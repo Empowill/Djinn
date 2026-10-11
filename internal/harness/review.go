@@ -12,12 +12,10 @@ import (
 	"strings"
 
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
-	"github.com/empowill/djinn/internal/store"
 )
 
 // Review (T07): a task whose worktree holds changes not committed is not merged, and nothing commits them blindly:
@@ -25,9 +23,6 @@ import (
 // task part of the same azima, of the task's provider, in that task's worktree and on its branch, the files and their
 // diff in its first prompt. It commits what belongs to the task and drops the rest; its branch then integrates like any
 // task's, and the reviewed work with it. Past the project's correction_attempts, Djinn asks the person.
-
-// reviewRetryOption is the first option of the question Djinn asks once the review attempts are spent.
-const reviewRetryOption = "Try again: Djinn starts a new review worker on the work not committed"
 
 // How much of a task's prompt, and of the diff of its work not committed, a review worker's first prompt holds.
 const (
@@ -124,7 +119,7 @@ func (h *Harness) reviewUncommitted(
 
 // review settles the integration of group, tasks whose work is left not committed in the worktree of the first one,
 // after attempts review workers: another one starts when more are allowed and the project's correction_attempts are
-// not spent; otherwise Djinn asks the person. text is the event that says why. It says what Djinn did, for the lead.
+// not spent; otherwise Djinn tells the lead. text is the event that says why. It says what Djinn did, for the lead.
 func (h *Harness) review(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, group []*planv1.Task,
 	in *planv1.TaskIntegration, text string, attempts int32, more bool,
@@ -138,7 +133,6 @@ func (h *Harness) review(
 	}
 	in = proto.CloneOf(in)
 	in.State, in.ReviewedBy, in.QuestionId, in.Attempts = planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED, "", "", attempts
-	var unstarted error
 	if more && int(attempts) < settings.CorrectionAttempts {
 		r, err := h.spawnReview(ctx, wish, project, group, in.GetBranch(), attempts+1)
 		if err == nil {
@@ -147,18 +141,16 @@ func (h *Harness) review(
 				attempts+1, settings.CorrectionAttempts), nil)
 			return didStart(r)
 		}
-		unstarted = err
 		text += "; the review worker could not start: " + err.Error()
 	}
-	q, err := h.askReview(ctx, wish, group, in, unstarted)
-	if err != nil {
-		log.Printf("djinn: integrate %s: ask: %v", codes(group), err)
-	} else {
-		in.QuestionId = q.GetId()
-		text += "; Djinn asks you " + q.GetCode()
-	}
+	c := codes(group)
+	line := fmt.Sprintf("Djinn: the work of %s into %s has uncommitted changes: %s. The move is yours: retry a review, drop the work (djinn task done --drop / djinn task cancel), or leave it waiting.",
+		c, in.GetBranch(), headline(in.GetReason()))
+	h.tellLead(ctx, wish.GetId(), line)
+	in.QuestionId = ""
+	text += "; left to the lead"
 	h.settleIntegration(ctx, group, in, text, nil)
-	return didAsk("review", unstarted, q)
+	return line
 }
 
 // spawnReview starts the attempt-th review worker of group's work, left not committed in the worktree of its first task:
@@ -273,51 +265,6 @@ func indent(s string) string {
 		b.WriteString("    " + line)
 	}
 	return b.String()
-}
-
-// askReview asks the person, on wish, what to do with the work of group, left not committed once the review attempts
-// were spent, or once unstarted kept the next review worker from starting: try again, leave it, or take it.
-func (h *Harness) askReview(
-	ctx context.Context, wish *planv1.Wish, group []*planv1.Task, in *planv1.TaskIntegration, unstarted error,
-) (*planv1.Question, error) {
-	from := group[0]
-	tried := fmt.Sprintf("Djinn started %d review workers, one after the other: none left it committed.", in.GetAttempts())
-	switch in.GetAttempts() {
-	case 0:
-		tried = "The project's settings start no review worker (correction_attempts: 0)."
-	case 1:
-		tried = "Djinn started a review worker: it did not leave it committed."
-	}
-	tried = unstartedText(tried, "review", in.GetAttempts(), unstarted)
-	var ctxt strings.Builder
-	if status, err := uncommitted(ctx, from); err == nil && len(status) > 0 {
-		fmt.Fprintf(&ctxt, "**The files not committed.** %s\n\n", strings.Join(statusPaths(status), ", "))
-	}
-	if len(group) > 1 {
-		fmt.Fprintf(&ctxt, "**The attempts.** %s, whose work was left not committed in turn.\n\n", codes(group[1:]))
-	}
-	fmt.Fprintf(&ctxt, "**To take it.** In `%s`, on the branch `%s`: commit what belongs to %s, drop the rest.\n\n",
-		from.GetWorktree(), from.GetBranch(), from.GetCode())
-	fmt.Fprintf(&ctxt, "The rest of the wish goes on meanwhile: only this work waits, out of %s.", in.GetBranch())
-	q := &planv1.Question{
-		Id: store.NewID(), WishId: wish.GetId(), CreateTime: timestamppb.New(h.now()), Icon: "🔀",
-		Text: fmt.Sprintf("The work of %s does not go into %s: its worktree holds changes not committed. %s What should Djinn do?",
-			from.GetCode(), in.GetBranch(), tried),
-		Context: ctxt.String(),
-		Options: []string{reviewRetryOption, fmt.Sprintf(leaveOption, in.GetBranch()), takeOption},
-		Before:  "before the push",
-	}
-	err := h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
-		if err := tx.Journal(actorHarness, methodIntegrate, q); err != nil {
-			return err
-		}
-		return plan.Ask(ctx, tx, q)
-	})
-	if err != nil {
-		return nil, err
-	}
-	h.notify()
-	return q, nil
 }
 
 // settleReviewed records the work the review workers of batch reviewed as committed with theirs, in in.Sha:

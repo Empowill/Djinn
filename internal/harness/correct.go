@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
@@ -22,13 +21,6 @@ import (
 // starts on the failed merge, with what failed in its first prompt. Its branch integrates like any task's, and its
 // success commits the failed work with it. Past the project's correction_attempts, Djinn asks the person a question
 // on the wish, which blocks nothing else.
-
-// The options of the question Djinn asks once the attempts are spent, answered by their letter.
-const (
-	retryOption = "Try again: Djinn starts a new correction worker on the failed merge"
-	leaveOption = "Leave it: the work stays out of %s"
-	takeOption  = "I take it: Djinn leaves the failed merge to you"
-)
 
 // failed records a batch whose merge conflicted in code or whose tests failed, in.Failure saying what: the tasks whose
 // work the failure holds wait for a correction worker, which Djinn starts by itself, or for the person once the
@@ -101,15 +93,14 @@ func (h *Harness) failed(
 }
 
 // correct settles the integration of group, tasks whose work failed as in says, after attempts correction workers:
-// another one starts when more are allowed and the project's correction_attempts are not spent; otherwise Djinn asks
-// the person. text is the event that says what failed. It says what Djinn did, for the lead.
+// another one starts when more are allowed and the project's correction_attempts are not spent; otherwise Djinn tells
+// the lead. text is the event that says what failed. It says what Djinn did, for the lead.
 func (h *Harness) correct(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, group []*planv1.Task,
 	in *planv1.TaskIntegration, text string, attempts int32, more bool,
 ) string {
 	in = proto.CloneOf(in)
 	in.CorrectedBy, in.QuestionId, in.Attempts = "", "", attempts
-	var unstarted error
 	if more && int(attempts) < settings.CorrectionAttempts {
 		c, err := h.spawnCorrection(ctx, wish, project, group, in, attempts+1)
 		if err == nil {
@@ -118,39 +109,25 @@ func (h *Harness) correct(
 				attempts+1, settings.CorrectionAttempts), nil)
 			return didStart(c)
 		}
-		unstarted = err
 		text += "; the correction worker could not start: " + err.Error()
 	}
-	q, err := h.askIntegration(ctx, wish, group, in, unstarted)
-	if err != nil {
-		log.Printf("djinn: integrate %s: ask: %v", codes(group), err)
-	} else {
-		in.QuestionId = q.GetId()
-		text += "; Djinn asks you " + q.GetCode()
+	c := codes(originals(group))
+	why := in.GetReason()
+	if in.GetFailure() != nil && in.GetFailure().GetReason() != "" {
+		why = in.GetFailure().GetReason()
 	}
+	line := fmt.Sprintf("Djinn: the work of %s into %s failed: %s. The move is yours: retry a correction, drop the work (djinn task done --drop / djinn task cancel), or leave it waiting.",
+		c, in.GetBranch(), headline(why))
+	h.tellLead(ctx, wish.GetId(), line)
+	in.QuestionId = ""
+	text += "; left to the lead"
 	h.settleIntegration(ctx, group, in, text, nil)
-	return didAsk("correction", unstarted, q)
+	return line
 }
 
 // didStart says, for the lead, that Djinn started the worker t.
 func didStart(t *planv1.Task) string {
 	return fmt.Sprintf("Djinn started %s: %s", t.GetCode(), t.GetTitle())
-}
-
-// didAsk says, for the lead, that the next worker did not start, unstarted saying why when it was tried, and that
-// Djinn asked q instead, when it could.
-func didAsk(worker string, unstarted error, q *planv1.Question) string {
-	var did []string
-	if unstarted != nil {
-		did = append(did, fmt.Sprintf("Djinn could not start a %s worker (%v)", worker, unstarted))
-	}
-	if q != nil {
-		did = append(did, "Djinn asks "+q.GetCode())
-	}
-	if len(did) == 0 {
-		return "Djinn could not ask the developer again: its log says why"
-	}
-	return strings.Join(did, "; ")
 }
 
 // spawnCorrection starts the attempt-th correction worker of group, tasks whose work failed as in says: a work task of
@@ -262,78 +239,6 @@ func correctionPrompt(work, merging string, f *planv1.IntegrationFailure, branch
 func headline(s string) string {
 	line, _, _ := strings.Cut(s, "\n")
 	return strings.TrimSuffix(line, ":")
-}
-
-// askIntegration asks the person, on wish, what to do with the work of group, which failed as in says once the
-// correction attempts were spent, or once unstarted kept the next correction worker from starting: try again, leave
-// it, or take it.
-func (h *Harness) askIntegration(
-	ctx context.Context, wish *planv1.Wish, group []*planv1.Task, in *planv1.TaskIntegration, unstarted error,
-) (*planv1.Question, error) {
-	f := in.GetFailure()
-	tried := fmt.Sprintf("Djinn started %d correction workers, one after the other: none got it in.", in.GetAttempts())
-	switch in.GetAttempts() {
-	case 0:
-		tried = "The project's settings start no correction worker (correction_attempts: 0)."
-	case 1:
-		tried = "Djinn started a correction worker: it did not get it in."
-	}
-	tried = unstartedText(tried, "correction", in.GetAttempts(), unstarted)
-	var ctxt strings.Builder
-	fmt.Fprintf(&ctxt, "**What failed.** %s\n\n", f.GetReason())
-	if len(f.GetFiles()) > 0 {
-		fmt.Fprintf(&ctxt, "**The files in conflict.** %s\n\n", strings.Join(f.GetFiles(), ", "))
-	}
-	if f.GetCommand() != "" {
-		fmt.Fprintf(&ctxt, "**The command.** `%s`\n\n", f.GetCommand())
-	}
-	var corrections []string
-	for _, t := range group {
-		if t.GetCorrection() != nil {
-			corrections = append(corrections, t.GetCode())
-		}
-	}
-	if len(corrections) > 0 {
-		fmt.Fprintf(&ctxt, "**The attempts.** %s, whose work failed in turn.\n\n", strings.Join(corrections, ", "))
-	}
-	if f.GetMergeBranch() != "" {
-		fmt.Fprintf(&ctxt, "**To take it.** `git switch --detach %s`, then `git merge %s`: the conflicts are yours to settle.\n\n",
-			short8(f.GetBase()), f.GetMergeBranch())
-	} else {
-		fmt.Fprintf(&ctxt, "**To take it.** `git switch --detach %s`: the work merged, where `%s` fails.\n\n", short8(f.GetBase()), f.GetCommand())
-	}
-	fmt.Fprintf(&ctxt, "The rest of the wish goes on meanwhile: only this work waits, out of %s.", in.GetBranch())
-	q := &planv1.Question{
-		Id: store.NewID(), WishId: wish.GetId(), CreateTime: timestamppb.New(h.now()), Icon: "🔀",
-		Text: fmt.Sprintf("The work of %s does not go into %s: %s. %s What should Djinn do?", codes(originals(group)),
-			in.GetBranch(), headline(f.GetReason()), tried),
-		Context: ctxt.String(),
-		Options: []string{retryOption, fmt.Sprintf(leaveOption, in.GetBranch()), takeOption},
-		Before:  "before the push",
-	}
-	err := h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
-		if err := tx.Journal(actorHarness, methodIntegrate, q); err != nil {
-			return err
-		}
-		return plan.Ask(ctx, tx, q)
-	})
-	if err != nil {
-		return nil, err
-	}
-	h.notify()
-	return q, nil
-}
-
-// unstartedText is tried, what the attempts of a worker did, once unstarted kept the next one from starting: the
-// reason it did not start, in place of the settings when none had started.
-func unstartedText(tried, worker string, attempts int32, unstarted error) string {
-	switch {
-	case unstarted == nil:
-		return tried
-	case attempts == 0:
-		return fmt.Sprintf("Djinn could not start a %s worker: %v.", worker, unstarted)
-	}
-	return fmt.Sprintf("%s Djinn could not start another one: %v.", tried, unstarted)
 }
 
 // settleCorrected records the work the correction workers of batch corrected as committed with theirs, in in.Sha:

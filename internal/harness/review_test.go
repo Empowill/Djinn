@@ -183,17 +183,10 @@ func TestReviewAttemptsThenAQuestion(t *testing.T) {
 	if got := in.states(t, w1, w3); got != "W1 UNCOMMITTED, W3 UNCOMMITTED" {
 		t.Fatalf("two attempts spent: %s", got)
 	}
-	q := in.question(t, w1)
 	got, texts := in.integration(t, w3)
-	if got.GetQuestionId() != q.GetId() || got.GetAttempts() != 2 || got.GetReviewedBy() != "" ||
-		!strings.HasSuffix(texts[len(texts)-1], "; Djinn asks you "+q.GetCode()) {
+	if got.GetQuestionId() != "" || got.GetAttempts() != 2 || got.GetReviewedBy() != "" ||
+		!strings.HasSuffix(texts[len(texts)-1], "; left to the lead") {
 		t.Errorf("W3's integration %v; events %q", got, texts)
-	}
-	if q.GetText() != "The work of W1 does not go into "+in.branch+": its worktree holds changes not committed. Djinn started 2 "+
-		"review workers, one after the other: none left it committed. What should Djinn do?" ||
-		!slices.Equal(q.GetOptions(), []string{reviewRetryOption, "Leave it: the work stays out of " + in.branch, takeOption}) ||
-		!strings.Contains(q.GetContext(), "**The files not committed.** app/src/b.txt") || !strings.Contains(q.GetContext(), "**The attempts.** W3") {
-		t.Errorf("the question %q, %q:\n%s", q.GetText(), q.GetOptions(), q.GetContext())
 	}
 	// Nothing more starts by itself, and nothing is merged.
 	in.pass(t, time.Hour)
@@ -202,6 +195,7 @@ func TestReviewAttemptsThenAQuestion(t *testing.T) {
 	}
 
 	// Try again: a new review, its attempts counted from one, which commits; the work goes in.
+	q := in.attachQuestion(t, w1, w3)
 	if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn started W4: Review the work W1 left not committed" {
 		t.Errorf("what Djinn did: %q", did)
 	}
@@ -324,23 +318,35 @@ func TestAReviewOfWorkWhoseAzimaIsGone(t *testing.T) {
 	}
 }
 
-// TestAReviewThatCannotStart: when the review worker cannot start, the question says why, not that the settings
-// start none.
+// TestAReviewThatCannotStart: when the review worker cannot start, the lead is told why and
+// it is left to the lead.
 func TestAReviewThatCannotStart(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
+	lead := &leadListener{}
+	in.h.TellLeads(lead.tell)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 	in.leave(t, w1, map[string]string{"app/src/b.txt": "b\n"})
 	delete(in.h.providers, planv1.Provider_PROVIDER_FAKE) // W1's provider: its review worker cannot start.
 
 	in.pass(t, 0)
-	q := in.question(t, w1)
-	if !strings.Contains(q.GetText(), "Djinn could not start a review worker: invalid_argument: provider PROVIDER_FAKE is not available.") ||
-		strings.Contains(q.GetText(), "correction_attempts") {
-		t.Errorf("the question %q", q.GetText())
-	}
-	if got, texts := in.integration(t, w1); got.GetReviewedBy() != "" ||
-		!strings.Contains(texts[len(texts)-1], "; the review worker could not start: invalid_argument: provider") {
+	got, texts := in.integration(t, w1)
+	if got.GetReviewedBy() != "" ||
+		!strings.Contains(texts[len(texts)-1], "; the review worker could not start: invalid_argument: provider") ||
+		!strings.HasSuffix(texts[len(texts)-1], "; left to the lead") {
 		t.Errorf("W1's integration %v; events %q", got, texts)
+	}
+	if got.GetQuestionId() != "" {
+		t.Errorf("W1 question_id = %q; want empty", got.GetQuestionId())
+	}
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(questions) != 0 {
+		t.Errorf("got %d questions; want 0", len(questions))
+	}
+	if paras := lead.all(); len(paras) == 0 || !strings.Contains(paras[len(paras)-1], "The move is yours: retry a review, drop the work") {
+		t.Errorf("expected lead notification, got %v", paras)
 	}
 }

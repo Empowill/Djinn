@@ -74,6 +74,40 @@ func (in *integration) pushQuestion(t *testing.T) *planv1.Question {
 	return q
 }
 
+// attachPushQuestion attaches a question to wish's push record to test answering it.
+func (in *integration) attachPushQuestion(t *testing.T) *planv1.Question {
+	t.Helper()
+	q := &planv1.Question{
+		Id:         store.NewID(),
+		WishId:     in.wishID,
+		Code:       "Q01",
+		Text:       "The push checks of " + in.branch + " stay red.",
+		CreateTime: timestamppb.Now(),
+	}
+	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal(actorLocal, "test/question", q); err != nil {
+			return err
+		}
+		if err := plan.Ask(t.Context(), tx, q); err != nil {
+			return err
+		}
+		wish, err := store.Get[*planv1.Wish](t.Context(), tx, in.wishID)
+		if err != nil {
+			return err
+		}
+		p := pushState(wish, in.projectID)
+		if p == nil {
+			p = &planv1.WishPush{ProjectId: in.projectID}
+			wish.Pushes = append(wish.Pushes, p)
+		}
+		p.QuestionId = q.GetId()
+		return tx.Put(wish)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return q
+}
+
 // later moves the clock by d, without a pass.
 func (in *integration) later(d time.Duration) {
 	in.mu.Lock()
