@@ -194,7 +194,7 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	}
 
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal(actorLocal, procedure, req); err != nil {
+		if err := tx.Journal(plan.CallerActor(ctx), procedure, req); err != nil {
 			return err
 		}
 		if promptGiven {

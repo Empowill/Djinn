@@ -475,8 +475,9 @@ cheapest model>`, then `djinn task watch <task> --raw --json > turn.jsonl`. A se
 ## Antigravity
 
 **Command.** `agy --input-format stream-json --output-format stream-json`, then, with permissions, `--mode
-accept-edits`, `--sandbox` without the network and `--project <Djinn's agy project>`; `--conversation <id>` to resume,
-`--model`; outside a project, refused until a real capture proves a read-only mode. No `-p`: it takes the prompt as its value, and stream-json
+accept-edits` and `--project <Djinn's agy project>` (run without `--sandbox`: developer choice Decision Q66, as agy's sandbox
+blocks UNIX domain sockets needed for `djinn gate run lint`, which triggers an `unsandboxed` request that headless mode denies);
+`--conversation <id>` to resume, `--model`; outside a project, refused until a real capture proves a read-only mode. No `-p`: it takes the prompt as its value, and stream-json
 input replaces it. Each message on the input is `{"event":"user","message":{"content":"…"}}` and runs one turn;
 the input is closed once every message has its result. agy cannot fork a conversation, and has no spending cap.
  
@@ -590,10 +591,9 @@ headless with "Do not attempt to circumvent this denial ... curl" (W371), after 
 page by curl and Python, which its rights allowed. Djinn grants `read_url(*)` in AUTO next to `command(*)`,
 keeping deny `command(git push)`.
 
-**So today an agy worker in AUTO runs any command in its sandbox but the denied ones, `git push` always, and may read any URL (`read_url(*)`, Q143);** in
+**So today an agy worker runs without `--sandbox` (Decision Q66, agy 1.3.3); in AUTO it runs any command via `command(*)` but the denied ones, `git push` always, and may read any URL (`read_url(*)`, Q143);** in
 LISTED, a command neither listed nor allowed by the user's own agy settings is still denied, and ends its turn:
-list what its tasks run, `git add` and `git commit` among them. Whether Djinn should pass
-`--dangerously-skip-permissions` is an open question (Q43).
+list what its tasks run, `git add` and `git commit` among them.
 
 **Verified:** the command line, from `agy --help` (1.3.0); the stream's shapes, from the official headless
 documentation (`antigravity.google/docs/cli/headless`, read 2026-10-08); the field names `event`, `step_update`,

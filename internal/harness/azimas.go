@@ -275,7 +275,7 @@ func (h *Harness) withAzimas(ctx context.Context, tasks []*planv1.Task) ([]*plan
 
 // PlanHandler returns the Connect handler of PlanService on h, and its path prefix.
 func PlanHandler(h *Harness) (string, http.Handler) {
-	return planv1connect.NewPlanServiceHandler(&Plans{h: h}, connect.WithInterceptors(plan.Validate))
+	return planv1connect.NewPlanServiceHandler(&Plans{h: h}, connect.WithInterceptors(plan.Validate, plan.WorkerGuard))
 }
 
 // Plans implements PlanService.

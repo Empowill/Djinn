@@ -126,9 +126,30 @@ func init() {
 	}
 }
 
-// InTest reports whether the current process is running under `go test` or with DJINN_TEST=1.
+// isTestBuild is set to "true" via ldflags when building test binaries (e.g. bin/djinn-e2e, bin/djinn-e2e-native).
+// W341 assumed that stray wishes were made by "a person with the window open" because go test was guarded,
+// but the stray wishes were created when W328 executed bin/djinn-e2e by hand outside tests and cleared DJINN_TASK_ID.
+// Marking test builds ensures that running test binaries by hand without harness environment refuses the real home.
+var isTestBuild string
+
+// IsTestBuild reports whether the current binary was built for testing or is an e2e binary.
+func IsTestBuild() bool {
+	if isTestBuild == "true" {
+		return true
+	}
+	if exe, err := os.Executable(); err == nil {
+		base := strings.ToLower(filepath.Base(exe))
+		base = strings.TrimSuffix(base, ".exe")
+		if strings.HasPrefix(base, "djinn-e2e") || strings.Contains(base, "-e2e") || strings.HasSuffix(base, ".test") {
+			return true
+		}
+	}
+	return false
+}
+
+// InTest reports whether the current process is running under `go test`, with DJINN_TEST=1, or is a test build.
 func InTest() bool {
-	return testing.Testing() || os.Getenv("DJINN_TEST") == "1"
+	return testing.Testing() || os.Getenv("DJINN_TEST") == "1" || IsTestBuild()
 }
 
 // RealHome returns the default data directory of the user: ~/.config/djinn (or djinn-dev for a development build).
@@ -216,7 +237,7 @@ func Home() (string, error) {
 		home = filepath.Join(config, name)
 	}
 	if InTest() && IsRealHome(home) {
-		return "", fmt.Errorf("refusing to use real data directory (%s) under test: set DJINN_HOME to a temporary directory", home)
+		return "", fmt.Errorf("refusing to use real data directory (%s) under test: without an address and a data folder given by the test harness, start a Djinn of your own (a DJINN_HOME of its own, djinn up on its own socket)", home)
 	}
 	return home, nil
 }

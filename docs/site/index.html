@@ -227,12 +227,28 @@
               diff and commits. Djinn brings it back on its session at every start, in its folder.
             </p>
           </article>
+          <article class="card word" id="principal-lead">
+            <h3>The principal lead</h3>
+            <p>
+              When multiple wishes run, one lead is principal: its terminal receives your answers whenever another wish has
+              no active lead, keeping decisions moving across the project. Designate one with
+              <code>djinn wish principal &lt;wish-id&gt; --principal</code> or let the oldest active wish lead.
+            </p>
+          </article>
           <article class="card word" id="azimas">
             <h3>Azimas <span class="tongue">ʿazīma</span></h3>
             <p>
               The incantation that binds and commands a djinn. The plan of a wish is a graph of azimas: tasks no worker
               runs, which work is part of. Only <code>depends_on</code> makes a task wait. <code>djinn plan sync</code>
               reads them from a project's <code>plan/*.md</code>.
+            </p>
+          </article>
+          <article class="card word" id="azima-drafts">
+            <h3>Draft azimas</h3>
+            <p>
+              Plan azimas ahead as drafts without dispatching workers or cluttering active progress. Open a draft for work
+              when you are ready with <code>djinn task open &lt;azima&gt;</code>, or move it to another wish with
+              <code>djinn task move &lt;azima&gt; --wish &lt;wish&gt;</code>.
             </p>
           </article>
           <article class="card word" id="workers">
@@ -250,6 +266,15 @@
               another, and a small worker turns the decision into tasks; <span class="chip ghost">Enlighten me</span> sends one to dig first, then revise
               the question. An answered question is a decision: who took it, and the tasks it led to, stay in the
               Decisions tab.
+            </p>
+          </article>
+          <article class="card word" id="push-strategy">
+            <h3>Push strategy</h3>
+            <p>
+              Control how a wish integrates its code: combine every task into one wish branch (<code>--strategy wish</code>),
+              or keep each task on an independent azima branch (<code>--strategy azima</code>) with automated pull request
+              proposals and individual push controls. Set it per wish with
+              <code>djinn wish push-strategy &lt;wish-id&gt; --strategy &lt;wish|azima&gt;</code>.
             </p>
           </article>
           <article class="card word" id="gates">

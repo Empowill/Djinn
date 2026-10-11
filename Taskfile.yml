@@ -136,14 +136,14 @@ tasks:
     deps: [ui]
     cmds:
       - npx vite build --config e2e/vite.config.ts --logLevel warn
-      - go build -tags headless -o bin/djinn-e2e{{exeExt}} ./cmd/djinn
+      - go build -tags headless -ldflags "-X github.com/empowill/djinn/internal/ui.isTestBuild=true" -o bin/djinn-e2e{{exeExt}} ./cmd/djinn
       - npx playwright test --config e2e/playwright.config.ts {{.CLI_ARGS}}
 
   screenshots:
     desc: "Retake the README's screenshots (docs/screenshots/readme/), dark and light: a demonstration wish in English on the browser build, in a djinn of its own (e2e/readme.shot.ts)"
     deps: [ui]
     cmds:
-      - go build -tags headless -o bin/djinn-e2e{{exeExt}} ./cmd/djinn
+      - go build -tags headless -ldflags "-X github.com/empowill/djinn/internal/ui.isTestBuild=true" -o bin/djinn-e2e{{exeExt}} ./cmd/djinn
       - npx playwright test --config e2e/screenshots.config.ts
 
   e2e-native:
@@ -153,7 +153,7 @@ tasks:
       DJINN_E2E_NATIVE: "{{.ROOT_DIR}}/bin/djinn-e2e-native{{exeExt}}"
     cmds:
       # The mcp tag adds the MCP server and titles the window "Djinn e2e" (cmd/djinn/window_mcp.go): never shipped.
-      - go build -tags '{{.WINDOW_TAGS}} mcp' -o bin/djinn-e2e-native{{exeExt}} ./cmd/djinn
+      - go build -tags '{{.WINDOW_TAGS}} mcp' -ldflags "-X github.com/empowill/djinn/internal/ui.isTestBuild=true" -o bin/djinn-e2e-native{{exeExt}} ./cmd/djinn
       - go test -count=1 {{.CLI_ARGS}} ./e2e/native
 
   check-window:

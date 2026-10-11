@@ -33,7 +33,7 @@ type Decided struct {
 	Human bool
 	// Approved says the developer took it by an approval: the recommendation on a question, a block as it is.
 	Approved bool
-	// By is the agent that took a block: "lead", or the code of the task the block is about. Empty when Human.
+	// By is the agent that took the decision: "lead", or the code of the task it is about. Empty when Human.
 	By string
 	// Icon is its emoji: its own, or the default of its kind.
 	Icon string
@@ -58,11 +58,17 @@ func Decisions(exp *planv1.WishExport) []Decided {
 	}
 	var out []Decided
 	for _, q := range exp.GetQuestions() {
-		if q.GetAnswer() == nil {
+		ans := q.GetAnswer()
+		if ans == nil {
 			continue
 		}
+		human := ans.GetActor() == planv1.Closer_CLOSER_DEVELOPER || (ans.GetActor() == planv1.Closer_CLOSER_UNSPECIFIED && ans.GetTaskId() == "")
+		var by string
+		if !human {
+			by = cmp.Or(codes[ans.GetTaskId()], ByLead)
+		}
 		out = append(out, Decided{
-			Question: q, At: q.GetAnswer().GetCreateTime().AsTime(), Human: true, Approved: approved(q.GetMarks()),
+			Question: q, At: ans.GetCreateTime().AsTime(), Human: human, By: by, Approved: approved(q.GetMarks()),
 			Icon: cmp.Or(q.GetIcon(), QuestionIcon), Tasks: led[strings.ToUpper(q.GetCode())],
 		})
 	}

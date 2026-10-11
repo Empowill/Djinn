@@ -27,6 +27,7 @@ generate: "go tool task gen"
 setup: "npm ci"
 checks { name: "lint" command: "go tool task lint" when: CHECK_WHEN_COMMIT }
 checks { name: "test" command: "go tool task test" when: CHECK_WHEN_PUSH }
+test_one: "go tool task test-pkg -- {pkg}"
 install: "go tool task install"
 ```
 
@@ -40,6 +41,7 @@ install: "go tool task install"
 | `generate`       | The command that makes them, in the project's folder.                   | none                       |
 | `setup`          | The command that makes a fresh worktree ready (`npm ci`), in the project's folder: see [checks](#checks). | none |
 | `checks`         | The commands Djinn runs before it commits a task's work, before it pushes, or both, each through a gate of its name: see [checks](#checks). Set, Djinn integrates finished work. A file that sets some sets them all. | none: no integration |
+| `test_one`       | The command template a worker runs for targeted tests (`go tool task test-pkg -- {pkg}`): see [checks](#checks). | none: worker runs tests covering what it changed |
 | `test`           | The former name of a check run before each commit: `test: "make test"` is the check `test` at `commit`. | none |
 | `correction_attempts` | How many correction workers Djinn starts for work that conflicts in code or tests red, before it asks you: see [integration](#integration). `0`: it asks at once. | `2` |
 | `install`        | The command that installs the integration branch once pushed, in the project's folder: the window proposes it. | none: nothing proposed |
@@ -188,6 +190,9 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
   worktree gets them at the end of its first prompt, to run the commit checks (`djinn gate run lint -- go tool task
   lint`) before it ends; again when it resumes from its first prompt (a session never known).
   When writing a worker's prompt, ask for the commit checks and the targeted tests, never "run the whole test suite"; the push checks are Djinn's.
+- **Targeted tests (`test_one`)**: when a project names `test_one` (such as `test_one: "go tool task test-pkg -- {pkg}"`),
+  Djinn includes the command template in the project's checks brief. Workers run the commit checks before they end,
+  and then only the targeted tests covering what they changed, leaving the push checks (such as the full test suite) for Djinn.
 - `djinn project show <project>` and the project's view in the window list the setup and the checks, each with its
   last run: the commit it checked, when, how long, and why it failed.
 
@@ -245,7 +250,9 @@ Djinn does not integrate (a project that names no check) counts once done, as be
 
 Where each task's work stands shows in `djinn task get` (`integration`: its state, the commit, what failed, the task
 that corrects it), the lead's brief, the wish's page and the Tasks tab: done, waiting to be committed, being
-committed, committed as `1a2b3c4d`, conflict, red, corrected by W9, uncommitted, reviewed by W9.
+committed, committed as `1a2b3c4d`, conflict, red, corrected by W9, uncommitted, reviewed by W9. A finished task's
+integration record can be cleared with `djinn task update <task> --integration none` (refused while it is merging),
+leaving it without an integration record so Djinn will not integrate it on its own.
 
 ### Pushing
 
@@ -295,11 +302,11 @@ that Djinn restarts; when it installed a newer Djinn at the path of the running 
 button does; otherwise it says the build is installed.
 
 By default (`install_questions: always`), Djinn raises an "Install and restart" question for uninstalled builds. With
-`install_questions: when_needed` (set in Djinn's own settings, whose builds are installed after each push), Djinn raises
-no routine question: the update banner and post-push install are enough. It asks only when necessary, stating why in the
-question and context: when a build carries the fix for a task or question you are waiting on (named), a change that takes
-effect after restart and matters now (such as a harness fix for failing workers, naming them), or when the running build is
-broken (a crash or failed check). With `install_questions: never`, no install questions are asked.
+`install_questions: when_needed`, Djinn raises no routine question: the update banner and post-push install are enough.
+It asks only when necessary, stating why in the question and context: when a build carries the fix for a task or question
+you are waiting on (named), a change that takes effect after restart and matters now (such as a harness fix for failing
+workers, naming them), or when the running build is broken (a crash or failed check). With `install_questions: never`
+(set in Djinn's own settings: the window proposes each new build, to install or skip), no install questions are asked.
 
 The commands' words are split on spaces, without a shell. The integration branch of a wish is, in each project, the
 branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it.
@@ -359,6 +366,8 @@ release, it looks at the checkout its build comes from, in the project whose rep
 Permissions stay in [`.agents/permissions.txtpb`](providers.md#the-agentspermissionstxtpb-format), templates in
 the skills ([wish templates](wish-templates.md)), gates are named where they run (`djinn gate run <name>`). The
 lead's agent, CPU limits and the machine's workers stay with each developer's `djinn up`.
+The operating load cursor (minimal, medium, high, max, overclock, auto) is machine-wide and developer-controlled
+(`djinn load get/set/watch`), not a repository setting in `.agents/settings.txtpb`.
 
 ## Cost estimates and model pricing
 

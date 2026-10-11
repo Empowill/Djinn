@@ -88,7 +88,14 @@ changes only when you click "update". Three separations make it so:
    with a version. Workers rebuild `bin/djinn`, never your copy.
 2. **A development build has its own data.** `bin/djinn` (version `dev`) uses a `djinn-dev`
    folder, so it never finds your Djinn, its socket or its window. Every test uses a temporary
-   folder.
+   folder. Test builds (`bin/djinn-e2e`, `bin/djinn-e2e-native`, test binaries) refuse to run or dial
+   without an explicit address and temporary data folder given by the test harness: without them,
+   they refuse loudly with instructions to start a Djinn of their own (`DJINN_HOME` of its own, `djinn up`
+   on its own socket). (W341 concluded that stray wishes were made by "a person with the window open"
+   because no test reached the real Djinn. In fact, W328 ran `./bin/djinn-e2e` by hand outside tests
+   and cleared `DJINN_TASK_ID`, which dialed the real Djinn. Test builds now refuse without harness
+   settings, workers are identified by kernel peer PID and secret token even if they clear their task ID,
+   and mutating wish commands refuse workers unless their own task's wish is concerned.)
 3. **Tests touch only what they started.** Stop a process by its PID, never by name. No native
    window unless asked (`check-window` opens one, on demand).
 
@@ -284,10 +291,11 @@ To use Djinn, see the [README](README.md). To work on it:
   … --icon 🧱` give it its subject's emoji (one emoji); `djinn task spawn … --decision Q43` (a question's code, or a
   decision block's id) says which decision a task comes from. The window lists them in a "Decisions" tab, read only:
   who took each one (you, the lead, a worker) and the tasks it led to; the page and the brief follow.
-- An answer starts a question worker, "Q43 → tasks", that turns the decision into tasks (`--decision Q43`); "Enlighten
-  me" starts "Q43: enlighten", which revises the question. They read, take no slot (only memory), and tell the lead what they did.
-  `question_workers: false` in a project's settings ([`docs/team-settings.md`](docs/team-settings.md)) or `djinn up
-  --question-workers=false` turns them off. A worker's `djinn block put`, `question ask` and `revise` name its task from
+- An answer turns into tasks by the lead by default, or with `answer_workers: true` starts a converter ("Q43 → tasks",
+  `--decision Q43`). "Enlighten me" starts an investigator by default ("Q43: enlighten", which revises the question;
+  turned off with `enlighten_workers: false`). They read, take no slot (only memory), and tell the lead what they did.
+  `question_workers` in a project's settings ([`docs/team-settings.md`](docs/team-settings.md)) or `djinn up
+  --question-workers` is deprecated and sets both. A worker's `djinn block put`, `question ask` and `revise` name its task from
   `$DJINN_TASK_ID`: the decision log says "By W12".
 - An open question is blocking when a task waits for its answer, red; `djinn question ask … --before "before the merge"`
   makes it orange under those words; without them it can wait, grey. `djinn question revise … --before …` changes them,

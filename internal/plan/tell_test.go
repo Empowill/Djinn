@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
@@ -15,6 +16,7 @@ func (c clients) answer(t *testing.T, q *planv1.Question, choice planv1.Choice, 
 	t.Helper()
 	if _, err := c.questions.Answer(t.Context(), connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
 		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}}, Choice: choice, Note: note,
+		By: planv1.Closer_CLOSER_DEVELOPER,
 	})); err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +84,13 @@ func TestAnswerReachesTheLead(t *testing.T) {
 	if len(leads.opened) != 0 || len(leads.said) != 0 {
 		t.Errorf("without a lead: opened %q, said %q", leads.opened, leads.said)
 	}
+	briefNoLead, err := BuildBrief(ctx, c.store, dir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(briefNoLead.Moving, "Q01") || !strings.Contains(briefNoLead.Moving, "Paraffin") {
+		t.Errorf("brief without lead: got %q, want Q01 decision", briefNoLead.Moving)
+	}
 
 	// A lead is set, then resumed: waiting answers are told at start, then new answers reach the running lead in order.
 	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: id, SessionId: session}); err != nil {
@@ -136,6 +145,13 @@ func TestAnswerReachesTheLead(t *testing.T) {
 	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
 	if len(leads.said) != 0 {
 		t.Errorf("typed in a shell: %q", leads.said)
+	}
+	briefShell, err := BuildBrief(ctx, c.store, dir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(briefShell.Moving, "Q06") {
+		t.Errorf("brief when shell ran: got %q, want Q06 decision", briefShell.Moving)
 	}
 
 	// A paused wish's lead is told while it runs, and not reopened once it stopped.
@@ -311,5 +327,86 @@ func TestAnswerRoutingToPrincipalAndWaitingLead(t *testing.T) {
 	}
 	if storedQ3After.GetWaitingLead() {
 		t.Errorf("after being told, waiting_lead = true, want false")
+	}
+}
+
+func TestLeadAnswerNotToldToLead(t *testing.T) {
+	ctx := t.Context()
+	leads := &fakeLeads{}
+	c := serve(t, WithLeads(leads))
+	project, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Lead answer", ProjectIds: []string{project.Msg.GetProject().GetId()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := made.Msg.GetWish().GetId()
+	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: id, SessionId: session}); err != nil {
+		t.Fatal(err)
+	}
+	leads.running = map[string][]string{
+		LeadTerminal(id): {"/bin/sh", "-c", "claude --resume " + session},
+	}
+
+	// 1. Answer from the lead's terminal (Lead set to wish id, as $DJINN_LEAD does):
+	// attributed to CLOSER_LEAD and NOT told to the lead.
+	q1 := c.ask(t, id, "A", "B")
+	if _, err := c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q1.GetId()}},
+		Choice:   planv1.Choice_CHOICE_A,
+		Lead:     id,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(leads.said) != 0 {
+		t.Errorf("lead answer was told to the lead: %v", leads.said)
+	}
+	saved1 := c.questionOf(t, q1.GetId())
+	if saved1.GetAnswer().GetActor() != planv1.Closer_CLOSER_LEAD {
+		t.Errorf("actor = %v, want CLOSER_LEAD", saved1.GetAnswer().GetActor())
+	}
+
+	// 2. Answer from a plain shell (neither Lead nor TaskId set, no By):
+	// defaults to CLOSER_DEVELOPER and IS told to the lead.
+	q2 := c.ask(t, id, "A", "B")
+	if _, err := c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q2.GetId()}},
+		Choice:   planv1.Choice_CHOICE_B,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(leads.said) != 1 {
+		t.Fatalf("plain shell answer was not told to the lead: %v", leads.said)
+	}
+	if !strings.Contains(leads.said[0], "Q02 answered B") {
+		t.Errorf("said = %q, want Q02 answered B", leads.said[0])
+	}
+	saved2 := c.questionOf(t, q2.GetId())
+	if saved2.GetAnswer().GetActor() != planv1.Closer_CLOSER_DEVELOPER {
+		t.Errorf("actor = %v, want CLOSER_DEVELOPER", saved2.GetAnswer().GetActor())
+	}
+	leads.said = nil
+
+	// 3. Answer by a worker ($DJINN_TASK_ID): attributed to its task.
+	taskID := uuid.NewString()
+	c.put(t, &planv1.Task{
+		Id: taskID, WishId: id, Code: "W01", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+	})
+	q3 := c.ask(t, id, "A", "B")
+	if _, err := c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q3.GetId()}},
+		Choice:   planv1.Choice_CHOICE_A,
+		TaskId:   taskID,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	saved3 := c.questionOf(t, q3.GetId())
+	if saved3.GetAnswer().GetActor() != planv1.Closer_CLOSER_UNSPECIFIED || saved3.GetAnswer().GetTaskId() != taskID {
+		t.Errorf("worker answer: actor = %v, taskId = %q, want CLOSER_UNSPECIFIED and %q",
+			saved3.GetAnswer().GetActor(), saved3.GetAnswer().GetTaskId(), taskID)
 	}
 }

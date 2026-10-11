@@ -18,7 +18,7 @@ import (
 
 // Handler returns the Connect handler of TaskService on h, and its path prefix.
 func Handler(h *Harness) (string, http.Handler) {
-	return planv1connect.NewTaskServiceHandler(&Tasks{h: h}, connect.WithInterceptors(plan.Validate))
+	return planv1connect.NewTaskServiceHandler(&Tasks{h: h}, connect.WithInterceptors(plan.WorkerGuard, plan.Validate))
 }
 
 // Tasks implements TaskService.
