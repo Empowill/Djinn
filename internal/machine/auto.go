@@ -62,13 +62,24 @@ func WithAutoOnChange(onChange func(djinnv1.LoadNotch)) AutoOption {
 	return func(c *AutoController) { c.onChange = onChange }
 }
 
+// WithAutoChosen sets the ceiling notch for auto mode.
+func WithAutoChosen(notch djinnv1.LoadNotch) AutoOption {
+	return func(c *AutoController) {
+		if notch == djinnv1.LoadNotch_LOAD_NOTCH_LIGHT {
+			notch = djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
+		}
+		c.chosen = notch
+	}
+}
+
 // AutoController manages the operating load notch in auto mode.
-// In auto mode, it dynamically chooses among the 5 notches (Minimal to Max)
-// based on developer activity: Minimal when working, Max when at rest,
-// with hysteresis (no change more than once per minute, slow climb, fast drop) to prevent oscillation.
+// In auto mode, it dynamically moves between Minimal and the notch the developer chose,
+// based on developer activity: Minimal when working, slowly climbing towards the chosen notch at rest,
+// with hysteresis (no change more than once per step duration) to prevent oscillation.
 type AutoController struct {
 	mu           sync.Mutex
 	isAuto       bool
+	chosen       djinnv1.LoadNotch
 	effective    djinnv1.LoadNotch
 	lastChange   time.Time
 	stepDuration time.Duration
@@ -79,10 +90,14 @@ type AutoController struct {
 
 // NewAutoController creates an AutoController with the given initial notch and options.
 func NewAutoController(initial djinnv1.LoadNotch, opts ...AutoOption) *AutoController {
+	if initial == djinnv1.LoadNotch_LOAD_NOTCH_LIGHT {
+		initial = djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
+	}
 	c := &AutoController{
 		stepDuration: DefaultAutoHysteresis,
 		clock:        time.Now,
 		signal:       func() bool { return false },
+		chosen:       djinnv1.LoadNotch_LOAD_NOTCH_MAX,
 		effective:    djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
 	}
 	for _, opt := range opts {
@@ -99,7 +114,14 @@ func (c *AutoController) IsAuto() bool {
 	return c.isAuto
 }
 
-// Effective returns the operating load notch currently in effect (always between Minimal and Max).
+// Chosen returns the ceiling notch for auto mode.
+func (c *AutoController) Chosen() djinnv1.LoadNotch {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.chosen
+}
+
+// Effective returns the operating load notch currently in effect.
 func (c *AutoController) Effective() djinnv1.LoadNotch {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -114,20 +136,31 @@ func (c *AutoController) LastChange() time.Time {
 }
 
 // SetNotch updates the notch setting. If notch is LOAD_NOTCH_AUTO, auto mode is enabled;
-// if notch is a manual notch (1 to 5), auto mode is disabled.
+// if notch is a manual notch (Minimal to Overclock), auto mode is disabled and chosen is updated.
 func (c *AutoController) SetNotch(notch djinnv1.LoadNotch) (effective djinnv1.LoadNotch, changed bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if notch == djinnv1.LoadNotch_LOAD_NOTCH_LIGHT {
+		notch = djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
+	}
+
 	now := c.clock()
 	if notch == djinnv1.LoadNotch_LOAD_NOTCH_AUTO {
 		c.isAuto = true
+		if c.chosen == djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
+			c.chosen = djinnv1.LoadNotch_LOAD_NOTCH_MAX
+		}
 		working := c.signal != nil && c.signal()
 		oldEffective := c.effective
 		if working {
 			c.effective = djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL
-		} else if c.effective < djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL || c.effective > djinnv1.LoadNotch_LOAD_NOTCH_MAX {
-			c.effective = djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL
+		} else {
+			if NotchIndex(c.effective) < 0 {
+				c.effective = djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL
+			} else if NotchIndex(c.effective) > NotchIndex(c.chosen) {
+				c.effective = c.chosen
+			}
 		}
 		c.lastChange = now
 		if c.effective != oldEffective {
@@ -136,8 +169,9 @@ func (c *AutoController) SetNotch(notch djinnv1.LoadNotch) (effective djinnv1.Lo
 		return c.effective, changed
 	}
 
-	if notch >= djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL && notch <= djinnv1.LoadNotch_LOAD_NOTCH_MAX {
+	if NotchIndex(notch) >= 0 {
 		c.isAuto = false
+		c.chosen = notch
 		oldEffective := c.effective
 		c.effective = notch
 		c.lastChange = now
@@ -153,8 +187,9 @@ func (c *AutoController) SetNotch(notch djinnv1.LoadNotch) (effective djinnv1.Lo
 // Tick evaluates developer activity and updates the effective notch if hysteresis allows.
 // In auto mode:
 // - If developer is working (signal = true): drops fast directly to Minimal.
-// - If machine is at rest (signal = false): climbs slowly (+1 notch per stepDuration) towards Max.
-// - No change is made if less than stepDuration (1 min) has elapsed since the last change.
+// - If machine is at rest (signal = false): climbs slowly (+1 notch per stepDuration) towards chosen notch.
+// - Never climbs above the notch the developer chose.
+// - No change is made if less than stepDuration has elapsed since the last change.
 func (c *AutoController) Tick() (bool, djinnv1.LoadNotch) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -170,7 +205,7 @@ func (c *AutoController) Tick() (bool, djinnv1.LoadNotch) {
 
 	working := c.signal != nil && c.signal()
 	if working {
-		if c.effective > djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+		if c.effective != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
 			c.effective = djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL
 			c.lastChange = now
 			if c.onChange != nil {
@@ -179,8 +214,13 @@ func (c *AutoController) Tick() (bool, djinnv1.LoadNotch) {
 			return true, c.effective
 		}
 	} else {
-		if c.effective < djinnv1.LoadNotch_LOAD_NOTCH_MAX {
-			c.effective++
+		curIdx := NotchIndex(c.effective)
+		chosenIdx := NotchIndex(c.chosen)
+		if chosenIdx < 0 {
+			chosenIdx = NotchIndex(djinnv1.LoadNotch_LOAD_NOTCH_MAX)
+		}
+		if curIdx >= 0 && curIdx < chosenIdx {
+			c.effective = ManualNotches[curIdx+1]
 			c.lastChange = now
 			if c.onChange != nil {
 				c.onChange(c.effective)

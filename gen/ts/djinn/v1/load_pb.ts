@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/load.proto.
  */
 export const file_djinn_v1_load: GenFile = /*@__PURE__*/
-  fileDesc("ChNkamlubi92MS9sb2FkLnByb3RvEghkamlubi52MSIXChVMb2FkU2VydmljZUdldFJlcXVlc3QiSgoWTG9hZFNlcnZpY2VHZXRSZXNwb25zZRIiCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBIMCgRhdXRvGAIgASgIIkoKFUxvYWRTZXJ2aWNlU2V0UmVxdWVzdBIxCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaEINukgKyAEBggEEEAEgACJKChZMb2FkU2VydmljZVNldFJlc3BvbnNlEiIKBW5vdGNoGAEgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEgwKBGF1dG8YAiABKAgiGQoXTG9hZFNlcnZpY2VXYXRjaFJlcXVlc3QiwwEKGExvYWRTZXJ2aWNlV2F0Y2hSZXNwb25zZRIiCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBIcChRlbmdhZ2VkX21lbW9yeV9ieXRlcxgCIAEoBBIbChN3b3JrZXJfbWVtb3J5X2J5dGVzGAMgASgEEhoKEm1lbW9yeV90b3RhbF9ieXRlcxgEIAEoBBIeChZtZW1vcnlfYXZhaWxhYmxlX2J5dGVzGAUgASgEEgwKBGF1dG8YBiABKAgqqgEKCUxvYWROb3RjaBIaChZMT0FEX05PVENIX1VOU1BFQ0lGSUVEEAASFgoSTE9BRF9OT1RDSF9NSU5JTUFMEAESFAoQTE9BRF9OT1RDSF9MSUdIVBACEhUKEUxPQURfTk9UQ0hfTUVESVVNEAMSEwoPTE9BRF9OT1RDSF9ISUdIEAQSEgoOTE9BRF9OT1RDSF9NQVgQBRITCg9MT0FEX05PVENIX0FVVE8QBjKMAgoLTG9hZFNlcnZpY2USUQoDR2V0Eh8uZGppbm4udjEuTG9hZFNlcnZpY2VHZXRSZXF1ZXN0GiAuZGppbm4udjEuTG9hZFNlcnZpY2VHZXRSZXNwb25zZSIHkAIByPMYARJSCgNTZXQSHy5kamlubi52MS5Mb2FkU2VydmljZVNldFJlcXVlc3QaIC5kamlubi52MS5Mb2FkU2VydmljZVNldFJlc3BvbnNlIgjI8xgB4PMYARJWCgVXYXRjaBIhLmRqaW5uLnYxLkxvYWRTZXJ2aWNlV2F0Y2hSZXF1ZXN0GiIuZGppbm4udjEuTG9hZFNlcnZpY2VXYXRjaFJlc3BvbnNlIgTI8xgBMAFCjQEKDGNvbS5kamlubi52MUIJTG9hZFByb3RvUAFaMWdpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL2RqaW5uL3YxO2RqaW5udjGiAgNEWFiqAghEamlubi5WMcoCCERqaW5uXFYx4gIURGppbm5cVjFcR1BCTWV0YWRhdGHqAglEamlubjo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options]);
+  fileDesc("ChNkamlubi92MS9sb2FkLnByb3RvEghkamlubi52MSIXChVMb2FkU2VydmljZUdldFJlcXVlc3QivgEKFkxvYWRTZXJ2aWNlR2V0UmVzcG9uc2USIgoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2gSDAoEYXV0bxgCIAEoCBISCgpiYXNlX3Nsb3RzGAMgASgFEhcKD3J1bm5pbmdfd29ya2VycxgEIAEoBRIaChJtZW1vcnlfdG90YWxfYnl0ZXMYBSABKAQSKQoMY2hvc2VuX25vdGNoGAYgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoIkoKFUxvYWRTZXJ2aWNlU2V0UmVxdWVzdBIxCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaEINukgKyAEBggEEEAEgACJ1ChZMb2FkU2VydmljZVNldFJlc3BvbnNlEiIKBW5vdGNoGAEgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEgwKBGF1dG8YAiABKAgSKQoMY2hvc2VuX25vdGNoGAMgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoIhkKF0xvYWRTZXJ2aWNlV2F0Y2hSZXF1ZXN0IpsCChhMb2FkU2VydmljZVdhdGNoUmVzcG9uc2USIgoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2gSHAoUZW5nYWdlZF9tZW1vcnlfYnl0ZXMYAiABKAQSGwoTd29ya2VyX21lbW9yeV9ieXRlcxgDIAEoBBIaChJtZW1vcnlfdG90YWxfYnl0ZXMYBCABKAQSHgoWbWVtb3J5X2F2YWlsYWJsZV9ieXRlcxgFIAEoBBIMCgRhdXRvGAYgASgIEhIKCmJhc2Vfc2xvdHMYByABKAUSFwoPcnVubmluZ193b3JrZXJzGAggASgFEikKDGNob3Nlbl9ub3RjaBgJIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaCrIAQoJTG9hZE5vdGNoEhoKFkxPQURfTk9UQ0hfVU5TUEVDSUZJRUQQABIWChJMT0FEX05PVENIX01JTklNQUwQARIYChBMT0FEX05PVENIX0xJR0hUEAIaAggBEhUKEUxPQURfTk9UQ0hfTUVESVVNEAMSEwoPTE9BRF9OT1RDSF9ISUdIEAQSEgoOTE9BRF9OT1RDSF9NQVgQBRITCg9MT0FEX05PVENIX0FVVE8QBhIYChRMT0FEX05PVENIX09WRVJDTE9DSxAHMowCCgtMb2FkU2VydmljZRJRCgNHZXQSHy5kamlubi52MS5Mb2FkU2VydmljZUdldFJlcXVlc3QaIC5kamlubi52MS5Mb2FkU2VydmljZUdldFJlc3BvbnNlIgeQAgHI8xgBElIKA1NldBIfLmRqaW5uLnYxLkxvYWRTZXJ2aWNlU2V0UmVxdWVzdBogLmRqaW5uLnYxLkxvYWRTZXJ2aWNlU2V0UmVzcG9uc2UiCMjzGAHg8xgBElYKBVdhdGNoEiEuZGppbm4udjEuTG9hZFNlcnZpY2VXYXRjaFJlcXVlc3QaIi5kamlubi52MS5Mb2FkU2VydmljZVdhdGNoUmVzcG9uc2UiBMjzGAEwAUKNAQoMY29tLmRqaW5uLnYxQglMb2FkUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_options]);
 
 /**
  * @generated from message djinn.v1.LoadServiceGetRequest
@@ -46,6 +46,34 @@ export type LoadServiceGetResponse = Message<"djinn.v1.LoadServiceGetResponse"> 
    * @generated from field: bool auto = 2;
    */
   auto: boolean;
+
+  /**
+   * The base rule's slots on this machine before notch scaling.
+   *
+   * @generated from field: int32 base_slots = 3;
+   */
+  baseSlots: number;
+
+  /**
+   * Number of workers currently running.
+   *
+   * @generated from field: int32 running_workers = 4;
+   */
+  runningWorkers: number;
+
+  /**
+   * Total RAM of the machine, in bytes.
+   *
+   * @generated from field: uint64 memory_total_bytes = 5;
+   */
+  memoryTotalBytes: bigint;
+
+  /**
+   * The chosen ceiling notch when auto mode is active.
+   *
+   * @generated from field: djinn.v1.LoadNotch chosen_notch = 6;
+   */
+  chosenNotch: LoadNotch;
 };
 
 /**
@@ -91,6 +119,13 @@ export type LoadServiceSetResponse = Message<"djinn.v1.LoadServiceSetResponse"> 
    * @generated from field: bool auto = 2;
    */
   auto: boolean;
+
+  /**
+   * The chosen ceiling notch when auto mode is active.
+   *
+   * @generated from field: djinn.v1.LoadNotch chosen_notch = 3;
+   */
+  chosenNotch: LoadNotch;
 };
 
 /**
@@ -158,6 +193,27 @@ export type LoadServiceWatchResponse = Message<"djinn.v1.LoadServiceWatchRespons
    * @generated from field: bool auto = 6;
    */
   auto: boolean;
+
+  /**
+   * The base rule's slots on this machine before notch scaling.
+   *
+   * @generated from field: int32 base_slots = 7;
+   */
+  baseSlots: number;
+
+  /**
+   * Number of workers currently running.
+   *
+   * @generated from field: int32 running_workers = 8;
+   */
+  runningWorkers: number;
+
+  /**
+   * The chosen ceiling notch when auto mode is active.
+   *
+   * @generated from field: djinn.v1.LoadNotch chosen_notch = 9;
+   */
+  chosenNotch: LoadNotch;
 };
 
 /**
@@ -181,46 +237,54 @@ export enum LoadNotch {
   UNSPECIFIED = 0,
 
   /**
-   * Minimal load: at most 1 worker, strict pressure thresholds, large gate margin, at most 20% of RAM committed.
+   * Minimal load: 20% of the machine's capacity, low CPU priority.
    *
    * @generated from enum value: LOAD_NOTCH_MINIMAL = 1;
    */
   MINIMAL = 1,
 
   /**
-   * Light load: up to 3 workers, conservative pressure thresholds, moderate gate margin, up to 40% of RAM committed.
+   * Light load (deprecated: maps to medium).
    *
-   * @generated from enum value: LOAD_NOTCH_LIGHT = 2;
+   * @generated from enum value: LOAD_NOTCH_LIGHT = 2 [deprecated = true];
+   * @deprecated
    */
   LIGHT = 2,
 
   /**
-   * Medium load: default behavior, up to 16 workers, balanced pressure thresholds, 512 MiB gate margin, up to 70% of RAM committed.
+   * Medium load: default behavior, 50% of the machine's capacity, low CPU priority.
    *
    * @generated from enum value: LOAD_NOTCH_MEDIUM = 3;
    */
   MEDIUM = 3,
 
   /**
-   * High load: up to 24 workers, tolerant pressure thresholds, 384 MiB gate margin, up to 85% of RAM committed.
+   * High load: 80% of the machine's capacity, standard CPU priority.
    *
    * @generated from enum value: LOAD_NOTCH_HIGH = 4;
    */
   HIGH = 4,
 
   /**
-   * Max load: up to 32 workers, aggressive pressure thresholds, 256 MiB gate margin, all RAM except safety margin committed.
+   * Max load: 100% of the machine's capacity, standard CPU priority.
    *
    * @generated from enum value: LOAD_NOTCH_MAX = 5;
    */
   MAX = 5,
 
   /**
-   * Auto load: adapts operating load between minimal and max based on developer activity.
+   * Auto load: adapts operating load between minimal and chosen notch based on developer activity.
    *
    * @generated from enum value: LOAD_NOTCH_AUTO = 6;
    */
   AUTO = 6,
+
+  /**
+   * Overclock load: 150% of the machine's capacity, accepts pressure, standard CPU priority.
+   *
+   * @generated from enum value: LOAD_NOTCH_OVERCLOCK = 7;
+   */
+  OVERCLOCK = 7,
 }
 
 /**

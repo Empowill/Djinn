@@ -437,7 +437,7 @@ func TestMemoryCommittableLimit(t *testing.T) {
 	if got["t1"] != "" {
 		t.Errorf("t1 should start, but got why: %q", got["t1"])
 	}
-	wantWhy := "load minimal commits up to 4.0 GiB of memory, 3.0 GiB already engaged, needs 1.5 GiB"
+	wantWhy := "load minimal commits up to 3.9 GiB of memory, 3.0 GiB already engaged, needs 1.5 GiB"
 	if got["t2"] != wantWhy {
 		t.Errorf("t2 why:\ngot:  %q\nwant: %q", got["t2"], wantWhy)
 	}

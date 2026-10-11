@@ -30,18 +30,22 @@ type LoadNotch int32
 const (
 	// Not set.
 	LoadNotch_LOAD_NOTCH_UNSPECIFIED LoadNotch = 0
-	// Minimal load: at most 1 worker, strict pressure thresholds, large gate margin, at most 20% of RAM committed.
+	// Minimal load: 20% of the machine's capacity, low CPU priority.
 	LoadNotch_LOAD_NOTCH_MINIMAL LoadNotch = 1
-	// Light load: up to 3 workers, conservative pressure thresholds, moderate gate margin, up to 40% of RAM committed.
+	// Light load (deprecated: maps to medium).
+	//
+	// Deprecated: Marked as deprecated in djinn/v1/load.proto.
 	LoadNotch_LOAD_NOTCH_LIGHT LoadNotch = 2
-	// Medium load: default behavior, up to 16 workers, balanced pressure thresholds, 512 MiB gate margin, up to 70% of RAM committed.
+	// Medium load: default behavior, 50% of the machine's capacity, low CPU priority.
 	LoadNotch_LOAD_NOTCH_MEDIUM LoadNotch = 3
-	// High load: up to 24 workers, tolerant pressure thresholds, 384 MiB gate margin, up to 85% of RAM committed.
+	// High load: 80% of the machine's capacity, standard CPU priority.
 	LoadNotch_LOAD_NOTCH_HIGH LoadNotch = 4
-	// Max load: up to 32 workers, aggressive pressure thresholds, 256 MiB gate margin, all RAM except safety margin committed.
+	// Max load: 100% of the machine's capacity, standard CPU priority.
 	LoadNotch_LOAD_NOTCH_MAX LoadNotch = 5
-	// Auto load: adapts operating load between minimal and max based on developer activity.
+	// Auto load: adapts operating load between minimal and chosen notch based on developer activity.
 	LoadNotch_LOAD_NOTCH_AUTO LoadNotch = 6
+	// Overclock load: 150% of the machine's capacity, accepts pressure, standard CPU priority.
+	LoadNotch_LOAD_NOTCH_OVERCLOCK LoadNotch = 7
 )
 
 // Enum value maps for LoadNotch.
@@ -54,6 +58,7 @@ var (
 		4: "LOAD_NOTCH_HIGH",
 		5: "LOAD_NOTCH_MAX",
 		6: "LOAD_NOTCH_AUTO",
+		7: "LOAD_NOTCH_OVERCLOCK",
 	}
 	LoadNotch_value = map[string]int32{
 		"LOAD_NOTCH_UNSPECIFIED": 0,
@@ -63,6 +68,7 @@ var (
 		"LOAD_NOTCH_HIGH":        4,
 		"LOAD_NOTCH_MAX":         5,
 		"LOAD_NOTCH_AUTO":        6,
+		"LOAD_NOTCH_OVERCLOCK":   7,
 	}
 )
 
@@ -134,7 +140,15 @@ type LoadServiceGetResponse struct {
 	// The notch in effect.
 	Notch LoadNotch `protobuf:"varint,1,opt,name=notch,proto3,enum=djinn.v1.LoadNotch" json:"notch,omitempty"`
 	// Whether auto mode is active.
-	Auto          bool `protobuf:"varint,2,opt,name=auto,proto3" json:"auto,omitempty"`
+	Auto bool `protobuf:"varint,2,opt,name=auto,proto3" json:"auto,omitempty"`
+	// The base rule's slots on this machine before notch scaling.
+	BaseSlots int32 `protobuf:"varint,3,opt,name=base_slots,json=baseSlots,proto3" json:"base_slots,omitempty"`
+	// Number of workers currently running.
+	RunningWorkers int32 `protobuf:"varint,4,opt,name=running_workers,json=runningWorkers,proto3" json:"running_workers,omitempty"`
+	// Total RAM of the machine, in bytes.
+	MemoryTotalBytes uint64 `protobuf:"varint,5,opt,name=memory_total_bytes,json=memoryTotalBytes,proto3" json:"memory_total_bytes,omitempty"`
+	// The chosen ceiling notch when auto mode is active.
+	ChosenNotch   LoadNotch `protobuf:"varint,6,opt,name=chosen_notch,json=chosenNotch,proto3,enum=djinn.v1.LoadNotch" json:"chosen_notch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -181,6 +195,34 @@ func (x *LoadServiceGetResponse) GetAuto() bool {
 		return x.Auto
 	}
 	return false
+}
+
+func (x *LoadServiceGetResponse) GetBaseSlots() int32 {
+	if x != nil {
+		return x.BaseSlots
+	}
+	return 0
+}
+
+func (x *LoadServiceGetResponse) GetRunningWorkers() int32 {
+	if x != nil {
+		return x.RunningWorkers
+	}
+	return 0
+}
+
+func (x *LoadServiceGetResponse) GetMemoryTotalBytes() uint64 {
+	if x != nil {
+		return x.MemoryTotalBytes
+	}
+	return 0
+}
+
+func (x *LoadServiceGetResponse) GetChosenNotch() LoadNotch {
+	if x != nil {
+		return x.ChosenNotch
+	}
+	return LoadNotch_LOAD_NOTCH_UNSPECIFIED
 }
 
 type LoadServiceSetRequest struct {
@@ -233,7 +275,9 @@ type LoadServiceSetResponse struct {
 	// The notch in effect.
 	Notch LoadNotch `protobuf:"varint,1,opt,name=notch,proto3,enum=djinn.v1.LoadNotch" json:"notch,omitempty"`
 	// Whether auto mode is active.
-	Auto          bool `protobuf:"varint,2,opt,name=auto,proto3" json:"auto,omitempty"`
+	Auto bool `protobuf:"varint,2,opt,name=auto,proto3" json:"auto,omitempty"`
+	// The chosen ceiling notch when auto mode is active.
+	ChosenNotch   LoadNotch `protobuf:"varint,3,opt,name=chosen_notch,json=chosenNotch,proto3,enum=djinn.v1.LoadNotch" json:"chosen_notch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -280,6 +324,13 @@ func (x *LoadServiceSetResponse) GetAuto() bool {
 		return x.Auto
 	}
 	return false
+}
+
+func (x *LoadServiceSetResponse) GetChosenNotch() LoadNotch {
+	if x != nil {
+		return x.ChosenNotch
+	}
+	return LoadNotch_LOAD_NOTCH_UNSPECIFIED
 }
 
 type LoadServiceWatchRequest struct {
@@ -331,7 +382,13 @@ type LoadServiceWatchResponse struct {
 	// Available RAM of the machine, in bytes.
 	MemoryAvailableBytes uint64 `protobuf:"varint,5,opt,name=memory_available_bytes,json=memoryAvailableBytes,proto3" json:"memory_available_bytes,omitempty"`
 	// Whether auto mode is active.
-	Auto          bool `protobuf:"varint,6,opt,name=auto,proto3" json:"auto,omitempty"`
+	Auto bool `protobuf:"varint,6,opt,name=auto,proto3" json:"auto,omitempty"`
+	// The base rule's slots on this machine before notch scaling.
+	BaseSlots int32 `protobuf:"varint,7,opt,name=base_slots,json=baseSlots,proto3" json:"base_slots,omitempty"`
+	// Number of workers currently running.
+	RunningWorkers int32 `protobuf:"varint,8,opt,name=running_workers,json=runningWorkers,proto3" json:"running_workers,omitempty"`
+	// The chosen ceiling notch when auto mode is active.
+	ChosenNotch   LoadNotch `protobuf:"varint,9,opt,name=chosen_notch,json=chosenNotch,proto3,enum=djinn.v1.LoadNotch" json:"chosen_notch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -408,37 +465,69 @@ func (x *LoadServiceWatchResponse) GetAuto() bool {
 	return false
 }
 
+func (x *LoadServiceWatchResponse) GetBaseSlots() int32 {
+	if x != nil {
+		return x.BaseSlots
+	}
+	return 0
+}
+
+func (x *LoadServiceWatchResponse) GetRunningWorkers() int32 {
+	if x != nil {
+		return x.RunningWorkers
+	}
+	return 0
+}
+
+func (x *LoadServiceWatchResponse) GetChosenNotch() LoadNotch {
+	if x != nil {
+		return x.ChosenNotch
+	}
+	return LoadNotch_LOAD_NOTCH_UNSPECIFIED
+}
+
 var File_djinn_v1_load_proto protoreflect.FileDescriptor
 
 const file_djinn_v1_load_proto_rawDesc = "" +
 	"\n" +
 	"\x13djinn/v1/load.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\"\x17\n" +
-	"\x15LoadServiceGetRequest\"W\n" +
+	"\x15LoadServiceGetRequest\"\x85\x02\n" +
 	"\x16LoadServiceGetResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
-	"\x04auto\x18\x02 \x01(\bR\x04auto\"Q\n" +
+	"\x04auto\x18\x02 \x01(\bR\x04auto\x12\x1d\n" +
+	"\n" +
+	"base_slots\x18\x03 \x01(\x05R\tbaseSlots\x12'\n" +
+	"\x0frunning_workers\x18\x04 \x01(\x05R\x0erunningWorkers\x12,\n" +
+	"\x12memory_total_bytes\x18\x05 \x01(\x04R\x10memoryTotalBytes\x126\n" +
+	"\fchosen_notch\x18\x06 \x01(\x0e2\x13.djinn.v1.LoadNotchR\vchosenNotch\"Q\n" +
 	"\x15LoadServiceSetRequest\x128\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchB\r\xbaH\n" +
-	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x05notch\"W\n" +
+	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x05notch\"\x8f\x01\n" +
 	"\x16LoadServiceSetResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
-	"\x04auto\x18\x02 \x01(\bR\x04auto\"\x19\n" +
-	"\x17LoadServiceWatchRequest\"\x9f\x02\n" +
+	"\x04auto\x18\x02 \x01(\bR\x04auto\x126\n" +
+	"\fchosen_notch\x18\x03 \x01(\x0e2\x13.djinn.v1.LoadNotchR\vchosenNotch\"\x19\n" +
+	"\x17LoadServiceWatchRequest\"\x9f\x03\n" +
 	"\x18LoadServiceWatchResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x120\n" +
 	"\x14engaged_memory_bytes\x18\x02 \x01(\x04R\x12engagedMemoryBytes\x12.\n" +
 	"\x13worker_memory_bytes\x18\x03 \x01(\x04R\x11workerMemoryBytes\x12,\n" +
 	"\x12memory_total_bytes\x18\x04 \x01(\x04R\x10memoryTotalBytes\x124\n" +
 	"\x16memory_available_bytes\x18\x05 \x01(\x04R\x14memoryAvailableBytes\x12\x12\n" +
-	"\x04auto\x18\x06 \x01(\bR\x04auto*\xaa\x01\n" +
+	"\x04auto\x18\x06 \x01(\bR\x04auto\x12\x1d\n" +
+	"\n" +
+	"base_slots\x18\a \x01(\x05R\tbaseSlots\x12'\n" +
+	"\x0frunning_workers\x18\b \x01(\x05R\x0erunningWorkers\x126\n" +
+	"\fchosen_notch\x18\t \x01(\x0e2\x13.djinn.v1.LoadNotchR\vchosenNotch*\xc8\x01\n" +
 	"\tLoadNotch\x12\x1a\n" +
 	"\x16LOAD_NOTCH_UNSPECIFIED\x10\x00\x12\x16\n" +
-	"\x12LOAD_NOTCH_MINIMAL\x10\x01\x12\x14\n" +
-	"\x10LOAD_NOTCH_LIGHT\x10\x02\x12\x15\n" +
+	"\x12LOAD_NOTCH_MINIMAL\x10\x01\x12\x18\n" +
+	"\x10LOAD_NOTCH_LIGHT\x10\x02\x1a\x02\b\x01\x12\x15\n" +
 	"\x11LOAD_NOTCH_MEDIUM\x10\x03\x12\x13\n" +
 	"\x0fLOAD_NOTCH_HIGH\x10\x04\x12\x12\n" +
 	"\x0eLOAD_NOTCH_MAX\x10\x05\x12\x13\n" +
-	"\x0fLOAD_NOTCH_AUTO\x10\x062\x8c\x02\n" +
+	"\x0fLOAD_NOTCH_AUTO\x10\x06\x12\x18\n" +
+	"\x14LOAD_NOTCH_OVERCLOCK\x10\a2\x8c\x02\n" +
 	"\vLoadService\x12Q\n" +
 	"\x03Get\x12\x1f.djinn.v1.LoadServiceGetRequest\x1a .djinn.v1.LoadServiceGetResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12R\n" +
 	"\x03Set\x12\x1f.djinn.v1.LoadServiceSetRequest\x1a .djinn.v1.LoadServiceSetResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
@@ -469,21 +558,24 @@ var file_djinn_v1_load_proto_goTypes = []any{
 	(*LoadServiceWatchResponse)(nil), // 6: djinn.v1.LoadServiceWatchResponse
 }
 var file_djinn_v1_load_proto_depIdxs = []int32{
-	0, // 0: djinn.v1.LoadServiceGetResponse.notch:type_name -> djinn.v1.LoadNotch
-	0, // 1: djinn.v1.LoadServiceSetRequest.notch:type_name -> djinn.v1.LoadNotch
-	0, // 2: djinn.v1.LoadServiceSetResponse.notch:type_name -> djinn.v1.LoadNotch
-	0, // 3: djinn.v1.LoadServiceWatchResponse.notch:type_name -> djinn.v1.LoadNotch
-	1, // 4: djinn.v1.LoadService.Get:input_type -> djinn.v1.LoadServiceGetRequest
-	3, // 5: djinn.v1.LoadService.Set:input_type -> djinn.v1.LoadServiceSetRequest
-	5, // 6: djinn.v1.LoadService.Watch:input_type -> djinn.v1.LoadServiceWatchRequest
-	2, // 7: djinn.v1.LoadService.Get:output_type -> djinn.v1.LoadServiceGetResponse
-	4, // 8: djinn.v1.LoadService.Set:output_type -> djinn.v1.LoadServiceSetResponse
-	6, // 9: djinn.v1.LoadService.Watch:output_type -> djinn.v1.LoadServiceWatchResponse
-	7, // [7:10] is the sub-list for method output_type
-	4, // [4:7] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	0,  // 0: djinn.v1.LoadServiceGetResponse.notch:type_name -> djinn.v1.LoadNotch
+	0,  // 1: djinn.v1.LoadServiceGetResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
+	0,  // 2: djinn.v1.LoadServiceSetRequest.notch:type_name -> djinn.v1.LoadNotch
+	0,  // 3: djinn.v1.LoadServiceSetResponse.notch:type_name -> djinn.v1.LoadNotch
+	0,  // 4: djinn.v1.LoadServiceSetResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
+	0,  // 5: djinn.v1.LoadServiceWatchResponse.notch:type_name -> djinn.v1.LoadNotch
+	0,  // 6: djinn.v1.LoadServiceWatchResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
+	1,  // 7: djinn.v1.LoadService.Get:input_type -> djinn.v1.LoadServiceGetRequest
+	3,  // 8: djinn.v1.LoadService.Set:input_type -> djinn.v1.LoadServiceSetRequest
+	5,  // 9: djinn.v1.LoadService.Watch:input_type -> djinn.v1.LoadServiceWatchRequest
+	2,  // 10: djinn.v1.LoadService.Get:output_type -> djinn.v1.LoadServiceGetResponse
+	4,  // 11: djinn.v1.LoadService.Set:output_type -> djinn.v1.LoadServiceSetResponse
+	6,  // 12: djinn.v1.LoadService.Watch:output_type -> djinn.v1.LoadServiceWatchResponse
+	10, // [10:13] is the sub-list for method output_type
+	7,  // [7:10] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_djinn_v1_load_proto_init() }

@@ -10,18 +10,20 @@ import "djinn/v1/options.proto";
 enum LoadNotch {
   // Not set.
   LOAD_NOTCH_UNSPECIFIED = 0;
-  // Minimal load: at most 1 worker, strict pressure thresholds, large gate margin, at most 20% of RAM committed.
+  // Minimal load: 20% of the machine's capacity, low CPU priority.
   LOAD_NOTCH_MINIMAL = 1;
-  // Light load: up to 3 workers, conservative pressure thresholds, moderate gate margin, up to 40% of RAM committed.
-  LOAD_NOTCH_LIGHT = 2;
-  // Medium load: default behavior, up to 16 workers, balanced pressure thresholds, 512 MiB gate margin, up to 70% of RAM committed.
+  // Light load (deprecated: maps to medium).
+  LOAD_NOTCH_LIGHT = 2 [deprecated = true];
+  // Medium load: default behavior, 50% of the machine's capacity, low CPU priority.
   LOAD_NOTCH_MEDIUM = 3;
-  // High load: up to 24 workers, tolerant pressure thresholds, 384 MiB gate margin, up to 85% of RAM committed.
+  // High load: 80% of the machine's capacity, standard CPU priority.
   LOAD_NOTCH_HIGH = 4;
-  // Max load: up to 32 workers, aggressive pressure thresholds, 256 MiB gate margin, all RAM except safety margin committed.
+  // Max load: 100% of the machine's capacity, standard CPU priority.
   LOAD_NOTCH_MAX = 5;
-  // Auto load: adapts operating load between minimal and max based on developer activity.
+  // Auto load: adapts operating load between minimal and chosen notch based on developer activity.
   LOAD_NOTCH_AUTO = 6;
+  // Overclock load: 150% of the machine's capacity, accepts pressure, standard CPU priority.
+  LOAD_NOTCH_OVERCLOCK = 7;
 }
 
 // LoadService gets and sets the machine's operating load notch.
@@ -51,6 +53,14 @@ message LoadServiceGetResponse {
   LoadNotch notch = 1;
   // Whether auto mode is active.
   bool auto = 2;
+  // The base rule's slots on this machine before notch scaling.
+  int32 base_slots = 3;
+  // Number of workers currently running.
+  int32 running_workers = 4;
+  // Total RAM of the machine, in bytes.
+  uint64 memory_total_bytes = 5;
+  // The chosen ceiling notch when auto mode is active.
+  LoadNotch chosen_notch = 6;
 }
 
 message LoadServiceSetRequest {
@@ -66,6 +76,8 @@ message LoadServiceSetResponse {
   LoadNotch notch = 1;
   // Whether auto mode is active.
   bool auto = 2;
+  // The chosen ceiling notch when auto mode is active.
+  LoadNotch chosen_notch = 3;
 }
 
 message LoadServiceWatchRequest {}
@@ -83,4 +95,10 @@ message LoadServiceWatchResponse {
   uint64 memory_available_bytes = 5;
   // Whether auto mode is active.
   bool auto = 6;
+  // The base rule's slots on this machine before notch scaling.
+  int32 base_slots = 7;
+  // Number of workers currently running.
+  int32 running_workers = 8;
+  // The chosen ceiling notch when auto mode is active.
+  LoadNotch chosen_notch = 9;
 }

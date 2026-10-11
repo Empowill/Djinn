@@ -37,6 +37,7 @@ func SetWatchInterval(d time.Duration) func() {
 
 // ReadNotch reads the operating load notch from settings.json in home.
 // It returns LOAD_NOTCH_MEDIUM if the file does not exist, cannot be read, or notch is unspecified.
+// An old saved "light" maps to Medium.
 func ReadNotch(home string) djinnv1.LoadNotch {
 	if home == "" {
 		return djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
@@ -52,6 +53,9 @@ func ReadNotch(home string) djinnv1.LoadNotch {
 	if settings.Load == nil || *settings.Load == djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
 		return djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
 	}
+	if *settings.Load == djinnv1.LoadNotch_LOAD_NOTCH_LIGHT {
+		return djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
+	}
 	return *settings.Load
 }
 
@@ -59,6 +63,9 @@ func ReadNotch(home string) djinnv1.LoadNotch {
 func WriteNotch(home string, notch djinnv1.LoadNotch) error {
 	if home == "" {
 		return nil
+	}
+	if notch == djinnv1.LoadNotch_LOAD_NOTCH_LIGHT {
+		notch = djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
 	}
 	settings := &uiv1.Settings{}
 	path := filepath.Join(home, settingsFile)
@@ -75,6 +82,13 @@ func WriteNotch(home string, notch djinnv1.LoadNotch) error {
 
 // LoadOption configures loadService.
 type LoadOption func(*loadService)
+
+// WithLoadRunningWorkers sets a function returning the count of currently running workers.
+func WithLoadRunningWorkers(running func() int) LoadOption {
+	return func(s *loadService) {
+		s.runningWorkers = running
+	}
+}
 
 // WithLoadAutoController sets a custom AutoController on the load service.
 func WithLoadAutoController(ac *AutoController) LoadOption {
@@ -174,11 +188,12 @@ func LoadHandler(
 
 type loadService struct {
 	djinnv1connect.UnimplementedLoadServiceHandler
-	home         string
-	monitor      *Monitor
-	setPolicy    func(Policy)
-	broadcast    func(djinnv1.LoadNotch)
-	workerMemory WorkerMemoryFunc
+	home           string
+	monitor        *Monitor
+	setPolicy      func(Policy)
+	broadcast      func(djinnv1.LoadNotch)
+	workerMemory   WorkerMemoryFunc
+	runningWorkers func() int
 
 	auto         *AutoController
 	clock        func() time.Time
@@ -247,10 +262,12 @@ func (s *loadService) snapshot(ctx context.Context) *djinnv1.LoadServiceWatchRes
 	if s.auto != nil {
 		resp.Notch = s.auto.Effective()
 		resp.Auto = s.auto.IsAuto()
+		resp.ChosenNotch = s.auto.Chosen()
 	} else if s.monitor != nil {
 		policy := s.monitor.Policy()
 		if policy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
 			resp.Notch = policy.Notch
+			resp.ChosenNotch = policy.Notch
 		}
 	}
 	var policy Policy
@@ -258,6 +275,8 @@ func (s *loadService) snapshot(ctx context.Context) *djinnv1.LoadServiceWatchRes
 		policy = s.monitor.Policy()
 		resp.MemoryTotalBytes = s.monitor.Total()
 		resp.MemoryAvailableBytes = s.monitor.Available()
+		base, _ := policy.BaseSlots(s.monitor.Snapshot())
+		resp.BaseSlots = int32(base)
 	}
 	if s.workerMemory != nil {
 		engaged, actual, err := s.workerMemory(ctx, policy)
@@ -266,6 +285,9 @@ func (s *loadService) snapshot(ctx context.Context) *djinnv1.LoadServiceWatchRes
 			resp.WorkerMemoryBytes = actual
 		}
 	}
+	if s.runningWorkers != nil {
+		resp.RunningWorkers = int32(s.runningWorkers())
+	}
 	return resp
 }
 
@@ -273,19 +295,32 @@ func (s *loadService) Get(
 	_ context.Context, _ *connect.Request[djinnv1.LoadServiceGetRequest],
 ) (*connect.Response[djinnv1.LoadServiceGetResponse], error) {
 	effective := djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
+	chosen := djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
 	isAuto := false
 	if s.auto != nil {
 		effective = s.auto.Effective()
 		isAuto = s.auto.IsAuto()
+		chosen = s.auto.Chosen()
 	} else if s.monitor != nil {
 		if n := s.monitor.Policy().Notch; n != djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
 			effective = n
+			chosen = n
 		}
 	}
-	return connect.NewResponse(&djinnv1.LoadServiceGetResponse{
-		Notch: effective,
-		Auto:  isAuto,
-	}), nil
+	resp := &djinnv1.LoadServiceGetResponse{
+		Notch:       effective,
+		Auto:        isAuto,
+		ChosenNotch: chosen,
+	}
+	if s.monitor != nil {
+		resp.MemoryTotalBytes = s.monitor.Total()
+		base, _ := s.monitor.Policy().BaseSlots(s.monitor.Snapshot())
+		resp.BaseSlots = int32(base)
+	}
+	if s.runningWorkers != nil {
+		resp.RunningWorkers = int32(s.runningWorkers())
+	}
+	return connect.NewResponse(resp), nil
 }
 
 func (s *loadService) Set(
@@ -294,6 +329,9 @@ func (s *loadService) Set(
 	notch := req.Msg.GetNotch()
 	if notch == djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("notch is required"))
+	}
+	if notch == djinnv1.LoadNotch_LOAD_NOTCH_LIGHT {
+		notch = djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
 	}
 	if err := WriteNotch(s.home, notch); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("write load setting: %w", err))
@@ -306,9 +344,14 @@ func (s *loadService) Set(
 	}
 	s.applyNotch(effective)
 	s.notifyWatchers()
+	chosen := effective
+	if s.auto != nil {
+		chosen = s.auto.Chosen()
+	}
 	return connect.NewResponse(&djinnv1.LoadServiceSetResponse{
-		Notch: effective,
-		Auto:  isAuto,
+		Notch:       effective,
+		Auto:        isAuto,
+		ChosenNotch: chosen,
 	}), nil
 }
 

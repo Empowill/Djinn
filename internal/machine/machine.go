@@ -87,8 +87,10 @@ type Policy struct {
 	WorkerPeak   uint64
 	WorkerPeaks  int
 	WorkerMargin uint64
-	// MemoryShare is the maximum fraction of total RAM Djinn may commit in peak forecasts (0.20 to 1.0).
-	// On max (1.0), all RAM except WorkerMargin may be committed.
+	// Share is the fraction of machine capacity this policy grants (0.20 to 1.50).
+	Share float64
+	// MemoryShare is the maximum fraction of total RAM Djinn may commit in peak forecasts (0.20 to 1.50).
+	// On max (1.0), all RAM except WorkerMargin may be committed; overclock (1.50) may exceed what the rule engages.
 	MemoryShare float64
 	// A local model runs on an NVIDIA or AMD GPU, its driver loaded, with ModelGPUMemory of its own; on Apple
 	// Silicon with ModelMemory of unified memory; else on the CPU, slowly, with ModelMemory. Its weights need
@@ -96,6 +98,34 @@ type Policy struct {
 	ModelGPUMemory uint64
 	ModelMemory    uint64
 	ModelDisk      uint64
+}
+
+// ManualNotches is the ordered list of 5 manual operating load notches.
+var ManualNotches = []djinnv1.LoadNotch{
+	djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL,
+	djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
+	djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+	djinnv1.LoadNotch_LOAD_NOTCH_MAX,
+	djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK,
+}
+
+// NotchIndex returns the index of a notch among the manual notches (0 to 4),
+// mapping LIGHT to MEDIUM (1).
+func NotchIndex(n djinnv1.LoadNotch) int {
+	switch n {
+	case djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL:
+		return 0
+	case djinnv1.LoadNotch_LOAD_NOTCH_LIGHT, djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM:
+		return 1
+	case djinnv1.LoadNotch_LOAD_NOTCH_HIGH:
+		return 2
+	case djinnv1.LoadNotch_LOAD_NOTCH_MAX:
+		return 3
+	case djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK:
+		return 4
+	default:
+		return 1
+	}
 }
 
 // NotchPolicy returns the policy of the operating load notch.
@@ -108,8 +138,7 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			CoresPerWorker:  2,
 			MemoryPerWorker: 2 * GiB,
 			MemoryReserve:   2 * GiB,
-			// At most 1 worker: leaves the machine fully responsive for interactive work.
-			MaxWorkers: 1,
+			MaxWorkers:      16,
 			// Strict PSI pressure thresholds: yields at the slightest resource contention.
 			CPUPressure:    25,
 			MemoryPressure: 5,
@@ -117,49 +146,26 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			LoadPerCore: 1.0,
 			MemoryFree:  0.20,
 			// 1 GiB gate margin: ample headroom for host commands.
-			CommandMargin: 1024 << 20,
-			WorkerPeak:    GiB,
-			WorkerPeaks:   10,
-			WorkerMargin:  512 << 20,
-			// At most 20% of RAM committed to peak forecasts.
+			CommandMargin:  1024 << 20,
+			WorkerPeak:     GiB,
+			WorkerPeaks:    10,
+			WorkerMargin:   512 << 20,
+			Share:          0.20,
 			MemoryShare:    0.20,
 			ModelGPUMemory: 6 * GiB,
 			ModelMemory:    16 * GiB,
 			ModelDisk:      10 * GiB,
 		}
 	case djinnv1.LoadNotch_LOAD_NOTCH_LIGHT:
-		return Policy{
-			Notch:           djinnv1.LoadNotch_LOAD_NOTCH_LIGHT,
-			CoresPerWorker:  2,
-			MemoryPerWorker: 2 * GiB,
-			MemoryReserve:   2 * GiB,
-			// Up to 3 workers: modest concurrency for laptops or quiet background operation.
-			MaxWorkers: 3,
-			// Conservative PSI thresholds: back off before noticeable desktop lag.
-			CPUPressure:    40,
-			MemoryPressure: 8,
-			// Conservative non-PSI thresholds: 1.5 load per core or <15% free RAM.
-			LoadPerCore: 1.5,
-			MemoryFree:  0.15,
-			// 768 MiB gate margin: generous headroom for compilation and tests.
-			CommandMargin: 768 << 20,
-			WorkerPeak:    GiB,
-			WorkerPeaks:   10,
-			WorkerMargin:  512 << 20,
-			// Up to 40% of RAM committed to peak forecasts.
-			MemoryShare:    0.40,
-			ModelGPUMemory: 6 * GiB,
-			ModelMemory:    16 * GiB,
-			ModelDisk:      10 * GiB,
-		}
+		// Deprecated light notch maps to medium.
+		return NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
 	case djinnv1.LoadNotch_LOAD_NOTCH_HIGH:
 		return Policy{
 			Notch:           djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
 			CoresPerWorker:  2,
 			MemoryPerWorker: 2 * GiB,
 			MemoryReserve:   2 * GiB,
-			// Up to 24 workers: higher concurrency for multi-core workstations and servers.
-			MaxWorkers: 24,
+			MaxWorkers:      16,
 			// Tolerant PSI thresholds: permits temporary pressure spikes during parallel builds.
 			CPUPressure:    70,
 			MemoryPressure: 15,
@@ -167,12 +173,12 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			LoadPerCore: 3.0,
 			MemoryFree:  0.05,
 			// 384 MiB gate margin: compact gate buffer allowing more concurrent gated commands.
-			CommandMargin: 384 << 20,
-			WorkerPeak:    GiB,
-			WorkerPeaks:   10,
-			WorkerMargin:  512 << 20,
-			// Up to 85% of RAM committed to peak forecasts.
-			MemoryShare:    0.85,
+			CommandMargin:  384 << 20,
+			WorkerPeak:     GiB,
+			WorkerPeaks:    10,
+			WorkerMargin:   512 << 20,
+			Share:          0.80,
+			MemoryShare:    0.80,
 			ModelGPUMemory: 6 * GiB,
 			ModelMemory:    16 * GiB,
 			ModelDisk:      10 * GiB,
@@ -183,8 +189,7 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			CoresPerWorker:  2,
 			MemoryPerWorker: 2 * GiB,
 			MemoryReserve:   2 * GiB,
-			// Up to 32 workers: maximum concurrency for dedicated machines.
-			MaxWorkers: 32,
+			MaxWorkers:      16,
 			// Aggressive PSI thresholds: keeps workers running unless heavily stalled.
 			CPUPressure:    90,
 			MemoryPressure: 25,
@@ -192,12 +197,35 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			LoadPerCore: 5.0,
 			MemoryFree:  0.02,
 			// 256 MiB gate margin: minimum safe gate margin.
-			CommandMargin: 256 << 20,
-			WorkerPeak:    GiB,
-			WorkerPeaks:   10,
-			WorkerMargin:  512 << 20,
-			// All RAM except safety margin committed to peak forecasts.
+			CommandMargin:  256 << 20,
+			WorkerPeak:     GiB,
+			WorkerPeaks:    10,
+			WorkerMargin:   512 << 20,
+			Share:          1.0,
 			MemoryShare:    1.0,
+			ModelGPUMemory: 6 * GiB,
+			ModelMemory:    16 * GiB,
+			ModelDisk:      10 * GiB,
+		}
+	case djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK:
+		return Policy{
+			Notch:           djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK,
+			CoresPerWorker:  2,
+			MemoryPerWorker: 2 * GiB,
+			MemoryReserve:   2 * GiB,
+			MaxWorkers:      16,
+			// Overclock accepts saturation and pressure.
+			CPUPressure:    95,
+			MemoryPressure: 40,
+			LoadPerCore:    8.0,
+			MemoryFree:     0.01,
+			// 128 MiB gate margin: very compact gate buffer.
+			CommandMargin:  128 << 20,
+			WorkerPeak:     GiB,
+			WorkerPeaks:    10,
+			WorkerMargin:   512 << 20,
+			Share:          1.50,
+			MemoryShare:    1.50,
 			ModelGPUMemory: 6 * GiB,
 			ModelMemory:    16 * GiB,
 			ModelDisk:      10 * GiB,
@@ -211,21 +239,20 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			CoresPerWorker:  2,
 			MemoryPerWorker: 2 * GiB,
 			MemoryReserve:   2 * GiB,
-			// Up to 16 workers: balanced concurrency for everyday development (default).
-			MaxWorkers: 16,
+			MaxWorkers:      16,
 			// Standard PSI thresholds: 50% CPU wait, 10% memory wait.
 			CPUPressure:    50,
 			MemoryPressure: 10,
 			// Standard non-PSI thresholds: 2.0 load per core or <10% free RAM.
-			LoadPerCore: 2,
+			LoadPerCore: 2.0,
 			MemoryFree:  0.10,
 			// 512 MiB gate margin: default gate margin.
-			CommandMargin: 512 << 20,
-			WorkerPeak:    GiB,
-			WorkerPeaks:   10,
-			WorkerMargin:  512 << 20,
-			// Up to 70% of RAM committed to peak forecasts: leaves ~30% for host and desktop.
-			MemoryShare:    0.70,
+			CommandMargin:  512 << 20,
+			WorkerPeak:     GiB,
+			WorkerPeaks:    10,
+			WorkerMargin:   512 << 20,
+			Share:          0.50,
+			MemoryShare:    0.50,
 			ModelGPUMemory: 6 * GiB,
 			ModelMemory:    16 * GiB,
 			ModelDisk:      10 * GiB,
@@ -240,19 +267,32 @@ func DefaultPolicy() Policy {
 	return NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
 }
 
+// RuleMemory returns the memory the rule would engage on a machine with total RAM.
+func (p Policy) RuleMemory(total uint64) uint64 {
+	if total <= p.WorkerMargin {
+		return 0
+	}
+	return total - p.WorkerMargin
+}
+
 // CommittableLimit is the maximum memory Djinn commits to peak forecasts on a machine with total bytes of RAM.
-// It returns 0 when total is 0 or unknown.
+// It returns 0 when total is 0 or unknown. Overclock (150%) may exceed what the rule engages.
 func (p Policy) CommittableLimit(total uint64) uint64 {
-	if total == 0 || p.MemoryShare <= 0 {
+	if total == 0 {
 		return 0
 	}
-	if p.MemoryShare >= 1.0 {
-		if total > p.WorkerMargin {
-			return total - p.WorkerMargin
-		}
+	share := p.Share
+	if share <= 0 {
+		share = p.MemoryShare
+	}
+	if share <= 0 {
 		return 0
 	}
-	return uint64(float64(total) * p.MemoryShare)
+	ruleMem := p.RuleMemory(total)
+	if ruleMem == 0 {
+		return 0
+	}
+	return uint64(math.Round(float64(ruleMem) * share))
 }
 
 // NotchName returns the lowercase name of a load notch.
@@ -268,6 +308,8 @@ func NotchName(notch djinnv1.LoadNotch) string {
 		return "high"
 	case djinnv1.LoadNotch_LOAD_NOTCH_MAX:
 		return "max"
+	case djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK:
+		return "overclock"
 	case djinnv1.LoadNotch_LOAD_NOTCH_AUTO:
 		return "auto"
 	default:
@@ -281,10 +323,17 @@ func (p Policy) NotchName() string {
 }
 
 // LowPriority reports whether the load notch runs workers with low CPU priority.
-// Minimal and light notches run with low CPU priority to yield CPU to developer applications;
-// other notches run with normal priority.
+// Minimal and medium notches run with low CPU priority to yield CPU to developer applications;
+// high, max, and overclock run with standard priority.
 func LowPriority(notch djinnv1.LoadNotch) bool {
-	return notch == djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL || notch == djinnv1.LoadNotch_LOAD_NOTCH_LIGHT
+	switch notch {
+	case djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL,
+		djinnv1.LoadNotch_LOAD_NOTCH_LIGHT,
+		djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM:
+		return true
+	default:
+		return false
+	}
 }
 
 // LowPriority reports whether the policy runs workers with low CPU priority.
@@ -298,36 +347,48 @@ func ParseNotch(s string) (djinnv1.LoadNotch, error) {
 	case "minimal":
 		return djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, nil
 	case "light":
-		return djinnv1.LoadNotch_LOAD_NOTCH_LIGHT, nil
+		// Old saved "light" maps to Medium.
+		return djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, nil
 	case "medium":
 		return djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, nil
 	case "high":
 		return djinnv1.LoadNotch_LOAD_NOTCH_HIGH, nil
 	case "max":
 		return djinnv1.LoadNotch_LOAD_NOTCH_MAX, nil
+	case "overclock":
+		return djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK, nil
 	case "auto":
 		return djinnv1.LoadNotch_LOAD_NOTCH_AUTO, nil
 	default:
-		return djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED, fmt.Errorf("unknown load notch %q: expected minimal, light, medium, high, max, or auto", s)
+		return djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED, fmt.Errorf("unknown load notch %q: expected minimal, medium, high, max, overclock, or auto", s)
 	}
 }
 
-// Slots is the most workers the machine runs at once, and the rule that gave it.
-func (p Policy) Slots(s Snapshot) (int, string) {
-	if p.Workers > 0 {
-		return p.Workers, fmt.Sprintf("%d, set by djinn up --workers", p.Workers)
-	}
+// BaseSlots is the number of worker slots the machine allows today under the standard rule:
+// one worker per 2 cores and per 2 GiB beyond 2 GiB reserve, min of both, up to 16, at least 1.
+func (p Policy) BaseSlots(s Snapshot) (int, string) {
 	cores := max(s.Cores, 1)
-	byCores := max(cores/max(p.CoresPerWorker, 1), 1)
-	n, rule := byCores, fmt.Sprintf("one per %d cores of %d", p.CoresPerWorker, cores)
-	if s.MemoryTotal > 0 && p.MemoryPerWorker > 0 {
+	cpw := p.CoresPerWorker
+	if cpw <= 0 {
+		cpw = 2
+	}
+	byCores := max(cores/cpw, 1)
+	n, rule := byCores, fmt.Sprintf("one per %d cores of %d", cpw, cores)
+	mpw := p.MemoryPerWorker
+	if mpw == 0 {
+		mpw = 2 * GiB
+	}
+	res := p.MemoryReserve
+	if res == 0 {
+		res = 2 * GiB
+	}
+	if s.MemoryTotal > 0 {
 		spare := uint64(0)
-		if s.MemoryTotal > p.MemoryReserve {
-			spare = s.MemoryTotal - p.MemoryReserve
+		if s.MemoryTotal > res {
+			spare = s.MemoryTotal - res
 		}
-		byMemory := max(int(spare/p.MemoryPerWorker), 1)
-		memRule := fmt.Sprintf("one per %s of memory beyond %s, of %s", size(p.MemoryPerWorker), size(p.MemoryReserve),
-			size(s.MemoryTotal))
+		byMemory := max(int(spare/mpw), 1)
+		memRule := fmt.Sprintf("one per %s of memory beyond %s, of %s", size(mpw), size(res), size(s.MemoryTotal))
 		switch {
 		case byMemory < byCores:
 			n, rule = byMemory, memRule
@@ -335,10 +396,43 @@ func (p Policy) Slots(s Snapshot) (int, string) {
 			rule += ", and " + memRule
 		}
 	}
-	if p.MaxWorkers > 0 && n > p.MaxWorkers {
-		return p.MaxWorkers, fmt.Sprintf("%d, the most Djinn runs (%s gives more)", p.MaxWorkers, rule)
+	maxW := p.MaxWorkers
+	if maxW <= 0 {
+		maxW = 16
+	}
+	if n > maxW {
+		return maxW, fmt.Sprintf("%d, the most Djinn runs (%s gives more)", maxW, rule)
 	}
 	return n, fmt.Sprintf("%d: %s", n, rule)
+}
+
+// BaseSlots returns the number of slots given by the current machine rule without notch scaling.
+func BaseSlots(s Snapshot) int {
+	n, _ := DefaultPolicy().BaseSlots(s)
+	return n
+}
+
+// Slots is the most workers the machine runs at once, and the rule that gave it.
+// Each notch is a share of what the machine allows today: workers = round(share × BaseSlots, at least 1).
+func (p Policy) Slots(s Snapshot) (int, string) {
+	if p.Workers > 0 {
+		return p.Workers, fmt.Sprintf("%d, set by djinn up --workers", p.Workers)
+	}
+	base, rule := p.BaseSlots(s)
+	share := p.Share
+	if share <= 0 {
+		if p.Notch != 0 {
+			share = NotchPolicy(p.Notch).Share
+		} else {
+			share = 0.50
+		}
+	}
+	workers := max(1, int(math.Round(share*float64(base))))
+	if share == 1.0 {
+		return workers, rule
+	}
+	pct := int(math.Round(share * 100))
+	return workers, fmt.Sprintf("%d: %d%% of %d (%s)", workers, pct, base, rule)
 }
 
 // Pressure says why the machine is under pressure, or "" when it is not. Under pressure, no worker starts and no
@@ -547,8 +641,12 @@ func (m *Monitor) Snapshot() Snapshot {
 	if !m.at.IsZero() && time.Since(m.at) < m.every {
 		return m.last
 	}
-	s, err := m.read()
-	if err != nil {
+	var s Snapshot
+	var err error
+	if m.read != nil {
+		s, err = m.read()
+	}
+	if m.read == nil || err != nil {
 		s = Snapshot{Cores: runtime.NumCPU()}
 	}
 	s.OS, s.Arch = runtime.GOOS, runtime.GOARCH

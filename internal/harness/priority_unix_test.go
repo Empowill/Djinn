@@ -186,24 +186,24 @@ func TestWorkerPriorityPolicyChangeUnix(t *testing.T) {
 		return pid
 	}
 
-	// 1. Initial MEDIUM notch: normal priority (nice 0).
-	spawnAndCheck("Worker 1 Medium", 0)
+	// 1. Initial MEDIUM notch: low priority (nice 10).
+	spawnAndCheck("Worker 1 Medium", 10)
 
 	// 2. Change policy to MINIMAL notch: low priority (nice 10).
 	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL))
 	spawnAndCheck("Worker 2 Minimal", 10)
 
-	// 3. Change policy to LIGHT notch: low priority (nice 10).
-	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_LIGHT))
-	spawnAndCheck("Worker 3 Light", 10)
-
-	// 4. Change policy to HIGH notch: normal priority (nice 0).
+	// 3. Change policy to HIGH notch: standard priority (nice 0).
 	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_HIGH))
-	spawnAndCheck("Worker 4 High", 0)
+	spawnAndCheck("Worker 3 High", 0)
 
-	// 5. Change policy to MAX notch: normal priority (nice 0).
+	// 4. Change policy to MAX notch: standard priority (nice 0).
 	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MAX))
-	spawnAndCheck("Worker 5 Max", 0)
+	spawnAndCheck("Worker 4 Max", 0)
+
+	// 5. Change policy to OVERCLOCK notch: standard priority (nice 0).
+	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK))
+	spawnAndCheck("Worker 5 Overclock", 0)
 }
 
 // TestWorkerChildPriorityInheritanceUnix verifies that child commands executed by a low-priority
