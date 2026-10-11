@@ -15,6 +15,7 @@ const {
   QuestionService,
   BlockService,
   InboxService,
+  LeadService,
   TaskKind,
   TaskStatus,
   AzimaState,
@@ -69,6 +70,9 @@ function server(data) {
     });
     service(ProjectService, {
       list: () => (count("projects"), { projects: data.projects }),
+    });
+    service(LeadService, {
+      get: () => ({ lead: data.lead }),
     });
     service(TaskService, {
       list: (req) => {

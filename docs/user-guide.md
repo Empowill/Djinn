@@ -62,8 +62,7 @@ never in your home folder: an agent started there would ask you to trust all of 
 asks you to create one. `djinn up --terminal-dir <folder>` picks another folder, and
 `djinn up --terminal "…" --terminal-dir <folder>` runs that command instead of your shell.
 
-It holds tabs. The window's own terminal is always there; while the wish you look at has a lead running, its tab,
-**Lead · <wish>**, is there too. The + of the tab bar, or Ctrl+Shift+T anywhere in the window, opens a new shell
+It holds tabs. The window's own terminal is always there; while the lead runs, its tab, **Lead**, is there too. The + of the tab bar, or Ctrl+Shift+T anywhere in the window, opens a new shell
 (**Shell 1**, **Shell 2**…); the terminal icon next to a project in the side panel opens one at its root. Each tab you
 opened closes with its ×, and comes back after a reload. The terminal folds away; **Restart** starts one again once
 its program ended. Ctrl+Shift+C and Ctrl+Shift+V copy and paste.
