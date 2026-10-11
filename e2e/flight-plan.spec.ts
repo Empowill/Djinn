@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { mergeVisual } from "./merge-visuals";
 import { portable } from "./portable";
+import { openWorkspaceSection, wishHeading } from "./workspace-selectors";
 
 portable();
 
@@ -143,7 +144,11 @@ test("the flight plan merges two wishes, and a question is answered from it", as
 
   const pageHeader = page.locator(".page-header");
   const appToolbar = page.locator(".app-toolbar");
-  const assertHeaderChrome = async (left: number, size = 32) => {
+  const assertHeaderChrome = async (
+    left: number,
+    size = 32,
+    alignWithAppToolbar = true,
+  ) => {
     const headerBox = await pageHeader.boundingBox();
     const breadcrumbsBox = await pageHeader
       .locator(".breadcrumbs")
@@ -161,12 +166,22 @@ test("the flight plan merges two wishes, and a question is answered from it", as
     expect(backBox).toMatchObject({ width: size, height: size });
     expect(toggleBox).toMatchObject({ width: size, height: size });
     const headerCenter = headerBox!.y + headerBox!.height / 2;
-    expect(
-      Math.abs(headerCenter - (backBox!.y + backBox!.height / 2)),
-    ).toBeLessThan(1);
-    expect(
-      Math.abs(headerCenter - (toggleBox!.y + toggleBox!.height / 2)),
-    ).toBeLessThan(1);
+    if (alignWithAppToolbar) {
+      expect(
+        Math.abs(headerCenter - (backBox!.y + backBox!.height / 2)),
+      ).toBeLessThan(1);
+      expect(
+        Math.abs(headerCenter - (toggleBox!.y + toggleBox!.height / 2)),
+      ).toBeLessThan(1);
+    } else {
+      const globalTopBox = await page
+        .locator(".workspace-global-top")
+        .boundingBox();
+      expect(globalTopBox).not.toBeNull();
+      expect(headerBox!.y).toBeGreaterThanOrEqual(
+        globalTopBox!.y + globalTopBox!.height,
+      );
+    }
     const actions = pageHeader.locator(".topbar-actions");
     if (await actions.count()) {
       const actionsBox = await actions.boundingBox();
@@ -260,7 +275,7 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   // The wish's own view stays: its tasks with their tokens in their own tab, its block about W1 in the agents' tab,
   // its journal.
   await page.locator(".plan-wish").filter({ hasText: lampTitle }).click();
-  await expect(page.locator(".hero h1")).toHaveText(lampTitle);
+  await expect(wishHeading(page)).toHaveText(lampTitle);
   const wishHeader = page.locator(".wish-view > .page-header");
   await expect(wishHeader).toHaveCount(1);
   await expect(wishHeader.locator(".page-header-action")).toHaveCount(4);
@@ -273,33 +288,33 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   const leadAction = wishHeader.locator(".split-button > button").first();
   await leadAction.focus();
   await expect(leadAction).toHaveAttribute("title", /lead/);
-  await assertHeaderChrome(248);
+  // The wish view keeps the global action strip between the app toolbar and its own header, so its header no longer
+  // shares the toolbar's vertical center. Its own controls remain checked below.
+  await assertHeaderChrome(248, 32, false);
   await expect(wishHeader.locator(".topbar-actions")).toBeVisible();
   await page.setViewportSize({ width: 760, height: 1000 });
-  await assertHeaderChrome(100);
+  await assertHeaderChrome(100, 32, false);
   await page.evaluate(() =>
     document.documentElement.classList.add("native-mac"),
   );
-  await assertHeaderChrome(166, 20);
+  await assertHeaderChrome(166, 20, false);
   await page.locator(".sidebar-toggle").click();
   await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
-  await assertHeaderChrome(166, 20);
+  await assertHeaderChrome(166, 20, false);
   await page.locator(".sidebar-toggle").click();
   await expect(page.locator(".wish-app")).not.toHaveClass(/sidebar-collapsed/);
   await page.evaluate(() =>
     document.documentElement.classList.remove("native-mac"),
   );
   await page.setViewportSize({ width: 1440, height: 1900 });
-  await page.getByRole("tab", { name: /^Tasks/ }).click();
+  await openWorkspaceSection(page, "tasks");
   const w2 = page.locator(".wish-task").filter({ hasText: "Read the map" });
   await expect(w2.locator(".task-usage")).toHaveText(/^6\.5\s?K tokens$/);
-  await page.getByRole("tab", { name: /^For agents/ }).click();
+  await openWorkspaceSection(page, "agents");
   await expect(page.locator(".wish-block")).toContainText("About W1");
-  await page.getByRole("tab", { name: /^Wish/ }).click();
-  // The journal is folded: a click opens it.
-  await page.getByRole("button", { name: /^Journal/ }).click();
+  await openWorkspaceSection(page, "journal");
   await expect(page.locator(".journal-list")).toContainText("Kick-off");
-  await page.getByRole("tab", { name: /^Tasks/ }).click();
+  await openWorkspaceSection(page, "tasks");
   await page
     .locator(".wish-task")
     .filter({ hasText: "Trim the wick" })
@@ -316,8 +331,8 @@ test("the flight plan merges two wishes, and a question is answered from it", as
 
   // The journal of the other wish: the commands that changed it, once asked for.
   await page.locator(".wish-nav").filter({ hasText: oilTitle }).click();
-  await expect(page.locator(".hero h1")).toHaveText(oilTitle);
-  await page.getByRole("button", { name: /^Journal/ }).click();
+  await expect(wishHeading(page)).toHaveText(oilTitle);
+  await openWorkspaceSection(page, "journal");
   await page.getByRole("button", { name: "Show the commands" }).click();
   const journal = page.locator(".journal-list");
   await expect(journal).toContainText("wish make");

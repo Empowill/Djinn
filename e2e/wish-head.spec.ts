@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { wishHeading } from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -40,7 +41,7 @@ async function open(page: import("@playwright/test").Page, title: string) {
     .wish.id as string;
   await page.goto(process.env.DJINN_URL!);
   await page.locator(".wish-nav").filter({ hasText: title }).click();
-  await expect(page.locator(".hero h1")).toHaveText(title);
+  await expect(wishHeading(page)).toHaveText(title);
   return wishId;
 }
 

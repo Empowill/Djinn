@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { openWorkspaceActions, wishHeading } from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -84,14 +85,15 @@ test("a request that matches a skill's template makes its wish, whose watcher of
     .locator(".wish-nav")
     .filter({ hasText: "Template from here" })
     .click();
-  await page
+  const sourceActions = await openWorkspaceActions(page);
+  await sourceActions
     .locator(".question-card")
     .filter({ hasText: "Where does this request go?" })
     .getByRole("button", { name: "Rub the lamp" })
     .click();
 
   // The new wish, its template recorded, its watcher started at once in the project.
-  await expect(page.locator(".hero h1")).toHaveText(title);
+  await expect(wishHeading(page)).toHaveText(title);
   const made = JSON.parse(djinn("wish", "list", "--json")).wishes.find(
     (w: { title: string }) => w.title === title,
   );
@@ -124,7 +126,8 @@ test("a request that matches a skill's template makes its wish, whose watcher of
     .toBe("TASK_STATUS_DONE");
 
   // The done line: a card asks whether to grant the wish; rubbing the lamp grants it.
-  const card = page
+  const actions = await openWorkspaceActions(page);
+  const card = actions
     .locator(".question-card")
     .filter({ hasText: `grant “${title}”?` });
   await expect(card).toContainText("MERGED: PR #7 is merged.", {

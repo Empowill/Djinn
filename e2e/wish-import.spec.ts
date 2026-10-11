@@ -7,6 +7,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { portable } from "./portable";
+import {
+  openWorkspaceActions,
+  openWorkspaceSection,
+} from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -107,16 +111,26 @@ test("a wish file imports from the interface", async ({ page }) => {
   await importFile(page, file);
 
   await expect(page.getByText("Ship the lamp").first()).toBeVisible();
-  await expect(page.getByText("Which oil for the wick?").first()).toBeVisible();
+  await expect(
+    page
+      .locator(".workspace-global-overlay .question-card")
+      .filter({ hasText: "Which oil for the wick?" }),
+  ).toHaveCount(1);
+  const actions = await openWorkspaceActions(page);
+  await expect(
+    actions
+      .locator(".question-card")
+      .filter({ hasText: "Which oil for the wick?" }),
+  ).toBeVisible();
   // A block, in the agents' tab: opened, it shows as the lead wrote it, in Markdown.
-  await page.getByRole("tab", { name: /^For agents/ }).click();
+  await openWorkspaceSection(page, "agents");
   await page.getByRole("button", { name: /Lexicon of the lamp/ }).click();
   await expect(page.getByText("A wick carries the oil.").first()).toBeVisible();
   await expect(page.locator(".wish-block strong")).toHaveText("wick");
   // Its task, from the file, in the Tasks tab.
-  await page.getByRole("tab", { name: /^Tasks/ }).click();
+  await openWorkspaceSection(page, "tasks");
   await expect(page.getByText("Polish the brass").first()).toBeVisible();
-  await page.getByRole("tab", { name: /^Wish/ }).click();
+  // The wish heading remains visible while detail sections open in the main area.
   // A wish at work: nothing to grant.
   await expect(page.getByText("My wish is granted")).toHaveCount(0);
   await page.screenshot({
@@ -182,7 +196,11 @@ test("a ready wish is granted by the user, from the interface", async ({
   await importFile(page, file);
 
   await expect(page.getByText(title).first()).toBeVisible();
-  const grant = page.getByRole("button", { name: "My wish is granted" });
+  await expect(
+    page.locator(".workspace-global-overlay #grant-" + readyId),
+  ).toHaveCount(1);
+  const actions = await openWorkspaceActions(page);
+  const grant = actions.getByRole("button", { name: "My wish is granted" });
   await expect(grant).toBeVisible();
   // Djinn proposes, and never grants by itself.
   const state = () => wishes().find((w) => w.id === readyId)!;

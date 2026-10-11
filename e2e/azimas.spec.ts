@@ -8,6 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { portable } from "./portable";
+import { openWorkspaceSection } from "./workspace-selectors";
 
 portable();
 
@@ -88,10 +89,15 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     // Nothing waits for you: no azima is your move.
     await expect(page.locator("#action-center")).toHaveCount(0);
-    const tasksTab = page.getByRole("tab", { name: /^Tasks/ });
+    const tasksTab = await openWorkspaceSection(page, "tasks");
+    await expect(tasksTab).toBeVisible();
     // The work only: an azima is the plan.
-    await expect(tasksTab).toHaveText("Tasks3");
-    await tasksTab.click();
+    await expect(tasksTab.locator(".workspace-panel-heading h2")).toHaveText(
+      "Tasks",
+    );
+    await expect(
+      tasksTab.locator(".workspace-panel-heading .count"),
+    ).toHaveText("3");
 
     await expect(page.locator(".tasks-moving h2")).toHaveText(
       "Moving or waiting1",
@@ -123,9 +129,10 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
       "T3",
       "T1",
     ]);
-    // What a click unfolded stays so, the Tasks tab left and back.
-    await page.getByRole("tab", { name: /^Decisions/ }).click();
-    await tasksTab.click();
+    // What a click unfolded stays so, the Tasks panel left and back. This fixture has no decisions, so Journal is
+    // the always-visible panel used to leave the work panel.
+    await openWorkspaceSection(page, "journal");
+    await openWorkspaceSection(page, "tasks");
     await expect(azimas.locator(".azima-heading .agent-code")).toHaveText([
       "T2",
       "T3",

@@ -10,6 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { disableWishSmokeWebGL } from "./wish-smoke-fixture";
 import { mergeVisual } from "./merge-visuals";
+import { openWorkspaceSection, wishHeading } from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -239,8 +240,8 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
 
     // The lead's blocks, in the agents' tab, opened: Markdown, a code block, a Mermaid diagram on the card's ground.
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    await expect(page.locator(".hero h1")).toHaveText(title);
-    await page.getByRole("tab", { name: /^For agents/ }).click();
+    await expect(wishHeading(page)).toHaveText(title);
+    await openWorkspaceSection(page, "agents");
     const heading = page
       .locator(".agent-block .fold-heading")
       .filter({ hasText: "How the wick burns" });
@@ -312,10 +313,12 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
 
     // The dialogs: the settings, and a new wish.
     await page.getByTitle("Connections & preferences").click();
-    const settings = page.locator(".modal");
+    const settings = page.getByRole("dialog", { name: "Connections" });
     await expect(settings).toBeVisible();
     await expect(page.getByLabel("Theme")).toHaveValue(theme);
-    expect(await background(page, ".modal")).toContain(look.card);
+    expect(
+      await background(page, '[role="dialog"][aria-label="Connections"]'),
+    ).toContain(look.card);
     await page.screenshot({
       path: path.join(shots, `theme-settings-${theme}.png`),
     });

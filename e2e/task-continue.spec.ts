@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { openWorkspaceSection } from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -128,9 +129,10 @@ test("an interrupted task continued from the command line stays one task", async
 
     await page.goto(running.url);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    const tasksTab = page.getByRole("tab", { name: /^Tasks/ });
-    await expect(tasksTab).toHaveText("Tasks1");
-    await tasksTab.click();
+    await openWorkspaceSection(page, "tasks");
+    const tasksSection = page.locator('[data-wish-section="tasks"]');
+    await expect(tasksSection.locator("strong")).toHaveText("Tasks");
+    await expect(tasksSection.locator(":scope > .count")).toHaveText("1");
     await expect(page.locator(".tasks-moving h2")).toHaveText(
       "Moving or waiting0",
     );

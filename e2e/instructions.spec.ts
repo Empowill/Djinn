@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { openWorkspaceSection, wishHeading } from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -177,7 +178,7 @@ test("a card saves offline without navigation; drafts survive folding and openin
     });
     await open.focus();
     await open.press("Enter");
-    await expect(page.locator(".hero h1")).toHaveText(sample.title);
+    await expect(wishHeading(page)).toHaveText(sample.title);
     await page
       .getByRole("button", { name: "Add an indication", exact: true })
       .click();
@@ -188,7 +189,11 @@ test("a card saves offline without navigation; drafts survive folding and openin
     await expect(
       page.getByRole("dialog", { name: "Indication for the lead" }),
     ).toHaveCount(0);
-    const history = page.getByRole("region", { name: "Indications" });
+    const instructionsPanel = await openWorkspaceSection(page, "instructions");
+    await expect(instructionsPanel).toBeVisible();
+    const history = instructionsPanel.getByRole("region", {
+      name: "Indications",
+    });
     await expect(history).toContainText("Offline indication\nFull detail");
     await expect(history.getByText("Pending", { exact: true })).toHaveCount(2);
     await expect(
@@ -210,7 +215,8 @@ test("a card saves offline without navigation; drafts survive folding and openin
     await page.evaluate(() => localStorage.setItem("djinn.language", "fr"));
     await page.reload();
     await page.locator(".wish-nav").filter({ hasText: sample.title }).click();
-    const french = page.getByRole("region", { name: "Indications" });
+    const frenchPanel = await openWorkspaceSection(page, "instructions");
+    const french = frenchPanel.getByRole("region", { name: "Indications" });
     await expect(
       french.getByText(fr["instruction.pending"], { exact: true }),
     ).toHaveCount(2);
@@ -231,8 +237,9 @@ test("a card saves offline without navigation; drafts survive folding and openin
     await expect(history.getByText("Done", { exact: true })).toHaveCount(2);
     await page.reload();
     await page.locator(".wish-nav").filter({ hasText: sample.title }).click();
+    const finalPanel = await openWorkspaceSection(page, "instructions");
     await expect(
-      page.getByRole("region", { name: "Indications" }),
+      finalPanel.getByRole("region", { name: "Indications" }),
     ).toContainText("Offline indication");
   } finally {
     sample.cleanup();

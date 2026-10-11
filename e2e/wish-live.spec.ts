@@ -5,6 +5,11 @@ import { type Page, expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import {
+  openWorkspaceActions,
+  workspaceSection,
+  wishHeading,
+} from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -46,7 +51,7 @@ test("a wish made by the command line shows live, and its question is answered f
   const item = page.locator(".wish-nav").filter({ hasText: title });
   await expect(item).toBeVisible();
   await item.click();
-  await expect(page.locator(".hero h1")).toHaveText(title);
+  await expect(wishHeading(page)).toHaveText(title);
 
   // A question asked by the command line comes in, open, with its options.
   djinn(
@@ -61,8 +66,14 @@ test("a wish made by the command line shows live, and its question is answered f
     "--recommendation",
     "**A**: it is tested.",
   );
+  await expect(
+    page
+      .locator(".workspace-global-overlay .question-card")
+      .filter({ hasText: "Which lamp first?" }),
+  ).toHaveCount(1);
+  await openWorkspaceActions(page);
   const card = page
-    .locator(".question-card")
+    .locator(".workspace-global-modal-body .question-card")
     .filter({ hasText: "Which lamp first?" });
   await expect(card).toBeVisible();
   await expect(card.getByText("it is tested.")).toBeVisible();
@@ -87,14 +98,20 @@ test("a wish made by the command line shows live, and its question is answered f
   await pick();
   await card.screenshot({ path: path.join(shots, "question-card-dark.png") });
   await theme(page, "light");
+  await expect(
+    page
+      .locator(".workspace-global-overlay .question-card")
+      .filter({ hasText: "Which lamp first?" }),
+  ).toHaveCount(1);
+  await openWorkspaceActions(page);
   await pick();
   await card.screenshot({ path: path.join(shots, "question-card-light.png") });
   await card.getByRole("button", { name: "Rub the lamp" }).click();
   await expect(page.locator(".decisions-section")).toHaveCount(0);
   // It is a decision now, in its own tab.
-  await expect(page.getByRole("tab", { name: /^Decisions/ })).toHaveText(
-    "Decisions1",
-  );
+  const decisionsSection = workspaceSection(page, "decisions");
+  await expect(decisionsSection.locator("strong")).toHaveText("Decisions");
+  await expect(decisionsSection.locator(":scope > .count")).toHaveText("1");
 
   // The command line reads it answered.
   const [question] = JSON.parse(

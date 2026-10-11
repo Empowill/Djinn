@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { portable } from "./portable";
+import { wishHeading } from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -56,7 +57,7 @@ async function open(
   const wishId = JSON.parse(djinn(...made)).wish.id as string;
   await page.goto(process.env.DJINN_URL!);
   await page.locator(".wish-nav").filter({ hasText: title }).click();
-  await expect(page.locator(".hero h1")).toHaveText(title);
+  await expect(wishHeading(page)).toHaveText(title);
   return wishId;
 }
 
@@ -67,13 +68,15 @@ test("the description under the title edits in place, as djinn wish describe", a
   const title = `Describe the lamp ${randomUUID().slice(0, 8)}`;
   const wishId = await open(page, title);
   // The title stands for it until someone writes one.
-  const description = page.locator(".hero .wish-description");
+  const details = page.locator(".workspace-thread-description");
+  await details.locator("summary").click();
+  const description = details.locator(".wish-description");
   await expect(description).toHaveText(title);
 
   await description.click();
   const field = page.getByRole("textbox", { name: "Description" });
   await field.fill("Light the house.\nNot the street.");
-  await page.locator(".hero h1").click(); // Leaving the field saves it.
+  await wishHeading(page).click(); // Leaving the field saves it.
   await expect(description).toHaveText("Light the house.\nNot the street.");
   await expect
     .poll(() => wishOf(wishId).description)

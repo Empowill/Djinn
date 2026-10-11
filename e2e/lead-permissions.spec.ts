@@ -4,6 +4,10 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { mergeVisual } from "./merge-visuals";
+import {
+  closeWorkspaceActions,
+  openWorkspaceActions,
+} from "./workspace-selectors";
 
 const binary = path.resolve(__dirname, "../bin/djinn-e2e");
 const session = "7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
@@ -72,6 +76,8 @@ test("the approval card checks the command and sends the user's answer", async (
     await page.goto(process.env.DJINN_URL!);
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
     await page.locator(".wish-nav").filter({ hasText: title }).click();
+    await expect(page.locator(`#lead-prompt-${wishId}`)).toHaveCount(1);
+    await openWorkspaceActions(page);
     const card = page.locator(`#lead-prompt-${wishId}`);
     await expect(card).toContainText("$ djinn wish brief");
     await expect(
@@ -100,6 +106,7 @@ test("the approval card checks the command and sends the user's answer", async (
     await expect(card).toBeVisible();
 
     // The request remains visible from the overview even when the terminal is folded away.
+    await closeWorkspaceActions(page);
     await page.locator(".plan-nav").click();
     await expect(card).toContainText("$ djinn wish brief");
     await card.getByRole("button", { name: "1 Yes, proceed (y)" }).click();

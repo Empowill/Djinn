@@ -10,6 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { mergeVisual } from "./merge-visuals";
+import { openWorkspaceSection } from "./workspace-selectors";
 
 const shots = path.join(__dirname, "../test-results/e2e");
 const binary = path.resolve(
@@ -69,9 +70,10 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
 
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    const tab = page.getByRole("tab", { name: /^Tilasms/ });
-    await expect(tab).toHaveText("Tilasms1");
-    await tab.click();
+    await openWorkspaceSection(page, "tilasms");
+    const tilasmsRow = page.locator('[data-wish-section="tilasms"]');
+    await expect(tilasmsRow.locator("strong")).toHaveText("Tilasms");
+    await expect(tilasmsRow.locator(":scope > .count")).toHaveText("1");
     const panel = page.getByRole("tabpanel", { name: "Tilasms" });
     const row = panel.locator(".tilasm-row").filter({ hasText: "L01" });
     await expect(row).toContainText("The lamp's anatomy");

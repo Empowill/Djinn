@@ -8,6 +8,10 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { portable } from "./portable";
+import {
+  openWorkspaceActions,
+  openWorkspaceSection,
+} from "./workspace-selectors";
 
 portable();
 
@@ -62,7 +66,8 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
     await page.locator(".wish-nav").filter({ hasText: title }).click();
 
     // The developer answers in the window.
-    const card = page
+    const actions = await openWorkspaceActions(page);
+    const card = actions
       .locator(".question-card")
       .filter({ hasText: "Which oil for the wick?" });
     await card.getByRole("button", { name: /Paraffin/ }).click();
@@ -84,11 +89,13 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
       "Q01",
     );
 
-    const tab = page.getByRole("tab", { name: /^Decisions/ });
-    await expect(tab).toHaveText("Decisions2");
-    await tab.click();
-    const log = page.getByRole("tabpanel", { name: "Decisions" });
-    await expect(log.getByRole("button")).toHaveCount(0);
+    const tab = page.locator('[data-wish-section="decisions"]');
+    await expect(tab.locator("strong")).toHaveText("Decisions");
+    await expect(tab.locator(":scope > .count")).toHaveText("2");
+    const log = await openWorkspaceSection(page, "decisions");
+    await expect(
+      log.locator(".workspace-panel-content").getByRole("button"),
+    ).toHaveCount(0);
     const rows = log.locator(".decision-row");
     // The latest first: the answer came after the block.
     await expect(rows.first()).toContainText("Which oil for the wick?");
@@ -106,9 +113,8 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
 
     // The decision opens its task in the Tasks tab, and the task leads back.
     await answered.getByRole("link", { name: "W1" }).click();
-    await expect(page.getByRole("tab", { name: /^Tasks/ })).toHaveAttribute(
-      "aria-selected",
-      "true",
+    await expect(page.locator('[data-wish-section="tasks"]')).toHaveClass(
+      /is-open/,
     );
     const task = page
       .locator(".wish-task")
@@ -116,7 +122,9 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
     await expect(task).toHaveClass(/focused/);
     await expect(task).toBeInViewport();
     await task.getByRole("link", { name: /From Q01/ }).click();
-    await expect(tab).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator('[data-wish-section="decisions"]')).toHaveClass(
+      /is-open/,
+    );
     await expect(
       page.locator(".decision-row.focused").filter({
         hasText: "Which oil for the wick?",
@@ -126,7 +134,7 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
     await page.evaluate(() => localStorage.setItem("djinn.theme", "light"));
     await page.reload();
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    await page.getByRole("tab", { name: /^Decisions/ }).click();
+    await openWorkspaceSection(page, "decisions");
     await expect(page.locator(".decision-row")).toHaveCount(2);
     await page.screenshot({ path: path.join(shots, "decision-log-light.png") });
     await page.evaluate(() => localStorage.removeItem("djinn.theme"));

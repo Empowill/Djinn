@@ -8,6 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { portable } from "./portable";
+import { openWorkspaceSection, wishHeading } from "./workspace-selectors";
 
 portable();
 
@@ -94,15 +95,15 @@ for (const engine of ["native", "script"] as const)
     const chooser = page.waitForEvent("filechooser");
     await importButton.click();
     await (await chooser).setFiles(file);
-    await expect(page.locator(".hero h1")).toHaveText(title);
-    const scroller = page.locator(".mission-scroll");
-    await expect(scroller).toHaveCSS(
+    await expect(wishHeading(page)).toHaveText(title);
+    const journal = await openWorkspaceSection(page, "journal");
+    const journalScroller = journal.locator(".workspace-panel-content");
+    await expect(journalScroller).toHaveCSS(
       "overflow-anchor",
       engine === "script" ? "none" : "auto",
     );
 
     // The journal: the 30 latest entries, then the line for the 10 others.
-    await page.getByRole("button", { name: /^Journal/ }).click();
     const entries = page.locator(".journal-list tr");
     await expect(entries).toHaveCount(30);
     await expect(entries.first()).toContainText("Entry number 40");
@@ -119,8 +120,7 @@ for (const engine of ["native", "script"] as const)
     await expect(moreEntries).toHaveCount(0);
 
     // The decisions: the 30 latest, then a batch at a time; the line goes once all show.
-    await page.getByRole("tab", { name: /^Decisions/ }).click();
-    const log = page.getByRole("tabpanel", { name: "Decisions" });
+    const log = await openWorkspaceSection(page, "decisions");
     const rows = log.locator(".decision-row");
     await expect(rows).toHaveCount(30);
     await expect(log.locator("h2 .count")).toHaveText("45");
@@ -130,7 +130,10 @@ for (const engine of ["native", "script"] as const)
     });
     await moreDecisions.evaluate((el) => el.scrollIntoView({ block: "end" }));
     // Not at the top: the page is scrolled, a row read above the line.
-    expect(await scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    const decisionScroller = log.locator(".workspace-panel-content");
+    expect(
+      await decisionScroller.evaluate((el) => el.scrollTop),
+    ).toBeGreaterThan(0);
     await steady(page, rows.last(), async () => {
       await moreDecisions.click();
       await expect(rows).toHaveCount(45);

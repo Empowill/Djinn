@@ -10,6 +10,11 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  openWorkspaceActions,
+  openWorkspaceSection,
+  wishHeading,
+} from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -113,12 +118,18 @@ test("rubbing the lamp starts a converter, which spawns a task from the decision
 
     await page.goto(running.url);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    await expect(page.locator(".hero h1")).toHaveText(title);
-    await page
+    await expect(wishHeading(page)).toHaveText(title);
+    await expect(
+      page
+        .locator(".workspace-global-overlay .question-card")
+        .filter({ hasText: "Which store?" }),
+    ).toHaveCount(1);
+    const actions = await openWorkspaceActions(page);
+    const question = actions
       .locator(".question-card")
-      .filter({ hasText: "Which store?" })
-      .getByRole("button", { name: "Rub the lamp" })
-      .click();
+      .filter({ hasText: "Which store?" });
+    await expect(question).toBeVisible();
+    await question.getByRole("button", { name: "Rub the lamp" }).click();
 
     // The converter appears, ends, and the task it spawned names the decision.
     const started = new Set<string>();
@@ -173,9 +184,10 @@ test("rubbing the lamp starts a converter, which spawns a task from the decision
     expect(spawned.role ?? "").toBe("");
 
     // The window shows both, and the decision log links the decision to the task.
-    const tasksTab = page.getByRole("tab", { name: /^Tasks/ });
-    await expect(tasksTab).toHaveText("Tasks2");
-    await tasksTab.click();
+    await openWorkspaceSection(page, "tasks");
+    const tasksSection = page.locator('[data-wish-section="tasks"]');
+    await expect(tasksSection.locator("strong")).toHaveText("Tasks");
+    await expect(tasksSection.locator(":scope > .count")).toHaveText("2");
     const finished = page.locator(".tasks-finished .wish-task");
     await expect(finished).toHaveCount(2);
     await expect(finished.filter({ hasText: "Q01 → tasks" })).toHaveCount(1);

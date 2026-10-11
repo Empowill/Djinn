@@ -9,6 +9,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { portable } from "./portable";
+import {
+  openWorkspaceActions,
+  openWorkspaceSection,
+  wishHeading,
+} from "./workspace-selectors";
 
 portable();
 
@@ -146,29 +151,36 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await theme(page, "");
 
   await page.locator(".wish-nav").filter({ hasText: title }).click();
-  await expect(page.locator(".hero h1")).toHaveText(title);
+  await expect(wishHeading(page)).toHaveText(title);
+  await expect(
+    page
+      .locator(".workspace-global-overlay .question-card")
+      .filter({ hasText: "Which oil for the wick?" }),
+  ).toHaveCount(1);
+  const wishActions = await openWorkspaceActions(page);
   const card = page
-    .locator(".question-card")
+    .locator(".workspace-global-modal-body .question-card")
     .filter({ hasText: "Which oil for the wick?" });
-  await bar
-    .locator(".attention-item")
-    .filter({ hasText: "Which oil for the wick?" })
-    .click();
-  await expect(card).toBeFocused();
+  await expect(card).toBeVisible();
   await expect(card.locator(".question-context h2")).toHaveText(
     "What it changes",
   );
   await shoot(page, "review-wish-dark");
   await theme(page, "light");
-  await page.getByRole("tab", { name: /^Tasks/ }).click();
+  await openWorkspaceSection(page, "tasks");
   await page
     .locator(".wish-task")
     .filter({ hasText: "Polish the brass" })
     .locator(".wish-task-heading")
     .click();
   await shoot(page, "review-wish-light");
-  await page.getByRole("tab", { name: /^Wish/ }).click();
   await theme(page, "");
+  await expect(
+    page
+      .locator(".workspace-global-overlay .question-card")
+      .filter({ hasText: "Which oil for the wick?" }),
+  ).toHaveCount(1);
+  await openWorkspaceActions(page);
 
   // Enlighten me: one click sends what the answer's note says to the lead, no second field; the question waits for
   // the lead, not for you, folded to one line out of the way, and opens on a click.
@@ -187,7 +199,9 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     "You asked: How long does each burn?",
   );
   await expect(digging.locator("textarea, .option")).toHaveCount(0);
-  await expect(bar.locator(".attention-item")).toHaveCount(1);
+  await expect(
+    wishActions.locator(".investigating-section .question-card"),
+  ).toHaveCount(1);
   await digging.screenshot({
     path: path.join(shots, "review-question-folded.png"),
   });
@@ -245,10 +259,15 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   expect(q01.revision).toBe(1);
 
   // A block is for agents: not on the wish's tab, but in the last one, folded, with no mark; opened, its Markdown.
-  await expect(page.locator(".wish-block")).toHaveCount(0);
-  const agents = page.getByRole("tab", { name: /^For agents/ });
-  await expect(agents).toHaveText("For agents1");
-  await agents.click();
+  const hiddenAgentsBlock = page.locator(
+    '[data-wish-panel="agents"] .wish-block',
+  );
+  await expect(hiddenAgentsBlock).toHaveCount(1);
+  await expect(hiddenAgentsBlock).toBeHidden();
+  await openWorkspaceSection(page, "agents");
+  const agentsRow = page.locator('[data-wish-section="agents"]');
+  await expect(agentsRow.locator("strong")).toHaveText("For agents");
+  await expect(agentsRow.locator(":scope > .count")).toHaveText("1");
   const block = page
     .locator(".wish-block")
     .filter({ hasText: "Ship on Friday" });
