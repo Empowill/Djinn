@@ -327,7 +327,10 @@ correction worker; past two attempts, Djinn asks you. Before it pushes the branc
 and three tasks committed, it runs the checks named for `push`: red, the push is held, and Djinn asks you if they stay
 red. `djinn project show` and the project's view in the window list the checks and how each last ran. When the settings also name an install command, the window
 proposes the batch it committed, with **What changed**; **Install and restart** installs it,
-nothing before your click. Details: [integration](team-settings.md#integration).
+nothing before your click. With `install_questions: when_needed` (set in Djinn itself, whose builds install after each push),
+Djinn raises no routine install question: the banner and post-push install are enough, and it asks only when necessary
+(e.g. a build carries a fix for a task you are waiting on, a change that takes effect after restart and matters now, or the running
+build is broken), saying why in the question. Details: [integration](team-settings.md#integration).
 
 Djinn also keeps the wish's branch up with the project's main branch: it fetches main at most hourly, and once main
 holds a release the branch lacks, it merges main in the same way, tested, never rebasing; a conflict starts a

@@ -230,6 +230,12 @@ message ProjectSettings {
   // A template command to run targeted tests covering a worker's change: "go tool task test-pkg -- {pkg}" or
   // "npm test -- {spec}". Shown in the brief when present.
   optional string test_one = 24 [(buf.validate.field).string.max_len = 500];
+  // When Djinn asks the developer to install and restart a build: never, when needed, or always.
+  // Not set: always.
+  optional InstallQuestions install_questions = 25 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.
@@ -398,6 +404,18 @@ enum PushStrategy {
   PUSH_STRATEGY_WISH = 1;
   // Azima: one integration branch per azima.
   PUSH_STRATEGY_AZIMA = 2;
+}
+
+// InstallQuestions is when Djinn asks the developer to install and restart a build: never, when needed, or always.
+enum InstallQuestions {
+  // Not set: always.
+  INSTALL_QUESTIONS_UNSPECIFIED = 0;
+  // Never raise an install or restart question; the banner and post-push install are enough.
+  INSTALL_QUESTIONS_NEVER = 1;
+  // Ask only when necessary: a build carries a fix for a task or question the developer is waiting on, a change that only takes effect after restart and matters now, or the running build is broken.
+  INSTALL_QUESTIONS_WHEN_NEEDED = 2;
+  // Always raise an install question for uninstalled builds (the default for other projects).
+  INSTALL_QUESTIONS_ALWAYS = 3;
 }
 
 // WishPush is where the push of a wish's integration branch to its remote stands, in one of its projects. Only Djinn

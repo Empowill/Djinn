@@ -44,6 +44,11 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   its option's letter (`B: …`): the developer applies it in one click, "Rub the lamp". `--before "before the merge"`
   says what the answer is needed before; without it the question can wait. A question a waiting task needs is
   blocking whatever it says: the window, the page and the brief list blocking, then before X, then can wait.
+- **Moves only the developer can make.** Granting a right, pushing a tag, opening or merging a PR, starting a
+  release, checking on a Mac or Windows, installing and restarting: the lead asks them through `djinn question ask`,
+  with the exact command in the question. In a project whose builds are installed after each push (such as Djinn itself,
+  or with `install_questions: when_needed`), ask the developer to install or restart only when necessary, and say why
+  in the question; never as routine.
 - **Investigations.** "Enlighten me" in the window (`djinn question enlighten <question> --note …`) asks to find out
   more before deciding: the question waits for a revision, and the brief lists it under "To investigate". Its
   question worker (below), or else the lead, answers with `djinn question revise <question> --context …

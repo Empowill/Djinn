@@ -608,3 +608,50 @@ func TestBriefRunningTaskModel(t *testing.T) {
 		t.Errorf("brief = %s\nwant to contain (claude · claude-sonnet-4-5, since ", brief.Moving)
 	}
 }
+
+// TestBriefInstallQuestionsRule: the lead's rule in briefRules reads the install_questions setting.
+func TestBriefInstallQuestionsRule(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		iq   planv1.InstallQuestions
+		want string
+	}{
+		{
+			name: "always",
+			iq:   planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS,
+			want: "grant a right, install and restart",
+		},
+		{
+			name: "when_needed",
+			iq:   planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED,
+			want: "in a project whose builds are installed after each push, ask to install only when necessary, saying why",
+		},
+		{
+			name: "never",
+			iq:   planv1.InstallQuestions_INSTALL_QUESTIONS_NEVER,
+			want: "in a project whose builds are installed after each push, never ask to install or restart",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rules := briefRules(tc.iq)
+			if !strings.Contains(rules, tc.want) {
+				t.Errorf("briefRules(%v) lacks %q:\n%s", tc.iq, tc.want, rules)
+			}
+		})
+	}
+
+	// Integration test with project settings
+	ctx := t.Context()
+	c, wish, repo := source(t)
+	home := t.TempDir()
+	writeSettings(t, filepath.Join(repo, SettingsFile), "install_questions: when_needed\n")
+
+	brief, err := BuildBrief(ctx, c.store, home, wish.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRule := "in a project whose builds are installed after each push, ask to install only when necessary, saying why"
+	if !strings.Contains(brief.Stable, wantRule) {
+		t.Errorf("brief.Stable lacks %q with when_needed settings:\n%s", wantRule, brief.Stable)
+	}
+}

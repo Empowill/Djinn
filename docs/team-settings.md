@@ -43,6 +43,7 @@ install: "go tool task install"
 | `test`           | The former name of a check run before each commit: `test: "make test"` is the check `test` at `commit`. | none |
 | `correction_attempts` | How many correction workers Djinn starts for work that conflicts in code or tests red, before it asks you: see [integration](#integration). `0`: it asks at once. | `2` |
 | `install`        | The command that installs the integration branch once pushed, in the project's folder: the window proposes it. | none: nothing proposed |
+| `install_questions` | When Djinn asks the developer to install builds: `always` (default), `when_needed` (only when necessary, stating why; for projects whose builds install automatically after each push), `never`. | `always` |
 | `main_branch`    | The project's main branch, which Djinn merges into each wish's integration branch: see [keeping up with main](#keeping-up-with-main). | the remote's default branch, else `main`, else `master` |
 | `merge_main`     | When Djinn merges it: `MERGE_MAIN_RELEASE` (once main holds a release the branch lacks), `MERGE_MAIN_COMMIT` (once it holds any commit the branch lacks), `MERGE_MAIN_OFF`. | at each release |
 | `merge_main_minutes` | How often, in minutes, Djinn fetches main to look at it, at most. A release the running Djinn finds makes it look at once. | `60` |
@@ -291,6 +292,13 @@ checkout nor in an integration worktree: an install never waits for an integrati
 says what it waits for (another install, a gate and who holds it, the machine under pressure), then that it builds, then
 that Djinn restarts; when it installed a newer Djinn at the path of the running one, Djinn restarts on it, as the update
 button does; otherwise it says the build is installed.
+
+By default (`install_questions: always`), Djinn raises an "Install and restart" question for uninstalled builds. With
+`install_questions: when_needed` (set in Djinn's own settings, whose builds are installed after each push), Djinn raises
+no routine question: the update banner and post-push install are enough. It asks only when necessary, stating why in the
+question and context: when a build carries the fix for a task or question you are waiting on (named), a change that takes
+effect after restart and matters now (such as a harness fix for failing workers, naming them), or when the running build is
+broken (a crash or failed check). With `install_questions: never`, no install questions are asked.
 
 The commands' words are split on spaces, without a shell. The integration branch of a wish is, in each project, the
 branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it.
