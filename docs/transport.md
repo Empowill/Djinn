@@ -31,10 +31,13 @@ fastest path their webview and kernel allow; Windows gets a path that works.
 - **The `wails://` handler** (Wails v3.0.0-beta.28, `internal/assetserver/webview`): every request gets its own
   goroutine, so a long stream starves nothing; each `Write` goes straight to a pipe that WebKitGTK reads (Linux)
   or to `didReceiveData` (macOS), and `Flush` has nothing to do. connect-go writes a message in two writes (5-byte
-  prefix, then payload) and flushes after it. On Linux the page reads them together (100 values took 100 reads);
-  on macOS, WebKit sometimes handed the page the prefix of a `WishService.Watch` message and held its payload back,
-  so the window never showed that change until a reload (5 runs in 6 of the native e2e). `server.WholeWrites`
-  gathers the writes until the flush: one chunk per message on `wails://`.
+  prefix, then payload) and flushes after it. On Linux the page reads them together (100 values took 100 reads).
+  On macOS, WebKit sometimes handed the page the prefix of a `WishService.Watch` message and held its payload back:
+  a question asked with `djinn question ask` did not show until a reload (5 runs in 6 of the native e2e, 0 in 13
+  with the fix). A held payload is a change the window never repairs: `WishService.Watch` sends only what changed,
+  and `UiService.Watch` carries show, update and load on one stream. `server.WholeWrites` (in `djinn up`, and in
+  `tools/windowcheck`) gathers a response's writes until connect-go flushes or the handler returns, and hands them
+  on in one write: one chunk per message on `wails://`.
   It answers 501 to a request whose handler wrote neither a header nor a byte, where net/http answers 200; an empty
   message in binary Protobuf is no byte at all, and connect-go then writes nothing (`TerminalService.Write`,
   `Resize`). `server.Handler` writes the 200 itself for the services.

@@ -185,7 +185,7 @@ func TestNativeWindow(t *testing.T) {
 			if err := d.eval(`const item = [...document.querySelectorAll(".wish-nav")]
 				.find((b) => b.textContent.includes(`+jsString(title)+`));
 				item?.click();
-				return { shown: document.querySelector(".hero h1")?.textContent ?? "" };`, &page); err != nil {
+				return { shown: document.querySelector(".wish-title")?.textContent ?? "" };`, &page); err != nil {
 				return err
 			}
 			if page.Shown != title {
@@ -197,7 +197,9 @@ func TestNativeWindow(t *testing.T) {
 		text := "Which lamp first " + d.token[:8] + "?"
 		ask := exec.Command(d.binary, "question", "ask", text, made.Msg.GetWish().GetId(),
 			"--options", "Brass", "--options", "Glass", "--recommendation", "B: lighter")
-		ask.Env = append(os.Environ(), "DJINN_HOME="+d.home)
+		// testx.Main set DJINN_ADDR for the whole test, and it wins over DJINN_HOME: name this djinn's address. The
+		// lead asks, not a worker: no DJINN_TASK_ID, even when a Djinn worker runs the test.
+		ask.Env = append(os.Environ(), "DJINN_HOME="+d.home, "DJINN_ADDR="+addr, "DJINN_TASK_ID=")
 		if out, err := ask.CombinedOutput(); err != nil {
 			t.Fatalf("djinn question ask: %v\n%s", err, out)
 		}
