@@ -688,6 +688,22 @@ func TestBriefConflictsRule(t *testing.T) {
 	}
 }
 
+// TestBriefOperationalDecisionsRule: Djinn's operational decisions go to the lead as events, not questions.
+func TestBriefOperationalDecisionsRule(t *testing.T) {
+	rules := briefRules(planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS)
+	for _, want := range []string{
+		"**Operational decisions are yours (Decision Q196).**",
+		"Djinn's operational questions",
+		"go to you as an event, never as a question to the developer",
+		"retry a correction, drop the work (`djinn task done <task> --drop` or `djinn task cancel`), re-sequence the graph (`djinn task depend`), or leave it waiting",
+		"Ask the developer only for moves only a person can make (a tag, a PR, a release, a right) or a real choice",
+	} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("briefRules lacks %q:\n%s", want, rules)
+		}
+	}
+}
+
 func TestBriefPrincipalListsOpenAnswersWithoutLead(t *testing.T) {
 	ctx := t.Context()
 	c := serve(t)
