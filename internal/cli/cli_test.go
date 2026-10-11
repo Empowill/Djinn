@@ -303,6 +303,14 @@ func (f tasks) Update(_ context.Context, req *connect.Request[planv1.TaskService
 	}}), nil
 }
 
+func (f tasks) Cancel(_ context.Context, req *connect.Request[planv1.TaskServiceCancelRequest]) (*connect.Response[planv1.TaskServiceCancelResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&planv1.TaskServiceCancelResponse{Task: &planv1.Task{
+		Id: req.Msg.GetTaskId(), Code: "W5", Status: planv1.TaskStatus_TASK_STATUS_CANCELLED,
+		Cancelled: &planv1.Cancellation{Note: req.Msg.GetNote()},
+	}}), nil
+}
+
 func (f questions) Answer(_ context.Context, req *connect.Request[planv1.QuestionServiceAnswerRequest]) (*connect.Response[planv1.QuestionServiceAnswerResponse], error) {
 	f.record(req.Msg)
 	if req.Msg.GetQuestion().GetCode() == "Q99" {
@@ -471,6 +479,7 @@ func TestRun(t *testing.T) {
 		{name: "wish push strategy set", args: []string{"wish", "push-strategy", wishID, "--strategy", "azima"}, wantOut: "strategy: azima\nsource: wish\n", wantCalled: true},
 		{name: "task update integration none", args: []string{"task", "update", taskID, "--integration", "none"}, wantCalled: true},
 		{name: "task update integration invalid", args: []string{"task", "update", taskID, "--integration", "other"}, wantCode: 2, wantErr: "--integration: must be in list [none]"},
+		{name: "task cancel", args: []string{"task", "cancel", taskID, "--note", "not needed"}, wantOut: "status: cancelled", wantCalled: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

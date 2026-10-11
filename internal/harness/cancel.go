@@ -25,27 +25,20 @@ func (h *Harness) Cancel(ctx context.Context, procedure string, req *planv1.Task
 	if plan.IsAzima(task) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is an azima: cannot cancel an azima", task.GetCode()))
 	}
-	switch s := task.GetStatus(); {
-	case s == planv1.TaskStatus_TASK_STATUS_DONE:
+	switch task.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_DONE:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is done already", task.GetCode()))
-	case s == planv1.TaskStatus_TASK_STATUS_CANCELLED:
+	case planv1.TaskStatus_TASK_STATUS_CANCELLED:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is cancelled already", task.GetCode()))
 	}
 
-	h.mu.Lock()
-	running := h.runs[id] != nil
-	h.mu.Unlock()
 	wasStatus := task.GetStatus()
 	wasError := task.GetError()
-	if running || wasStatus == planv1.TaskStatus_TASK_STATUS_RUNNING || wasStatus == planv1.TaskStatus_TASK_STATUS_PAUSED {
+	if wasStatus == planv1.TaskStatus_TASK_STATUS_RUNNING || wasStatus == planv1.TaskStatus_TASK_STATUS_PAUSED {
 		if _, err := h.Stop(ctx, procedure, &planv1.TaskServiceStopRequest{TaskId: id}); err != nil {
 			return nil, err
 		}
 		wasError = ""
-		task, err = store.Get[*planv1.Task](ctx, h.store, id)
-		if err != nil {
-			return nil, plan.Status(err)
-		}
 	}
 
 	h.answering.Lock()
@@ -57,10 +50,10 @@ func (h *Harness) Cancel(ctx context.Context, procedure string, req *planv1.Task
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	switch s := task.GetStatus(); {
-	case s == planv1.TaskStatus_TASK_STATUS_DONE:
+	switch task.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_DONE:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is done already", task.GetCode()))
-	case s == planv1.TaskStatus_TASK_STATUS_CANCELLED:
+	case planv1.TaskStatus_TASK_STATUS_CANCELLED:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is cancelled already", task.GetCode()))
 	}
 

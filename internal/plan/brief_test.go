@@ -425,6 +425,40 @@ func TestBriefFinished(t *testing.T) {
 	}
 }
 
+// TestBriefCancelled: the brief lists a cancelled task in its finished list with who and why.
+func TestBriefCancelled(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Cancelled work"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	day := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	task := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, Code: "W1", Title: "Useless task",
+		Status:     planv1.TaskStatus_TASK_STATUS_CANCELLED,
+		CreateTime: timestamppb.New(day), EndTime: timestamppb.New(day.Add(time.Hour)),
+		Cancelled: &planv1.Cancellation{Actor: planv1.Closer_CLOSER_LEAD, CreateTime: timestamppb.New(day.Add(time.Hour)), Note: "no longer needed"},
+	}
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal(actor, "test/put", task); err != nil {
+			return err
+		}
+		return tx.Put(task)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "- **W1** Useless task: cancelled, by the lead: no longer needed\n"
+	if !strings.Contains(brief.Moving, want) {
+		t.Errorf("brief does not list cancelled task:\n%s\nwant:\n%s", brief.Moving, want)
+	}
+}
+
 // TestBriefWorkStands: the brief says where each finished task's work stands on its way into the wish's integration
 // branch, and why a task waits for a dependency's work to be committed.
 func TestBriefWorkStands(t *testing.T) {
