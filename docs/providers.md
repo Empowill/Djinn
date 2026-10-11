@@ -252,7 +252,7 @@ command, are to check on a real run.
 
 ## When Djinn resumes a worker
 
-Djinn resumes a worker by itself, in the same task (status `resuming`), in two cases:
+Djinn resumes a worker by itself, in the same task (status `resuming`), in three cases:
 
 - **djinn up stopped or crashed while it ran.** At the next start the task is interrupted, then resumed, unless a
   person stopped it, it was imported, its worktree is gone, its wish is granted, or another task was forked from it
@@ -260,20 +260,53 @@ Djinn resumes a worker by itself, in the same task (status `resuming`), in two c
 - **Its provider's usage limit stopped it.** The task waits for the reset (status "waiting for the limit", with
   "the account's session limit, resets at 07:20"), then resumes. Without a reset time, it waits 15 minutes, then 30,
   doubling up to 2 hours. While a limit holds, no new worker of that provider starts.
+- **Preemption for an investigator worker.** When memory is short and an investigator worker ("Qxx: enlighten")
+  cannot start, Djinn makes room: it interrupts the running work task of lowest priority so that it resumes later in
+  its session or conversation (Claude, Antigravity), RESUMING with the wait reason "made room for Qxx: enlighten",
+  without consuming a resume attempt.
 
-The scheduler starts a resumed task like a planned one, first: slots, pressure and gates still apply. After 3
-resumes without finishing, the task fails, saying so. What each agent gets:
+The scheduler starts a resumed task like a planned one: slots, pressure and gates still apply. After 3
+resumes without finishing (unspent by preemption, pauses, or grants), the task fails, saying so. What each agent gets:
 
 | Agent  | Resumed with                                                                                                       |
 | ------ | ------------------------------------------------------------------------------------------------------------------ |
-| Claude | `--resume <session>`, and "Djinn restarted while you worked; your worktree is as you left it. Continue your task." |
+| Claude | `--resume <session>`, and "Djinn restarted while you worked; your worktree is as you left it. Continue your task." (or "Djinn interrupted your worker to make room for an investigator…") |
 | Codex  | `thread/resume` on its thread, and the same line                                                                   |
-| agy    | `--conversation <session>`, and the resume line (restarted, limit, answer, continue), like claude; from the first prompt only when no conversation id is known |
+| agy    | `--conversation <session>`, and the resume line (restarted, limit, answer, continue, preempted), like claude; from the first prompt only when no conversation id is known |
 
 The limits Djinn recognizes, in the failure a worker ends with (`internal/harness/limit.go`): Claude's
 `rate_limit_event` with status `rejected` (its `rateLimitType` and `resetsAt`) and its messages "You've hit your
 session limit · resets …" or "Claude AI usage limit reached|<time>"; Codex's `usageLimitExceeded`; agy's
 `RESOURCE_EXHAUSTED` (supposed); a rate limit or HTTP 429 from any of them.
+
+## The scheduler's order and preemption
+
+The scheduler (`internal/dispatch`) starts planned and resuming tasks in a strict 5-tier order (Q117, A):
+
+1. **Investigator workers** (`Enlighten me`), followed by answer workers (`Rub the lamp`). Question workers skip the worker slot count, but wait if the machine is under pressure or memory is short.
+2. **Correction workers**, then **review workers** (finished work waits on them to enter the branch, and its dependents wait with it).
+3. **Resumed work tasks** (`RESUMING`: limits, restarts, preemption).
+4. **Work tasks that unblock others**: the critical path, sorted descending by the transitive count of planned and waiting work tasks that depend on them.
+5. **Other work tasks**.
+
+Within each level, tasks are ordered by the wish's rank, then the oldest creation time (`create_time`). Watchers and inbox sources stay outside the slot and model queue.
+
+### Memory queue and wait reasons
+When memory is short for a task at the front of the queue, subsequent work tasks wait behind it with explicit wait reasons:
+- Behind an investigator: `"an investigator goes first: <reason>"`
+- Behind an answer worker: `"an answer worker goes first: <reason>"`
+- Behind a correction worker: `"a correction goes first: <reason>"`
+- Behind a review worker: `"a review goes first: <reason>"`
+- Behind a work task: `"<code|a work task> goes first: <reason>"`
+
+An investigator is never held behind a waiting work task. If memory is short, it goes first in the queue, and work tasks wait behind it. Under real machine pressure, an investigator waits saying `"the machine is under pressure: <pressure>"`.
+
+### Preemption for investigators
+When an investigator cannot start, Djinn makes room:
+- **No free slot**: Djinn pauses the running work task of lowest priority (the last wish by rank, then the most recently started), starts the investigator, and resumes the paused task as soon as the investigator ends.
+- **Memory short**: A pause frees the slot and CPU but not the memory held by the stopped process. When memory blocks an investigator, Djinn interrupts the running work task of lowest priority so that it resumes later in its session or conversation (`plan.CanResume`), entering status `RESUMING` with the reason `"made room for Qxx: enlighten"`, without spending a resume attempt.
+- **Exclusions**: Djinn never preempts a task holding or waiting for a gate, never a correction or review worker, never a provider that cannot resume, and never pauses on Windows where process tree suspension is refused. At most one task is preempted per investigator. Each preemption records an event on both tasks and an entry in the journal (`harness/preempt`).
+
 
 ## Watch: a command, no agent
 

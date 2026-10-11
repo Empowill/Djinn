@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -553,5 +554,215 @@ func TestProviderPeaks(t *testing.T) {
 	}
 	if len(peaks) != 2 {
 		t.Errorf("expected 2 providers, got %d", len(peaks))
+	}
+}
+
+// TestStrict5TierOrder verifies the 5-tier dispatch order and tie-breaking:
+//  1. Investigator workers, then answer workers;
+//  2. Correction workers, then review workers;
+//  3. Resumed work tasks;
+//  4. Critical path: work tasks that unblock others (most waiting/planned dependents first);
+//  5. Other work tasks.
+//
+// Within each tier/subtier: wish rank, oldest first, task ID.
+func TestStrict5TierOrder(t *testing.T) {
+	at := time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)
+	wishA := &planv1.Wish{Id: "wishA", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
+	wishB := &planv1.Wish{Id: "wishB", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 2}
+	wishes := []*planv1.Wish{wishA, wishB}
+
+	makeTask := func(id, wish string, status planv1.TaskStatus, age time.Duration, opts ...func(*planv1.Task)) *planv1.Task {
+		tk := &planv1.Task{
+			Id: id, Code: id, WishId: wish, Status: status, Scheduled: true,
+			CreateTime: timestamppb.New(at.Add(-age)),
+		}
+		for _, opt := range opts {
+			opt(tk)
+		}
+		return tk
+	}
+
+	// Tier 1: Investigator and Converter
+	invB := makeTask("inv_b", "wishB", planv1.TaskStatus_TASK_STATUS_PENDING, 10*time.Minute, func(tk *planv1.Task) {
+		tk.Role = planv1.TaskRole_TASK_ROLE_INVESTIGATOR
+	})
+	invA := makeTask("inv_a", "wishA", planv1.TaskStatus_TASK_STATUS_PENDING, 5*time.Minute, func(tk *planv1.Task) {
+		tk.Role = planv1.TaskRole_TASK_ROLE_INVESTIGATOR
+	})
+	conv := makeTask("conv_a", "wishA", planv1.TaskStatus_TASK_STATUS_PENDING, 20*time.Minute, func(tk *planv1.Task) {
+		tk.Role = planv1.TaskRole_TASK_ROLE_CONVERTER
+	})
+
+	// Tier 2: Correction and Review
+	corr := makeTask("corr_a", "wishA", planv1.TaskStatus_TASK_STATUS_PENDING, 10*time.Minute, func(tk *planv1.Task) {
+		tk.Correction = &planv1.TaskCorrection{}
+	})
+	rev := makeTask("rev_a", "wishA", planv1.TaskStatus_TASK_STATUS_PENDING, 10*time.Minute, func(tk *planv1.Task) {
+		tk.Review = &planv1.TaskReview{}
+	})
+
+	// Tier 3: Resumed work tasks
+	resB := makeTask("res_b", "wishB", planv1.TaskStatus_TASK_STATUS_RESUMING, 30*time.Minute)
+	resA := makeTask("res_a", "wishA", planv1.TaskStatus_TASK_STATUS_RESUMING, 15*time.Minute)
+
+	// Tier 4: Critical path work tasks
+	// block2 unblocks mid and leaf (2 dependents)
+	block2 := makeTask("block_2deps", "wishA", planv1.TaskStatus_TASK_STATUS_PENDING, 10*time.Minute)
+	// block1 unblocks leaf2 (1 dependent)
+	block1 := makeTask("block_1dep", "wishA", planv1.TaskStatus_TASK_STATUS_PENDING, 10*time.Minute)
+	mid := makeTask("mid", "wishA", planv1.TaskStatus_TASK_STATUS_PENDING, 10*time.Minute, func(tk *planv1.Task) {
+		tk.DependsOn = []string{"block_2deps"}
+	})
+	leaf := makeTask("leaf", "wishA", planv1.TaskStatus_TASK_STATUS_WAITING, 10*time.Minute, func(tk *planv1.Task) {
+		tk.DependsOn = []string{"mid"}
+		tk.Scheduled = false
+	})
+	leaf2 := makeTask("leaf2", "wishA", planv1.TaskStatus_TASK_STATUS_PENDING, 10*time.Minute, func(tk *planv1.Task) {
+		tk.DependsOn = []string{"block_1dep"}
+	})
+
+	// Tier 5: Other work tasks (0 dependents)
+	otherAOld := makeTask("other_a_old", "wishA", planv1.TaskStatus_TASK_STATUS_PENDING, 30*time.Minute)
+	otherAYoung := makeTask("other_a_young", "wishA", planv1.TaskStatus_TASK_STATUS_PENDING, 5*time.Minute)
+	otherB := makeTask("other_b", "wishB", planv1.TaskStatus_TASK_STATUS_PENDING, 25*time.Minute)
+
+	tasks := []*planv1.Task{
+		otherB, otherAYoung, otherAOld, leaf2, leaf, mid, block1, block2,
+		resA, resB, rev, corr, conv, invA, invB,
+	}
+
+	ordered := New(tasks, wishes, nil, nil).At(at).Order()
+	var gotIDs []string
+	for _, tk := range ordered {
+		gotIDs = append(gotIDs, tk.GetId())
+	}
+
+	wantIDs := []string{
+		"inv_a",         // Tier 1, sub 0, wish rank 1
+		"inv_b",         // Tier 1, sub 0, wish rank 2
+		"conv_a",        // Tier 1, sub 1
+		"corr_a",        // Tier 2, sub 0
+		"rev_a",         // Tier 2, sub 1
+		"res_a",         // Tier 3, wish rank 1
+		"res_b",         // Tier 3, wish rank 2
+		"block_2deps",   // Tier 4, 2 dependents
+		"block_1dep",    // Tier 4, 1 dependent (ID tie-break before mid)
+		"mid",           // Tier 4, 1 dependent
+		"other_a_old",   // Tier 5, wish rank 1, age 30m
+		"leaf2",         // Tier 5, wish rank 1, age 10m
+		"other_a_young", // Tier 5, wish rank 1, age 5m
+		"other_b",       // Tier 5, wish rank 2
+	}
+
+	if !slices.Equal(gotIDs, wantIDs) {
+		t.Errorf("Order():\ngot:  %v\nwant: %v", gotIDs, wantIDs)
+	}
+}
+
+// TestInvestigatorPriorityAndMemory verifies that investigators take memory before work tasks,
+// that work tasks held back by an investigator/answer/correction/review report the specific reason,
+// and that investigators still wait under pressure.
+func TestInvestigatorPriorityAndMemory(t *testing.T) {
+	at := time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)
+	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
+
+	workTask := &planv1.Task{
+		Id: "w1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Scheduled: true, CreateTime: timestamppb.New(at.Add(-time.Hour)),
+	}
+	invTask := &planv1.Task{
+		Id: "q1", WishId: "w", Code: "Q1", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Scheduled: true, Role: planv1.TaskRole_TASK_ROLE_INVESTIGATOR,
+		CreateTime: timestamppb.New(at), // created after W1
+	}
+
+	// 1. Investigator skips slot: starts when all slots are full
+	mFull := &Machine{Slots: 1, Running: 1, Rule: "test"}
+	pass := func(tasks []*planv1.Task, mach *Machine) map[string]string {
+		got := map[string]string{}
+		for _, d := range New(tasks, []*planv1.Wish{wish}, nil, mach).At(at).Pass() {
+			got[d.Task.GetId()] = d.Why
+		}
+		return got
+	}
+
+	got := pass([]*planv1.Task{workTask, invTask}, mFull)
+	if got["q1"] != "" {
+		t.Errorf("investigator should start without slot, got why: %q", got["q1"])
+	}
+	if got["w1"] == "" {
+		t.Error("work task should wait for slot")
+	}
+
+	// 2. Machine under pressure: investigator still waits, saying why
+	mPressure := &Machine{Slots: 1, Pressure: "high load"}
+	got = pass([]*planv1.Task{invTask}, mPressure)
+	if got["q1"] != "the machine is under pressure: high load" {
+		t.Errorf("investigator under pressure: got %q, want 'the machine is under pressure: high load'", got["q1"])
+	}
+
+	// 3. Memory for one task only: investigator takes it, work task waits
+	tightPolicy := machine.Policy{
+		WorkerPeak:   1 * machine.GiB,
+		WorkerMargin: 512 * machine.MiB,
+	}
+	mMem := &Machine{
+		Slots: 4, Rule: "test", Total: 10 * machine.GiB, Available: 2 * machine.GiB,
+		Policy: tightPolicy,
+	}
+	got = pass([]*planv1.Task{workTask, invTask}, mMem)
+	if got["q1"] != "" {
+		t.Errorf("investigator should take memory, got why: %q", got["q1"])
+	}
+	if got["w1"] == "" {
+		t.Error("work task should wait when memory taken by investigator")
+	}
+
+	// 4. Memory short for investigator: investigator goes first, work task waits behind it saying so
+	mNoRoom := &Machine{
+		Slots: 4, Rule: "test", Total: 10 * machine.GiB, Available: 1 * machine.GiB,
+		Policy: tightPolicy,
+	}
+	got = pass([]*planv1.Task{workTask, invTask}, mNoRoom)
+	if got["q1"] == "" {
+		t.Error("investigator should wait when memory is short")
+	}
+	if !strings.HasPrefix(got["w1"], "an investigator goes first: ") {
+		t.Errorf("work task held back by investigator: got %q, want prefix 'an investigator goes first: '", got["w1"])
+	}
+
+	// 5. Memory short reasons for other priority roles when memory is insufficient
+
+	// a) Answer worker
+	convTask := &planv1.Task{
+		Id: "c1", WishId: "w", Code: "C1", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Scheduled: true, Role: planv1.TaskRole_TASK_ROLE_CONVERTER,
+		CreateTime: timestamppb.New(at.Add(-2 * time.Hour)),
+	}
+	got = pass([]*planv1.Task{convTask, workTask}, mNoRoom)
+	if !strings.HasPrefix(got["w1"], "an answer worker goes first: ") {
+		t.Errorf("work task held back by converter: got %q, want prefix 'an answer worker goes first: '", got["w1"])
+	}
+
+	// b) Correction worker
+	corrTask := &planv1.Task{
+		Id: "corr1", WishId: "w", Code: "W_corr", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Scheduled: true, Correction: &planv1.TaskCorrection{},
+		CreateTime: timestamppb.New(at.Add(-2 * time.Hour)),
+	}
+	got = pass([]*planv1.Task{corrTask, workTask}, mNoRoom)
+	if !strings.HasPrefix(got["w1"], "a correction goes first: ") {
+		t.Errorf("work task held back by correction: got %q, want prefix 'a correction goes first: '", got["w1"])
+	}
+
+	// c) Review worker
+	revTask := &planv1.Task{
+		Id: "rev1", WishId: "w", Code: "W_rev", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Scheduled: true, Review: &planv1.TaskReview{},
+		CreateTime: timestamppb.New(at.Add(-2 * time.Hour)),
+	}
+	got = pass([]*planv1.Task{revTask, workTask}, mNoRoom)
+	if !strings.HasPrefix(got["w1"], "a review goes first: ") {
+		t.Errorf("work task held back by review: got %q, want prefix 'a review goes first: '", got["w1"])
 	}
 }
