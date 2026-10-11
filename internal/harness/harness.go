@@ -147,6 +147,7 @@ type run struct {
 	stopping     bool
 	shelved      bool                 // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
 	paused       bool                 // the worker holds still: it takes no slot
+	notchPaused  bool                 // paused by the operating load notch
 	holdWhy      string               // why the worker holds still (preemption or pause reason)
 	preemptedWhy string               // if set, stopping to make room for an investigator
 	watcher      bool                 // a watcher runs a command, and takes no slot
@@ -679,7 +680,7 @@ func (h *Harness) spawn(
 	var preemptedCode string
 	if task.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
 		if why != "" && isMemoryShort(why) {
-			if code, err := h.preemptForMemory(ctx, task); err == nil && code != "" {
+			if code, err := h.interruptPausedForMemory(ctx, task); err == nil && code != "" {
 				preemptedCode = code
 				if fresh, err3 := store.List[*planv1.Task](ctx, h.store, nil); err3 == nil {
 					tasks = fresh
@@ -692,9 +693,38 @@ func (h *Harness) spawn(
 					}
 				}
 			}
+			if why != "" && isMemoryShort(why) {
+				if code, err := h.preemptForMemory(ctx, task); err == nil && code != "" {
+					preemptedCode = code
+					if fresh, err3 := store.List[*planv1.Task](ctx, h.store, nil); err3 == nil {
+						tasks = fresh
+					}
+					if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
+						for _, d := range sit2.Pass() {
+							if d.Task == task {
+								why, failed = d.Why, d.Failed
+							}
+						}
+					}
+				}
+			}
 		} else if why == "" && h.slotsFull() {
 			if code, err := h.preemptForSlot(ctx, task); err == nil && code != "" {
 				preemptedCode = code
+			}
+		}
+	} else if why != "" && isMemoryShort(why) {
+		if code, err := h.interruptPausedForMemory(ctx, task); err == nil && code != "" {
+			preemptedCode = code
+			if fresh, err3 := store.List[*planv1.Task](ctx, h.store, nil); err3 == nil {
+				tasks = fresh
+			}
+			if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
+				for _, d := range sit2.Pass() {
+					if d.Task == task {
+						why, failed = d.Why, d.Failed
+					}
+				}
 			}
 		}
 	}
@@ -1841,15 +1871,23 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
 	}
 	r.paused = pause
-	if pause && len(why) > 0 {
-		r.holdWhy = why[0]
+	if pause {
+		r.notchPaused = (procedure == methodNotch)
+		if len(why) > 0 {
+			r.holdWhy = why[0]
+		}
+	} else {
+		r.notchPaused = false
+		if len(why) > 0 {
+			r.holdWhy = why[0]
+		}
 	}
 	h.mu.Unlock()
 	if pause {
 		h.wake() // Its slot is free.
 	}
 	actor := actorLocal
-	if procedure == methodPreempt {
+	if procedure == methodPreempt || procedure == methodNotch {
 		actor = actorHarness
 	}
 	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Journal(actor, procedure, req) }); err != nil {
@@ -1916,7 +1954,11 @@ func (h *Harness) writeHold(r *run) {
 		t.Runs = append(t.Runs, &planv1.TaskRun{
 			StartTime: nowPb,
 		})
-		h.write(r, actorHarness, methodHold, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "resumed"})
+		text := "resumed"
+		if holdWhy != "" {
+			text = "resumed: " + holdWhy
+		}
+		h.write(r, actorHarness, methodHold, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	}
 }
 

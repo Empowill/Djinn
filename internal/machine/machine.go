@@ -92,6 +92,8 @@ type Policy struct {
 	// MemoryShare is the maximum fraction of total RAM Djinn may commit in peak forecasts (0.20 to 1.50).
 	// On max (1.0), all RAM except WorkerMargin may be committed; overclock (1.50) may exceed what the rule engages.
 	MemoryShare float64
+	// Auto is whether the operating load is currently managed by auto mode.
+	Auto bool
 	// A local model runs on an NVIDIA or AMD GPU, its driver loaded, with ModelGPUMemory of its own; on Apple
 	// Silicon with ModelMemory of unified memory; else on the CPU, slowly, with ModelMemory. Its weights need
 	// ModelDisk free on the disk of the data folder.
@@ -320,6 +322,33 @@ func NotchName(notch djinnv1.LoadNotch) string {
 // NotchName is the name of the policy's load notch.
 func (p Policy) NotchName() string {
 	return NotchName(p.Notch)
+}
+
+// NotchTitle returns the title-case name of a notch (e.g. "Minimal", "Medium", "High", "Max", "Overclock", "Auto").
+func NotchTitle(notch djinnv1.LoadNotch) string {
+	switch notch {
+	case djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL:
+		return "Minimal"
+	case djinnv1.LoadNotch_LOAD_NOTCH_LIGHT:
+		return "Light"
+	case djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED:
+		return "Medium"
+	case djinnv1.LoadNotch_LOAD_NOTCH_HIGH:
+		return "High"
+	case djinnv1.LoadNotch_LOAD_NOTCH_MAX:
+		return "Max"
+	case djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK:
+		return "Overclock"
+	case djinnv1.LoadNotch_LOAD_NOTCH_AUTO:
+		return "Auto"
+	default:
+		return "Medium"
+	}
+}
+
+// NotchTitle returns the title-case name of the policy's load notch.
+func (p Policy) NotchTitle() string {
+	return NotchTitle(p.Notch)
 }
 
 // LowPriority reports whether the load notch runs workers with low CPU priority.

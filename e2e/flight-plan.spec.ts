@@ -73,6 +73,7 @@ const lampOf = (wishId: string, title: string) => {
         title: "Read the map",
         status: "TASK_STATUS_DONE",
         provider: "PROVIDER_CODEX",
+        model: "custom-local",
         usage: {
           input_tokens: "1200",
           output_tokens: "300",
@@ -169,9 +170,7 @@ test("the flight plan merges two wishes, and a question is answered from it", as
     .locator(".wish-spent");
   await expect(lampSpent).toContainText("cache read");
   await expect(lampSpent).toContainText("0.42");
-  await expect(lampSpent).toContainText(
-    "1 task without a cost: its agent gives tokens only",
-  );
+  await expect(lampSpent).toContainText("1 task without a price in the table");
   await page.screenshot({
     path: path.join(__dirname, "../test-results/e2e/flight-plan.png"),
     fullPage: true,
@@ -213,7 +212,9 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   const azimaCard = page.locator(".azima-card");
   await azimaCard.locator(".azima-heading").click();
   const w2 = page.locator(".wish-task").filter({ hasText: "Read the map" });
-  await expect(w2.locator(".task-usage")).toHaveText(/^6\.5\s?K tokens$/);
+  await expect(w2.locator(".task-usage")).toHaveText(
+    /^6\.5\s?K tokens · no price in the table$/,
+  );
   await page.getByRole("tab", { name: /^For agents/ }).click();
   await expect(page.locator(".wish-block")).toContainText("About W1");
   await page.getByRole("tab", { name: /^Wish/ }).click();

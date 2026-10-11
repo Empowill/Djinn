@@ -439,10 +439,17 @@ const WorkerRow = memo(function WorkerRow({
   const memFormatted = `${formatBytes(lastMem)} · ${t("consumption.peak", { peak: formatBytes(worker.peakMemoryBytes) })}`;
 
   return (
-    <div className="consumption-worker-row">
+    <div
+      className={`consumption-worker-row ${worker.paused ? "is-paused" : ""}`}
+    >
       <div className="consumption-worker-meta">
         <div className="consumption-worker-head">
           <span className="agent-code">{worker.code}</span>
+          {worker.paused && (
+            <span className="consumption-worker-paused-badge">
+              {t("consumption.paused")}
+            </span>
+          )}
           <span className={`provider-badge ${provClass}`}>{prov}</span>
           {modelShort && (
             <span className="consumption-worker-model">{modelShort}</span>

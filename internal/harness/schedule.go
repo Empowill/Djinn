@@ -61,8 +61,12 @@ func WithTotal(total func() uint64) Option {
 
 // SetPolicy updates the scheduling policy and wakes the scheduler for the next pass.
 func (h *Harness) SetPolicy(p machine.Policy) {
+	h.updatePriorities(p.LowPriority())
 	h.sched.Lock()
 	h.policy.Store(&p)
+	if !p.Auto && h.capacity != nil {
+		h.enforceNotchCapacity(h.ctx, p)
+	}
 	h.sched.Unlock()
 	h.wake()
 }
@@ -208,6 +212,15 @@ func planned(t *planv1.Task) bool { return dispatch.Planned(t) }
 func (h *Harness) schedule(ctx context.Context) {
 	h.sched.Lock()
 	defer h.sched.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
+	p := h.Policy()
+	if !p.Auto && h.capacity != nil {
+		h.enforceNotchCapacity(ctx, p)
+	}
+	h.resumeNotchPaused(ctx)
+
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
 		if ctx.Err() == nil {
@@ -236,6 +249,14 @@ func (h *Harness) schedule(ctx context.Context) {
 		case d.Failed != "":
 			h.failPlanned(ctx, t, d.Failed)
 		case d.Why != "":
+			if isMemoryShort(d.Why) {
+				if code, err := h.interruptPausedForMemory(ctx, t); err == nil && code != "" {
+					if err := h.launchPlannedWithPreemption(ctx, t, code); err != nil {
+						log.Printf("djinn: task %s: %v", t.GetCode(), err)
+					}
+					continue
+				}
+			}
 			if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && isMemoryShort(d.Why) {
 				if code, err := h.preemptForMemory(ctx, t); err == nil && code != "" {
 					if err := h.launchPlannedWithPreemption(ctx, t, code); err != nil {
@@ -402,7 +423,7 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 // launchPlannedWithPreemption starts the worker of a planned task, recording an event if a task was preempted to make room.
 func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Task, preemptedCode string) error {
 	if dispatch.Resuming(t) {
-		return h.relaunch(ctx, t)
+		return h.relaunch(ctx, t, preemptedCode)
 	}
 	t = proto.CloneOf(t)
 	t.WaitReason = ""
