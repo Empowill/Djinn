@@ -850,6 +850,7 @@ func (q *Questions) Answer(
 		}
 		by := req.Msg.GetBy()
 		taskID := req.Msg.GetTaskId()
+		leadID := req.Msg.GetLead()
 		if by == planv1.Closer_CLOSER_PLAN_FILE {
 			return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("a plan file does not answer questions"))
 		}
@@ -860,7 +861,11 @@ func (q *Questions) Answer(
 				return err
 			}
 		} else if actor == planv1.Closer_CLOSER_UNSPECIFIED {
-			actor = planv1.Closer_CLOSER_LEAD
+			if leadID != "" {
+				actor = planv1.Closer_CLOSER_LEAD
+			} else {
+				actor = planv1.Closer_CLOSER_DEVELOPER
+			}
 		}
 		question.Answer = &planv1.Answer{
 			Choice:     choice,
@@ -1192,6 +1197,7 @@ func (q *Questions) Withdraw(
 		}
 		by := req.Msg.GetBy()
 		taskID := req.Msg.GetTaskId()
+		leadID := req.Msg.GetLead()
 		if by == planv1.Closer_CLOSER_PLAN_FILE {
 			return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("a plan file does not withdraw questions"))
 		}
@@ -1202,7 +1208,11 @@ func (q *Questions) Withdraw(
 				return err
 			}
 		} else if actor == planv1.Closer_CLOSER_UNSPECIFIED {
-			actor = planv1.Closer_CLOSER_LEAD
+			if leadID != "" {
+				actor = planv1.Closer_CLOSER_LEAD
+			} else {
+				actor = planv1.Closer_CLOSER_DEVELOPER
+			}
 		}
 		question.Withdrawal = &planv1.Withdrawal{
 			Note:       req.Msg.GetNote(),

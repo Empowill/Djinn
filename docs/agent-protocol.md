@@ -140,8 +140,10 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   in a discreet last tab, **For agents**, folded, with no mark. What the developer must see is a question.
 - **Who did it.** `djinn block put`, `djinn question ask` and `djinn question revise` take `--task-id`, by default
   `$DJINN_TASK_ID`, which Djinn sets for every worker (`(djinn.v1.env)` in the protos): a worker's decision block
-  reads "By W12" in the decision log, its revision "Revised by W12" on the page; the lead's, run without the
-  variable, stay the lead's.
+  reads "By W12" in the decision log, its revision "Revised by W12" on the page. Djinn marks the lead's terminal
+  with `$DJINN_LEAD` (its wish ID): `djinn question answer` and `djinn question withdraw` take `--lead` from it,
+  attributing them to the lead and not echoing them back; a plain shell has neither variable, attributing answers
+  to the developer so they reach the lead as a message.
 - **The page.** `djinn wish sync <wish>` renders the wish's page in Go and prints its file, kept up to date. The lead
   republishes that file as it is; it never writes the HTML.
 - **The developer's word.** `djinn wish grant <wish>` says a wish is done. Only the developer says it.

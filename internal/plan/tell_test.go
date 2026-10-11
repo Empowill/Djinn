@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 )
@@ -232,11 +233,13 @@ func TestLeadAnswerNotToldToLead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 1. Answer by the lead (unspecified By, no TaskId -> CLOSER_LEAD): not told to the lead.
+	// 1. Answer from the lead's terminal (Lead set to wish id, as $DJINN_LEAD does):
+	// attributed to CLOSER_LEAD and NOT told to the lead.
 	q1 := c.ask(t, id, "A", "B")
 	if _, err := c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
 		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q1.GetId()}},
 		Choice:   planv1.Choice_CHOICE_A,
+		Lead:     id,
 	})); err != nil {
 		t.Fatal(err)
 	}
@@ -248,26 +251,43 @@ func TestLeadAnswerNotToldToLead(t *testing.T) {
 		t.Errorf("actor = %v, want CLOSER_LEAD", saved1.GetAnswer().GetActor())
 	}
 
-	// 2. Answer with explicit CLOSER_LEAD: not told to the lead.
+	// 2. Answer from a plain shell (neither Lead nor TaskId set, no By):
+	// defaults to CLOSER_DEVELOPER and IS told to the lead.
 	q2 := c.ask(t, id, "A", "B")
 	if _, err := c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
 		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q2.GetId()}},
 		Choice:   planv1.Choice_CHOICE_B,
-		By:       planv1.Closer_CLOSER_LEAD,
 	})); err != nil {
 		t.Fatal(err)
 	}
-	if len(leads.said) != 0 {
-		t.Errorf("lead answer was told to the lead: %v", leads.said)
-	}
-
-	// 3. Answer by the developer (By: CLOSER_DEVELOPER): IS told to the lead.
-	q3 := c.ask(t, id, "A", "B")
-	c.answer(t, q3, planv1.Choice_CHOICE_A, "looks good")
 	if len(leads.said) != 1 {
-		t.Fatalf("developer answer was not told to the lead: %v", leads.said)
+		t.Fatalf("plain shell answer was not told to the lead: %v", leads.said)
 	}
-	if !strings.Contains(leads.said[0], "Q03 answered A") {
-		t.Errorf("said = %q, want Q03 answered A", leads.said[0])
+	if !strings.Contains(leads.said[0], "Q02 answered B") {
+		t.Errorf("said = %q, want Q02 answered B", leads.said[0])
+	}
+	saved2 := c.questionOf(t, q2.GetId())
+	if saved2.GetAnswer().GetActor() != planv1.Closer_CLOSER_DEVELOPER {
+		t.Errorf("actor = %v, want CLOSER_DEVELOPER", saved2.GetAnswer().GetActor())
+	}
+	leads.said = nil
+
+	// 3. Answer by a worker ($DJINN_TASK_ID): attributed to its task.
+	taskID := uuid.NewString()
+	c.put(t, &planv1.Task{
+		Id: taskID, WishId: id, Code: "W01", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+	})
+	q3 := c.ask(t, id, "A", "B")
+	if _, err := c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q3.GetId()}},
+		Choice:   planv1.Choice_CHOICE_A,
+		TaskId:   taskID,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	saved3 := c.questionOf(t, q3.GetId())
+	if saved3.GetAnswer().GetActor() != planv1.Closer_CLOSER_UNSPECIFIED || saved3.GetAnswer().GetTaskId() != taskID {
+		t.Errorf("worker answer: actor = %v, taskId = %q, want CLOSER_UNSPECIFIED and %q",
+			saved3.GetAnswer().GetActor(), saved3.GetAnswer().GetTaskId(), taskID)
 	}
 }

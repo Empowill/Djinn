@@ -6658,10 +6658,14 @@ type QuestionServiceAnswerRequest struct {
 	Note string `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
 	// Wish of the question, needed only when its code exists in several wishes.
 	WishId string `protobuf:"bytes,4,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
-	// The task whose worker answers; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead.
+	// The task whose worker answers; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead or
+	// the developer.
 	TaskId string `protobuf:"bytes,5,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	// Who answers; by default the lead (or a worker if task_id is set). The window and developer CLI say developer.
-	By            Closer `protobuf:"varint,6,opt,name=by,proto3,enum=plan.v1.Closer" json:"by,omitempty"`
+	// Who answers: CLOSER_DEVELOPER from the window or an external shell, CLOSER_LEAD from the lead's terminal (or
+	// DJINN_LEAD), CLOSER_UNSPECIFIED with task_id for a worker.
+	By Closer `protobuf:"varint,6,opt,name=by,proto3,enum=plan.v1.Closer" json:"by,omitempty"`
+	// Wish of the lead whose terminal answers; by default $DJINN_LEAD, which Djinn sets in the lead's terminal.
+	Lead          string `protobuf:"bytes,7,opt,name=lead,proto3" json:"lead,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6736,6 +6740,13 @@ func (x *QuestionServiceAnswerRequest) GetBy() Closer {
 		return x.By
 	}
 	return Closer_CLOSER_UNSPECIFIED
+}
+
+func (x *QuestionServiceAnswerRequest) GetLead() string {
+	if x != nil {
+		return x.Lead
+	}
+	return ""
 }
 
 type QuestionServiceAnswerResponse struct {
@@ -7061,10 +7072,13 @@ type QuestionServiceWithdrawRequest struct {
 	Note string `protobuf:"bytes,2,opt,name=note,proto3" json:"note,omitempty"`
 	// Wish of the question, needed only when its code exists in several wishes.
 	WishId string `protobuf:"bytes,3,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
-	// The task whose worker withdraws; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead.
+	// The task whose worker withdraws; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead or
+	// the developer.
 	TaskId string `protobuf:"bytes,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	// Who withdraws; by default the lead (or a worker if task_id is set). The window and developer CLI say developer.
-	By            Closer `protobuf:"varint,5,opt,name=by,proto3,enum=plan.v1.Closer" json:"by,omitempty"`
+	By Closer `protobuf:"varint,5,opt,name=by,proto3,enum=plan.v1.Closer" json:"by,omitempty"`
+	// Wish of the lead whose terminal withdraws; by default $DJINN_LEAD, which Djinn sets in the lead's terminal.
+	Lead          string `protobuf:"bytes,6,opt,name=lead,proto3" json:"lead,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7132,6 +7146,13 @@ func (x *QuestionServiceWithdrawRequest) GetBy() Closer {
 		return x.By
 	}
 	return Closer_CLOSER_UNSPECIFIED
+}
+
+func (x *QuestionServiceWithdrawRequest) GetLead() string {
+	if x != nil {
+		return x.Lead
+	}
+	return ""
 }
 
 type QuestionServiceWithdrawResponse struct {
@@ -16544,14 +16565,16 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06before\x18\b \x01(\tB\a\xbaH\x04r\x02\x18dR\x06before\x12\x12\n" +
 	"\x04move\x18\t \x01(\bR\x04move\"K\n" +
 	"\x1aQuestionServiceAskResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xb4\x02\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xe3\x02\n" +
 	"\x1cQuestionServiceAnswerRequest\x128\n" +
 	"\bquestion\x18\x01 \x01(\v2\x14.plan.v1.QuestionRefB\x06\xbaH\x03\xc8\x01\x01R\bquestion\x124\n" +
 	"\x06choice\x18\x02 \x01(\x0e2\x0f.plan.v1.ChoiceB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\x06choice\x12\x1c\n" +
 	"\x04note\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x04note\x12$\n" +
 	"\awish_id\x18\x04 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x125\n" +
 	"\atask_id\x18\x05 \x01(\tB\x1c\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01\xf2\xf3\x18\rDJINN_TASK_IDR\x06taskId\x12)\n" +
-	"\x02by\x18\x06 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02by\"N\n" +
+	"\x02by\x18\x06 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02by\x12-\n" +
+	"\x04lead\x18\a \x01(\tB\x19\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01\xf2\xf3\x18\n" +
+	"DJINN_LEADR\x04lead\"N\n" +
 	"\x1dQuestionServiceAnswerResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xda\x01\n" +
 	"\x1aQuestionServiceListRequest\x12\x12\n" +
@@ -16573,13 +16596,15 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\awish_id\x18\x04 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"q\n" +
 	"\x1bQuestionServiceMoveResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\x12#\n" +
-	"\x05tasks\x18\x02 \x03(\v2\r.plan.v1.TaskR\x05tasks\"\x80\x02\n" +
+	"\x05tasks\x18\x02 \x03(\v2\r.plan.v1.TaskR\x05tasks\"\xaf\x02\n" +
 	"\x1eQuestionServiceWithdrawRequest\x128\n" +
 	"\bquestion\x18\x01 \x01(\v2\x14.plan.v1.QuestionRefB\x06\xbaH\x03\xc8\x01\x01R\bquestion\x12\x1c\n" +
 	"\x04note\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x04note\x12$\n" +
 	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x125\n" +
 	"\atask_id\x18\x04 \x01(\tB\x1c\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01\xf2\xf3\x18\rDJINN_TASK_IDR\x06taskId\x12)\n" +
-	"\x02by\x18\x05 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02by\"P\n" +
+	"\x02by\x18\x05 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02by\x12-\n" +
+	"\x04lead\x18\x06 \x01(\tB\x19\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01\xf2\xf3\x18\n" +
+	"DJINN_LEADR\x04lead\"P\n" +
 	"\x1fQuestionServiceWithdrawResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"b\n" +
 	"\x18ProjectServiceAddRequest\x12)\n" +

@@ -1500,14 +1500,22 @@ message QuestionServiceAnswerRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
-  // The task whose worker answers; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead.
+  // The task whose worker answers; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead or
+  // the developer.
   string task_id = 5 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true,
     (djinn.v1.env) = "DJINN_TASK_ID"
   ];
-  // Who answers; by default the lead (or a worker if task_id is set). The window and developer CLI say developer.
+  // Who answers: CLOSER_DEVELOPER from the window or an external shell, CLOSER_LEAD from the lead's terminal (or
+  // DJINN_LEAD), CLOSER_UNSPECIFIED with task_id for a worker.
   Closer by = 6 [(buf.validate.field).enum.defined_only = true];
+  // Wish of the lead whose terminal answers; by default $DJINN_LEAD, which Djinn sets in the lead's terminal.
+  string lead = 7 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_LEAD"
+  ];
 }
 
 message QuestionServiceAnswerResponse {
@@ -1574,7 +1582,8 @@ message QuestionServiceWithdrawRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
-  // The task whose worker withdraws; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead.
+  // The task whose worker withdraws; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead or
+  // the developer.
   string task_id = 4 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true,
@@ -1582,6 +1591,12 @@ message QuestionServiceWithdrawRequest {
   ];
   // Who withdraws; by default the lead (or a worker if task_id is set). The window and developer CLI say developer.
   Closer by = 5 [(buf.validate.field).enum.defined_only = true];
+  // Wish of the lead whose terminal withdraws; by default $DJINN_LEAD, which Djinn sets in the lead's terminal.
+  string lead = 6 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_LEAD"
+  ];
 }
 
 message QuestionServiceWithdrawResponse {
