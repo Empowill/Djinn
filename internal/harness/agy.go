@@ -495,8 +495,10 @@ type agyLine struct {
 	Init           *struct {
 		Model string `json:"model"`
 	} `json:"init"`
-	StepUpdate *agyStep   `json:"step_update"`
-	Result     *agyResult `json:"result"`
+	StepUpdate *agyStep        `json:"step_update"`
+	Result     *agyResult      `json:"result"`
+	Error      json.RawMessage `json:"error"`
+	Message    json.RawMessage `json:"message"`
 }
 
 type agyStep struct {
@@ -515,6 +517,8 @@ type agyStep struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	} `json:"tool_info"`
+	Error   json.RawMessage `json:"error"`
+	Message json.RawMessage `json:"message"`
 }
 
 type agyResult struct {
@@ -542,6 +546,33 @@ type agyUsage struct {
 // agyContinuePrompt is what Djinn says when agy ended its turn on one of its own model retry prompts.
 const agyContinuePrompt = "continue where you stopped, keep answers and edits short"
 
+// extractAgyError extracts an error message string from agy error JSON payloads, handling strings or nested objects.
+func extractAgyError(raw json.RawMessage, fallback string) string {
+	if len(raw) > 0 {
+		var s string
+		if json.Unmarshal(raw, &s) == nil && s != "" {
+			return s
+		}
+		var obj struct {
+			Message json.RawMessage `json:"message"`
+			Error   json.RawMessage `json:"error"`
+			Content json.RawMessage `json:"content"`
+		}
+		if json.Unmarshal(raw, &obj) == nil {
+			if str := extractAgyError(obj.Message, ""); str != "" {
+				return str
+			}
+			if str := extractAgyError(obj.Error, ""); str != "" {
+				return str
+			}
+			if str := extractAgyError(obj.Content, ""); str != "" {
+				return str
+			}
+		}
+	}
+	return fallback
+}
+
 // isAgyRetryPrompt says whether text is one of agy's own retry prompts to its model (malformed
 // function call, output token limit, or transient model retry error) rather than the agent's final answer.
 func isAgyRetryPrompt(text string) bool {
@@ -550,6 +581,8 @@ func isAgyRetryPrompt(text string) bool {
 	case strings.Contains(lower, "improperly formatted function call"):
 		return true
 	case strings.Contains(lower, "malformed function call"):
+		return true
+	case strings.Contains(lower, "properly formatted function call"):
 		return true
 	case strings.Contains(lower, "output token limit"):
 		return true
@@ -570,6 +603,10 @@ type agyParser struct {
 	toolsIn map[int]bool             // tool steps whose call is said already
 	retries int                      // retry prompt continuations sent by Djinn
 
+	sessionID   string
+	turnEnded   bool
+	turnRetried bool
+
 	// The last tool step started, and whether it gave an output: a denial ends the turn, and the denied step
 	// ends without output, or does not end (real runs, agy 1.3.0).
 	lastStep     int
@@ -577,6 +614,46 @@ type agyParser struct {
 	lastAnswered bool
 	denied       string // the permission named by the denial notice on the error output, when one came
 	failed       bool   // a result said the turn failed: the notice adds nothing
+}
+
+func (p *agyParser) retryOrEnd(events *lineEvents, convID, retryText string) *turnEnd {
+	if p.turnEnded {
+		return nil
+	}
+	p.turnEnded = true
+	if p.retries < 3 {
+		p.retries++
+		p.turnRetried = true
+		ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "continued: "+agyContinuePrompt)
+		ev.SessionID = convID
+		return &turnEnd{retry: agyContinuePrompt}
+	}
+	p.failed = true
+	events.add(planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, retryText)
+	return &turnEnd{failure: retryText}
+}
+
+func (p *agyParser) errorEvent(events *lineEvents, m *agyLine) *turnEnd {
+	convID := m.ConversationID
+	if convID == "" {
+		convID = p.sessionID
+	}
+	errText := extractAgyError(m.Error, extractAgyError(m.Message, ""))
+	if isAgyRetryPrompt(errText) {
+		*events = append(*events, p.cut()...)
+		return p.retryOrEnd(events, convID, errText)
+	}
+	if p.turnEnded {
+		return nil
+	}
+	p.turnEnded = true
+	p.failed = true
+	*events = append(*events, p.cut()...)
+	if errText == "" {
+		errText = "agy error"
+	}
+	events.add(planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, errText)
+	return &turnEnd{failure: errText}
 }
 
 func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
@@ -589,6 +666,7 @@ func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
 	what, silent := m.Event, false
 	switch {
 	case m.Event == "init":
+		p.sessionID = m.ConversationID
 		text := "session " + m.ConversationID
 		var model string
 		if m.Init != nil && m.Init.Model != "" {
@@ -601,7 +679,9 @@ func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
 	case m.Event == "step_update" && m.StepUpdate != nil:
 		s := m.StepUpdate
 		what = "step " + s.StepType + " " + s.State
-		silent = p.step(&events, s)
+		silent, end = p.step(&events, s)
+	case m.Event == "error":
+		end = p.errorEvent(&events, &m)
 	case m.Event == "result" && m.Result != nil:
 		end = p.result(&events, m.Result)
 	}
@@ -612,7 +692,31 @@ func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
 }
 
 // step reads a step update, and says whether Djinn knows its kind: a known step may say nothing yet.
-func (p *agyParser) step(events *lineEvents, s *agyStep) bool {
+func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
+	if s.ConversationID != "" {
+		p.sessionID = s.ConversationID
+	}
+	if p.turnRetried && (s.StepType == "user_input" || s.StepType == "agent_response" || s.StepType == "tool") {
+		p.turnEnded = false
+		p.turnRetried = false
+	}
+	if s.StepType == "user_input" {
+		p.turnEnded = false
+	}
+	stepErr := extractAgyError(s.Error, extractAgyError(s.Message, ""))
+	if s.ToolInfo != nil && s.ToolInfo.Error != nil && stepErr == "" {
+		stepErr = s.ToolInfo.Error.Message
+	}
+	if isAgyRetryPrompt(stepErr) {
+		convID := s.ConversationID
+		if convID == "" {
+			convID = p.sessionID
+		}
+		delete(p.toolsIn, s.StepIndex)
+		p.forget(s.StepIndex)
+		*events = append(*events, p.cut()...)
+		return true, p.retryOrEnd(events, convID, stepErr)
+	}
 	switch s.StepType {
 	case "user_input", "checkpoint", "system_message":
 		// The prompt Djinn sent, and agy's own bookkeeping: nothing to say.
@@ -674,13 +778,16 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) bool {
 			delete(p.toolsIn, s.StepIndex)
 		}
 	default:
-		return false
+		return false, nil
 	}
-	return true
+	return true, nil
 }
 
 func (p *agyParser) result(events *lineEvents, r *agyResult) *turnEnd {
-	end := &turnEnd{}
+	convID := r.ConversationID
+	if convID == "" {
+		convID = p.sessionID
+	}
 	*events = append(*events, p.cut()...)
 	retryText := ""
 	if isAgyRetryPrompt(r.Error) {
@@ -688,33 +795,32 @@ func (p *agyParser) result(events *lineEvents, r *agyResult) *turnEnd {
 	} else if isAgyRetryPrompt(r.Response) {
 		retryText = r.Response
 	}
-	// SUCCESS, or ERROR, CANCELED, INTERRUPTED, INVALID, WAITING (--print-timeout reached), RUNNING.
-	switch {
-	case retryText != "":
-		if p.retries < 3 {
-			p.retries++
-			end.retry = agyContinuePrompt
-			ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "continued: "+agyContinuePrompt)
-			ev.SessionID = r.ConversationID
+	var end *turnEnd
+	if !p.turnEnded {
+		if retryText != "" {
+			end = p.retryOrEnd(events, convID, retryText)
 		} else {
-			end.failure = retryText
+			p.turnEnded = true
+			end = &turnEnd{}
+			switch {
+			case r.Status != "SUCCESS":
+				end.failure = r.Error
+				if end.failure == "" {
+					end.failure = "agy ended its turn with status " + r.Status
+				}
+			case len(r.DeniedActions) > 0:
+				// A turn with a denial says SUCCESS, but the denial ended it: the work was not done.
+				actions := make([]string, len(r.DeniedActions))
+				for i, a := range r.DeniedActions {
+					actions[i] = a.Action
+				}
+				end.failure = p.deniedReason(actions)
+			}
+			if end.failure != "" {
+				p.failed = true
+				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, end.failure)
+			}
 		}
-	case r.Status != "SUCCESS":
-		end.failure = r.Error
-		if end.failure == "" {
-			end.failure = "agy ended its turn with status " + r.Status
-		}
-	case len(r.DeniedActions) > 0:
-		// A turn with a denial says SUCCESS, but the denial ended it: the work was not done.
-		actions := make([]string, len(r.DeniedActions))
-		for i, a := range r.DeniedActions {
-			actions[i] = a.Action
-		}
-		end.failure = p.deniedReason(actions)
-	}
-	if end.failure != "" {
-		p.failed = true
-		events.add(planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, end.failure)
 	}
 	// The usage of a result is what the whole conversation spent so far. agy gives no cost: tokens only. Its
 	// thinking tokens are counted as written ones.

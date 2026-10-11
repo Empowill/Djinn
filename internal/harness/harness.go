@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -168,6 +169,8 @@ type run struct {
 	limit       *Limit        // the usage limit the current worker said it hit: it wins over failure
 	refused     string        // the last call its permissions refused, as the worker said it (question.go)
 	envReplayed bool          // a tool call/result already triggered replay of env failures
+	startHead   string        // HEAD commit when the worker started
+	answered    bool          // worker gave its final answer (text after tool calls)
 }
 
 // newRun is the run of task, its next event after seq, registered so that a watcher never misses its first events.
@@ -763,6 +766,18 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	t := r.task
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, timestamppb.Now(), nil, 0, ""
 	r.failure, r.limit = "", nil
+	r.answered = false
+	if r.startHead == "" {
+		wt := t.GetWorktree()
+		if wt == "" {
+			wt = spec.Dir
+		}
+		if wt != "" {
+			if head, err := git(h.ctx, wt, "rev-parse", "HEAD"); err == nil {
+				r.startHead = strings.TrimSpace(head)
+			}
+		}
+	}
 	fresh(t)
 	if foreignModel(t.GetProvider(), spec.Model) {
 		spec.Model = DefaultModel(t.GetProvider())
@@ -943,6 +958,12 @@ func (h *Harness) record(r *run, ev Event) {
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
 		r.failure = ev.Text
 	}
+	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TEXT && strings.TrimSpace(ev.Text) != "" && !strings.HasSuffix(ev.Text, " [cut]") {
+		r.answered = true
+	}
+	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL {
+		r.answered = false
+	}
 	if ev.Limit != nil {
 		r.limit = ev.Limit
 	}
@@ -1020,6 +1041,62 @@ func (h *Harness) finish(r *run, res Result) {
 	}
 }
 
+// agyDoneAfterWork checks whether an antigravity worker already gave its final answer and committed its work
+// (worktree clean, branch ahead with commits made in this run) and only then ended on a model retry prompt.
+func (h *Harness) agyDoneAfterWork(r *run, res Result) bool {
+	if r.task.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY {
+		return false
+	}
+	if !r.answered {
+		return false
+	}
+	errText := r.failure
+	if errText == "" && res.Err != nil {
+		errText = res.Err.Error()
+	}
+	if !isAgyRetryPrompt(errText) {
+		return false
+	}
+	wt := r.task.GetWorktree()
+	if wt == "" {
+		return false
+	}
+	uncomm, err := uncommitted(h.ctx, r.task)
+	if err != nil || len(uncomm) > 0 {
+		return false
+	}
+	if r.startHead == "" {
+		return false
+	}
+	curHead, err := git(h.ctx, wt, "rev-parse", "HEAD")
+	if err != nil || curHead == "" {
+		return false
+	}
+	curHead = strings.TrimSpace(curHead)
+	if curHead == r.startHead {
+		return false
+	}
+	if _, err := git(h.ctx, wt, "merge-base", "--is-ancestor", r.startHead, curHead); err != nil {
+		return false
+	}
+	countStr, err := git(h.ctx, wt, "rev-list", "--count", r.startHead+".."+curHead)
+	if err != nil {
+		return false
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(countStr))
+	if err != nil || count <= 0 {
+		return false
+	}
+	if branch := r.task.GetBranch(); branch != "" {
+		if branchHead, err := git(h.ctx, wt, "rev-parse", "--verify", "refs/heads/"+branch); err == nil {
+			if strings.TrimSpace(branchHead) != curHead {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // end gives the task its final status, then lets its watchers go. A task whose worker read while it asks whether
 // it may edit waits for the answer. A task is done only when its worker ended without an error, whatever its
 // provider: an error it reported, an exit code other than 0, or an error it said on the way, even when its
@@ -1053,6 +1130,10 @@ func (h *Harness) end(r *run, res Result) {
 		t.Status, t.Error, t.EndTime, t.ExitCode, t.WaitReason = planv1.TaskStatus_TASK_STATUS_PENDING, "", nil, 0, whyStoppedFirst
 	case h.ctx.Err() != nil:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "djinn up stopped while the worker ran"
+	case h.agyDoneAfterWork(r, res):
+		t.Status, t.Error, t.ExitCode = planv1.TaskStatus_TASK_STATUS_DONE, "", 0
+		res.Err, res.ExitCode, r.failure = nil, 0, ""
+		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "agy ended on a model error after the work was done"})
 	case res.Err != nil:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, res.Err.Error()
 	case res.ExitCode != 0:
