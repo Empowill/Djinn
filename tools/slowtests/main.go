@@ -28,15 +28,21 @@ import (
 // with why it cannot be fast. Keep it empty.
 var allowed = map[string]string{
 	// Real djinn up processes: each test starts one or two full djinn up servers and CLI commands.
-	"github.com/empowill/djinn/cmd/djinn TestUpdateFromRelease":             "two real djinn up processes, one restarting into the other",
-	"github.com/empowill/djinn/cmd/djinn TestCrashReopensTheLeads":          "two real djinn up processes across a kill",
-	"github.com/empowill/djinn/cmd/djinn TestUpdate":                        "two real djinn up processes across a restart",
-	"github.com/empowill/djinn/cmd/djinn TestWishResume":                    "a real djinn up process and a djinn CLI invocation",
-	"github.com/empowill/djinn/cmd/djinn TestCrashResumesTheWorkers":        "two real djinn up processes across a kill",
-	"github.com/empowill/djinn/cmd/djinn TestWindowTerminalOpensInAProject": "a real djinn up process and a djinn CLI invocation",
-	"github.com/empowill/djinn/internal/testx/bigwish TestSizes":            "generates a 10x wish with thousands of tasks and events",
-	"github.com/empowill/djinn/internal/harness TestRestartResumesInOrder":  "starts 7 sequential workers across a simulated restart",
-	"github.com/empowill/djinn/internal/harness TestSummonAtLaunch":         "creates two git repositories and spawns tasks for multiple providers",
+	"github.com/empowill/djinn/cmd/djinn TestUpdateFromRelease":                                     "two real djinn up processes, one restarting into the other",
+	"github.com/empowill/djinn/cmd/djinn TestCrashReopensTheLeads":                                  "two real djinn up processes across a kill",
+	"github.com/empowill/djinn/cmd/djinn TestUpdate":                                                "two real djinn up processes across a restart",
+	"github.com/empowill/djinn/cmd/djinn TestWishResume":                                            "a real djinn up process and a djinn CLI invocation",
+	"github.com/empowill/djinn/cmd/djinn TestCrashResumesTheWorkers":                                "two real djinn up processes across a kill",
+	"github.com/empowill/djinn/cmd/djinn TestWindowTerminalOpensInAProject":                         "a real djinn up process and a djinn CLI invocation",
+	"github.com/empowill/djinn/internal/testx/bigwish TestSizes":                                    "generates a 10x wish with thousands of tasks and events",
+	"github.com/empowill/djinn/internal/harness TestRestartResumesInOrder":                          "starts 7 sequential workers across a simulated restart",
+	"github.com/empowill/djinn/internal/harness TestSummonAtLaunch":                                 "creates two git repositories and spawns tasks for multiple providers",
+	"github.com/empowill/djinn/internal/harness TestAzimaPRGlabRetargetAndReady":                    "runs multiple git passes and glab integrations against real git repos",
+	"github.com/empowill/djinn/internal/harness TestAzimaPRRetargetAfterMerge":                      "runs multiple git passes and PR retargeting against real git repos",
+	"github.com/empowill/djinn/internal/harness TestAzimaPRStackedProposal":                         "runs multiple git passes and stacked PR proposals against real git repos",
+	"github.com/empowill/djinn/internal/harness TestAzimaFollowMainMergePushed":                     "runs multiple git passes and merge operations against real git repos",
+	"github.com/empowill/djinn/internal/harness TestAzimaFollowMainRebaseUnpushedWithRemoteAskMode": "runs multiple git passes and rebases against real git repos",
+	"github.com/empowill/djinn/internal/harness TestAzimaDependentBranchStacked":                    "runs multiple git passes and branch stacking against real git repos",
 }
 
 // event is a line of go test -json (go doc test2json).

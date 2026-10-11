@@ -282,22 +282,27 @@ func (sub *watcher) read(ctx context.Context, s *store.Store, wishID string, p *
 		}
 		changed.Deleted = append(changed.Deleted, deleted...)
 	}
-	if changed.Questions, err = readAll[*planv1.Question](ctx, s, p.questions, &changed.Deleted); err != nil {
+	if changed.Questions, err = readAll[*planv1.Question](ctx, s, wishID, p.questions, &changed.Deleted); err != nil {
 		return nil, false, err
 	}
-	if changed.Blocks, err = readAll[*planv1.Block](ctx, s, p.blocks, &changed.Deleted); err != nil {
+	if changed.Blocks, err = readAll[*planv1.Block](ctx, s, wishID, p.blocks, &changed.Deleted); err != nil {
 		return nil, false, err
 	}
 	return changed, reshaped, nil
 }
 
+type wishEntity interface {
+	proto.Message
+	GetWishId() string
+}
+
 // readAll reads the entities of ids, in their order; those no longer there go to deleted.
-func readAll[T proto.Message](ctx context.Context, s *store.Store, ids map[string]bool, deleted *[]string) ([]T, error) {
+func readAll[T wishEntity](ctx context.Context, s *store.Store, wishID string, ids map[string]bool, deleted *[]string) ([]T, error) {
 	var out []T
 	for _, id := range slices.Sorted(maps.Keys(ids)) {
 		m, err := store.Get[T](ctx, s, id)
 		switch {
-		case errors.Is(err, store.ErrNotFound):
+		case errors.Is(err, store.ErrNotFound) || (wishID != "" && !strings.EqualFold(m.GetWishId(), wishID)):
 			*deleted = append(*deleted, id)
 		case err != nil:
 			return nil, err
@@ -344,12 +349,12 @@ func (sub *watcher) readTasks(ctx context.Context, s *store.Store, wishID string
 	for _, id := range slices.Sorted(maps.Keys(ids)) {
 		t, err := store.Get[*planv1.Task](ctx, s, id)
 		switch {
-		case errors.Is(err, store.ErrNotFound):
+		case errors.Is(err, store.ErrNotFound) || (wishID != "" && !strings.EqualFold(t.GetWishId(), wishID)):
 			deleted = append(deleted, id)
 			if shapes[id] != nil {
 				delete(shapes, id)
-				reshaped = true
 			}
+			reshaped = true
 			continue
 		case err != nil:
 			return nil, nil, false, err
