@@ -738,6 +738,16 @@ func TestBriefOperationalDecisionsRule(t *testing.T) {
 	}
 }
 
+// TestBriefCancelRule: the lead cancels a task no longer useful with djinn task cancel, never marks it done.
+func TestBriefCancelRule(t *testing.T) {
+	rules := briefRules(planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS)
+	want := "a task no longer useful is cancelled, never marked done: `djinn task cancel <task> --note \"…\"` " +
+		"stops its worker, removes its worktree (its branch stays) and drops its work from integration"
+	if !strings.Contains(rules, want) {
+		t.Errorf("briefRules lacks %q:\n%s", want, rules)
+	}
+}
+
 func TestBriefPrincipalListsOpenAnswersWithoutLead(t *testing.T) {
 	ctx := t.Context()
 	c := serve(t)
