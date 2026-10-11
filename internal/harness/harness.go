@@ -118,14 +118,16 @@ type Harness struct {
 	mainTested       map[string]mainTested // by wish/project; owned by the integration's pass
 	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
 
-	mu      sync.Mutex
-	closed  bool
-	held    func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
-	waiting func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
-	outside func() int                   // the gates held outside the running workers (GatesOutside); nil: none
-	version string                       // version of the running binary (WithVersion)
-	runs    map[string]*run              // by task id
-	changed chan struct{}                // closed at the next change of a task without worker (notifyLocked)
+	mu        sync.Mutex
+	closed    bool
+	held      func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
+	waiting   func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
+	outside   func() int                   // the gates held outside the running workers (GatesOutside); nil: none
+	version   string                       // version of the running binary (WithVersion)
+	runs      map[string]*run              // by task id
+	changed   chan struct{}                // closed at the next change of a task without worker (notifyLocked)
+	preempted map[string]string            // investigator task ID -> paused work task ID, guarded by mu
+	goos      func() string                // runtime.GOOS; nil: runtime.GOOS
 }
 
 // run is a task at work: its worker, or the workers it runs one after the other when the task starts again.
@@ -139,16 +141,18 @@ type run struct {
 	holds chan chan struct{} // a pause or a resume for the pump to write; closed once written
 
 	// Guarded by Harness.mu.
-	worker   Worker
-	stopping bool
-	shelved  bool                 // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
-	paused   bool                 // the worker holds still: it takes no slot
-	watcher  bool                 // a watcher runs a command, and takes no slot
-	light    bool                 // a question worker reads and runs djinn's commands: it takes no slot
-	final    bool                 // the task is getting its final status: an answer waits for done instead
-	answers  []*planv1.Question   // answers to the task's edit question, for the pump to apply
-	use      *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one
-	subs     map[chan *planv1.TaskEvent]struct{}
+	worker       Worker
+	stopping     bool
+	shelved      bool                 // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
+	paused       bool                 // the worker holds still: it takes no slot
+	holdWhy      string               // why the worker holds still (preemption or pause reason)
+	preemptedWhy string               // if set, stopping to make room for an investigator
+	watcher      bool                 // a watcher runs a command, and takes no slot
+	light        bool                 // a question worker reads and runs djinn's commands: it takes no slot
+	final        bool                 // the task is getting its final status: an answer waits for done instead
+	answers      []*planv1.Question   // answers to the task's edit question, for the pump to apply
+	use          *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one
+	subs         map[chan *planv1.TaskEvent]struct{}
 
 	// Owned by whoever writes the task: Spawn, then the pump.
 	task        *planv1.Task
@@ -199,7 +203,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
 		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{},
-		installed: map[string]string{},
+		installed: map[string]string{}, preempted: map[string]string{},
 	}
 	def := machine.DefaultPolicy()
 	h.policy.Store(&def)
@@ -486,6 +490,28 @@ func (h *Harness) spawn(
 			why, failed = d.Why, d.Failed
 		}
 	}
+	var preemptedCode string
+	if task.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+		if why != "" && isMemoryShort(why) {
+			if code, err := h.preemptForMemory(ctx, task); err == nil && code != "" {
+				preemptedCode = code
+				if fresh, err3 := store.List[*planv1.Task](ctx, h.store, nil); err3 == nil {
+					tasks = fresh
+				}
+				if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
+					for _, d := range sit2.Pass() {
+						if d.Task == task {
+							why, failed = d.Why, d.Failed
+						}
+					}
+				}
+			}
+		} else if why == "" && h.slotsFull() {
+			if code, err := h.preemptForSlot(ctx, task); err == nil && code != "" {
+				preemptedCode = code
+			}
+		}
+	}
 	switch {
 	case failed != "":
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the task would never start: %s", failed))
@@ -510,6 +536,11 @@ func (h *Harness) spawn(
 	}
 	var prep prepared
 	prompted := newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
+	var preEv *planv1.TaskEvent
+	if preemptedCode != "" {
+		r.seq++
+		preEv = newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
+	}
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal(spawner(task), procedure, req); err != nil {
 			return err
@@ -536,13 +567,24 @@ func (h *Harness) spawn(
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		return tx.Put(prompted)
+		if err := tx.Put(prompted); err != nil {
+			return err
+		}
+		if preEv != nil {
+			if err := tx.Put(preEv); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		h.forget(r)
 		return nil, plan.Status(err)
 	}
 	h.publish(r, prompted)
+	if preEv != nil {
+		h.publish(r, preEv)
+	}
 	if len(blocked) > 0 {
 		h.wake() // The tasks it blocks say what they wait for now.
 	}
@@ -1108,7 +1150,7 @@ func (h *Harness) end(r *run, res Result) {
 		}
 	}
 	h.mu.Lock()
-	stopping, shelved := r.stopping, r.shelved
+	stopping, shelved, preemptedWhy := r.stopping, r.shelved, r.preemptedWhy
 	h.mu.Unlock()
 	t := r.task
 	if (t.GetModel() == "" || foreignModel(t.GetProvider(), t.GetModel())) && !r.watcher {
@@ -1116,6 +1158,8 @@ func (h *Harness) end(r *run, res Result) {
 	}
 	t.EndTime, t.ExitCode = timestamppb.Now(), int32(res.ExitCode)
 	switch {
+	case preemptedWhy != "":
+		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy
 	case stopping:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, "stopped on request"
 	case shelved:
@@ -1160,6 +1204,8 @@ func (h *Harness) end(r *run, res Result) {
 	}
 	text := short(t.GetStatus())
 	switch {
+	case preemptedWhy != "":
+		text = "resuming: " + preemptedWhy
 	case shelved:
 		text = "resuming: " + whyWishPaused
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING:
@@ -1415,7 +1461,7 @@ func (h *Harness) Resume(ctx context.Context, procedure string, req *planv1.Task
 }
 
 // hold pauses or resumes the task's worker, then waits until its pump has written the task so, or the task ended.
-func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message, id string, pause bool) (*planv1.Task, error) {
+func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message, id string, pause bool, why ...string) (*planv1.Task, error) {
 	task, err := store.Get[*planv1.Task](ctx, h.store, id)
 	if err != nil {
 		return nil, plan.Status(err)
@@ -1467,11 +1513,18 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
 	}
 	r.paused = pause
+	if pause && len(why) > 0 {
+		r.holdWhy = why[0]
+	}
 	h.mu.Unlock()
 	if pause {
 		h.wake() // Its slot is free.
 	}
-	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Journal(actorLocal, procedure, req) }); err != nil {
+	actor := actorLocal
+	if procedure == methodPreempt {
+		actor = actorHarness
+	}
+	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Journal(actor, procedure, req) }); err != nil {
 		return nil, plan.Status(err)
 	}
 	written := make(chan struct{})
@@ -1495,13 +1548,18 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 func (h *Harness) writeHold(r *run) {
 	h.mu.Lock()
 	paused := r.paused
+	holdWhy := r.holdWhy
+	r.holdWhy = ""
 	h.mu.Unlock()
 	t := r.task
 	switch {
 	case paused && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING:
 		t.Status = planv1.TaskStatus_TASK_STATUS_PAUSED
-		h.write(r, actorHarness, methodHold, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
-			Text: "paused: the worker holds still, and frees its slot"})
+		text := "paused: the worker holds still, and frees its slot"
+		if holdWhy != "" {
+			text = "paused: " + holdWhy
+		}
+		h.write(r, actorHarness, methodHold, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	case !paused && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED:
 		t.Status = planv1.TaskStatus_TASK_STATUS_RUNNING
 		h.write(r, actorHarness, methodHold, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "resumed"})
