@@ -893,3 +893,51 @@ func TestBriefHeldPush(t *testing.T) {
 		t.Errorf("brief lacks %q:\n%s", want, brief.Moving)
 	}
 }
+
+// TestBriefComments: diff review comments on tasks appear in the brief with file, lines, and resolution status.
+func TestBriefComments(t *testing.T) {
+	ctx := t.Context()
+	c, wish, _ := source(t)
+	tasks, err := store.List[*planv1.Task](ctx, c.store, store.Where{"wish_id": wish.GetId(), "code": "W1"})
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("W1: %v, %v", tasks, err)
+	}
+	task := tasks[0]
+	task.Comments = []*planv1.TaskComment{
+		{
+			Id:       store.NewID(),
+			File:     "src/main.go",
+			Line:     10,
+			EndLine:  10,
+			Text:     "Check boundary condition",
+			Resolved: false,
+		},
+		{
+			Id:       store.NewID(),
+			File:     "src/utils.go",
+			Line:     20,
+			EndLine:  25,
+			Text:     "Refactored helper function",
+			Resolved: true,
+		},
+	}
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("test", "test/put", task); err != nil {
+			return err
+		}
+		return tx.Put(task)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wish.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(brief.Moving, "- Comment on src/main.go, line 10 (unresolved): Check boundary condition") {
+		t.Errorf("brief lacks unresolved comment:\n%s", brief.Moving)
+	}
+	if !strings.Contains(brief.Moving, "- Comment on src/utils.go, lines 20-25 (resolved): Refactored helper function") {
+		t.Errorf("brief lacks resolved comment:\n%s", brief.Moving)
+	}
+}

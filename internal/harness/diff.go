@@ -26,6 +26,7 @@ func (h *Harness) Diff(ctx context.Context, procedure string, req *planv1.TaskSe
 	if err != nil {
 		return nil, err
 	}
+	_, _ = h.checkCommentsResolution(ctx, task)
 	if task.GetProjectId() == "" {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s has no project", task.GetCode()))
 	}
