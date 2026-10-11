@@ -78,6 +78,11 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 	case state.GetApproved():
 		return // The person said to push: pushApproved pushes, at the end of this pass.
 	}
+	if id := state.GetCorrectedBy(); id != "" {
+		if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
+			return // The correction worker is running; push checks run after it is committed.
+		}
+	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wishID})
 	if err != nil {
 		log.Printf("djinn: push: %v", err)
@@ -87,6 +92,9 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 	committed := committedSince(tasks, project.GetId(), since)
 	every := time.Duration(wish.GetPushAfterMinutes()) * time.Minute
 	why := pushDue(committed, tasks, since, h.now(), cmp.Or(every, DefaultPushAfter), int(cmp.Or(wish.GetPushAfterTasks(), DefaultPushTasks)))
+	if state.GetHeld() != "" && why == "" && len(committed) > 0 {
+		why = "push checks corrected"
+	}
 	if why != "" {
 		if _, err := h.push(ctx, wish, project, committed, why, false); err != nil {
 			log.Printf("djinn: push %s: %v", project.GetId(), err)
@@ -265,22 +273,24 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 	state := pushState(wish, project.GetId())
 	unchecked := approved && state.GetUnchecked()
 	if !unchecked {
-		var held, out string
+		var cmd, held, out string
 		var stopped bool
 		if settings, err := plan.LoadSettings(h.home, project); err != nil {
 			held = err.Error()
 		} else {
-			held, out, stopped = h.pushChecks(pushing, wish, project, settings, branch, sha, committed)
+			cmd, held, out, stopped = h.pushChecks(pushing, wish, project, settings, branch, sha, committed)
 		}
 		switch {
 		case stopped || pushing.Err() != nil:
 			return nil, pushing.Err()
 		case held != "":
-			h.holdPush(ctx, wish, project, committed, branch, sha, held, out)
+			h.holdPush(ctx, wish, project, committed, branch, sha, cmd, held, out)
 			return nil, fmt.Errorf("the push is held: its checks are red (%s)", held)
 		case state.GetHeld() != "" || state.GetHeldRuns() > 0:
 			err := h.store.Tx(ctx, func(tx *store.Tx) error {
-				return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) { p.Held, p.HeldRuns = "", 0 })
+				return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
+					p.Held, p.HeldRuns, p.CorrectedBy, p.Attempts, p.FailedSha, p.Failure = "", 0, "", 0, "", nil
+				})
 			})
 			if err != nil {
 				log.Printf("djinn: push %s: %v", branch, err)
@@ -327,6 +337,7 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
 			p.Last, p.QuestionId, p.Refused, p.Approved = record, "", "", false
 			p.Held, p.HeldRuns, p.Unchecked = "", 0, false
+			p.CorrectedBy, p.Attempts, p.FailedSha, p.Failure = "", 0, "", nil
 		})
 	})
 	if err != nil {
@@ -466,6 +477,11 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 	case state.GetApproved():
 		return
 	}
+	if id := state.GetCorrectedBy(); id != "" {
+		if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
+			return
+		}
+	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
 	if err != nil {
 		log.Printf("djinn: push: %v", err)
@@ -484,6 +500,9 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 		since := h.lastBranchPush(ctx, repo, wish, state, branch)
 		committed := h.committedBranchTasks(ctx, repo, tasks, project.GetId(), branch, since)
 		why := pushDueAzima(azima, committed, tasks, since, h.now(), pushAfterEvery, pushAfterTasks)
+		if state.GetHeld() != "" && why == "" && len(committed) > 0 {
+			why = "push checks corrected"
+		}
 		if why != "" {
 			if _, err := h.pushBranch(ctx, wish, project, branch, committed, why, false); err != nil {
 				log.Printf("djinn: push %s (%s): %v", project.GetId(), branch, err)
@@ -496,6 +515,9 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 		since := h.lastBranchPush(ctx, repo, wish, state, wishBranch)
 		committed := h.committedBranchTasks(ctx, repo, tasks, project.GetId(), wishBranch, since)
 		why := pushDue(committed, tasks, since, h.now(), pushAfterEvery, pushAfterTasks)
+		if state.GetHeld() != "" && why == "" && len(committed) > 0 {
+			why = "push checks corrected"
+		}
 		if why != "" {
 			if _, err := h.pushBranch(ctx, wish, project, wishBranch, committed, why, false); err != nil {
 				log.Printf("djinn: push %s (%s): %v", project.GetId(), wishBranch, err)
@@ -692,8 +714,9 @@ func editPush(ctx context.Context, tx *store.Tx, wishID, projectID string, edit 
 }
 
 // answerPush takes the person's answer to a question Djinn asked about a push: A pushes at the integration's next
-// pass, B waits for the next push due; once the push checks stay red, B pushes without them and C waits. It tells
-// whether q was such a question, and what Djinn does, for the lead.
+// pass, B waits for the next push due; once the push checks stay red, A starts a new correction worker, B leaves it
+// to the person, C pushes without the push checks. It tells whether q was such a question, and what Djinn does, for
+// the lead.
 func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, bool) {
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
 	if err != nil {
@@ -703,17 +726,94 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 	if i < 0 {
 		return "", false
 	}
-	// Once the push checks stay red: A checks again and pushes if they pass, B pushes without them, C waits for the next
-	// push due. Otherwise A pushes, B waits.
-	choice, held := q.GetAnswer().GetChoice(), wish.GetPushes()[i].GetHeld() != ""
-	push := choice == planv1.Choice_CHOICE_A || held && choice == planv1.Choice_CHOICE_B
+	p := wish.GetPushes()[i]
+	choice, held := q.GetAnswer().GetChoice(), p.GetHeld() != ""
+	if held {
+		projectID := p.GetProjectId()
+		branch := p.GetLast().GetBranch()
+		if branch == "" {
+			branch = plan.IntegrationBranchOf(wish, projectID)
+		}
+		f := p.GetFailure()
+		var committed []*planv1.Task
+		if f != nil && len(f.GetTaskIds()) > 0 {
+			committed, _ = tasksByID(ctx, h.store, f.GetTaskIds())
+		}
+		switch choice {
+		case planv1.Choice_CHOICE_A:
+			project, err1 := store.Get[*planv1.Project](ctx, h.store, projectID)
+			settings, err2 := plan.LoadSettings(h.home, project)
+			if err := errors.Join(err1, err2); err != nil {
+				log.Printf("djinn: question %s: %v", q.GetCode(), err)
+				return "Djinn could not try again: " + err.Error(), true
+			}
+			settings.CorrectionAttempts = max(settings.CorrectionAttempts, 1)
+			c, err := h.spawnPushCorrection(ctx, wish, project, settings, branch, f, 1, committed)
+			if err != nil {
+				log.Printf("djinn: question %s: %v", q.GetCode(), err)
+				return "Djinn could not start a correction worker: " + err.Error(), true
+			}
+			err = h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
+				for _, t := range committed {
+					curT, err := store.Get[*planv1.Task](ctx, tx, t.GetId())
+					if err != nil {
+						return err
+					}
+					if curT.GetIntegration() != nil {
+						curT.Integration.CorrectedBy = c.GetId()
+						if err := tx.Journal(actorHarness, methodIntegrate, curT); err != nil {
+							return err
+						}
+						if err := tx.Put(curT); err != nil {
+							return err
+						}
+					}
+				}
+				return editPush(ctx, tx, wish.GetId(), projectID, func(p *planv1.WishPush) {
+					p.QuestionId, p.CorrectedBy, p.Attempts, p.Approved = "", c.GetId(), 1, false
+				})
+			})
+			if err != nil {
+				log.Printf("djinn: question %s: %v", q.GetCode(), err)
+				return "Djinn could not take the answer: " + err.Error(), true
+			}
+			h.pushSteps(ctx, committed, fmt.Sprintf("integration: you said to try again (%s); Djinn started %s", q.GetCode(), c.GetCode()))
+			h.notify()
+			return didStart(c), true
+		case planv1.Choice_CHOICE_B:
+			err = h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
+				return editPush(ctx, tx, wish.GetId(), projectID, func(p *planv1.WishPush) {
+					p.QuestionId, p.CorrectedBy, p.HeldRuns, p.Approved = "", "", 0, false
+				})
+			})
+			if err != nil {
+				log.Printf("djinn: question %s: %v", q.GetCode(), err)
+				return "Djinn could not take the answer: " + err.Error(), true
+			}
+			h.pushSteps(ctx, committed, fmt.Sprintf("integration: you take it (%s); the push of %s stays held until you make its checks pass", q.GetCode(), branch))
+			h.notify()
+			return fmt.Sprintf("Djinn leaves the push checks of %s to the developer", branch), true
+		case planv1.Choice_CHOICE_C:
+			err = h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
+				return editPush(ctx, tx, wish.GetId(), projectID, func(p *planv1.WishPush) {
+					p.QuestionId, p.Approved, p.Unchecked = "", true, true
+				})
+			})
+			if err != nil {
+				log.Printf("djinn: question %s: %v", q.GetCode(), err)
+				return "Djinn could not take the answer: " + err.Error(), true
+			}
+			h.notify()
+			h.kickIntegrate()
+			return "Djinn pushes at the integration's next pass, without the push checks", true
+		}
+		return "", true
+	}
+	push := choice == planv1.Choice_CHOICE_A
 	ctx = context.WithoutCancel(ctx)
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		return editPush(ctx, tx, wish.GetId(), wish.GetPushes()[i].GetProjectId(), func(p *planv1.WishPush) {
-			p.QuestionId, p.Approved, p.Unchecked = "", push, held && choice == planv1.Choice_CHOICE_B
-			if held && !push {
-				p.HeldRuns = 0
-			}
+		return editPush(ctx, tx, wish.GetId(), p.GetProjectId(), func(p *planv1.WishPush) {
+			p.QuestionId, p.Approved, p.Unchecked = "", push, false
 		})
 	})
 	if err != nil {
@@ -723,13 +823,6 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 	h.notify()
 	if push {
 		h.kickIntegrate()
-	}
-	switch {
-	case held && choice == planv1.Choice_CHOICE_A:
-		return "Djinn runs the push checks again at the integration's next pass, and pushes if they pass", true
-	case held && push:
-		return "Djinn pushes at the integration's next pass, without the push checks", true
-	case push:
 		return "Djinn pushes at the integration's next pass", true
 	}
 	return "Djinn waits for the next push due", true

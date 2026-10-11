@@ -332,8 +332,8 @@ ends, it merges the task's branch in a worktree of its own (made ready by the `s
 for `commit` through their gates, and moves the branch when they pass. Each task says where its work stands: waiting
 to be committed, committed, conflict, red, corrected by another task. A conflict in code or a red check start a
 correction worker; past two attempts, Djinn asks you. Before it pushes the branch, at an azima's end or after an hour
-and three tasks committed, it runs the checks named for `push`: red, the push is held, and Djinn asks you if they stay
-red. `djinn project show` and the project's view in the window list the checks and how each last ran. When the settings also name an install command, the window
+and three tasks committed, it runs the checks named for `push`: red, the push is held, and Djinn starts a correction
+worker; if that fails or attempts are spent, it asks you. `djinn project show` and the project's view in the window list the checks and how each last ran. When the settings also name an install command, the window
 proposes the batch it committed, with **What changed**; **Install and restart** installs it,
 nothing before your click. With `install_questions: when_needed` (set in Djinn itself, whose builds install after each push),
 Djinn raises no routine install question: the banner and post-push install are enough, and it asks only when necessary

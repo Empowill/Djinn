@@ -439,6 +439,14 @@ message WishPush {
   int32 held_runs = 7;
   // The person said to push without the push checks: the next push skips them, once.
   bool unchecked = 8;
+  // The correction worker that makes the push checks pass, while it works.
+  string corrected_by = 9;
+  // How many correction workers Djinn started for the push checks at failed_sha.
+  int32 attempts = 10;
+  // The integration branch's commit whose push checks Djinn gave up on once the correction attempts were spent.
+  string failed_sha = 11;
+  // The push checks failure that holds the push.
+  IntegrationFailure failure = 12;
 }
 
 // IntegrationPush is a push of a wish's integration branch to its remote, as the journal records it and the wish shows

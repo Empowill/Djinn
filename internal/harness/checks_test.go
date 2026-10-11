@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
@@ -151,7 +152,8 @@ func TestARedCommitCheck(t *testing.T) {
 
 // TestPushChecksHoldThePush: before a push, the push checks run on the branch's tip; red, the push is held, said in
 // the tasks' events and on the wish. Red while work is left to commit, Djinn checks again at the next push due; red
-// again, it asks. Checking again once they pass pushes, and the push held is forgotten.
+// again, it starts a correction worker. A second red does not spawn another worker while it runs; a failed correction
+// asks the person, who can retry, take it over, or push without checks.
 func TestPushChecksHoldThePush(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
@@ -162,6 +164,19 @@ func TestPushChecksHoldThePush(t *testing.T) {
 	first, second := in.azima(t, in.wishID, "First"), in.azima(t, in.wishID, "Second")
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = first.GetId() })
 	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, func(task *planv1.Task) { task.PartOf = second.GetId() })
+
+	var (
+		attempts int
+		prompt   string
+	)
+	in.correctWith(func(dir, p string) string {
+		attempts++
+		prompt = p
+		if attempts == 1 {
+			return "wait\nfail could not fix tests"
+		}
+		return "text push checks fixed"
+	})
 
 	in.pass(t, 0)
 	if got := in.remoteTip(t, bare); got != old {
@@ -180,8 +195,45 @@ func TestPushChecksHoldThePush(t *testing.T) {
 	if !strings.Contains(state.GetHeld(), "test: test exited 1") || state.GetHeldRuns() != 2 {
 		t.Fatalf("the push %v; want held twice, W2's azima ending after W1's", state)
 	}
+	if state.GetCorrectedBy() == "" || state.GetAttempts() != 1 {
+		t.Fatalf("the push %v; want corrected by a worker, attempt 1", state)
+	}
+	w3ID := state.GetCorrectedBy()
+	w3 := in.get(t, w3ID)
+	if w3.GetCode() != "W3" {
+		t.Errorf("correction worker code %s; want W3", w3.GetCode())
+	}
+	for _, s := range []string{
+		"The push checks of " + in.branch + " failed: test: test exited 1.",
+		"The command, run in the project's folder: `test`",
+		"--- FAIL: TestLogin",
+	} {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("W3 prompt lacks %q:\n%s", s, prompt)
+		}
+	}
+	if _, texts := in.integration(t, w1); !slices.Contains(texts, "the push of "+in.branch+" is held, corrected by "+w3.GetCode()) {
+		t.Errorf("W1's events %q lack push held corrected by W3", texts)
+	}
+	if _, texts := in.integration(t, w2); !slices.Contains(texts, "the push of "+in.branch+" is held, corrected by "+w3.GetCode()) {
+		t.Errorf("W2's events %q lack push held corrected by W3", texts)
+	}
+
+	// While W3 runs, a second pass does not spawn another correction worker.
+	in.pass(t, 0)
+	if got := in.pushState(t).GetCorrectedBy(); got != w3ID {
+		t.Errorf("second pass while running changed correction worker to %s; want %s", got, w3ID)
+	}
+
+	// W3 fails once released: asking the person what to do.
+	if _, err := in.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{TaskId: w3ID, Text: "wake"})); err != nil {
+		t.Fatal(err)
+	}
+	in.ended(t, w3ID)
+	in.pass(t, time.Second)
+
 	q := in.pushQuestion(t)
-	if !strings.HasPrefix(q.GetText(), "The push checks of "+in.branch+" stay red: test: test exited 1.") ||
+	if !strings.HasPrefix(q.GetText(), "The push checks of "+in.branch+" stay red: test: test exited 1. Djinn started a correction worker: it did not make the push checks pass. What should Djinn do?") ||
 		!strings.Contains(q.GetContext(), "--- FAIL: TestLogin") || len(q.GetOptions()) != 3 {
 		t.Errorf("question %q, context %q, options %q", q.GetText(), q.GetContext(), q.GetOptions())
 	}
@@ -189,11 +241,16 @@ func TestPushChecksHoldThePush(t *testing.T) {
 		t.Errorf("W2's events %q lack the question", texts)
 	}
 
+	// Answering Choice A retries with a new correction worker W4.
 	in.mu.Lock()
 	in.testCode = 0
 	in.mu.Unlock()
-	if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn runs the push checks again at the integration's next pass, and pushes if they pass" {
+	if did := in.answer(t, q, planv1.Choice_CHOICE_A); !strings.HasPrefix(did, "Djinn started W4:") {
 		t.Errorf("what Djinn did: %q", did)
+	}
+	w4 := in.ended(t, in.pushState(t).GetCorrectedBy())
+	if w4.GetCode() != "W4" {
+		t.Errorf("retried worker code %s; want W4", w4.GetCode())
 	}
 	in.pass(t, time.Second)
 	if got, tip := in.remoteTip(t, bare), in.tip(t); got != tip {
@@ -204,12 +261,14 @@ func TestPushChecksHoldThePush(t *testing.T) {
 	}
 }
 
-// TestPushWithoutTheChecks: red once no work is left to commit, Djinn asks at once; "push it without the checks"
-// pushes once, saying so. A check that passed on the tip as a commit check does not run again before the push.
+// TestPushWithoutTheChecks: red once no work is left to commit, Djinn asks at once when correction attempts are spent;
+// "push it without the checks" pushes once, saying so. A check that passed on the tip as a commit check does not run
+// again before the push.
 func TestPushWithoutTheChecks(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
-	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_PUSH] }\n"+
+	in.checking(t, "correction_attempts: 0\n"+
+		"checks { name: \"lint\" command: \"lint\" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_PUSH] }\n"+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
 	in.testCode = 1
 	bare := in.remote(t)
@@ -227,7 +286,7 @@ func TestPushWithoutTheChecks(t *testing.T) {
 	if state := in.pushState(t); state.GetHeldRuns() != 1 || state.GetQuestionId() == "" {
 		t.Fatalf("no work left: the push %v; want a question at once", state)
 	}
-	if did := in.answer(t, in.pushQuestion(t), planv1.Choice_CHOICE_B); did != "Djinn pushes at the integration's next pass, without the push checks" {
+	if did := in.answer(t, in.pushQuestion(t), planv1.Choice_CHOICE_C); did != "Djinn pushes at the integration's next pass, without the push checks" {
 		t.Errorf("what Djinn did: %q", did)
 	}
 	in.pass(t, time.Second)
