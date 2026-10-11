@@ -1528,7 +1528,7 @@ func (h *Harness) handleMergeMoves(
 				return strings.Contains(q.GetText(), tag)
 			})
 			if !asked {
-				q := tagMoveQuestion(wish.GetId(), tag, remote)
+				q := tagMoveQuestion(wish.GetId(), project.GetId(), tag, remote)
 				if err := h.askMove(ctx, q); err == nil {
 					existing = append(existing, q)
 					moves = append(moves, moveName)
@@ -1767,7 +1767,7 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 										}
 									}
 									if !asked {
-										q := installMoveQuestionWithReason(wish.GetId(), sha, branch, reason)
+										q := installMoveQuestionWithReason(wish.GetId(), projectID, sha, branch, reason)
 										if err := h.askMove(ctx, q); err == nil {
 											allQuestions = append(allQuestions, q)
 										}
@@ -1782,7 +1782,7 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 									}
 								}
 								if !asked {
-									q := installMoveQuestion(wish.GetId(), sha, branch, delay)
+									q := installMoveQuestion(wish.GetId(), projectID, sha, branch, delay)
 									if err := h.askMove(ctx, q); err == nil {
 										allQuestions = append(allQuestions, q)
 									}
@@ -2304,13 +2304,14 @@ func (h *Harness) azimaPRPass(
 			if !proposed {
 				title, desc := h.draftAzimaPR(ctx, azima, parts)
 				q := &planv1.Question{
-					WishId:  wish.GetId(),
-					TaskId:  azima.GetId(),
-					Text:    fmt.Sprintf("Open a pull request for %s to %s?", azima.GetCode(), base),
-					Context: fmt.Sprintf("**Title**: %s\n**Base**: %s\n\n%s", title, base, desc),
-					Options: []string{"Open pull request", "Not yet"},
-					Move:    true,
-					Before:  "before the merge",
+					WishId:    wish.GetId(),
+					TaskId:    azima.GetId(),
+					Text:      fmt.Sprintf("Open a pull request for %s to %s?", azima.GetCode(), base),
+					Context:   fmt.Sprintf("**Title**: %s\n**Base**: %s\n\n%s", title, base, desc),
+					Options:   []string{"Open pull request", "Not yet"},
+					Move:      true,
+					Before:    "before the merge",
+					DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_PULL_REQUEST},
 				}
 				if err := h.askMove(ctx, q); err == nil {
 					allQuestions = append(allQuestions, q)
@@ -2331,13 +2332,14 @@ func (h *Harness) azimaPRPass(
 					return q.GetTaskId() == azima.GetId() && strings.Contains(strings.ToLower(q.GetText()), "ready to merge")
 				}) {
 					q := &planv1.Question{
-						WishId:  wish.GetId(),
-						TaskId:  azima.GetId(),
-						Text:    fmt.Sprintf("Pull request #%d for %s is ready to merge?", pr.Number, azima.GetCode()),
-						Context: fmt.Sprintf("Pull request #%d for azima %s (%s) is mergeable and all checks are green.", pr.Number, azima.GetCode(), azima.GetTitle()),
-						Options: []string{"Ready to merge", "Not yet"},
-						Move:    true,
-						Before:  "before the merge",
+						WishId:    wish.GetId(),
+						TaskId:    azima.GetId(),
+						Text:      fmt.Sprintf("Pull request #%d for %s is ready to merge?", pr.Number, azima.GetCode()),
+						Context:   fmt.Sprintf("Pull request #%d for azima %s (%s) is mergeable and all checks are green.", pr.Number, azima.GetCode(), azima.GetTitle()),
+						Options:   []string{"Ready to merge", "Not yet"},
+						Move:      true,
+						Before:    "before the merge",
+						DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_READY_TO_MERGE},
 					}
 					if err := h.askMove(ctx, q); err == nil {
 						allQuestions = append(allQuestions, q)

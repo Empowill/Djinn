@@ -1344,6 +1344,41 @@ message Question {
   Withdrawal withdrawal = 19;
   // The answer was recorded but no lead was running to receive it; it waits for the next lead to start.
   bool waiting_lead = 20;
+  // The move Djinn asked for, set only when Djinn asks the question itself: Djinn acts on the answer by it alone,
+  // never by the words of the question. Empty on a worker's or the lead's move question, whose answer is only noted.
+  DjinnMove djinn_move = 21;
+}
+
+// DjinnMove is a move Djinn asked the developer for on its own move question, recorded when Djinn asks it.
+message DjinnMove {
+  // Which move.
+  MoveKind kind = 1;
+  // What the move acts on: the full sha of the build to install, or the tag to push.
+  string ref = 2;
+  // The remote a tag is pushed to.
+  string remote = 3;
+  // The project the build is installed from, or the tag pushed in.
+  string project_id = 4;
+}
+
+// MoveKind is which move Djinn asked for on its own move question.
+enum MoveKind {
+  // Not one of Djinn's moves: the answer is only noted.
+  MOVE_KIND_UNSPECIFIED = 0;
+  // Install and restart a build: a yes installs the build named by ref.
+  MOVE_KIND_INSTALL = 1;
+  // Push a local tag: a yes pushes the tag named by ref to remote.
+  MOVE_KIND_TAG = 2;
+  // Start a release dry run: noted.
+  MOVE_KIND_RELEASE = 3;
+  // Open a pull request: noted.
+  MOVE_KIND_PULL_REQUEST = 4;
+  // Merge a pull request whose checks are green: noted.
+  MOVE_KIND_READY_TO_MERGE = 5;
+  // Check a needs: box on a machine Djinn lacks: noted.
+  MOVE_KIND_CHECK = 6;
+  // Verify the proof an azima awaits: a yes marks the question's azima done.
+  MOVE_KIND_AZIMA_PROOF = 7;
 }
 
 // Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or

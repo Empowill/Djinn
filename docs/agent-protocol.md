@@ -59,7 +59,9 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   or a correction stopped by the lead) are settled silently without raising questions. The lead decides: retry a
   correction, drop the work (`djinn task done --drop` or `djinn task cancel`), re-sequence the graph (`djinn task depend`),
   or leave it waiting. Questions to the developer are reserved for moves only a person can make (a tag, a PR, a release,
-  a right) or a real choice.
+  a right) or a real choice. Djinn acts on a yes only to the move questions it asked itself, as each records its move
+  (`djinn_move`: install the build it named, push the tag it named, mark an azima whose proof it asked for done), never
+  by the words of a question; an answer to a worker's or the lead's move question is only noted (`Djinn noted move`).
 - **When Djinn misbehaves.** When Djinn misbehaves while the developer is away, the lead may stop the damage without
   touching code: redirect the wish's integration to another branch, stop workers, withdraw useless questions. The lead
   may also revert a faulty merge on the integration branch, telling the developer at once; every other commit on the

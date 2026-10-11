@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -69,8 +70,10 @@ func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 	return strings.Join(slices.DeleteFunc(did, func(d string) bool { return d == "" }), "; ")
 }
 
-// answerMove takes the person's answer to a question Djinn asked for a move only the developer can make:
-// a push of a tag, installing an integrated build, verifying an azima proof, or a pull request / release dry run.
+// answerMove takes the person's answer to a move question. Djinn acts on a yes only for the moves it asked itself,
+// as its question records them (DjinnMove), never by the words of the question: it installs the build it named,
+// pushes the tag it named, or marks the azima whose proof it asked for done. A move question a worker or the lead
+// asked is only noted, whatever its words: an installer in its context installs nothing.
 func (h *Harness) answerMove(ctx context.Context, q *planv1.Question) (string, bool) {
 	if !q.GetMove() {
 		return "", false
@@ -79,97 +82,70 @@ func (h *Harness) answerMove(ctx context.Context, q *planv1.Question) (string, b
 	if choice != planv1.Choice_CHOICE_A && choice != planv1.Choice_CHOICE_YES {
 		return "left for later", true
 	}
-
-	textLower := strings.ToLower(q.GetText() + " " + q.GetContext())
-
-	// 1. Ready to merge / Pull request
-	if strings.Contains(textLower, "ready to merge") {
-		return "Djinn noted: ready to merge", true
-	}
-	if strings.Contains(textLower, "pull request") {
-		return "Djinn noted: open pull request", true
-	}
-
-	// 2. Azima proof
-	if q.GetTaskId() != "" && (strings.Contains(textLower, "proof") || strings.Contains(textLower, "verified") || strings.Contains(textLower, "check") || strings.Contains(textLower, "awaiting proof")) {
+	move := q.GetDjinnMove()
+	switch move.GetKind() {
+	case planv1.MoveKind_MOVE_KIND_INSTALL:
+		project, err := h.moveProject(ctx, q)
+		if err != nil || move.GetRef() == "" {
+			return "install noted", true
+		}
+		if _, err := h.Install(ctx, q.GetWishId(), project.GetId(), move.GetRef(), nil); err != nil {
+			return fmt.Sprintf("Djinn install failed: %v", err), true
+		}
+		return "Djinn installed build " + short8(move.GetRef()), true
+	case planv1.MoveKind_MOVE_KIND_TAG:
+		tag := move.GetRef()
+		project, err := h.moveProject(ctx, q)
+		if err != nil || tag == "" {
+			return "Djinn noted: push tag " + tag, true
+		}
+		repo := project.GetDirectory()
+		remote := move.GetRemote()
+		if remote == "" {
+			remote, _ = pushTarget(ctx, repo, "HEAD")
+		}
+		remote = cmp.Or(remote, "origin")
+		if _, err := git(ctx, repo, "push", remote, "refs/tags/"+tag); err != nil {
+			return fmt.Sprintf("Djinn could not push tag %s: %v", tag, err), true
+		}
+		return "Djinn pushed tag " + tag, true
+	case planv1.MoveKind_MOVE_KIND_AZIMA_PROOF:
 		task, err := store.Get[*planv1.Task](ctx, h.store, q.GetTaskId())
-		if err == nil && plan.IsAzima(task) {
-			_, err := h.Done(ctx, "", &planv1.TaskServiceDoneRequest{
-				TaskId: q.GetTaskId(),
-				Note:   "proof verified",
-				By:     planv1.Closer_CLOSER_DEVELOPER,
-			})
-			if err != nil {
-				return "Djinn could not mark azima done: " + err.Error(), true
-			}
-			return fmt.Sprintf("Djinn marked %s done", task.GetCode()), true
+		if err != nil || !plan.IsAzima(task) {
+			return "Djinn noted move", true
 		}
-	}
-
-	// 2. Push tag
-	if strings.Contains(textLower, "push tag") {
-		var tagName string
-		fields := strings.Fields(q.GetText() + " " + q.GetContext())
-		for i, f := range fields {
-			if strings.EqualFold(f, "tag") && i+1 < len(fields) {
-				tagName = strings.Trim(fields[i+1], "?:, ")
-				break
-			}
+		if _, err := h.Done(ctx, "", &planv1.TaskServiceDoneRequest{
+			TaskId: q.GetTaskId(),
+			Note:   "proof verified",
+			By:     planv1.Closer_CLOSER_DEVELOPER,
+		}); err != nil {
+			return "Djinn could not mark azima done: " + err.Error(), true
 		}
-		if tagName != "" {
-			wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
-			if err == nil && len(wish.GetProjectIds()) > 0 {
-				project, err := store.Get[*planv1.Project](ctx, h.store, wish.GetProjectIds()[0])
-				if err == nil {
-					repo := project.GetDirectory()
-					remote, _ := pushTarget(ctx, repo, "HEAD")
-					if remote == "" {
-						remote = "origin"
-					}
-					if _, err := git(ctx, repo, "push", remote, tagName); err != nil {
-						return fmt.Sprintf("Djinn pushed tag %s: %v", tagName, err), true
-					}
-				}
-			}
-			return "Djinn pushed tag " + tagName, true
-		}
-	}
-
-	// 3. Install and restart
-	if strings.Contains(textLower, "install") {
-		wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
-		if err == nil && len(wish.GetProjectIds()) > 0 {
-			projectID := wish.GetProjectIds()[0]
-			project, err := store.Get[*planv1.Project](ctx, h.store, projectID)
-			if err == nil {
-				branch, _ := h.integrationBranch(ctx, wish, project)
-				sha, _ := git(ctx, project.GetDirectory(), "rev-parse", "refs/heads/"+branch)
-				for _, word := range strings.Fields(q.GetText() + " " + q.GetContext()) {
-					clean := strings.Trim(word, "?:.,\"'()[]{}")
-					if len(clean) >= 7 && len(clean) <= 40 && isHex(clean) {
-						if resolved, err := git(ctx, project.GetDirectory(), "rev-parse", "--verify", "--quiet", clean+"^{commit}"); err == nil && strings.TrimSpace(resolved) != "" {
-							sha = strings.TrimSpace(resolved)
-							break
-						}
-					}
-				}
-				if sha != "" {
-					if _, err := h.Install(ctx, q.GetWishId(), projectID, sha, nil); err != nil {
-						return fmt.Sprintf("Djinn install failed: %v", err), true
-					}
-					return "Djinn installed build " + short8(sha), true
-				}
-			}
-		}
-		return "install noted", true
-	}
-
-	// 4. Release dry run / Other moves
-	if strings.Contains(textLower, "release") {
+		return fmt.Sprintf("Djinn marked %s done", task.GetCode()), true
+	case planv1.MoveKind_MOVE_KIND_READY_TO_MERGE:
+		return "Djinn noted: ready to merge", true
+	case planv1.MoveKind_MOVE_KIND_PULL_REQUEST:
+		return "Djinn noted: open pull request", true
+	case planv1.MoveKind_MOVE_KIND_RELEASE:
 		return "Djinn noted: start release dry run", true
 	}
-
 	return "Djinn noted move", true
+}
+
+// moveProject is the project of Djinn's move question q: the one it names, or its wish's first.
+func (h *Harness) moveProject(ctx context.Context, q *planv1.Question) (*planv1.Project, error) {
+	id := q.GetDjinnMove().GetProjectId()
+	if id == "" {
+		wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
+		if err != nil {
+			return nil, err
+		}
+		if len(wish.GetProjectIds()) == 0 {
+			return nil, errors.New("the wish has no project")
+		}
+		id = wish.GetProjectIds()[0]
+	}
+	return store.Get[*planv1.Project](ctx, h.store, id)
 }
 
 // answer gives the answer q to the task id: to its run, which applies it, or to the task itself when no worker runs
@@ -385,14 +361,4 @@ func firstPrompt(s *store.Store, taskID string) (string, error) {
 		}
 	}
 	return "", errors.New("its prompt is lost")
-}
-
-// isHex reports whether string s contains only hexadecimal characters.
-func isHex(s string) bool {
-	for _, r := range s {
-		if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
-			return false
-		}
-	}
-	return true
 }

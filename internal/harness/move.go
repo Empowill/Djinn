@@ -79,11 +79,12 @@ func needsMoveQuestion(wishID, box, machine string) *planv1.Question {
 		context = fmt.Sprintf("A verification is needed on %s:\n- [ ] (needs: %s)", machine, machine)
 	}
 	return &planv1.Question{
-		WishId:  wishID,
-		Text:    text,
-		Context: context,
-		Options: []string{"Verified", "Not yet"},
-		Move:    true,
+		WishId:    wishID,
+		Text:      text,
+		Context:   context,
+		Options:   []string{"Verified", "Not yet"},
+		Move:      true,
+		DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_CHECK},
 	}
 }
 
@@ -93,14 +94,15 @@ func tagMoveName(tag string) string {
 }
 
 // tagMoveQuestion builds the question for pushing a local tag.
-func tagMoveQuestion(wishID, tag, remote string) *planv1.Question {
+func tagMoveQuestion(wishID, projectID, tag, remote string) *planv1.Question {
 	return &planv1.Question{
-		WishId:  wishID,
-		Text:    fmt.Sprintf("Push tag %s to %s?", tag, remote),
-		Context: fmt.Sprintf("Run `git push %s %s` to push the release tag to %s.", remote, tag, remote),
-		Options: []string{fmt.Sprintf("Push tag %s", tag), "Skip"},
-		Move:    true,
-		Before:  "before the release",
+		WishId:    wishID,
+		Text:      fmt.Sprintf("Push tag %s to %s?", tag, remote),
+		Context:   fmt.Sprintf("Run `git push %s %s` to push the release tag to %s.", remote, tag, remote),
+		Options:   []string{fmt.Sprintf("Push tag %s", tag), "Skip"},
+		Move:      true,
+		Before:    "before the release",
+		DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_TAG, Ref: tag, Remote: remote, ProjectId: projectID},
 	}
 }
 
@@ -109,12 +111,13 @@ const releaseMoveName = "start a release"
 // releaseMoveQuestion builds the question for changed release files.
 func releaseMoveQuestion(wishID, sha string) *planv1.Question {
 	return &planv1.Question{
-		WishId:  wishID,
-		Text:    "Start release dry run?",
-		Context: fmt.Sprintf("Release files changed in %s. Trigger the release workflow dry run or prepare the release.", short8(sha)),
-		Options: []string{"Start release dry run", "Skip"},
-		Move:    true,
-		Before:  "before the release",
+		WishId:    wishID,
+		Text:      "Start release dry run?",
+		Context:   fmt.Sprintf("Release files changed in %s. Trigger the release workflow dry run or prepare the release.", short8(sha)),
+		Options:   []string{"Start release dry run", "Skip"},
+		Move:      true,
+		Before:    "before the release",
+		DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_RELEASE},
 	}
 }
 
@@ -126,12 +129,13 @@ func prMoveName(main string) string {
 // prMoveQuestion builds the question for opening a pull request to main.
 func prMoveQuestion(wishID, main, title, body string) *planv1.Question {
 	return &planv1.Question{
-		WishId:  wishID,
-		Text:    fmt.Sprintf("Open a pull request to %s?", main),
-		Context: fmt.Sprintf("### %s\n\n%s", title, body),
-		Options: []string{"Open pull request", "Not yet"},
-		Move:    true,
-		Before:  "before the merge",
+		WishId:    wishID,
+		Text:      fmt.Sprintf("Open a pull request to %s?", main),
+		Context:   fmt.Sprintf("### %s\n\n%s", title, body),
+		Options:   []string{"Open pull request", "Not yet"},
+		Move:      true,
+		Before:    "before the merge",
+		DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_PULL_REQUEST},
 	}
 }
 
@@ -221,29 +225,31 @@ type installReason struct {
 }
 
 // installMoveQuestion builds the question for an uninstalled build.
-func installMoveQuestion(wishID, sha, branch string, delay time.Duration) *planv1.Question {
+func installMoveQuestion(wishID, projectID, sha, branch string, delay time.Duration) *planv1.Question {
 	s := short8(sha)
 	return &planv1.Question{
 		WishId: wishID,
 		Text:   fmt.Sprintf("Install and restart %s?", s),
 		Context: fmt.Sprintf("The build %s on %s has been integrated for %s and is not installed yet. Install and restart?",
 			s, branch, delay.Round(time.Minute)),
-		Options: []string{"Install and restart", "Skip"},
-		Move:    true,
+		Options:   []string{"Install and restart", "Skip"},
+		Move:      true,
+		DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_INSTALL, Ref: sha, ProjectId: projectID},
 	}
 }
 
 // installMoveQuestionWithReason builds an install and restart question stating the specific reason why it is needed.
-func installMoveQuestionWithReason(wishID, sha, branch string, reason *installReason) *planv1.Question {
+func installMoveQuestionWithReason(wishID, projectID, sha, branch string, reason *installReason) *planv1.Question {
 	s := short8(sha)
 	text := fmt.Sprintf("Install and restart %s: %s?", s, reason.whyText)
 	context := fmt.Sprintf("The build %s on %s is needed now: %s.\n\nInstall and restart?", s, branch, reason.whyContext)
 	return &planv1.Question{
-		WishId:  wishID,
-		Text:    text,
-		Context: context,
-		Options: []string{"Install and restart", "Skip"},
-		Move:    true,
+		WishId:    wishID,
+		Text:      text,
+		Context:   context,
+		Options:   []string{"Install and restart", "Skip"},
+		Move:      true,
+		DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_INSTALL, Ref: sha, ProjectId: projectID},
 	}
 }
 
@@ -252,12 +258,13 @@ func azimaProofMoveQuestion(wishID, taskID, code, needsWords string, boxes []str
 	prompt := fmt.Sprintf("Check %s on %s?", code, needsWords)
 	ctxt := fmt.Sprintf("Azima %s is awaiting proof:\n\n%s", code, strings.Join(boxes, "\n"))
 	return &planv1.Question{
-		WishId:  wishID,
-		TaskId:  taskID,
-		Text:    prompt,
-		Context: ctxt,
-		Options: []string{"Verified", "Not yet"},
-		Move:    true,
+		WishId:    wishID,
+		TaskId:    taskID,
+		Text:      prompt,
+		Context:   ctxt,
+		Options:   []string{"Verified", "Not yet"},
+		Move:      true,
+		DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_AZIMA_PROOF},
 	}
 }
 
