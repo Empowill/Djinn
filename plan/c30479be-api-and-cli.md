@@ -337,10 +337,9 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   `TestResolveSettings`, `TestProjectShow` in `internal/plan`, `TestSpawnTakesTheProjectSettings` in
   `internal/harness`; tried on a `djinn up --browser` in a temporary DJINN_HOME: `djinn project show app` gave
   `model: sonnet, source: developer` over the team's `opus`, and listed a developer file with `api_key` under
-  `problems`)
-  - [x] Warm workers start with the settings: a warm worker's model and budget are the ones Spawn fills from the
-    project's files, so a task of a project with settings takes it; when the files change, it is replaced, and a
-    project whose tasks go to another agent warms no claude. (`TestWarmTakesTheProjectSettings` in `internal/harness`)
+  - [x] Warm workers removed: decided on 11/10/2026 (decision block "Warm workers removed", Q112) by the developer:
+    workers are meant to run for a long time, so a few seconds of cold start are acceptable; warm workers are not useful
+    and would be hard to support.
 - [x] macOS specifics: no cgroups, pause by signal. Pause by signal is built for Linux and macOS alike in T07
   (`internal/harness/process_unix.go`); macOS runs workers in their process group, no scope (W108). Proved on macOS by
   the CI's macos-15 job, green on 10/10/2026 (run 37997257519): `TestPauseProcess` and `TestPauseResume` run there,

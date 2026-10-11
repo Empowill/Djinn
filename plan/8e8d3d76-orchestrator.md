@@ -124,8 +124,8 @@ Decide who does what, run each worker safely, and protect the machine.
   `watch` (a server stream; the command line now prints a stream message by message, `--json` as JSON lines) and
   `clean`. `djinn up` serves them and stops every worker before closing the database.
 - **`Provider` is a small Go interface**: `Start(ctx, Spec) Worker`; a `Worker` gives its `Events`, takes
-  another message with `Send`, `Stop`s and `Wait`s. `Spec` already holds `Resume` and `Fork` (warm workers,
-  Q28), unused. Four providers: `claude`, `codex`, `antigravity` and `fake`; how each is driven, what is verified
+  another message with `Send`, `Stop`s and `Wait`s. `Spec` already holds `Resume` and `Fork` (Q28), unused. Four
+  providers: `claude`, `codex`, `antigravity` and `fake`; how each is driven, what is verified
   and what is supposed, and the catalog of cases each fixture replays: [`docs/providers.md`](../docs/providers.md).
   Every real case met with a model becomes a fixture and a row there.
 - **Claude**: `claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompts

@@ -163,8 +163,8 @@ overloaded. Part of the orchestrator (T07).
 - **A scope per worker** (`machine.Scopes`, `harness.WithScopes`): at start, on Linux, `djinn up` starts one probe
   scope as a worker's would be (`systemd-run --user --scope --quiet --collect --unit=djinn-probe-<uuid8> [-p
   CPUQuota=…%] [-p MemoryMax=…] -- sh -c …`), and reads from inside its cgroup, its `cpu.max` and `memory.max`. Then
-  every process a worker starts (an agent, each run of a watcher's command, a warm worker, an inbox source's command)
-  runs under the same prefix, in a scope of its own, `djinn-<task code>-<uuid8>.scope` (`warm`, `inbox` for those
+  every process a worker starts (an agent, each run of a watcher's command, an inbox source's command)
+  runs under the same prefix, in a scope of its own, `djinn-<task code>-<uuid8>.scope` (`inbox` for those
   without a task); the uuid8 is drawn at each start: systemd keeps the name of an ended scope a little while, and the
   same name again fails one time in two. The scope keeps the process: same PID, process group and streams. Its cgroup
   is the probe's slice plus the unit, known before it exists. With it: pausing freezes the cgroup (`cgroup.freeze`)
@@ -193,23 +193,25 @@ the context its task needs, no more.
   2. **Otherwise a brief built from the store**, behind a stable prefix (Djinn's rules, then the
      project's) placed before the prompt's dynamic boundary, so every worker of a project reads
      it from the cache.
-  3. **Warm workers**: one process per active project, already loaded, waiting for its brief on
-     its stream-json input. Their number is bounded by what the machine can take (T17).
+  3. **Warm workers** (removed 11/10/2026, Q112): one process per active project, already loaded, waiting for its
+     brief on its stream-json input. Removed because workers run for a long time, so a cold start of a few seconds
+     is acceptable; warm workers were not useful and hard to support.
   4. **Measure everything**: each process reports its usage in its stream; Djinn sums it by
      worker and by wish (done for Claude in T07).
 - **Inheriting is not free**: a forked context is read again at every turn of the worker, even
   from the cache. A short brief is often cheaper and keeps the worker on its task.
-- **Measure before promising**: a bench compares five ways to run the same small task (an
-  in-process sub-agent, a cold `claude -p`, `--bare`, a fork of the lead, a warm worker): time
+- **Measure before promising**: a bench compares four ways to run the same small task (an
+  in-process sub-agent, a cold `claude -p`, `--bare`, a fork of the lead, and a brief): time
   to first token, tokens with cache, cost. It is a paid run: its cost is estimated and approved
   before it runs.
 
 ### Done when
 - [x] The bench has run, and its figures are in this file (Haiku, below). Opus waits for a go.
 - [x] A task can ask for a fork or a brief, and Djinn picks the brief by default.
-- [ ] Warm workers are on, bounded by the machine, and their idle cost is known. *Built, bounded and off by
-  default (`djinn up --warm-workers`); their memory is supposed until the bench measures it.* (needs: the paid
-  bench, `go tool task bench-workers`, with a person's go)
+- [x] Warm workers removed: decided on 11/10/2026 (decision block "Warm workers removed", Q112) by the developer:
+  workers are meant to run for a long time, so a few seconds of cold start are acceptable; warm workers are not useful
+  and would be hard to support. The feature, tests, flags, interfaces, and accounting were removed; only a one-time
+  cleanup in Recover remains to delete leftover worktrees and branches (`djinn-warm-…`) from older versions.
 - [x] Every worker's tokens and cost show per wish in the interface. (branch `w30-ui`: each task shows its tokens and
   its cost, the detail on hover and opened (input, output, cache read, cache written); a wish shows its total, and the
   flight plan each active wish's; Codex and Antigravity give tokens only, so their tasks show no cost and the total
@@ -247,21 +249,11 @@ the context its task needs, no more.
   source's (the fork runs the source's agent by default). A planned fork keeps its source until it starts; an export
   leaves `fork_session` out. *Supposed:* that claude finds the source session from the fork's own worktree, another
   folder than the source's (claude files sessions by folder): the bench's fork runs check it.
-- **Warm workers, the minimum safe**: `djinn up --warm-workers`, off by default. One claude per project of each
-  active wish, started ahead with `--input-format stream-json` and no message: it loads, then waits. The next task
-  spawned there takes it: its identifier was chosen ahead, so the session (`--session-id`), `DJINN_TASK_ID` and the
-  worktree are already the task's; the placeholder branch (`djinn-warm-…`) is renamed after the task. The scheduler
-  starts the next one. They live in the slots the running workers leave (running + warm ≤ the machine's slots), the
-  first wish first, and none waits while the machine is under pressure. A task that asks for anything the warm worker
-  was not started with starts cold: another model or budget than the project's settings give
-  (`TestWarmTakesTheProjectSettings`), a fork, other rights (`.agents/permissions.txtpb` or the wish's allowance
-  changed), a project whose HEAD moved, a planned task (its identifier is older). Stopping Djinn stops them and
-  removes their worktrees; a crash's leftovers (a worktree in the data folder on a `djinn-warm-` branch) are
-  removed at the next start. Only Claude warms (`harness.Warmer`).
-- **What a warm worker costs while it waits: no token, memory.** *Supposed: about 300 MB each* (claude 2.1.293 is a
-  250 MB single-file Bun program; a loaded Node or Bun agent sits at a few hundred MB). The fake binary's figure would
-  mean nothing; the bench reads the real one (`ps -o rss`) before the warm worker's message, which costs nothing.
-- **The bench compares what Djinn launches**: cold, `--bare`, a fork, a warm worker, and a brief (a cold worker with
+- **Warm workers removed**: decided on 11/10/2026 (decision block "Warm workers removed", Q112) by the developer:
+  workers are meant to run for a long time, so a few seconds of cold start are acceptable; warm workers are not useful
+  and would be hard to support. The feature, its tests, flags, interfaces, and accounting were removed; only a one-time
+  cleanup in Recover remains to delete leftover worktrees and branches (`djinn-warm-…`) from older versions.
+- **The bench compares what Djinn launches**: cold, `--bare`, a fork, and a brief (a cold worker with
   the stable brief in `--append-system-prompt-file` and `--exclude-dynamic-system-prompt-sections`, which moves
   the folder and Git status out of the system prompt, for the cache). The in-process sub-agent is left out: Djinn
   does not launch it.
@@ -280,13 +272,12 @@ BENCH_PAID=yes BENCH_MAX_USD=7 BENCH_MODEL=opus go tool task bench-workers   # a
 ```
 
 - **What it does.** A Git repository in a temporary folder (`README.md` says "The answer is 42", `AGENTS.md` two
-  rules). One parent session reads them, in the repository itself, for the forks. Then each round runs the five
+  rules). One parent session reads them, in the repository itself, for the forks. Then each round runs the four
   variants in turn, each in a worktree of its own, as Djinn gives each task: "Read README.md and reply with the
-  answer it gives". `BENCH_RUNS` rounds (3), `BENCH_MODEL` (haiku), `BENCH_WARM_WAIT` (5s of loading before the warm
-  worker's message), `BENCH_OUT` (a file for the table).
-- **What it measures**, per run then as medians: the time from asking (the start of the process; the message, for a
-  warm worker) to the first output and to the result; claude's own `ttft_ms`; the tokens read from the cache, written
-  to it, the other input and the output; the cost claude reports; a warm worker's memory while it waited.
+  answer it gives". `BENCH_RUNS` rounds (3), `BENCH_MODEL` (haiku), `BENCH_OUT` (a file for the table).
+- **What it measures**, per run then as medians: the time from asking (the start of the process) to the first output
+  and to the result; claude's own `ttft_ms`; the tokens read from the cache, written to it, the other input and the
+  output; the cost claude reports.
 - **The quote** comes from real runs recorded in `internal/harness/testdata/claude`: $0.006 a small Haiku 5.5 run,
   $0.18 a first Opus 5.5 call (22k tokens written to the cache). 5.5 runs a round (a fork reads its parent again)
   plus the parent. A model not observed is quoted as Opus. The cap must cover the quote; the bench stops once it has
@@ -299,17 +290,15 @@ BENCH_PAID=yes BENCH_MAX_USD=7 BENCH_MODEL=opus go tool task bench-workers   # a
 
 2026-10-08, model haiku, 3 rounds, $0.0616 spent. Medians:
 
-| Variant | Runs ok | First output | Result | Claude's ttft | Cache read | Cache write | Input | Output | Cost | Warm RSS |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| cold | 3 of 3 | 2068 ms | 3524 ms | 1507 ms | 38153 | 12845 | 4 | 409 | $0.0032 | - |
-| bare | 0 of 3 | 0 ms | 0 ms | 0 ms | 0 | 0 | 0 | 0 | $0.0000 | - |
-| fork | 3 of 3 | 2034 ms | 2954 ms | 1337 ms | 78665 | 32625 | 8 | 484 | $0.0076 | - |
-| warm | 3 of 3 | 2136 ms | 2697 ms | 1728 ms | 43648 | 14546 | 4 | 300 | $0.0035 | 238 MB |
-| brief | 3 of 3 | 2284 ms | 3554 ms | 1850 ms | 38610 | 15398 | 4 | 338 | $0.0036 | - |
+| Variant | Runs ok | First output | Result | Claude's ttft | Cache read | Cache write | Input | Output | Cost |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| cold | 3 of 3 | 2068 ms | 3524 ms | 1507 ms | 38153 | 12845 | 4 | 409 | $0.0032 |
+| bare | 0 of 3 | 0 ms | 0 ms | 0 ms | 0 | 0 | 0 | 0 | $0.0000 |
+| fork | 3 of 3 | 2034 ms | 2954 ms | 1337 ms | 78665 | 32625 | 8 | 484 | $0.0076 |
+| brief | 3 of 3 | 2284 ms | 3554 ms | 1850 ms | 38610 | 15398 | 4 | 338 | $0.0036 |
 
 What it says, on a tiny task with a small parent:
 - **A cold start is cheap**: about 2 s to the first output. The CLI's own start is not the cost to fight.
-- **Warm saves about 0.8 s** to the result (2.7 s against 3.5 s), for 238 MB of memory while it waits.
 - **A fork reads twice the cache and costs twice as much**, from a parent of only 40k tokens. From a lead of 150k
   tokens, the gap grows with every turn: a brief stays the default.
 - **A brief costs what a cold start costs**, and carries the wish's state.

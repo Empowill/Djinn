@@ -42,12 +42,6 @@ address in the data folder, for the other commands.`,
 				"default $DJINN_WORKERS.",
 		},
 		{
-			Name: "--warm-workers", Type: "bool",
-			Help: "Keep a claude loaded and waiting for the next task of each project of the active wishes, in the slots " +
-				"the running workers leave: it starts at once, and costs memory while it waits (about 300 MB each, " +
-				"supposed), no token.",
-		},
-		{
 			Name: "--worker-cpu", Type: "int", Env: "DJINN_WORKER_CPU",
 			Help: "Cap each worker's CPU at this percent of one core (150 is a core and a half), in a systemd user scope of " +
 				"its own; Linux with systemd only, and only where systemd gives your user the cpu controller, else workers " +

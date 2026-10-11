@@ -48,7 +48,7 @@ func (h *Harness) newMeter(r *run) *meter {
 		return nil
 	}
 	m := &meter{proc: p, pid: p.PID(), at: time.Now(), written: r.task.GetResources()}
-	// A warm worker ran before its task took it: its CPU time so far is not the task's.
+	// Initial CPU baseline: CPU time before the meter starts is not the task's.
 	if m.pid != 0 {
 		if g, err := h.measureRead(m.pid, p.Cgroup()); err == nil {
 			m.cpu = g.CPU
