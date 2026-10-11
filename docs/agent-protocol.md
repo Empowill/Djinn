@@ -85,28 +85,67 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   hold it, like any agent. Its model and budget are project settings, `question_model` (default `sonnet` for claude,
   the provider's own default otherwise) and `question_budget_usd` (default $2). In settings, `enlighten_workers`
   (default `true`) controls them (`docs/team-settings.md`).
-- **What reaches the lead's terminal (Decision Q173).** Djinn types into the lead's terminal only what changes something:
-  - a real merge where the branch moved (no-op batches where work was already in the branch tell nothing in the terminal;
-    repeated merges of a pass go out as one coalesced line: `Djinn: W12, W14, W15 merged into feat/foo as 1a2b3c4d`);
+- **What reaches the lead (Decision Q173).** Djinn tells the lead only what changes something:
+  - a real merge where the branch moved (no-op batches where work was already in the branch tell nothing;
+    repeated merges of a pass go out as one coalesced event: `W12, W14, W15 merged into feat/foo as 1a2b3c4d`);
   - moves only when a question was actually asked on that merge (`: push tag v1.0.0`, `: start a release`);
   - an actionable failure (a work worker failed or was cut short; an integration failed; push checks stay red; a main merge failed);
-  - an answer or question for the lead to act on (developer answers, an open question when enlighten workers are disabled,
-    a filed request or inbox item, an azima opened to plan its tasks);
+  - an answer or question for the lead to act on (developer answers, an "Enlighten me" when enlighten workers are
+    disabled, a filed request or inbox item, an azima opened to plan its tasks);
   - a task ending without failure (the lead's cue to check its final note, revised questions, or spawned tasks);
-  - a watcher waking the lead.
-  Everything else goes to the journal and the window, not to the terminal.
-- **An answer reaches the lead.** When the developer answers a question, Djinn types one line in the lead's
-  terminal, then Enter:
+  - a watcher waking the lead;
+  - Djinn restarted: `Djinn: restarted on version v1.4.0: 2 workers interrupted (W12, W14), resumed by Djinn: W12; not
+    resumed, the move is yours: W14.`
+  Everything else goes to the journal and the window.
+- **The lead's events wait in a queue; the lead watches it (Decision Q191).** Each of these is a `LeadEvent` in the
+  store, with an id (a UUIDv7), a time, a kind (`ended`, `failed`, `merged`, `answer`, `enlighten`, `move`, `restart`,
+  `watch`, `request`), the wish and the code it is about, and its line; one queue for the one lead, whatever the wish
+  (`internal/plan/leadwatch.go`). `djinn lead watch [--after <cursor>] [--timeout 1h]` blocks until an event waits,
+  lets the events settle (2 seconds of quiet, 10 at most: the lines of one integration pass, or a failure and the
+  correction Djinn starts for it, come within a second or two, and one digest is one turn of the lead instead of
+  several), then prints a digest and exits:
+
+  ```
+  2 events for the lead:
+  - W12 failed: (Build parser) failed (claude): exit 1. A correction worker started.
+  - Q43 answer: answered B — "Paraffin". Turn it into tasks: you hold the plan's graph (djinn wish brief <wish>).
+  Details: djinn task watch <task>, djinn wish brief <wish>.
+  Cursor 01a1…. Next: djinn lead watch --after 01a1… (acknowledges these, waits for the next).
+  ```
+
+  A line per event (its code, its kind, its line cut to 160 characters, and its wish's title when the events span
+  several), 30 at most (the rest come with the next watch, at once). Called again with `--after` the cursor, the watch
+  acknowledges every event up to it for the session that watches, then waits: an event never acknowledged (the lead
+  crashed, its session was lost) comes back on the next watch, at least once, never lost. With nothing in an hour (or
+  `--timeout`, at most 6 hours) it prints "No event…" and the command to run again; `--timeout 0s` returns at once.
+  The watch knows its session from the variable its agent sets for its commands (`CLAUDE_CODE_SESSION_ID`,
+  `CODEX_THREAD_ID`, `ANTIGRAVITY_CONVERSATION_ID`), else the recorded lead's: a session other than the recorded
+  lead's is refused (`djinn lead set` records it), and so is a worker. Acknowledged events are kept 7 days.
+- **Djinn types one line only when no watch waits.** While a watch of the lead's session waits, or within a minute of
+  one returning (the lead runs the next one first thing), Djinn types nothing in the lead's terminal. Otherwise, two
+  seconds after the events settle, it types one short line, `Djinn: 3 events waiting, run djinn lead watch`, at most
+  once until the lead watches again (or ten minutes passed); a lead that does not run is reopened on its session first,
+  as `djinn lead resume` does, without taking the window. djinn up does the same a minute after it starts, so that a
+  lead whose watch died with the last djinn up hears of the restart. The line waits until the developer has not typed
+  in that terminal for three seconds.
+- **Each agent is woken up by its finished watch** (recorded in `internal/plan/testdata/wake`):
+  - **Claude Code** runs it with the Bash tool and `run_in_background: true`; when it exits, Claude Code adds a
+    `<task-notification>` and the agent takes a turn, even idle (Claude Code 2.1.296; an interactive session sets no
+    time limit on background commands).
+  - **Antigravity** runs it with `run_command` and `WaitMsBeforeAsync: 500`: it goes to the background as a task, and
+    agy adds a system message, `Task id "…" finished with result`, which starts a turn (agy 1.3.3).
+  - **Codex** is not woken up by a finished command (openai/codex rust-v0.162.1: a process still running after
+    `yield_time_ms` must be polled with `write_stdin`, and its exit only shows in the interface). A codex lead keeps
+    no watch running; Djinn types its line even while a codex watch waits, and the lead runs
+    `djinn lead watch --after <cursor> --timeout 0s` in the foreground, then ends its turn.
+- **An answer reaches the lead.** When the developer answers a question, Djinn queues it for the lead:
   `Djinn: Q43 answered B — "<option>". Note: "<note>". Turn it into tasks: you hold the plan's graph (djinn wish brief <wish>).`
   Answers Djinn settles itself (an edit question, a question on work that failed to integrate, a routed request, a
-  grant) say what Djinn did. Answers given by the lead itself are not echoed back. The agent reads each line as a message,
-  queued while it works; each line is typed with Enter and paced so consecutive lines are submitted cleanly and never
-  clump or remain in the prompt box. The line waits until the developer has not typed in that terminal for three seconds,
-  and lines go out in order. A lead that does not run is reopened on its session first, as `djinn lead resume` does,
-  without taking the window.
-  If the lead does not run, the question is marked as waiting for a lead (`waiting_lead: true`), and the lead when
-  started or resumed is told of all waiting answers. The lead's global brief lists open answers without a lead under
-  `## Open answers without a lead` (`internal/plan/tell.go`).
+  grant) say what Djinn did. Answers given by the lead itself are not echoed back. An answer is never typed in the
+  lead's terminal, so it never lands in the developer's prompt box, and never lost: it waits in the queue. If the lead
+  does not run, the question is marked as waiting for a lead (`waiting_lead: true`) until the lead's watch
+  acknowledges it. The lead's global brief lists open answers without a lead under `## Open answers without a lead`
+  (`internal/plan/tell.go`).
 - **Tasks.** `djinn task spawn` starts a worker. A task that cannot start yet waits, and says why.
   `djinn task watch <task>` follows its events; `djinn task stop <task>` stops it.
   A task no longer useful is cancelled, never marked done: `djinn task cancel <task> --note "…"` stops its worker,

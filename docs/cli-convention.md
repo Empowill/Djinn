@@ -62,6 +62,8 @@ A pair is how `djinn task depend --also` sets several tasks in one call: `TaskAf
 A field marked `(djinn.v1.env) = "DJINN_TASK_ID"` or `"DJINN_LEAD"` takes that environment variable when the command line,
 or a tool call of `djinn mcp`, leaves it empty: Djinn sets `$DJINN_TASK_ID` for every worker and `$DJINN_LEAD` for the
 lead's terminal, so commands name the caller by themselves. A value given wins. The help says it, from the field's comment.
+The option may name several variables, separated by spaces: the first one set wins. `djinn lead watch` names its session
+by `"CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID ANTIGRAVITY_CONVERSATION_ID"`, the variable each agent sets for its commands.
 
 The `oneof` rule is how a question is named by its code or its identifier: `QuestionRef` has `code` (pattern
 `^Q[0-9]{2,3}$`) then `id` (a UUID), so `Q03` lands in `code` and a UUID in `id`. An input no member accepts

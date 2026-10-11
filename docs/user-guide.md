@@ -283,10 +283,11 @@ Windows, install when needed), Djinn or the agent asks it as a question with the
 Your answer goes to the lead and the workers. An answered question is a decision. From a terminal,
 `djinn question answer <question> <choice>` answers a question; Djinn marks the lead terminal with `$DJINN_LEAD`,
 so an answer typed by the lead is attributed to it without echoing back to its own terminal, whereas an answer
-typed in a plain shell is attributed to the developer and reaches the lead as a message. When a question is answered in
-any wish, Djinn routes the answer to the lead terminal. If no lead runs, Djinn marks the question as waiting for
-a lead; the next lead to start or resume is told of all waiting answers, and the brief lists them under
-**Open answers without a lead.**
+typed in a plain shell is attributed to the developer and reaches the lead. When a question is answered in
+any wish, Djinn queues the answer for the one lead, which waits on `djinn lead watch`: nothing is typed in the lead's
+terminal while its watch runs, so nothing lands in your prompt box; without a watch, Djinn types one short line,
+"Djinn: N events waiting, run djinn lead watch". If no lead runs, Djinn marks the question as waiting for a lead until
+the lead acknowledges it, and the brief lists it under **Open answers without a lead.**
 
 An open question can be moved to another wish (`djinn question move <question> --wish <wish>`), with `--follow` to
 bring tasks following this decision along with it. A question no longer relevant can be withdrawn without an answer
