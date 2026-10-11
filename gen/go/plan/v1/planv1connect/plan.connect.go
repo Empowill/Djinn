@@ -162,6 +162,8 @@ const (
 	TaskServiceListProcedure = "/plan.v1.TaskService/List"
 	// TaskServiceGetProcedure is the fully-qualified name of the TaskService's Get RPC.
 	TaskServiceGetProcedure = "/plan.v1.TaskService/Get"
+	// TaskServiceDiffProcedure is the fully-qualified name of the TaskService's Diff RPC.
+	TaskServiceDiffProcedure = "/plan.v1.TaskService/Diff"
 	// TaskServiceStopProcedure is the fully-qualified name of the TaskService's Stop RPC.
 	TaskServiceStopProcedure = "/plan.v1.TaskService/Stop"
 	// TaskServicePauseProcedure is the fully-qualified name of the TaskService's Pause RPC.
@@ -2023,6 +2025,9 @@ type TaskServiceClient interface {
 	List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error)
 	// Show a task.
 	Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error)
+	// File diff of a task against its base: with no file given, the files changed and their counts; with a file, the
+	// unified diff of that file with syntax tokens.
+	Diff(context.Context, *connect.Request[v1.TaskServiceDiffRequest]) (*connect.Response[v1.TaskServiceDiffResponse], error)
 	// Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
 	// started is stopped at once.
 	Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error)
@@ -2103,6 +2108,13 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+TaskServiceGetProcedure,
 			connect.WithSchema(taskServiceMethods.ByName("Get")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		diff: connect.NewClient[v1.TaskServiceDiffRequest, v1.TaskServiceDiffResponse](
+			httpClient,
+			baseURL+TaskServiceDiffProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Diff")),
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
@@ -2204,6 +2216,7 @@ type taskServiceClient struct {
 	spawn     *connect.Client[v1.TaskServiceSpawnRequest, v1.TaskServiceSpawnResponse]
 	list      *connect.Client[v1.TaskServiceListRequest, v1.TaskServiceListResponse]
 	get       *connect.Client[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse]
+	diff      *connect.Client[v1.TaskServiceDiffRequest, v1.TaskServiceDiffResponse]
 	stop      *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
 	pause     *connect.Client[v1.TaskServicePauseRequest, v1.TaskServicePauseResponse]
 	resume    *connect.Client[v1.TaskServiceResumeRequest, v1.TaskServiceResumeResponse]
@@ -2234,6 +2247,11 @@ func (c *taskServiceClient) List(ctx context.Context, req *connect.Request[v1.Ta
 // Get calls plan.v1.TaskService.Get.
 func (c *taskServiceClient) Get(ctx context.Context, req *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error) {
 	return c.get.CallUnary(ctx, req)
+}
+
+// Diff calls plan.v1.TaskService.Diff.
+func (c *taskServiceClient) Diff(ctx context.Context, req *connect.Request[v1.TaskServiceDiffRequest]) (*connect.Response[v1.TaskServiceDiffResponse], error) {
+	return c.diff.CallUnary(ctx, req)
 }
 
 // Stop calls plan.v1.TaskService.Stop.
@@ -2322,6 +2340,9 @@ type TaskServiceHandler interface {
 	List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error)
 	// Show a task.
 	Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error)
+	// File diff of a task against its base: with no file given, the files changed and their counts; with a file, the
+	// unified diff of that file with syntax tokens.
+	Diff(context.Context, *connect.Request[v1.TaskServiceDiffRequest]) (*connect.Response[v1.TaskServiceDiffResponse], error)
 	// Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
 	// started is stopped at once.
 	Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error)
@@ -2398,6 +2419,13 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		TaskServiceGetProcedure,
 		svc.Get,
 		connect.WithSchema(taskServiceMethods.ByName("Get")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceDiffHandler := connect.NewUnaryHandler(
+		TaskServiceDiffProcedure,
+		svc.Diff,
+		connect.WithSchema(taskServiceMethods.ByName("Diff")),
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
@@ -2499,6 +2527,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceListHandler.ServeHTTP(w, r)
 		case TaskServiceGetProcedure:
 			taskServiceGetHandler.ServeHTTP(w, r)
+		case TaskServiceDiffProcedure:
+			taskServiceDiffHandler.ServeHTTP(w, r)
 		case TaskServiceStopProcedure:
 			taskServiceStopHandler.ServeHTTP(w, r)
 		case TaskServicePauseProcedure:
@@ -2548,6 +2578,10 @@ func (UnimplementedTaskServiceHandler) List(context.Context, *connect.Request[v1
 
 func (UnimplementedTaskServiceHandler) Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Get is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Diff(context.Context, *connect.Request[v1.TaskServiceDiffRequest]) (*connect.Response[v1.TaskServiceDiffResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Diff is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error) {

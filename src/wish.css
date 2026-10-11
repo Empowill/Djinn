@@ -282,6 +282,15 @@
   font-size: var(--font-size-body);
   color: var(--accent);
 }
+.wish-task-events-fold {
+  display: inline-block;
+  vertical-align: top;
+  margin-right: var(--space-2);
+}
+.wish-task-events-fold[open] {
+  display: block;
+  width: 100%;
+}
 .wish-task-events-fold > summary.wish-task-logs-button {
   list-style: none;
   cursor: pointer;
