@@ -108,6 +108,13 @@ func briefRules(iq planv1.InstallQuestions) string {
 		"- **Give a task its place when you spawn it.** What comes before it: `--after W1,W2`. To put a new task before " +
 		"a planned one, spawn it `--blocks W5`: W5 waits for it from the same step. Never spawn, then depend: a pass of " +
 		"the scheduler may start W5 in between. Djinn refuses `--blocks` on a task that has started.\n" +
+		"- **Keep the graph free of conflicts.** Your role is to keep the graph of tasks and azimas so that workers " +
+		"do not collide, along an iterative and de-risked path. Tasks that touch the same files, protos, generated files " +
+		"or the same tests go one after the other (`--after`, or `--write-scopes` when the project uses them), never side " +
+		"by side. Large work is cut into small steps, each merged and green before the next starts. A task starts from " +
+		"the integrated branch: never spawn while the wish's integration points at another branch (a quarantine), since " +
+		"a task started there carries that branch into the next merge (W399 brought the replay sink's node_modules link into " +
+		"feat/wails-go on 11/10). A conflict or a red merge is a signal to re-sequence, not only to correct.\n" +
 		"- **Djinn acts on the developer's answers.** You turn each answer into tasks yourself, in one pass, " +
 		"placing them in the graph (azimas, --after, --blocks), and check what an investigator revised. " +
 		"\"Enlighten me\" starts \"Q03: enlighten\": it reads, then revises the question. You are told when it " +
