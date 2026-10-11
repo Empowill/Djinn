@@ -98,7 +98,9 @@ test.describe("Lead of another agent", () => {
     const menu = page.getByRole("menu", { name: "Choose the agent" });
     const claude = menu.getByRole("menuitem", { name: /Claude/ });
     await expect(claude).toHaveAttribute("aria-current", "true");
-    await expect(claude).toContainText("The wish's lead: resumes its session");
+    await expect(claude).toContainText(
+      "The lead: resumes it, focused on this wish",
+    );
     const agy = menu.getByRole("menuitem", { name: /Antigravity/ });
     await expect(agy).toBeEnabled();
     await agy.click();

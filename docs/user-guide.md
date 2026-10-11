@@ -121,7 +121,7 @@ the questions and keeps the plans true. It drives Djinn with the `djinn` command
 
 The arrow beside **Lead**, **Choose the agent**, starts a lead of another agent found on this machine: Claude Code,
 Codex or Antigravity. An agent that is not installed shows greyed, saying so; the recorded one is checked, and picking
-it resumes its session. Starting a lead of another provider replaces it.
+it resumes the lead, focused on this wish. Starting a lead of another provider replaces it.
 
 Every new lead, of any agent, starts by running `djinn brief`: every active wish at once (each wish's title, description,
 open questions, what runs and waits, its azimas), then Djinn's rules and the projects' (`AGENTS.md`, `CLAUDE.md`,
@@ -298,8 +298,8 @@ the app bundle. The **Global shortcut**, in Connections & preferences, brings Dj
 newest question (Ctrl+Alt+Space by default, Ctrl+Cmd+J on macOS; empty turns it off).
 
 **A request that belongs elsewhere.** When something unrelated comes up, the lead hands it to Djinn, which asks you
-"Where does this request go?": file it in an existing wish, keep it where it is, or open a new one whose lead starts
-on it. Djinn ranks the wishes by their titles, projects and latest blocks, without a model.
+"Where does this request go?": file it in an existing wish, keep it where it is, or open a new one: the window opens it,
+and the one lead is told of it. Djinn ranks the wishes by their titles, projects and latest blocks, without a model.
 
 ## Everything for you is a question
 

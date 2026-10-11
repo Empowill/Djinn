@@ -809,7 +809,7 @@ type InboxServiceClient interface {
 	// Set an item aside: it is not proposed again. Nothing is sent to its source.
 	Dismiss(context.Context, *connect.Request[v1.InboxServiceDismissRequest]) (*connect.Response[v1.InboxServiceDismissResponse], error)
 	// Send an item where an option of its route says: file it in a wish, or make the new wish, from its template when
-	// one matched, and start its watcher and its lead. Nothing is sent to its source.
+	// one matched, and start its watcher. Nothing is sent to its source.
 	Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error)
 	// List the sources the projects' skills declare, plugged in or not on this machine.
 	Sources(context.Context, *connect.Request[v1.InboxServiceSourcesRequest]) (*connect.Response[v1.InboxServiceSourcesResponse], error)
@@ -918,7 +918,7 @@ type InboxServiceHandler interface {
 	// Set an item aside: it is not proposed again. Nothing is sent to its source.
 	Dismiss(context.Context, *connect.Request[v1.InboxServiceDismissRequest]) (*connect.Response[v1.InboxServiceDismissResponse], error)
 	// Send an item where an option of its route says: file it in a wish, or make the new wish, from its template when
-	// one matched, and start its watcher and its lead. Nothing is sent to its source.
+	// one matched, and start its watcher. Nothing is sent to its source.
 	Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error)
 	// List the sources the projects' skills declare, plugged in or not on this machine.
 	Sources(context.Context, *connect.Request[v1.InboxServiceSourcesRequest]) (*connect.Response[v1.InboxServiceSourcesResponse], error)
@@ -1071,7 +1071,7 @@ type WishServiceClient interface {
 	// active at most: when three are, it takes the third place, and the third wish is paused.
 	Activate(context.Context, *connect.Request[v1.WishServiceActivateRequest]) (*connect.Response[v1.WishServiceActivateResponse], error)
 	// Delete a wish, and all that belongs to it: its tasks and their events, its questions, its blocks. Its workers
-	// stop first, and its lead's terminal closes. A task's worktree goes when it holds no work: clean, and no commit
+	// stop first. A task's worktree goes when it holds no work: clean, and no commit
 	// beyond the project's current branch; the others stay, said with why. Branches all stay. It cannot be undone.
 	Delete(context.Context, *connect.Request[v1.WishServiceDeleteRequest]) (*connect.Response[v1.WishServiceDeleteResponse], error)
 	// Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
@@ -1089,9 +1089,9 @@ type WishServiceClient interface {
 	// projects the request names or links to (a GitLab or GitHub link whose repository is a project's remote), and
 	// their latest blocks. It proposes to file the request in the closest ones, or to open a new wish with a title
 	// and a project. A request that matches the wish template of a skill in those projects (metadata.djinn.wish in
-	// its SKILL.md) proposes the template's wish: its title, its watcher, its lead started with the skill. With
-	// --ask, the proposal is a question on the wish --wish-id: answering it files the request, or makes the new wish
-	// and starts its watcher and its lead in its own terminal.
+	// its SKILL.md) proposes the template's wish: its title, its watcher, the skill for the lead to follow. With
+	// --ask, the proposal is a question on the wish --wish-id: answering it files the request, or makes the new wish,
+	// starts its watcher and opens it in the window; the lead is told where the request went.
 	Route(context.Context, *connect.Request[v1.WishServiceRouteRequest]) (*connect.Response[v1.WishServiceRouteResponse], error)
 	// Follow what changes, as it changes: which wish, and what in it. The first message names everything, to read; then
 	// each change follows, with the tasks, questions and blocks that changed, whole, so that a reader replaces them
@@ -1435,7 +1435,7 @@ type WishServiceHandler interface {
 	// active at most: when three are, it takes the third place, and the third wish is paused.
 	Activate(context.Context, *connect.Request[v1.WishServiceActivateRequest]) (*connect.Response[v1.WishServiceActivateResponse], error)
 	// Delete a wish, and all that belongs to it: its tasks and their events, its questions, its blocks. Its workers
-	// stop first, and its lead's terminal closes. A task's worktree goes when it holds no work: clean, and no commit
+	// stop first. A task's worktree goes when it holds no work: clean, and no commit
 	// beyond the project's current branch; the others stay, said with why. Branches all stay. It cannot be undone.
 	Delete(context.Context, *connect.Request[v1.WishServiceDeleteRequest]) (*connect.Response[v1.WishServiceDeleteResponse], error)
 	// Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
@@ -1453,9 +1453,9 @@ type WishServiceHandler interface {
 	// projects the request names or links to (a GitLab or GitHub link whose repository is a project's remote), and
 	// their latest blocks. It proposes to file the request in the closest ones, or to open a new wish with a title
 	// and a project. A request that matches the wish template of a skill in those projects (metadata.djinn.wish in
-	// its SKILL.md) proposes the template's wish: its title, its watcher, its lead started with the skill. With
-	// --ask, the proposal is a question on the wish --wish-id: answering it files the request, or makes the new wish
-	// and starts its watcher and its lead in its own terminal.
+	// its SKILL.md) proposes the template's wish: its title, its watcher, the skill for the lead to follow. With
+	// --ask, the proposal is a question on the wish --wish-id: answering it files the request, or makes the new wish,
+	// starts its watcher and opens it in the window; the lead is told where the request went.
 	Route(context.Context, *connect.Request[v1.WishServiceRouteRequest]) (*connect.Response[v1.WishServiceRouteResponse], error)
 	// Follow what changes, as it changes: which wish, and what in it. The first message names everything, to read; then
 	// each change follows, with the tasks, questions and blocks that changed, whole, so that a reader replaces them

@@ -248,7 +248,7 @@ func TestRouteAnswered(t *testing.T) {
 	if choice, ok := Recommended(q); !ok || choice != planv1.Choice_CHOICE_A {
 		t.Errorf("recommended %v, %v", choice, ok)
 	}
-	opened := len(leads.opened)
+	opened, shown := len(leads.opened), len(leads.shown)
 	if _, err := c.marks.Put(ctx, connect.NewRequest(&planv1.MarkServicePutRequest{
 		WishId: here.GetId(), Target: &planv1.MarkTarget{Ref: &planv1.MarkTarget_Code{Code: "Q01"}},
 		Kind: planv1.MarkKind_MARK_KIND_APPROVED,
@@ -262,9 +262,12 @@ func TestRouteAnswered(t *testing.T) {
 	if got := c.requests(t, made.GetId()); !slices.Equal(got, []string{request}) {
 		t.Errorf("requests filed = %q", got)
 	}
-	// The lead is reopened to be told; no second lead is started.
+	// The lead is reopened to be told; no second lead is started. The window opens the new wish.
 	if len(leads.opened) != opened+1 || !strings.HasPrefix(leads.opened[opened], "claude --resume "+session) {
 		t.Errorf("opened %q", leads.opened[opened:])
+	}
+	if !slices.Equal(leads.shown[shown:], []string{made.GetId() + "/"}) {
+		t.Errorf("shown %q, want the new wish", leads.shown[shown:])
 	}
 	answered := c.questionOf(t, q.GetId())
 	if answered.GetRoute().GetOptions()[0].GetWishId() != made.GetId() {
@@ -302,10 +305,10 @@ func TestRouteAnswered(t *testing.T) {
 		!strings.HasPrefix(q.GetOptions()[2], "File it in ") || q.GetOptions()[3] != "Keep it in “Lamp: the sidebar”" {
 		t.Fatalf("options %q", q.GetOptions())
 	}
-	opened = len(leads.opened)
+	opened, shown = len(leads.opened), len(leads.shown)
 	c.answer(t, q, planv1.Choice_CHOICE_A, "")
 	queued := wishTitled(t, c, "Order more coffee beans")
-	if queued.GetState() != planv1.WishState_WISH_STATE_PAUSED || len(leads.opened) != opened ||
+	if queued.GetState() != planv1.WishState_WISH_STATE_PAUSED || len(leads.opened) != opened || len(leads.shown) != shown ||
 		!slices.Equal(c.requests(t, queued.GetId()), []string{"order more coffee beans"}) {
 		t.Errorf("queued = %v, opened %q", queued, leads.opened[opened:])
 	}
@@ -314,8 +317,9 @@ func TestRouteAnswered(t *testing.T) {
 	if w := wishTitled(t, c, "Babysit shop!41"); w.GetState() != planv1.WishState_WISH_STATE_PAUSED {
 		t.Errorf("not paused: %v", w)
 	}
-	if w := wishTitled(t, c, "Polish the brass of the lamp"); !Active(w) || len(leads.opened) != opened {
-		t.Errorf("swapped in = %v, opened %q", w, leads.opened[opened:])
+	if w := wishTitled(t, c, "Polish the brass of the lamp"); !Active(w) || len(leads.opened) != opened ||
+		!slices.Equal(leads.shown[shown:], []string{w.GetId() + "/"}) {
+		t.Errorf("swapped in = %v, opened %q, shown %q", w, leads.opened[opened:], leads.shown[shown:])
 	}
 	if actives := Ranked(c.list(t)); len(actives) != MaxActive {
 		t.Errorf("%d active", len(actives))

@@ -271,7 +271,7 @@ func held(key string, wishes []*planv1.Wish, blocks map[string][]*planv1.Block) 
 // Inbox implements InboxService, and receives what the sources print.
 type Inbox struct {
 	planv1connect.UnimplementedInboxServiceHandler
-	// Wishes routes an item: it files it, or makes its wish and starts its watcher and lead.
+	// Wishes routes an item: it files it, or makes its wish and starts its watcher.
 	Wishes *Wishes
 }
 

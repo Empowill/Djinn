@@ -20,7 +20,7 @@ import (
 )
 
 // runOpen is djinn open <link>: it hands the link to the djinn that runs on this data folder, one per folder as djinn
-// up and djinn wish resume find it, after starting one in the background when none answers. It returns the exit code:
+// up and djinn lead resume find it, after starting one in the background when none answers. It returns the exit code:
 // 2 for a command line that is wrong, or a link that is not a djinn:// one, where nothing is started. Its help is
 // cli.Open.
 func runOpen(args []string, stdout, stderr io.Writer) int {

@@ -79,7 +79,7 @@ type Service struct {
 	updated    chan struct{}    // closed and replaced at each change
 }
 
-// replay is how long a request to show something waits for a window that opens after it: djinn wish resume may
+// replay is how long a request to show something waits for a window that opens after it: djinn lead resume may
 // start djinn, whose page loads after the request.
 const replay = time.Minute
 

@@ -351,8 +351,8 @@ func (u *updater) Restarting() bool {
 
 // resumeTerminals runs again the terminals a restart noted in home, or the leads a crash left, shows the window what
 // it showed, and returns the terminals that did not start, one line each. The note is removed once read, before the
-// terminals start and the note of the leads follows them: a lead that did not start keeps its session in its wish,
-// for djinn wish resume.
+// terminals start and the note of the leads follows them: a lead that did not start keeps its session recorded,
+// for djinn lead resume.
 func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say io.Writer) []string {
 	path := filepath.Join(home, RestartFile)
 	data, err := os.ReadFile(path)
@@ -486,7 +486,7 @@ func runUpdate(args []string) error {
 		return stream.Err()
 	}
 	if lines := stream.Msg().GetNotResumed(); len(lines) > 0 {
-		fmt.Println("djinn: not resumed (each wish keeps its lead: djinn wish resume <wish-id>):")
+		fmt.Println("djinn: not resumed (the lead keeps its session: djinn lead resume):")
 		for _, line := range lines {
 			fmt.Println("  -", line)
 		}

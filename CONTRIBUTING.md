@@ -253,8 +253,8 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
   The scheme is registered without sudo: on Linux `go tool task install` adds it to the menu entry
   (`MimeType=x-scheme-handler/djinn`, `xdg-mime default`); on macOS `Djinn.app` declares it (`CFBundleURLTypes`);
   on Windows the install, or else `djinn up`, writes it in the user's registry (`HKCU\Software\Classes\djinn`).
-- `djinn mcp` serves the commands as MCP tools on stdio, for an agent that speaks MCP (`wish_set_lead` is
-  `djinn wish set-lead`; [convention](docs/cli-convention.md#mcp)).
+- `djinn mcp` serves the commands as MCP tools on stdio, for an agent that speaks MCP (`lead_set` is
+  `djinn lead set`; [convention](docs/cli-convention.md#mcp)).
 - `djinn gate run <name> -- <command>` runs a command under a gate and records what it cost in its project (CPU
   time, peak memory, duration); `djinn command list [--project <name>]` shows the costs. Held outside a running
   worker (a person's terminal, a lead, `djinn gate hold <name> --pid <pid>`), a gate takes a worker's slot, is
@@ -274,19 +274,21 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
   ([T07](plan/8e8d3d76-orchestrator.md)).
 - `djinn backup [--file <archive>]` copies the data folder, even while Djinn runs; `djinn backup restore <archive>`
   puts it back, Djinn stopped ([`docs/backup.md`](docs/backup.md)).
-- `djinn wish set-lead <wish-id> <session-id> --directory <folder>` records a wish's lead session;
-  `djinn wish resume <wish-id>` shows the wish and resumes its lead in the window's terminal,
-  starting Djinn if needed. A second `djinn up` brings the window to the front.
+- One lead leads every wish, in the window's terminal "lead". `djinn lead set <session-id> [--provider <agent>]
+  [--directory <folder>]` records its session; `djinn lead get` shows it; `djinn lead resume` resumes it, starting
+  Djinn if needed, and `--wish-id <wish-id>` shows the wish and focuses the lead on it (the wish's Lead button does the
+  same). A second `djinn up` brings the window to the front.
 - `djinn wish route "<request>" --wish-id <wish-id> --ask`: a request that is not about the wish becomes a card, without a
-  model: open a new one whose lead starts on it in its own terminal, file it in an existing wish, or keep it here
+  model: open a new wish, which the window opens and the lead is told of, file it in an existing wish, or keep it here
   ([T26](plan/e1210c5e-request-routing.md)). A request that matches a skill's wish template (`metadata.djinn.wish` in its
-  `SKILL.md`) makes that skill's wish, its watcher started and its lead on the skill: `.agents/skills/babysit-pr` for a
-  GitHub pull request, `.agents/skills/babysit-mr` for a GitLab merge request
+  `SKILL.md`) makes that skill's wish, its watcher started and its brief telling the lead to follow the skill:
+  `.agents/skills/babysit-pr` for a GitHub pull request, `.agents/skills/babysit-mr` for a GitLab merge request
   ([`docs/wish-templates.md`](docs/wish-templates.md)).
-- `djinn wish brief <wish-id>`: where the wish stands and how to lead it, computed from the store; every new lead, of
-  any agent, starts by running it. `djinn wish describe <wish-id> --text "…"` gives the wish the few lines it opens with
-  (also edited under the wish's title). `djinn wish resume <wish-id> --provider antigravity` (or the arrow beside Lead)
-  starts a lead of another agent than the recorded one's.
+- `djinn lead brief` (or `djinn brief`): every active wish at once and how to lead them, computed from the store; every
+  new lead, of any agent, starts by running it. `djinn wish brief <wish-id>`: where one wish stands, which the lead
+  reads when focused on it. `djinn wish describe <wish-id> --text "…"` gives the wish the few lines it opens with
+  (also edited under the wish's title). `djinn lead resume --provider antigravity` (or the arrow beside Lead) starts a
+  lead of another agent than the recorded one's.
   `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `go tool task
   bench-workers` (paid, refuses without consent) compares the ways Djinn starts a worker ([T14](plan/8ce817da-cost.md)).
 - `djinn task send <task-id> "…"` gives a running worker an instruction (or the box under its events, in the window):

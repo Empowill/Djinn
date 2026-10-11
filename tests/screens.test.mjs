@@ -3132,7 +3132,7 @@ test("an azima whose status is done while its state is in progress shows in prog
   assert.doesNotMatch(page, /<b>1<\/b>\/ 1 azimas<\/span>/);
 });
 
-test("Lead is split: the button resumes the recorded lead, the arrow lists this machine's agents", () => {
+test("Lead is split: the button resumes the one lead, focused on the wish, the arrow lists this machine's agents", () => {
   const agents = [
     { id: "codex", name: "Codex", available: false, command: "codex" },
     { id: "claude", name: "Claude", available: true, command: "/bin/claude" },
@@ -3192,7 +3192,7 @@ test("Lead is split: the button resumes the recorded lead, the arrow lists this 
   );
   assert.match(
     open,
-    /<button role="menuitem" class="lead-agent current" aria-current="true"><span class="lead-agent-name">Claude<svg[^]*?The wish&#x27;s lead: resumes its session/,
+    /<button role="menuitem" class="lead-agent current" aria-current="true"><span class="lead-agent-name">Claude<svg[^]*?The lead: resumes it, focused on this wish/,
   );
   assert.match(
     open,

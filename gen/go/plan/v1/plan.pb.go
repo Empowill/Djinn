@@ -1377,11 +1377,11 @@ const (
 	RouteKind_ROUTE_KIND_UNSPECIFIED RouteKind = 0
 	// File the request in an existing wish, as a block, and tell its lead.
 	RouteKind_ROUTE_KIND_FILE RouteKind = 1
-	// Make a new wish, active, and start its lead on the request.
+	// Make a new wish, active, the request in its blocks, and show it in the window.
 	RouteKind_ROUTE_KIND_NEW RouteKind = 2
 	// Make a new wish paused: it waits for a place, three wishes being active.
 	RouteKind_ROUTE_KIND_QUEUE RouteKind = 3
-	// Pause an active wish to make room, then make the new wish and start its lead on the request.
+	// Pause an active wish to make room, then make the new wish as ROUTE_KIND_NEW does.
 	RouteKind_ROUTE_KIND_SWAP RouteKind = 4
 )
 
@@ -3500,8 +3500,8 @@ func (x *IntegrationBranch) GetBranch() string {
 }
 
 // WishTemplate is the skill a wish was made from: a request matched the wish template its SKILL.md declares, under
-// metadata.djinn.wish. Djinn started the template's watcher, and the wish's lead starts with the skill. When the
-// watcher prints its done line, Djinn asks whether to grant the wish; only the answer grants it.
+// metadata.djinn.wish. Djinn started the template's watcher, and the wish's brief tells the lead to follow the skill.
+// When the watcher prints its done line, Djinn asks whether to grant the wish; only the answer grants it.
 type WishTemplate struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The skill's name: its folder's name.
@@ -5568,7 +5568,7 @@ type Question struct {
 	// How many times the lead revised it.
 	Revision int32 `protobuf:"varint,12,opt,name=revision,proto3" json:"revision,omitempty"`
 	// Where a request may go, when djinn wish route --ask asked this question: each option is a destination, in the
-	// same order. Answering it files the request, or makes the new wish and starts its lead.
+	// same order. Answering it files the request, or makes the new wish; the lead is told where it went.
 	Route *Route `protobuf:"bytes,13,opt,name=route,proto3" json:"route,omitempty"`
 	// Djinn asked it when the watcher of the wish's template printed its done line: answering A grants the wish, B
 	// keeps it open. Djinn never grants a wish itself.
@@ -5847,7 +5847,7 @@ type RouteOption struct {
 	// Why, in a few words.
 	Reason string `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
 	// The skill whose wish template the request matched, for a new wish: its title comes from it, its watcher starts
-	// with it, and its lead starts with the skill.
+	// with it, and its brief tells the lead to follow the skill.
 	Template      *WishTemplate `protobuf:"bytes,8,opt,name=template,proto3" json:"template,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
