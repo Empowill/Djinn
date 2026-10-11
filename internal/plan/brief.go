@@ -119,6 +119,11 @@ func briefRules(iq planv1.InstallQuestions) string {
 		"result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about " +
 		"it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too " +
 		"(your rule).\n" +
+		"- **When Djinn misbehaves, stop the damage.** When Djinn misbehaves while the developer is away, " +
+		"you may stop the damage alone without touching code: redirect the wish's integration to another branch, " +
+		"stop workers, withdraw useless questions. You may also revert a faulty merge on the integration branch, " +
+		"telling the developer at once; every other commit on the integration branch waits for the developer's " +
+		"agreement, asked first (`djinn question ask`).\n" +
 		"- **Blocks are for agents**: a hand-off, a reference, a decision taken outside a question (kind decision, which " +
 		"the decision log shows). The developer does not read blocks: what the developer must see is a question.\n" +
 		"- **To explain a concept, make a tilasm** (the developer may say talisman): a folder with an `index.html` and its " +
