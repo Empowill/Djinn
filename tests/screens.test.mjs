@@ -70,6 +70,7 @@ export { readDrop } from "@/src/data/tilasms.ts";
 export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export { ConsumptionPanel } from "@/src/consumption-panel.tsx";
 export { MachineService, CommandService } from "@/gen/ts/machine/v1/machine_pb.ts";
+export { TaskDiffView, UnifiedView, SplitView } from "@/src/diff.tsx";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
@@ -1195,8 +1196,67 @@ test("a task card shows its prompt on hover, and opened shows prompt and no logs
   assert.match(opened, /First instruction line/);
   assert.match(opened, /wish-task-logs-button/);
   assert.match(opened, /See logs/);
-  // Logs are deferred: event container is not rendered until logs are toggled.
+  assert.match(opened, /wish-task-diff-button/);
+  assert.match(opened, /See the diff/);
+  // Logs and diff are deferred: containers are not rendered until toggled.
   assert.doesNotMatch(opened, /class="wish-task-events"/);
+  assert.doesNotMatch(opened, /class="task-diff-view"/);
+});
+
+test("diff views render unified and split diffs with Chroma syntax tokens and hunk headers", () => {
+  const hunks = [
+    {
+      header: "@@ -1,3 +1,4 @@",
+      lines: [
+        {
+          kind: s.DiffLineKind.CONTEXT,
+          oldLine: 1,
+          newLine: 1,
+          text: "package main",
+          tokens: [
+            { text: "package", category: "keyword" },
+            { text: " main", category: "" },
+          ],
+        },
+        {
+          kind: s.DiffLineKind.DELETED,
+          oldLine: 2,
+          newLine: 0,
+          text: "// old line",
+          tokens: [{ text: "// old line", category: "comment" }],
+        },
+        {
+          kind: s.DiffLineKind.ADDED,
+          oldLine: 0,
+          newLine: 2,
+          text: "// new line",
+          tokens: [{ text: "// new line", category: "comment" }],
+        },
+      ],
+    },
+  ];
+
+  // 1. Unified view
+  const unified = s.renderToStaticMarkup(h(s.UnifiedView, { hunks }));
+  assert.match(unified, /diff-hunk-header/);
+  assert.match(unified, /@@ -1,3 \+1,4 @@/);
+  assert.match(unified, /line-context/);
+  assert.match(unified, /line-deleted/);
+  assert.match(unified, /line-added/);
+  assert.match(unified, /tok-keyword/);
+  assert.match(unified, /tok-comment/);
+  assert.match(unified, />package</);
+  assert.match(unified, />\+/);
+  assert.match(unified, />-</);
+
+  // 2. Split view
+  const split = s.renderToStaticMarkup(h(s.SplitView, { hunks }));
+  assert.match(split, /diff-split-table/);
+  assert.match(split, /diff-split-row/);
+  assert.match(split, /diff-split-side left/);
+  assert.match(split, /diff-split-side right/);
+  assert.match(split, /tok-keyword/);
+  assert.match(split, /tok-comment/);
 });
 
 test("promptPreview truncates long prompts to a few lines with an ellipsis", () => {

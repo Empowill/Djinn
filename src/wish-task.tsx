@@ -56,6 +56,7 @@ import { DecisionLink } from "./decision-log";
 import { language, t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
+import { TaskDiffView } from "./diff";
 import { resourcesDetail, resourcesNow, TaskUsage, usageDetail } from "./usage";
 
 const eventIcons: Partial<Record<TaskEventKind, typeof FileText>> = {
@@ -507,6 +508,7 @@ function TaskBody({
   prompt: string;
 }) {
   const [showLogs, setShowLogs] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
   const events = useTaskEvents(task.id, task.status, showLogs);
   const box = useRef<HTMLDivElement>(null);
   // Keep the newest event in sight while the worker runs, inside the box: the page stays where it is.
@@ -579,6 +581,19 @@ function TaskBody({
             )}
           </div>
         )}
+      </details>
+      <details className="wish-task-diff-fold" open={showDiff}>
+        <summary
+          className="button secondary small wish-task-diff-button"
+          role="button"
+          onClick={(e) => {
+            e.preventDefault();
+            setShowDiff(!showDiff);
+          }}
+        >
+          {showDiff ? t("task.hide_diff") : t("task.see_diff")}
+        </summary>
+        {showDiff && <TaskDiffView task={task} />}
       </details>
     </div>
   );
