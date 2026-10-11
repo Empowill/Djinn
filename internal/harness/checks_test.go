@@ -544,15 +544,15 @@ func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 		t.Errorf("W2 integration after correction conflict = %v; want COMMITTED", w2In)
 	}
 
-	// A new dependent task WDep depending on W1 is planned: it must be free to start!
+	// A new dependent task WDep depending on W1 is planned: while push checks are red, it waits to be green again!
 	wDep := in.mustSpawn(t, in.wishID, "Dependent", "wait\ntext dependent", &planv1.TaskServiceSpawnRequest{
 		DependsOn: []string{"W1"},
 	})
-	// Because W1 is COMMITTED, WDep does NOT wait on W1 ("waits for W1 to be committed (conflict)")
-	// It is dispatched and starts running!
-	wDep = in.until(t, wDep.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
-	in.release(t, wDep.GetId())
-	in.ended(t, wDep.GetId())
+	// W1 remains COMMITTED, but wDep waits for the branch to be green again!
+	wDep = in.get(t, wDep.GetId())
+	if wDep.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !strings.Contains(wDep.GetWaitReason(), "to be green again") {
+		t.Fatalf("wDep while push held = %v; want pending waiting to be green again", wDep)
+	}
 
 	// The correction worker W3 has CONFLICT integration state on itself.
 	w3In, _ := in.integration(t, w3)
@@ -588,9 +588,149 @@ func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 		t.Errorf("after push, pushState = %v; want cleared", state)
 	}
 
+	// Now that push checks have passed and push succeeded, wDep starts running and finishes!
+	wDep = in.until(t, wDep.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	in.release(t, wDep.GetId())
+	in.ended(t, wDep.GetId())
+	in.pass(t, time.Second)
+
 	// W1, W2, and wDep all remain COMMITTED!
 	wantStates := fmt.Sprintf("W1 COMMITTED, W2 COMMITTED, %s COMMITTED", wDep.GetCode())
 	if got := in.states(t, w1, w2, wDep); got != wantStates {
 		t.Errorf("final task states = %s; want %s", got, wantStates)
+	}
+}
+
+// TestPushHeldBlocksPlannedTasksUntilGreen: while push checks are red, planned work tasks
+// wait with "waits for <branch> to be green again (push checks red at <sha>: <check>)";
+// once the correction makes the checks pass and the push clears, the task starts from the green head.
+func TestPushHeldBlocksPlannedTasksUntilGreen(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.checking(t, lintAtCommit+
+		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+	in.testCode = 1
+	bare := in.remote(t)
+	azima := in.azima(t, in.wishID, "Feature")
+
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) {
+		task.PartOf = azima.GetId()
+	})
+
+	in.correctWith(func(dir, prompt string) string {
+		if strings.HasPrefix(prompt, "The push checks of ") {
+			in.mu.Lock()
+			in.testCode = 0
+			in.mu.Unlock()
+			return "text push checks fixed"
+		}
+		return ""
+	})
+
+	// Pass 1: W1 commits into branch, push checks fail on tip.
+	in.pass(t, 0)
+	state := in.pushState(t)
+	if state.GetHeld() == "" || state.GetCorrectedBy() == "" {
+		t.Fatalf("push state %v; want held and corrected", state)
+	}
+
+	// Spawn a new planned work task W2.
+	w2 := in.mustSpawn(t, in.wishID, "W2 Work", "wait\ntext w2", nil)
+
+	// W2 must wait because push checks are red.
+	w2 = in.get(t, w2.GetId())
+	if w2.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
+		t.Fatalf("W2 status = %v; want PENDING", w2.GetStatus())
+	}
+	expectedWaitPrefix := fmt.Sprintf("waits for %s to be green again (push checks red at ", in.branch)
+	if !strings.HasPrefix(w2.GetWaitReason(), expectedWaitPrefix) {
+		t.Fatalf("W2 waitReason = %q; want prefix %q", w2.GetWaitReason(), expectedWaitPrefix)
+	}
+
+	// Correction worker finishes.
+	wCorr := in.ended(t, state.GetCorrectedBy())
+	if wCorr == nil {
+		t.Fatal("expected correction worker")
+	}
+
+	// Pass 2: correction commits, push checks pass, push clears!
+	in.pass(t, time.Second)
+	tip := in.tip(t)
+	if got := in.remoteTip(t, bare); got != tip {
+		t.Fatalf("remote at %s, want tip %s", got, tip)
+	}
+	if s := in.pushState(t); s.GetHeld() != "" {
+		t.Fatalf("push state still held: %v", s)
+	}
+
+	// Now W2 starts running from the green head!
+	w2 = in.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	wtHead := in.git(t, w2.GetWorktree(), "rev-parse", "HEAD")
+	if wtHead != tip {
+		t.Fatalf("W2 started at %s; want green tip %s", wtHead, tip)
+	}
+	in.release(t, w2.GetId())
+	in.ended(t, w2.GetId())
+	in.pass(t, time.Second)
+
+	if got := in.states(t, w1, w2); !strings.Contains(got, "W1 COMMITTED") || !strings.Contains(got, "COMMITTED") {
+		t.Errorf("states = %s; want COMMITTED", got)
+	}
+}
+
+// TestPushHeldLiftsWhenApprovedUnchecked: approving a held push unchecked lifts the blocker gate
+// and notifies the lead; the waiting planned work task starts running.
+func TestPushHeldLiftsWhenApprovedUnchecked(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.checking(t, "correction_attempts: 0\n"+
+		lintAtCommit+
+		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+	in.testCode = 1
+	bare := in.remote(t)
+	azima := in.azima(t, in.wishID, "Feature")
+
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) {
+		task.PartOf = azima.GetId()
+	})
+
+	// Pass 1: W1 commits, push checks fail, question asked at once.
+	in.pass(t, 0)
+	q := in.pushQuestion(t)
+	if q == nil {
+		t.Fatal("expected push question")
+	}
+
+	// Spawn a new planned work task W2.
+	w2 := in.mustSpawn(t, in.wishID, "W2 Work", "wait\ntext w2", nil)
+
+	// W2 must wait while push is held.
+	w2 = in.get(t, w2.GetId())
+	if w2.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !strings.Contains(w2.GetWaitReason(), "to be green again") {
+		t.Fatalf("W2 before answer = %v; want pending waiting to be green again", w2)
+	}
+
+	// Person chooses Choice C: push without the checks.
+	in.answer(t, q, planv1.Choice_CHOICE_C)
+
+	// The gate lifts: W2 starts running!
+	w2 = in.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	in.release(t, w2.GetId())
+	in.ended(t, w2.GetId())
+
+	// Integration pass: push without checks succeeds, W2 commits.
+	in.pass(t, time.Second)
+	tip := in.tip(t)
+	if got := in.remoteTip(t, bare); got != tip {
+		t.Fatalf("remote at %s, want %s", got, tip)
+	}
+
+	// Verify the lead was told about pushing without push checks.
+	_, texts := in.integration(t, w1)
+	foundTell := slices.ContainsFunc(texts, func(txt string) bool {
+		return strings.Contains(txt, "without push checks")
+	})
+	if !foundTell {
+		t.Errorf("W1 events %v did not mention pushing without push checks", texts)
 	}
 }

@@ -19,7 +19,12 @@ export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
 export { WishSidebar } from "@/src/wish-sidebar.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
-export { WishTask, promptPreview } from "@/src/wish-task.tsx";
+export {
+  WishTask,
+  promptPreview,
+  isGreenWait,
+  compactGreenWait,
+} from "@/src/wish-task.tsx";
 export {
   azimaTime,
   shortModel,
@@ -1402,6 +1407,34 @@ test("a task card shows its model: planned forecasts it, running shows it, finis
     kind: s.TaskKind.AZIMA,
   });
   assert.doesNotMatch(azimaCard, /task-model/);
+});
+
+test("a task card waiting for branch to be green again shows compact reason", () => {
+  const fullReason =
+    "waits for feat/wails-go to be green again (push checks red at 12345678: test)";
+  assert.equal(s.isGreenWait(fullReason), true);
+  assert.equal(s.isGreenWait("waits for W1 (running)"), false);
+  assert.equal(
+    s.compactGreenWait(fullReason),
+    "waits for feat/wails-go to be green again",
+  );
+
+  const markup = s.renderToStaticMarkup(
+    h(s.WishTask, {
+      task: {
+        id: "t1",
+        code: "W1",
+        title: "Waiting task",
+        status: s.TaskStatus.PENDING,
+        waitReason: fullReason,
+      },
+      onStop() {},
+    }),
+  );
+  assert.match(
+    markup,
+    /<span title="waits for feat\/wails-go to be green again \(push checks red at 12345678: test\)">waits for feat\/wails-go to be green again<\/span>/,
+  );
 });
 
 test("a task row reads on two lines: status, code and long title on the first, details on the second", () => {

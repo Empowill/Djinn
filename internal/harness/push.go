@@ -819,6 +819,7 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 				log.Printf("djinn: question %s: %v", q.GetCode(), err)
 				return "Djinn could not take the answer: " + err.Error(), true
 			}
+			h.pushSteps(ctx, committed, fmt.Sprintf("integration: you chose to push %s without push checks (%s)", branch, q.GetCode()))
 			h.notify()
 			h.kickIntegrate()
 			return "Djinn pushes at the integration's next pass, without the push checks", true

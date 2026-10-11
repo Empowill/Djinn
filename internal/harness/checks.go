@@ -289,10 +289,19 @@ func (h *Harness) holdPush(
 		}
 	}
 	held := fmt.Sprintf("at %s, %s", short8(sha), headline(why))
+	f := &planv1.IntegrationFailure{
+		State:   planv1.IntegrationState_INTEGRATION_STATE_RED,
+		Base:    sha,
+		Command: command,
+		Output:  tail(out),
+		Reason:  why,
+		TaskIds: ids(committed),
+	}
 	var runs int32
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
 			p.Held, p.HeldRuns, p.Approved, p.Unchecked = held, p.GetHeldRuns()+1, false, false
+			p.FailedSha, p.Failure = sha, f
 			runs = p.GetHeldRuns()
 		})
 	})
@@ -314,14 +323,6 @@ func (h *Harness) holdPush(
 	if err != nil {
 		log.Printf("djinn: push %s: %v", branch, err)
 		return
-	}
-	f := &planv1.IntegrationFailure{
-		State:   planv1.IntegrationState_INTEGRATION_STATE_RED,
-		Base:    sha,
-		Command: command,
-		Output:  tail(out),
-		Reason:  why,
-		TaskIds: ids(committed),
 	}
 	attempts := cur.GetAttempts()
 	var unstarted error
@@ -391,8 +392,9 @@ func (h *Harness) askPushHeld(
 	h.notify()
 }
 
-// workLeft tells whether some work of tasks, in the project projectID, may still be committed: a task not finished,
-// or finished and waiting to be committed. Azimas and watchers bring none.
+// workLeft tells whether some work of tasks, in the project projectID, may still be committed while a push is held:
+// a running or integrating task, or an active correction worker. Planned tasks held on the push checks cannot run
+// until the push is green again. Azimas and watchers bring none.
 func workLeft(tasks []*planv1.Task, projectID string) bool {
 	return slices.ContainsFunc(tasks, func(t *planv1.Task) bool {
 		if t.GetProjectId() != projectID || plan.IsAzima(t) || t.GetProvider() == planv1.Provider_PROVIDER_WATCH {
@@ -403,10 +405,12 @@ func workLeft(tasks []*planv1.Task, projectID string) bool {
 			return true
 		}
 		switch t.GetStatus() {
-		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED:
-			return false
+		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_WAITING:
+			return true
+		case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RESUMING:
+			return t.GetCorrection() != nil
 		}
-		return true
+		return false
 	})
 }
 
