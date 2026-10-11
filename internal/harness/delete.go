@@ -19,25 +19,35 @@ import (
 // an azima that is gone. Its code is retired with it (Wish.retired_codes): no task of the wish gets it again.
 func (h *Harness) Delete(ctx context.Context, procedure string, req *planv1.TaskServiceDeleteRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
-	task, err := store.Get[*planv1.Task](ctx, h.store, id)
-	if err != nil {
-		return nil, plan.Status(err)
-	}
-	h.mu.Lock()
-	running := h.runs[id] != nil
-	h.mu.Unlock()
-	if running || task.GetWorktree() != "" || task.GetSessionId() != "" {
-		return nil, connect.NewError(connect.CodeFailedPrecondition,
-			fmt.Errorf("task %s was run by a worker of this Djinn: it stays, as the record of that work", task.GetCode()))
-	}
-	events, err := store.List[*planv1.TaskEvent](ctx, h.store, store.Where{"task_id": id})
-	if err != nil {
-		return nil, plan.Status(err)
-	}
-	h.sched.Lock() // Group holds it too: no task joins the azima between the check and the delete.
+	var task *planv1.Task
+	h.sched.Lock() // Serialize deletion with scheduler passes and graph edits (Spawn, Depend, Group).
 	defer h.sched.Unlock()
-	err = h.store.Tx(ctx, func(tx *store.Tx) error {
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		var err error
+		if task, err = store.Get[*planv1.Task](ctx, tx, id); err != nil {
+			return err
+		}
+		h.mu.Lock()
+		running := h.runs[task.GetId()] != nil
+		h.mu.Unlock()
+		if running || task.GetWorktree() != "" || task.GetSessionId() != "" {
+			return connect.NewError(connect.CodeFailedPrecondition,
+				fmt.Errorf("task %s was run by a worker of this Djinn: it stays, as the record of that work", task.GetCode()))
+		}
 		if err := keptParts(ctx, tx, task); err != nil {
+			return err
+		}
+		dependents, err := incomingDependents(ctx, tx, task.GetId())
+		if err != nil {
+			return err
+		}
+		if len(dependents) > 0 {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"task %s still has dependents: %s. Rewire them in one atomic `djinn task depend <task-id> --after ... --also ...` command, then delete it",
+				task.GetCode(), strings.Join(dependents, ", ")))
+		}
+		events, err := store.List[*planv1.TaskEvent](ctx, tx, store.Where{"task_id": task.GetId()})
+		if err != nil {
 			return err
 		}
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
@@ -57,6 +67,23 @@ func (h *Harness) Delete(ctx context.Context, procedure string, req *planv1.Task
 		return nil, plan.Status(err)
 	}
 	return task, nil
+}
+
+// incomingDependents returns the codes of every task that still names taskID in DependsOn, across wishes. Imported
+// data is checked globally too: a malformed cross-wish edge must not be erased by deleting its target.
+func incomingDependents(ctx context.Context, r store.Reader, taskID string) ([]string, error) {
+	tasks, err := store.List[*planv1.Task](ctx, r, nil)
+	if err != nil {
+		return nil, err
+	}
+	var dependents []string
+	for _, task := range tasks {
+		if task.GetId() != taskID && slices.Contains(task.GetDependsOn(), taskID) {
+			dependents = append(dependents, task.GetCode())
+		}
+	}
+	slices.SortFunc(dependents, plan.CompareCodes)
+	return dependents, nil
 }
 
 // retire keeps the code of task, being deleted, in its wish, which gives it no more.
