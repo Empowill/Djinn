@@ -172,6 +172,13 @@ func openPRFromBranch(ctx context.Context, repo, branch string) (prNum string, o
 	return "", false
 }
 
+// installReason describes why an install and restart question is necessary under when_needed.
+type installReason struct {
+	kind       string // "fix", "restart", "broken"
+	whyText    string // short reason in the question text, e.g. "carries fix for W2"
+	whyContext string // explanation in the question context
+}
+
 // installMoveQuestion builds the question for an uninstalled build.
 func installMoveQuestion(wishID, sha, branch string, delay time.Duration) *planv1.Question {
 	s := short8(sha)
@@ -180,6 +187,20 @@ func installMoveQuestion(wishID, sha, branch string, delay time.Duration) *planv
 		Text:   fmt.Sprintf("Install and restart %s?", s),
 		Context: fmt.Sprintf("The build %s on %s has been integrated for %s and is not installed yet. Install and restart?",
 			s, branch, delay.Round(time.Minute)),
+		Options: []string{"Install and restart", "Skip"},
+		Move:    true,
+	}
+}
+
+// installMoveQuestionWithReason builds an install and restart question stating the specific reason why it is needed.
+func installMoveQuestionWithReason(wishID, sha, branch string, reason *installReason) *planv1.Question {
+	s := short8(sha)
+	text := fmt.Sprintf("Install and restart %s: %s?", s, reason.whyText)
+	context := fmt.Sprintf("The build %s on %s is needed now: %s.\n\nInstall and restart?", s, branch, reason.whyContext)
+	return &planv1.Question{
+		WishId:  wishID,
+		Text:    text,
+		Context: context,
 		Options: []string{"Install and restart", "Skip"},
 		Move:    true,
 	}

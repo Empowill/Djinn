@@ -13,7 +13,9 @@ checks { name: "lint" command: "go tool task lint" when: CHECK_WHEN_COMMIT }
 checks { name: "test" command: "go tool task test" when: CHECK_WHEN_PUSH }
 
 # Once pushed, the window proposes to install the build and restart on it.
+# Djinn installs builds after each push: ask only when needed, saying why.
 install: "go tool task install"
+install_questions: when_needed
 
 # By default Djinn merges main into each wish's branch once main holds a release the branch lacks, fetched at most
 # hourly (merge_main, merge_main_minutes), and a Djinn built from a checkout on main installs a newer release by itself

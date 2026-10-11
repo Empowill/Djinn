@@ -45,7 +45,16 @@ func ReadSettings(path string) (*planv1.ProjectSettings, error) {
 		return nil, fmt.Errorf("%s: line %d %s; this file holds no secret: remove it", path, line, why)
 	}
 	s := &planv1.ProjectSettings{}
-	if err := prototext.Unmarshal(b, s); err != nil {
+	normalized := normalizeInstallQuestions.ReplaceAllFunc(b, func(match []byte) []byte {
+		parts := normalizeInstallQuestions.FindSubmatch(match)
+		if len(parts) == 3 {
+			prefix := parts[1]
+			val := strings.ToUpper(string(parts[2]))
+			return append(prefix, []byte("INSTALL_QUESTIONS_"+val)...)
+		}
+		return match
+	})
+	if err := prototext.Unmarshal(normalized, s); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	if err := protovalidate.Validate(s); err != nil {
@@ -73,6 +82,9 @@ var (
 	// word is what a key is made of, separators included; run is a stretch without separators.
 	word = regexp.MustCompile(`[A-Za-z0-9_-]+`)
 	run  = regexp.MustCompile(`[A-Za-z0-9]{32,}`)
+
+	// normalizeInstallQuestions matches lowercase enum values for install_questions so prototext can parse them.
+	normalizeInstallQuestions = regexp.MustCompile(`(?m)^(\s*install_questions\s*:\s*)["']?(never|when_needed|always)["']?`)
 )
 
 // secretIn returns the first line of b that looks like it holds a secret, and why; 0 when none does: a field name
@@ -110,8 +122,9 @@ const DefaultCorrectionAttempts = 2
 // Defaults of keeping a wish's integration branch up with the project's main branch: merged at each release, main
 // fetched at most hourly, and a release of Djinn installed by itself on main.
 const (
-	DefaultMergeMain      = planv1.MergeMain_MERGE_MAIN_RELEASE
-	DefaultMergeMainEvery = time.Hour
+	DefaultMergeMain        = planv1.MergeMain_MERGE_MAIN_RELEASE
+	DefaultMergeMainEvery   = time.Hour
+	DefaultInstallQuestions = planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS
 )
 
 // Settings are a project's settings as its workers get them, each with where it comes from.
@@ -143,18 +156,20 @@ type Settings struct {
 	// How Djinn keeps each wish's integration branch up with the project's main branch: the branch ("" for the
 	// remote's default), when it merges it, how often it fetches it at most; and whether a release of Djinn installs by
 	// itself while the person's checkout is on main.
-	MainBranch      string
-	MergeMain       planv1.MergeMain
-	MergeMainEvery  time.Duration
-	InstallReleases bool
-	Push            planv1.ProjectPush
-	PushStrategy    planv1.PushStrategy
+	MainBranch       string
+	MergeMain        planv1.MergeMain
+	MergeMainEvery   time.Duration
+	InstallReleases  bool
+	Push             planv1.ProjectPush
+	PushStrategy     planv1.PushStrategy
+	InstallQuestions planv1.InstallQuestions
 
 	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom            planv1.SettingSource
 	ChecksFrom, AttemptsFrom, InstallFrom, TestOneFrom                                                 planv1.SettingSource
 	AnswerWorkersFrom, EnlightenWorkersFrom                                                            planv1.SettingSource
 	QuestionWorkersFrom, QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                   planv1.SettingSource
 	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom, PushStrategyFrom planv1.SettingSource
+	InstallQuestionsFrom                                                                               planv1.SettingSource
 }
 
 // CanReadOnly tells whether a provider can run a question worker (read-only).
@@ -203,9 +218,11 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		QuestionProviderFrom: def, QuestionBudgetUSD: DefaultQuestionBudgetUSD,
 		QuestionModelFrom: def, QuestionBudgetFrom: def,
 		MergeMain: DefaultMergeMain, MergeMainEvery: DefaultMergeMainEvery, InstallReleases: true,
-		Push:           planv1.ProjectPush_PROJECT_PUSH_STANDARD,
-		PushStrategy:   planv1.PushStrategy_PUSH_STRATEGY_WISH,
-		MainBranchFrom: def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def, PushStrategyFrom: def,
+		Push:             planv1.ProjectPush_PROJECT_PUSH_STANDARD,
+		PushStrategy:     planv1.PushStrategy_PUSH_STRATEGY_WISH,
+		InstallQuestions: DefaultInstallQuestions,
+		MainBranchFrom:   def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def, PushStrategyFrom: def,
+		InstallQuestionsFrom: def,
 	}
 	questionModel := false // a file set it
 	for _, f := range []struct {
@@ -291,6 +308,9 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		if f.settings.TestOne != nil {
 			s.TestOne, s.TestOneFrom = f.settings.GetTestOne(), f.from
 		}
+		if f.settings.InstallQuestions != nil {
+			s.InstallQuestions, s.InstallQuestionsFrom = f.settings.GetInstallQuestions(), f.from
+		}
 	}
 	effective := s.QuestionProvider
 	if effective == planv1.Provider_PROVIDER_UNSPECIFIED {
@@ -365,6 +385,7 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "test_one", Value: s.TestOne, Source: s.TestOneFrom},
 		{Name: "correction_attempts", Value: strconv.Itoa(s.CorrectionAttempts), Source: s.AttemptsFrom},
 		{Name: "install", Value: s.Install, Source: s.InstallFrom},
+		{Name: "install_questions", Value: InstallQuestionsWord(s.InstallQuestions), Source: s.InstallQuestionsFrom},
 		{Name: "answer_workers", Value: strconv.FormatBool(s.AnswerWorkers), Source: s.AnswerWorkersFrom},
 		{Name: "enlighten_workers", Value: strconv.FormatBool(s.EnlightenWorkers), Source: s.EnlightenWorkersFrom},
 		{Name: "question_provider", Value: questionProviderName(s.QuestionProvider), Source: s.QuestionProviderFrom},
@@ -427,6 +448,45 @@ func ProjectPushWord(p planv1.ProjectPush) string {
 	default:
 		return "standard"
 	}
+}
+
+// InstallQuestionsWord is when Djinn asks to install builds, as the settings say it: always, when_needed, never.
+func InstallQuestionsWord(q planv1.InstallQuestions) string {
+	switch q {
+	case planv1.InstallQuestions_INSTALL_QUESTIONS_NEVER:
+		return "never"
+	case planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED:
+		return "when_needed"
+	default:
+		return "always"
+	}
+}
+
+// SaveDeveloperInstallQuestions writes the developer's install questions setting into their settings file in home.
+func SaveDeveloperInstallQuestions(home, projectID string, questions planv1.InstallQuestions) error {
+	if home == "" || projectID == "" {
+		return errors.New("cannot save developer settings: home or project ID is missing")
+	}
+	path := DeveloperSettingsFile(home, projectID)
+	s, err := ReadSettings(path)
+	if err != nil {
+		return err
+	}
+	if s == nil {
+		s = &planv1.ProjectSettings{}
+	}
+	s.InstallQuestions = questions.Enum()
+	if err := protovalidate.Validate(s); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	b, err := prototext.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(s)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o600)
 }
 
 // SaveDeveloperPush writes the developer's push setting into their settings file in home.

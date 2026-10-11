@@ -266,7 +266,7 @@ func (h *Harness) fillModels(ctx context.Context, tasks []*planv1.Task) {
 			t.Models = nil
 			continue
 		}
-		if t.GetModel() == "" {
+		if t.GetModel() == "" && (t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_WAITING) {
 			var model string
 			if t.GetProjectId() != "" {
 				if project, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId()); err == nil {

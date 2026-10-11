@@ -196,6 +196,8 @@ func TestResolveSettings(t *testing.T) {
 		got.Push, got.PushFrom = 0, 0
 		got.PushStrategy, got.PushStrategyFrom = 0, 0
 		got.TestOne, got.TestOneFrom = "", 0
+		// Install questions is TestInstallQuestionsSettings'.
+		got.InstallQuestions, got.InstallQuestionsFrom = 0, 0
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
 		}
@@ -375,7 +377,7 @@ func TestProjectShow(t *testing.T) {
 		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetProblems(), repoFile, devFile)
 	}
 	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT, "+
-		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
+		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, install_questions=always DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
 		t.Errorf("no file: %s; want %s", got, want)
 	}
 	var question []string
@@ -394,7 +396,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY, "+
 		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/schema.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
 		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
 	}
 
@@ -404,7 +406,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=djinn/{code}-{uuid8} REPOSITORY, generated=gen/**,docs/schema.json REPOSITORY, "+
 		"generate=go tool task gen REPOSITORY, setup= DEFAULT, checks=test: go tool task test (commit) REPOSITORY, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)
 	}
 	if len(res.GetProblems()) != 1 || !strings.Contains(res.GetProblems()[0], devFile) {
@@ -661,5 +663,86 @@ func TestPushStrategySettings(t *testing.T) {
 	w.PushStrategy = azimaStrat
 	if strat, src, err := EffectiveWishPushStrategy(t.Context(), sStore, home, w); err != nil || strat != azimaStrat || src != wish {
 		t.Errorf("EffectiveWishPushStrategy wish override = %v, %v; want azima, wish", strat, src)
+	}
+}
+
+// TestInstallQuestionsSettings: by default Djinn asks to install builds; either file changes it, the developer's
+// winning, and SaveDeveloperInstallQuestions writes the developer's choice.
+func TestInstallQuestionsSettings(t *testing.T) {
+	const (
+		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
+		repo = planv1.SettingSource_SETTING_SOURCE_REPOSITORY
+		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
+	)
+	always := planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS
+	whenNeeded := planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED
+	never := planv1.InstallQuestions_INSTALL_QUESTIONS_NEVER
+
+	for _, c := range []struct {
+		name          string
+		repo, dev     *planv1.ProjectSettings
+		wantQuestions planv1.InstallQuestions
+		wantFrom      planv1.SettingSource
+		wantWord      string
+	}{
+		{"neither file", nil, nil, always, def, "always"},
+		{"repo sets when_needed", &planv1.ProjectSettings{InstallQuestions: &whenNeeded}, nil, whenNeeded, repo, "when_needed"},
+		{"repo sets never", &planv1.ProjectSettings{InstallQuestions: &never}, nil, never, repo, "never"},
+		{"dev overrides to always", &planv1.ProjectSettings{InstallQuestions: &whenNeeded}, &planv1.ProjectSettings{InstallQuestions: &always}, always, dev, "always"},
+		{"dev overrides to never", &planv1.ProjectSettings{InstallQuestions: &whenNeeded}, &planv1.ProjectSettings{InstallQuestions: &never}, never, dev, "never"},
+	} {
+		s := ResolveSettings(c.repo, c.dev)
+		if s.InstallQuestions != c.wantQuestions || s.InstallQuestionsFrom != c.wantFrom {
+			t.Errorf("%s: install_questions=%v from=%v; want %v from=%v", c.name, s.InstallQuestions, s.InstallQuestionsFrom, c.wantQuestions, c.wantFrom)
+		}
+		if got := InstallQuestionsWord(s.InstallQuestions); got != c.wantWord {
+			t.Errorf("%s: word=%s; want %s", c.name, got, c.wantWord)
+		}
+	}
+
+	// Reading normalized settings from file (lowercase values)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.txtpb")
+	for _, tc := range []struct {
+		content string
+		want    planv1.InstallQuestions
+	}{
+		{"install_questions: when_needed\n", whenNeeded},
+		{"install_questions: never\n", never},
+		{"install_questions: always\n", always},
+		{"install_questions: INSTALL_QUESTIONS_WHEN_NEEDED\n", whenNeeded},
+	} {
+		if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		ps, err := ReadSettings(path)
+		if err != nil {
+			t.Fatalf("ReadSettings(%q): %v", tc.content, err)
+		}
+		if ps.GetInstallQuestions() != tc.want {
+			t.Errorf("ReadSettings(%q) = %v, want %v", tc.content, ps.GetInstallQuestions(), tc.want)
+		}
+	}
+
+	home := t.TempDir()
+	projectID := "01946059-e68b-7cb8-8c1d-6b586e3f4ea2"
+	project := &planv1.Project{Id: projectID}
+
+	if err := SaveDeveloperInstallQuestions(home, projectID, whenNeeded); err != nil {
+		t.Fatalf("SaveDeveloperInstallQuestions: %v", err)
+	}
+	s, err := LoadSettings(home, project)
+	if err != nil {
+		t.Fatalf("LoadSettings: %v", err)
+	}
+	if s.InstallQuestions != whenNeeded || s.InstallQuestionsFrom != dev {
+		t.Errorf("saved developer install_questions: %v from %v; want when_needed from developer", s.InstallQuestions, s.InstallQuestionsFrom)
+	}
+
+	if err := SaveDeveloperInstallQuestions("", projectID, whenNeeded); err == nil {
+		t.Error("SaveDeveloperInstallQuestions without home: want error")
+	}
+	if err := SaveDeveloperInstallQuestions(home, "", whenNeeded); err == nil {
+		t.Error("SaveDeveloperInstallQuestions without project ID: want error")
 	}
 }

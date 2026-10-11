@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -521,6 +522,154 @@ func (h *Harness) closeInstallQuestions(ctx context.Context, projectID, sha stri
 			_ = h.closeMove(ctx, q, planv1.Choice_CHOICE_B, fmt.Sprintf("superseded by build %s", s))
 		}
 	}
+}
+
+// detectInstallReason inspects the wish, project, and git commits to determine if an install and restart
+// question is necessary under InstallQuestions_WHEN_NEEDED. Returns nil when no question should be raised.
+func (h *Harness) detectInstallReason(
+	ctx context.Context,
+	wish *planv1.Wish,
+	project *planv1.Project,
+	branch, inst, sha string,
+) *installReason {
+	repo := project.GetDirectory()
+	tasks, _ := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
+
+	// 1. Broken build: running build crashed or has a panic/sigsegv error, or a failed check after install
+	for _, t := range tasks {
+		errLower := strings.ToLower(t.GetError())
+		if strings.Contains(errLower, "panic:") ||
+			strings.Contains(errLower, "crash") ||
+			strings.Contains(errLower, "segmentation fault") ||
+			strings.Contains(errLower, "sigsegv") ||
+			strings.Contains(errLower, "signal: killed") ||
+			strings.Contains(errLower, "check failed") ||
+			strings.Contains(errLower, "install check failed") {
+			code := t.GetCode()
+			if code == "" {
+				code = t.GetId()
+			}
+			return &installReason{
+				kind:       "broken",
+				whyText:    "running build is broken (crash)",
+				whyContext: fmt.Sprintf("the running build crashed or failed checks in %s (%s)", code, t.GetError()),
+			}
+		}
+	}
+
+	// 2. Commit log of the new build
+	rangeArg := sha
+	if inst != "" && inst != sha {
+		if _, err := git(ctx, repo, "merge-base", inst, sha); err == nil {
+			rangeArg = inst + ".." + sha
+		}
+	}
+	logOut, _ := git(ctx, repo, "log", "--format=%s%n%b", rangeArg)
+	if logOut == "" {
+		logOut, _ = git(ctx, repo, "log", "-n", "50", "--format=%s%n%b", sha)
+	}
+
+	// 3. Fix of a task or question developer is waiting on
+	for _, t := range tasks {
+		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED &&
+			t.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING &&
+			t.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
+			continue
+		}
+		code := t.GetCode()
+		if code == "" {
+			code = t.GetId()
+		}
+		pattern := `(?i)\b(` + regexp.QuoteMeta(code)
+		if t.GetId() != "" && t.GetId() != code {
+			pattern += `|` + regexp.QuoteMeta(t.GetId())
+		}
+		pattern += `)\b`
+		codeRe := regexp.MustCompile(pattern)
+		matchesLog := codeRe.MatchString(logOut) || (t.GetTitle() != "" && strings.Contains(strings.ToLower(logOut), strings.ToLower(t.GetTitle())))
+		matchesFork := false
+		for _, t2 := range tasks {
+			if (t2.GetIntegration().GetSha() == sha || t2.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE) &&
+				(t2.GetForkOf() == code || t2.GetDecision() == code) {
+				matchesFork = true
+				break
+			}
+		}
+		if matchesLog || matchesFork {
+			desc := code
+			if t.GetTitle() != "" {
+				desc = fmt.Sprintf("%s (%s)", code, t.GetTitle())
+			}
+			return &installReason{
+				kind:       "fix",
+				whyText:    fmt.Sprintf("carries fix for %s", code),
+				whyContext: fmt.Sprintf("it carries the fix for %s", desc),
+			}
+		}
+	}
+
+	// Check waiting questions
+	questions, _ := store.List[*planv1.Question](ctx, h.store, store.Where{"wish_id": wish.GetId()})
+	for _, q := range questions {
+		if q.GetAnswer() != nil {
+			continue
+		}
+		code := q.GetCode()
+		if code == "" {
+			code = q.GetId()
+		}
+		pattern := `(?i)\b(` + regexp.QuoteMeta(code)
+		if q.GetId() != "" && q.GetId() != code {
+			pattern += `|` + regexp.QuoteMeta(q.GetId())
+		}
+		pattern += `)\b`
+		codeRe := regexp.MustCompile(pattern)
+		if codeRe.MatchString(logOut) {
+			return &installReason{
+				kind:       "fix",
+				whyText:    fmt.Sprintf("carries fix for %s", code),
+				whyContext: fmt.Sprintf("it carries the fix for question %s", code),
+			}
+		}
+	}
+
+	// 4. Change that only takes effect after restart and matters now (harness fix for failing workers)
+	diffOut, _ := git(ctx, repo, "diff", "--name-only", rangeArg)
+	if diffOut == "" {
+		diffOut, _ = git(ctx, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", sha)
+	}
+	var harnessFiles []string
+	for _, line := range strings.Split(diffOut, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "cmd/") || strings.HasPrefix(line, "internal/harness/") || strings.HasPrefix(line, "internal/") {
+			harnessFiles = append(harnessFiles, line)
+		}
+	}
+	if len(harnessFiles) > 0 {
+		var failingWorkers []string
+		for _, t := range tasks {
+			if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
+				c := t.GetCode()
+				if c == "" {
+					c = t.GetId()
+				}
+				failingWorkers = append(failingWorkers, c)
+			}
+		}
+		if len(failingWorkers) > 0 {
+			workersList := strings.Join(failingWorkers, ", ")
+			return &installReason{
+				kind:       "restart",
+				whyText:    fmt.Sprintf("harness fix for %s", workersList),
+				whyContext: fmt.Sprintf("harness changes take effect after restart and affect failing workers %s", workersList),
+			}
+		}
+	}
+
+	return nil
 }
 
 // isQuestionForProject tells whether question q belongs to a wish that targets projectID.
@@ -1507,17 +1656,43 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 						commitTime := time.Unix(ts, 0)
 						delay := cmp.Or(h.uninstalledDelay, defaultUninstalledDelay)
 						if h.now().Sub(commitTime) >= delay {
-							asked := false
-							for _, q := range allQuestions {
-								if q.GetMove() && strings.Contains(q.GetText(), "Install and restart") && strings.Contains(q.GetText(), s) && h.isQuestionForProject(ctx, q, projectID, wishesByID) {
-									asked = true
-									break
-								}
+							iq := settings.InstallQuestions
+							if iq == planv1.InstallQuestions_INSTALL_QUESTIONS_UNSPECIFIED {
+								iq = plan.DefaultInstallQuestions
 							}
-							if !asked {
-								q := installMoveQuestion(wish.GetId(), sha, branch, delay)
-								if err := h.askMove(ctx, q); err == nil {
-									allQuestions = append(allQuestions, q)
+							switch iq {
+							case planv1.InstallQuestions_INSTALL_QUESTIONS_NEVER:
+								// Never ask install or restart questions.
+							case planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED:
+								reason := h.detectInstallReason(ctx, wish, project, branch, inst, sha)
+								if reason != nil {
+									asked := false
+									for _, q := range allQuestions {
+										if q.GetMove() && q.GetAnswer() == nil && strings.Contains(q.GetText(), "Install and restart") && strings.Contains(q.GetText(), reason.whyText) && h.isQuestionForProject(ctx, q, projectID, wishesByID) {
+											asked = true
+											break
+										}
+									}
+									if !asked {
+										q := installMoveQuestionWithReason(wish.GetId(), sha, branch, reason)
+										if err := h.askMove(ctx, q); err == nil {
+											allQuestions = append(allQuestions, q)
+										}
+									}
+								}
+							case planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS:
+								asked := false
+								for _, q := range allQuestions {
+									if q.GetMove() && strings.Contains(q.GetText(), "Install and restart") && strings.Contains(q.GetText(), s) && h.isQuestionForProject(ctx, q, projectID, wishesByID) {
+										asked = true
+										break
+									}
+								}
+								if !asked {
+									q := installMoveQuestion(wish.GetId(), sha, branch, delay)
+									if err := h.askMove(ctx, q); err == nil {
+										allQuestions = append(allQuestions, q)
+									}
 								}
 							}
 						}

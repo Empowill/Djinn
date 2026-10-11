@@ -321,6 +321,128 @@ func TestComputedMoveUninstalledBuild(t *testing.T) {
 	}
 }
 
+// TestComputedMoveInstallQuestionsWhenNeeded: with install_questions: when_needed,
+// a routine uninstalled build raises no question. A build carrying a fix for a waiting
+// failed task raises an install question naming the task, deduplicated, and closed when installed.
+func TestComputedMoveInstallQuestionsWhenNeeded(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+		"generate: \"gen\"\ntest: \"test\"\ninstall: \"install\"\ninstall_questions: when_needed\n")
+
+	// 1. Normal build: merged and advanced past delay raises no question.
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "v1\n"})
+	in.pass(t, 0)
+	in.pass(t, 10*time.Minute)
+
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range questions {
+		if strings.Contains(q.GetText(), "Install and restart") {
+			t.Fatalf("expected no install question for routine build with when_needed, got %v", q)
+		}
+	}
+
+	// 2. A failed task W2 exists.
+	w2 := &planv1.Task{
+		Id: store.NewID(), WishId: in.wishID, ProjectId: in.projectID, Code: "W2", Title: "Failing work",
+		Kind: planv1.TaskKind_TASK_KIND_WORK, Status: planv1.TaskStatus_TASK_STATUS_FAILED,
+		CreateTime: timestamppb.New(in.clock()),
+	}
+	putTask(t, in.db, w2, "work")
+
+	// 3. A new task W3 is finished carrying the fix for W2.
+	in.finished(t, "W3", map[string]string{"app/src/a.txt": "v2\n"}, func(task *planv1.Task) {
+		task.Title = "Fix W2"
+	})
+	in.pass(t, 0)
+	in.pass(t, 10*time.Minute)
+
+	questions, _ = store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	var installQ *planv1.Question
+	installCount := 0
+	for _, q := range questions {
+		if strings.Contains(q.GetText(), "Install and restart") {
+			installCount++
+			installQ = q
+		}
+	}
+	if installCount != 1 || installQ == nil {
+		t.Fatalf("expected exactly 1 install question for fix build, got %d", installCount)
+	}
+	if !installQ.GetMove() {
+		t.Errorf("question Move = false, want true")
+	}
+	if !strings.Contains(installQ.GetText(), "W2") {
+		t.Errorf("question text %q does not name failed task W2", installQ.GetText())
+	}
+	if !strings.Contains(installQ.GetContext(), "W2") {
+		t.Errorf("question context %q does not name failed task W2", installQ.GetContext())
+	}
+
+	// 4. Another pass after delay does not duplicate the question.
+	in.pass(t, 10*time.Minute)
+	questions, _ = store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	count := 0
+	for _, q := range questions {
+		if strings.Contains(q.GetText(), "Install and restart") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected still exactly 1 install question (deduplicated), got %d", count)
+	}
+
+	// 5. Answering Choice A installs the build and closes the question.
+	did := in.answer(t, installQ, planv1.Choice_CHOICE_A)
+	if !strings.HasPrefix(did, "Djinn installed build") {
+		t.Errorf("what Djinn did: %q; want prefix 'Djinn installed build'", did)
+	}
+
+	// Next pass: question is closed as installed
+	in.pass(t, time.Minute)
+	qGot, err := store.Get[*planv1.Question](t.Context(), in.db, installQ.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if qGot.GetAnswer() == nil || qGot.GetAnswer().GetChoice() != planv1.Choice_CHOICE_A {
+		t.Errorf("expected question closed with Choice A, got %v", qGot.GetAnswer())
+	}
+}
+
+// TestComputedMoveInstallQuestionsNever: with install_questions: never,
+// no install question is raised even when a build carries a fix for a failed task.
+func TestComputedMoveInstallQuestionsNever(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+		"generate: \"gen\"\ntest: \"test\"\ninstall: \"install\"\ninstall_questions: never\n")
+
+	w1 := &planv1.Task{
+		Id: store.NewID(), WishId: in.wishID, ProjectId: in.projectID, Code: "W1", Title: "Failing work",
+		Kind: planv1.TaskKind_TASK_KIND_WORK, Status: planv1.TaskStatus_TASK_STATUS_FAILED,
+		CreateTime: timestamppb.New(in.clock()),
+	}
+	putTask(t, in.db, w1, "work")
+
+	in.finished(t, "W2", map[string]string{"app/src/a.txt": "v2\n"}, func(task *planv1.Task) {
+		task.Title = "Fix W1"
+	})
+	in.pass(t, 0)
+	in.pass(t, 10*time.Minute)
+
+	questions, _ := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	for _, q := range questions {
+		if strings.Contains(q.GetText(), "Install and restart") {
+			t.Fatalf("expected no install question with install_questions: never, got %v", q)
+		}
+	}
+}
+
 // TestComputedMoveAzimaProof: an azima whose parts are finished and has proof needs
 // enters AZIMA_STATE_AWAITING_PROOF and raises a "Check T01 on <needs>?" question.
 // Answering "Verified" marks the azima done.
