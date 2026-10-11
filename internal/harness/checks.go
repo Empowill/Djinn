@@ -273,8 +273,14 @@ func (h *Harness) holdPush(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, committed []*planv1.Task, branch, sha, command, why, out string,
 ) {
 	cur := pushState(wish, project.GetId())
-	if cur.GetQuestionId() != "" {
-		return
+	if id := cur.GetQuestionId(); id != "" {
+		if cur.GetHeld() != "" && cur.GetFailedSha() == sha {
+			return // The question is about these very checks: the answer says what Djinn does.
+		}
+		// Red at another commit than the one Djinn asked about: the question is stale, and nobody would act on the
+		// hold while it stays open. Djinn withdraws it and acts on these checks instead.
+		h.withdrawPushQuestion(ctx, wish.GetId(), project.GetId(), id,
+			fmt.Sprintf("Djinn: the push checks of %s ran again at %s and are red; Djinn acts on them instead.", branch, short8(sha)))
 	}
 	if strings.HasSuffix(cur.GetHeld(), "; left to the lead") && cur.GetFailedSha() == sha {
 		return
@@ -340,6 +346,35 @@ func (h *Harness) holdPush(
 		log.Printf("djinn: push %s: correction: %v", branch, err)
 	}
 	h.askPushHeld(ctx, wish, project, branch, f, attempts, unstarted, committed)
+}
+
+// withdrawPushQuestion withdraws id, the question the push of the wish wishID in the project projectID waits on, with
+// note, and lets go of it.
+func (h *Harness) withdrawPushQuestion(ctx context.Context, wishID, projectID, id, note string) {
+	err := h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
+		q, err := store.Get[*planv1.Question](ctx, tx, id)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+		case err != nil:
+			return err
+		case q.GetAnswer() == nil && q.GetWithdrawal() == nil:
+			q.Withdrawal = &planv1.Withdrawal{Note: note, CreateTime: timestamppb.New(h.now())}
+			if err := tx.Journal(actorHarness, methodIntegrate, q); err != nil {
+				return err
+			}
+			if err := tx.Put(q); err != nil {
+				return err
+			}
+		}
+		return editPush(ctx, tx, wishID, projectID, func(p *planv1.WishPush) {
+			if p.QuestionId == id {
+				p.QuestionId, p.Approved = "", false
+			}
+		})
+	})
+	if err != nil {
+		log.Printf("djinn: push: withdraw %s: %v", id, err)
+	}
 }
 
 // askPushHeld tells the lead that the push checks of branch stay red: retry a correction, drop the work, or leave it waiting.

@@ -515,7 +515,8 @@ func TestIntegrationFailureCorrectionCancelled(t *testing.T) {
 }
 
 // TestIntegrationFailureCorrectionStopped: a task whose integration failed and is corrected by a worker
-// that was stopped by the lead clears that link and records the stop without asking a question.
+// that was stopped by the lead keeps that link while the stop is recent (it may be continued), then clears it and
+// records the stop without asking a question.
 func TestIntegrationFailureCorrectionStopped(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
@@ -545,6 +546,11 @@ func TestIntegrationFailureCorrectionStopped(t *testing.T) {
 	}
 
 	in.pass(t, time.Second)
+	if got, _ := in.integration(t, w1); got.GetCorrectedBy() != w2.GetId() {
+		t.Errorf("just after the stop, W1 corrected by %q; want %q", got.GetCorrectedBy(), w2.GetId())
+	}
+
+	in.pass(t, stopGrace)
 
 	got, texts := in.integration(t, w1)
 	if got.GetCorrectedBy() != "" {

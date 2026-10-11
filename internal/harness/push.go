@@ -66,6 +66,7 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 		log.Printf("djinn: push: %v", err)
 		return
 	}
+	h.releaseClosedQuestion(ctx, wish, project.GetId())
 	strat, _ := plan.ResolveWishPushStrategy(wish, settings)
 	if strat == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
 		h.pushAzimaBranchesIfDue(ctx, wish, project, settings)
@@ -104,14 +105,25 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 	committed := committedSince(tasks, project.GetId(), since)
 	every := time.Duration(wish.GetPushAfterMinutes()) * time.Minute
 	why := pushDue(committed, tasks, since, h.now(), cmp.Or(every, DefaultPushAfter), int(cmp.Or(wish.GetPushAfterTasks(), DefaultPushTasks)))
-	if state.GetHeld() != "" && why == "" && len(committed) > 0 {
-		why = "push checks corrected"
+	if state.GetHeld() != "" && why == "" {
+		switch {
+		case len(committed) > 0:
+			why = "push checks corrected"
+		case movedSince(ctx, project.GetDirectory(), plan.IntegrationBranchOf(wish, project.GetId()), state.GetFailedSha()):
+			why = "its branch moved since its push checks were red"
+		}
 	}
 	if why != "" {
 		if _, err := h.push(ctx, wish, project, committed, why, false); err != nil {
 			log.Printf("djinn: push %s: %v", project.GetId(), err)
 		}
 	}
+}
+
+// movedSince tells whether branch, in repo, is at another commit than sha, the one its push checks were red on.
+func movedSince(ctx context.Context, repo, branch, sha string) bool {
+	tip, err := git(ctx, repo, "rev-parse", "refs/heads/"+branch)
+	return err == nil && tip != "" && tip != sha
 }
 
 // pushApproved pushes the integration branches whose push the person approved, answering a question.
@@ -292,7 +304,11 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		log.Printf("djinn: push %s: %v", branch, err)
 		return nil, err
 	}
-	if ahead == 0 {
+	state := pushState(wish, project.GetId())
+	unchecked := approved && state.GetUnchecked()
+	// A branch its remote holds already, pushed by hand while its push checks held it, is checked all the same: green,
+	// Djinn records it as pushed, and the hold lifts.
+	if ahead == 0 && (state.GetHeld() == "" || unchecked) {
 		h.clearApproved(ctx, wish.GetId(), project.GetId(), approved)
 		return nil, errors.New("nothing to push: the remote is up to date")
 	}
@@ -301,8 +317,6 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		log.Printf("djinn: push %s: %v", branch, err)
 		return nil, err
 	}
-	state := pushState(wish, project.GetId())
-	unchecked := approved && state.GetUnchecked()
 	if !unchecked {
 		var cmd, held, out string
 		var stopped bool
@@ -327,6 +341,9 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 				log.Printf("djinn: push %s: %v", branch, err)
 			}
 		}
+	}
+	if ahead == 0 {
+		return h.pushedByHand(ctx, wish, project, branch, remote, sha, committed)
 	}
 	if wish.GetPushMode() == planv1.PushMode_PUSH_MODE_ASK && !approved {
 		q := h.pushQuestion(wish, fmt.Sprintf("Push %s to %s? (%s)", branch, remote, commitsText(count, titles)),
@@ -384,6 +401,47 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 	if settings, err := plan.LoadSettings(h.home, project); err == nil && settings.Install != "" && h.built != nil {
 		h.built(h.build(ctx, wish, project, settings.Install, record, committed))
 	}
+	return record, nil
+}
+
+// pushedByHand records the push of branch, at sha, that its remote holds already, pushed by someone else than Djinn
+// (the developer, by hand) while its push checks held it; they passed on it since: the hold lifts, and no push is due
+// before more work is committed.
+func (h *Harness) pushedByHand(
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch, remote, sha string, committed []*planv1.Task,
+) (*planv1.IntegrationPush, error) {
+	repo := project.GetDirectory()
+	old := pushState(wish, project.GetId()).GetLast().GetNewSha()
+	record := &planv1.IntegrationPush{
+		WishId: wish.GetId(), ProjectId: project.GetId(), Branch: branch, Remote: remote, OldSha: old, NewSha: sha,
+		TaskIds: ids(committed), PushTime: timestamppb.New(h.now()),
+	}
+	if old != "" && isAncestor(ctx, repo, old, sha) {
+		if n, err := git(ctx, repo, "rev-list", "--count", "--no-merges", old+".."+sha); err == nil {
+			n, _ := strconv.ParseInt(n, 10, 32)
+			record.Count = int32(n)
+		}
+		if out, err := git(ctx, repo, "log", "--no-merges", "--format=%s", "-n", strconv.Itoa(pushTitles), old+".."+sha); err == nil && out != "" {
+			record.Commits = strings.Split(out, "\n")
+		}
+	}
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal(actorHarness, methodPush, record); err != nil {
+			return err
+		}
+		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
+			p.Last, p.QuestionId, p.Refused, p.Approved = record, "", "", false
+			p.Held, p.HeldRuns, p.Unchecked = "", 0, false
+			p.CorrectedBy, p.Attempts, p.FailedSha, p.Failure = "", 0, "", nil
+		})
+	})
+	if err != nil {
+		log.Printf("djinn: push %s: %v", branch, err)
+		return nil, err
+	}
+	h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push checks of %s pass at %s, which %s holds already (pushed by hand): the push is no longer held",
+		branch, short8(sha), remote))
+	h.notify()
 	return record, nil
 }
 
@@ -732,6 +790,35 @@ func (h *Harness) askPush(ctx context.Context, wishID, projectID string, q *plan
 	}
 	h.notify()
 	return nil
+}
+
+// releaseClosedQuestion lets go of the question the push of wish's integration branch in the project projectID waits
+// on, when it was closed without an answer (withdrawn, moved to another wish, or deleted): nobody can answer it any
+// more, and the push goes on as if Djinn had not asked. wish is changed in place too.
+func (h *Harness) releaseClosedQuestion(ctx context.Context, wish *planv1.Wish, projectID string) {
+	state := pushState(wish, projectID)
+	id := state.GetQuestionId()
+	if id == "" {
+		return
+	}
+	q, err := store.Get[*planv1.Question](ctx, h.store, id)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+	case err != nil, q.GetAnswer() != nil, q.GetWithdrawal() == nil && q.GetWishId() == wish.GetId():
+		return // Open, or answered: the answer says when.
+	}
+	err = h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
+		return editPush(ctx, tx, wish.GetId(), projectID, func(p *planv1.WishPush) {
+			if p.QuestionId == id {
+				p.QuestionId, p.Approved = "", false
+			}
+		})
+	})
+	if err != nil {
+		log.Printf("djinn: push: %v", err)
+		return
+	}
+	state.QuestionId, state.Approved = "", false
 }
 
 // editPush changes, with edit, where the push of the wish wishID stands in the project projectID, in tx.
