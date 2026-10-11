@@ -408,7 +408,7 @@ func runUp(args []string) (restart bool, err error) {
 		err = <-served
 	default:
 		if transport == server.Wails {
-			err = openWindow(ctx, "", h, raise, notices, shortcuts, openLinks)
+			err = openWindow(ctx, "", server.WholeWrites(h), raise, notices, shortcuts, openLinks)
 		} else {
 			err = openWindow(ctx, url, nil, raise, notices, shortcuts, openLinks)
 		}
