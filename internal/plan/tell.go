@@ -156,7 +156,12 @@ func (w *Wishes) tellWaitingAnswers(ctx context.Context, wishID, terminal string
 
 // Enlightened tells the lead of q's wish that the developer wants to know more before answering q, with their note.
 func (w *Wishes) Enlightened(ctx context.Context, q *planv1.Question, note string) {
-	w.tell(ctx, q, EnlightenLine(q, note, w.workerOf(ctx, q, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)))
+	if w.workerOf(ctx, q, planv1.TaskRole_TASK_ROLE_INVESTIGATOR) != "" {
+		// Decision Q173: when an investigator runs, its start is silent in the terminal
+		// (journal and window only); the lead hears when the worker ends.
+		return
+	}
+	w.tell(ctx, q, EnlightenLine(q, note, ""))
 }
 
 // workerOf is the code of the question worker of role that works on q, started just before the lead is told; ""

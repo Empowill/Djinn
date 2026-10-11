@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -732,9 +733,9 @@ func TestOldTaskWithoutIntegrationRecordIsNotQueued(t *testing.T) {
 	}
 }
 
-// TestNoOpBatchTellsLeadAlreadyIn verifies that a batch that does not move the branch
-// (its work was already in) tells the lead "Wnn was already in <branch>", never "merged as".
-func TestNoOpBatchTellsLeadAlreadyIn(t *testing.T) {
+// TestNoOpBatchTellsNothing verifies that a batch that does not move the branch
+// (its work was already in) tells nothing in the lead's terminal (Decision Q173).
+func TestNoOpBatchTellsNothing(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
 
@@ -759,13 +760,71 @@ func TestNoOpBatchTellsLeadAlreadyIn(t *testing.T) {
 		t.Fatalf("W2 state: %s", got)
 	}
 
-	wantTold := leadAlreadyInLine("W2", in.branch)
-	if !slices.Contains(told, wantTold) {
-		t.Errorf("told lines %v; want to contain %q", told, wantTold)
+	if len(told) != 0 {
+		t.Errorf("told lines %v; want nothing told in terminal for no-op batch", told)
 	}
-	for _, line := range told {
-		if strings.Contains(line, "merged into") || strings.Contains(line, "merged as") {
-			t.Errorf("told line %q should not mention merge for a no-op batch", line)
-		}
+}
+
+// TestRealMergeTellsOneLine verifies that a real merge that moves the branch
+// tells the lead exactly one line (Decision Q173).
+func TestRealMergeTellsOneLine(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	var told []string
+	in.h.TellLeads(func(ctx context.Context, wishID, line string) error {
+		told = append(told, line)
+		return nil
+	})
+
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	in.pass(t, 0)
+	if got := in.states(t, w1); got != "W1 COMMITTED" {
+		t.Fatalf("W1 state: %s", got)
+	}
+
+	if len(told) != 1 {
+		t.Fatalf("expected exactly 1 told line, got %d: %v", len(told), told)
+	}
+	wantPrefix := fmt.Sprintf("Djinn: W1 merged into %s as ", in.branch)
+	if !strings.HasPrefix(told[0], wantPrefix) {
+		t.Errorf("told line %q; want prefix %q", told[0], wantPrefix)
+	}
+}
+
+// TestThreeMergesInPassTellOneLine verifies that three tasks merged in one pass
+// coalesce into a single line for the lead (Decision Q173).
+func TestThreeMergesInPassTellOneLine(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	var told []string
+	in.h.TellLeads(func(ctx context.Context, wishID, line string) error {
+		told = append(told, line)
+		return nil
+	})
+
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
+	w3 := in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
+
+	in.pass(t, 0)
+
+	if got := in.states(t, w1); got != "W1 COMMITTED" {
+		t.Fatalf("W1 state: %s", got)
+	}
+	if got := in.states(t, w2); got != "W2 COMMITTED" {
+		t.Fatalf("W2 state: %s", got)
+	}
+	if got := in.states(t, w3); got != "W3 COMMITTED" {
+		t.Fatalf("W3 state: %s", got)
+	}
+
+	if len(told) != 1 {
+		t.Fatalf("expected exactly 1 told line for 3 merges in a pass, got %d: %v", len(told), told)
+	}
+	wantPrefix := fmt.Sprintf("Djinn: W1, W2, W3 merged into %s as ", in.branch)
+	if !strings.HasPrefix(told[0], wantPrefix) {
+		t.Errorf("told line %q; want prefix %q", told[0], wantPrefix)
 	}
 }
