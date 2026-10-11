@@ -17,11 +17,11 @@ const faintCell rune = 1 << 30
 // promptMarks start the row of an agent's prompt, before a space: Claude Code's ❯, Codex's ›.
 var promptMarks = []rune{'❯', '›'}
 
-// screen follows what the program shows now, cell by cell, as a terminal draws it: what Tell reads to know whether a
-// choice is on screen. A choice drawn once and covered since, erased in place (Claude Code redraws by moving the
-// cursor, not by clearing the screen) or scrolled away, is no longer there. It follows what moves text and the
-// cursor, and of the colors only faintness, which tells an agent's placeholder from text typed at its prompt: the
-// window's emulator is the one that shows.
+// screen follows what the program shows now, cell by cell, as a terminal draws it: what Djinn reads before it types a
+// line in (Say), to know whether a choice is on screen. A choice drawn once and covered since, erased in place (Claude
+// Code redraws by moving the cursor, not by clearing the screen) or scrolled away, is no longer there. It follows what
+// moves text and the cursor, and of the colors only faintness, which tells an agent's placeholder from text typed at
+// its prompt: the window's emulator is the one that shows.
 type screen struct {
 	cols, rows  int
 	cells       [][]rune // rows of cols cells; 0 is blank, faintCell marks a faint character
