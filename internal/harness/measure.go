@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
@@ -145,7 +146,9 @@ func (h *Harness) Uses() []*machinev1.WorkerUse {
 	var out []*machinev1.WorkerUse
 	for _, r := range h.runs {
 		if r.use != nil {
-			out = append(out, r.use)
+			u := proto.CloneOf(r.use)
+			u.Paused = r.paused
+			out = append(out, u)
 		}
 	}
 	h.mu.Unlock()
@@ -244,7 +247,7 @@ func (h *Harness) RunsSeries(cutoff time.Time, gateIntervals []*machinev1.GateIn
 
 	var out []*machinev1.WorkerSeries
 	for _, r := range h.runs {
-		if r.paused || r.light {
+		if r.light {
 			continue
 		}
 		t := r.task
@@ -281,6 +284,7 @@ func (h *Harness) RunsSeries(cutoff time.Time, gateIntervals []*machinev1.GateIn
 			Gates:           intervalsByTask[t.GetId()],
 			PeakMemoryBytes: peakMem,
 			PeakCpuPercent:  peakCPU,
+			Paused:          r.paused,
 		}
 		out = append(out, ws)
 	}

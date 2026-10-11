@@ -96,6 +96,13 @@ type Pauser interface {
 	Resume() error
 }
 
+// Prioritizer is a worker that can change its CPU priority while running.
+type Prioritizer interface {
+	// SetPriority sets the worker and its process tree to low CPU priority (nice 10 / cpu.weight 10)
+	// when low is true, or standard priority (nice 0 / cpu.weight 100) when low is false.
+	SetPriority(low bool) error
+}
+
 // Process is a worker that runs a process of its own, which leads its process group: Djinn measures what it uses.
 // A worker that is not one (the fake agent, which runs in Djinn's process) is not measured.
 type Process interface {

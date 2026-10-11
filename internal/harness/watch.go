@@ -196,6 +196,16 @@ func (w *watchWorker) Resume() error {
 	return nil
 }
 
+// SetPriority sets the priority of the running command.
+func (w *watchWorker) SetPriority(low bool) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.proc != nil {
+		return w.proc.SetPriority(low)
+	}
+	return nil
+}
+
 // loop runs the command, and again after each exit when the task restarts it, until it is stopped.
 func (w *watchWorker) loop() {
 	defer close(w.done)

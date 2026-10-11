@@ -307,6 +307,19 @@ When an investigator cannot start, Djinn makes room:
 - **Memory short**: A pause frees the slot and CPU but not the memory held by the stopped process. When memory blocks an investigator, Djinn interrupts the running work task of lowest priority so that it resumes later in its session or conversation (`plan.CanResume`), entering status `RESUMING` with the reason `"made room for Qxx: enlighten"`, without spending a resume attempt.
 - **Exclusions**: Djinn never preempts a task holding or waiting for a gate, never a correction or review worker, never a provider that cannot resume, and never pauses on Windows where process tree suspension is refused. At most one task is preempted per investigator. Each preemption records an event on both tasks and an entry in the journal (`harness/preempt`).
 
+### Operating load runtime adjustments
+
+When the operating load notch changes, Djinn immediately adjusts running workers without waiting for subsequent scheduler decisions:
+
+- **Priority at runtime (Q120 A)**: Every running worker's process tree is updated at once in both directions. On Linux/Unix, Djinn applies `setpriority` (`nice 10` for low priority, `nice 0` for normal) to all processes in the worker's process tree, and updates `cpu.weight` (10 for low, 100 for normal) on its systemd scope / cgroup when available. Child processes spawned subsequently inherit this priority. On Windows, `SetPriorityClass` dynamically switches process priority between `BELOW_NORMAL_PRIORITY_CLASS` (low) and `NORMAL_PRIORITY_CLASS` (normal).
+- **Worker count at runtime (Q121 A & Q123 A)**:
+  - When a notch change reduces capacity below the number of running workers, Djinn pauses the extra workers in the order of Q121 (Q117 reversed: last wish by rank, most recently started, descending task code). Djinn never pauses an investigator, a correction, a review, or a worker holding or waiting for a gate.
+  - When the notch is raised and capacity increases, Djinn resumes paused workers first in Q123 order (Q117's strict order: highest wish rank, earliest start time, ascending task code) before starting any newly planned tasks.
+  - *Windows limitation*: Windows cannot suspend processes (process tree pause is refused with `errNoPause`), so capacity reduction through process pausing is only supported on POSIX systems (Linux, macOS).
+- **Memory shortage for paused workers (Q122 A)**: A paused worker keeps its memory. If memory is short for a higher-priority worker that must start, Djinn interrupts the paused worker so that it can resume later in its session or conversation (`plan.CanResume`), entering `TASK_STATUS_RESUMING` with wait reason `"made room for <task>"` without spending a resume attempt. Djinn never interrupts a provider that cannot resume.
+- **Auto mode (Q124 C)**: In Auto mode, Djinn lowers priority and stops starting new workers when the machine is under pressure, but never pauses running workers (`Policy.Auto == true`).
+- **Events and journal**: Every pause, resume, or interruption triggered by the notch emits an event on the task (e.g. `"paused: operating load lowered to Minimal"`, `"resumed: operating load raised to Normal"`) and a line in the journal (`actorHarness`, procedure `harness/notch`).
+
 
 ## Watch: a command, no agent
 

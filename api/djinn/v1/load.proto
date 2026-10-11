@@ -61,6 +61,8 @@ message LoadServiceGetResponse {
   uint64 memory_total_bytes = 5;
   // The chosen ceiling notch when auto mode is active.
   LoadNotch chosen_notch = 6;
+  // Number of workers currently paused.
+  int32 paused_workers = 7;
 }
 
 message LoadServiceSetRequest {
@@ -101,4 +103,6 @@ message LoadServiceWatchResponse {
   int32 running_workers = 8;
   // The chosen ceiling notch when auto mode is active.
   LoadNotch chosen_notch = 9;
+  // Number of workers currently paused.
+  int32 paused_workers = 10;
 }
