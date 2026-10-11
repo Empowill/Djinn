@@ -103,9 +103,16 @@ export function parsePriceTable(yamlText: string): PriceTable {
   return { date, currency, models };
 }
 
+let customTable: PriceTable | null = null;
 let cachedTable: PriceTable | null = null;
 
+// setPriceTable overrides the price table used for cost estimation (useful for tests and fixtures).
+export function setPriceTable(table: PriceTable | null): void {
+  customTable = table;
+}
+
 export function getPriceTable(): PriceTable {
+  if (customTable) return customTable;
   if (!cachedTable) {
     cachedTable = parsePriceTable(rawPrices);
   }

@@ -76,9 +76,45 @@ export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export { ConsumptionPanel } from "@/src/consumption-panel.tsx";
 export { MachineService, CommandService } from "@/gen/ts/machine/v1/machine_pb.ts";
 export { TaskDiffView, UnifiedView, SplitView } from "@/src/diff.tsx";
+export { setPriceTable } from "@/src/data/prices.ts";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
+
+// A fixture price table keeps screen tests independent of changes to internal/usage/prices.yaml.
+s.setPriceTable({
+  date: "2026-01-01",
+  currency: "USD",
+  models: {
+    "claude-sonnet-5-5": {
+      input: 2.0,
+      output: 10.0,
+      cacheRead: 0.1,
+      cacheWrite: 2.5,
+      thinking: 10.0,
+      source: "https://example.com/pricing",
+      date: "2026-01-01",
+    },
+    "gpt-5.5": {
+      input: 5.0,
+      output: 30.0,
+      cacheRead: 0.5,
+      cacheWrite: 0.0,
+      thinking: 30.0,
+      source: "https://example.com/pricing",
+      date: "2026-01-01",
+    },
+    "gemini-3.8-flash-high": {
+      input: 0.75,
+      output: 3.75,
+      cacheRead: 0.075,
+      cacheWrite: 0.0,
+      thinking: 3.75,
+      source: "https://example.com/pricing",
+      date: "2026-01-01",
+    },
+  },
+});
 
 // live renders a component whose state lives between renders, so that a test types and clicks with no DOM: it calls
 // the component with a dispatcher that keeps its useState, as React does, and walks the elements it returns. The
@@ -1029,11 +1065,11 @@ test("a task shows its tokens, estimated cost, reported cost, or missing price",
   );
   assert.match(
     claude,
-    /51\.4K tokens · \$0\.003 reported · \$0\.04 estimated, prices of 2026-10-11/,
+    /51\.4K tokens · \$0\.003 reported · \$0\.04 estimated, prices of 2026-01-01/,
   );
   assert.match(
     claude,
-    /input 4 · output 409 · cache read 38\.2K · cache written 12\.8K · \$0\.003 reported · \$0\.04 estimated, prices of 2026-10-11/,
+    /input 4 · output 409 · cache read 38\.2K · cache written 12\.8K · \$0\.003 reported · \$0\.04 estimated, prices of 2026-01-01/,
   );
 
   const codex = s.renderToStaticMarkup(
@@ -1051,11 +1087,11 @@ test("a task shows its tokens, estimated cost, reported cost, or missing price",
   );
   assert.match(
     codex,
-    /6\.5K tokens · \$0\.018 estimated, prices of 2026-10-11/,
+    /6\.5K tokens · \$0\.018 estimated, prices of 2026-01-01/,
   );
   assert.match(
     codex,
-    /input 1\.2K · output 300 · cache read 5K · \$0\.018 estimated, prices of 2026-10-11/,
+    /input 1\.2K · output 300 · cache read 5K · \$0\.018 estimated, prices of 2026-01-01/,
   );
 
   const unpriced = s.renderToStaticMarkup(
@@ -1065,7 +1101,7 @@ test("a task shows its tokens, estimated cost, reported cost, or missing price",
         code: "W3",
         title: "Test unpriced",
         status: s.TaskStatus.DONE,
-        model: "unlisted-model-xyz",
+        model: "fixture-unpriced",
         usage: usage(100, 200, 0, 0, 0),
       },
       onStop() {},
@@ -1906,7 +1942,7 @@ function twoWishes() {
         code: "W1",
         title: "Taste the oils",
         status: s.TaskStatus.RUNNING,
-        model: "custom-local",
+        model: "fixture-unpriced",
         usage: usage(1200, 300, 5000, 0, 0),
       },
       {
@@ -1997,7 +2033,7 @@ test("the flight plan merges the active wishes: their questions, the blocking on
   // What each wish spent: the first with its cost, the second in tokens only with missing price note.
   assert.match(
     html,
-    /input 10 · output 400 · cache read 38K · cache written 12K · \$0\.42 reported · \$0\.038 estimated, prices of 2026-10-11/,
+    /input 10 · output 400 · cache read 38K · cache written 12K · \$0\.42 reported · \$0\.038 estimated, prices of 2026-01-01/,
   );
   assert.match(html, /input 1\.2K · output 300 · cache read 5K/);
   assert.match(html, /1 task without a price in the table/);
