@@ -175,6 +175,35 @@ test.describe("operating load slider", () => {
     expect(errors).toEqual([]);
   });
 
+  test("clicking anywhere on the track picks the nearest notch", async ({
+    page,
+  }) => {
+    const errors = collectErrors(page);
+    await page.goto(djinnURL());
+    await expect(
+      page.locator(".app-statusbar").getByText("Live"),
+    ).toBeVisible();
+
+    const slider = page.locator(".operating-load-slider");
+    const box = await slider.boundingBox();
+    expect(box).toBeTruthy();
+    if (!box) return;
+
+    // Click near left edge (minimal)
+    await page.mouse.click(box.x + 8, box.y + 10);
+    await expect.poll(getNotch).toBe("minimal");
+
+    // Click near right edge (overclock)
+    await page.mouse.click(box.x + box.width - 8, box.y + 10);
+    await expect.poll(getNotch).toBe("overclock");
+
+    // Click in middle (high or medium depending on exact position)
+    await page.mouse.click(box.x + box.width * 0.5, box.y + 10);
+    await expect.poll(getNotch).toMatch(/^(medium|high)$/);
+
+    expect(errors).toEqual([]);
+  });
+
   test("auto mode selects a notch and manual selection exits auto mode", async ({
     page,
   }) => {
@@ -298,6 +327,14 @@ test.describe("operating load slider", () => {
     const forecastEl = page.locator(".operating-load-forecast");
     await expect(forecastEl).toBeVisible();
 
+    // Binding resource line: "limited by (memory|CPU): X workers of ~Y"
+    await expect(
+      forecastEl.locator(".operating-load-forecast-binding"),
+    ).toBeVisible();
+    await expect(
+      forecastEl.locator(".operating-load-forecast-binding"),
+    ).toContainText(/limited by (memory|CPU): \d+ workers? of ~[\d.]+ \w+/i);
+
     // CPU line: "CPU: up to X workers, (low|standard) priority"
     await expect(forecastEl).toContainText(/CPU:\s*up to \d+ workers/i);
     await expect(forecastEl).toContainText(/(low|standard) priority/i);
@@ -343,7 +380,9 @@ test.describe("operating load slider", () => {
     expect(errors).toEqual([]);
   });
 
-  test("cursor appearance and screenshots at each notch", async ({ page }) => {
+  test("cursor appearance and screenshots at each notch in dark and light modes", async ({
+    page,
+  }) => {
     const errors = collectErrors(page);
     await page.goto(djinnURL());
     await expect(
@@ -357,17 +396,23 @@ test.describe("operating load slider", () => {
     const outDir = path.resolve(__dirname, "../test-results/screenshots");
     fs.mkdirSync(outDir, { recursive: true });
 
-    for (const notch of notches) {
-      djinn("load", "set", notch);
-      await expect(sliderEl).toHaveAttribute("data-notch", notch);
-      await expect(
-        page.locator(`.operating-load-notch[data-notch="${notch}"]`),
-      ).toHaveClass(/active/);
+    for (const theme of ["dark", "light"] as const) {
+      await page.evaluate(
+        (t) => document.documentElement.setAttribute("data-theme", t),
+        theme,
+      );
+      for (const notch of notches) {
+        djinn("load", "set", notch);
+        await expect(sliderEl).toHaveAttribute("data-notch", notch);
+        await expect(
+          page.locator(`.operating-load-notch[data-notch="${notch}"]`),
+        ).toHaveClass(/active/);
 
-      // Verify cursor element exists and capture screenshot of operating-load component
-      await loadEl.screenshot({
-        path: path.join(outDir, `notch-${notch}.png`),
-      });
+        // Capture screenshot of operating-load component for visual verification
+        await loadEl.screenshot({
+          path: path.join(outDir, `notch-${notch}-${theme}.png`),
+        });
+      }
     }
 
     expect(errors).toEqual([]);
