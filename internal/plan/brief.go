@@ -852,10 +852,10 @@ func (w *Wishes) Brief(
 	return connect.NewResponse(&planv1.WishServiceBriefResponse{Text: brief.Text()}), nil
 }
 
-// home is Djinn's data folder, when the server keeps the wishes' pages there.
+// home is Djinn's data folder: Home, else the one of the wishes' pages; empty for a server without one.
 func (w *Wishes) home() string {
-	if w.Pages == nil {
-		return ""
+	if w.Home != "" || w.Pages == nil {
+		return w.Home
 	}
 	return w.Pages.Home
 }
