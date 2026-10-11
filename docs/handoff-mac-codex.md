@@ -2,7 +2,30 @@
 
 A practical guide for Clément to test Djinn's new native window and recent features on macOS using Codex.
 
-## 1. Install on a Mac
+## 1. Before you start
+
+### Your git identity
+
+Your commits so far carry your Mac's local address (`clementfauvelle@macbook-air-de-alexandre-3.home`), which GitHub
+links to no account. In your Djinn checkout, before you commit:
+
+```sh
+git config user.name "Clément Fauvelle"
+git config user.email "44783512+clemzer0o@users.noreply.github.com" # your GitHub noreply address, or your account's
+git log -1 --format='%an <%ae>' # after your next commit: shows the name and address above
+```
+
+### A fresh data folder for `feat/wails-go`
+
+Wishes made on your branches (`feat/harness-friendly`, `feat/wish-minimal-workspace`) store fields that read
+differently on `feat/wails-go`. Before you switch, start Djinn from a fresh data folder: quit Djinn and move
+`~/Library/Application Support/djinn` aside (`djinn project show <project>` prints your settings file, inside that
+folder), or point `DJINN_HOME` at an empty folder.
+
+Your work is not lost: Djinn ports it onto `feat/wails-go` commit by commit, under your name, on branch
+`feat/clement-port`.
+
+## 2. Install on a Mac
 
 There are two ways to get Djinn running on macOS:
 
@@ -29,7 +52,7 @@ To build and install from a Git checkout:
    ```
    This compiles the native binary and installs `djinn` into your Go bin directory (`~/go/bin/djinn` or `$GOPATH/bin`).
 
-## 2. Run it with Codex
+## 3. Run it with Codex
 
 ### Provider configuration
 
@@ -40,7 +63,7 @@ provider: PROVIDER_CODEX
 ```
 
 in your personal local override file:
-`~/.config/djinn/projects/<project id>/settings.txtpb`
+`~/Library/Application Support/djinn/projects/<project id>/settings.txtpb` (`~/.config/djinn/…` on Linux)
 
 - **Find the project ID**: run `djinn project list` or `djinn project show <project>` (which prints its folder path and the exact location of its settings file; see [`docs/team-settings.md`](team-settings.md#your-own-file)).
 - **Scope**: this override is per-machine and per-person, is never committed, and takes precedence over `.agents/settings.txtpb`.
@@ -77,7 +100,7 @@ djinn task watch <task> --raw --json > turn.jsonl
 
 Send the resulting `.jsonl` and `.stderr` files to the developer (or commit them as fixtures on a branch). In addition, note and report any Codex errors or unexpected behaviors Djinn shows in the window or terminal.
 
-## 3. What needs a Mac
+## 4. What needs a Mac
 
 The following table lists all open plan boxes marked `(needs: a Mac)` across [`plan/*.md`](../plan/README.md) and how to verify each one:
 
@@ -92,7 +115,17 @@ The following table lists all open plan boxes marked `(needs: a Mac)` across [`p
 | **T02** / **T25** ([`plan/4a699d0f-review-at-a-glance.md`](../plan/4a699d0f-review-at-a-glance.md)) | `- [ ] djinn://tilasm/<id> opens the app on the tilasm from outside, Djinn running or not, on Linux (a desktop entry for x-scheme-handler/djinn), macOS (CFBundleURLTypes in Djinn.app) and Windows (the registry, by the installer). (needs: a Mac, and a Windows machine)` | Click or open a `djinn://tilasm/<id>` link from outside (e.g. via Terminal `open djinn://tilasm/<id>` or from a browser). Verify that it starts Djinn.app or brings a running Djinn forward and opens the tilasm in its wish's Tilasms tab. |
 | **T02** ([`plan/c30479be-api-and-cli.md`](../plan/c30479be-api-and-cli.md)) | `- [ ] Pressed by hand on macOS and on Windows. (needs: a Mac, and a Windows machine)` | Press the macOS global shortcut (`Ctrl+Cmd+J` by default, or as configured in settings) anywhere on the desktop. Verify by hand that it brings the Djinn window forward to the active wish with the newest open question (or flight plan). |
 
-## 4. New since PR #1 worth trying in passing
+## 5. Runs on your Mac as your work is ported
+
+Each check below comes as its port lands on `feat/clement-port`, then on `feat/wails-go`:
+
+- **`go tool task e2e-native`**: the live updates, the titlebar and toolbar test (`e2e/native/titlebar_toolbar_test.go`),
+  and the smoke geometry test (`e2e/native/smoke_geometry_test.go`) once ported.
+- **Djinn.app opened from the Finder** finds `claude` and `codex` and shows both signed in.
+- **Notifications**: macOS asks for the permission, and a click on a notification lands on its card.
+- **The window**: the titlebar, the sidebar toggle, and dragging the window.
+
+## 6. New since PR #1 worth trying in passing
 
 - **Operating load cursor with five notches and Overclock**: A slider in the status bar (`minimal`, `light`, `medium`, `high`, `max`, and `overclock` / auto) dynamically controlling worker slots, pressure stall thresholds, gate margins, and committable memory (`djinn load get/set`).
 - **Memory engaged by each worker's 95th percentile**: The scheduler calculates engaged memory forecasts from workers' 95th percentile resident memory (`p95_memory_bytes`) sampled every 5 seconds instead of raw peak spikes, with an optional dynamic memory guardrail (`--worker-memory-guard`).
@@ -108,12 +141,12 @@ The following table lists all open plan boxes marked `(needs: a Mac)` across [`p
 - **A task waits until its dependencies' work is in the integration branch**: The scheduler strictly blocks dependent tasks from starting until their upstream dependencies' commits are verified and merged into the integration branch.
 - **The update banner after each push**: After each successful push, an update banner notifies you of changes, folding task summaries and proposing to install new builds if configured.
 
-## 5. How to report
+## 7. How to report
 
 - **Proof questions in the window**: Answer Djinn's proof questions directly in the window (**Verified** / **Not yet**) when they appear for azimas awaiting proof, or tick nothing yourself in the plan files.
 - **Other feedback and issues**: Report anything else as a GitHub issue or message the developer, including the Djinn version (`djinn version`), macOS version/architecture, and a screenshot of the window, Dock, or terminal.
 
-## 6. Known pitfalls
+## 8. Known pitfalls
 
 - **Antigravity-specific notes do not apply**: Documentation regarding Antigravity (such as sandbox permissions and `agy` flags) is specific to that environment and does not apply to Codex.
 - **Unknown settings fields (W377)**: If a settings file refuses an unknown field after pulling changes, update Djinn to the latest commit on `feat/wails-go`.
