@@ -594,8 +594,8 @@
 
 /* An azima of the plan in the Tasks tab: its heading, then, opened, the work part of it, set in. */
 .azima-card {
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--tone, var(--line));
+  border: 1px solid
+    color-mix(in srgb, var(--tone, var(--line)) 45%, var(--line));
   border-radius: var(--radius-panel);
   background: var(--surface);
   margin-bottom: var(--space-2);
