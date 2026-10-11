@@ -265,3 +265,62 @@ func TestAgyReadURLStep(t *testing.T) {
 		t.Errorf("expected ERROR event on refusal result")
 	}
 }
+
+// TestAgyIdleLoop tests that Antigravity's idle pause message:
+// 1) ends the turn as done if the work is committed and clean (W392).
+// 2) continues once if work is not yet committed.
+// 3) fails if the idle pause happens again.
+// 4) is ignored if background tasks of its own are still running.
+func TestAgyIdleLoop(t *testing.T) {
+	stepDoneWithPause := `{"event":"step_update","step_update":{"conversation_id":"c1","step_index":1,"state":"DONE","step_type":"system","tool_info":{"output":"There are no tools called. Execution paused. Waiting for task completion."}}}`
+
+	// Case 1: work is committed.
+	pCommitted := &agyParser{isWorkDone: func() bool { return true }}
+	events, end := pCommitted.stdout(stepDoneWithPause)
+	if end == nil || end.failure != "" || end.retry != "" {
+		t.Fatalf("expected clean turn end for committed work, got %+v", end)
+	}
+	hasDone := false
+	for _, ev := range events {
+		if strings.Contains(ev.Text, "idle pause with work committed: done") {
+			hasDone = true
+			break
+		}
+	}
+	if !hasDone {
+		t.Errorf("missing done event: %+v", events)
+	}
+
+	// Case 2: work not committed, first time: continue once.
+	pUncommitted := &agyParser{isWorkDone: func() bool { return false }}
+	events, end = pUncommitted.stdout(stepDoneWithPause)
+	if end == nil || end.retry != agyContinuePrompt {
+		t.Fatalf("expected continuation prompt %q, got %+v", agyContinuePrompt, end)
+	}
+	hasContinued := false
+	for _, ev := range events {
+		if strings.Contains(ev.Text, "continued:") {
+			hasContinued = true
+			break
+		}
+	}
+	if !hasContinued {
+		t.Errorf("missing continued event: %+v", events)
+	}
+
+	// Case 3: idle pause occurs again: fails with idle loop error.
+	pUncommitted.turnEnded = false // next turn started
+	_, end = pUncommitted.stdout(stepDoneWithPause)
+	if end == nil || !strings.Contains(end.failure, "idle loop:") {
+		t.Fatalf("expected idle loop failure, got %+v", end)
+	}
+
+	// Case 4: background tasks still running: not treated as idle loop.
+	pWithBg := &agyParser{
+		bgTasks: map[string]bool{"task-bg-123": true},
+	}
+	_, end = pWithBg.stdout(stepDoneWithPause)
+	if end != nil {
+		t.Fatalf("expected no turn end when background task is running, got %+v", end)
+	}
+}

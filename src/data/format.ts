@@ -192,9 +192,36 @@ export function taskTime(
       }),
     );
   }
+  const activity = taskActivity(task, now);
+  if (activity) {
+    tooltipParts.push(activity);
+  }
   const title = tooltipParts.join("; ");
 
   return { text, title };
+}
+
+// Silence limit: 15 minutes before watchdog checks an idle running worker.
+// Past half this limit (7.5 min), the UI highlights silence.
+export const SILENCE_LIMIT_MS = 15 * 60 * 1000;
+export const SILENCE_HOVER_MS = SILENCE_LIMIT_MS / 2;
+
+// taskActivity returns the compact activity string for a running task on hover:
+// "active <time> ago" or "silent for <N> min" when past half the silence limit.
+export function taskActivity(task: Task, now: number): string | null {
+  if (task.status !== TaskStatus.RUNNING) return null;
+  const last = task.lastActivityTime
+    ? timestampMs(task.lastActivityTime)
+    : task.startTime
+      ? timestampMs(task.startTime)
+      : 0;
+  if (!last) return null;
+  const elapsed = Math.max(0, now - last);
+  if (elapsed >= SILENCE_HOVER_MS) {
+    const mins = Math.max(1, Math.round(elapsed / 60000));
+    return t("task.silent_for", { count: mins });
+  }
+  return t("task.active_ago", { time: span(elapsed) });
 }
 
 // azimaTime is how long an azima runs or ran: summing its parts' running time.

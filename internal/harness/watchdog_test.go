@@ -267,3 +267,169 @@ func TestWatchdogLostProcessResumesAndStopSucceeds(t *testing.T) {
 		t.Errorf("lead not told of lost process continuation: %v", told)
 	}
 }
+
+func TestWatchdogBudgetWallTimeExceeded(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	clock := &fakeClock{at: time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)}
+	var told []string
+	var toldMu sync.Mutex
+	tell := func(ctx context.Context, wishID, line string) error {
+		toldMu.Lock()
+		defer toldMu.Unlock()
+		told = append(told, line)
+		return nil
+	}
+
+	e := up(t, t.TempDir(),
+		WithClock(clock.now),
+		WithTaskMaxWallTime(100*time.Millisecond),
+		WithTellDelay(10*time.Millisecond),
+	)
+	e.h.TellLeads(tell)
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	task := e.spawn(t, wishID, "wait")
+	id := task.GetId()
+
+	e.until(t, id, func(tk *planv1.Task) bool {
+		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
+	})
+
+	// Advance clock past wall time budget.
+	clock.set(clock.now().Add(3 * time.Hour))
+	e.h.Wake()
+
+	done := e.ended(t, id)
+	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED {
+		t.Fatalf("status = %v, want STOPPED", done.GetStatus())
+	}
+	if !strings.Contains(done.GetError(), "budget exceeded") {
+		t.Errorf("error = %q, want budget exceeded", done.GetError())
+	}
+
+	e.h.batcher.Flush(t.Context())
+	toldMu.Lock()
+	defer toldMu.Unlock()
+	found := false
+	for _, line := range told {
+		if strings.Contains(line, "budget exceeded") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("lead not told of budget failure, got told: %v", told)
+	}
+}
+
+func TestWatchdogBudgetTurnsExceeded(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	clock := &fakeClock{at: time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)}
+	var told []string
+	var toldMu sync.Mutex
+	tell := func(ctx context.Context, wishID, line string) error {
+		toldMu.Lock()
+		defer toldMu.Unlock()
+		told = append(told, line)
+		return nil
+	}
+
+	e := up(t, t.TempDir(),
+		WithClock(clock.now),
+		WithTaskMaxTurns(1),
+		WithTellDelay(10*time.Millisecond),
+	)
+	e.h.TellLeads(tell)
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	task := e.spawn(t, wishID, "wait")
+	id := task.GetId()
+
+	e.until(t, id, func(tk *planv1.Task) bool {
+		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
+	})
+
+	// Inject extra turn into run.
+	e.h.mu.Lock()
+	r := e.h.runs[id]
+	if r != nil {
+		r.turns = 5
+	}
+	e.h.mu.Unlock()
+
+	e.h.Wake()
+
+	done := e.ended(t, id)
+	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED {
+		t.Fatalf("status = %v, want STOPPED", done.GetStatus())
+	}
+	if !strings.Contains(done.GetError(), "budget exceeded") {
+		t.Errorf("error = %q, want budget exceeded", done.GetError())
+	}
+
+	e.h.batcher.Flush(t.Context())
+	toldMu.Lock()
+	defer toldMu.Unlock()
+	found := false
+	for _, line := range told {
+		if strings.Contains(line, "budget exceeded") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("lead not told of budget failure, got told: %v", told)
+	}
+}
+
+func TestWatchdogDeadProcessEnds(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	clock := &fakeClock{at: time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)}
+	measureFunc := func(pid int, cgroup string) (machine.Group, error) {
+		return machine.Group{Processes: 0}, nil
+	}
+
+	waitEnv, _, _ := fake{provider: "claude", fixture: "success", end: "wait"}.env(t)
+	successEnv, _, _ := fake{provider: "claude", fixture: "success"}.env(t)
+	providers, sw := claudePlaying(waitEnv)
+
+	e := upWith(t, t.TempDir(), providers,
+		WithClock(clock.now),
+		WithSilenceLimit(100*time.Millisecond),
+		WithMeasure(10*time.Millisecond, measureFunc),
+	)
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Dead Worker", Prompt: "x", Provider: planv1.Provider_PROVIDER_CLAUDE,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+
+	e.until(t, id, func(tk *planv1.Task) bool {
+		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && tk.GetSessionId() != ""
+	})
+
+	// Before resumption, set the next run to finish successfully.
+	sw.play(successEnv)
+
+	// Advance past silence limit.
+	clock.set(clock.now().Add(15 * time.Minute))
+	e.h.Wake()
+
+	done := e.ended(t, id)
+	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("status = %v, want DONE (after continuation)", done.GetStatus())
+	}
+	if done.GetResumes() != 1 {
+		t.Errorf("resumes = %d, want 1", done.GetResumes())
+	}
+}

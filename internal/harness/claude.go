@@ -22,6 +22,8 @@ type Claude struct {
 	Command string
 	// Grace is how long a worker asked to stop has before it is killed; Grace by default.
 	Grace time.Duration
+	// IdleTimeout is how long a model call that returns nothing may wait before being cut and continued; StreamIdleTimeout by default.
+	IdleTimeout time.Duration
 	// Extra are arguments passed after Djinn's own: the workers' bench tries --bare and a system prompt file.
 	Extra []string
 }
@@ -151,7 +153,7 @@ func (c Claude) Start(ctx context.Context, spec Spec) (Worker, error) {
 	if grace == 0 {
 		grace = Grace
 	}
-	return startStream(ctx, spec, command, c.args(spec), grace, streamAgent{name: "claude", parser: claudeParser{}, encode: claudeMessageLine})
+	return startStream(ctx, spec, command, c.args(spec), grace, streamAgent{name: "claude", parser: &claudeParser{}, idle: c.IdleTimeout, encode: claudeMessageLine})
 }
 
 // claudeMessageLine is a user message as claude reads it in stream-json.
@@ -162,16 +164,40 @@ func claudeMessageLine(text string) ([]byte, error) {
 	})
 }
 
-// claudeParser reads claude's stream-json; it holds nothing between lines.
-type claudeParser struct{}
+// claudeParser reads claude's stream-json; it tracks tool execution to gate idle timeouts.
+type claudeParser struct {
+	toolDepth int
+}
 
-func (claudeParser) stdout(raw string) ([]Event, *turnEnd) { return parseClaude(raw) }
+func (p *claudeParser) toolRunning() bool {
+	return p != nil && p.toolDepth > 0
+}
 
-func (claudeParser) stderr(raw string) []Event {
+func (p *claudeParser) stdout(raw string) ([]Event, *turnEnd) {
+	events, end := parseClaude(raw)
+	if p != nil {
+		for _, ev := range events {
+			switch ev.Kind {
+			case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL:
+				p.toolDepth++
+			case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT:
+				if p.toolDepth > 0 {
+					p.toolDepth--
+				}
+			}
+		}
+		if end != nil {
+			p.toolDepth = 0
+		}
+	}
+	return events, end
+}
+
+func (*claudeParser) stderr(raw string) []Event {
 	return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: raw, Raw: raw}}
 }
 
-func (claudeParser) flush() []Event { return nil }
+func (*claudeParser) flush() []Event { return nil }
 
 // claudeMessage is a line of claude's stream-json output; only the fields Djinn reads.
 type claudeMessage struct {

@@ -19,8 +19,22 @@ import (
 // command is excluded by checking the gate it holds or waits for. An idle or dead worker past this limit is ended.
 const SilenceLimit = 15 * time.Minute
 
+// TaskMaxWallTime is how long a task may run in total across its runs before being stopped.
+// Generous for heavy builds and slow e2e tests (which can take 30-45m), while stopping 4h runaway zombies.
+const TaskMaxWallTime = 2 * time.Hour
+
+// TaskMaxTurns is how many model turns a task may consume before being stopped.
+// Ample for complex multi-step tasks (rarely exceeding 20-30 turns), while preventing infinite prompt loops.
+const TaskMaxTurns = 50
+
 // WithSilenceLimit sets the silence limit before the watchdog checks a worker: tests set a shorter one.
 func WithSilenceLimit(d time.Duration) Option { return func(h *Harness) { h.silenceLimit = d } }
+
+// WithTaskMaxWallTime sets the maximum wall time budget per task before being stopped: tests set a shorter one.
+func WithTaskMaxWallTime(d time.Duration) Option { return func(h *Harness) { h.maxWallTime = d } }
+
+// WithTaskMaxTurns sets the maximum turn budget per task before being stopped: tests set a lower one.
+func WithTaskMaxTurns(n int) Option { return func(h *Harness) { h.maxTurns = n } }
 
 // watchdog checks running workers: if a worker produces no events for longer than the silence limit,
 // its process tree and CPU usage are inspected. Dead or idle workers are ended (continued per W296/W320
@@ -46,6 +60,33 @@ func (h *Harness) watchdog(ctx context.Context, tasks []*planv1.Task) (anyLost b
 
 		if r.stopping || r.final || r.paused || r.watchdogEnd {
 			h.mu.Unlock()
+			continue
+		}
+
+		// Budget per task: check wall time and turns against limits.
+		maxWall := cmp.Or(h.maxWallTime, TaskMaxWallTime)
+		maxTurns := cmp.Or(h.maxTurns, TaskMaxTurns)
+
+		wallTime := taskWallTime(t, now)
+		if wallTime >= maxWall {
+			r.stopping = true
+			r.stoppingReason = fmt.Sprintf("budget exceeded: wall time %s (limit %s)", wallTime.Round(time.Second), maxWall.Round(time.Second))
+			worker := r.worker
+			h.mu.Unlock()
+			if worker != nil {
+				worker.Stop()
+			}
+			continue
+		}
+
+		if r.turns > maxTurns {
+			r.stopping = true
+			r.stoppingReason = fmt.Sprintf("budget exceeded: %d turns (limit %d)", r.turns, maxTurns)
+			worker := r.worker
+			h.mu.Unlock()
+			if worker != nil {
+				worker.Stop()
+			}
 			continue
 		}
 
@@ -135,4 +176,29 @@ func (h *Harness) endLostProcess(ctx context.Context, t *planv1.Task) {
 	}
 	h.tellWorkerFailed(t)
 	h.wake()
+}
+
+// taskWallTime computes the total wall time consumed by task t up to now across all its runs.
+func taskWallTime(t *planv1.Task, now time.Time) time.Duration {
+	if t == nil {
+		return 0
+	}
+	var total time.Duration
+	for _, run := range t.GetRuns() {
+		if run.GetStartTime() == nil {
+			continue
+		}
+		start := run.GetStartTime().AsTime()
+		end := now
+		if run.GetEndTime() != nil {
+			end = run.GetEndTime().AsTime()
+		}
+		if end.After(start) {
+			total += end.Sub(start)
+		}
+	}
+	if total == 0 && t.GetStartTime() != nil {
+		total = now.Sub(t.GetStartTime().AsTime())
+	}
+	return total
 }

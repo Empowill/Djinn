@@ -43,6 +43,7 @@ import { jump } from "./attention";
 import { type Decision } from "./data/decisions";
 import { useOptionalData, useTaskEvents, useTaskPrompt } from "./data/djinn";
 import {
+  taskActivity,
   taskFinished,
   taskModelDisplay,
   taskStatusText,
@@ -230,6 +231,7 @@ export const WishTask = memo(function WishTask({
   // The main counter ticks while it runs, and freezes while paused or done.
   const now = useNow(task.status === TaskStatus.RUNNING && !!task.startTime);
   const time = taskTime(task, now);
+  const activity = taskActivity(task, now);
   const work = taskWork(task, codes);
   const hasActions =
     holdable || stoppable || (!!onDone && closable(task.status));
@@ -245,13 +247,20 @@ export const WishTask = memo(function WishTask({
           aria-expanded={open}
         >
           <span className="wish-task-first-line">
-            <StatusBadge tone={tone} label={taskStatusText(task, forkedAs)} />
+            <StatusBadge
+              tone={tone}
+              label={taskStatusText(task, forkedAs)}
+              title={activity ?? undefined}
+            />
             <span className="agent-code">{task.code}</span>
             {/* Cut to the room left: the whole title shows on hover. */}
             <span className="task-title-wrap">
               <strong className="task-title">{task.title}</strong>
               <span className="task-tooltip" role="tooltip">
                 <span className="task-tooltip-title">{task.title}</span>
+                {activity ? (
+                  <span className="task-tooltip-activity">{activity}</span>
+                ) : null}
                 {preview ? (
                   <span className="task-tooltip-prompt">{preview}</span>
                 ) : null}

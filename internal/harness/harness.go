@@ -122,6 +122,8 @@ type Harness struct {
 	waiting      func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
 	outside      func() int                   // the gates held outside the running workers (GatesOutside); nil: none
 	silenceLimit time.Duration                // silence limit before watchdog checks a worker (watchdog.go)
+	maxWallTime  time.Duration                // ceiling on wall time budget per task (watchdog.go)
+	maxTurns     int                          // ceiling on model turns budget per task (watchdog.go)
 	version      string                       // version of the running binary (WithVersion)
 	runs         map[string]*run              // by task id
 	changed      chan struct{}                // closed at the next change of a task without worker (notifyLocked)
@@ -147,6 +149,7 @@ type run struct {
 	cgroup          string // cgroup of the running worker
 	token           string // secret per-run token passed in DJINN_WORKER_TOKEN
 	stopping        bool
+	stoppingReason  string               // why worker was stopped if not stopped on request (e.g. budget exceeded)
 	shelved         bool                 // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
 	paused          bool                 // the worker holds still: it takes no slot
 	notchPaused     bool                 // paused by the operating load notch
@@ -159,6 +162,8 @@ type run struct {
 	use             *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one
 	samples         *workerRing          // recent measurement samples (measure.go)
 	subs            map[chan *planv1.TaskEvent]struct{}
+	startTime       time.Time     // when the current run started
+	turns           int           // model turns consumed so far
 	lastActivity    time.Time     // when the worker last produced an event (watchdog.go)
 	lastWatchdogCPU time.Duration // CPU time used at previous watchdog check
 	watchdogEnd     bool          // watchdog ended this worker
@@ -1064,6 +1069,12 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		t.FirstStartTime = nowPb
 	}
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, nowPb, nil, 0, ""
+	t.LastActivityTime = nowPb
+	h.mu.Lock()
+	r.startTime = now
+	r.lastActivity = now
+	r.turns = 1
+	h.mu.Unlock()
 	if len(t.Runs) > 0 && t.Runs[len(t.Runs)-1].EndTime == nil {
 		t.Runs[len(t.Runs)-1].EndTime = nowPb
 		if t.Runs[len(t.Runs)-1].Reason == "" {
@@ -1271,6 +1282,21 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	if ev.Usage != nil {
 		r.task.Usage, changed = sum(r.base, ev.Usage), true
+	}
+	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_USAGE {
+		var uTurns int
+		if _, err := fmt.Sscanf(ev.Text, "%d turns", &uTurns); err == nil && uTurns > 0 {
+			h.mu.Lock()
+			if uTurns > r.turns {
+				r.turns = uTurns
+			}
+			h.mu.Unlock()
+		}
+	}
+	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
+		h.mu.Lock()
+		r.turns++
+		h.mu.Unlock()
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
 		r.failure = ev.Text
@@ -1481,8 +1507,15 @@ func (h *Harness) end(r *run, res Result) {
 		}
 	}
 	h.mu.Lock()
-	stopping, shelved, preemptedWhy, watchdogEnd, watchdogReason := r.stopping, r.shelved, r.preemptedWhy, r.watchdogEnd, r.watchdogReason
+	stopping, stoppingReason, shelved, preemptedWhy, watchdogEnd, watchdogReason := r.stopping, r.stoppingReason, r.shelved, r.preemptedWhy, r.watchdogEnd, r.watchdogReason
 	h.mu.Unlock()
+	var streamIdleReason string
+	if isStreamIdle(res.Err) {
+		streamIdleReason = res.Err.Error()
+	} else if isStreamIdleString(r.failure) {
+		streamIdleReason = r.failure
+	}
+	streamIdleEnd := streamIdleReason != ""
 	t := r.task
 	if t.GetModel() == "" && !r.watcher {
 		if len(t.Models) > 0 {
@@ -1521,7 +1554,7 @@ func (h *Harness) end(r *run, res Result) {
 	case preemptedWhy != "":
 		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy
 	case stopping:
-		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, "stopped on request"
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, cmp.Or(stoppingReason, "stopped on request")
 	case watchdogEnd:
 		if plan.CanResume(t.GetProvider()) && t.GetResumes() < maxResumes {
 			t.Status, t.Error, t.Continuing = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true
@@ -1529,6 +1562,14 @@ func (h *Harness) end(r *run, res Result) {
 			t.Resumes++
 		} else {
 			t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, watchdogReason
+		}
+	case streamIdleEnd:
+		if plan.CanResume(t.GetProvider()) && t.GetResumes() < maxResumes {
+			t.Status, t.Error, t.Continuing = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true
+			t.WaitReason = streamIdleReason
+			t.Resumes++
+		} else {
+			t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, streamIdleReason
 		}
 	case shelved:
 		shelve(t)
@@ -1599,6 +1640,8 @@ func (h *Harness) end(r *run, res Result) {
 		text = "resuming: " + whyWishPaused
 	case watchdogEnd && t.GetContinuing():
 		text = "resuming: " + watchdogReason + "; continued"
+	case streamIdleEnd && t.GetContinuing():
+		text = "resuming: " + streamIdleReason + "; continued"
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING:
 		text = "waiting: " + whyStoppedFirst
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING:
@@ -1606,7 +1649,7 @@ func (h *Harness) end(r *run, res Result) {
 	case t.GetError() != "":
 		text += ": " + t.GetError()
 	}
-	if watchdogEnd && t.GetContinuing() {
+	if (watchdogEnd || streamIdleEnd) && t.GetContinuing() {
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: agyContinuePrompt})
 	}
 	h.write(r, actorHarness, methodEnd, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
@@ -1749,6 +1792,9 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 	r.seq++
 	h.mu.Lock()
 	r.lastActivity = h.now()
+	if r.task != nil {
+		r.task.LastActivityTime = timestamppb.New(r.lastActivity)
+	}
 	h.mu.Unlock()
 	h.publish(r, te)
 	return te, nil

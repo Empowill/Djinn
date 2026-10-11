@@ -843,6 +843,8 @@ message Task {
   google.protobuf.Duration paused = 59;
   // Time the task waited before its first start (no slot, dependencies).
   google.protobuf.Duration waiting_before_start = 60;
+  // When the worker last produced an event (output, tool call, status).
+  google.protobuf.Timestamp last_activity_time = 61;
 }
 
 // TaskRun is a single run of a task's worker.
