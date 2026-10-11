@@ -104,7 +104,8 @@ type Terminal struct {
 	changed chan struct{} // closed and replaced at each change
 	exited  bool
 	code    int
-	voice   voice // the lines Djinn types, under mu
+	voice   voice   // the lines Djinn types, under mu
+	screen  *screen // what the program shows now
 }
 
 // Open returns the running terminal of name, attached true, or starts one: command in dir at cols×rows, each
@@ -180,7 +181,7 @@ func (m *Manager) OpenExclusive(
 	t = &Terminal{
 		ID: uuid.NewString(), Name: name, Command: slices.Clone(command), Dir: dir,
 		p: p, done: make(chan struct{}), cols: cols, rows: rows, changed: make(chan struct{}),
-		voice: voice{started: time.Now()},
+		voice: voice{started: time.Now()}, screen: newScreen(cols, rows),
 	}
 	if old := m.byName[name]; old != nil {
 		delete(m.byID, old.ID) // Ended: its output goes with it.
@@ -299,6 +300,7 @@ func (t *Terminal) append(b []byte) {
 	defer t.mu.Unlock()
 	t.buf = append(t.buf, b...)
 	t.voice.output = time.Now()
+	t.screen.write(b)
 	if len(t.buf) > Scrollback+Scrollback/4 {
 		drop := len(t.buf) - Scrollback
 		t.base += uint64(drop)
@@ -369,6 +371,7 @@ func (t *Terminal) Resize(cols, rows int) error {
 	}
 	t.mu.Lock()
 	t.cols, t.rows = cols, rows
+	t.screen.resize(cols, rows)
 	t.mu.Unlock()
 	return nil
 }
