@@ -880,7 +880,7 @@ test("a task card shows the model chosen for the worker; watchers do not show it
   assert.doesNotMatch(noModel, /task-model/);
 });
 
-test("a task row reads on two lines: code and long title on the first, details on the second", () => {
+test("a task row reads on two lines: status, code and long title on the first, details on the second", () => {
   const longTitle =
     "Configure the multi-environment deployment pipeline with automated rollbacks and canary release verification across staging and production clusters";
   const task = {
@@ -905,11 +905,12 @@ test("a task row reads on two lines: code and long title on the first, details o
   assert.match(markup, /<span class="wish-task-first-line">/);
   assert.match(markup, /<span class="wish-task-second-line">/);
 
-  // 2. First line: code, whole title without string truncation, and chevron
+  // 2. First line: status badge, code, whole title without string truncation, and chevron
   const firstLine = markup.match(
     /<span class="wish-task-first-line">([\s\S]*?)<\/span><span class="wish-task-second-line">/,
   )?.[1];
   assert.ok(firstLine, "first line exists");
+  assert.match(firstLine, /<span class="status-badge/);
   assert.match(firstLine, /<span class="agent-code">W42<\/span>/);
   assert.match(
     firstLine,
@@ -918,7 +919,14 @@ test("a task row reads on two lines: code and long title on the first, details o
   // Full title preserved, not truncated into characters + ellipsis in markup
   assert.doesNotMatch(firstLine, /<strong class="task-title">[^<]*…<\/strong>/);
 
-  // 3. Second line: project, model, elapsed time, status badge in order
+  // Verify the order of elements in the first line: status -> code -> title
+  const statusIdx = firstLine.indexOf('class="status-badge');
+  const codeIdx = firstLine.indexOf('class="agent-code"');
+  const titleIdx = firstLine.indexOf('class="task-title"');
+  assert.ok(statusIdx < codeIdx, "status comes before code");
+  assert.ok(codeIdx < titleIdx, "code comes before title");
+
+  // 3. Second line: project, model, elapsed time in order (status badge moved to first line)
   const secondLine = markup.match(
     /<span class="wish-task-second-line">([\s\S]*?)<\/span><\/button>/,
   )?.[1];
@@ -928,14 +936,14 @@ test("a task row reads on two lines: code and long title on the first, details o
     secondLine,
     /<span class="task-model" title="claude-sonnet-5-5-20250929">sonnet 5\.5<\/span>/,
   );
-  assert.match(secondLine, /<span class="status-badge/);
+  assert.doesNotMatch(secondLine, /<span class="status-badge/);
 
-  // Verify the order of elements in the second line: project -> model -> time -> status
+  // Verify the order of elements in the second line: project -> model -> time
   const projectIdx = secondLine.indexOf('class="task-project"');
   const modelIdx = secondLine.indexOf('class="task-model"');
-  const statusIdx = secondLine.indexOf('class="status-badge');
+  const timeIdx = secondLine.indexOf('class="task-time"');
   assert.ok(projectIdx < modelIdx, "project comes before model");
-  assert.ok(modelIdx < statusIdx, "model comes before status");
+  assert.ok(modelIdx < timeIdx, "model comes before time");
 
   // 4. Action buttons aligned in actions block outside the heading button
   assert.match(
@@ -943,6 +951,66 @@ test("a task row reads on two lines: code and long title on the first, details o
     /<span class="wish-task-actions">[\s\S]*?<\/span><\/div>/,
   );
   assert.match(markup, /aria-label="Stop the worker"/);
+});
+
+test("a task row and an azima row both start with their status badge: state -> code -> title", () => {
+  // 1. Task row starts with its status badge before code and title
+  const task = {
+    id: "t1",
+    code: "W42",
+    title: "Configure the deployment pipeline",
+    status: s.TaskStatus.RUNNING,
+  };
+  const taskMarkup = s.renderToStaticMarkup(
+    h(s.WishTask, {
+      task,
+      project: { id: "p1", name: "Djinn Core" },
+      onStop() {},
+    }),
+  );
+  const taskFirstLine = taskMarkup.match(
+    /<span class="wish-task-first-line">([\s\S]*?)<\/span><span class="wish-task-second-line">/,
+  )?.[1];
+  assert.ok(taskFirstLine, "task first line exists");
+  const taskStatusIdx = taskFirstLine.indexOf('class="status-badge');
+  const taskCodeIdx = taskFirstLine.indexOf('class="agent-code"');
+  const taskTitleIdx = taskFirstLine.indexOf('class="task-title"');
+  assert.ok(taskStatusIdx !== -1, "task status badge is present in first line");
+  assert.ok(taskCodeIdx !== -1, "task agent code is present in first line");
+  assert.ok(taskTitleIdx !== -1, "task title is present in first line");
+  assert.ok(taskStatusIdx < taskCodeIdx, "task status comes before code");
+  assert.ok(taskCodeIdx < taskTitleIdx, "task code comes before title");
+
+  // 2. Azima row starts with its status badge before code and title
+  const azima = {
+    id: "a1",
+    code: "T1",
+    title: "Ship the lamp",
+    kind: s.TaskKind.AZIMA,
+    azima: { state: s.AzimaState.IN_PROGRESS, partsRunning: 1 },
+  };
+  const azimaMarkup = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima,
+      parts: [],
+      tasks: new Map(),
+      render() {
+        return null;
+      },
+    }),
+  );
+  const azimaHeading = azimaMarkup.match(
+    /<button[^>]*class="azima-heading"[^>]*>([\s\S]*?)<\/button>/,
+  )?.[1];
+  assert.ok(azimaHeading, "azima heading exists");
+  const azimaStatusIdx = azimaHeading.indexOf('class="status-badge');
+  const azimaCodeIdx = azimaHeading.indexOf('class="agent-code"');
+  const azimaTitleIdx = azimaHeading.indexOf("<strong");
+  assert.ok(azimaStatusIdx !== -1, "azima status badge is present in heading");
+  assert.ok(azimaCodeIdx !== -1, "azima agent code is present in heading");
+  assert.ok(azimaTitleIdx !== -1, "azima title is present in heading");
+  assert.ok(azimaStatusIdx < azimaCodeIdx, "azima status comes before code");
+  assert.ok(azimaCodeIdx < azimaTitleIdx, "azima code comes before title");
 });
 
 test("a task card shows its prompt on hover, and opened shows prompt and no logs until the button", () => {

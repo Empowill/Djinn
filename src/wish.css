@@ -118,6 +118,9 @@
   min-width: 0;
   width: 100%;
 }
+.wish-task-first-line > .status-badge {
+  flex-shrink: 0;
+}
 .wish-task-first-line > .agent-code {
   flex-shrink: 0;
   margin-top: 1px;
@@ -219,9 +222,6 @@
   gap: var(--space-3);
   color: var(--muted);
   font: var(--font-size-body) var(--mono);
-}
-.wish-task-meta .status-badge {
-  font-family: var(--font-sans);
 }
 /* The project, just before the task's title, in the grey of the facts after it. */
 .task-project {
