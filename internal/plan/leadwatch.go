@@ -36,10 +36,14 @@ type watchTiming struct {
 	grace time.Duration
 	// retype is how long Djinn waits before typing the line again when the lead ran no watch since the last one.
 	retype time.Duration
+	// remind is how long Djinn waits after an event before typing the line, so that a burst gets one line: quiet.
+	remind time.Duration
 }
 
 // defaultWatchTiming is the timing of djinn up.
-var defaultWatchTiming = watchTiming{quiet: 2 * time.Second, settleMax: 10 * time.Second, grace: time.Minute, retype: 10 * time.Minute}
+var defaultWatchTiming = watchTiming{
+	quiet: 2 * time.Second, settleMax: 10 * time.Second, grace: time.Minute, retype: 10 * time.Minute, remind: 2 * time.Second,
+}
 
 const (
 	// watchDefault is how long a watch waits for an event when the request names no timeout.
@@ -132,14 +136,19 @@ func (w *Wishes) Notify(ctx context.Context, e *planv1.LeadEvent) error {
 	}
 	l := w.leadWatch()
 	l.signal()
-	w.remindLead(l.timing.quiet)
+	w.remindLead(l.timing.remind)
 	return nil
 }
 
 // RemindLead types the line that says events wait, after a grace for the lead's watch to come back, when events
 // wait and no watch does: djinn up calls it once it runs, so that a lead whose watch died with the last djinn up
 // hears of what happened meanwhile, the restart first.
-func (w *Wishes) RemindLead() { w.remindLead(w.leadWatch().timing.grace) }
+func (w *Wishes) RemindLead() {
+	if w.Store != nil {
+		w.queueWaitingAnswers(context.Background())
+	}
+	w.remindLead(w.leadWatch().timing.grace)
+}
 
 // remindLead plans the check that types the line, in after at the soonest, or later when a watch returned within
 // the grace.

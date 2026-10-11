@@ -379,8 +379,8 @@ func TestInbox(t *testing.T) {
 	if got := c.requests(t, docs.GetId()); !slices.Equal(got, []string{mention}) {
 		t.Errorf("requests filed = %q", got)
 	}
-	if want := LeadTerminal + ": " + InboxFiledLine(docs.GetId(), "babysit-mr", mention); !slices.Contains(leads.said, want) {
-		t.Errorf("said %q, want %q", leads.said, want)
+	if want := LeadTerminal + ": " + InboxFiledLine(docs.GetId(), "babysit-mr", mention); !slices.Contains(told(t, c.store), want) {
+		t.Errorf("queued %q, want %q", told(t, c.store), want)
 	}
 
 	// Nothing waits any more; --all lists every item. A link a wish holds is not proposed.

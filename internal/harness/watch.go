@@ -449,17 +449,16 @@ func (h *Harness) SpawnWatcher(ctx context.Context, wishID, projectID, title, wa
 // a lead to tell keeps the paragraph in its task's events.
 func (h *Harness) wakeLead(r *run, w *Watched, text string) {
 	h.mu.Lock()
-	tell, watched := h.tell, h.watched
+	watched := h.watched
 	h.mu.Unlock()
 	if !w.Wake {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if tell != nil {
-		if err := tell(ctx, r.task.GetWishId(), WatchLine(r.task.GetCode(), w)); err != nil && !errors.Is(err, plan.ErrNoLead) {
-			h.Note(r.id, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: "the lead was not told: " + err.Error()})
-		}
+	err := h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_WATCH, r.task.GetWishId(), r.task.GetCode(), WatchLine(r.task.GetCode(), w))
+	if err != nil && !errors.Is(err, plan.ErrNoLead) {
+		h.Note(r.id, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: "the lead was not told: " + err.Error()})
 	}
 	if watched == nil || w.First == "" {
 		return

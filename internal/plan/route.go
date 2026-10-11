@@ -656,7 +656,8 @@ func (w *Wishes) routeTo(
 			return nil, nil
 		}
 		return func(ctx context.Context) {
-			if err := w.Tell(ctx, wish.GetId(), line); err != nil && !errors.Is(err, ErrNoLead) {
+			e := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_REQUEST, WishId: wish.GetId(), Text: line}
+			if err := w.Notify(ctx, e); err != nil {
 				log.Printf("djinn: wish %s: tell the lead about a request filed: %v", wish.GetId(), err)
 			}
 		}, nil

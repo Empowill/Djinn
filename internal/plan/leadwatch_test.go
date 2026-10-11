@@ -16,7 +16,8 @@ import (
 )
 
 // quick is the timing of the lead's watch in these tests.
-var quick = watchTiming{quiet: 50 * time.Millisecond, settleMax: 400 * time.Millisecond, grace: 150 * time.Millisecond, retype: time.Hour}
+var quick = watchTiming{quiet: 50 * time.Millisecond, settleMax: 400 * time.Millisecond, grace: 150 * time.Millisecond, retype: time.Hour,
+	remind: 50 * time.Millisecond}
 
 // syncLeads is a fakeLeads safe for the reminder's goroutine.
 type syncLeads struct {

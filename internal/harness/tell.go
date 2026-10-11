@@ -18,6 +18,35 @@ import (
 // TellFunc types a line in the terminal of the lead of a wish: plan.Wishes.Tell.
 type TellFunc func(ctx context.Context, wishID, line string) error
 
+// NotifyFunc queues an event for the lead, which its watch hands out: plan.Wishes.Notify.
+type NotifyFunc func(ctx context.Context, e *planv1.LeadEvent) error
+
+// NotifyLead lets Djinn queue the lead's events (decision Q191) instead of typing lines in its terminal: djinn up
+// gives it once its terminals run. Without it, the lines go to TellLeads' function, as they did.
+func (h *Harness) NotifyLead(notify NotifyFunc) {
+	h.mu.Lock()
+	h.notifyLead = notify
+	h.mu.Unlock()
+	if notify != nil && h.batcher != nil {
+		h.batcher.Flush(context.Background())
+	}
+}
+
+// toLead hands an event of kind about code in wishID to the lead: queued with NotifyLead's function, or else typed
+// with TellLeads'. ErrNoLead-like errors are the caller's to ignore; with neither function, nothing happens.
+func (h *Harness) toLead(ctx context.Context, kind planv1.LeadEventKind, wishID, code, line string) error {
+	h.mu.Lock()
+	tell, notify := h.tell, h.notifyLead
+	h.mu.Unlock()
+	switch {
+	case notify != nil:
+		return notify(ctx, &planv1.LeadEvent{Kind: kind, WishId: wishID, Code: code, Text: line})
+	case tell != nil:
+		return tell(ctx, wishID, line)
+	}
+	return nil
+}
+
 // WithTellDelay sets the delay before batched lines to a wish's lead are flushed: tests set a shorter one.
 func WithTellDelay(d time.Duration) Option { return func(h *Harness) { h.tellDelay = d } }
 
@@ -161,6 +190,16 @@ func (h *Harness) tellWorkerFailed(t *planv1.Task) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	line := h.workerFailedLine(ctx, t)
+	h.mu.Lock()
+	queued := h.notifyLead != nil
+	h.mu.Unlock()
+	if queued {
+		// The lead's queue batches by itself, in its watch.
+		if err := h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_FAILED, t.GetWishId(), t.GetCode(), line); err != nil {
+			log.Printf("djinn: wish %s: tell the lead: %v", t.GetWishId(), err)
+		}
+		return
+	}
 	h.batcher.queue(t.GetWishId(), line)
 }
 

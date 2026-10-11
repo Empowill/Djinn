@@ -262,17 +262,17 @@ func TestRouteAnswered(t *testing.T) {
 	if got := c.requests(t, made.GetId()); !slices.Equal(got, []string{request}) {
 		t.Errorf("requests filed = %q", got)
 	}
-	// The lead is reopened to be told; no second lead is started.
-	if len(leads.opened) != opened+1 || !strings.HasPrefix(leads.opened[opened], "claude --resume "+session) {
+	// The lead is told by its queue: no lead is started, the one lead hears it with its watch.
+	if len(leads.opened) != opened {
 		t.Errorf("opened %q", leads.opened[opened:])
 	}
 	answered := c.questionOf(t, q.GetId())
 	if answered.GetRoute().GetOptions()[0].GetWishId() != made.GetId() {
 		t.Errorf("the decision does not say where the request went: %v", answered.GetRoute())
 	}
-	told := LeadTerminal + ": " + RoutedLine(answered)
-	if !slices.Contains(leads.said, told) || !strings.Contains(told, `the new wish "Babysit shop!41"`) {
-		t.Errorf("said %q, want %q", leads.said, told)
+	want := LeadTerminal + ": " + RoutedLine(answered)
+	if !slices.Contains(told(t, c.store), want) || !strings.Contains(want, `the new wish "Babysit shop!41"`) {
+		t.Errorf("queued %q, want %q", told(t, c.store), want)
 	}
 	// Routed once: answering again would make a second wish.
 	if _, err := c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
@@ -291,8 +291,8 @@ func TestRouteAnswered(t *testing.T) {
 	if got := c.requests(t, babysit.GetId()); !slices.Equal(got, []string{request}) {
 		t.Errorf("requests filed = %q", got)
 	}
-	if want := LeadTerminal + ": " + FiledLine(babysit.GetId(), here.GetTitle(), request); !slices.Contains(leads.said, want) {
-		t.Errorf("said %q, want %q", leads.said, want)
+	if want := LeadTerminal + ": " + FiledLine(babysit.GetId(), here.GetTitle(), request); !slices.Contains(told(t, c.store), want) {
+		t.Errorf("queued %q, want %q", told(t, c.store), want)
 	}
 
 	// Three wishes are active: the card offers to wait paused, or to pause the last one, then a wish to file it in and
@@ -328,7 +328,8 @@ func TestRouteAnswered(t *testing.T) {
 	if q.GetOptions()[keep] != "Keep it in “Lamp: the sidebar”" {
 		t.Fatalf("options %q", q.GetOptions())
 	}
-	wishes, said := len(c.list(t)), len(leads.said)
+	take(t, c.store)
+	wishes := len(c.list(t))
 	c.answer(t, q, planv1.Choice_CHOICE_A+planv1.Choice(keep), "")
 	if got := c.requests(t, here.GetId()); !slices.Equal(got, []string{request}) {
 		t.Errorf("requests kept = %q", got)
@@ -336,12 +337,9 @@ func TestRouteAnswered(t *testing.T) {
 	if len(c.list(t)) != wishes {
 		t.Errorf("a wish was made: %d, was %d", len(c.list(t)), wishes)
 	}
-	if filed := LeadTerminal + ": " + FiledLine(here.GetId(), here.GetTitle(), request); slices.Contains(leads.said, filed) {
-		t.Errorf("said the request was filed: %q", leads.said[said:])
-	}
-	told = LeadTerminal + ": " + RoutedLine(c.questionOf(t, q.GetId()))
-	if !slices.Equal(leads.said[said:], []string{told}) || !strings.Contains(told, "keeps the request in this wish") {
-		t.Errorf("said %q, want %q", leads.said[said:], told)
+	want = LeadTerminal + ": " + RoutedLine(c.questionOf(t, q.GetId()))
+	if got := told(t, c.store); !slices.Equal(got, []string{want}) || !strings.Contains(want, "keeps the request in this wish") {
+		t.Errorf("queued %q, want %q alone, not the request filed", got, want)
 	}
 }
 

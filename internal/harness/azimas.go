@@ -702,12 +702,8 @@ func (h *Harness) Open(ctx context.Context, procedure string, req *planv1.TaskSe
 	}
 	h.notify()
 	h.wake()
-	h.mu.Lock()
-	tell := h.tell
-	h.mu.Unlock()
-	if tell != nil {
-		_ = tell(ctx, task.GetWishId(), fmt.Sprintf("Djinn: azima %s opened: plan its tasks", task.GetCode()))
-	}
+	_ = h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_REQUEST, task.GetWishId(), task.GetCode(),
+		fmt.Sprintf("Djinn: azima %s opened: plan its tasks", task.GetCode()))
 	return task, nil
 }
 

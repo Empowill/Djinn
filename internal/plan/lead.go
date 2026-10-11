@@ -187,9 +187,6 @@ func (s *LeadService) Resume(
 		}
 		res.Lead = started
 	}
-	if !res.GetAttached() {
-		s.Wishes.tellWaitingAnswers(ctx, res.GetTerminal())
-	}
 	if wishID := req.Msg.GetWishId(); wishID != "" {
 		if wish, err := store.Get[*planv1.Wish](ctx, s.Wishes.Store, wishID); err == nil {
 			line := fmt.Sprintf("Focus on the wish %s (%s): djinn wish brief %s", wish.GetTitle(), wish.GetId(), wish.GetId())

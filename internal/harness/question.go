@@ -257,16 +257,16 @@ func (h *Harness) questionEnded(t *planv1.Task) {
 // place, if any.
 func (h *Harness) tellEnd(t *planv1.Task, retry string) {
 	h.mu.Lock()
-	tell := h.tell
+	told := h.tell != nil || h.notifyLead != nil
 	h.mu.Unlock()
-	if tell == nil {
+	if !told {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	line, err := h.questionEndLineOf(ctx, t, retry)
 	if err == nil {
-		err = tell(ctx, t.GetWishId(), line)
+		err = h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, t.GetWishId(), t.GetCode(), line)
 	}
 	if err != nil && !errors.Is(err, plan.ErrNoLead) {
 		h.Note(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: "the lead was not told: " + err.Error()})
