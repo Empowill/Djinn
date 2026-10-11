@@ -81,11 +81,15 @@ func frenchIn(name string) []string {
 	if _, ok := frenchAllowed[name]; ok || skipFrench.MatchString(name) {
 		return nil
 	}
-	data, err := os.ReadFile(filepath.Join("..", filepath.FromSlash(name)))
+	target := filepath.Join("..", filepath.FromSlash(name))
+	data, err := os.ReadFile(target)
 	if os.IsNotExist(err) {
 		return nil // Deleted, not yet staged.
 	}
 	if err != nil {
+		if fi, statErr := os.Stat(target); statErr == nil && fi.IsDir() {
+			return nil
+		}
 		return []string{err.Error()}
 	}
 	if bytes.IndexByte(data, 0) >= 0 {
