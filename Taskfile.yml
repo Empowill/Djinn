@@ -25,8 +25,20 @@ tasks:
     cmds:
       - go run ./tools/docsite bin/docs
 
+  npm:
+    desc: Install npm dependencies when missing or package files changed
+    internal: true
+    sources:
+      - package.json
+      - package-lock.json
+    generates:
+      - node_modules/.package-lock.json
+    cmds:
+      - npm ci
+
   ui:
     desc: Build the interface into dist/, only when its sources changed (the djinn binary embeds it)
+    deps: [npm]
     sources:
       - src/**/*
       - locales/*.json
@@ -80,6 +92,7 @@ tasks:
 
   test-ui:
     desc: Run the interface tests (Node), and those of its data module on in-memory services
+    deps: [npm]
     cmds:
       - npm test
       - node --test tests/*.test.mjs
