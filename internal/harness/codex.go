@@ -122,7 +122,7 @@ func (c Codex) Start(ctx context.Context, spec Spec) (Worker, error) {
 	if grace == 0 {
 		grace = Grace
 	}
-	p, err := startProcess(spec.Dir, command, c.args(), spec.Env, spec.Scope, grace)
+	p, err := startProcess(spec.Dir, command, c.args(), spec.Env, spec.Scope, grace, spec.LowPriority)
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}
