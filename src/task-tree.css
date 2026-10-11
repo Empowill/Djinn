@@ -1,0 +1,178 @@
+/* The tree of a wish's tasks (src/task-tree.tsx) and the switch between it and the list (src/task-tabs.tsx). Its
+   colours are the theme's tokens and the status language's: both themes, no colour of its own. */
+.tasks-moving .section-title,
+.tasks-tree .section-title {
+  position: relative;
+  padding-right: 64px;
+}
+.layout-toggle {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+.layout-toggle button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.layout-toggle button + button {
+  border-left: 1px solid var(--line);
+}
+.layout-toggle button:hover {
+  color: var(--text);
+}
+.layout-toggle button.active {
+  color: var(--text);
+  background: var(--surface-soft);
+}
+
+.task-tree-layout.with-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.task-tree {
+  position: relative;
+  min-width: 0;
+}
+.task-tree-lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.task-tree-lines path {
+  fill: none;
+  stroke-linecap: round;
+}
+.tree-trunk {
+  stroke: var(--line-strong);
+  stroke-width: 3;
+}
+/* A task while it ran: its lane, in its state's colour. */
+.tree-run {
+  stroke: color-mix(in srgb, var(--tone) 55%, transparent);
+  stroke-width: 2;
+}
+.tree-link {
+  stroke: color-mix(in srgb, var(--muted) 30%, transparent);
+  stroke-width: 1;
+}
+.tree-link-fork {
+  stroke-dasharray: 3 3;
+}
+.tree-link-merge {
+  stroke: color-mix(in srgb, var(--st-investigating) 40%, transparent);
+}
+.task-tree-lines path.lit {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.tree-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 24px;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tree-row:hover,
+.tree-row:focus-visible {
+  background: color-mix(in srgb, var(--surface-soft) 70%, transparent);
+  outline: none;
+}
+/* The rows of the hovered task's azima: one group, a light band. */
+.tree-row.kin {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.tree-row.focused {
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+}
+.tree-dot {
+  position: absolute;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--tone);
+}
+.tree-dot .live-dot {
+  width: 8px;
+  height: 8px;
+}
+.tree-label {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--tree-lanes) + 4px);
+  right: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.tree-label .agent-code {
+  flex-shrink: 0;
+}
+.tree-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-row.tone-cancelled .tree-title,
+.tree-row.tone-stopped .tree-title {
+  color: var(--muted);
+}
+.task-tooltip.tree-tip {
+  display: flex;
+  left: var(--tree-lanes);
+  pointer-events: none;
+}
+
+.task-tree-card {
+  position: sticky;
+  top: 8px;
+  max-height: calc(100vh - 96px);
+  overflow: auto;
+}
+.task-tree-close {
+  float: right;
+  display: inline-flex;
+  margin: 0 0 4px 8px;
+  padding: 4px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.task-tree-close:hover {
+  color: var(--text);
+}

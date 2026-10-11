@@ -58,6 +58,7 @@ import {
   codeMapOf,
   forkedAs,
   investigatingQuestions,
+  isAzima,
   mergeNest,
   movingTasks,
   openQuestions,
@@ -108,7 +109,15 @@ import {
   useStickyRoom,
 } from "./azima";
 import { MoveQuestionDialog, WithdrawQuestionDialog } from "./wish-dialogs";
-import { kindsForView, TaskSections, type View, ViewTabs } from "./task-tabs";
+import {
+  kindsForView,
+  LayoutToggle,
+  TaskSections,
+  useTaskLayout,
+  type View,
+  ViewTabs,
+} from "./task-tabs";
+import { TaskTree } from "./task-tree";
 import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
@@ -259,6 +268,13 @@ export function WishView({
     [drafts, focus],
   );
   const spentDetail = useMemo(() => spent(detail.tasks), [detail.tasks]);
+  // The Tasks tab as a list or as the tree of every task; the tree reads them all, page after page.
+  const [layout] = useTaskLayout();
+  const tree = view === "tasks" && layout === "tree";
+  useEffect(() => {
+    if (tree && store && detail.tasksNextToken)
+      void store.loadMore(wish.id, Change.TASK);
+  }, [tree, store, wish.id, detail.tasksNextToken]);
   const byId = taskMapOf(detail.tasks);
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -962,6 +978,25 @@ export function WishView({
               <p className="muted-text" role="tabpanel">
                 {detail.loaded ? t("wish.no_tasks") : t("common.loading")}
               </p>
+            ) : tree ? (
+              <TaskTree
+                tasks={detail.tasks}
+                projects={projectById}
+                codes={codes}
+                focus={focus}
+                card={(() => {
+                  const shown = byId.get(nest.host.get(focus) ?? focus);
+                  return shown && !isAzima(shown) ? renderTask(shown) : null;
+                })()}
+                onOpen={handleTaskFocus}
+                onClose={() => show("tasks")}
+                aside={
+                  <>
+                    <LayoutToggle />
+                    <SpentLine spent={spentDetail} />
+                  </>
+                }
+              />
             ) : (
               <TaskSections
                 moving={moving}
@@ -973,7 +1008,12 @@ export function WishView({
                 showDrafts={showDrafts}
                 renderAzima={renderAzima}
                 renderDraft={renderDraft}
-                aside={<SpentLine spent={spentDetail} />}
+                aside={
+                  <>
+                    <LayoutToggle />
+                    <SpentLine spent={spentDetail} />
+                  </>
+                }
                 render={renderTask}
               />
             ))}

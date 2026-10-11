@@ -442,7 +442,7 @@ export const WishTask = memo(function WishTask({
 });
 
 // MergeLabel marks a merge, compact; what it brings in on hover.
-function MergeLabel({
+export function MergeLabel({
   task,
   codes,
 }: {

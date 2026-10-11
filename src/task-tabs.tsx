@@ -3,8 +3,13 @@
 // planned ones last); then the azimas of the plan, each with the work part of it (src/azima.tsx), the done ones folded
 // (Fold). The decisions have the next tab (src/decision-log.tsx), then a wish's tilasms (src/tilasms.tsx), and last,
 // discreet, its blocks for agents (src/agent-blocks.tsx).
-import { ChevronDown } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { ChevronDown, GitBranch, List } from "lucide-react";
+import {
+  type ReactNode,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { Change } from "../gen/ts/plan/v1/plan_pb";
 import { t } from "./i18n";
@@ -89,6 +94,79 @@ export function ViewTabs({
         </button>
       ))}
     </div>
+  );
+}
+
+// How the Tasks tab shows a wish's tasks: the list, by default, or the tree of all of them, oldest at the bottom
+// (src/task-tree.tsx). A preference of the person, kept in the page's storage as the theme is: across wishes and
+// restarts.
+export type TaskLayout = "list" | "tree";
+
+const LAYOUT = "djinn.tasks.layout";
+const layoutListeners = new Set<() => void>();
+
+export function chosenLayout(): TaskLayout {
+  try {
+    return window.localStorage.getItem(LAYOUT) === "tree" ? "tree" : "list";
+  } catch {
+    return "list";
+  }
+}
+
+// The choice this page shows: read once from storage, then kept here too, should the storage refuse it.
+let current: TaskLayout | undefined;
+
+export function setLayout(layout: TaskLayout) {
+  current = layout;
+  try {
+    if (layout === "tree") window.localStorage.setItem(LAYOUT, layout);
+    else window.localStorage.removeItem(LAYOUT);
+  } catch {
+    // Private window or blocked storage: the choice lasts for this page only.
+  }
+  layoutListeners.forEach((fn) => fn());
+}
+
+const shownLayout = () => (current ??= chosenLayout());
+
+// useTaskLayout is the layout chosen, and how to choose another; every Tasks tab follows the choice.
+export function useTaskLayout(): [TaskLayout, (layout: TaskLayout) => void] {
+  const layout = useSyncExternalStore(
+    (onChange) => {
+      layoutListeners.add(onChange);
+      return () => {
+        layoutListeners.delete(onChange);
+      };
+    },
+    shownLayout,
+    () => "list" as const,
+  );
+  return [layout, setLayout];
+}
+
+// LayoutToggle switches the Tasks tab between the list and the tree: two icons, their words on hover.
+export function LayoutToggle() {
+  const [layout, choose] = useTaskLayout();
+  const options = [
+    { id: "list" as const, icon: List, label: t("tasks.layout_list") },
+    { id: "tree" as const, icon: GitBranch, label: t("tasks.layout_tree") },
+  ];
+  return (
+    <span className="layout-toggle" role="group" aria-label={t("tasks.layout")}>
+      {options.map(({ id, icon: Icon, label }) => (
+        <button
+          key={id}
+          type="button"
+          className={layout === id ? "active" : ""}
+          aria-pressed={layout === id}
+          aria-label={label}
+          title={label}
+          onClick={() => choose(id)}
+        >
+          <Icon size={14} aria-hidden="true" />
+        </button>
+      ))}
+    </span>
   );
 }
 

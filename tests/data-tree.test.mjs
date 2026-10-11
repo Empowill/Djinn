@@ -53,7 +53,7 @@ test("the rows go bottom up by start time, finished ones included, the planned o
   assert.equal(f.treeLayout(tasks), layout);
 });
 
-test("the azimas are no rows: their work opens a branch beside the trunk, and closes it", () => {
+test("the azimas are no rows: their work is a group, on the lanes it takes like any work", () => {
   const azima = task("T1", {
     kind: f.TaskKind.AZIMA,
     status: f.TaskStatus.PENDING,
@@ -67,31 +67,44 @@ test("the azimas are no rows: their work opens a branch beside the trunk, and cl
   ]);
   assert.deepEqual(codes(layout), ["W1", "W2", "W3", "W4"]);
   assert.deepEqual(
-    layout.nodes.map((n) => n.lane),
-    [0, 1, 1, 0],
+    layout.nodes.map((n) => n.group),
+    ["", azima.id, azima.id, ""],
   );
-  assert.deepEqual(layout.branches, [{ azima, lane: 1, from: 1, to: 2 }]);
-  assert.equal(layout.lanes, 2);
+  // One after the other: all on the trunk.
+  assert.deepEqual(
+    layout.nodes.map((n) => n.lane),
+    [0, 0, 0, 0],
+  );
+  assert.equal(layout.lanes, 1);
 });
 
-test("work running beside work opens a side lane, held while it runs, then given back", () => {
+test("work running beside work opens a side lane where it starts, and closes it where it ends", () => {
   const layout = f.treeLayout([
     ran("W1", 10, 100),
-    ran("W2", 20, 30),
-    ran("W3", 40, 50),
-    ran("W4", 200, 210),
-    ran("W5", 205, 220),
+    ran("W2", 20, 70),
+    ran("W3", 30, 40),
+    ran("W4", 50, 60),
+    ran("W5", 200, 210),
+    ran("W6", 205, 220),
   ]);
   const by = Object.fromEntries(layout.nodes.map((n) => [n.task.code, n]));
+  // W1 still ran when W2, W3 and W4 started: its lane holds up to W4's row.
   assert.equal(by.W1.lane, 0);
-  // W1 still ran when W2 and W3 started: its lane holds up to W3's row.
-  assert.equal(by.W1.top, 2);
+  assert.equal(by.W1.top, 3);
   assert.equal(by.W2.lane, 1);
   assert.equal(by.W2.from, 0);
-  assert.equal(by.W3.lane, 1);
-  assert.equal(by.W4.lane, 0);
-  assert.equal(by.W5.lane, 1);
-  assert.equal(layout.lanes, 2);
+  assert.equal(by.W2.top, 3);
+  // W3 opens beside W2, and closes back into it.
+  assert.equal(by.W3.lane, 2);
+  assert.equal(by.W3.from, 1);
+  assert.equal(by.W3.to, 1);
+  // W4 takes the lane W3 gave back.
+  assert.equal(by.W4.lane, 2);
+  // Once they ended, the smoke narrows back to the trunk.
+  assert.equal(by.W5.lane, 0);
+  assert.equal(by.W6.lane, 1);
+  assert.equal(by.W6.from, 0);
+  assert.equal(layout.lanes, 3);
 });
 
 test("a running task holds its lane up to the last task that started", () => {
