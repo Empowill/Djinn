@@ -669,3 +669,187 @@ func TestSpawnUnreadableSettingsWaitsThenStarts(t *testing.T) {
 		t.Fatalf("task after fixing settings: %v", got)
 	}
 }
+
+// TestDependencyWorkIntegration verifies that only the merge of the previous task's work
+// releases the task that depends on it:
+// 1. Dependency closed by hand with unmerged commits: dependent waits.
+// 2. Cleared record with unmerged commits: dependent waits.
+// 3. Cleared record with merged commits: dependent starts.
+// 4. No record and no commits: dependent starts.
+// 5. Worktree check: when worker's worktree is created, unmerged dependency commits prevent starting.
+func TestDependencyWorkIntegration(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	repo := gitRepo(t)
+	mainBranch := plan.CheckedOutBranch(t.Context(), repo)
+
+	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 2}).capacity), WithTick(time.Hour))
+	wishID, projectID := e.wish(t, repo)
+
+	// Create branch b1 with unmerged commit.
+	b1 := "branch-unmerged-1"
+	if _, err := git(t.Context(), repo, "checkout", "-b", b1); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "app", "file1.txt"), []byte("work 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "add", "."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "work 1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "checkout", mainBranch); err != nil {
+		t.Fatal(err)
+	}
+
+	w1 := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W1", Title: "Task 1",
+		Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED, Branch: b1, CreateTime: timestamppb.Now(),
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		_ = tx.Journal("test", "put", w1)
+		return tx.Put(w1)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Dependency closed by hand with unmerged commits -> dependent waits.
+	dropVal := true
+	_, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
+		TaskId: w1.GetId(), Drop: &dropVal, Note: "dropped for test",
+	}))
+	if err != nil {
+		t.Fatalf("task done: %v", err)
+	}
+
+	w2 := e.mustSpawn(t, wishID, "W2", "wait\ntext 2", &planv1.TaskServiceSpawnRequest{
+		DependsOn: []string{"W1"},
+	})
+	wantWait := "waits for W1's work to reach " + mainBranch
+	if w2.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || w2.GetWaitReason() != wantWait || w2.GetStartTime() != nil {
+		t.Fatalf("w2 initially: status=%v, waitReason=%q, want %q", w2.GetStatus(), w2.GetWaitReason(), wantWait)
+	}
+
+	// 2. Cleared record with unmerged commits -> dependent waits.
+	// Give W1 a committed integration record first, then clear it with --force.
+	w1 = e.get(t, w1.GetId())
+	w1.Integration = &planv1.TaskIntegration{
+		State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+		Sha:   "deadbeef",
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		_ = tx.Journal("test", "put", w1)
+		return tx.Put(w1)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	none := "none"
+	forceVal := true
+	_, err = e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+		TaskId:      w1.GetId(),
+		Integration: &none,
+		Force:       &forceVal,
+	}))
+	if err != nil {
+		t.Fatalf("task update: %v", err)
+	}
+
+	e.h.wake()
+	time.Sleep(50 * time.Millisecond)
+	curr2 := e.get(t, w2.GetId())
+	if curr2.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || curr2.GetWaitReason() != wantWait || curr2.GetStartTime() != nil {
+		t.Fatalf("w2 after clearing integration record: status=%v, waitReason=%q, want %q", curr2.GetStatus(), curr2.GetWaitReason(), wantWait)
+	}
+
+	// 3. Cleared record with merged commits -> dependent starts.
+	if _, err := git(t.Context(), repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "merge", "--no-ff", "-m", "merge b1", b1); err != nil {
+		t.Fatal(err)
+	}
+	e.h.wake()
+	e.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	curr2 = e.get(t, w2.GetId())
+	if curr2.GetStartTime() == nil {
+		t.Errorf("w2 should have started after merge")
+	}
+	e.release(t, w2.GetId())
+	e.ended(t, w2.GetId())
+
+	// 4. No record and no commits -> dependent starts.
+	b3 := "branch-no-commits"
+	if _, err := git(t.Context(), repo, "branch", b3, mainBranch); err != nil {
+		t.Fatal(err)
+	}
+	w3 := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W3", Title: "Task 3",
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b3, CreateTime: timestamppb.Now(),
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		_ = tx.Journal("test", "put", w3)
+		return tx.Put(w3)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	w4 := e.mustSpawn(t, wishID, "W4", "wait\ntext 4", &planv1.TaskServiceSpawnRequest{
+		DependsOn: []string{"W3"},
+	})
+	e.until(t, w4.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	e.release(t, w4.GetId())
+	e.ended(t, w4.GetId())
+
+	// 5. Worktree check: when worker's worktree is created, unmerged dependency commits prevent starting.
+	// Create task W5 with unmerged commits on branch b5.
+	b5 := "branch-unmerged-5"
+	if _, err := git(t.Context(), repo, "checkout", "-b", b5); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "app", "file5.txt"), []byte("work 5\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "add", "."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "work 5"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "checkout", mainBranch); err != nil {
+		t.Fatal(err)
+	}
+
+	w5 := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W5", Title: "Task 5",
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b5, CreateTime: timestamppb.Now(),
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		_ = tx.Journal("test", "put", w5)
+		return tx.Put(w5)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// W6 depends on W5, planned for later.
+	w6 := e.mustSpawn(t, wishID, "W6", "wait\ntext 6", &planv1.TaskServiceSpawnRequest{
+		DependsOn: []string{w5.GetCode()},
+		Later:     true,
+	})
+
+	// Directly invoke launchPlanned: worktree creation check fails because W5's work is not in start sha.
+	err = e.h.launchPlanned(t.Context(), w6)
+	if err != nil {
+		t.Fatalf("launchPlanned: %v", err)
+	}
+	curr6 := e.get(t, w6.GetId())
+	wantWait6 := "waits for W5's work to reach " + mainBranch
+	if curr6.GetWaitReason() != wantWait6 {
+		t.Errorf("curr6 waitReason = %q, want %q", curr6.GetWaitReason(), wantWait6)
+	}
+	if curr6.GetWorktree() != "" {
+		t.Errorf("curr6 worktree should be empty, got %q", curr6.GetWorktree())
+	}
+	if curr6.GetStartTime() != nil {
+		t.Errorf("curr6 should not have started")
+	}
+}

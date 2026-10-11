@@ -393,6 +393,103 @@ func TestWaitsForTheCommit(t *testing.T) {
 	}
 }
 
+// TestWaitsForBranchWork: a DONE dependency with a branch counts as met only when its work is in the wish's
+// integration branch: integration COMMITTED, or (no record) its branch's head is an ancestor of the integration
+// branch's head, or it has no commit beyond the point it started from. Otherwise the dependent waits, with a
+// reason that says so ("waits for W5's work to reach feat/wails-go"). The ancestry check is cached.
+func TestWaitsForBranchWork(t *testing.T) {
+	wish := &planv1.Wish{
+		Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1,
+		IntegrationBranches: []*planv1.IntegrationBranch{{ProjectId: "p1", Branch: "feat/wails-go"}},
+	}
+	cases := []struct {
+		name       string
+		branch     string
+		state      planv1.IntegrationState
+		bHead      string
+		noCommits  bool
+		intHead    string
+		isAncestor bool
+		want       string
+	}{
+		{
+			name:   "no branch and no record starts",
+			branch: "", state: planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED,
+			want: "",
+		},
+		{
+			name:   "committed record starts",
+			branch: "w5-feat", state: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+			want: "",
+		},
+		{
+			name:   "cleared record with unmerged commits waits",
+			branch: "w5-feat", state: planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED,
+			bHead: "b1111111", noCommits: false, intHead: "i2222222", isAncestor: false,
+			want: "waits for W5's work to reach feat/wails-go",
+		},
+		{
+			name:   "cleared record with merged commits starts",
+			branch: "w5-feat", state: planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED,
+			bHead: "b1111111", noCommits: false, intHead: "i2222222", isAncestor: true,
+			want: "",
+		},
+		{
+			name:   "no record and no commits starts",
+			branch: "w5-feat", state: planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED,
+			bHead: "b1111111", noCommits: true, intHead: "i2222222", isAncestor: false,
+			want: "",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dep := &planv1.Task{
+				Id: "d", WishId: "w", ProjectId: "p1", Code: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+				Branch: c.branch,
+			}
+			if c.state != planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED {
+				dep.Integration = &planv1.TaskIntegration{State: c.state}
+			}
+			task := &planv1.Task{
+				Id: "t", WishId: "w", ProjectId: "p1", Code: "W6", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+				Scheduled: true, DependsOn: []string{"d"},
+			}
+			calls := 0
+			branchHead := func(projectID, branch string) (string, bool) {
+				if branch == c.branch {
+					return c.bHead, c.noCommits
+				}
+				if branch == "feat/wails-go" {
+					return c.intHead, false
+				}
+				return "", false
+			}
+			isAncestor := func(projectID, a, b string) bool {
+				calls++
+				return c.isAncestor
+			}
+			sit := New([]*planv1.Task{dep, task}, []*planv1.Wish{wish}, map[string]bool{"p1": true}, nil)
+			sit.WithAncestry(branchHead, isAncestor)
+			pass := sit.Pass()
+			if len(pass) == 0 {
+				t.Fatalf("no decision returned")
+			}
+			d := pass[0]
+			if d.Why != c.want {
+				t.Errorf("got why %q, want %q", d.Why, c.want)
+			}
+			// Verify ancestry cache: running Blocker again should not call isAncestor again.
+			if c.bHead != "" && !c.noCommits && c.state == planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED {
+				prevCalls := calls
+				sit.Blocker(task)
+				if calls != prevCalls {
+					t.Errorf("ancestry not cached: calls went from %d to %d", prevCalls, calls)
+				}
+			}
+		})
+	}
+}
+
 // TestMemoryCommittableLimit: when machine Total is known, dispatch respects the load notch committable memory ceiling.
 func TestMemoryCommittableLimit(t *testing.T) {
 	at := time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC)

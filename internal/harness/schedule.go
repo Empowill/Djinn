@@ -291,9 +291,11 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 	if err != nil {
 		return nil, err
 	}
-	git := make(map[string]bool, len(projects))
+	projectGit := make(map[string]bool, len(projects))
+	projectDirs := make(map[string]string, len(projects))
 	for _, p := range projects {
-		git[p.GetId()] = p.GetGit()
+		projectGit[p.GetId()] = p.GetGit()
+		projectDirs[p.GetId()] = p.GetDirectory()
 	}
 	var m *dispatch.Machine
 	if h.capacity != nil {
@@ -312,7 +314,58 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 			m.Total = h.total()
 		}
 	}
-	return dispatch.New(tasks, wishes, git, m).At(h.now()), nil
+	type branchState struct {
+		head      string
+		noCommits bool
+	}
+	branchCache := make(map[[2]string]branchState)
+	branchHead := func(projectID, branch string) (string, bool) {
+		if branch == "" {
+			return "", false
+		}
+		key := [2]string{projectID, branch}
+		if st, ok := branchCache[key]; ok {
+			return st.head, st.noCommits
+		}
+		dir := projectDirs[projectID]
+		if dir == "" || !projectGit[projectID] {
+			return "", false
+		}
+		head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"^{commit}")
+		if err != nil || head == "" {
+			if h, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", branch+"^{commit}"); err == nil && h != "" {
+				head = h
+			} else if branch == plan.CheckedOutBranch(ctx, dir) || branch == "HEAD" {
+				head, _ = git(ctx, dir, "rev-parse", "HEAD")
+			}
+		}
+		noCommits := false
+		if head != "" {
+			reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+branch)
+			if err == nil && reflog != "" {
+				lines := strings.Split(strings.TrimSpace(reflog), "\n")
+				if strings.TrimSpace(lines[len(lines)-1]) == head {
+					noCommits = true
+				}
+			}
+		}
+		branchCache[key] = branchState{head: head, noCommits: noCommits}
+		return head, noCommits
+	}
+	isAncestor := func(projectID, a, b string) bool {
+		if a == "" || b == "" {
+			return false
+		}
+		dir := projectDirs[projectID]
+		if dir == "" || !projectGit[projectID] {
+			return false
+		}
+		_, err := git(ctx, dir, "merge-base", "--is-ancestor", a, b)
+		return err == nil
+	}
+	sit := dispatch.New(tasks, wishes, projectGit, m).At(h.now())
+	sit.WithAncestry(branchHead, isAncestor)
+	return sit, nil
 }
 
 // Ranks gives the position of each task's wish among the active wishes, the first served first; the task of a wish

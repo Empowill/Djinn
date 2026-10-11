@@ -963,6 +963,14 @@ func (h *Harness) launch(
 			dir, err = correctionWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), f)
 		default:
 			if sha, from, err = startPoint(ctx, project.GetDirectory(), r.from); err == nil {
+				if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), task, sha, r.from); depWhy != "" {
+					log.Printf("djinn: task %s: worktree not created: %s", task.GetCode(), depWhy)
+					_ = os.RemoveAll(skillsDir)
+					task.Branch, task.Worktree = "", ""
+					h.forget(r)
+					h.setWaiting(ctx, task, depWhy)
+					return store.Get[*planv1.Task](ctx, h.store, task.GetId())
+				}
 				dir, err = addWorktreeFrom(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), sha)
 			}
 		}

@@ -13,6 +13,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/cli"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -185,5 +186,111 @@ func TestDoneCommand(t *testing.T) {
 	code, _, errs = run("task", "done", task.GetId())
 	if code != 1 || !strings.Contains(errs, "task W1 is done already") {
 		t.Errorf("djinn task done twice: code %d, stderr %q", code, errs)
+	}
+}
+
+// TestDoneUnmergedCommits: closing a task whose branch holds unmerged commits queues them for merging (pending record),
+// unless --drop is given with a note explaining why it was dropped on purpose.
+func TestDoneUnmergedCommits(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	repo := gitRepo(t)
+	e := up(t, t.TempDir())
+	wishID, projectID := e.wish(t, repo)
+
+	// Create a branch with a commit not in the main branch
+	mainBranch := plan.CheckedOutBranch(t.Context(), repo)
+	b1 := "branch-unmerged-1"
+	if _, err := git(t.Context(), repo, "checkout", "-b", b1); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(repo+"/app/file1.txt", []byte("unmerged 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "add", "."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "unmerged commit 1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "checkout", mainBranch); err != nil {
+		t.Fatal(err)
+	}
+
+	t1 := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W1", Title: "work with unmerged branch",
+		Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED, Branch: b1, CreateTime: timestamppb.Now(),
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		_ = tx.Journal("test", "put", t1)
+		return tx.Put(t1)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Closing without --drop queues for merging
+	res, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: t1.GetId()}))
+	if err != nil {
+		t.Fatalf("task done: %v", err)
+	}
+	if res.Msg.GetTask().GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("status = %v, want DONE", res.Msg.GetTask().GetStatus())
+	}
+	if res.Msg.GetTask().GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING {
+		t.Errorf("integration = %v, want PENDING", res.Msg.GetTask().GetIntegration())
+	}
+	events := e.watch(t.Context(), t, t1.GetId(), 0)
+	if !hasText(events, "integration: pending, to be merged into the integration branch") {
+		t.Errorf("missing pending event: %v", eventTexts(events))
+	}
+
+	// 2. Create another unmerged branch
+	b2 := "branch-unmerged-2"
+	if _, err := git(t.Context(), repo, "checkout", "-b", b2); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(repo+"/app/file2.txt", []byte("unmerged 2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "add", "."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "unmerged commit 2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "checkout", mainBranch); err != nil {
+		t.Fatal(err)
+	}
+
+	t2 := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W2", Title: "dropped work",
+		Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED, Branch: b2, CreateTime: timestamppb.Now(),
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		_ = tx.Journal("test", "put", t2)
+		return tx.Put(t2)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Closing with --drop but no note fails
+	dropVal := true
+	_, err = e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: t2.GetId(), Drop: &dropVal}))
+	if err == nil || !strings.Contains(err.Error(), "--note must say why they are dropped") {
+		t.Errorf("expected error about --note, got: %v", err)
+	}
+
+	// Closing with --drop and note succeeds without queuing for merge
+	res2, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
+		TaskId: t2.GetId(), Drop: &dropVal, Note: "obsolete experiment",
+	}))
+	if err != nil {
+		t.Fatalf("task done with drop: %v", err)
+	}
+	if res2.Msg.GetTask().GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("status = %v, want DONE", res2.Msg.GetTask().GetStatus())
+	}
+	if res2.Msg.GetTask().GetIntegration() != nil {
+		t.Errorf("expected nil integration, got %v", res2.Msg.GetTask().GetIntegration())
 	}
 }
