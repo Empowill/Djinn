@@ -647,9 +647,44 @@
 .azima-progress-parts {
   color: var(--muted);
 }
-.azima-parts {
+/* Opened: its description on the left, a measure that reads (about 60 characters, never more than 40% of the card), in
+   sight while its parts scroll on the right, one per row, the width of their column. A narrow card stacks them. */
+.azima-card {
+  container: azima / inline-size;
+}
+.azima-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 var(--space-4);
+  align-items: start;
   border-top: 1px solid var(--line);
-  padding: var(--space-2) var(--space-2) 0 24px;
+  padding: var(--space-3) var(--space-2) 0 var(--space-4);
+}
+.azima-side {
+  min-width: 0;
+  padding-bottom: var(--space-3);
+}
+@container azima (min-width: 900px) {
+  .azima-body.with-side {
+    grid-template-columns: minmax(0, min(40%, 50ch)) minmax(0, 1fr);
+  }
+  .azima-side {
+    position: sticky;
+    top: calc(var(--attention-height, 0px) + var(--space-2));
+    max-height: calc(
+      var(--scroll-height, 100vh) - var(--attention-height, 0px) - 2 *
+        var(--space-2)
+    );
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+.azima-parts {
+  min-width: 0;
+}
+.azima-part-list {
+  display: flex;
+  flex-direction: column;
 }
 /* The line that folds what is finished, the done azimas or the finished parts of one: discreet, under what moves. */
 .fold-line {
@@ -682,14 +717,28 @@
   padding-left: 18px;
 }
 .draft-azima-body {
-  padding-bottom: var(--space-3);
+  border-top: 1px solid var(--line);
+  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-4);
 }
-/* An azima's description: Markdown, as its plan file writes it. */
+/* An azima's description: Markdown, as its plan file writes it; its headings no bigger than the card's title. */
 .azima-description,
 .draft-azima-description {
   margin-bottom: var(--space-3);
   color: var(--text);
   font-size: var(--font-size-body);
+}
+.azima-description .ac-markdown,
+.draft-azima-description .ac-markdown {
+  line-height: 1.6;
+}
+.azima-description .ac-markdown :is(h1, h2, h3, h4),
+.draft-azima-description .ac-markdown :is(h1, h2, h3, h4) {
+  font-size: 13px;
+  margin: 14px 0 4px;
+}
+.azima-description .ac-markdown > :first-child,
+.draft-azima-description .ac-markdown > :first-child {
+  margin-top: 0;
 }
 .draft-azima-actions {
   display: flex;
