@@ -245,10 +245,12 @@ func runUp(args []string) (restart bool, err error) {
 	// A djinn:// link shows the tilasm's wish, or the wish.
 	uiSvc.Linked = func(ctx context.Context, l link.Link) (string, error) { return plan.Linked(ctx, db, l) }
 	registerLinks(os.Stderr)
+	// The lead a wish kept, before the one lead, is the lead from now on.
+	lead := carryLead(ctx, db, os.Stderr)
 	// After an update, the terminals that ran before it run again; after a crash, the leads.
-	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, os.Stderr))
+	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, lead.GetSessionId(), os.Stderr))
 	// Then the lead, unless a lead came back already.
-	resumeLead(ctx, db, terminals, uiSvc, os.Stderr)
+	resumeLead(ctx, db, home, terminals, uiSvc, os.Stderr)
 	updates, err := newUpdater(version, uiSvc, terminals, leadNotes, stop)
 	if err != nil {
 		return false, err

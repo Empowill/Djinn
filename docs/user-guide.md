@@ -131,6 +131,9 @@ From a terminal, `djinn lead resume` does what **Lead** does, and starts Djinn i
 `djinn lead resume --provider codex` picks the agent. `djinn lead set <session-id> --directory <folder>`
 records a session you started yourself.
 
+Djinn takes the lead back at every start, in the lead's terminal. The first start after an update from a Djinn that had
+one lead per wish keeps the lead of the first active wish as the one lead.
+
 ## The flight plan
 
 **Flight plan**, at the top of the side panel, shows every active wish together:

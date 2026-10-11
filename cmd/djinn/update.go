@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -353,7 +354,11 @@ func (u *updater) Restarting() bool {
 // it showed, and returns the terminals that did not start, one line each. The note is removed once read, before the
 // terminals start and the note of the leads follows them: a lead that did not start keeps its session recorded,
 // for djinn lead resume.
-func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say io.Writer) []string {
+//
+// A note from a Djinn of one lead per wish names its leads' terminals lead-<wish id>: the first that runs session,
+// the lead's recorded session (any when none is), comes back as the lead's terminal; the others do not, and
+// resumeLead resumes the lead's session after: never a lead under another name, nor two terminals on a session.
+func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, session string, say io.Writer) []string {
 	path := filepath.Join(home, RestartFile)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -371,10 +376,23 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 		fmt.Fprintln(say, "djinn:", err)
 	}
 	var failed []string
-	shown := ""
+	shown, dropped := "", 0
+	lead := slices.ContainsFunc(note.Terminals, func(t restartTerminal) bool { return t.Name == plan.LeadTerminal })
 	for _, t := range note.Terminals {
+		if strings.HasPrefix(t.Name, "lead-") {
+			if lead || session != "" && !strings.Contains(strings.Join(t.Command, " "), session) {
+				fmt.Fprintf(say, "djinn: %s, a wish's lead, does not run again: Djinn has one lead now, in the %q terminal\n",
+					t.Name, plan.LeadTerminal)
+				dropped++
+				continue
+			}
+			if note.ShowTerminal == t.Name {
+				note.ShowTerminal = plan.LeadTerminal
+			}
+			t.Name, lead = plan.LeadTerminal, true
+		}
 		_, err := os.Stat(t.Directory)
-		if err == nil && (t.Name == "lead" || strings.HasPrefix(t.Name, "lead-")) && plan.HoldsHome(t.Directory) {
+		if err == nil && t.Name == plan.LeadTerminal && plan.HoldsHome(t.Directory) {
 			err = errors.New("a lead never runs in the home folder: djinn lead resume starts it in a project")
 		}
 		if err == nil {
@@ -386,7 +404,7 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 			failed = append(failed, line)
 			continue
 		}
-		if t.Name == note.ShowTerminal || shown == "" && (t.Name == "lead" || strings.HasPrefix(t.Name, "lead-")) {
+		if t.Name == note.ShowTerminal || shown == "" && t.Name == plan.LeadTerminal {
 			shown = t.Name
 		}
 	}
@@ -398,11 +416,11 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 	}
 	if note.Version == "" {
 		fmt.Fprintf(say, "djinn: the last djinn up crashed, %d of %d leads reopened\n",
-			len(note.Terminals)-len(failed), len(note.Terminals))
+			len(note.Terminals)-dropped-len(failed), len(note.Terminals)-dropped)
 		return failed
 	}
 	fmt.Fprintf(say, "djinn: restarted on %s, %d of %d terminals resumed\n",
-		note.Version, len(note.Terminals)-len(failed), len(note.Terminals))
+		note.Version, len(note.Terminals)-dropped-len(failed), len(note.Terminals)-dropped)
 	return failed
 }
 
