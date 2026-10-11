@@ -702,11 +702,10 @@ func TestPushHeldLiftsWhenApprovedUnchecked(t *testing.T) {
 		task.PartOf = azima.GetId()
 	})
 
-	// Pass 1: W1 commits, push checks fail, question asked at once.
+	// Pass 1: W1 commits, push checks fail, the push is left to the lead at once.
 	in.pass(t, 0)
-	q := in.pushQuestion(t)
-	if q == nil {
-		t.Fatal("expected push question")
+	if state := in.pushState(t); state.GetQuestionId() != "" || !strings.HasSuffix(state.GetHeld(), "; left to the lead") {
+		t.Fatalf("the push %v; want held, left to the lead, no question", state)
 	}
 
 	// Spawn a new planned work task W2.
@@ -719,7 +718,7 @@ func TestPushHeldLiftsWhenApprovedUnchecked(t *testing.T) {
 	}
 
 	// Person chooses Choice C: push without the checks.
-	in.answer(t, q, planv1.Choice_CHOICE_C)
+	in.answer(t, in.attachPushQuestion(t), planv1.Choice_CHOICE_C)
 
 	// The gate lifts: W2 starts running!
 	w2 = in.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))

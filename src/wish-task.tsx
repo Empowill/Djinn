@@ -367,6 +367,17 @@ export const WishTask = memo(function WishTask({
           )}
         </p>
       )}
+      {task.cancelled && (
+        <p className="wish-task-note wish-task-closed">
+          {t(
+            task.cancelled.actor === Closer.DEVELOPER
+              ? "task.cancelled_by_you"
+              : "task.cancelled_by_lead",
+            { when: when(task.cancelled.createTime) },
+          )}
+          {task.cancelled.note && `: ${task.cancelled.note}`}
+        </p>
+      )}
       {work && (
         <p className={`wish-task-note wish-task-work work-${work.tone}`}>
           {work.text}
