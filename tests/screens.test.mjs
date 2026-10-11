@@ -25,6 +25,9 @@ export {
   shortModel,
   effectivePushStrategy,
   azimaBranchName,
+  recordModelAlias,
+  clearModelAliases,
+  taskModelDisplay,
 } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
 export { attentionOf, AttentionBar } from "@/src/attention.tsx";
@@ -812,12 +815,13 @@ test("shortModel formats model identifiers cleanly", () => {
   assert.equal(s.shortModel("anthropic/claude-3.5-sonnet"), "sonnet 3.5");
 });
 
-test("a task card shows the model chosen for the worker; watchers do not show it", () => {
-  const card = (task) =>
-    s.renderToStaticMarkup(h(s.WishTask, { task, onStop() {} }));
+test("a task card shows its model: planned forecasts it, running shows it, finished keeps it; watchers and azimas show none", () => {
+  s.clearModelAliases();
+  const card = (task, project) =>
+    s.renderToStaticMarkup(h(s.WishTask, { task, project, onStop() {} }));
 
-  // Regular task with model
-  const claude = card({
+  // --- Running tasks ---
+  const claudeRunning = card({
     id: "t1",
     code: "W1",
     title: "Trim the wick",
@@ -825,12 +829,11 @@ test("a task card shows the model chosen for the worker; watchers do not show it
     model: "claude-sonnet-5-5-20250929",
   });
   assert.match(
-    claude,
+    claudeRunning,
     /<span class="task-model" title="claude-sonnet-5-5-20250929">sonnet 5\.5<\/span>/,
   );
 
-  // Question worker task with model
-  const questionWorker = card({
+  const questionWorkerRunning = card({
     id: "t2",
     code: "W2",
     title: "Investigate Q01",
@@ -840,12 +843,11 @@ test("a task card shows the model chosen for the worker; watchers do not show it
     question: "q1",
   });
   assert.match(
-    questionWorker,
+    questionWorkerRunning,
     /<span class="task-model" title="gemini-3.8-flash-high">gemini 3\.8 flash<\/span>/,
   );
 
-  // Correction worker task with model
-  const correctionWorker = card({
+  const correctionWorkerRunning = card({
     id: "t3",
     code: "W3",
     title: "Correct integration failure",
@@ -855,30 +857,170 @@ test("a task card shows the model chosen for the worker; watchers do not show it
     correction: { attempts: 1 },
   });
   assert.match(
-    correctionWorker,
+    correctionWorkerRunning,
     /<span class="task-model" title="gpt-5.5">gpt-5\.5<\/span>/,
   );
 
-  // Watcher task does not show model even if set
-  const watcher = card({
+  // Running task with empty model does not show badge
+  const noModelRunning = card({
     id: "t4",
     code: "W4",
+    title: "No model",
+    status: s.TaskStatus.RUNNING,
+    model: "",
+  });
+  assert.doesNotMatch(noModelRunning, /task-model/);
+
+  // --- Planned / waiting tasks ---
+  // Planned task with no model defaults to provider default (Claude -> sonnet 5.5 · default)
+  const plannedDefaultClaude = card({
+    id: "t5",
+    code: "W5",
+    title: "Planned Claude task",
+    status: s.TaskStatus.PENDING,
+  });
+  assert.match(
+    plannedDefaultClaude,
+    /<span class="task-model" title="claude-sonnet-5-5">sonnet 5\.5 · default<\/span>/,
+  );
+
+  // Planned task with Antigravity provider defaults to gemini 3.8 flash · default
+  const plannedDefaultAgy = card({
+    id: "t6",
+    code: "W6",
+    title: "Planned Antigravity task",
+    status: s.TaskStatus.PENDING,
+    provider: s.Provider.ANTIGRAVITY,
+  });
+  assert.match(
+    plannedDefaultAgy,
+    /<span class="task-model" title="gemini-3.8-flash-high">gemini 3\.8 flash · default<\/span>/,
+  );
+
+  // Planned task using model from project settings
+  const plannedProjectModel = card(
+    {
+      id: "t7",
+      code: "W7",
+      title: "Planned task with project settings",
+      status: s.TaskStatus.PENDING,
+      projectId: "p1",
+    },
+    { id: "p1", name: "Djinn", settings: { model: "claude-sonnet-4-5" } },
+  );
+  assert.match(
+    plannedProjectModel,
+    /<span class="task-model" title="claude-sonnet-4-5">sonnet 4\.5<\/span>/,
+  );
+
+  // Planned task with unknown alias shows "alias · version unknown"
+  const plannedUnknownAlias = card({
+    id: "t8",
+    code: "W8",
+    title: "Planned task with unknown alias",
+    status: s.TaskStatus.PENDING,
+    model: "haiku",
+  });
+  assert.match(
+    plannedUnknownAlias,
+    /<span class="task-model" title="haiku">haiku · version unknown<\/span>/,
+  );
+
+  // Planned task with known alias (learned or registered) resolves to version and shows "· alias"
+  s.recordModelAlias("haiku", "claude-haiku-4-5");
+  const plannedKnownAlias = card({
+    id: "t9",
+    code: "W9",
+    title: "Planned task with known alias",
+    status: s.TaskStatus.PENDING,
+    model: "haiku",
+  });
+  assert.match(
+    plannedKnownAlias,
+    /<span class="task-model" title="claude-haiku-4-5">haiku 4\.5 · alias<\/span>/,
+  );
+
+  // Planned task with explicit model
+  const plannedExplicit = card({
+    id: "t10",
+    code: "W10",
+    title: "Planned task with explicit model",
+    status: s.TaskStatus.PENDING,
+    model: "claude-sonnet-4-5",
+  });
+  assert.match(
+    plannedExplicit,
+    /<span class="task-model" title="claude-sonnet-4-5">sonnet 4\.5<\/span>/,
+  );
+
+  // --- Finished tasks ---
+  // Finished task (DONE, FAILED, STOPPED, INTERRUPTED) keeps showing recorded model
+  const finishedDone = card({
+    id: "t11",
+    code: "W11",
+    title: "Done task",
+    status: s.TaskStatus.DONE,
+    model: "claude-sonnet-5-5-20250929",
+  });
+  assert.match(
+    finishedDone,
+    /<span class="task-model" title="claude-sonnet-5-5-20250929">sonnet 5\.5<\/span>/,
+  );
+
+  const finishedFailed = card({
+    id: "t12",
+    code: "W12",
+    title: "Failed task",
+    status: s.TaskStatus.FAILED,
+    model: "gpt-5.5",
+  });
+  assert.match(
+    finishedFailed,
+    /<span class="task-model" title="gpt-5.5">gpt-5\.5<\/span>/,
+  );
+
+  // Finished task across multiple models across resumes: badge shows last model, tooltip shows all
+  const multiModelFinished = card({
+    id: "t13",
+    code: "W13",
+    title: "Task run across models",
+    status: s.TaskStatus.DONE,
+    model: "gemini-3.8-flash-high",
+    models: ["claude-sonnet-4-5", "gemini-3.8-flash-high"],
+  });
+  assert.match(
+    multiModelFinished,
+    /<span class="task-model" title="claude-sonnet-4-5, gemini-3.8-flash-high">gemini 3\.8 flash<\/span>/,
+  );
+
+  // --- Watchers and Azimas show none ---
+  const watcherRunning = card({
+    id: "t14",
+    code: "W14",
     title: "Watch checks",
     status: s.TaskStatus.RUNNING,
     provider: s.Provider.WATCH,
     model: "claude-sonnet-5-5",
   });
-  assert.doesNotMatch(watcher, /task-model/);
+  assert.doesNotMatch(watcherRunning, /task-model/);
 
-  // Task with empty model does not show badge
-  const noModel = card({
-    id: "t5",
-    code: "W5",
-    title: "No model",
-    status: s.TaskStatus.RUNNING,
-    model: "",
+  const watcherPlanned = card({
+    id: "t15",
+    code: "W15",
+    title: "Watch planned",
+    status: s.TaskStatus.PENDING,
+    provider: s.Provider.WATCH,
   });
-  assert.doesNotMatch(noModel, /task-model/);
+  assert.doesNotMatch(watcherPlanned, /task-model/);
+
+  const azimaCard = card({
+    id: "t16",
+    code: "T1",
+    title: "Azima plan",
+    status: s.TaskStatus.PENDING,
+    kind: s.TaskKind.AZIMA,
+  });
+  assert.doesNotMatch(azimaCard, /task-model/);
 });
 
 test("a task row reads on two lines: status, code and long title on the first, details on the second", () => {

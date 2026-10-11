@@ -912,9 +912,12 @@ func TestUpdateCLIAndAlias(t *testing.T) {
 	if code != 0 {
 		t.Errorf("djinn task set-agent --model \"\": code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
 	}
-	got := e.get(t, task.GetId())
-	if got.GetModel() != "" {
-		t.Errorf("model after clearing: %q, want empty", got.GetModel())
+	stored, err := store.Get[*planv1.Task](ctx, e.db, task.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.GetModel() != "" {
+		t.Errorf("model after clearing: %q, want empty", stored.GetModel())
 	}
 
 	// djinn task set-agent --provider claude (no --model) resets model to claude's default and command output says it
@@ -925,7 +928,7 @@ func TestUpdateCLIAndAlias(t *testing.T) {
 	if code != 0 || !strings.Contains(out.String(), "provider: claude") || !strings.Contains(out.String(), "model: claude-sonnet-5-5") {
 		t.Errorf("djinn task set-agent --provider claude: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
 	}
-	got = e.get(t, task.GetId())
+	got := e.get(t, task.GetId())
 	if got.GetModel() != "claude-sonnet-5-5" {
 		t.Errorf("model after provider change: %q, want %q", got.GetModel(), "claude-sonnet-5-5")
 	}
