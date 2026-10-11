@@ -5557,6 +5557,14 @@ type Resources struct {
 	ReadTime *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=read_time,json=readTime,proto3" json:"read_time,omitempty"`
 	// 95th percentile of resident memory_bytes read over its worker's measurement series.
 	P95MemoryBytes uint64 `protobuf:"varint,7,opt,name=p95_memory_bytes,json=p95MemoryBytes,proto3" json:"p95_memory_bytes,omitempty"`
+	// 50th percentile of the same series: Overclock engages a worker at it (machine.Policy.Percentile).
+	P50MemoryBytes uint64 `protobuf:"varint,8,opt,name=p50_memory_bytes,json=p50MemoryBytes,proto3" json:"p50_memory_bytes,omitempty"`
+	// 60th percentile of the same series: Max engages a worker at it.
+	P60MemoryBytes uint64 `protobuf:"varint,9,opt,name=p60_memory_bytes,json=p60MemoryBytes,proto3" json:"p60_memory_bytes,omitempty"`
+	// 70th percentile of the same series: High engages a worker at it.
+	P70MemoryBytes uint64 `protobuf:"varint,10,opt,name=p70_memory_bytes,json=p70MemoryBytes,proto3" json:"p70_memory_bytes,omitempty"`
+	// 80th percentile of the same series: Medium engages a worker at it.
+	P80MemoryBytes uint64 `protobuf:"varint,11,opt,name=p80_memory_bytes,json=p80MemoryBytes,proto3" json:"p80_memory_bytes,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -5636,6 +5644,34 @@ func (x *Resources) GetReadTime() *timestamppb.Timestamp {
 func (x *Resources) GetP95MemoryBytes() uint64 {
 	if x != nil {
 		return x.P95MemoryBytes
+	}
+	return 0
+}
+
+func (x *Resources) GetP50MemoryBytes() uint64 {
+	if x != nil {
+		return x.P50MemoryBytes
+	}
+	return 0
+}
+
+func (x *Resources) GetP60MemoryBytes() uint64 {
+	if x != nil {
+		return x.P60MemoryBytes
+	}
+	return 0
+}
+
+func (x *Resources) GetP70MemoryBytes() uint64 {
+	if x != nil {
+		return x.P70MemoryBytes
+	}
+	return 0
+}
+
+func (x *Resources) GetP80MemoryBytes() uint64 {
+	if x != nil {
+		return x.P80MemoryBytes
 	}
 	return 0
 }
@@ -17727,7 +17763,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x02pr\x18\t \x01(\v2\x10.plan.v1.AzimaPrR\x02pr\"H\n" +
 	"\aAzimaPr\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12+\n" +
-	"\x05state\x18\x02 \x01(\x0e2\x15.plan.v1.AzimaPrStateR\x05state\"\xa6\x02\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x15.plan.v1.AzimaPrStateR\x05state\"\xce\x03\n" +
 	"\tResources\x12\x1f\n" +
 	"\vcpu_percent\x18\x01 \x01(\x01R\n" +
 	"cpuPercent\x12!\n" +
@@ -17736,7 +17772,12 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x10peak_cpu_percent\x18\x04 \x01(\x01R\x0epeakCpuPercent\x12*\n" +
 	"\x11peak_memory_bytes\x18\x05 \x01(\x04R\x0fpeakMemoryBytes\x127\n" +
 	"\tread_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\breadTime\x12(\n" +
-	"\x10p95_memory_bytes\x18\a \x01(\x04R\x0ep95MemoryBytes\"\xa4\x01\n" +
+	"\x10p95_memory_bytes\x18\a \x01(\x04R\x0ep95MemoryBytes\x12(\n" +
+	"\x10p50_memory_bytes\x18\b \x01(\x04R\x0ep50MemoryBytes\x12(\n" +
+	"\x10p60_memory_bytes\x18\t \x01(\x04R\x0ep60MemoryBytes\x12(\n" +
+	"\x10p70_memory_bytes\x18\n" +
+	" \x01(\x04R\x0ep70MemoryBytes\x12(\n" +
+	"\x10p80_memory_bytes\x18\v \x01(\x04R\x0ep80MemoryBytes\"\xa4\x01\n" +
 	"\aClosure\x12%\n" +
 	"\x05actor\x18\x01 \x01(\x0e2\x0f.plan.v1.CloserR\x05actor\x12;\n" +
 	"\vcreate_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +

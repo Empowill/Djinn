@@ -151,7 +151,8 @@ type LoadServiceGetResponse struct {
 	ChosenNotch LoadNotch `protobuf:"varint,6,opt,name=chosen_notch,json=chosenNotch,proto3,enum=djinn.v1.LoadNotch" json:"chosen_notch,omitempty"`
 	// Available RAM of the machine, in bytes.
 	MemoryAvailableBytes uint64 `protobuf:"varint,7,opt,name=memory_available_bytes,json=memoryAvailableBytes,proto3" json:"memory_available_bytes,omitempty"`
-	// Forecast memory per worker in bytes (measured peak or policy default).
+	// Forecast memory per worker in bytes: the median of the latest finished workers' memory at worker_percentile,
+	// plus the notch's margin, or the policy default.
 	WorkerForecastBytes uint64 `protobuf:"varint,8,opt,name=worker_forecast_bytes,json=workerForecastBytes,proto3" json:"worker_forecast_bytes,omitempty"`
 	// The binding resource: "memory" or "cpu".
 	BindingResource string `protobuf:"bytes,9,opt,name=binding_resource,json=bindingResource,proto3" json:"binding_resource,omitempty"`
@@ -161,8 +162,13 @@ type LoadServiceGetResponse struct {
 	MemorySlots int32 `protobuf:"varint,11,opt,name=memory_slots,json=memorySlots,proto3" json:"memory_slots,omitempty"`
 	// Number of workers currently paused.
 	PausedWorkers int32 `protobuf:"varint,12,opt,name=paused_workers,json=pausedWorkers,proto3" json:"paused_workers,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// The percentile of its memory series a worker is engaged at under this notch (machine.Policy.Percentile): 95
+	// at Minimal down to 50 at Overclock; worker_forecast_bytes is the median of the latest workers' value at it.
+	WorkerPercentile int32 `protobuf:"varint,13,opt,name=worker_percentile,json=workerPercentile,proto3" json:"worker_percentile,omitempty"`
+	// The same in words, like "engaged at p50 (overclock)".
+	WorkerEngagedAt string `protobuf:"bytes,14,opt,name=worker_engaged_at,json=workerEngagedAt,proto3" json:"worker_engaged_at,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *LoadServiceGetResponse) Reset() {
@@ -277,6 +283,20 @@ func (x *LoadServiceGetResponse) GetPausedWorkers() int32 {
 		return x.PausedWorkers
 	}
 	return 0
+}
+
+func (x *LoadServiceGetResponse) GetWorkerPercentile() int32 {
+	if x != nil {
+		return x.WorkerPercentile
+	}
+	return 0
+}
+
+func (x *LoadServiceGetResponse) GetWorkerEngagedAt() string {
+	if x != nil {
+		return x.WorkerEngagedAt
+	}
+	return ""
 }
 
 type LoadServiceSetRequest struct {
@@ -443,7 +463,8 @@ type LoadServiceWatchResponse struct {
 	RunningWorkers int32 `protobuf:"varint,8,opt,name=running_workers,json=runningWorkers,proto3" json:"running_workers,omitempty"`
 	// The chosen ceiling notch when auto mode is active.
 	ChosenNotch LoadNotch `protobuf:"varint,9,opt,name=chosen_notch,json=chosenNotch,proto3,enum=djinn.v1.LoadNotch" json:"chosen_notch,omitempty"`
-	// Forecast memory per worker in bytes (measured peak or policy default).
+	// Forecast memory per worker in bytes: the median of the latest finished workers' memory at worker_percentile,
+	// plus the notch's margin, or the policy default.
 	WorkerForecastBytes uint64 `protobuf:"varint,10,opt,name=worker_forecast_bytes,json=workerForecastBytes,proto3" json:"worker_forecast_bytes,omitempty"`
 	// The binding resource: "memory" or "cpu".
 	BindingResource string `protobuf:"bytes,11,opt,name=binding_resource,json=bindingResource,proto3" json:"binding_resource,omitempty"`
@@ -453,8 +474,12 @@ type LoadServiceWatchResponse struct {
 	MemorySlots int32 `protobuf:"varint,13,opt,name=memory_slots,json=memorySlots,proto3" json:"memory_slots,omitempty"`
 	// Number of workers currently paused.
 	PausedWorkers int32 `protobuf:"varint,14,opt,name=paused_workers,json=pausedWorkers,proto3" json:"paused_workers,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// The percentile of its memory series a worker is engaged at under this notch (machine.Policy.Percentile).
+	WorkerPercentile int32 `protobuf:"varint,15,opt,name=worker_percentile,json=workerPercentile,proto3" json:"worker_percentile,omitempty"`
+	// The same in words, like "engaged at p50 (overclock)".
+	WorkerEngagedAt string `protobuf:"bytes,16,opt,name=worker_engaged_at,json=workerEngagedAt,proto3" json:"worker_engaged_at,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *LoadServiceWatchResponse) Reset() {
@@ -585,12 +610,26 @@ func (x *LoadServiceWatchResponse) GetPausedWorkers() int32 {
 	return 0
 }
 
+func (x *LoadServiceWatchResponse) GetWorkerPercentile() int32 {
+	if x != nil {
+		return x.WorkerPercentile
+	}
+	return 0
+}
+
+func (x *LoadServiceWatchResponse) GetWorkerEngagedAt() string {
+	if x != nil {
+		return x.WorkerEngagedAt
+	}
+	return ""
+}
+
 var File_djinn_v1_load_proto protoreflect.FileDescriptor
 
 const file_djinn_v1_load_proto_rawDesc = "" +
 	"\n" +
 	"\x13djinn/v1/load.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\"\x17\n" +
-	"\x15LoadServiceGetRequest\"\x81\x04\n" +
+	"\x15LoadServiceGetRequest\"\xda\x04\n" +
 	"\x16LoadServiceGetResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
 	"\x04auto\x18\x02 \x01(\bR\x04auto\x12\x1d\n" +
@@ -605,7 +644,9 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\tcpu_slots\x18\n" +
 	" \x01(\x05R\bcpuSlots\x12!\n" +
 	"\fmemory_slots\x18\v \x01(\x05R\vmemorySlots\x12%\n" +
-	"\x0epaused_workers\x18\f \x01(\x05R\rpausedWorkers\"Q\n" +
+	"\x0epaused_workers\x18\f \x01(\x05R\rpausedWorkers\x12+\n" +
+	"\x11worker_percentile\x18\r \x01(\x05R\x10workerPercentile\x12*\n" +
+	"\x11worker_engaged_at\x18\x0e \x01(\tR\x0fworkerEngagedAt\"Q\n" +
 	"\x15LoadServiceSetRequest\x128\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x05notch\"\x8f\x01\n" +
@@ -613,7 +654,7 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
 	"\x04auto\x18\x02 \x01(\bR\x04auto\x126\n" +
 	"\fchosen_notch\x18\x03 \x01(\x0e2\x13.djinn.v1.LoadNotchR\vchosenNotch\"\x19\n" +
-	"\x17LoadServiceWatchRequest\"\xe5\x04\n" +
+	"\x17LoadServiceWatchRequest\"\xbe\x05\n" +
 	"\x18LoadServiceWatchResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x120\n" +
 	"\x14engaged_memory_bytes\x18\x02 \x01(\x04R\x12engagedMemoryBytes\x12.\n" +
@@ -630,7 +671,9 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\x10binding_resource\x18\v \x01(\tR\x0fbindingResource\x12\x1b\n" +
 	"\tcpu_slots\x18\f \x01(\x05R\bcpuSlots\x12!\n" +
 	"\fmemory_slots\x18\r \x01(\x05R\vmemorySlots\x12%\n" +
-	"\x0epaused_workers\x18\x0e \x01(\x05R\rpausedWorkers*\xc8\x01\n" +
+	"\x0epaused_workers\x18\x0e \x01(\x05R\rpausedWorkers\x12+\n" +
+	"\x11worker_percentile\x18\x0f \x01(\x05R\x10workerPercentile\x12*\n" +
+	"\x11worker_engaged_at\x18\x10 \x01(\tR\x0fworkerEngagedAt*\xc8\x01\n" +
 	"\tLoadNotch\x12\x1a\n" +
 	"\x16LOAD_NOTCH_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12LOAD_NOTCH_MINIMAL\x10\x01\x12\x18\n" +
