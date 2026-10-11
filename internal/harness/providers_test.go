@@ -331,7 +331,7 @@ func catalog() []catalogCase {
 				if err != nil || json.Unmarshal(b, &f) != nil {
 					t.Fatalf("project %s: %v", b, err)
 				}
-				if g := f.PermissionGrants.PermissionGrants; !slices.Contains(g.Allow, "command(*)") || !slices.Contains(g.Deny, "command(git push)") {
+				if g := f.PermissionGrants.PermissionGrants; !slices.Contains(g.Allow, "command(*)") || !slices.Contains(g.Allow, "read_url(*)") || !slices.Contains(g.Deny, "command(git push)") {
 					t.Errorf("grants = %+v", g)
 				}
 			}},
