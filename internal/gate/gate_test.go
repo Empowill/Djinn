@@ -190,7 +190,8 @@ func TestOneAtATime(t *testing.T) {
 	}
 	await(t, second, "second grant")()
 	want := []string{
-		"W1 gate codegen: taken", "W2 gate codegen: waiting: held by W1, for Ns", "W1 gate codegen: given back after Ns",
+		"W1 gate codegen: asked", "W1 gate codegen: taken",
+		"W2 gate codegen: asked", "W2 gate codegen: waiting: held by W1, for Ns", "W1 gate codegen: given back after Ns",
 		"W2 gate codegen: taken", "W2 gate codegen: given back after Ns",
 	}
 	var got []string

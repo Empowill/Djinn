@@ -205,8 +205,8 @@ export const WishTask = memo(function WishTask({
         .map((id) => codes?.get(id))
         .filter((code): code is string => !!code);
   const tone = taskTone(task, forkedAs);
-  // How long it runs comes first: ticking while it runs, how long it ran once ended.
-  const now = useNow(!taskFinished(task.status) && !!task.startTime);
+  // The main counter ticks while it runs, and freezes while paused or done.
+  const now = useNow(task.status === TaskStatus.RUNNING && !!task.startTime);
   const time = taskTime(task, now);
   const work = taskWork(task, codes);
   const hasActions =

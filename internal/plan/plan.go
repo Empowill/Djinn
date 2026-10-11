@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 
 	"buf.build/go/protovalidate"
@@ -62,6 +63,8 @@ type options struct {
 	load            func() djinnv1.LoadNotch
 	loadBroadcaster *func(djinnv1.LoadNotch)
 	pusher          Pusher
+	fillModels      func(context.Context, []*planv1.Task)
+	clock           func() time.Time
 }
 
 // WithPusher gives ProjectService the pusher for pushing and computing sync status.
@@ -112,6 +115,16 @@ func WithLoadBroadcaster(b *func(djinnv1.LoadNotch)) Option {
 	return func(o *options) { o.loadBroadcaster = b }
 }
 
+// WithFillModels sets the function that fills forecast models on tasks for Watch.
+func WithFillModels(f func(context.Context, []*planv1.Task)) Option {
+	return func(o *options) { o.fillModels = f }
+}
+
+// WithClock gives the plan services their clock; tests set a fake one.
+func WithClock(now func() time.Time) Option {
+	return func(o *options) { o.clock = now }
+}
+
 // Handlers returns the Connect handlers of the plan services, by path prefix.
 func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	var o options
@@ -123,7 +136,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home, Pusher: o.pusher}, opt)
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers,
-		Workers: o.workers, Home: o.home, Load: o.load}
+		Workers: o.workers, Home: o.home, Load: o.load, FillModels: o.fillModels, Clock: o.clock}
 	if o.loadBroadcaster != nil {
 		*o.loadBroadcaster = wishes.ChangeLoad
 	}
@@ -500,8 +513,19 @@ type Wishes struct {
 	Home string
 	// Load reports Djinn's current load notch; nil where djinn up does not run machine monitoring.
 	Load func() djinnv1.LoadNotch
+	// FillModels fills forecast models on tasks for Watch.
+	FillModels func(context.Context, []*planv1.Task)
+	// Clock gives the wishes their time; nil uses time.Now.
+	Clock func() time.Time
 
 	watch watchers // the open Watch streams
+}
+
+func (w *Wishes) now() time.Time {
+	if w == nil || w.Clock == nil {
+		return time.Now()
+	}
+	return w.Clock()
 }
 
 func (w *Wishes) Make(

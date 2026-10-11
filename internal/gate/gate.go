@@ -189,6 +189,7 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 	}
 	g.queue = append(g.queue, w)
 	g.mu.Unlock()
+	g.note(w, "asked")
 
 	tick := time.NewTicker(g.tick)
 	defer tick.Stop()

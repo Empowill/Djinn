@@ -19,7 +19,10 @@ import (
 	"github.com/empowill/djinn/locales"
 )
 
-const timestampName = "google.protobuf.Timestamp"
+const (
+	timestampName = "google.protobuf.Timestamp"
+	durationName  = "google.protobuf.Duration"
+)
 
 // parse builds the request md from the arguments of a command line: the required fields are positional, in
 // field-number order, and the other fields are --kebab-case flags.
@@ -171,8 +174,8 @@ func supported(fd protoreflect.FieldDescriptor) error {
 		return errors.New("maps are not supported")
 	case fd.Kind() == protoreflect.BytesKind || fd.Kind() == protoreflect.GroupKind:
 		return fmt.Errorf("%s fields are not supported", fd.Kind())
-	case fd.Kind() == protoreflect.MessageKind && fd.Message().FullName() != timestampName && ref(fd) == nil && !isPair(fd):
-		return errors.New("only a Timestamp, a message holding a single oneof of scalars, or a string and a list of strings is supported")
+	case fd.Kind() == protoreflect.MessageKind && fd.Message().FullName() != timestampName && fd.Message().FullName() != durationName && ref(fd) == nil && !isPair(fd):
+		return errors.New("only a Timestamp, a Duration, a message holding a single oneof of scalars, or a string and a list of strings is supported")
 	}
 	return nil
 }
@@ -262,6 +265,17 @@ func set(msg protoreflect.Message, fd protoreflect.FieldDescriptor, s string) er
 		return nil
 	}
 	if fd.Kind() == protoreflect.MessageKind {
+		if fd.Message().FullName() == durationName {
+			d, err := time.ParseDuration(s)
+			if err != nil {
+				return fmt.Errorf("%q is not a duration, like 10m or 1h30m", s)
+			}
+			dur := msg.NewField(fd).Message()
+			dur.Set(dur.Descriptor().Fields().ByName("seconds"), protoreflect.ValueOfInt64(int64(d/time.Second)))
+			dur.Set(dur.Descriptor().Fields().ByName("nanos"), protoreflect.ValueOfInt32(int32((d%time.Second)/time.Nanosecond)))
+			msg.Set(fd, protoreflect.ValueOfMessage(dur))
+			return nil
+		}
 		t, err := time.Parse(time.RFC3339Nano, s)
 		if err != nil {
 			return fmt.Errorf("%q is not an RFC 3339 time, like 2026-10-07T09:00:00Z", s)
@@ -390,6 +404,12 @@ func text(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
 		}
 		return sub.Get(key).String() + "=" + strings.Join(values, ",")
 	case fd.Kind() == protoreflect.MessageKind:
+		if fd.Message().FullName() == durationName {
+			dur := v.Message()
+			fields := dur.Descriptor().Fields()
+			sec, nanos := dur.Get(fields.ByName("seconds")).Int(), dur.Get(fields.ByName("nanos")).Int()
+			return (time.Duration(sec)*time.Second + time.Duration(nanos)*time.Nanosecond).String()
+		}
 		ts := v.Message()
 		fields := ts.Descriptor().Fields()
 		sec, nanos := ts.Get(fields.ByName("seconds")).Int(), ts.Get(fields.ByName("nanos")).Int()
@@ -423,6 +443,9 @@ func expect(fd protoreflect.FieldDescriptor) string {
 		}
 		return "one of " + strings.Join(names, ", ")
 	case protoreflect.MessageKind:
+		if fd.Message().FullName() == durationName {
+			return "a duration, like 10m or 1h30m"
+		}
 		return "an RFC 3339 time, like 2026-10-07T09:00:00Z"
 	case protoreflect.StringKind:
 		r := rules(fd).GetString()

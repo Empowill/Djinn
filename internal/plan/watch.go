@@ -50,6 +50,7 @@ type watchers struct {
 
 // watcher is one stream: the changes not sent yet, by wish ("" for the projects).
 type watcher struct {
+	wishes  *Wishes
 	wishID  string // empty for every wish
 	mu      sync.Mutex
 	pending map[string]*unsent
@@ -109,8 +110,11 @@ func (w *Wishes) Watch(
 func (ws *watchers) add(w *Wishes, wishID string) *watcher {
 	ws.once.Do(func() { w.Store.OnCommit(ws.changed) })
 	sub := &watcher{
-		wishID: wishID, pending: map[string]*unsent{}, kick: make(chan struct{}, 1),
-		shapes: map[string]map[string]*planv1.Task{},
+		wishes:  w,
+		wishID:  wishID,
+		pending: map[string]*unsent{},
+		kick:    make(chan struct{}, 1),
+		shapes:  map[string]map[string]*planv1.Task{},
 	}
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
@@ -388,6 +392,16 @@ func (sub *watcher) readTasks(ctx context.Context, s *store.Store, wishID string
 	}
 	if err := FillTilasms(ctx, s, tasks); err != nil {
 		return nil, nil, false, err
+	}
+	now := time.Now()
+	if sub.wishes != nil {
+		now = sub.wishes.now()
+	}
+	if err := FillTimes(ctx, s, tasks, now); err != nil {
+		return nil, nil, false, err
+	}
+	if sub.wishes != nil && sub.wishes.FillModels != nil {
+		sub.wishes.FillModels(ctx, tasks)
 	}
 	return tasks, deleted, reshaped, nil
 }

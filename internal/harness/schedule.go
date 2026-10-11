@@ -368,7 +368,7 @@ func (h *Harness) writeAlone(ctx context.Context, actor, method string, req prot
 		if err != nil {
 			return err
 		}
-		te := newEvent(id, seq+1, ev)
+		te := h.newEvent(id, seq+1, ev)
 		if req == nil {
 			req = te
 		}
@@ -427,7 +427,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 	var preEv *planv1.TaskEvent
 	if preemptedCode != "" {
 		r.seq++
-		preEv = newEvent(t.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
+		preEv = h.newEvent(t.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
 	}
 	var project *planv1.Project
 	var wish *planv1.Wish

@@ -114,7 +114,7 @@ func watchWish(tb testing.TB, n size) *watched {
 	h := harness.New(db, tb.TempDir(), harness.Providers())
 	tb.Cleanup(h.Close)
 	mux := http.NewServeMux()
-	for prefix, handler := range plan.Handlers(db) {
+	for prefix, handler := range plan.Handlers(db, plan.WithFillModels(h.FillModels), plan.WithClock(h.Now)) {
 		mux.Handle(prefix, handler)
 	}
 	mux.Handle(harness.Handler(h))

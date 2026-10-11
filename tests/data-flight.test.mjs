@@ -406,14 +406,60 @@ test("a task says how long it runs as a counter, two units at most", () => {
   assert.equal(
     f.taskTime({ status: S.RUNNING, startTime: at(1_000_000 - 3_661) }, now)
       .text,
-    "1h1m",
+    "1 run · 1h1m running",
   );
   assert.equal(
     f.taskTime({ status: S.DONE, startTime: at(100), endTime: at(161) }, now)
       .text,
-    "1m1s",
+    "1 run · 1m1s running",
   );
   assert.equal(f.taskTime({ status: S.PENDING }, now).text, "");
+
+  // Multiple runs, pause, and wait before start in tooltip and card line
+  const multiRunTask = {
+    status: S.DONE,
+    firstStartTime: at(1000),
+    startTime: at(2440),
+    endTime: at(3340),
+    runs: [
+      { startTime: at(1000), endTime: at(1720), reason: "pause" },
+      { startTime: at(1960), endTime: at(2440), reason: "pause" },
+      { startTime: at(2440), endTime: at(3340), reason: "done" },
+    ],
+    waitingBeforeStart: { seconds: 540n, nanos: 0 },
+  };
+  const multiTime = f.taskTime(multiRunTask, now);
+  assert.equal(multiTime.text, "3 runs · 35m running · 4m paused");
+  assert.equal(
+    multiTime.title,
+    "3 runs: 12m, 8m, 15m; paused 4m; waited 9m for a slot",
+  );
+
+  // Counter frozen when paused
+  const pausedTask = {
+    status: S.PAUSED,
+    firstStartTime: at(1000),
+    startTime: at(1000),
+    endTime: at(1720),
+    runs: [{ startTime: at(1000), endTime: at(1720), reason: "pause" }],
+    paused: { seconds: 240n, nanos: 0 },
+  };
+  const pausedAtT1 = f.taskTime(pausedTask, 2000 * 1000);
+  const pausedAtT2 = f.taskTime(pausedTask, 5000 * 1000);
+  assert.equal(pausedAtT1.text, "1 run · 12m running · 4m paused");
+  assert.equal(pausedAtT2.text, pausedAtT1.text);
+
+  // Waiting gate is included on card when non-zero
+  const gatedTask = {
+    status: S.DONE,
+    firstStartTime: at(1000),
+    startTime: at(1000),
+    endTime: at(2000),
+    runs: [{ startTime: at(1000), endTime: at(2000), reason: "done" }],
+    waitingGate: { seconds: 120n, nanos: 0 },
+  };
+  const gatedTime = f.taskTime(gatedTask, now);
+  assert.equal(gatedTime.text, "1 run · 14m40s running · 2m waiting gate");
 });
 
 test("the azimas' progress counts the azimas done, those awaiting their proof apart, and not the work", () => {
