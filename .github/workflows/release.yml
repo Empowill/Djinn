@@ -9,9 +9,10 @@
 # Every step runs by hand too: `go tool task release-build`, `release-build-macos`, `release-macos-app`,
 # `release-sums`.
 #
-# A dry run builds the macOS archive and Djinn.app from a branch, with no tag and no release, and keeps them as the
-# run's artifact: `gh workflow run release.yml --ref <branch> -f version=v0.0.0-dryrun`, then `gh run download`. GitHub
-# offers it once this file, with its workflow_dispatch, is on the default branch.
+# A dry run builds every target (each Linux variant, Windows, macOS universal and Djinn.app) from a branch, checks
+# the archives (checksums, the app bundle, install scripts), and keeps everything as the run's artifacts:
+# `gh workflow run release.yml --ref <branch> -f version=v0.0.0-dryrun`, then `gh run download`. No tag, release nor asset
+# is published. GitHub offers it once this file, with its workflow_dispatch, is on the default branch.
 name: Release
 
 on:
@@ -28,10 +29,12 @@ on:
 permissions:
   contents: read
 
+env:
+  VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+
 jobs:
   check:
     name: The tag is a release
-    if: github.event_name == 'push' || github.event_name == 'release'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -86,11 +89,11 @@ jobs:
           # shellcheck disable=SC2086
           sudo apt-get install -y --no-install-recommends build-essential pkg-config $PACKAGES
       # The Taskfile picks gtk3 or GTK 4 from the WebKitGTK it finds, and names the archive after it.
-      - run: go tool task release-build VERSION="$GITHUB_REF_NAME"
+      - run: go tool task release-build VERSION="$VERSION"
       - name: The binary starts and knows its version
         run: |
           for bin in bin/release/djinn_linux_*/djinn; do
-            DJINN_HOME="$RUNNER_TEMP/djinn-home" "$bin" version | grep -Fx "djinn $GITHUB_REF_NAME"
+            DJINN_HOME="$RUNNER_TEMP/djinn-home" "$bin" version | grep -Fx "djinn $VERSION"
           done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -116,24 +119,21 @@ jobs:
           cache: npm
       - if: hashFiles('dist/index.html') == ''
         run: npm ci && go tool task ui
-      - run: go tool task release-build VERSION="$GITHUB_REF_NAME" GOOS=linux GOARCH=amd64 CGO=0
-      - run: go tool task release-build VERSION="$GITHUB_REF_NAME" GOOS=linux GOARCH=arm64 CGO=0
+      - run: go tool task release-build VERSION="$VERSION" GOOS=linux GOARCH=amd64 CGO=0
+      - run: go tool task release-build VERSION="$VERSION" GOOS=linux GOARCH=arm64 CGO=0
       - name: The binary starts and knows its version
-        run: DJINN_HOME="$RUNNER_TEMP/djinn-home" bin/release/djinn_linux_amd64_browser/djinn version | grep -Fx "djinn $GITHUB_REF_NAME"
+        run: DJINN_HOME="$RUNNER_TEMP/djinn-home" bin/release/djinn_linux_amd64_browser/djinn version | grep -Fx "djinn $VERSION"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-browser
           path: bin/release/*.tar.gz
           if-no-files-found: error
 
-  # The universal binary, and Djinn.app around it: one bundle for arm64 and amd64 Macs. The only job of a dry run.
+  # The universal binary, and Djinn.app around it: one bundle for arm64 and amd64 Macs.
   macos:
     name: macOS universal and Djinn.app
     needs: check
-    if: ${{ !cancelled() && (needs.check.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: macos-15
-    env:
-      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -260,20 +260,23 @@ jobs:
       # The .exe carries Djinn's icon (Explorer, the task bar): a resource made from build/icon.ico.
       # go-winres is a build tool only (0BSD-style license); nothing of it ships.
       - run: go run github.com/tc-hib/go-winres@v0.3.3 simply --icon build/icon.ico --arch amd64,arm64 --manifest gui --product-name Djinn --out cmd/djinn/rsrc
-      - run: go tool task release-build VERSION="$GITHUB_REF_NAME" GOOS=windows GOARCH=amd64
-      - run: go tool task release-build VERSION="$GITHUB_REF_NAME" GOOS=windows GOARCH=arm64
+      - run: go tool task release-build VERSION="$VERSION" GOOS=windows GOARCH=amd64
+      - run: go tool task release-build VERSION="$VERSION" GOOS=windows GOARCH=arm64
+      - name: The archives are well formed
+        run: |
+          for zip in bin/release/*.zip; do
+            unzip -t "$zip"
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows
           path: bin/release/*.zip
           if-no-files-found: error
 
-  publish:
-    name: Attach assets or draft the release
+  archives:
+    name: Check the release archives
     needs: [linux, linux-browser, macos, windows]
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -286,6 +289,67 @@ jobs:
       # The notices ship beside the archives too, and the install scripts of this very release.
       - run: cp LICENSE NOTICE docs/THIRD_PARTY_NOTICES.md scripts/install.sh scripts/install.ps1 bin/release/
       - run: go tool task release-sums
+      - name: The archives match their checksums
+        run: |
+          for asset in \
+            djinn_linux_amd64.tar.gz \
+            djinn_linux_arm64.tar.gz \
+            djinn_linux_amd64_browser.tar.gz \
+            djinn_linux_arm64_browser.tar.gz \
+            djinn_darwin_universal.tar.gz \
+            djinn_darwin_universal_app.zip \
+            djinn_windows_amd64.zip \
+            djinn_windows_arm64.zip; do
+            test -f "bin/release/$asset" || { echo "Missing release asset: $asset"; exit 1; }
+          done
+          (cd bin/release && sha256sum -c SHA256SUMS)
+      - name: The archives are well formed
+        run: |
+          for f in bin/release/*.tar.gz; do
+            tar -tzf "$f" >/dev/null
+          done
+          for f in bin/release/*.zip; do
+            unzip -t "$f" >/dev/null
+          done
+      - name: The install script installs this release
+        run: |
+          releases="$RUNNER_TEMP/releases/download/$VERSION"
+          latest="$RUNNER_TEMP/releases/latest/download"
+          mkdir -p "$releases" "$RUNNER_TEMP/releases/latest"
+          cp bin/release/* "$releases/"
+          ln -s "$releases" "$latest"
+
+          # Install with explicit version
+          DJINN_RELEASES="file://$RUNNER_TEMP/releases" \
+          DJINN_VERSION="$VERSION" \
+          DJINN_INSTALL_DIR="$RUNNER_TEMP/bin-version" \
+          sh scripts/install.sh
+          DJINN_HOME="$RUNNER_TEMP/djinn-home" "$RUNNER_TEMP/bin-version/djinn" version | grep -Fx "djinn $VERSION"
+
+          # Install with latest (default)
+          DJINN_RELEASES="file://$RUNNER_TEMP/releases" \
+          DJINN_INSTALL_DIR="$RUNNER_TEMP/bin-latest" \
+          sh scripts/install.sh
+          DJINN_HOME="$RUNNER_TEMP/djinn-home" "$RUNNER_TEMP/bin-latest/djinn" version | grep -Fx "djinn $VERSION"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release
+          path: bin/release/*
+          if-no-files-found: error
+
+  publish:
+    name: Attach assets or draft the release
+    needs: archives
+    if: github.event_name == 'push' || github.event_name == 'release'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release
+          path: bin/release
       - name: Publish or draft the release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -110,13 +110,14 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
     11 entries, `djinn` 0755)
   - [x] The release workflow builds it next to the bare archive, checks it and ships it with the sums.
     (`release.yml`, job `macos`; `actionlint` v1.7.12 passes; dry run dispatched 2026-10-10, run 38049665651)
-  - [ ] The dry run passes on GitHub: the bundle is well formed and opens.
+  - [x] The dry run passes on GitHub: the bundle is well formed and opens.
     - [x] Dry run 38049665651 (2026-10-10, W243, macos-15 arm64): the universal binary builds, `lipo -info`
       confirms `x86_64 arm64`, runs and prints `djinn v0.0.0-dryrun`. Djinn.app is laid out, unzips with `ditto`,
       `plutil` lints `Info.plist`, `CFBundleIdentifier` is `io.github.empowill.djinn`, binary matches `cmp`, and runs
       from inside the bundle. It proved that `codesign --verify` cannot check `$app/Contents/MacOS/djinn` directly on an
       unsigned bundle without failing on missing bundle resources: moved to standalone binary and added
       `CFBundleURLTypes` checking. The full pass with `open` and artifact upload awaits the next run.
+    - [x] Dry run 38106409666 (2026-10-10, feat/wails-go): macOS universal and Djinn.app passed all checks (well formed and opens).
   - [ ] Opened on a Mac from Finder: the window, the icon in the Dock and Launchpad, a notification. (needs: a Mac)
 
 ## Decided along the way
@@ -176,11 +177,13 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
     the bundle's `djinn` is the archive's and prints the tag, then opens it with `open` and asks Launch Services for
     `io.github.empowill.djinn` (this last step does not block a release until it has passed once).
   - **A dry run without a release**: `release.yml` also runs on `workflow_dispatch`, with a `version` input
-    (`v0.0.0-dryrun` by default). Only the macOS job runs: it builds the interface (a branch has no `dist/`), the
-    archive and the bundle, checks them, and keeps them as the run's artifact; nothing is published. GitHub offers it
-    once `release.yml` with its `workflow_dispatch` is on the default branch:
+    (`v0.0.0-dryrun` by default). It builds every target (each Linux variant, Windows amd64 and arm64, macOS universal
+    and `Djinn.app`), checks archive integrity, checksums (`SHA256SUMS`), the macOS bundle and Launch Services, and tests
+    `install.sh` against the built release folder, keeping all assets as the run's artifacts (`release`, `darwin-universal`,
+    `linux-*`, `windows`); nothing is published. GitHub offers it once `release.yml` with its `workflow_dispatch` is on
+    the default branch:
     `gh workflow run release.yml --ref <branch> -f version=v0.0.0-dryrun`, then `gh run watch` and
-    `gh run download <run-id> -n darwin-universal`.
+    `gh run download <run-id> -n release`.
   - **Still to do around it**: an update from inside the app (T12) swaps `Contents/MacOS/djinn` for the archive's
     binary, as for the bare one; `Info.plist` keeps the older version, and a signed bundle's seal breaks. `install.sh`
     could put `Djinn.app` in `~/Applications` (no sudo, and `curl` sets no quarantine flag).

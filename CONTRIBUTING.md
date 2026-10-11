@@ -305,7 +305,13 @@ To use Djinn, see the [README](README.md). To work on it:
 - **Tasks live in [`plan/`](plan/README.md)**, one file each. The README checklist is the only
   tracker.
 - **Every change is reviewed** by a maintainer.
-- **How to release**: create the release on GitHub's page, from main.
+- **How to release**: create the release on GitHub's page, from main (or push a tag `vX.Y.Z`).
+  Before tagging or publishing, run the dry run from your branch:
+  `gh workflow run release.yml --ref <branch> -f version=v0.0.0-dryrun`
+  It builds every target (each Linux variant, Windows amd64 and arm64, macOS universal and `Djinn.app`), verifies
+  the macOS bundle and Launch Services, archive integrity, checksums (`SHA256SUMS`), and tests `install.sh` against
+  the built release folder, keeping all assets as the run's artifacts (`gh run download`) without creating a tag,
+  a release nor publishing assets.
 - **Updating the model price table**: Model prices are maintained in `internal/usage/prices.yaml`, embedded into the binary. When a model's price changes or a new model is introduced:
   1. Edit `internal/usage/prices.yaml` and update the table `date` (`YYYY-MM-DD`).
   2. Each entry must specify `name` (as reported by provider streams, e.g. `claude-sonnet-5-5`, `gemini-3.8-flash-high`, `gpt-5.1-codex`), prices per million tokens (`input_cost_per_million`, `output_cost_per_million`, and where applicable `cache_read_cost_per_million`, `cache_write_cost_per_million`, `thinking_cost_per_million`), `source` (public URL), and `source_date` (`YYYY-MM-DD`).
