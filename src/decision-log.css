@@ -1,12 +1,12 @@
-/* The decision log: a row per decision, its subject's emoji first, a thin accent in its tone's colour on the left (the
-   developer's decisions, human), no tile. The links to tasks read as codes. */
+/* The decision log: a row per decision, its subject's emoji first, its border tinted with its tone (the developer's
+   decisions, human), no tile. The links to tasks read as codes. */
 .decision-log .decision-row {
   display: flex;
   gap: 12px;
   margin-bottom: 8px;
   padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-left: 2px solid var(--tone, var(--line));
+  border: 1px solid
+    color-mix(in srgb, var(--tone, var(--line)) 45%, var(--line));
   border-radius: 8px;
   background: var(--surface);
 }
