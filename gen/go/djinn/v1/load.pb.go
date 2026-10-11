@@ -148,7 +148,17 @@ type LoadServiceGetResponse struct {
 	// Total RAM of the machine, in bytes.
 	MemoryTotalBytes uint64 `protobuf:"varint,5,opt,name=memory_total_bytes,json=memoryTotalBytes,proto3" json:"memory_total_bytes,omitempty"`
 	// The chosen ceiling notch when auto mode is active.
-	ChosenNotch   LoadNotch `protobuf:"varint,6,opt,name=chosen_notch,json=chosenNotch,proto3,enum=djinn.v1.LoadNotch" json:"chosen_notch,omitempty"`
+	ChosenNotch LoadNotch `protobuf:"varint,6,opt,name=chosen_notch,json=chosenNotch,proto3,enum=djinn.v1.LoadNotch" json:"chosen_notch,omitempty"`
+	// Available RAM of the machine, in bytes.
+	MemoryAvailableBytes uint64 `protobuf:"varint,7,opt,name=memory_available_bytes,json=memoryAvailableBytes,proto3" json:"memory_available_bytes,omitempty"`
+	// Forecast memory per worker in bytes (measured peak or policy default).
+	WorkerForecastBytes uint64 `protobuf:"varint,8,opt,name=worker_forecast_bytes,json=workerForecastBytes,proto3" json:"worker_forecast_bytes,omitempty"`
+	// The binding resource: "memory" or "cpu".
+	BindingResource string `protobuf:"bytes,9,opt,name=binding_resource,json=bindingResource,proto3" json:"binding_resource,omitempty"`
+	// Worker slots allowed by CPU before notch scaling.
+	CpuSlots int32 `protobuf:"varint,10,opt,name=cpu_slots,json=cpuSlots,proto3" json:"cpu_slots,omitempty"`
+	// Worker slots allowed by memory before notch scaling.
+	MemorySlots   int32 `protobuf:"varint,11,opt,name=memory_slots,json=memorySlots,proto3" json:"memory_slots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -223,6 +233,41 @@ func (x *LoadServiceGetResponse) GetChosenNotch() LoadNotch {
 		return x.ChosenNotch
 	}
 	return LoadNotch_LOAD_NOTCH_UNSPECIFIED
+}
+
+func (x *LoadServiceGetResponse) GetMemoryAvailableBytes() uint64 {
+	if x != nil {
+		return x.MemoryAvailableBytes
+	}
+	return 0
+}
+
+func (x *LoadServiceGetResponse) GetWorkerForecastBytes() uint64 {
+	if x != nil {
+		return x.WorkerForecastBytes
+	}
+	return 0
+}
+
+func (x *LoadServiceGetResponse) GetBindingResource() string {
+	if x != nil {
+		return x.BindingResource
+	}
+	return ""
+}
+
+func (x *LoadServiceGetResponse) GetCpuSlots() int32 {
+	if x != nil {
+		return x.CpuSlots
+	}
+	return 0
+}
+
+func (x *LoadServiceGetResponse) GetMemorySlots() int32 {
+	if x != nil {
+		return x.MemorySlots
+	}
+	return 0
 }
 
 type LoadServiceSetRequest struct {
@@ -388,7 +433,15 @@ type LoadServiceWatchResponse struct {
 	// Number of workers currently running.
 	RunningWorkers int32 `protobuf:"varint,8,opt,name=running_workers,json=runningWorkers,proto3" json:"running_workers,omitempty"`
 	// The chosen ceiling notch when auto mode is active.
-	ChosenNotch   LoadNotch `protobuf:"varint,9,opt,name=chosen_notch,json=chosenNotch,proto3,enum=djinn.v1.LoadNotch" json:"chosen_notch,omitempty"`
+	ChosenNotch LoadNotch `protobuf:"varint,9,opt,name=chosen_notch,json=chosenNotch,proto3,enum=djinn.v1.LoadNotch" json:"chosen_notch,omitempty"`
+	// Forecast memory per worker in bytes (measured peak or policy default).
+	WorkerForecastBytes uint64 `protobuf:"varint,10,opt,name=worker_forecast_bytes,json=workerForecastBytes,proto3" json:"worker_forecast_bytes,omitempty"`
+	// The binding resource: "memory" or "cpu".
+	BindingResource string `protobuf:"bytes,11,opt,name=binding_resource,json=bindingResource,proto3" json:"binding_resource,omitempty"`
+	// Worker slots allowed by CPU before notch scaling.
+	CpuSlots int32 `protobuf:"varint,12,opt,name=cpu_slots,json=cpuSlots,proto3" json:"cpu_slots,omitempty"`
+	// Worker slots allowed by memory before notch scaling.
+	MemorySlots   int32 `protobuf:"varint,13,opt,name=memory_slots,json=memorySlots,proto3" json:"memory_slots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -486,12 +539,40 @@ func (x *LoadServiceWatchResponse) GetChosenNotch() LoadNotch {
 	return LoadNotch_LOAD_NOTCH_UNSPECIFIED
 }
 
+func (x *LoadServiceWatchResponse) GetWorkerForecastBytes() uint64 {
+	if x != nil {
+		return x.WorkerForecastBytes
+	}
+	return 0
+}
+
+func (x *LoadServiceWatchResponse) GetBindingResource() string {
+	if x != nil {
+		return x.BindingResource
+	}
+	return ""
+}
+
+func (x *LoadServiceWatchResponse) GetCpuSlots() int32 {
+	if x != nil {
+		return x.CpuSlots
+	}
+	return 0
+}
+
+func (x *LoadServiceWatchResponse) GetMemorySlots() int32 {
+	if x != nil {
+		return x.MemorySlots
+	}
+	return 0
+}
+
 var File_djinn_v1_load_proto protoreflect.FileDescriptor
 
 const file_djinn_v1_load_proto_rawDesc = "" +
 	"\n" +
 	"\x13djinn/v1/load.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\"\x17\n" +
-	"\x15LoadServiceGetRequest\"\x85\x02\n" +
+	"\x15LoadServiceGetRequest\"\xda\x03\n" +
 	"\x16LoadServiceGetResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
 	"\x04auto\x18\x02 \x01(\bR\x04auto\x12\x1d\n" +
@@ -499,7 +580,13 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"base_slots\x18\x03 \x01(\x05R\tbaseSlots\x12'\n" +
 	"\x0frunning_workers\x18\x04 \x01(\x05R\x0erunningWorkers\x12,\n" +
 	"\x12memory_total_bytes\x18\x05 \x01(\x04R\x10memoryTotalBytes\x126\n" +
-	"\fchosen_notch\x18\x06 \x01(\x0e2\x13.djinn.v1.LoadNotchR\vchosenNotch\"Q\n" +
+	"\fchosen_notch\x18\x06 \x01(\x0e2\x13.djinn.v1.LoadNotchR\vchosenNotch\x124\n" +
+	"\x16memory_available_bytes\x18\a \x01(\x04R\x14memoryAvailableBytes\x122\n" +
+	"\x15worker_forecast_bytes\x18\b \x01(\x04R\x13workerForecastBytes\x12)\n" +
+	"\x10binding_resource\x18\t \x01(\tR\x0fbindingResource\x12\x1b\n" +
+	"\tcpu_slots\x18\n" +
+	" \x01(\x05R\bcpuSlots\x12!\n" +
+	"\fmemory_slots\x18\v \x01(\x05R\vmemorySlots\"Q\n" +
 	"\x15LoadServiceSetRequest\x128\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x05notch\"\x8f\x01\n" +
@@ -507,7 +594,7 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
 	"\x04auto\x18\x02 \x01(\bR\x04auto\x126\n" +
 	"\fchosen_notch\x18\x03 \x01(\x0e2\x13.djinn.v1.LoadNotchR\vchosenNotch\"\x19\n" +
-	"\x17LoadServiceWatchRequest\"\x9f\x03\n" +
+	"\x17LoadServiceWatchRequest\"\xbe\x04\n" +
 	"\x18LoadServiceWatchResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x120\n" +
 	"\x14engaged_memory_bytes\x18\x02 \x01(\x04R\x12engagedMemoryBytes\x12.\n" +
@@ -518,7 +605,12 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\n" +
 	"base_slots\x18\a \x01(\x05R\tbaseSlots\x12'\n" +
 	"\x0frunning_workers\x18\b \x01(\x05R\x0erunningWorkers\x126\n" +
-	"\fchosen_notch\x18\t \x01(\x0e2\x13.djinn.v1.LoadNotchR\vchosenNotch*\xc8\x01\n" +
+	"\fchosen_notch\x18\t \x01(\x0e2\x13.djinn.v1.LoadNotchR\vchosenNotch\x122\n" +
+	"\x15worker_forecast_bytes\x18\n" +
+	" \x01(\x04R\x13workerForecastBytes\x12)\n" +
+	"\x10binding_resource\x18\v \x01(\tR\x0fbindingResource\x12\x1b\n" +
+	"\tcpu_slots\x18\f \x01(\x05R\bcpuSlots\x12!\n" +
+	"\fmemory_slots\x18\r \x01(\x05R\vmemorySlots*\xc8\x01\n" +
 	"\tLoadNotch\x12\x1a\n" +
 	"\x16LOAD_NOTCH_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12LOAD_NOTCH_MINIMAL\x10\x01\x12\x18\n" +

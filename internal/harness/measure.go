@@ -182,6 +182,21 @@ func (h *Harness) WorkerMemory(ctx context.Context, p machine.Policy) (engaged, 
 	return engaged, actual, nil
 }
 
+// WorkerForecast returns the typical forecast peak memory per worker across providers in use,
+// or p.WorkerForecast() if none is measured.
+func (h *Harness) WorkerForecast() uint64 {
+	p := h.Policy()
+	if h.store == nil {
+		return p.WorkerForecast()
+	}
+	ctx := context.Background()
+	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
+	if err != nil || len(tasks) == 0 {
+		return p.WorkerForecast()
+	}
+	return dispatch.TypicalForecast(tasks, p)
+}
+
 const maxWorkerSamples = 1440 // 120 minutes at 5s intervals
 
 type workerRing struct {
