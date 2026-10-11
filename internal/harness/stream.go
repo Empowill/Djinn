@@ -98,8 +98,9 @@ func (w *streamWorker) PID() int { return w.p.cmd.Process.Pid }
 // Cgroup is the cgroup of the agent's scope.
 func (w *streamWorker) Cgroup() string { return w.p.cgroup }
 
-func (w *streamWorker) Pause() error  { return w.p.Pause() }
-func (w *streamWorker) Resume() error { return w.p.Resume() }
+func (w *streamWorker) Pause() error               { return w.p.Pause() }
+func (w *streamWorker) Resume() error              { return w.p.Resume() }
+func (w *streamWorker) SetPriority(low bool) error { return w.p.SetPriority(low) }
 
 func (w *streamWorker) Stop() {
 	w.stopped.Store(true)

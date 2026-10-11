@@ -184,8 +184,9 @@ func (w *codexWorker) PID() int { return w.p.cmd.Process.Pid }
 // Cgroup is the cgroup of the agent's scope.
 func (w *codexWorker) Cgroup() string { return w.p.cgroup }
 
-func (w *codexWorker) Pause() error  { return w.p.Pause() }
-func (w *codexWorker) Resume() error { return w.p.Resume() }
+func (w *codexWorker) Pause() error               { return w.p.Pause() }
+func (w *codexWorker) Resume() error              { return w.p.Resume() }
+func (w *codexWorker) SetPriority(low bool) error { return w.p.SetPriority(low) }
 
 func (w *codexWorker) Stop() {
 	w.stopped.Store(true)

@@ -241,6 +241,10 @@
   text-overflow: ellipsis;
 }
 
+.operating-load-forecast-paused {
+  color: var(--n-79, #999);
+}
+
 /* Mini progress bars showing current use against new limit */
 .operating-load-bar {
   position: relative;

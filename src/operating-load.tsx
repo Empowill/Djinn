@@ -17,6 +17,7 @@ interface LoadData {
   memoryAvailableBytes: bigint;
   baseSlots: number;
   runningWorkers: number;
+  pausedWorkers: number;
 }
 
 class LoadManager {
@@ -30,6 +31,7 @@ class LoadManager {
     memoryAvailableBytes: 0n,
     baseSlots: 1,
     runningWorkers: 0,
+    pausedWorkers: 0,
   };
   private previewNotch: LoadNotch | null = null;
   private listeners = new Set<() => void>();
@@ -100,6 +102,7 @@ class LoadManager {
         const chosenNotch = res.chosenNotch || this.data.chosenNotch || notch;
         const baseSlots = res.baseSlots || this.data.baseSlots;
         const runningWorkers = res.runningWorkers ?? this.data.runningWorkers;
+        const pausedWorkers = res.pausedWorkers ?? this.data.pausedWorkers;
         const memoryTotalBytes =
           res.memoryTotalBytes || this.data.memoryTotalBytes;
         this.data = {
@@ -109,6 +112,7 @@ class LoadManager {
           chosenNotch,
           baseSlots,
           runningWorkers,
+          pausedWorkers,
           memoryTotalBytes,
         };
         this.notify();
@@ -131,6 +135,7 @@ class LoadManager {
               memoryAvailableBytes: res.memoryAvailableBytes,
               baseSlots: res.baseSlots || this.data.baseSlots,
               runningWorkers: res.runningWorkers ?? this.data.runningWorkers,
+              pausedWorkers: res.pausedWorkers ?? this.data.pausedWorkers,
             };
             this.notify();
           }
@@ -516,10 +521,16 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
             workers: Math.round(animatedWorkers),
             priority: priorityText,
           })}
+          {data.pausedWorkers > 0 && (
+            <span className="operating-load-forecast-paused">
+              {" · "}
+              {t("load.forecast_paused", { count: data.pausedWorkers })}
+            </span>
+          )}
         </span>
         <div
           className="operating-load-bar"
-          title={`CPU: ${data.runningWorkers} / ${allowedWorkers}`}
+          title={`CPU: ${data.runningWorkers} / ${allowedWorkers}${data.pausedWorkers > 0 ? ` (${data.pausedWorkers} paused)` : ""}`}
         >
           <div
             className="operating-load-bar-limit"

@@ -23,6 +23,23 @@ func ownGroup(cmd *exec.Cmd, lowPriority bool) {
 // applyPriority is a no-op on Windows: priority class is set at process creation via CreationFlags.
 func applyPriority(cmd *exec.Cmd, lowPriority bool) {}
 
+// setPriority sets CPU priority class on the running process.
+func setPriority(p *process, low bool) error {
+	if p.cmd.Process == nil {
+		return errors.New("the process has not started")
+	}
+	h, err := windows.OpenProcess(windows.PROCESS_SET_INFORMATION, false, uint32(p.cmd.Process.Pid))
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(h)
+	cls := uint32(windows.NORMAL_PRIORITY_CLASS)
+	if low {
+		cls = windows.BELOW_NORMAL_PRIORITY_CLASS
+	}
+	return windows.SetPriorityClass(h, cls)
+}
+
 // terminate stops the process. Windows has no signal to ask a console process to stop: it is killed at once.
 // What it started survives; a job object will hold the whole tree when the machine task (T14) needs one.
 func terminate(p *process) { kill(p) }
