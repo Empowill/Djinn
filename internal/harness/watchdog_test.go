@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -383,6 +384,43 @@ func TestWatchdogBudgetTurnsExceeded(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("lead not told of budget failure, got told: %v", told)
+	}
+}
+
+// A worker at 120 turns, as real Opus tasks take (W442, W453), goes on under the default budget; past it, it stops.
+func TestWatchdogBudgetTurnsDefault(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	clock := &fakeClock{at: time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)}
+	e := up(t, t.TempDir(), WithClock(clock.now))
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	task := e.spawn(t, wishID, "wait")
+	id := task.GetId()
+	running := e.until(t, id, func(tk *planv1.Task) bool {
+		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
+	})
+
+	turns := func(n int) {
+		e.h.mu.Lock()
+		e.h.runs[id].turns = n
+		e.h.mu.Unlock()
+	}
+	turns(120)
+	e.h.watchdog(t.Context(), []*planv1.Task{running})
+	e.h.mu.Lock()
+	stopping, reason := e.h.runs[id].stopping, e.h.runs[id].stoppingReason
+	e.h.mu.Unlock()
+	if stopping {
+		t.Fatalf("stopped at 120 turns: %q", reason)
+	}
+
+	turns(TaskMaxTurns + 1)
+	e.h.watchdog(t.Context(), []*planv1.Task{running})
+	done := e.ended(t, id)
+	if want := fmt.Sprintf("budget exceeded: %d turns (limit %d)", TaskMaxTurns+1, TaskMaxTurns); done.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED || done.GetError() != want {
+		t.Errorf("status = %v, error = %q; want STOPPED, %q", done.GetStatus(), done.GetError(), want)
 	}
 }
 
