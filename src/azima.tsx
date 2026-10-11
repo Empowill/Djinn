@@ -218,7 +218,10 @@ export const AzimaCard = memo(function AzimaCard({
     )
     .map((x) => x.code)
     .sort(compareCodes);
-  const total = azima.azima?.parts ?? parts.length;
+  // A cancelled part is no work left: listed among the finished, out of the total and of what waits.
+  const total =
+    azima.azima?.parts ??
+    parts.filter((x) => x.status !== TaskStatus.CANCELLED || isAzima(x)).length;
   const done =
     azima.azima?.partsDone ??
     parts.filter((x) =>

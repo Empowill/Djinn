@@ -82,6 +82,11 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
           end_time: "2026-10-07T21:05:00Z",
         }),
         task("W2", "Pause a worker", "PENDING", { part_of: ids.T2 }),
+        // Cancelled: no work left, out of the counts, listed among the finished parts.
+        task("W4", "Drop the old runner", "CANCELLED", {
+          part_of: ids.T2,
+          end_time: "2026-10-07T21:06:00Z",
+        }),
         task("W3", "Polish the window", "PENDING"),
       ],
     }),
@@ -93,7 +98,7 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
     // Nothing waits for you: no azima is your move.
     await expect(page.locator("#action-center")).toHaveCount(0);
     const tasksTab = page.getByRole("tab", { name: /^Tasks/ });
-    // The work only: an azima is the plan.
+    // The work only: an azima is the plan, a cancelled task no work left.
     await expect(tasksTab).toHaveText("Tasks3");
     await tasksTab.click();
 
@@ -112,7 +117,8 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
     ]);
     const t2 = azimas.locator(".azima-card").first();
     await expect(t2.locator(".azima-heading")).toContainText("In progress");
-    // Its heading reads at a glance: what comes before it, its parts by state, on hover only.
+    // Its heading reads at a glance: what comes before it, its parts by state, on hover only; W4, cancelled, is
+    // not one of them.
     await expect(t2.locator(".azima-progress")).toHaveText("1/2");
     await expect(t2.locator(".azima-progress")).toHaveAttribute(
       "title",
@@ -170,8 +176,15 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
     // Opened on its work: what waits, what is done folded under it; a click shows it.
     await expect(t2.locator(".wish-task .agent-code")).toHaveText(["W2"]);
     await t2.locator(".fold-line").click();
-    await expect(t2.locator(".wish-task .agent-code")).toHaveText(["W2", "W1"]);
+    await expect(t2.locator(".wish-task .agent-code")).toHaveText([
+      "W2",
+      "W4",
+      "W1",
+    ]);
     await expect(t2.locator(".fold-line")).toHaveText("Hide the finished ones");
+    await expect(
+      t2.locator(".wish-task").filter({ hasText: "Drop the old runner" }),
+    ).toContainText("Cancelled");
     const doneFold = azimas.locator(":scope > .fold-line");
     await expect(doneFold).toHaveText("Show 1 finished");
     await doneFold.click();
@@ -188,7 +201,11 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
       "T3",
       "T1",
     ]);
-    await expect(t2.locator(".wish-task .agent-code")).toHaveText(["W2", "W1"]);
+    await expect(t2.locator(".wish-task .agent-code")).toHaveText([
+      "W2",
+      "W4",
+      "W1",
+    ]);
     const t3 = azimas.locator(".azima-card").nth(1);
     await expect(t3.locator(".azima-waits")).toHaveText("Waits for T2");
     await expect(t3.locator(".azima-heading")).toContainText("Open");

@@ -285,23 +285,27 @@ export function awaitedProofs(tasks: readonly Task[]): Proof[] {
     );
 }
 
-// workCount is how many tasks of work there are: the azimas are the plan, not work; a merge counts with the task it serves.
+// workCount is how many tasks of work there are: the azimas are the plan, not work; a merge counts with the task it
+// serves; a cancelled task is no work left (the server's Task.azima.parts leaves it out too).
 export function workCount(tasks: readonly Task[]): number {
   const azimas = tasks.filter((x) => isAzima(x) && !isDraftAzima(x));
   const hasServerParts = azimas.some((a) => (a.azima?.parts ?? 0) > 0);
+  const nested = mergeNest(tasks).host;
   if (hasServerParts) {
     const serverParts = azimas.reduce((n, a) => n + (a.azima?.parts ?? 0), 0);
-    const looseTasks = tasks.filter((x) => !isAzima(x) && !x.partOf).length;
-    return serverParts + looseTasks - nestedLoose(tasks);
+    const looseTasks = tasks.filter(
+      (x) =>
+        !isAzima(x) &&
+        !x.partOf &&
+        !nested.has(x.id) &&
+        x.status !== TaskStatus.CANCELLED,
+    ).length;
+    return serverParts + looseTasks;
   }
-  const nested = mergeNest(tasks).host;
-  return tasks.filter((x) => !isAzima(x) && !nested.has(x.id)).length;
-}
-
-// nestedLoose is how many merges part of no azima sit under the task they serve: counted with it.
-function nestedLoose(tasks: readonly Task[]): number {
-  const nested = mergeNest(tasks).host;
-  return tasks.filter((x) => !x.partOf && nested.has(x.id)).length;
+  return tasks.filter(
+    (x) =>
+      !isAzima(x) && !nested.has(x.id) && x.status !== TaskStatus.CANCELLED,
+  ).length;
 }
 
 // workDoneCount is how many work tasks are done: using server azima.partsDone when available.

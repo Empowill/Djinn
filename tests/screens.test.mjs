@@ -1848,6 +1848,69 @@ test("the Tasks tab lists what moves or waits by status", () => {
   assert.doesNotMatch(html, /Finished/);
 });
 
+test("a cancelled part leaves its azima's counters and shows among its finished parts, Cancelled", () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const work = (code, status, end) => ({
+    id: code,
+    code,
+    title: `Task ${code}`,
+    status,
+    partOf: "T1",
+    dependsOn: [],
+    createTime: at(1),
+    endTime: at(end),
+  });
+  const parts = [
+    work("W1", s.TaskStatus.DONE, 10),
+    work("W2", s.TaskStatus.CANCELLED, 20),
+  ];
+  const card = (counts) =>
+    s.renderToStaticMarkup(
+      h(s.AzimaCard, {
+        azima: {
+          id: "T1",
+          code: "T1",
+          title: "Ship the lamp",
+          kind: s.TaskKind.AZIMA,
+          status: s.TaskStatus.PENDING,
+          dependsOn: [],
+          azima: { state: s.AzimaState.AWAITING_PROOF, ready: true, ...counts },
+        },
+        parts,
+        tasks: new Map(parts.map((x) => [x.id, x])),
+        focus: "W2",
+        render: (task) => h(s.WishTask, { key: task.id, task, onStop() {} }),
+      }),
+    );
+  // The server's counts (internal/plan.FillAzimas), then the card's own when it has none: 1/1, nothing waiting.
+  for (const html of [
+    card({ parts: 1, partsDone: 1, partsRunning: 0 }),
+    card({}),
+  ]) {
+    assert.match(html, />1\/1</);
+    assert.match(html, /1 done, 0 running, 0 waiting/);
+    assert.match(html, /status-badge tone-cancelled[^>]*>.*?Cancelled/);
+  }
+  // An azima whose only part is cancelled has nothing to count: no bar, never "0/1 … 1 waiting".
+  const only = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: {
+        id: "T2",
+        code: "T2",
+        title: "Trim the wick",
+        kind: s.TaskKind.AZIMA,
+        dependsOn: [],
+        azima: { state: s.AzimaState.OPEN, ready: true },
+      },
+      parts: [{ ...parts[1], partOf: "T2" }],
+      tasks: new Map(),
+      render: () => null,
+    }),
+  );
+  assert.doesNotMatch(only, /azima-progress/);
+  assert.doesNotMatch(only, /waiting/);
+});
+
 test("the Tasks tab groups work under its azima, which says what it waits for and its progress, and never waits", () => {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
   const azima = (code, title, extra) => ({

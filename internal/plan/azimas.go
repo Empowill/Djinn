@@ -119,6 +119,10 @@ func FillAzimas(tasks []*planv1.Task) {
 				running[h] = running[h] || working(p) || taskMerging(p)
 				continue
 			}
+			// A cancelled part is no work left: neither in the total nor waiting.
+			if p.GetStatus() == planv1.TaskStatus_TASK_STATUS_CANCELLED && !IsAzima(p) {
+				continue
+			}
 			e.Parts++
 			if IsAzima(p) {
 				if state(p) == planv1.AzimaState_AZIMA_STATE_DONE {
