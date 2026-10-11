@@ -17,8 +17,10 @@ func TestTaskListPagination(t *testing.T) {
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
 	wishID, _ := e.wish(t, fakeProject(t, ""))
 
+	const totalTasks = 5
+	const pageSize = 3
 	var taskIDs []string
-	for i := range 55 {
+	for i := range totalTasks {
 		res, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 			WishId:   wishID,
 			Title:    fmt.Sprintf("Task %02d", i),
@@ -32,18 +34,19 @@ func TestTaskListPagination(t *testing.T) {
 		taskIDs = append(taskIDs, res.Msg.GetTask().GetId())
 	}
 
-	// First page (default size 50)
+	// First page (page size 3)
 	res1, err := e.tasks.List(ctx, connect.NewRequest(&planv1.TaskServiceListRequest{
-		WishId: wishID,
+		WishId:   wishID,
+		PageSize: pageSize,
 	}))
 	if err != nil {
 		t.Fatalf("list page 1: %v", err)
 	}
-	if len(res1.Msg.GetTasks()) != 50 {
-		t.Fatalf("got %d tasks, want 50", len(res1.Msg.GetTasks()))
+	if len(res1.Msg.GetTasks()) != pageSize {
+		t.Fatalf("got %d tasks, want %d", len(res1.Msg.GetTasks()), pageSize)
 	}
-	if res1.Msg.GetTotal() != 55 {
-		t.Errorf("got total %d, want 55", res1.Msg.GetTotal())
+	if res1.Msg.GetTotal() != totalTasks {
+		t.Errorf("got total %d, want %d", res1.Msg.GetTotal(), totalTasks)
 	}
 	if res1.Msg.GetNextPageToken() == "" {
 		t.Fatal("expected non-empty next_page_token on page 1")
@@ -59,16 +62,17 @@ func TestTaskListPagination(t *testing.T) {
 	// Second page
 	res2, err := e.tasks.List(ctx, connect.NewRequest(&planv1.TaskServiceListRequest{
 		WishId:    wishID,
+		PageSize:  pageSize,
 		PageToken: res1.Msg.GetNextPageToken(),
 	}))
 	if err != nil {
 		t.Fatalf("list page 2: %v", err)
 	}
-	if len(res2.Msg.GetTasks()) != 5 {
-		t.Fatalf("got %d tasks, want 5", len(res2.Msg.GetTasks()))
+	if len(res2.Msg.GetTasks()) != totalTasks-pageSize {
+		t.Fatalf("got %d tasks, want %d", len(res2.Msg.GetTasks()), totalTasks-pageSize)
 	}
-	if res2.Msg.GetTotal() != 55 {
-		t.Errorf("got total %d, want 55", res2.Msg.GetTotal())
+	if res2.Msg.GetTotal() != totalTasks {
+		t.Errorf("got total %d, want %d", res2.Msg.GetTotal(), totalTasks)
 	}
 	if res2.Msg.GetNextPageToken() != "" {
 		t.Errorf("expected empty next_page_token on last page, got %q", res2.Msg.GetNextPageToken())
@@ -76,9 +80,21 @@ func TestTaskListPagination(t *testing.T) {
 
 	// Verify order of second page
 	for i, task := range res2.Msg.GetTasks() {
-		if task.GetId() != taskIDs[50+i] {
-			t.Errorf("task %d: got id %s, want %s", 50+i, task.GetId(), taskIDs[50+i])
+		if task.GetId() != taskIDs[pageSize+i] {
+			t.Errorf("task %d: got id %s, want %s", pageSize+i, task.GetId(), taskIDs[pageSize+i])
 		}
+	}
+
+	// Default page size returns all tasks without pagination token
+	resDefault, err := e.tasks.List(ctx, connect.NewRequest(&planv1.TaskServiceListRequest{
+		WishId: wishID,
+	}))
+	if err != nil {
+		t.Fatalf("list default: %v", err)
+	}
+	if len(resDefault.Msg.GetTasks()) != totalTasks || resDefault.Msg.GetNextPageToken() != "" {
+		t.Errorf("list default = %d tasks, next %q; want %d tasks, empty token",
+			len(resDefault.Msg.GetTasks()), resDefault.Msg.GetNextPageToken(), totalTasks)
 	}
 
 	// Invalid page token

@@ -1,5 +1,6 @@
 // Smoke tests of the browser mode: djinn serves the built interface itself (see global-setup.ts). Run them with
 // `go tool task e2e`, which builds what they need first.
+import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
 // A spec's djinn is not the one a Djinn worker running it reports to: the commands the specs run must not name that
@@ -27,7 +28,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   forbidOnly: Boolean(process.env.CI),
-  reporter: [["list"]],
+  reporter: [["list"], [path.resolve(__dirname, "reporter.ts")]],
   use: {
     ...devices["Desktop Chrome"],
     viewport: { width: 1440, height: 1000 },

@@ -171,7 +171,7 @@ func TestNotchRuntimeMemoryInterrupt(t *testing.T) {
 
 	lim := &limit{slots: 2}
 	e := up(t, t.TempDir(), WithEnlightenWorkers(), WithCapacity(lim.capacity),
-		WithMemory(available, machine.DefaultPolicy()), WithTick(20*time.Millisecond))
+		WithMemory(available, machine.DefaultPolicy()), WithTick(5*time.Millisecond))
 
 	repo := fakeProject(t, "")
 	wish1, projectID := e.wish(t, repo)
@@ -248,7 +248,6 @@ func TestNotchRuntimeMemoryInterrupt(t *testing.T) {
 	lim.set(2, "")
 	e.h.SetPolicy(machine.DefaultPolicy())
 
-	e.release(t, inv.GetId())
 	e.ended(t, inv.GetId())
 
 	// Wish 2 task resumes and finishes with 0 resumes spent.
