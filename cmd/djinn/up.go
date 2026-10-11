@@ -134,10 +134,6 @@ func runUp(args []string) (restart bool, err error) {
 		}
 		fmt.Fprintln(os.Stderr, "djinn: the last djinn up did not stop cleanly; starting again")
 	}
-	// Started from the Finder or a desktop menu, Djinn has a bare PATH: its workers and leads would not find claude.
-	// The workers and the leads bring it up to date before they start (WithBeforeStart, BeforeStart), as the agents'
-	// panel does; this first pass, which asks the login shell, does not hold the start.
-	go machine.ExtendPath()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	db, err := store.Open(ctx, filepath.Join(home, store.File), plan.Entities()...)
@@ -160,7 +156,9 @@ func runUp(args []string) (restart bool, err error) {
 		harness.WithCapacity(monitor.Capacity),
 		harness.WithMemory(monitor.Available, policy),
 		harness.WithTotal(monitor.Total),
-		harness.WithBeforeStart(machine.ExtendPath),
+		// Started from the Finder or a desktop menu, Djinn has a bare PATH (fromLauncher): before each start, its PATH
+		// gains the folders of the agents installed meanwhile.
+		harness.WithBeforeStart(beforeStart()),
 	}
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
@@ -226,7 +224,7 @@ func runUp(args []string) (restart bool, err error) {
 	leadNotes := newLeadNote(home, os.Stderr)
 	// The window's terminal opens in the first project, never in the home folder, where djinn starts from a menu.
 	terminals := terminal.NewManager(terminal.Config{
-		Command: terminal.ShellCommand(term), Dir: termDir, BeforeStart: machine.ExtendPath, Changed: leadNotes.update,
+		Command: terminal.ShellCommand(term), Dir: termDir, BeforeStart: beforeStart(), Changed: leadNotes.update,
 		Folder: func() (string, error) { return plan.FirstProjectFolder(ctx, db) },
 	})
 	leadNotes.terms = terminals

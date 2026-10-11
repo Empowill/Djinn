@@ -1,7 +1,10 @@
 package machine
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,51 +77,86 @@ func withApps(path string, apps map[string][]string) string {
 }
 
 var (
-	extending  sync.Mutex
-	loginShell = sync.OnceValue(func() string { return loginShellPath(os.Getenv("SHELL")) })
+	extending sync.Mutex // one ExtendPath at a time
+	loginPATH string     // the login shell's PATH, once AskLoginShell had it; guarded by extending
 )
 
 // ExtendPath gives Djinn's own PATH the folders where the agents are, as they are now: AgentPath with the login
-// shell's PATH, and the folders of the applications that ship an agent. Djinn calls it before it starts a worker or
-// a lead and when the panel checks the agents, so that an agent installed while Djinn runs is found at once, by
-// both. The login shell is asked once; the first call may wait for it, at most CheckTimeout.
+// shell's PATH (AskLoginShell), and the folders of the applications that ship an agent. Djinn calls it as djinn up
+// starts and before it starts a worker or a lead, so that an agent installed while Djinn runs is found at once. It
+// asks no shell: it only looks at folders.
 func ExtendPath() {
 	home, _ := os.UserHomeDir()
-	shell := loginShell()
 	extending.Lock()
 	defer extending.Unlock()
-	path := withApps(AgentPath(runtime.GOOS, os.Getenv("PATH"), home, shell), agentApps)
+	path := withApps(AgentPath(runtime.GOOS, os.Getenv("PATH"), home, loginPATH), agentApps)
 	if path != os.Getenv("PATH") {
 		_ = os.Setenv("PATH", path)
 	}
 }
 
-// CheckTimeout bounds the login shell Djinn asks for its PATH, and each command the panel runs to check an agent.
-var CheckTimeout = 3 * time.Second
+// loginTimeout is how long a login shell has to give its PATH: a profile that waits for input must not keep the
+// app from opening.
+const loginTimeout = 10 * time.Second
 
-// loginShellPath is the PATH that shell sets up as an interactive login shell, as a terminal opens it; empty on
-// Windows, without a shell, or when it fails or takes longer than CheckTimeout.
-func loginShellPath(shell string) string {
-	if runtime.GOOS == "windows" || shell == "" {
-		return ""
+// loginWaitDelay is how long a child of the profile may keep the output open once the shell is done. Tests shorten it.
+var loginWaitDelay = time.Second
+
+// pathMark marks the PATH in what a login shell prints: a profile may print more.
+const pathMark = "djinn-login-path="
+
+// AskLoginShell asks the user's login shell for its PATH, which ExtendPath adds from then on. djinn up asks it once,
+// when a launcher started it (a menu entry, the Dock, Finder): a graphical session gives its apps its own PATH,
+// without what the user's shell profiles add (~/.zshrc's go/bin, nvm's node, an agent's own folder), so a watcher
+// would not find gh, nor a lead go. A terminal reads those profiles, and a djinn up started from one has its PATH
+// already. Nothing to ask on Windows, which passes the user's PATH to its apps.
+func AskLoginShell() error {
+	if runtime.GOOS == "windows" {
+		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), CheckTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), loginTimeout)
 	defer cancel()
-	// env prints PATH joined by colons whatever the shell (fish keeps it as a list).
-	cmd := exec.CommandContext(ctx, shell, "-i", "-l", "-c", "/usr/bin/env")
-	detach(cmd)
-	cmd.WaitDelay = 500 * time.Millisecond
-	out, err := cmd.Output()
+	path, err := loginPath(ctx, loginShell(os.Getenv("SHELL")))
 	if err != nil {
-		return ""
+		return err
 	}
-	path := ""
-	for line := range strings.SplitSeq(string(out), "\n") {
-		if v, ok := strings.CutPrefix(line, "PATH="); ok {
-			path = strings.TrimSpace(v)
+	extending.Lock()
+	loginPATH = path
+	extending.Unlock()
+	return nil
+}
+
+// loginShell is the shell whose PATH djinn takes: the user's when it is a POSIX one (bash, zsh, ksh or sh) and
+// runs, zsh otherwise, the default of macOS.
+func loginShell(shell string) string {
+	switch filepath.Base(shell) {
+	case "bash", "zsh", "ksh", "sh":
+		if info, err := os.Stat(shell); err == nil && !info.IsDir() && info.Mode().Perm()&0o111 != 0 {
+			return shell
 		}
 	}
-	return path
+	return "/bin/zsh"
+}
+
+// loginPath gives the PATH that shell sets as an interactive login shell, reading the user's profiles. Interactive
+// too, as VS Code asks: a login shell alone skips ~/.zshrc and ~/.bashrc, where nvm and many agent installers add
+// to PATH. What an interactive profile prints is left out by the mark, and one that waits for input is cut by ctx.
+func loginPath(ctx context.Context, shell string) (string, error) {
+	cmd := exec.CommandContext(ctx, shell, "-i", "-l", "-c", `printf '\n%s%s\n' "$1" "$PATH"`, "djinn", pathMark)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.WaitDelay = loginWaitDelay
+	detach(cmd)
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("%s: %w", shell, err)
+	}
+	lines := strings.Split(out.String(), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if path, ok := strings.CutPrefix(lines[i], pathMark); ok && path != "" {
+			return path, nil
+		}
+	}
+	return "", errors.New(shell + " printed no PATH")
 }
 
 // joinPaths joins PATH lists, each folder once, in order.

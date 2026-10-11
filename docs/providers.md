@@ -377,17 +377,17 @@ for `harness.Quiet` (10 minutes), Djinn takes them as answered, says so in a `ST
 that add `~/.local/bin` (where Claude Code's installer puts `claude`) are never read, not even by the login shell
 that runs a lead (`zsh -l -c` reads `.zprofile`, not `.zshrc`). One resolver, `machine.ExtendPath`, appends to
 Djinn's own PATH, after the inherited folders, which keep their place: the PATH of the user's interactive login
-shell (asked once), the folders that exist among `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`,
-`~/.npm-global/bin`, `~/.volta/bin` and `~/.bun/bin` (on Windows `%LOCALAPPDATA%\agy\bin`, `%APPDATA%\npm` and
-`~/.local/bin`, which an installer adds to the user's PATH after Djinn started), and the folder of a `codex` only the
-ChatGPT or Codex application ships. It runs again before each worker and each lead starts, and when the agents' panel
-checks them, which looks on that PATH alone: what the panel finds is what they run, and an agent installed from the
-panel, in a folder created meanwhile, is found without a restart (`TestExtendPathAfterAnInstall`,
-`TestPanelAndLaunchAgree`). Gates inherit it from the worker that runs them.
+shell, the folders that exist among `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.npm-global/bin`,
+`~/.volta/bin` and `~/.bun/bin` (on Windows `%LOCALAPPDATA%\agy\bin`, `%APPDATA%\npm` and `~/.local/bin`, which an
+installer adds to the user's PATH after Djinn started), and the folder of a `codex` only the ChatGPT or Codex
+application ships. The login shell is asked once, as `djinn up` starts from a launcher (`machine.AskLoginShell`; a
+`djinn up` started from a terminal has its PATH already); the folders are looked at again before each worker and
+each lead starts, so an agent installed in a folder created meanwhile is found without a restart
+(`TestExtendPathAfterAnInstall`). Gates inherit it from the worker that runs them.
 
 **The lead.** A lead runs `claude` interactive in the window's terminal, not `-p`. Claude Code skips its workspace
-trust dialog only with `-p` (`claude --help`), so a lead started in a folder Claude Code has not trusted yet (a
-wish without a project starts in its own folder of Djinn's data) first asks to trust it, there, in the window.
+trust dialog only with `-p` (`claude --help`), so a lead started in a folder Claude Code has not trusted yet (the
+lead starts in the first project's folder) first asks to trust it, there, in the window.
 Djinn never answers it: trusting a folder is the user's decision. A first run of interactive Claude Code on a
 machine also shows its onboarding (theme, sign-in) once.
 

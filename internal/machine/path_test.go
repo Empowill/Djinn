@@ -1,12 +1,14 @@
 package machine
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeAgent writes an executable shell script named name in dir: a fake agent, which says it ran and calls no model.
@@ -80,6 +82,43 @@ func TestExtendPathAfterAnInstall(t *testing.T) {
 	}
 }
 
+// Started by a launcher, djinn up asks the login shell for its PATH once (AskLoginShell): each ExtendPath after it
+// adds that PATH's folders, after Djinn's own, without asking the shell again.
+func TestExtendPathAddsTheLoginShell(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Djinn asks no login shell on Windows")
+	}
+	bare(t)
+	shell := filepath.Join(t.TempDir(), "zsh")
+	if err := os.WriteFile(shell, []byte(`#!/bin/sh
+PATH="/from/the/profile:$PATH"
+export PATH
+shift 3
+cmd=$1
+shift
+exec /bin/sh -c "$cmd" "$@"
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", shell)
+	t.Cleanup(func() {
+		extending.Lock()
+		loginPATH = ""
+		extending.Unlock()
+	})
+	if err := AskLoginShell(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(shell); err != nil { // Asked once: the shell is not run again.
+		t.Fatal(err)
+	}
+	ExtendPath()
+	// The machine's own installers' folders (/usr/local/bin…) may follow.
+	if got, want := os.Getenv("PATH"), "/usr/bin:/bin:/usr/sbin:/sbin:/from/the/profile"; got != want && !strings.HasPrefix(got, want+":") {
+		t.Errorf("PATH = %q, want %q: Djinn's own folders, then the login shell's", got, want)
+	}
+}
+
 func TestAgentPath(t *testing.T) {
 	home := t.TempDir()
 	local := filepath.Join(home, ".local", "bin")
@@ -100,7 +139,9 @@ func TestAgentPath(t *testing.T) {
 		t.Errorf("%q: a folder of no home", got)
 	}
 	// The login shell's PATH comes after Djinn's own, before the installers' folders.
-	if got := AgentPath("darwin", "/x", home, "/shell"+sep+"/x"); got != strings.Join([]string{"/x", "/shell", local}, sep) {
+	// The machine's own absolute folders (/usr/local/bin…) may follow.
+	got, want := AgentPath("darwin", "/x", home, "/shell"+sep+"/x"), strings.Join([]string{"/x", "/shell", local}, sep)
+	if got != want && !strings.HasPrefix(got, want+sep) {
 		t.Errorf("%q: want Djinn's PATH, the shell's, then %s", got, local)
 	}
 	// Volta's folder is one of them: the window's panel looked there.
@@ -160,32 +201,87 @@ func TestLookPath(t *testing.T) {
 	}
 }
 
-// The login shell's PATH is read from what env prints, whatever the shell prints before it.
-func TestLoginShellPath(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Djinn asks no login shell on Windows")
-	}
+// TestLoginShell: the user's shell when it is a POSIX one that runs, zsh otherwise.
+func TestLoginShell(t *testing.T) {
 	dir := t.TempDir()
-	write := func(name, script string) string {
-		file := filepath.Join(dir, name)
-		if err := os.WriteFile(file, []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+	write := func(name string, mode os.FileMode) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"), mode); err != nil {
 			t.Fatal(err)
 		}
-		return file
+		return p
 	}
-	shell := write("shell", `[ "$1 $2 $3 $4" = "-i -l -c /usr/bin/env" ] || exit 1
-echo "Welcome"
-echo "HOME=/home/someone"
-echo "PATH=/opt/homebrew/bin:/usr/bin"
+	cases := map[string]string{
+		"":                             "/bin/zsh",
+		write("fish", 0o755):           "/bin/zsh",
+		write("bash", 0o644):           "/bin/zsh",
+		filepath.Join(dir, "ksh"):      "/bin/zsh", // Missing.
+		filepath.Join(dir, "none/zsh"): "/bin/zsh",
+	}
+	if runtime.GOOS != "windows" { // No executable bit there.
+		zsh := write("zsh", 0o755)
+		cases[zsh] = zsh
+	}
+	for shell, want := range cases {
+		if got := loginShell(shell); got != want {
+			t.Errorf("loginShell(%q) = %q, want %q", shell, got, want)
+		}
+	}
+}
+
+// TestLoginPath: djinn takes the PATH an interactive login shell sets from its profile and its rc, through what the profile prints, and
+// says why when the shell fails, prints no PATH or hangs.
+func TestLoginPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a fake shell is a shell script")
+	}
+	dir := t.TempDir()
+	shell := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	// A fake shell: it insists on -i and -l, reads a "profile" and an "rc" that print and set PATH, then runs the
+	// command. Without -i, a real one skips the rc, where nvm adds to PATH.
+	login := shell("zsh", `[ "$1" = -i ] && [ "$2" = -l ] && [ "$3" = -c ] || exit 3
+echo "Last login: a profile that talks"
+PATH="/from/the/login/profile:/opt/homebrew/bin:$PATH"
+echo "an rc that talks too"
+PATH="/from/the/rc/nvm:$PATH"
+export PATH
+shift 3
+cmd=$1
+shift
+exec /bin/sh -c "$cmd" "$@"
 `)
-	if got := loginShellPath(shell); got != "/opt/homebrew/bin:/usr/bin" {
-		t.Errorf("loginShellPath = %q; want the shell's PATH", got)
+	path, err := loginPath(t.Context(), login)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := loginShellPath(write("broken", "exit 1\n")); got != "" {
-		t.Errorf("loginShellPath of a failing shell = %q; want empty", got)
+	if want := "/from/the/rc/nvm:/from/the/login/profile:/opt/homebrew/bin:"; !strings.HasPrefix(path, want) || path == want {
+		t.Errorf("PATH = %q, want the rc's and the profile's first", path)
 	}
-	if got := loginShellPath(""); got != "" {
-		t.Errorf("loginShellPath without a shell = %q; want empty", got)
+
+	if _, err := loginPath(t.Context(), shell("broken", "exit 1\n")); err == nil {
+		t.Error("a failing shell gave a PATH")
+	}
+	if _, err := loginPath(t.Context(), shell("mute", "exit 0\n")); err == nil {
+		t.Error("a shell that printed nothing gave a PATH")
+	}
+	// Its sleep keeps the output open once the shell is killed: the wait delay cuts it too.
+	delay := loginWaitDelay
+	loginWaitDelay = 50 * time.Millisecond
+	t.Cleanup(func() { loginWaitDelay = delay })
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if _, err := loginPath(ctx, shell("hangs", "sleep 30\n")); err == nil {
+		t.Error("a hanging shell gave a PATH")
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("a hanging shell held djinn %v", d)
 	}
 }
 
