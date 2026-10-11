@@ -19,7 +19,7 @@ export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
 export { WishSidebar } from "@/src/wish-sidebar.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
-export { WishTask, promptPreview } from "@/src/wish-task.tsx";
+export { WishTask, TurnCommentsButton, promptPreview } from "@/src/wish-task.tsx";
 export {
   azimaTime,
   shortModel,
@@ -70,7 +70,7 @@ export { readDrop } from "@/src/data/tilasms.ts";
 export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export { ConsumptionPanel } from "@/src/consumption-panel.tsx";
 export { MachineService, CommandService } from "@/gen/ts/machine/v1/machine_pb.ts";
-export { TaskDiffView, UnifiedView, SplitView } from "@/src/diff.tsx";
+export { TaskDiffView, UnifiedView, SplitView, CommentBox } from "@/src/diff.tsx";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
@@ -1493,6 +1493,94 @@ test("diff views render unified and split diffs with Chroma syntax tokens and hu
   assert.match(split, /diff-split-side right/);
   assert.match(split, /tok-keyword/);
   assert.match(split, /tok-comment/);
+});
+
+test("diff views render inline comments, comment box, and task card displays comments with turn comments button", () => {
+  const hunks = [
+    {
+      header: "@@ -1,3 +1,4 @@",
+      lines: [
+        {
+          kind: s.DiffLineKind.CONTEXT,
+          oldLine: 1,
+          newLine: 1,
+          text: "package main",
+        },
+        {
+          kind: s.DiffLineKind.ADDED,
+          oldLine: 0,
+          newLine: 2,
+          text: '\tprintln("review this")',
+        },
+      ],
+    },
+  ];
+
+  const comments = [
+    {
+      id: "c-1",
+      file: "main.go",
+      line: 2,
+      endLine: 2,
+      commit: "abcdef123456",
+      text: "Please add a comment explaining this line.",
+      resolved: false,
+    },
+    {
+      id: "c-2",
+      file: "main.go",
+      line: 1,
+      endLine: 2,
+      commit: "abcdef123456",
+      text: "Looks good overall.",
+      resolved: true,
+    },
+  ];
+
+  // 1. Unified view with comments
+  const unified = s.renderToStaticMarkup(
+    h(s.UnifiedView, { hunks, comments, filePath: "main.go" }),
+  );
+  assert.match(unified, /diff-comment-row/);
+  assert.match(unified, /Please add a comment explaining this line\./);
+  assert.match(unified, /Looks good overall\./);
+  assert.match(unified, /diff-comment-resolved-badge/);
+  assert.match(unified, /Resolved/);
+  assert.match(unified, /diff-add-comment-btn/);
+
+  // 2. CommentBox standalone
+  const box = s.renderToStaticMarkup(
+    h(s.CommentBox, {
+      startLine: 2,
+      endLine: 5,
+      filePath: "main.go",
+      onCancel() {},
+    }),
+  );
+  assert.match(box, /diff-comment-box/);
+  assert.match(box, /Comment on lines 2–5/);
+  assert.match(box, /diff-comment-textarea/);
+  assert.match(box, /diff-comment-btn-cancel/);
+  assert.match(box, /diff-comment-btn-submit/);
+
+  // 3. Task card displaying comments and TurnCommentsButton
+  const taskCard = s.renderToStaticMarkup(
+    h(s.WishTask, {
+      task: {
+        id: "t1",
+        code: "W1",
+        title: "Trim the wick",
+        status: s.TaskStatus.DONE,
+        comments,
+      },
+      focused: true,
+      onStop() {},
+    }),
+  );
+  assert.match(taskCard, /wish-task-comments/);
+  assert.match(taskCard, /Review comments/);
+  assert.match(taskCard, /wish-task-turn-comments-button/);
+  assert.match(taskCard, /Turn comments into work/);
 });
 
 test("promptPreview truncates long prompts to a few lines with an ellipsis", () => {

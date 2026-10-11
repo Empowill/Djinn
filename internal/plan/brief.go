@@ -78,6 +78,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"ended, failed, stopped or was cut short a new turn of its own session, in its worktree, as the same task. " +
 	"Fork it only to start a different task from its context: a fork of a task cut short closes it, " +
 	"\"continued in\" the fork.\n" +
+	"- **Review comments on diffs**: `djinn task comment <task> \"…\" --file <path> --line <n> [--end-line <n>]` attaches a comment " +
+	"to lines of a task's diff. While the worker runs, it is sent to it as an instruction; once the task has ended, " +
+	"`djinn task turn-comments <task>` continues it or spawns a correction task in the same azima.\n" +
 	"- **The plan is a graph of azimas.** An azima (`T07`) is a task of the plan that no worker runs, nothing waits " +
 	"for the developer on it. Work is part of an azima and waits only for what it depends on, so plan it as a graph, " +
 	"never a line: spawn each task `--part-of <azima>`, and `--after` only the tasks whose result it needs, " +
@@ -334,6 +337,7 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 				b.WriteString(", since " + when(s.AsTime()))
 			}
 			b.WriteString(")\n")
+			commentsBrief(&b, t.GetComments())
 		}
 	}
 	if len(waiting) > 0 {
@@ -344,6 +348,7 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 				b.WriteString(" (part of " + e + ")")
 			}
 			b.WriteString(": " + waitText(t) + "\n")
+			commentsBrief(&b, t.GetComments())
 		}
 	}
 	if len(done) > 0 {
@@ -365,6 +370,7 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 				}
 			}
 			b.WriteString("\n")
+			commentsBrief(&b, t.GetComments())
 		}
 	}
 
@@ -481,6 +487,8 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 var leadMethods = map[string]bool{
 	planv1connect.TaskServiceSpawnProcedure:        true,
 	planv1connect.TaskServiceContinueProcedure:     true,
+	planv1connect.TaskServiceCommentProcedure:      true,
+	planv1connect.TaskServiceTurnCommentsProcedure: true,
 	planv1connect.TaskServiceDependProcedure:       true,
 	planv1connect.TaskServiceGroupProcedure:        true,
 	planv1connect.BlockServicePutProcedure:         true,
@@ -730,6 +738,28 @@ func waitText(t *planv1.Task) string {
 		text += ", " + clipLine(t.GetError())
 	}
 	return text
+}
+
+// commentsBrief writes the review comments of a task, if any.
+func commentsBrief(b *strings.Builder, comments []*planv1.TaskComment) {
+	if len(comments) == 0 {
+		return
+	}
+	for _, c := range comments {
+		lineDesc := fmt.Sprintf("line %d", c.GetLine())
+		if c.GetEndLine() > c.GetLine() {
+			lineDesc = fmt.Sprintf("lines %d-%d", c.GetLine(), c.GetEndLine())
+		}
+		status := "unresolved"
+		if c.GetResolved() {
+			status = "resolved"
+		}
+		if c.GetFile() != "" {
+			fmt.Fprintf(b, "  - Comment on %s, %s (%s): %s\n", c.GetFile(), lineDesc, status, clipLine(c.GetText()))
+		} else {
+			fmt.Fprintf(b, "  - Comment on %s (%s): %s\n", lineDesc, status, clipLine(c.GetText()))
+		}
+	}
 }
 
 // workText says where the finished work of t stands on its way into its wish's integration branch, as the page

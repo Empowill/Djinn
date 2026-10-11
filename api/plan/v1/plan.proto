@@ -801,6 +801,34 @@ message Task {
   string env_cause = 53 [(buf.validate.field).string.max_len = 1024];
   // Models the worker ran across its runs (resumes or provider changes), in the order they ran.
   repeated string models = 54;
+  // Comments on lines or ranges of the task's diff.
+  repeated TaskComment comments = 55;
+}
+
+// A comment on a line or range of lines in a task's diff.
+message TaskComment {
+  // Identifier of the comment.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // File path relative to the repository root.
+  string file = 2 [(buf.validate.field).string.min_len = 1];
+  // Starting line number (1-based).
+  int32 line = 3 [(buf.validate.field).int32.gte = 1];
+  // Ending line number (1-based).
+  int32 end_line = 4 [(buf.validate.field).int32.gte = 1];
+  // Commit SHA the comment refers to.
+  string commit = 5 [(buf.validate.field).string.max_len = 64];
+  // Comment text.
+  string text = 6 [(buf.validate.field).string.min_len = 1];
+  // When the comment was created.
+  google.protobuf.Timestamp create_time = 7;
+  // Code excerpt at the time of comment.
+  string excerpt = 8;
+  // Whether the comment has been resolved.
+  bool resolved = 9;
+  // Commit SHA that resolved the comment.
+  string resolved_commit = 10;
+  // When the comment was resolved.
+  google.protobuf.Timestamp resolve_time = 11;
 }
 
 // TaskReview is what a review worker reviews: work its worker left in its worktree without committing it.
@@ -2992,6 +3020,18 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Comment on a line or range of lines of a task's diff: stored on the task with its file, line range, commit, and
+  // excerpt. While the task's worker runs, the comment is sent to it as an instruction (djinn task send).
+  rpc Comment(TaskServiceCommentRequest) returns (TaskServiceCommentResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Turn comments of an ended task into work: continues the task when its provider can resume (djinn task continue),
+  // or spawns a correction task in the same azima whose prompt quotes each comment with its code excerpt.
+  rpc TurnComments(TaskServiceTurnCommentsRequest) returns (TaskServiceTurnCommentsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 message TaskServiceSpawnRequest {
@@ -3574,6 +3614,62 @@ message TaskServiceMoveRequest {
 message TaskServiceMoveResponse {
   // The azima moved, in its new wish.
   Task task = 1;
+}
+
+message TaskServiceCommentRequest {
+  // Task identifier (UUID).
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The comment text.
+  string text = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 20000
+  ];
+  // File path relative to the repository root.
+  string file = 3 [
+    (buf.validate.field).string.max_len = 1000
+  ];
+  // Starting line number (1-based).
+  int32 line = 4 [
+    (buf.validate.field).int32.gte = 0
+  ];
+  // Ending line number (1-based); empty or 0 defaults to line.
+  int32 end_line = 5 [
+    (buf.validate.field).int32.gte = 0
+  ];
+  // Commit SHA the diff showed; empty resolves from task head.
+  string commit = 6 [
+    (buf.validate.field).string.max_len = 64
+  ];
+  // Code excerpt quoted from the lines.
+  string excerpt = 7 [
+    (buf.validate.field).string.max_len = 20000
+  ];
+}
+
+message TaskServiceCommentResponse {
+  // The comment created.
+  TaskComment comment = 1;
+  // The task, with its comments.
+  Task task = 2;
+}
+
+message TaskServiceTurnCommentsRequest {
+  // The ended task whose comments to turn into work.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TaskServiceTurnCommentsResponse {
+  // The task: continued task or newly spawned correction task.
+  Task task = 1;
+  // Whether the task was continued in place (true) or a correction task was spawned (false).
+  bool continued = 2;
 }
 
 // The plan of a wish as a graph of azimas: tasks of kind AZIMA that no worker runs, which work is part of. The store

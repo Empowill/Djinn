@@ -885,6 +885,11 @@ func (h *Harness) settleIntegration(
 		log.Printf("djinn: integrate %s: %v", codes(batch), err)
 	}
 	h.notify()
+	for _, b := range batch {
+		if len(b.GetComments()) > 0 {
+			_, _ = h.checkCommentsResolution(ctx, b)
+		}
+	}
 }
 
 // sameIntegration tells whether a and b say the same, whenever they said it.

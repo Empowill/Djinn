@@ -194,6 +194,11 @@ const (
 	TaskServiceOpenProcedure = "/plan.v1.TaskService/Open"
 	// TaskServiceMoveProcedure is the fully-qualified name of the TaskService's Move RPC.
 	TaskServiceMoveProcedure = "/plan.v1.TaskService/Move"
+	// TaskServiceCommentProcedure is the fully-qualified name of the TaskService's Comment RPC.
+	TaskServiceCommentProcedure = "/plan.v1.TaskService/Comment"
+	// TaskServiceTurnCommentsProcedure is the fully-qualified name of the TaskService's TurnComments
+	// RPC.
+	TaskServiceTurnCommentsProcedure = "/plan.v1.TaskService/TurnComments"
 	// PlanServiceSyncProcedure is the fully-qualified name of the PlanService's Sync RPC.
 	PlanServiceSyncProcedure = "/plan.v1.PlanService/Sync"
 )
@@ -2078,6 +2083,12 @@ type TaskServiceClient interface {
 	Open(context.Context, *connect.Request[v1.TaskServiceOpenRequest]) (*connect.Response[v1.TaskServiceOpenResponse], error)
 	// Move an azima (a draft, or an azima no worker runs with parts that have not started) to another wish.
 	Move(context.Context, *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error)
+	// Comment on a line or range of lines of a task's diff: stored on the task with its file, line range, commit, and
+	// excerpt. While the task's worker runs, the comment is sent to it as an instruction (djinn task send).
+	Comment(context.Context, *connect.Request[v1.TaskServiceCommentRequest]) (*connect.Response[v1.TaskServiceCommentResponse], error)
+	// Turn comments of an ended task into work: continues the task when its provider can resume (djinn task continue),
+	// or spawns a correction task in the same azima whose prompt quotes each comment with its code excerpt.
+	TurnComments(context.Context, *connect.Request[v1.TaskServiceTurnCommentsRequest]) (*connect.Response[v1.TaskServiceTurnCommentsResponse], error)
 }
 
 // NewTaskServiceClient constructs a client for the plan.v1.TaskService service. By default, it uses
@@ -2208,30 +2219,44 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Move")),
 			connect.WithClientOptions(opts...),
 		),
+		comment: connect.NewClient[v1.TaskServiceCommentRequest, v1.TaskServiceCommentResponse](
+			httpClient,
+			baseURL+TaskServiceCommentProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Comment")),
+			connect.WithClientOptions(opts...),
+		),
+		turnComments: connect.NewClient[v1.TaskServiceTurnCommentsRequest, v1.TaskServiceTurnCommentsResponse](
+			httpClient,
+			baseURL+TaskServiceTurnCommentsProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("TurnComments")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // taskServiceClient implements TaskServiceClient.
 type taskServiceClient struct {
-	spawn     *connect.Client[v1.TaskServiceSpawnRequest, v1.TaskServiceSpawnResponse]
-	list      *connect.Client[v1.TaskServiceListRequest, v1.TaskServiceListResponse]
-	get       *connect.Client[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse]
-	diff      *connect.Client[v1.TaskServiceDiffRequest, v1.TaskServiceDiffResponse]
-	stop      *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
-	pause     *connect.Client[v1.TaskServicePauseRequest, v1.TaskServicePauseResponse]
-	resume    *connect.Client[v1.TaskServiceResumeRequest, v1.TaskServiceResumeResponse]
-	watch     *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
-	clean     *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
-	depend    *connect.Client[v1.TaskServiceDependRequest, v1.TaskServiceDependResponse]
-	group     *connect.Client[v1.TaskServiceGroupRequest, v1.TaskServiceGroupResponse]
-	delete    *connect.Client[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse]
-	done      *connect.Client[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse]
-	_continue *connect.Client[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse]
-	send      *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
-	update    *connect.Client[v1.TaskServiceUpdateRequest, v1.TaskServiceUpdateResponse]
-	describe  *connect.Client[v1.TaskServiceDescribeRequest, v1.TaskServiceDescribeResponse]
-	open      *connect.Client[v1.TaskServiceOpenRequest, v1.TaskServiceOpenResponse]
-	move      *connect.Client[v1.TaskServiceMoveRequest, v1.TaskServiceMoveResponse]
+	spawn        *connect.Client[v1.TaskServiceSpawnRequest, v1.TaskServiceSpawnResponse]
+	list         *connect.Client[v1.TaskServiceListRequest, v1.TaskServiceListResponse]
+	get          *connect.Client[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse]
+	diff         *connect.Client[v1.TaskServiceDiffRequest, v1.TaskServiceDiffResponse]
+	stop         *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
+	pause        *connect.Client[v1.TaskServicePauseRequest, v1.TaskServicePauseResponse]
+	resume       *connect.Client[v1.TaskServiceResumeRequest, v1.TaskServiceResumeResponse]
+	watch        *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
+	clean        *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
+	depend       *connect.Client[v1.TaskServiceDependRequest, v1.TaskServiceDependResponse]
+	group        *connect.Client[v1.TaskServiceGroupRequest, v1.TaskServiceGroupResponse]
+	delete       *connect.Client[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse]
+	done         *connect.Client[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse]
+	_continue    *connect.Client[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse]
+	send         *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
+	update       *connect.Client[v1.TaskServiceUpdateRequest, v1.TaskServiceUpdateResponse]
+	describe     *connect.Client[v1.TaskServiceDescribeRequest, v1.TaskServiceDescribeResponse]
+	open         *connect.Client[v1.TaskServiceOpenRequest, v1.TaskServiceOpenResponse]
+	move         *connect.Client[v1.TaskServiceMoveRequest, v1.TaskServiceMoveResponse]
+	comment      *connect.Client[v1.TaskServiceCommentRequest, v1.TaskServiceCommentResponse]
+	turnComments *connect.Client[v1.TaskServiceTurnCommentsRequest, v1.TaskServiceTurnCommentsResponse]
 }
 
 // Spawn calls plan.v1.TaskService.Spawn.
@@ -2329,6 +2354,16 @@ func (c *taskServiceClient) Move(ctx context.Context, req *connect.Request[v1.Ta
 	return c.move.CallUnary(ctx, req)
 }
 
+// Comment calls plan.v1.TaskService.Comment.
+func (c *taskServiceClient) Comment(ctx context.Context, req *connect.Request[v1.TaskServiceCommentRequest]) (*connect.Response[v1.TaskServiceCommentResponse], error) {
+	return c.comment.CallUnary(ctx, req)
+}
+
+// TurnComments calls plan.v1.TaskService.TurnComments.
+func (c *taskServiceClient) TurnComments(ctx context.Context, req *connect.Request[v1.TaskServiceTurnCommentsRequest]) (*connect.Response[v1.TaskServiceTurnCommentsResponse], error) {
+	return c.turnComments.CallUnary(ctx, req)
+}
+
 // TaskServiceHandler is an implementation of the plan.v1.TaskService service.
 type TaskServiceHandler interface {
 	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
@@ -2393,6 +2428,12 @@ type TaskServiceHandler interface {
 	Open(context.Context, *connect.Request[v1.TaskServiceOpenRequest]) (*connect.Response[v1.TaskServiceOpenResponse], error)
 	// Move an azima (a draft, or an azima no worker runs with parts that have not started) to another wish.
 	Move(context.Context, *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error)
+	// Comment on a line or range of lines of a task's diff: stored on the task with its file, line range, commit, and
+	// excerpt. While the task's worker runs, the comment is sent to it as an instruction (djinn task send).
+	Comment(context.Context, *connect.Request[v1.TaskServiceCommentRequest]) (*connect.Response[v1.TaskServiceCommentResponse], error)
+	// Turn comments of an ended task into work: continues the task when its provider can resume (djinn task continue),
+	// or spawns a correction task in the same azima whose prompt quotes each comment with its code excerpt.
+	TurnComments(context.Context, *connect.Request[v1.TaskServiceTurnCommentsRequest]) (*connect.Response[v1.TaskServiceTurnCommentsResponse], error)
 }
 
 // NewTaskServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -2519,6 +2560,18 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Move")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceCommentHandler := connect.NewUnaryHandler(
+		TaskServiceCommentProcedure,
+		svc.Comment,
+		connect.WithSchema(taskServiceMethods.ByName("Comment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceTurnCommentsHandler := connect.NewUnaryHandler(
+		TaskServiceTurnCommentsProcedure,
+		svc.TurnComments,
+		connect.WithSchema(taskServiceMethods.ByName("TurnComments")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TaskService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TaskServiceSpawnProcedure:
@@ -2559,6 +2612,10 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceOpenHandler.ServeHTTP(w, r)
 		case TaskServiceMoveProcedure:
 			taskServiceMoveHandler.ServeHTTP(w, r)
+		case TaskServiceCommentProcedure:
+			taskServiceCommentHandler.ServeHTTP(w, r)
+		case TaskServiceTurnCommentsProcedure:
+			taskServiceTurnCommentsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -2642,6 +2699,14 @@ func (UnimplementedTaskServiceHandler) Open(context.Context, *connect.Request[v1
 
 func (UnimplementedTaskServiceHandler) Move(context.Context, *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Move is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Comment(context.Context, *connect.Request[v1.TaskServiceCommentRequest]) (*connect.Response[v1.TaskServiceCommentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Comment is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) TurnComments(context.Context, *connect.Request[v1.TaskServiceTurnCommentsRequest]) (*connect.Response[v1.TaskServiceTurnCommentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.TurnComments is not implemented"))
 }
 
 // PlanServiceClient is a client for the plan.v1.PlanService service.

@@ -86,6 +86,7 @@ func (s *Tasks) Get(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
+	_, _ = s.h.checkCommentsResolution(ctx, task)
 	filled, err := s.h.withAzimas(ctx, []*planv1.Task{task})
 	if err != nil {
 		return nil, plan.Status(err)
@@ -260,6 +261,26 @@ func (s *Tasks) Diff(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceDiffRequest],
 ) (*connect.Response[planv1.TaskServiceDiffResponse], error) {
 	resp, err := s.h.Diff(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (s *Tasks) Comment(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceCommentRequest],
+) (*connect.Response[planv1.TaskServiceCommentResponse], error) {
+	resp, err := s.h.Comment(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (s *Tasks) TurnComments(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceTurnCommentsRequest],
+) (*connect.Response[planv1.TaskServiceTurnCommentsResponse], error) {
+	resp, err := s.h.TurnComments(ctx, req.Spec().Procedure, req.Msg)
 	if err != nil {
 		return nil, err
 	}
