@@ -71,6 +71,16 @@ export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export { ConsumptionPanel } from "@/src/consumption-panel.tsx";
 export { MachineService, CommandService } from "@/gen/ts/machine/v1/machine_pb.ts";
 export { TaskDiffView, UnifiedView, SplitView } from "@/src/diff.tsx";
+export {
+  OperatingLoad,
+  OperatingLoadSlider,
+  OperatingLoadForecast,
+  loadManager,
+  NOTCHES,
+  notchLabel,
+  notchSlug,
+} from "@/src/operating-load.tsx";
+export { LoadNotch } from "@/gen/ts/djinn/v1/load_pb.ts";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
@@ -95,6 +105,14 @@ function live(component, props) {
         return [states[i], set];
       },
       useEffect() {},
+      useRef(initial) {
+        const i = at++;
+        if (!(i in states)) states[i] = { current: initial };
+        return states[i];
+      },
+      useSyncExternalStore(subscribe, getSnapshot) {
+        return getSnapshot();
+      },
     };
     try {
       const fn = typeof component === "function" ? component : component.type;
@@ -4684,4 +4702,222 @@ test("the consumption panel renders running workers with their charts, gate band
     unmeasuredHtml,
     /CPU and memory: not measured on this system yet/,
   );
+});
+
+test("operating load gauge: click selects nearest notch, keyboard steps, colours per notch class", async () => {
+  s.loadManager.setSnapshot({
+    notch: s.LoadNotch.MEDIUM,
+    auto: false,
+    chosenNotch: s.LoadNotch.MEDIUM,
+    engagedMemoryBytes: 12n * 1024n * 1024n * 1024n,
+    workerMemoryBytes: 4n * 1024n * 1024n * 1024n,
+    memoryTotalBytes: 32n * 1024n * 1024n * 1024n,
+    memoryAvailableBytes: 24n * 1024n * 1024n * 1024n,
+    workerForecastBytes: 3n * 1024n * 1024n * 1024n,
+    bindingResource: "memory",
+    cpuSlots: 8,
+    memorySlots: 4,
+    baseSlots: 8,
+    runningWorkers: 2,
+  });
+
+  const screen = live(s.OperatingLoadSlider, {});
+
+  // Initial render at Medium
+  let slider = screen.one("operating-load-slider");
+  assert.equal(slider["data-notch"], "medium");
+
+  let input = screen.one("operating-load-input");
+  assert.equal(input.role, "slider");
+  assert.equal(input["aria-valuemin"], 1);
+  assert.equal(input["aria-valuemax"], 5);
+  assert.equal(input["aria-valuenow"], 2);
+  assert.match(input["aria-valuetext"], /Medium, 50\s*%/);
+
+  // Check 5 notch buttons rendered
+  const buttons = screen.all("operating-load-notch");
+  assert.equal(buttons.length, 5);
+  const notchSlugs = buttons.map((b) => b.props["data-notch"]);
+  assert.deepEqual(notchSlugs, [
+    "minimal",
+    "medium",
+    "high",
+    "max",
+    "overclock",
+  ]);
+
+  // Medium button is active
+  const mediumBtn = buttons.find((b) => b.props["data-notch"] === "medium");
+  assert.match(mediumBtn.props.className, /active/);
+
+  // 1. Click on the track selects nearest notch
+  // Simulate click on track at ratio ~0.0 (near left edge) -> Minimal
+  slider.onClick({
+    clientX: 5,
+    currentTarget: { getBoundingClientRect: () => ({ left: 0, width: 200 }) },
+    stopPropagation() {},
+  });
+  slider = screen.one("operating-load-slider");
+  assert.equal(slider["data-notch"], "minimal");
+  input = screen.one("operating-load-input");
+  assert.equal(input["aria-valuenow"], 1);
+  assert.match(input["aria-valuetext"], /Minimal, 20\s*%/);
+
+  // Simulate click on track at ratio ~0.95 (near right edge) -> Overclock
+  slider.onClick({
+    clientX: 195,
+    currentTarget: { getBoundingClientRect: () => ({ left: 0, width: 200 }) },
+    stopPropagation() {},
+  });
+  slider = screen.one("operating-load-slider");
+  assert.equal(slider["data-notch"], "overclock");
+  input = screen.one("operating-load-input");
+  assert.equal(input["aria-valuenow"], 5);
+  assert.match(input["aria-valuetext"], /Overclock, 150\s*%/);
+
+  // Click on a notch button directly: click High button
+  const highBtn = screen
+    .all("operating-load-notch")
+    .find((b) => b.props["data-notch"] === "high");
+  highBtn.props.onClick({ stopPropagation() {} });
+  slider = screen.one("operating-load-slider");
+  assert.equal(slider["data-notch"], "high");
+  input = screen.one("operating-load-input");
+  assert.equal(input["aria-valuenow"], 3);
+  assert.match(input["aria-valuetext"], /High, 80\s*%/);
+
+  // 2. Keyboard steps: ArrowRight, ArrowLeft, ArrowUp, ArrowDown, Home, End
+  // From High (index 2 / value 3), ArrowRight moves to Max (index 3 / value 4)
+  let prevented = false;
+  input.onKeyDown({
+    key: "ArrowRight",
+    preventDefault() {
+      prevented = true;
+    },
+  });
+  assert.equal(prevented, true);
+  slider = screen.one("operating-load-slider");
+  assert.equal(slider["data-notch"], "max");
+  input = screen.one("operating-load-input");
+  assert.equal(input["aria-valuenow"], 4);
+  assert.match(input["aria-valuetext"], /Max, 100\s*%/);
+
+  // From Max, ArrowDown moves to High
+  prevented = false;
+  input.onKeyDown({
+    key: "ArrowDown",
+    preventDefault() {
+      prevented = true;
+    },
+  });
+  assert.equal(prevented, true);
+  slider = screen.one("operating-load-slider");
+  assert.equal(slider["data-notch"], "high");
+
+  // Home key jumps to Minimal (notch 0 / value 1)
+  prevented = false;
+  input.onKeyDown({
+    key: "Home",
+    preventDefault() {
+      prevented = true;
+    },
+  });
+  assert.equal(prevented, true);
+  slider = screen.one("operating-load-slider");
+  assert.equal(slider["data-notch"], "minimal");
+  input = screen.one("operating-load-input");
+  assert.equal(input["aria-valuenow"], 1);
+
+  // End key jumps to Overclock (notch 4 / value 5)
+  prevented = false;
+  input.onKeyDown({
+    key: "End",
+    preventDefault() {
+      prevented = true;
+    },
+  });
+  assert.equal(prevented, true);
+  slider = screen.one("operating-load-slider");
+  assert.equal(slider["data-notch"], "overclock");
+  input = screen.one("operating-load-input");
+  assert.equal(input["aria-valuenow"], 5);
+
+  // 3. Colours per notch class
+  // Check that all 5 notches correctly reflect their active class and data-notch
+  for (const notch of s.NOTCHES) {
+    const slug = s.notchSlug(notch);
+    await s.loadManager.setNotch(notch);
+    slider = screen.one("operating-load-slider");
+    assert.equal(slider["data-notch"], slug);
+    const active = screen
+      .all("operating-load-notch")
+      .find((b) => b.props.className.includes("active"));
+    assert.equal(active.props["data-notch"], slug);
+  }
+});
+
+test("operating load forecast: binding resource (memory-bound vs cpu-bound) and consistent two-line numbers", async () => {
+  // Case A: Memory-bound machine (e.g. 4 memory slots, 8 cpu slots)
+  s.loadManager.setSnapshot({
+    notch: s.LoadNotch.MEDIUM,
+    auto: false,
+    chosenNotch: s.LoadNotch.MEDIUM,
+    engagedMemoryBytes: 12n * 1024n * 1024n * 1024n,
+    workerMemoryBytes: 4n * 1024n * 1024n * 1024n,
+    memoryTotalBytes: 32n * 1024n * 1024n * 1024n,
+    memoryAvailableBytes: 24n * 1024n * 1024n * 1024n,
+    workerForecastBytes: 3n * 1024n * 1024n * 1024n, // ~3 GiB
+    bindingResource: "memory",
+    cpuSlots: 8,
+    memorySlots: 4,
+    baseSlots: 4, // min(cpu, memory)
+    runningWorkers: 2,
+  });
+
+  let screen = live(s.OperatingLoadForecast, {});
+  let binding = screen.one("operating-load-forecast-binding");
+  // At Medium (50% of 4 = 2 workers)
+  assert.match(
+    s.renderToStaticMarkup(binding.children),
+    /limited by memory: 2 workers of ~3 GB/,
+  );
+
+  let rows = screen.all("operating-load-forecast-row");
+  assert.equal(rows.length, 2);
+  let cpuText = s.renderToStaticMarkup(rows[0].props.children);
+  let memText = s.renderToStaticMarkup(rows[1].props.children);
+  assert.match(cpuText, /CPU: up to 2 workers/);
+  assert.match(memText, /Memory: 11 GB of 24 GB/); // (24 - 2) * 0.5 = 11 GB engaged
+
+  // Case B: CPU-bound machine (e.g. 4 cpu slots, 16 memory slots)
+  s.loadManager.setSnapshot({
+    notch: s.LoadNotch.HIGH,
+    auto: false,
+    chosenNotch: s.LoadNotch.HIGH,
+    engagedMemoryBytes: 16n * 1024n * 1024n * 1024n,
+    workerMemoryBytes: 3n * 1024n * 1024n * 1024n,
+    memoryTotalBytes: 64n * 1024n * 1024n * 1024n,
+    memoryAvailableBytes: 48n * 1024n * 1024n * 1024n,
+    workerForecastBytes: 1536n * 1024n * 1024n, // ~1.5 GiB
+    bindingResource: "cpu",
+    cpuSlots: 4,
+    memorySlots: 16,
+    baseSlots: 4,
+    runningWorkers: 1,
+  });
+
+  screen = live(s.OperatingLoadForecast, {});
+  binding = screen.one("operating-load-forecast-binding");
+  // At High (80% of 4 = 3 workers)
+  assert.match(
+    s.renderToStaticMarkup(binding.children),
+    /limited by CPU: 3 workers of ~1\.5 GB/,
+  );
+
+  rows = screen.all("operating-load-forecast-row");
+  assert.equal(rows.length, 2);
+  cpuText = s.renderToStaticMarkup(rows[0].props.children);
+  memText = s.renderToStaticMarkup(rows[1].props.children);
+  assert.match(cpuText, /CPU: up to 3 workers/);
+  assert.match(memText, /Memory: 37 GB of 48 GB/); // (48 - 2) * 0.8 = 36.8 GB rounded to 37 GB
 });

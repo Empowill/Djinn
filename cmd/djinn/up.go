@@ -347,7 +347,7 @@ func runUp(args []string) (restart bool, err error) {
 		if broadcastLoad != nil {
 			broadcastLoad(n)
 		}
-	}, workers.WorkerMemory, machine.WithLoadRunningWorkers(workers.Running))
+	}, workers.WorkerMemory, machine.WithLoadRunningWorkers(workers.Running), machine.WithLoadWorkerForecast(workers.WorkerForecast))
 	svc[loadPrefix] = loadHandler
 	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running, workers.Uses,
 		machine.WithSeriesRecorder(seriesRec),
