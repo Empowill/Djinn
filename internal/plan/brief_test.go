@@ -88,7 +88,7 @@ func TestBrief(t *testing.T) {
 	}
 	// The wish first, where it stands; then how to lead it: Djinn's rules, then the projects' own.
 	order := []string{"# The wish: Ship the API", "## Running", "## Waiting", "## Open questions", "## Latest decisions",
-		"## Latest blocks", "# Leading a wish in Djinn", "## Commands", "## The projects' rules"}
+		"## Latest blocks", "# Leading in Djinn", "## Commands", "## The projects' rules"}
 	last := -1
 	for _, s := range order {
 		i := strings.Index(text, s)
@@ -207,6 +207,7 @@ func serveLeads(t *testing.T, home string, opts ...Option) (clients, *fakeLeads)
 		blocks:    planv1connect.NewBlockServiceClient(srv.Client(), srv.URL),
 		marks:     planv1connect.NewMarkServiceClient(srv.Client(), srv.URL),
 		inbox:     planv1connect.NewInboxServiceClient(srv.Client(), srv.URL),
+		lead:      planv1connect.NewLeadServiceClient(srv.Client(), srv.URL),
 		store:     s,
 	}, leads
 }
@@ -241,24 +242,24 @@ func TestResumeFromBrief(t *testing.T) {
 		last = w.Msg.GetWish().GetId()
 		return last
 	}
-	resume := func(id string, p planv1.Provider) *planv1.WishServiceResumeResponse {
+	resume := func(p planv1.Provider) *planv1.LeadServiceResumeResponse {
 		t.Helper()
-		res, err := c.wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{WishId: id, Provider: p}))
+		res, err := c.lead.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{Provider: p}))
 		if err != nil {
 			t.Fatal(err)
 		}
 		return res.Msg
 	}
 
-	// Claude: the same first message as every agent, to run djinn wish brief; a session chosen and recorded.
-	id := makeWish("Ship the API")
-	res := resume(id, planv1.Provider_PROVIDER_UNSPECIFIED)
-	lead := res.GetWish().GetLead()
-	first, err := os.ReadFile(filepath.Join(home, PagesDir, id, LeadFirstFile))
-	if err != nil || string(first) != StartLine(id) || !strings.Contains(string(first), "djinn wish brief "+id) {
+	// Claude: the same first message as every agent, to run djinn brief; a session chosen and recorded.
+	_ = makeWish("Ship the API")
+	res := resume(planv1.Provider_PROVIDER_UNSPECIFIED)
+	lead := res.GetLead()
+	first, err := os.ReadFile(filepath.Join(home, "lead", LeadFirstFile))
+	if err != nil || string(first) != StartLine() || !strings.Contains(string(first), "djinn brief") {
 		t.Fatalf("first message %q, %v", first, err)
 	}
-	want := "claude --session-id " + lead.GetSessionId() + " '" + StartLine(id) + "'"
+	want := "claude --session-id " + lead.GetSessionId() + " '" + StartLine() + "'"
 	if len(leads.opened) != 1 || leads.opened[0] != want+" in "+folder {
 		t.Fatalf("opened %q\nwant %q", leads.opened, want+" in "+folder)
 	}
@@ -268,55 +269,55 @@ func TestResumeFromBrief(t *testing.T) {
 	}
 	// The shell gives the agent the message as written: the quotes hold.
 	if sh, err := exec.LookPath("sh"); err == nil {
-		q, _ := quoteArg("linux", StartLine(id)+"it's $HOME `x`")
+		q, _ := quoteArg("linux", StartLine()+"it's $HOME `x`")
 		out, err := exec.Command(sh, "-c", "printf %s "+q).Output()
-		if err != nil || string(out) != StartLine(id)+"it's $HOME `x`" {
+		if err != nil || string(out) != StartLine()+"it's $HOME `x`" {
 			t.Errorf("through sh: %q, %v", out, err)
 		}
 	}
 	// The lead runs: a second resume attaches to it, with nothing to say.
-	if res = resume(id, planv1.Provider_PROVIDER_UNSPECIFIED); !res.GetAttached() || res.GetNote() != "" || len(leads.opened) != 1 {
+	if res = resume(planv1.Provider_PROVIDER_UNSPECIFIED); !res.GetAttached() || res.GetNote() != "" || len(leads.opened) != 1 {
 		t.Errorf("second resume = %v", res)
 	}
 	// Once it has exited, the recorded session is resumed.
-	delete(leads.running, "lead-"+id)
-	if res = resume(id, planv1.Provider_PROVIDER_UNSPECIFIED); leads.opened[1] != "claude --resume "+lead.GetSessionId()+" in "+folder {
+	delete(leads.running, LeadTerminal)
+	if res = resume(planv1.Provider_PROVIDER_UNSPECIFIED); leads.opened[1] != "claude --resume "+lead.GetSessionId()+" in "+folder {
 		t.Errorf("resume after exit = %v, opened %q", res, leads.opened)
 	}
 
 	// Codex gets the same first message; Djinn cannot know its session.
 	{
-		id := makeWish("Lead with Codex")
-		res := resume(id, planv1.Provider_PROVIDER_CODEX)
+		delete(leads.running, LeadTerminal)
+		res := resume(planv1.Provider_PROVIDER_CODEX)
 		got := leads.opened[len(leads.opened)-1]
-		if got != "codex '"+StartLine(id)+"' in "+folder || res.GetWish().GetLead() != nil || res.GetNote() == "" {
+		if got != "codex '"+StartLine()+"' in "+folder || res.GetLead().GetSessionId() != lead.GetSessionId() || res.GetNote() == "" {
 			t.Errorf("codex: opened %q, resume %v", got, res)
 		}
 	}
-	// Antigravity starts from the brief; its folder becomes the wish's lead, resumed with agy --continue.
+	// Antigravity starts from the brief; its folder becomes the lead, resumed with agy --continue.
 	{
-		id := makeWish("Lead with Antigravity")
-		res := resume(id, planv1.Provider_PROVIDER_ANTIGRAVITY)
+		delete(leads.running, LeadTerminal)
+		res := resume(planv1.Provider_PROVIDER_ANTIGRAVITY)
 		got := leads.opened[len(leads.opened)-1]
-		lead := res.GetWish().GetLead()
-		if got != "agy -i '"+StartLine(id)+"' in "+folder || lead.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY ||
+		lead := res.GetLead()
+		if got != "agy -i '"+StartLine()+"' in "+folder || lead.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY ||
 			lead.GetSessionId() != "" || lead.GetDirectory() != folder || res.GetNote() == "" {
 			t.Errorf("antigravity: opened %q, resume %v", got, res)
 		}
 	}
 	// The fake agent has no terminal.
-	if _, err := c.wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{
-		WishId: makeWish("Fake lead"), Provider: planv1.Provider_PROVIDER_FAKE,
+	if _, err := c.lead.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{
+		Provider: planv1.Provider_PROVIDER_FAKE,
 	})); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("a fake lead: %v, want invalid_argument", err)
 	}
 }
 
 func TestLeadLine(t *testing.T) {
-	data := `C:\Users\Ann Lee\AppData\Roaming\djinn\wishes\w1`
+	data := `C:\Users\Ann Lee\AppData\Roaming\djinn\lead`
 	file := data + `\` + LeadFirstFile
 	claude := &planv1.Lead{Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: "s1"}
-	start := StartLine("w1")
+	start := StartLine()
 
 	// Every agent gets the same message, as one argument.
 	for p, want := range map[planv1.Provider]string{
@@ -551,9 +552,6 @@ func TestBriefOrder(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: id, SessionId: session}); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := c.blocks.Put(ctx, connect.NewRequest(&planv1.BlockServicePutRequest{
 		WishId: id, Kind: "report", Title: "Where the store stands", Content: "Written, not backed up.",
 	})); err != nil {
@@ -568,31 +566,13 @@ func TestBriefOrder(t *testing.T) {
 	last := -1
 	for _, s := range []string{"# The wish: Ship the API\n\n" + description + "\n\n- Identifier:", "## Azimas", "**T01** The store: ready",
 		"## Running", "**W1** Write the store", "## Waiting", "**W2** Back the store up (part of T01)", "## Open questions",
-		"## Latest decisions", "## Latest blocks", "### Where the store stands (report)", "## The last lead",
-		"- claude, session `" + session + "`, recorded ", "- A lead last acted ", "`djinn block put`",
-		"# Leading a wish in Djinn", "**Start from the brief.**", "`djinn wish describe <wish> --text", "## The projects' rules"} {
+		"## Latest decisions", "## Latest blocks", "### Where the store stands (report)",
+		"# Leading in Djinn", "**Start from the brief.**", "`djinn wish describe <wish> --text", "## The projects' rules"} {
 		i := strings.Index(text, s)
 		if i <= last {
 			t.Fatalf("%q at %d, after %d: the brief is out of order\n%s", s, i, last, text)
 		}
 		last = i
-	}
-	// A worker's block is not the lead acting.
-	tasks, err := store.List[*planv1.Task](ctx, c.store, store.Where{"wish_id": id, "code": "W1"})
-	if err != nil || len(tasks) != 1 {
-		t.Fatalf("W1: %v, %v", tasks, err)
-	}
-	if _, err := c.blocks.Put(ctx, connect.NewRequest(&planv1.BlockServicePutRequest{
-		WishId: id, Kind: "report", Title: "From W1", Content: "Done.", TaskId: tasks[0].GetId(),
-	})); err != nil {
-		t.Fatal(err)
-	}
-	if again, err := BuildBrief(ctx, c.store, t.TempDir(), id); err != nil || !strings.Contains(again.Moving, "`djinn block put`.\n") {
-		t.Errorf("the lead's last act moved with a worker's block (%v):\n%s", err, again.Moving)
-	}
-	// A wish that never had a lead says nothing of one.
-	if bare, err := BuildBrief(ctx, c.store, "", c.wish(t)); err != nil || strings.Contains(bare.Moving, "## The last lead") {
-		t.Errorf("a wish without a lead (%v):\n%s", err, bare.Moving)
 	}
 }
 
@@ -633,21 +613,25 @@ func TestBriefInstallQuestionsRule(t *testing.T) {
 		{
 			name: "always",
 			iq:   planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS,
-			want: "grant a right, install and restart",
+			want: "grant a right, install and restart (djinn: always)",
 		},
 		{
 			name: "when_needed",
 			iq:   planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED,
-			want: "in a project whose builds are installed after each push, ask to install only when necessary, saying why",
+			want: "grant a right, install and restart (djinn: when_needed)",
 		},
 		{
 			name: "never",
 			iq:   planv1.InstallQuestions_INSTALL_QUESTIONS_NEVER,
-			want: "in a project whose builds are installed after each push, never ask to install or restart",
+			want: "grant a right, install and restart (djinn: never)",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rules := briefRules(tc.iq)
+			home := t.TempDir()
+			repo := t.TempDir()
+			writeSettings(t, filepath.Join(repo, SettingsFile), fmt.Sprintf("install_questions: %s\n", InstallQuestionsWord(tc.iq)))
+			proj := &planv1.Project{Name: "djinn", Directory: repo}
+			rules := briefRules([]*planv1.Project{proj}, home)
 			if !strings.Contains(rules, tc.want) {
 				t.Errorf("briefRules(%v) lacks %q:\n%s", tc.iq, tc.want, rules)
 			}
@@ -664,7 +648,7 @@ func TestBriefInstallQuestionsRule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantRule := "in a project whose builds are installed after each push, ask to install only when necessary, saying why"
+	wantRule := "grant a right, install and restart (api: when_needed, notes: always)"
 	if !strings.Contains(brief.Stable, wantRule) {
 		t.Errorf("brief.Stable lacks %q with when_needed settings:\n%s", wantRule, brief.Stable)
 	}
@@ -672,7 +656,7 @@ func TestBriefInstallQuestionsRule(t *testing.T) {
 
 // TestBriefConflictsRule: the lead's rule in briefRules includes keeping the graph free of conflicts.
 func TestBriefConflictsRule(t *testing.T) {
-	rules := briefRules(planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS)
+	rules := briefRules(nil, "")
 	for _, want := range []string{
 		"**Keep the graph free of conflicts.**",
 		"keep the graph of tasks and azimas so that workers do not collide, along an iterative and de-risked path",
@@ -688,69 +672,105 @@ func TestBriefConflictsRule(t *testing.T) {
 	}
 }
 
-func TestBriefPrincipalListsOpenAnswersWithoutLead(t *testing.T) {
+func TestGlobalBrief(t *testing.T) {
 	ctx := t.Context()
 	c := serve(t)
+	home := t.TempDir()
 
-	made1, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Principal Wish"}))
+	repo := filepath.Join(t.TempDir(), "djinn")
+	if err := os.MkdirAll(repo, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeSettings(t, filepath.Join(repo, SettingsFile), "install_questions: never\n")
+	if _, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: repo})); err != nil {
+		t.Fatal(err)
+	}
+
+	made1, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Active Wish 1"}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	wish1ID := made1.Msg.GetWish().GetId()
+	if _, err := c.wishes.Describe(ctx, connect.NewRequest(&planv1.WishServiceDescribeRequest{WishId: wish1ID, Text: "First active wish"})); err != nil {
+		t.Fatal(err)
+	}
 
-	made2, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Relecture in Djinn"}))
+	made2, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Active Wish 2"}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	wish2ID := made2.Msg.GetWish().GetId()
-
-	asked, err := c.questions.Ask(ctx, connect.NewRequest(&planv1.QuestionServiceAskRequest{
-		Text: "Which oil?", Options: []string{"Olive", "Paraffin"}, WishId: wish2ID,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	q := asked.Msg.GetQuestion()
-	_, err = c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
-		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}},
-		Choice:   planv1.Choice_CHOICE_B,
-		Note:     "for warmth",
-	}))
-	if err != nil {
+	if _, err := c.wishes.Describe(ctx, connect.NewRequest(&planv1.WishServiceDescribeRequest{WishId: wish2ID, Text: "Second active wish"})); err != nil {
 		t.Fatal(err)
 	}
 
-	leads := &fakeLeads{}
-	brief1, err := BuildBrief(ctx, c.store, t.TempDir(), wish1ID, leads)
+	made3, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Paused Wish"}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantLine := `- **Q01** answered B — "Paraffin" in Relecture in Djinn (wish ` + wish2ID +
-		`): turn it into tasks there; djinn wish brief ` + wish2ID + ` has its context. Note: "for warmth".`
-	if !strings.Contains(brief1.Moving, "## Open answers without a lead") {
-		t.Fatalf("expected ## Open answers without a lead in principal brief, got:\n%s", brief1.Moving)
-	}
-	if !strings.Contains(brief1.Moving, wantLine) {
-		t.Fatalf("expected %q in principal brief, got:\n%s", wantLine, brief1.Moving)
+	wish3ID := made3.Msg.GetWish().GetId()
+	if _, err := c.wishes.Pause(ctx, connect.NewRequest(&planv1.WishServicePauseRequest{WishId: wish3ID})); err != nil {
+		t.Fatal(err)
 	}
 
-	brief2, err := BuildBrief(ctx, c.store, t.TempDir(), wish2ID, leads)
+	made4, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Granted Wish"}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(brief2.Moving, "## Open answers without a lead") {
-		t.Fatalf("non-principal brief should not contain open answers without lead:\n%s", brief2.Moving)
+	wish4ID := made4.Msg.GetWish().GetId()
+	if _, err := c.wishes.Grant(ctx, connect.NewRequest(&planv1.WishServiceGrantRequest{WishId: wish4ID})); err != nil {
+		t.Fatal(err)
 	}
 
-	leads.running = map[string][]string{
-		LeadTerminal(wish2ID): {"/bin/sh"},
+	if _, err := c.questions.Ask(ctx, connect.NewRequest(&planv1.QuestionServiceAskRequest{
+		Text: "Which oil?", Options: []string{"Olive", "Paraffin"}, WishId: wish1ID,
+	})); err != nil {
+		t.Fatal(err)
 	}
-	brief1AfterLead, err := BuildBrief(ctx, c.store, t.TempDir(), wish1ID, leads)
+
+	brief, err := BuildGlobalBrief(ctx, c.store, home)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(brief1AfterLead.Moving, "## Open answers without a lead") {
-		t.Fatalf("brief should not contain open answers when wish 2 has a running lead:\n%s", brief1AfterLead.Moving)
+
+	if !strings.Contains(brief, "# The wish: Active Wish 1") {
+		t.Errorf("expected Active Wish 1 in global brief:\n%s", brief)
+	}
+	if !strings.Contains(brief, "- Identifier: `"+wish1ID+"`") {
+		t.Errorf("expected wish1ID in global brief:\n%s", brief)
+	}
+	if !strings.Contains(brief, "## Open questions") || !strings.Contains(brief, "Which oil?") {
+		t.Errorf("expected open question in global brief:\n%s", brief)
+	}
+	if !strings.Contains(brief, "# The wish: Active Wish 2") {
+		t.Errorf("expected Active Wish 2 in global brief:\n%s", brief)
+	}
+	if !strings.Contains(brief, "- Identifier: `"+wish2ID+"`") {
+		t.Errorf("expected wish2ID in global brief:\n%s", brief)
+	}
+
+	wantPaused := fmt.Sprintf("- **Paused Wish** (`%s`): paused: `djinn wish activate %s` makes it active again.", wish3ID, wish3ID)
+	if !strings.Contains(brief, wantPaused) {
+		t.Errorf("expected paused line %q in global brief:\n%s", wantPaused, brief)
+	}
+	wantGranted := fmt.Sprintf("- **Granted Wish** (`%s`):", wish4ID)
+	if !strings.Contains(brief, wantGranted) {
+		t.Errorf("expected granted line starting with %q in global brief:\n%s", wantGranted, brief)
+	}
+
+	if !strings.Contains(brief, "# Leading in Djinn") {
+		t.Errorf("expected # Leading in Djinn in global brief:\n%s", brief)
+	}
+	if !strings.Contains(brief, "(djinn: never)") {
+		t.Errorf("expected (djinn: never) in global brief:\n%s", brief)
+	}
+
+	resp, err := c.lead.Brief(ctx, connect.NewRequest(&planv1.LeadServiceBriefRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Msg.GetText() != brief {
+		t.Errorf("c.lead.Brief text mismatch: got %d bytes, want %d bytes", len(resp.Msg.GetText()), len(brief))
 	}
 }
 

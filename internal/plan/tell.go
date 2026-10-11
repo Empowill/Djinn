@@ -18,48 +18,49 @@ import (
 // wish is not active. What the lead missed waits in the wish's brief.
 var ErrNoLead = errors.New("this wish has no lead to tell")
 
-// Tell types line in the terminal of the lead of the wish wishID, then Enter, once the person is not typing there:
+// Tell types line in the terminal of the lead, then Enter, once the person is not typing there:
 // the lead reads it as a message, and acts. A lead that does not run is reopened first, on its session, as Resume
-// does, without bringing the window to the front; only an active wish's lead is reopened. ErrNoLead when there is
-// none to tell.
+// does, without bringing the window to the front. ErrNoLead when there is none to tell.
 func (w *Wishes) Tell(ctx context.Context, wishID, line string) error {
 	if w.Leads == nil {
 		return errors.New("this server runs no terminal")
 	}
-	wish, err := store.Get[*planv1.Wish](ctx, w.Store, wishID)
-	if err != nil {
+	lead, err := store.Get[*planv1.Lead](ctx, w.Store, "lead")
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
-	session := wish.GetLead().GetSessionId()
-	if session == "" {
+	if !hasLead(lead) {
 		return ErrNoLead
 	}
-	name := LeadTerminal(wish.GetId())
-	if wish.GetState() != planv1.WishState_WISH_STATE_ACTIVE {
-		if err := w.Leads.Say(name, line); err != nil {
-			return fmt.Errorf("%w: %w", ErrNoLead, err)
+	name := LeadTerminal
+	if wishID != "" {
+		wish, err := store.Get[*planv1.Wish](ctx, w.Store, wishID)
+		if err == nil && wish.GetState() != planv1.WishState_WISH_STATE_ACTIVE {
+			if err := w.Leads.Say(name, line); err != nil {
+				return fmt.Errorf("%w: %w", ErrNoLead, err)
+			}
+			return nil
 		}
-		return nil
 	}
-	resume, dir, err := sessionLine(wish)
+	resume, dir, err := sessionLine(lead)
 	if err != nil {
 		return err
 	}
-	command, _, attached, err := w.Leads.Open(name, resume, dir, session)
+	command, _, attached, err := w.Leads.Open(name, resume, dir, lead.GetSessionId())
 	if err != nil {
 		return err
 	}
 	// The lead's terminal runs something else, a shell perhaps: a line typed there would run as a command.
-	if running := strings.Join(command, " "); attached && !strings.Contains(running, session) {
+	if running := strings.Join(command, " "); attached && !strings.Contains(running, lead.GetSessionId()) {
 		return fmt.Errorf("the lead's terminal runs %s, not the lead", running)
 	}
 	if !attached {
-		w.tellWaitingAnswers(ctx, wish.GetId(), name)
+		w.tellWaitingAnswers(ctx, name)
 	}
 	return w.Leads.Say(name, line)
 }
 
-// Answered tells the lead of q's wish that the developer answered q, in one line, with what Djinn did with the
+// Answered tells the lead that the developer answered q, in one line, with what Djinn did with the
 // answer (did) when it settled it. Handlers calls it once the answer is stored, when it serves the leads; the answer
 // stays in the brief whatever happens here.
 func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, did string) {
@@ -75,25 +76,9 @@ func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, did string) {
 		return
 	}
 
-	ownTerminal := LeadTerminal(q.GetWishId())
-	if w.Leads != nil && w.Leads.Running(ownTerminal) {
+	if w.Leads != nil && w.Leads.Running(LeadTerminal) {
 		w.tell(ctx, q, AnswerLine(q, ""))
 		return
-	}
-
-	pw, err := PrincipalWish(ctx, w.Store)
-	if err == nil && pw != nil {
-		principalTerminal := LeadTerminal(pw.GetId())
-		if w.Leads != nil && w.Leads.Running(principalTerminal) {
-			qWish, err := store.Get[*planv1.Wish](ctx, w.Store, q.GetWishId())
-			if err != nil {
-				log.Printf("djinn: wish %s: get question wish: %v", q.GetWishId(), err)
-			}
-			if err := w.Tell(ctx, pw.GetId(), PrincipalAnswerLine(q, qWish)); err != nil && !errors.Is(err, ErrNoLead) {
-				log.Printf("djinn: wish %s: tell principal lead about %s: %v", pw.GetId(), q.GetCode(), err)
-			}
-			return
-		}
 	}
 
 	// No lead runs at all: the answer waits, marked waiting for a lead.
@@ -113,31 +98,22 @@ func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, did string) {
 }
 
 // tellWaitingAnswers tells terminal of every answer waiting for a lead, and marks them no longer waiting.
-func (w *Wishes) tellWaitingAnswers(ctx context.Context, wishID, terminal string) {
+func (w *Wishes) tellWaitingAnswers(ctx context.Context, terminal string) {
 	if w.Leads == nil || w.Store == nil {
 		return
 	}
 	questions, err := store.List[*planv1.Question](ctx, w.Store, nil)
 	if err != nil {
-		log.Printf("djinn: wish %s: list waiting answers: %v", wishID, err)
+		log.Printf("djinn: list waiting answers: %v", err)
 		return
 	}
 	for _, q := range questions {
 		if !q.GetWaitingLead() {
 			continue
 		}
-		var line string
-		if q.GetWishId() == wishID {
-			line = AnswerLine(q, "")
-		} else {
-			qWish, err := store.Get[*planv1.Wish](ctx, w.Store, q.GetWishId())
-			if err != nil {
-				log.Printf("djinn: wish %s: get question wish %s: %v", wishID, q.GetWishId(), err)
-			}
-			line = PrincipalAnswerLine(q, qWish)
-		}
+		line := AnswerLine(q, "")
 		if err := w.Leads.Say(terminal, line); err != nil {
-			log.Printf("djinn: wish %s: tell waiting answer %s: %v", wishID, q.GetCode(), err)
+			log.Printf("djinn: tell waiting answer %s: %v", q.GetCode(), err)
 			continue
 		}
 		spec := connect.Spec{Procedure: planv1connect.QuestionServiceAnswerProcedure}
@@ -235,25 +211,5 @@ func EnlightenLine(q *planv1.Question, note, worker string) string {
 		return b.String()
 	}
 	fmt.Fprintf(&b, " Investigate, then revise %s: djinn wish brief %s has the context.", q.GetCode(), q.GetWishId())
-	return b.String()
-}
-
-// PrincipalAnswerLine is the line that tells a principal lead that q was answered in another wish,
-// which has no running lead: the choice, the option, the wish title and ID, and where to find context.
-func PrincipalAnswerLine(q *planv1.Question, wish *planv1.Wish) string {
-	choice := choiceText(q)
-	if letter, option, ok := strings.Cut(choice, ": "); ok {
-		choice = fmt.Sprintf("%s — %q", letter, option)
-	}
-	title := ""
-	if wish != nil {
-		title = wish.GetTitle()
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "Djinn: %s answered %s in %s (wish %s): turn it into tasks there; djinn wish brief %s has its context.",
-		q.GetCode(), choice, title, q.GetWishId(), q.GetWishId())
-	if note := q.GetAnswer().GetNote(); note != "" {
-		fmt.Fprintf(&b, " Note: %q.", clipLine(note))
-	}
 	return b.String()
 }

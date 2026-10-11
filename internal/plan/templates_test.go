@@ -198,14 +198,14 @@ func TestTemplateWish(t *testing.T) {
 	c, leads := serveLeads(t, home, WithWatchers(watchers.spawn))
 	lamp := &planv1.Project{Id: store.NewID(), Name: "lamp", Directory: t.TempDir(), Git: true,
 		Remote: "https://github.com/acme/lamp.git"}
-	skill := agentSkill(t, lamp.GetDirectory(), "babysit", babysitFront)
+	_ = agentSkill(t, lamp.GetDirectory(), "babysit", babysitFront)
 	c.put(t, lamp)
 	res, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "The sidebar", ProjectIds: []string{lamp.GetId()}}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	here := res.Msg.GetWish()
-	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: here.GetId(), SessionId: session}); err != nil {
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -223,15 +223,13 @@ func TestTemplateWish(t *testing.T) {
 	if want := []string{made.GetId() + " | " + lamp.GetId() + " | Watch, for the skill babysit | sh watch.sh 12"}; !slices.Equal(watchers.calls, want) {
 		t.Errorf("watchers %q, want %q", watchers.calls, want)
 	}
-	if len(leads.opened) <= opened || !strings.HasPrefix(leads.opened[opened], "claude --session-id "+made.GetLead().GetSessionId()) {
+	// The lead is reopened to be told; no second lead is started.
+	if len(leads.opened) != opened+1 || !strings.HasPrefix(leads.opened[opened], "claude --resume "+session) {
 		t.Errorf("opened %q", leads.opened[opened:])
 	}
-	first, err := os.ReadFile(filepath.Join(home, PagesDir, made.GetId(), LeadFirstFile))
-	want := FirstLine(here.GetTitle(), request) + " This wish follows the skill babysit (" + filepath.Join(skill, SkillFile) +
-		"): read it first, and follow it. Its watcher W1 runs sh watch.sh 12 and tells you what changes. When it prints " +
-		"MERGED, Djinn asks the developer whether to grant the wish.\n\n" + StartLine(made.GetId())
-	if err != nil || string(first) != want {
-		t.Errorf("the lead's first message:\n%s\nwant\n%s", first, want)
+	told := LeadTerminal + ": " + RoutedLine(c.questionOf(t, q.GetId()))
+	if !slices.Contains(leads.said, told) {
+		t.Errorf("said %q, want %q", leads.said, told)
 	}
 	brief, err := BuildBrief(ctx, c.store, home, made.GetId())
 	if err != nil || !strings.Contains(brief.Moving, "- Made from the wish template of the skill `babysit`: follow that skill. Its watcher runs `sh watch.sh 12`") {

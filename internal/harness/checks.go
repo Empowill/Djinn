@@ -218,7 +218,7 @@ func (h *Harness) wishProviderAndModel(ctx context.Context, wish *planv1.Wish, s
 			return p, committed[i].GetModel()
 		}
 	}
-	if lead := wish.GetLead(); lead != nil && lead.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED {
+	if lead, err := store.Get[*planv1.Lead](ctx, h.store, "lead"); err == nil && lead != nil && lead.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED {
 		return lead.GetProvider(), ""
 	}
 	if tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()}); err == nil {

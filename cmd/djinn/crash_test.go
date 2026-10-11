@@ -85,7 +85,7 @@ func TestCrashReopensTheLeads(t *testing.T) {
 	}
 	const session = "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69"
 	wish := seedWish(t, home, folder, session)
-	lead := "lead-" + wish.GetId()
+	lead := "lead"
 	notePath := filepath.Join(home, RestartFile)
 
 	// A first djinn runs the lead: the note says so, and only the lead, not the shell of the window.
@@ -94,7 +94,7 @@ func TestCrashReopensTheLeads(t *testing.T) {
 	if _, err := terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "main"})); err != nil {
 		t.Fatal(err)
 	}
-	if code, out, errs := runDjinn(t, env, "wish", "resume", wish.GetId()); code != 0 {
+	if code, out, errs := runDjinn(t, env, "lead", "resume", "--wish-id", wish.GetId()); code != 0 {
 		t.Fatalf("resume: exit %d\n%s%s", code, out, errs)
 	}
 	opened, err := terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: lead}))
@@ -160,7 +160,7 @@ func TestCrashReopensTheLeads(t *testing.T) {
 	}
 	read(t, terminals, opened.Msg.GetTerminal().GetId(), "fake-claude --resume "+session+" in "+folder)
 	if errs := third.errs.String(); strings.Contains(errs, "reopened") ||
-		!strings.Contains(errs, "the lead of \""+wish.GetTitle()+"\" resumed in "+folder) {
+		!strings.Contains(errs, "the lead resumed in "+folder) {
 		t.Fatalf("djinn up after a quit says:\n%s", errs)
 	}
 }

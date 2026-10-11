@@ -450,7 +450,7 @@ func TestRun(t *testing.T) {
 		{name: "rule on a repeated flag", args: []string{"q", "ask", "Which?", wishID, "--options", "a", "--options", "b", "--options", "c", "--options", "d", "--options", "e"}, wantCode: 2, wantErr: "--options: must contain no more than 4 item(s)"},
 		{name: "rule on a flag", args: []string{"q", "answer", "Q03", "b", "--wish-id", "W1"}, wantCode: 2, wantErr: "--wish-id: must be a valid UUID; expected a UUID"},
 		{name: "ambiguous method", args: []string{"question", "a"}, wantCode: 2, wantErr: `question method "a" is ambiguous: ask, answer`},
-		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, load, machine, mark, plan, project, question, skill, task, tilasm, wish`},
+		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, lead, load, machine, mark, plan, project, question, skill, task, tilasm, wish`},
 		{name: "load get", args: []string{"load", "get"}, wantOut: "notch: medium\n", wantCalled: true},
 		{name: "load set", args: []string{"load", "set", "minimal"}, wantOut: "notch: minimal\n", wantCalled: true},
 		{name: "load set auto", args: []string{"load", "set", "auto"}, wantOut: "notch: minimal\nauto: true\n", wantCalled: true},
@@ -530,10 +530,10 @@ func TestFromEnv(t *testing.T) {
 	}
 
 	// DJINN_LEAD fills the lead field on answer and withdraw.
-	const leadWish = "01a120ea-554a-716c-8e66-43516f2f0111"
+	const leadVal = "1"
 	leadEnv := func(name string) string {
 		if name == "DJINN_LEAD" {
-			return leadWish
+			return leadVal
 		}
 		return ""
 	}
@@ -542,9 +542,9 @@ func TestFromEnv(t *testing.T) {
 		args []string
 		want string
 	}{
-		{&planv1.QuestionServiceAnswerRequest{}, []string{"Q03", "yes"}, leadWish},
+		{&planv1.QuestionServiceAnswerRequest{}, []string{"Q03", "yes"}, leadVal},
 		{&planv1.QuestionServiceAnswerRequest{}, []string{"Q03", "yes", "--lead", other}, other},
-		{&planv1.QuestionServiceWithdrawRequest{}, []string{"Q03"}, leadWish},
+		{&planv1.QuestionServiceWithdrawRequest{}, []string{"Q03"}, leadVal},
 		{&planv1.QuestionServiceWithdrawRequest{}, []string{"Q03", "--lead", other}, other},
 	} {
 		md := local(t, c.msg)

@@ -608,29 +608,25 @@ func (w *Wishes) settle(ctx context.Context, tx *store.Tx, q *planv1.Question) (
 	}
 	return w.routeTo(ctx, tx, route.GetOptions()[i], route.GetRequest(), origin{
 		block: locales.T(lang, "route.block_title", map[string]string{"wish": from.GetTitle()}),
-		first: FirstLine(from.GetTitle(), route.GetRequest()),
 		filed: func(wishID string) string {
 			if wishID == from.GetId() {
 				return "" // kept in the lead's own wish: RoutedLine tells its lead
 			}
 			return FiledLine(wishID, from.GetTitle(), route.GetRequest())
 		},
-		provider: from.GetLead().GetProvider(),
 	})
 }
 
 // origin is where a routed request comes from, as the wish it goes to says it: a wish whose lead handed it over, or
 // the inbox.
 type origin struct {
-	block    string                     // the title of the block that holds the request
-	first    string                     // the first line of a new wish's lead
-	filed    func(wishID string) string // the line that tells the lead of the wish wishID it was filed there; empty for none
-	provider planv1.Provider            // the provider of a new wish's lead; claude when unset
+	block string                     // the title of the block that holds the request
+	filed func(wishID string) string // the line that tells the lead of the wish wishID it was filed there; empty for none
 }
 
 // routeTo sends request where opt says, in tx: it files it in the wish, or makes the new wish, pausing the one that
 // makes room. Each change is journaled as the command that would make it. It records the new wish in opt, and
-// returns what follows once tx is committed: tell the lead of the wish, or start the new wish's watcher and lead.
+// returns what follows once tx is committed: tell the lead of the wish, or start the template.
 func (w *Wishes) routeTo(
 	ctx context.Context, tx *store.Tx, opt *planv1.RouteOption, request string, from origin,
 ) (func(context.Context), error) {
@@ -704,62 +700,20 @@ func (w *Wishes) routeTo(
 	}
 	opt.WishId = wish.GetId()
 	if makeReq.GetPaused() {
-		// Its watcher waits with it; its lead starts when the wish is resumed.
+		// Its watcher waits with it; its template starts when the wish is resumed.
 		return func(ctx context.Context) { w.startTemplate(ctx, wish) }, nil
 	}
 	return func(ctx context.Context) {
 		if paused != nil {
 			w.shelve(ctx, paused)
 		}
-		// The watcher first: the lead's first line says what it runs, or why it did not start.
-		w.startLead(ctx, wish.GetId(), from.provider, from.first+w.startTemplate(ctx, wish))
+		w.startTemplate(ctx, wish)
 	}, nil
 }
 
 // routable tells whether opt is a destination routeTo knows.
 func routable(opt *planv1.RouteOption) bool {
 	return opt.GetKind() >= planv1.RouteKind_ROUTE_KIND_FILE && opt.GetKind() <= planv1.RouteKind_ROUTE_KIND_SWAP
-}
-
-// startLead starts the lead of a wish made for a request: a new session from the wish's brief, whose first line is
-// the request, in the wish's own terminal, shown in the window. Without terminals, the wish waits for djinn wish
-// resume, the request in its blocks.
-func (w *Wishes) startLead(ctx context.Context, wishID string, provider planv1.Provider, first string) {
-	if w.Leads == nil {
-		return
-	}
-	err := func() error {
-		wish, err := store.Get[*planv1.Wish](ctx, w.Store, wishID)
-		if err != nil {
-			return err
-		}
-		dir, err := startFolder(ctx, w.Store, wish)
-		if err != nil {
-			return err
-		}
-		line, dir, started, _, err := w.newLead(ctx, wish, provider, dir, first)
-		if err != nil {
-			return err
-		}
-		name := LeadTerminal(wishID)
-		_, _, attached, err := w.Leads.Open(name, line, dir, started.GetSessionId())
-		if err != nil {
-			return err
-		}
-		if !attached && started.GetSessionId() != "" {
-			if _, err := w.recordLead(ctx, wishID, started); err != nil {
-				return err
-			}
-		}
-		if !attached {
-			w.tellWaitingAnswers(ctx, wishID, name)
-		}
-		w.Leads.Show(wishID, name)
-		return nil
-	}()
-	if err != nil {
-		log.Printf("djinn: wish %s: start its lead: %v", wishID, err)
-	}
 }
 
 // FirstLine is the first line of the lead of a wish made for a request: the request, and where it comes from.
@@ -784,7 +738,7 @@ func RoutedLine(q *planv1.Question) string {
 	where := fmt.Sprintf("the wish %q (%s)", opt.GetTitle(), opt.GetWishId())
 	switch opt.GetKind() {
 	case planv1.RouteKind_ROUTE_KIND_NEW, planv1.RouteKind_ROUTE_KIND_SWAP:
-		where = fmt.Sprintf("the new wish %q (%s), whose lead starts on it", opt.GetTitle(), opt.GetWishId())
+		where = fmt.Sprintf("the new wish %q (%s)", opt.GetTitle(), opt.GetWishId())
 	case planv1.RouteKind_ROUTE_KIND_QUEUE:
 		where = fmt.Sprintf("the new wish %q (%s), paused until a place frees up", opt.GetTitle(), opt.GetWishId())
 	}

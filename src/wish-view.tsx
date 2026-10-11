@@ -147,6 +147,7 @@ export function WishView({
     [allProjects],
   );
   const allWishes = useData((s) => s.wishes);
+  const leadRecord = useData((s) => s.lead);
   const pausable = usePausable();
   const initialKinds = useMemo(
     () => kindsForView(opening ? "tilasms" : "main"),
@@ -524,7 +525,7 @@ export function WishView({
     (id: string) => show("tasks", id),
     [show],
   );
-  const checkNoLead = useCallback(() => noLead(wish), [wish]);
+  const checkNoLead = useCallback(() => noLead(leadRecord), [leadRecord]);
   const handleDecisionsMore = useCallback(() => {
     if (store) {
       void store.loadMore(wish.id, Change.QUESTION);
@@ -543,14 +544,14 @@ export function WishView({
     [quiet, act, clients.wishes, wish.id],
   );
 
-  // lead resumes the wish's lead, or starts one of another agent; what Djinn says of it shows as a toast: a terminal
+  // lead resumes the lead, focusing on this wish, or starts one of another agent; what Djinn says of it shows as a toast: a terminal
   // that runs a program already, a session Djinn does not know.
   const lead = (provider?: Provider) => {
     let note = "";
     quiet(
       act(
         async () => {
-          ({ note } = await clients.wishes.resume({
+          ({ note } = await clients.lead.resume({
             wishId: wish.id,
             provider,
           }));
@@ -634,7 +635,7 @@ export function WishView({
             </button>
           )}
           <LeadButton
-            recorded={recordedAgent(wish.lead)}
+            recorded={recordedAgent(leadRecord)}
             loadAgents={async () =>
               (await clients.ui.getEnvironment({})).providers
             }
@@ -976,7 +977,7 @@ export function WishView({
                                 key={q.id}
                                 question={q}
                                 blocking={blocking}
-                                noLead={noLead(wish)}
+                                noLead={noLead(leadRecord)}
                                 onAnswer={handleQuestionAnswer}
                                 onMark={handleQuestionMark}
                                 onEnlighten={handleQuestionEnlighten}
@@ -1100,6 +1101,7 @@ export const InvestigatingSection = memo(function InvestigatingSection({
   onMove?: (question: Question) => void;
   onWithdraw?: (question: Question) => void;
 }) {
+  const lead = useData((s) => s.lead);
   return (
     <section
       className="wish-section investigating-section"
@@ -1117,7 +1119,7 @@ export const InvestigatingSection = memo(function InvestigatingSection({
           key={item.id}
           question={item}
           blocking={blocking}
-          noLead={noLead(wish)}
+          noLead={noLead(lead)}
           origin={origin ? wishOrigin(wish) : undefined}
           onAnswer={onAnswer}
           onMark={onMark}

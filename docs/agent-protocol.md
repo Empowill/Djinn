@@ -10,11 +10,10 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
 - **Every command comes from a proto.** Each public method of `api/` is a command: `QuestionService.Answer` is
   `djinn question answer`. Arguments, help and validation follow the [convention](cli-convention.md). Exit codes:
   `0` success, `1` the call failed, `2` the command line is wrong.
-- **The brief says where the wish stands, and how to lead it.** `djinn wish brief <wish>` is a status on its own,
-  computed by Djinn from its store (`internal/plan/brief.go`), without a model: the wish's description first, then its
-  azimas and their states, the tasks running and waiting, the open questions, the latest decisions and blocks, and
-  the last lead (its agent, its session, when a lead last acted through Djinn); then Djinn's rules and the projects'
-  rules. Reconstructing the state is not the lead's job.
+- **The brief says where the wishes stand, and how to lead them.** `djinn brief` gives the lead every active
+  wish at once (each wish's title, description, open questions, what runs and waits, its azimas), then Djinn's rules
+  once; paused and granted wishes in one line each. `djinn wish brief <wish>` gives one wish's detail (latest decisions,
+  blocks, and the last lead). Reconstructing the state is not the lead's job.
 - **A wish describes itself.** Its description is a few lines: what it is for, its scope, where it goes.
   `djinn wish describe <wish> --text "…"` sets it; the developer edits it in the wish's head, under its title (a
   click, saved when the field is left). Until someone writes one, the title stands for it.
@@ -26,17 +25,18 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   developer, and asks again, a new question, only on a real doubt. Djinn's rules in the brief say it, and so does
   every lead's first message.
 - **Every lead starts the same way, whatever its agent.** Its first message is one line, the same for claude, codex
-  and antigravity: run `djinn wish brief <wish>`, then continue the wish from what it says (`StartLine` in
-  `internal/plan/newlead.go`). Nothing in it is about one agent or the wish's state: a lead of another agent than the
-  last one takes the wish over from the brief, without the old session. In the window, the arrow beside **Lead** lists
+  and antigravity: run `djinn brief`, then continue from what it says (`StartLine` in
+  `internal/plan/newlead.go`). Nothing in it is about one agent or a wish's state: a lead of another agent than the
+  last one takes over from the brief, without the old session. In the window, the arrow beside **Lead** lists
   the agents found on this machine (`UiService.GetEnvironment`: `claude`, `codex`, `agy`), those missing shown
   disabled; picking the recorded lead's agent resumes it (claude by session id, antigravity with `agy --continue` in the
   lead's folder as the folder's most recent conversation), another starts a new lead of that agent in the
-  lead's terminal (`djinn wish resume <wish> --provider antigravity`). A new claude or antigravity lead becomes the
-  wish's lead; a codex one once `djinn wish set-lead … --provider codex` gives its session. While the lead's terminal runs a program, nothing starts, and Djinn says to exit it there.
-- **A lead runs in a project, never in the home folder.** `djinn wish resume` resumes the lead's session in the
-  folder it was recorded in (`djinn wish set-lead --directory`): claude finds a session only from the folder it was
-  made in. A new lead starts in the wish's first project, else the first of Djinn's projects as the window lists them.
+  lead's terminal (`djinn lead resume --provider antigravity`). Resuming the lead resumes that session; starting a lead
+  of another provider replaces it. A new claude or antigravity lead becomes the lead; a codex one once
+  `djinn lead set … --provider codex` gives its session. While the lead's terminal runs a program, nothing starts, and Djinn says to exit it there.
+- **A lead runs in a project, never in the home folder.** `djinn lead resume` resumes the lead's session in the
+  folder it was recorded in (`djinn lead set --directory`): claude finds a session only from the folder it was
+  made in. A new lead starts in the first of Djinn's projects as the window lists them.
   A session recorded in the home folder, or a folder above it, is not resumed: a new lead starts from the brief, in a
   project. With no project, no lead starts, and the error says to create one (`internal/plan/lead.go`).
 - **Questions.** `djinn question ask` offers up to four options, answered by letter, or none for a yes. An answered
@@ -88,21 +88,18 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   - a task ending without failure (the lead's cue to check its final note, revised questions, or spawned tasks);
   - a watcher waking the lead.
   Everything else goes to the journal and the window, not to the terminal.
-- **An answer reaches the lead.** When the developer answers a question, Djinn types one line in the terminal of
-  the wish's lead, then Enter:
+- **An answer reaches the lead.** When the developer answers a question, Djinn types one line in the lead's
+  terminal, then Enter:
   `Djinn: Q43 answered B — "<option>". Note: "<note>". Turn it into tasks: you hold the plan's graph (djinn wish brief <wish>).`
   Answers Djinn settles itself (an edit question, a question on work that failed to integrate, a routed request, a
   grant) say what Djinn did. Answers given by the lead itself are not echoed back. The agent reads each line as a message,
   queued while it works; each line is typed with Enter and paced so consecutive lines are submitted cleanly and never
   clump or remain in the prompt box. The line waits until the developer has not typed in that terminal for three seconds,
-  and lines go out in order. A lead that does not run is reopened on its session first, as `djinn wish resume` does,
-  without taking the window; only an active wish's.
-  When an answer arrives in a wish without a running lead, Djinn routes the answer to the principal lead's terminal
-  (the principal wish is explicitly set with `djinn wish principal <wish-id> --principal`, or defaults to the
-  lowest-rank active wish, rank 1), noting the wish's title and ID. If no lead runs at all across wishes, the question
-  is marked as waiting for a lead (`waiting_lead: true`), and the next lead to start or resume on any wish is told of
-  all waiting answers. The principal lead's brief lists open answers without a lead under `## Open answers without a lead`.
-  A wish without a lead session keeps the answer in its brief's decisions (`internal/plan/tell.go`).
+  and lines go out in order. A lead that does not run is reopened on its session first, as `djinn lead resume` does,
+  without taking the window.
+  If the lead does not run, the question is marked as waiting for a lead (`waiting_lead: true`), and the lead when
+  started or resumed is told of all waiting answers. The lead's global brief lists open answers without a lead under
+  `## Open answers without a lead` (`internal/plan/tell.go`).
 - **Tasks.** `djinn task spawn` starts a worker. A task that cannot start yet waits, and says why.
   `djinn task watch <task>` follows its events; `djinn task stop <task>` stops it.
   `djinn task update <task-id>` (or `djinn task set-agent`) updates a task: only the given fields change.
@@ -115,7 +112,7 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   waits for the developer. `djinn plan sync <wish>` reads them from the projects' `plan/*.md` and writes each one's
   `after:` line back from the store; `djinn task spawn <wish> --kind azima --title "…"` makes one. An azima can also
   be created as a draft (`DRAFT`), or opened into active work (`djinn task open <azima>`) which marks it open, ready
-  for parts to be spawned, and notifies the wish's lead. An azima (a draft, or an azima no worker runs with parts
+  for parts to be spawned, and notifies the lead. An azima (a draft, or an azima no worker runs with parts
   that have not started) can be moved to another wish with `djinn task move <azima> --wish <wish>`.
   The lead plans work as a graph, never as a line:
   - give each azima one clear goal, one sentence a user reads as a feature, a will of its own; when a task extends
@@ -154,18 +151,17 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   and no slot, and each new paragraph it prints wakes the lead. `--restart` starts again a command that exits on each
   change ([watch](providers.md#watch-a-command-no-agent)).
 - **Every request finds its wish.** A request that is not about the wish goes through
-  `djinn wish route "<request>" --wish-id <wish> --ask`: a card asks the developer to open a new wish, whose lead
-  starts on it, to file it in an existing wish, or to keep it in this one; then the lead does its work. The new lead
-  reads the request on its first line, before the line that sends it to the brief. A skill's [wish template](wish-templates.md) (`metadata.djinn.wish`)
-  makes the new wish follow the skill, its watcher started; the brief tells the lead to propose one for a request
-  that comes back.
+  `djinn wish route "<request>" --wish-id <wish> --ask`: a card asks the developer to open a new wish, to file it in
+  an existing wish, or to keep it in this one. Answering NEW makes the wish and tells the lead without starting a second lead.
+  A skill's [wish template](wish-templates.md) (`metadata.djinn.wish`) makes the new wish follow the skill, its watcher started;
+  the brief tells the lead to propose one for a request that comes back.
 - **Blocks are for agents.** A hand-off, a reference, a decision taken outside a question (kind `decision`, which
   the decision log shows) is a block: `djinn block put`. The developer does not read the others: the window keeps them
   in a discreet last tab, **For agents**, folded, with no mark. What the developer must see is a question.
 - **Who did it.** `djinn block put`, `djinn question ask` and `djinn question revise` take `--task-id`, by default
   `$DJINN_TASK_ID`, which Djinn sets for every worker (`(djinn.v1.env)` in the protos): a worker's decision block
   reads "By W12" in the decision log, its revision "Revised by W12" on the page. Djinn marks the lead's terminal
-  with `$DJINN_LEAD` (its wish ID): `djinn question answer` and `djinn question withdraw` take `--lead` from it,
+  with `$DJINN_LEAD=1`: `djinn question answer` and `djinn question withdraw` take `--lead` from it,
   attributing them to the lead and not echoing them back; a plain shell has neither variable, attributing answers
   to the developer so they reach the lead as a message.
 - **The page.** `djinn wish sync <wish>` renders the wish's page in Go and prints its file, kept up to date. The lead

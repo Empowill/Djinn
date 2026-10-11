@@ -27,6 +27,7 @@ type clients struct {
 	skills    planv1connect.SkillServiceClient
 	inbox     planv1connect.InboxServiceClient
 	tilasms   planv1connect.TilasmServiceClient
+	lead      planv1connect.LeadServiceClient
 	store     *store.Store
 	url       string // the server's, for its routes other than the services
 }
@@ -54,6 +55,7 @@ func serve(t *testing.T, opts ...Option) clients {
 		skills:    planv1connect.NewSkillServiceClient(srv.Client(), srv.URL),
 		inbox:     planv1connect.NewInboxServiceClient(srv.Client(), srv.URL),
 		tilasms:   planv1connect.NewTilasmServiceClient(srv.Client(), srv.URL),
+		lead:      planv1connect.NewLeadServiceClient(srv.Client(), srv.URL),
 		store:     s,
 		url:       srv.URL,
 	}

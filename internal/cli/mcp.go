@@ -99,7 +99,7 @@ func tools() []mcpTool {
 	return out
 }
 
-// toolName is the command line of a method in snake_case: djinn wish set-lead is wish_set_lead.
+// toolName is the command line of a method in snake_case: djinn lead set is lead_set.
 func toolName(md protoreflect.MethodDescriptor) string {
 	name := command(md.Parent().(protoreflect.ServiceDescriptor)) + "_" + kebab(string(md.Name()))
 	return strings.ReplaceAll(name, "-", "_")
@@ -299,7 +299,7 @@ func (s *mcpServer) handle(ctx context.Context, msg rpcMessage) {
 			"protocolVersion": version,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "djinn", "version": s.cfg.Version},
-			"instructions": "Each tool is a command of the djinn command line: djinn wish set-lead is wish_set_lead, " +
+			"instructions": "Each tool is a command of the djinn command line: djinn lead set is lead_set, " +
 				"with the same arguments by their proto names and the same checks.",
 		}, nil)
 	case "ping":

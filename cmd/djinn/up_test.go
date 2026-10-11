@@ -308,13 +308,13 @@ func TestWishResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	project := &planv1.Project{Id: store.NewID(), Name: "lamp", Directory: folder, CreateTime: timestamppb.Now()}
+	leadRecord := &planv1.Lead{Id: "lead", Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: session, Directory: folder}
 	wish := &planv1.Wish{
 		Id: store.NewID(), Title: "Polish the lamp", ProjectIds: []string{project.GetId()}, CreateTime: timestamppb.Now(),
-		Lead: &planv1.Lead{Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: session, Directory: folder},
 	}
 	err = db.Tx(ctx, func(tx *store.Tx) error {
 		return errors.Join(tx.Journal("test", planv1connect.WishServiceMakeProcedure, &planv1.WishServiceMakeRequest{Title: wish.GetTitle()}),
-			tx.Put(project), tx.Put(wish))
+			tx.Put(project), tx.Put(wish), tx.Put(leadRecord))
 	})
 	db.Close()
 	if err != nil {
@@ -323,11 +323,11 @@ func TestWishResume(t *testing.T) {
 
 	// No djinn runs: resume starts one in the background, then resumes the lead in its terminal. The wish being the
 	// first active one, djinn up may have resumed its lead at its start already: resume attaches to it then.
-	code, out, errs := runDjinn(t, env, "wish", "resume", wish.GetId())
+	code, out, errs := runDjinn(t, env, "lead", "resume", "--wish-id", wish.GetId())
 	if strings.Contains(errs, "(pid ") {
 		stopStarted(t, home, errs)
 	}
-	name := "lead-" + wish.GetId()
+	name := "lead"
 	if code != 0 || !strings.Contains(errs, "started djinn up in the background") || !strings.Contains(out, "terminal: "+name) {
 		t.Fatalf("resume: exit %d\n%s%s", code, out, errs)
 	}
@@ -356,7 +356,7 @@ func TestWishResume(t *testing.T) {
 	shows.Close()
 
 	// Again: the same terminal, attached, and no second program.
-	code, out, errs = runDjinn(t, env, "wish", "resume", wish.GetId())
+	code, out, errs = runDjinn(t, env, "lead", "resume", "--wish-id", wish.GetId())
 	if code != 0 || !strings.Contains(out, "attached: true") || strings.Contains(errs, "started djinn up") {
 		t.Fatalf("second resume: exit %d\n%s%s", code, out, errs)
 	}
@@ -375,7 +375,7 @@ func TestWishResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	read(t, terminals, lead.GetId(), "") // Until it ends.
-	code, out, errs = runDjinn(t, env, "wish", "resume", wish.GetId())
+	code, out, errs = runDjinn(t, env, "lead", "resume", "--wish-id", wish.GetId())
 	if code != 1 || !strings.Contains(errs, "already running in another terminal") || !strings.Contains(errs, `"main"`) {
 		t.Fatalf("resume while main runs the session: exit %d\n%s%s", code, out, errs)
 	}

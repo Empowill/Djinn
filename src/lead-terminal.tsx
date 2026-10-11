@@ -36,8 +36,8 @@ import { AddProject } from "./wish-dialogs";
 // The terminal of the window: opening it again attaches to it while djinn up runs. The wish shown, or djinn wish
 // resume, switches it to the terminal of a wish's lead.
 const NAME = "main";
-// The terminal of a wish's lead, as djinn up names it.
-const lead = (wishId: string) => `lead-${wishId}`;
+// The terminal of the lead, as djinn up names it.
+const LEAD = "lead";
 const MIN_HEIGHT = 120;
 // The Connect code of a terminal that has no folder to open in: djinn up opens the window's terminal in the first
 // project's folder, never in the home folder, and refuses with failed_precondition while no project has one.
@@ -91,12 +91,6 @@ function store(key: string, value: string) {
   }
 }
 
-// The app tells the terminal which wish it shows: empty for none, such as the flight plan.
-const ShowWishContext = createContext<(wishId: string) => void>(
-  () => undefined,
-);
-export const useShowWish = () => use(ShowWishContext);
-
 // A terminal you opened, in a tab of its own: a shell in the first project's folder (shell-…), or in a project's
 // root (project-<id>-…). The names say which, so that the tabs come back from djinn up after a reload.
 interface Tab {
@@ -112,7 +106,6 @@ export const useOpenTerminal = () => use(OpenTerminalContext);
 // LeadTerminalFrame lays the app out above the terminal, when there is one.
 export function LeadTerminalFrame({ children }: { children: ReactNode }) {
   const djinn = useDjinn();
-  const [wishId, setWishId] = useState<string>();
   const [request, setRequest] = useState<Tab>();
   if (!djinn) return <>{children}</>;
   const open = (project?: { id: string; directory: string }) =>
@@ -124,17 +117,10 @@ export function LeadTerminalFrame({ children }: { children: ReactNode }) {
     });
   return (
     <div className="lead-frame">
-      <ShowWishContext value={setWishId}>
-        <OpenTerminalContext value={open}>
-          <div className="lead-frame-app">{children}</div>
-        </OpenTerminalContext>
-      </ShowWishContext>
-      <LeadTerminal
-        djinn={djinn}
-        wishId={wishId}
-        request={request}
-        onNew={() => open()}
-      />
+      <OpenTerminalContext value={open}>
+        <div className="lead-frame-app">{children}</div>
+      </OpenTerminalContext>
+      <LeadTerminal djinn={djinn} request={request} onNew={() => open()} />
     </div>
   );
 }
@@ -147,12 +133,10 @@ type Status =
 
 function LeadTerminal({
   djinn,
-  wishId,
   request,
   onNew,
 }: {
   djinn: Djinn;
-  wishId: string | undefined;
   // A tab the app asked for, opened at once.
   request: Tab | undefined;
   onNew: () => void;
@@ -172,7 +156,6 @@ function LeadTerminal({
   // Every terminal the panel holds, each in a tab: the leads first, then the others in the order they came.
   const [tabs, setTabs] = useState<Tab[]>([]);
   const projects = useData((s) => s.projects);
-  const wishes = useData((s) => s.wishes);
   const data = useStore();
   // Whether a project has a folder here: the terminal opens in the first one.
   const hasFolder = useData((s) => s.projects.some((p) => p.directory !== ""));
@@ -208,10 +191,10 @@ function LeadTerminal({
       have.some((x) => x.name === tab.name) ? have : [...have, tab],
     );
   const ordered = [
-    ...tabs.filter((x) => x.name.startsWith("lead-")),
-    ...tabs.filter((x) => !x.name.startsWith("lead-")),
+    ...tabs.filter((x) => x.name === LEAD),
+    ...tabs.filter((x) => x.name !== LEAD),
   ].map((x) => x.name);
-  // Show the terminal djinn asks for, such as a wish's lead: never start a lead from here.
+  // Show the terminal djinn asks for, such as the lead: never start a lead from here.
   useEffect(
     () =>
       djinn.focus.subscribe((focus) => {
@@ -226,28 +209,6 @@ function LeadTerminal({
       }),
     [api, djinn],
   );
-  // Show the lead of the wish shown while it runs: never start a lead from here.
-  useEffect(() => {
-    if (!wishId) return;
-    let current = true;
-    api.running().then(
-      (names) => {
-        if (!current) return;
-        if (names.includes(lead(wishId))) {
-          add({ name: lead(wishId) });
-          setName(lead(wishId));
-        } else {
-          setName((shown) =>
-            shown.startsWith("lead-") && shown !== lead(wishId) ? "" : shown,
-          );
-        }
-      },
-      () => undefined, // djinn up restarts: the terminal shown stays, and says so.
-    );
-    return () => {
-      current = false;
-    };
-  }, [api, wishId]);
 
   // The terminals that run come back as tabs after a reload: djinn up keeps them while it runs. None opens by itself.
   useEffect(() => {
@@ -261,11 +222,9 @@ function LeadTerminal({
             .filter((n) => !have.some((x) => x.name === n))
             .map((n) => ({ name: n })),
         ]);
-        const matchingLead = wishId
-          ? names.find((n) => n === lead(wishId))
-          : undefined;
-        const nonLead = names.find((n) => !n.startsWith("lead-"));
-        const first = matchingLead ?? (wishId ? undefined : nonLead);
+        const leadTab = names.find((n) => n === LEAD);
+        const nonLead = names.find((n) => n !== LEAD);
+        const first = leadTab ?? nonLead;
         setName((shown) => shown || first || "");
       },
       () => undefined,
@@ -273,7 +232,7 @@ function LeadTerminal({
     return () => {
       current = false;
     };
-  }, [api, wishId]);
+  }, [api]);
   useEffect(() => {
     if (!request) return;
     ended.current = undefined;
@@ -299,10 +258,7 @@ function LeadTerminal({
   closeTabRef.current = closeTab;
   const label = (tab: string) => {
     if (tab === NAME) return t("terminal.title");
-    if (tab.startsWith("lead-")) {
-      const wish = wishes.find((w) => lead(w.id) === tab);
-      return t("terminal.lead_tab", { wish: wish?.title ?? "" });
-    }
+    if (tab === LEAD) return t("wish.resume");
     const project = projects.find((p) => tab.startsWith(`project-${p.id}-`));
     if (project) return project.name;
     return t("terminal.shell_tab", {

@@ -369,11 +369,6 @@ func portable(exp *planv1.WishExport, scrub *scrubber) *planv1.WishExport {
 	scrub.message(exp.ProtoReflect())
 	// The rank is this machine's order of its wishes; the readiness is computed where the wish is read.
 	exp.Wish.Rank, exp.Wish.Ready = 0, false
-	if lead := exp.GetWish().GetLead(); lead != nil {
-		// The lead's session travels, so that the wish can be taken back where the agent's sessions are; its folder
-		// only as a project's name or ~.
-		lead.Directory = portableFolder(lead.GetDirectory())
-	}
 	return exp
 }
 
@@ -551,9 +546,6 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 		wish.ProjectIds = projectIDs
 		if t := wish.GetTemplate(); t != nil {
 			t.ProjectId = local[t.GetProjectId()]
-		}
-		if lead := wish.GetLead(); lead != nil {
-			lead.Directory = localFolder(lead.GetDirectory(), folders)
 		}
 		wish.Rank, wish.Ready = 0, false
 		if Active(wish) {

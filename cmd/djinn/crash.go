@@ -24,6 +24,7 @@ import (
 type leadNote struct {
 	path  string
 	terms *terminal.Manager
+	ui    *ui.Service
 	say   io.Writer
 
 	mu        sync.Mutex
@@ -45,7 +46,7 @@ func (n *leadNote) update() {
 	}
 	var note restartNote
 	for _, t := range n.terms.Running() {
-		if strings.HasPrefix(t.Name, "lead-") {
+		if t.Name == "lead" || strings.HasPrefix(t.Name, "lead-") {
 			note.Terminals = append(note.Terminals, restartTerminal{Name: t.Name, Command: resumable(t.Command), Directory: t.Dir})
 		}
 	}
@@ -54,6 +55,9 @@ func (n *leadNote) update() {
 			fmt.Fprintln(n.say, "djinn:", err)
 		}
 		return
+	}
+	if n.ui != nil {
+		note.ShowWish, note.ShowTerminal = n.ui.LastShow()
 	}
 	if err := n.write(note); err != nil {
 		fmt.Fprintln(n.say, "djinn: note the leads:", err)

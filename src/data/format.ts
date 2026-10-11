@@ -11,6 +11,7 @@ import {
   Choice,
   IntegrationState,
   type KeptWorktree,
+  type Lead,
   type Mark,
   MarkKind,
   type Project,
@@ -279,10 +280,16 @@ export function isActive(wish: Wish): boolean {
   );
 }
 
-// noLead tells a wish with no lead session: djinn tells no lead its answers, they wait in the wish's brief
+// hasLead tells whether Djinn has a resumable lead session or workspace.
+export function hasLead(lead?: Lead | null): boolean {
+  if (!lead || !lead.directory) return false;
+  return Boolean(lead.sessionId || lead.provider === Provider.ANTIGRAVITY);
+}
+
+// noLead tells whether Djinn has no lead session: djinn tells no lead its answers, they wait in the wish's brief
 // (plan.ErrNoLead).
-export function noLead(wish: Pick<Wish, "lead">): boolean {
-  return !wish.lead?.sessionId;
+export function noLead(lead?: Lead | null): boolean {
+  return !hasLead(lead);
 }
 
 // principalWish returns the wish explicitly marked as principal, or the first active wish by rank.
