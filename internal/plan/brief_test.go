@@ -753,3 +753,63 @@ func TestBriefPrincipalListsOpenAnswersWithoutLead(t *testing.T) {
 		t.Fatalf("brief should not contain open answers when wish 2 has a running lead:\n%s", brief1AfterLead.Moving)
 	}
 }
+
+func TestBriefHeldPush(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	dir1 := t.TempDir()
+	p1, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir1}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir2 := t.TempDir()
+	p2, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir2}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Held push", ProjectIds: []string{p1.Msg.GetProject().GetId(), p2.Msg.GetProject().GetId()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	wish, err := store.Get[*planv1.Wish](ctx, c.store, wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	corr := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, Code: "W10", Title: "Fix push", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		CreateTime: timestamppb.Now(),
+	}
+	wish.Pushes = []*planv1.WishPush{
+		{
+			ProjectId:   p1.Msg.GetProject().GetId(),
+			Held:        "push checks failed: test exited 1",
+			CorrectedBy: corr.GetId(),
+		},
+	}
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal(actor, "test/put", corr); err != nil {
+			return err
+		}
+		if err := tx.Put(corr); err != nil {
+			return err
+		}
+		if err := tx.Journal(actor, "test/put", wish); err != nil {
+			return err
+		}
+		return tx.Put(wish)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("- Push held in %s: push checks failed: test exited 1, corrected by W10.\n", p1.Msg.GetProject().GetName())
+	if !strings.Contains(brief.Moving, want) {
+		t.Errorf("brief lacks %q:\n%s", want, brief.Moving)
+	}
+}
