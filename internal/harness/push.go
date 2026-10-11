@@ -640,7 +640,7 @@ func (h *Harness) pushSteps(ctx context.Context, tasks []*planv1.Task, text stri
 func (h *Harness) pushQuestion(wish *planv1.Wish, text, ctxt string, options []string) *planv1.Question {
 	return &planv1.Question{
 		Id: store.NewID(), WishId: wish.GetId(), CreateTime: timestamppb.New(h.now()), Icon: "🚀",
-		Text: text, Context: ctxt, Options: options,
+		Text: text, Context: ctxt, Options: options, Before: "before the push",
 	}
 }
 

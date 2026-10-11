@@ -509,7 +509,14 @@ test("open questions come blocking, then your move, then before X, then can wait
       [
         { id: "q1", code: "Q01", text: "Brass?" },
         { id: "q2", code: "Q02", text: "Wick?", before: "before the merge" },
-        { id: "q6", code: "Q03", text: "Push tag?", move: true },
+        {
+          id: "q6",
+          code: "Q03",
+          text: "Push tag?",
+          move: true,
+          before: "before the release",
+        },
+        { id: "q7", code: "Q04", text: "Install build?", move: true },
       ],
     ),
     w2: detail(
@@ -541,6 +548,7 @@ test("open questions come blocking, then your move, then before X, then can wait
       ["q2", 2],
       ["q4", 2],
       ["q1", 3],
+      ["q7", 3],
       ["q3", 3],
     ],
   );

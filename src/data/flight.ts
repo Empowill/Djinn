@@ -33,7 +33,7 @@ export const EMPTY_BLOCKING: string[] = [];
 // task waits for it; 1 a move only the developer can make; 2 needed before something, its before words; 3 it can wait.
 export function urgency(question: OpenQuestion): number {
   if (question.blocking.length) return 0;
-  if (question.item.move) return 1;
+  if (question.item.move && question.item.before) return 1;
   return question.item.before ? 2 : 3;
 }
 

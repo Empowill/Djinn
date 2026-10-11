@@ -46,7 +46,7 @@ export function attentionOf(
   for (const { wish, item, blocking } of questions) {
     const level: Level = blocking.length
       ? "blocking"
-      : item.move
+      : item.move && item.before
         ? "move"
         : item.before
           ? "question"

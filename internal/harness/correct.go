@@ -273,6 +273,7 @@ func (h *Harness) askIntegration(
 			in.GetBranch(), headline(f.GetReason()), tried),
 		Context: ctxt.String(),
 		Options: []string{retryOption, fmt.Sprintf(leaveOption, in.GetBranch()), takeOption},
+		Before:  "before the push",
 	}
 	err := h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
 		if err := tx.Journal(actorHarness, methodIntegrate, q); err != nil {

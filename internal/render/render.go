@@ -333,7 +333,10 @@ func build(in Input) (*view, error) {
 			cq.Blocking = tr("page.blocking", "tasks", strings.Join(blocking[q.GetId()], ", "))
 			cq.Class, cq.Level, cq.Open = "bad", cq.Blocking, true
 		case Move:
-			cq.Class, cq.Level = "move", tr("page.level_move")
+			cq.Class, cq.Level = "move", q.GetBefore()
+			if cq.Level == "" {
+				cq.Level = tr("page.level_move")
+			}
 		case Before:
 			cq.Class, cq.Level = "wait", q.GetBefore()
 		default:
