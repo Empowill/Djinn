@@ -310,6 +310,7 @@ func (h *Harness) questionEnded(t *planv1.Task) {
 	default:
 		return // Djinn resumes it, or it waits: it has not ended.
 	}
+	h.unpausePreempted(t)
 	if !refusedFailure(t) {
 		h.tellEnd(t, "")
 		return

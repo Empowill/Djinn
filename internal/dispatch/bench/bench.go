@@ -82,6 +82,12 @@ type Task struct {
 	Scopes []string `json:"scopes,omitempty"`
 	// ForkOf is the code of the task this one forks: an interrupted task forked is resumed as its fork.
 	ForkOf string `json:"fork_of,omitempty"`
+	// Role: investigator, converter.
+	Role string `json:"role,omitempty"`
+	// Correction indicates a correction worker.
+	Correction bool `json:"correction,omitempty"`
+	// Review indicates a review worker.
+	Review bool `json:"review,omitempty"`
 }
 
 // Gate is a gate held in a case.
@@ -161,6 +167,18 @@ func (c Case) Situation() *dispatch.Situation {
 			DependsOn: t.DependsOn, WriteScopes: t.Scopes, ForkOf: t.ForkOf, CreateTime: timestamppb.New(start.Add(time.Duration(i) * time.Second)),
 		}
 		task.Scheduled = scheduled(t.Status)
+		switch t.Role {
+		case "investigator":
+			task.Role = planv1.TaskRole_TASK_ROLE_INVESTIGATOR
+		case "converter":
+			task.Role = planv1.TaskRole_TASK_ROLE_CONVERTER
+		}
+		if t.Correction {
+			task.Correction = &planv1.TaskCorrection{}
+		}
+		if t.Review {
+			task.Review = &planv1.TaskReview{}
+		}
 		if t.Status != "planned" {
 			task.StartTime = task.CreateTime
 		}

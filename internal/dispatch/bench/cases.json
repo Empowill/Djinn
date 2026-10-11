@@ -347,5 +347,40 @@
       { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] }
     ],
     "expect": { "W2": "wait" }
+  },
+  {
+    "name": "investigator worker skips slot and starts before planned work task",
+    "machine": { "slots": 1, "running": 1 },
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "planned" },
+      { "code": "Q1", "wish": "A", "status": "planned", "role": "investigator" }
+    ],
+    "expect": { "Q1": "start", "W1": "wait" }
+  },
+  {
+    "name": "critical path: task with more dependents starts first",
+    "machine": { "slots": 1, "running": 0 },
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "planned" },
+      { "code": "W2", "wish": "A", "status": "planned" },
+      { "code": "W3", "wish": "A", "status": "planned", "depends_on": ["W1"] },
+      { "code": "W4", "wish": "A", "status": "planned", "depends_on": ["W3"] },
+      { "code": "W5", "wish": "A", "status": "planned", "depends_on": ["W2"] }
+    ],
+    "expect": { "W1": "start", "W2": "wait", "W3": "wait", "W4": "wait", "W5": "wait" }
+  },
+  {
+    "name": "correction goes before review and resumed tasks",
+    "machine": { "slots": 1, "running": 0 },
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "resuming" },
+      { "code": "W2", "wish": "A", "status": "planned", "review": true },
+      { "code": "W3", "wish": "A", "status": "planned", "correction": true }
+    ],
+    "expect": { "W3": "start", "W2": "wait", "W1": "wait" }
   }
 ]
+

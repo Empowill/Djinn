@@ -236,9 +236,23 @@ func (h *Harness) schedule(ctx context.Context) {
 		case d.Failed != "":
 			h.failPlanned(ctx, t, d.Failed)
 		case d.Why != "":
+			if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && isMemoryShort(d.Why) {
+				if code, err := h.preemptForMemory(ctx, t); err == nil && code != "" {
+					if err := h.launchPlannedWithPreemption(ctx, t, code); err != nil {
+						log.Printf("djinn: task %s: %v", t.GetCode(), err)
+					}
+					continue
+				}
+			}
 			h.setWaiting(ctx, t, d.Why)
 		default:
-			if err := h.launchPlanned(ctx, t); err != nil {
+			var preemptedCode string
+			if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && h.slotsFull() {
+				if code, err := h.preemptForSlot(ctx, t); err == nil && code != "" {
+					preemptedCode = code
+				}
+			}
+			if err := h.launchPlannedWithPreemption(ctx, t, preemptedCode); err != nil {
 				log.Printf("djinn: task %s: %v", t.GetCode(), err)
 			}
 		}
@@ -328,7 +342,7 @@ func (h *Harness) GatesOutside(n func() int) {
 
 // setWaiting records why a planned task waits, when the reason changed, with an event.
 func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string) {
-	why = grantedWhy(t, shelvedWhy(t, why))
+	why = grantedWhy(t, shelvedWhy(t, preemptedWaitReason(t, why)))
 	if t.GetWaitReason() == why {
 		return
 	}
@@ -382,6 +396,11 @@ func (h *Harness) writeAlone(ctx context.Context, actor, method string, req prot
 // launchPlanned starts the worker of a planned task that is ready: its access is decided now, with the wish's
 // grants and the project's configuration as they are, and it may ask its edit question.
 func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
+	return h.launchPlannedWithPreemption(ctx, t, "")
+}
+
+// launchPlannedWithPreemption starts the worker of a planned task, recording an event if a task was preempted to make room.
+func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Task, preemptedCode string) error {
 	if dispatch.Resuming(t) {
 		return h.relaunch(ctx, t)
 	}
@@ -405,6 +424,11 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 	if err != nil {
 		return err
 	}
+	var preEv *planv1.TaskEvent
+	if preemptedCode != "" {
+		r.seq++
+		preEv = newEvent(t.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
+	}
 	var project *planv1.Project
 	var wish *planv1.Wish
 	var prep prepared
@@ -424,7 +448,15 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 		if err := tx.Journal(actorHarness, methodSchedule, t); err != nil {
 			return err
 		}
-		return tx.Put(t)
+		if err := tx.Put(t); err != nil {
+			return err
+		}
+		if preEv != nil {
+			if err := tx.Put(preEv); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		h.finish(r, Result{ExitCode: -1, Err: err})
