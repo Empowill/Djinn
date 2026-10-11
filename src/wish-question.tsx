@@ -8,15 +8,18 @@
 // approve it again, and the decision log shows it. Djinn types each answer in the lead's terminal; a wish without a
 // lead session has no lead to tell, and the card says so. Its rounds, each request and each revision, fold below.
 import {
+  ArrowRightLeft,
   Check,
   ChevronDown,
+  CircleOff,
   CornerDownRight,
   History,
   Lamp,
   Lightbulb,
+  MoreVertical,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { type ReactNode, memo, useState } from "react";
+import { type ReactNode, memo, useEffect, useRef, useState } from "react";
 
 import {
   Choice,
@@ -29,6 +32,7 @@ import {
   answerText,
   choiceOf,
   investigating,
+  isWithdrawn,
   letter,
   recommendedChoice,
   when,
@@ -47,6 +51,8 @@ export const WishQuestion = memo(function WishQuestion({
   onAnswer,
   onMark,
   onEnlighten,
+  onMove,
+  onWithdraw,
 }: {
   question: Question;
   // Where the question comes from, in the flight plan of several wishes: its wish.
@@ -71,14 +77,19 @@ export const WishQuestion = memo(function WishQuestion({
   ) => Promise<void>;
   // Asks the lead to investigate before deciding, the note saying what to look into.
   onEnlighten?: (note: string, question?: Question) => Promise<void>;
+  // Moves an open question to another wish.
+  onMove?: (question: Question) => void;
+  // Withdraws an open question without an answer.
+  onWithdraw?: (question: Question) => void;
 }) {
   const answered = !!q.answer;
+  const withdrawn = isWithdrawn(q);
   // A message built by hand (a test) may leave the lists out.
   const rounds = q.rounds ?? [];
   const digging = investigating(q);
   // What you asked to look into, while it is being investigated.
   const asked = digging ? rounds.at(-1)?.note : undefined;
-  const recommended = answered ? undefined : recommendedChoice(q);
+  const recommended = answered || withdrawn ? undefined : recommendedChoice(q);
   const [expanded, setExpanded] = useState(open);
   // Being investigated, it is one line until you open it.
   const [peek, setPeek] = useState(false);
@@ -101,6 +112,8 @@ export const WishQuestion = memo(function WishQuestion({
   };
   const status = answered ? (
     <StatusBadge tone="done" label={t("panels.decision_recorded")} />
+  ) : withdrawn ? (
+    <StatusBadge tone="withdrawn" label={t("question.withdrawn")} />
   ) : digging ? (
     <StatusBadge tone="investigating" label={t("question.investigating")} />
   ) : blocking.length ? (
@@ -114,7 +127,7 @@ export const WishQuestion = memo(function WishQuestion({
     <StatusBadge tone="later" label={t("question.can_wait")} />
   );
   const level =
-    answered || digging
+    answered || withdrawn || digging
       ? ""
       : blocking.length
         ? "is-blocking"
@@ -124,7 +137,13 @@ export const WishQuestion = memo(function WishQuestion({
   const heading = (
     <>
       <span className="question-id">
-        {answered ? <Check size={14} aria-label={q.code} /> : q.code}
+        {answered ? (
+          <Check size={14} aria-label={q.code} />
+        ) : withdrawn ? (
+          <CircleOff size={14} aria-label={q.code} />
+        ) : (
+          q.code
+        )}
       </span>
       <div className="question-title">
         <span className="question-meta">
@@ -141,11 +160,11 @@ export const WishQuestion = memo(function WishQuestion({
       </div>
     </>
   );
-  const body = answered ? expanded : !folded;
+  const body = answered || withdrawn ? expanded : !folded;
   return (
     <motion.article
       id={`question-${q.id}`}
-      className={`question-card ${answered ? "answered" : digging ? "investigating" : "open"} ${level}${folded ? " folded" : ""}`}
+      className={`question-card ${answered ? "answered" : withdrawn ? "withdrawn" : digging ? "investigating" : "open"} ${level}${folded ? " folded" : ""}`}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: 30 }}
@@ -170,23 +189,31 @@ export const WishQuestion = memo(function WishQuestion({
             )}
             <ChevronDown size={16} />
           </button>
-        ) : answered || digging ? (
+        ) : answered || withdrawn || digging ? (
           <button
             className="question-heading"
-            onClick={() => (answered ? setExpanded(!expanded) : setPeek(false))}
-            aria-expanded={answered ? expanded : true}
+            onClick={() =>
+              answered || withdrawn ? setExpanded(!expanded) : setPeek(false)
+            }
+            aria-expanded={answered || withdrawn ? expanded : true}
           >
             {heading}
             <ChevronDown
               size={16}
-              className={answered && !expanded ? "" : "rotated"}
+              className={(answered || withdrawn) && !expanded ? "" : "rotated"}
             />
           </button>
         ) : (
           <div className="question-heading">{heading}</div>
         )}
-        {onMark && !answered && !folded && (
+        {onMark && !answered && !withdrawn && !folded && (
           <MarkButtons item={q} onMark={onMark} />
+        )}
+        {(onMove || onWithdraw) && !answered && !withdrawn && !folded && (
+          <QuestionMenu
+            onMove={onMove ? () => onMove(q) : undefined}
+            onWithdraw={onWithdraw ? () => onWithdraw(q) : undefined}
+          />
         )}
       </div>
       {body && (
@@ -221,6 +248,15 @@ export const WishQuestion = memo(function WishQuestion({
               {noLead && (
                 <p className="no-lead">{t("question.no_lead_answered")}</p>
               )}
+            </div>
+          ) : withdrawn ? (
+            <div className="answered-info">
+              <span>
+                {t("question.withdrawn_at", {
+                  when: when(q.withdrawal?.createTime),
+                })}
+              </span>
+              {q.withdrawal?.note && <p>{q.withdrawal.note}</p>}
             </div>
           ) : (
             <>
@@ -354,5 +390,78 @@ function Rounds({ question }: { question: Question }) {
         </tbody>
       </table>
     </details>
+  );
+}
+
+function QuestionMenu({
+  onMove,
+  onWithdraw,
+}: {
+  onMove?: () => void;
+  onWithdraw?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("mousedown", handleDown);
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("mousedown", handleDown);
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  if (!onMove && !onWithdraw) return null;
+
+  return (
+    <div className="question-menu-wrap" ref={ref}>
+      <button
+        type="button"
+        className="question-menu-trigger"
+        aria-label={t("question.menu")}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <MoreVertical size={14} />
+      </button>
+      {open && (
+        <div className="question-dropdown">
+          {onMove && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onMove();
+              }}
+            >
+              <ArrowRightLeft size={14} />
+              {t("question.move")}
+            </button>
+          )}
+          {onWithdraw && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onWithdraw();
+              }}
+            >
+              <CircleOff size={14} />
+              {t("question.withdraw")}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

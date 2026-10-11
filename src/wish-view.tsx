@@ -83,6 +83,7 @@ import {
   runningOf,
   wishTone,
   effectivePushStrategy,
+  isWithdrawn,
 } from "./data/format";
 import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
@@ -102,6 +103,7 @@ import {
   DraftAzimaCard,
   MoveAzimaDialog,
 } from "./azima";
+import { MoveQuestionDialog, WithdrawQuestionDialog } from "./wish-dialogs";
 import { kindsForView, TaskSections, type View, ViewTabs } from "./task-tabs";
 import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
@@ -167,10 +169,20 @@ export function WishView({
   );
   const decisionsTotal = useMemo(() => {
     if (detail.questionsTotal === undefined) return undefined;
-    const answeredCount = Math.max(0, detail.questionsTotal - open.length);
+    const withdrawnCount = detail.questions.filter(isWithdrawn).length;
+    const answeredCount = Math.max(
+      0,
+      detail.questionsTotal - open.length - withdrawnCount,
+    );
     const decisionBlocksCount = detail.blocks.filter(isDecisionBlock).length;
     return Math.max(decisionItems.length, answeredCount + decisionBlocksCount);
-  }, [detail.questionsTotal, open.length, detail.blocks, decisionItems.length]);
+  }, [
+    detail.questionsTotal,
+    open.length,
+    detail.questions,
+    detail.blocks,
+    decisionItems.length,
+  ]);
   const { running, watching } = runningOf(detail.tasks);
   const done = detail.tasks.filter(
     (task) => task.status === TaskStatus.DONE && !isAzima(task),
@@ -182,6 +194,9 @@ export function WishView({
   const [view, setView] = useState<View>(opening ? "tilasms" : "main");
   const [deleting, setDeleting] = useState(false);
   const [movingAzima, setMovingAzima] = useState<Task | null>(null);
+  const [movingQuestion, setMovingQuestion] = useState<Question | null>(null);
+  const [withdrawingQuestion, setWithdrawingQuestion] =
+    useState<Question | null>(null);
   // What a link between a decision and a task brings into sight in the other tab: its id.
   const [focus, setFocus] = useState("");
   const show = useCallback(
@@ -255,6 +270,8 @@ export function WishView({
     answer,
     enlighten,
     mark,
+    move,
+    withdraw,
   } = useWrites(onToast);
   const act = useCallback(
     (
@@ -683,6 +700,23 @@ export function WishView({
           }}
         />
       )}
+      {movingQuestion && (
+        <MoveQuestionDialog
+          question={movingQuestion}
+          wishes={allWishes}
+          currentWishId={wish.id}
+          onClose={() => setMovingQuestion(null)}
+          onMove={move}
+        />
+      )}
+      {withdrawingQuestion && (
+        <WithdrawQuestionDialog
+          question={withdrawingQuestion}
+          currentWishId={wish.id}
+          onClose={() => setWithdrawingQuestion(null)}
+          onWithdraw={withdraw}
+        />
+      )}
       <div className="mission-scroll" ref={keepPlace}>
         <AttentionBar items={attention} />
         <div className="hero mission-header review-head">
@@ -898,6 +932,8 @@ export function WishView({
                                 onAnswer={handleQuestionAnswer}
                                 onMark={handleQuestionMark}
                                 onEnlighten={handleQuestionEnlighten}
+                                onMove={setMovingQuestion}
+                                onWithdraw={setWithdrawingQuestion}
                               />
                             ))}
                           </AnimatePresence>
@@ -915,6 +951,8 @@ export function WishView({
                       questions={digging}
                       onAnswer={handleQuestionAnswer}
                       onMark={handleQuestionMark}
+                      onMove={setMovingQuestion}
+                      onWithdraw={setWithdrawingQuestion}
                     />
                   )}
                 </div>
@@ -996,6 +1034,8 @@ export const InvestigatingSection = memo(function InvestigatingSection({
   origin = false,
   onAnswer,
   onMark,
+  onMove,
+  onWithdraw,
 }: {
   questions: OpenQuestion[];
   origin?: boolean;
@@ -1009,6 +1049,8 @@ export const InvestigatingSection = memo(function InvestigatingSection({
     remove: boolean,
     question?: Question,
   ) => Promise<void>;
+  onMove?: (question: Question) => void;
+  onWithdraw?: (question: Question) => void;
 }) {
   return (
     <section
@@ -1031,6 +1073,8 @@ export const InvestigatingSection = memo(function InvestigatingSection({
           origin={origin ? wishOrigin(wish) : undefined}
           onAnswer={onAnswer}
           onMark={onMark}
+          onMove={onMove}
+          onWithdraw={onWithdraw}
         />
       ))}
     </section>

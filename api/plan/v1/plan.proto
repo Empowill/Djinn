@@ -1166,6 +1166,8 @@ message Question {
   // A move only the developer can make through the interface or outside Djinn: push a tag, open a PR, create a
   // release, test on a machine Djinn lacks, install an update. Shown as "Your move" in the attention bar.
   bool move = 18;
+  // Closed without an answer, shown as withdrawn, not a decision, out of open questions.
+  Withdrawal withdrawal = 19;
 }
 
 // Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or
@@ -1276,6 +1278,14 @@ message Answer {
   google.protobuf.Timestamp create_time = 3;
 }
 
+// The withdrawal of an open question: closed without an answer, not a decision.
+message Withdrawal {
+  // Why the question was withdrawn.
+  string note = 1 [(buf.validate.field).string.max_len = 2000];
+  // When the question was withdrawn.
+  google.protobuf.Timestamp create_time = 2;
+}
+
 // QuestionRef points to a question by its code or by its identifier.
 message QuestionRef {
   oneof ref {
@@ -1312,6 +1322,16 @@ service QuestionService {
   // Revise an open question after investigating: its context, options or recommendation. The former ones stay in its
   // rounds, and the question waits for the developer again.
   rpc Revise(QuestionServiceReviseRequest) returns (QuestionServiceReviseResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Move an open question to another wish. Its code is retired in this wish; it receives the next code in the other.
+  rpc Move(QuestionServiceMoveRequest) returns (QuestionServiceMoveResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Withdraw an open question without an answer.
+  rpc Withdraw(QuestionServiceWithdrawRequest) returns (QuestionServiceWithdrawResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
@@ -1457,6 +1477,44 @@ message QuestionServiceListResponse {
   string next_page_token = 2;
   // Total number of questions matching the request.
   int32 total = 3;
+}
+
+message QuestionServiceMoveRequest {
+  // The question to move: its code, like Q03, or its identifier.
+  QuestionRef question = 1 [(buf.validate.field).required = true];
+  // The wish to move the question to: its code (W12), identifier, or title.
+  string wish = 2 [(buf.validate.field).string.max_len = 100];
+  // Move tasks naming this question as their decision along with it.
+  bool follow = 3;
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 4 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message QuestionServiceMoveResponse {
+  // The question moved, in its new wish.
+  Question question = 1;
+  // The tasks that followed the question into the new wish.
+  repeated Task tasks = 2;
+}
+
+message QuestionServiceWithdrawRequest {
+  // The question to withdraw: its code, like Q03, or its identifier.
+  QuestionRef question = 1 [(buf.validate.field).required = true];
+  // Why the question was withdrawn.
+  string note = 2 [(buf.validate.field).string.max_len = 2000];
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message QuestionServiceWithdrawResponse {
+  // The question, withdrawn.
+  Question question = 1;
 }
 
 // Projects Djinn works in.

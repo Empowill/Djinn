@@ -46,17 +46,21 @@ func (m *Marks) Put(
 		}
 		mark := &planv1.Mark{Kind: msg.GetKind(), Actor: actor, CreateTime: timestamppb.Now()}
 		if question != nil {
-			// Approving an open question answers it with the option its recommendation names.
-			if msg.GetKind() == planv1.MarkKind_MARK_KIND_APPROVED && !msg.GetRemove() && question.GetAnswer() == nil {
-				choice, ok := Recommended(question)
-				if !ok {
-					return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-						"the recommendation of %s names no option: answer it with djinn question answer", question.GetCode()))
+			if msg.GetKind() == planv1.MarkKind_MARK_KIND_APPROVED && !msg.GetRemove() {
+				if question.GetWithdrawal() != nil {
+					return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s was withdrawn", question.GetCode()))
 				}
-				question.Answer = &planv1.Answer{Choice: choice, CreateTime: mark.GetCreateTime()}
-				answered = question
-				if then, err = settled(ctx, m.Settle, tx, question); err != nil {
-					return err
+				if question.GetAnswer() == nil {
+					choice, ok := Recommended(question)
+					if !ok {
+						return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+							"the recommendation of %s names no option: answer it with djinn question answer", question.GetCode()))
+					}
+					question.Answer = &planv1.Answer{Choice: choice, CreateTime: mark.GetCreateTime()}
+					answered = question
+					if then, err = settled(ctx, m.Settle, tx, question); err != nil {
+						return err
+					}
 				}
 			}
 			question.Marks = setMark(question.GetMarks(), mark, msg.GetRemove())

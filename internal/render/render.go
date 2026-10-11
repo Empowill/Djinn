@@ -318,7 +318,7 @@ func build(in Input) (*view, error) {
 	// Open questions, the blocking ones first, then those needed before something, then those that can wait; each in
 	// the order they were asked. Decisions, the latest first.
 	for _, q := range exp.GetQuestions() {
-		if q.GetAnswer() != nil {
+		if q.GetAnswer() != nil || q.GetWithdrawal() != nil {
 			continue
 		}
 		cq := question{
@@ -451,7 +451,7 @@ func build(in Input) (*view, error) {
 		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
 			continue
 		}
-		if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil {
+		if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil && q.GetWithdrawal() == nil {
 			addAction("bad", blocked, tr("page.action_waiting", "task", t.GetCode(), "question", q.GetCode()), "")
 		} else {
 			addAction("bad", blocked, tr("page.action_waiting_unknown", "task", t.GetCode()),
@@ -977,6 +977,18 @@ func summary(
 		}
 		return strings.TrimSpace(code + " " + strings.ToLower(strings.TrimPrefix(m.GetChoice().String(), "CHOICE_")) +
 			" " + m.GetNote())
+	case *planv1.QuestionServiceMoveRequest:
+		code := m.GetQuestion().GetCode()
+		if q := questions[m.GetQuestion().GetId()]; q != nil {
+			code = q.GetCode()
+		}
+		return strings.TrimSpace(code + " -> " + m.GetWish())
+	case *planv1.QuestionServiceWithdrawRequest:
+		code := m.GetQuestion().GetCode()
+		if q := questions[m.GetQuestion().GetId()]; q != nil {
+			code = q.GetCode()
+		}
+		return strings.TrimSpace(code + " " + m.GetNote())
 	case *planv1.BlockServicePutRequest:
 		return strings.TrimSpace(m.GetKind() + " " + m.GetTitle())
 	case *planv1.TaskServiceSpawnRequest:

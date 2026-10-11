@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -467,7 +466,7 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 			if len(deps) == 0 {
 				continue
 			}
-			if cycle := closesCycle(r.azima, deps, r.azima.GetPartOf(), tasks); cycle != "" {
+			if cycle := plan.ClosesCycle(r.azima, deps, r.azima.GetPartOf(), tasks); cycle != "" {
 				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 					"%s: the tasks of a wish form no cycle: %s", r.file.Path, cycle))
 			}
@@ -649,7 +648,7 @@ func (h *Harness) Move(ctx context.Context, procedure string, req *planv1.TaskSe
 	defer h.sched.Unlock()
 	var movedAzima *planv1.Task
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
-		targetWish, err := resolveWish(ctx, tx, req.GetWish())
+		targetWish, err := plan.ResolveWish(ctx, tx, req.GetWish())
 		if err != nil {
 			return err
 		}
@@ -686,7 +685,7 @@ func (h *Harness) Move(ctx context.Context, procedure string, req *planv1.TaskSe
 		}
 
 		for _, t := range moving {
-			if h.hasRun(t.GetId()) || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED {
+			if h.HasRun(t.GetId()) || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED {
 				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s runs: move it once it ended", t.GetCode()))
 			}
 			if !plan.IsAzima(t) {
@@ -721,7 +720,7 @@ func (h *Harness) Move(ctx context.Context, procedure string, req *planv1.TaskSe
 
 		allTarget := append(slices.Clone(targetTasks), moving...)
 		for _, t := range moving {
-			if cycle := closesCycle(t, t.GetDependsOn(), t.GetPartOf(), allTarget); cycle != "" {
+			if cycle := plan.ClosesCycle(t, t.GetDependsOn(), t.GetPartOf(), allTarget); cycle != "" {
 				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the tasks of a wish form no cycle: %s", cycle))
 			}
 		}
@@ -843,32 +842,4 @@ func findAzima(ctx context.Context, r store.Reader, name string, notInWish ...st
 		}
 		return matches[0], nil
 	}
-}
-
-// resolveWish finds a wish by identifier, rank (e.g. W1, 1), or title.
-func resolveWish(ctx context.Context, r store.Reader, name string) (*planv1.Wish, error) {
-	if name == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("wish is required"))
-	}
-	if w, err := store.Get[*planv1.Wish](ctx, r, name); err == nil {
-		return w, nil
-	}
-	all, err := store.List[*planv1.Wish](ctx, r, nil)
-	if err != nil {
-		return nil, err
-	}
-	norm := strings.TrimPrefix(strings.ToUpper(name), "W")
-	if n, err := strconv.Atoi(norm); err == nil && n > 0 {
-		for _, w := range all {
-			if int(w.GetRank()) == n {
-				return w, nil
-			}
-		}
-	}
-	for _, w := range all {
-		if strings.EqualFold(w.GetId(), name) || strings.EqualFold(w.GetTitle(), name) {
-			return w, nil
-		}
-	}
-	return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("wish %s not found", name))
 }

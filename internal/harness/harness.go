@@ -884,26 +884,7 @@ func nextCode(ctx context.Context, r store.Reader, wishID string) (string, error
 // after the highest one its tasks have or its deleted tasks had (Wish.retired_codes), so that a code is never given
 // twice, deleted or not. The unique index guards the tasks' codes anyway.
 func nextNumber(ctx context.Context, r store.Reader, wishID, letter string) (string, error) {
-	wish, err := store.Get[*planv1.Wish](ctx, r, wishID)
-	if err != nil {
-		return "", err
-	}
-	tasks, err := store.List[*planv1.Task](ctx, r, store.Where{"wish_id": wishID})
-	if err != nil {
-		return "", err
-	}
-	codes := wish.GetRetiredCodes()
-	for _, t := range tasks {
-		codes = append(codes, t.GetCode())
-	}
-	last := 0
-	for _, c := range codes {
-		var n int
-		if _, err := fmt.Sscanf(strings.ToUpper(c), letter+"%d", &n); err == nil && n > last {
-			last = n
-		}
-	}
-	return fmt.Sprintf("%s%d", letter, last+1), nil
+	return plan.NextTaskNumber(ctx, r, wishID, letter)
 }
 
 // pump records the worker's events until the task ends for good: a worker stopped to start again, allowed to

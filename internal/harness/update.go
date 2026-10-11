@@ -176,7 +176,7 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	}
 
 	if afterGiven || partOfGiven {
-		if cycle := closesCycle(task, newDeps, newAzima, tasks); cycle != "" {
+		if cycle := plan.ClosesCycle(task, newDeps, newAzima, tasks); cycle != "" {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the tasks of a wish form no cycle: %s", cycle))
 		}
 	}

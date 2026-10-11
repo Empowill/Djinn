@@ -74,6 +74,26 @@ function summary(command: Command, exp: WishExport): string {
       const choices = ["", "yes", "a", "b", "c", "d"];
       return `${code} ${choices[Number(r.choice)] ?? ""} ${String(r.note ?? "")}`.trim();
     }
+    case "plan.v1.QuestionServiceMoveRequest": {
+      const ref = (r.question as { ref?: { case?: string; value?: string } })
+        ?.ref;
+      const code =
+        ref?.case === "id"
+          ? (exp.questions.find((q) => q.id === ref.value)?.code ?? "")
+          : (ref?.value ?? "");
+      const wish = String(r.wish ?? "");
+      return wish ? `${code} -> ${wish}`.trim() : code;
+    }
+    case "plan.v1.QuestionServiceWithdrawRequest": {
+      const ref = (r.question as { ref?: { case?: string; value?: string } })
+        ?.ref;
+      const code =
+        ref?.case === "id"
+          ? (exp.questions.find((q) => q.id === ref.value)?.code ?? "")
+          : (ref?.value ?? "");
+      const note = String(r.note ?? "");
+      return `${code} ${note}`.trim();
+    }
     case "plan.v1.BlockServicePutRequest":
       return `${String(r.kind ?? "")} ${String(r.title ?? "")}`.trim();
     case "plan.v1.WishServiceAllowRequest": {

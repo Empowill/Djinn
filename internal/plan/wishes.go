@@ -8,6 +8,8 @@ import (
 	"math"
 	"os"
 	"slices"
+	"strconv"
+	"strings"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -29,6 +31,7 @@ type WishWorkers interface {
 	Wake()
 	// StopWish stops the wish's workers for good, and waits until they have ended.
 	StopWish(ctx context.Context, wishID string) error
+	HasRun(taskID string) bool
 }
 
 // shelve stops the workers of the wishes paused, and wakes the scheduler for the active ones; without workers,
@@ -96,7 +99,7 @@ func Ready(tasks []*planv1.Task, questions []*planv1.Question) bool {
 		return false
 	}
 	for _, q := range questions {
-		if q.GetAnswer() == nil {
+		if q.GetAnswer() == nil && q.GetWithdrawal() == nil {
 			return false
 		}
 	}
@@ -463,4 +466,32 @@ func sorted(all []*planv1.Wish) []*planv1.Wish {
 		}
 	}
 	return out
+}
+
+// ResolveWish finds a wish by identifier, rank (e.g. W1, 1), or title.
+func ResolveWish(ctx context.Context, r store.Reader, name string) (*planv1.Wish, error) {
+	if name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("wish is required"))
+	}
+	if w, err := store.Get[*planv1.Wish](ctx, r, name); err == nil {
+		return w, nil
+	}
+	all, err := store.List[*planv1.Wish](ctx, r, nil)
+	if err != nil {
+		return nil, err
+	}
+	norm := strings.TrimPrefix(strings.ToUpper(name), "W")
+	if n, err := strconv.Atoi(norm); err == nil && n > 0 {
+		for _, w := range all {
+			if int(w.GetRank()) == n {
+				return w, nil
+			}
+		}
+	}
+	for _, w := range all {
+		if strings.EqualFold(w.GetId(), name) || strings.EqualFold(w.GetTitle(), name) {
+			return w, nil
+		}
+	}
+	return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("wish %s not found", name))
 }

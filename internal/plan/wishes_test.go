@@ -92,6 +92,10 @@ func (w *workers) StopWish(_ context.Context, wishID string) error {
 	return nil
 }
 
+func (w *workers) HasRun(_ string) bool {
+	return false
+}
+
 // TestThreeWishes: there may be as many wishes as you like, and the three first are active. A fourth is made paused;
 // activating one when three are active takes the third place, and pauses the third wish. A paused wish's workers
 // stop.
