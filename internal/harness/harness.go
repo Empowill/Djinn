@@ -118,14 +118,16 @@ type Harness struct {
 	mainTested       map[string]mainTested // by wish/project; owned by the integration's pass
 	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
 
-	mu      sync.Mutex
-	closed  bool
-	held    func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
-	waiting func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
-	outside func() int                   // the gates held outside the running workers (GatesOutside); nil: none
-	version string                       // version of the running binary (WithVersion)
-	runs    map[string]*run              // by task id
-	changed chan struct{}                // closed at the next change of a task without worker (notifyLocked)
+	mu        sync.Mutex
+	closed    bool
+	held      func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
+	waiting   func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
+	outside   func() int                   // the gates held outside the running workers (GatesOutside); nil: none
+	version   string                       // version of the running binary (WithVersion)
+	runs      map[string]*run              // by task id
+	changed   chan struct{}                // closed at the next change of a task without worker (notifyLocked)
+	aliasesMu sync.RWMutex
+	aliases   map[string]string // alias -> model ID
 }
 
 // run is a task at work: its worker, or the workers it runs one after the other when the task starts again.
@@ -152,24 +154,25 @@ type run struct {
 	subs     map[chan *planv1.TaskEvent]struct{}
 
 	// Owned by whoever writes the task: Spawn, then the pump.
-	task        *planv1.Task
-	seq         int64         // last event written
-	base        *planv1.Usage // what the task had spent before this worker
-	restart     bool          // the worker stops to start again, allowed to edit
-	unread      []string      // messages the worker took on its input and has said nothing after yet
-	branch      string        // the branch template of the project's settings, for launch; empty: the default
-	from        string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
-	checks      string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
-	pushChecks  []string      // commands of the project's push checks, to note when a worker runs them
-	testOne     string        // project's targeted test command template or prefix
-	notedPush   bool          // already noted that worker ran push checks
-	fallback    string        // why the worker fell back to another provider, for its start event
-	failure     string        // the last error the current worker said: it never ends done
-	limit       *Limit        // the usage limit the current worker said it hit: it wins over failure
-	refused     string        // the last call its permissions refused, as the worker said it (question.go)
-	envReplayed bool          // a tool call/result already triggered replay of env failures
-	startHead   string        // HEAD commit when the worker started
-	answered    bool          // worker gave its final answer (text after tool calls)
+	task           *planv1.Task
+	seq            int64         // last event written
+	base           *planv1.Usage // what the task had spent before this worker
+	restart        bool          // the worker stops to start again, allowed to edit
+	unread         []string      // messages the worker took on its input and has said nothing after yet
+	branch         string        // the branch template of the project's settings, for launch; empty: the default
+	from           string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
+	checks         string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
+	pushChecks     []string      // commands of the project's push checks, to note when a worker runs them
+	testOne        string        // project's targeted test command template or prefix
+	notedPush      bool          // already noted that worker ran push checks
+	fallback       string        // why the worker fell back to another provider, for its start event
+	failure        string        // the last error the current worker said: it never ends done
+	limit          *Limit        // the usage limit the current worker said it hit: it wins over failure
+	refused        string        // the last call its permissions refused, as the worker said it (question.go)
+	envReplayed    bool          // a tool call/result already triggered replay of env failures
+	startHead      string        // HEAD commit when the worker started
+	answered       bool          // worker gave its final answer (text after tool calls)
+	requestedModel string        // model as requested before stream events
 }
 
 // newRun is the run of task, its next event after seq, registered so that a watcher never misses its first events.
@@ -179,7 +182,7 @@ func (h *Harness) newRun(task *planv1.Task, seq int64) (*run, error) {
 		id: task.GetId(), wish: task.GetWishId(), task: task, seq: seq, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
 		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}),
 		subs: map[chan *planv1.TaskEvent]struct{}{}, watcher: watching(task),
-		light: questionWorker(task),
+		light: questionWorker(task), requestedModel: task.GetModel(),
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -203,7 +206,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
 		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{},
-		installed: map[string]string{},
+		installed: map[string]string{}, aliases: map[string]string{},
 	}
 	def := machine.DefaultPolicy()
 	h.policy.Store(&def)
@@ -270,6 +273,16 @@ func (h *Harness) Recover(ctx context.Context) error {
 		return err
 	}
 	h.recoverIntegrations(ctx, tasks)
+	for _, t := range tasks {
+		if t.GetModel() != "" && !isModelAlias(t.GetModel()) {
+			h.learnAliases(t.GetModel())
+		}
+		for _, m := range t.GetModels() {
+			if m != "" && !isModelAlias(m) {
+				h.learnAliases(m)
+			}
+		}
+	}
 	for _, t := range tasks {
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
@@ -946,8 +959,18 @@ func (h *Harness) drain(r *run) Result {
 // record writes an event of the worker, with the task when the event changes it.
 func (h *Harness) record(r *run, ev Event) {
 	changed := false
-	if ev.Model != "" && ev.Model != r.task.GetModel() {
-		r.task.Model, changed = ev.Model, true
+	if ev.Model != "" {
+		if r.requestedModel != "" && isModelAlias(r.requestedModel) {
+			h.recordAlias(r.requestedModel, ev.Model)
+		}
+		h.learnAliases(ev.Model)
+		if len(r.task.Models) == 0 || r.task.Models[len(r.task.Models)-1] != ev.Model {
+			r.task.Models = append(r.task.Models, ev.Model)
+			changed = true
+		}
+		if ev.Model != r.task.GetModel() {
+			r.task.Model, changed = ev.Model, true
+		}
 	}
 	if ev.SessionID != "" && ev.SessionID != r.task.GetSessionId() {
 		r.task.SessionId, changed = ev.SessionID, true
@@ -1198,8 +1221,24 @@ func (h *Harness) end(r *run, res Result) {
 	stopping, shelved := r.stopping, r.shelved
 	h.mu.Unlock()
 	t := r.task
-	if (t.GetModel() == "" || foreignModel(t.GetProvider(), t.GetModel())) && !r.watcher {
-		t.Model = DefaultModel(t.GetProvider())
+	if t.GetModel() == "" && !r.watcher {
+		if len(t.Models) > 0 {
+			t.Model = t.Models[len(t.Models)-1]
+		} else {
+			t.Model = DefaultModel(t.GetProvider())
+		}
+	}
+	if t.GetModel() != "" && !r.watcher {
+		if len(t.Models) == 0 {
+			t.Models = []string{t.GetModel()}
+		} else if t.Models[len(t.Models)-1] != t.GetModel() {
+			t.Models = append(t.Models, t.GetModel())
+		}
+		h.learnAliases(t.GetModel())
+	}
+	if r.watcher {
+		t.Model = ""
+		t.Models = nil
 	}
 	t.EndTime, t.ExitCode = timestamppb.Now(), int32(res.ExitCode)
 	switch {
@@ -1842,5 +1881,70 @@ func foreignModel(p planv1.Provider, model string) bool {
 		return isClaudeModel(model) || isAntigravityModel(model)
 	default:
 		return false
+	}
+}
+
+func isModelAlias(model string) bool {
+	if model == "" {
+		return false
+	}
+	for _, r := range model {
+		if r >= '0' && r <= '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeAlias(alias string) string {
+	a := strings.ToLower(strings.TrimSpace(alias))
+	if idx := strings.Index(a, "/"); idx != -1 {
+		a = a[idx+1:]
+	}
+	a = strings.TrimPrefix(a, "claude-")
+	return a
+}
+
+func (h *Harness) recordAlias(alias, model string) {
+	if alias == "" || model == "" {
+		return
+	}
+	model = strings.TrimSpace(model)
+	h.aliasesMu.Lock()
+	defer h.aliasesMu.Unlock()
+	if h.aliases == nil {
+		h.aliases = make(map[string]string)
+	}
+	h.aliases[normalizeAlias(alias)] = model
+	h.aliases[strings.ToLower(strings.TrimSpace(alias))] = model
+}
+
+func (h *Harness) resolveAlias(alias string) (string, bool) {
+	if alias == "" {
+		return "", false
+	}
+	h.aliasesMu.RLock()
+	defer h.aliasesMu.RUnlock()
+	if h.aliases == nil {
+		return "", false
+	}
+	norm := normalizeAlias(alias)
+	if m, ok := h.aliases[norm]; ok {
+		return m, true
+	}
+	m, ok := h.aliases[strings.ToLower(strings.TrimSpace(alias))]
+	return m, ok
+}
+
+func (h *Harness) learnAliases(model string) {
+	if model == "" || isModelAlias(model) {
+		return
+	}
+	m := strings.ToLower(model)
+	for _, tier := range []string{"sonnet", "opus", "haiku"} {
+		if strings.Contains(m, tier) {
+			h.recordAlias(tier, model)
+			h.recordAlias("claude-"+tier, model)
+		}
 	}
 }

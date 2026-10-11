@@ -71,6 +71,7 @@ func (s *Tasks) List(
 	if err := plan.FillTilasms(ctx, s.h.store, page); err != nil {
 		return nil, plan.Status(err)
 	}
+	s.h.fillModels(ctx, page)
 	return connect.NewResponse(&planv1.TaskServiceListResponse{
 		Tasks:         page,
 		NextPageToken: nextToken,
@@ -92,6 +93,7 @@ func (s *Tasks) Get(
 	if err := plan.FillTilasms(ctx, s.h.store, filled); err != nil {
 		return nil, plan.Status(err)
 	}
+	s.h.fillModels(ctx, filled)
 	if p, err := lastPrompt(ctx, s.h.store, task.GetId()); err == nil {
 		filled[0].Prompt = p
 	}
@@ -253,4 +255,42 @@ func (s *Tasks) Move(
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.TaskServiceMoveResponse{Task: task}), nil
+}
+
+// fillModels fills the forecast model on planned or waiting tasks whose model is empty,
+// and ensures watchers and azimas have no model.
+func (h *Harness) fillModels(ctx context.Context, tasks []*planv1.Task) {
+	for _, t := range tasks {
+		if watching(t) || t.GetProvider() == planv1.Provider_PROVIDER_WATCH || t.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA || t.GetAzima() != nil {
+			t.Model = ""
+			t.Models = nil
+			continue
+		}
+		if t.GetModel() == "" {
+			var model string
+			if t.GetProjectId() != "" {
+				if project, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId()); err == nil {
+					if settings, err := plan.LoadSettings(h.home, project); err == nil {
+						if settings.Model != "" && (settings.Provider == t.GetProvider() || settings.Provider == planv1.Provider_PROVIDER_UNSPECIFIED || t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED) {
+							model = settings.Model
+						}
+					}
+				}
+			} else if t.GetWishId() != "" {
+				if wish, err := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId()); err == nil && len(wish.GetProjectIds()) > 0 {
+					if project, err := store.Get[*planv1.Project](ctx, h.store, wish.GetProjectIds()[0]); err == nil {
+						if settings, err := plan.LoadSettings(h.home, project); err == nil {
+							if settings.Model != "" && (settings.Provider == t.GetProvider() || settings.Provider == planv1.Provider_PROVIDER_UNSPECIFIED || t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED) {
+								model = settings.Model
+							}
+						}
+					}
+				}
+			}
+			if model == "" {
+				model = DefaultModel(t.GetProvider())
+			}
+			t.Model = model
+		}
+	}
 }
