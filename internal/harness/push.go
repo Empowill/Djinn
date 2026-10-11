@@ -78,6 +78,12 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 	case state.GetApproved():
 		return // The person said to push: pushApproved pushes, at the end of this pass.
 	}
+	if strings.HasSuffix(state.GetHeld(), "; left to the lead") {
+		branch := plan.IntegrationBranchOf(wish, project.GetId())
+		if sha, err := git(ctx, project.GetDirectory(), "rev-parse", "refs/heads/"+branch); err == nil && sha == state.GetFailedSha() {
+			return // Left to the lead; the branch has not moved.
+		}
+	}
 	if id := state.GetCorrectedBy(); id != "" {
 		if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
 			return // The correction worker is running; push checks run after it is committed.
@@ -528,6 +534,9 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 		if commitOf(ctx, repo, "refs/heads/"+branch) == "" {
 			continue
 		}
+		if strings.HasSuffix(state.GetHeld(), "; left to the lead") && state.GetFailedSha() == commitOf(ctx, repo, "refs/heads/"+branch) {
+			continue
+		}
 		since := h.lastBranchPush(ctx, repo, wish, state, branch)
 		committed := h.committedBranchTasks(ctx, repo, tasks, project.GetId(), branch, since)
 		why := pushDueAzima(azima, committed, tasks, since, h.now(), pushAfterEvery, pushAfterTasks)
@@ -543,6 +552,9 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 
 	wishBranch := plan.IntegrationBranchOf(wish, project.GetId())
 	if commitOf(ctx, repo, "refs/heads/"+wishBranch) != "" {
+		if strings.HasSuffix(state.GetHeld(), "; left to the lead") && state.GetFailedSha() == commitOf(ctx, repo, "refs/heads/"+wishBranch) {
+			return
+		}
 		since := h.lastBranchPush(ctx, repo, wish, state, wishBranch)
 		committed := h.committedBranchTasks(ctx, repo, tasks, project.GetId(), wishBranch, since)
 		why := pushDue(committed, tasks, since, h.now(), pushAfterEvery, pushAfterTasks)
@@ -787,6 +799,8 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 			err = h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
 				return editPush(ctx, tx, wish.GetId(), projectID, func(p *planv1.WishPush) {
 					p.QuestionId, p.CorrectedBy, p.Attempts, p.Approved = "", c.GetId(), 1, false
+					p.Held = strings.TrimSuffix(p.Held, "; left to the lead")
+					p.FailedSha = ""
 				})
 			})
 			if err != nil {

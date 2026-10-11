@@ -425,12 +425,15 @@ func TestIntegrateCodeConflict(t *testing.T) {
 	if want := "W2 conflicts with " + in.branch + " in app/README.md"; got.GetReason() != want {
 		t.Errorf("W2's reason %q; want %q", got.GetReason(), want)
 	}
-	q := in.question(t, w2)
-	if last := texts[len(texts)-1]; last != "conflict: "+got.GetReason()+"; "+in.branch+" stays as it was; Djinn asks you "+q.GetCode() {
+	if got.GetQuestionId() != "" {
+		t.Errorf("W2 question ID %q; want empty", got.GetQuestionId())
+	}
+	if last := texts[len(texts)-1]; last != "conflict: "+got.GetReason()+"; "+in.branch+" stays as it was; left to the lead" {
 		t.Errorf("W2's last event %q", last)
 	}
-	if !strings.Contains(q.GetText(), "The project's settings start no correction worker") {
-		t.Errorf("the question %q", q.GetText())
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	if err != nil || len(questions) != 0 {
+		t.Errorf("questions in store: %d, want 0", len(questions))
 	}
 	if commits := in.commits(t); len(commits) != 2 || len(in.runs) != 2 {
 		t.Errorf("commits %v; runs %v", commits, in.runs)

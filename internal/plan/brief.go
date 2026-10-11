@@ -115,6 +115,11 @@ func briefRules(iq planv1.InstallQuestions) string {
 		"the integrated branch: never spawn while the wish's integration points at another branch (a quarantine), since " +
 		"a task started there carries that branch into the next merge (W399 brought the replay sink's node_modules link into " +
 		"feat/wails-go on 11/10). A conflict or a red merge is a signal to re-sequence, not only to correct.\n" +
+		"- **Operational decisions are yours (Decision Q196).** Djinn's operational questions (a merge still " +
+		"failing after its corrections, a held push, a conflict, a main merge that fails) go to you as an event, " +
+		"never as a question to the developer. You decide: retry a correction, drop the work (`djinn task done <task> --drop` " +
+		"or `djinn task cancel`), re-sequence the graph (`djinn task depend`), or leave it waiting. Ask the developer only " +
+		"for moves only a person can make (a tag, a PR, a release, a right) or a real choice.\n" +
 		"- **Djinn acts on the developer's answers.** You turn each answer into tasks yourself, in one pass, " +
 		"placing them in the graph (azimas, --after, --blocks), and check what an investigator revised. " +
 		"\"Enlighten me\" starts \"Q03: enlighten\": it reads, then revises the question. You are told when it " +

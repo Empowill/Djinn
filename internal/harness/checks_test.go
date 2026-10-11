@@ -270,19 +270,22 @@ func TestPushChecksHoldThePush(t *testing.T) {
 	in.ended(t, w3ID)
 	in.pass(t, time.Second)
 
-	q := in.pushQuestion(t)
-	if !strings.HasPrefix(q.GetText(), "The push checks of "+in.branch+" stay red: test: test exited 1. Djinn started a correction worker: it did not make the push checks pass. What should Djinn do?") ||
-		!strings.Contains(q.GetContext(), "--- FAIL: TestLogin") || len(q.GetOptions()) != 3 {
-		t.Errorf("question %q, context %q, options %q", q.GetText(), q.GetContext(), q.GetOptions())
+	state = in.pushState(t)
+	if state.GetQuestionId() != "" {
+		t.Fatalf("push question %s; want none (left to the lead)", state.GetQuestionId())
 	}
-	if _, texts := in.integration(t, w2); !slices.Contains(texts, "the push checks of "+in.branch+" stay red; Djinn asks you "+q.GetCode()) {
-		t.Errorf("W2's events %q lack the question", texts)
+	if !strings.HasSuffix(state.GetHeld(), "; left to the lead") {
+		t.Fatalf("push held %q; want suffix '; left to the lead'", state.GetHeld())
+	}
+	if _, texts := in.integration(t, w2); !slices.Contains(texts, "the push checks of "+in.branch+" stay red; left to the lead") {
+		t.Errorf("W2's events %q lack left to the lead", texts)
 	}
 
 	// Answering Choice A retries with a new correction worker W4.
 	in.mu.Lock()
 	in.testCode = 0
 	in.mu.Unlock()
+	q := in.attachPushQuestion(t)
 	if did := in.answer(t, q, planv1.Choice_CHOICE_A); !strings.HasPrefix(did, "Djinn started W4:") {
 		t.Errorf("what Djinn did: %q", did)
 	}
@@ -321,10 +324,11 @@ func TestPushWithoutTheChecks(t *testing.T) {
 	if got := in.remoteTip(t, bare); got != old {
 		t.Fatalf("pushed red: origin at %s", got)
 	}
-	if state := in.pushState(t); state.GetHeldRuns() != 1 || state.GetQuestionId() == "" {
-		t.Fatalf("no work left: the push %v; want a question at once", state)
+	if state := in.pushState(t); state.GetHeldRuns() != 1 || state.GetQuestionId() != "" || !strings.HasSuffix(state.GetHeld(), "; left to the lead") {
+		t.Fatalf("no work left: the push %v; want left to the lead at once", state)
 	}
-	if did := in.answer(t, in.pushQuestion(t), planv1.Choice_CHOICE_C); did != "Djinn pushes at the integration's next pass, without the push checks" {
+	q := in.attachPushQuestion(t)
+	if did := in.answer(t, q, planv1.Choice_CHOICE_C); did != "Djinn pushes at the integration's next pass, without the push checks" {
 		t.Errorf("what Djinn did: %q", did)
 	}
 	in.pass(t, time.Second)
@@ -560,11 +564,15 @@ func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 		t.Errorf("W3 integration = %v; want CONFLICT", w3In)
 	}
 
-	// Push remains held. Djinn asks the push question.
-	q := in.pushQuestion(t)
-	if q == nil {
-		t.Fatal("expected push question after correction attempt spent")
+	// Push remains held, left to the lead.
+	state = in.pushState(t)
+	if state.GetQuestionId() != "" {
+		t.Fatalf("push question %s; want none (left to the lead)", state.GetQuestionId())
 	}
+	if !strings.HasSuffix(state.GetHeld(), "; left to the lead") {
+		t.Fatalf("push held %q; want suffix '; left to the lead'", state.GetHeld())
+	}
+	q := in.attachPushQuestion(t)
 
 	// Answer Choice A to retry correction. Now push checks pass.
 	in.mu.Lock()

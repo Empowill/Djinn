@@ -53,6 +53,13 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   never asks a question to install or restart (the window proposes each new build, to install or skip); with
   `install_questions: when_needed`, ask the developer to install or restart only when necessary, and say why in the
   question; never as routine.
+- **Operational decisions are the lead's (Decision Q196).** Djinn's operational questions (a merge still failing after its
+  corrections, a held push, a conflict, a main merge that fails, uncommitted review failures) go to the lead as an event,
+  never as a question to the developer. Obvious cases (work already in the integration branch, a task dropped or cancelled,
+  or a correction stopped by the lead) are settled silently without raising questions. The lead decides: retry a
+  correction, drop the work (`djinn task done --drop` or `djinn task cancel`), re-sequence the graph (`djinn task depend`),
+  or leave it waiting. Questions to the developer are reserved for moves only a person can make (a tag, a PR, a release,
+  a right) or a real choice.
 - **When Djinn misbehaves.** When Djinn misbehaves while the developer is away, the lead may stop the damage without
   touching code: redirect the wish's integration to another branch, stop workers, withdraw useless questions. The lead
   may also revert a faulty merge on the integration branch, telling the developer at once; every other commit on the
@@ -82,7 +89,7 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   - a real merge where the branch moved (no-op batches where work was already in the branch tell nothing in the terminal;
     repeated merges of a pass go out as one coalesced line: `Djinn: W12, W14, W15 merged into feat/foo as 1a2b3c4d`);
   - moves only when a question was actually asked on that merge (`: push tag v1.0.0`, `: start a release`);
-  - an actionable failure (a work worker failed or was cut short; an integration failed);
+  - an actionable failure (a work worker failed or was cut short; an integration failed; push checks stay red; a main merge failed);
   - an answer or question for the lead to act on (developer answers, an open question when enlighten workers are disabled,
     a filed request or inbox item, an azima opened to plan its tasks);
   - a task ending without failure (the lead's cue to check its final note, revised questions, or spawned tasks);

@@ -43,13 +43,6 @@ var lockFiles = []string{
 	"Package.resolved", "gradle.lockfile",
 }
 
-// The options of the question Djinn asks once the push checks stay red, answered by their letter.
-const (
-	retryPushOption     = "Try again: Djinn starts a new correction worker on the push checks"
-	takePushOption      = "I take it: Djinn leaves the push checks to you"
-	pushUncheckedOption = "Push it without the push checks, this once"
-)
-
 // check runs run's command, a check or the setup, in dir under the gate of its name, and records how it ended as the
 // project's last run of it. It returns why it failed, "" when it passed, and the end of its output; stopped when djinn
 // up stopped during it, nothing recorded.
@@ -283,6 +276,9 @@ func (h *Harness) holdPush(
 	if cur.GetQuestionId() != "" {
 		return
 	}
+	if strings.HasSuffix(cur.GetHeld(), "; left to the lead") && cur.GetFailedSha() == sha {
+		return
+	}
 	if id := cur.GetCorrectedBy(); id != "" {
 		if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
 			return
@@ -346,49 +342,30 @@ func (h *Harness) holdPush(
 	h.askPushHeld(ctx, wish, project, branch, f, attempts, unstarted, committed)
 }
 
-// askPushHeld asks the person what to do when the push checks of branch stay red: try again with a new correction worker,
-// take it over, or push without the push checks this once.
+// askPushHeld tells the lead that the push checks of branch stay red: retry a correction, drop the work, or leave it waiting.
 func (h *Harness) askPushHeld(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch string, f *planv1.IntegrationFailure,
 	attempts int32, unstarted error, committed []*planv1.Task,
 ) {
-	tried := fmt.Sprintf("Djinn started %d correction workers, one after the other: none made the push checks pass.", attempts)
-	switch attempts {
-	case 0:
-		tried = "The project's settings start no correction worker (correction_attempts: 0)."
-	case 1:
-		tried = "Djinn started a correction worker: it did not make the push checks pass."
+	tip := f.GetBase()
+	if sha, err := git(ctx, project.GetDirectory(), "rev-parse", "refs/heads/"+branch); err == nil && sha != "" {
+		tip = sha
 	}
-	tried = unstartedText(tried, "correction", attempts, unstarted)
-	var ctxt strings.Builder
-	fmt.Fprintf(&ctxt, "**What failed.** %s, on %s at %s.\n\n", capital(headline(f.GetReason())), branch, short8(f.GetBase()))
-	if s := strings.TrimSpace(strings.TrimPrefix(tail(f.GetOutput()), ":\n")); s != "" {
-		fmt.Fprintf(&ctxt, "```\n%s\n```\n\n", s)
-	}
-	if f.GetCommand() != "" {
-		fmt.Fprintf(&ctxt, "**The command.** `%s`\n\n", f.GetCommand())
-	}
-	fmt.Fprintf(&ctxt, "**To take it.** `git switch %s`: where `%s` fails.\n\n", branch, f.GetCommand())
-	ctxt.WriteString("Djinn runs the push checks before each push, and pushes nothing red unless you say so.")
-
-	text := fmt.Sprintf("The push checks of %s stay red: %s. %s What should Djinn do?", branch, headline(f.GetReason()), tried)
-	q := h.pushQuestion(wish, text, ctxt.String(), []string{retryPushOption, takePushOption, pushUncheckedOption})
 	err := h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
-		if err := tx.Journal(actorHarness, methodIntegrate, q); err != nil {
-			return err
-		}
-		if err := plan.Ask(ctx, tx, q); err != nil {
-			return err
-		}
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
-			p.QuestionId, p.Approved, p.CorrectedBy, p.Failure = q.GetId(), false, "", f
+			p.QuestionId, p.Approved, p.CorrectedBy, p.Failure = "", false, "", f
+			p.Held = fmt.Sprintf("at %s, %s; left to the lead", short8(tip), headline(f.GetReason()))
+			p.FailedSha = tip
 		})
 	})
 	if err != nil {
-		log.Printf("djinn: push %s: ask: %v", branch, err)
+		log.Printf("djinn: push %s: %v", branch, err)
 		return
 	}
-	h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push checks of %s stay red; Djinn asks you %s", branch, q.GetCode()))
+	line := fmt.Sprintf("Djinn: the push checks of %s stay red: %s. The move is yours: retry a correction, drop the work (djinn task done --drop / djinn task cancel), or leave it waiting.",
+		branch, headline(f.GetReason()))
+	h.tellLead(ctx, wish.GetId(), line)
+	h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push checks of %s stay red; left to the lead", branch))
 	h.notify()
 }
 

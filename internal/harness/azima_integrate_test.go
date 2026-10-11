@@ -1,7 +1,6 @@
 package harness
 
 import (
-	"slices"
 	"strings"
 	"testing"
 
@@ -318,13 +317,15 @@ func TestAzimaFollowMainMergePushed(t *testing.T) {
 	}
 }
 
-// TestAzimaFollowMainConflictRaisesQuestion verifies that a conflict when following main raises a question to the
-// developer with the conflict icon and options.
-func TestAzimaFollowMainConflictRaisesQuestion(t *testing.T) {
+// TestAzimaFollowMainConflictLeavesToLead verifies that a conflict when following main tells the lead
+// and leaves QuestionId empty, asking no question to the developer.
+func TestAzimaFollowMainConflictLeavesToLead(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
 	in.setAzimaStrategy(t)
 	in.noCorrection(t)
+	lead := &leadListener{}
+	in.h.TellLeads(lead.tell)
 
 	t1 := in.azima(t, in.wishID, "Base")
 	t2 := in.azima(t, in.wishID, "Dependent", t1.GetCode())
@@ -352,19 +353,15 @@ func TestAzimaFollowMainConflictRaisesQuestion(t *testing.T) {
 		t.Fatalf("w2 state = %v, want CONFLICT", w2Task.GetIntegration().GetState())
 	}
 	qid := w2Task.GetIntegration().GetQuestionId()
-	if qid == "" {
-		t.Fatal("expected question_id on conflicted task, got empty")
+	if qid != "" {
+		t.Fatalf("expected empty question_id on conflicted task, got %s", qid)
 	}
-
-	q, err := store.Get[*planv1.Question](t.Context(), in.db, qid)
-	if err != nil {
-		t.Fatalf("get question %s: %v", qid, err)
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	if err != nil || len(questions) != 0 {
+		t.Fatalf("expected 0 questions, got %d (%v)", len(questions), err)
 	}
-	if q.GetIcon() != "🔀" {
-		t.Fatalf("question icon = %s, want 🔀", q.GetIcon())
-	}
-	if !slices.Contains(q.GetOptions(), retryOption) {
-		t.Fatalf("question options %v do not contain retryOption", q.GetOptions())
+	if paras := lead.all(); len(paras) == 0 || !strings.Contains(paras[len(paras)-1], "The move is yours: retry a correction, drop the work") {
+		t.Errorf("expected lead notification, got %v", paras)
 	}
 }
 

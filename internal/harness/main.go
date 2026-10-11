@@ -305,6 +305,8 @@ func (h *Harness) mainFailed(
 		m.FailedSha, m.Attempts = f.GetMainSha(), 0
 		m.Held = text + "; Djinn merges " + shown + " again once it moves"
 	})
+	h.tellLead(ctx, wish.GetId(), fmt.Sprintf("Djinn: the merge of %s into %s failed: %s. The move is yours: retry a correction, or leave it waiting (Djinn merges again once main moves).",
+		shown, branch, headline(f.GetReason())))
 }
 
 // mainCorrectionTitle is the title of a correction worker of main's failed merge f into branch.

@@ -256,6 +256,41 @@ func depWorkInSha(ctx context.Context, dir string, dep *planv1.Task, sha string)
 	return false
 }
 
+// taskWorkInBranch reports whether the task's work is already in the integration branch:
+// its branch head is an ancestor of the integration branch head (W425's check).
+func taskWorkInBranch(ctx context.Context, dir string, task *planv1.Task, integration string) bool {
+	if task == nil || task.GetBranch() == "" || integration == "" {
+		return false
+	}
+	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+task.GetBranch()+"^{commit}")
+	if err != nil || head == "" {
+		head, err = git(ctx, dir, "rev-parse", "--verify", "--quiet", task.GetBranch()+"^{commit}")
+		if err != nil || head == "" {
+			return false
+		}
+	}
+	intTarget := "refs/heads/" + integration + "^{commit}"
+	intHead, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", intTarget)
+	if err != nil || intHead == "" {
+		intHead, _ = git(ctx, dir, "rev-parse", "--verify", "--quiet", integration+"^{commit}")
+	}
+	if intHead == "" {
+		intHead, _ = git(ctx, dir, "rev-parse", "HEAD")
+	}
+	if intHead == "" {
+		return false
+	}
+	if _, err := git(ctx, dir, "merge-base", "--is-ancestor", head, intHead); err == nil {
+		return true
+	}
+	if intSha := task.GetIntegration().GetSha(); intSha != "" {
+		if _, err := git(ctx, dir, "merge-base", "--is-ancestor", intSha, intHead); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // dependenciesUnmergedIn checks that each dependency's work is in sha; if not, it returns why the task must wait.
 func (h *Harness) dependenciesUnmergedIn(ctx context.Context, dir string, task *planv1.Task, sha, from string) string {
 	if len(task.GetDependsOn()) == 0 {
