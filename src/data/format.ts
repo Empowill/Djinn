@@ -195,7 +195,8 @@ export type Tone =
   | "human"
   | "proof"
   // An open question nothing waits for: it can wait.
-  | "later";
+  | "later"
+  | "withdrawn";
 
 // taskTone is a task's state in that language. A task Djinn resumes runs; one waiting for its provider's limit to
 // reset holds still, as a paused one; one cut short and resumed as another task (forkedAs) is stopped, no alarm.
@@ -281,7 +282,11 @@ export function answerText(question: Question): string {
 }
 
 export function isOpen(question: Question): boolean {
-  return !question.answer;
+  return !question.answer && !question.withdrawal;
+}
+
+export function isWithdrawn(question: Question): boolean {
+  return !!question.withdrawal;
 }
 
 export function allowanceOf(wish: Wish, projectId: string): Allowance {
@@ -331,7 +336,11 @@ export function usd(cost: number): string {
 // lamp reads it the same way (plan.Investigating).
 export function investigating(question: Question): boolean {
   const last = question.rounds?.at(-1);
-  return !question.answer && last?.kind === RoundKind.ENLIGHTEN;
+  return (
+    !question.answer &&
+    !question.withdrawal &&
+    last?.kind === RoundKind.ENLIGHTEN
+  );
 }
 
 // waitsForYou tells an open question that waits for your answer.

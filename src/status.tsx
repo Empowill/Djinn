@@ -38,6 +38,7 @@ const icons: Record<Tone, LucideIcon | null> = {
   human: CircleUserRound,
   proof: ClipboardCheck,
   later: Clock3,
+  withdrawn: CircleOff,
 };
 
 // ToneIcon is a state's icon; running is a live dot.

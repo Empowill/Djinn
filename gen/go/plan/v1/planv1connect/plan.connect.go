@@ -62,6 +62,11 @@ const (
 	QuestionServiceEnlightenProcedure = "/plan.v1.QuestionService/Enlighten"
 	// QuestionServiceReviseProcedure is the fully-qualified name of the QuestionService's Revise RPC.
 	QuestionServiceReviseProcedure = "/plan.v1.QuestionService/Revise"
+	// QuestionServiceMoveProcedure is the fully-qualified name of the QuestionService's Move RPC.
+	QuestionServiceMoveProcedure = "/plan.v1.QuestionService/Move"
+	// QuestionServiceWithdrawProcedure is the fully-qualified name of the QuestionService's Withdraw
+	// RPC.
+	QuestionServiceWithdrawProcedure = "/plan.v1.QuestionService/Withdraw"
 	// ProjectServiceAddProcedure is the fully-qualified name of the ProjectService's Add RPC.
 	ProjectServiceAddProcedure = "/plan.v1.ProjectService/Add"
 	// ProjectServiceListProcedure is the fully-qualified name of the ProjectService's List RPC.
@@ -202,6 +207,10 @@ type QuestionServiceClient interface {
 	// Revise an open question after investigating: its context, options or recommendation. The former ones stay in its
 	// rounds, and the question waits for the developer again.
 	Revise(context.Context, *connect.Request[v1.QuestionServiceReviseRequest]) (*connect.Response[v1.QuestionServiceReviseResponse], error)
+	// Move an open question to another wish. Its code is retired in this wish; it receives the next code in the other.
+	Move(context.Context, *connect.Request[v1.QuestionServiceMoveRequest]) (*connect.Response[v1.QuestionServiceMoveResponse], error)
+	// Withdraw an open question without an answer.
+	Withdraw(context.Context, *connect.Request[v1.QuestionServiceWithdrawRequest]) (*connect.Response[v1.QuestionServiceWithdrawResponse], error)
 }
 
 // NewQuestionServiceClient constructs a client for the plan.v1.QuestionService service. By default,
@@ -246,6 +255,18 @@ func NewQuestionServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(questionServiceMethods.ByName("Revise")),
 			connect.WithClientOptions(opts...),
 		),
+		move: connect.NewClient[v1.QuestionServiceMoveRequest, v1.QuestionServiceMoveResponse](
+			httpClient,
+			baseURL+QuestionServiceMoveProcedure,
+			connect.WithSchema(questionServiceMethods.ByName("Move")),
+			connect.WithClientOptions(opts...),
+		),
+		withdraw: connect.NewClient[v1.QuestionServiceWithdrawRequest, v1.QuestionServiceWithdrawResponse](
+			httpClient,
+			baseURL+QuestionServiceWithdrawProcedure,
+			connect.WithSchema(questionServiceMethods.ByName("Withdraw")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -256,6 +277,8 @@ type questionServiceClient struct {
 	list      *connect.Client[v1.QuestionServiceListRequest, v1.QuestionServiceListResponse]
 	enlighten *connect.Client[v1.QuestionServiceEnlightenRequest, v1.QuestionServiceEnlightenResponse]
 	revise    *connect.Client[v1.QuestionServiceReviseRequest, v1.QuestionServiceReviseResponse]
+	move      *connect.Client[v1.QuestionServiceMoveRequest, v1.QuestionServiceMoveResponse]
+	withdraw  *connect.Client[v1.QuestionServiceWithdrawRequest, v1.QuestionServiceWithdrawResponse]
 }
 
 // Ask calls plan.v1.QuestionService.Ask.
@@ -283,6 +306,16 @@ func (c *questionServiceClient) Revise(ctx context.Context, req *connect.Request
 	return c.revise.CallUnary(ctx, req)
 }
 
+// Move calls plan.v1.QuestionService.Move.
+func (c *questionServiceClient) Move(ctx context.Context, req *connect.Request[v1.QuestionServiceMoveRequest]) (*connect.Response[v1.QuestionServiceMoveResponse], error) {
+	return c.move.CallUnary(ctx, req)
+}
+
+// Withdraw calls plan.v1.QuestionService.Withdraw.
+func (c *questionServiceClient) Withdraw(ctx context.Context, req *connect.Request[v1.QuestionServiceWithdrawRequest]) (*connect.Response[v1.QuestionServiceWithdrawResponse], error) {
+	return c.withdraw.CallUnary(ctx, req)
+}
+
 // QuestionServiceHandler is an implementation of the plan.v1.QuestionService service.
 type QuestionServiceHandler interface {
 	// Ask the developer a question. Offer up to four options to answer by letter, or none for a yes/no question.
@@ -296,6 +329,10 @@ type QuestionServiceHandler interface {
 	// Revise an open question after investigating: its context, options or recommendation. The former ones stay in its
 	// rounds, and the question waits for the developer again.
 	Revise(context.Context, *connect.Request[v1.QuestionServiceReviseRequest]) (*connect.Response[v1.QuestionServiceReviseResponse], error)
+	// Move an open question to another wish. Its code is retired in this wish; it receives the next code in the other.
+	Move(context.Context, *connect.Request[v1.QuestionServiceMoveRequest]) (*connect.Response[v1.QuestionServiceMoveResponse], error)
+	// Withdraw an open question without an answer.
+	Withdraw(context.Context, *connect.Request[v1.QuestionServiceWithdrawRequest]) (*connect.Response[v1.QuestionServiceWithdrawResponse], error)
 }
 
 // NewQuestionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -336,6 +373,18 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 		connect.WithSchema(questionServiceMethods.ByName("Revise")),
 		connect.WithHandlerOptions(opts...),
 	)
+	questionServiceMoveHandler := connect.NewUnaryHandler(
+		QuestionServiceMoveProcedure,
+		svc.Move,
+		connect.WithSchema(questionServiceMethods.ByName("Move")),
+		connect.WithHandlerOptions(opts...),
+	)
+	questionServiceWithdrawHandler := connect.NewUnaryHandler(
+		QuestionServiceWithdrawProcedure,
+		svc.Withdraw,
+		connect.WithSchema(questionServiceMethods.ByName("Withdraw")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.QuestionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case QuestionServiceAskProcedure:
@@ -348,6 +397,10 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 			questionServiceEnlightenHandler.ServeHTTP(w, r)
 		case QuestionServiceReviseProcedure:
 			questionServiceReviseHandler.ServeHTTP(w, r)
+		case QuestionServiceMoveProcedure:
+			questionServiceMoveHandler.ServeHTTP(w, r)
+		case QuestionServiceWithdrawProcedure:
+			questionServiceWithdrawHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -375,6 +428,14 @@ func (UnimplementedQuestionServiceHandler) Enlighten(context.Context, *connect.R
 
 func (UnimplementedQuestionServiceHandler) Revise(context.Context, *connect.Request[v1.QuestionServiceReviseRequest]) (*connect.Response[v1.QuestionServiceReviseResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Revise is not implemented"))
+}
+
+func (UnimplementedQuestionServiceHandler) Move(context.Context, *connect.Request[v1.QuestionServiceMoveRequest]) (*connect.Response[v1.QuestionServiceMoveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Move is not implemented"))
+}
+
+func (UnimplementedQuestionServiceHandler) Withdraw(context.Context, *connect.Request[v1.QuestionServiceWithdrawRequest]) (*connect.Response[v1.QuestionServiceWithdrawResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Withdraw is not implemented"))
 }
 
 // ProjectServiceClient is a client for the plan.v1.ProjectService service.

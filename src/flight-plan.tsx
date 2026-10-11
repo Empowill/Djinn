@@ -53,6 +53,7 @@ import {
   MoveAzimaDialog,
   proofWords,
 } from "./azima";
+import { MoveQuestionDialog, WithdrawQuestionDialog } from "./wish-dialogs";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
 import { OperatingLoad } from "./operating-load";
 import { SpentLine } from "./usage";
@@ -77,6 +78,7 @@ export function FlightPlan({
   onToast: (text: string) => void;
 }) {
   const projects = useData((s) => s.projects);
+  const allWishes = useData((s) => s.wishes);
   const projectById = useMemo(
     () => new Map(projects.map((p) => [p.id, p])),
     [projects],
@@ -87,7 +89,8 @@ export function FlightPlan({
   const plan = useMemo(() => flightPlan(wishes, details), [wishes, details]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
-  const { clients, act, quiet, answer, enlighten, mark } = useWrites(onToast);
+  const { clients, act, quiet, answer, enlighten, mark, move, withdraw } =
+    useWrites(onToast);
   const waits =
     plan.questions.length +
     plan.waiting.length +
@@ -111,6 +114,14 @@ export function FlightPlan({
   const [movingAzima, setMovingAzima] = useState<{
     wishId: string;
     task: Task;
+  } | null>(null);
+  const [movingQuestion, setMovingQuestion] = useState<{
+    wishId: string;
+    question: Question;
+  } | null>(null);
+  const [withdrawingQuestion, setWithdrawingQuestion] = useState<{
+    wishId: string;
+    question: Question;
   } | null>(null);
   // What a link between a decision and a task brings into sight in the other tab: its id.
   const [focus, setFocus] = useState("");
@@ -609,6 +620,18 @@ export function FlightPlan({
                               onAnswer={handleQuestionAnswer}
                               onMark={handleQuestionMark}
                               onEnlighten={handleQuestionEnlighten}
+                              onMove={(q) =>
+                                setMovingQuestion({
+                                  wishId: wish.id,
+                                  question: q,
+                                })
+                              }
+                              onWithdraw={(q) =>
+                                setWithdrawingQuestion({
+                                  wishId: wish.id,
+                                  question: q,
+                                })
+                              }
                             />
                           ))}
                         </section>
@@ -668,6 +691,18 @@ export function FlightPlan({
                       origin
                       onAnswer={handleQuestionAnswer}
                       onMark={handleQuestionMark}
+                      onMove={(q) =>
+                        setMovingQuestion({
+                          wishId: q.wishId,
+                          question: q,
+                        })
+                      }
+                      onWithdraw={(q) =>
+                        setWithdrawingQuestion({
+                          wishId: q.wishId,
+                          question: q,
+                        })
+                      }
                     />
                   </div>
                 )}
@@ -703,6 +738,23 @@ export function FlightPlan({
               ),
             );
           }}
+        />
+      )}
+      {movingQuestion && (
+        <MoveQuestionDialog
+          question={movingQuestion.question}
+          wishes={allWishes.length > 0 ? allWishes : wishes}
+          currentWishId={movingQuestion.wishId}
+          onClose={() => setMovingQuestion(null)}
+          onMove={move}
+        />
+      )}
+      {withdrawingQuestion && (
+        <WithdrawQuestionDialog
+          question={withdrawingQuestion.question}
+          currentWishId={withdrawingQuestion.wishId}
+          onClose={() => setWithdrawingQuestion(null)}
+          onWithdraw={withdraw}
         />
       )}
     </div>

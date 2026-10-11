@@ -136,7 +136,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	if o.leads != nil {
 		o.enlight = append(o.enlight, wishes.Enlightened) // The lead learns each request to investigate, after the harness.
 	}
-	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle}
+	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle, Workers: o.workers}
 	p, h = planv1connect.NewQuestionServiceHandler(questions, opt)
 	out[p] = h
 	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
@@ -659,6 +659,8 @@ type Questions struct {
 	// Settle, when set, acts on an answer in the transaction that stores it, and returns what follows once it is
 	// stored, if anything: a question that routes a request files it, or makes its wish.
 	Settle Settle
+	// Workers tells whether a task is running.
+	Workers WishWorkers
 }
 
 // AnswerHook is called with a question once its answer is stored. It says what it did with the answer, for the
@@ -723,13 +725,27 @@ func (q *Questions) Ask(
 	return connect.NewResponse(&planv1.QuestionServiceAskResponse{Question: question}), nil
 }
 
-// Ask stores question, new, in tx with the next code of its wish. The caller journals the command that asks it.
-func Ask(ctx context.Context, tx *store.Tx, question *planv1.Question) error {
-	// The next code follows the highest one of the wish. Questions are never deleted, so a code is never given
-	// twice; transactions run one at a time, and the unique index guards it anyway.
-	asked, err := store.List[*planv1.Question](ctx, tx, store.Where{"wish_id": question.GetWishId()})
+func (q *Questions) taskRuns(t *planv1.Task) bool {
+	if working(t) {
+		return true
+	}
+	if q.Workers != nil && q.Workers.HasRun(t.GetId()) {
+		return true
+	}
+	return false
+}
+
+// NextQuestionCode is the code of a new question of the wish wishID: Q01, Q02…
+// The number after the highest one its questions have or its retired codes had (Wish.retired_codes),
+// so that a code is never given twice, deleted or moved.
+func NextQuestionCode(ctx context.Context, r store.Reader, wishID string) (string, error) {
+	wish, err := store.Get[*planv1.Wish](ctx, r, wishID)
 	if err != nil {
-		return err
+		return "", err
+	}
+	asked, err := store.List[*planv1.Question](ctx, r, store.Where{"wish_id": wishID})
+	if err != nil {
+		return "", err
 	}
 	last := 0
 	for _, a := range asked {
@@ -738,10 +754,25 @@ func Ask(ctx context.Context, tx *store.Tx, question *planv1.Question) error {
 			last = n
 		}
 	}
-	if last >= maxCode {
-		return connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("this wish has used its %d question codes", maxCode))
+	for _, code := range wish.GetRetiredCodes() {
+		var n int
+		if _, err := fmt.Sscanf(code, "Q%d", &n); err == nil && n > last {
+			last = n
+		}
 	}
-	question.Code = fmt.Sprintf("Q%02d", last+1)
+	if last >= maxCode {
+		return "", connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("this wish has used its %d question codes", maxCode))
+	}
+	return fmt.Sprintf("Q%02d", last+1), nil
+}
+
+// Ask stores question, new, in tx with the next code of its wish. The caller journals the command that asks it.
+func Ask(ctx context.Context, tx *store.Tx, question *planv1.Question) error {
+	code, err := NextQuestionCode(ctx, tx, question.GetWishId())
+	if err != nil {
+		return err
+	}
+	question.Code = code
 	return tx.Put(question)
 }
 
@@ -754,6 +785,9 @@ func (q *Questions) Answer(
 		var err error
 		if question, err = find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId()); err != nil {
 			return err
+		}
+		if question.GetWithdrawal() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s was withdrawn", question.GetCode()))
 		}
 		if question.GetRoute() != nil && question.GetAnswer() != nil {
 			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
@@ -870,7 +904,7 @@ func (q *Questions) List(
 	since := req.Msg.GetSince()
 	var matching []*planv1.Question
 	for _, question := range all {
-		if req.Msg.GetOpen() && question.GetAnswer() != nil {
+		if req.Msg.GetOpen() && (question.GetAnswer() != nil || question.GetWithdrawal() != nil) {
 			continue
 		}
 		if since != nil && question.GetCreateTime().AsTime().Before(since.AsTime()) {
@@ -887,4 +921,213 @@ func (q *Questions) List(
 		NextPageToken: nextToken,
 		Total:         total,
 	}), nil
+}
+
+// Move moves an open question to another wish, optionally along with tasks that name it as their decision.
+func (q *Questions) Move(
+	ctx context.Context, req *connect.Request[planv1.QuestionServiceMoveRequest],
+) (*connect.Response[planv1.QuestionServiceMoveResponse], error) {
+	var movedQuestion *planv1.Question
+	var movedTasks []*planv1.Task
+	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		sourceQuestion, err := find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId())
+		if err != nil {
+			return err
+		}
+		if sourceQuestion.GetAnswer() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s is decided: ask a new one", sourceQuestion.GetCode()))
+		}
+		if sourceQuestion.GetWithdrawal() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s was withdrawn", sourceQuestion.GetCode()))
+		}
+		targetWish, err := ResolveWish(ctx, tx, req.Msg.GetWish())
+		if err != nil {
+			return err
+		}
+		if targetWish.GetId() == sourceQuestion.GetWishId() {
+			return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("question %s is already in %s", sourceQuestion.GetCode(), targetWish.GetTitle()))
+		}
+		sourceWish, err := store.Get[*planv1.Wish](ctx, tx, sourceQuestion.GetWishId())
+		if err != nil {
+			return err
+		}
+
+		oldCode := sourceQuestion.GetCode()
+		newCode, err := NextQuestionCode(ctx, tx, targetWish.GetId())
+		if err != nil {
+			return err
+		}
+
+		// Tasks naming this question with --decision
+		var following []*planv1.Task
+		if req.Msg.GetFollow() {
+			tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": sourceWish.GetId()})
+			if err != nil {
+				return err
+			}
+			for _, t := range tasks {
+				if strings.EqualFold(t.GetDecision(), oldCode) || t.GetDecision() == sourceQuestion.GetId() {
+					if q.taskRuns(t) {
+						return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s runs: wait for it to end", t.GetCode()))
+					}
+					following = append(following, t)
+				}
+			}
+		}
+
+		// Retire old question code in source wish
+		if !slices.Contains(sourceWish.GetRetiredCodes(), oldCode) {
+			sourceWish.RetiredCodes = append(sourceWish.RetiredCodes, oldCode)
+		}
+
+		// Prepare target tasks and taken codes for following tasks
+		targetTasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": targetWish.GetId()})
+		if err != nil {
+			return err
+		}
+		takenCodes := make(map[string]bool)
+		for _, c := range targetWish.GetRetiredCodes() {
+			takenCodes[strings.ToUpper(c)] = true
+		}
+		for _, tt := range targetTasks {
+			takenCodes[strings.ToUpper(tt.GetCode())] = true
+		}
+
+		validTargetTaskIDs := make(map[string]bool, len(targetTasks)+len(following))
+		for _, tt := range targetTasks {
+			validTargetTaskIDs[tt.GetId()] = true
+		}
+		for _, ft := range following {
+			validTargetTaskIDs[ft.GetId()] = true
+		}
+
+		nextNum := func(letter string) string {
+			last := 0
+			for c := range takenCodes {
+				var n int
+				if _, err := fmt.Sscanf(c, letter+"%d", &n); err == nil && n > last {
+					last = n
+				}
+			}
+			code := fmt.Sprintf("%s%d", letter, last+1)
+			takenCodes[strings.ToUpper(code)] = true
+			return code
+		}
+
+		for _, t := range following {
+			oldTaskCode := t.GetCode()
+			if !slices.Contains(sourceWish.GetRetiredCodes(), oldTaskCode) {
+				sourceWish.RetiredCodes = append(sourceWish.RetiredCodes, oldTaskCode)
+			}
+			if takenCodes[strings.ToUpper(t.GetCode())] {
+				letter := "W"
+				if IsAzima(t) {
+					letter = "T"
+				}
+				if len(t.GetCode()) > 0 {
+					r := rune(t.GetCode()[0])
+					if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+						letter = strings.ToUpper(string(r))
+					}
+				}
+				t.Code = nextNum(letter)
+			} else {
+				takenCodes[strings.ToUpper(t.GetCode())] = true
+			}
+			t.WishId = targetWish.GetId()
+			t.Decision = newCode
+
+			var validDeps []string
+			for _, depID := range t.GetDependsOn() {
+				if validTargetTaskIDs[depID] {
+					validDeps = append(validDeps, depID)
+				}
+			}
+			t.DependsOn = validDeps
+
+			if t.GetPartOf() != "" && !validTargetTaskIDs[t.GetPartOf()] {
+				t.PartOf = ""
+			}
+		}
+
+		// Cycle check in target wish
+		allTargetTasks := append(slices.Clone(targetTasks), following...)
+		for _, t := range following {
+			if cycle := ClosesCycle(t, t.GetDependsOn(), t.GetPartOf(), allTargetTasks); cycle != "" {
+				return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("task %s closes a cycle: %s", t.GetCode(), cycle))
+			}
+		}
+
+		// Save source wish (with retired codes)
+		if err := tx.Put(sourceWish); err != nil {
+			return err
+		}
+
+		// Save question in target wish
+		sourceQuestion.WishId = targetWish.GetId()
+		sourceQuestion.Code = newCode
+		if err := tx.Put(sourceQuestion); err != nil {
+			return err
+		}
+
+		// Save following tasks
+		for _, t := range following {
+			if err := tx.Put(t); err != nil {
+				return err
+			}
+		}
+
+		// Trace decision block in source wish's decision log
+		if _, err := PutBlock(ctx, tx, &planv1.BlockServicePutRequest{
+			WishId:  sourceWish.GetId(),
+			Kind:    "decision",
+			Title:   fmt.Sprintf("moved to %s as %s", targetWish.GetTitle(), newCode),
+			Content: sourceQuestion.GetText(),
+			Icon:    sourceQuestion.GetIcon(),
+		}); err != nil {
+			return err
+		}
+
+		movedQuestion = sourceQuestion
+		movedTasks = following
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if q.Workers != nil && len(movedTasks) > 0 {
+		q.Workers.Wake()
+	}
+	return connect.NewResponse(&planv1.QuestionServiceMoveResponse{
+		Question: movedQuestion,
+		Tasks:    movedTasks,
+	}), nil
+}
+
+// Withdraw closes an open question without an answer.
+func (q *Questions) Withdraw(
+	ctx context.Context, req *connect.Request[planv1.QuestionServiceWithdrawRequest],
+) (*connect.Response[planv1.QuestionServiceWithdrawResponse], error) {
+	var question *planv1.Question
+	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if question, err = find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		if question.GetAnswer() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s is decided: ask a new one", question.GetCode()))
+		}
+		if question.GetWithdrawal() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s was withdrawn", question.GetCode()))
+		}
+		question.Withdrawal = &planv1.Withdrawal{
+			Note:       req.Msg.GetNote(),
+			CreateTime: timestamppb.Now(),
+		}
+		return tx.Put(question)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.QuestionServiceWithdrawResponse{Question: question}), nil
 }

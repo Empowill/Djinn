@@ -10,7 +10,9 @@ import {
   type ProjectCheck,
   ProjectPush,
   type ProjectServiceShowResponse,
+  type Question,
   type Skill,
+  type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import type {
   Shortcut,
@@ -714,6 +716,160 @@ export function Settings({
         <Brand small />
         <span>Djinn {env?.version}</span>
       </div>
+    </ModalFrame>
+  );
+}
+
+// MoveQuestionDialog asks which other wish an open question should move to, and whether its tasks should follow.
+export function MoveQuestionDialog({
+  question,
+  wishes,
+  currentWishId,
+  onClose,
+  onMove,
+}: {
+  question: Question;
+  wishes: readonly Wish[];
+  currentWishId: string;
+  onClose: () => void;
+  onMove: (
+    wishId: string,
+    id: string,
+    targetWish: string,
+    follow: boolean,
+  ) => Promise<unknown>;
+}) {
+  const otherWishes = wishes.filter((w) => w.id !== currentWishId);
+  const [targetWish, setTargetWish] = useState(otherWishes[0]?.id ?? "");
+  const [follow, setFollow] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!targetWish) return;
+    setBusy(true);
+    try {
+      await onMove(currentWishId, question.id, targetWish, follow);
+      onClose();
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalFrame
+      title={t("question.move_dialog_title", { code: question.code })}
+      eyebrow={question.text}
+      onClose={onClose}
+    >
+      <form className="form-fields" onSubmit={(e) => void submit(e)}>
+        <label>
+          <span>{t("question.move_select_wish")}</span>
+          <select
+            value={targetWish}
+            onChange={(e) => setTargetWish(e.target.value)}
+            disabled={busy || otherWishes.length === 0}
+            autoFocus
+          >
+            {otherWishes.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="wish-project-choice">
+          <input
+            type="checkbox"
+            checked={follow}
+            onChange={(e) => setFollow(e.target.checked)}
+            disabled={busy}
+          />
+          <span>{t("question.move_follow")}</span>
+        </label>
+        {error && <p className="login-message">{error}</p>}
+        <div className="modal-footer">
+          <button type="button" className="button secondary" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button
+            type="submit"
+            className="button accent"
+            disabled={busy || !targetWish}
+          >
+            {t("question.move_confirm")}
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      </form>
+    </ModalFrame>
+  );
+}
+
+// WithdrawQuestionDialog closes an open question without an answer.
+export function WithdrawQuestionDialog({
+  question,
+  currentWishId,
+  onClose,
+  onWithdraw,
+}: {
+  question: Question;
+  currentWishId: string;
+  onClose: () => void;
+  onWithdraw: (wishId: string, id: string, note: string) => Promise<unknown>;
+}) {
+  const [note, setNote] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await onWithdraw(currentWishId, question.id, note.trim());
+      onClose();
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalFrame
+      title={t("question.withdraw_dialog_title", { code: question.code })}
+      eyebrow={question.text}
+      onClose={onClose}
+    >
+      <form className="form-fields" onSubmit={(e) => void submit(e)}>
+        <label>
+          <span>{t("question.withdraw_note")}</span>
+          <textarea
+            autoFocus
+            rows={3}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={t("question.withdraw_note_placeholder")}
+            disabled={busy}
+          />
+        </label>
+        {error && <p className="login-message">{error}</p>}
+        <div className="modal-footer">
+          <button type="button" className="button secondary" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button
+            type="submit"
+            className="button danger-button"
+            disabled={busy}
+          >
+            {t("question.withdraw_confirm")}
+          </button>
+        </div>
+      </form>
     </ModalFrame>
   );
 }

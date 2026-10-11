@@ -137,6 +137,48 @@ export function useWrites(onToast: (text: string) => void) {
     [act, clients.marks],
   );
 
+  const move = useCallback(
+    (wishId: string, id: string, targetWish: string, follow: boolean) =>
+      act(
+        wishId,
+        async () => {
+          const res = await clients.questions.move({
+            question: { ref: { case: "id", value: id } },
+            wish: targetWish,
+            follow,
+            wishId,
+          });
+          if (res.question?.wishId) {
+            void store.changed(res.question.wishId, [
+              Change.QUESTION,
+              Change.TASK,
+              Change.WISH,
+            ]);
+          }
+          return res;
+        },
+        [Change.QUESTION, Change.BLOCK, Change.TASK, Change.WISH],
+        t("question.moved_toast"),
+      ),
+    [act, clients.questions, store],
+  );
+
+  const withdraw = useCallback(
+    (wishId: string, id: string, note: string) =>
+      act(
+        wishId,
+        () =>
+          clients.questions.withdraw({
+            question: { ref: { case: "id", value: id } },
+            note,
+            wishId,
+          }),
+        QUESTIONS_CHANGES,
+        t("question.withdrawn_toast"),
+      ),
+    [act, clients.questions],
+  );
+
   return useMemo(
     () => ({
       clients,
@@ -145,7 +187,9 @@ export function useWrites(onToast: (text: string) => void) {
       answer,
       enlighten,
       mark,
+      move,
+      withdraw,
     }),
-    [clients, act, quiet, answer, enlighten, mark],
+    [clients, act, quiet, answer, enlighten, mark, move, withdraw],
   );
 }

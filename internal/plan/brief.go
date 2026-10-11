@@ -157,7 +157,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"\"…\"`; `djinn tilasm get <code>` (its text, the folder of its files); `djinn tilasm history <code>`, " +
 	"`djinn tilasm restore <code> <version>`.\n" +
 	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for a " +
-	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, by its question worker or by you.\n" +
+	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, by its question worker or by you; " +
+	"`djinn question move <question> --wish <wish>` moves an open question to another wish (`--follow` moves tasks naming it as decision); " +
+	"`djinn question withdraw <question> --note \"…\"` closes it without an answer.\n" +
 	"- `djinn mark list <wish>`: the open questions the developer marked read in the window, without a word. Start a " +
 	"recommendation with its option's letter (`B: …`): the developer approves it in one click.\n" +
 	"- `djinn wish sync <wish>`: the wish's page, which Djinn keeps up to date in the file it prints. After the wish " +
@@ -369,6 +371,9 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 
 	var open, investigate []*planv1.Question
 	for _, q := range exp.GetQuestions() {
+		if q.GetWithdrawal() != nil {
+			continue
+		}
 		if Investigating(q) {
 			investigate = append(investigate, q)
 		} else if q.GetAnswer() == nil {
@@ -473,15 +478,17 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 // leadMethods are the commands a lead gives, as its rules list them, whatever its agent: the latest says when a lead
 // last acted. The developer's own commands (answers, marks, pauses) are not among them.
 var leadMethods = map[string]bool{
-	planv1connect.TaskServiceSpawnProcedure:      true,
-	planv1connect.TaskServiceContinueProcedure:   true,
-	planv1connect.TaskServiceDependProcedure:     true,
-	planv1connect.TaskServiceGroupProcedure:      true,
-	planv1connect.BlockServicePutProcedure:       true,
-	planv1connect.QuestionServiceAskProcedure:    true,
-	planv1connect.QuestionServiceReviseProcedure: true,
-	planv1connect.WishServiceRouteProcedure:      true,
-	planv1connect.PlanServiceSyncProcedure:       true,
+	planv1connect.TaskServiceSpawnProcedure:        true,
+	planv1connect.TaskServiceContinueProcedure:     true,
+	planv1connect.TaskServiceDependProcedure:       true,
+	planv1connect.TaskServiceGroupProcedure:        true,
+	planv1connect.BlockServicePutProcedure:         true,
+	planv1connect.QuestionServiceAskProcedure:      true,
+	planv1connect.QuestionServiceReviseProcedure:   true,
+	planv1connect.QuestionServiceMoveProcedure:     true,
+	planv1connect.QuestionServiceWithdrawProcedure: true,
+	planv1connect.WishServiceRouteProcedure:        true,
+	planv1connect.PlanServiceSyncProcedure:         true,
 }
 
 // lastLeadBrief writes the wish's last recorded lead, its agent and its session, and when a lead last acted on the

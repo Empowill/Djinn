@@ -50,7 +50,7 @@ func (h *Harness) Depend(ctx context.Context, procedure string, req *planv1.Task
 			if slices.ContainsFunc(set, func(t *planv1.Task) bool { return t.GetId() == task.GetId() }) {
 				return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("task %s is set twice", task.GetCode()))
 			}
-			if h.hasRun(task.GetId()) {
+			if h.HasRun(task.GetId()) {
 				// Its worker writes the task as it goes: what it waits for is set before it starts, or once it ended.
 				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 					"task %s runs: set what it waits for once it ended", task.GetCode()))
@@ -65,7 +65,7 @@ func (h *Harness) Depend(ctx context.Context, procedure string, req *planv1.Task
 		}
 		// A cycle of the new graph goes through a task just set: looking from each one finds it.
 		for _, task := range set {
-			if cycle := closesCycle(task, task.GetDependsOn(), task.GetPartOf(), graph); cycle != "" {
+			if cycle := plan.ClosesCycle(task, task.GetDependsOn(), task.GetPartOf(), graph); cycle != "" {
 				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the tasks of a wish form no cycle: %s", cycle))
 			}
 		}
@@ -110,7 +110,7 @@ func (h *Harness) insertBefore(ctx context.Context, r store.Reader, task *planv1
 	for _, id := range ids {
 		i := slices.IndexFunc(graph, func(t *planv1.Task) bool { return t.GetId() == id })
 		t := proto.CloneOf(graph[i])
-		if where := started(t, h.hasRun(id)); where != "" {
+		if where := started(t, h.HasRun(id)); where != "" {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 				"task %s has started (%s): --blocks puts a new task before a planned one only", t.GetCode(), where))
 		}
@@ -118,15 +118,15 @@ func (h *Harness) insertBefore(ctx context.Context, r store.Reader, task *planv1
 		graph[i], blocked = t, append(blocked, t)
 	}
 	for _, t := range blocked {
-		if cycle := closesCycle(t, t.GetDependsOn(), t.GetPartOf(), graph); cycle != "" {
+		if cycle := plan.ClosesCycle(t, t.GetDependsOn(), t.GetPartOf(), graph); cycle != "" {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the tasks of a wish form no cycle: %s", cycle))
 		}
 	}
 	return blocked, nil
 }
 
-// hasRun tells whether a worker of the task runs, paused or not.
-func (h *Harness) hasRun(taskID string) bool {
+// HasRun tells whether a worker of the task runs, paused or not.
+func (h *Harness) HasRun(taskID string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.runs[taskID] != nil
@@ -191,7 +191,7 @@ func (h *Harness) Group(ctx context.Context, procedure string, req *planv1.TaskS
 		if err != nil {
 			return err
 		}
-		if cycle := closesCycle(task, task.GetDependsOn(), azima, tasks); cycle != "" {
+		if cycle := plan.ClosesCycle(task, task.GetDependsOn(), azima, tasks); cycle != "" {
 			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the tasks of a wish form no cycle: %s", cycle))
 		}
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
@@ -234,59 +234,4 @@ func resolveAzima(ctx context.Context, r store.Reader, wishID, name string) (str
 			"azima %s is a draft: open it first with djinn task open %s", tasks[i].GetCode(), tasks[i].GetCode()))
 	}
 	return tasks[i].GetId(), nil
-}
-
-// closesCycle tells whether task, waiting for deps and part of azima, would reach itself through tasks, following what
-// each task depends on and the azima it is part of, and then says the cycle in codes ("W1 → W3 → W1"); "" when it
-// would not.
-func closesCycle(task *planv1.Task, deps []string, azima string, tasks []*planv1.Task) string {
-	byID := map[string]*planv1.Task{}
-	for _, t := range tasks {
-		byID[t.GetId()] = t
-	}
-	edges := func(id string) []string {
-		if id == task.GetId() {
-			if azima != "" {
-				return append(slices.Clip(deps), azima)
-			}
-			return deps
-		}
-		t := byID[id]
-		if p := t.GetPartOf(); p != "" {
-			return append(slices.Clip(t.GetDependsOn()), p)
-		}
-		return t.GetDependsOn()
-	}
-	// A path from one of the task's edges back to task closes a cycle.
-	seen := map[string]bool{}
-	var path []string
-	var walk func(id string) bool
-	walk = func(id string) bool {
-		if id == task.GetId() {
-			return true
-		}
-		if seen[id] {
-			return false
-		}
-		seen[id] = true
-		path = append(path, id)
-		for _, next := range edges(id) {
-			if walk(next) {
-				return true
-			}
-		}
-		path = path[:len(path)-1]
-		return false
-	}
-	for _, d := range edges(task.GetId()) {
-		path = path[:0]
-		if walk(d) {
-			codes := []string{task.GetCode()}
-			for _, id := range path {
-				codes = append(codes, byID[id].GetCode())
-			}
-			return strings.Join(append(codes, task.GetCode()), " → ")
-		}
-	}
-	return ""
 }
