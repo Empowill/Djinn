@@ -48,14 +48,19 @@ export function attentionOf(
       ? "blocking"
       : item.move && item.before
         ? "move"
-        : item.before
+        : item.waitingLead
           ? "question"
-          : "later";
+          : item.before
+            ? "question"
+            : "later";
     out.push({
       key: item.id,
       level,
-      label:
-        blocking.length || item.move ? undefined : item.before || undefined,
+      label: item.waitingLead
+        ? t("question.waiting_lead")
+        : blocking.length || item.move
+          ? undefined
+          : item.before || undefined,
       target: `question-${item.id}`,
       code: item.code,
       text: blocking.length
@@ -104,7 +109,8 @@ const levelKeys = {
 export function jump(id: string) {
   const element =
     document.getElementById(id) ??
-    document.getElementById(id.replace(/^waiting-/, "task-"));
+    document.getElementById(id.replace(/^waiting-/, "task-")) ??
+    document.getElementById(id.replace(/^question-/, "decision-"));
   if (!element) return;
   const reduced = document.documentElement.dataset.motion === "reduced";
   element.scrollIntoView({

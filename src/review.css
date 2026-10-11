@@ -91,6 +91,9 @@ html[data-theme="light"] {
 .tone-withdrawn {
   --tone: var(--st-stopped);
 }
+.tone-accent {
+  --tone: var(--accent);
+}
 .status-badge,
 .count-pill {
   display: inline-flex;

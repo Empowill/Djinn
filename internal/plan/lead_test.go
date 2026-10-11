@@ -49,6 +49,14 @@ func (f *fakeLeads) Open(name, line, dir, exclusive string) ([]string, string, b
 
 func (f *fakeLeads) Show(wishID, terminal string) { f.shown = append(f.shown, wishID+"/"+terminal) }
 
+func (f *fakeLeads) Running(name string) bool {
+	if f == nil || f.running == nil {
+		return false
+	}
+	_, ok := f.running[name]
+	return ok
+}
+
 func (f *fakeLeads) Close(name string) {
 	if _, ok := f.running[name]; ok {
 		delete(f.running, name)

@@ -185,7 +185,7 @@ func briefRules(iq planv1.InstallQuestions) string {
 
 // BuildBrief writes the brief of a wish from what r holds. home is Djinn's data folder: like the projects' folders
 // and the home folder, it never shows. No secret: Djinn stores none, and a URL loses its credentials.
-func BuildBrief(ctx context.Context, r store.Reader, home, wishID string) (Brief, error) {
+func BuildBrief(ctx context.Context, r store.Reader, home, wishID string, leads ...Leads) (Brief, error) {
 	exp, projects, err := collect(ctx, r, wishID, noEvents)
 	if err != nil {
 		return Brief{}, err
@@ -198,7 +198,12 @@ func BuildBrief(ctx context.Context, r store.Reader, home, wishID string) (Brief
 	rank := wish.GetRank()
 	ready := wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions())
 	exp = portable(exp, newScrubber(all, home, dataName))
-	return Brief{Stable: stableBrief(home, projects), Moving: movingBrief(exp, rank, ready)}, nil
+	var l Leads
+	if len(leads) > 0 {
+		l = leads[0]
+	}
+	openAnswers, _ := openAnswersWithoutLead(ctx, r, wishID, l)
+	return Brief{Stable: stableBrief(home, projects), Moving: movingBrief(exp, rank, ready, openAnswers)}, nil
 }
 
 // StableBrief is the part of a brief that changes rarely, for a wish on projects: Djinn's rules, then where each
@@ -274,7 +279,11 @@ func presentFiles(dir string, names []string) []string {
 // movingBrief is where the wish stands: its description, its azimas, what runs and waits, its tilasms, its open
 // questions, its latest decisions and blocks, then the last lead and when a lead last acted. Empty sections are left
 // out.
-func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
+func movingBrief(exp *planv1.WishExport, rank int32, ready bool, openAnswers ...[]string) string {
+	var openAnswersWithoutLead []string
+	if len(openAnswers) > 0 {
+		openAnswersWithoutLead = openAnswers[0]
+	}
 	wish := exp.GetWish()
 	var b strings.Builder
 	fmt.Fprintf(&b, "# The wish: %s\n\n", oneLine(wish.GetTitle()))
@@ -445,6 +454,12 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 				b.WriteString(": " + clipLine(note))
 			}
 			b.WriteString("\n")
+		}
+	}
+	if len(openAnswersWithoutLead) > 0 {
+		b.WriteString("\n## Open answers without a lead\n\n")
+		for _, item := range openAnswersWithoutLead {
+			b.WriteString(item + "\n")
 		}
 	}
 	if decided := render.Decisions(exp); len(decided) > 0 {
@@ -860,7 +875,7 @@ func stripCredentials(s string) string { return credentials.ReplaceAllString(s, 
 func (w *Wishes) Brief(
 	ctx context.Context, req *connect.Request[planv1.WishServiceBriefRequest],
 ) (*connect.Response[planv1.WishServiceBriefResponse], error) {
-	brief, err := BuildBrief(ctx, w.Store, w.home(), req.Msg.GetWishId())
+	brief, err := BuildBrief(ctx, w.Store, w.home(), req.Msg.GetWishId(), w.Leads)
 	if err != nil {
 		return nil, Status(err)
 	}
@@ -873,4 +888,62 @@ func (w *Wishes) home() string {
 		return ""
 	}
 	return w.Pages.Home
+}
+
+// openAnswersWithoutLead finds open answers in other active wishes that have no running lead.
+func openAnswersWithoutLead(ctx context.Context, r store.Reader, currentWishID string, leads Leads) ([]string, error) {
+	pw, err := PrincipalWish(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	if pw == nil || pw.GetId() != currentWishID {
+		return nil, nil
+	}
+	allWishes, err := store.List[*planv1.Wish](ctx, r, nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, other := range Ranked(allWishes) {
+		if other.GetId() == currentWishID || !Active(other) {
+			continue
+		}
+		if leads != nil && leads.Running(LeadTerminal(other.GetId())) {
+			continue
+		}
+		qs, err := store.List[*planv1.Question](ctx, r, store.Where{"wish_id": other.GetId()})
+		if err != nil {
+			continue
+		}
+		tasks, _ := store.List[*planv1.Task](ctx, r, store.Where{"wish_id": other.GetId()})
+		decisions := make(map[string]bool)
+		for _, t := range tasks {
+			if d := t.GetDecision(); d != "" {
+				decisions[strings.ToUpper(d)] = true
+			}
+		}
+		for _, q := range qs {
+			if q.GetAnswer() == nil {
+				continue
+			}
+			if decisions[strings.ToUpper(q.GetCode())] || decisions[strings.ToUpper(q.GetId())] {
+				continue
+			}
+			if q.GetRoute() != nil || q.GetGrant() || q.GetMove() {
+				continue
+			}
+			choice := choiceText(q)
+			if letter, option, ok := strings.Cut(choice, ": "); ok {
+				choice = fmt.Sprintf("%s — %q", letter, option)
+			}
+			var item strings.Builder
+			fmt.Fprintf(&item, "- **%s** answered %s in %s (wish %s): turn it into tasks there; djinn wish brief %s has its context.",
+				q.GetCode(), choice, other.GetTitle(), other.GetId(), other.GetId())
+			if note := q.GetAnswer().GetNote(); note != "" {
+				fmt.Fprintf(&item, " Note: %q.", clipLine(note))
+			}
+			out = append(out, item.String())
+		}
+	}
+	return out, nil
 }

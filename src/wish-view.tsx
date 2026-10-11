@@ -63,6 +63,7 @@ import {
   openQuestions,
   spent,
   taskMapOf,
+  waitingLeadQuestions,
   waitingTasks,
   azimasDone,
   draftAzimas,
@@ -74,6 +75,7 @@ import {
   firstLine,
   MAX_ACTIVE,
   isActive,
+  isPrincipal,
   noLead,
   projectsOf,
   taskStatusText,
@@ -114,6 +116,7 @@ import {
   LastPushes,
   LeadButton,
   MainMerges,
+  PrincipalSelector,
   PushStrategySelector,
   WishDescription,
   WishTitle,
@@ -155,6 +158,7 @@ export function WishView({
     [wish, allProjects],
   );
   const open = openQuestions(wish, detail);
+  const waitingLead = waitingLeadQuestions(wish, detail);
   const digging = investigatingQuestions(wish, detail);
   const waiting = waitingTasks(wish, detail);
   const codes = codeMapOf(detail.tasks);
@@ -556,7 +560,11 @@ export function WishView({
       ),
     );
   };
-  const attention = attentionOf(open, waiting, wish.ready ? [wish] : []);
+  const attention = attentionOf(
+    [...open, ...waitingLead],
+    waiting,
+    wish.ready ? [wish] : [],
+  );
   const tone = wishTone(wish, open.length, running, watching);
 
   return (
@@ -753,6 +761,13 @@ export function WishView({
             <div className="review-facts">
               <div className="review-pills">
                 <StatusBadge tone={tone} label={wishStateText(wish)} />
+                {isPrincipal(wish, allWishes) && (
+                  <StatusBadge
+                    tone="accent"
+                    label={t("wish.principal")}
+                    title={t("wish.principal_detail")}
+                  />
+                )}
                 {open.length > 0 && (
                   <CountPill
                     tone="waiting"
@@ -835,6 +850,23 @@ export function WishView({
                   <Clock3 size={13} />
                   {when(wish.createTime)}
                 </span>
+                {isActive(wish) && (
+                  <PrincipalSelector
+                    wish={wish}
+                    onChange={(principal) =>
+                      quiet(
+                        act(
+                          () =>
+                            clients.wishes.principal({
+                              wishId: wish.id,
+                              principal,
+                            }),
+                          [Change.WISH],
+                        ),
+                      )
+                    }
+                  />
+                )}
                 <PushStrategySelector
                   wish={wish}
                   projects={projects}

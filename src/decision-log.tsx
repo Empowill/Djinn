@@ -155,7 +155,10 @@ const DecisionRow = memo(function DecisionRow({
         </div>
         <h3>{title}</h3>
         {q && <p className="answer-value">→ {answerText(q)}</p>}
-        {q && noLead && (
+        {q && q.waitingLead && (
+          <p className="no-lead">{t("question.waiting_lead_detail")}</p>
+        )}
+        {q && !q.waitingLead && noLead && (
           <p className="no-lead">{t("question.no_lead_answered")}</p>
         )}
         {note &&

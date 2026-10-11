@@ -161,9 +161,11 @@ test("a source runs once plugged in; its assigned merge request becomes a card t
     }
     if (madeId) {
       try {
-        djinn("wish", "pause", madeId);
+        djinn("wish", "delete", madeId);
       } catch {}
     }
-    djinn("wish", "pause", here);
+    try {
+      djinn("wish", "delete", here);
+    } catch {}
   }
 });

@@ -469,7 +469,8 @@ html[data-theme="light"] .wordmark-period {
   border-radius: 5px;
   color: var(--n-8f);
 }
-.icon-button:hover {
+.icon-button:hover,
+.icon-button.active {
   background: var(--n-2a);
   color: var(--accent);
 }

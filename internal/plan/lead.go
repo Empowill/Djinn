@@ -27,6 +27,8 @@ type Leads interface {
 	// Say types line into the running terminal called name, then Enter, once the person is not typing there. It
 	// returns at once; the lines go out in order.
 	Say(name, line string) error
+	// Running tells whether the terminal called name runs.
+	Running(name string) bool
 	// Close hangs up the running terminal called name, as closing it in the window does; none runs, nothing.
 	Close(name string)
 }
@@ -188,6 +190,9 @@ func (w *Wishes) Resume(
 		if res.Wish, err = w.recordLead(ctx, wish.GetId(), started); err != nil {
 			return nil, err
 		}
+	}
+	if !res.GetAttached() {
+		w.tellWaitingAnswers(ctx, wish.GetId(), res.GetTerminal())
 	}
 	w.Leads.Show(wish.GetId(), res.GetTerminal())
 	return connect.NewResponse(res), nil

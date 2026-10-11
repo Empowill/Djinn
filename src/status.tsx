@@ -17,6 +17,7 @@ import {
   Hand,
   type LucideIcon,
   Search,
+  Star,
   TriangleAlert,
   XCircle,
 } from "lucide-react";
@@ -39,6 +40,7 @@ const icons: Record<Tone, LucideIcon | null> = {
   proof: ClipboardCheck,
   later: Clock3,
   withdrawn: CircleOff,
+  accent: Star,
 };
 
 // ToneIcon is a state's icon; running is a live dot.

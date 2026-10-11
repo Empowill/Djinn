@@ -35,8 +35,6 @@ async function show(terminal: string) {
 
 test.skip(process.platform === "win32", "the fake claude is a shell script");
 
-test.afterAll(() => show("main"));
-
 test("an answer is typed in the terminal of the wish's lead, reopened", async ({
   page,
 }) => {
@@ -74,6 +72,8 @@ test("an answer is typed in the terminal of the wish's lead, reopened", async ({
     "lighter",
   );
 
+  djinn("wish", "resume", wishId);
+
   await show(`lead-${wishId}`);
   const url = new URL(process.env.DJINN_URL!);
   url.pathname = "/";
@@ -87,5 +87,5 @@ test("an answer is typed in the terminal of the wish's lead, reopened", async ({
     rows.filter({ hasText: 'Djinn: Q01 answered B — "Glass"' }),
   ).toHaveCount(2, { timeout: 15_000 });
 
-  djinn("wish", "pause", wishId);
+  djinn("wish", "delete", wishId);
 });
