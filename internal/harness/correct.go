@@ -339,12 +339,25 @@ func correctedIDs(batch []*planv1.Task) []string {
 
 // correctionsEnded settles the work of the correction and review workers among tasks that ended without being done:
 // one that failed counts as an attempt, the next one starting while the attempts are not spent; one stopped leaves it
-// to the person, asked.
+// to the person, asked; one cancelled or whose record was cleared clears its links.
 func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 	for _, c := range tasks {
+		if h.running(c.GetId()) {
+			continue
+		}
+		cancelled := isCancelled(c)
+		noRecord := c.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && c.GetIntegration() == nil
+		if cancelled || (noRecord && (c.GetCorrection() != nil || c.GetReview() != nil)) {
+			_ = h.store.Tx(ctx, func(tx *store.Tx) error {
+				return h.clearCorrectionLinks(ctx, tx, c.GetWishId(), c.GetId())
+			})
+			continue
+		}
+		if c.GetCorrection() == nil && c.GetReview() == nil {
+			continue
+		}
 		failed := c.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED
-		if c.GetCorrection() == nil && c.GetReview() == nil || !failed && c.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED ||
-			h.running(c.GetId()) {
+		if !failed && c.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED {
 			continue
 		}
 		var group []*planv1.Task
@@ -507,4 +520,65 @@ func (h *Harness) pushCorrectionEnded(
 		attempts = c.GetCorrection().GetAttempt()
 	}
 	h.askPushHeld(ctx, wish, project, branch, f, attempts, nil, committed)
+}
+
+// clearCorrectionLinks clears links pointing to taskID as corrected_by on any push,
+// main merge, or integration failure in wishID.
+func (h *Harness) clearCorrectionLinks(ctx context.Context, tx *store.Tx, wishID, taskID string) error {
+	if wishID == "" || taskID == "" {
+		return nil
+	}
+	wish, err := store.Get[*planv1.Wish](ctx, tx, wishID)
+	if err == nil && wish != nil {
+		changed := false
+		for _, p := range wish.GetPushes() {
+			if p.GetCorrectedBy() == taskID {
+				p.CorrectedBy = ""
+				changed = true
+			}
+		}
+		for _, m := range wish.GetMains() {
+			if m.GetCorrectedBy() == taskID {
+				m.CorrectedBy = ""
+				m.CheckTime = nil
+				changed = true
+				h.mainNow.Store(true)
+			}
+		}
+		if changed {
+			if err := tx.Journal(actorHarness, methodIntegrate, wish); err != nil {
+				return err
+			}
+			if err := tx.Put(wish); err != nil {
+				return err
+			}
+		}
+	}
+	tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": wishID})
+	if err != nil {
+		return err
+	}
+	for _, t := range tasks {
+		if t.GetId() == taskID {
+			continue
+		}
+		if in := t.GetIntegration(); in != nil && in.GetCorrectedBy() == taskID {
+			in.CorrectedBy = ""
+			if err := tx.Journal(actorHarness, methodIntegrate, t); err != nil {
+				return err
+			}
+			if err := tx.Put(t); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// ClearCorrectionLinks clears links pointing to taskID as corrected_by on any push,
+// main merge, or integration failure in wishID.
+func (h *Harness) ClearCorrectionLinks(ctx context.Context, wishID, taskID string) error {
+	return h.store.Tx(ctx, func(tx *store.Tx) error {
+		return h.clearCorrectionLinks(ctx, tx, wishID, taskID)
+	})
 }
