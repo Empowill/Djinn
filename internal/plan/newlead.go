@@ -2,6 +2,7 @@ package plan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,7 +34,8 @@ func StartLine() string {
 // newLead prepares a new lead: the command line that starts provider's agent in dir (FirstProjectFolder: a
 // project's folder, never the home folder) on StartLine, the same for every agent, and the lead it starts.
 // The lead holds a session only when Djinn chooses it ahead: claude's. An antigravity lead resumes without a
-// session (the folder's most recent conversation). A server without data folder keeps the shell.
+// session (the folder's most recent conversation). A server without data folder starts none: the lead's terminal
+// never holds an empty shell.
 func (w *Wishes) newLead(
 	ctx context.Context, provider planv1.Provider, dir string,
 ) (line, folder string, lead *planv1.Lead, note string, err error) {
@@ -42,8 +44,9 @@ func (w *Wishes) newLead(
 	}
 	home := w.home()
 	if home == "" {
-		return "", dir, nil, "There is no lead session to resume: the lead's terminal runs a shell. " +
-			"djinn lead set records the session of the lead.", nil
+		return "", "", nil, "", connect.NewError(connect.CodeFailedPrecondition, errors.New(
+			"there is no lead session to resume, and this server has no data folder to start a new lead: "+
+				"djinn lead set records the session of a lead"))
 	}
 	if provider == planv1.Provider_PROVIDER_UNSPECIFIED {
 		provider = planv1.Provider_PROVIDER_CLAUDE

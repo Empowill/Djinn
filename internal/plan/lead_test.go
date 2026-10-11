@@ -167,31 +167,35 @@ func TestResume(t *testing.T) {
 		return res.Msg
 	}
 
-	// Without a session: a shell in the first project, and a note that says so.
-	res := resume()
-	if res.GetTerminal() != LeadTerminal || res.GetAttached() || !strings.Contains(res.GetNote(), "no lead session") ||
-		res.GetDirectory() != folder {
-		t.Errorf("resume without a session = %v", res)
+	// Without a session nor a data folder for a new lead's first message: nothing starts, never an empty shell in
+	// the lead's terminal, and the error says how to record a session.
+	if _, err := c.lead.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{})); code(err) != connect.CodeFailedPrecondition ||
+		!strings.Contains(err.Error(), "no lead session") || !strings.Contains(err.Error(), "djinn lead set") {
+		t.Errorf("resume without a session: %v, want failed_precondition", err)
 	}
-	if want := " in " + folder; len(leads.opened) != 1 || leads.opened[0] != want {
-		t.Errorf("opened %q, want %q", leads.opened, want)
+	if len(leads.opened) != 0 || leads.running[LeadTerminal] != nil {
+		t.Errorf("opened %q without a session", leads.opened)
 	}
-	// With one, in a new terminal: the shell of the first resume still runs, so it is attached, and told.
+	// With one, in a terminal that runs a shell: it is attached, and told.
 	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
 		t.Fatal(err)
 	}
-	if res = resume(); !res.GetAttached() || !strings.Contains(res.GetNote(), "exit it there") {
+	leads.running = map[string][]string{LeadTerminal: {"/bin/sh"}}
+	if res := resume(); !res.GetAttached() || !strings.Contains(res.GetNote(), "exit it there") || res.GetDirectory() != folder {
 		t.Errorf("resume over a running shell = %v, want attached with a note", res)
 	}
 	delete(leads.running, LeadTerminal)
-	res = resume()
+	res := resume()
 	if res.GetAttached() || res.GetNote() != "" || strings.Join(res.GetCommand(), " ") != "/bin/sh -c claude --resume "+session {
 		t.Errorf("resume = %v", res)
 	}
-	if res = resume(); !res.GetAttached() || res.GetNote() != "" || len(leads.opened) != 2 {
+	if want := "claude --resume " + session + " in " + folder; len(leads.opened) != 1 || leads.opened[0] != want {
+		t.Errorf("opened %q, want %q", leads.opened, want)
+	}
+	if res = resume(); !res.GetAttached() || res.GetNote() != "" || len(leads.opened) != 1 {
 		t.Errorf("second resume = %v, opened %q; want attached, one program", res, leads.opened)
 	}
-	if len(leads.shown) != 4 || leads.shown[3] != "/"+LeadTerminal {
+	if len(leads.shown) != 3 || leads.shown[2] != "/"+LeadTerminal {
 		t.Errorf("shown %q", leads.shown)
 	}
 
