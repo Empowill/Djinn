@@ -411,6 +411,11 @@ task fails. Such a task is history: it shows among the finished parts of its azi
 
 A worker stopped by its provider's usage limit shows "Waiting for the limit", then resumes once the limit resets.
 
+A watchdog guards against runaway workers. A worker that prints nothing for 15 minutes, with no process busy and no
+gate held or awaited, is ended (continued when its provider can resume). A task is stopped, "budget exceeded", past
+2 hours of work in total across its runs, or a worker past 500 model turns in one run; `djinn task continue` gives a
+stopped worker 500 turns again, not more time.
+
 At every start, the lead of the first active wish comes back on its session, in its folder. The lead terminals come
 back after an update or a crash too, on the same sessions; not after you quit. When a newer Djinn is installed, a
 banner offers **Update**, with its **Release notes** when it has some: nothing restarts without that click. After the

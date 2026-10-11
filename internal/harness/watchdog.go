@@ -19,13 +19,17 @@ import (
 // command is excluded by checking the gate it holds or waits for. An idle or dead worker past this limit is ended.
 const SilenceLimit = 15 * time.Minute
 
-// TaskMaxWallTime is how long a task may run in total across its runs before being stopped.
-// Generous for heavy builds and slow e2e tests (which can take 30-45m), while stopping 4h runaway zombies.
+// TaskMaxWallTime is how long a task may run in total before being stopped: the sum of its runs (taskWallTime), time
+// waiting for a gate included, never reset by a continue. Generous for heavy builds and e2e-heavy tasks (past an hour),
+// while stopping 4h runaway zombies.
 const TaskMaxWallTime = 2 * time.Hour
 
-// TaskMaxTurns is how many model turns a task may consume before being stopped.
-// Ample for complex multi-step tasks (rarely exceeding 20-30 turns), while preventing infinite prompt loops.
-const TaskMaxTurns = 50
+// TaskMaxTurns is how many model turns a worker may take before being stopped: a guard against an endless loop, not a
+// cap on real work. Real Opus tasks take a hundred turns and more (W442: 102, W453: 112, both stopped at the former
+// limit of 50). The count is per run, not per task: start sets it to 1 each time a worker starts (first start,
+// restart, resume, continue, answer); each message sent to the worker adds one, and the provider's own count of a
+// result (num_turns) replaces it when larger.
+const TaskMaxTurns = 500
 
 // WithSilenceLimit sets the silence limit before the watchdog checks a worker: tests set a shorter one.
 func WithSilenceLimit(d time.Duration) Option { return func(h *Harness) { h.silenceLimit = d } }
