@@ -24,7 +24,7 @@ func TestStreamQuietAfterResult(t *testing.T) {
 	t.Parallel()
 	env, _, _ := fake{provider: "claude", fixture: "mid-turn-message"}.env(t)
 	spec := Spec{TaskID: "t1", Dir: t.TempDir(), Prompt: "x", Env: env}
-	a := streamAgent{name: "claude", parser: unsaidQueue{}, encode: claudeMessageLine, quiet: 200 * time.Millisecond}
+	a := streamAgent{name: "claude", parser: &unsaidQueue{}, encode: claudeMessageLine, quiet: 200 * time.Millisecond}
 	w, err := startStream(t.Context(), spec, os.Args[0], Claude{}.args(spec), Grace, a)
 	if err != nil {
 		t.Fatal(err)
@@ -47,5 +47,33 @@ func TestStreamQuietAfterResult(t *testing.T) {
 	}
 	if err := w.Send("late"); err == nil {
 		t.Errorf("Send after the end took the message")
+	}
+}
+
+// TestStreamIdleTimeout: when an agent goes silent mid-turn (e.g. model hung returning nothing),
+// the stream idle timer cuts the worker and records a stream idle error.
+func TestStreamIdleTimeout(t *testing.T) {
+	t.Parallel()
+	env, _, _ := fake{provider: "claude", fixture: "stream-idle", end: "wait"}.env(t)
+	spec := Spec{TaskID: "t-idle", Dir: t.TempDir(), Prompt: "x", Env: env}
+	a := streamAgent{
+		name:   "claude",
+		parser: &claudeParser{},
+		encode: claudeMessageLine,
+		idle:   200 * time.Millisecond,
+	}
+	w, err := startStream(t.Context(), spec, os.Args[0], Claude{}.args(spec), Grace, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hung := time.AfterFunc(10*time.Second, func() {
+		t.Errorf("the worker still runs after 10s")
+		w.Stop()
+	})
+	_ = collect(w)
+	hung.Stop()
+	res := w.Wait()
+	if res.Err == nil || !isStreamIdle(res.Err) {
+		t.Errorf("res = %+v, want stream idle error", res)
 	}
 }

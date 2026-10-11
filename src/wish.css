@@ -204,6 +204,11 @@
   white-space: normal;
   word-break: break-word;
 }
+.task-tooltip-activity {
+  font-size: var(--font-size-body);
+  color: var(--muted);
+  font-family: var(--mono);
+}
 .task-tooltip-prompt {
   font-size: var(--font-size-body);
   color: var(--muted);

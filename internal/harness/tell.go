@@ -210,6 +210,8 @@ func (h *Harness) workerFailedLine(ctx context.Context, t *planv1.Task) string {
 	switch {
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetResumeAfter() != nil:
 		action = "A retry scheduled after a limit."
+	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetContinuing():
+		action = "A continuation scheduled."
 	case t.GetCorrection() != nil:
 		c := t.GetCorrection()
 		attempts := c.GetAttempt()

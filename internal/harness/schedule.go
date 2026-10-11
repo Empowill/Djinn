@@ -228,6 +228,11 @@ func (h *Harness) schedule(ctx context.Context) {
 		}
 		return
 	}
+	if h.watchdog(ctx, tasks) {
+		if reloaded, err := store.List[*planv1.Task](ctx, h.store, nil); err == nil {
+			tasks = reloaded
+		}
+	}
 	if !slices.ContainsFunc(tasks, planned) {
 		return
 	}
@@ -365,6 +370,11 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 	}
 	sit := dispatch.New(tasks, wishes, projectGit, m).At(h.now())
 	sit.WithAncestry(branchHead, isAncestor)
+	sit.WithRunning(func(taskID string) bool {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return h.runs[taskID] != nil
+	})
 	return sit, nil
 }
 

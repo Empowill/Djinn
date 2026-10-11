@@ -56,6 +56,7 @@ type Situation struct {
 	branchHead BranchResolver
 	isAncestor AncestryChecker
 	ancestry   map[[2]string]bool // (branchHead, integrationHead) -> isAncestor
+	isRunning  func(taskID string) bool
 }
 
 // AncestryChecker tells whether commit a is an ancestor of commit b in projectID:
@@ -71,6 +72,23 @@ func (s *Situation) WithAncestry(branchHead BranchResolver, isAncestor AncestryC
 	s.branchHead = branchHead
 	s.isAncestor = isAncestor
 	return s
+}
+
+// WithRunning equips the situation with a function to check if a task currently has an active worker run.
+// A task whose status is RUNNING but has no active run (a lost process) is not counted as running.
+func (s *Situation) WithRunning(isRunning func(taskID string) bool) *Situation {
+	s.isRunning = isRunning
+	return s
+}
+
+func (s *Situation) taskRunning(t *planv1.Task) bool {
+	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		return false
+	}
+	if s.isRunning != nil {
+		return s.isRunning(t.GetId())
+	}
+	return true
 }
 
 // New is the situation of tasks and wishes, all of them as the store lists them (oldest first), the projects in Git being git (a project not in it is
@@ -282,7 +300,9 @@ func (s *Situation) writing(t *planv1.Task) bool {
 		return false
 	}
 	switch t.GetStatus() {
-	case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_WAITING:
+	case planv1.TaskStatus_TASK_STATUS_RUNNING:
+		return s.taskRunning(t)
+	case planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_WAITING:
 		return true
 	}
 	return s.started[t.GetId()]
@@ -791,7 +811,7 @@ func (s *Situation) typical(name string) (uint64, int) {
 func (s *Situation) growing() uint64 {
 	var sum uint64
 	for _, t := range s.tasks {
-		alive := (t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED) && !Watcher(t)
+		alive := (s.taskRunning(t) || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED) && !Watcher(t)
 		if !alive && !s.started[t.GetId()] && !s.reading[t.GetId()] {
 			continue
 		}
@@ -822,7 +842,7 @@ func (s *Situation) engaged() uint64 {
 		now = time.Now()
 	}
 	for _, t := range s.tasks {
-		alive := (t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED) && !Watcher(t)
+		alive := (s.taskRunning(t) || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED) && !Watcher(t)
 		if !alive && !s.started[t.GetId()] && !s.reading[t.GetId()] {
 			continue
 		}

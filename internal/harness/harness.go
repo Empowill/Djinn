@@ -116,18 +116,21 @@ type Harness struct {
 	mainTested       map[string]mainTested // by wish/project; owned by the integration's pass
 	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
 
-	mu        sync.Mutex
-	closed    bool
-	held      func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
-	waiting   func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
-	outside   func() int                   // the gates held outside the running workers (GatesOutside); nil: none
-	version   string                       // version of the running binary (WithVersion)
-	runs      map[string]*run              // by task id
-	changed   chan struct{}                // closed at the next change of a task without worker (notifyLocked)
-	preempted map[string]string            // investigator task ID -> paused work task ID, guarded by mu
-	goos      func() string                // runtime.GOOS; nil: runtime.GOOS
-	aliasesMu sync.RWMutex
-	aliases   map[string]string // alias -> model ID
+	mu           sync.Mutex
+	closed       bool
+	held         func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
+	waiting      func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
+	outside      func() int                   // the gates held outside the running workers (GatesOutside); nil: none
+	silenceLimit time.Duration                // silence limit before watchdog checks a worker (watchdog.go)
+	maxWallTime  time.Duration                // ceiling on wall time budget per task (watchdog.go)
+	maxTurns     int                          // ceiling on model turns budget per task (watchdog.go)
+	version      string                       // version of the running binary (WithVersion)
+	runs         map[string]*run              // by task id
+	changed      chan struct{}                // closed at the next change of a task without worker (notifyLocked)
+	preempted    map[string]string            // investigator task ID -> paused work task ID, guarded by mu
+	goos         func() string                // runtime.GOOS; nil: runtime.GOOS
+	aliasesMu    sync.RWMutex
+	aliases      map[string]string // alias -> model ID
 }
 
 // run is a task at work: its worker, or the workers it runs one after the other when the task starts again.
@@ -141,23 +144,30 @@ type run struct {
 	holds chan chan struct{} // a pause or a resume for the pump to write; closed once written
 
 	// Guarded by Harness.mu.
-	worker       Worker
-	pid          int    // process ID of the running worker (0 if none)
-	cgroup       string // cgroup of the running worker
-	token        string // secret per-run token passed in DJINN_WORKER_TOKEN
-	stopping     bool
-	shelved      bool                 // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
-	paused       bool                 // the worker holds still: it takes no slot
-	notchPaused  bool                 // paused by the operating load notch
-	holdWhy      string               // why the worker holds still (preemption or pause reason)
-	preemptedWhy string               // if set, stopping to make room for an investigator
-	watcher      bool                 // a watcher runs a command, and takes no slot
-	light        bool                 // a question worker reads and runs djinn's commands: it takes no slot
-	final        bool                 // the task is getting its final status: an answer waits for done instead
-	answers      []*planv1.Question   // answers to the task's edit question, for the pump to apply
-	use          *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one
-	samples      *workerRing          // recent measurement samples (measure.go)
-	subs         map[chan *planv1.TaskEvent]struct{}
+	worker          Worker
+	pid             int    // process ID of the running worker (0 if none)
+	cgroup          string // cgroup of the running worker
+	token           string // secret per-run token passed in DJINN_WORKER_TOKEN
+	stopping        bool
+	stoppingReason  string               // why worker was stopped if not stopped on request (e.g. budget exceeded)
+	shelved         bool                 // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
+	paused          bool                 // the worker holds still: it takes no slot
+	notchPaused     bool                 // paused by the operating load notch
+	holdWhy         string               // why the worker holds still (preemption or pause reason)
+	preemptedWhy    string               // if set, stopping to make room for an investigator
+	watcher         bool                 // a watcher runs a command, and takes no slot
+	light           bool                 // a question worker reads and runs djinn's commands: it takes no slot
+	final           bool                 // the task is getting its final status: an answer waits for done instead
+	answers         []*planv1.Question   // answers to the task's edit question, for the pump to apply
+	use             *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one
+	samples         *workerRing          // recent measurement samples (measure.go)
+	subs            map[chan *planv1.TaskEvent]struct{}
+	startTime       time.Time     // when the current run started
+	turns           int           // model turns consumed so far
+	lastActivity    time.Time     // when the worker last produced an event (watchdog.go)
+	lastWatchdogCPU time.Duration // CPU time used at previous watchdog check
+	watchdogEnd     bool          // watchdog ended this worker
+	watchdogReason  string        // why watchdog ended it ("silent for N min")
 
 	// Owned by whoever writes the task: Spawn, then the pump.
 	task           *planv1.Task
@@ -190,7 +200,8 @@ func (h *Harness) newRun(task *planv1.Task, seq int64) (*run, error) {
 		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}),
 		subs: map[chan *planv1.TaskEvent]struct{}{}, watcher: watching(task),
 		light: questionWorker(task), requestedModel: task.GetModel(),
-		token: store.NewID(),
+		token:        store.NewID(),
+		lastActivity: h.now(),
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -1058,6 +1069,12 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		t.FirstStartTime = nowPb
 	}
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, nowPb, nil, 0, ""
+	t.LastActivityTime = nowPb
+	h.mu.Lock()
+	r.startTime = now
+	r.lastActivity = now
+	r.turns = 1
+	h.mu.Unlock()
 	if len(t.Runs) > 0 && t.Runs[len(t.Runs)-1].EndTime == nil {
 		t.Runs[len(t.Runs)-1].EndTime = nowPb
 		if t.Runs[len(t.Runs)-1].Reason == "" {
@@ -1265,6 +1282,21 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	if ev.Usage != nil {
 		r.task.Usage, changed = sum(r.base, ev.Usage), true
+	}
+	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_USAGE {
+		var uTurns int
+		if _, err := fmt.Sscanf(ev.Text, "%d turns", &uTurns); err == nil && uTurns > 0 {
+			h.mu.Lock()
+			if uTurns > r.turns {
+				r.turns = uTurns
+			}
+			h.mu.Unlock()
+		}
+	}
+	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
+		h.mu.Lock()
+		r.turns++
+		h.mu.Unlock()
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
 		r.failure = ev.Text
@@ -1475,8 +1507,15 @@ func (h *Harness) end(r *run, res Result) {
 		}
 	}
 	h.mu.Lock()
-	stopping, shelved, preemptedWhy := r.stopping, r.shelved, r.preemptedWhy
+	stopping, stoppingReason, shelved, preemptedWhy, watchdogEnd, watchdogReason := r.stopping, r.stoppingReason, r.shelved, r.preemptedWhy, r.watchdogEnd, r.watchdogReason
 	h.mu.Unlock()
+	var streamIdleReason string
+	if isStreamIdle(res.Err) {
+		streamIdleReason = res.Err.Error()
+	} else if isStreamIdleString(r.failure) {
+		streamIdleReason = r.failure
+	}
+	streamIdleEnd := streamIdleReason != ""
 	t := r.task
 	if t.GetModel() == "" && !r.watcher {
 		if len(t.Models) > 0 {
@@ -1515,7 +1554,23 @@ func (h *Harness) end(r *run, res Result) {
 	case preemptedWhy != "":
 		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy
 	case stopping:
-		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, "stopped on request"
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, cmp.Or(stoppingReason, "stopped on request")
+	case watchdogEnd:
+		if plan.CanResume(t.GetProvider()) && t.GetResumes() < maxResumes {
+			t.Status, t.Error, t.Continuing = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true
+			t.WaitReason = watchdogReason
+			t.Resumes++
+		} else {
+			t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, watchdogReason
+		}
+	case streamIdleEnd:
+		if plan.CanResume(t.GetProvider()) && t.GetResumes() < maxResumes {
+			t.Status, t.Error, t.Continuing = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true
+			t.WaitReason = streamIdleReason
+			t.Resumes++
+		} else {
+			t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, streamIdleReason
+		}
 	case shelved:
 		shelve(t)
 	case h.ctx.Err() != nil && t.GetScheduled() && t.GetStartTime() == nil:
@@ -1583,12 +1638,19 @@ func (h *Harness) end(r *run, res Result) {
 		text = "resuming: " + preemptedWhy
 	case shelved:
 		text = "resuming: " + whyWishPaused
+	case watchdogEnd && t.GetContinuing():
+		text = "resuming: " + watchdogReason + "; continued"
+	case streamIdleEnd && t.GetContinuing():
+		text = "resuming: " + streamIdleReason + "; continued"
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING:
 		text = "waiting: " + whyStoppedFirst
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING:
 		text = "waiting for the limit: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it then"
 	case t.GetError() != "":
 		text += ": " + t.GetError()
+	}
+	if (watchdogEnd || streamIdleEnd) && t.GetContinuing() {
+		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: agyContinuePrompt})
 	}
 	h.write(r, actorHarness, methodEnd, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	if integrate {
@@ -1660,7 +1722,7 @@ func (h *Harness) workerEnded(t *planv1.Task) {
 		return
 	}
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED ||
-		(t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetResumeAfter() != nil) ||
+		(t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && (t.GetResumeAfter() != nil || t.GetContinuing())) ||
 		(t.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED && !strings.HasPrefix(t.GetError(), "stopped on request")) {
 		h.tellWorkerFailed(t)
 	}
@@ -1728,6 +1790,12 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 		return nil, err
 	}
 	r.seq++
+	h.mu.Lock()
+	r.lastActivity = h.now()
+	if r.task != nil {
+		r.task.LastActivityTime = timestamppb.New(r.lastActivity)
+	}
+	h.mu.Unlock()
 	h.publish(r, te)
 	return te, nil
 }
@@ -1793,6 +1861,9 @@ func (h *Harness) Stop(ctx context.Context, procedure string, req *planv1.TaskSe
 		if planned(task) {
 			return h.stopPlanned(ctx, procedure, req)
 		}
+		if task.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
+			return h.stopLost(ctx, procedure, req, task)
+		}
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is not running: %s", task.GetCode(), short(task.GetStatus())))
 	}
 	r.stopping = true
@@ -1833,6 +1904,24 @@ func (h *Harness) stopPlanned(ctx context.Context, procedure string, req *planv1
 	h.sched.Unlock()
 	h.wake() // Its dependents fail in turn.
 	return store.Get[*planv1.Task](ctx, h.store, task.GetId())
+}
+
+// stopLost stops a task whose status is RUNNING but has no worker running in harness (a lost process).
+func (h *Harness) stopLost(ctx context.Context, procedure string, req *planv1.TaskServiceStopRequest, task *planv1.Task) (*planv1.Task, error) {
+	h.sched.Lock()
+	defer h.sched.Unlock()
+	latest, err := store.Get[*planv1.Task](ctx, h.store, req.GetTaskId())
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if latest.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		return latest, nil
+	}
+	why := "stopped on request: worker was lost"
+	latest.Status, latest.Error, latest.WaitReason, latest.ResumeAfter, latest.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, why, "", nil, timestamppb.Now()
+	h.writeAlone(ctx, actorLocal, procedure, req, latest.GetId(), latest, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "stopped: " + latest.GetError()})
+	h.wake()
+	return store.Get[*planv1.Task](ctx, h.store, latest.GetId())
 }
 
 // Pause holds the task's worker where it is, without killing it, until Resume: the task is paused, and its slot

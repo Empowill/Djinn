@@ -198,19 +198,25 @@ func (h *Harness) WorkerMemory(ctx context.Context, p machine.Policy) (engaged, 
 	if err != nil {
 		return 0, 0, err
 	}
-	// Overlay live resource readings from in-flight runs.
+	// Overlay live resource readings from in-flight runs, excluding lost processes.
 	h.mu.Lock()
+	activeTasks := make([]*planv1.Task, 0, len(tasks))
 	for _, t := range tasks {
-		if r, ok := h.runs[t.GetId()]; ok {
+		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
+			r, ok := h.runs[t.GetId()]
+			if !ok {
+				continue
+			}
 			if r.use != nil && r.use.GetResources() != nil {
 				t.Resources = r.use.GetResources()
 			} else if r.task != nil && r.task.GetResources() != nil {
 				t.Resources = r.task.GetResources()
 			}
 		}
+		activeTasks = append(activeTasks, t)
 	}
 	h.mu.Unlock()
-	engaged, actual = dispatch.WorkerMemory(tasks, p, h.now())
+	engaged, actual = dispatch.WorkerMemory(activeTasks, p, h.now())
 	return engaged, actual, nil
 }
 

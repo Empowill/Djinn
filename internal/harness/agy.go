@@ -35,6 +35,8 @@ type Antigravity struct {
 	Command string
 	// Grace is how long a worker asked to stop has before it is killed; Grace by default.
 	Grace time.Duration
+	// IdleTimeout is how long a model call that returns nothing may wait before being cut and continued; StreamIdleTimeout by default.
+	IdleTimeout time.Duration
 }
 
 // args are the arguments of agy for spec. The prompt goes on the input, not on the command line: -p takes the
@@ -108,7 +110,7 @@ func (a Antigravity) Start(ctx context.Context, spec Spec) (Worker, error) {
 			return agyWorkDone(ctx, spec.Dir, spec.StartHead, spec.Branch)
 		}
 	}
-	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: &agyParser{isWorkDone: isWorkDone}, encode: agyMessageLine})
+	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: &agyParser{isWorkDone: isWorkDone}, idle: a.IdleTimeout, encode: agyMessageLine})
 }
 
 // agyMessageLine is a user message as agy reads it in stream-json.
@@ -556,6 +558,19 @@ type agyUsage struct {
 // agyContinuePrompt is what Djinn says when agy ended its turn on one of its own model retry prompts.
 const agyContinuePrompt = "continue where you stopped, keep answers and edits short"
 
+// agyIdlePause is what agy prints when execution is paused waiting for tasks to complete.
+const agyIdlePause = "There are no tools called. Execution paused. Waiting for task completion."
+
+var agyBgTaskIDRegex = regexp.MustCompile(`\b(task-[a-zA-Z0-9_\-]+)\b`)
+
+func extractBgTaskID(s string) string {
+	m := agyBgTaskIDRegex.FindStringSubmatch(s)
+	if len(m) > 1 {
+		return m[1]
+	}
+	return ""
+}
+
 const (
 	agyMaxRetryPromptContinuations = 3
 	agyMaxTransientContinuations   = 4
@@ -690,10 +705,12 @@ func agyWorkDone(ctx context.Context, dir, startHead, branch string) bool {
 // agyParser reads agy's stream-json. The agent's text comes in deltas: it is gathered per step, and said once
 // the step is done.
 type agyParser struct {
-	text    map[int]*strings.Builder // text of the agent_response steps under way, by step index
-	order   []int                    // their indexes, in the order they started
-	toolsIn map[int]bool             // tool steps whose call is said already
-	retries int                      // retry prompt continuations sent by Djinn
+	text        map[int]*strings.Builder // text of the agent_response steps under way, by step index
+	order       []int                    // their indexes, in the order they started
+	toolsIn     map[int]bool             // tool steps whose call is said already
+	retries     int                      // retry prompt continuations sent by Djinn
+	bgTasks     map[string]bool          // background tasks started by agy
+	idleRetries int                      // idle pause continuations sent by Djinn
 
 	sessionID   string
 	turnEnded   bool
@@ -710,6 +727,76 @@ type agyParser struct {
 	answered      bool        // the agent completed an agent_response step with non-empty text, and no tool started since
 	closingFailed bool        // closing call failed after work was done; suppress error failure
 	isWorkDone    func() bool // reports whether clean work has been committed since task start
+}
+
+func (p *agyParser) toolRunning() bool {
+	return p != nil && (len(p.toolsIn) > 0 || len(p.bgTasks) > 0)
+}
+
+func (p *agyParser) handleIdlePause(events *lineEvents) *turnEnd {
+	if p.turnEnded {
+		return nil
+	}
+	*events = append(*events, p.cut()...)
+	if p.isWorkDone != nil && p.isWorkDone() {
+		p.turnEnded = true
+		events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "idle pause with work committed: done")
+		return &turnEnd{}
+	}
+	if p.idleRetries < 1 {
+		p.idleRetries++
+		p.turnEnded = true
+		p.turnRetried = true
+		p.answered = false
+		events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "continued: "+agyContinuePrompt)
+		return &turnEnd{retry: agyContinuePrompt}
+	}
+	p.turnEnded = true
+	p.failed = true
+	errText := "idle loop: " + agyIdlePause
+	events.add(planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, errText)
+	return &turnEnd{failure: errText}
+}
+
+func (p *agyParser) recordBgTask(name string, params json.RawMessage, output *string) {
+	if p.bgTasks == nil {
+		p.bgTasks = make(map[string]bool)
+	}
+	switch name {
+	case "run_command":
+		if output != nil && (strings.Contains(*output, "sent to the background") || strings.Contains(*output, "background task") || strings.Contains(*output, "task-")) {
+			if id := extractBgTaskID(*output); id != "" {
+				p.bgTasks[id] = true
+			}
+		}
+	case "schedule":
+		if output != nil {
+			if id := extractBgTaskID(*output); id != "" {
+				p.bgTasks[id] = true
+			}
+		}
+	case "manage_task":
+		var mp struct {
+			Action string `json:"Action"`
+			TaskID string `json:"TaskId"`
+		}
+		if json.Unmarshal(params, &mp) == nil {
+			if mp.Action == "kill" && mp.TaskID != "" {
+				delete(p.bgTasks, mp.TaskID)
+			}
+		}
+	}
+}
+
+func (p *agyParser) checkBgTaskFinished(text string) {
+	if len(p.bgTasks) == 0 {
+		return
+	}
+	if strings.Contains(text, "completed") || strings.Contains(text, "exited with code") || strings.Contains(text, "finished") {
+		if id := extractBgTaskID(text); id != "" {
+			delete(p.bgTasks, id)
+		}
+	}
 }
 
 func (p *agyParser) canFinishNow() bool {
@@ -763,6 +850,9 @@ func (p *agyParser) errorEvent(events *lineEvents, m *agyLine) *turnEnd {
 	if errText == "" {
 		errText = "agy error"
 	}
+	if strings.Contains(errText, agyIdlePause) && len(p.bgTasks) == 0 {
+		return p.handleIdlePause(events)
+	}
 	if p.canFinishNow() {
 		return p.finishClosingError(events, errText)
 	}
@@ -787,6 +877,11 @@ func (p *agyParser) errorEvent(events *lineEvents, m *agyLine) *turnEnd {
 func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
 	var m agyLine
 	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		if strings.Contains(raw, agyIdlePause) && len(p.bgTasks) == 0 && !p.turnEnded {
+			var events lineEvents
+			end := p.handleIdlePause(&events)
+			return events.done(raw, "idle_pause"), end
+		}
 		return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_OTHER, Text: raw, Raw: raw}}, nil
 	}
 	var events lineEvents
@@ -862,8 +957,17 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 			return true, p.retryOrEnd(events, convID, stepErr, true)
 		}
 	}
+	outputStr := ""
+	if s.ToolInfo != nil && s.ToolInfo.Output != nil {
+		outputStr = *s.ToolInfo.Output
+	}
+	if (strings.Contains(s.TextDelta, agyIdlePause) ||
+		strings.Contains(outputStr, agyIdlePause) ||
+		strings.Contains(stepErr, agyIdlePause)) && len(p.bgTasks) == 0 {
+		return true, p.handleIdlePause(events)
+	}
 	switch s.StepType {
-	case "user_input", "checkpoint", "system_message":
+	case "user_input", "checkpoint", "system_message", "system":
 		// The prompt Djinn sent, and agy's own bookkeeping: nothing to say.
 	case "agent_response":
 		b := p.text[s.StepIndex]
@@ -877,11 +981,16 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 		}
 		b.WriteString(s.TextDelta)
 		if s.State == "DONE" {
-			if text := b.String(); strings.TrimSpace(text) != "" {
+			text := b.String()
+			p.checkBgTaskFinished(text)
+			if strings.TrimSpace(text) != "" {
 				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, strings.TrimRight(text, "\n"))
 				p.answered = true
 			}
 			p.forget(s.StepIndex)
+			if strings.Contains(text, agyIdlePause) && len(p.bgTasks) == 0 {
+				return true, p.handleIdlePause(events)
+			}
 		}
 	case "tool":
 		p.answered = false
@@ -909,6 +1018,8 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 				text = strings.TrimRight(*output, "\r\n")
 				p.lastAnswered = p.lastAnswered || s.StepIndex == p.lastStep
 			}
+			p.recordBgTask(name, params, output)
+			p.checkBgTaskFinished(text)
 			events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, text)
 			delete(p.toolsIn, s.StepIndex)
 		}
@@ -959,6 +1070,8 @@ func (p *agyParser) result(events *lineEvents, r *agyResult) *turnEnd {
 			end = p.finishClosingError(events, errText)
 		case retryText != "":
 			end = p.retryOrEnd(events, convID, retryText, false)
+		case (strings.Contains(r.Response, agyIdlePause) || strings.Contains(r.Error, agyIdlePause)) && len(p.bgTasks) == 0:
+			end = p.handleIdlePause(events)
 		case isAgyTransientNetworkError(r.Error):
 			end = p.retryOrEnd(events, convID, r.Error, true)
 		default:

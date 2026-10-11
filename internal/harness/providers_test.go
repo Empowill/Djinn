@@ -142,6 +142,8 @@ func catalog() []catalogCase {
 					t.Errorf("input = %q", input)
 				}
 			}},
+		{provider: "claude", fixture: "stream-idle", send: []string{"continue"},
+			want: []string{"STATUS", "TEXT", "USAGE"}},
 		{provider: "claude", fixture: "budget-first-call", end: "eof:1", spec: Spec{MaxBudgetUSD: 0.1},
 			want: []string{"STATUS", "TOOL_CALL", "ERROR", "USAGE"}, exit: 1, err: "Reached maximum budget ($0.1)",
 			check: func(t *testing.T, events []Event, _, _ string) {
