@@ -1195,3 +1195,53 @@ func TestPushHeld(t *testing.T) {
 		t.Errorf("fallback: Blocker = (%q, %q); want (%q, %q)", why, failed, wantWhyFallback, "")
 	}
 }
+
+func TestLostProcessNotWritingNorEngaged(t *testing.T) {
+	wish := &planv1.Wish{Id: "wish1", State: planv1.WishState_WISH_STATE_ACTIVE}
+	lost := &planv1.Task{
+		Id:        "lost-1",
+		WishId:    "wish1",
+		ProjectId: "proj1",
+		Code:      "W1",
+		Provider:  planv1.Provider_PROVIDER_ANTIGRAVITY,
+		Status:    planv1.TaskStatus_TASK_STATUS_RUNNING,
+	}
+	next := &planv1.Task{
+		Id:        "next-1",
+		WishId:    "wish1",
+		ProjectId: "proj1",
+		Code:      "W2",
+		Provider:  planv1.Provider_PROVIDER_ANTIGRAVITY,
+		Status:    planv1.TaskStatus_TASK_STATUS_PENDING,
+		Scheduled: true,
+	}
+	tasks := []*planv1.Task{lost, next}
+	policy := machine.Policy{WorkerPeak: 1 * machine.GiB, WorkerMargin: 512 * machine.MiB}
+	m := &Machine{Slots: 4, Policy: policy}
+
+	// Without WithRunning, lost is seen as RUNNING: writing returns true, memory is engaged.
+	sitDefault := New(tasks, []*planv1.Wish{wish}, nil, m)
+	if !sitDefault.writing(lost) {
+		t.Errorf("expected default writing to be true for RUNNING task")
+	}
+	if why, _ := sitDefault.Blocker(next); why != "W1 writes the whole folder, which overlaps the whole folder" {
+		t.Errorf("expected next to be blocked by W1, got %q", why)
+	}
+
+	// With WithRunning reporting false for lost-1:
+	sitWithRunning := New(tasks, []*planv1.Wish{wish}, nil, m).WithRunning(func(id string) bool {
+		return id != "lost-1"
+	})
+	if sitWithRunning.writing(lost) {
+		t.Errorf("expected writing to be false for lost process")
+	}
+	if sitWithRunning.growing() != 0 {
+		t.Errorf("expected growing to be 0 for lost process, got %d", sitWithRunning.growing())
+	}
+	if sitWithRunning.Engaged() != 0 {
+		t.Errorf("expected engaged to be 0 for lost process, got %d", sitWithRunning.Engaged())
+	}
+	if why, failed := sitWithRunning.Blocker(next); why != "" || failed != "" {
+		t.Errorf("expected next to be unblocked when lost process is not running, got why=%q, failed=%q", why, failed)
+	}
+}
