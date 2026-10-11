@@ -77,6 +77,8 @@ type Harness struct {
 
 	scopes *machine.Scopes // the systemd scopes the workers run in, one each (WithScopes); nil: none
 
+	beforeStart func() // runs before a worker's process starts (WithBeforeStart); nil: nothing
+
 	clock func() time.Time // nil: the machine's (WithClock)
 
 	measureEvery time.Duration // how often a worker is read (WithMeasure); 0: never
@@ -1164,6 +1166,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		}
 		return agyWorkDone(h.ctx, wt, r.startHead, t.GetBranch())
 	}
+	h.prepare()
 	w, err := provider.Start(h.ctx, spec)
 	if err != nil {
 		return err
