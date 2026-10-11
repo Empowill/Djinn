@@ -35,10 +35,15 @@ class LoadManager {
   private listeners = new Set<() => void>();
   private abort: AbortController | null = null;
   private clients: Clients | null = null;
+  private stopTimer: ReturnType<typeof setTimeout> | null = null;
 
   setClients(clients: Clients) {
     if (this.clients === clients) return;
     this.clients = clients;
+    if (this.stopTimer) {
+      clearTimeout(this.stopTimer);
+      this.stopTimer = null;
+    }
     if (this.listeners.size > 0) {
       this.restart();
     }
@@ -55,14 +60,23 @@ class LoadManager {
   }
 
   subscribe = (listener: () => void) => {
+    if (this.stopTimer) {
+      clearTimeout(this.stopTimer);
+      this.stopTimer = null;
+    }
     this.listeners.add(listener);
-    if (this.listeners.size === 1) {
+    if (this.listeners.size === 1 && !this.abort) {
       this.start();
     }
     return () => {
       this.listeners.delete(listener);
       if (this.listeners.size === 0) {
-        this.stop();
+        this.stopTimer = setTimeout(() => {
+          this.stopTimer = null;
+          if (this.listeners.size === 0) {
+            this.stop();
+          }
+        }, 1000);
       }
     };
   };
@@ -129,6 +143,10 @@ class LoadManager {
   }
 
   private stop() {
+    if (this.stopTimer) {
+      clearTimeout(this.stopTimer);
+      this.stopTimer = null;
+    }
     this.abort?.abort();
     this.abort = null;
   }
