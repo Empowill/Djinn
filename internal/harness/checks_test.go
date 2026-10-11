@@ -112,6 +112,43 @@ func TestSetupAgain(t *testing.T) {
 	}
 }
 
+// TestSetupWhenNodeModulesMissing: setup runs when package.json exists and node_modules is missing, even without
+// lock file changes.
+func TestSetupWhenNodeModulesMissing(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.checking(t, "setup: \"setup\"\n"+lintAtCommit, map[string]int{"setup": 0, "lint": 0})
+	in.finished(t, "W1", map[string]string{"app/package.json": "{}\n", "app/.gitignore": "node_modules\n"})
+	in.pass(t, 0)
+	in.ran()
+
+	// W1 ran setup, but the fake setup command created no node_modules.
+	// W2 commits without changing lock files: setup runs again because node_modules is missing.
+	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
+	in.pass(t, time.Second)
+	if runs, _ := in.ran(); !slices.Equal(runs, []string{"setup", "lint"}) {
+		t.Errorf("W2 with missing node_modules: %q; want setup then lint", runs)
+	}
+
+	// Now simulate setup having installed node_modules.
+	wt := integrationDir(in.home, in.projectID, in.wishID)
+	nm := filepath.Join(wt, "app", "node_modules")
+	if err := os.MkdirAll(nm, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nm, "pkg.txt"), []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	in.ran()
+
+	// W3 commits without changing lock files: with node_modules present, setup is skipped.
+	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
+	in.pass(t, time.Second)
+	if runs, _ := in.ran(); !slices.Equal(runs, []string{"lint"}) {
+		t.Errorf("W3 with present node_modules: %q; want lint only", runs)
+	}
+}
+
 // TestARedCommitCheck: the checks run before a commit, in their order; a red one fails the merge, as red tests did,
 // and starts a correction worker, whose first prompt says the checks Djinn runs and when. A push check does not run
 // at the commit. Djinn's former test command is the check test at commit (the other integration tests).

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -109,7 +110,7 @@ func (h *Harness) setUp(
 		return "read the lock files: " + err.Error(), "", false
 	}
 	stamp := setupStamp(wt)
-	if b, err := os.ReadFile(stamp); err == nil && string(b) == key {
+	if b, err := os.ReadFile(stamp); err == nil && string(b) == key && setupInstalled(dir) {
 		return "", "", false
 	}
 	sha, err := git(ctx, wt, "rev-parse", "HEAD")
@@ -126,6 +127,18 @@ func (h *Harness) setUp(
 		log.Printf("djinn: setup %s: %v", project.GetName(), err)
 	}
 	return "", out, false
+}
+
+// setupInstalled reports whether the directory's dependencies installed by setup are present.
+func setupInstalled(dir string) bool {
+	if _, err := os.Stat(filepath.Join(dir, "package.json")); err == nil {
+		nm := filepath.Join(dir, "node_modules")
+		entries, err := os.ReadDir(nm)
+		if err != nil || len(entries) == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // setupStamp is the file that says what the setup of the integration worktree wt last ran on: beside it, in Djinn's
