@@ -65,7 +65,6 @@ func TestReadSettings(t *testing.T) {
 		"checks { name: \"lint\" when: CHECK_WHEN_PUSH }\n",
 		"checks { name: \"../lint\" command: \"a\" when: CHECK_WHEN_PUSH }\n",
 		"provider: PROVIDER_CLAUDE\nprovider: \n",
-		"unknown_field: 1\n",
 		"provider: PROVIDER_WATCH\n",
 		"provider: PROVIDER_UNSPECIFIED\n",
 		"max_budget_usd: -1\n",
@@ -84,6 +83,40 @@ func TestReadSettings(t *testing.T) {
 		if s, err := ReadSettings(path); err == nil || !strings.Contains(err.Error(), path) {
 			t.Errorf("%q: %v, %v; want an error naming the file", bad, s, err)
 		}
+	}
+}
+
+func TestReadSettingsUnknownField(t *testing.T) {
+	ResetWarnedUnknownFields()
+	path := filepath.Join(t.TempDir(), "settings.txtpb")
+	writeSettings(t, path, "provider: PROVIDER_CODEX\nunknown_setting: true\n")
+	s, warnings, err := ReadSettingsWithWarnings(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s.GetProvider() != planv1.Provider_PROVIDER_CODEX {
+		t.Errorf("provider: got %v, want PROVIDER_CODEX", s.GetProvider())
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "unknown_setting") || !strings.Contains(warnings[0], "a newer Djinn knows it") {
+		t.Errorf("warnings: got %v, want warning for unknown_setting", warnings)
+	}
+}
+
+func TestLoadSettingsUnknownField(t *testing.T) {
+	ResetWarnedUnknownFields()
+	home := t.TempDir()
+	repo := t.TempDir()
+	writeSettings(t, filepath.Join(repo, ".agents", "settings.txtpb"), "provider: PROVIDER_CODEX\nunknown_feature: true\n")
+	p := &planv1.Project{Id: "p1", Directory: repo, Git: true}
+	s, err := LoadSettings(home, p)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s.Provider != planv1.Provider_PROVIDER_CODEX {
+		t.Errorf("provider: got %v, want PROVIDER_CODEX", s.Provider)
+	}
+	if len(s.Warnings) != 1 || !strings.Contains(s.Warnings[0], "unknown_feature") || !strings.Contains(s.Warnings[0], "a newer Djinn knows it") {
+		t.Errorf("warnings: got %v, want warning for unknown_feature", s.Warnings)
 	}
 }
 

@@ -51,16 +51,22 @@ func TestSpawnTakesTheProjectSettings(t *testing.T) {
 	writeFile(t, home, devFileName, "provider: PROVIDER_CODEX\nmodel: \"gpt-5.1-codex\"\nmax_budget_usd: 0\n")
 	check("a model goes to its own provider only", &planv1.TaskServiceSpawnRequest{Provider: fake}, fake, "", 0)
 
-	// A malformed file refuses the project's tasks, with why; Djinn still starts.
+	// A malformed file keeps the project's tasks waiting, with why; Djinn still starts.
 	writeFile(t, home, devFileName, "max_budget_usd: lots\n")
-	if _, err := spawn(&planv1.TaskServiceSpawnRequest{Provider: fake}); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
-		!strings.Contains(err.Error(), devFile) {
-		t.Errorf("a malformed file: %v; want failed_precondition naming %s", err, devFile)
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{WishId: wishID, Title: "Try malformed", Provider: fake}))
+	if err != nil {
+		t.Fatalf("a malformed file: %v; want pending task", err)
+	}
+	if res.Msg.GetTask().GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !strings.Contains(res.Msg.GetTask().GetWaitReason(), devFile) {
+		t.Errorf("a malformed file: %v; want pending task naming %s", res.Msg.GetTask(), devFile)
 	}
 	writeFile(t, dir, ".agents/settings.txtpb", "api_key: \"abc\"\n")
-	if _, err := spawn(&planv1.TaskServiceSpawnRequest{Provider: fake}); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
-		!strings.Contains(err.Error(), "holds no secret") {
-		t.Errorf("a secret in the repository's file: %v; want failed_precondition", err)
+	res, err = e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{WishId: wishID, Title: "Try secret", Provider: fake}))
+	if err != nil {
+		t.Fatalf("a secret in the repository's file: %v; want pending task", err)
+	}
+	if res.Msg.GetTask().GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !strings.Contains(res.Msg.GetTask().GetWaitReason(), "holds no secret") {
+		t.Errorf("a secret in the repository's file: %v; want pending task naming holds no secret", res.Msg.GetTask())
 	}
 	e.down()
 	e = up(t, home)

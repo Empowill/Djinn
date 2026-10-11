@@ -195,6 +195,21 @@ func (h *Harness) limited(r *run, t *planv1.Task) {
 // it may edit now, with its first prompt (grant). Its access is decided again in a project, as for a planned task,
 // but for an answer the developer gave about editing, which stays. A worker that cannot start fails the task.
 func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
+	var project *planv1.Project
+	if t.GetProjectId() != "" {
+		p, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
+		if err != nil {
+			h.failPlanned(ctx, t, err.Error())
+			return nil
+		}
+		project = p
+	}
+	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
+		if _, err := plan.LoadSettings(h.home, project); err != nil {
+			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err))
+			return nil
+		}
+	}
 	t = proto.CloneOf(t)
 	by := byRestart
 	switch {
@@ -244,7 +259,6 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 	if err != nil {
 		return err
 	}
-	var project *planv1.Project
 	var prep prepared
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		wish, err := store.Get[*planv1.Wish](ctx, tx, t.GetWishId())

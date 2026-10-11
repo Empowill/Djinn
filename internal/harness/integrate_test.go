@@ -660,3 +660,53 @@ func TestADependentStartsFromTheCommit(t *testing.T) {
 		t.Errorf("W2's events, without %q: %q", from, texts)
 	}
 }
+
+func TestTaskEndsWithUnreadableSettingsGetsMergedOnceFixed(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	// Corrupt settings file
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"), "provider: [broken\n")
+
+	// Task W1 finished while settings were unreadable:
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) {
+		task.Integration = nil // Simulate ending when pendIntegration had returned false or settings failed
+	})
+
+	// Also verify pendIntegration directly on a done task when settings are unreadable
+	task2 := proto.CloneOf(w1)
+	task2.Id = store.NewID()
+	task2.Integration = nil
+	if !in.h.pendIntegration(task2) {
+		t.Fatal("pendIntegration should return true even when settings are unreadable")
+	}
+	if task2.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING {
+		t.Fatalf("task2 integration state: got %v, want PENDING", task2.GetIntegration().GetState())
+	}
+	if !strings.HasPrefix(task2.GetIntegration().GetReason(), "settings unreadable:") {
+		t.Fatalf("task2 integration reason: got %q, want 'settings unreadable:'", task2.GetIntegration().GetReason())
+	}
+
+	// Make an integrate pass while settings are broken
+	in.pass(t, 0)
+	gotW1, err := store.Get[*planv1.Task](t.Context(), in.db, w1.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// W1 should now be queued as pending with wait reason
+	if gotW1.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING {
+		t.Fatalf("W1 integration state: got %v, want PENDING", gotW1.GetIntegration().GetState())
+	}
+	if !strings.HasPrefix(gotW1.GetIntegration().GetReason(), "settings unreadable:") {
+		t.Fatalf("W1 integration reason: got %q, want 'settings unreadable:'", gotW1.GetIntegration().GetReason())
+	}
+
+	// Now fix the settings file
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\n")
+
+	// Next integration pass should merge W1
+	in.pass(t, 0)
+	if got := in.states(t, w1); got != "W1 COMMITTED" {
+		t.Fatalf("after fixing settings, W1 state: got %q, want 'W1 COMMITTED'", got)
+	}
+}

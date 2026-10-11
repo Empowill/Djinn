@@ -347,6 +347,16 @@ export function ProjectPanel({
       onClose={onClose}
       wide
     >
+      {shown?.problems?.map((p) => (
+        <p className="login-message" key={p}>
+          {p}
+        </p>
+      ))}
+      {shown?.warnings?.map((w) => (
+        <p className="login-message" key={w}>
+          {w}
+        </p>
+      ))}
       <div className="setting-row">
         <div>
           <strong>{t("project.folder")}</strong>

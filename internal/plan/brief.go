@@ -241,8 +241,13 @@ func stableBrief(home string, projects []*planv1.Project) string {
 		} else {
 			b.WriteString(". It keeps no rule file at its root.\n")
 		}
-		if settings, err := LoadSettings(home, p); err == nil && settings.ChecksBrief() != "" {
-			b.WriteString("  " + settings.ChecksBrief() + " Djinn says so in each worker's first prompt.\n")
+		if settings, err := LoadSettings(home, p); err == nil {
+			if settings.ChecksBrief() != "" {
+				b.WriteString("  " + settings.ChecksBrief() + " Djinn says so in each worker's first prompt.\n")
+			}
+			for _, w := range settings.Warnings {
+				b.WriteString("  Warning: " + w + ".\n")
+			}
 		}
 	}
 	return b.String()

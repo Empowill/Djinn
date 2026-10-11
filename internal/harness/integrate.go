@@ -130,7 +130,16 @@ func (h *Harness) pendIntegration(t *planv1.Task) bool {
 	if err != nil || !project.GetGit() {
 		return false
 	}
-	if settings, err := plan.LoadSettings(h.home, project); err != nil || !settings.Integrates() {
+	settings, err := plan.LoadSettings(h.home, project)
+	if err != nil {
+		t.Integration = &planv1.TaskIntegration{
+			State:      planv1.IntegrationState_INTEGRATION_STATE_PENDING,
+			Reason:     fmt.Sprintf("settings unreadable: %v", err),
+			UpdateTime: timestamppb.New(h.now()),
+		}
+		return true
+	}
+	if !settings.Integrates() {
 		return false
 	}
 	t.Integration = &planv1.TaskIntegration{
@@ -167,9 +176,31 @@ func (h *Harness) integratePass(ctx context.Context) {
 	h.followStackedBranches(ctx, tasks)
 	var waiting []*planv1.Task
 	for _, t := range tasks {
-		if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING &&
-			t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !h.running(t.GetId()) {
+		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || h.running(t.GetId()) {
+			continue
+		}
+		if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING {
 			waiting = append(waiting, t)
+			continue
+		}
+		if t.GetIntegration() == nil && t.GetBranch() != "" && !plan.IsAzima(t) {
+			project, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
+			if err == nil && project.GetGit() {
+				settings, err := plan.LoadSettings(h.home, project)
+				if err != nil {
+					in := pending("", fmt.Sprintf("settings unreadable: %v", err))
+					in.UpdateTime = timestamppb.New(h.now())
+					t.Integration = in
+					_ = h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Put(t) })
+					waiting = append(waiting, t)
+				} else if settings.Integrates() {
+					in := pending("", "")
+					in.UpdateTime = timestamppb.New(h.now())
+					t.Integration = in
+					_ = h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Put(t) })
+					waiting = append(waiting, t)
+				}
+			}
 		}
 	}
 	slices.SortStableFunc(waiting, func(a, b *planv1.Task) int {
@@ -225,7 +256,7 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	var ok bool
 	switch {
 	case err != nil:
-		why = err.Error()
+		why = fmt.Sprintf("settings unreadable: %v", err)
 	case !settings.Integrates():
 		why = errNoChecks.Error()
 		branch, _ = h.integrationBranch(ctx, wish, project)

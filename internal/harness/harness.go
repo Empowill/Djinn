@@ -585,9 +585,10 @@ func (h *Harness) spawn(
 	// The project's settings fill what the request leaves out (docs/team-settings.md). A watcher runs a command:
 	// none applies to it.
 	var settings plan.Settings
+	var settingsErr error
 	if req.GetProvider() != planv1.Provider_PROVIDER_WATCH {
-		if settings, err = plan.LoadSettings(h.home, project); err != nil {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s: %w", project.GetName(), err))
+		if settings, settingsErr = plan.LoadSettings(h.home, project); settingsErr != nil {
+			settings = plan.ResolveSettings(nil, nil)
 		}
 	}
 	kind := cmp.Or(req.GetProvider(), settings.Provider, planv1.Provider_PROVIDER_CLAUDE)
@@ -701,6 +702,8 @@ func (h *Harness) spawn(
 	switch {
 	case failed != "":
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the task would never start: %s", failed))
+	case settingsErr != nil:
+		why = fmt.Sprintf("settings unreadable: %v", settingsErr)
 	case req.GetLater() && why == "":
 		why = "planned: it starts at the scheduler's next pass"
 	}
@@ -1536,7 +1539,11 @@ func (h *Harness) end(r *run, res Result) {
 	}
 	h.write(r, actorHarness, methodEnd, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	if integrate {
-		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: pending, to be merged into the integration branch"})
+		text := "integration: pending, to be merged into the integration branch"
+		if t.GetIntegration().GetReason() != "" {
+			text = "integration: waiting: " + t.GetIntegration().GetReason()
+		}
+		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 		h.kickIntegrate()
 	}
 	if !r.light && !watching(t) {

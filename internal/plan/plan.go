@@ -218,7 +218,7 @@ func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) {
 	if project == nil {
 		return
 	}
-	repo, dev, _ := loadSettings(p.Home, project)
+	repo, dev, _, _ := loadSettings(p.Home, project)
 	settings := ResolveSettings(repo, dev)
 	project.Push = settings.Push
 	project.PushStrategy = settings.PushStrategy
@@ -357,7 +357,7 @@ func (p *Projects) Show(
 		return nil, Status(err)
 	}
 	p.fillProject(ctx, project)
-	repo, dev, problems := loadSettings(p.Home, project)
+	repo, dev, warnings, problems := loadSettings(p.Home, project)
 	settings := ResolveSettings(repo, dev)
 	out := &planv1.ProjectServiceShowResponse{
 		Project: project, Settings: settings.Rows(), Setup: settings.Setup, Checks: settings.Checks,
@@ -366,6 +366,7 @@ func (p *Projects) Show(
 	for _, err := range problems {
 		out.Problems = append(out.Problems, err.Error())
 	}
+	out.Warnings = append(out.Warnings, warnings...)
 	return connect.NewResponse(out), nil
 }
 
@@ -429,7 +430,7 @@ func (p *Projects) PushStrategy(
 			return nil, Status(err)
 		}
 	}
-	repo, dev, _ := loadSettings(p.Home, project)
+	repo, dev, _, _ := loadSettings(p.Home, project)
 	settings := ResolveSettings(repo, dev)
 	return connect.NewResponse(&planv1.ProjectServicePushStrategyResponse{
 		Strategy: settings.PushStrategy,
