@@ -64,14 +64,8 @@ func (h *Harness) now() time.Time {
 }
 
 // queueInterrupted gives back to the scheduler the tasks djinn up cut short: each one resumes, unless it cannot (see
-// resumable). Recover calls it.
-func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) error {
-	_, err := h.resumeInterrupted(ctx, tasks)
-	return err
-}
-
-// resumeInterrupted is queueInterrupted, which returns the codes of the interrupted tasks Djinn resumes.
-func (h *Harness) resumeInterrupted(ctx context.Context, tasks []*planv1.Task) ([]string, error) {
+// resumable). Recover calls it; it returns the codes of the interrupted tasks Djinn resumes, for the lead.
+func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) ([]string, error) {
 	var resumed []string
 	wishes, err := store.List[*planv1.Wish](ctx, h.store, nil)
 	if err != nil {

@@ -344,7 +344,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
 		}
 	}
-	resumed, err := h.resumeInterrupted(ctx, tasks)
+	resumed, err := h.queueInterrupted(ctx, tasks)
 	if err != nil {
 		return err
 	}

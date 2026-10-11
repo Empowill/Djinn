@@ -93,7 +93,7 @@ func TestAntigravityWakesOnBackgroundTask(t *testing.T) {
 		t.Fatalf("not a run_command with WaitMsBeforeAsync: %v", call)
 	}
 	background, _ := rows[1]["content"].(string)
-	task, ok := strings.CutPrefix(background[strings.Index(background, "task id: "):], "task id: ")
+	_, task, ok := strings.Cut(background, "task id: ")
 	if !ok || rows[1]["status"] != "RUNNING" {
 		t.Fatalf("the command did not go to the background: %q", background)
 	}
