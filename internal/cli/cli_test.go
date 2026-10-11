@@ -528,6 +528,35 @@ func TestFromEnv(t *testing.T) {
 	if seen := f.seen(); len(seen) != 1 || seen[0].(*planv1.QuestionServiceAskRequest).GetTaskId() != task {
 		t.Errorf("djinn mcp sent %v, want the task of $DJINN_TASK_ID", seen)
 	}
+
+	// DJINN_LEAD fills the lead field on answer and withdraw.
+	const leadWish = "01a120ea-554a-716c-8e66-43516f2f0111"
+	leadEnv := func(name string) string {
+		if name == "DJINN_LEAD" {
+			return leadWish
+		}
+		return ""
+	}
+	for _, c := range []struct {
+		msg  proto.Message
+		args []string
+		want string
+	}{
+		{&planv1.QuestionServiceAnswerRequest{}, []string{"Q03", "yes"}, leadWish},
+		{&planv1.QuestionServiceAnswerRequest{}, []string{"Q03", "yes", "--lead", other}, other},
+		{&planv1.QuestionServiceWithdrawRequest{}, []string{"Q03"}, leadWish},
+		{&planv1.QuestionServiceWithdrawRequest{}, []string{"Q03", "--lead", other}, other},
+	} {
+		md := local(t, c.msg)
+		req, err := parse(md, c.args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fromEnv(req, leadEnv)
+		if got := req.Get(md.Fields().ByName("lead")).String(); got != c.want {
+			t.Errorf("%s %v: lead %q, want %q", md.Name(), c.args, got, c.want)
+		}
+	}
 }
 
 // protoMethods are the public methods of the protos, streams included: each method of each service that says

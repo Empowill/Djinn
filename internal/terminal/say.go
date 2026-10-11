@@ -28,6 +28,9 @@ var (
 	// enter is the pause between a line and its Enter: an agent's prompt reads a line and an Enter that come
 	// together as a paste, and keeps the Enter in the text.
 	enter = 300 * time.Millisecond
+	// afterEnter is the pause after Enter before the next line: it lets the agent's prompt accept the submission
+	// and clear its prompt box before another line arrives.
+	afterEnter = 300 * time.Millisecond
 )
 
 // ErrFull says that SayQueue lines already wait for the terminal.
@@ -87,7 +90,7 @@ func (t *Terminal) speak(lines <-chan string) {
 		case <-t.done:
 			return
 		case line := <-lines:
-			if !t.ready() || t.put([]byte(line)) != nil || !t.sleep(enter) || t.put([]byte("\r")) != nil {
+			if !t.ready() || t.put([]byte(line)) != nil || !t.sleep(enter) || t.put([]byte("\r")) != nil || !t.sleep(afterEnter) {
 				return
 			}
 		}

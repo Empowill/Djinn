@@ -93,9 +93,11 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   refusal named, and Djinn starts it again once, told what was refused: `Djinn: W12 (Q43 → tasks) failed: its command
   was refused: djinn task list … | grep …. Djinn starts it again: W13, …`. The lead acts only if the retry gives up
   too. Answers Djinn settles itself (an edit question, a question on work that failed to integrate, a routed request, a
-  grant) say what Djinn did. The agent reads each line as a message, queued while it works. The line waits until the
-  developer has not typed in that terminal for three seconds, and lines go out in order. A lead that does not run is
-  reopened on its session first, as `djinn wish resume` does, without taking the window; only an active wish's.
+  grant) say what Djinn did. Answers given by the lead itself are not echoed back. The agent reads each line as a message,
+  queued while it works; each line is typed with Enter and paced so consecutive lines are submitted cleanly and never
+  clump or remain in the prompt box. The line waits until the developer has not typed in that terminal for three seconds,
+  and lines go out in order. A lead that does not run is reopened on its session first, as `djinn wish resume` does,
+  without taking the window; only an active wish's.
   When `answer_workers` is disabled and an answer arrives in a wish without a running lead, Djinn routes the answer
   to the principal lead's terminal (the principal wish is explicitly set with `djinn wish principal <wish-id> --principal`,
   or defaults to the lowest-rank active wish, rank 1), noting the wish's title and ID. If no lead runs at all across wishes,
@@ -157,8 +159,10 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   in a discreet last tab, **For agents**, folded, with no mark. What the developer must see is a question.
 - **Who did it.** `djinn block put`, `djinn question ask` and `djinn question revise` take `--task-id`, by default
   `$DJINN_TASK_ID`, which Djinn sets for every worker (`(djinn.v1.env)` in the protos): a worker's decision block
-  reads "By W12" in the decision log, its revision "Revised by W12" on the page; the lead's, run without the
-  variable, stay the lead's.
+  reads "By W12" in the decision log, its revision "Revised by W12" on the page. Djinn marks the lead's terminal
+  with `$DJINN_LEAD` (its wish ID): `djinn question answer` and `djinn question withdraw` take `--lead` from it,
+  attributing them to the lead and not echoing them back; a plain shell has neither variable, attributing answers
+  to the developer so they reach the lead as a message.
 - **The page.** `djinn wish sync <wish>` renders the wish's page in Go and prints its file, kept up to date. The lead
   republishes that file as it is; it never writes the HTML.
 - **The developer's word.** `djinn wish grant <wish>` says a wish is done. Only the developer says it.

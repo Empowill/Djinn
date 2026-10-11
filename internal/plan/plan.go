@@ -849,7 +849,32 @@ func (q *Questions) Answer(
 		if err != nil {
 			return connect.NewError(connect.CodeInvalidArgument, err)
 		}
-		question.Answer = &planv1.Answer{Choice: choice, Note: req.Msg.GetNote(), CreateTime: timestamppb.Now()}
+		by := req.Msg.GetBy()
+		taskID := req.Msg.GetTaskId()
+		leadID := req.Msg.GetLead()
+		if by == planv1.Closer_CLOSER_PLAN_FILE {
+			return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("a plan file does not answer questions"))
+		}
+		actor := by
+		if taskID != "" {
+			actor = planv1.Closer_CLOSER_UNSPECIFIED
+			if err := taskOfWish(ctx, tx, question.GetWishId(), taskID); err != nil {
+				return err
+			}
+		} else if actor == planv1.Closer_CLOSER_UNSPECIFIED {
+			if leadID != "" {
+				actor = planv1.Closer_CLOSER_LEAD
+			} else {
+				actor = planv1.Closer_CLOSER_DEVELOPER
+			}
+		}
+		question.Answer = &planv1.Answer{
+			Choice:     choice,
+			Note:       req.Msg.GetNote(),
+			CreateTime: timestamppb.Now(),
+			Actor:      actor,
+			TaskId:     taskID,
+		}
 		if then, err = settled(ctx, q.Settle, tx, question); err != nil {
 			return err
 		}
@@ -1177,9 +1202,30 @@ func (q *Questions) Withdraw(
 		if question.GetWithdrawal() != nil {
 			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s was withdrawn", question.GetCode()))
 		}
+		by := req.Msg.GetBy()
+		taskID := req.Msg.GetTaskId()
+		leadID := req.Msg.GetLead()
+		if by == planv1.Closer_CLOSER_PLAN_FILE {
+			return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("a plan file does not withdraw questions"))
+		}
+		actor := by
+		if taskID != "" {
+			actor = planv1.Closer_CLOSER_UNSPECIFIED
+			if err := taskOfWish(ctx, tx, question.GetWishId(), taskID); err != nil {
+				return err
+			}
+		} else if actor == planv1.Closer_CLOSER_UNSPECIFIED {
+			if leadID != "" {
+				actor = planv1.Closer_CLOSER_LEAD
+			} else {
+				actor = planv1.Closer_CLOSER_DEVELOPER
+			}
+		}
 		question.Withdrawal = &planv1.Withdrawal{
 			Note:       req.Msg.GetNote(),
 			CreateTime: timestamppb.Now(),
+			Actor:      actor,
+			TaskId:     taskID,
 		}
 		return tx.Put(question)
 	})
