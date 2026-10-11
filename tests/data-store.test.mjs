@@ -864,3 +864,108 @@ test("incremental updates refresh derived views: azima groups, loose tasks, depe
 
   stop();
 });
+
+test("worker measurements over a minute update tasks in place without task-list re-reads", async () => {
+  const data = sample();
+  const workerCount = 5;
+  const workerTasks = [];
+  for (let i = 1; i <= workerCount; i++) {
+    workerTasks.push({
+      id: `worker-task-${i}`,
+      wishId,
+      code: `T0${i}`,
+      title: `Worker ${i}`,
+      status: TaskStatus.IN_PROGRESS,
+      resources: { cpuPercent: 10, memoryBytes: 100_000_000n },
+    });
+  }
+  data.tasks = workerTasks;
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId);
+  await until(store, (s) => s.details[wishId]?.loaded);
+
+  // Initial read when wish was opened
+  assert.equal(reads.tasks, 1, "initial task list read");
+
+  // Simulate 1 minute of worker measurements (every 5 seconds = 12 ticks) for N=5 workers
+  for (let tick = 1; tick <= 12; tick++) {
+    for (let i = 1; i <= workerCount; i++) {
+      const updatedTask = {
+        id: `worker-task-${i}`,
+        wishId,
+        code: `T0${i}`,
+        title: `Worker ${i}`,
+        status: TaskStatus.IN_PROGRESS,
+        resources: {
+          cpuPercent: 10 + tick * 5 + i,
+          memoryBytes: BigInt(100_000_000 + tick * 1_000_000),
+        },
+      };
+      watch.push({
+        wishId,
+        changes: [Change.TASK],
+        changed: carried({ tasks: [updatedTask] }),
+      });
+    }
+  }
+
+  // Wait until the final measurement arrives and updates the store
+  await until(
+    store,
+    (s) =>
+      s.details[wishId]?.tasks.find((t) => t.id === `worker-task-${workerCount}`)
+        ?.resources?.cpuPercent ===
+      10 + 12 * 5 + workerCount,
+  );
+
+  // Bound: exactly 0 task-list re-reads during worker measurements (total reads.tasks remains 1)
+  assert.equal(
+    reads.tasks,
+    1,
+    "bound: task-list re-reads during 60s of measurements is 0 (total reads.tasks = 1)",
+  );
+
+  // Verify all workers received the updated in-place metrics
+  const currentTasks = store.getState().details[wishId].tasks;
+  for (let i = 1; i <= workerCount; i++) {
+    const t = currentTasks.find((item) => item.id === `worker-task-${i}`);
+    assert.equal(t.resources.cpuPercent, 10 + 12 * 5 + i);
+  }
+
+  stop();
+});
+
+test("window throttles task re-reads during rapid changes and never enters a tight loop", async () => {
+  const data = sample();
+  const { clients, reads, watch } = server(data);
+  const throttleMs = 50;
+  const store = createStore(clients, 10, throttleMs);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId);
+  await until(store, (s) => s.details[wishId]?.loaded);
+  assert.equal(reads.tasks, 1);
+
+  // 25 uncarried task changes pushed over 50ms (every 2ms)
+  for (let i = 0; i < 25; i++) {
+    watch.push({ wishId, changes: [Change.TASK] });
+    await new Promise((r) => setTimeout(r, 2));
+  }
+
+  // Wait for scheduled throttled flush to settle
+  await new Promise((r) => setTimeout(r, 120));
+
+  // In ~170ms with throttle=50ms, at most 3-4 reads can occur, bound <= 4 (not 25)
+  assert.ok(
+    reads.tasks <= 4,
+    `expected throttled task reads <= 4, got ${reads.tasks}`,
+  );
+
+  stop();
+});
+
