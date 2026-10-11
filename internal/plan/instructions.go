@@ -8,7 +8,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
+	"buf.build/go/protovalidate"
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
@@ -203,6 +205,7 @@ func changeInstruction[R instructionRequest](ctx context.Context, i *Instruction
 		if err := tx.Journal(actor, spec.Procedure, journal.Interface()); err != nil {
 			return err
 		}
+		priorUpdate := instruction.GetUpdateTime()
 		before := proto.Clone(instruction)
 		if err := fn(tx, instruction); err != nil {
 			return err
@@ -210,7 +213,15 @@ func changeInstruction[R instructionRequest](ctx context.Context, i *Instruction
 		if proto.Equal(before, instruction) {
 			return nil
 		}
-		instruction.UpdateTime = timestamppb.Now()
+		updated := timestamppb.Now()
+		// An imported instruction may carry a future reply or update timestamp. Keep the lifecycle timestamp
+		// monotonic when a new local reply is appended after that import.
+		for _, old := range []*timestamppb.Timestamp{priorUpdate, instruction.GetUpdateTime()} {
+			if old != nil && old.CheckValid() == nil && old.AsTime().After(updated.AsTime()) {
+				updated = old
+			}
+		}
+		instruction.UpdateTime = updated
 		return tx.Put(instruction)
 	})
 	return instruction, Status(err)
@@ -288,4 +299,44 @@ func (i *Instructions) Complete(ctx context.Context, req *connect.Request[planv1
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.InstructionServiceCompleteResponse{Instruction: instruction}), nil
+}
+
+// Reply appends one informational reply while leaving the instruction's lifecycle and worker assignment alone.
+// Reply timestamps are nondecreasing, even when an imported instruction came from the future or the system clock
+// has not advanced between two submissions. The maximum valid protobuf timestamp is kept equal because it cannot
+// be incremented without becoming invalid.
+func (i *Instructions) Reply(ctx context.Context, req *connect.Request[planv1.InstructionServiceReplyRequest]) (*connect.Response[planv1.InstructionServiceReplyResponse], error) {
+	if req == nil || req.Msg == nil {
+		return nil, instructionError(connect.CodeInvalidArgument, "instructionBackend.blank")
+	}
+	if err := protovalidate.Validate(req.Msg); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	if strings.TrimSpace(req.Msg.GetReply()) == "" {
+		return nil, instructionError(connect.CodeInvalidArgument, "instructionBackend.blank")
+	}
+	instruction, err := changeInstruction(ctx, i, req.Spec(), req.Msg, func(_ *store.Tx, instruction *planv1.Instruction) error {
+		at := timestamppb.Now()
+		if replies := instruction.GetReplies(); len(replies) > 0 {
+			last := replies[len(replies)-1].GetCreateTime()
+			if last != nil && last.CheckValid() == nil && !last.AsTime().Before(at.AsTime()) {
+				candidate := timestamppb.New(last.AsTime().Add(time.Nanosecond))
+				if candidate.CheckValid() == nil {
+					at = candidate
+				} else {
+					// Timestamp has reached its representable upper bound. Equal timestamps remain chronological;
+					// the import validator still rejects malformed timestamps.
+					at = last
+				}
+			}
+		}
+		instruction.Replies = append(instruction.GetReplies(), &planv1.InstructionReply{Text: req.Msg.GetReply(), CreateTime: at})
+		// changeInstruction keeps this timestamp when it is ahead of the local clock.
+		instruction.UpdateTime = at
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.InstructionServiceReplyResponse{Instruction: instruction}), nil
 }

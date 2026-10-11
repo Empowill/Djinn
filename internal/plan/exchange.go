@@ -375,6 +375,9 @@ func portable(exp *planv1.WishExport, scrub *scrubber) *planv1.WishExport {
 	exp = proto.Clone(exp).(*planv1.WishExport)
 	for _, instruction := range exp.GetInstructions() {
 		instruction.Text = stripCredentials(instruction.GetText())
+		for _, reply := range instruction.GetReplies() {
+			reply.Text = stripCredentials(reply.GetText())
+		}
 	}
 	for _, t := range exp.GetTasks() {
 		// The worktree is a folder here, and the agent session lives in this machine's provider.
@@ -400,6 +403,9 @@ func portable(exp *planv1.WishExport, scrub *scrubber) *planv1.WishExport {
 		}
 		if instruction, ok := req.(*planv1.InstructionServiceSendRequest); ok {
 			instruction.Text = stripCredentials(instruction.GetText())
+		}
+		if instruction, ok := req.(*planv1.InstructionServiceReplyRequest); ok {
+			instruction.Reply = stripCredentials(instruction.GetReply())
 		}
 		scrub.message(req.ProtoReflect())
 		if packed, err := anypb.New(req); err == nil {
@@ -898,6 +904,20 @@ func check(exp *planv1.WishExport) error {
 		}
 		if id := instruction.GetTaskId(); id != "" && !tasks[id] {
 			return fmt.Errorf("instruction %s: its worker task must be in the export", code)
+		}
+		var previous time.Time
+		for n, reply := range instruction.GetReplies() {
+			if reply == nil || strings.TrimSpace(reply.GetText()) == "" {
+				return fmt.Errorf("instruction %s reply %d: it needs nonblank text", code, n+1)
+			}
+			if reply.GetCreateTime() == nil || reply.GetCreateTime().CheckValid() != nil {
+				return fmt.Errorf("instruction %s reply %d: it needs a valid timestamp", code, n+1)
+			}
+			at := reply.GetCreateTime().AsTime()
+			if n > 0 && at.Before(previous) {
+				return fmt.Errorf("instruction %s replies must be chronological", code)
+			}
+			previous = at
 		}
 	}
 	for _, b := range exp.GetBlocks() {

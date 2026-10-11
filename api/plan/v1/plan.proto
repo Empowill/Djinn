@@ -3146,6 +3146,16 @@ message Instruction {
   InstructionStatus status = 7 [(buf.validate.field).required = true, (buf.validate.field).enum.defined_only = true];
   // Worker task of the same wish; required for processing and done.
   string task_id = 8 [(buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE, (buf.validate.field).string.uuid = true];
+  // Informational replies from the lead, oldest first. Replies never change the instruction lifecycle.
+  repeated InstructionReply replies = 10;
+}
+
+// A concise informational reply on a durable developer instruction.
+message InstructionReply {
+  // The reply text.
+  string text = 1 [(buf.validate.field).string = {min_len: 1, max_len: 2000}];
+  // When the reply was added.
+  google.protobuf.Timestamp create_time = 2 [(buf.validate.field).required = true];
 }
 
 // InstructionStatus follows the lead's handling of a developer instruction, independently of the worker status.
@@ -3186,6 +3196,11 @@ service InstructionService {
   }
   // Complete a processing instruction explicitly, after verifying its worker task ended successfully.
   rpc Complete(InstructionServiceCompleteRequest) returns (InstructionServiceCompleteResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Append an informational reply without changing the instruction's lifecycle or worker assignment.
+  rpc Reply(InstructionServiceReplyRequest) returns (InstructionServiceReplyResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
@@ -3241,6 +3256,26 @@ message InstructionServiceCompleteRequest {
 }
 message InstructionServiceCompleteResponse {
   // The instruction, done after explicit verification by the lead.
+  Instruction instruction = 1;
+}
+
+message InstructionServiceReplyRequest {
+  // Instruction code (I01) or identifier; codes ignore case.
+  string instruction = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string = {
+      min_len: 1,
+      max_len: 64,
+      pattern: "(?i)^(I[0-9]{2,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+    }
+  ];
+  // The concise informational reply to append.
+  string reply = 2 [(buf.validate.field).required = true, (buf.validate.field).string = {min_len: 1, max_len: 2000}];
+  // The wish, required when a code exists in several wishes.
+  string wish_id = 3 [(buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE, (buf.validate.field).string.uuid = true];
+}
+message InstructionServiceReplyResponse {
+  // The instruction with the appended reply; its lifecycle and worker are unchanged.
   Instruction instruction = 1;
 }
 

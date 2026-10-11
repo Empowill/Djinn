@@ -66,6 +66,7 @@ func TestConvention(t *testing.T) {
 		{name: "durable instruction reflect", args: []string{"I01", "--wish-id", wishID}, want: &planv1.InstructionServiceReflectRequest{Instruction: "I01", WishId: wishID}},
 		{name: "durable instruction assign", args: []string{"I01", "W1", "--wish-id", wishID}, want: &planv1.InstructionServiceAssignRequest{Instruction: "I01", Task: "W1", WishId: wishID}},
 		{name: "durable instruction complete", args: []string{questionID}, want: &planv1.InstructionServiceCompleteRequest{Instruction: questionID}},
+		{name: "durable instruction reply", args: []string{"I01", "Reply text", "--wish-id", wishID}, want: &planv1.InstructionServiceReplyRequest{Instruction: "I01", Reply: "Reply text", WishId: wishID}},
 		{
 			name: "oneof takes a code",
 			args: []string{"Q03", "b", "--note", "ship it"},
@@ -288,6 +289,20 @@ type tasks struct {
 	*fake
 }
 
+type instructions struct {
+	planv1connect.UnimplementedInstructionServiceHandler
+	*fake
+}
+
+func (f instructions) Reply(_ context.Context, req *connect.Request[planv1.InstructionServiceReplyRequest]) (*connect.Response[planv1.InstructionServiceReplyResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&planv1.InstructionServiceReplyResponse{Instruction: &planv1.Instruction{
+		Id: req.Msg.GetInstruction(), WishId: req.Msg.GetWishId(), Code: "I01", Text: "Original instruction",
+		Status:  planv1.InstructionStatus_INSTRUCTION_STATUS_PENDING,
+		Replies: []*planv1.InstructionReply{{Text: req.Msg.GetReply(), CreateTime: timestamppb.New(time.Date(2026, 10, 7, 9, 5, 0, 0, time.UTC))}},
+	}}), nil
+}
+
 // Get is a task done whose work a correction worker took over, its batch red.
 func (f tasks) Get(_ context.Context, req *connect.Request[planv1.TaskServiceGetRequest]) (*connect.Response[planv1.TaskServiceGetResponse], error) {
 	f.record(req.Msg)
@@ -337,6 +352,7 @@ func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr 
 	mux.Handle(planv1connect.NewProjectServiceHandler(projects{fake: f}))
 	mux.Handle(planv1connect.NewTilasmServiceHandler(tilasms{fake: f}))
 	mux.Handle(planv1connect.NewTaskServiceHandler(tasks{fake: f}))
+	mux.Handle(planv1connect.NewInstructionServiceHandler(instructions{fake: f}))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return f, func(args ...string) (int, string, string) {
@@ -359,6 +375,9 @@ func TestRun(t *testing.T) {
 	}{
 		{name: "prefixes", args: []string{"q", "ans", "Q03", "b"}, wantOut: "code: Q03", wantCalled: true},
 		{name: "text output", args: []string{"question", "answer", "Q03", "B", "--note", "ok"}, wantOut: "answer:\n  choice: b\n  note: ok\n", wantCalled: true},
+		{name: "instruction reply executes publicly", args: []string{"instruction", "reply", "I01", "Reply text", "--wish-id", wishID}, wantOut: "text: Reply text", wantCalled: true},
+		{name: "instruction reply help", args: []string{"instruction", "reply", "--help"}, wantOut: "Usage: djinn instruction reply <instruction> <reply> [flags]"},
+		{name: "instruction reply rejects malformed reference locally", args: []string{"instruction", "reply", "garbage", "Reply text"}, wantCode: 2, wantErr: "does not match regex pattern"},
 		{name: "json output", args: []string{"--json", "q", "answer", questionID, "a"}, wantOut: `"CHOICE_A"`, wantCalled: true},
 		{name: "where a task's work stands", args: []string{"task", "get", wishID}, wantOut: "status: done\n" +
 			"integration:\n  state: red\n  branch: feat/x\n  reason: test exited 1\n  corrected_by: W9\n", wantCalled: true},
