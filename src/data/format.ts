@@ -15,6 +15,7 @@ import {
   type Question,
   RoundKind,
   type Task,
+  TaskKind,
   TaskStatus,
   type Wish,
   WishState,
@@ -435,6 +436,189 @@ export function shortModel(model: string): string {
   }
 
   return m;
+}
+
+// defaultModel is the model a provider runs when no model was requested; empty when it has none.
+export function defaultModel(provider?: Provider): string {
+  switch (provider) {
+    case Provider.CLAUDE:
+    case Provider.UNSPECIFIED:
+    case undefined:
+      return "claude-sonnet-5-5";
+    case Provider.ANTIGRAVITY:
+      return "gemini-3.8-flash-high";
+    case Provider.CODEX:
+      return "gpt-5.5";
+    default:
+      return "";
+  }
+}
+
+// In-memory alias registry: alias -> model id (e.g. "sonnet" -> "claude-sonnet-5-5")
+const modelAliases = new Map<string, string>();
+
+export function isAlias(model: string): boolean {
+  if (!model) return false;
+  const trimmed = model.trim();
+  return !/\d/.test(trimmed);
+}
+
+export function normalizeAlias(alias: string): string {
+  let a = alias.trim().toLowerCase();
+  a = a.replace(/^[a-z0-9-._]+\//, "");
+  a = a.replace(/^claude-/, "");
+  return a;
+}
+
+export function recordModelAlias(alias: string, model: string): void {
+  if (!alias || !model) return;
+  const a = normalizeAlias(alias);
+  modelAliases.set(a, model.trim());
+  modelAliases.set(alias.trim().toLowerCase(), model.trim());
+}
+
+export function resolveModelAlias(alias: string): string | undefined {
+  if (!alias) return undefined;
+  const a = normalizeAlias(alias);
+  return modelAliases.get(a) ?? modelAliases.get(alias.trim().toLowerCase());
+}
+
+export function clearModelAliases(): void {
+  modelAliases.clear();
+}
+
+export function learnAliasesFromModel(model: string): void {
+  if (!model || isAlias(model)) return;
+  const m = model.toLowerCase();
+  for (const tier of ["sonnet", "opus", "haiku"]) {
+    if (m.includes(tier)) {
+      recordModelAlias(tier, model);
+      recordModelAlias(`claude-${tier}`, model);
+    }
+  }
+}
+
+export interface TaskModelDisplay {
+  label: string;
+  title: string;
+}
+
+// taskModelDisplay computes the model badge to show on a task row:
+// - watchers and azimas show none.
+// - running and paused tasks show the model they run.
+// - finished tasks keep showing the model they ran (the last one if several, all in tooltip).
+// - planned and waiting tasks forecast the model they will run (requested, settings, or provider default).
+export function taskModelDisplay(
+  task: Task,
+  project?:
+    Project | { settings?: { model?: string; provider?: Provider } } | null,
+): TaskModelDisplay | null {
+  if (
+    task.provider === Provider.WATCH ||
+    watcherRuns(task) ||
+    task.kind === TaskKind.AZIMA ||
+    task.azima != null
+  ) {
+    return null;
+  }
+
+  if (task.status === TaskStatus.RUNNING || task.status === TaskStatus.PAUSED) {
+    if (!task.model) return null;
+    if (!isAlias(task.model)) {
+      learnAliasesFromModel(task.model);
+    }
+    return {
+      label: shortModel(task.model),
+      title: task.model,
+    };
+  }
+
+  if (taskFinished(task.status)) {
+    const modelsList: string[] = [];
+    if (task.models && task.models.length > 0) {
+      modelsList.push(...task.models);
+    }
+    if (task.model && !modelsList.includes(task.model)) {
+      modelsList.push(task.model);
+    }
+    const distinct: string[] = [];
+    for (const m of modelsList) {
+      const trimmed = m.trim();
+      if (trimmed && !distinct.includes(trimmed)) {
+        distinct.push(trimmed);
+        if (!isAlias(trimmed)) {
+          learnAliasesFromModel(trimmed);
+        }
+      }
+    }
+    const lastModel =
+      distinct.length > 0
+        ? distinct[distinct.length - 1]
+        : task.model?.trim() || "";
+    if (!lastModel) return null;
+    return {
+      label: shortModel(lastModel),
+      title: distinct.length > 1 ? distinct.join(", ") : lastModel,
+    };
+  }
+
+  // Planned or waiting tasks
+  const providerDef = defaultModel(task.provider);
+  let requested = task.model?.trim() || "";
+  let isDefault = false;
+
+  const projectSettings =
+    project && "settings" in project
+      ? (project as { settings?: { model?: string; provider?: Provider } })
+          .settings
+      : undefined;
+
+  if (!requested) {
+    if (
+      projectSettings?.model?.trim() &&
+      (!projectSettings.provider || projectSettings.provider === task.provider)
+    ) {
+      requested = projectSettings.model.trim();
+    } else if (providerDef) {
+      requested = providerDef;
+      isDefault = true;
+    }
+  } else if (
+    requested === providerDef &&
+    (!projectSettings?.model ||
+      projectSettings.model.trim() !== requested ||
+      (projectSettings.provider && projectSettings.provider !== task.provider))
+  ) {
+    isDefault = true;
+  }
+
+  if (!requested) return null;
+
+  if (isDefault) {
+    return {
+      label: `${shortModel(requested)} · default`,
+      title: requested,
+    };
+  }
+
+  if (isAlias(requested)) {
+    const resolved = resolveModelAlias(requested);
+    if (resolved) {
+      return {
+        label: `${shortModel(resolved)} · alias`,
+        title: resolved,
+      };
+    }
+    return {
+      label: `${shortModel(requested)} · version unknown`,
+      title: requested,
+    };
+  }
+
+  return {
+    label: shortModel(requested),
+    title: requested,
+  };
 }
 
 // syncDescription says how the integration branch stands against its remote target.

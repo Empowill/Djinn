@@ -799,6 +799,8 @@ message Task {
   string env_build = 52 [(buf.validate.field).string.max_len = 128];
   // Cause of the environment failure; empty when it failed for a work failure.
   string env_cause = 53 [(buf.validate.field).string.max_len = 1024];
+  // Models the worker ran across its runs (resumes or provider changes), in the order they ran.
+  repeated string models = 54;
 }
 
 // TaskReview is what a review worker reviews: work its worker left in its worktree without committing it.

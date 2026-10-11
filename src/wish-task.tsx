@@ -43,8 +43,8 @@ import { jump } from "./attention";
 import { type Decision } from "./data/decisions";
 import { useOptionalData, useTaskEvents, useTaskPrompt } from "./data/djinn";
 import {
-  shortModel,
   taskFinished,
+  taskModelDisplay,
   taskStatusText,
   taskTime,
   taskTone,
@@ -242,11 +242,14 @@ export const WishTask = memo(function WishTask({
               {project?.name && (
                 <span className="task-project">{project.name}</span>
               )}
-              {!watcher && task.model && (
-                <span className="task-model" title={task.model}>
-                  {shortModel(task.model)}
-                </span>
-              )}
+              {(() => {
+                const display = taskModelDisplay(task, project);
+                return display ? (
+                  <span className="task-model" title={display.title}>
+                    {display.label}
+                  </span>
+                ) : null;
+              })()}
               {time.text && (
                 <span className="task-time" title={time.title}>
                   {time.text}
