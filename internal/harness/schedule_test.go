@@ -621,3 +621,51 @@ func TestSetPolicyDoesNotKillRunningWorkers(t *testing.T) {
 		t.Fatalf("worker failed after SetPolicy: status=%v", got.GetStatus())
 	}
 }
+
+func TestSpawnUnreadableSettingsWaitsThenStarts(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	repo := gitRepo(t)
+	settingsFile := filepath.Join(repo, ".agents", "settings.txtpb")
+	if err := os.MkdirAll(filepath.Dir(settingsFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Invalid prototext syntax to make LoadSettings fail.
+	if err := os.WriteFile(settingsFile, []byte("provider: [invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	e := up(t, t.TempDir(), WithTick(20*time.Millisecond))
+	wishID, _ := e.wish(t, repo)
+
+	// Spawning when settings are unreadable should put the task in PENDING state with wait reason.
+	task := e.mustSpawn(t, wishID, "TaskWaiting", "text done", nil)
+	if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
+		t.Fatalf("status: got %v, want PENDING", task.GetStatus())
+	}
+	if !strings.HasPrefix(task.GetWaitReason(), "settings unreadable:") {
+		t.Fatalf("wait reason: got %q, want prefix 'settings unreadable:'", task.GetWaitReason())
+	}
+	if task.GetWorktree() != "" {
+		t.Fatalf("worktree: got %q, want empty", task.GetWorktree())
+	}
+
+	// Verify task does not start while settings are broken.
+	time.Sleep(100 * time.Millisecond)
+	curr := e.get(t, task.GetId())
+	if curr.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || curr.GetStartTime() != nil {
+		t.Fatalf("task started while settings unreadable: %v", curr)
+	}
+
+	// Now fix the settings file.
+	if err := os.WriteFile(settingsFile, []byte("provider: PROVIDER_FAKE\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e.h.wake()
+
+	// Task should now start and finish DONE.
+	got := e.ended(t, task.GetId())
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("task after fixing settings: %v", got)
+	}
+}

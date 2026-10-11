@@ -7347,8 +7347,10 @@ type ProjectServiceShowResponse struct {
 	Problems []string `protobuf:"bytes,5,rep,name=problems,proto3" json:"problems,omitempty"`
 	// The command that makes a fresh worktree ready, and the checks Djinn runs before it commits and pushes, as the
 	// files resolve them. Their last runs are the project's check_runs.
-	Setup         string          `protobuf:"bytes,6,opt,name=setup,proto3" json:"setup,omitempty"`
-	Checks        []*ProjectCheck `protobuf:"bytes,7,rep,name=checks,proto3" json:"checks,omitempty"`
+	Setup  string          `protobuf:"bytes,6,opt,name=setup,proto3" json:"setup,omitempty"`
+	Checks []*ProjectCheck `protobuf:"bytes,7,rep,name=checks,proto3" json:"checks,omitempty"`
+	// Warnings when reading the settings, e.g. unknown fields that a newer Djinn knows.
+	Warnings      []string `protobuf:"bytes,8,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7428,6 +7430,13 @@ func (x *ProjectServiceShowResponse) GetSetup() string {
 func (x *ProjectServiceShowResponse) GetChecks() []*ProjectCheck {
 	if x != nil {
 		return x.Checks
+	}
+	return nil
+}
+
+func (x *ProjectServiceShowResponse) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
 	}
 	return nil
 }
@@ -16512,7 +16521,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\bprojects\x18\x01 \x03(\v2\x10.plan.v1.ProjectR\bprojects\"A\n" +
 	"\x19ProjectServiceShowRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
-	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\"\xae\x02\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\"\xca\x02\n" +
 	"\x1aProjectServiceShowResponse\x12*\n" +
 	"\aproject\x18\x01 \x01(\v2\x10.plan.v1.ProjectR\aproject\x123\n" +
 	"\bsettings\x18\x02 \x03(\v2\x17.plan.v1.ProjectSettingR\bsettings\x12'\n" +
@@ -16520,7 +16529,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0edeveloper_file\x18\x04 \x01(\tR\rdeveloperFile\x12\x1a\n" +
 	"\bproblems\x18\x05 \x03(\tR\bproblems\x12\x14\n" +
 	"\x05setup\x18\x06 \x01(\tR\x05setup\x12-\n" +
-	"\x06checks\x18\a \x03(\v2\x15.plan.v1.ProjectCheckR\x06checks\"l\n" +
+	"\x06checks\x18\a \x03(\v2\x15.plan.v1.ProjectCheckR\x06checks\x12\x1a\n" +
+	"\bwarnings\x18\b \x03(\tR\bwarnings\"l\n" +
 	"\x19ProjectServicePushRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\x12 \n" +

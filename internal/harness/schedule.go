@@ -416,6 +416,23 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		h.failPlanned(ctx, t, err.Error())
 		return nil
 	}
+	var project *planv1.Project
+	if t.GetProjectId() != "" {
+		p, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
+		if err != nil {
+			h.failPlanned(ctx, t, err.Error())
+			return nil
+		}
+		project = p
+	}
+	var settings plan.Settings
+	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
+		var err error
+		if settings, err = plan.LoadSettings(h.home, project); err != nil {
+			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err))
+			return nil
+		}
+	}
 	seq, err := lastSeq(ctx, h.store, t.GetId())
 	if err != nil {
 		return err
@@ -429,18 +446,12 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		r.seq++
 		preEv = h.newEvent(t.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
 	}
-	var project *planv1.Project
 	var wish *planv1.Wish
 	var prep prepared
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		var err error
 		if wish, err = store.Get[*planv1.Wish](ctx, tx, t.GetWishId()); err != nil {
 			return err
-		}
-		if t.GetProjectId() != "" {
-			if project, err = store.Get[*planv1.Project](ctx, tx, t.GetProjectId()); err != nil {
-				return err
-			}
 		}
 		if prep, err = prepare(ctx, tx, t, wish, project); err != nil {
 			return err
@@ -462,13 +473,8 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		h.finish(r, Result{ExitCode: -1, Err: err})
 		return err
 	}
-	if project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
+	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		// Its branch follows the project's settings as they are now, like its access.
-		settings, err := plan.LoadSettings(h.home, project)
-		if err != nil {
-			h.finish(r, Result{ExitCode: -1, Err: fmt.Errorf("project %s: %w", project.GetName(), err)})
-			return nil
-		}
 		r.branch, r.from = settings.Branch, h.workerStartBranch(h.ctx, wish, project, settings, t)
 		r.setChecks(settings)
 		if questionWorker(t) {

@@ -39,7 +39,6 @@ func TestLoadPermissions(t *testing.T) {
 	}
 	for _, bad := range []string{
 		"edit: maybe\n",
-		"unknown_field: 1\n",
 		`commands: "go test *"` + "\n",
 		`commands: "make && rm -rf /"` + "\n",
 		`denied_commands: "git  push"` + "\n",
@@ -49,6 +48,12 @@ func TestLoadPermissions(t *testing.T) {
 		if p, err := LoadPermissions(dir); err == nil || !strings.Contains(err.Error(), "permissions.txtpb") {
 			t.Errorf("%q: %v, %v; want an error naming the file", bad, p, err)
 		}
+	}
+
+	writeFile(t, dir, ".agents/permissions.txtpb", "unknown_field: 1\nedit: true\n")
+	p, err = LoadPermissions(dir)
+	if err != nil || !p.GetEdit() {
+		t.Errorf("unknown field: %v, %v", p, err)
 	}
 }
 

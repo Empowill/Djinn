@@ -34,15 +34,23 @@ func DeveloperSettingsFile(home, projectID string) string {
 // ReadSettings reads the settings of the file at path: nil, and no error, when there is none. A file that holds
 // something that looks like a secret is refused, comments included, without repeating it.
 func ReadSettings(path string) (*planv1.ProjectSettings, error) {
+	s, _, err := ReadSettingsWithWarnings(path)
+	return s, err
+}
+
+// ReadSettingsWithWarnings reads the settings of the file at path: nil, and no error, when there is none. A file that holds
+// something that looks like a secret is refused, comments included, without repeating it. Any unknown fields are discarded,
+// logged once as warnings, and returned in warnings.
+func ReadSettingsWithWarnings(path string) (*planv1.ProjectSettings, []string, error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if line, why := secretIn(b); line > 0 {
-		return nil, fmt.Errorf("%s: line %d %s; this file holds no secret: remove it", path, line, why)
+		return nil, nil, fmt.Errorf("%s: line %d %s; this file holds no secret: remove it", path, line, why)
 	}
 	s := &planv1.ProjectSettings{}
 	normalized := normalizeInstallQuestions.ReplaceAllFunc(b, func(match []byte) []byte {
@@ -54,21 +62,27 @@ func ReadSettings(path string) (*planv1.ProjectSettings, error) {
 		}
 		return match
 	})
-	if err := prototext.Unmarshal(normalized, s); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+	unknowns := FindUnknownFields(normalized, s)
+	var warnings []string
+	for _, u := range unknowns {
+		warnings = append(warnings, WarnUnknownField(path, u))
+	}
+	opts := prototext.UnmarshalOptions{DiscardUnknown: true}
+	if err := opts.Unmarshal(normalized, s); err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", path, err)
 	}
 	if err := protovalidate.Validate(s); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, nil, fmt.Errorf("%s: %w", path, err)
 	}
 	seen := map[string]bool{}
 	for _, c := range s.GetChecks() {
 		name := strings.ToLower(c.GetName())
 		if seen[name] {
-			return nil, fmt.Errorf("%s: two checks are named %s: names ignore case", path, c.GetName())
+			return nil, nil, fmt.Errorf("%s: two checks are named %s: names ignore case", path, c.GetName())
 		}
 		seen[name] = true
 	}
-	return s, nil
+	return s, warnings, nil
 }
 
 var (
@@ -163,6 +177,7 @@ type Settings struct {
 	Push             planv1.ProjectPush
 	PushStrategy     planv1.PushStrategy
 	InstallQuestions planv1.InstallQuestions
+	Warnings         []string
 
 	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom            planv1.SettingSource
 	ChecksFrom, AttemptsFrom, InstallFrom, TestOneFrom                                                 planv1.SettingSource
@@ -341,28 +356,43 @@ func settingsFiles(home string, project *planv1.Project) (repo, dev string) {
 // LoadSettings reads the settings of project (nil outside any project): its repository's, then the developer's in
 // Djinn's data folder home. A file that cannot be read is an error that names it.
 func LoadSettings(home string, project *planv1.Project) (Settings, error) {
-	repo, dev, problems := loadSettings(home, project)
-	return ResolveSettings(repo, dev), errors.Join(problems...)
+	repo, dev, warnings, problems := loadSettings(home, project)
+	s := ResolveSettings(repo, dev)
+	s.Warnings = warnings
+	return s, errors.Join(problems...)
 }
 
 // loadSettings reads both files of project, and why each one that could not be read was not.
-func loadSettings(home string, project *planv1.Project) (repo, dev *planv1.ProjectSettings, problems []error) {
+func loadSettings(home string, project *planv1.Project) (repo, dev *planv1.ProjectSettings, warnings []string, problems []error) {
 	if project == nil {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	repoFile, devFile := settingsFiles(home, project)
 	var err error
+	var w []string
 	if repoFile != "" {
-		if repo, err = ReadSettings(repoFile); err != nil {
+		if repo, w, err = ReadSettingsWithWarnings(repoFile); err != nil {
 			problems = append(problems, err)
+		} else {
+			for _, warn := range w {
+				if !slices.Contains(warnings, warn) {
+					warnings = append(warnings, warn)
+				}
+			}
 		}
 	}
 	if devFile != "" {
-		if dev, err = ReadSettings(devFile); err != nil {
+		if dev, w, err = ReadSettingsWithWarnings(devFile); err != nil {
 			problems = append(problems, err)
+		} else {
+			for _, warn := range w {
+				if !slices.Contains(warnings, warn) {
+					warnings = append(warnings, warn)
+				}
+			}
 		}
 	}
-	return repo, dev, problems
+	return repo, dev, warnings, problems
 }
 
 // Rows are the settings as djinn project show lists them.

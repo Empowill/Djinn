@@ -1646,6 +1646,8 @@ message ProjectServiceShowResponse {
   // files resolve them. Their last runs are the project's check_runs.
   string setup = 6;
   repeated ProjectCheck checks = 7;
+  // Warnings when reading the settings, e.g. unknown fields that a newer Djinn knows.
+  repeated string warnings = 8;
 }
 
 message ProjectServicePushRequest {

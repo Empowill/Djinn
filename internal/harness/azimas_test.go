@@ -255,6 +255,11 @@ func TestSyncPlan(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	dir := copyPlan(t)
+	// Give one azima an unchecked box without needs so work > 0 is exercised.
+	t27Path := filepath.Join(dir, "plan", "9ac1c08b-djinn-stays-fast.md")
+	if data, err := os.ReadFile(t27Path); err == nil {
+		_ = os.WriteFile(t27Path, []byte(strings.Replace(string(data), " (needs: startup profiling)", "", 1)), 0o600)
+	}
 	files, err := plan.ReadAzimaFiles(dir)
 	if err != nil {
 		t.Fatal(err)

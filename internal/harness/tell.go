@@ -192,7 +192,7 @@ func (h *Harness) workerFailedLine(ctx context.Context, t *planv1.Task) string {
 
 	project, _ := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
 	var errLine string
-	if project != nil && project.GetGit() && !light(t) && (t.GetWorktree() == "" || isGone(t.GetWorktree())) {
+	if project != nil && project.GetGit() && !light(t) && t.GetWorktree() != "" && isGone(t.GetWorktree()) {
 		errLine = "its worktree is gone: it cannot be resumed"
 	} else {
 		errLine = firstLine(t.GetError())
