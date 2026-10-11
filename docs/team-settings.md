@@ -185,6 +185,7 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
 - **The workers know them.** The lead's brief lists each project's checks and when they run; each worker that edits a
   worktree gets them at the end of its first prompt, to run the commit checks (`djinn gate run lint -- go tool task
   lint`) before it ends; again when it resumes from its first prompt (a session never known).
+  When writing a worker's prompt, ask for the commit checks and the targeted tests, never "run the whole test suite"; the push checks are Djinn's.
 - `djinn project show <project>` and the project's view in the window list the setup and the checks, each with its
   last run: the commit it checked, when, how long, and why it failed.
 

@@ -104,7 +104,9 @@ func TestBrief(t *testing.T) {
 		"Read `AGENTS.md`, `contributing.md` at its root first", "**notes**, outside Git", "**api**, a Git repository",
 		"  Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- go tool task lint`; " +
 			"before it pushes, with `djinn gate run test -- go tool task test`. A worker runs the commit checks before it ends, " +
-			"and fixes what they find. A fresh worktree needs `npm ci` first. Djinn says so in each worker's first prompt.\n",
+			"and fixes what they find, then only the tests that cover what it changed; do not run the push checks (`djinn gate run test -- go tool task test`): " +
+			"Djinn runs them before pushing. A fresh worktree needs `npm ci` first. Djinn says so in each worker's first prompt.\n",
+		"When writing a worker's prompt, ask for the commit checks and the targeted tests, never \"run the whole test suite\"; the push checks are Djinn's.",
 		wish.GetId(), "**Q01** Which store? → A: SQLite", "**W1** Write the store (claude", "**W2** Write the docs: failed",
 		"### No CGO (decision)", "In api/internal", "https://example.com/acme.git",
 		"`djinn wish sync <wish>`", "republish that file as it is, in one call",

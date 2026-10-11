@@ -71,6 +71,7 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"ones, several side by side; keep for yourself what only the lead does: talk with the developer, plan, check " +
 	"what comes back.\n" +
 	"- **Workers start from a short prompt.** Say what to do, in which project, and how to check it. " +
+	"When writing a worker's prompt, ask for the commit checks and the targeted tests, never \"run the whole test suite\"; the push checks are Djinn's. " +
 	"`--fork <task>` or `--from-lead` start a worker from a copy of a conversation instead: it reads that context " +
 	"again at every turn, so use them only when the whole context is needed.\n" +
 	"- **To follow up on a task, continue it**: `djinn task continue <task> --prompt \"…\"` gives a task that " +

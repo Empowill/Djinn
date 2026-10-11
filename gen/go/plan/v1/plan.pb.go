@@ -2202,7 +2202,10 @@ type ProjectSettings struct {
 	EnlightenWorkers *bool `protobuf:"varint,22,opt,name=enlighten_workers,json=enlightenWorkers,proto3,oneof" json:"enlighten_workers,omitempty"`
 	// Push strategy for the project's wishes: one integration branch per wish (wish) or per azima (azima).
 	// Not set: wish.
-	PushStrategy  *PushStrategy `protobuf:"varint,23,opt,name=push_strategy,json=pushStrategy,proto3,enum=plan.v1.PushStrategy,oneof" json:"push_strategy,omitempty"`
+	PushStrategy *PushStrategy `protobuf:"varint,23,opt,name=push_strategy,json=pushStrategy,proto3,enum=plan.v1.PushStrategy,oneof" json:"push_strategy,omitempty"`
+	// A template command to run targeted tests covering a worker's change: "go tool task test-pkg -- {pkg}" or
+	// "npm test -- {spec}". Shown in the brief when present.
+	TestOne       *string `protobuf:"bytes,24,opt,name=test_one,json=testOne,proto3,oneof" json:"test_one,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2397,6 +2400,13 @@ func (x *ProjectSettings) GetPushStrategy() PushStrategy {
 		return *x.PushStrategy
 	}
 	return PushStrategy_PUSH_STRATEGY_UNSPECIFIED
+}
+
+func (x *ProjectSettings) GetTestOne() string {
+	if x != nil && x.TestOne != nil {
+		return *x.TestOne
+	}
+	return ""
 }
 
 // ProjectCheck is a command Djinn runs on a project's work: checks { name: "lint" command: "go tool task lint" when:
@@ -14960,7 +14970,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x14\n" +
 	"\x05skill\x18\x02 \x01(\tR\x05skill\x12;\n" +
 	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\"\x83\x0e\n" +
+	"createTime\"\xba\x0e\n" +
 	"\x0fProjectSettings\x12@\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x11.plan.v1.ProviderB\f\xbaH\t\x82\x01\x06\x10\x01 \x00 \x05H\x00R\bprovider\x88\x01\x01\x12=\n" +
 	"\x05model\x18\x02 \x01(\tB\"\xbaH\x1fr\x1d\x18\xc8\x012\x18^[A-Za-z0-9._:@/\\[\\]-]*$H\x01R\x05model\x88\x01\x01\x12B\n" +
@@ -14993,7 +15003,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0eanswer_workers\x18\x15 \x01(\bH\x12R\ranswerWorkers\x88\x01\x01\x120\n" +
 	"\x11enlighten_workers\x18\x16 \x01(\bH\x13R\x10enlightenWorkers\x88\x01\x01\x12K\n" +
 	"\rpush_strategy\x18\x17 \x01(\x0e2\x15.plan.v1.PushStrategyB\n" +
-	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x14R\fpushStrategy\x88\x01\x01B\v\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x14R\fpushStrategy\x88\x01\x01\x12(\n" +
+	"\btest_one\x18\x18 \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\x15R\atestOne\x88\x01\x01B\v\n" +
 	"\t_providerB\b\n" +
 	"\x06_modelB\x11\n" +
 	"\x0f_max_budget_usdB\t\n" +
@@ -15015,7 +15026,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05_pushB\x11\n" +
 	"\x0f_answer_workersB\x14\n" +
 	"\x12_enlighten_workersB\x10\n" +
-	"\x0e_push_strategy\"\xad\x01\n" +
+	"\x0e_push_strategyB\v\n" +
+	"\t_test_one\"\xad\x01\n" +
 	"\fProjectCheck\x12:\n" +
 	"\x04name\x18\x01 \x01(\tB&\xbaH#r!\x10\x01\x18(2\x1b^[A-Za-z0-9][A-Za-z0-9_-]*$R\x04name\x12$\n" +
 	"\acommand\x18\x02 \x01(\tB\n" +

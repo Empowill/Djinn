@@ -124,6 +124,7 @@ type Settings struct {
 	// them, the one that makes a fresh worktree ready, and the one that installs its new build; empty when not set.
 	Generated                []string
 	Generate, Setup, Install string
+	TestOne                  string
 	// The checks Djinn runs before it commits a task's work and before it pushes, in the order the file names them.
 	Checks []*planv1.ProjectCheck
 	// How many correction workers Djinn starts for a batch that conflicts in code or tests red, before it asks.
@@ -150,7 +151,7 @@ type Settings struct {
 	PushStrategy    planv1.PushStrategy
 
 	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom            planv1.SettingSource
-	ChecksFrom, AttemptsFrom, InstallFrom                                                              planv1.SettingSource
+	ChecksFrom, AttemptsFrom, InstallFrom, TestOneFrom                                                 planv1.SettingSource
 	AnswerWorkersFrom, EnlightenWorkersFrom                                                            planv1.SettingSource
 	QuestionWorkersFrom, QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                   planv1.SettingSource
 	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom, PushStrategyFrom planv1.SettingSource
@@ -195,7 +196,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 	s := Settings{
 		Provider: planv1.Provider_PROVIDER_CLAUDE, Branch: DefaultBranch, CorrectionAttempts: DefaultCorrectionAttempts,
 		ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
-		SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def,
+		SetupFrom: def, ChecksFrom: def, InstallFrom: def, TestOneFrom: def, AttemptsFrom: def,
 		AnswerWorkers: false, AnswerWorkersFrom: def,
 		EnlightenWorkers: true, EnlightenWorkersFrom: def,
 		QuestionWorkers: false, QuestionWorkersFrom: def,
@@ -287,6 +288,9 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		if f.settings.PushStrategy != nil {
 			s.PushStrategy, s.PushStrategyFrom = f.settings.GetPushStrategy(), f.from
 		}
+		if f.settings.TestOne != nil {
+			s.TestOne, s.TestOneFrom = f.settings.GetTestOne(), f.from
+		}
 	}
 	effective := s.QuestionProvider
 	if effective == planv1.Provider_PROVIDER_UNSPECIFIED {
@@ -358,6 +362,7 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "generate", Value: s.Generate, Source: s.GenerateFrom},
 		{Name: "setup", Value: s.Setup, Source: s.SetupFrom},
 		{Name: "checks", Value: ChecksText(s.Checks), Source: s.ChecksFrom},
+		{Name: "test_one", Value: s.TestOne, Source: s.TestOneFrom},
 		{Name: "correction_attempts", Value: strconv.Itoa(s.CorrectionAttempts), Source: s.AttemptsFrom},
 		{Name: "install", Value: s.Install, Source: s.InstallFrom},
 		{Name: "answer_workers", Value: strconv.FormatBool(s.AnswerWorkers), Source: s.AnswerWorkersFrom},
@@ -544,8 +549,9 @@ func GateCommand(c *planv1.ProjectCheck) string {
 	return "djinn gate run " + c.GetName() + " -- " + c.GetCommand()
 }
 
-// ChecksBrief says, in a sentence or two, which checks Djinn runs on the project's work and when, and what a fresh
-// worktree needs first; "" for a project that sets none. The lead's brief and each worker's first prompt carry it.
+// ChecksBrief says, in a sentence or two, which checks Djinn runs on the project's work and when, how a worker
+// runs the commit checks and targeted tests (never push checks), and what a fresh worktree needs first; "" for a
+// project that sets none. The lead's brief and each worker's first prompt carry it.
 func (s Settings) ChecksBrief() string {
 	if !s.Integrates() {
 		return ""
@@ -570,8 +576,30 @@ func (s Settings) ChecksBrief() string {
 		b.WriteString(" before it pushes, with " + push)
 	}
 	b.WriteString(".")
+	commitHasTest := slices.ContainsFunc(s.ChecksAt(planv1.CheckWhen_CHECK_WHEN_COMMIT), func(c *planv1.ProjectCheck) bool {
+		return strings.EqualFold(c.GetName(), "test")
+	})
 	if commit != "" {
-		b.WriteString(" A worker runs the commit checks before it ends, and fixes what they find.")
+		b.WriteString(" A worker runs the commit checks before it ends, and fixes what they find")
+		if commitHasTest {
+			b.WriteString(" (the commit check is the whole suite)")
+		} else {
+			b.WriteString(", then only the tests that cover what it changed")
+			if s.TestOne != "" {
+				b.WriteString(" (`" + s.TestOne + "`)")
+			}
+		}
+		if push != "" {
+			b.WriteString("; do not run the push checks (" + push + "): Djinn runs them before pushing.")
+		} else {
+			b.WriteString(".")
+		}
+	} else if push != "" {
+		b.WriteString(" A worker runs only the tests that cover what it changed")
+		if s.TestOne != "" {
+			b.WriteString(" (`" + s.TestOne + "`)")
+		}
+		b.WriteString("; do not run the push checks (" + push + "): Djinn runs them before pushing.")
 	}
 	if s.Setup != "" {
 		b.WriteString(" A fresh worktree needs `" + s.Setup + "` first.")

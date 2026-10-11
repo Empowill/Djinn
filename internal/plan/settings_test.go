@@ -192,12 +192,39 @@ func TestResolveSettings(t *testing.T) {
 		// Main's are TestMainSettings'.
 		got.MainBranch, got.MergeMain, got.MergeMainEvery, got.InstallReleases = "", 0, 0, false
 		got.MainBranchFrom, got.MergeMainFrom, got.MergeMainEveryFrom, got.InstallReleasesFrom = 0, 0, 0, 0
-		// Push is TestPushSettings', push strategy is TestPushStrategySettings'.
+		// Push is TestPushSettings', push strategy is TestPushStrategySettings', test_one is TestTestOneSettings'.
 		got.Push, got.PushFrom = 0, 0
 		got.PushStrategy, got.PushStrategyFrom = 0, 0
+		got.TestOne, got.TestOneFrom = "", 0
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
 		}
+	}
+}
+
+// TestTestOneSettings: a project may name its targeted-test command in its settings (test_one),
+// either file sets it, and the developer's file overrides the repository's.
+func TestTestOneSettings(t *testing.T) {
+	def, repo, dev := planv1.SettingSource_SETTING_SOURCE_DEFAULT, planv1.SettingSource_SETTING_SOURCE_REPOSITORY, planv1.SettingSource_SETTING_SOURCE_DEVELOPER
+
+	// 1. Neither file: default empty
+	s := ResolveSettings(nil, nil)
+	if s.TestOne != "" || s.TestOneFrom != def {
+		t.Errorf("default test_one: %q from %v; want empty from %v", s.TestOne, s.TestOneFrom, def)
+	}
+
+	// 2. Repository file sets test_one
+	repoSettings := &planv1.ProjectSettings{TestOne: proto.String("go tool task test-pkg -- {pkg}")}
+	s = ResolveSettings(repoSettings, nil)
+	if s.TestOne != "go tool task test-pkg -- {pkg}" || s.TestOneFrom != repo {
+		t.Errorf("repo test_one: %q from %v; want template from %v", s.TestOne, s.TestOneFrom, repo)
+	}
+
+	// 3. Developer file overrides repository file
+	devSettings := &planv1.ProjectSettings{TestOne: proto.String("npm test -- {spec}")}
+	s = ResolveSettings(repoSettings, devSettings)
+	if s.TestOne != "npm test -- {spec}" || s.TestOneFrom != dev {
+		t.Errorf("dev test_one override: %q from %v; want template from %v", s.TestOne, s.TestOneFrom, dev)
 	}
 }
 
@@ -348,7 +375,7 @@ func TestProjectShow(t *testing.T) {
 		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetProblems(), repoFile, devFile)
 	}
 	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT, "+
-		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
+		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
 		t.Errorf("no file: %s; want %s", got, want)
 	}
 	var question []string
@@ -366,7 +393,7 @@ func TestProjectShow(t *testing.T) {
 	writeSettings(t, devFile, "model: \"sonnet\"\nbranch: \"me/{slug}-{uuid8}\"\ntest: \"go tool task test-go\"\n")
 	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY, "+
 		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/schema.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
-		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, correction_attempts=3 REPOSITORY, "+
+		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
 		"install=go tool task install REPOSITORY, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
 	}
@@ -376,7 +403,7 @@ func TestProjectShow(t *testing.T) {
 	res = show()
 	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=djinn/{code}-{uuid8} REPOSITORY, generated=gen/**,docs/schema.json REPOSITORY, "+
-		"generate=go tool task gen REPOSITORY, setup= DEFAULT, checks=test: go tool task test (commit) REPOSITORY, correction_attempts=3 REPOSITORY, "+
+		"generate=go tool task gen REPOSITORY, setup= DEFAULT, checks=test: go tool task test (commit) REPOSITORY, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
 		"install=go tool task install REPOSITORY, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)
 	}
@@ -417,12 +444,41 @@ func TestChecksBrief(t *testing.T) {
 	}}
 	want := "Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- go tool task lint`; " +
 		"before it pushes, with `djinn gate run test -- go tool task test`. A worker runs the commit checks before it ends, " +
-		"and fixes what they find. A fresh worktree needs `npm ci` first."
+		"and fixes what they find, then only the tests that cover what it changed; do not run the push checks (`djinn gate run test -- go tool task test`): " +
+		"Djinn runs them before pushing. A fresh worktree needs `npm ci` first."
 	if got := s.ChecksBrief(); got != want {
 		t.Errorf("brief:\n%s\nwant:\n%s", got, want)
 	}
+
+	// With test_one template
+	sTestOne := Settings{
+		Setup: "npm ci",
+		Checks: []*planv1.ProjectCheck{
+			atCommit("lint", "go tool task lint"),
+			{Name: "test", Command: "go tool task test", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}},
+		},
+		TestOne: "go tool task test-pkg -- {pkg}",
+	}
+	wantTestOne := "Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- go tool task lint`; " +
+		"before it pushes, with `djinn gate run test -- go tool task test`. A worker runs the commit checks before it ends, " +
+		"and fixes what they find, then only the tests that cover what it changed (`go tool task test-pkg -- {pkg}`); " +
+		"do not run the push checks (`djinn gate run test -- go tool task test`): Djinn runs them before pushing. A fresh worktree needs `npm ci` first."
+	if got := sTestOne.ChecksBrief(); got != wantTestOne {
+		t.Errorf("brief with test_one:\n%s\nwant:\n%s", got, wantTestOne)
+	}
+
+	// When a commit check is the whole suite (name "test")
+	sWhole := Settings{Checks: []*planv1.ProjectCheck{atCommit("test", "make test")}}
+	wantWhole := "Djinn checks this project's work before it commits a task's work, with `djinn gate run test -- make test`. " +
+		"A worker runs the commit checks before it ends, and fixes what they find (the commit check is the whole suite)."
+	if got := sWhole.ChecksBrief(); got != wantWhole {
+		t.Errorf("brief whole suite at commit:\n%s\nwant:\n%s", got, wantWhole)
+	}
+
 	push := Settings{Checks: []*planv1.ProjectCheck{{Name: "lint", Command: "make lint", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}}}}
-	if got, want := push.ChecksBrief(), "Djinn checks this project's work before it pushes, with `djinn gate run lint -- make lint`."; got != want {
+	wantPush := "Djinn checks this project's work before it pushes, with `djinn gate run lint -- make lint`. " +
+		"A worker runs only the tests that cover what it changed; do not run the push checks (`djinn gate run lint -- make lint`): Djinn runs them before pushing."
+	if got, want := push.ChecksBrief(), wantPush; got != want {
 		t.Errorf("push only: %q; want %q", got, want)
 	}
 }
