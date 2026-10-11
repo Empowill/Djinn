@@ -132,7 +132,7 @@ func FillAzimas(tasks []*planv1.Task) {
 				if IsAzima(dep) {
 					depDone = state(dep) == planv1.AzimaState_AZIMA_STATE_DONE
 				} else {
-					depDone = dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !taskMergingOrFailed(dep)
+					depDone = (dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !taskMergingOrFailed(dep)) || dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_CANCELLED
 				}
 			}
 			if !depDone {
@@ -286,7 +286,7 @@ func HasUnfinishedParts(id string, tasks []*planv1.Task) bool {
 // every task it can (RESUMING), so one left interrupted (resumed as a fork, imported, its worktree gone) is history.
 func Finished(t *planv1.Task) bool {
 	switch t.GetStatus() {
-	case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+	case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_INTERRUPTED, planv1.TaskStatus_TASK_STATUS_CANCELLED:
 		return true
 	}
 	return false

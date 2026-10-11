@@ -204,7 +204,7 @@ func (h *Harness) answer(id string, q *planv1.Question) error {
 	if err != nil {
 		return err
 	}
-	if !yes(q) || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED || task.GetClosed() != nil || !task.GetScheduled() {
+	if !yes(q) || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_CANCELLED || task.GetClosed() != nil || task.GetCancelled() != nil || !task.GetScheduled() {
 		// Nothing starts: the answer is recorded with the task, a task waiting for it is done. A task imported from
 		// another Djinn is not this one's to start.
 		r := &run{id: id, task: task, seq: seq}
@@ -312,6 +312,9 @@ func (h *Harness) applyAnswer(r *run, q *planv1.Question) bool {
 	case yes(q) && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED:
 		t.Access = planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED
 		text = "edit granted (" + q.GetCode() + "): the task was stopped on request, and stays stopped"
+	case yes(q) && (t.GetStatus() == planv1.TaskStatus_TASK_STATUS_CANCELLED || t.GetCancelled() != nil):
+		t.Access = planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED
+		text = "edit granted (" + q.GetCode() + "): the task was cancelled, and stays cancelled"
 	case yes(q) && t.GetClosed() != nil:
 		t.Access = planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED
 		text = "edit granted (" + q.GetCode() + "): the task was marked done by hand, and stays done"
