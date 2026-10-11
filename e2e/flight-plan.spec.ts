@@ -72,7 +72,8 @@ const lampOf = (wishId: string, title: string) => {
         code: "W2",
         title: "Read the map",
         status: "TASK_STATUS_DONE",
-        model: "custom-local",
+        provider: "PROVIDER_CODEX",
+        model: "fixture-unpriced",
         usage: {
           input_tokens: "1200",
           output_tokens: "300",
