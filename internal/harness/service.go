@@ -256,6 +256,15 @@ func (s *Tasks) Move(
 	}
 	return connect.NewResponse(&planv1.TaskServiceMoveResponse{Task: task}), nil
 }
+func (s *Tasks) Diff(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceDiffRequest],
+) (*connect.Response[planv1.TaskServiceDiffResponse], error) {
+	resp, err := s.h.Diff(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
+}
 
 // fillModels fills the forecast model on planned or waiting tasks whose model is empty,
 // and ensures watchers and azimas have no model.
@@ -264,6 +273,12 @@ func (h *Harness) fillModels(ctx context.Context, tasks []*planv1.Task) {
 		if watching(t) || t.GetProvider() == planv1.Provider_PROVIDER_WATCH || t.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA || t.GetAzima() != nil {
 			t.Model = ""
 			t.Models = nil
+			continue
+		}
+		status := t.GetStatus()
+		if status != planv1.TaskStatus_TASK_STATUS_PENDING &&
+			status != planv1.TaskStatus_TASK_STATUS_WAITING &&
+			status != planv1.TaskStatus_TASK_STATUS_UNSPECIFIED {
 			continue
 		}
 		if t.GetModel() == "" {
