@@ -93,7 +93,13 @@ export { readDrop } from "@/src/data/tilasms.ts";
 export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export { ConsumptionPanel } from "@/src/consumption-panel.tsx";
 export { MachineService, CommandService } from "@/gen/ts/machine/v1/machine_pb.ts";
-export { TaskDiffView, UnifiedView, SplitView, CommentBox } from "@/src/diff.tsx";
+export {
+  TaskDiffView,
+  UnifiedView,
+  SplitView,
+  CommentBox,
+  appendChunk,
+} from "@/src/diff.tsx";
 export { setPriceTable } from "@/src/data/prices.ts";
 export {
   OperatingLoad,
@@ -5921,4 +5927,146 @@ test("azima counters and states in the window are right before any azima is open
     }),
   );
   assert.match(tasksTab, /200\/250<\/span>/);
+});
+
+test("a long diff loads its next chunk as the reader scrolls near its end, a hunk cut between chunks joined back", async () => {
+  const line = (kind, n, text) => ({
+    kind,
+    oldLine: kind === s.DiffLineKind.ADDED ? 0 : n,
+    newLine: kind === s.DiffLineKind.DELETED ? 0 : n,
+    text,
+    tokens: [],
+  });
+  const first = {
+    path: "big.txt",
+    totalLines: 9,
+    offset: 0,
+    nextOffset: 5,
+    hunks: [
+      {
+        header: "@@ -1,4 +1,4 @@",
+        lines: [
+          line(s.DiffLineKind.CONTEXT, 1, "line one"),
+          line(s.DiffLineKind.ADDED, 2, "line two"),
+          line(s.DiffLineKind.ADDED, 3, "line three"),
+        ],
+      },
+    ],
+  };
+  const second = {
+    path: "big.txt",
+    totalLines: 9,
+    offset: 5,
+    nextOffset: 0,
+    hunks: [
+      {
+        header: "@@ -1,4 +1,4 @@",
+        continued: true,
+        lines: [line(s.DiffLineKind.ADDED, 4, "line four")],
+      },
+      {
+        header: "@@ -20,1 +20,1 @@",
+        lines: [line(s.DiffLineKind.ADDED, 20, "line twenty")],
+      },
+    ],
+  };
+
+  // appendChunk joins the hunk the second chunk carries on to the first chunk's last one.
+  const joined = s.appendChunk(s.appendChunk(null, first), second);
+  assert.deepEqual(
+    joined.hunks.map((hk) => [hk.header, hk.lines.map((l) => l.text)]),
+    [
+      ["@@ -1,4 +1,4 @@", ["line one", "line two", "line three", "line four"]],
+      ["@@ -20,1 +20,1 @@", ["line twenty"]],
+    ],
+  );
+  assert.equal(joined.nextOffset, 0);
+
+  const container = setupMockDom();
+  const observers = [];
+  const savedObserver = globalThis.IntersectionObserver;
+  globalThis.IntersectionObserver = class {
+    constructor(callback) {
+      this.callback = callback;
+      this.live = true;
+      observers.push(this);
+    }
+    observe() {}
+    disconnect() {
+      this.live = false;
+    }
+  };
+  const asked = [];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.TaskService, {
+      diff: (req) => {
+        if (req.file === "") {
+          return { files: [{ path: "big.txt", added: 5 }], head: "abc" };
+        }
+        asked.push(req.offset);
+        return { file: req.offset === 0 ? first : second, head: "abc" };
+      },
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  // React sets a lone text child as textContent, and clears a root's: children first.
+  const text = (node) =>
+    node.childNodes.length > 0
+      ? node.childNodes.map(text).join("")
+      : (node.nodeValue ?? node.textContent ?? "");
+  const count = (node, cls) =>
+    (node.attributes?.class?.split(" ").includes(cls) ? 1 : 0) +
+    node.childNodes.reduce((n, c) => n + count(c, cls), 0);
+  const settle = async () => {
+    for (let i = 0; i < 5; i++) {
+      await s.act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+  };
+
+  const root = s.createRoot(container);
+  try {
+    s.act(() => {
+      root.render(
+        h(
+          s.DjinnProvider,
+          { djinn },
+          h(s.TaskDiffView, { task: { id: "t1", comments: [] } }),
+        ),
+      );
+    });
+    await settle();
+    assert.deepEqual(asked, [0], "the first chunk alone at first");
+    let shown = text(container);
+    assert.match(shown, /line three/);
+    assert.doesNotMatch(shown, /line four/);
+    assert.match(shown, /5 of 9 lines shown/);
+    assert.equal(count(container, "diff-next-chunk"), 1);
+
+    // The end of the diff nears the view: the window asks for the next chunk, once.
+    const live = observers.filter((o) => o.live);
+    assert.equal(live.length, 1);
+    await s.act(async () => {
+      live[0].callback([{ isIntersecting: true }]);
+      live[0].callback([{ isIntersecting: true }]);
+    });
+    await settle();
+    assert.deepEqual(asked, [0, 5]);
+    shown = text(container);
+    assert.match(shown, /line four/);
+    assert.match(shown, /line twenty/);
+    assert.equal(count(container, "diff-hunk-header"), 2);
+    assert.equal(
+      count(container, "diff-next-chunk"),
+      0,
+      "nothing more to load",
+    );
+  } finally {
+    s.act(() => root.unmount());
+    globalThis.IntersectionObserver = savedObserver;
+    for (const handle of process._getActiveHandles()) {
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+    }
+  }
 });

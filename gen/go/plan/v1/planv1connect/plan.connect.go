@@ -2219,7 +2219,7 @@ type TaskServiceClient interface {
 	// Show a task.
 	Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error)
 	// File diff of a task against its base: with no file given, the files changed and their counts; with a file, the
-	// unified diff of that file with syntax tokens.
+	// unified diff of that file with syntax tokens, by chunks of 2 000 lines at most: --offset asks for the next one.
 	Diff(context.Context, *connect.Request[v1.TaskServiceDiffRequest]) (*connect.Response[v1.TaskServiceDiffResponse], error)
 	// Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
 	// started is stopped at once.
@@ -2582,7 +2582,7 @@ type TaskServiceHandler interface {
 	// Show a task.
 	Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error)
 	// File diff of a task against its base: with no file given, the files changed and their counts; with a file, the
-	// unified diff of that file with syntax tokens.
+	// unified diff of that file with syntax tokens, by chunks of 2 000 lines at most: --offset asks for the next one.
 	Diff(context.Context, *connect.Request[v1.TaskServiceDiffRequest]) (*connect.Response[v1.TaskServiceDiffResponse], error)
 	// Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
 	// started is stopped at once.
