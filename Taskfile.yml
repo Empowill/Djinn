@@ -140,11 +140,11 @@ tasks:
       - npx playwright test --config e2e/playwright.config.ts {{.CLI_ARGS}}
 
   screenshots:
-    desc: "Retake the README's screenshots (docs/screenshots/readme/), dark and light: a demonstration wish in English on the browser build, in a djinn of its own (e2e/readme.shot.ts)"
+    desc: "Retake the README's screenshots (docs/screenshots/readme/), dark and light: a demonstration wish in English on the browser build, in a djinn of its own (e2e/readme.shot.ts); and opened azimas into test-results/azima-shots/ (e2e/azima-card.shot.ts). Pass one shot file after -- to take only it"
     deps: [ui]
     cmds:
       - go build -tags headless -ldflags "-X github.com/empowill/djinn/internal/ui.isTestBuild=true" -o bin/djinn-e2e{{exeExt}} ./cmd/djinn
-      - npx playwright test --config e2e/screenshots.config.ts
+      - npx playwright test --config e2e/screenshots.config.ts {{.CLI_ARGS}}
 
   e2e-native:
     desc: "Drive the real native window end to end through the MCP server of Wails (e2e/native/): builds a test variant, bin/djinn-e2e-native, opens its window a few seconds. Not part of test; -- -v shows each step, DJINN_E2E_NATIVE_HOLD=5s keeps the window up to look at it"
