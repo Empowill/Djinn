@@ -604,6 +604,19 @@
   white-space: nowrap;
   font-weight: 600;
 }
+/* On a narrow card, what follows the title goes to a second line rather than squeezing it out. */
+@container azima (max-width: 560px) {
+  .azima-heading {
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
+  }
+  .azima-heading strong {
+    flex-basis: 12ch;
+  }
+  .azima-meta {
+    margin-left: auto;
+  }
+}
 .azima-meta {
   display: flex;
   align-items: center;
@@ -661,6 +674,7 @@
 }
 .azima-side {
   min-width: 0;
+  max-width: 80ch;
   padding-bottom: var(--space-3);
 }
 @container azima (min-width: 900px) {

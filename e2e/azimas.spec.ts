@@ -140,6 +140,7 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
         const [side, work] = [rect(".azima-side"), rect(".azima-parts")];
         return {
           width: body.getBoundingClientRect().width,
+          sticky: getComputedStyle(body.querySelector(".azima-side")!).position,
           side: {
             x: side.x,
             y: side.y,
@@ -153,12 +154,16 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
     expect(wide.side.x + wide.side.width).toBeLessThanOrEqual(wide.work.x);
     expect(wide.side.width).toBeLessThanOrEqual(wide.width * 0.4 + 1);
     expect(Math.abs(wide.side.y - wide.work.y)).toBeLessThan(2);
+    // In sight while the parts scroll.
+    expect(wide.sticky).toBe("sticky");
     // A narrow window stacks them: the description, then the parts.
     await page.setViewportSize({ width: 700, height: 1000 });
     await expect
       .poll(async () => {
         const narrow = await columns();
-        return narrow.work.y >= narrow.side.bottom - 1;
+        return (
+          narrow.work.y >= narrow.side.bottom - 1 && narrow.sticky === "static"
+        );
       })
       .toBe(true);
     await page.setViewportSize({ width: 1440, height: 1000 });
