@@ -131,18 +131,21 @@ func TestWorth(t *testing.T) {
 		was, now *planv1.Resources
 		want     bool
 	}{
-		"first":                    {nil, same(nil), true},
-		"barely moved":             {was, same(nil), false},
-		"a process":                {was, same(func(r *planv1.Resources) { r.Processes = 4 }), true},
-		"CPU at 5s":                {was, same(func(r *planv1.Resources) { r.CpuPercent = 46 }), false},
-		"large CPU at 5s":          {was, same(func(r *planv1.Resources) { r.CpuPercent = 90 }), false},
-		"memory":                   {was, same(func(r *planv1.Resources) { r.MemoryBytes = 1060 }), true},
-		"peak memory":              {was, same(func(r *planv1.Resources) { r.PeakMemoryBytes = 2200 }), true},
-		"p95 memory":               {was, same(func(r *planv1.Resources) { r.P95MemoryBytes = 2100 }), true},
-		"CPU barely moved at 30s":  {was, same(func(r *planv1.Resources) { r.ReadTime = timestamppb.New(at.Add(30 * time.Second)); r.CpuPercent = 50 }), false},
-		"CPU moved at 30s":         {was, same(func(r *planv1.Resources) { r.ReadTime = timestamppb.New(at.Add(30 * time.Second)); r.CpuPercent = 65 }), true},
-		"peak CPU moved at 30s":    {was, same(func(r *planv1.Resources) { r.ReadTime = timestamppb.New(at.Add(30 * time.Second)); r.PeakCpuPercent = 110 }), true},
-		"a minute gone":            {was, same(func(r *planv1.Resources) { r.ReadTime = timestamppb.New(at.Add(time.Minute)) }), true},
+		"first":                   {nil, same(nil), true},
+		"barely moved":            {was, same(nil), false},
+		"a process":               {was, same(func(r *planv1.Resources) { r.Processes = 4 }), true},
+		"CPU at 5s":               {was, same(func(r *planv1.Resources) { r.CpuPercent = 46 }), false},
+		"large CPU at 5s":         {was, same(func(r *planv1.Resources) { r.CpuPercent = 90 }), false},
+		"memory":                  {was, same(func(r *planv1.Resources) { r.MemoryBytes = 1060 }), true},
+		"peak memory":             {was, same(func(r *planv1.Resources) { r.PeakMemoryBytes = 2200 }), true},
+		"p95 memory":              {was, same(func(r *planv1.Resources) { r.P95MemoryBytes = 2100 }), true},
+		"CPU barely moved at 30s": {was, same(func(r *planv1.Resources) { r.ReadTime = timestamppb.New(at.Add(30 * time.Second)); r.CpuPercent = 50 }), false},
+		"CPU moved at 30s":        {was, same(func(r *planv1.Resources) { r.ReadTime = timestamppb.New(at.Add(30 * time.Second)); r.CpuPercent = 65 }), true},
+		"peak CPU moved at 30s": {was, same(func(r *planv1.Resources) {
+			r.ReadTime = timestamppb.New(at.Add(30 * time.Second))
+			r.PeakCpuPercent = 110
+		}), true},
+		"a minute gone": {was, same(func(r *planv1.Resources) { r.ReadTime = timestamppb.New(at.Add(time.Minute)) }), true},
 	} {
 		if got := worth(c.was, c.now); got != c.want {
 			t.Errorf("%s: worth = %v, want %v", name, got, c.want)

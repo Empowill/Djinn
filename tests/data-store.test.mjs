@@ -917,8 +917,9 @@ test("worker measurements over a minute update tasks in place without task-list 
   await until(
     store,
     (s) =>
-      s.details[wishId]?.tasks.find((t) => t.id === `worker-task-${workerCount}`)
-        ?.resources?.cpuPercent ===
+      s.details[wishId]?.tasks.find(
+        (t) => t.id === `worker-task-${workerCount}`,
+      )?.resources?.cpuPercent ===
       10 + 12 * 5 + workerCount,
   );
 
@@ -968,4 +969,3 @@ test("window throttles task re-reads during rapid changes and never enters a tig
 
   stop();
 });
-
