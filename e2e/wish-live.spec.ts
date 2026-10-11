@@ -68,8 +68,8 @@ test("a wish made by the command line shows live, and its question is answered f
   await expect(card.getByText("it is tested.")).toBeVisible();
   // Two gestures only: Enlighten on the left, the lamp; nothing else confirms.
   await expect(card.locator(".question-actions button")).toHaveText([
-    "Enlighten me",
-    "Rub the lamp",
+    /Enlighten me/,
+    /Rub the lamp/,
   ]);
 
   // B picked over the recommended A, with a note: the lamp sends that.

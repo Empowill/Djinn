@@ -276,7 +276,7 @@ test("a question shows its options by letter and its recommendation; answered, w
   );
   assert.match(
     open,
-    /title="Answer with the selected option and your note"><svg[^]*?Rub the lamp<\/button>/,
+    /title="Answer with the selected option and your note \(↵\)"><svg[^]*?Rub the lamp<kbd class="key-hint" aria-hidden="true">↵<\/kbd><\/button>/,
   );
   // The recommendation is boxed first, its option marked.
   assert.ok(open.indexOf("Recommendation · A") < open.indexOf("Olive"));
@@ -353,7 +353,7 @@ test("a question shows its options by letter and its recommendation; answered, w
   assert.doesNotMatch(vague, /option selected/);
   assert.match(
     vague,
-    /title="Pick an option first" disabled=""><svg[^]*?Rub the lamp<\/button>/,
+    /title="Pick an option first" disabled=""><svg[^]*?Rub the lamp<kbd class="key-hint" aria-hidden="true">↵<\/kbd><\/button>/,
   );
 
   // Being investigated, then revised: one line out of the way, which opens on its state, the note, the badge, the
@@ -462,11 +462,11 @@ test("Enlighten me sends the answer's note in one click: no second field", async
   assert.equal(open.match(/<textarea/g).length, 1);
   assert.match(
     open,
-    /placeholder="A note with your choice, or what to look into for Enlighten me \(optional\)"/,
+    /placeholder="A note with your choice, or what to look into for Enlighten me \(optional · ⇧↵ new line\)"/,
   );
   assert.match(
     open,
-    /<button class="button secondary lamp-enlighten" title="Find out more before deciding: the lead looks into what your note asks, then revises the question">/,
+    /<button class="button secondary lamp-enlighten" title="Find out more before deciding: the lead looks into what your note asks, then revises the question \(⌃⇧↵\)">/,
   );
   assert.doesNotMatch(open, /aria-expanded|Ask the lead to investigate/);
 
@@ -496,12 +496,248 @@ test("Enlighten me sends the answer's note in one click: no second field", async
   });
   assert.match(
     kept.html(),
-    /placeholder="Your answer, or what to look into for Enlighten me"/,
+    /placeholder="Your answer, or what to look into for Enlighten me \(⇧↵ new line\)"/,
   );
   kept.one("textarea").onChange({ target: { value: "Cotton?" } });
   kept.one("lamp-enlighten").onClick();
   await kept.settle();
   assert.match(kept.html(), /<textarea[^>]*>Cotton\?<\/textarea>/);
+});
+
+test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enlighten, composing, arrows, 1-4, and macOS hints", async () => {
+  const answered = [];
+  const enlightened = [];
+  const card = live(s.WishQuestion, {
+    question: {
+      id: "q1",
+      code: "Q01",
+      text: "Which oil?",
+      options: ["Olive", "Paraffin", "Canola", "Sesame"],
+      recommendation: "A: it smells good.",
+    },
+    onAnswer: async (choice, note) => {
+      answered.push({ choice, note });
+    },
+    onEnlighten: async (note) => {
+      enlightened.push(note);
+    },
+  });
+
+  // 1. Initial state: option A is recommended and preselected.
+  assert.match(
+    card.html(),
+    /<button class="option selected" aria-pressed="true"><strong class="option-letter">A</,
+  );
+  assert.doesNotMatch(card.html(), /question-hint unpicked/);
+
+  // Arrow navigation: Down/Right moves next (wraps), Up/Left moves previous.
+  let prevented = false;
+  card.one("question-card").onKeyDown({
+    key: "ArrowDown",
+    preventDefault: () => {
+      prevented = true;
+    },
+  });
+  assert.ok(prevented);
+  assert.match(
+    card.html(),
+    /<button class="option selected" aria-pressed="true"><strong class="option-letter">B</,
+  );
+
+  card.one("question-card").onKeyDown({
+    key: "ArrowRight",
+    preventDefault: () => {},
+  });
+  assert.match(
+    card.html(),
+    /<button class="option selected" aria-pressed="true"><strong class="option-letter">C</,
+  );
+
+  card.one("question-card").onKeyDown({
+    key: "ArrowLeft",
+    preventDefault: () => {},
+  });
+  assert.match(
+    card.html(),
+    /<button class="option selected" aria-pressed="true"><strong class="option-letter">B</,
+  );
+
+  card.one("question-card").onKeyDown({
+    key: "ArrowUp",
+    preventDefault: () => {},
+  });
+  assert.match(
+    card.html(),
+    /<button class="option selected" aria-pressed="true"><strong class="option-letter">A</,
+  );
+
+  // Number keys 1-4 pick options
+  card.one("question-card").onKeyDown({
+    key: "4",
+    preventDefault: () => {},
+  });
+  assert.match(
+    card.html(),
+    /<button class="option selected" aria-pressed="true"><strong class="option-letter">D</,
+  );
+
+  card.one("question-card").onKeyDown({
+    key: "2",
+    preventDefault: () => {},
+  });
+  assert.match(
+    card.html(),
+    /<button class="option selected" aria-pressed="true"><strong class="option-letter">B</,
+  );
+
+  // Typing in the textarea
+  card.one("textarea").onChange({ target: { value: "Pure and filtered" } });
+
+  // IME composition: isComposing ignores Enter
+  card.one("textarea").onKeyDown({
+    key: "Enter",
+    isComposing: true,
+    preventDefault: () => {},
+  });
+  await card.settle();
+  assert.equal(answered.length, 0);
+
+  // Shift+Enter in textarea does not answer (allows native newline)
+  let shiftPrevented = false;
+  card.one("textarea").onKeyDown({
+    key: "Enter",
+    shiftKey: true,
+    preventDefault: () => {
+      shiftPrevented = true;
+    },
+  });
+  await card.settle();
+  assert.equal(shiftPrevented, false);
+  assert.equal(answered.length, 0);
+
+  // Ctrl+Shift+Enter in textarea triggers Enlighten me, sending note text and clearing note
+  let enlightenPrevented = false;
+  card.one("textarea").onKeyDown({
+    key: "Enter",
+    ctrlKey: true,
+    shiftKey: true,
+    preventDefault: () => {
+      enlightenPrevented = true;
+    },
+  });
+  await card.settle();
+  assert.ok(enlightenPrevented);
+  assert.deepEqual(enlightened, ["Pure and filtered"]);
+  assert.match(card.html(), /<textarea[^>]*><\/textarea>/);
+
+  // Type new note, then Enter in textarea rubs the lamp
+  card.one("textarea").onChange({ target: { value: "Pressed today" } });
+  let enterPrevented = false;
+  card.one("textarea").onKeyDown({
+    key: "Enter",
+    preventDefault: () => {
+      enterPrevented = true;
+    },
+  });
+  await card.settle();
+  assert.ok(enterPrevented);
+  assert.deepEqual(answered, [{ choice: s.Choice.B, note: "Pressed today" }]);
+
+  // Ctrl+Enter on card answers as well
+  card.one("question-card").onKeyDown({
+    key: "Enter",
+    ctrlKey: true,
+    preventDefault: () => {},
+  });
+  await card.settle();
+  assert.equal(answered.length, 2);
+
+  // Cmd+Shift+Enter on card triggers enlighten
+  card.one("textarea").onChange({ target: { value: "From card" } });
+  card.one("question-card").onKeyDown({
+    key: "Enter",
+    metaKey: true,
+    shiftKey: true,
+    preventDefault: () => {},
+  });
+  await card.settle();
+  assert.deepEqual(enlightened, ["Pure and filtered", "From card"]);
+
+  // Question with no recommendation: Enter without option selected does not answer and shows alert
+  const unselectedAnswered = [];
+  const cardNoRec = live(s.WishQuestion, {
+    question: {
+      id: "q2",
+      code: "Q02",
+      text: "Which wick?",
+      options: ["Cotton", "Linen"],
+      recommendation: "",
+    },
+    onAnswer: async (choice, note) => {
+      unselectedAnswered.push({ choice, note });
+    },
+  });
+  assert.doesNotMatch(cardNoRec.html(), /option selected/);
+  assert.doesNotMatch(cardNoRec.html(), /question-hint unpicked/);
+
+  // Pressing Enter on card warns
+  cardNoRec.one("question-card").onKeyDown({
+    key: "Enter",
+    preventDefault: () => {},
+  });
+  await cardNoRec.settle();
+  assert.equal(unselectedAnswered.length, 0);
+  assert.match(
+    cardNoRec.html(),
+    /<p class="question-hint unpicked" role="alert">.*Pick an option first<\/p>/,
+  );
+
+  // Pressing 1 picks first option and clears unpicked warning
+  cardNoRec.one("question-card").onKeyDown({
+    key: "1",
+    preventDefault: () => {},
+  });
+  assert.match(
+    cardNoRec.html(),
+    /<button class="option selected" aria-pressed="true"><strong class="option-letter">A</,
+  );
+  assert.doesNotMatch(cardNoRec.html(), /question-hint unpicked/);
+
+  // Now Enter answers
+  cardNoRec.one("question-card").onKeyDown({
+    key: "Enter",
+    preventDefault: () => {},
+  });
+  await cardNoRec.settle();
+  assert.deepEqual(unselectedAnswered, [{ choice: s.Choice.A, note: "" }]);
+
+  // macOS symbols on macOS
+  globalThis.__DJINN_MAC__ = true;
+  try {
+    const macMarkup = s.renderToStaticMarkup(
+      h(s.WishQuestion, {
+        question: {
+          id: "q3",
+          code: "Q03",
+          text: "Mac test?",
+          options: ["Yes", "No"],
+          recommendation: "",
+        },
+        onAnswer: async () => {},
+        onEnlighten: async () => {},
+      }),
+    );
+    assert.match(
+      macMarkup,
+      /<kbd class="key-hint" aria-hidden="true">⌘⇧↵<\/kbd>/,
+    );
+    assert.match(
+      macMarkup,
+      /title="Find out more before deciding: the lead looks into what your note asks, then revises the question \(⌘⇧↵\)"/,
+    );
+  } finally {
+    delete globalThis.__DJINN_MAC__;
+  }
 });
 
 test("a question of a wish without a lead session says no lead is told: open, then answered", () => {
