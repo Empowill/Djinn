@@ -202,6 +202,7 @@ func (h *Harness) integratePass(ctx context.Context) {
 		}
 	}
 	h.pushApproved(ctx)
+	h.pushPass(ctx)
 	h.mainPass(ctx)
 	h.computedMovesPass(ctx)
 }

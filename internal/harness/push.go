@@ -82,6 +82,12 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 		if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
 			return // The correction worker is running; push checks run after it is committed.
 		}
+		_ = h.store.Tx(ctx, func(tx *store.Tx) error {
+			return editPush(ctx, tx, wishID, project.GetId(), func(p *planv1.WishPush) {
+				p.CorrectedBy = ""
+			})
+		})
+		state.CorrectedBy = ""
 	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wishID})
 	if err != nil {
@@ -129,6 +135,30 @@ func (h *Harness) pushApproved(ctx context.Context) {
 			if _, err := h.push(ctx, wish, project, committedSince(tasks, p.GetProjectId(), lastPush(wish, p)), "you said to push it", true); err != nil {
 				log.Printf("djinn: push %s: %v", p.GetProjectId(), err)
 			}
+		}
+	}
+}
+
+// pushPass checks whether any push is due on active wishes.
+func (h *Harness) pushPass(ctx context.Context) {
+	wishes, err := store.List[*planv1.Wish](ctx, h.store, nil)
+	if err != nil {
+		log.Printf("djinn: push: %v", err)
+		return
+	}
+	for _, wish := range wishes {
+		if s := wish.GetState(); s == planv1.WishState_WISH_STATE_PAUSED || s == planv1.WishState_WISH_STATE_GRANTED {
+			continue
+		}
+		for _, projectID := range wish.GetProjectIds() {
+			if ctx.Err() != nil {
+				return
+			}
+			project, err := store.Get[*planv1.Project](ctx, h.store, projectID)
+			if err != nil {
+				continue
+			}
+			h.pushIfDue(ctx, wish.GetId(), project)
 		}
 	}
 }
@@ -481,6 +511,12 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 		if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
 			return
 		}
+		_ = h.store.Tx(ctx, func(tx *store.Tx) error {
+			return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
+				p.CorrectedBy = ""
+			})
+		})
+		state.CorrectedBy = ""
 	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
 	if err != nil {

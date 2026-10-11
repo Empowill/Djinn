@@ -12,6 +12,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"connectrpc.com/connect"
+
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
@@ -385,5 +387,72 @@ func TestACorrectionThatCannotStart(t *testing.T) {
 	if did := in.answer(t, q, planv1.Choice_CHOICE_A); !strings.HasPrefix(did, "Djinn could not start a correction worker (invalid_argument: provider") ||
 		!strings.Contains(did, "; Djinn asks Q") {
 		t.Errorf("what Djinn did: %q", did)
+	}
+}
+
+// TestIntegrationFailureCorrectionCleared: a task whose integration failed and is corrected by a worker
+// clears that link when the correction's integration record is cleared.
+func TestIntegrationFailureCorrectionCleared(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.testCode = 1
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+
+	in.pass(t, 0)
+	w2 := in.correction(t, w1)
+	got, _ := in.integration(t, w1)
+	if got.GetCorrectedBy() != w2.GetId() {
+		t.Fatalf("W1 corrected by %q; want %q", got.GetCorrectedBy(), w2.GetId())
+	}
+
+	none := "none"
+	if _, err := in.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+		TaskId:      w2.GetId(),
+		Integration: &none,
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ = in.integration(t, w1)
+	if got.GetCorrectedBy() != "" {
+		t.Errorf("after clearing record, W1 corrected by %q; want empty", got.GetCorrectedBy())
+	}
+}
+
+// TestIntegrationFailureCorrectionCancelled: a task whose integration failed and is corrected by a worker
+// clears that link when the correction worker is cancelled.
+func TestIntegrationFailureCorrectionCancelled(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.testCode = 1
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+
+	in.pass(t, 0)
+	w2 := in.correction(t, w1)
+	got, _ := in.integration(t, w1)
+	if got.GetCorrectedBy() != w2.GetId() {
+		t.Fatalf("W1 corrected by %q; want %q", got.GetCorrectedBy(), w2.GetId())
+	}
+
+	// Cancel W2 (status 10).
+	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		c, err := store.Get[*planv1.Task](t.Context(), tx, w2.GetId())
+		if err != nil {
+			return err
+		}
+		c.Status = 10
+		if err := tx.Journal("test", "put", c); err != nil {
+			return err
+		}
+		return tx.Put(c)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	in.pass(t, time.Second)
+
+	got, _ = in.integration(t, w1)
+	if got.GetCorrectedBy() != "" {
+		t.Errorf("after correction cancelled, W1 corrected by %q; want empty", got.GetCorrectedBy())
 	}
 }

@@ -342,3 +342,105 @@ func TestPushWithoutTheChecks(t *testing.T) {
 		t.Errorf("after the push: %v", state)
 	}
 }
+
+// TestPushChecksCorrectionCleared: a push held with a correction whose integration record was cleared
+// runs its checks again on the next pass and pushes when green.
+func TestPushChecksCorrectionCleared(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
+		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+	in.testCode = 1
+	bare := in.remote(t)
+	old := in.tip(t)
+	azima := in.azima(t, in.wishID, "Letters")
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+
+	in.pass(t, 0)
+	if got := in.remoteTip(t, bare); got != old {
+		t.Fatalf("pushed red: origin at %s", got)
+	}
+	state := in.pushState(t)
+	if state.GetHeld() == "" || state.GetCorrectedBy() == "" {
+		t.Fatalf("the push %v; want held and corrected by a worker", state)
+	}
+	w2ID := state.GetCorrectedBy()
+	in.ended(t, w2ID)
+
+	in.mu.Lock()
+	in.testCode = 0
+	in.mu.Unlock()
+
+	none := "none"
+	if _, err := in.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+		TaskId:      w2ID,
+		Integration: &none,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if got := in.pushState(t).GetCorrectedBy(); got != "" {
+		t.Errorf("after clearing record, corrected_by = %q; want empty", got)
+	}
+
+	in.pass(t, time.Second)
+	tip := in.tip(t)
+	if got := in.remoteTip(t, bare); got != tip {
+		t.Fatalf("push checks passed, not pushed: origin at %s, want %s", got, tip)
+	}
+	if state := in.pushState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
+		t.Errorf("after push succeeded, push state: %v", state)
+	}
+}
+
+// TestPushChecksCorrectionCancelled: a push held with a correction that was cancelled
+// clears its link, runs its checks again on the next pass and pushes when green.
+func TestPushChecksCorrectionCancelled(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
+		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+	in.testCode = 1
+	bare := in.remote(t)
+	old := in.tip(t)
+	azima := in.azima(t, in.wishID, "Letters")
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+
+	in.pass(t, 0)
+	if got := in.remoteTip(t, bare); got != old {
+		t.Fatalf("pushed red: origin at %s", got)
+	}
+	state := in.pushState(t)
+	if state.GetHeld() == "" || state.GetCorrectedBy() == "" {
+		t.Fatalf("the push %v; want held and corrected by a worker", state)
+	}
+	w2ID := state.GetCorrectedBy()
+	in.ended(t, w2ID)
+
+	// Cancel W2 (status 10).
+	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		w2, err := store.Get[*planv1.Task](t.Context(), tx, w2ID)
+		if err != nil {
+			return err
+		}
+		w2.Status = 10
+		if err := tx.Journal("test", "put", w2); err != nil {
+			return err
+		}
+		return tx.Put(w2)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	in.mu.Lock()
+	in.testCode = 0
+	in.mu.Unlock()
+
+	in.pass(t, time.Second)
+	tip := in.tip(t)
+	if got := in.remoteTip(t, bare); got != tip {
+		t.Fatalf("push checks passed, not pushed: origin at %s, want %s", got, tip)
+	}
+	if state := in.pushState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
+		t.Errorf("after push succeeded, push state: %v", state)
+	}
+}

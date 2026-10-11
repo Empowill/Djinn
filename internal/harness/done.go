@@ -99,6 +99,11 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 		if err := tx.Put(newEvent(id, seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})); err != nil {
 			return err
 		}
+		if task.GetIntegration() == nil {
+			if err := h.clearCorrectionLinks(ctx, tx, task.GetWishId(), task.GetId()); err != nil {
+				return err
+			}
+		}
 		if task.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING {
 			return tx.Put(newEvent(id, seq+2, Event{
 				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
@@ -110,7 +115,7 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	if task.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING {
+	if task.GetIntegration() == nil || task.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING {
 		h.kickIntegrate()
 	}
 	_ = h.unblockDependencyFailed(ctx, task.GetCode())

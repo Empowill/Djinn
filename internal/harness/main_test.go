@@ -482,3 +482,87 @@ func TestMainMergeFails(t *testing.T) {
 		t.Errorf("held does not contain git merge message: %q", held)
 	}
 }
+
+// TestMainCorrectionCleared: a merge of main held with a correction whose integration record was cleared
+// runs again on the next pass and merges when green.
+func TestMainCorrectionCleared(t *testing.T) {
+	testx.Portable(t)
+	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+	u.testCode, u.testOut = 1, "--- FAIL: TestLogin"
+	theirs := u.onMain(t, "Feature on main", map[string]string{"app/src/feature.txt": "feat\n"})
+
+	u.pass(t, 0)
+	state := u.mainState(t)
+	if state.GetCorrectedBy() == "" {
+		t.Fatalf("main state %v; want corrected by a worker", state)
+	}
+	cID := state.GetCorrectedBy()
+	u.ended(t, cID)
+
+	u.mu.Lock()
+	u.testCode = 0
+	u.mu.Unlock()
+
+	none := "none"
+	if _, err := u.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+		TaskId:      cID,
+		Integration: &none,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if got := u.mainState(t).GetCorrectedBy(); got != "" {
+		t.Errorf("after clearing record, corrected_by = %q; want empty", got)
+	}
+
+	u.pass(t, 0)
+	if !u.holds(t, theirs) {
+		t.Fatalf("main not merged after record cleared: %v", u.mainState(t))
+	}
+	if state := u.mainState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
+		t.Errorf("after main merge succeeded, state: %v", state)
+	}
+}
+
+// TestMainCorrectionCancelled: a merge of main held with a correction that was cancelled
+// clears its link, runs again on the next pass and merges when green.
+func TestMainCorrectionCancelled(t *testing.T) {
+	testx.Portable(t)
+	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+	u.testCode, u.testOut = 1, "--- FAIL: TestLogin"
+	theirs := u.onMain(t, "Feature on main", map[string]string{"app/src/feature.txt": "feat\n"})
+
+	u.pass(t, 0)
+	state := u.mainState(t)
+	if state.GetCorrectedBy() == "" {
+		t.Fatalf("main state %v; want corrected by a worker", state)
+	}
+	cID := state.GetCorrectedBy()
+	u.ended(t, cID)
+
+	// Cancel the correction worker (status 10).
+	if err := u.db.Tx(t.Context(), func(tx *store.Tx) error {
+		c, err := store.Get[*planv1.Task](t.Context(), tx, cID)
+		if err != nil {
+			return err
+		}
+		c.Status = 10
+		if err := tx.Journal("test", "put", c); err != nil {
+			return err
+		}
+		return tx.Put(c)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	u.mu.Lock()
+	u.testCode = 0
+	u.mu.Unlock()
+
+	u.pass(t, 0)
+	if !u.holds(t, theirs) {
+		t.Fatalf("main not merged after correction cancelled: %v", u.mainState(t))
+	}
+	if state := u.mainState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
+		t.Errorf("after main merge succeeded, state: %v", state)
+	}
+}

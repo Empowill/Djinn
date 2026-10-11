@@ -222,6 +222,11 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 				return err
 			}
 		}
+		if integrationGiven && t.GetIntegration() == nil {
+			if err := h.clearCorrectionLinks(ctx, tx, task.GetWishId(), task.GetId()); err != nil {
+				return err
+			}
+		}
 		return tx.Put(t)
 	})
 	if err != nil {
@@ -230,6 +235,9 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 
 	h.notify()
 	h.wake()
+	if integrationGiven {
+		h.kickIntegrate()
+	}
 
 	filled, err := h.withAzimas(ctx, []*planv1.Task{t})
 	if err != nil {
