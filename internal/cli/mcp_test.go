@@ -119,7 +119,7 @@ func TestMCPListTools(t *testing.T) {
 			t.Errorf("tool %s is no public method that answers once", name)
 		}
 	}
-	for _, want := range []string{"question_answer", "wish_set_lead", "project_list", "machine_show"} {
+	for _, want := range []string{"question_answer", "lead_set", "project_list", "machine_show"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("no tool %s in %v", want, names)
 		}

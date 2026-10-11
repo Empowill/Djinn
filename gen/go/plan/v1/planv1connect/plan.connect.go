@@ -33,6 +33,8 @@ const (
 	InboxServiceName = "plan.v1.InboxService"
 	// WishServiceName is the fully-qualified name of the WishService service.
 	WishServiceName = "plan.v1.WishService"
+	// LeadServiceName is the fully-qualified name of the LeadService service.
+	LeadServiceName = "plan.v1.LeadService"
 	// BlockServiceName is the fully-qualified name of the BlockService service.
 	BlockServiceName = "plan.v1.BlockService"
 	// MarkServiceName is the fully-qualified name of the MarkService service.
@@ -108,10 +110,6 @@ const (
 	WishServiceImportProcedure = "/plan.v1.WishService/Import"
 	// WishServiceImportDataProcedure is the fully-qualified name of the WishService's ImportData RPC.
 	WishServiceImportDataProcedure = "/plan.v1.WishService/ImportData"
-	// WishServiceSetLeadProcedure is the fully-qualified name of the WishService's SetLead RPC.
-	WishServiceSetLeadProcedure = "/plan.v1.WishService/SetLead"
-	// WishServiceResumeProcedure is the fully-qualified name of the WishService's Resume RPC.
-	WishServiceResumeProcedure = "/plan.v1.WishService/Resume"
 	// WishServiceDescribeProcedure is the fully-qualified name of the WishService's Describe RPC.
 	WishServiceDescribeProcedure = "/plan.v1.WishService/Describe"
 	// WishServiceRenameProcedure is the fully-qualified name of the WishService's Rename RPC.
@@ -148,6 +146,14 @@ const (
 	WishServiceRouteProcedure = "/plan.v1.WishService/Route"
 	// WishServiceWatchProcedure is the fully-qualified name of the WishService's Watch RPC.
 	WishServiceWatchProcedure = "/plan.v1.WishService/Watch"
+	// LeadServiceSetProcedure is the fully-qualified name of the LeadService's Set RPC.
+	LeadServiceSetProcedure = "/plan.v1.LeadService/Set"
+	// LeadServiceResumeProcedure is the fully-qualified name of the LeadService's Resume RPC.
+	LeadServiceResumeProcedure = "/plan.v1.LeadService/Resume"
+	// LeadServiceGetProcedure is the fully-qualified name of the LeadService's Get RPC.
+	LeadServiceGetProcedure = "/plan.v1.LeadService/Get"
+	// LeadServiceBriefProcedure is the fully-qualified name of the LeadService's Brief RPC.
+	LeadServiceBriefProcedure = "/plan.v1.LeadService/Brief"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
 	BlockServicePutProcedure = "/plan.v1.BlockService/Put"
 	// BlockServiceListProcedure is the fully-qualified name of the BlockService's List RPC.
@@ -1029,18 +1035,6 @@ type WishServiceClient interface {
 	// Import a wish from the content of a file, as the window reads it. The journal records every import this
 	// way, with the content, whatever way it came.
 	ImportData(context.Context, *connect.Request[v1.WishServiceImportDataRequest]) (*connect.Response[v1.WishServiceImportDataResponse], error)
-	// Record the lead of a wish: the agent session that drives it, for djinn wish resume to take it back. Starts
-	// djinn if it is not running.
-	SetLead(context.Context, *connect.Request[v1.WishServiceSetLeadRequest]) (*connect.Response[v1.WishServiceSetLeadResponse], error)
-	// Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach
-	// to it if it runs. Without a lead session, a new lead starts from the wish's brief (djinn wish brief) in the
-	// wish's first project, else the first of Djinn's projects, and claude's session is recorded as the wish's lead.
-	// A provider other than the recorded lead's starts a new lead of that agent from the brief the same way: a claude
-	// one becomes the wish's lead, a codex one once djinn wish set-lead gives its session, and an antigravity one
-	// leaves the record as it is. While the lead's terminal runs a program, nothing starts, and the note says so. A
-	// lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no
-	// project nothing starts, the error says to create one. Starts djinn if it is not running.
-	Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error)
 	// Describe a wish: a few lines that say what it is for, its scope and where it goes, in place of what it had.
 	// Empty text takes it back to the title.
 	Describe(context.Context, *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error)
@@ -1144,18 +1138,6 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+WishServiceImportDataProcedure,
 			connect.WithSchema(wishServiceMethods.ByName("ImportData")),
-			connect.WithClientOptions(opts...),
-		),
-		setLead: connect.NewClient[v1.WishServiceSetLeadRequest, v1.WishServiceSetLeadResponse](
-			httpClient,
-			baseURL+WishServiceSetLeadProcedure,
-			connect.WithSchema(wishServiceMethods.ByName("SetLead")),
-			connect.WithClientOptions(opts...),
-		),
-		resume: connect.NewClient[v1.WishServiceResumeRequest, v1.WishServiceResumeResponse](
-			httpClient,
-			baseURL+WishServiceResumeProcedure,
-			connect.WithSchema(wishServiceMethods.ByName("Resume")),
 			connect.WithClientOptions(opts...),
 		),
 		describe: connect.NewClient[v1.WishServiceDescribeRequest, v1.WishServiceDescribeResponse](
@@ -1271,8 +1253,6 @@ type wishServiceClient struct {
 	export         *connect.Client[v1.WishServiceExportRequest, v1.WishServiceExportResponse]
 	_import        *connect.Client[v1.WishServiceImportRequest, v1.WishServiceImportResponse]
 	importData     *connect.Client[v1.WishServiceImportDataRequest, v1.WishServiceImportDataResponse]
-	setLead        *connect.Client[v1.WishServiceSetLeadRequest, v1.WishServiceSetLeadResponse]
-	resume         *connect.Client[v1.WishServiceResumeRequest, v1.WishServiceResumeResponse]
 	describe       *connect.Client[v1.WishServiceDescribeRequest, v1.WishServiceDescribeResponse]
 	rename         *connect.Client[v1.WishServiceRenameRequest, v1.WishServiceRenameResponse]
 	brief          *connect.Client[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse]
@@ -1315,16 +1295,6 @@ func (c *wishServiceClient) Import(ctx context.Context, req *connect.Request[v1.
 // ImportData calls plan.v1.WishService.ImportData.
 func (c *wishServiceClient) ImportData(ctx context.Context, req *connect.Request[v1.WishServiceImportDataRequest]) (*connect.Response[v1.WishServiceImportDataResponse], error) {
 	return c.importData.CallUnary(ctx, req)
-}
-
-// SetLead calls plan.v1.WishService.SetLead.
-func (c *wishServiceClient) SetLead(ctx context.Context, req *connect.Request[v1.WishServiceSetLeadRequest]) (*connect.Response[v1.WishServiceSetLeadResponse], error) {
-	return c.setLead.CallUnary(ctx, req)
-}
-
-// Resume calls plan.v1.WishService.Resume.
-func (c *wishServiceClient) Resume(ctx context.Context, req *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error) {
-	return c.resume.CallUnary(ctx, req)
 }
 
 // Describe calls plan.v1.WishService.Describe.
@@ -1429,18 +1399,6 @@ type WishServiceHandler interface {
 	// Import a wish from the content of a file, as the window reads it. The journal records every import this
 	// way, with the content, whatever way it came.
 	ImportData(context.Context, *connect.Request[v1.WishServiceImportDataRequest]) (*connect.Response[v1.WishServiceImportDataResponse], error)
-	// Record the lead of a wish: the agent session that drives it, for djinn wish resume to take it back. Starts
-	// djinn if it is not running.
-	SetLead(context.Context, *connect.Request[v1.WishServiceSetLeadRequest]) (*connect.Response[v1.WishServiceSetLeadResponse], error)
-	// Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach
-	// to it if it runs. Without a lead session, a new lead starts from the wish's brief (djinn wish brief) in the
-	// wish's first project, else the first of Djinn's projects, and claude's session is recorded as the wish's lead.
-	// A provider other than the recorded lead's starts a new lead of that agent from the brief the same way: a claude
-	// one becomes the wish's lead, a codex one once djinn wish set-lead gives its session, and an antigravity one
-	// leaves the record as it is. While the lead's terminal runs a program, nothing starts, and the note says so. A
-	// lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no
-	// project nothing starts, the error says to create one. Starts djinn if it is not running.
-	Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error)
 	// Describe a wish: a few lines that say what it is for, its scope and where it goes, in place of what it had.
 	// Empty text takes it back to the title.
 	Describe(context.Context, *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error)
@@ -1540,18 +1498,6 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		WishServiceImportDataProcedure,
 		svc.ImportData,
 		connect.WithSchema(wishServiceMethods.ByName("ImportData")),
-		connect.WithHandlerOptions(opts...),
-	)
-	wishServiceSetLeadHandler := connect.NewUnaryHandler(
-		WishServiceSetLeadProcedure,
-		svc.SetLead,
-		connect.WithSchema(wishServiceMethods.ByName("SetLead")),
-		connect.WithHandlerOptions(opts...),
-	)
-	wishServiceResumeHandler := connect.NewUnaryHandler(
-		WishServiceResumeProcedure,
-		svc.Resume,
-		connect.WithSchema(wishServiceMethods.ByName("Resume")),
 		connect.WithHandlerOptions(opts...),
 	)
 	wishServiceDescribeHandler := connect.NewUnaryHandler(
@@ -1669,10 +1615,6 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceImportHandler.ServeHTTP(w, r)
 		case WishServiceImportDataProcedure:
 			wishServiceImportDataHandler.ServeHTTP(w, r)
-		case WishServiceSetLeadProcedure:
-			wishServiceSetLeadHandler.ServeHTTP(w, r)
-		case WishServiceResumeProcedure:
-			wishServiceResumeHandler.ServeHTTP(w, r)
 		case WishServiceDescribeProcedure:
 			wishServiceDescribeHandler.ServeHTTP(w, r)
 		case WishServiceRenameProcedure:
@@ -1734,14 +1676,6 @@ func (UnimplementedWishServiceHandler) Import(context.Context, *connect.Request[
 
 func (UnimplementedWishServiceHandler) ImportData(context.Context, *connect.Request[v1.WishServiceImportDataRequest]) (*connect.Response[v1.WishServiceImportDataResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.ImportData is not implemented"))
-}
-
-func (UnimplementedWishServiceHandler) SetLead(context.Context, *connect.Request[v1.WishServiceSetLeadRequest]) (*connect.Response[v1.WishServiceSetLeadResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.SetLead is not implemented"))
-}
-
-func (UnimplementedWishServiceHandler) Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Resume is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Describe(context.Context, *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error) {
@@ -1810,6 +1744,180 @@ func (UnimplementedWishServiceHandler) Route(context.Context, *connect.Request[v
 
 func (UnimplementedWishServiceHandler) Watch(context.Context, *connect.Request[v1.WishServiceWatchRequest], *connect.ServerStream[v1.WishServiceWatchResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Watch is not implemented"))
+}
+
+// LeadServiceClient is a client for the plan.v1.LeadService service.
+type LeadServiceClient interface {
+	// Record the lead of Djinn: the agent session that drives it, for djinn lead resume to take it back. Starts
+	// djinn if it is not running.
+	Set(context.Context, *connect.Request[v1.LeadServiceSetRequest]) (*connect.Response[v1.LeadServiceSetResponse], error)
+	// Take the lead back where it stopped: resume its session in the lead's terminal, or attach to it if it runs.
+	// Without a lead session, a new lead starts from the brief (djinn brief) in the first of Djinn's projects, and
+	// claude's session is recorded as the lead. A provider other than the recorded lead's starts a new lead of that
+	// agent from the brief the same way: a claude one becomes the lead, a codex one once djinn lead set gives its
+	// session, and an antigravity one leaves the record as it is. While the lead's terminal runs a program, nothing
+	// starts, and the note says so. A lead never starts in the home folder: a session recorded there starts a new lead
+	// the same way, and with no project nothing starts, the error says to create one. Starts djinn if it is not running.
+	Resume(context.Context, *connect.Request[v1.LeadServiceResumeRequest]) (*connect.Response[v1.LeadServiceResumeResponse], error)
+	// The lead of Djinn, as currently recorded.
+	Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error)
+	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
+	Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error)
+}
+
+// NewLeadServiceClient constructs a client for the plan.v1.LeadService service. By default, it uses
+// the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) LeadServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	leadServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("LeadService").Methods()
+	return &leadServiceClient{
+		set: connect.NewClient[v1.LeadServiceSetRequest, v1.LeadServiceSetResponse](
+			httpClient,
+			baseURL+LeadServiceSetProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Set")),
+			connect.WithClientOptions(opts...),
+		),
+		resume: connect.NewClient[v1.LeadServiceResumeRequest, v1.LeadServiceResumeResponse](
+			httpClient,
+			baseURL+LeadServiceResumeProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Resume")),
+			connect.WithClientOptions(opts...),
+		),
+		get: connect.NewClient[v1.LeadServiceGetRequest, v1.LeadServiceGetResponse](
+			httpClient,
+			baseURL+LeadServiceGetProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Get")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		brief: connect.NewClient[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse](
+			httpClient,
+			baseURL+LeadServiceBriefProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Brief")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// leadServiceClient implements LeadServiceClient.
+type leadServiceClient struct {
+	set    *connect.Client[v1.LeadServiceSetRequest, v1.LeadServiceSetResponse]
+	resume *connect.Client[v1.LeadServiceResumeRequest, v1.LeadServiceResumeResponse]
+	get    *connect.Client[v1.LeadServiceGetRequest, v1.LeadServiceGetResponse]
+	brief  *connect.Client[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse]
+}
+
+// Set calls plan.v1.LeadService.Set.
+func (c *leadServiceClient) Set(ctx context.Context, req *connect.Request[v1.LeadServiceSetRequest]) (*connect.Response[v1.LeadServiceSetResponse], error) {
+	return c.set.CallUnary(ctx, req)
+}
+
+// Resume calls plan.v1.LeadService.Resume.
+func (c *leadServiceClient) Resume(ctx context.Context, req *connect.Request[v1.LeadServiceResumeRequest]) (*connect.Response[v1.LeadServiceResumeResponse], error) {
+	return c.resume.CallUnary(ctx, req)
+}
+
+// Get calls plan.v1.LeadService.Get.
+func (c *leadServiceClient) Get(ctx context.Context, req *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error) {
+	return c.get.CallUnary(ctx, req)
+}
+
+// Brief calls plan.v1.LeadService.Brief.
+func (c *leadServiceClient) Brief(ctx context.Context, req *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error) {
+	return c.brief.CallUnary(ctx, req)
+}
+
+// LeadServiceHandler is an implementation of the plan.v1.LeadService service.
+type LeadServiceHandler interface {
+	// Record the lead of Djinn: the agent session that drives it, for djinn lead resume to take it back. Starts
+	// djinn if it is not running.
+	Set(context.Context, *connect.Request[v1.LeadServiceSetRequest]) (*connect.Response[v1.LeadServiceSetResponse], error)
+	// Take the lead back where it stopped: resume its session in the lead's terminal, or attach to it if it runs.
+	// Without a lead session, a new lead starts from the brief (djinn brief) in the first of Djinn's projects, and
+	// claude's session is recorded as the lead. A provider other than the recorded lead's starts a new lead of that
+	// agent from the brief the same way: a claude one becomes the lead, a codex one once djinn lead set gives its
+	// session, and an antigravity one leaves the record as it is. While the lead's terminal runs a program, nothing
+	// starts, and the note says so. A lead never starts in the home folder: a session recorded there starts a new lead
+	// the same way, and with no project nothing starts, the error says to create one. Starts djinn if it is not running.
+	Resume(context.Context, *connect.Request[v1.LeadServiceResumeRequest]) (*connect.Response[v1.LeadServiceResumeResponse], error)
+	// The lead of Djinn, as currently recorded.
+	Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error)
+	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
+	Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error)
+}
+
+// NewLeadServiceHandler builds an HTTP handler from the service implementation. It returns the path
+// on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	leadServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("LeadService").Methods()
+	leadServiceSetHandler := connect.NewUnaryHandler(
+		LeadServiceSetProcedure,
+		svc.Set,
+		connect.WithSchema(leadServiceMethods.ByName("Set")),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceResumeHandler := connect.NewUnaryHandler(
+		LeadServiceResumeProcedure,
+		svc.Resume,
+		connect.WithSchema(leadServiceMethods.ByName("Resume")),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceGetHandler := connect.NewUnaryHandler(
+		LeadServiceGetProcedure,
+		svc.Get,
+		connect.WithSchema(leadServiceMethods.ByName("Get")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceBriefHandler := connect.NewUnaryHandler(
+		LeadServiceBriefProcedure,
+		svc.Brief,
+		connect.WithSchema(leadServiceMethods.ByName("Brief")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/plan.v1.LeadService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case LeadServiceSetProcedure:
+			leadServiceSetHandler.ServeHTTP(w, r)
+		case LeadServiceResumeProcedure:
+			leadServiceResumeHandler.ServeHTTP(w, r)
+		case LeadServiceGetProcedure:
+			leadServiceGetHandler.ServeHTTP(w, r)
+		case LeadServiceBriefProcedure:
+			leadServiceBriefHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedLeadServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedLeadServiceHandler struct{}
+
+func (UnimplementedLeadServiceHandler) Set(context.Context, *connect.Request[v1.LeadServiceSetRequest]) (*connect.Response[v1.LeadServiceSetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Set is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Resume(context.Context, *connect.Request[v1.LeadServiceResumeRequest]) (*connect.Response[v1.LeadServiceResumeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Resume is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Get is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Brief is not implemented"))
 }
 
 // BlockServiceClient is a client for the plan.v1.BlockService service.

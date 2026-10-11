@@ -306,8 +306,8 @@ func place(ctx context.Context, tx *store.Tx, wish *planv1.Wish, to int) ([]*pla
 
 // Delete deletes a wish and everything that belongs to it: its tasks and their events, its questions, its blocks.
 // Its workers stop first: an active wish is paused, which the journal records, so that no task of it starts again.
-// Once it is gone, its lead's terminal closes, and each task's worktree that holds no work is removed (cleanWorktree);
-// the others stay, the response says why. Every branch stays. An inbox item routed to it forgets it.
+// Once it is gone, each task's worktree that holds no work is removed (cleanWorktree); the others stay, the response
+// says why. Every branch stays. An inbox item routed to it forgets it.
 func (w *Wishes) Delete(
 	ctx context.Context, req *connect.Request[planv1.WishServiceDeleteRequest],
 ) (*connect.Response[planv1.WishServiceDeleteResponse], error) {
@@ -397,9 +397,6 @@ func (w *Wishes) Delete(
 	})
 	if err != nil {
 		return nil, err
-	}
-	if w.Leads != nil {
-		w.Leads.Close(LeadTerminal(id))
 	}
 	for _, t := range tilasms {
 		if w.Home != "" {

@@ -33,8 +33,8 @@ type Leads interface {
 	Close(name string)
 }
 
-// LeadTerminal is the name of the terminal of a wish's lead.
-func LeadTerminal(wishID string) string { return "lead-" + strings.ToLower(wishID) }
+// LeadTerminal is the name of the terminal of the lead.
+const LeadTerminal = "lead"
 
 // leadProvider is the agent of a recorded lead: claude when the record names none.
 func leadProvider(lead *planv1.Lead) planv1.Provider {
@@ -76,10 +76,15 @@ func resumeLine(lead *planv1.Lead) (string, error) {
 		strings.ToLower(strings.TrimPrefix(lead.GetProvider().String(), "PROVIDER_")))
 }
 
-func (w *Wishes) SetLead(
-	ctx context.Context, req *connect.Request[planv1.WishServiceSetLeadRequest],
-) (*connect.Response[planv1.WishServiceSetLeadResponse], error) {
-	lead := &planv1.Lead{Provider: req.Msg.GetProvider(), SessionId: req.Msg.GetSessionId()}
+// LeadService implements planv1connect.LeadServiceHandler.
+type LeadService struct {
+	Wishes *Wishes
+}
+
+func (s *LeadService) Set(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceSetRequest],
+) (*connect.Response[planv1.LeadServiceSetResponse], error) {
+	lead := &planv1.Lead{Id: "lead", Provider: req.Msg.GetProvider(), SessionId: req.Msg.GetSessionId()}
 	if lead.Provider == planv1.Provider_PROVIDER_UNSPECIFIED {
 		lead.Provider = planv1.Provider_PROVIDER_CLAUDE
 	}
@@ -96,84 +101,74 @@ func (w *Wishes) SetLead(
 				"directory: %s holds your home folder, where Djinn never runs a lead: start the session in a project", lead.Directory))
 		}
 	}
-	var wish *planv1.Wish
-	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
-		var err error
-		if wish, err = store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId()); err != nil {
-			return err
-		}
+	err := write(ctx, s.Wishes.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		if lead.Directory == "" {
-			if lead.Directory, err = firstFolder(ctx, tx, wish); err != nil {
+			if old, err := store.Get[*planv1.Lead](ctx, tx, "lead"); err == nil && old.GetDirectory() != "" && isFolder(old.GetDirectory()) && !HoldsHome(old.GetDirectory()) {
+				lead.Directory = old.GetDirectory()
+			} else if lead.Directory, err = FirstProjectFolder(ctx, tx); err != nil && !errors.Is(err, ErrNoProject) {
 				return err
 			}
 		}
 		if lead.Directory == "" {
 			return connect.NewError(connect.CodeInvalidArgument, errors.New(
-				"none of the wish's projects has a folder here: give the folder the session runs in with --directory"))
+				"none of Djinn's projects has a folder here: give the folder the session runs in with --directory"))
 		}
-		wish.Lead = lead
-		return tx.Put(wish)
+		return tx.Put(lead)
 	})
 	if err != nil {
 		return nil, err
 	}
-	if err := fill(ctx, w.Store, wish); err != nil {
-		return nil, Status(err)
-	}
-	return connect.NewResponse(&planv1.WishServiceSetLeadResponse{Wish: wish}), nil
+	return connect.NewResponse(&planv1.LeadServiceSetResponse{Lead: lead}), nil
 }
 
-func (w *Wishes) Resume(
-	ctx context.Context, req *connect.Request[planv1.WishServiceResumeRequest],
-) (*connect.Response[planv1.WishServiceResumeResponse], error) {
-	if w.Leads == nil {
+func (s *LeadService) Resume(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceResumeRequest],
+) (*connect.Response[planv1.LeadServiceResumeResponse], error) {
+	if s.Wishes.Leads == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this server runs no terminal"))
 	}
-	wish, err := store.Get[*planv1.Wish](ctx, w.Store, req.Msg.GetWishId())
-	if err != nil {
+	lead, err := store.Get[*planv1.Lead](ctx, s.Wishes.Store, "lead")
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, Status(err)
 	}
-	if err := fill(ctx, w.Store, wish); err != nil {
-		return nil, Status(err)
-	}
-	res := &planv1.WishServiceResumeResponse{Wish: wish, Terminal: LeadTerminal(wish.GetId())}
+	res := &planv1.LeadServiceResumeResponse{Lead: lead, Terminal: LeadTerminal}
 	var line, dir, exclusive string
 	var started *planv1.Lead // the lead a brief starts, recorded once its terminal runs
 	// A session recorded in the home folder is not resumed: Djinn never runs a lead there, and claude finds a
 	// session only from the folder it was made in. A new lead starts from the brief, in a project.
-	atHome := hasLead(wish.GetLead()) && HoldsHome(wish.GetLead().GetDirectory())
+	atHome := hasLead(lead) && HoldsHome(lead.GetDirectory())
 	// A lead of another agent than the recorded one cannot open its session: it starts from the brief, which says
 	// how to take the wish over.
 	other := req.Msg.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED &&
-		req.Msg.GetProvider() != leadProvider(wish.GetLead())
-	if hasLead(wish.GetLead()) && !atHome && !other {
-		if line, dir, err = sessionLine(wish); err != nil {
+		req.Msg.GetProvider() != leadProvider(lead)
+	if hasLead(lead) && !atHome && !other {
+		if line, dir, err = sessionLine(lead); err != nil {
 			return nil, err
 		}
-		exclusive = wish.GetLead().GetSessionId()
+		exclusive = lead.GetSessionId()
 	} else {
-		if dir, err = startFolder(ctx, w.Store, wish); err != nil {
+		if dir, err = FirstProjectFolder(ctx, s.Wishes.Store); err != nil {
 			return nil, Status(err)
 		}
 		provider := req.Msg.GetProvider()
 		if atHome && provider == planv1.Provider_PROVIDER_UNSPECIFIED {
-			provider = wish.GetLead().GetProvider()
+			provider = lead.GetProvider()
 		}
 		var note string
-		if line, dir, started, note, err = w.newLead(ctx, wish, provider, dir, ""); err != nil {
+		if line, dir, started, note, err = s.Wishes.newLead(ctx, provider, dir); err != nil {
 			return nil, err
 		}
 		if atHome {
-			leadDescr := "The lead's session " + wish.GetLead().GetSessionId()
-			if wish.GetLead().GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY && wish.GetLead().GetSessionId() == "" {
+			leadDescr := "The lead's session " + lead.GetSessionId()
+			if lead.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY && lead.GetSessionId() == "" {
 				leadDescr = "The lead"
 			}
 			note = fmt.Sprintf("%s was recorded in %s, the home folder, where Djinn never runs a "+
-				"lead. ", leadDescr, wish.GetLead().GetDirectory()) + note
+				"lead. ", leadDescr, lead.GetDirectory()) + note
 		}
 		res.Note, exclusive = note, started.GetSessionId()
 	}
-	res.Command, res.Directory, res.Attached, err = w.Leads.Open(res.GetTerminal(), line, dir, exclusive)
+	res.Command, res.Directory, res.Attached, err = s.Wishes.Leads.Open(res.GetTerminal(), line, dir, exclusive)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
@@ -181,26 +176,56 @@ func (w *Wishes) Resume(
 	switch {
 	case res.GetAttached() && started != nil:
 		res.Note = fmt.Sprintf("The lead's terminal already runs %s: exit it there, then resume again to start a lead "+
-			"from the wish's brief.", running)
+			"from the brief.", running)
 	case res.GetAttached() && line != "" && !strings.Contains(running, line) && (exclusive == "" || !strings.Contains(running, exclusive)):
 		res.Note = fmt.Sprintf("The lead's terminal already runs %s, not %s: exit it there, then resume again.",
 			running, line)
 	case !res.GetAttached() && hasLead(started):
-		// The new lead runs: its session is the wish's lead from now on, for the next resume.
-		if res.Wish, err = w.recordLead(ctx, wish.GetId(), started); err != nil {
+		// The new lead runs: its session is the lead from now on, for the next resume.
+		if err := s.Wishes.recordLead(ctx, started); err != nil {
 			return nil, err
 		}
+		res.Lead = started
 	}
 	if !res.GetAttached() {
-		w.tellWaitingAnswers(ctx, wish.GetId(), res.GetTerminal())
+		s.Wishes.tellWaitingAnswers(ctx, res.GetTerminal())
 	}
-	w.Leads.Show(wish.GetId(), res.GetTerminal())
+	if wishID := req.Msg.GetWishId(); wishID != "" {
+		if wish, err := store.Get[*planv1.Wish](ctx, s.Wishes.Store, wishID); err == nil {
+			line := fmt.Sprintf("Focus on the wish %s (%s): djinn wish brief %s", wish.GetTitle(), wish.GetId(), wish.GetId())
+			_ = s.Wishes.Leads.Say(res.GetTerminal(), line)
+		}
+	}
+	s.Wishes.Leads.Show(req.Msg.GetWishId(), res.GetTerminal())
 	return connect.NewResponse(res), nil
 }
 
-// sessionLine is the command line that resumes the session of the wish's lead, and the folder it runs in.
-func sessionLine(wish *planv1.Wish) (line, dir string, err error) {
-	lead := wish.GetLead()
+func (s *LeadService) Get(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceGetRequest],
+) (*connect.Response[planv1.LeadServiceGetResponse], error) {
+	lead, err := store.Get[*planv1.Lead](ctx, s.Wishes.Store, "lead")
+	if errors.Is(err, store.ErrNotFound) {
+		return connect.NewResponse(&planv1.LeadServiceGetResponse{}), nil
+	}
+	if err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.LeadServiceGetResponse{Lead: lead}), nil
+}
+
+func (s *LeadService) Brief(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceBriefRequest],
+) (*connect.Response[planv1.LeadServiceBriefResponse], error) {
+	home := s.Wishes.home()
+	brief, err := BuildGlobalBrief(ctx, s.Wishes.Store, home)
+	if err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.LeadServiceBriefResponse{Text: brief}), nil
+}
+
+// sessionLine is the command line that resumes the session of the lead, and the folder it runs in.
+func sessionLine(lead *planv1.Lead) (line, dir string, err error) {
 	if line, err = resumeLine(lead); err != nil {
 		return "", "", connect.NewError(connect.CodeFailedPrecondition, err)
 	}
@@ -208,17 +233,17 @@ func sessionLine(wish *planv1.Wish) (line, dir string, err error) {
 	if !isFolder(dir) {
 		if lead.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY && lead.GetSessionId() == "" {
 			return "", "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-				"the lead's folder %q is not on this machine: djinn wish set-lead %s --provider antigravity --directory <folder> gives it",
-				dir, wish.GetId()))
+				"the lead's folder %q is not on this machine: djinn lead set --provider antigravity --directory <folder> gives it",
+				dir))
 		}
 		return "", "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-			"the lead's folder %q is not on this machine: djinn wish set-lead %s %s --directory <folder> gives it",
-			dir, wish.GetId(), lead.GetSessionId()))
+			"the lead's folder %q is not on this machine: djinn lead set %s --directory <folder> gives it",
+			dir, lead.GetSessionId()))
 	}
 	if HoldsHome(dir) {
 		return "", "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-			"the lead's folder %s holds your home folder, where Djinn never runs a lead: djinn wish resume %s starts "+
-				"a new one in a project", dir, wish.GetId()))
+			"the lead's folder %s holds your home folder, where Djinn never runs a lead: djinn lead resume starts "+
+				"a new one in a project", dir))
 	}
 	return line, dir, nil
 }
@@ -227,16 +252,6 @@ func sessionLine(wish *planv1.Wish) (line, dir string, err error) {
 // one in the home folder.
 var ErrNoProject = errors.New("no project has a folder on this machine, and Djinn never starts a lead in your home " +
 	"folder: create a project first (djinn project add <folder>, or + beside Projects in the window)")
-
-// startFolder is the folder a new lead of wish starts in: the wish's first project that has one on this machine,
-// else the first of Djinn's projects, in the order the window lists them. ErrNoProject when no project has one.
-func startFolder(ctx context.Context, r store.Reader, wish *planv1.Wish) (string, error) {
-	dir, err := firstFolder(ctx, r, wish)
-	if dir != "" || err != nil {
-		return dir, err
-	}
-	return FirstProjectFolder(ctx, r)
-}
 
 // FirstProjectFolder is the folder of the first of Djinn's projects, in the order the window lists them, that has
 // one on this machine, outside the home folder's own. ErrNoProject when none has: where the window's terminal opens
@@ -252,24 +267,6 @@ func FirstProjectFolder(ctx context.Context, r store.Reader) (string, error) {
 		}
 	}
 	return "", ErrNoProject
-}
-
-// firstFolder is the folder of the first project of the wish that has one on this machine, outside the home
-// folder's own; empty when none has.
-func firstFolder(ctx context.Context, r store.Reader, wish *planv1.Wish) (string, error) {
-	for _, id := range wish.GetProjectIds() {
-		p, err := store.Get[*planv1.Project](ctx, r, id)
-		if errors.Is(err, store.ErrNotFound) {
-			continue
-		}
-		if err != nil {
-			return "", err
-		}
-		if dir := p.GetDirectory(); isFolder(dir) && !HoldsHome(dir) {
-			return dir, nil
-		}
-	}
-	return "", nil
 }
 
 // isFolder reports whether dir is an absolute path to a folder of this machine.

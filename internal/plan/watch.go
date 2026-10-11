@@ -144,6 +144,8 @@ func (ws *watchers) changed(ms []proto.Message) {
 		switch m := m.(type) {
 		case *planv1.Wish:
 			changes = append(changes, change{m.GetId(), planv1.Change_CHANGE_WISH, ""})
+		case *planv1.Lead:
+			changes = append(changes, change{"", planv1.Change_CHANGE_WISH, ""})
 		case *planv1.Task:
 			// Whether Djinn proposes to grant the wish follows its tasks: take says whether this one changes it.
 			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TASK, m.GetId()})

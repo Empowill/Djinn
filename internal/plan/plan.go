@@ -32,7 +32,7 @@ import (
 func Entities() []proto.Message {
 	return []proto.Message{
 		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{},
-		&planv1.InboxItem{}, &planv1.PluggedSource{}, &machinev1.CommandCost{}, &planv1.Tilasm{},
+		&planv1.InboxItem{}, &planv1.PluggedSource{}, &machinev1.CommandCost{}, &planv1.Tilasm{}, &planv1.Lead{},
 	}
 }
 
@@ -159,6 +159,8 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	p, h = planv1connect.NewSkillServiceHandler(&Skills{Store: s}, opt)
 	out[p] = h
 	p, h = planv1connect.NewInboxServiceHandler(&Inbox{Wishes: wishes}, opt)
+	out[p] = h
+	p, h = planv1connect.NewLeadServiceHandler(&LeadService{Wishes: wishes}, opt)
 	out[p] = h
 	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url}
 	p, h = planv1connect.NewTilasmServiceHandler(tilasms, opt)

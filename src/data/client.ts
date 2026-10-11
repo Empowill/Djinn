@@ -17,6 +17,7 @@ import {
 import {
   BlockService,
   InboxService,
+  LeadService,
   MarkService,
   ProjectService,
   QuestionService,
@@ -39,6 +40,7 @@ export function djinnTransport(
 export function createClients(transport: Transport) {
   return {
     wishes: createClient(WishService, transport),
+    lead: createClient(LeadService, transport),
     tasks: createClient(TaskService, transport),
     questions: createClient(QuestionService, transport),
     projects: createClient(ProjectService, transport),

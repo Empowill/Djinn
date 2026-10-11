@@ -238,13 +238,17 @@ func runUp(args []string) (restart bool, err error) {
 	if uiSvc, err = ui.New(version); err != nil {
 		return false, err
 	}
+	leadNotes.ui = uiSvc
+	uiSvc.Shown = func(wishID, terminal string) {
+		leadNotes.update()
+	}
 	// A djinn:// link shows the tilasm's wish, or the wish.
 	uiSvc.Linked = func(ctx context.Context, l link.Link) (string, error) { return plan.Linked(ctx, db, l) }
 	registerLinks(os.Stderr)
 	// After an update, the terminals that ran before it run again; after a crash, the leads.
 	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, os.Stderr))
-	// Then the lead of the first active wish, unless a lead came back already.
-	resumeFirstLead(ctx, db, terminals, uiSvc, os.Stderr)
+	// Then the lead, unless a lead came back already.
+	resumeLead(ctx, db, terminals, uiSvc, os.Stderr)
 	updates, err := newUpdater(version, uiSvc, terminals, leadNotes, stop)
 	if err != nil {
 		return false, err

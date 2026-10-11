@@ -102,7 +102,7 @@ At the top of a wish:
   one makes it active at that rank; **Make it the first active wish**, next to it in the side panel, puts it first.
 - **Reopen** brings back a granted wish.
 - The bin, **Delete this wish**, deletes it for good after you confirm: its tasks and their events, its questions and
-  its blocks. Its running workers stop first and its lead's terminal closes. A worktree with no work of its own goes;
+  its blocks. Its running workers stop first. A worktree with no work of its own goes;
   one with commits or changes not committed stays, and every branch stays.
 
 From a terminal: `djinn wish pause <wish-id>`, `djinn wish activate <wish-id>`, `djinn wish move <wish-id> --to 1`,
@@ -110,27 +110,27 @@ From a terminal: `djinn wish pause <wish-id>`, `djinn wish activate <wish-id>`, 
 
 ## The lead
 
-Each wish has a lead: an agent session that talks with you, splits the wish into tasks, asks the questions and keeps
-the plan true. It drives Djinn with the `djinn` command.
+Djinn has a single lead for all active wishes: an agent session that talks with you, splits wishes into tasks, asks
+the questions and keeps the plans true. It drives Djinn with the `djinn` command.
 
-**Lead**, at the top of the wish, opens it in the terminal of the window:
+**Lead**, at the top of a wish, opens the lead in the terminal of the window and focuses on that wish:
 
-- the wish has a lead session: Djinn resumes it (`claude --resume …` or `codex resume …`) in the folder it was recorded
-  in, or shows it if it runs;
-- it has none: a new Claude lead starts in the wish's first project, else in your first project, never in your home
-  folder. With no project at all, nothing starts: create one first.
+- the lead has a session: Djinn resumes it (`claude --resume …` or `codex resume …`) in the folder it was recorded
+  in, or shows it if it runs, and types a short line focusing on the wish;
+- it has none: a new Claude lead starts in your first project, never in your home folder. With no project at all,
+  nothing starts: create one first.
 
 The arrow beside **Lead**, **Choose the agent**, starts a lead of another agent found on this machine: Claude Code,
 Codex or Antigravity. An agent that is not installed shows greyed, saying so; the recorded one is checked, and picking
-it resumes its session. A running lead is never replaced.
+it resumes its session. Starting a lead of another provider replaces it.
 
-Every new lead, of any agent, starts by running `djinn wish brief <wish-id>`: the wish (its description, its azimas,
-what runs and waits, the open questions, the decisions, the blocks, when a lead last acted), then Djinn's rules and the
-projects' (`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`). No model writes it.
+Every new lead, of any agent, starts by running `djinn brief`: every active wish at once (each wish's title, description,
+open questions, what runs and waits, its azimas), then Djinn's rules and the projects' (`AGENTS.md`, `CLAUDE.md`,
+`CONTRIBUTING.md`). `djinn wish brief <wish-id>` gives one wish's detail. No model writes it.
 
-From a terminal, `djinn wish resume <wish-id>` does what **Lead** does, and starts Djinn if it does not run;
-`djinn wish resume <wish-id> --provider codex` picks the agent. `djinn wish set-lead <wish-id> <session-id> --directory
-<folder>` records a session you started yourself.
+From a terminal, `djinn lead resume` does what **Lead** does, and starts Djinn if it does not run;
+`djinn lead resume --provider codex` picks the agent. `djinn lead set <session-id> --directory <folder>`
+records a session you started yourself.
 
 ## The flight plan
 
@@ -282,12 +282,11 @@ Windows, install when needed), Djinn or the agent asks it as a question with the
   The shortcuts stay on the card: they never intercept keys from the terminal or other inputs.
 
 Your answer goes to the lead and the workers. An answered question is a decision. From a terminal,
-`djinn question answer <question> <choice>` answers a question; Djinn marks each lead terminal with `$DJINN_LEAD`,
+`djinn question answer <question> <choice>` answers a question; Djinn marks the lead terminal with `$DJINN_LEAD`,
 so an answer typed by the lead is attributed to it without echoing back to its own terminal, whereas an answer
-typed in a plain shell is attributed to the developer and reaches the lead as a message. When a question is answered in a
-wish without a running lead, Djinn routes the answer to the terminal of the principal lead (`principal: true` or
-rank 1 active wish), noting the wish name and id. If no lead runs on any wish, Djinn marks the question as waiting for
-a lead; the next lead to start or resume is told of all waiting answers, and the principal lead's brief lists them under
+typed in a plain shell is attributed to the developer and reaches the lead as a message. When a question is answered in
+any wish, Djinn routes the answer to the lead terminal. If no lead runs, Djinn marks the question as waiting for
+a lead; the next lead to start or resume is told of all waiting answers, and the brief lists them under
 **Open answers without a lead.**
 
 An open question can be moved to another wish (`djinn question move <question> --wish <wish>`), with `--follow` to

@@ -138,7 +138,7 @@ var MCP = Command{
 	Usage:   "djinn mcp [--addr URL]",
 	Summary: "Serve these commands as MCP tools on stdin and stdout, for an agent that speaks MCP.",
 	Help: `Serve the commands of djinn as MCP tools, on stdin and stdout (the stdio transport of the Model Context
-Protocol). Each public method that answers once is a tool: djinn wish set-lead is wish_set_lead. Its arguments
+Protocol). Each public method that answers once is a tool: djinn lead set is lead_set. Its arguments
 are the fields of the request, by their proto names, read and checked as the command line does. A relative path
 starts from the folder djinn mcp runs in. The streaming methods (watch, gate hold) stay on the command line.
 

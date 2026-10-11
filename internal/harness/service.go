@@ -51,17 +51,6 @@ func (s *Tasks) fillTasks(ctx context.Context, tasks []*planv1.Task) ([]*planv1.
 		return nil, plan.Status(err)
 	}
 	s.h.FillModels(ctx, filled)
-	s.h.mu.Lock()
-	for _, t := range filled {
-		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
-			if r := s.h.runs[t.GetId()]; r != nil && !r.lastActivity.IsZero() {
-				t.LastActivityTime = timestamppb.New(r.lastActivity)
-			} else if t.LastActivityTime == nil {
-				t.LastActivityTime = t.StartTime
-			}
-		}
-	}
-	s.h.mu.Unlock()
 	return filled, nil
 }
 
@@ -361,4 +350,15 @@ func (h *Harness) FillModels(ctx context.Context, tasks []*planv1.Task) {
 			t.Model = model
 		}
 	}
+	h.mu.Lock()
+	for _, t := range tasks {
+		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
+			if r := h.runs[t.GetId()]; r != nil && !r.lastActivity.IsZero() {
+				t.LastActivityTime = timestamppb.New(r.lastActivity)
+			} else if t.LastActivityTime == nil {
+				t.LastActivityTime = t.StartTime
+			}
+		}
+	}
+	h.mu.Unlock()
 }

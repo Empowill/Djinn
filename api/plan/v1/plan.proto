@@ -336,8 +336,8 @@ message Wish {
   google.protobuf.Timestamp create_time = 4;
   // Rights the developer allows the wish's workers, per project, ahead of any task.
   repeated ProjectAllowance allowances = 5;
-  // The lead: the agent session that drives the wish, for djinn wish resume to take it back.
-  Lead lead = 6;
+  reserved 6;
+  reserved "lead";
   // Where the wish stands: active, paused or granted. Three wishes are active at most.
   WishState state = 7;
   // Place among the active wishes, from 1: the first one has priority. 0 for a paused or granted wish.
@@ -554,13 +554,15 @@ enum WishState {
   WISH_STATE_GRANTED = 3;
 }
 
-// The lead of a wish: an agent session the user talks to, in the lead's terminal. Never a secret: the provider and
+// The lead of Djinn: an agent session the user talks to, in the lead's terminal. Never a secret: the provider and
 // the session's identifier, which the agent's own command line resumes.
 message Lead {
+  // Identifier, always "lead" for the one lead stored.
+  string id = 4;
   // Kind of agent: claude, codex or antigravity.
   Provider provider = 1;
   // Identifier of the session, as the agent names it: claude --resume takes it. An antigravity lead does not
-  // know its session id and leaves it empty; djinn wish resume resumes the folder's most recent conversation (agy --continue).
+  // know its session id and leaves it empty; djinn lead resume resumes the folder's most recent conversation (agy --continue).
   string session_id = 2;
   // Folder the session runs in on this machine: an agent finds its sessions by folder. An export replaces it by
   // its project's name or ~, and an import puts this machine's folder back when it knows it.
@@ -1525,10 +1527,9 @@ message QuestionServiceAnswerRequest {
   // Who answers: CLOSER_DEVELOPER from the window or an external shell, CLOSER_LEAD from the lead's terminal (or
   // DJINN_LEAD), CLOSER_UNSPECIFIED with task_id for a worker.
   Closer by = 6 [(buf.validate.field).enum.defined_only = true];
-  // Wish of the lead whose terminal answers; by default $DJINN_LEAD, which Djinn sets in the lead's terminal.
+  // Marker of the lead whose terminal answers; by default $DJINN_LEAD, which Djinn sets in the lead's terminal.
   string lead = 7 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
-    (buf.validate.field).string.uuid = true,
     (djinn.v1.env) = "DJINN_LEAD"
   ];
 }
@@ -1606,10 +1607,9 @@ message QuestionServiceWithdrawRequest {
   ];
   // Who withdraws; by default the lead (or a worker if task_id is set). The window and developer CLI say developer.
   Closer by = 5 [(buf.validate.field).enum.defined_only = true];
-  // Wish of the lead whose terminal withdraws; by default $DJINN_LEAD, which Djinn sets in the lead's terminal.
+  // Marker of the lead whose terminal withdraws; by default $DJINN_LEAD, which Djinn sets in the lead's terminal.
   string lead = 6 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
-    (buf.validate.field).string.uuid = true,
     (djinn.v1.env) = "DJINN_LEAD"
   ];
 }
@@ -2076,26 +2076,6 @@ service WishService {
   // way, with the content, whatever way it came.
   rpc ImportData(WishServiceImportDataRequest) returns (WishServiceImportDataResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
-  }
-  // Record the lead of a wish: the agent session that drives it, for djinn wish resume to take it back. Starts
-  // djinn if it is not running.
-  rpc SetLead(WishServiceSetLeadRequest) returns (WishServiceSetLeadResponse) {
-    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
-    option (djinn.v1.writes) = WRITES_CHANGE;
-    option (djinn.v1.autostart) = true;
-  }
-  // Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach
-  // to it if it runs. Without a lead session, a new lead starts from the wish's brief (djinn wish brief) in the
-  // wish's first project, else the first of Djinn's projects, and claude's session is recorded as the wish's lead.
-  // A provider other than the recorded lead's starts a new lead of that agent from the brief the same way: a claude
-  // one becomes the wish's lead, a codex one once djinn wish set-lead gives its session, and an antigravity one
-  // leaves the record as it is. While the lead's terminal runs a program, nothing starts, and the note says so. A
-  // lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no
-  // project nothing starts, the error says to create one. Starts djinn if it is not running.
-  rpc Resume(WishServiceResumeRequest) returns (WishServiceResumeResponse) {
-    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
-    option (djinn.v1.writes) = WRITES_CHANGE;
-    option (djinn.v1.autostart) = true;
   }
   // Describe a wish: a few lines that say what it is for, its scope and where it goes, in place of what it had.
   // Empty text takes it back to the title.
@@ -2606,29 +2586,6 @@ message WishServiceImportDataResponse {
   string note = 3;
 }
 
-message WishServiceSetLeadRequest {
-  // The wish.
-  string wish_id = 1 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.uuid = true
-  ];
-  // Identifier of the lead's session, as the agent names it.
-  string session_id = 2 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.pattern = "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
-  ];
-  // Kind of agent: claude (the default), codex or antigravity.
-  Provider provider = 3;
-  // Folder the session runs in. By default, the folder of the wish's first project. Never the home folder, nor
-  // a folder above it.
-  string directory = 4 [(buf.validate.field).string.max_len = 4096];
-}
-
-message WishServiceSetLeadResponse {
-  // The wish, with its lead.
-  Wish wish = 1;
-}
-
 message WishServiceDescribeRequest {
   // The wish.
   string wish_id = 1 [
@@ -2660,32 +2617,6 @@ message WishServiceRenameRequest {
 message WishServiceRenameResponse {
   // The wish, with its new title.
   Wish wish = 1;
-}
-
-message WishServiceResumeRequest {
-  // The wish.
-  string wish_id = 1 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.uuid = true
-  ];
-  // Kind of agent for the lead: unset or the recorded lead's resumes it; another starts a new lead of that agent
-  // from the brief. A wish with no lead to resume starts one of this kind: claude (the default), codex or antigravity.
-  Provider provider = 2 [(buf.validate.field).enum.defined_only = true];
-}
-
-message WishServiceResumeResponse {
-  // The wish.
-  Wish wish = 1;
-  // Name of the lead's terminal in the window.
-  string terminal = 2;
-  // The command line the terminal runs, program first.
-  repeated string command = 3;
-  // Its working directory.
-  string directory = 4;
-  // The lead was already running: the window attached to it, nothing was started.
-  bool attached = 5;
-  // What to know, when there is something: no session to resume, a terminal that runs something else.
-  string note = 6;
 }
 
 message WishServiceBriefRequest {
@@ -2788,6 +2719,96 @@ message Command {
   string method = 4;
   // The request.
   google.protobuf.Any request = 5;
+}
+
+// LeadService drives the lead of Djinn: a single agent session the user talks to, in the lead's terminal.
+service LeadService {
+  // Record the lead of Djinn: the agent session that drives it, for djinn lead resume to take it back. Starts
+  // djinn if it is not running.
+  rpc Set(LeadServiceSetRequest) returns (LeadServiceSetResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+    option (djinn.v1.autostart) = true;
+  }
+  // Take the lead back where it stopped: resume its session in the lead's terminal, or attach to it if it runs.
+  // Without a lead session, a new lead starts from the brief (djinn brief) in the first of Djinn's projects, and
+  // claude's session is recorded as the lead. A provider other than the recorded lead's starts a new lead of that
+  // agent from the brief the same way: a claude one becomes the lead, a codex one once djinn lead set gives its
+  // session, and an antigravity one leaves the record as it is. While the lead's terminal runs a program, nothing
+  // starts, and the note says so. A lead never starts in the home folder: a session recorded there starts a new lead
+  // the same way, and with no project nothing starts, the error says to create one. Starts djinn if it is not running.
+  rpc Resume(LeadServiceResumeRequest) returns (LeadServiceResumeResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+    option (djinn.v1.autostart) = true;
+  }
+  // The lead of Djinn, as currently recorded.
+  rpc Get(LeadServiceGetRequest) returns (LeadServiceGetResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
+  rpc Brief(LeadServiceBriefRequest) returns (LeadServiceBriefResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message LeadServiceSetRequest {
+  // Identifier of the lead's session, as the agent names it.
+  string session_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+  ];
+  // Kind of agent: claude (the default), codex or antigravity.
+  Provider provider = 2;
+  // Folder the session runs in. By default, the folder of the first project. Never the home folder, nor a folder above it.
+  string directory = 3 [(buf.validate.field).string.max_len = 4096];
+}
+
+message LeadServiceSetResponse {
+  // The lead.
+  Lead lead = 1;
+}
+
+message LeadServiceResumeRequest {
+  // Kind of agent for the lead: unset or the recorded lead's resumes it; another starts a new lead of that agent
+  // from the brief. Without a lead to resume, starts one of this kind: claude (the default), codex or antigravity.
+  Provider provider = 1 [(buf.validate.field).enum.defined_only = true];
+  // The wish to focus on in the lead's terminal: when set, types "Focus on the wish <title> (<id>): djinn wish brief <id>".
+  string wish_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message LeadServiceResumeResponse {
+  // The lead.
+  Lead lead = 1;
+  // Name of the lead's terminal in the window ("lead").
+  string terminal = 2;
+  // The command line the terminal runs, program first.
+  repeated string command = 3;
+  // Its working directory.
+  string directory = 4;
+  // The lead was already running: the window attached to it, nothing was started.
+  bool attached = 5;
+  // What to know, when there is something: no session to resume, a terminal that runs something else.
+  string note = 6;
+}
+
+message LeadServiceGetRequest {}
+
+message LeadServiceGetResponse {
+  // The lead, or unset if none is recorded.
+  Lead lead = 1;
+}
+
+message LeadServiceBriefRequest {}
+
+message LeadServiceBriefResponse {
+  // The brief, in Markdown.
+  string text = 1;
 }
 
 // A block is free content of a wish, laid out by the lead: a decision taken outside a question, a section of
