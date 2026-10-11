@@ -232,6 +232,7 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 	}
 	var out []*planv1.Command
 	var failed error
+	others, _ := store.List[*planv1.Wish](ctx, r, nil)
 	// Only the methods of the API make a wish's history: "/plan.v1.WishService/Make"… The harness's entries, a
 	// worker's events most of all, are not even read.
 	_, err := store.CommandsOf(ctx, r, "/", func(c store.Command) bool {
@@ -249,8 +250,15 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 			}
 			return false
 		case *planv1.WishServiceMakeRequest:
-			if m.GetTitle() != wish.GetTitle() || !within(c.At, wish.GetCreateTime().AsTime()) {
+			if !within(c.At, wish.GetCreateTime().AsTime()) {
 				return false
+			}
+			if m.GetTitle() != wish.GetTitle() {
+				for _, o := range others {
+					if o.GetId() != wish.GetId() && o.GetTitle() == m.GetTitle() && within(c.At, o.GetCreateTime().AsTime()) {
+						return false
+					}
+				}
 			}
 		case *planv1.QuestionServiceAnswerRequest:
 			at, ok := answered[strings.ToUpper(m.GetQuestion().GetCode())]

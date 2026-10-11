@@ -113,6 +113,11 @@ func TestConvention(t *testing.T) {
 			want: &planv1.WishServiceDescribeRequest{WishId: wishID, Text: "Ship the API.\nIts scope: the store."},
 		},
 		{
+			name: "djinn wish rename <wish> --title",
+			args: []string{wishID, "--title", "Djinn orchestrator"},
+			want: &planv1.WishServiceRenameRequest{WishId: wishID, Title: "Djinn orchestrator"},
+		},
+		{
 			name: "a string and a list of strings in one input, repeated",
 			args: []string{taskID, "--after", "W1,W2", "--also", "W6=W5,W3", "--also", "W7="},
 			want: &planv1.TaskServiceDependRequest{

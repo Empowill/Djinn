@@ -1999,6 +1999,11 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Rename a wish: what you wish, in a sentence, in place of what it had.
+  rpc Rename(WishServiceRenameRequest) returns (WishServiceRenameResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the
   // store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks
   // running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
@@ -2505,6 +2510,24 @@ message WishServiceDescribeRequest {
 
 message WishServiceDescribeResponse {
   // The wish, with its description.
+  Wish wish = 1;
+}
+
+message WishServiceRenameRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What you wish, in a sentence.
+  string title = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 500
+  ];
+}
+
+message WishServiceRenameResponse {
+  // The wish, with its new title.
   Wish wish = 1;
 }
 

@@ -52,6 +52,7 @@ export {
   MainMerges,
   PushStrategySelector,
   WishDescription,
+  WishTitle,
   recordedAgent,
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView } from "@/src/update-banner.tsx";
@@ -2572,6 +2573,30 @@ test("the wish's description shows under its title, the title until one is writt
   assert.match(
     editing,
     /<textarea class="wish-description-edit" aria-label="Description" rows="2" autofocus="">Light the house.\nNot the street.<\/textarea>/,
+  );
+});
+
+test("the wish's title shows in the head and edits in place", () => {
+  const titled = s.renderToStaticMarkup(
+    h(s.WishTitle, {
+      title: "Ship the lamp",
+      onSave() {},
+    }),
+  );
+  assert.match(
+    titled,
+    /<h1 class="wish-title" role="button" tabindex="0" title="Click to rename the wish">Ship the lamp<\/h1>/,
+  );
+  const editing = s.renderToStaticMarkup(
+    h(s.WishTitle, {
+      title: "Ship the lamp",
+      editing: true,
+      onSave() {},
+    }),
+  );
+  assert.match(
+    editing,
+    /<input type="text" class="wish-title-edit" aria-label="Title" maxLength="500" autofocus="" value="Ship the lamp"\/>/,
   );
 });
 

@@ -60,8 +60,11 @@ function summary(command: Command, exp: WishExport): string {
   const r = req as unknown as Record<string, unknown>;
   switch (req.$typeName) {
     case "plan.v1.WishServiceMakeRequest":
+    case "plan.v1.WishServiceRenameRequest":
     case "plan.v1.TaskServiceSpawnRequest":
       return String(r.title ?? "");
+    case "plan.v1.WishServiceDescribeRequest":
+      return String(r.text ?? "");
     case "plan.v1.QuestionServiceAskRequest":
       return String(r.text ?? "");
     case "plan.v1.QuestionServiceAnswerRequest": {
