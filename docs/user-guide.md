@@ -282,7 +282,10 @@ Windows, install when needed), Djinn or the agent asks it as a question with the
   - Arrows (Up/Down/Left/Right) or 1–4 pick an option when focus is on the card and not in the note.
   The shortcuts stay on the card: they never intercept keys from the terminal or other inputs.
 
-Your answer goes to the lead and the workers. An answered question is a decision. When a question is answered in a
+Your answer goes to the lead and the workers. An answered question is a decision. From a terminal,
+`djinn question answer <question> <choice>` answers a question; Djinn marks each lead terminal with `$DJINN_LEAD`,
+so an answer typed by the lead is attributed to it without echoing back to its own terminal, whereas an answer
+typed in a plain shell is attributed to the developer and reaches the lead as a message. When a question is answered in a
 wish without a running lead, Djinn routes the answer to the terminal of the principal lead (`principal: true` or
 rank 1 active wish), noting the wish name and id. If no lead runs on any wish, Djinn marks the question as waiting for
 a lead; the next lead to start or resume is told of all waiting answers, and the principal lead's brief lists them under
@@ -373,10 +376,11 @@ switch cadence in the project view or with `djinn project set-push <project> sta
 it runs the checks named for `push`: red, the push is held, and Djinn starts a correction worker; if that fails or attempts
 are spent, it asks you. `djinn project show` and the project's view in the window list the checks and how each last ran.
 When the settings also name an install command, the window proposes the batch it committed, with **What changed** displaying
-folded task summaries; **Install and restart** installs it, nothing before your click. With `install_questions: when_needed`
-(set in Djinn itself, whose builds install after each push), Djinn raises no routine install question: the banner and post-push
-install are enough, and it asks only when necessary (e.g. a build carries a fix for a task you are waiting on, a change that
-takes effect after restart and matters now, or the running build is broken), saying why in the question. Details: [integration](team-settings.md#integration).
+folded task summaries; **Install and restart** installs it, nothing before your click. With `install_questions: when_needed`,
+Djinn raises no routine install question: the banner and post-push install are enough, and it asks only when necessary
+(e.g. a build carries a fix for a task you are waiting on, a change that takes effect after restart and matters now, or
+the running build is broken), saying why in the question; with `install_questions: never` (set in Djinn itself), no
+install questions are asked. Details: [integration](team-settings.md#integration).
 
 Djinn also keeps the wish's branch up with the project's main branch: it fetches main at most hourly, and once main
 holds a release the branch lacks, it merges main in the same way, tested, never rebasing; a conflict starts a

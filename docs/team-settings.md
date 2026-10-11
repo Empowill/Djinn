@@ -250,7 +250,9 @@ Djinn does not integrate (a project that names no check) counts once done, as be
 
 Where each task's work stands shows in `djinn task get` (`integration`: its state, the commit, what failed, the task
 that corrects it), the lead's brief, the wish's page and the Tasks tab: done, waiting to be committed, being
-committed, committed as `1a2b3c4d`, conflict, red, corrected by W9, uncommitted, reviewed by W9.
+committed, committed as `1a2b3c4d`, conflict, red, corrected by W9, uncommitted, reviewed by W9. A finished task's
+integration record can be cleared with `djinn task update <task> --integration none` (refused while it is merging),
+leaving it without an integration record so Djinn will not integrate it on its own.
 
 ### Pushing
 
@@ -300,11 +302,11 @@ that Djinn restarts; when it installed a newer Djinn at the path of the running 
 button does; otherwise it says the build is installed.
 
 By default (`install_questions: always`), Djinn raises an "Install and restart" question for uninstalled builds. With
-`install_questions: when_needed` (set in Djinn's own settings, whose builds are installed after each push), Djinn raises
-no routine question: the update banner and post-push install are enough. It asks only when necessary, stating why in the
-question and context: when a build carries the fix for a task or question you are waiting on (named), a change that takes
-effect after restart and matters now (such as a harness fix for failing workers, naming them), or when the running build is
-broken (a crash or failed check). With `install_questions: never`, no install questions are asked.
+`install_questions: when_needed`, Djinn raises no routine question: the update banner and post-push install are enough.
+It asks only when necessary, stating why in the question and context: when a build carries the fix for a task or question
+you are waiting on (named), a change that takes effect after restart and matters now (such as a harness fix for failing
+workers, naming them), or when the running build is broken (a crash or failed check). With `install_questions: never`
+(set in Djinn's own settings: the window proposes each new build, to install or skip), no install questions are asked.
 
 The commands' words are split on spaces, without a shell. The integration branch of a wish is, in each project, the
 branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it.

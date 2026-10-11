@@ -49,9 +49,10 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   with it). `djinn question withdraw <question> [--note "…"]` withdraws an open question without an answer.
 - **Moves only the developer can make.** Granting a right, pushing a tag, opening or merging a PR, starting a
   release, checking on a Mac or Windows, installing and restarting: the lead asks them through `djinn question ask`,
-  with the exact command in the question. In a project whose builds are installed after each push (such as Djinn itself,
-  or with `install_questions: when_needed`), ask the developer to install or restart only when necessary, and say why
-  in the question; never as routine.
+  with the exact command in the question. In a project with `install_questions: never` (such as Djinn itself), Djinn
+  never asks a question to install or restart (the window proposes each new build, to install or skip); with
+  `install_questions: when_needed`, ask the developer to install or restart only when necessary, and say why in the
+  question; never as routine.
 - **When Djinn misbehaves.** When Djinn misbehaves while the developer is away, the lead may stop the damage without
   touching code: redirect the wish's integration to another branch, stop workers, withdraw useless questions. The lead
   may also revert a faulty merge on the integration branch, telling the developer at once; every other commit on the
@@ -109,7 +110,7 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   `djinn task update <task-id>` (or `djinn task set-agent`) updates a task: only the given fields change.
   Before starting (planned, waiting), any field may change; while running or paused, only its title;
   once finished (done, failed, stopped, cut short), title, provider, model, prompt (for its next continue),
-  and azima, but never its dependencies once it ran.
+  azima, and integration (`--integration none` clears it; refused while merging); never its dependencies once it ran.
   When writing a worker's prompt, ask for the commit checks and the targeted tests, never "run the whole test suite"; the push checks are Djinn's.
 - **The plan is a graph of azimas.** An azima (Arabic ʿazīma, the incantation that binds and commands a djinn) is a
   part of the plan, coded `T07`: a task of kind `AZIMA` that no worker runs, the scheduler never starts, and that never
