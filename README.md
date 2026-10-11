@@ -67,7 +67,7 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 **Phase 2 · Orchestration and data**, after which Djinn runs on itself
 
 - [ ] [T07 · The orchestrator: Djinn decides, starts, resumes, integrates and pushes the work by itself](plan/8e8d3d76-orchestrator.md) (in progress)
-- [x] [T13 · Work across projects: a wish spanning several projects, a project's skills in another](plan/58ae4a59-cross-project-sessions.md)
+- [ ] [T13 · Work across projects: a wish spanning several projects, a project's skills in another](plan/58ae4a59-cross-project-sessions.md) (in progress)
 - [x] [T14 · Fast, economical workers: the right context and model, sized to the machine](plan/8ce817da-cost.md)
 - [x] [T18 · Antigravity as a worker provider](plan/a72eb1f8-antigravity-provider.md)
 - [ ] [T25 · Understand and decide at a glance: what waits for you first, clear questions, tilasms](plan/4a699d0f-review-at-a-glance.md) (in progress)

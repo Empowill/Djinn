@@ -2,7 +2,7 @@
 id: 01a11876-6480-7ec2-9833-abd058ae4a59
 code: T13
 phase: 2
-status: done
+status: in-progress
 after: T07
 ---
 
@@ -241,7 +241,7 @@ project of a wish, and the skills each one holds: it can bring one where it is m
   (cross-agent: see `CONTRIBUTING.md`).
 
 ### Done when
-- [x] A skill of one project is summoned into another, and an agent there uses it (0658258, harness tests in internal/harness/skills_test.go; real runs W124, W139 for Claude, W226, W254 for Antigravity; docs/providers.md#skills-summoned-from-another-project).
+- [ ] A skill of one project is summoned into another, and an agent there uses it (0658258, harness tests in internal/harness/skills_test.go; docs/providers.md#skills-summoned-from-another-project). (needs: a real run of each agent (Claude, Antigravity) in a project that summons a skill of another project (djinn skill summon), using it)
 - [x] A change to the source skill reaches the target without a copy: a link to its folder.
 - [x] Unsummoning leaves the target project as it was: nothing was ever written there.
 
