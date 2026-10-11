@@ -129,6 +129,15 @@ func TestBrief(t *testing.T) {
 		// An azima carries one clear goal, and new work finds its azima first.
 		"**An azima carries one clear goal**", "rephrase its goal (its plan file's Goal and its title",
 		"open a new azima only for a will no existing one carries",
+		// The graph of tasks and azimas is kept free of conflicts.
+		"**Keep the graph free of conflicts.**",
+		"keep the graph of tasks and azimas so that workers do not collide, along an iterative and de-risked path",
+		"Tasks that touch the same files, protos, generated files or the same tests go one after the other",
+		"never side by side",
+		"Large work is cut into small steps, each merged and green before the next starts",
+		"never spawn while the wish's integration points at another branch (a quarantine)",
+		"W399 brought the replay sink's node_modules link into feat/wails-go on 11/10",
+		"A conflict or a red merge is a signal to re-sequence, not only to correct",
 		// When Djinn misbehaves, the lead stops the damage alone and may revert a faulty merge.
 		"**When Djinn misbehaves, stop the damage.**",
 		"redirect the wish's integration to another branch, stop workers, withdraw useless questions",
@@ -658,6 +667,24 @@ func TestBriefInstallQuestionsRule(t *testing.T) {
 	wantRule := "in a project whose builds are installed after each push, ask to install only when necessary, saying why"
 	if !strings.Contains(brief.Stable, wantRule) {
 		t.Errorf("brief.Stable lacks %q with when_needed settings:\n%s", wantRule, brief.Stable)
+	}
+}
+
+// TestBriefConflictsRule: the lead's rule in briefRules includes keeping the graph free of conflicts.
+func TestBriefConflictsRule(t *testing.T) {
+	rules := briefRules(planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS)
+	for _, want := range []string{
+		"**Keep the graph free of conflicts.**",
+		"keep the graph of tasks and azimas so that workers do not collide, along an iterative and de-risked path",
+		"Tasks that touch the same files, protos, generated files or the same tests go one after the other (`--after`, or `--write-scopes` when the project uses them), never side by side",
+		"Large work is cut into small steps, each merged and green before the next starts",
+		"A task starts from the integrated branch: never spawn while the wish's integration points at another branch (a quarantine)",
+		"W399 brought the replay sink's node_modules link into feat/wails-go on 11/10",
+		"A conflict or a red merge is a signal to re-sequence, not only to correct",
+	} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("briefRules lacks %q:\n%s", want, rules)
+		}
 	}
 }
 

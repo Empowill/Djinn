@@ -66,7 +66,8 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   brief's "Marked by the developer". Approving an open question (`djinn mark put Q03 approved`) answers it with
   its recommendation. A block takes no mark: Djinn refuses one.
 - **Investigators clarify questions; the lead turns answers into tasks.** Djinn does not turn answers into tasks
-  with workers: the DAG is the lead's responsibility, and the lead turns each answer into tasks itself, in one pass,
+  with workers: the DAG is the lead's responsibility (keeping it free of conflicts so workers do not collide along an
+  iterative and de-risked path), and the lead turns each answer into tasks itself, in one pass,
   placing them in the graph (`azimas`, `--after`, `--blocks`), and checks what an investigator revised.
   "Enlighten me" starts `Q43: enlighten` by default, an *investigator*: it reads the code and the brief, then revises
   the question, keeping the lead's context clean.
@@ -130,6 +131,13 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
     through dependencies and azimas together, naming it, and then changes nothing. An azima absorbed into another is
     deleted (`djinn task delete`) only once its parts are regrouped: Djinn names them; its code is never given again. `--depends-on` is the former
     name of `--after`, still read.
+- **Keep the graph free of conflicts.** The lead keeps the graph of tasks and azimas so that workers do not collide,
+  along an iterative and de-risked path. Tasks that touch the same files, protos, generated files or the same tests go
+  one after the other (`--after`, or `--write-scopes` when the project uses them), never side by side. Large work is cut
+  into small steps, each merged and green before the next starts. A task starts from the integrated branch: never spawn
+  while the wish's integration points at another branch (a quarantine), since a task started there carries that branch
+  into the next merge (W399 brought the replay sink's node_modules link into feat/wails-go on 11/10). A conflict or a
+  red merge is a signal to re-sequence, not only to correct.
 - **Watchers.** To wait on something outside, the lead spawns a watcher instead of polling:
   `djinn task spawn <wish> --title … --provider watch --prompt "<command>"` runs the command, with no agent, no model
   and no slot, and each new paragraph it prints wakes the lead. `--restart` starts again a command that exits on each
