@@ -72,8 +72,17 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 		if task.Code, err = nextNumber(ctx, tx, wish.GetId(), "T"); err != nil {
 			return err
 		}
-		if err := h.block(ctx, tx, task, req.GetBlocks()); err != nil {
+		blocked, err := h.insertBefore(ctx, tx, task, req.GetBlocks())
+		if err != nil {
 			return err
+		}
+		if err := h.refuseAzimaDependencies(ctx, tx, wish, append(blocked, task)...); err != nil {
+			return err
+		}
+		for _, t := range blocked {
+			if err := tx.Put(t); err != nil {
+				return err
+			}
 		}
 		if task.PartOf != "" {
 			if err := reopenAzima(ctx, tx, task.PartOf, task.GetCode()+" spawned"); err != nil {
@@ -89,7 +98,8 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 	if len(req.GetBlocks()) > 0 {
 		h.wake() // The tasks it blocks say what they wait for now.
 	}
-	return task, nil
+	h.cutAzimaBranch(ctx, wish, task)
+	return store.Get[*planv1.Task](ctx, h.store, task.GetId())
 }
 
 // reopenAzima reopens a closed azima and any closed azima it is part of, recording an event.
@@ -479,6 +489,9 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 			}
 			r.azima.DependsOn = deps
 		}
+		if err := h.refuseAzimaDependencies(ctx, tx, wish, tasks...); err != nil {
+			return err
+		}
 		if len(changed) == 0 && len(reopenedEvents) == 0 {
 			return nil
 		}
@@ -510,6 +523,14 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 	if len(res.Made)+len(res.Changed) > 0 {
 		h.notify()
 		h.wake() // A task waiting on an azima its file closed may start.
+	}
+	for _, r := range reads {
+		if slices.Contains(res.Made, r.azima.GetCode()) {
+			h.cutAzimaBranch(ctx, wish, r.azima)
+			if t, err := store.Get[*planv1.Task](ctx, h.store, r.azima.GetId()); err == nil {
+				r.azima.Azima = t.GetAzima()
+			}
+		}
 	}
 
 	// The files follow the store: what each azima depends on, by code.

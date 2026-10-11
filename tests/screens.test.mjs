@@ -5012,14 +5012,15 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
   assert.doesNotMatch(defaultCardHtml, /T27-djinn-stays-fast/);
   assert.doesNotMatch(defaultCardHtml, /azima-actions/);
 
-  // 5. AzimaCard in per-azima mode with branch, base branch, sync, push button, and PR
+  // 5. AzimaCard in per-azima mode with branch, the main it lands in, sync, push button, and PR
   let pushedAzima = null;
   let openedPrUrl = null;
   const azimaPerAzima = {
     ...taskT27,
     azima: {
       branch: "djinn/T27-djinn-stays-fast",
-      baseBranch: "djinn/T26-split-the-branch",
+      baseBranch: "main",
+      cutFrom: "0123456789abcdef0123456789abcdef01234567",
       sync: { ahead: 2, behind: 0 },
       pr: {
         state: s.AzimaPrState.OPEN,
@@ -5044,10 +5045,10 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
     }),
   );
 
-  // Branch and base branch: on its title's hover, not in its heading.
+  // Its branch and the main it lands in: on its title's hover, not in its heading.
   assert.match(
     perAzimaHtml,
-    /<strong title="[^"]*\ndjinn\/T27-djinn-stays-fast\nbased on djinn\/T26-split-the-branch">/,
+    /<strong title="[^"]*\ndjinn\/T27-djinn-stays-fast\nlands in main">/,
   );
   assert.doesNotMatch(perAzimaHtml, /azima-branch|azima-base-branch/);
 

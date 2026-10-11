@@ -69,6 +69,13 @@ func (h *Harness) Depend(ctx context.Context, procedure string, req *planv1.Task
 				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the tasks of a wish form no cycle: %s", cycle))
 			}
 		}
+		wish, err := store.Get[*planv1.Wish](ctx, tx, first.GetWishId())
+		if err != nil {
+			return err
+		}
+		if err := h.refuseAzimaDependencies(ctx, tx, wish, set...); err != nil {
+			return err
+		}
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err
 		}
@@ -193,6 +200,15 @@ func (h *Harness) Group(ctx context.Context, procedure string, req *planv1.TaskS
 		}
 		if cycle := plan.ClosesCycle(task, task.GetDependsOn(), azima, tasks); cycle != "" {
 			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the tasks of a wish form no cycle: %s", cycle))
+		}
+		wish, err := store.Get[*planv1.Wish](ctx, tx, task.GetWishId())
+		if err != nil {
+			return err
+		}
+		grouped := proto.CloneOf(task)
+		grouped.PartOf = azima
+		if err := h.refuseAzimaDependencies(ctx, tx, wish, grouped); err != nil {
+			return err
 		}
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err

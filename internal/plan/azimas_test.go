@@ -104,19 +104,20 @@ func TestFillAzimas(t *testing.T) {
 		task("W9", work, planv1.TaskStatus_TASK_STATUS_CANCELLED, "T11"),
 	}
 	FillAzimas(tasks)
+	// No branch is based on another's: an azima's branch is cut from main, whatever it waits for.
 	for code, want := range map[string]*planv1.Azima{
 		"T1": {State: planv1.AzimaState_AZIMA_STATE_DONE, Ready: true, Branch: "djinn/T1"},
-		"T2": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 2, PartsDone: 1, Branch: "djinn/T2", BaseBranch: "djinn/T1"},
+		"T2": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 2, PartsDone: 1, Branch: "djinn/T2"},
 		// Its part T4 is under way, through W3.
-		"T3": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Parts: 1, Branch: "djinn/T3", BaseBranch: "djinn/T2"},
+		"T3": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Parts: 1, Branch: "djinn/T3"},
 		"T4": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1, Branch: "djinn/T4"},
 		// A failed part is not progress.
-		"T5": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Parts: 1, Branch: "djinn/T5", BaseBranch: "djinn/T2"},
+		"T5": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Parts: 1, Branch: "djinn/T5"},
 		"T6": {State: planv1.AzimaState_AZIMA_STATE_DRAFT, Ready: true, Branch: "djinn/T6"},
 		// T7 has a done part whose work is merging: in progress, partsRunning=1, partsDone=0.
 		"T7": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1, PartsDone: 0, Branch: "djinn/T7"},
 		// T8 waits for T7, which is not done yet: Ready is false.
-		"T8": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: false, Branch: "djinn/T8", BaseBranch: "djinn/T7"},
+		"T8": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: false, Branch: "djinn/T8"},
 		// T9's work is done, its other part cancelled: 1/1, its proof awaited.
 		"T9": {State: planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF, Ready: true, Parts: 1, PartsDone: 1, Branch: "djinn/T9"},
 		// T10's only part is cancelled: nothing to count, nothing waiting, nothing under way.
@@ -131,6 +132,79 @@ func TestFillAzimas(t *testing.T) {
 	}
 	if tasks[4].GetAzima() != nil {
 		t.Error("work has an azima state")
+	}
+}
+
+// TestFillAzimasKeepsTheCut: what Djinn records of an azima's branch once it cut it from main stays on every read:
+// its name, even once its title changed, the main it lands in, the commit it was cut from, where it stands against
+// main and its pull request. A base branch without a cut, as an old read computed it, is left out.
+func TestFillAzimasKeepsTheCut(t *testing.T) {
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	main := &planv1.WishMain{ProjectId: "p", Held: "main holds no release the branch lacks"}
+	pr := &planv1.AzimaPr{Url: "https://example.com/pull/7", State: planv1.AzimaPrState_AZIMA_PR_STATE_OPEN}
+	cut := &planv1.Task{
+		Id: "T1", Code: "T1", Title: "A new title", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Azima: &planv1.Azima{Branch: "djinn/T1-the-first-title", BaseBranch: "main", CutFrom: sha, Main: main, Pr: pr},
+	}
+	old := &planv1.Task{
+		Id: "T2", Code: "T2", Title: "Stacked", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Azima: &planv1.Azima{Branch: "djinn/T2-stacked", BaseBranch: "djinn/T1-the-first-title"},
+	}
+	if got := AzimaBranchName(cut); got != "djinn/T1-the-first-title" {
+		t.Errorf("AzimaBranchName = %q, want the recorded branch", got)
+	}
+	FillAzimas([]*planv1.Task{cut, old})
+	want := &planv1.Azima{
+		State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: true, Branch: "djinn/T1-the-first-title", BaseBranch: "main", CutFrom: sha,
+		Main: main, Pr: pr,
+	}
+	if got := cut.GetAzima(); !proto.Equal(got, want) {
+		t.Errorf("cut: %v, want %v", got, want)
+	}
+	want = &planv1.Azima{State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: true, Branch: "djinn/T2-stacked"}
+	if got := old.GetAzima(); !proto.Equal(got, want) {
+		t.Errorf("old: %v, want %v", got, want)
+	}
+}
+
+// TestAzimaDependencies: an azima waits for another itself or through its work; work inside one azima waiting for
+// work of the same, or for work of no azima, makes no azima wait. RefuseAzimaDependencies refuses only what a change
+// adds; RefuseSwitchToAzima refuses any, naming them in a line.
+func TestAzimaDependencies(t *testing.T) {
+	task := func(code string, kind planv1.TaskKind, partOf string, deps ...string) *planv1.Task {
+		return &planv1.Task{Id: code, Code: code, Kind: kind, PartOf: partOf, DependsOn: deps}
+	}
+	const azima, work = planv1.TaskKind_TASK_KIND_AZIMA, planv1.TaskKind_TASK_KIND_WORK
+	tasks := []*planv1.Task{
+		task("T1", azima, ""),
+		task("T2", azima, "", "T1"),
+		task("T3", azima, ""),
+		task("W1", work, "T1"),
+		task("W2", work, "T1", "W1"), // inside T1
+		task("W3", work, "T3", "W1"), // T3 through its work
+		task("W4", work, ""),
+		task("W5", work, "T3", "W4"), // work of no azima
+		task("T10", azima, "", "T2"),
+	}
+	if got, want := AzimaDependenciesText(AzimaDependencies(tasks)), "T2 after T1; T3 after T1; T10 after T2"; got != want {
+		t.Errorf("AzimaDependencies = %q, want %q", got, want)
+	}
+	if err := RefuseSwitchToAzima(tasks); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+		!strings.Contains(err.Error(), "per azima refused: azimas depend on each other (T2 after T1; T3 after T1; T10 after T2)") {
+		t.Errorf("switch: %v", err)
+	}
+	if err := RefuseSwitchToAzima(tasks[2:8]); err != nil {
+		t.Errorf("switch with work waiting inside one azima: %v", err)
+	}
+	// What a change adds is refused, what was there stays.
+	if err := RefuseAzimaDependencies(tasks, tasks); err != nil {
+		t.Errorf("nothing added: %v", err)
+	}
+	graph := slices.Clone(tasks)
+	graph[2] = task("T3", azima, "", "T2")
+	err := RefuseAzimaDependencies(tasks, graph)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "(T3 after T2)") {
+		t.Errorf("T3 after T2 added: %v", err)
 	}
 }
 

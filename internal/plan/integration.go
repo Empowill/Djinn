@@ -120,6 +120,11 @@ func (w *Wishes) SetIntegration(
 							"cannot switch push strategy: work of wish %q is already merged into its integration branch", wish.GetTitle()))
 					}
 				}
+				if s == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
+					if err := RefuseSwitchToAzima(tasks); err != nil {
+						return err
+					}
+				}
 			}
 			wish.PushStrategy = s
 		}
@@ -162,6 +167,11 @@ func (w *Wishes) PushStrategy(
 					if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
 						return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 							"cannot switch push strategy: work of wish %q is already merged into its integration branch", wish.GetTitle()))
+					}
+				}
+				if newStrategy == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
+					if err := RefuseSwitchToAzima(tasks); err != nil {
+						return err
 					}
 				}
 			}

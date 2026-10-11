@@ -114,7 +114,7 @@ type Harness struct {
 	uninstalledDelay time.Duration         // how long a build waits uninstalled before asking; 0: defaultUninstalledDelay
 	pushMu           sync.Mutex            // held while an integration branch is pushed
 	built            func(Built)           // nil: no build is proposed
-	mainTested       map[string]mainTested // by wish/project; owned by the integration's pass
+	mainTested       map[string]mainTested // by mainLine.key; owned by the integration's pass
 	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
 
 	mu           sync.Mutex
@@ -709,6 +709,9 @@ func (h *Harness) spawn(
 	// What it blocks is checked now, the decision reads them waiting for it, and they are written with it.
 	blocked, err := h.insertBefore(ctx, h.store, task, req.GetBlocks())
 	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if err := h.refuseAzimaDependencies(ctx, h.store, wish, append(slices.Clone(blocked), task)...); err != nil {
 		return nil, plan.Status(err)
 	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
