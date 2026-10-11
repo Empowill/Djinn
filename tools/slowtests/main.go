@@ -42,6 +42,7 @@ var allowed = map[string]string{
 	"github.com/empowill/djinn/cmd/djinn TestWishResume":                                            "a real djinn up process and a djinn CLI invocation",
 	"github.com/empowill/djinn/cmd/djinn TestCrashResumesTheWorkers":                                "two real djinn up processes across a kill",
 	"github.com/empowill/djinn/cmd/djinn TestWindowTerminalOpensInAProject":                         "a real djinn up process and a djinn CLI invocation",
+	"github.com/empowill/djinn/cmd/djinn TestCrossVet":                                              "cross-platform go vet for Windows and Darwin on cold cache",
 	"github.com/empowill/djinn/internal/testx/bigwish TestSizes":                                    "generates a 10x wish with thousands of tasks and events",
 	"github.com/empowill/djinn/internal/harness TestRestartResumesInOrder":                          "starts 7 sequential workers across a simulated restart",
 	"github.com/empowill/djinn/internal/harness TestEnvFailureReplayOnVersionChange":                "starts 5 sequential harness instances across simulated version upgrades",
