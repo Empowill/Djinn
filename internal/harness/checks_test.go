@@ -741,3 +741,84 @@ func TestPushHeldLiftsWhenApprovedUnchecked(t *testing.T) {
 		t.Errorf("W1 events %v did not mention pushing without push checks", texts)
 	}
 }
+
+// questions are the questions of the wish, open or closed.
+func (in *integration) questions(t *testing.T) []*planv1.Question {
+	t.Helper()
+	qs, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return qs
+}
+
+// TestPushCorrectionStoppedThenContinued replays the incident of W452 (11/10/2026): red push checks start a correction;
+// the lead stops it, changes its agent and continues it. The stop is no end of the correction: no question, no other
+// correction, the push stays held on it; once it is committed, the push checks pass and the push lifts the hold.
+func TestPushCorrectionStoppedThenContinued(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
+		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+	in.testCode = 1
+	bare := in.remote(t)
+	old := in.tip(t)
+	azima := in.azima(t, in.wishID, "Letters")
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+	var starts int
+	in.correctWith(func(dir, prompt string) string {
+		starts++
+		if starts == 1 {
+			return "wait\ntext stopped before this"
+		}
+		return "text push checks fixed"
+	})
+
+	in.pass(t, 0)
+	if got := in.remoteTip(t, bare); got != old {
+		t.Fatalf("pushed red: origin at %s", got)
+	}
+	w2ID := in.pushState(t).GetCorrectedBy()
+	if w2ID == "" {
+		t.Fatalf("the push %v; want corrected by a worker", in.pushState(t))
+	}
+
+	// The lead stops the correction, to move it to another agent.
+	if _, err := in.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: w2ID})); err != nil {
+		t.Fatal(err)
+	}
+	in.pass(t, time.Second)
+	state := in.pushState(t)
+	if state.GetQuestionId() != "" || strings.HasSuffix(state.GetHeld(), "; left to the lead") || state.GetCorrectedBy() != w2ID {
+		t.Fatalf("just after the stop, the push %v; want still held, corrected by the stopped worker, nobody asked", state)
+	}
+
+	// ... and continues it at once.
+	if _, err := in.tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{TaskId: w2ID})); err != nil {
+		t.Fatal(err)
+	}
+	in.mu.Lock()
+	in.testCode = 0
+	in.mu.Unlock()
+	if w2 := in.ended(t, w2ID); w2.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("continued correction %s ended %v", w2.GetCode(), w2.GetStatus())
+	}
+	in.pass(t, stopGrace)
+	tip := in.tip(t)
+	if got := in.remoteTip(t, bare); got != tip {
+		t.Fatalf("correction committed, push checks green, not pushed: origin at %s, the branch at %s; push %v", got, tip, in.pushState(t))
+	}
+	if state := in.pushState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" || state.GetQuestionId() != "" {
+		t.Errorf("after the push, the push still held: %v", state)
+	}
+	if qs := in.questions(t); len(qs) != 0 {
+		t.Errorf("questions %v; want none", qs)
+	}
+	tasks, err := store.List[*planv1.Task](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(slices.DeleteFunc(tasks, func(t *planv1.Task) bool { return t.GetCorrection() == nil })); n != 1 {
+		t.Errorf("%d correction workers; want the one, continued", n)
+	}
+}
