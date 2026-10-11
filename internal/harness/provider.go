@@ -60,6 +60,13 @@ type Spec struct {
 	// LowPriority runs the worker process with low CPU priority (nice 10 on Unix,
 	// BELOW_NORMAL_PRIORITY_CLASS on Windows) when running at minimal or light operating load.
 	LowPriority bool
+	// StartHead is the git commit hash at task start, used to verify progress.
+	StartHead string
+	// Branch is the task's git branch name.
+	Branch string
+	// IsWorkDone reports whether the worker has committed clean work since start.
+	// When nil, callers compute it from git status in Dir.
+	IsWorkDone func() bool
 }
 
 // Skill is a skill summoned from another project: its folder stays in its source, and the worker reads it there.
