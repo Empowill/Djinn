@@ -174,8 +174,8 @@ func briefRules(iq planv1.InstallQuestions) string {
 		"`djinn plan sync <wish>` reads the azimas from the projects' plan files and writes their `after:` lines back; " +
 		"`djinn task list --wish-id <wish>`; `djinn task watch <task>`; " +
 		"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
-		"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task update <task>` edits what is given in place (not started: everything; running or paused: title only; finished: title, prompt, agent, azima, integration (none clears it); never its dependencies once it ran; alias `set-agent`); `djinn task done <task> --note " +
-		"\"…\"` closes a task no worker runs (planned, cut short, failed, stopped, imported) once its work is done " +
+		"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task update <task>` edits what is given in place (not started: everything; running or paused: title only; finished: title, prompt, agent, azima, integration (none clears it, --force if unmerged); never its dependencies once it ran; alias `set-agent`); `djinn task done <task> [--drop] --note " +
+		"\"…\"` closes a task no worker runs (planned, cut short, failed, stopped, imported; unmerged commits queue for merging unless --drop) once its work is done " +
 		"elsewhere.\n" +
 		"- `djinn wish route \"<request>\" --wish-id <wish> --ask`: where a request goes, asked to the developer on a " +
 		"card; without `--ask`, the proposal only.\n" +

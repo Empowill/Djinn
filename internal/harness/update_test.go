@@ -3,6 +3,7 @@ package harness
 import (
 	"bytes"
 	"context"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -10,10 +11,12 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/cli"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -1055,5 +1058,87 @@ func TestUpdateIntegrationNone(t *testing.T) {
 	after := e.get(t, task.GetId())
 	if after.GetIntegration() != nil {
 		t.Fatalf("task integration after update --integration none: got %v, want nil", after.GetIntegration())
+	}
+}
+
+// TestUpdateIntegrationNoneUnmergedBranch: clearing integration record when the branch holds unmerged commits
+// is refused unless --force is given.
+func TestUpdateIntegrationNoneUnmergedBranch(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	repo := gitRepo(t)
+	mainBranch := plan.CheckedOutBranch(t.Context(), repo)
+
+	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity), WithTick(time.Hour))
+	wishID, projectID := e.wish(t, repo)
+
+	b := "branch-with-commits"
+	if _, err := git(t.Context(), repo, "checkout", "-b", b); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(repo+"/app/test.txt", []byte("unmerged\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "add", "."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "unmerged commit"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "checkout", mainBranch); err != nil {
+		t.Fatal(err)
+	}
+
+	task := &planv1.Task{
+		Id:        store.NewID(),
+		WishId:    wishID,
+		ProjectId: projectID,
+		Code:      "W1",
+		Title:     "Task with unmerged commits",
+		Status:    planv1.TaskStatus_TASK_STATUS_DONE,
+		Branch:    b,
+		Integration: &planv1.TaskIntegration{
+			State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+			Sha:   "deadbeef",
+		},
+		CreateTime: timestamppb.Now(),
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		_ = tx.Journal("test", "put", task)
+		return tx.Put(task)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	none := "none"
+	// 1. Refused without --force via API
+	_, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+		TaskId:      task.GetId(),
+		Integration: &none,
+	}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("expected FailedPrecondition with --force, got: %v", err)
+	}
+
+	// 2. Refused without --force via CLI
+	var out, errs bytes.Buffer
+	code := cli.Run(t.Context(), []string{"task", "update", task.GetId(), "--integration", "none"},
+		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+	if code == 0 || !strings.Contains(errs.String(), "--force") {
+		t.Fatalf("cli run should fail without --force, got code %d, errs: %s", code, errs.String())
+	}
+
+	// 3. Allowed with --force via CLI
+	out.Reset()
+	errs.Reset()
+	code = cli.Run(t.Context(), []string{"task", "update", task.GetId(), "--integration", "none", "--force"},
+		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+	if code != 0 {
+		t.Fatalf("cli run with --force failed with code %d: %s", code, errs.String())
+	}
+
+	after := e.get(t, task.GetId())
+	if after.GetIntegration() != nil {
+		t.Fatalf("task integration after update --integration none --force: got %v, want nil", after.GetIntegration())
 	}
 }

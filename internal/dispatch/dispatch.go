@@ -50,9 +50,27 @@ type Situation struct {
 	reading map[string]bool // the question workers started in this pass: they take memory, no slot
 	now     time.Time
 	// The first task the memory held in this pass, and why: the tasks after it wait for it.
-	short    *planv1.Task
-	shortWhy string
-	peaks    map[string][]uint64 // the peak memory of the finished workers of each provider, the latest first
+	short      *planv1.Task
+	shortWhy   string
+	peaks      map[string][]uint64 // the peak memory of the finished workers of each provider, the latest first
+	branchHead BranchResolver
+	isAncestor AncestryChecker
+	ancestry   map[[2]string]bool // (branchHead, integrationHead) -> isAncestor
+}
+
+// AncestryChecker tells whether commit a is an ancestor of commit b in projectID:
+// git merge-base --is-ancestor a b.
+type AncestryChecker func(projectID, a, b string) bool
+
+// BranchResolver resolves the head SHA of branch in projectID, and tells whether the branch has no commit beyond
+// the point it started from (noCommits).
+type BranchResolver func(projectID, branch string) (head string, noCommits bool)
+
+// WithAncestry equips the situation with functions to check branch heads and ancestry in Git repositories.
+func (s *Situation) WithAncestry(branchHead BranchResolver, isAncestor AncestryChecker) *Situation {
+	s.branchHead = branchHead
+	s.isAncestor = isAncestor
+	return s
 }
 
 // New is the situation of tasks and wishes, all of them as the store lists them (oldest first), the projects in Git being git (a project not in it is
@@ -62,7 +80,7 @@ func New(tasks []*planv1.Task, wishes []*planv1.Wish, git map[string]bool, machi
 	s := &Situation{
 		tasks: tasks, byID: make(map[string]*planv1.Task, len(tasks)), wishes: make(map[string]*planv1.Wish, len(wishes)),
 		rank: map[string]int{}, git: git, machine: machine, started: map[string]bool{}, reading: map[string]bool{},
-		now: time.Now(),
+		ancestry: make(map[[2]string]bool), now: time.Now(),
 	}
 	for _, t := range tasks {
 		s.byID[t.GetId()] = t
@@ -296,8 +314,17 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 			}
 			// Work Djinn integrates counts once committed into the wish's integration branch, which the task starts
 			// from (T07); until then it waits, through a conflict or red tests a worker corrects too.
-			if waits, state := uncommitted(d); waits && why == "" {
-				why = fmt.Sprintf("waits for %s to be committed%s", d.GetCode(), state)
+			if waits, state := uncommitted(d); waits {
+				if why == "" {
+					why = fmt.Sprintf("waits for %s to be committed%s", d.GetCode(), state)
+				}
+				continue
+			}
+			if d.GetBranch() != "" && d.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+				if !s.workMerged(d) && why == "" {
+					intBranch := s.integrationBranch(d)
+					why = fmt.Sprintf("waits for %s's work to reach %s", d.GetCode(), intBranch)
+				}
 			}
 			continue
 		case planv1.TaskStatus_TASK_STATUS_FAILED:
@@ -368,6 +395,49 @@ func uncommitted(d *planv1.Task) (waits bool, state string) {
 		return true, " (uncommitted)"
 	}
 	return true, ""
+}
+
+// workMerged tells whether the work of a done dependency with a branch is in its wish's integration branch:
+// its branch's head is an ancestor of the integration branch's head, or it has no commit beyond the point it started from.
+func (s *Situation) workMerged(d *planv1.Task) bool {
+	if s.branchHead == nil || s.isAncestor == nil {
+		return false
+	}
+	bHead, noCommits := s.branchHead(d.GetProjectId(), d.GetBranch())
+	if noCommits {
+		return true
+	}
+	if bHead == "" {
+		return false
+	}
+	intBranch := s.integrationBranch(d)
+	intHead, _ := s.branchHead(d.GetProjectId(), intBranch)
+	if intHead == "" {
+		return false
+	}
+	key := [2]string{bHead, intHead}
+	if merged, ok := s.ancestry[key]; ok {
+		return merged
+	}
+	merged := s.isAncestor(d.GetProjectId(), bHead, intHead)
+	if s.ancestry == nil {
+		s.ancestry = make(map[[2]string]bool)
+	}
+	s.ancestry[key] = merged
+	return merged
+}
+
+// integrationBranch returns the integration branch name of d's wish for d's project.
+func (s *Situation) integrationBranch(d *planv1.Task) string {
+	if wish, ok := s.wishes[d.GetWishId()]; ok {
+		if b := plan.IntegrationBranchOf(wish, d.GetProjectId()); b != "" {
+			return b
+		}
+		if len(wish.GetIntegrationBranches()) > 0 {
+			return wish.GetIntegrationBranches()[0].GetBranch()
+		}
+	}
+	return "the integration branch"
 }
 
 // forkedAs is the task that took over d: d itself, or, when d was cut short and resumed as a fork of its session

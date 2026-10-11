@@ -15431,7 +15431,9 @@ type TaskServiceDoneRequest struct {
 	// Why it is done, in a few words.
 	Note string `protobuf:"bytes,2,opt,name=note,proto3" json:"note,omitempty"`
 	// Who closes it; by default the lead. The window says developer.
-	By            Closer `protobuf:"varint,3,opt,name=by,proto3,enum=plan.v1.Closer" json:"by,omitempty"`
+	By Closer `protobuf:"varint,3,opt,name=by,proto3,enum=plan.v1.Closer" json:"by,omitempty"`
+	// Drop the task's unmerged work on purpose instead of queuing it for merging. Requires --note to say why.
+	Drop          *bool `protobuf:"varint,4,opt,name=drop,proto3,oneof" json:"drop,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -15485,6 +15487,13 @@ func (x *TaskServiceDoneRequest) GetBy() Closer {
 		return x.By
 	}
 	return Closer_CLOSER_UNSPECIFIED
+}
+
+func (x *TaskServiceDoneRequest) GetDrop() bool {
+	if x != nil && x.Drop != nil {
+		return *x.Drop
+	}
+	return false
 }
 
 type TaskServiceDoneResponse struct {
@@ -15663,8 +15672,10 @@ type TaskServiceUpdateRequest struct {
 	MaxBudgetUsd *float64 `protobuf:"fixed64,9,opt,name=max_budget_usd,json=maxBudgetUsd,proto3,oneof" json:"max_budget_usd,omitempty"`
 	// A path the task writes, in the project's folder; empty for the whole folder.
 	WriteScopes []string `protobuf:"bytes,10,rep,name=write_scopes,json=writeScopes,proto3" json:"write_scopes,omitempty"`
-	// Clear the task's integration record: "none" removes it. Refused while the task merges.
-	Integration   *string `protobuf:"bytes,11,opt,name=integration,proto3,oneof" json:"integration,omitempty"`
+	// Clear the task's integration record: "none" removes it. Refused while the task merges, or when its branch holds unmerged commits unless --force is given.
+	Integration *string `protobuf:"bytes,11,opt,name=integration,proto3,oneof" json:"integration,omitempty"`
+	// Force clearing the integration record even if the task's branch holds unmerged commits.
+	Force         *bool `protobuf:"varint,12,opt,name=force,proto3,oneof" json:"force,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -15774,6 +15785,13 @@ func (x *TaskServiceUpdateRequest) GetIntegration() string {
 		return *x.Integration
 	}
 	return ""
+}
+
+func (x *TaskServiceUpdateRequest) GetForce() bool {
+	if x != nil && x.Force != nil {
+		return *x.Force
+	}
+	return false
 }
 
 type TaskServiceUpdateResponse struct {
@@ -17343,11 +17361,13 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x18TaskServiceDeleteRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\">\n" +
 	"\x19TaskServiceDeleteResponse\x12!\n" +
-	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\x87\x01\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xa9\x01\n" +
 	"\x16TaskServiceDoneRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12\x1c\n" +
 	"\x04note\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x04note\x12)\n" +
-	"\x02by\x18\x03 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02by\"<\n" +
+	"\x02by\x18\x03 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02by\x12\x17\n" +
+	"\x04drop\x18\x04 \x01(\bH\x00R\x04drop\x88\x01\x01B\a\n" +
+	"\x05_drop\"<\n" +
 	"\x17TaskServiceDoneResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xa2\x01\n" +
 	"\x1aTaskServiceContinueRequest\x12$\n" +
@@ -17356,7 +17376,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x02by\x18\x03 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02byB\t\n" +
 	"\a_prompt\"@\n" +
 	"\x1bTaskServiceContinueResponse\x12!\n" +
-	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xdf\x05\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\x84\x06\n" +
 	"\x18TaskServiceUpdateRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12%\n" +
 	"\x05title\x18\x02 \x01(\tB\n" +
@@ -17370,7 +17390,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0emax_budget_usd\x18\t \x01(\x01B\x0e\xbaH\v\x12\t)\x00\x00\x00\x00\x00\x00\x00\x00H\x06R\fmaxBudgetUsd\x88\x01\x01\x124\n" +
 	"\fwrite_scopes\x18\n" +
 	" \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\vwriteScopes\x122\n" +
-	"\vintegration\x18\v \x01(\tB\v\xbaH\br\x06R\x04noneH\aR\vintegration\x88\x01\x01B\b\n" +
+	"\vintegration\x18\v \x01(\tB\v\xbaH\br\x06R\x04noneH\aR\vintegration\x88\x01\x01\x12\x19\n" +
+	"\x05force\x18\f \x01(\bH\bR\x05force\x88\x01\x01B\b\n" +
 	"\x06_titleB\t\n" +
 	"\a_promptB\v\n" +
 	"\t_providerB\b\n" +
@@ -17379,7 +17400,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\b_part_ofB\v\n" +
 	"\t_decisionB\x11\n" +
 	"\x0f_max_budget_usdB\x0e\n" +
-	"\f_integration\">\n" +
+	"\f_integrationB\b\n" +
+	"\x06_force\">\n" +
 	"\x19TaskServiceUpdateResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"_\n" +
 	"\x1aTaskServiceDescribeRequest\x12\"\n" +
@@ -18343,6 +18365,7 @@ func file_plan_v1_plan_proto_init() {
 		(*TaskRef_Code)(nil),
 		(*TaskRef_Id)(nil),
 	}
+	file_plan_v1_plan_proto_msgTypes[186].OneofWrappers = []any{}
 	file_plan_v1_plan_proto_msgTypes[188].OneofWrappers = []any{}
 	file_plan_v1_plan_proto_msgTypes[190].OneofWrappers = []any{}
 	type x struct{}

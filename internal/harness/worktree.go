@@ -14,6 +14,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/store"
 )
 
 // worktreeDir is where a task's worktree goes: in Djinn's data folder, on the project's side, named after the
@@ -186,4 +187,98 @@ func removeWorktree(ctx context.Context, dir, path string, force bool) error {
 		forgetAgyProject(path)
 	}
 	return err
+}
+
+// branchHoldsUnmergedCommits tells whether branch in dir has commits of its own that are not in integration.
+func branchHoldsUnmergedCommits(ctx context.Context, dir, branch, integration string) bool {
+	if branch == "" {
+		return false
+	}
+	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"^{commit}")
+	if err != nil || head == "" {
+		head, err = git(ctx, dir, "rev-parse", "--verify", "--quiet", branch+"^{commit}")
+		if err != nil || head == "" {
+			return false
+		}
+	}
+	// A branch with no commit beyond the point it started from holds no unmerged work.
+	reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+branch)
+	if err == nil && reflog != "" {
+		lines := strings.Split(strings.TrimSpace(reflog), "\n")
+		if strings.TrimSpace(lines[len(lines)-1]) == head {
+			return false
+		}
+	}
+	intTarget := "refs/heads/" + integration + "^{commit}"
+	intHead, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", intTarget)
+	if err != nil || intHead == "" {
+		intHead, _ = git(ctx, dir, "rev-parse", "--verify", "--quiet", integration+"^{commit}")
+	}
+	if intHead == "" {
+		intHead, _ = git(ctx, dir, "rev-parse", "HEAD")
+	}
+	if intHead != "" {
+		if _, err := git(ctx, dir, "merge-base", "--is-ancestor", head, intHead); err == nil {
+			return false
+		}
+	}
+	return true
+}
+
+// depWorkInSha tells whether the work of dep is reachable from sha.
+func depWorkInSha(ctx context.Context, dir string, dep *planv1.Task, sha string) bool {
+	if sha == "" {
+		return false
+	}
+	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+dep.GetBranch()+"^{commit}")
+	if err != nil || head == "" {
+		head, _ = git(ctx, dir, "rev-parse", "--verify", "--quiet", dep.GetBranch()+"^{commit}")
+	}
+	if head == "" {
+		return true // Branch does not exist; no work to check.
+	}
+	// A branch with no commit beyond the point it started from holds no unmerged work.
+	reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+dep.GetBranch())
+	if err == nil && reflog != "" {
+		lines := strings.Split(strings.TrimSpace(reflog), "\n")
+		if strings.TrimSpace(lines[len(lines)-1]) == head {
+			return true
+		}
+	}
+	if _, err := git(ctx, dir, "merge-base", "--is-ancestor", head, sha); err == nil {
+		return true
+	}
+	if intSha := dep.GetIntegration().GetSha(); intSha != "" {
+		if _, err := git(ctx, dir, "merge-base", "--is-ancestor", intSha, sha); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// dependenciesUnmergedIn checks that each dependency's work is in sha; if not, it returns why the task must wait.
+func (h *Harness) dependenciesUnmergedIn(ctx context.Context, dir string, task *planv1.Task, sha, from string) string {
+	if len(task.GetDependsOn()) == 0 {
+		return ""
+	}
+	targetBranch := from
+	if targetBranch == "" {
+		targetBranch = "the integration branch"
+	}
+	for _, depID := range task.GetDependsOn() {
+		dep, err := store.Get[*planv1.Task](ctx, h.store, depID)
+		if err != nil || dep == nil {
+			continue
+		}
+		if dep.GetProjectId() != "" && task.GetProjectId() != "" && dep.GetProjectId() != task.GetProjectId() {
+			continue
+		}
+		if dep.GetBranch() == "" {
+			continue
+		}
+		if !depWorkInSha(ctx, dir, dep, sha) {
+			return fmt.Sprintf("waits for %s's work to reach %s", dep.GetCode(), targetBranch)
+		}
+	}
+	return ""
 }

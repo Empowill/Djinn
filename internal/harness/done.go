@@ -60,6 +60,26 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 	if n := req.GetNote(); n != "" {
 		text += ": " + n
 	}
+	var unmerged bool
+	if task.GetBranch() != "" {
+		wish, _ := store.Get[*planv1.Wish](ctx, h.store, task.GetWishId())
+		project, _ := store.Get[*planv1.Project](ctx, h.store, task.GetProjectId())
+		if project != nil && project.GetGit() {
+			intBranch, _ := h.integrationBranch(ctx, wish, project)
+			unmerged = branchHoldsUnmergedCommits(ctx, project.GetDirectory(), task.GetBranch(), intBranch)
+		}
+	}
+	if unmerged {
+		if req.GetDrop() {
+			if req.GetNote() == "" {
+				return nil, connect.NewError(connect.CodeInvalidArgument,
+					fmt.Errorf("task %s has unmerged commits: --note must say why they are dropped", task.GetCode()))
+			}
+			task.Integration = nil
+		} else {
+			task.Integration = pending(task.GetBranch(), "")
+		}
+	}
 	task.Status, task.Error, task.WaitReason = planv1.TaskStatus_TASK_STATUS_DONE, "", ""
 	if task.GetEndTime() == nil {
 		task.EndTime = now
@@ -76,10 +96,22 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		return tx.Put(newEvent(id, seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
+		if err := tx.Put(newEvent(id, seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})); err != nil {
+			return err
+		}
+		if task.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING {
+			return tx.Put(newEvent(id, seq+2, Event{
+				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+				Text: "integration: pending, to be merged into the integration branch",
+			}))
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, plan.Status(err)
+	}
+	if task.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING {
+		h.kickIntegrate()
 	}
 	_ = h.unblockDependencyFailed(ctx, task.GetCode())
 	h.notify()

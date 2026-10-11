@@ -3576,6 +3576,8 @@ message TaskServiceDoneRequest {
   string note = 2 [(buf.validate.field).string.max_len = 2000];
   // Who closes it; by default the lead. The window says developer.
   Closer by = 3 [(buf.validate.field).enum.defined_only = true];
+  // Drop the task's unmerged work on purpose instead of queuing it for merging. Requires --note to say why.
+  optional bool drop = 4;
 }
 
 message TaskServiceDoneResponse {
@@ -3647,8 +3649,10 @@ message TaskServiceUpdateRequest {
     (buf.validate.field).repeated.items.string.min_len = 1,
     (buf.validate.field).repeated.items.string.max_len = 1000
   ];
-  // Clear the task's integration record: "none" removes it. Refused while the task merges.
+  // Clear the task's integration record: "none" removes it. Refused while the task merges, or when its branch holds unmerged commits unless --force is given.
   optional string integration = 11 [(buf.validate.field).string = {in: ["none"]}];
+  // Force clearing the integration record even if the task's branch holds unmerged commits.
+  optional bool force = 12;
 }
 
 message TaskServiceUpdateResponse {

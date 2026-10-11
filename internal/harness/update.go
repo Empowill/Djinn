@@ -153,6 +153,17 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		if req.GetIntegration() != "none" {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("integration may only be set to none"))
 		}
+		if task.GetBranch() != "" && !req.GetForce() {
+			wish, _ := store.Get[*planv1.Wish](ctx, h.store, task.GetWishId())
+			project, _ := store.Get[*planv1.Project](ctx, h.store, task.GetProjectId())
+			if project != nil && project.GetGit() {
+				intBranch, _ := h.integrationBranch(ctx, wish, project)
+				if branchHoldsUnmergedCommits(ctx, project.GetDirectory(), task.GetBranch(), intBranch) {
+					return nil, connect.NewError(connect.CodeFailedPrecondition,
+						fmt.Errorf("task %s's branch holds commits not in the integration branch: refused unless --force is given", task.GetCode()))
+				}
+			}
+		}
 		t.Integration = nil
 	}
 
