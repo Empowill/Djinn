@@ -196,7 +196,7 @@ func TestReviewAttemptsThenAQuestion(t *testing.T) {
 
 	// Try again: a new review, its attempts counted from one, which commits; the work goes in.
 	q := in.attachQuestion(t, w1, w3)
-	if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn started W4: Review the work W1 left not committed" {
+	if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn started W4: Merge: Work of W1 (W1) — work left not committed" {
 		t.Errorf("what Djinn did: %q", did)
 	}
 	got, texts = in.integration(t, w1)

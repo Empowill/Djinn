@@ -143,7 +143,7 @@ func (h *Harness) spawnCorrection(
 	}
 	azima, note := h.azimaOf(ctx, from)
 	c, err := h.spawn(context.WithoutCancel(ctx), planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
-		WishId: wish.GetId(), ProjectId: project.GetId(), Title: correctionTitle(group, f, in.GetBranch()),
+		WishId: wish.GetId(), ProjectId: project.GetId(), Title: mergeTitle(servedTasks(ctx, h.store, group), failureWhat(f)),
 		Prompt:   correctionPrompt("the work of "+codes(group), f.GetMergeBranch(), f, in.GetBranch(), settings, attempt),
 		Provider: from.GetProvider(), Model: from.GetModel(), PartOf: azima,
 	}, &planv1.Task{Correction: &planv1.TaskCorrection{Failure: proto.CloneOf(f), Attempt: attempt}})
@@ -191,14 +191,6 @@ func originals(group []*planv1.Task) []*planv1.Task {
 		return group
 	}
 	return out
-}
-
-// correctionTitle is the title of a correction worker of group's failure f, into branch.
-func correctionTitle(group []*planv1.Task, f *planv1.IntegrationFailure, branch string) string {
-	if f.GetState() == planv1.IntegrationState_INTEGRATION_STATE_RED {
-		return "Make the tests pass with the work of " + codes(originals(group))
-	}
-	return fmt.Sprintf("Settle the conflict of %s with %s", failedTask(group, f).GetCode(), branch)
 }
 
 // correctionPrompt is the first prompt of the attempt-th correction worker of the failure f of work ("the work of W2",
