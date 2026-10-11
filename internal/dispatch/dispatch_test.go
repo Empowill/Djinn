@@ -414,7 +414,7 @@ func TestMemoryCommittableLimit(t *testing.T) {
 
 	tasks := []*planv1.Task{done, busy, t1, t2}
 
-	// 20 GiB total, 16 GiB available.
+	// 24 GiB total, 22 GiB available (usable 20 GiB beyond 2 GiB reserve).
 	// On minimal load (20%), ceiling is 4.0 GiB.
 	// busy engaged is 1.5 GiB (1 GiB peak + 512 MiB margin).
 	// t1 forecast is 1.5 GiB.
@@ -425,8 +425,8 @@ func TestMemoryCommittableLimit(t *testing.T) {
 		Slots:     4,
 		Rule:      "test",
 		Running:   1,
-		Total:     20 * machine.GiB,
-		Available: 16 * machine.GiB,
+		Total:     24 * machine.GiB,
+		Available: 22 * machine.GiB,
 		Policy:    minPolicy,
 	}
 
@@ -438,7 +438,7 @@ func TestMemoryCommittableLimit(t *testing.T) {
 	if got["t1"] != "" {
 		t.Errorf("t1 should start, but got why: %q", got["t1"])
 	}
-	wantWhy := "load minimal commits up to 3.9 GiB of memory, 3.0 GiB already engaged, needs 1.5 GiB"
+	wantWhy := "load minimal commits up to 4.0 GiB of memory, 3.0 GiB already engaged, needs 1.5 GiB"
 	if got["t2"] != wantWhy {
 		t.Errorf("t2 why:\ngot:  %q\nwant: %q", got["t2"], wantWhy)
 	}

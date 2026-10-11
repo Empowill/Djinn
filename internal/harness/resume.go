@@ -194,7 +194,7 @@ func (h *Harness) limited(r *run, t *planv1.Task) {
 // worker takes its last prompt on its session instead (Continue); one a yes to its edit question gave back is told
 // it may edit now, with its first prompt (grant). Its access is decided again in a project, as for a planned task,
 // but for an answer the developer gave about editing, which stays. A worker that cannot start fails the task.
-func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
+func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ...string) error {
 	var project *planv1.Project
 	if t.GetProjectId() != "" {
 		p, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
@@ -259,6 +259,11 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 	if err != nil {
 		return err
 	}
+	var preEv *planv1.TaskEvent
+	if len(preemptedCode) > 0 && preemptedCode[0] != "" {
+		r.seq++
+		preEv = newEvent(t.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode[0] + " to make room"})
+	}
 	var prep prepared
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		wish, err := store.Get[*planv1.Wish](ctx, tx, t.GetWishId())
@@ -292,6 +297,11 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 		}
 		if err := tx.Journal(actorHarness, methodSchedule, t); err != nil {
 			return err
+		}
+		if preEv != nil {
+			if err := tx.Put(preEv); err != nil {
+				return err
+			}
 		}
 		return tx.Put(t)
 	})

@@ -139,6 +139,9 @@ func (p *process) Pause() error { return pause(p) }
 // Resume lets them go on.
 func (p *process) Resume() error { return resume(p) }
 
+// SetPriority sets the process and its process tree priority.
+func (p *process) SetPriority(low bool) error { return setPriority(p, low) }
+
 func exitResult(cmd *exec.Cmd, err error) Result {
 	if errors.Is(err, exec.ErrWaitDelay) {
 		err = nil // The process ended; a child kept its output open.

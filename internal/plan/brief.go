@@ -118,6 +118,11 @@ func briefRules(iq planv1.InstallQuestions) string {
 		"result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about " +
 		"it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too " +
 		"(your rule).\n" +
+		"- **When Djinn misbehaves, stop the damage.** When Djinn misbehaves while the developer is away, " +
+		"you may stop the damage alone without touching code: redirect the wish's integration to another branch, " +
+		"stop workers, withdraw useless questions. You may also revert a faulty merge on the integration branch, " +
+		"telling the developer at once; every other commit on the integration branch waits for the developer's " +
+		"agreement, asked first (`djinn question ask`).\n" +
 		"- **Blocks are for agents**: a hand-off, a reference, a decision taken outside a question (kind decision, which " +
 		"the decision log shows). The developer does not read blocks: what the developer must see is a question.\n" +
 		"- **To explain a concept, make a tilasm** (the developer may say talisman): a folder with an `index.html` and its " +
@@ -161,7 +166,7 @@ func briefRules(iq planv1.InstallQuestions) string {
 		"`djinn plan sync <wish>` reads the azimas from the projects' plan files and writes their `after:` lines back; " +
 		"`djinn task list --wish-id <wish>`; `djinn task watch <task>`; " +
 		"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
-		"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task update <task>` edits what is given in place (not started: everything; running or paused: title only; finished: title, prompt, agent, azima; never its dependencies once it ran; alias `set-agent`); `djinn task done <task> --note " +
+		"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task update <task>` edits what is given in place (not started: everything; running or paused: title only; finished: title, prompt, agent, azima, integration (none clears it); never its dependencies once it ran; alias `set-agent`); `djinn task done <task> --note " +
 		"\"…\"` closes a task no worker runs (planned, cut short, failed, stopped, imported) once its work is done " +
 		"elsewhere.\n" +
 		"- `djinn wish route \"<request>\" --wish-id <wish> --ask`: where a request goes, asked to the developer on a " +

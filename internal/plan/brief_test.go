@@ -129,6 +129,11 @@ func TestBrief(t *testing.T) {
 		// An azima carries one clear goal, and new work finds its azima first.
 		"**An azima carries one clear goal**", "rephrase its goal (its plan file's Goal and its title",
 		"open a new azima only for a will no existing one carries",
+		// When Djinn misbehaves, the lead stops the damage alone and may revert a faulty merge.
+		"**When Djinn misbehaves, stop the damage.**",
+		"redirect the wish's integration to another branch, stop workers, withdraw useless questions",
+		"revert a faulty merge on the integration branch, telling the developer at once",
+		"every other commit on the integration branch waits for the developer's agreement, asked first (`djinn question ask`)",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the brief lacks %q:\n%s", want, text)

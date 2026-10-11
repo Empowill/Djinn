@@ -131,7 +131,7 @@ name, shared by the team, your own file winning: [team settings](team-settings.m
 | `commands`        | allow `Bash(<p> *)` and `PowerShell(<p> *)`                          | LISTED: `approvalPolicy: untrusted`, and Djinn accepts a command approval when the command is listed | LISTED: `command(<p>)` grants; AUTO: `command(*)`, every command |
 | `denied_commands` | deny `Bash(<p> *)` and `PowerShell(<p> *)`                           | LISTED: Djinn declines them. AUTO: **lost**, codex's reviewer decides                              | deny `command(<p>)` grants; AUTO adds `git push`   |
 | `network`         | allow, or deny, `WebFetch` and `WebSearch`                           | `networkAccess` of the sandbox policy; a command approval asking for the network is declined without it | not cut: no `--sandbox`, which would cut Djinn's own socket (`djinn gate`); the developer's choice, Q66 (agy 1.3.3, 2026-10-10) |
-| `mode`            | LISTED: `--permission-mode dontAsk`; AUTO: `--permission-mode auto`  | AUTO: `approvalPolicy: on-request`, `approvalsReviewer: auto_review`                              | AUTO: runs as `accept-edits`, with `command(*)` above |
+| `mode`            | LISTED: `--permission-mode dontAsk`; AUTO: `--permission-mode auto`  | AUTO: `approvalPolicy: on-request`, `approvalsReviewer: auto_review`                              | AUTO: runs as `accept-edits`, with `command(*)` above and `read_url(*)` (Q143) |
 
 What is verified and what is supposed:
 
@@ -168,7 +168,8 @@ What is verified and what is supposed:
   permission at launch, but `--project <id>` runs it in one of its projects, a JSON file in
   `~/.gemini/config/projects/`, whose `permissionGrants` it applies headless on top of the user's settings, untouched
   (see [Antigravity](#antigravity)). So Djinn writes one project of its own per worktree. In AUTO it grants
-  `command(*)`: any command runs, in the sandbox, but the denied ones (real runs, agy 1.3.3, 2026-10-10). **Lost:**
+  `command(*)` (any command runs, in the sandbox, but the denied ones) and `read_url(*)` (any URL fetched with
+  `read_url`, Decision Q143; real runs, agy 1.3.3, 2026-10-10). **Lost:**
   a review of what runs (agy has no auto mode: `command(*)` approves every command, where Claude's classifier reviews
   them); a deny grant is a prefix, so `sh -c "git push"` or `git -C . push` gets past it (as past Claude's rules), and
   only Djinn's environment then keeps the push from happening ([no worker pushes](#no-worker-pushes));
@@ -306,6 +307,19 @@ When an investigator cannot start, Djinn makes room:
 - **No free slot**: Djinn pauses the running work task of lowest priority (the last wish by rank, then the most recently started), starts the investigator, and resumes the paused task as soon as the investigator ends.
 - **Memory short**: A pause frees the slot and CPU but not the memory held by the stopped process. When memory blocks an investigator, Djinn interrupts the running work task of lowest priority so that it resumes later in its session or conversation (`plan.CanResume`), entering status `RESUMING` with the reason `"made room for Qxx: enlighten"`, without spending a resume attempt.
 - **Exclusions**: Djinn never preempts a task holding or waiting for a gate, never a correction or review worker, never a provider that cannot resume, and never pauses on Windows where process tree suspension is refused. At most one task is preempted per investigator. Each preemption records an event on both tasks and an entry in the journal (`harness/preempt`).
+
+### Operating load runtime adjustments
+
+When the operating load notch changes, Djinn immediately adjusts running workers without waiting for subsequent scheduler decisions:
+
+- **Priority at runtime (Q120 A)**: Every running worker's process tree is updated at once in both directions. On Linux/Unix, Djinn applies `setpriority` (`nice 10` for low priority, `nice 0` for normal) to all processes in the worker's process tree, and updates `cpu.weight` (10 for low, 100 for normal) on its systemd scope / cgroup when available. Child processes spawned subsequently inherit this priority. On Windows, `SetPriorityClass` dynamically switches process priority between `BELOW_NORMAL_PRIORITY_CLASS` (low) and `NORMAL_PRIORITY_CLASS` (normal).
+- **Worker count at runtime (Q121 A & Q123 A)**:
+  - When a notch change reduces capacity below the number of running workers, Djinn pauses the extra workers in the order of Q121 (Q117 reversed: last wish by rank, most recently started, descending task code). Djinn never pauses an investigator, a correction, a review, or a worker holding or waiting for a gate.
+  - When the notch is raised and capacity increases, Djinn resumes paused workers first in Q123 order (Q117's strict order: highest wish rank, earliest start time, ascending task code) before starting any newly planned tasks.
+  - *Windows limitation*: Windows cannot suspend processes (process tree pause is refused with `errNoPause`), so capacity reduction through process pausing is only supported on POSIX systems (Linux, macOS).
+- **Memory shortage for paused workers (Q122 A)**: A paused worker keeps its memory. If memory is short for a higher-priority worker that must start, Djinn interrupts the paused worker so that it can resume later in its session or conversation (`plan.CanResume`), entering `TASK_STATUS_RESUMING` with wait reason `"made room for <task>"` without spending a resume attempt. Djinn never interrupts a provider that cannot resume.
+- **Auto mode (Q124 C)**: In Auto mode, Djinn lowers priority and stops starting new workers when the machine is under pressure, but never pauses running workers (`Policy.Auto == true`).
+- **Events and journal**: Every pause, resume, or interruption triggered by the notch emits an event on the task (e.g. `"paused: operating load lowered to Minimal"`, `"resumed: operating load raised to Normal"`) and a line in the journal (`actorHarness`, procedure `harness/notch`).
 
 
 ## Watch: a command, no agent
@@ -525,9 +539,9 @@ permissions: id `djinn-<16 hex digits of the folder's SHA-256>`, the same for ev
 resumes a conversation in the project it began in; rewritten at each start, removed with the worktree. Its grants:
 `write_file` of the worker's folder and of Git's folders for it (the `.git` folder, or a linked worktree's folder in
 the repository and the repository's common `.git`, read from the `.git` and `commondir` files, without running
-git), `command(<p>)` for each listed command in LISTED, `command(*)` in AUTO, and deny `command(<p>)` for each denied one,
-with `git push` always denied in AUTO, since pushing is the orchestrator's (a first line: see
-[no worker pushes](#no-worker-pushes)).
+git), `command(<p>)` for each listed command in LISTED, `command(*)` and `read_url(*)` in AUTO (Decision Q143, A,
+11/10/2026), and deny `command(<p>)` for each denied one, with `git push` always denied in AUTO, since pushing is the
+orchestrator's (a first line: see [no worker pushes](#no-worker-pushes)).
 
 **Reads and denials (W254, W269, 2026-10-10).** By default headless agy cannot prompt for `read_file` outside the
 workspace, so reading Go's sources (`/usr/local/go/src/…`), caches, or external files failed. Djinn grants
@@ -570,7 +584,13 @@ and denying `command(git push)`, the user's settings untouched (`wc`, `echo`, `p
   file was made. `npm ci` ran in the sandbox from npm's cache (its package was there); a package missing from the
   cache would need the network, so a project whose workers install must allow it.
 
-**So today an agy worker in AUTO runs any command in its sandbox but the denied ones, `git push` always;** in
+**read_url in AUTO (Decision Q143, A, 11/10/2026).** In AUTO, an agy worker already reaches the internet through
+`curl` under `command(*)`, consistent with Q66. Without an explicit grant, agy 1.3.3 refused the `read_url` tool
+headless with "Do not attempt to circumvent this denial ... curl" (W371), after which the worker fetched the same
+page by curl and Python, which its rights allowed. Djinn grants `read_url(*)` in AUTO next to `command(*)`,
+keeping deny `command(git push)`.
+
+**So today an agy worker in AUTO runs any command in its sandbox but the denied ones, `git push` always, and may read any URL (`read_url(*)`, Q143);** in
 LISTED, a command neither listed nor allowed by the user's own agy settings is still denied, and ends its turn:
 list what its tasks run, `git add` and `git commit` among them. Whether Djinn should pass
 `--dangerously-skip-permissions` is an open question (Q43).

@@ -15,8 +15,13 @@ interface LoadData {
   workerMemoryBytes: bigint;
   memoryTotalBytes: bigint;
   memoryAvailableBytes: bigint;
+  workerForecastBytes: bigint;
+  bindingResource: string;
+  cpuSlots: number;
+  memorySlots: number;
   baseSlots: number;
   runningWorkers: number;
+  pausedWorkers: number;
 }
 
 class LoadManager {
@@ -28,8 +33,13 @@ class LoadManager {
     workerMemoryBytes: 0n,
     memoryTotalBytes: 0n,
     memoryAvailableBytes: 0n,
+    workerForecastBytes: 0n,
+    bindingResource: "cpu",
+    cpuSlots: 1,
+    memorySlots: 1,
     baseSlots: 1,
     runningWorkers: 0,
+    pausedWorkers: 0,
   };
   private previewNotch: LoadNotch | null = null;
   private listeners = new Set<() => void>();
@@ -62,6 +72,11 @@ class LoadManager {
     if (this.listeners.size > 0) {
       this.restart();
     }
+  }
+
+  setSnapshot(partial: Partial<LoadData>) {
+    this.data = { ...this.data, ...partial };
+    this.notify();
   }
 
   getSnapshot = (): LoadData => this.data;
@@ -116,8 +131,17 @@ class LoadManager {
           const chosenNotch = res.chosenNotch || this.data.chosenNotch || notch;
           const baseSlots = res.baseSlots || this.data.baseSlots;
           const runningWorkers = res.runningWorkers ?? this.data.runningWorkers;
+          const pausedWorkers = res.pausedWorkers ?? this.data.pausedWorkers;
           const memoryTotalBytes =
             res.memoryTotalBytes || this.data.memoryTotalBytes;
+          const memoryAvailableBytes =
+            res.memoryAvailableBytes || this.data.memoryAvailableBytes;
+          const workerForecastBytes =
+            res.workerForecastBytes || this.data.workerForecastBytes;
+          const bindingResource =
+            res.bindingResource || this.data.bindingResource;
+          const cpuSlots = res.cpuSlots || this.data.cpuSlots;
+          const memorySlots = res.memorySlots || this.data.memorySlots;
           this.data = {
             ...this.data,
             notch,
@@ -125,7 +149,13 @@ class LoadManager {
             chosenNotch,
             baseSlots,
             runningWorkers,
+            pausedWorkers,
             memoryTotalBytes,
+            memoryAvailableBytes,
+            workerForecastBytes,
+            bindingResource,
+            cpuSlots,
+            memorySlots,
           };
           this.notify();
         })
@@ -143,8 +173,14 @@ class LoadManager {
           workerMemoryBytes: res.workerMemoryBytes,
           memoryTotalBytes: res.memoryTotalBytes,
           memoryAvailableBytes: res.memoryAvailableBytes,
+          workerForecastBytes:
+            res.workerForecastBytes || this.data.workerForecastBytes,
+          bindingResource: res.bindingResource || this.data.bindingResource,
+          cpuSlots: res.cpuSlots || this.data.cpuSlots,
+          memorySlots: res.memorySlots || this.data.memorySlots,
           baseSlots: res.baseSlots || this.data.baseSlots,
           runningWorkers: res.runningWorkers ?? this.data.runningWorkers,
+          pausedWorkers: res.pausedWorkers ?? this.data.pausedWorkers,
         };
         this.notify();
       });
@@ -165,8 +201,14 @@ class LoadManager {
               workerMemoryBytes: res.workerMemoryBytes,
               memoryTotalBytes: res.memoryTotalBytes,
               memoryAvailableBytes: res.memoryAvailableBytes,
+              workerForecastBytes:
+                res.workerForecastBytes || this.data.workerForecastBytes,
+              bindingResource: res.bindingResource || this.data.bindingResource,
+              cpuSlots: res.cpuSlots || this.data.cpuSlots,
+              memorySlots: res.memorySlots || this.data.memorySlots,
               baseSlots: res.baseSlots || this.data.baseSlots,
               runningWorkers: res.runningWorkers ?? this.data.runningWorkers,
+              pausedWorkers: res.pausedWorkers ?? this.data.pausedWorkers,
             };
             this.notify();
           }
@@ -299,13 +341,22 @@ function computeWorkers(notch: LoadNotch, baseSlots: number): number {
   return Math.max(1, Math.round(share * (baseSlots || 1)));
 }
 
-const WORKER_MARGIN = 512n * 1024n * 1024n; // 512 MiB
+const MEMORY_RESERVE = 2n * 1024n * 1024n * 1024n; // 2 GiB
 
-function computeEngagedLimit(notch: LoadNotch, total: bigint): bigint {
-  if (total <= WORKER_MARGIN) return 0n;
+function computeEngagedLimit(
+  notch: LoadNotch,
+  availableBytes: bigint,
+  totalBytes: bigint,
+): bigint {
+  const ref = availableBytes > 0n ? availableBytes : totalBytes;
+  if (ref <= MEMORY_RESERVE) return 0n;
+  const usable = ref - MEMORY_RESERVE;
   const share = notchShare(notch);
-  const ruleMemory = Number(total - WORKER_MARGIN);
-  return BigInt(Math.round(ruleMemory * share));
+  let limit = BigInt(Math.round(Number(usable) * share));
+  if (limit > ref) {
+    limit = ref;
+  }
+  return limit;
 }
 
 function notchTooltip(
@@ -406,11 +457,63 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
   const displayNotch = preview ?? activeNotch;
   const sliderIndex = Math.max(0, NOTCHES.indexOf(displayNotch));
   const chosen = data.chosenNotch || LoadNotch.MEDIUM;
+  const allowedWorkers = computeWorkers(displayNotch, data.baseSlots);
+
+  const valuetext = data.auto
+    ? t("load.aria_valuetext", {
+        notch: t("load.effective", { notch: notchLabel(data.notch) }),
+        pct: Math.round(notchShare(data.notch) * 100),
+        count: allowedWorkers,
+      })
+    : t("load.aria_valuetext", {
+        notch: notchLabel(displayNotch),
+        pct: Math.round(notchShare(displayNotch) * 100),
+        count: allowedWorkers,
+      });
+
+  const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement)?.tagName === "BUTTON") return;
+    const rect = e.currentTarget?.getBoundingClientRect?.() ?? {
+      left: 0,
+      width: 0,
+    };
+    if (rect.width <= 0) return;
+    const ratio = Math.max(
+      0,
+      Math.min(1, (e.clientX - rect.left) / rect.width),
+    );
+    const idx = Math.min(4, Math.max(0, Math.round(ratio * 4)));
+    loadManager.setPreviewNotch(null);
+    void loadManager.setNotch(NOTCHES[idx] ?? LoadNotch.MEDIUM);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    let nextIdx: number;
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      nextIdx = Math.min(4, sliderIndex + 1);
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      nextIdx = Math.max(0, sliderIndex - 1);
+    } else if (e.key === "Home") {
+      nextIdx = 0;
+    } else if (e.key === "End") {
+      nextIdx = 4;
+    } else {
+      return;
+    }
+    e.preventDefault();
+    loadManager.setPreviewNotch(null);
+    void loadManager.setNotch(NOTCHES[nextIdx] ?? LoadNotch.MEDIUM);
+  };
 
   return (
-    <div className="operating-load-slider" data-notch={notchSlug(displayNotch)}>
+    <div
+      className="operating-load-slider"
+      data-notch={notchSlug(displayNotch)}
+      onClick={handleTrackClick}
+    >
       <input
         type="range"
+        role="slider"
         min={1}
         max={5}
         step={1}
@@ -424,13 +527,13 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
           loadManager.setPreviewNotch(null);
           void loadManager.setNotch(NOTCHES[idx] ?? LoadNotch.MEDIUM);
         }}
+        onKeyDown={handleKeyDown}
         onBlur={() => loadManager.setPreviewNotch(null)}
         aria-label={t("load.label")}
-        aria-valuetext={
-          data.auto
-            ? t("load.effective", { notch: notchLabel(data.notch) })
-            : notchLabel(displayNotch)
-        }
+        aria-valuemin={1}
+        aria-valuemax={5}
+        aria-valuenow={sliderIndex + 1}
+        aria-valuetext={valuetext}
         title={
           data.auto
             ? notchTooltip(LoadNotch.AUTO, data.baseSlots, chosen)
@@ -448,7 +551,8 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
             className={`operating-load-notch ${!data.auto && activeNotch === n ? "active" : ""}`}
             onMouseEnter={() => loadManager.setPreviewNotch(n)}
             onMouseLeave={() => loadManager.setPreviewNotch(null)}
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               loadManager.setPreviewNotch(null);
               void loadManager.setNotch(n);
             }}
@@ -509,12 +613,17 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
 
   const displayNotch = preview ?? data.notch;
   const allowedWorkers = computeWorkers(displayNotch, data.baseSlots);
-  const limitMemory = computeEngagedLimit(displayNotch, data.memoryTotalBytes);
+  const limitMemory = computeEngagedLimit(
+    displayNotch,
+    data.memoryAvailableBytes,
+    data.memoryTotalBytes,
+  );
 
   const animatedWorkers = useAnimatedNumber(allowedWorkers, 300);
   const animatedEngaged = useAnimatedBigInt(limitMemory, 300);
 
-  if (data.memoryTotalBytes === 0n) return null;
+  if (data.memoryTotalBytes === 0n && data.memoryAvailableBytes === 0n)
+    return null;
 
   const priorityText = notchLowPriority(displayNotch)
     ? t("load.priority_low")
@@ -533,7 +642,11 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
     Math.max(0, Math.round((data.runningWorkers / maxPossibleWorkers) * 100)),
   );
 
-  const maxScaleBytes = (data.memoryTotalBytes * 3n) / 2n;
+  const refMem =
+    data.memoryAvailableBytes > 0n
+      ? data.memoryAvailableBytes
+      : data.memoryTotalBytes;
+  const maxScaleBytes = (refMem * 3n) / 2n;
   const memLimitPct =
     maxScaleBytes > 0n
       ? Math.min(100, Number((limitMemory * 100n) / maxScaleBytes))
@@ -543,6 +656,21 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
       ? Math.min(100, Number((data.workerMemoryBytes * 100n) / maxScaleBytes))
       : 0;
 
+  const forecastBytes =
+    data.workerForecastBytes > 0n
+      ? data.workerForecastBytes
+      : 1536n * 1024n * 1024n; // 1.5 GiB default
+
+  const isMemoryBound =
+    data.bindingResource === "memory" ||
+    (data.memorySlots > 0 &&
+      data.cpuSlots > 0 &&
+      data.memorySlots < data.cpuSlots);
+
+  const bindingKey = isMemoryBound
+    ? "load.limited_by_memory"
+    : "load.limited_by_cpu";
+
   return (
     <div
       className="operating-load-forecast operating-load-memory"
@@ -550,16 +678,28 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
       role="status"
       aria-live="polite"
     >
+      <div className="operating-load-forecast-binding">
+        {t(bindingKey, {
+          count: Math.round(animatedWorkers),
+          forecast: memory(forecastBytes),
+        })}
+      </div>
       <div className="operating-load-forecast-row">
         <span className="operating-load-forecast-label">
           {t("load.forecast_cpu", {
             workers: Math.round(animatedWorkers),
             priority: priorityText,
           })}
+          {data.pausedWorkers > 0 && (
+            <span className="operating-load-forecast-paused">
+              {" · "}
+              {t("load.forecast_paused", { count: data.pausedWorkers })}
+            </span>
+          )}
         </span>
         <div
           className="operating-load-bar"
-          title={`CPU: ${data.runningWorkers} / ${allowedWorkers}`}
+          title={`CPU: ${data.runningWorkers} / ${allowedWorkers}${data.pausedWorkers > 0 ? ` (${data.pausedWorkers} paused)` : ""}`}
         >
           <div
             className="operating-load-bar-limit"
@@ -575,7 +715,7 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
         <span className="operating-load-forecast-label">
           {t("load.forecast_memory", {
             engaged: memory(animatedEngaged),
-            total: memory(data.memoryTotalBytes),
+            total: memory(refMem),
             used: memory(data.workerMemoryBytes),
           })}
         </span>
@@ -618,3 +758,16 @@ export const OperatingLoad = React.memo(function OperatingLoad() {
     </div>
   );
 });
+
+export {
+  OperatingLoadSlider,
+  OperatingLoadAuto,
+  OperatingLoadForecast,
+  loadManager,
+  NOTCHES,
+  notchLabel,
+  notchSlug,
+  notchShare,
+  computeWorkers,
+  computeEngagedLimit,
+};

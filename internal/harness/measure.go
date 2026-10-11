@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
@@ -145,7 +146,9 @@ func (h *Harness) Uses() []*machinev1.WorkerUse {
 	var out []*machinev1.WorkerUse
 	for _, r := range h.runs {
 		if r.use != nil {
-			out = append(out, r.use)
+			u := proto.CloneOf(r.use)
+			u.Paused = r.paused
+			out = append(out, u)
 		}
 	}
 	h.mu.Unlock()
@@ -180,6 +183,21 @@ func (h *Harness) WorkerMemory(ctx context.Context, p machine.Policy) (engaged, 
 	h.mu.Unlock()
 	engaged, actual = dispatch.WorkerMemory(tasks, p)
 	return engaged, actual, nil
+}
+
+// WorkerForecast returns the typical forecast peak memory per worker across providers in use,
+// or p.WorkerForecast() if none is measured.
+func (h *Harness) WorkerForecast() uint64 {
+	p := h.Policy()
+	if h.store == nil {
+		return p.WorkerForecast()
+	}
+	ctx := context.Background()
+	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
+	if err != nil || len(tasks) == 0 {
+		return p.WorkerForecast()
+	}
+	return dispatch.TypicalForecast(tasks, p)
 }
 
 const maxWorkerSamples = 1440 // 120 minutes at 5s intervals
@@ -244,7 +262,7 @@ func (h *Harness) RunsSeries(cutoff time.Time, gateIntervals []*machinev1.GateIn
 
 	var out []*machinev1.WorkerSeries
 	for _, r := range h.runs {
-		if r.paused || r.light {
+		if r.light {
 			continue
 		}
 		t := r.task
@@ -281,6 +299,7 @@ func (h *Harness) RunsSeries(cutoff time.Time, gateIntervals []*machinev1.GateIn
 			Gates:           intervalsByTask[t.GetId()],
 			PeakMemoryBytes: peakMem,
 			PeakCpuPercent:  peakCPU,
+			Paused:          r.paused,
 		}
 		out = append(out, ws)
 	}

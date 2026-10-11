@@ -28,8 +28,10 @@ type turnEnd struct {
 	// queued is how many messages the agent still holds for later turns, when it says so; nil when it does not.
 	// A message sent during a turn may be folded into that turn, and then gets no result of its own.
 	queued *int
-	// retry is a message Djinn immediately sends on the agent's input to continue the conversation, when not empty.
+	// retry is a message Djinn sends on the agent's input to continue the conversation, when not empty (after backoff, when set).
 	retry string
+	// backoff is how long to wait before sending retry, when not 0.
+	backoff time.Duration
 }
 
 // Quiet is how long a worker that has messages without a result, after a result that did not say how many it
@@ -53,7 +55,7 @@ func startStream(ctx context.Context, spec Spec, command string, args []string, 
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}
-	w := &streamWorker{a: a, p: p, events: make(chan Event, 64), done: make(chan struct{})}
+	w := &streamWorker{ctx: ctx, a: a, p: p, events: make(chan Event, 64), done: make(chan struct{})}
 	go w.read()
 	if err := w.Send(spec.Prompt); err != nil {
 		p.Stop()
@@ -75,6 +77,7 @@ func startStream(ctx context.Context, spec Spec, command string, args []string, 
 }
 
 type streamWorker struct {
+	ctx    context.Context
 	a      streamAgent
 	p      *process
 	events chan Event
@@ -98,8 +101,9 @@ func (w *streamWorker) PID() int { return w.p.cmd.Process.Pid }
 // Cgroup is the cgroup of the agent's scope.
 func (w *streamWorker) Cgroup() string { return w.p.cgroup }
 
-func (w *streamWorker) Pause() error  { return w.p.Pause() }
-func (w *streamWorker) Resume() error { return w.p.Resume() }
+func (w *streamWorker) Pause() error               { return w.p.Pause() }
+func (w *streamWorker) Resume() error              { return w.p.Resume() }
+func (w *streamWorker) SetPriority(low bool) error { return w.p.SetPriority(low) }
 
 func (w *streamWorker) Stop() {
 	w.stopped.Store(true)
@@ -203,10 +207,21 @@ lines:
 			w.pending--
 		}
 		if end.retry != "" && !w.closed {
-			if b, err := w.a.encode(end.retry); err == nil {
-				if _, err := w.p.stdin.Write(append(b, '\n')); err == nil {
-					w.pending++
-					lastError = ""
+			if end.backoff > 0 {
+				w.mu.Unlock()
+				select {
+				case <-time.After(end.backoff):
+				case <-w.p.done:
+				case <-w.ctx.Done():
+				}
+				w.mu.Lock()
+			}
+			if !w.closed {
+				if b, err := w.a.encode(end.retry); err == nil {
+					if _, err := w.p.stdin.Write(append(b, '\n')); err == nil {
+						w.pending++
+						lastError = ""
+					}
 				}
 			}
 		}

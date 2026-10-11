@@ -102,7 +102,13 @@ func (a Antigravity) Start(ctx context.Context, spec Spec) (Worker, error) {
 			return nil, err
 		}
 	}
-	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: &agyParser{}, encode: agyMessageLine})
+	isWorkDone := spec.IsWorkDone
+	if isWorkDone == nil && spec.Dir != "" && spec.StartHead != "" {
+		isWorkDone = func() bool {
+			return agyWorkDone(ctx, spec.Dir, spec.StartHead, spec.Branch)
+		}
+	}
+	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: &agyParser{isWorkDone: isWorkDone}, encode: agyMessageLine})
 }
 
 // agyMessageLine is a user message as agy reads it in stream-json.
@@ -144,6 +150,9 @@ type agyGrants struct {
 // agyEveryCommand is the grant of every command: in AUTO, agy runs any command but the denied ones, as Claude does,
 // agy having no auto mode of its own.
 const agyEveryCommand = "command(*)"
+
+// agyEveryURL grants fetching any URL with read_url in AUTO (Q143).
+const agyEveryURL = "read_url(*)"
 
 // agyAlwaysDenied are denied to an agy worker in AUTO whatever the project denies: pushing is the orchestrator's.
 var agyAlwaysDenied = []string{"git push"}
@@ -252,6 +261,7 @@ func djinnDenials(dir string, keepPaths []string) []string {
 // A command(<p>) grant lets a command starting with p run without approval, command(*) any command, in the sandbox
 // still; a deny grant wins over any allow one, the user's settings' and command(*) included, in every part of a
 // compound command (`a && git push`) and after an env prefix, and its command fails without ending the turn.
+// In AUTO, command(*) grants every command and read_url(*) grants fetching any URL without approval (Q143).
 //
 // For reading, agy headless requires explicit read_file grants (W254, W269). Djinn grants read_file on what a
 // worker needs to read: the repository (main checkout and .git), Go's root, module and build caches, npm's cache,
@@ -330,7 +340,7 @@ func agyProject(spec Spec) agyProjectFile {
 
 	denied := slices.Clone(p.GetDeniedCommands())
 	if effectiveMode(p) == djinnv1.Mode_MODE_AUTO {
-		g.Allow = appendUnique(g.Allow, agyEveryCommand)
+		g.Allow = appendUnique(g.Allow, agyEveryCommand, agyEveryURL)
 		for _, c := range agyAlwaysDenied {
 			if !slices.Contains(denied, c) {
 				denied = append(denied, c)
@@ -546,6 +556,24 @@ type agyUsage struct {
 // agyContinuePrompt is what Djinn says when agy ended its turn on one of its own model retry prompts.
 const agyContinuePrompt = "continue where you stopped, keep answers and edits short"
 
+const (
+	agyMaxRetryPromptContinuations = 3
+	agyMaxTransientContinuations   = 4
+)
+
+var agyTransientBackoff = 500 * time.Millisecond
+
+func transientBackoff(attempt int) time.Duration {
+	if agyTransientBackoff <= 0 {
+		return 0
+	}
+	factor := 1 << (attempt - 1)
+	if factor < 1 {
+		factor = 1
+	}
+	return agyTransientBackoff * time.Duration(factor)
+}
+
 // extractAgyError extracts an error message string from agy error JSON payloads, handling strings or nested objects.
 func extractAgyError(raw json.RawMessage, fallback string) string {
 	if len(raw) > 0 {
@@ -573,6 +601,32 @@ func extractAgyError(raw json.RawMessage, fallback string) string {
 	return fallback
 }
 
+var re5xx = regexp.MustCompile(`\b5\d{2}\b`)
+
+// isAgyTransientNetworkError reports whether text is a transient network error from agy or its API.
+func isAgyTransientNetworkError(text string) bool {
+	lower := strings.ToLower(text)
+	switch {
+	case strings.Contains(lower, "stream was interrupted") || strings.Contains(lower, "stream interrupted") ||
+		strings.Contains(lower, "stream error") || strings.Contains(lower, "stream closed"):
+		return true
+	case strings.Contains(lower, "connection reset"):
+		return true
+	case strings.Contains(lower, "broken pipe"):
+		return true
+	case strings.Contains(lower, "connection refused"):
+		return true
+	case strings.Contains(lower, "unexpected eof"):
+		return true
+	case strings.Contains(lower, "deadline exceeded") || strings.Contains(lower, "timed out") || strings.Contains(lower, "timeout"):
+		return true
+	case strings.Contains(lower, "5xx") || re5xx.MatchString(lower):
+		return true
+	default:
+		return false
+	}
+}
+
 // isAgyRetryPrompt says whether text is one of agy's own retry prompts to its model (malformed
 // function call, output token limit, or transient model retry error) rather than the agent's final answer.
 func isAgyRetryPrompt(text string) bool {
@@ -595,6 +649,44 @@ func isAgyRetryPrompt(text string) bool {
 	}
 }
 
+// agyWorkDone reports whether the worktree at dir is clean and branch has commits since startHead.
+func agyWorkDone(ctx context.Context, dir, startHead, branch string) bool {
+	if dir == "" || startHead == "" {
+		return false
+	}
+	uncomm, err := uncommittedDir(ctx, dir)
+	if err != nil || len(uncomm) > 0 {
+		return false
+	}
+	curHead, err := git(ctx, dir, "rev-parse", "HEAD")
+	if err != nil || curHead == "" {
+		return false
+	}
+	curHead = strings.TrimSpace(curHead)
+	if curHead == startHead {
+		return false
+	}
+	if _, err := git(ctx, dir, "merge-base", "--is-ancestor", startHead, curHead); err != nil {
+		return false
+	}
+	countStr, err := git(ctx, dir, "rev-list", "--count", startHead+".."+curHead)
+	if err != nil {
+		return false
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(countStr))
+	if err != nil || count <= 0 {
+		return false
+	}
+	if branch != "" {
+		if branchHead, err := git(ctx, dir, "rev-parse", "--verify", "refs/heads/"+branch); err == nil {
+			if strings.TrimSpace(branchHead) != curHead {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // agyParser reads agy's stream-json. The agent's text comes in deltas: it is gathered per step, and said once
 // the step is done.
 type agyParser struct {
@@ -614,19 +706,45 @@ type agyParser struct {
 	lastAnswered bool
 	denied       string // the permission named by the denial notice on the error output, when one came
 	failed       bool   // a result said the turn failed: the notice adds nothing
+
+	answered      bool        // the agent completed an agent_response step with non-empty text, and no tool started since
+	closingFailed bool        // closing call failed after work was done; suppress error failure
+	isWorkDone    func() bool // reports whether clean work has been committed since task start
 }
 
-func (p *agyParser) retryOrEnd(events *lineEvents, convID, retryText string) *turnEnd {
+func (p *agyParser) canFinishNow() bool {
+	return p.answered && len(p.toolsIn) == 0 && p.isWorkDone != nil && p.isWorkDone()
+}
+
+func (p *agyParser) finishClosingError(events *lineEvents, why string) *turnEnd {
+	p.turnEnded = true
+	p.closingFailed = true
+	*events = append(*events, p.cut()...)
+	events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "closing call failed: "+why)
+	return &turnEnd{}
+}
+
+func (p *agyParser) retryOrEnd(events *lineEvents, convID, retryText string, isTransient bool) *turnEnd {
 	if p.turnEnded {
 		return nil
 	}
 	p.turnEnded = true
-	if p.retries < 3 {
+	p.answered = false
+	maxRetries := agyMaxRetryPromptContinuations
+	if isTransient {
+		maxRetries = agyMaxTransientContinuations
+	}
+	if p.retries < maxRetries {
 		p.retries++
 		p.turnRetried = true
-		ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "continued: "+agyContinuePrompt)
+		statusText := fmt.Sprintf("continued: %s (attempt %d of %d)", agyContinuePrompt, p.retries, maxRetries)
+		ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, statusText)
 		ev.SessionID = convID
-		return &turnEnd{retry: agyContinuePrompt}
+		var backoff time.Duration
+		if isTransient {
+			backoff = transientBackoff(p.retries)
+		}
+		return &turnEnd{retry: agyContinuePrompt, backoff: backoff}
 	}
 	p.failed = true
 	events.add(planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, retryText)
@@ -634,14 +752,27 @@ func (p *agyParser) retryOrEnd(events *lineEvents, convID, retryText string) *tu
 }
 
 func (p *agyParser) errorEvent(events *lineEvents, m *agyLine) *turnEnd {
+	if p.closingFailed {
+		return nil
+	}
 	convID := m.ConversationID
 	if convID == "" {
 		convID = p.sessionID
 	}
 	errText := extractAgyError(m.Error, extractAgyError(m.Message, ""))
+	if errText == "" {
+		errText = "agy error"
+	}
+	if p.canFinishNow() {
+		return p.finishClosingError(events, errText)
+	}
 	if isAgyRetryPrompt(errText) {
 		*events = append(*events, p.cut()...)
-		return p.retryOrEnd(events, convID, errText)
+		return p.retryOrEnd(events, convID, errText, false)
+	}
+	if isAgyTransientNetworkError(errText) {
+		*events = append(*events, p.cut()...)
+		return p.retryOrEnd(events, convID, errText, true)
 	}
 	if p.turnEnded {
 		return nil
@@ -649,9 +780,6 @@ func (p *agyParser) errorEvent(events *lineEvents, m *agyLine) *turnEnd {
 	p.turnEnded = true
 	p.failed = true
 	*events = append(*events, p.cut()...)
-	if errText == "" {
-		errText = "agy error"
-	}
 	events.add(planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, errText)
 	return &turnEnd{failure: errText}
 }
@@ -693,6 +821,9 @@ func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
 
 // step reads a step update, and says whether Djinn knows its kind: a known step may say nothing yet.
 func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
+	if p.closingFailed {
+		return false, nil
+	}
 	if s.ConversationID != "" {
 		p.sessionID = s.ConversationID
 	}
@@ -702,20 +833,34 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 	}
 	if s.StepType == "user_input" {
 		p.turnEnded = false
+		p.answered = false
 	}
 	stepErr := extractAgyError(s.Error, extractAgyError(s.Message, ""))
 	if s.ToolInfo != nil && s.ToolInfo.Error != nil && stepErr == "" {
 		stepErr = s.ToolInfo.Error.Message
 	}
-	if isAgyRetryPrompt(stepErr) {
+	if stepErr != "" {
 		convID := s.ConversationID
 		if convID == "" {
 			convID = p.sessionID
 		}
-		delete(p.toolsIn, s.StepIndex)
-		p.forget(s.StepIndex)
-		*events = append(*events, p.cut()...)
-		return true, p.retryOrEnd(events, convID, stepErr)
+		if p.canFinishNow() {
+			delete(p.toolsIn, s.StepIndex)
+			p.forget(s.StepIndex)
+			return true, p.finishClosingError(events, stepErr)
+		}
+		if isAgyRetryPrompt(stepErr) {
+			delete(p.toolsIn, s.StepIndex)
+			p.forget(s.StepIndex)
+			*events = append(*events, p.cut()...)
+			return true, p.retryOrEnd(events, convID, stepErr, false)
+		}
+		if s.StepType != "tool" && isAgyTransientNetworkError(stepErr) {
+			delete(p.toolsIn, s.StepIndex)
+			p.forget(s.StepIndex)
+			*events = append(*events, p.cut()...)
+			return true, p.retryOrEnd(events, convID, stepErr, true)
+		}
 	}
 	switch s.StepType {
 	case "user_input", "checkpoint", "system_message":
@@ -734,10 +879,12 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 		if s.State == "DONE" {
 			if text := b.String(); strings.TrimSpace(text) != "" {
 				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, strings.TrimRight(text, "\n"))
+				p.answered = true
 			}
 			p.forget(s.StepIndex)
 		}
 	case "tool":
+		p.answered = false
 		name, params, output, failure := s.ToolName, json.RawMessage(nil), (*string)(nil), ""
 		if ti := s.ToolInfo; ti != nil {
 			if ti.Name != "" {
@@ -784,6 +931,9 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 }
 
 func (p *agyParser) result(events *lineEvents, r *agyResult) *turnEnd {
+	if p.closingFailed {
+		return nil
+	}
 	convID := r.ConversationID
 	if convID == "" {
 		convID = p.sessionID
@@ -797,9 +947,21 @@ func (p *agyParser) result(events *lineEvents, r *agyResult) *turnEnd {
 	}
 	var end *turnEnd
 	if !p.turnEnded {
-		if retryText != "" {
-			end = p.retryOrEnd(events, convID, retryText)
-		} else {
+		errText := r.Error
+		if errText == "" {
+			errText = retryText
+		}
+		switch {
+		case p.canFinishNow() && (r.Status != "SUCCESS" || errText != "" || isAgyTransientNetworkError(errText)):
+			if errText == "" {
+				errText = "agy ended its turn with status " + r.Status
+			}
+			end = p.finishClosingError(events, errText)
+		case retryText != "":
+			end = p.retryOrEnd(events, convID, retryText, false)
+		case isAgyTransientNetworkError(r.Error):
+			end = p.retryOrEnd(events, convID, r.Error, true)
+		default:
 			p.turnEnded = true
 			end = &turnEnd{}
 			switch {
@@ -851,6 +1013,9 @@ func (p *agyParser) forget(step int) {
 // apart.
 func (p *agyParser) flush() []Event {
 	events := p.cut()
+	if p.closingFailed {
+		return events
+	}
 	if p.denied != "" && !p.failed {
 		p.failed = true
 		events = append(events, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: p.deniedReason([]string{p.denied})})
@@ -899,6 +1064,9 @@ const agyDenyRule = "deny rule"
 var agyDeniedPermission = regexp.MustCompile(`required the "([^"]+)" permission`)
 
 func (p *agyParser) stderr(raw string) []Event {
+	if p.closingFailed {
+		return nil
+	}
 	switch {
 	case strings.HasPrefix(raw, agyErrorPrefix):
 		text := strings.TrimSpace(strings.TrimPrefix(raw, agyErrorPrefix))
@@ -915,6 +1083,11 @@ func (p *agyParser) stderr(raw string) []Event {
 			if e.Retryable != nil && *e.Retryable {
 				text += ", retryable"
 			}
+		}
+		if p.canFinishNow() {
+			p.turnEnded = true
+			p.closingFailed = true
+			return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "closing call failed: " + text, Raw: raw}}
 		}
 		return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: text, Raw: raw}}
 	case strings.Contains(raw, agyDenied):

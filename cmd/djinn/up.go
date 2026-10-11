@@ -324,6 +324,8 @@ func runUp(args []string) (restart bool, err error) {
 			broadcastLoad(n)
 		}
 	}, workers.WorkerMemory, machine.WithLoadRunningWorkers(workers.Running),
+		machine.WithLoadPausedWorkers(workers.Paused),
+		machine.WithLoadWorkerForecast(workers.WorkerForecast),
 		machine.WithLoadStreamer(func(stream func(context.Context, func(*djinnv1.LoadServiceWatchResponse) error) error) {
 			uiSvc.WatchLoad = stream
 		}),

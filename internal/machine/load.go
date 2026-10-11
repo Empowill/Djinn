@@ -90,6 +90,20 @@ func WithLoadRunningWorkers(running func() int) LoadOption {
 	}
 }
 
+// WithLoadPausedWorkers sets a function returning the count of currently paused workers.
+func WithLoadPausedWorkers(paused func() int) LoadOption {
+	return func(s *loadService) {
+		s.pausedWorkers = paused
+	}
+}
+
+// WithLoadWorkerForecast sets a function returning the measured forecast per worker in bytes.
+func WithLoadWorkerForecast(forecast func() uint64) LoadOption {
+	return func(s *loadService) {
+		s.workerForecast = forecast
+	}
+}
+
 // WithLoadAutoController sets a custom AutoController on the load service.
 func WithLoadAutoController(ac *AutoController) LoadOption {
 	return func(s *loadService) {
@@ -215,6 +229,8 @@ type loadService struct {
 	broadcast      func(djinnv1.LoadNotch)
 	workerMemory   WorkerMemoryFunc
 	runningWorkers func() int
+	pausedWorkers  func() int
+	workerForecast func() uint64
 
 	auto         *AutoController
 	clock        func() time.Time
@@ -251,6 +267,9 @@ func (s *loadService) Tick() (bool, djinnv1.LoadNotch) {
 
 func (s *loadService) applyNotch(effective djinnv1.LoadNotch) {
 	p := NotchPolicy(effective)
+	if s.auto != nil && s.auto.IsAuto() {
+		p.Auto = true
+	}
 	if s.monitor != nil {
 		// Preserve any runtime overrides from flags (Workers, WorkerMemory).
 		current := s.monitor.Policy()
@@ -295,10 +314,25 @@ func (s *loadService) snapshot(ctx context.Context) *djinnv1.LoadServiceWatchRes
 	var policy Policy
 	if s.monitor != nil {
 		policy = s.monitor.Policy()
+		snap := s.monitor.Snapshot()
+		forecast := policy.WorkerForecast()
+		if s.workerForecast != nil {
+			if f := s.workerForecast(); f > 0 {
+				forecast = f
+			}
+		}
+		cpuSlots := policy.CPUSlots(snap)
+		memSlots := policy.MemorySlots(snap, forecast)
+		binding := policy.BindingResource(snap, forecast)
+		baseSlots := min(cpuSlots, memSlots)
+
 		resp.MemoryTotalBytes = s.monitor.Total()
 		resp.MemoryAvailableBytes = s.monitor.Available()
-		base, _ := policy.BaseSlots(s.monitor.Snapshot())
-		resp.BaseSlots = int32(base)
+		resp.WorkerForecastBytes = forecast
+		resp.BindingResource = binding
+		resp.CpuSlots = int32(cpuSlots)
+		resp.MemorySlots = int32(memSlots)
+		resp.BaseSlots = int32(baseSlots)
 	}
 	if s.workerMemory != nil {
 		engaged, actual, err := s.workerMemory(ctx, policy)
@@ -309,6 +343,9 @@ func (s *loadService) snapshot(ctx context.Context) *djinnv1.LoadServiceWatchRes
 	}
 	if s.runningWorkers != nil {
 		resp.RunningWorkers = int32(s.runningWorkers())
+	}
+	if s.pausedWorkers != nil {
+		resp.PausedWorkers = int32(s.pausedWorkers())
 	}
 	return resp
 }
@@ -335,12 +372,32 @@ func (s *loadService) Get(
 		ChosenNotch: chosen,
 	}
 	if s.monitor != nil {
+		policy := s.monitor.Policy()
+		snap := s.monitor.Snapshot()
+		forecast := policy.WorkerForecast()
+		if s.workerForecast != nil {
+			if f := s.workerForecast(); f > 0 {
+				forecast = f
+			}
+		}
+		cpuSlots := policy.CPUSlots(snap)
+		memSlots := policy.MemorySlots(snap, forecast)
+		binding := policy.BindingResource(snap, forecast)
+		baseSlots := min(cpuSlots, memSlots)
+
 		resp.MemoryTotalBytes = s.monitor.Total()
-		base, _ := s.monitor.Policy().BaseSlots(s.monitor.Snapshot())
-		resp.BaseSlots = int32(base)
+		resp.MemoryAvailableBytes = s.monitor.Available()
+		resp.WorkerForecastBytes = forecast
+		resp.BindingResource = binding
+		resp.CpuSlots = int32(cpuSlots)
+		resp.MemorySlots = int32(memSlots)
+		resp.BaseSlots = int32(baseSlots)
 	}
 	if s.runningWorkers != nil {
 		resp.RunningWorkers = int32(s.runningWorkers())
+	}
+	if s.pausedWorkers != nil {
+		resp.PausedWorkers = int32(s.pausedWorkers())
 	}
 	return connect.NewResponse(resp), nil
 }

@@ -94,6 +94,8 @@ message WorkerUse {
   string title = 4;
   // What its worker uses, at the last reading.
   plan.v1.Resources resources = 5;
+  // Whether the worker is paused.
+  bool paused = 6;
 }
 
 // Disk is the space of the file system that holds a folder.
@@ -192,6 +194,8 @@ message WorkerSeries {
   repeated WorkerPoint points = 9;
   // Gate intervals held by this worker.
   repeated GateInterval gates = 10;
+  // Whether the worker is paused.
+  bool paused = 11;
 }
 
 message WorkerPoint {
