@@ -82,6 +82,13 @@ func TestAnswerReachesTheLead(t *testing.T) {
 	if len(leads.opened) != 0 || len(leads.said) != 0 {
 		t.Errorf("without a lead: opened %q, said %q", leads.opened, leads.said)
 	}
+	briefNoLead, err := BuildBrief(ctx, c.store, dir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(briefNoLead.Moving, "Q01") || !strings.Contains(briefNoLead.Moving, "Paraffin") {
+		t.Errorf("brief without lead: got %q, want Q01 decision", briefNoLead.Moving)
+	}
 
 	// A lead that does not run is reopened on its session, without showing the window, then told; the next answer
 	// goes to the same terminal, in order.
@@ -132,6 +139,13 @@ func TestAnswerReachesTheLead(t *testing.T) {
 	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
 	if len(leads.said) != 0 {
 		t.Errorf("typed in a shell: %q", leads.said)
+	}
+	briefShell, err := BuildBrief(ctx, c.store, dir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(briefShell.Moving, "Q06") {
+		t.Errorf("brief when shell ran: got %q, want Q06 decision", briefShell.Moving)
 	}
 
 	// A paused wish's lead is told while it runs, and not reopened once it stopped.
