@@ -227,7 +227,8 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
 - `djinn task done <task-id> [--drop] --note "…"` closes a task no worker runs (planned, cut short, failed, stopped,
   imported) once its work is done, with who closed it and why (unmerged commits queue for merging unless `--drop`); "Mark done" on its card does it in the window.
   `djinn task delete` stays for a task made by mistake; an azima goes once no task is part of it (regroup them first,
-  `djinn task group`), and a deleted task's code (W12, T27) is never given again in its wish.
+  `djinn task group`), a task once no task waits for it (rewire them first, `djinn task depend … --also`), and a
+  deleted task's code (W12, T27) is never given again in its wish.
 - `djinn task continue <task-id> --prompt "…"` gives a task no worker runs (done, failed, stopped, cut short) a new
   turn of its own session, in its own worktree and branch: the same task, back through the scheduler, its usage
   summed. Refused while it runs, once its worktree is gone, or for an agent that cannot resume a session (Antigravity,
