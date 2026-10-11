@@ -10,8 +10,8 @@ There are two ways to get Djinn running on macOS:
 
 Download the pre-packaged universal macOS application bundle from the release dry run of `feat/wails-go`:
 - **Run**: GitHub Actions run [38148001105](https://github.com/empowill/djinn/actions/runs/38148001105) of `release.yml`.
-- **Artifact**: `djinn_darwin_universal_app.zip`.
-- **Install**: Unzip the archive and place `Djinn.app` into `/Applications` (or any working folder).
+- **Artifact**: `darwin-universal` (`djinn_darwin_universal_app.zip` is inside).
+- **Install**: Unzip the artifact, extract `Djinn.app` from `djinn_darwin_universal_app.zip`, and place `Djinn.app` into `/Applications` (or any working folder).
 - **Opening unsigned app**: macOS Gatekeeper will block opening the unsigned bundle directly on first launch with a warning that the developer cannot be verified. To open it anyway, **right-click (or Control-click) Djinn.app in Finder and choose Open**, then click **Open** in the confirmation dialog (or run `xattr -d com.apple.quarantine /Applications/Djinn.app`). Checking whether macOS accepts the ad hoc signature and opens cleanly is itself one of the open verification boxes in T02.
 
 ### (b) From source
