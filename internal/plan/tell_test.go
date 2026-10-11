@@ -186,7 +186,7 @@ func TestEnlightenReachesTheLead(t *testing.T) {
 	}
 
 	leads.said = nil
-	// An investigator worker was started: the lead hears that the worker investigates.
+	// An investigator worker was started: silent in the lead terminal per Decision Q173 (lead hears when it ends).
 	qInv := c.ask(t, id)
 	c.put(t, &planv1.Task{
 		Id: "task-inv", WishId: id, Code: "W13", Question: qInv.GetCode(),
@@ -197,9 +197,8 @@ func TestEnlightenReachesTheLead(t *testing.T) {
 	})); err != nil {
 		t.Fatal(err)
 	}
-	wantInv := LeadTerminal(id) + ": Djinn: " + qInv.GetCode() + `, the developer wants to know more before answering. Note: "investigate this". W13 investigates, then revises it; you will hear when it ends.`
-	if len(leads.said) != 1 || leads.said[0] != wantInv {
-		t.Errorf("with investigator: said %q, want %q", leads.said, wantInv)
+	if len(leads.said) != 0 {
+		t.Errorf("with investigator: said %q, want nothing (silent in terminal)", leads.said)
 	}
 }
 

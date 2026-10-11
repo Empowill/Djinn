@@ -70,13 +70,24 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   iterative and de-risked path), and the lead turns each answer into tasks itself, in one pass,
   placing them in the graph (`azimas`, `--after`, `--blocks`), and checks what an investigator revised.
   "Enlighten me" starts `Q43: enlighten` by default, an *investigator*: it reads the code and the brief, then revises
-  the question, keeping the lead's context clean.
+  the question, keeping the lead's context clean. The investigator starts quietly without typing to the lead's terminal
+  (recorded in the journal and the window); the lead is told when it ends.
   An investigator writes no code and runs no gate: Djinn gives it `TASK_ACCESS_DJINN`, reading plus a short list of
   `djinn` and read-only `git` commands (`internal/harness/permissions.go`), in its project's folder, without a worktree.
   It takes no slot of the machine, like a watcher, but waits while the machine is under pressure or its memory would not
   hold it, like any agent. Its model and budget are project settings, `question_model` (default `sonnet` for claude,
   the provider's own default otherwise) and `question_budget_usd` (default $2). In settings, `enlighten_workers`
   (default `true`) controls them (`docs/team-settings.md`).
+- **What reaches the lead's terminal (Decision Q173).** Djinn types into the lead's terminal only what changes something:
+  - a real merge where the branch moved (no-op batches where work was already in the branch tell nothing in the terminal;
+    repeated merges of a pass go out as one coalesced line: `Djinn: W12, W14, W15 merged into feat/foo as 1a2b3c4d`);
+  - moves only when a question was actually asked on that merge (`: push tag v1.0.0`, `: start a release`);
+  - an actionable failure (a work worker failed or was cut short; an integration failed);
+  - an answer or question for the lead to act on (developer answers, an open question when enlighten workers are disabled,
+    a filed request or inbox item, an azima opened to plan its tasks);
+  - a task ending without failure (the lead's cue to check its final note, revised questions, or spawned tasks);
+  - a watcher waking the lead.
+  Everything else goes to the journal and the window, not to the terminal.
 - **An answer reaches the lead.** When the developer answers a question, Djinn types one line in the terminal of
   the wish's lead, then Enter:
   `Djinn: Q43 answered B — "<option>". Note: "<note>". Turn it into tasks: you hold the plan's graph (djinn wish brief <wish>).`

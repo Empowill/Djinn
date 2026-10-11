@@ -128,6 +128,17 @@ func TestMergeMoveTag(t *testing.T) {
 	if tagSha := in.git(t, bare, "rev-parse", "refs/tags/v1.0.0"); tagSha == "" {
 		t.Errorf("tag v1.0.0 not found on remote")
 	}
+
+	// Decision Q173: a subsequent merge does not repeat the move since no question was asked on it
+	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
+	in.pass(t, 0)
+	if len(told) < 2 {
+		t.Fatalf("expected at least 2 told lines, got %d: %v", len(told), told)
+	}
+	last := told[len(told)-1]
+	if strings.Contains(last, "push tag v1.0.0") {
+		t.Errorf("subsequent merge repeated move: %q", last)
+	}
 }
 
 // TestMergeMoveTagAlreadyOnRemoteNotProposed: if a tag is already on the remote at the same commit,
@@ -350,7 +361,7 @@ func TestMergeMoveNeedsBox(t *testing.T) {
 }
 
 // TestMergeMoveWorkerAlreadyAskedDeduplicated: when the worker already asked the move question,
-// Djinn does not ask a duplicate, and the lead line still names the move.
+// Djinn does not ask a duplicate, and the merge line does not repeat the move since no question was asked on merge.
 func TestMergeMoveWorkerAlreadyAskedDeduplicated(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
@@ -393,9 +404,13 @@ func TestMergeMoveWorkerAlreadyAskedDeduplicated(t *testing.T) {
 		t.Fatalf("expected 1 question (deduplicated), got %d: %v", len(questions), questions)
 	}
 
-	// Lead line still names the move
-	if len(told) == 0 || !strings.Contains(told[len(told)-1], "push tag v2.5.0") {
-		t.Errorf("lead told %v; want to contain 'push tag v2.5.0'", told)
+	// Decision Q173: merge line only names moves when a question was actually asked on this merge.
+	// Since the worker already asked it, no question was asked on merge, so it is omitted from the merge line.
+	if len(told) == 0 {
+		t.Fatalf("lead was not told of merge; told: %v", told)
+	}
+	if strings.Contains(told[len(told)-1], "push tag v2.5.0") {
+		t.Errorf("lead told %q; want move 'push tag v2.5.0' omitted because no question was asked on merge", told[len(told)-1])
 	}
 }
 

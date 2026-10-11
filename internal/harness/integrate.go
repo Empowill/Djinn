@@ -187,6 +187,7 @@ func (h *Harness) integratePass(ctx context.Context) {
 	slices.SortStableFunc(waiting, func(a, b *planv1.Task) int {
 		return a.GetEndTime().AsTime().Compare(b.GetEndTime().AsTime())
 	})
+	var merged []*mergedBatch
 	for _, t := range waiting {
 		if ctx.Err() != nil {
 			return
@@ -197,8 +198,55 @@ func (h *Harness) integratePass(ctx context.Context) {
 			log.Printf("djinn: integrate: %v", err)
 			continue
 		}
-		if h.integrateBatch(ctx, wish, project, []*planv1.Task{t}) {
+		committed, mb := h.integrateBatch(ctx, wish, project, []*planv1.Task{t})
+		if committed {
 			h.pushIfDue(ctx, wish.GetId(), project)
+			if mb != nil {
+				merged = append(merged, mb)
+			}
+		}
+	}
+	// Decision Q173: repeated lines of one kind within a pass go out as one line per (wishID, branch).
+	if len(merged) > 0 {
+		type mergeGroup struct {
+			wishID string
+			branch string
+			codes  []string
+			sha    string
+			moves  []string
+		}
+		var groups []*mergeGroup
+		groupIndex := make(map[string]int)
+		for _, m := range merged {
+			key := m.wishID + "|" + m.branch
+			idx, ok := groupIndex[key]
+			if !ok {
+				groupIndex[key] = len(groups)
+				groups = append(groups, &mergeGroup{
+					wishID: m.wishID,
+					branch: m.branch,
+					codes:  slices.Clone(m.codes),
+					sha:    m.sha,
+					moves:  slices.Clone(m.moves),
+				})
+			} else {
+				g := groups[idx]
+				for _, c := range m.codes {
+					if !slices.Contains(g.codes, c) {
+						g.codes = append(g.codes, c)
+					}
+				}
+				g.sha = m.sha
+				for _, mv := range m.moves {
+					if !slices.Contains(g.moves, mv) {
+						g.moves = append(g.moves, mv)
+					}
+				}
+			}
+		}
+		for _, g := range groups {
+			leadLine := leadMergeLine(strings.Join(g.codes, ", "), g.branch, g.sha, g.moves)
+			h.tellLead(ctx, g.wishID, leadLine)
 		}
 	}
 	h.pushApproved(ctx)
@@ -226,11 +274,29 @@ type tested struct {
 	ids      []string
 }
 
+// mergedBatch is a batch committed to a branch in an integration pass.
+type mergedBatch struct {
+	wishID string
+	branch string
+	codes  []string
+	sha    string
+	moves  []string
+}
+
+// taskBatchCodes returns the slice of codes for the tasks in batch.
+func taskBatchCodes(batch []*planv1.Task) []string {
+	c := make([]string, len(batch))
+	for i, t := range batch {
+		c[i] = t.GetCode()
+	}
+	return c
+}
+
 // integrateBatch commits the work of batch, a task of wish in project, with the work a review or a correction worker
 // of it reviews or corrects, into the wish's integration branch, records where each task's work stands, and tells
 // whether it is committed. A task whose worktree holds changes not committed is not merged: a review worker judges
 // them. The worktrees of the work committed are removed when clean.
-func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, batch []*planv1.Task) bool {
+func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, batch []*planv1.Task) (bool, *mergedBatch) {
 	h.integrateMu.Lock() // The push checks use the integration worktree too.
 	defer h.integrateMu.Unlock()
 	settings, err := plan.LoadSettings(h.home, project)
@@ -245,15 +311,15 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	default:
 		branch, why, ok = h.targetBranch(ctx, wish, project, settings, batch)
 		if !ok {
-			return false
+			return false, nil
 		}
 	}
 	if why != "" {
 		h.settleIntegration(ctx, batch, pending(branch, why), "integration: waiting: "+why, nil)
-		return false
+		return false, nil
 	}
 	if batch = h.reviewUncommitted(ctx, wish, project, settings, branch, batch); len(batch) == 0 {
-		return false
+		return false, nil
 	}
 	in, text, commit := h.commitBatch(ctx, wish, project, settings, branch, batch)
 	if ctx.Err() != nil && in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
@@ -262,11 +328,11 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	in.Branch = branch
 	if in.GetFailure() != nil {
 		h.failed(ctx, wish, project, settings, batch, in, text)
-		return false
+		return false, nil
 	}
 	h.settleIntegration(ctx, batch, in, text, commit)
 	if in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
-		return false
+		return false, nil
 	}
 	settled := append(slices.Clone(batch), h.settleReviewed(ctx, batch, in)...)
 	settled = append(settled, h.settleCorrected(ctx, settled, in)...)
@@ -275,16 +341,20 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 		h.dropWorktree(ctx, project, t)
 	}
 	if commit == nil || commit.GetOldSha() == in.GetSha() {
-		h.tellLead(ctx, wish.GetId(), leadAlreadyInLine(codes(batch), branch))
+		// Decision Q173: no-op batches are silent in terminal (journal & window only via settleIntegration).
 		h.wake()
-		return true
+		return true, nil
 	}
 	oldSha := commit.GetOldSha()
-	moves := h.handleMergeMoves(ctx, wish, project, branch, oldSha, in.GetSha(), settled)
-	leadLine := leadMergeLine(codes(batch), branch, in.GetSha(), moves)
-	h.tellLead(ctx, wish.GetId(), leadLine)
+	moves := h.handleMergeMoves(ctx, wish, project, branch, oldSha, in.GetSha())
 	h.wake() // The tasks that waited for this work to be committed may start, from it.
-	return true
+	return true, &mergedBatch{
+		wishID: wish.GetId(),
+		branch: branch,
+		codes:  taskBatchCodes(batch),
+		sha:    in.GetSha(),
+		moves:  moves,
+	}
 }
 
 // dropWorktree removes the worktree of t, whose work is committed, as djinn task clean does: its branch stays. A
@@ -1365,12 +1435,11 @@ func (h *Harness) draftPR(ctx context.Context, wish *planv1.Wish, project *planv
 	return title, strings.TrimSpace(body.String())
 }
 
-// handleMergeMoves inspects the commits merged from oldSha to sha and the workers' final notes for moves only
-// the developer can make: a tag created locally, release files changed, a needs: box added, or the integration
-// branch worth a pull request. It raises a question for any move the worker did not ask itself, and returns
-// the names of all moves detected.
+// handleMergeMoves inspects the commits merged from oldSha to sha: local tags created,
+// release workflow changes, needs: box, or an integration branch worth a pull request.
+// It raises a question for any move not already asked, and returns the names of moves asked.
 func (h *Harness) handleMergeMoves(
-	ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch, oldSha, sha string, batch []*planv1.Task,
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch, oldSha, sha string,
 ) []string {
 	if sha == "" {
 		return nil
@@ -1421,7 +1490,6 @@ func (h *Harness) handleMergeMoves(
 		}
 		moveName := tagMoveName(tag)
 		if !slices.Contains(moves, moveName) {
-			moves = append(moves, moveName)
 			asked := hasQuestion(func(q *planv1.Question) bool {
 				return strings.Contains(q.GetText(), tag)
 			})
@@ -1429,6 +1497,7 @@ func (h *Harness) handleMergeMoves(
 				q := tagMoveQuestion(wish.GetId(), tag, remote)
 				if err := h.askMove(ctx, q); err == nil {
 					existing = append(existing, q)
+					moves = append(moves, moveName)
 				}
 			}
 		}
@@ -1454,7 +1523,6 @@ func (h *Harness) handleMergeMoves(
 	}
 	if hasRelease {
 		if !slices.Contains(moves, releaseMoveName) {
-			moves = append(moves, releaseMoveName)
 			asked := hasQuestion(func(q *planv1.Question) bool {
 				return strings.Contains(strings.ToLower(q.GetText()), "release")
 			})
@@ -1462,6 +1530,7 @@ func (h *Harness) handleMergeMoves(
 				q := releaseMoveQuestion(wish.GetId(), sha)
 				if err := h.askMove(ctx, q); err == nil {
 					existing = append(existing, q)
+					moves = append(moves, releaseMoveName)
 				}
 			}
 		}
@@ -1495,7 +1564,6 @@ func (h *Harness) handleMergeMoves(
 			if ok {
 				moveName := needsMoveName(box, machine)
 				if !slices.Contains(moves, moveName) {
-					moves = append(moves, moveName)
 					asked := hasQuestion(func(q *planv1.Question) bool {
 						tl := strings.ToLower(q.GetText())
 						return strings.Contains(tl, strings.ToLower(machine)) && (box == "" || strings.Contains(tl, strings.ToLower(box)))
@@ -1504,6 +1572,7 @@ func (h *Harness) handleMergeMoves(
 						q := needsMoveQuestion(wish.GetId(), box, machine)
 						if err := h.askMove(ctx, q); err == nil {
 							existing = append(existing, q)
+							moves = append(moves, moveName)
 						}
 					}
 				}
@@ -1537,47 +1606,12 @@ func (h *Harness) handleMergeMoves(
 			if !h.hasPRQuestion(ctx, project.GetId(), allQuestions, wishesByID) {
 				moveName := prMoveName(main)
 				if !slices.Contains(moves, moveName) {
-					moves = append(moves, moveName)
 					title, body := h.draftPR(ctx, wish, project, ref, branch)
 					q := prMoveQuestion(wish.GetId(), main, title, body)
 					if err := h.askMove(ctx, q); err == nil {
 						existing = append(existing, q)
+						moves = append(moves, moveName)
 					}
-				}
-			}
-		}
-	}
-
-	// 5. Worker asked moves: any moves the worker explicitly asked that were not already detected.
-	for _, t := range batch {
-		for _, q := range existing {
-			if q.GetTaskId() == t.GetId() && q.GetMove() {
-				already := false
-				for _, tag := range tags {
-					if strings.Contains(q.GetText(), tag) {
-						already = true
-						break
-					}
-				}
-				if hasRelease && strings.Contains(strings.ToLower(q.GetText()), "release") {
-					already = true
-				}
-				if strings.Contains(strings.ToLower(q.GetText()), "pull request") {
-					already = true
-				}
-				if already {
-					continue
-				}
-				name := strings.TrimSpace(strings.TrimSuffix(q.GetText(), "?"))
-				found := false
-				for _, m := range moves {
-					if strings.EqualFold(m, name) {
-						found = true
-						break
-					}
-				}
-				if !found && name != "" {
-					moves = append(moves, name)
 				}
 			}
 		}

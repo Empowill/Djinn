@@ -118,7 +118,7 @@ func briefRules(iq planv1.InstallQuestions) string {
 		"- **Djinn acts on the developer's answers.** You turn each answer into tasks yourself, in one pass, " +
 		"placing them in the graph (azimas, --after, --blocks), and check what an investigator revised. " +
 		"\"Enlighten me\" starts \"Q03: enlighten\": it reads, then revises the question. You are told when it " +
-		"starts and ends, and what it revised: check it, do not do it again. When the line says \"Investigate\", " +
+		"ends, and what it revised: check it, do not do it again. When the line says \"Investigate\", " +
 		"enlighten workers are off and the move is yours.\n" +
 		"- **Check every task that ends.** Read its final note (`djinn task watch <task>`, or the line Djinn types): " +
 		"when it leaves an uncertainty (a choice it made in the developer's place, something it did not verify, a partial " +
