@@ -1,0 +1,18 @@
+# Case: agy encounters a transient stream error after final text (5 turns for max retry test).
+{"event":"init","conversation_id":"a1b2c3d4-0001-4000-8000-000000000001","init":{"cwd":"/work/project","tools":["ask_permission","run_command","view_file","write_to_file"],"permission_mode":"accept-edits","model":"gemini-3.8-flash-medium"}}
+{"event":"step_update","step_update":{"conversation_id":"a1b2c3d4-0001-4000-8000-000000000001","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"a1b2c3d4-0001-4000-8000-000000000001","step_index":1,"state":"DONE","step_type":"agent_response","text_delta":"Task is finished, all changes committed.\n"}}
+{"event":"error","error":"The stream was interrupted"}
+{"event":"result","result":{"conversation_id":"a1b2c3d4-0001-4000-8000-000000000001","status":"ERROR","error":"The stream was interrupted","duration_seconds":1.0,"num_turns":1,"usage":{"input_tokens":1000,"output_tokens":10,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":1010}}}
+{"event":"step_update","step_update":{"conversation_id":"a1b2c3d4-0001-4000-8000-000000000001","step_index":2,"state":"DONE","step_type":"user_input"}}
+{"event":"error","error":"The stream was interrupted"}
+{"event":"result","result":{"conversation_id":"a1b2c3d4-0001-4000-8000-000000000001","status":"ERROR","error":"The stream was interrupted","duration_seconds":1.0,"num_turns":2,"usage":{"input_tokens":2000,"output_tokens":20,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":2020}}}
+{"event":"step_update","step_update":{"conversation_id":"a1b2c3d4-0001-4000-8000-000000000001","step_index":3,"state":"DONE","step_type":"user_input"}}
+{"event":"error","error":"The stream was interrupted"}
+{"event":"result","result":{"conversation_id":"a1b2c3d4-0001-4000-8000-000000000001","status":"ERROR","error":"The stream was interrupted","duration_seconds":1.0,"num_turns":3,"usage":{"input_tokens":3000,"output_tokens":30,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":3030}}}
+{"event":"step_update","step_update":{"conversation_id":"a1b2c3d4-0001-4000-8000-000000000001","step_index":4,"state":"DONE","step_type":"user_input"}}
+{"event":"error","error":"The stream was interrupted"}
+{"event":"result","result":{"conversation_id":"a1b2c3d4-0001-4000-8000-000000000001","status":"ERROR","error":"The stream was interrupted","duration_seconds":1.0,"num_turns":4,"usage":{"input_tokens":4000,"output_tokens":40,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":4040}}}
+{"event":"step_update","step_update":{"conversation_id":"a1b2c3d4-0001-4000-8000-000000000001","step_index":5,"state":"DONE","step_type":"user_input"}}
+{"event":"error","error":"The stream was interrupted"}
+{"event":"result","result":{"conversation_id":"a1b2c3d4-0001-4000-8000-000000000001","status":"ERROR","error":"The stream was interrupted","duration_seconds":1.0,"num_turns":5,"usage":{"input_tokens":5000,"output_tokens":50,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":5050}}}
