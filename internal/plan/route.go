@@ -626,7 +626,7 @@ type origin struct {
 
 // routeTo sends request where opt says, in tx: it files it in the wish, or makes the new wish, pausing the one that
 // makes room. Each change is journaled as the command that would make it. It records the new wish in opt, and
-// returns what follows once tx is committed: tell the lead of the wish, or start the template.
+// returns what follows once tx is committed: tell the lead of the wish, or start the template and show the new wish.
 func (w *Wishes) routeTo(
 	ctx context.Context, tx *store.Tx, opt *planv1.RouteOption, request string, from origin,
 ) (func(context.Context), error) {
@@ -708,6 +708,10 @@ func (w *Wishes) routeTo(
 			w.shelve(ctx, paused)
 		}
 		w.startTemplate(ctx, wish)
+		// The window opens the wish made.
+		if w.Leads != nil {
+			w.Leads.Show(wish.GetId(), "")
+		}
 	}, nil
 }
 

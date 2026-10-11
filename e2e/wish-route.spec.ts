@@ -1,7 +1,7 @@
 // Every request finds its wish, against the real djinn up --browser (see global-setup.ts): the lead hands a request over
 // with djinn wish route --ask, the developer rubs the lamp on the card, and Djinn makes the new wish, the request in
-// its blocks, and tells the one lead where the request went, in its terminal: no second lead starts. The lead is a
-// fake claude on djinn's PATH that repeats what it reads.
+// its blocks, opens it in the window, and tells the one lead where the request went, in its terminal: no second lead
+// starts. The lead is a fake claude on djinn's PATH that repeats what it reads.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -32,7 +32,7 @@ test.skip(process.platform === "win32", "the fake claude is a shell script");
 
 test.afterEach(dropLead);
 
-test("a request routed to a new wish makes it, and the one lead is told, at a rub of the lamp", async ({
+test("a request routed to a new wish makes it, the window opens it, and the one lead is told, at a rub of the lamp", async ({
   page,
 }) => {
   // Three wishes at a time: the earlier specs' wishes make way.
@@ -75,9 +75,8 @@ test("a request routed to a new wish makes it, and the one lead is told, at a ru
   await expect(card).toContainText(request);
   await card.getByRole("button", { name: "Rub the lamp" }).click();
 
-  // The new wish, active, the request in its blocks.
-  const nav = page.locator(".wish-nav").filter({ hasText: title });
-  await expect(nav).toBeVisible();
+  // The window goes to the new wish, active, the request in its blocks.
+  await expect(page.locator(".hero h1")).toHaveText(title);
   const made = JSON.parse(djinn("wish", "list", "--json")).wishes.find(
     (w: { title: string }) => w.title === title,
   );
@@ -100,10 +99,6 @@ test("a request routed to a new wish makes it, and the one lead is told, at a ru
   );
   expect(claudes.map((t) => t.name)).toEqual(["lead"]);
   expect(claudes[0].command.join(" ")).toContain(`claude --resume ${session}`);
-
-  // The new wish opens from the side panel.
-  await nav.click();
-  await expect(page.locator(".hero h1")).toHaveText(title);
 
   djinn("wish", "pause", made.id);
   djinn("wish", "pause", here);

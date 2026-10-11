@@ -79,8 +79,8 @@ export function WishApp() {
     () => store("djinn.sidebar.collapsed", collapsed ? "1" : ""),
     [collapsed],
   );
-  // djinn wish resume asks the window to show a wish; a djinn:// link, a wish or a tilasm in its wish, or says Djinn
-  // does not know it.
+  // djinn lead resume --wish-id asks the window to show a wish, and so does a request routed to a new wish; a djinn://
+  // link, a wish or a tilasm in its wish, or says Djinn does not know it.
   useEffect(
     () =>
       djinn.focus.subscribe((focus) => {

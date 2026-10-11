@@ -1118,8 +1118,8 @@ export const IntegrationBranchSchema: GenMessage<IntegrationBranch> = /*@__PURE_
 
 /**
  * WishTemplate is the skill a wish was made from: a request matched the wish template its SKILL.md declares, under
- * metadata.djinn.wish. Djinn started the template's watcher, and the wish's lead starts with the skill. When the
- * watcher prints its done line, Djinn asks whether to grant the wish; only the answer grants it.
+ * metadata.djinn.wish. Djinn started the template's watcher, and the wish's brief tells the lead to follow the skill.
+ * When the watcher prints its done line, Djinn asks whether to grant the wish; only the answer grants it.
  *
  * @generated from message plan.v1.WishTemplate
  */
@@ -2532,7 +2532,7 @@ export type Question = Message<"plan.v1.Question"> & {
 
   /**
    * Where a request may go, when djinn wish route --ask asked this question: each option is a destination, in the
-   * same order. Answering it files the request, or makes the new wish and starts its lead.
+   * same order. Answering it files the request, or makes the new wish; the lead is told where it went.
    *
    * @generated from field: plan.v1.Route route = 13;
    */
@@ -2694,7 +2694,7 @@ export type RouteOption = Message<"plan.v1.RouteOption"> & {
 
   /**
    * The skill whose wish template the request matched, for a new wish: its title comes from it, its watcher starts
-   * with it, and its lead starts with the skill.
+   * with it, and its brief tells the lead to follow the skill.
    *
    * @generated from field: plan.v1.WishTemplate template = 8;
    */
@@ -9341,7 +9341,7 @@ export enum RouteKind {
   FILE = 1,
 
   /**
-   * Make a new wish, active, and start its lead on the request.
+   * Make a new wish, active, the request in its blocks, and show it in the window.
    *
    * @generated from enum value: ROUTE_KIND_NEW = 2;
    */
@@ -9355,7 +9355,7 @@ export enum RouteKind {
   QUEUE = 3,
 
   /**
-   * Pause an active wish to make room, then make the new wish and start its lead on the request.
+   * Pause an active wish to make room, then make the new wish as ROUTE_KIND_NEW does.
    *
    * @generated from enum value: ROUTE_KIND_SWAP = 4;
    */
@@ -9900,7 +9900,7 @@ export const InboxService: GenService<{
   },
   /**
    * Send an item where an option of its route says: file it in a wish, or make the new wish, from its template when
-   * one matched, and start its watcher and its lead. Nothing is sent to its source.
+   * one matched, and start its watcher. Nothing is sent to its source.
    *
    * @generated from rpc plan.v1.InboxService.Route
    */
@@ -10126,7 +10126,7 @@ export const WishService: GenService<{
   },
   /**
    * Delete a wish, and all that belongs to it: its tasks and their events, its questions, its blocks. Its workers
-   * stop first, and its lead's terminal closes. A task's worktree goes when it holds no work: clean, and no commit
+   * stop first. A task's worktree goes when it holds no work: clean, and no commit
    * beyond the project's current branch; the others stay, said with why. Branches all stay. It cannot be undone.
    *
    * @generated from rpc plan.v1.WishService.Delete
@@ -10176,9 +10176,9 @@ export const WishService: GenService<{
    * projects the request names or links to (a GitLab or GitHub link whose repository is a project's remote), and
    * their latest blocks. It proposes to file the request in the closest ones, or to open a new wish with a title
    * and a project. A request that matches the wish template of a skill in those projects (metadata.djinn.wish in
-   * its SKILL.md) proposes the template's wish: its title, its watcher, its lead started with the skill. With
-   * --ask, the proposal is a question on the wish --wish-id: answering it files the request, or makes the new wish
-   * and starts its watcher and its lead in its own terminal.
+   * its SKILL.md) proposes the template's wish: its title, its watcher, the skill for the lead to follow. With
+   * --ask, the proposal is a question on the wish --wish-id: answering it files the request, or makes the new wish,
+   * starts its watcher and opens it in the window; the lead is told where the request went.
    *
    * @generated from rpc plan.v1.WishService.Route
    */

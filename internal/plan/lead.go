@@ -311,7 +311,7 @@ func portableFolder(dir string) string {
 
 // localFolder puts back this machine's folder in a lead's folder from an export: ~ is the home folder, and a path
 // that starts with the name of a project of the export starts from that project's folder here. A folder this
-// machine does not have yet is left empty, for djinn wish set-lead to give.
+// machine does not have yet is left empty, for djinn lead set to give.
 func localFolder(dir string, folders map[string]string) string {
 	if dir == "" || filepath.IsAbs(dir) {
 		return dir

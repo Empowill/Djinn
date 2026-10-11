@@ -1375,8 +1375,8 @@ function Rights({
 }
 
 // DeleteWish asks before a wish goes for good, with its tasks, their events, its questions and its blocks
-// (WishService.Delete). Its workers stop first and its lead's terminal closes; a worktree with no work of its own
-// goes, the others and every branch stay, as the toast says after the delete.
+// (WishService.Delete). Its workers stop first; a worktree with no work of its own goes, the others and every branch
+// stay, as the toast says after the delete.
 function DeleteWish({
   wish,
   tasks,

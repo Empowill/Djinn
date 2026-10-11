@@ -1,5 +1,5 @@
-// What djinn asks the window to show (UiService.WatchShow), such as the wish and the lead's terminal that `djinn wish
-// resume` takes back, or the tilasm a djinn:// link names. One stream for the page; each part of the interface subscribes to it, and one that subscribes
+// What djinn asks the window to show (UiService.WatchShow), such as the wish and the lead's terminal that `djinn lead
+// resume --wish-id` focuses, or the tilasm a djinn:// link names. One stream for the page; each part of the interface subscribes to it, and one that subscribes
 // late still gets a request of the last minute.
 import { type Transport, createClient } from "@connectrpc/connect";
 

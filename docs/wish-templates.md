@@ -13,8 +13,8 @@ lines: nothing to code per template.
    comes from the template, and the card says which skill: "New wish “Babysit PR #12”, in lamp, from the skill
    babysit-pr". A wish on the same piece of work (its title names the same `#12` or `!12`) still takes the request.
 3. You rub the lamp. The wish is made with `Wish.template`, its watcher starts at once in the skill's project
-   (a [watcher](providers.md#watch-a-command-no-agent): a command, no model, no token), and its lead starts on the
-   request, told to follow the skill. The wish's brief says it too, for a lead resumed later.
+   (a [watcher](providers.md#watch-a-command-no-agent): a command, no model, no token), and the window opens it.
+   The lead is told where the request went, and the wish's brief tells it to follow the skill.
 4. Each change the watcher prints wakes the lead. When it prints the `done_when` line, Djinn asks "W1's watcher says
    “MERGED: PR #12 is merged.”: grant “Babysit PR #12”?". A grants the wish, B keeps it open. Djinn never grants a
    wish itself.

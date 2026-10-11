@@ -86,10 +86,14 @@ test.describe("Lead", () => {
     const wishId = await open(page, title);
     setLead(session, folder);
 
-    await page
+    const lead = page
       .locator(".topbar-actions")
-      .getByRole("button", { name: "Lead" })
-      .click();
+      .getByRole("button", { name: "Lead" });
+    await expect(lead).toHaveAttribute(
+      "title",
+      "Focus the lead on this wish, in the terminal",
+    );
+    await lead.click();
     const terminal = page.getByRole("region", { name: "Terminal" });
     await expect(
       terminal.locator(".lead-terminal-command").first(),

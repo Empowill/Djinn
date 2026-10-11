@@ -1,6 +1,7 @@
 // The wish's head, around its title: its description, a few lines the person edits in place (a click, saved when the
-// field is left), the Lead button, split: Lead resumes the recorded lead, the arrow beside it lists the agents found on
-// this machine, to start a lead of another one from the brief; and where Djinn last pushed its integration branches.
+// field is left), the Lead button, split: Lead resumes the one lead, focused on the wish, the arrow beside it lists the
+// agents found on this machine, to start a lead of another one from the brief; and where Djinn last pushed its
+// integration branches.
 import {
   Check,
   ChevronDown,
@@ -226,7 +227,7 @@ export function LeadButton({
 }
 
 // LeadMenu lists the agents a lead may run, those missing from this machine disabled, saying why; the recorded
-// lead's is marked, and picking it resumes its session.
+// lead's is marked, and picking it resumes that lead, focused on the wish.
 export function LeadMenu({
   agents: found,
   recorded,
