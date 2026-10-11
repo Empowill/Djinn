@@ -68,9 +68,32 @@ func (h *Harness) failed(
 		log.Printf("djinn: integrate %s: %v", codes(held), err)
 		group = held
 	}
-	group = slices.DeleteFunc(group, func(t *planv1.Task) bool {
-		return t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED
-	})
+	var activeGroup []*planv1.Task
+	for _, t := range group {
+		if t.GetIntegration() == nil || isCancelled(t) {
+			continue
+		}
+		if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+			continue
+		}
+		if taskWorkInBranch(ctx, project.GetDirectory(), t, in.GetBranch()) {
+			head, _ := git(ctx, project.GetDirectory(), "rev-parse", "--verify", "--quiet", "refs/heads/"+in.GetBranch()+"^{commit}")
+			if head == "" {
+				head, _ = git(ctx, project.GetDirectory(), "rev-parse", "HEAD")
+			}
+			committed := &planv1.TaskIntegration{
+				State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+				Branch: in.GetBranch(),
+				Sha:    head,
+			}
+			text := "integration: committed: " + in.GetBranch() + " holds the work already, at " + short8(head)
+			h.settleIntegration(ctx, []*planv1.Task{t}, committed, text, nil)
+			h.dropWorktree(ctx, project, t)
+			continue
+		}
+		activeGroup = append(activeGroup, t)
+	}
+	group = activeGroup
 	if len(group) == 0 {
 		return
 	}
@@ -351,26 +374,68 @@ func correctedIDs(batch []*planv1.Task) []string {
 }
 
 // correctionsEnded settles the work of the correction and review workers among tasks that ended without being done:
-// one that failed counts as an attempt, the next one starting while the attempts are not spent; one stopped leaves it
-// to the person, asked; one cancelled or whose record was cleared clears its links.
+// one that failed counts as an attempt, the next one starting while the attempts are not spent; one stopped or cancelled
+// by the lead clears its links and settles silently (the record shows why).
 func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 	for _, c := range tasks {
 		if h.running(c.GetId()) {
 			continue
 		}
+		if c.GetCorrection() == nil && c.GetReview() == nil {
+			continue
+		}
 		cancelled := isCancelled(c)
+		stopped := c.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED
 		noRecord := c.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && c.GetIntegration() == nil
-		if cancelled || (noRecord && (c.GetCorrection() != nil || c.GetReview() != nil)) {
+		if cancelled || stopped || noRecord {
+			worker := "correction"
+			if c.GetReview() != nil {
+				worker = "review"
+			}
+			action := "stopped"
+			if cancelled {
+				action = "cancelled"
+			}
+			text := "integration: " + c.GetCode() + ", its " + worker + " worker, was " + action
+			var group []*planv1.Task
+			for _, t := range tasks {
+				in := t.GetIntegration()
+				if in == nil || in.GetQuestionId() != "" {
+					continue
+				}
+				if in.GetCorrectedBy() == c.GetId() || in.GetReviewedBy() == c.GetId() {
+					group = append(group, t)
+				}
+			}
+			if len(group) > 0 {
+				for _, t := range group {
+					in := proto.CloneOf(t.GetIntegration())
+					in.CorrectedBy = ""
+					in.ReviewedBy = ""
+					in.QuestionId = ""
+					h.settleIntegration(ctx, []*planv1.Task{t}, in, text, nil)
+				}
+			}
+			wish, err := store.Get[*planv1.Wish](ctx, h.store, c.GetWishId())
+			if err == nil && wish != nil {
+				for _, p := range wish.GetPushes() {
+					if p.GetCorrectedBy() == c.GetId() {
+						var committed []*planv1.Task
+						if f := p.GetFailure(); f != nil && len(f.GetTaskIds()) > 0 {
+							committed, _ = tasksByID(ctx, h.store, f.GetTaskIds())
+						} else if c.GetCorrection() != nil && c.GetCorrection().GetFailure() != nil {
+							committed, _ = tasksByID(ctx, h.store, c.GetCorrection().GetFailure().GetTaskIds())
+						}
+						h.pushSteps(ctx, committed, text)
+					}
+				}
+			}
 			_ = h.store.Tx(ctx, func(tx *store.Tx) error {
 				return h.clearCorrectionLinks(ctx, tx, c.GetWishId(), c.GetId())
 			})
 			continue
 		}
-		if c.GetCorrection() == nil && c.GetReview() == nil {
-			continue
-		}
-		failed := c.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED
-		if !failed && c.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED {
+		if c.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
 			continue
 		}
 		var group []*planv1.Task
@@ -396,7 +461,7 @@ func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 					project, err1 := store.Get[*planv1.Project](ctx, h.store, wish.GetPushes()[i].GetProjectId())
 					settings, err2 := plan.LoadSettings(h.home, project)
 					if err := errors.Join(err1, err2); err == nil {
-						h.pushCorrectionEnded(ctx, wish, project, settings, wish.GetPushes()[i], c, failed)
+						h.pushCorrectionEnded(ctx, wish, project, settings, wish.GetPushes()[i], c, true)
 					}
 				}
 			}
@@ -411,19 +476,16 @@ func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 		if c.GetReview() != nil {
 			worker = "review"
 		}
-		text := "integration: " + c.GetCode() + ", its " + worker + " worker, was stopped"
-		if failed {
-			text = "integration: " + c.GetCode() + ", its " + worker + " worker, failed: " + c.GetError()
-		}
+		text := "integration: " + c.GetCode() + ", its " + worker + " worker, failed: " + c.GetError()
 		if r := c.GetReview(); r != nil {
 			// The work stays in the worktree of the task it reviews: the first of the review's tasks.
 			if g, err := tasksByID(ctx, h.store, r.GetTaskIds()); err == nil {
 				group = g
 			}
-			h.review(ctx, wish, project, settings, group, group[0].GetIntegration(), text, r.GetAttempt(), failed)
+			h.review(ctx, wish, project, settings, group, group[0].GetIntegration(), text, r.GetAttempt(), true)
 			continue
 		}
-		h.correct(ctx, wish, project, settings, group, group[0].GetIntegration(), text, c.GetCorrection().GetAttempt(), failed)
+		h.correct(ctx, wish, project, settings, group, group[0].GetIntegration(), text, c.GetCorrection().GetAttempt(), true)
 	}
 }
 
@@ -597,8 +659,9 @@ func (h *Harness) clearCorrectionLinks(ctx context.Context, tx *store.Tx, wishID
 		if t.GetId() == taskID {
 			continue
 		}
-		if in := t.GetIntegration(); in != nil && in.GetCorrectedBy() == taskID {
+		if in := t.GetIntegration(); in != nil && (in.GetCorrectedBy() == taskID || in.GetReviewedBy() == taskID) {
 			in.CorrectedBy = ""
+			in.ReviewedBy = ""
 			if err := tx.Journal(actorHarness, methodIntegrate, t); err != nil {
 				return err
 			}

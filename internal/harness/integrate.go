@@ -321,6 +321,42 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	if batch = h.reviewUncommitted(ctx, wish, project, settings, branch, batch); len(batch) == 0 {
 		return false, nil
 	}
+	var remaining []*planv1.Task
+	var alreadyIn []*planv1.Task
+	for _, t := range batch {
+		if taskWorkInBranch(ctx, project.GetDirectory(), t, branch) {
+			alreadyIn = append(alreadyIn, t)
+		} else {
+			remaining = append(remaining, t)
+		}
+	}
+	if len(alreadyIn) > 0 {
+		head, err := git(ctx, project.GetDirectory(), "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"^{commit}")
+		if err != nil || head == "" {
+			head, _ = git(ctx, project.GetDirectory(), "rev-parse", "--verify", "--quiet", branch+"^{commit}")
+		}
+		if head == "" {
+			head, _ = git(ctx, project.GetDirectory(), "rev-parse", "HEAD")
+		}
+		committed := &planv1.TaskIntegration{
+			State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+			Branch: branch,
+			Sha:    head,
+		}
+		text := "integration: committed: " + branch + " holds the work already, at " + short8(head)
+		h.settleIntegration(ctx, alreadyIn, committed, text, nil)
+		settled := append(slices.Clone(alreadyIn), h.settleReviewed(ctx, alreadyIn, committed)...)
+		settled = append(settled, h.settleCorrected(ctx, settled, committed)...)
+		h.settleMain(ctx, wish, project, settled, committed)
+		for _, t := range settled {
+			h.dropWorktree(ctx, project, t)
+		}
+		h.wake()
+		if len(remaining) == 0 {
+			return true, nil
+		}
+		batch = remaining
+	}
 	in, text, commit := h.commitBatch(ctx, wish, project, settings, branch, batch)
 	if ctx.Err() != nil && in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
 		in, text, commit = pending(branch, ""), "integration: djinn up stopped during it; Djinn integrates the work again", nil

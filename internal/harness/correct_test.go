@@ -451,8 +451,140 @@ func TestIntegrationFailureCorrectionCancelled(t *testing.T) {
 
 	in.pass(t, time.Second)
 
-	got, _ = in.integration(t, w1)
+	got, texts := in.integration(t, w1)
 	if got.GetCorrectedBy() != "" {
 		t.Errorf("after correction cancelled, W1 corrected by %q; want empty", got.GetCorrectedBy())
+	}
+	if got.GetQuestionId() != "" {
+		t.Errorf("W1 question_id %q; want empty", got.GetQuestionId())
+	}
+	wantSuffix := w2.GetCode() + ", its correction worker, was cancelled"
+	if len(texts) == 0 || !strings.HasSuffix(texts[len(texts)-1], wantSuffix) {
+		t.Errorf("W1 events %q; want suffix %q", texts, wantSuffix)
+	}
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(questions) != 0 {
+		t.Errorf("got %d questions; want 0", len(questions))
+	}
+}
+
+// TestIntegrationFailureCorrectionStopped: a task whose integration failed and is corrected by a worker
+// that was stopped by the lead clears that link and records the stop without asking a question.
+func TestIntegrationFailureCorrectionStopped(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.testCode = 1
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+
+	in.pass(t, 0)
+	w2 := in.correction(t, w1)
+	got, _ := in.integration(t, w1)
+	if got.GetCorrectedBy() != w2.GetId() {
+		t.Fatalf("W1 corrected by %q; want %q", got.GetCorrectedBy(), w2.GetId())
+	}
+
+	// Stop W2 (lead stops it).
+	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		c, err := store.Get[*planv1.Task](t.Context(), tx, w2.GetId())
+		if err != nil {
+			return err
+		}
+		c.Status = planv1.TaskStatus_TASK_STATUS_STOPPED
+		if err := tx.Journal("test", "put", c); err != nil {
+			return err
+		}
+		return tx.Put(c)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	in.pass(t, time.Second)
+
+	got, texts := in.integration(t, w1)
+	if got.GetCorrectedBy() != "" {
+		t.Errorf("after correction stopped, W1 corrected by %q; want empty", got.GetCorrectedBy())
+	}
+	if got.GetQuestionId() != "" {
+		t.Errorf("W1 question_id %q; want empty", got.GetQuestionId())
+	}
+	wantSuffix := w2.GetCode() + ", its correction worker, was stopped"
+	if len(texts) == 0 || !strings.HasSuffix(texts[len(texts)-1], wantSuffix) {
+		t.Errorf("W1 events %q; want suffix %q", texts, wantSuffix)
+	}
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(questions) != 0 {
+		t.Errorf("got %d questions; want 0", len(questions))
+	}
+}
+
+// TestIntegrationWorkAlreadyInBranchSettlesSilently: a task whose branch commits are already in
+// the integration branch settles immediately as COMMITTED without running tests or asking questions.
+func TestIntegrationWorkAlreadyInBranchSettlesSilently(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	// Even if testCode is 1 (tests fail), the task shouldn't run tests because it's already in the branch!
+	in.testCode = 1
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+
+	// Merge W1's branch directly into the integration branch (master) before integration runs.
+	if _, err := git(t.Context(), in.repo, "merge", "--no-ff", "-m", "merge into master", w1.GetBranch()); err != nil {
+		t.Fatal(err)
+	}
+
+	in.pass(t, time.Second)
+
+	got, texts := in.integration(t, w1)
+	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+		t.Errorf("W1 state %v; want COMMITTED", got.GetState())
+	}
+	if len(texts) == 0 || !strings.Contains(texts[len(texts)-1], "holds the work already") {
+		t.Errorf("W1 events %q; want 'holds the work already'", texts)
+	}
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(questions) != 0 {
+		t.Errorf("got %d questions; want 0", len(questions))
+	}
+}
+
+// TestIntegrationDroppedTaskRaisesNoQuestion: a task whose integration was dropped
+// (--drop, task.Integration == nil) triggers no question or correction.
+func TestIntegrationDroppedTaskRaisesNoQuestion(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.testCode = 1
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+
+	// Drop W1's integration.
+	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		c, err := store.Get[*planv1.Task](t.Context(), tx, w1.GetId())
+		if err != nil {
+			return err
+		}
+		c.Integration = nil
+		if err := tx.Journal("test", "put", c); err != nil {
+			return err
+		}
+		return tx.Put(c)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	in.pass(t, time.Second)
+
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(questions) != 0 {
+		t.Errorf("got %d questions; want 0", len(questions))
 	}
 }
