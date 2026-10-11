@@ -18,12 +18,14 @@ export function WorkspaceAction({
   expanded = false,
   className = "",
   layoutId = ACTION_LAYOUT_ID,
+  dataWishSection,
 }: {
   children: ReactNode;
   tone: WorkspaceActionTone;
   expanded?: boolean;
   className?: string;
   layoutId?: string;
+  dataWishSection?: string;
 }) {
   const reducedMotion = useReducedMotion();
   const transition = reducedMotion
@@ -40,6 +42,7 @@ export function WorkspaceAction({
       layoutId={`${layoutId}-surface`}
       layoutAnchor={{ x: 0.5, y: 1 }}
       className={`workspace-action ${ACTION_TONE_CLASS[tone]}${expanded ? " is-expanded" : ""} ${className}`}
+      data-wish-section={dataWishSection}
       initial={false}
       transition={transition}
       style={{ borderRadius: 999 }}

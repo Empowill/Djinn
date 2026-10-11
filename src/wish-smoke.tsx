@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { t } from "./i18n";
 import {
@@ -119,6 +119,22 @@ type SmokeState = {
 };
 
 type SmokePerformanceCleanup = () => void;
+
+export const WISH_SMOKE_DISSIPATION_MS = 800;
+
+type SmokeRendererHandle = {
+  dispose: () => void;
+  canAcknowledgeDissolve: boolean;
+  setDissolveProgress: (progress: number) => void;
+  onDissolveFrame: (callback: () => void) => () => void;
+};
+
+const emptySmokeRenderer = (): SmokeRendererHandle => ({
+  dispose: () => undefined,
+  canAcknowledgeDissolve: false,
+  setDissolveProgress: () => undefined,
+  onDissolveFrame: () => () => undefined,
+});
 
 // Opt-in browser instrumentation for measuring the real renderer without adding work to ordinary sessions. Open the
 // creation surface with `?djinnPerf=1`; attributes are published on the creation and smoke roots for CUA inspection.
@@ -344,9 +360,9 @@ type AsciiGrid = {
 function mountSmoke(
   canvas: HTMLCanvasElement,
   asciiOutput: HTMLElement,
-): () => void {
+): SmokeRendererHandle {
   const container = canvas.parentElement;
-  if (!container) return () => undefined;
+  if (!container) return emptySmokeRenderer();
 
   let gl: WebGL2RenderingContext | null;
   try {
@@ -361,7 +377,7 @@ function mountSmoke(
   } catch (error) {
     canvas.dataset.error =
       error instanceof Error ? error.message : "WebGL is unavailable.";
-    return () => undefined;
+    return emptySmokeRenderer();
   }
 
   const context = gl;
@@ -544,6 +560,8 @@ function mountSmoke(
   context.vertexAttribPointer(0, 2, context.FLOAT, false, 0, 0);
 
   let disposed = false;
+  let dissolveProgress = 0;
+  let dissolveFrameCallback: (() => void) | undefined;
   let simulationTime = 0;
   let windTime = seed;
   let animationFrame = 0;
@@ -718,8 +736,18 @@ function mountSmoke(
     float r=texture(pressure,uv+vec2(texel.x,0)).x;float b=texture(pressure,uv-vec2(0,texel.y)).x;
     float t=texture(pressure,uv+vec2(0,texel.y)).x;color=vec4(texture(velocity,uv).xy-.5*vec2(r-l,t-b),0,1);}`);
   const smokeField = `${bilinear}
-    uniform vec2 resolution;uniform float zoom;uniform float cameraScale;
+    uniform vec2 resolution;uniform float zoom;uniform float cameraScale;uniform float dissolveProgress;
     float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+    float valueNoise(vec2 p){
+      vec2 cell=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);
+      return mix(mix(hash(cell),hash(cell+vec2(1.,0.)),f.x),mix(hash(cell+vec2(0.,1.)),hash(cell+vec2(1.,1.)),f.x),f.y);
+    }
+    float dissolveMask(vec2 pixel){
+      if(dissolveProgress<=.001)return 1.;
+      if(dissolveProgress>=.999)return 0.;
+      float noise=mix(valueNoise(pixel*vec2(.018,.024)),valueNoise(pixel*vec2(.07,.09)),.32);
+      return smoothstep(dissolveProgress-.12,dissolveProgress+.12,noise);
+    }
     vec2 domain(vec2 p){
       vec2 q=vec2((.5-p.x)*cameraScale+.5,(p.y-.038)/1.16);
       vec2 focus=vec2(.565,.18);return focus+(q-focus)/zoom;}
@@ -730,7 +758,7 @@ function mountSmoke(
   const display = makeProgram(`${smokeField}
     uniform float asciiOn; uniform vec3 smokeBackground; uniform vec3 smokeTintLow; uniform vec3 smokeTintHigh;
     void main(){
-      vec2 pixel=uv*resolution;float raw=smoke(uv);
+      vec2 pixel=uv*resolution;float raw=smoke(uv)*dissolveMask(pixel);
       float value=asciiOn>.5?raw*.025:raw;
       float grain=(hash(pixel+floor(time*20.))-.5)*.007;
       float vignette=1.-.24*length((uv-.5)*vec2(1.,.7));
@@ -738,7 +766,7 @@ function mountSmoke(
       color=vec4(mix(smokeBackground,tint,value*vignette)+vec3(grain),1.);
     }`);
   const sampleAscii = makeProgram(`${smokeField}uniform vec2 coverage;
-    void main(){float d=smoke(uv*coverage+vec2(1.-coverage.x,0.));color=vec4(d,d,d,1.);}`);
+    void main(){vec2 sampleUv=uv*coverage+vec2(1.-coverage.x,0.);float d=smoke(sampleUv)*dissolveMask(uv*resolution);color=vec4(d,d,d,1.);}`);
   const trimDensity = makeProgram(`uniform float cutoff;uniform float edge;
     void main(){float inkValue=texture(density,uv).x;
     float above=smoothstep(cutoff-edge,cutoff+edge,uv.y);
@@ -839,7 +867,10 @@ function mountSmoke(
   };
 
   const renderAscii = (now: number) => {
-    if (!grid || now - lastAscii < 1000 / 30) return;
+    // Always sample the terminal dissolve frame before acknowledging it. The display canvas can render at 60 Hz
+    // while the ASCII layers are throttled; letting progress 1 take the throttle would leave stale glyphs visible
+    // for the last frame before the creation surface is removed.
+    if (!grid || (dissolveProgress < 1 && now - lastAscii < 1000 / 30)) return;
     const elapsed = textPointer.last
       ? Math.min((now - textPointer.last) / 1000, 5)
       : 1 / 30;
@@ -881,10 +912,15 @@ function mountSmoke(
       }
     }
     textPointer.points.length = 0;
+    if (dissolveProgress >= 1) {
+      grid.trail.fill(0);
+      grid.trailActive = false;
+    }
     if (
       state.paused &&
       visibleAscii &&
       Number.isFinite(lastAscii) &&
+      dissolveProgress < 1 &&
       !hadTrail &&
       !grid.trailActive
     )
@@ -899,6 +935,7 @@ function mountSmoke(
         coverage: grid.coverage,
         zoom: state.zoom,
         cameraScale,
+        dissolveProgress,
       },
       { density: ink.read },
     );
@@ -1083,12 +1120,18 @@ function mountSmoke(
         zoom: state.zoom,
         cameraScale,
         asciiOn: 1,
+        dissolveProgress,
         smokeBackground: smokePalette.background,
         smokeTintLow: smokePalette.tintLow,
         smokeTintHigh: smokePalette.tintHigh,
       },
       { density: ink.read },
     );
+    if (dissolveProgress >= 1 && dissolveFrameCallback) {
+      const callback = dissolveFrameCallback;
+      dissolveFrameCallback = undefined;
+      callback();
+    }
     canvas.dataset.visible = "true";
     canvas.dataset.renderWidth = String(Math.round(rect.width));
   };
@@ -1144,6 +1187,8 @@ function mountSmoke(
   };
   const onMotionPreferenceChange = () => {
     state.paused = reducedMotion.matches;
+    if (dissolveProgress >= 1 && !animationFrame && !disposed)
+      animationFrame = requestAnimationFrame(frame);
   };
   const onWindowResize = () => {
     if (resizeFrame) cancelAnimationFrame(resizeFrame);
@@ -1174,36 +1219,52 @@ function mountSmoke(
   canvas.dataset.visible = "false";
   animationFrame = requestAnimationFrame(frame);
 
-  return () => {
-    disposed = true;
-    stopTheme();
-    cancelAnimationFrame(animationFrame);
-    if (resizeFrame) cancelAnimationFrame(resizeFrame);
-    observer.disconnect();
-    visibilityObserver?.disconnect();
-    interactionTarget.removeEventListener("pointermove", onPointerMove);
-    interactionTarget.removeEventListener("pointerleave", onPointerLeave);
-    document.removeEventListener("visibilitychange", onVisibilityChange);
-    reducedMotion.removeEventListener?.("change", onMotionPreferenceChange);
-    window.removeEventListener("blur", onPointerLeave);
-    canvas.dataset.visible = "false";
-    if (grid) {
-      context.deleteFramebuffer(grid.framebuffer);
-      context.deleteTexture(grid.texture);
-    }
-    asciiOutput.replaceChildren();
-    for (const target of renderTargets) {
-      context.deleteFramebuffer(target.framebuffer);
-      context.deleteTexture(target.texture);
-    }
-    for (const shader of programs) context.deleteProgram(shader.program);
-    context.deleteBuffer(buffer);
-    context.deleteVertexArray(vertexArray);
-    for (const target of [canvas, canvas.parentElement]) {
-      if (!target) continue;
-      for (const name of ["perfRendererWebgl", "perfVendorWebgl"])
-        delete target.dataset[name];
-    }
+  return {
+    dispose: () => {
+      disposed = true;
+      dissolveFrameCallback = undefined;
+      stopTheme();
+      cancelAnimationFrame(animationFrame);
+      if (resizeFrame) cancelAnimationFrame(resizeFrame);
+      observer.disconnect();
+      visibilityObserver?.disconnect();
+      interactionTarget.removeEventListener("pointermove", onPointerMove);
+      interactionTarget.removeEventListener("pointerleave", onPointerLeave);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      reducedMotion.removeEventListener?.("change", onMotionPreferenceChange);
+      window.removeEventListener("blur", onPointerLeave);
+      canvas.dataset.visible = "false";
+      if (grid) {
+        context.deleteFramebuffer(grid.framebuffer);
+        context.deleteTexture(grid.texture);
+      }
+      asciiOutput.replaceChildren();
+      for (const target of renderTargets) {
+        context.deleteFramebuffer(target.framebuffer);
+        context.deleteTexture(target.texture);
+      }
+      for (const shader of programs) context.deleteProgram(shader.program);
+      context.deleteBuffer(buffer);
+      context.deleteVertexArray(vertexArray);
+      for (const target of [canvas, canvas.parentElement]) {
+        if (!target) continue;
+        for (const name of ["perfRendererWebgl", "perfVendorWebgl"])
+          delete target.dataset[name];
+      }
+    },
+    canAcknowledgeDissolve: true,
+    setDissolveProgress: (progress) => {
+      dissolveProgress = Math.max(0, Math.min(1, progress));
+      if (dissolveProgress >= 1 && !animationFrame && !disposed)
+        animationFrame = requestAnimationFrame(frame);
+    },
+    onDissolveFrame: (callback) => {
+      dissolveFrameCallback = callback;
+      return () => {
+        if (dissolveFrameCallback === callback)
+          dissolveFrameCallback = undefined;
+      };
+    },
   };
 }
 
@@ -1460,7 +1521,7 @@ function mountSmokeWorker(
   canvas: HTMLCanvasElement,
   asciiOutput: HTMLElement,
   mountEpoch = performance.timeOrigin + performance.now(),
-): () => void {
+): SmokeRendererHandle {
   if (typeof Worker === "undefined")
     throw new Error("Smoke workers are unavailable.");
   const container = canvas.parentElement;
@@ -1654,7 +1715,10 @@ function mountSmokeWorker(
   }
 
   let stopped = false;
-  let fallbackCleanup: (() => void) | undefined;
+  let dissolveProgress = 0;
+  let dissolveFrameCallback: (() => void) | undefined;
+  let fallbackCleanup: SmokeRendererHandle | undefined;
+  let fallbackDissolveCleanup: (() => void) | undefined;
   let workerDisposed = false;
   let pointerFrameHandle = 0;
   let resizeFrameHandle = 0;
@@ -1680,6 +1744,49 @@ function mountSmokeWorker(
     x: 0,
     y: 0,
     active: false,
+  };
+
+  const scheduleUnavailableDissolve = (callback: () => void) => {
+    let frame = 0;
+    let frames = 0;
+    let cancelled = false;
+    const tick = () => {
+      frame = 0;
+      if (cancelled) return;
+      frames++;
+      if (frames >= 2) callback();
+      else frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      if (frame) cancelAnimationFrame(frame);
+    };
+  };
+  const registerFallbackDissolve = (callback: () => void) => {
+    fallbackDissolveCleanup?.();
+    const cleanup = fallbackCleanup?.canAcknowledgeDissolve
+      ? fallbackCleanup.onDissolveFrame(callback)
+      : scheduleUnavailableDissolve(callback);
+    fallbackDissolveCleanup = cleanup;
+    return () => {
+      cleanup();
+      if (fallbackDissolveCleanup === cleanup)
+        fallbackDissolveCleanup = undefined;
+    };
+  };
+
+  const setDissolveProgress = (progress: number) => {
+    dissolveProgress = Math.max(0, Math.min(1, progress));
+    if (fallbackCleanup) fallbackCleanup.setDissolveProgress(dissolveProgress);
+    else worker.postMessage({ type: "dissolve", progress: dissolveProgress });
+  };
+  const onDissolveFrame = (callback: () => void) => {
+    if (fallbackCleanup) return registerFallbackDissolve(callback);
+    dissolveFrameCallback = callback;
+    return () => {
+      if (dissolveFrameCallback === callback) dissolveFrameCallback = undefined;
+    };
   };
 
   const installLayer = (layer: number, text: string) => {
@@ -1924,11 +2031,23 @@ function mountSmokeWorker(
     delete canvas.dataset.error;
     try {
       fallbackCleanup = mountSmoke(canvas, asciiOutput);
+      fallbackCleanup.setDissolveProgress(dissolveProgress);
+      if (dissolveFrameCallback) {
+        const callback = dissolveFrameCallback;
+        dissolveFrameCallback = undefined;
+        registerFallbackDissolve(callback);
+      }
     } catch (fallbackError) {
+      fallbackCleanup = emptySmokeRenderer();
       canvas.dataset.error =
         fallbackError instanceof Error
           ? fallbackError.message
           : "Smoke rendering is unavailable.";
+      if (dissolveFrameCallback) {
+        const callback = dissolveFrameCallback;
+        dissolveFrameCallback = undefined;
+        registerFallbackDissolve(callback);
+      }
     }
   };
   const onWorkerMessage = (event: MessageEvent<unknown>) => {
@@ -1953,6 +2072,12 @@ function mountSmokeWorker(
       // continuing to render forever.
       prewarm.ready = true;
       if (!prewarmActivated) activatePrewarm();
+      return;
+    }
+    if (message?.type === "dissolved") {
+      const callback = dissolveFrameCallback;
+      dissolveFrameCallback = undefined;
+      callback?.();
       return;
     }
     if (message?.type === "ready") {
@@ -2144,105 +2269,129 @@ function mountSmokeWorker(
   if (!surfaceVisible())
     worker.postMessage({ type: "visibility", visible: false });
 
-  return () => {
-    stopped = true;
-    stopTheme();
-    resizeObserver.disconnect();
-    interactionTarget.removeEventListener("pointermove", onPointerMove);
-    interactionTarget.removeEventListener("pointerleave", onPointerLeave);
-    document.removeEventListener("visibilitychange", onVisibilityChange);
-    reducedMotion.removeEventListener("change", onMotionPreferenceChange);
-    visibilityObserver?.disconnect();
-    window.removeEventListener("blur", onPointerLeave);
-    if (pointerFrameHandle) cancelAnimationFrame(pointerFrameHandle);
-    if (resizeFrameHandle) cancelAnimationFrame(resizeFrameHandle);
-    worker.removeEventListener("message", onWorkerMessage);
-    worker.removeEventListener("error", onWorkerError);
-    fallbackCleanup?.();
-    if (prewarm && !workerDisposed) {
-      if (!returnSmokePrewarm(prewarm)) {
+  return {
+    dispose: () => {
+      stopped = true;
+      stopTheme();
+      resizeObserver.disconnect();
+      interactionTarget.removeEventListener("pointermove", onPointerMove);
+      interactionTarget.removeEventListener("pointerleave", onPointerLeave);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      reducedMotion.removeEventListener("change", onMotionPreferenceChange);
+      visibilityObserver?.disconnect();
+      window.removeEventListener("blur", onPointerLeave);
+      if (pointerFrameHandle) cancelAnimationFrame(pointerFrameHandle);
+      if (resizeFrameHandle) cancelAnimationFrame(resizeFrameHandle);
+      worker.removeEventListener("message", onWorkerMessage);
+      worker.removeEventListener("error", onWorkerError);
+      dissolveFrameCallback = undefined;
+      fallbackDissolveCleanup?.();
+      fallbackDissolveCleanup = undefined;
+      fallbackCleanup?.dispose();
+      if (prewarm && !workerDisposed) {
+        if (!returnSmokePrewarm(prewarm)) {
+          worker.terminate();
+          workerCanvas.remove();
+        }
+      } else {
         worker.terminate();
         workerCanvas.remove();
       }
-    } else {
-      worker.terminate();
-      workerCanvas.remove();
-    }
-    asciiOutput.replaceChildren();
-    canvas.style.display = "";
-    canvas.removeAttribute("aria-hidden");
-    canvas.dataset.visible = "false";
-    canvas.dataset.ready = "false";
-    for (const name of [
-      "perfWorkerDomMs",
-      "perfWorkerComputeMs",
-      "perfWorkerGridMs",
-      "perfRendererWebgl",
-      "perfVendorWebgl",
-    ])
-      delete canvas.dataset[name];
-    for (const target of perfTargets)
+      asciiOutput.replaceChildren();
+      canvas.style.display = "";
+      canvas.removeAttribute("aria-hidden");
+      canvas.dataset.visible = "false";
+      canvas.dataset.ready = "false";
       for (const name of [
-        "data-perf-worker-dom-ms",
-        "data-perf-worker-compute-ms",
-        "data-perf-worker-grid-ms",
-        "data-perf-main-dom-patches",
-        "data-perf-main-dom-text-mutations",
-        "data-perf-main-dom-changed-count",
-        "data-perf-timing-window-ms",
-        "data-perf-gpu-timer",
-        "data-perf-gl-texture-bytes",
-        "data-perf-gl-scalar-format",
-        "data-perf-gl-velocity-format",
-        "data-perf-gl-readback-mode",
-        "data-perf-renderer",
-        "data-perf-vendor",
-        "data-perf-renderer-unmasked",
-        "data-perf-vendor-unmasked",
-        "data-perf-canvas-css-width",
-        "data-perf-canvas-css-height",
-        "data-perf-canvas-pixel-width",
-        "data-perf-canvas-pixel-height",
-        "data-perf-grid-width",
-        "data-perf-grid-height",
-        "data-perf-grid-cells",
-        "data-perf-pixel-ratio",
-        "data-perf-worker-cpu-step-p50",
-        "data-perf-worker-cpu-step-p95",
-        "data-perf-worker-cpu-step-p99",
-        "data-perf-worker-cpu-step-count",
-        "data-perf-worker-steps-p50",
-        "data-perf-worker-steps-p95",
-        "data-perf-worker-steps-p99",
-        "data-perf-worker-steps-count",
-        "data-perf-worker-sample-p50",
-        "data-perf-worker-sample-p95",
-        "data-perf-worker-sample-p99",
-        "data-perf-worker-sample-count",
-        "data-perf-worker-grid-p50",
-        "data-perf-worker-grid-p95",
-        "data-perf-worker-grid-p99",
-        "data-perf-worker-grid-count",
-        "data-perf-worker-gpu-p50",
-        "data-perf-worker-gpu-p95",
-        "data-perf-worker-gpu-p99",
-        "data-perf-worker-gpu-count",
-        "data-perf-main-dom-p50",
-        "data-perf-main-dom-p95",
-        "data-perf-main-dom-p99",
-        "data-perf-main-dom-count",
-        "data-perf-main-dom-changed-interval-p50",
-        "data-perf-main-dom-changed-interval-p95",
-        "data-perf-main-dom-changed-interval-p99",
-        "data-perf-main-dom-changed-interval-count",
+        "perfWorkerDomMs",
+        "perfWorkerComputeMs",
+        "perfWorkerGridMs",
+        "perfRendererWebgl",
+        "perfVendorWebgl",
       ])
-        target.removeAttribute(name);
+        delete canvas.dataset[name];
+      for (const target of perfTargets)
+        for (const name of [
+          "data-perf-worker-dom-ms",
+          "data-perf-worker-compute-ms",
+          "data-perf-worker-grid-ms",
+          "data-perf-main-dom-patches",
+          "data-perf-main-dom-text-mutations",
+          "data-perf-main-dom-changed-count",
+          "data-perf-timing-window-ms",
+          "data-perf-gpu-timer",
+          "data-perf-gl-texture-bytes",
+          "data-perf-gl-scalar-format",
+          "data-perf-gl-velocity-format",
+          "data-perf-gl-readback-mode",
+          "data-perf-renderer",
+          "data-perf-vendor",
+          "data-perf-renderer-unmasked",
+          "data-perf-vendor-unmasked",
+          "data-perf-canvas-css-width",
+          "data-perf-canvas-css-height",
+          "data-perf-canvas-pixel-width",
+          "data-perf-canvas-pixel-height",
+          "data-perf-grid-width",
+          "data-perf-grid-height",
+          "data-perf-grid-cells",
+          "data-perf-pixel-ratio",
+          "data-perf-worker-cpu-step-p50",
+          "data-perf-worker-cpu-step-p95",
+          "data-perf-worker-cpu-step-p99",
+          "data-perf-worker-cpu-step-count",
+          "data-perf-worker-steps-p50",
+          "data-perf-worker-steps-p95",
+          "data-perf-worker-steps-p99",
+          "data-perf-worker-steps-count",
+          "data-perf-worker-sample-p50",
+          "data-perf-worker-sample-p95",
+          "data-perf-worker-sample-p99",
+          "data-perf-worker-sample-count",
+          "data-perf-worker-grid-p50",
+          "data-perf-worker-grid-p95",
+          "data-perf-worker-grid-p99",
+          "data-perf-worker-grid-count",
+          "data-perf-worker-gpu-p50",
+          "data-perf-worker-gpu-p95",
+          "data-perf-worker-gpu-p99",
+          "data-perf-worker-gpu-count",
+          "data-perf-main-dom-p50",
+          "data-perf-main-dom-p95",
+          "data-perf-main-dom-p99",
+          "data-perf-main-dom-count",
+          "data-perf-main-dom-changed-interval-p50",
+          "data-perf-main-dom-changed-interval-p95",
+          "data-perf-main-dom-changed-interval-p99",
+          "data-perf-main-dom-changed-interval-count",
+        ])
+          target.removeAttribute(name);
+    },
+    canAcknowledgeDissolve: true,
+    setDissolveProgress,
+    onDissolveFrame,
   };
 }
 
-export function WishSmoke() {
+export function WishSmoke({
+  transitionState = "surface",
+  onDissipationComplete,
+}: {
+  transitionState?: "surface" | "expanded" | "dissipating";
+  onDissipationComplete?: () => void;
+}) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const asciiOutput = useRef<HTMLDivElement>(null);
+  const renderer = useRef<SmokeRendererHandle | undefined>(undefined);
+  const dissolveFrame = useRef<number | undefined>(undefined);
+  const dissolveRef = useRef(0);
+  const [dissolveProgress, setDissolveProgress] = useState(0);
+  const setProgress = useCallback((progress: number) => {
+    const next = Math.max(0, Math.min(1, progress));
+    dissolveRef.current = next;
+    setDissolveProgress(next);
+    renderer.current?.setDissolveProgress(next);
+  }, []);
 
   useEffect(() => {
     const canvasElement = canvas.current;
@@ -2259,7 +2408,7 @@ export function WishSmoke() {
       canvasElement.dataset.perfSmokeMode = mode;
       canvasElement.parentElement?.setAttribute("data-perf-smoke-mode", mode);
     }
-    let cleanup: (() => void) | undefined;
+    let cleanup: SmokeRendererHandle | undefined;
     if (smokeEnabled) {
       try {
         cleanup = mountSmokeWorker(canvasElement, asciiElement, mountEpoch);
@@ -2276,16 +2425,96 @@ export function WishSmoke() {
         }
       }
     }
+    renderer.current = cleanup ?? emptySmokeRenderer();
+    renderer.current.setDissolveProgress(dissolveRef.current);
     return () => {
-      cleanup?.();
+      renderer.current = undefined;
+      cleanup?.dispose();
       performanceCleanup();
       delete canvasElement.dataset.perfSmokeMode;
       canvasElement.parentElement?.removeAttribute("data-perf-smoke-mode");
     };
   }, []);
 
+  useEffect(() => {
+    if (dissolveFrame.current !== undefined) {
+      cancelAnimationFrame(dissolveFrame.current);
+      dissolveFrame.current = undefined;
+    }
+    if (transitionState !== "dissipating") {
+      setProgress(0);
+      return;
+    }
+    const reduced =
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      document.documentElement.dataset.motion === "reduced";
+    let completionScheduled = false;
+    let notified = false;
+    let rendererCleanup: (() => void) | undefined;
+    const notify = () => {
+      if (notified) return;
+      notified = true;
+      rendererCleanup?.();
+      rendererCleanup = undefined;
+      dissolveFrame.current = undefined;
+      onDissipationComplete?.();
+    };
+    const finish = () => {
+      if (completionScheduled) return;
+      completionScheduled = true;
+      const rendererHandle = renderer.current;
+      rendererCleanup = rendererHandle?.onDissolveFrame(notify);
+      setProgress(1);
+      if (!rendererHandle?.canAcknowledgeDissolve) {
+        // Empty or unavailable renderers have no frame acknowledgment, so hold their terminal state for two
+        // frames before handing off to the wish. Main and worker renderers notify after drawing the final frame.
+        let frames = 0;
+        const waitForTerminalFrame = () => {
+          if (notified) return;
+          frames++;
+          if (frames >= 2) notify();
+          else
+            dissolveFrame.current = requestAnimationFrame(waitForTerminalFrame);
+        };
+        dissolveFrame.current = requestAnimationFrame(waitForTerminalFrame);
+      }
+    };
+    if (reduced) {
+      finish();
+      return () => {
+        rendererCleanup?.();
+        rendererCleanup = undefined;
+        if (dissolveFrame.current !== undefined)
+          cancelAnimationFrame(dissolveFrame.current);
+        dissolveFrame.current = undefined;
+      };
+    }
+    const startedAt = performance.now();
+    const tick = (now: number) => {
+      const progress = Math.min(
+        1,
+        Math.max(0, (now - startedAt) / WISH_SMOKE_DISSIPATION_MS),
+      );
+      setProgress(progress);
+      if (progress >= 1) finish();
+      else dissolveFrame.current = requestAnimationFrame(tick);
+    };
+    dissolveFrame.current = requestAnimationFrame(tick);
+    return () => {
+      rendererCleanup?.();
+      rendererCleanup = undefined;
+      if (dissolveFrame.current !== undefined)
+        cancelAnimationFrame(dissolveFrame.current);
+      dissolveFrame.current = undefined;
+    };
+  }, [onDissipationComplete, setProgress, transitionState]);
+
   return (
-    <div className="wish-smoke">
+    <div
+      className="wish-smoke"
+      data-wish-smoke-state={transitionState}
+      data-wish-smoke-dissolve={dissolveProgress}
+    >
       <canvas
         ref={canvas}
         className="wish-smoke-canvas"
