@@ -223,6 +223,7 @@ export const WishTask = memo(function WishTask({
           aria-expanded={open}
         >
           <span className="wish-task-first-line">
+            <StatusBadge tone={tone} label={taskStatusText(task, forkedAs)} />
             <span className="agent-code">{task.code}</span>
             {/* Cut to the room left: the whole title shows on hover. */}
             <span className="task-title-wrap">
@@ -251,7 +252,6 @@ export const WishTask = memo(function WishTask({
                   {time.text}
                 </span>
               )}
-              <StatusBadge tone={tone} label={taskStatusText(task, forkedAs)} />
               {origin}
               <TaskUsage usage={task.usage} />
               {task.status === TaskStatus.RUNNING &&
