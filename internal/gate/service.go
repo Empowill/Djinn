@@ -2,6 +2,7 @@ package gate
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 
 // Handler returns the Connect handler of GateService on g, and its path prefix.
 func Handler(g *Gates) (string, http.Handler) {
-	return machinev1connect.NewGateServiceHandler(&service{g: g}, connect.WithInterceptors(plan.Validate))
+	return machinev1connect.NewGateServiceHandler(&service{g: g}, connect.WithInterceptors(plan.WorkerGuard, plan.Validate))
 }
 
 type service struct {
@@ -34,6 +35,13 @@ func (s *service) Hold(
 	// The validating interceptor only sees unary calls.
 	if err := protovalidate.Validate(req.Msg); err != nil {
 		return connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	if caller := plan.CallerFromContext(ctx); caller != nil {
+		if req.Msg.TaskId == "" {
+			req.Msg.TaskId = caller.TaskID
+		} else if req.Msg.TaskId != caller.TaskID {
+			return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("a worker can only hold a gate for its own task (%s)", caller.TaskID))
+		}
 	}
 	name := Name(req.Msg.GetName())
 	hold, err := s.g.Take(ctx, Request{

@@ -132,7 +132,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 		opt(&o)
 	}
 	out := map[string]http.Handler{}
-	opt := connect.WithInterceptors(Validate)
+	opt := connect.WithInterceptors(WorkerGuard, Validate)
 	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home, Pusher: o.pusher}, opt)
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers,
@@ -182,7 +182,7 @@ var Validate = connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect
 // write journals req, then runs fn, in one transaction. Store errors become Connect errors.
 func write(ctx context.Context, s *store.Store, spec connect.Spec, req proto.Message, fn func(*store.Tx) error) error {
 	return Status(s.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal(actor, spec.Procedure, req); err != nil {
+		if err := tx.Journal(CallerActor(ctx), spec.Procedure, req); err != nil {
 			return err
 		}
 		return fn(tx)
