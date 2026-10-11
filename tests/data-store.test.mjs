@@ -569,3 +569,91 @@ test("incremental changes adjust server totals", async () => {
 
   stop();
 });
+
+test("a move removes the azima from the first wish's detail and adds it to the second's", async () => {
+  const data = sample();
+  const wish1 = wishId;
+  const wish2 = "01a11833-a440-7479-a067-52615c91da72";
+  data.wishes.push({
+    id: wish2,
+    title: "Collaborative Djinn",
+    rank: 2,
+    state: 1,
+  });
+
+  const azima = {
+    id: `${taskId}1`,
+    wishId: wish1,
+    code: "T01",
+    title: "Azima",
+    kind: 2,
+  };
+  const part = {
+    id: `${taskId}2`,
+    wishId: wish1,
+    code: "W01",
+    title: "Part",
+    partOf: azima.id,
+  };
+  const allTasks = [azima, part];
+  data.listTasks = (req) => {
+    const tasks = allTasks.filter((t) => t.wishId === req.wishId);
+    return { tasks, total: tasks.length, nextPageToken: "" };
+  };
+
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wish1, [Change.TASK]);
+  store.open(wish2, [Change.TASK]);
+  await until(
+    store,
+    (s) =>
+      s.details[wish1]?.loadedKinds.has(Change.TASK) &&
+      s.details[wish2]?.loadedKinds.has(Change.TASK),
+  );
+
+  assert.equal(store.getState().details[wish1].tasks.length, 2);
+  assert.equal(store.getState().details[wish1].tasksTotal, 2);
+  assert.equal(store.getState().details[wish2].tasks.length, 0);
+  assert.equal(store.getState().details[wish2].tasksTotal, 0);
+  const before = { ...reads };
+
+  // Move azima and part from wish1 to wish2.
+  const movedAzima = { ...azima, wishId: wish2, code: "T02" };
+  const movedPart = { ...part, wishId: wish2, partOf: movedAzima.id };
+  watch.push({
+    wishId: wish1,
+    changes: [Change.TASK],
+    changed: carried({ deleted: [azima.id, part.id] }),
+  });
+  watch.push({
+    wishId: wish2,
+    changes: [Change.TASK],
+    changed: carried({ tasks: [movedAzima, movedPart] }),
+  });
+
+  const state = await until(
+    store,
+    (s) =>
+      s.details[wish1]?.tasks.length === 0 &&
+      s.details[wish2]?.tasks.length === 2,
+  );
+
+  assert.equal(state.details[wish1].tasks.length, 0);
+  assert.equal(state.details[wish1].tasksTotal, 0);
+  assert.equal(state.details[wish2].tasks.length, 2);
+  assert.equal(state.details[wish2].tasksTotal, 2);
+  assert.deepEqual(
+    state.details[wish2].tasks.map((t) => t.id),
+    [movedAzima.id, movedPart.id],
+  );
+  assert.equal(state.details[wish2].tasks[0].code, "T02");
+  assert.equal(state.details[wish2].tasks[1].partOf, movedAzima.id);
+  assert.equal(reads.tasks, before.tasks, "tasks was not re-read from server");
+
+  stop();
+});

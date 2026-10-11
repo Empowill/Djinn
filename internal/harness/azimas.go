@@ -750,6 +750,9 @@ func (h *Harness) Move(ctx context.Context, procedure string, req *planv1.TaskSe
 		}
 
 		for _, t := range moving {
+			if err := tx.Change(t); err != nil {
+				return err
+			}
 			if !slices.Contains(sourceWish.GetRetiredCodes(), t.GetCode()) {
 				sourceWish.RetiredCodes = append(sourceWish.RetiredCodes, t.GetCode())
 			}

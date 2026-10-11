@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -18,6 +19,27 @@ import (
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
+
+func nextWatch(t *testing.T, s *connect.ServerStreamForClient[planv1.WishServiceWatchResponse]) *planv1.WishServiceWatchResponse {
+	t.Helper()
+	got := make(chan *planv1.WishServiceWatchResponse, 1)
+	go func() {
+		if s.Receive() {
+			got <- s.Msg()
+		}
+		close(got)
+	}()
+	select {
+	case msg, ok := <-got:
+		if !ok {
+			t.Fatalf("the stream ended: %v", s.Err())
+		}
+		return msg
+	case <-time.After(5 * time.Second):
+		t.Fatal("no message")
+		return nil
+	}
+}
 
 // azima makes an azima of the wish, waiting for deps.
 func (e *env) azima(t *testing.T, wishID, title string, deps ...string) *planv1.Task {
@@ -1005,10 +1027,57 @@ func TestMoveAzima(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Find T1's ID in wish1.
+	var t1ID string
+	for _, task := range e.list(t, wish1) {
+		if task.GetCode() == "T1" {
+			t1ID = task.GetId()
+			break
+		}
+	}
+	if t1ID == "" {
+		t.Fatal("T1 not found in wish1")
+	}
+
+	// Watch both wishes before move.
+	wCtx, wCancel := context.WithCancel(ctx)
+	t.Cleanup(wCancel)
+	s1, err := e.wishes.Watch(wCtx, connect.NewRequest(&planv1.WishServiceWatchRequest{WishId: wish1}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2, err := e.wishes.Watch(wCtx, connect.NewRequest(&planv1.WishServiceWatchRequest{WishId: wish2}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = nextWatch(t, s1)
+	_ = nextWatch(t, s2)
+
 	moved, err := e.tasks.Move(ctx, connect.NewRequest(&planv1.TaskServiceMoveRequest{Azima: "T1", Wish: wish2}))
 	if err != nil {
 		t.Fatalf("Move failed: %v", err)
 	}
+	// The move publishes changes for both wishes: deleted from wish1, added to wish2.
+	msg1 := nextWatch(t, s1)
+	if !slices.Contains(msg1.GetChanges(), planv1.Change_CHANGE_TASK) {
+		t.Errorf("wish1 changes = %v, want CHANGE_TASK", msg1.GetChanges())
+	}
+	if !slices.Contains(msg1.GetChanged().GetDeleted(), t1ID) || !slices.Contains(msg1.GetChanged().GetDeleted(), w1Wish1.GetId()) {
+		t.Errorf("wish1 deleted = %v, want T1 (%s) and W1 (%s)", msg1.GetChanged().GetDeleted(), t1ID, w1Wish1.GetId())
+	}
+
+	msg2 := nextWatch(t, s2)
+	if !slices.Contains(msg2.GetChanges(), planv1.Change_CHANGE_TASK) {
+		t.Errorf("wish2 changes = %v, want CHANGE_TASK", msg2.GetChanges())
+	}
+	var gotWish2IDs []string
+	for _, task := range msg2.GetChanged().GetTasks() {
+		gotWish2IDs = append(gotWish2IDs, task.GetId())
+	}
+	if !slices.Contains(gotWish2IDs, t1ID) || !slices.Contains(gotWish2IDs, w1Wish1.GetId()) {
+		t.Errorf("wish2 tasks = %v, want T1 (%s) and W1 (%s)", gotWish2IDs, t1ID, w1Wish1.GetId())
+	}
+
 	// In wish2, T1 conflicted with existing T1, so it got renumbered to T2.
 	if moved.Msg.GetTask().GetWishId() != wish2 {
 		t.Errorf("moved wishID = %q, want %q", moved.Msg.GetTask().GetWishId(), wish2)
