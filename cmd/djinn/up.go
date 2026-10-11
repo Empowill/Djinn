@@ -54,7 +54,7 @@ var readMachine func() (machine.Snapshot, error)
 // everything here is closed.
 func runUp(args []string) (restart bool, err error) {
 	var (
-		browser, warmWorkers                      bool
+		browser                                   bool
 		answerWorkers, enlightenWorkers           bool
 		questionWorkers                           bool
 		profiles                                  bool
@@ -64,7 +64,7 @@ func runUp(args []string) (restart bool, err error) {
 	)
 	flags := cli.Up.FlagSet(map[string]any{
 		"browser": &browser, "port": &port, "terminal": &term, "terminal-dir": &termDir, "workers": &maxWorkers,
-		"warm-workers": &warmWorkers, "worker-cpu": &workerCPU, "worker-memory": &workerMemory,
+		"worker-cpu": &workerCPU, "worker-memory": &workerMemory,
 		"worker-memory-guard": &workerMemoryGuard,
 		"answer-workers":      &answerWorkers, "enlighten-workers": &enlightenWorkers,
 		"question-workers": &questionWorkers, "pprof": &profiles,
@@ -180,9 +180,6 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
-	}
-	if warmWorkers {
-		opts = append(opts, harness.WithWarm())
 	}
 	if answerSet {
 		opts = append(opts, harness.WithAnswerWorkers(answerWorkers))

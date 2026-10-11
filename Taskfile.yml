@@ -109,7 +109,7 @@ tasks:
       - go test -tags headless -run '^$' -bench . -benchmem {{.CLI_ARGS}} ./internal/server
 
   bench-workers:
-    desc: "PAID: compare five ways Djinn starts a worker (cold, --bare, fork, warm, brief) on one small task with a real model. Prints its quote; runs only with BENCH_PAID=yes and BENCH_MAX_USD (see plan/8ce817da-cost.md)"
+    desc: "PAID: compare four ways Djinn starts a worker (cold, --bare, fork, brief) on one small task with a real model. Prints its quote; runs only with BENCH_PAID=yes and BENCH_MAX_USD (see plan/8ce817da-cost.md)"
     cmds:
       - go run ./tools/benchworkers
 

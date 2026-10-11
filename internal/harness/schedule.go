@@ -208,7 +208,6 @@ func planned(t *planv1.Task) bool { return dispatch.Planned(t) }
 func (h *Harness) schedule(ctx context.Context) {
 	h.sched.Lock()
 	defer h.sched.Unlock()
-	defer h.refreshWarm(ctx) // Once the planned tasks have taken their slots.
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
 		if ctx.Err() == nil {

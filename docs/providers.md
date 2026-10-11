@@ -108,8 +108,8 @@ prefix never widens into a pattern.
 
 Pushing is the orchestrator's. A denied `git push` is only a first line: a prefix, it lets `sh -c "git push"` or
 `git -C . push` through, under Claude's rules as under agy's deny grants. So Djinn makes the push impossible by
-environment, for every worker whatever its provider (Claude, Codex, Antigravity, the fake; question workers and warm
-ones alike): their environment gives Git a command-line configuration (`GIT_CONFIG_COUNT`, after the user's own)
+environment, for every worker whatever its provider (Claude, Codex, Antigravity, the fake; question workers
+alike): their environment gives Git a command-line configuration (`GIT_CONFIG_COUNT`, after the user's own)
 that includes, in the project's repository only (`includeIf.gitdir` on its `.git` and its worktrees), Djinn's
 `git/no-push.gitconfig`. It holds one empty `pushInsteadOf`, a prefix of every URL: any push from the worker, to a
 remote, to one it added, to a path or URL on the command line, `--no-verify` or not, goes to the
@@ -325,8 +325,6 @@ Djinn does not count one result per message but takes the result's `queued_turn_
 for later turns) as the number still waiting; at 0 it closes the input. A result without that field (older
 versions, and agy) counts one message. If messages still wait after such a result and the agent writes nothing
 for `harness.Quiet` (10 minutes), Djinn takes them as answered, says so in a `STATUS`, and closes the input.
-A warm worker (`djinn up --warm-workers`) is the same command started before its task: it waits for
-its first message, which is the task's prompt.
 
 **Stream.** One JSON message per line: `system/init` (session, model), `assistant` and `user` messages made of
 blocks (`text`, `tool_use`, `tool_result`, `thinking`), and one `result` per turn with the cost.

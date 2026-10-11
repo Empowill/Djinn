@@ -276,9 +276,8 @@ To use Djinn, see the [README](README.md). To work on it:
   any agent, starts by running it. `djinn wish describe <wish-id> --text "…"` gives the wish the few lines it opens with
   (also edited under the wish's title). `djinn wish resume <wish-id> --provider antigravity` (or the arrow beside Lead)
   starts a lead of another agent than the recorded one's.
-  `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `djinn up
-  --warm-workers` keeps a claude loaded per project; `go tool task bench-workers` (paid, refuses without consent)
-  compares them ([T14](plan/8ce817da-cost.md)).
+  `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `go tool task
+  bench-workers` (paid, refuses without consent) compares the ways Djinn starts a worker ([T14](plan/8ce817da-cost.md)).
 - `djinn task send <task-id> "…"` gives a running worker an instruction (or the box under its events, in the window):
   an event of the task, then "received" once the worker says something after it.
 - A decision is an answered question or a block of kind decision. `djinn question ask … --icon 🔒` and `djinn block put

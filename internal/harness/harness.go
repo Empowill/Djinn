@@ -118,10 +118,6 @@ type Harness struct {
 	mainTested       map[string]mainTested // by wish/project; owned by the integration's pass
 	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
 
-	// Warm workers (warm.go), guarded by sched.
-	warmOn bool
-	warm   map[string]*warm // by wish/project
-
 	mu      sync.Mutex
 	closed  bool
 	held    func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
@@ -160,7 +156,6 @@ type run struct {
 	base        *planv1.Usage // what the task had spent before this worker
 	restart     bool          // the worker stops to start again, allowed to edit
 	unread      []string      // messages the worker took on its input and has said nothing after yet
-	warm        *warm         // the warm worker the task takes, until launch
 	branch      string        // the branch template of the project's settings, for launch; empty: the default
 	from        string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
 	checks      string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
@@ -202,7 +197,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	ctx, cancel := context.WithCancel(context.Background())
 	h := &Harness{
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
-		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}), warm: map[string]*warm{},
+		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
 		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{},
 		installed: map[string]string{},
 	}
@@ -248,7 +243,6 @@ func (h *Harness) Close() {
 	if h.integrateDone != nil {
 		<-h.integrateDone
 	}
-	h.closeWarm()
 	if h.batcher != nil {
 		h.batcher.Close()
 	}
@@ -304,6 +298,49 @@ func (h *Harness) Recover(ctx context.Context) error {
 		return err
 	}
 	return h.recoverAzimas(ctx, tasks)
+}
+
+// cleanWarmLeftovers removes leftover worktrees and branches (djinn-warm-…) from older versions of Djinn that
+// supported warm workers: when a previous djinn up died before a task took them, their worktrees remained in Djinn's
+// data folder. Kept so older worktrees and branches do not linger after upgrading.
+func (h *Harness) cleanWarmLeftovers(ctx context.Context) {
+	const warmBranchPrefix = "djinn-warm-"
+	projects, err := store.List[*planv1.Project](ctx, h.store, nil)
+	if err != nil {
+		return
+	}
+	root := filepath.Join(h.home, "projects")
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	root += string(filepath.Separator)
+	for _, p := range projects {
+		if !p.GetGit() || p.GetDirectory() == "" {
+			continue
+		}
+		if _, err := os.Stat(p.GetDirectory()); err != nil {
+			continue
+		}
+		out, err := git(ctx, p.GetDirectory(), "worktree", "list", "--porcelain")
+		if err != nil {
+			continue
+		}
+		var path string
+		for _, line := range strings.Split(out, "\n") {
+			switch {
+			case strings.HasPrefix(line, "worktree "):
+				path = filepath.Clean(strings.TrimPrefix(line, "worktree "))
+			case strings.HasPrefix(line, "branch refs/heads/"+warmBranchPrefix) && strings.HasPrefix(path+string(filepath.Separator), root):
+				branch := strings.TrimPrefix(line, "branch refs/heads/")
+				if err := removeWorktree(ctx, p.GetDirectory(), path, true); err != nil {
+					log.Printf("djinn: remove leftover warm worktree: %v", err)
+				}
+				if _, err := git(ctx, p.GetDirectory(), "branch", "-D", branch); err != nil {
+					log.Printf("djinn: remove leftover warm branch: %v", err)
+				}
+			}
+		}
+	}
 }
 
 // Spawn creates a task and starts its worker: in a Git project, in a new worktree on its own branch. procedure
@@ -459,19 +496,11 @@ func (h *Harness) spawn(
 		return h.plan(ctx, procedure, req, task, parent, prompt, why)
 	}
 
-	// A warm worker of the wish in the project, when the task asks for nothing it was not started with.
-	wk := h.claimWarm(ctx, wish, project, task)
-	if wk != nil {
-		task.Id = wk.id
-	}
 	r, err := h.newRun(task, 1)
 	if err != nil {
-		if wk != nil {
-			h.dropWarm(wk, "the task did not start")
-		}
 		return nil, err
 	}
-	r.warm, r.branch, r.from = wk, settings.Branch, h.workerStartBranch(ctx, wish, project, settings, task)
+	r.branch, r.from = settings.Branch, h.workerStartBranch(ctx, wish, project, settings, task)
 	r.checks = settings.ChecksBrief()
 	if questionWorker(task) {
 		p, _, fb := questionProvider(settings)
@@ -510,9 +539,6 @@ func (h *Harness) spawn(
 		return tx.Put(prompted)
 	})
 	if err != nil {
-		if wk != nil {
-			h.dropWarm(wk, "the task did not start")
-		}
 		h.forget(r)
 		return nil, plan.Status(err)
 	}
@@ -641,22 +667,10 @@ func (h *Harness) launch(
 	task := r.task
 	readOnly, perms := accessSpec(task.GetAccess(), prep.declared)
 	perms = withCommit(task, perms)
-	wk := r.warm
-	r.warm = nil
-	if wk != nil && (!wk.fits(readOnly, perms) || wk.spec.LowPriority != h.lowPriority()) {
-		// Decided otherwise in the meantime: its worktree is the task's, so it goes first.
-		h.stopWarm(wk)
-		wk = nil
-	}
 	var skills []Skill
 	var skillsDir string
 	if !r.watcher && !r.light { // A command reads no skill, nor does a question worker.
 		skills, skillsDir = h.summon(ctx, r, project)
-	}
-	if wk != nil && len(skills) > 0 {
-		// A warm worker started without the project's summoned skills: the task starts cold, with them.
-		h.stopWarm(wk)
-		wk = nil
 	}
 	dir := project.GetDirectory()
 	if project == nil {
@@ -681,8 +695,6 @@ func (h *Harness) launch(
 			dir, err = reviewWorktree(ctx, project.GetDirectory(), task.GetWorktree())
 		case f != nil:
 			dir, err = correctionWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), f)
-		case wk != nil:
-			dir, sha, from = wk.spec.Dir, wk.base, wk.from
 		default:
 			if sha, from, err = startPoint(ctx, project.GetDirectory(), r.from); err == nil {
 				dir, err = addWorktreeFrom(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), sha)
@@ -728,12 +740,7 @@ func (h *Harness) launch(
 		text = "started " + short(task.GetProvider()) + how + " " + where + ": " + questionStart(task) + "; " +
 			accessText(task, nil)
 	}
-	var err error
-	if wk != nil {
-		err = h.adoptWarm(ctx, r, provider, wk, spec, text)
-	} else {
-		err = h.start(r, provider, spec, text)
-	}
+	err := h.start(r, provider, spec, text)
 	if err != nil && r.light && questionWorker(task) && task.GetProvider() != planv1.Provider_PROVIDER_CLAUDE {
 		if claudeProvider, ok := h.providers[planv1.Provider_PROVIDER_CLAUDE]; ok {
 			origProvider := task.GetProvider()

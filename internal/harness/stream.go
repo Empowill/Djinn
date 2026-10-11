@@ -49,34 +49,12 @@ type streamAgent struct {
 // startStream starts command with args, writes the prompt as the first message, and reads what the agent says.
 // The input stays open for more messages, and is closed once every message has its result: the agent then exits.
 func startStream(ctx context.Context, spec Spec, command string, args []string, grace time.Duration, a streamAgent) (Worker, error) {
-	return startStreamWith(ctx, spec, command, args, grace, a, true)
-}
-
-// startStreamIdle starts command with args and lets the agent load, without a message: the first Send is its first
-// message. A warm worker.
-func startStreamIdle(ctx context.Context, spec Spec, command string, args []string, grace time.Duration, a streamAgent) (Worker, error) {
-	return startStreamWith(ctx, spec, command, args, grace, a, false)
-}
-
-func startStreamWith(
-	ctx context.Context, spec Spec, command string, args []string, grace time.Duration, a streamAgent, prompt bool,
-) (Worker, error) {
 	p, err := startProcess(spec.Dir, command, args, spec.Env, spec.Scope, grace, spec.LowPriority)
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}
 	w := &streamWorker{a: a, p: p, events: make(chan Event, 64), done: make(chan struct{})}
 	go w.read()
-	if !prompt {
-		go func() {
-			select {
-			case <-ctx.Done():
-				w.Stop()
-			case <-w.done:
-			}
-		}()
-		return w, nil
-	}
 	if err := w.Send(spec.Prompt); err != nil {
 		p.Stop()
 		go func() {
