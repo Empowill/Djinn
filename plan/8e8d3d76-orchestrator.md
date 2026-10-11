@@ -116,6 +116,15 @@ Decide who does what, run each worker safely, and protect the machine.
   (`TestMergeMainAtARelease`, `TestLookAtMainAtOnce`, `TestMergeMainEachCommit`, `TestMainConflictStartsACorrection`,
   `TestMainAttemptsSpent`, `TestReleaseFit` in `internal/harness`; `TestMainSettings` in `internal/plan`;
   `TestALocalBuildFollowsItsCheckout`, `TestLocalBuild`, `TestReleaseSource` in `cmd/djinn`)
+- [x] The scheduler follows a strict 5-tier order (Q117, A, W332): investigator workers first, followed by answer
+  workers; then correction workers, then review workers; then resumed work tasks; then work tasks on the critical
+  path that unblock others (ordered by transitive dependent count); then other work tasks. Within each level, wish
+  rank, then oldest. When memory is short, an investigator goes first and work tasks wait behind it with explicit wait
+  reasons ("an investigator goes first: …"). Preemption: when an investigator cannot start, Djinn pauses the lowest
+  running work task to free a slot (resumed once the investigator ends), or interrupts it to RESUMING with no spent
+  resumes when memory is short; gate holders, correction/review workers, and Windows pausing are excluded.
+  (`TestStrict5TierOrder`, `TestInvestigatorPriorityAndMemory` in `internal/dispatch`; `TestPreemptForSlot`,
+  `TestPreemptForMemory`, `TestPreemptExclusions`, `TestPreemptWindowsNeverPauses` in `internal/harness`)
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -354,6 +363,13 @@ Decide who does what, run each worker safely, and protect the machine.
   Releases are tags `v*` whose commit, or its parent (the release commit holding `dist/`, off main), is in main; the
   release commit itself never comes in. A build from a checkout (`local-<commit>`) follows the GitHub releases of the
   variant it would have been; `harness.Release` says what one means from where the checkout stands.
+- **Strict 5-tier dispatch order and investigator preemption** (Q117, A; W332 on 11/10): investigator workers (Enlighten me)
+  preempt and take precedence over work tasks so decisions are reached faster. Order: (1) investigator workers, then answer
+  workers; (2) correction workers, then review workers; (3) resumed work tasks; (4) work tasks unblocking others (critical path,
+  ordered by transitive dependent count); (5) other work tasks. Within each level, wish rank, then oldest. When memory holds
+  tasks back, subsequent tasks wait behind them with specific wait reasons ("an investigator goes first: …", "a correction goes first: …",
+  etc.). When an investigator cannot start: if slots are full, it pauses the lowest running work task; if memory is short, it
+  interrupts it to RESUMING ("made room for Qxx: enlighten", spending no resume count, only for providers supporting resume).
 
 ## Open questions
 - Branch names for workers: where does the team convention live? *Decided: in the project settings, default `<task-code>-<slug>-<uuid8>`; built (`branch`, `TestBranchFromSettings`).*

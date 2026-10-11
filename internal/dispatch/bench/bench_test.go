@@ -1,6 +1,7 @@
 package bench
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -33,7 +34,8 @@ func TestGo(t *testing.T) {
 	}
 	var b strings.Builder
 	Table(&b, "Go", results)
-	if !strings.Contains(b.String(), "Go: 35 of 35 cases right") {
+	wantSummary := fmt.Sprintf("Go: %d of %d cases right", len(cases), len(cases))
+	if !strings.Contains(b.String(), wantSummary) {
 		t.Errorf("table:\n%s", b.String())
 	}
 }

@@ -36,6 +36,7 @@ const (
 	restartedLine = "Djinn restarted while you worked; your worktree is as you left it. Continue your task."
 	limitLine     = "Your provider's usage limit stopped you; it has reset. Your worktree is as you left it. Continue your task."
 	envReplayLine = "Djinn replays this task after an environment failure. Continue your task."
+	preemptLine   = "Djinn interrupted your worker to make room for an investigator; your worktree is as you left it. Continue your task."
 )
 
 // Why a task waits to be resumed, as its wait reason and its events say.
@@ -45,6 +46,7 @@ const (
 	byLimit      = "after its usage limit reset"
 	byContinue   = "continued" // djinn task continue: its worker takes the new prompt on its session
 	byEnvReplay  = "replaying environment failure"
+	byPreempt    = "after making room"
 )
 
 // whyStoppedFirst is why a planned task waits that djinn up stopped before its worker started (its worktree being
@@ -213,13 +215,15 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 		by = byAnswer
 	case strings.HasPrefix(t.GetWaitReason(), byEnvReplay):
 		by = byEnvReplay
+	case strings.HasPrefix(t.GetWaitReason(), "made room for "):
+		by = byPreempt
 	}
 	// Running from now on, as its worker starts: never waiting again without a reason.
 	t.Status, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RUNNING, "", nil
 	switch by {
 	case byContinue:
 		t.Continuing = false // Cut short again, it resumes as any task does.
-	case byWish, byAnswer, byEnvReplay: // The developer paused it, or let it edit: no resume spent.
+	case byWish, byAnswer, byEnvReplay, byPreempt: // The developer paused it, or let it edit, or made room: no resume spent.
 	default:
 		t.Resumes++
 	}
@@ -374,6 +378,8 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		line = editLine + briefed(r, prompt, readOnly)
 	case byEnvReplay:
 		line = envReplayLine
+	case byPreempt:
+		line = preemptLine
 	}
 	model := t.GetModel()
 	if foreignModel(t.GetProvider(), model) && !r.watcher {
@@ -418,6 +424,10 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	text := fmt.Sprintf("resumed %s (%d of %d): started %s %s%s, %s%s", by, t.GetResumes(), maxResumes,
 		short(t.GetProvider()), where, how, accessText(t, nil), skillsText(spec.Skills))
 	if by == byWish {
+		text = fmt.Sprintf("resumed %s: started %s %s%s, %s%s", by, short(t.GetProvider()), where, how,
+			accessText(t, nil), skillsText(spec.Skills))
+	}
+	if by == byPreempt {
 		text = fmt.Sprintf("resumed %s: started %s %s%s, %s%s", by, short(t.GetProvider()), where, how,
 			accessText(t, nil), skillsText(spec.Skills))
 	}

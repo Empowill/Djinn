@@ -139,8 +139,15 @@ func (s *Situation) Pass() []Decision {
 	return out
 }
 
-// Order is the planned tasks: the ones Djinn resumes first, as they ran before; then by the rank of their wish, then
-// the oldest first. The tasks of a wish that is not active come last; Blocker keeps them waiting.
+// Order is the planned tasks in the strict 5-tier order:
+//  1. Investigator workers (Enlighten me), followed by answer workers;
+//  2. Correction workers, followed by review workers;
+//  3. Resumed work tasks (RESUMING: limits, restarts, preemptions);
+//  4. Work tasks that unblock others (graph's critical path: most planned and waiting dependents first);
+//  5. Other work tasks.
+//
+// Within each level and sub-level, ties are broken by the wish's rank, then the oldest first, then by task ID.
+// The tasks of a wish that is not active come last; Blocker keeps them waiting.
 func (s *Situation) Order() []*planv1.Task {
 	var out []*planv1.Task
 	for _, t := range s.tasks {
@@ -148,23 +155,97 @@ func (s *Situation) Order() []*planv1.Task {
 			out = append(out, t)
 		}
 	}
+	depCounts := s.dependentCounts()
 	pos := func(wishID string) int {
 		if p, ok := s.rank[wishID]; ok {
 			return p
 		}
 		return len(s.rank)
 	}
-	first := func(t *planv1.Task) int {
-		if Resuming(t) {
-			return 0
-		}
-		return 1
-	}
 	slices.SortStableFunc(out, func(a, b *planv1.Task) int {
-		return cmp.Or(cmp.Compare(first(a), first(b)), cmp.Compare(pos(a.GetWishId()), pos(b.GetWishId())),
-			a.GetCreateTime().AsTime().Compare(b.GetCreateTime().AsTime()), strings.Compare(a.GetId(), b.GetId()))
+		aLevel, aSub := taskPriority(a, depCounts)
+		bLevel, bSub := taskPriority(b, depCounts)
+		return cmp.Or(
+			cmp.Compare(aLevel, bLevel),
+			cmp.Compare(aSub, bSub),
+			cmp.Compare(pos(a.GetWishId()), pos(b.GetWishId())),
+			a.GetCreateTime().AsTime().Compare(b.GetCreateTime().AsTime()),
+			strings.Compare(a.GetId(), b.GetId()),
+		)
 	})
 	return out
+}
+
+func taskPriority(t *planv1.Task, depCounts map[string]int) (level int, sub int) {
+	switch {
+	case t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
+		return 1, 0
+	case t.GetRole() == planv1.TaskRole_TASK_ROLE_CONVERTER:
+		return 1, 1
+	case QuestionWorker(t):
+		return 1, 2
+	case t.GetCorrection() != nil:
+		return 2, 0
+	case t.GetReview() != nil:
+		return 2, 1
+	case Resuming(t):
+		return 3, 0
+	case depCounts[t.GetId()] > 0:
+		return 4, -depCounts[t.GetId()]
+	default:
+		return 5, 0
+	}
+}
+
+// isWaitingWorkTask tells whether a task is a planned or waiting work task in the dependency graph.
+func isWaitingWorkTask(t *planv1.Task) bool {
+	if plan.IsAzima(t) || Watcher(t) || QuestionWorker(t) {
+		return false
+	}
+	return Planned(t) || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_WAITING
+}
+
+// dependentCounts returns the count of planned and waiting work tasks that depend on each task directly and transitively.
+func (s *Situation) dependentCounts() map[string]int {
+	children := make(map[string][]string)
+	for _, t := range s.tasks {
+		for _, depID := range t.GetDependsOn() {
+			if parent, ok := s.byID[depID]; ok {
+				parent = s.forkedAs(parent)
+				children[parent.GetId()] = append(children[parent.GetId()], t.GetId())
+			} else {
+				children[depID] = append(children[depID], t.GetId())
+			}
+		}
+	}
+
+	counts := make(map[string]int)
+	for _, t := range s.tasks {
+		if !Planned(t) {
+			continue
+		}
+		visited := map[string]bool{t.GetId(): true}
+		queue := []string{t.GetId()}
+		count := 0
+
+		for len(queue) > 0 {
+			curr := queue[0]
+			queue = queue[1:]
+
+			for _, childID := range children[curr] {
+				if visited[childID] {
+					continue
+				}
+				visited[childID] = true
+				if child, ok := s.byID[childID]; ok && isWaitingWorkTask(child) {
+					count++
+				}
+				queue = append(queue, childID)
+			}
+		}
+		counts[t.GetId()] = count
+	}
+	return counts
 }
 
 // Start counts the task as started: it writes in its project, takes a slot and memory. A question worker only takes
@@ -372,7 +453,19 @@ func (s *Situation) full(t *planv1.Task) string {
 		return ""
 	}
 	if s.short != nil {
-		return fmt.Sprintf("%s goes first: %s", s.short.GetCode(), s.shortWhy)
+		switch {
+		case s.short.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
+			return "an investigator goes first: " + s.shortWhy
+		case s.short.GetRole() == planv1.TaskRole_TASK_ROLE_CONVERTER:
+			return "an answer worker goes first: " + s.shortWhy
+		case s.short.GetCorrection() != nil:
+			return "a correction goes first: " + s.shortWhy
+		case s.short.GetReview() != nil:
+			return "a review goes first: " + s.shortWhy
+		default:
+			code := cmp.Or(s.short.GetCode(), "a work task")
+			return fmt.Sprintf("%s goes first: %s", code, s.shortWhy)
+		}
 	}
 	peak, measured := s.typical(provider(t))
 	why := m.Policy.WorkerRoom(m.Total, m.Available, s.growing(), s.engaged(), provider(t), peak, measured)
