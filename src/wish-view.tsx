@@ -268,12 +268,13 @@ export function WishView({
     [drafts, focus],
   );
   const spentDetail = useMemo(() => spent(detail.tasks), [detail.tasks]);
-  // The Tasks tab as a list or as the tree of every task; the tree reads them all, page after page.
+  // The Tasks tab as a list or as the tree of every task; the tree reads them all, page after page, of the most tasks a
+  // page holds.
   const [layout] = useTaskLayout();
   const tree = view === "tasks" && layout === "tree";
   useEffect(() => {
     if (tree && store && detail.tasksNextToken)
-      void store.loadMore(wish.id, Change.TASK);
+      void store.loadMore(wish.id, Change.TASK, 200);
   }, [tree, store, wish.id, detail.tasksNextToken]);
   const byId = taskMapOf(detail.tasks);
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).

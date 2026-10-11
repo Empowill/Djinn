@@ -11,7 +11,8 @@ import { portable } from "./portable";
 // Budgets in milliseconds, set from first measurements on Linux with margin:
 // open ~68 ms (budget 300 ms), tasks ~55 ms (budget 250 ms), decisions ~46 ms (budget 250 ms),
 // journal ~34 ms (budget 200 ms), blocks ~60 ms (budget 250 ms), task open ~20 ms (budget 200 ms),
-// change ~125 ms (budget 500 ms).
+// change ~125 ms (budget 500 ms). The Tasks tab as a tree (W454): drawn ~25 ms (budget 250 ms); the first time, every
+// page of tasks read ~1.5 s (budget 3 s), the server's reads of the tasks, not the drawing.
 export const BUDGET_OPEN_MS = 300;
 export const BUDGET_TAB_TASKS_MS = 250;
 export const BUDGET_TAB_DECISIONS_MS = 250;
@@ -19,6 +20,8 @@ export const BUDGET_TAB_JOURNAL_MS = 200;
 export const BUDGET_TAB_BLOCKS_MS = 250;
 export const BUDGET_TASK_OPEN_MS = 200;
 export const BUDGET_CHANGE_ARRIVAL_MS = 500;
+export const BUDGET_TAB_TREE_MS = 250;
+export const BUDGET_TREE_LOAD_MS = 3000;
 
 const binary = path.resolve(
   __dirname,
@@ -438,6 +441,123 @@ test.describe("wish render performance @render", () => {
     ).toBeVisible();
 
     await runBudgets(page, "baseline");
+  });
+
+  test("the Tasks tab as a tree draws every task of the real-size wish within budget, and the choice stays", async ({
+    page,
+  }) => {
+    portable();
+    const errors: string[] = [];
+    page.on("pageerror", (err) => errors.push(err.message));
+    await page.goto(process.env.DJINN_URL!);
+    await expect(
+      page.locator(".app-statusbar").getByText("Live"),
+    ).toBeVisible();
+    await page
+      .locator(".wish-nav", { hasText: "A wish of real size" })
+      .first()
+      .click();
+    await expect(page.locator(".hero h1")).toHaveText(
+      "A wish of real size (real)",
+    );
+    // The list is the default; the switch chooses the tree.
+    await page.locator("#view-tab-tasks").click();
+    await expect(page.locator(".tasks-moving")).toBeVisible();
+    // Chosen, the tree reads every page of the wish's tasks (50 a page): measured from the click to every task drawn.
+    // The azimas are no rows.
+    const load = await page.evaluate(async () => {
+      const t0 = performance.now();
+      document
+        .querySelector<HTMLButtonElement>(
+          ".layout-toggle button[aria-pressed=false]",
+        )!
+        .click();
+      await new Promise<void>((resolve) => {
+        const isReady = () =>
+          document.querySelector(".tasks-tree h2 .count")?.textContent ===
+          "180";
+        if (isReady()) return resolve();
+        const observer = new MutationObserver(() => {
+          if (!isReady()) return;
+          observer.disconnect();
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        });
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+        });
+      });
+      return performance.now() - t0;
+    });
+    console.log(`Tree, every task read: ${load.toFixed(1)} ms`);
+
+    // Measured: from the click on the tab to the tree drawn with every task, three times.
+    const runs = 3;
+    const measures: number[] = [];
+    for (let i = 0; i < runs; i++) {
+      await page.locator("#view-tab-decisions").click();
+      await expect(page.locator(".decision-log")).toBeVisible();
+      const duration = await page.evaluate(async () => {
+        const t0 = performance.now();
+        document.getElementById("view-tab-tasks")!.click();
+        await new Promise<void>((resolve) => {
+          const isReady = () =>
+            document.querySelector(".tasks-tree h2 .count")?.textContent ===
+              "180" && document.querySelector(".task-tree .tree-row") !== null;
+          const done = () =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          if (isReady()) return done();
+          const observer = new MutationObserver(() => {
+            if (!isReady()) return;
+            observer.disconnect();
+            done();
+          });
+          observer.observe(document.body, { childList: true, subtree: true });
+        });
+        return performance.now() - t0;
+      });
+      measures.push(duration);
+    }
+    const medianTree = median(measures);
+    console.log(
+      `Tab tasks as a tree: raw=[${measures.map((n) => n.toFixed(1)).join(", ")}] ms, median=${medianTree.toFixed(1)} ms`,
+    );
+
+    // Only the rows on screen are drawn, the newest at the top.
+    const drawn = await page.locator(".task-tree .tree-row").count();
+    expect(drawn).toBeGreaterThan(10);
+    expect(drawn).toBeLessThan(180);
+    // A click opens the task's card beside the tree.
+    const first = page.locator(".task-tree .tree-row").first();
+    const code = await first.getAttribute("data-task");
+    await first.click();
+    await expect(page.locator(".task-tree-card .wish-task.open")).toContainText(
+      code!,
+    );
+
+    // The choice stays across a restart of the page, and for another wish.
+    await page.reload();
+    await expect(
+      page.locator(".app-statusbar").getByText("Live"),
+    ).toBeVisible();
+    await page
+      .locator(".wish-nav", { hasText: "A wish of real size" })
+      .first()
+      .click();
+    await page.locator("#view-tab-tasks").click();
+    await expect(page.locator(".task-tree")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Tree:/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // Back to the list, for the other specs.
+    await page.getByRole("button", { name: /^List:/ }).click();
+    await expect(page.locator(".tasks-moving")).toBeVisible();
+
+    expect(errors).toEqual([]);
+    expect(medianTree).toBeLessThanOrEqual(BUDGET_TAB_TREE_MS);
+    expect(load).toBeLessThanOrEqual(BUDGET_TREE_LOAD_MS);
   });
 
   test("window stays responsive within render budgets with several running fake workers", async ({

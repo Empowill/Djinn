@@ -501,8 +501,10 @@ test("loadMore fetches the next page and merges items", async () => {
   const data = sample();
   const task1 = { id: `${taskId}1`, wishId, code: "T01", title: "Task 1" };
   const task2 = { id: `${taskId}2`, wishId, code: "T02", title: "Task 2" };
+  let asked = 0;
   data.listTasks = (req) => {
     if (req.pageToken === "token-p2") {
+      asked = req.pageSize;
       return {
         tasks: [task2],
         total: 2,
@@ -532,9 +534,11 @@ test("loadMore fetches the next page and merges items", async () => {
   assert.equal(state1.tasksNextToken, "token-p2");
   assert.equal(reads.tasks, 1);
 
-  await store.loadMore(wishId, Change.TASK);
+  // The tree of the Tasks tab reads the rest by pages of the most tasks a page holds.
+  await store.loadMore(wishId, Change.TASK, 200);
   const state2 = store.getState().details[wishId];
   assert.equal(reads.tasks, 2);
+  assert.equal(asked, 200);
   assert.equal(state2.tasks.length, 2);
   assert.deepEqual(
     state2.tasks.map((t) => t.code),
