@@ -2466,6 +2466,7 @@ func (h *Harness) azimaPRPass(
 					Context: fmt.Sprintf("**Title**: %s\n**Base**: %s\n\n%s", title, base, desc),
 					Options: []string{"Open pull request", "Not yet"},
 					Move:    true,
+					Before:  "before the merge",
 				}
 				if err := h.askMove(ctx, q); err == nil {
 					allQuestions = append(allQuestions, q)
@@ -2491,6 +2492,7 @@ func (h *Harness) azimaPRPass(
 						Context: fmt.Sprintf("Pull request #%d for azima %s (%s) is mergeable and all checks are green.", pr.Number, azima.GetCode(), azima.GetTitle()),
 						Options: []string{"Ready to merge", "Not yet"},
 						Move:    true,
+						Before:  "before the merge",
 					}
 					if err := h.askMove(ctx, q); err == nil {
 						allQuestions = append(allQuestions, q)

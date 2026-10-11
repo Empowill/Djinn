@@ -105,6 +105,9 @@ func TestMergeMoveTag(t *testing.T) {
 	if !tagQ.GetMove() {
 		t.Errorf("question Move = false, want true")
 	}
+	if got := tagQ.GetBefore(); got != "before the release" {
+		t.Errorf("question Before = %q, want 'before the release'", got)
+	}
 	if want := "Push tag v1.0.0 to origin?"; tagQ.GetText() != want {
 		t.Errorf("question text %q, want %q", tagQ.GetText(), want)
 	}
@@ -121,6 +124,48 @@ func TestMergeMoveTag(t *testing.T) {
 	}
 	if tagSha := in.git(t, bare, "rev-parse", "refs/tags/v1.0.0"); tagSha == "" {
 		t.Errorf("tag v1.0.0 not found on remote")
+	}
+}
+
+// TestComputedQuestionLevels verifies that every question Djinn raises itself gets its level:
+// - developer moves (W258) -> before what they unblock (tag push, release dry run, open PR)
+// - red push check, refused push, failed integration, correction past attempts -> "before the push"
+// - install proposals and proof checks -> can wait (Before: "", Urgency: Later).
+func TestComputedQuestionLevels(t *testing.T) {
+	tagQ := tagMoveQuestion("w1", "v1.0.0", "origin")
+	if !tagQ.GetMove() || tagQ.GetBefore() != "before the release" {
+		t.Errorf("tagMoveQuestion: move=%v, before=%q; want move=true, before='before the release'", tagQ.GetMove(), tagQ.GetBefore())
+	}
+
+	relQ := releaseMoveQuestion("w1", "abcdef123456")
+	if !relQ.GetMove() || relQ.GetBefore() != "before the release" {
+		t.Errorf("releaseMoveQuestion: move=%v, before=%q; want move=true, before='before the release'", relQ.GetMove(), relQ.GetBefore())
+	}
+
+	prQ := prMoveQuestion("w1", "main", "Feature", "Body")
+	if !prQ.GetMove() || prQ.GetBefore() != "before the merge" {
+		t.Errorf("prMoveQuestion: move=%v, before=%q; want move=true, before='before the merge'", prQ.GetMove(), prQ.GetBefore())
+	}
+
+	instQ := installMoveQuestion("w1", "abcdef123456", "feat", time.Hour)
+	if !instQ.GetMove() || instQ.GetBefore() != "" {
+		t.Errorf("installMoveQuestion: move=%v, before=%q; want move=true, before=''", instQ.GetMove(), instQ.GetBefore())
+	}
+
+	needsQ := needsMoveQuestion("w1", "build", "a Mac")
+	if !needsQ.GetMove() || needsQ.GetBefore() != "" {
+		t.Errorf("needsMoveQuestion: move=%v, before=%q; want move=true, before=''", needsQ.GetMove(), needsQ.GetBefore())
+	}
+
+	azimaQ := azimaProofMoveQuestion("w1", "t1", "W1", "a Mac", []string{"- [ ] test"})
+	if !azimaQ.GetMove() || azimaQ.GetBefore() != "" {
+		t.Errorf("azimaProofMoveQuestion: move=%v, before=%q; want move=true, before=''", azimaQ.GetMove(), azimaQ.GetBefore())
+	}
+
+	h := &Harness{}
+	pushQ := h.pushQuestion(&planv1.Wish{Id: "w1"}, "Push?", "ctx", []string{"A", "B"})
+	if pushQ.GetBefore() != "before the push" {
+		t.Errorf("pushQuestion: before=%q; want 'before the push'", pushQ.GetBefore())
 	}
 }
 
@@ -155,6 +200,9 @@ func TestMergeMoveReleaseFiles(t *testing.T) {
 	}
 	if !relQ.GetMove() {
 		t.Errorf("question Move = false, want true")
+	}
+	if got := relQ.GetBefore(); got != "before the release" {
+		t.Errorf("question Before = %q, want 'before the release'", got)
 	}
 	if want := "Start release dry run?"; relQ.GetText() != want {
 		t.Errorf("question text %q, want %q", relQ.GetText(), want)
@@ -818,6 +866,9 @@ func TestMergeMoveOpenPRDeduplicatedAndAheadGreen(t *testing.T) {
 	for _, q := range questions {
 		if strings.Contains(strings.ToLower(q.GetText()), "pull request") {
 			prCount++
+			if got := q.GetBefore(); got != "before the merge" {
+				t.Errorf("PR question Before = %q, want 'before the merge'", got)
+			}
 		}
 	}
 	if prCount != 1 {

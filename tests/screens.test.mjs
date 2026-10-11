@@ -2758,7 +2758,8 @@ test("the attention bar says how much each question holds up: blocking, your mov
       { wish: w, item: q("q1", "before the merge"), blocking: ["W1"] },
       { wish: w, item: q("q2", "before the demo"), blocking: [] },
       { wish: w, item: q("q3"), blocking: [] },
-      { wish: w, item: q("q4", "", true), blocking: [] },
+      { wish: w, item: q("q4", "before the release", true), blocking: [] },
+      { wish: w, item: q("q5", "", true), blocking: [] },
     ],
     [
       {
@@ -2777,6 +2778,7 @@ test("the attention bar says how much each question holds up: blocking, your mov
       ["q2", "question", "before the demo"],
       ["t9", "action", undefined],
       ["q3", "later", undefined],
+      ["q5", "later", undefined],
       ["ready-w1", "ready", undefined],
     ],
   );
@@ -2786,6 +2788,70 @@ test("the attention bar says how much each question holds up: blocking, your mov
     markup,
     /<span class="attention-level"><svg[^>]*class="lucide lucide-circle-user-round[^>]*>.*<\/svg>Your move<\/span>/,
   );
+});
+
+test("an open question that can wait stays visible in WishView action center and attention bar, never folded", async () => {
+  const wishId = "01a11833-a440-7479-a067-52615c91da70";
+  const lamp = wish(wishId, "Djinn sur Wails", s.WishState.ACTIVE, 1);
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, {
+      list: () => ({ wishes: [lamp] }),
+      watch: () => new ReadableStream(),
+    });
+    service(s.ProjectService, {
+      list: () => ({ projects: [] }),
+    });
+    service(s.TaskService, {
+      list: () => ({ tasks: [], total: 0 }),
+    });
+    service(s.QuestionService, {
+      list: () => ({
+        questions: [
+          {
+            id: "q86",
+            code: "Q86",
+            text: "The push checks of feat/wails-go stay red. What should Djinn do?",
+            options: ["Check again", "Push unchecked", "Leave held"],
+            before: "",
+            wishId,
+          },
+        ],
+        total: 1,
+      }),
+    });
+    service(s.BlockService, {
+      list: () => ({ blocks: [], total: 0 }),
+    });
+    service(s.InboxService, {
+      list: () => ({ items: [] }),
+      sources: () => ({ sources: [] }),
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const close = djinn.store.open(wishId);
+  await djinn.store.changed(wishId, [s.Change.QUESTION]);
+  close();
+  const html = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: lamp, onToast() {} })),
+  );
+
+  // 1. Attention bar shows the can-wait question with level-later and "Can wait".
+  assert.match(html, /class="attention-item level-later"/);
+  assert.match(html, /<b class="attention-code">Q86<\/b>/);
+  assert.match(html, /<span class="attention-level">Can wait<\/span>/);
+
+  // 2. Action center displays the question in decisions-section with can-wait tone.
+  assert.match(html, /class="action-center"/);
+  assert.match(html, /class="decisions-section"/);
+  assert.match(html, /question-card open can-wait/);
+  assert.match(html, /<span class="question-id">Q86<\/span>/);
+  assert.match(html, /status-badge tone-later[^>]*>.*<span>Can wait<\/span>/);
+  assert.match(html, /The push checks of feat\/wails-go stay red/);
+
+  // 3. Question options and actions are rendered, not folded out of sight.
+  assert.match(html, /Check again/);
+  assert.doesNotMatch(html, /question-fold/);
+  assert.doesNotMatch(html, /question-card[^"]*folded/);
 });
 
 test("the attention bar shows a failed worker until it is dealt with (continued, done, or a new task names it)", () => {

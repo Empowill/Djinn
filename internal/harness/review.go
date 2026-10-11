@@ -300,6 +300,7 @@ func (h *Harness) askReview(
 			from.GetCode(), in.GetBranch(), tried),
 		Context: ctxt.String(),
 		Options: []string{reviewRetryOption, fmt.Sprintf(leaveOption, in.GetBranch()), takeOption},
+		Before:  "before the push",
 	}
 	err := h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
 		if err := tx.Journal(actorHarness, methodIntegrate, q); err != nil {

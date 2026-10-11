@@ -62,6 +62,7 @@ func tagMoveQuestion(wishID, tag, remote string) *planv1.Question {
 		Context: fmt.Sprintf("Run `git push %s %s` to push the release tag to %s.", remote, tag, remote),
 		Options: []string{fmt.Sprintf("Push tag %s", tag), "Skip"},
 		Move:    true,
+		Before:  "before the release",
 	}
 }
 
@@ -75,6 +76,7 @@ func releaseMoveQuestion(wishID, sha string) *planv1.Question {
 		Context: fmt.Sprintf("Release files changed in %s. Trigger the release workflow dry run or prepare the release.", short8(sha)),
 		Options: []string{"Start release dry run", "Skip"},
 		Move:    true,
+		Before:  "before the release",
 	}
 }
 
@@ -91,6 +93,7 @@ func prMoveQuestion(wishID, main, title, body string) *planv1.Question {
 		Context: fmt.Sprintf("### %s\n\n%s", title, body),
 		Options: []string{"Open pull request", "Not yet"},
 		Move:    true,
+		Before:  "before the merge",
 	}
 }
 

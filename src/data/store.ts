@@ -431,10 +431,32 @@ export function createStore(clients: Clients, retry = 1000): Store {
       if (kinds.has(Change.QUESTION))
         attempt(async () => {
           const res = await clients.questions.list({ wishId });
+          let allQuestions = res.questions;
+          if (res.nextPageToken) {
+            let openList: Question[] = [];
+            let token: string | undefined;
+            do {
+              const page = await clients.questions.list({
+                wishId,
+                open: true,
+                pageSize: 200,
+                pageToken: token,
+              });
+              openList = openList.concat(page.questions);
+              token = page.nextPageToken;
+            } while (token);
+            allQuestions = merge(
+              QuestionSchema,
+              res.questions,
+              openList,
+              new Set(),
+              byID,
+            );
+          }
           into.questions = reconcile(
             QuestionSchema,
             prevDetail.questions,
-            res.questions,
+            allQuestions,
           );
           into.questionsTotal = res.total;
           into.questionsNextToken = res.nextPageToken;

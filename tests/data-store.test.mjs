@@ -657,3 +657,68 @@ test("a move removes the azima from the first wish's detail and adds it to the s
 
   stop();
 });
+
+test("open questions beyond page 1 are loaded into store", async () => {
+  const data = sample();
+  const answered = Array.from({ length: 50 }, (_, i) => ({
+    id: `01a11800-0000-0000-0000-${String(i).padStart(12, "0")}`,
+    wishId,
+    code: `Q${String(i + 1).padStart(2, "0")}`,
+    text: `Answered question ${i + 1}`,
+    answer: { choice: 1, note: "ok" },
+  }));
+  const open51 = {
+    id: "01a11800-0000-0000-0000-000000000051",
+    wishId,
+    code: "Q51",
+    text: "Can wait question 51?",
+  };
+  const open52 = {
+    id: "01a11800-0000-0000-0000-000000000052",
+    wishId,
+    code: "Q52",
+    text: "Blocking question 52?",
+  };
+
+  data.listQuestions = (req) => {
+    if (req.open) {
+      return {
+        questions: [open51, open52],
+        total: 2,
+        nextPageToken: "",
+      };
+    }
+    if (!req.pageToken) {
+      return {
+        questions: answered,
+        total: 52,
+        nextPageToken: "token-p2",
+      };
+    }
+    return {
+      questions: [open51, open52],
+      total: 52,
+      nextPageToken: "",
+    };
+  };
+
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wishId, [Change.QUESTION]);
+  await until(store, (s) =>
+    s.details[wishId]?.loadedKinds.has(Change.QUESTION),
+  );
+
+  const detail = store.getState().details[wishId];
+  assert.equal(detail.questions.length, 52);
+  assert.equal(detail.questionsTotal, 52);
+  assert.equal(detail.questionsNextToken, "token-p2");
+  assert.ok(detail.questions.some((q) => q.code === "Q51" && !q.answer));
+  assert.ok(detail.questions.some((q) => q.code === "Q52" && !q.answer));
+
+  stop();
+});
