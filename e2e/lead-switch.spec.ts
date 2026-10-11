@@ -23,19 +23,6 @@ function djinn(...args: string[]): string {
   });
 }
 
-async function show(terminal: string) {
-  const url = new URL(process.env.DJINN_URL!);
-  const res = await fetch(new URL("/ui.v1.UiService/Show", url), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${url.searchParams.get("token")}`,
-    },
-    body: JSON.stringify({ terminal }),
-  });
-  expect(res.ok).toBe(true);
-}
-
 // wishWithLead makes a wish whose lead runs, in a folder of its own.
 function wishWithLead(title: string, session: string) {
   const folder = fs.realpathSync(
@@ -57,10 +44,9 @@ function rows(page: Page, text: string) {
 test.skip(process.platform === "win32", "the fake claude is a shell script");
 
 const made: string[] = [];
-// The next specs find the window's own terminal again, and room for their wishes.
+// The next specs find room for their wishes, and no leftover leads running.
 test.afterAll(async () => {
-  for (const id of made) djinn("wish", "pause", id);
-  await show("main");
+  for (const id of made) djinn("wish", "delete", id);
 });
 
 test("switching the wish switches the terminal to its own lead", async ({

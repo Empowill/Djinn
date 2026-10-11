@@ -99,6 +99,7 @@ export function FlightPlan({
     useWrites(onToast);
   const waits =
     plan.questions.length +
+    plan.waitingLead.length +
     plan.waiting.length +
     plan.ready.length +
     plan.proofs.length;
@@ -109,12 +110,18 @@ export function FlightPlan({
   const attention = useMemo(
     () =>
       attentionOf(
-        plan.questions,
+        [...plan.questions, ...plan.waitingLead],
         plan.waiting,
         plan.ready,
         renderAttentionOrigin,
       ),
-    [plan.questions, plan.waiting, plan.ready, renderAttentionOrigin],
+    [
+      plan.questions,
+      plan.waitingLead,
+      plan.waiting,
+      plan.ready,
+      renderAttentionOrigin,
+    ],
   );
   const [view, setView] = useState<View>("main");
   const [movingAzima, setMovingAzima] = useState<{

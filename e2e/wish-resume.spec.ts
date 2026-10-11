@@ -18,24 +18,7 @@ function djinn(...args: string[]): string {
   });
 }
 
-// show asks djinn for a terminal, as the command line asks for the lead's.
-async function show(terminal: string) {
-  const url = new URL(process.env.DJINN_URL!);
-  const res = await fetch(new URL("/ui.v1.UiService/Show", url), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${url.searchParams.get("token")}`,
-    },
-    body: JSON.stringify({ terminal }),
-  });
-  expect(res.ok).toBe(true);
-}
-
 test.skip(process.platform === "win32", "the fake claude is a shell script");
-
-// The next specs find the window's own terminal again.
-test.afterAll(() => show("main"));
 
 test("wish resume shows the wish and runs its lead in the lead's terminal", async ({
   page,

@@ -128,6 +128,8 @@ const (
 	// WishServicePushStrategyProcedure is the fully-qualified name of the WishService's PushStrategy
 	// RPC.
 	WishServicePushStrategyProcedure = "/plan.v1.WishService/PushStrategy"
+	// WishServicePrincipalProcedure is the fully-qualified name of the WishService's Principal RPC.
+	WishServicePrincipalProcedure = "/plan.v1.WishService/Principal"
 	// WishServiceGrantProcedure is the fully-qualified name of the WishService's Grant RPC.
 	WishServiceGrantProcedure = "/plan.v1.WishService/Grant"
 	// WishServicePauseProcedure is the fully-qualified name of the WishService's Pause RPC.
@@ -1060,6 +1062,9 @@ type WishServiceClient interface {
 	SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error)
 	// Show or change the push strategy of a wish: wish (one branch per wish) or azima (one branch per azima).
 	PushStrategy(context.Context, *connect.Request[v1.WishServicePushStrategyRequest]) (*connect.Response[v1.WishServicePushStrategyResponse], error)
+	// Show or change whether a wish is the principal wish. When set, this wish's lead is the principal lead; when unset,
+	// the active wish with the lowest rank is principal.
+	Principal(context.Context, *connect.Request[v1.WishServicePrincipalRequest]) (*connect.Response[v1.WishServicePrincipalResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
@@ -1196,6 +1201,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("PushStrategy")),
 			connect.WithClientOptions(opts...),
 		),
+		principal: connect.NewClient[v1.WishServicePrincipalRequest, v1.WishServicePrincipalResponse](
+			httpClient,
+			baseURL+WishServicePrincipalProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Principal")),
+			connect.WithClientOptions(opts...),
+		),
 		grant: connect.NewClient[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse](
 			httpClient,
 			baseURL+WishServiceGrantProcedure,
@@ -1269,6 +1280,7 @@ type wishServiceClient struct {
 	allow          *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
 	setIntegration *connect.Client[v1.WishServiceSetIntegrationRequest, v1.WishServiceSetIntegrationResponse]
 	pushStrategy   *connect.Client[v1.WishServicePushStrategyRequest, v1.WishServicePushStrategyResponse]
+	principal      *connect.Client[v1.WishServicePrincipalRequest, v1.WishServicePrincipalResponse]
 	grant          *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
 	pause          *connect.Client[v1.WishServicePauseRequest, v1.WishServicePauseResponse]
 	activate       *connect.Client[v1.WishServiceActivateRequest, v1.WishServiceActivateResponse]
@@ -1348,6 +1360,11 @@ func (c *wishServiceClient) SetIntegration(ctx context.Context, req *connect.Req
 // PushStrategy calls plan.v1.WishService.PushStrategy.
 func (c *wishServiceClient) PushStrategy(ctx context.Context, req *connect.Request[v1.WishServicePushStrategyRequest]) (*connect.Response[v1.WishServicePushStrategyResponse], error) {
 	return c.pushStrategy.CallUnary(ctx, req)
+}
+
+// Principal calls plan.v1.WishService.Principal.
+func (c *wishServiceClient) Principal(ctx context.Context, req *connect.Request[v1.WishServicePrincipalRequest]) (*connect.Response[v1.WishServicePrincipalResponse], error) {
+	return c.principal.CallUnary(ctx, req)
 }
 
 // Grant calls plan.v1.WishService.Grant.
@@ -1445,6 +1462,9 @@ type WishServiceHandler interface {
 	SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error)
 	// Show or change the push strategy of a wish: wish (one branch per wish) or azima (one branch per azima).
 	PushStrategy(context.Context, *connect.Request[v1.WishServicePushStrategyRequest]) (*connect.Response[v1.WishServicePushStrategyResponse], error)
+	// Show or change whether a wish is the principal wish. When set, this wish's lead is the principal lead; when unset,
+	// the active wish with the lowest rank is principal.
+	Principal(context.Context, *connect.Request[v1.WishServicePrincipalRequest]) (*connect.Response[v1.WishServicePrincipalResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
@@ -1577,6 +1597,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("PushStrategy")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServicePrincipalHandler := connect.NewUnaryHandler(
+		WishServicePrincipalProcedure,
+		svc.Principal,
+		connect.WithSchema(wishServiceMethods.ByName("Principal")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceGrantHandler := connect.NewUnaryHandler(
 		WishServiceGrantProcedure,
 		svc.Grant,
@@ -1661,6 +1687,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceSetIntegrationHandler.ServeHTTP(w, r)
 		case WishServicePushStrategyProcedure:
 			wishServicePushStrategyHandler.ServeHTTP(w, r)
+		case WishServicePrincipalProcedure:
+			wishServicePrincipalHandler.ServeHTTP(w, r)
 		case WishServiceGrantProcedure:
 			wishServiceGrantHandler.ServeHTTP(w, r)
 		case WishServicePauseProcedure:
@@ -1742,6 +1770,10 @@ func (UnimplementedWishServiceHandler) SetIntegration(context.Context, *connect.
 
 func (UnimplementedWishServiceHandler) PushStrategy(context.Context, *connect.Request[v1.WishServicePushStrategyRequest]) (*connect.Response[v1.WishServicePushStrategyResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.PushStrategy is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Principal(context.Context, *connect.Request[v1.WishServicePrincipalRequest]) (*connect.Response[v1.WishServicePrincipalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Principal is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error) {

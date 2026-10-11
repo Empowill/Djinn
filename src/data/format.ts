@@ -284,6 +284,22 @@ export function noLead(wish: Pick<Wish, "lead">): boolean {
   return !wish.lead?.sessionId;
 }
 
+// principalWish returns the wish explicitly marked as principal, or the first active wish by rank.
+export function principalWish(allWishes: readonly Wish[]): Wish | undefined {
+  const activeWishes = allWishes.filter(isActive);
+  const explicit = activeWishes.find((w) => w.principal);
+  if (explicit) return explicit;
+  const sorted = [...activeWishes].sort(
+    (a, b) => (a.rank || 999) - (b.rank || 999),
+  );
+  return sorted[0];
+}
+
+// isPrincipal tells whether wish is the principal wish among all wishes.
+export function isPrincipal(wish: Wish, allWishes: readonly Wish[]): boolean {
+  return isActive(wish) && principalWish(allWishes)?.id === wish.id;
+}
+
 export function wishStateText(wish: Wish): string {
   if (wish.state === WishState.GRANTED) return t("wish.state_granted");
   if (wish.state === WishState.PAUSED) return t("wish.state_paused");
@@ -333,7 +349,8 @@ export type Tone =
   | "proof"
   // An open question nothing waits for: it can wait.
   | "later"
-  | "withdrawn";
+  | "withdrawn"
+  | "accent";
 
 // taskTone is a task's state in that language. A task Djinn resumes runs; one waiting for its provider's limit to
 // reset holds still, as a paused one; one cut short and resumed as another task (forkedAs) is stopped, no alarm.

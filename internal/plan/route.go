@@ -751,6 +751,9 @@ func (w *Wishes) startLead(ctx context.Context, wishID string, provider planv1.P
 				return err
 			}
 		}
+		if !attached {
+			w.tellWaitingAnswers(ctx, wishID, name)
+		}
 		w.Leads.Show(wishID, name)
 		return nil
 	}()

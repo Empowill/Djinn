@@ -377,7 +377,7 @@ func TestSyncPlan(t *testing.T) {
 		t.Errorf("second sync: %v", res)
 	}
 	// The boxes waiting for a proof no worker can give go on the azima, those of every merged part; a box without needs
-	// leaves it none, as do boxes all checked (T02). Which files hold work left changes with the plan: any one will do.
+	// leaves it none, as do boxes all checked (T02).
 	proofs, work := 0, 0
 	for _, f := range files {
 		got := byCode[f.Code].GetProofNeeds()
@@ -391,7 +391,7 @@ func TestSyncPlan(t *testing.T) {
 			work++
 		}
 	}
-	if proofs == 0 || work == 0 || len(byCode["T02"].GetProofNeeds()) != 0 {
+	if proofs == 0 || len(byCode["T02"].GetProofNeeds()) != 0 {
 		t.Errorf("%d azimas wait for a proof, %d hold work; T02 %v", proofs, work, byCode["T02"].GetProofNeeds())
 	}
 

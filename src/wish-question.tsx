@@ -233,7 +233,9 @@ export const WishQuestion = memo(function WishQuestion({
     }
   };
 
-  const status = answered ? (
+  const status = q.waitingLead ? (
+    <StatusBadge tone="waiting" label={t("question.waiting_lead")} />
+  ) : answered ? (
     <StatusBadge tone="done" label={t("panels.decision_recorded")} />
   ) : withdrawn ? (
     <StatusBadge tone="withdrawn" label={t("question.withdrawn")} />
@@ -372,9 +374,11 @@ export const WishQuestion = memo(function WishQuestion({
                 {t("question.decided", { when: when(q.answer?.createTime) })}
               </span>
               {q.answer?.note && <p>{q.answer.note}</p>}
-              {noLead && (
+              {q.waitingLead ? (
+                <p className="no-lead">{t("question.waiting_lead_detail")}</p>
+              ) : noLead ? (
                 <p className="no-lead">{t("question.no_lead_answered")}</p>
-              )}
+              ) : null}
             </div>
           ) : withdrawn ? (
             <div className="answered-info">

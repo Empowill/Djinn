@@ -7,6 +7,7 @@ import {
   CloudUpload,
   GitBranch,
   GitMerge,
+  Star,
   Terminal,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -428,6 +429,41 @@ export function PushStrategySelector({
           disabled={disabled}
         >
           {t("wish.strategy_azima")}
+        </button>
+      </div>
+    </span>
+  );
+}
+
+// PrincipalSelector lets the developer see and toggle whether a wish is explicitly marked principal.
+export function PrincipalSelector({
+  wish,
+  onChange,
+  disabled,
+}: {
+  wish?: Wish;
+  onChange: (principal: boolean) => void;
+  disabled?: boolean;
+}) {
+  if (!wish) return null;
+  return (
+    <span className="wish-principal-setting">
+      <Star size={13} fill={wish.principal ? "currentColor" : "none"} />
+      <div
+        className="segmented-switch"
+        role="group"
+        aria-label={t("wish.principal_label")}
+      >
+        <button
+          type="button"
+          className={wish.principal ? "active" : ""}
+          title={t(
+            wish.principal ? "wish.unset_principal" : "wish.make_principal",
+          )}
+          onClick={() => onChange(!wish.principal)}
+          disabled={disabled}
+        >
+          {t(wish.principal ? "wish.principal" : "wish.make_principal")}
         </button>
       </div>
     </span>

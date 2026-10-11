@@ -51,6 +51,8 @@ export interface Waiting extends Item<Task> {
 export interface FlightPlan {
   // The questions that wait for your answer.
   questions: OpenQuestion[];
+  // The questions answered that wait for a lead.
+  waitingLead: OpenQuestion[];
   // The questions you asked to investigate: they wait for the lead.
   investigating: OpenQuestion[];
   waiting: Waiting[];
@@ -284,6 +286,14 @@ export function investigatingQuestions(
   return questionsWhere(wish, detail, investigating);
 }
 
+// waitingLeadQuestions are a wish's answered questions waiting for a lead to start.
+export function waitingLeadQuestions(
+  wish: Wish,
+  detail: WishDetail,
+): OpenQuestion[] {
+  return questionsWhere(wish, detail, (q) => Boolean(q.waitingLead));
+}
+
 function questionsWhere(
   wish: Wish,
   detail: WishDetail,
@@ -361,6 +371,7 @@ export function flightPlan(
 ): FlightPlan {
   const plan: FlightPlan = {
     questions: [],
+    waitingLead: [],
     investigating: [],
     waiting: [],
     ready: [],
@@ -379,6 +390,7 @@ export function flightPlan(
     if (wish.ready) plan.ready.push(wish);
     if (!detail) continue;
     plan.questions.push(...openQuestions(wish, detail));
+    plan.waitingLead.push(...waitingLeadQuestions(wish, detail));
     plan.investigating.push(...investigatingQuestions(wish, detail));
     plan.waiting.push(...waitingTasks(wish, detail));
     for (const item of detail.tasks) {
@@ -407,6 +419,7 @@ export function flightPlan(
   }
   // Blocking, then before X, then can wait across every wish; within a level each keeps its wish's rank and its order.
   plan.questions.sort(byUrgency);
+  plan.waitingLead.sort(byUrgency);
   plan.decisions.sort((a, b) => later(a.item.at, b.item.at));
   plan.moving.sort((a, b) => byMotion(a.item, b.item));
   plan.azimas.sort(

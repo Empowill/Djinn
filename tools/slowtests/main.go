@@ -41,6 +41,7 @@ var allowed = map[string]string{
 	"github.com/empowill/djinn/internal/harness TestAzimaPRRetargetAfterMerge":                      "runs multiple git passes and PR retargeting against real git repos",
 	"github.com/empowill/djinn/internal/harness TestAzimaPRStackedProposal":                         "runs multiple git passes and stacked PR proposals against real git repos",
 	"github.com/empowill/djinn/internal/harness TestAzimaFollowMainMergePushed":                     "runs multiple git passes and merge operations against real git repos",
+	"github.com/empowill/djinn/internal/harness TestAzimaFollowMainRebaseUnpushed":                  "runs multiple git passes and rebases against real git repos",
 	"github.com/empowill/djinn/internal/harness TestAzimaFollowMainRebaseUnpushedWithRemoteAskMode": "runs multiple git passes and rebases against real git repos",
 	"github.com/empowill/djinn/internal/harness TestAzimaDependentBranchStacked":                    "runs multiple git passes and branch stacking against real git repos",
 }

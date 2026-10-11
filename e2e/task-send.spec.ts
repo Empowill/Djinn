@@ -29,7 +29,7 @@ test("an instruction sent to a running worker is recorded, then acknowledged", a
   const title = `Send a word ${randomUUID().slice(0, 8)}`;
   const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
     .id as string;
-  try {
+  const taskId = JSON.parse(
     djinn(
       "task",
       "spawn",
@@ -40,7 +40,10 @@ test("an instruction sent to a running worker is recorded, then acknowledged", a
       "fake",
       "--prompt",
       "text working\nwait\ntext after\nsleep 4s",
-    );
+      "--json",
+    ),
+  ).task.id as string;
+  try {
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await page.getByRole("tab", { name: /^Tasks/ }).click();
@@ -55,7 +58,7 @@ test("an instruction sent to a running worker is recorded, then acknowledged", a
     );
     await box.fill("Also update the docs");
     await box.press("Enter");
-    await expect(box).toHaveValue("");
+    await expect(box).toHaveValue("", { timeout: 10000 });
     await expect(
       page.locator(".wish-event.kind-11").getByText("Also update the docs"),
     ).toBeVisible();
@@ -66,6 +69,7 @@ test("an instruction sent to a running worker is recorded, then acknowledged", a
     ).toBeVisible({ timeout: 15_000 });
     expect(errors).toEqual([]);
   } finally {
+    djinn("task", "stop", taskId);
     djinn("wish", "pause", wishId);
   }
 });

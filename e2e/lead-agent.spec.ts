@@ -31,20 +31,6 @@ function wishOf(id: string) {
   return listed.find((w) => w.id === id)!;
 }
 
-// show asks djinn for a terminal, as the command line asks for the lead's.
-async function show(terminal: string) {
-  const url = new URL(process.env.DJINN_URL!);
-  const res = await fetch(new URL("/ui.v1.UiService/Show", url), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${url.searchParams.get("token")}`,
-    },
-    body: JSON.stringify({ terminal }),
-  });
-  expect(res.ok).toBe(true);
-}
-
 // open makes a wish set aside, in projects when given, and shows it in the window.
 async function open(
   page: import("@playwright/test").Page,
@@ -87,8 +73,6 @@ test("the description under the title edits in place, as djinn wish describe", a
 
 test.describe("Lead of another agent", () => {
   test.skip(process.platform === "win32", "the fake agents are shell scripts");
-  // The next specs find the window's own terminal again.
-  test.afterAll(() => show("main"));
 
   test("the arrow beside Lead starts an Antigravity lead, which becomes the wish's lead", async ({
     page,
