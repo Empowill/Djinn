@@ -671,6 +671,25 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
   });
   assert.equal(f.workCount(paginatedWishTasks), 430);
   assert.equal(f.workDoneCount(paginatedWishTasks), 380);
+
+  // A cancelled task is no work left, part of an azima or not: out of the count, never done.
+  const cancelled = [
+    {
+      id: "c1",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.AWAITING_PROOF, parts: 1, partsDone: 1 },
+    },
+    { id: "x1", status: S.DONE, partOf: "c1" },
+    { id: "x2", status: S.CANCELLED, partOf: "c1" },
+    { id: "x3", status: S.DONE },
+    { id: "x4", status: S.CANCELLED },
+  ];
+  assert.equal(f.workCount(cancelled), 2);
+  assert.equal(f.workDoneCount(cancelled), 2);
+  // Without the server's counts, the same.
+  const local = cancelled.map((x) => ({ ...x, azima: undefined }));
+  assert.equal(f.workCount(local), 2);
+  assert.equal(f.workDoneCount(local), 2);
 });
 
 test("open questions come blocking, then your move, then before X, then can wait, across the wishes", () => {

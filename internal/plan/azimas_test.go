@@ -94,6 +94,14 @@ func TestFillAzimas(t *testing.T) {
 		task("T7", plan, done, ""),
 		{Id: "W5", Code: "W5", Kind: work, Status: done, PartOf: "T7", Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_PENDING}},
 		task("T8", plan, pending, "", "T7"),
+		// A cancelled part is no work left: out of the total, listed all the same.
+		task("T9", plan, pending, ""),
+		task("W6", work, done, "T9"),
+		task("W7", work, planv1.TaskStatus_TASK_STATUS_CANCELLED, "T9"),
+		task("T10", plan, pending, ""),
+		task("W8", work, planv1.TaskStatus_TASK_STATUS_CANCELLED, "T10"),
+		task("T11", plan, done, ""),
+		task("W9", work, planv1.TaskStatus_TASK_STATUS_CANCELLED, "T11"),
 	}
 	FillAzimas(tasks)
 	for code, want := range map[string]*planv1.Azima{
@@ -109,6 +117,12 @@ func TestFillAzimas(t *testing.T) {
 		"T7": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1, PartsDone: 0, Branch: "djinn/T7"},
 		// T8 waits for T7, which is not done yet: Ready is false.
 		"T8": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: false, Branch: "djinn/T8", BaseBranch: "djinn/T7"},
+		// T9's work is done, its other part cancelled: 1/1, its proof awaited.
+		"T9": {State: planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF, Ready: true, Parts: 1, PartsDone: 1, Branch: "djinn/T9"},
+		// T10's only part is cancelled: nothing to count, nothing waiting, nothing under way.
+		"T10": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: true, Branch: "djinn/T10"},
+		// T11 is closed, its only part cancelled: done, and it folds.
+		"T11": {State: planv1.AzimaState_AZIMA_STATE_DONE, Ready: true, Branch: "djinn/T11"},
 	} {
 		i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetCode() == code })
 		if got := tasks[i].GetAzima(); !proto.Equal(got, want) {
