@@ -352,7 +352,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		if err != nil {
 			return fmt.Errorf("project %s: %w", project.GetName(), err)
 		}
-		r.checks = settings.ChecksBrief()
+		r.setChecks(settings)
 	}
 	readOnly, perms := accessSpec(t.GetAccess(), prep.declared)
 	perms = withCommit(t, perms)

@@ -97,3 +97,47 @@ func TestBranchFromSettings(t *testing.T) {
 	}
 	check("the developer's, for a planned task", later, "ship-it/w2/")
 }
+
+// TestWorkerRunsPushChecksNoted: when a worker runs a push-check command anyway, Djinn notes it in the task's
+// events once, so the lead sees it.
+func TestWorkerRunsPushChecksNoted(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home, dir := t.TempDir(), t.TempDir()
+	writeFile(t, dir, ".agents/settings.txtpb", `provider: PROVIDER_FAKE
+checks { name: "lint" command: "make lint" when: CHECK_WHEN_COMMIT }
+checks { name: "test" command: "make test" when: CHECK_WHEN_PUSH }
+test_one: "make test-pkg {pkg}"
+`)
+	e := up(t, home)
+	wishID, _ := e.wish(t, dir)
+	prompt := strings.Join([]string{
+		"tool Bash make lint",
+		"result ok",
+		"tool Bash make test-pkg ./internal/plan/...",
+		"result ok",
+		"tool Bash make test",
+		"result ok",
+		"tool Bash make test",
+		"result ok",
+		"text done",
+	}, "\n")
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Worker run", Prompt: prompt, Provider: planv1.Provider_PROVIDER_FAKE,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := e.watch(t.Context(), t, res.Msg.GetTask().GetId(), 0)
+
+	var notes int
+	for _, ev := range events {
+		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS &&
+			ev.GetText() == "ran the push checks: Djinn runs them before the push" {
+			notes++
+		}
+	}
+	if notes != 1 {
+		t.Errorf("got %d push check status events; want 1", notes)
+	}
+}

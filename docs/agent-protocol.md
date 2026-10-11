@@ -87,6 +87,7 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   A wish without a lead session keeps the answer in its brief's decisions (`internal/plan/tell.go`).
 - **Tasks.** `djinn task spawn` starts a worker. A task that cannot start yet waits, and says why.
   `djinn task watch <task>` follows its events; `djinn task stop <task>` stops it.
+  When writing a worker's prompt, ask for the commit checks and the targeted tests, never "run the whole test suite"; the push checks are Djinn's.
 - **The plan is a graph of azimas.** An azima (Arabic ʿazīma, the incantation that binds and commands a djinn) is a
   part of the plan, coded `T07`: a task of kind `AZIMA` that no worker runs, the scheduler never starts, and that never
   waits for the developer. `djinn plan sync <wish>` reads them from the projects' `plan/*.md` and writes each one's

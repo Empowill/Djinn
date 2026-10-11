@@ -227,6 +227,9 @@ message ProjectSettings {
     defined_only: true
     not_in: [0]
   }];
+  // A template command to run targeted tests covering a worker's change: "go tool task test-pkg -- {pkg}" or
+  // "npm test -- {spec}". Shown in the brief when present.
+  optional string test_one = 24 [(buf.validate.field).string.max_len = 500];
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.

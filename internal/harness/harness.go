@@ -159,6 +159,9 @@ type run struct {
 	branch      string        // the branch template of the project's settings, for launch; empty: the default
 	from        string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
 	checks      string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
+	pushChecks  []string      // commands of the project's push checks, to note when a worker runs them
+	testOne     string        // project's targeted test command template or prefix
+	notedPush   bool          // already noted that worker ran push checks
 	fallback    string        // why the worker fell back to another provider, for its start event
 	failure     string        // the last error the current worker said: it never ends done
 	limit       *Limit        // the usage limit the current worker said it hit: it wins over failure
@@ -501,7 +504,7 @@ func (h *Harness) spawn(
 		return nil, err
 	}
 	r.branch, r.from = settings.Branch, h.workerStartBranch(ctx, wish, project, settings, task)
-	r.checks = settings.ChecksBrief()
+	r.setChecks(settings)
 	if questionWorker(task) {
 		p, _, fb := questionProvider(settings)
 		if task.GetProvider() == p {
@@ -975,6 +978,15 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	h.acknowledge(r, ev)
 	h.write(r, actorWorker, methodEvent, task, ev)
+	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL && !r.notedPush {
+		if r.ranPushCheck(ev.Text) || r.ranPushCheck(ev.Raw) {
+			r.notedPush = true
+			h.write(r, actorHarness, methodEvent, nil, Event{
+				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+				Text: "ran the push checks: Djinn runs them before the push",
+			})
+		}
+	}
 	if ev.Watched != nil {
 		h.wakeLead(r, ev.Watched, ev.Text)
 	}
@@ -982,6 +994,80 @@ func (h *Harness) record(r *run, ev Event) {
 		r.envReplayed = true
 		_ = h.replayEnvFailures(context.Background(), r.task.GetProvider())
 	}
+}
+
+// setChecks records what the project's settings say of checks Djinn runs, and its push checks to watch for.
+func (r *run) setChecks(settings plan.Settings) {
+	r.checks = settings.ChecksBrief()
+	r.testOne = settings.TestOne
+	var pushes []string
+	commitNames := make(map[string]bool)
+	for _, c := range settings.ChecksAt(planv1.CheckWhen_CHECK_WHEN_COMMIT) {
+		commitNames[strings.ToLower(c.GetName())] = true
+	}
+	for _, c := range settings.ChecksAt(planv1.CheckWhen_CHECK_WHEN_PUSH) {
+		if commitNames[strings.ToLower(c.GetName())] {
+			continue
+		}
+		if cmd := strings.TrimSpace(c.GetCommand()); cmd != "" {
+			pushes = append(pushes, cmd)
+		}
+		if gateCmd := strings.TrimSpace(plan.GateCommand(c)); gateCmd != "" {
+			pushes = append(pushes, gateCmd)
+		}
+		if name := strings.TrimSpace(c.GetName()); name != "" {
+			pushes = append(pushes, "djinn gate run "+name)
+		}
+	}
+	r.pushChecks = pushes
+}
+
+func (r *run) ranPushCheck(text string) bool {
+	if text == "" || len(r.pushChecks) == 0 {
+		return false
+	}
+	if r.testOne != "" {
+		prefix, _, _ := strings.Cut(r.testOne, "{")
+		prefix = strings.TrimSpace(prefix)
+		if prefix != "" && matchesCommand(text, prefix) {
+			return false
+		}
+	}
+	for _, cmd := range r.pushChecks {
+		if matchesCommand(text, cmd) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesCommand(text, cmd string) bool {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return false
+	}
+	offset := 0
+	for {
+		idx := strings.Index(text[offset:], cmd)
+		if idx < 0 {
+			return false
+		}
+		i := offset + idx
+		beforeOK := i == 0 || !isWordChar(text[i-1])
+		end := i + len(cmd)
+		afterOK := end >= len(text) || !isWordChar(text[end])
+		if beforeOK && afterOK {
+			return true
+		}
+		offset = i + len(cmd)
+		if offset >= len(text) {
+			return false
+		}
+	}
+}
+
+func isWordChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/'
 }
 
 // takeAnswers takes the answers waiting for the run.
