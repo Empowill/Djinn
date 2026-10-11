@@ -587,3 +587,25 @@ func TestWorkerMemoryGuard(t *testing.T) {
 		}
 	})
 }
+
+func TestLowPriority(t *testing.T) {
+	for _, tt := range []struct {
+		notch djinnv1.LoadNotch
+		want  bool
+	}{
+		{djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED, false},
+		{djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, true},
+		{djinnv1.LoadNotch_LOAD_NOTCH_LIGHT, true},
+		{djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, false},
+		{djinnv1.LoadNotch_LOAD_NOTCH_HIGH, false},
+		{djinnv1.LoadNotch_LOAD_NOTCH_MAX, false},
+	} {
+		if got := LowPriority(tt.notch); got != tt.want {
+			t.Errorf("LowPriority(%v) = %v, want %v", tt.notch, got, tt.want)
+		}
+		p := NotchPolicy(tt.notch)
+		if got := p.LowPriority(); got != tt.want {
+			t.Errorf("Policy.LowPriority() for notch %v = %v, want %v", tt.notch, got, tt.want)
+		}
+	}
+}

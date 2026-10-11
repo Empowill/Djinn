@@ -6,12 +6,22 @@ import (
 	"errors"
 	"os/exec"
 	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
 // ownGroup starts the process in a group of its own, so that a Ctrl+C in Djinn's console does not reach it.
-func ownGroup(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
+// When lowPriority is true, it sets BELOW_NORMAL_PRIORITY_CLASS to give CPU priority to developer applications.
+func ownGroup(cmd *exec.Cmd, lowPriority bool) {
+	flags := uint32(syscall.CREATE_NEW_PROCESS_GROUP)
+	if lowPriority {
+		flags |= windows.BELOW_NORMAL_PRIORITY_CLASS
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: flags}
 }
+
+// applyPriority is a no-op on Windows: priority class is set at process creation via CreationFlags.
+func applyPriority(cmd *exec.Cmd, lowPriority bool) {}
 
 // terminate stops the process. Windows has no signal to ask a console process to stop: it is killed at once.
 // What it started survives; a job object will hold the whole tree when the machine task (T14) needs one.

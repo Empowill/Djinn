@@ -41,13 +41,14 @@ type line struct {
 // startProcess starts name in dir with args, in a scope of its own when scope is set. The process gets Djinn's
 // environment plus env, which Djinn passes on without reading. On Unix it leads a process group of its own, so that
 // stopping it stops what it started; in a scope, its cgroup holds even what left the group.
-func startProcess(dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration) (*process, error) {
-	return startCommand(dir, name, args, env, scope, grace, false)
+// When lowPriority is true, the process runs with low CPU priority (nice 10 on Unix, BELOW_NORMAL_PRIORITY_CLASS on Windows).
+func startProcess(dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, lowPriority bool) (*process, error) {
+	return startCommand(dir, name, args, env, scope, grace, false, lowPriority)
 }
 
 // startCommand is startProcess; with blanks, the empty lines of the output are lines too.
 func startCommand(
-	dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, blanks bool,
+	dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, blanks bool, lowPriority bool,
 ) (*process, error) {
 	var sc machine.Scope
 	if scope != nil {
@@ -66,7 +67,7 @@ func startCommand(
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
-	ownGroup(cmd)
+	ownGroup(cmd, lowPriority)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -82,6 +83,7 @@ func startCommand(
 		}
 		return nil, err
 	}
+	applyPriority(cmd, lowPriority)
 	p := &process{cmd: cmd, cgroup: sc.Cgroup, stdin: stdin, grace: grace, lines: make(chan line, 64), done: make(chan struct{}), blanks: blanks}
 	var read sync.WaitGroup
 	read.Add(2)
