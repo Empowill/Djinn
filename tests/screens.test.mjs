@@ -1677,7 +1677,7 @@ test("diff views render unified and split diffs with Chroma syntax tokens and hu
   assert.match(split, /tok-comment/);
 });
 
-test("diff views render inline comments, comment box, and task card displays comments with turn comments button", () => {
+test("diff views render inline comments and a comment box; an ended task card offers to turn its waiting comments into work", () => {
   const hunks = [
     {
       header: "@@ -1,3 +1,4 @@",
@@ -1745,24 +1745,41 @@ test("diff views render inline comments, comment box, and task card displays com
   assert.match(box, /diff-comment-btn-cancel/);
   assert.match(box, /diff-comment-btn-submit/);
 
-  // 3. Task card displaying comments and TurnCommentsButton
-  const taskCard = s.renderToStaticMarkup(
-    h(s.WishTask, {
-      task: {
-        id: "t1",
-        code: "W1",
-        title: "Trim the wick",
-        status: s.TaskStatus.DONE,
-        comments,
-      },
-      focused: true,
-      onStop() {},
+  // A deleted line is in no version of the file a comment names: no comment button on it.
+  const deleted = s.renderToStaticMarkup(
+    h(s.UnifiedView, {
+      hunks: [
+        {
+          header: "@@ -1 +0,0 @@",
+          lines: [{ kind: s.DiffLineKind.DELETED, oldLine: 1, newLine: 0, text: "gone" }],
+        },
+      ],
+      comments: [],
+      filePath: "main.go",
     }),
   );
-  assert.match(taskCard, /wish-task-comments/);
-  assert.match(taskCard, /Review comments/);
+  assert.doesNotMatch(deleted, /diff-add-comment-btn/);
+
+  // 3. The card of an ended task: the comments show in its diff; the card only offers to turn the waiting ones into
+  // work, those that went to no worker and are not resolved.
+  const card = (status, comments, onTurnComments = async () => {}) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: { id: "t1", code: "W1", title: "Trim the wick", status, comments },
+        focused: true,
+        onStop() {},
+        onTurnComments,
+      }),
+    );
+  const taskCard = card(s.TaskStatus.DONE, comments);
   assert.match(taskCard, /wish-task-turn-comments-button/);
   assert.match(taskCard, /Turn comments into work/);
+  assert.doesNotMatch(taskCard, /Please add a comment explaining this line\./);
+  const sent = comments.map((c) => ({ ...c, sentTo: "t2" }));
+  assert.doesNotMatch(card(s.TaskStatus.DONE, sent), /wish-task-turn-comments-button/);
+  assert.doesNotMatch(card(s.TaskStatus.RUNNING, comments), /wish-task-turn-comments-button/);
+  assert.doesNotMatch(card(s.TaskStatus.CANCELLED, comments), /wish-task-turn-comments-button/);
+  assert.doesNotMatch(card(s.TaskStatus.DONE, comments, null), /wish-task-turn-comments-button/);
 });
 
 test("promptPreview truncates long prompts to a few lines with an ellipsis", () => {

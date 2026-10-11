@@ -1,4 +1,5 @@
-import { create } from "@bufbuild/protobuf";
+// TaskDiffView displays git diffs for a task: changed files list, then unified and side-by-side diff viewers. A line
+// of the unified diff, or a range of them (shift-click), takes a review comment: TaskService.Comment.
 import { type FormEvent, memo, useEffect, useState } from "react";
 import {
   DiffHunk,
@@ -6,7 +7,6 @@ import {
   DiffLineKind,
   type Task,
   type TaskComment,
-  TaskCommentSchema,
   TaskDiffFile,
   TaskFileDiff,
   type TaskServiceDiffResponse,
@@ -83,30 +83,12 @@ function pairHunkLines(lines: readonly DiffLine[]): SplitRow[] {
   return rows;
 }
 
-function extractExcerpt(
-  hunks: readonly DiffHunk[],
-  startLine: number,
-  endLine: number,
-): string {
-  const lines: string[] = [];
-  for (const hunk of hunks) {
-    for (const l of hunk.lines) {
-      const num = l.newLine > 0 ? l.newLine : l.oldLine;
-      if (num >= startLine && num <= endLine) {
-        lines.push(l.text);
-      }
-    }
-  }
-  return lines.join("\n");
-}
-
 export interface CommentBoxProps {
   startLine: number;
   endLine: number;
   taskId?: string;
   filePath?: string;
   commit?: string;
-  excerpt?: string;
   onCancel: () => void;
   onCommentAdded?: (comment: TaskComment) => void;
 }
@@ -117,7 +99,6 @@ export function CommentBox({
   taskId,
   filePath,
   commit,
-  excerpt,
   onCancel,
   onCommentAdded,
 }: CommentBoxProps) {
@@ -136,21 +117,7 @@ export function CommentBox({
     e.preventDefault();
     const trimmed = text.trim();
     if (!trimmed || submitting) return;
-    if (!clients || !taskId) {
-      onCommentAdded?.(
-        create(TaskCommentSchema, {
-          id: "preview-id",
-          file: filePath ?? "",
-          line: startLine,
-          endLine: endLine,
-          commit: commit ?? "",
-          text: trimmed,
-          excerpt: excerpt ?? "",
-        }),
-      );
-      onCancel();
-      return;
-    }
+    if (!clients || !taskId) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -161,7 +128,6 @@ export function CommentBox({
         line: startLine,
         endLine: endLine,
         commit: commit ?? "",
-        excerpt: excerpt ?? "",
       });
       if (res.comment) {
         onCommentAdded?.(res.comment);
@@ -199,7 +165,7 @@ export function CommentBox({
         <button
           type="submit"
           className="diff-comment-btn-submit"
-          disabled={submitting || !text.trim()}
+          disabled={submitting || !text.trim() || !clients || !taskId}
         >
           {t("diff.comment_submit")}
         </button>
@@ -249,7 +215,8 @@ export function UnifiedView({
           <div className="diff-hunk-header">{hunk.header}</div>
           <div className="diff-lines-unified">
             {hunk.lines.map((line, lIdx) => {
-              const lineNum = line.newLine > 0 ? line.newLine : line.oldLine;
+              // A comment names a line of the task's version of the file: a deleted line has none.
+              const lineNum = line.newLine;
               const isSelected =
                 activeRange !== null &&
                 lineNum > 0 &&
@@ -269,6 +236,7 @@ export function UnifiedView({
                     : " ";
 
               const lineComments = (comments ?? []).filter((c) => {
+                if (lineNum <= 0) return false;
                 if (c.file && filePath && c.file !== filePath) return false;
                 const end = c.endLine > 0 ? c.endLine : c.line;
                 return end === lineNum;
@@ -282,17 +250,6 @@ export function UnifiedView({
                   <div
                     className={`diff-line-row ${rowClass}`}
                     onClick={(e) => handleLineClick(lineNum, e)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        handleLineClick(
-                          lineNum,
-                          e as unknown as React.MouseEvent,
-                        );
-                      }
-                    }}
                   >
                     <span className="diff-cell-num">
                       {line.oldLine > 0 ? line.oldLine : ""}
@@ -302,17 +259,20 @@ export function UnifiedView({
                     </span>
                     <span className="diff-cell-marker">{marker}</span>
                     <span className="diff-cell-code">
-                      <button
-                        type="button"
-                        className="diff-add-comment-btn"
-                        title={t("diff.add_comment")}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveRange({ start: lineNum, end: lineNum });
-                        }}
-                      >
-                        +
-                      </button>
+                      {lineNum > 0 && (
+                        <button
+                          type="button"
+                          className="diff-add-comment-btn"
+                          title={t("diff.add_comment")}
+                          aria-label={t("diff.add_comment")}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveRange({ start: lineNum, end: lineNum });
+                          }}
+                        >
+                          +
+                        </button>
+                      )}
                       <LineTokens line={line} />
                     </span>
                   </div>
@@ -329,32 +289,11 @@ export function UnifiedView({
                         <div
                           className={`diff-comment-item ${comment.resolved ? "resolved" : ""}`}
                         >
-                          <div className="diff-comment-header">
-                            <span className="diff-comment-range">
-                              {comment.line === comment.endLine ||
-                              comment.endLine === 0
-                                ? t("diff.comment_on_line", {
-                                    line: comment.line,
-                                  })
-                                : t("diff.comment_on_lines", {
-                                    start: comment.line,
-                                    end: comment.endLine,
-                                  })}
+                          {comment.resolved && (
+                            <span className="diff-comment-resolved-badge">
+                              {t("diff.resolved")}
                             </span>
-                            {comment.commit && (
-                              <span
-                                className="diff-comment-commit"
-                                title={comment.commit}
-                              >
-                                {comment.commit.slice(0, 7)}
-                              </span>
-                            )}
-                            {comment.resolved && (
-                              <span className="diff-comment-resolved-badge">
-                                {t("diff.resolved")}
-                              </span>
-                            )}
-                          </div>
+                          )}
                           <div className="diff-comment-text">
                             {comment.text}
                           </div>
@@ -375,11 +314,6 @@ export function UnifiedView({
                           taskId={taskId}
                           filePath={filePath}
                           commit={headCommit}
-                          excerpt={extractExcerpt(
-                            hunks,
-                            activeRange.start,
-                            activeRange.end,
-                          )}
                           onCancel={() => setActiveRange(null)}
                           onCommentAdded={(newComment) => {
                             setActiveRange(null);

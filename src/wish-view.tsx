@@ -350,6 +350,21 @@ export function WishView({
     [write, clients.tasks],
   );
 
+  const handleTurnComments = useCallback(
+    (task: Task) =>
+      write(
+        task.wishId,
+        () =>
+          clients.tasks.turnComments({
+            taskId: task.id,
+            by: Closer.DEVELOPER,
+          }),
+        [Change.TASK],
+        t("task.turn_comments_done", { task: task.code }),
+      ),
+    [write, clients.tasks],
+  );
+
   const handleDecision = useCallback(
     (task: Task) => {
       const d = decisionOf(task, decisions);
@@ -373,6 +388,7 @@ export function WishView({
         onSend={handleSend}
         onHold={pausable ? handleHold : undefined}
         onDone={handleDone}
+        onTurnComments={handleTurnComments}
       />
     ),
     [
@@ -387,6 +403,7 @@ export function WishView({
       pausable,
       handleHold,
       handleDone,
+      handleTurnComments,
     ],
   );
 
