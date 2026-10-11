@@ -253,7 +253,7 @@
 {{- end}}
 {{- define "run-item"}}<li><details><summary class="block-head">{{template "block-head" (index . 0)}}</summary>{{template "block-body" .}}</details></li>{{end}}
 {{- define "block-body"}}{{$b := index . 0}}{{$T := index . 1}}
-    {{- if $b.Markdown}}<div class="md prose">{{$b.HTML}}</div>{{else if $b.Text}}<pre>{{$b.Text}}</pre>{{end}}
+    {{- if $b.Markdown}}<div class="md prose">{{$b.HTML}}</div>{{else if $b.SVG}}<div class="dia-frame">{{$b.HTML}}</div>{{else if $b.Text}}<pre>{{$b.Text}}</pre>{{end}}
     {{- if $b.Diagram}}<p class="hint">{{index $T "page.diagram"}}</p>{{end}}
 {{- end}}
 {{- define "journal"}}{{$es := index . 0}}{{$T := index . 1}}

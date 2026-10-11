@@ -882,3 +882,54 @@ func TestWorkStands(t *testing.T) {
 		t.Error("the French page does not say where the work stands")
 	}
 }
+
+// TestSVG ensures SVG blocks and fenced SVG markdown render inside dia-frame and strip unsafe elements.
+func TestSVG(t *testing.T) {
+	exp := &planv1.WishExport{
+		Wish: &planv1.Wish{Id: "w", Title: "SVG Wish"},
+		Blocks: []*planv1.Block{
+			{
+				Id:        "b-standalone",
+				Kind:      "diagram",
+				Title:     "Standalone SVG",
+				MediaType: "image/svg+xml",
+				Content: `<svg viewBox="0 0 100 100" onload="alert('fail')">
+					<script>alert('evil')</script>
+					<foreignObject><iframe src="https://evil.com"></iframe></foreignObject>
+					<a href="https://evil.com" xlink:href="https://evil.com"><text>Click</text></a>
+					<a href="#safe-ref"><rect width="10" height="10" /></a>
+				</svg>`,
+			},
+			{
+				Id:    "b-fenced",
+				Kind:  "notes",
+				Title: "Fenced SVG",
+				Content: "Here is an SVG diagram:\n\n```svg\n<svg viewBox=\"0 0 200 200\" onclick=\"bad()\">\n" +
+					"<script>bad()</script>\n<circle cx=\"50\" cy=\"50\" r=\"20\" />\n</svg>\n```\n\nAnd concluding text.",
+			},
+		},
+	}
+	html := page(t, Input{Export: exp, Language: "en"})
+
+	if strings.Contains(strings.ToLower(html), "<script") {
+		t.Errorf("rendered page must not contain script tags: %s", html)
+	}
+	if strings.Contains(html, "alert(") || strings.Contains(html, "bad()") {
+		t.Errorf("rendered page must not contain event handlers or script contents: %s", html)
+	}
+	if strings.Contains(html, "foreignObject") || strings.Contains(html, "foreignobject") {
+		t.Errorf("rendered page must not contain foreignObject: %s", html)
+	}
+	if strings.Contains(html, "https://evil.com") {
+		t.Errorf("rendered page must not contain external URLs: %s", html)
+	}
+	if !strings.Contains(html, `href="#safe-ref"`) {
+		t.Errorf("rendered page should preserve local fragment links: %s", html)
+	}
+	if !strings.Contains(html, `<circle cx="50" cy="50" r="20" />`) && !strings.Contains(html, `<circle cx="50" cy="50" r="20"></circle>`) {
+		t.Errorf("rendered page should contain circle element: %s", html)
+	}
+	if n := strings.Count(html, `class="dia-frame"`); n < 2 {
+		t.Errorf("expected at least 2 dia-frame occurrences, got %d", n)
+	}
+}
