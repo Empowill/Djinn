@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"cmp"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -62,6 +63,13 @@ func FillAzimas(tasks []*planv1.Task) {
 		}
 		states[t.GetId()] = planv1.AzimaState_AZIMA_STATE_IN_PROGRESS
 		s := planv1.AzimaState_AZIMA_STATE_OPEN
+		// unfinished tells whether a part is still to finish: work not finished, or an azima not done.
+		unfinished := slices.ContainsFunc(parts[t.GetId()], func(p *planv1.Task) bool {
+			if IsAzima(p) {
+				return state(p) != planv1.AzimaState_AZIMA_STATE_DONE
+			}
+			return !Finished(p)
+		})
 		// left tells whether a part is still to finish: work not finished, or an azima neither done nor to validate.
 		left := slices.ContainsFunc(parts[t.GetId()], func(p *planv1.Task) bool {
 			if IsAzima(p) {
@@ -71,7 +79,9 @@ func FillAzimas(tasks []*planv1.Task) {
 			return !Finished(p)
 		})
 		switch {
-		case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !left:
+		case t.GetDraft():
+			s = planv1.AzimaState_AZIMA_STATE_DRAFT
+		case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !unfinished:
 			s = planv1.AzimaState_AZIMA_STATE_DONE
 		case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE:
 			// Closed, but work part of it still runs or waits: in progress until it ends.
@@ -90,10 +100,25 @@ func FillAzimas(tasks []*planv1.Task) {
 			t.Azima = nil
 			continue
 		}
-		e := &planv1.Azima{State: state(t), Ready: true}
+		e := &planv1.Azima{
+			State:  state(t),
+			Ready:  true,
+			Branch: AzimaBranchName(t),
+		}
+		if deps := DependencyAzimas(t, tasks); len(deps) > 0 {
+			e.BaseBranch = AzimaBranchName(deps[len(deps)-1])
+		}
+		if existing := t.GetAzima(); existing != nil {
+			e.Sync = existing.GetSync()
+			e.Pr = existing.GetPr()
+		}
 		for _, p := range parts[t.GetId()] {
 			e.Parts++
-			if p.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+			if IsAzima(p) {
+				if state(p) == planv1.AzimaState_AZIMA_STATE_DONE {
+					e.PartsDone++
+				}
+			} else if p.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
 				e.PartsDone++
 			}
 			if working(p) {
@@ -101,12 +126,160 @@ func FillAzimas(tasks []*planv1.Task) {
 			}
 		}
 		for _, id := range t.GetDependsOn() {
-			if byID[id].GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			dep := byID[id]
+			depDone := false
+			if dep != nil {
+				if IsAzima(dep) {
+					depDone = state(dep) == planv1.AzimaState_AZIMA_STATE_DONE
+				} else {
+					depDone = dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE
+				}
+			}
+			if !depDone {
 				e.Ready = false
 			}
 		}
 		t.Azima = e
 	}
+}
+
+// accents are folded to their letter in a slug.
+var accents = strings.NewReplacer(
+	"\u00e0", "a", "\u00e2", "a", "\u00e4", "a", "\u00e1", "a", "\u00e7", "c", "\u00e9", "e", "\u00e8", "e", "\u00ea", "e", "\u00eb", "e",
+	"\u00ee", "i", "\u00ef", "i", "\u00ed", "i", "\u00f4", "o", "\u00f6", "o", "\u00f3", "o", "\u00f9", "u", "\u00fb", "u", "\u00fc", "u", "\u00fa", "u", "\u00f1", "n",
+)
+
+// Slug keeps lower-case letters and digits, joined by single dashes, at most n characters cut on a dash.
+func Slug(s string, n int) string {
+	s = accents.Replace(strings.ToLower(s))
+	var b strings.Builder
+	dash := false
+	for _, r := range s {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			if dash && b.Len() > 0 {
+				b.WriteByte('-')
+			}
+			b.WriteRune(r)
+			dash = false
+			continue
+		}
+		dash = true
+	}
+	out := b.String()
+	if len(out) > n {
+		out = out[:n]
+		if i := strings.LastIndexByte(out, '-'); i > 0 {
+			out = out[:i]
+		}
+	}
+	return strings.Trim(out, "-")
+}
+
+// AzimaBranchName is the integration branch name of an azima: djinn/<code-slug> or djinn/<code>.
+func AzimaBranchName(a *planv1.Task) string {
+	if a == nil {
+		return ""
+	}
+	s := Slug(a.GetTitle(), 40)
+	if s != "" {
+		return fmt.Sprintf("djinn/%s-%s", a.GetCode(), s)
+	}
+	return fmt.Sprintf("djinn/%s", a.GetCode())
+}
+
+// DependencyAzimas finds all unique azimas that azima (or its work tasks) depends on among tasks.
+func DependencyAzimas(azima *planv1.Task, tasks []*planv1.Task) []*planv1.Task {
+	if azima == nil {
+		return nil
+	}
+	taskMap := make(map[string]*planv1.Task, len(tasks))
+	parts := make(map[string][]*planv1.Task)
+	for _, t := range tasks {
+		taskMap[t.GetId()] = t
+		if p := t.GetPartOf(); p != "" {
+			parts[p] = append(parts[p], t)
+		}
+	}
+
+	azimaMemo := make(map[string]*planv1.Task, len(tasks))
+	findAzima := func(taskID string) *planv1.Task {
+		if a, ok := azimaMemo[taskID]; ok {
+			return a
+		}
+		curr := taskMap[taskID]
+		visited := make(map[string]bool)
+		var res *planv1.Task
+		for curr != nil && !visited[curr.GetId()] {
+			visited[curr.GetId()] = true
+			if IsAzima(curr) {
+				res = curr
+				break
+			}
+			if curr.GetPartOf() == "" {
+				break
+			}
+			curr = taskMap[curr.GetPartOf()]
+		}
+		for id := range visited {
+			azimaMemo[id] = res
+		}
+		return res
+	}
+
+	depAzimaMap := make(map[string]*planv1.Task)
+	for _, depID := range azima.GetDependsOn() {
+		if a := findAzima(depID); a != nil && a.GetId() != azima.GetId() {
+			depAzimaMap[a.GetId()] = a
+		}
+	}
+
+	var checkParts func(parentID string)
+	seenParts := make(map[string]bool)
+	checkParts = func(parentID string) {
+		for _, p := range parts[parentID] {
+			if seenParts[p.GetId()] {
+				continue
+			}
+			seenParts[p.GetId()] = true
+			if !IsAzima(p) {
+				for _, depID := range p.GetDependsOn() {
+					if da := findAzima(depID); da != nil && da.GetId() != azima.GetId() {
+						depAzimaMap[da.GetId()] = da
+					}
+				}
+				checkParts(p.GetId())
+			}
+		}
+	}
+	checkParts(azima.GetId())
+
+	var res []*planv1.Task
+	for _, da := range depAzimaMap {
+		res = append(res, da)
+	}
+	slices.SortStableFunc(res, func(a, b *planv1.Task) int {
+		return strings.Compare(a.GetCode(), b.GetCode())
+	})
+	return res
+}
+
+// HasUnfinishedParts tells whether an azima has parts still to finish: work not finished,
+// or an azima part of it not done.
+func HasUnfinishedParts(id string, tasks []*planv1.Task) bool {
+	tasks = WithAzimas(tasks)
+	for _, t := range tasks {
+		if t.GetPartOf() != id {
+			continue
+		}
+		if IsAzima(t) {
+			if t.GetAzima().GetState() != planv1.AzimaState_AZIMA_STATE_DONE {
+				return true
+			}
+		} else if !Finished(t) {
+			return true
+		}
+	}
+	return false
 }
 
 // Finished tells a task of work finished: done, stopped on request, or cut short for good. Djinn resumes by itself
@@ -172,6 +345,8 @@ type AzimaFile struct {
 	Phase  string
 	Status string
 	Title  string
+	// Description is what the file holds after its title heading: its goal and body.
+	Description string
 	// After is what the file says the azima depends on, by code.
 	After []string
 	// DoneWhen is what its Done-when sections say: their boxes, and what the unchecked ones need.
@@ -181,9 +356,12 @@ type AzimaFile struct {
 // Done tells whether the file says its azima is done.
 func (f AzimaFile) Done() bool { return strings.EqualFold(f.Status, "done") }
 
+// Draft tells whether the file says its azima is a draft.
+func (f AzimaFile) Draft() bool { return strings.EqualFold(f.Status, "draft") }
+
 // Closes tells whether the file closes its azima: its status says done, or every box of its Done-when section is
-// checked.
-func (f AzimaFile) Closes() bool { return f.Done() || f.DoneWhen.AllChecked() }
+// checked. A draft azima never closes.
+func (f AzimaFile) Closes() bool { return !f.Draft() && (f.Done() || f.DoneWhen.AllChecked()) }
 
 // ReadAzimaFiles reads the plan files of a project's folder: plan/*.md with a front matter that gives a code, and their
 // Done-when section. A file without one (the README) is not an azima's.
@@ -209,7 +387,7 @@ func ReadAzimaFiles(project string) ([]AzimaFile, error) {
 	return out, nil
 }
 
-// parseAzimaFile reads a plan file's front matter and title; false when it has no front matter with a code.
+// parseAzimaFile reads a plan file's front matter, title and description; false when it has no front matter with a code.
 func parseAzimaFile(data []byte) (AzimaFile, bool) {
 	var f AzimaFile
 	lines, body, ok := splitFrontMatter(data)
@@ -240,11 +418,23 @@ func parseAzimaFile(data []byte) (AzimaFile, bool) {
 	}
 	f.DoneWhen = ReadDoneWhen(body)
 	sc := bufio.NewScanner(bytes.NewReader(body))
+	var afterTitle []string
+	foundTitle := false
 	for sc.Scan() {
-		if title, ok := strings.CutPrefix(sc.Text(), "# "); ok {
-			f.Title = azimaTitle(strings.TrimSpace(title), f.Code)
-			break
+		line := sc.Text()
+		if !foundTitle {
+			if title, ok := strings.CutPrefix(line, "# "); ok {
+				f.Title = azimaTitle(strings.TrimSpace(title), f.Code)
+				foundTitle = true
+			}
+			continue
 		}
+		afterTitle = append(afterTitle, line)
+	}
+	if foundTitle {
+		f.Description = strings.TrimSpace(strings.Join(afterTitle, "\n"))
+	} else {
+		f.Description = strings.TrimSpace(string(body))
 	}
 	return f, true
 }
@@ -330,4 +520,101 @@ func WriteAfter(file string, codes []string) (bool, error) {
 		return false, err
 	}
 	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
+}
+
+// WriteStatus writes an azima's status ("open", "draft", etc.) into its plan file's front matter.
+// It tells whether the file changed.
+func WriteStatus(file string, status string) (bool, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return false, err
+	}
+	lines, body, ok := splitFrontMatter(data)
+	if !ok {
+		return false, nil
+	}
+	nl := "\n"
+	if bytes.HasPrefix(data, []byte("---\r\n")) {
+		nl = "\r\n"
+	}
+	var out []string
+	found := false
+	for _, line := range lines {
+		key, _, hasKey := strings.Cut(line, ":")
+		if hasKey && strings.TrimSpace(key) == "status" {
+			out = append(out, "status: "+status)
+			found = true
+		} else {
+			out = append(out, line)
+		}
+	}
+	if !found {
+		out = append(out, "status: "+status)
+	}
+	if slices.Equal(out, lines) {
+		return false, nil
+	}
+	var b bytes.Buffer
+	b.WriteString("---" + nl)
+	for _, line := range out {
+		b.WriteString(line + nl)
+	}
+	b.WriteString("---" + nl)
+	b.Write(body)
+	info, err := os.Stat(file)
+	if err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
+}
+
+// WriteDescription writes the description of an azima into its plan file, after its title heading.
+// It tells whether the file changed.
+func WriteDescription(file string, text string) (bool, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return false, err
+	}
+	lines, body, ok := splitFrontMatter(data)
+	if !ok {
+		return false, nil
+	}
+	nl := "\n"
+	if bytes.HasPrefix(data, []byte("---\r\n")) {
+		nl = "\r\n"
+	}
+	sc := bufio.NewScanner(bytes.NewReader(body))
+	var titleLine string
+	var foundTitle bool
+	for sc.Scan() {
+		line := sc.Text()
+		if strings.HasPrefix(line, "# ") {
+			titleLine = line
+			foundTitle = true
+			break
+		}
+	}
+	var b bytes.Buffer
+	b.WriteString("---" + nl)
+	for _, line := range lines {
+		b.WriteString(line + nl)
+	}
+	b.WriteString("---" + nl)
+	b.WriteString(nl)
+	if foundTitle {
+		b.WriteString(titleLine + nl + nl)
+	}
+	trimmed := strings.TrimSpace(text)
+	if trimmed != "" {
+		b.WriteString(trimmed + nl)
+	}
+	newContent := b.Bytes()
+	if bytes.Equal(newContent, data) {
+		return false, nil
+	}
+	info, err := os.Stat(file)
+	if err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(file, newContent, info.Mode().Perm())
 }

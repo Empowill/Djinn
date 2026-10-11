@@ -425,7 +425,12 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
       kind: f.TaskKind.AZIMA,
       azima: { state: f.AzimaState.IN_PROGRESS },
     },
-    { id: "c", kind: f.TaskKind.AZIMA, status: S.DONE },
+    {
+      id: "c",
+      kind: f.TaskKind.AZIMA,
+      status: S.DONE,
+      azima: { state: f.AzimaState.DONE },
+    },
     {
       id: "d",
       kind: f.TaskKind.AZIMA,
@@ -436,9 +441,20 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
   ];
   assert.deepEqual(f.azimasDone(tasks), { done: 2, proof: 1, count: 4 });
   assert.equal(f.workCount(tasks), 2);
+
+  // Status DONE never overrides computed state IN_PROGRESS.
+  const runningAzima = [
+    {
+      id: "e",
+      kind: f.TaskKind.AZIMA,
+      status: S.DONE,
+      azima: { state: f.AzimaState.IN_PROGRESS },
+    },
+  ];
+  assert.deepEqual(f.azimasDone(runningAzima), { done: 0, proof: 0, count: 1 });
 });
 
-test("open questions come blocking, then before X, then can wait, across the wishes", () => {
+test("open questions come blocking, then your move, then before X, then can wait, across the wishes", () => {
   const lamp = wish("w1", "Ship the lamp", 1);
   const oil = wish("w2", "Find the oil", 2);
   const plan = f.flightPlan([lamp, oil], {
@@ -447,6 +463,7 @@ test("open questions come blocking, then before X, then can wait, across the wis
       [
         { id: "q1", code: "Q01", text: "Brass?" },
         { id: "q2", code: "Q02", text: "Wick?", before: "before the merge" },
+        { id: "q6", code: "Q03", text: "Push tag?", move: true },
       ],
     ),
     w2: detail(
@@ -474,10 +491,11 @@ test("open questions come blocking, then before X, then can wait, across the wis
     plan.questions.map((q) => [q.item.id, f.urgency(q)]),
     [
       ["q5", 0],
-      ["q2", 1],
-      ["q4", 1],
-      ["q1", 2],
-      ["q3", 2],
+      ["q6", 1],
+      ["q2", 2],
+      ["q4", 2],
+      ["q1", 3],
+      ["q3", 3],
     ],
   );
   // One wish alone sorts the same way.

@@ -58,8 +58,11 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"have led the wish before you: its plan carries over, its session does not.\n" +
 	"- **Ask, do not guess, and never in your terminal.** Everything for the developer is a question, " +
 	"`djinn question ask`, with its options and your recommendation, or with none when you really do not know what " +
-	"to think; the analysis behind it goes in its `--context`. A question, a proposal or a \"shall I?\" written in " +
-	"your terminal reaches neither the window, nor the decision log, nor the question workers: there, only name its " +
+	"to think; the analysis behind it goes in its `--context`. Every move only the developer can make (push a tag, " +
+	"merge or open a pull request, create a release, try something on a machine Djinn does not have, grant a right, " +
+	"install and restart) is asked as a question (`djinn question ask`, with what exactly to run or click, and why now), " +
+	"the moment it becomes due; never left in a note or a terminal line. A question, a proposal or a \"shall I?\" " +
+	"written in your terminal reaches neither the window, nor the decision log, nor the question workers: there, only name its " +
 	"code (Q12). A decision the developer takes in the terminal gets a block of kind decision. An answered question " +
 	"is a decision, resolved: do not bring it back to the developer; ask again, a new question, only on a real " +
 	"doubt. A block of kind decision is a decision too. A task that follows from one names it: `--decision Q03`, or " +
@@ -90,11 +93,17 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- **Give a task its place when you spawn it.** What comes before it: `--after W1,W2`. To put a new task before " +
 	"a planned one, spawn it `--blocks W5`: W5 waits for it from the same step. Never spawn, then depend: a pass of " +
 	"the scheduler may start W5 in between. Djinn refuses `--blocks` on a task that has started.\n" +
-	"- **Djinn acts on the developer's answers.** An answer starts a question worker, \"Q03 → tasks\": it turns " +
-	"the decision into tasks (`--decision Q03`), or asks what the answer leaves open. \"Enlighten me\" starts " +
-	"\"Q03: enlighten\": it reads, then revises the question. You are told when each one starts and ends, and what it " +
-	"spawned, asked or revised: check it, do not do it again. When the line says \"Act on it\" or \"Investigate\", " +
-	"question workers are off and the move is yours.\n" +
+	"- **Djinn acts on the developer's answers.** By default you turn answers into tasks yourself, in one pass, " +
+	"placing them in the graph (azimas, --after, --blocks), and check what an investigator revised. " +
+	"\"Enlighten me\" starts \"Q03: enlighten\": it reads, then revises the question. You are told when each one " +
+	"starts and ends, and what it spawned, asked or revised: check it, do not do it again. When answer workers " +
+	"are on, an answer starts \"Q03 → tasks\" instead. When the line says \"Investigate\", enlighten workers are " +
+	"off and the move is yours.\n" +
+	"- **Check every task that ends.** Read its final note (`djinn task watch <task>`, or the line Djinn types): " +
+	"when it leaves an uncertainty (a choice it made in the developer's place, something it did not verify, a partial " +
+	"result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about " +
+	"it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too " +
+	"(your rule).\n" +
 	"- **Blocks are for agents**: a hand-off, a reference, a decision taken outside a question (kind decision, which " +
 	"the decision log shows). The developer does not read blocks: what the developer must see is a question.\n" +
 	"- **To explain a concept, make a tilasm** (the developer may say talisman): a folder with an `index.html` and its " +
@@ -124,18 +133,21 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"where it goes. The developer edits it in the window too.\n" +
 	"- `djinn question ask \"<question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\" --icon 🔒` (one " +
 	"emoji for the subject); `--before \"before the merge\"` says what the answer is needed before, without it the " +
-	"question can wait (a question a waiting task needs is blocking anyway); " +
-	"`djinn question list --wish-id <wish> --open`.\n" +
+	"question can wait (a question a waiting task needs is blocking anyway); `--move` marks a move only the " +
+	"developer can make; `djinn question list --wish-id <wish> --open`.\n" +
 	"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--project-id`, " +
 	"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`, `--tilasm L01`); " +
-	"`djinn task spawn <wish> --kind azima --title \"…\" --after T02` makes an azima; " +
+	"`djinn task spawn <wish> --kind azima --title \"…\" --after T02` makes an azima (`--draft`, `--description \"…\"`); " +
+	"`djinn task describe <azima> --text \"…\"` revises its description; " +
+	"`djinn task open <azima>` turns a draft open; " +
+	"`djinn task move <azima> --wish <wish>` moves an azima and its unstarted parts to another wish; " +
 	"`djinn task depend <task> --after W1,T02 --also W6=W5` sets what tasks wait for, in place of what they had, " +
 	"all or none; " +
 	"`djinn task group <task> --part-of T07` sets its azima; " +
 	"`djinn plan sync <wish>` reads the azimas from the projects' plan files and writes their `after:` lines back; " +
 	"`djinn task list --wish-id <wish>`; `djinn task watch <task>`; " +
 	"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
-	"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task done <task> --note " +
+	"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task update <task>` edits what is given in place (not started: everything; running or paused: title only; finished: title, prompt, agent, azima; never its dependencies once it ran; alias `set-agent`); `djinn task done <task> --note " +
 	"\"…\"` closes a task no worker runs (planned, cut short, failed, stopped, imported) once its work is done " +
 	"elsewhere.\n" +
 	"- `djinn wish route \"<request>\" --wish-id <wish> --ask`: where a request goes, asked to the developer on a " +
@@ -145,7 +157,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"\"…\"`; `djinn tilasm get <code>` (its text, the folder of its files); `djinn tilasm history <code>`, " +
 	"`djinn tilasm restore <code> <version>`.\n" +
 	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for a " +
-	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, by its question worker or by you.\n" +
+	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, by its question worker or by you; " +
+	"`djinn question move <question> --wish <wish>` moves an open question to another wish (`--follow` moves tasks naming it as decision); " +
+	"`djinn question withdraw <question> --note \"…\"` closes it without an answer.\n" +
 	"- `djinn mark list <wish>`: the open questions the developer marked read in the window, without a word. Start a " +
 	"recommendation with its option's letter (`B: …`): the developer approves it in one click.\n" +
 	"- `djinn wish sync <wish>`: the wish's page, which Djinn keeps up to date in the file it prints. After the wish " +
@@ -304,7 +318,11 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 	if len(running) > 0 {
 		b.WriteString("\n## Running\n\n")
 		for _, t := range running {
-			fmt.Fprintf(&b, "- **%s** %s (%s", t.GetCode(), clipLine(t.GetTitle()), providerName(t.GetProvider()))
+			name := providerName(t.GetProvider())
+			if t.GetModel() != "" {
+				name += " · " + t.GetModel()
+			}
+			fmt.Fprintf(&b, "- **%s** %s (%s", t.GetCode(), clipLine(t.GetTitle()), name)
 			if e := codes[t.GetPartOf()]; e != "" {
 				b.WriteString(", part of " + e)
 			}
@@ -353,6 +371,9 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 
 	var open, investigate []*planv1.Question
 	for _, q := range exp.GetQuestions() {
+		if q.GetWithdrawal() != nil {
+			continue
+		}
 		if Investigating(q) {
 			investigate = append(investigate, q)
 		} else if q.GetAnswer() == nil {
@@ -368,6 +389,8 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 			switch render.UrgencyOf(q, blocked) {
 			case render.Blocking:
 				level = "blocking: " + strings.Join(blocked[q.GetId()], ", ") + " waits"
+			case render.Move:
+				level = "your move"
 			case render.Before:
 				level = clipLine(q.GetBefore())
 			}
@@ -455,15 +478,17 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 // leadMethods are the commands a lead gives, as its rules list them, whatever its agent: the latest says when a lead
 // last acted. The developer's own commands (answers, marks, pauses) are not among them.
 var leadMethods = map[string]bool{
-	planv1connect.TaskServiceSpawnProcedure:      true,
-	planv1connect.TaskServiceContinueProcedure:   true,
-	planv1connect.TaskServiceDependProcedure:     true,
-	planv1connect.TaskServiceGroupProcedure:      true,
-	planv1connect.BlockServicePutProcedure:       true,
-	planv1connect.QuestionServiceAskProcedure:    true,
-	planv1connect.QuestionServiceReviseProcedure: true,
-	planv1connect.WishServiceRouteProcedure:      true,
-	planv1connect.PlanServiceSyncProcedure:       true,
+	planv1connect.TaskServiceSpawnProcedure:        true,
+	planv1connect.TaskServiceContinueProcedure:     true,
+	planv1connect.TaskServiceDependProcedure:       true,
+	planv1connect.TaskServiceGroupProcedure:        true,
+	planv1connect.BlockServicePutProcedure:         true,
+	planv1connect.QuestionServiceAskProcedure:      true,
+	planv1connect.QuestionServiceReviseProcedure:   true,
+	planv1connect.QuestionServiceMoveProcedure:     true,
+	planv1connect.QuestionServiceWithdrawProcedure: true,
+	planv1connect.WishServiceRouteProcedure:        true,
+	planv1connect.PlanServiceSyncProcedure:         true,
 }
 
 // lastLeadBrief writes the wish's last recorded lead, its agent and its session, and when a lead last acted on the
@@ -521,10 +546,13 @@ func commandWords(procedure string) string {
 // with what they wait for, then those whose work is done and that wait for their proof, with who gives it, then the
 // done ones on one line; each with the tilasms that explain it. Nothing without an azima.
 func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]string, tilasms []*planv1.Tilasm) {
-	var ready, blocked, proof, done []*planv1.Task
-	for _, t := range WithAzimas(tasks) {
+	tasks = WithAzimas(tasks)
+	var ready, blocked, proof, done, drafts []*planv1.Task
+	for _, t := range tasks {
 		switch e := t.GetAzima(); {
 		case !IsAzima(t):
+		case e.GetState() == planv1.AzimaState_AZIMA_STATE_DRAFT:
+			drafts = append(drafts, t)
 		case e.GetState() == planv1.AzimaState_AZIMA_STATE_DONE:
 			done = append(done, t)
 		case e.GetState() == planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF:
@@ -535,7 +563,7 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 			blocked = append(blocked, t)
 		}
 	}
-	if len(ready)+len(blocked)+len(proof)+len(done) == 0 {
+	if len(ready)+len(blocked)+len(proof)+len(done)+len(drafts) == 0 {
 		return
 	}
 	byCode := func(a, b *planv1.Task) int { return CompareCodes(a.GetCode(), b.GetCode()) }
@@ -548,6 +576,7 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 	slices.SortFunc(blocked, byCode)
 	slices.SortFunc(proof, byCode)
 	slices.SortFunc(done, byCode)
+	slices.SortFunc(drafts, byCode)
 	b.WriteString("\n## Azimas\n\n")
 	b.WriteString("The plan as a graph, the ready azimas first. Spawn their work `--part-of <azima>`.\n\n")
 	status := map[*planv1.Task]string{}
@@ -576,7 +605,16 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 		for _, id := range t.GetDependsOn() {
 			code := codes[id]
 			all = append(all, code)
-			if byID[id].GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			dep := byID[id]
+			depDone := false
+			if dep != nil {
+				if IsAzima(dep) {
+					depDone = dep.GetAzima().GetState() == planv1.AzimaState_AZIMA_STATE_DONE
+				} else {
+					depDone = dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE
+				}
+			}
+			if !depDone {
 				waits = append(waits, code)
 			}
 		}
@@ -615,6 +653,17 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 			}
 		}
 		fmt.Fprintf(b, "- Done: %s.\n", strings.Join(names, ", "))
+	}
+	if len(drafts) > 0 {
+		names := make([]string, len(drafts))
+		for i, t := range drafts {
+			item := fmt.Sprintf("%s %s — open with djinn task open %s", t.GetCode(), clipLine(t.GetTitle()), t.GetCode())
+			if ls := citing(tilasms, t.GetId()); len(ls) > 0 {
+				item += " (explained by " + strings.Join(ls, ", ") + ")"
+			}
+			names[i] = item
+		}
+		fmt.Fprintf(b, "- Drafts: %s.\n", strings.Join(names, "; "))
 	}
 }
 

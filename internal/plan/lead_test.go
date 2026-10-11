@@ -118,10 +118,20 @@ func TestSetLead(t *testing.T) {
 		t.Errorf("stored lead = %v", got)
 	}
 
+	// Antigravity with a session id.
+	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{
+		WishId: id, SessionId: "c-1", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, Directory: sub,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	for name, req := range map[string]*planv1.WishServiceSetLeadRequest{
 		"a provider without a terminal": {WishId: id, SessionId: session, Provider: planv1.Provider_PROVIDER_FAKE},
 		"a session that is not a word":  {WishId: id, SessionId: "x; rm -rf ~"},
 		"a missing folder":              {WishId: id, SessionId: session, Directory: filepath.Join(dir, "nowhere")},
+		"claude without session":        {WishId: id, SessionId: "", Provider: planv1.Provider_PROVIDER_CLAUDE},
+		"codex without session":         {WishId: id, SessionId: "", Provider: planv1.Provider_PROVIDER_CODEX},
+		"antigravity without session":   {WishId: id, SessionId: "", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY},
 	} {
 		if _, err := setLead(t, c, req); code(err) != connect.CodeInvalidArgument {
 			t.Errorf("%s: %v, want invalid_argument", name, err)
@@ -454,38 +464,38 @@ func TestResumeAnotherAgent(t *testing.T) {
 		}
 		return res.Msg
 	}
-	claudeKept := func(res *planv1.WishServiceResumeResponse) bool {
+	agyKept := func(res *planv1.WishServiceResumeResponse) bool {
 		lead := res.GetWish().GetLead()
-		return lead.GetProvider() == planv1.Provider_PROVIDER_CLAUDE && lead.GetSessionId() == session
+		return lead.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY && lead.GetDirectory() == folder
 	}
 
-	// Antigravity on a claude-led wish: agy -i on the start line, in the project; the claude record stays.
+	// Antigravity on a claude-led wish: agy -i on the start line, in the project; becomes the wish's lead.
 	res := resume(planv1.Provider_PROVIDER_ANTIGRAVITY)
 	if want := "agy -i '" + StartLine(id) + "' in " + folder; len(leads.opened) != 1 || leads.opened[0] != want {
 		t.Fatalf("opened %q, want %q", leads.opened, want)
 	}
-	if res.GetAttached() || res.GetTerminal() != terminal || !claudeKept(res) ||
-		!strings.Contains(res.GetNote(), "stays the claude session "+session) {
+	if res.GetAttached() || res.GetTerminal() != terminal || !agyKept(res) ||
+		!strings.Contains(res.GetNote(), "The folder's most recent conversation is the wish's lead now") {
 		t.Errorf("antigravity over claude = %v", res)
 	}
 	// While it runs, neither another agent nor the recorded lead starts: the note says to exit it there.
 	for _, p := range []planv1.Provider{planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_UNSPECIFIED} {
 		res = resume(p)
 		if !res.GetAttached() || !strings.Contains(res.GetNote(), "already runs") || !strings.Contains(res.GetNote(), "exit it there") ||
-			!claudeKept(res) || len(leads.opened) != 1 {
+			!agyKept(res) || len(leads.opened) != 1 {
 			t.Errorf("%s over a running agy = %v, opened %q", p, res, leads.opened)
 		}
 	}
-	// Once it exits, the recorded agent resumes its own session.
+	// Once it exits, the recorded agent resumes its own session with agy --continue.
 	delete(leads.running, terminal)
-	if res = resume(planv1.Provider_PROVIDER_CLAUDE); leads.opened[1] != "claude --resume "+session+" in "+folder || !claudeKept(res) {
-		t.Errorf("claude = %v, opened %q", res, leads.opened)
+	if res = resume(planv1.Provider_PROVIDER_UNSPECIFIED); len(leads.opened) != 2 || leads.opened[1] != "agy --continue in "+folder || !agyKept(res) {
+		t.Errorf("resumed agy = %v, opened %q", res, leads.opened)
 	}
-	// Codex: its session is not known, the claude record stays until set-lead gives it.
+	// Codex: its session is not known, the antigravity record stays until set-lead gives it.
 	delete(leads.running, terminal)
 	res = resume(planv1.Provider_PROVIDER_CODEX)
-	if leads.opened[2] != "codex '"+StartLine(id)+"' in "+folder || !claudeKept(res) ||
-		!strings.Contains(res.GetNote(), "set-lead") || !strings.Contains(res.GetNote(), "stays the claude session") {
+	if len(leads.opened) != 3 || leads.opened[2] != "codex '"+StartLine(id)+"' in "+folder || !agyKept(res) ||
+		!strings.Contains(res.GetNote(), "set-lead") || !strings.Contains(res.GetNote(), "stays the antigravity conversation") {
 		t.Errorf("codex = %v, opened %q", res, leads.opened)
 	}
 	// A codex record, then claude: a new claude lead, whose session becomes the wish's lead.
@@ -498,7 +508,7 @@ func TestResumeAnotherAgent(t *testing.T) {
 	res = resume(planv1.Provider_PROVIDER_CLAUDE)
 	lead := res.GetWish().GetLead()
 	if lead.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || lead.GetSessionId() == "thread-1" ||
-		leads.opened[3] != "claude --session-id "+lead.GetSessionId()+" '"+StartLine(id)+"' in "+folder {
+		len(leads.opened) != 4 || leads.opened[3] != "claude --session-id "+lead.GetSessionId()+" '"+StartLine(id)+"' in "+folder {
 		t.Errorf("claude over codex = %v, opened %q", res, leads.opened)
 	}
 }

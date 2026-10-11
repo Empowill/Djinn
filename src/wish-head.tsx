@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   CloudUpload,
+  GitBranch,
   GitMerge,
   Terminal,
 } from "lucide-react";
@@ -12,12 +13,15 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   type Lead,
+  ProjectPush,
   Provider,
+  PushStrategy,
+  type Wish,
   type WishMain,
   type WishPush,
 } from "../gen/ts/plan/v1/plan_pb";
 import type { Provider as Agent } from "../gen/ts/ui/v1/ui_pb";
-import { when } from "./data/format";
+import { effectivePushStrategy, when } from "./data/format";
 import { t } from "./i18n";
 
 // The agents a lead runs, in the order the menu lists them, by their identifier in UiService.GetEnvironment.
@@ -27,12 +31,67 @@ const agents: [string, Provider][] = [
   ["antigravity", Provider.ANTIGRAVITY],
 ];
 
-// recordedAgent is the agent of the wish's recorded lead; none without a session. A lead stored without one ran Claude.
+// recordedAgent is the agent of the wish's recorded lead; none without a session, except Antigravity. A lead stored without one ran Claude.
 export function recordedAgent(lead?: Lead): Provider | undefined {
+  if (lead?.provider === Provider.ANTIGRAVITY) return Provider.ANTIGRAVITY;
   if (!lead?.sessionId) return undefined;
   return lead.provider === Provider.UNSPECIFIED
     ? Provider.CLAUDE
     : lead.provider;
+}
+
+export function WishTitle({
+  title,
+  editing: startEditing = false,
+  onSave,
+}: {
+  title: string;
+  editing?: boolean;
+  onSave: (title: string) => void;
+}) {
+  const [editing, setEditing] = useState(startEditing);
+  if (!editing)
+    return (
+      <h1
+        className="wish-title"
+        role="button"
+        tabIndex={0}
+        title={t("wish.rename_detail")}
+        onClick={() => setEditing(true)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            setEditing(true);
+          }
+        }}
+      >
+        {title}
+      </h1>
+    );
+  return (
+    <input
+      type="text"
+      className="wish-title-edit"
+      aria-label={t("wish.title")}
+      defaultValue={title}
+      maxLength={500}
+      autoFocus
+      onBlur={(event) => {
+        setEditing(false);
+        const text = event.currentTarget.value.trim();
+        if (text && text !== title.trim()) onSave(text);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          // Left as it was: the blur that follows saves nothing.
+          event.currentTarget.value = title;
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
 }
 
 export function WishDescription({
@@ -223,21 +282,25 @@ export function LastPushes({
   projects,
 }: {
   pushes: WishPush[];
-  projects: { id: string; name: string }[];
+  projects: { id: string; name: string; push?: ProjectPush }[];
 }) {
+  const projectIds = Array.from(
+    new Set([...projects.map((p) => p.id), ...pushes.map((p) => p.projectId)]),
+  );
   return (
     <>
-      {pushes.map((push) => {
-        const last = push.last;
-        if (!last && !push.refused && !push.held) return null;
-        const project =
-          projects.length > 1
-            ? projects.find((p) => p.id === push.projectId)?.name
-            : undefined;
+      {projectIds.map((id) => {
+        const project = projects.find((p) => p.id === id);
+        const push = pushes.find((p) => p.projectId === id);
+        const onDemand = project?.push === ProjectPush.ON_DEMAND;
+        const last = push?.last;
+        if (!last && !push?.refused && !push?.held && !onDemand) return null;
+        const name =
+          projects.length > 1 ? (project?.name ?? push?.projectId) : undefined;
         return (
-          <span key={push.projectId} className="wish-push">
+          <span key={id} className="wish-push">
             <CloudUpload size={13} />
-            {project && <b>{project}</b>}
+            {name && <b>{name}</b>}
             {last && (
               <span title={last.commits.join("\n")}>
                 {t("wish.pushed", {
@@ -248,14 +311,19 @@ export function LastPushes({
                 })}
               </span>
             )}
-            {push.refused && (
+            {push?.refused && (
               <span className="wish-push-refused" title={push.refused}>
                 {t("wish.push_refused")}
               </span>
             )}
-            {push.held && (
+            {push?.held && (
               <span className="wish-push-refused" title={push.held}>
                 {t("wish.push_held")}
+              </span>
+            )}
+            {onDemand && (
+              <span className="wish-push-on-demand">
+                {t("wish.push_on_demand")}
               </span>
             )}
           </span>
@@ -265,9 +333,15 @@ export function LastPushes({
   );
 }
 
+// shortReason returns the first line of s, trimmed of whitespace and trailing colon, for short display in the head.
+export function shortReason(s: string): string {
+  const line = s.split("\n")[0]?.trim() ?? "";
+  return line.replace(/:$/, "");
+}
+
 // MainMerges says, for each project of the wish, the last time Djinn merged the project's main branch into the wish's
 // integration branch, how many commits and which release it brought, their titles on hover; and why the next merge
-// waits, on hover, while it does. Names the project when the wish has several.
+// waits, visible without hovering, the full reason on hover. Names the project when the wish has several.
 export function MainMerges({
   mains,
   projects,
@@ -306,12 +380,56 @@ export function MainMerges({
             )}
             {main.held && (
               <span className="wish-push-refused" title={main.held}>
-                {t("wish.main_held")}
+                {t("wish.main_held", { reason: shortReason(main.held) })}
               </span>
             )}
           </span>
         );
       })}
     </>
+  );
+}
+
+// PushStrategySelector lets the developer see and change the push strategy of a wish.
+export function PushStrategySelector({
+  wish,
+  projects,
+  onChange,
+  disabled,
+}: {
+  wish?: Wish;
+  projects?: { pushStrategy?: PushStrategy }[];
+  onChange: (strategy: PushStrategy) => void;
+  disabled?: boolean;
+}) {
+  const current = effectivePushStrategy(wish, projects);
+  return (
+    <span className="wish-push-strategy">
+      <GitBranch size={13} />
+      <div
+        className="segmented-switch"
+        role="group"
+        aria-label={t("wish.strategy_label")}
+      >
+        <button
+          type="button"
+          className={current !== PushStrategy.AZIMA ? "active" : ""}
+          title={t("wish.strategy_wish_detail")}
+          onClick={() => onChange(PushStrategy.WISH)}
+          disabled={disabled}
+        >
+          {t("wish.strategy_wish")}
+        </button>
+        <button
+          type="button"
+          className={current === PushStrategy.AZIMA ? "active" : ""}
+          title={t("wish.strategy_azima_detail")}
+          onClick={() => onChange(PushStrategy.AZIMA)}
+          disabled={disabled}
+        >
+          {t("wish.strategy_azima")}
+        </button>
+      </div>
+    </span>
   );
 }

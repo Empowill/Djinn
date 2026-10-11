@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -50,6 +51,7 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 	task := &planv1.Task{
 		Id: store.NewID(), WishId: wish.GetId(), ProjectId: project.GetId(), Title: req.GetTitle(),
 		Status: planv1.TaskStatus_TASK_STATUS_PENDING, Kind: planv1.TaskKind_TASK_KIND_AZIMA, CreateTime: timestamppb.Now(),
+		Draft: req.GetDraft(), Description: req.GetDescription(),
 	}
 	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), after(req)); err != nil {
 		return nil, plan.Status(err)
@@ -73,6 +75,11 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 		if err := h.block(ctx, tx, task, req.GetBlocks()); err != nil {
 			return err
 		}
+		if task.PartOf != "" {
+			if err := reopenAzima(ctx, tx, task.PartOf, task.GetCode()+" spawned"); err != nil {
+				return err
+			}
+		}
 		return tx.Put(task)
 	})
 	if err != nil {
@@ -83,6 +90,44 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 		h.wake() // The tasks it blocks say what they wait for now.
 	}
 	return task, nil
+}
+
+// reopenAzima reopens a closed azima and any closed azima it is part of, recording an event.
+func reopenAzima(ctx context.Context, tx *store.Tx, id, reason string) error {
+	seen := map[string]bool{}
+	for id != "" && !seen[id] {
+		seen[id] = true
+		a, err := store.Get[*planv1.Task](ctx, tx, id)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				break
+			}
+			return err
+		}
+		if !plan.IsAzima(a) {
+			break
+		}
+		if a.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+			a.Status = planv1.TaskStatus_TASK_STATUS_PENDING
+			a.EndTime = nil
+			a.Closed = nil
+			if err := tx.Put(a); err != nil {
+				return err
+			}
+			seq, err := lastSeq(ctx, tx, a.GetId())
+			if err != nil {
+				return err
+			}
+			if err := tx.Put(newEvent(a.GetId(), seq+1, Event{
+				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+				Text: "reopened: " + reason,
+			})); err != nil {
+				return err
+			}
+		}
+		id = a.GetPartOf()
+	}
+	return nil
 }
 
 // azimaCode is the code of an azima: T1, T07.
@@ -152,6 +197,45 @@ func (h *Harness) ungroupOrphans(ctx context.Context, tasks []*planv1.Task) erro
 		})
 		if err != nil {
 			return fmt.Errorf("take %s out of its azima: %w", t.GetCode(), err)
+		}
+	}
+	return nil
+}
+
+// recoverAzimas reopens any azima whose status is DONE while a part is not finished: journaled, with an event.
+func (h *Harness) recoverAzimas(ctx context.Context, tasks []*planv1.Task) error {
+	byWish := map[string][]*planv1.Task{}
+	for _, t := range tasks {
+		byWish[t.GetWishId()] = append(byWish[t.GetWishId()], t)
+	}
+	for _, t := range tasks {
+		if !plan.IsAzima(t) || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			continue
+		}
+		wishTasks := byWish[t.GetWishId()]
+		if plan.HasUnfinishedParts(t.GetId(), wishTasks) {
+			t.Status = planv1.TaskStatus_TASK_STATUS_PENDING
+			t.EndTime = nil
+			t.Closed = nil
+			err := h.store.Tx(ctx, func(tx *store.Tx) error {
+				if err := tx.Journal(actorHarness, methodRecover, t); err != nil {
+					return err
+				}
+				seq, err := lastSeq(ctx, tx, t.GetId())
+				if err != nil {
+					return err
+				}
+				if err := tx.Put(t); err != nil {
+					return err
+				}
+				return tx.Put(newEvent(t.GetId(), seq+1, Event{
+					Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+					Text: "reopened: parts not finished",
+				}))
+			})
+			if err != nil {
+				return fmt.Errorf("recover azima %s: %w", t.GetCode(), err)
+			}
 		}
 	}
 	return nil
@@ -278,6 +362,7 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 		now := timestamppb.Now()
 		codes := map[string]string{}
 		var changed []*planv1.Task
+		var reopenedEvents []struct{ id, reason string }
 		for _, src := range sources {
 			for _, f := range src.files {
 				key := strings.ToUpper(f.Code)
@@ -320,6 +405,7 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 				}
 				t := r.azima
 				t.Kind, t.Title, t.Phase, t.PlanFile = planv1.TaskKind_TASK_KIND_AZIMA, cmp.Or(f.Title, t.GetTitle(), f.Code), f.Phase, f.Path
+				t.Draft, t.Description = f.Draft(), f.Description
 				if t.GetProjectId() == "" {
 					t.ProjectId = src.project.GetId()
 				}
@@ -328,17 +414,22 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 				if !f.Done() && f.DoneWhen.AllChecked() {
 					res.AllChecked = append(res.AllChecked, f.Path)
 				}
+				hasUnfinished := plan.HasUnfinishedParts(t.GetId(), tasks)
 				switch {
-				case f.Closes() && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE:
+				case f.Closes() && !hasUnfinished && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE:
 					note := f.Path + " says done"
 					if !f.Done() {
 						note = "every Done-when box of " + f.Path + " is checked"
 					}
 					t.Status, t.WaitReason, t.EndTime = planv1.TaskStatus_TASK_STATUS_DONE, "", now
 					t.Closed = &planv1.Closure{Actor: planv1.Closer_CLOSER_PLAN_FILE, CreateTime: now, Note: note}
-				case !f.Closes() && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE &&
-					t.GetClosed().GetActor() == planv1.Closer_CLOSER_PLAN_FILE:
+				case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && (!f.Closes() || hasUnfinished):
+					reason := "plan file in progress"
+					if hasUnfinished {
+						reason = "parts not finished"
+					}
 					t.Status, t.EndTime, t.Closed = planv1.TaskStatus_TASK_STATUS_PENDING, nil, nil
+					reopenedEvents = append(reopenedEvents, struct{ id, reason string }{t.GetId(), reason})
 				}
 				switch {
 				case before == nil:
@@ -349,6 +440,17 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 					changed = append(changed, t)
 				}
 				reads = append(reads, r)
+			}
+		}
+		for _, t := range tasks {
+			if !plan.IsAzima(t) || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+				continue
+			}
+			if plan.HasUnfinishedParts(t.GetId(), tasks) {
+				t.Status, t.EndTime, t.Closed = planv1.TaskStatus_TASK_STATUS_PENDING, nil, nil
+				res.Changed = append(res.Changed, t.GetCode())
+				changed = append(changed, t)
+				reopenedEvents = append(reopenedEvents, struct{ id, reason string }{t.GetId(), "parts not finished"})
 			}
 		}
 		// An azima made here takes its file's after line, once: the store holds the graph from then on. A code the
@@ -364,13 +466,13 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 			if len(deps) == 0 {
 				continue
 			}
-			if cycle := closesCycle(r.azima, deps, r.azima.GetPartOf(), tasks); cycle != "" {
+			if cycle := plan.ClosesCycle(r.azima, deps, r.azima.GetPartOf(), tasks); cycle != "" {
 				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 					"%s: the tasks of a wish form no cycle: %s", r.file.Path, cycle))
 			}
 			r.azima.DependsOn = deps
 		}
-		if len(changed) == 0 {
+		if len(changed) == 0 && len(reopenedEvents) == 0 {
 			return nil
 		}
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
@@ -378,6 +480,18 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 		}
 		for _, t := range changed {
 			if err := tx.Put(t); err != nil {
+				return err
+			}
+		}
+		for _, re := range reopenedEvents {
+			seq, err := lastSeq(ctx, tx, re.id)
+			if err != nil {
+				return err
+			}
+			if err := tx.Put(newEvent(re.id, seq+1, Event{
+				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+				Text: "reopened: " + re.reason,
+			})); err != nil {
 				return err
 			}
 		}
@@ -444,4 +558,288 @@ func azimaID(ctx context.Context, r store.Reader, fileID string) (string, error)
 		return "", err
 	}
 	return store.NewID(), nil
+}
+
+// DescribeTask sets the description of an azima, and writes it back to its plan file if it has one.
+func (h *Harness) DescribeTask(ctx context.Context, procedure string, req *planv1.TaskServiceDescribeRequest) (*planv1.Task, error) {
+	h.sched.Lock()
+	defer h.sched.Unlock()
+	var task *planv1.Task
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		var err error
+		task, err = findAzima(ctx, tx, req.GetAzima())
+		if err != nil {
+			return err
+		}
+		if task.GetPlanFile() != "" && task.GetProjectId() != "" {
+			project, err := store.Get[*planv1.Project](ctx, tx, task.GetProjectId())
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+			if project != nil && project.GetDirectory() != "" {
+				planPath := filepath.Join(project.GetDirectory(), filepath.FromSlash(task.GetPlanFile()))
+				if _, err := plan.WriteDescription(planPath, req.GetText()); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return connect.NewError(connect.CodeInternal, fmt.Errorf("write description: %w", err))
+				}
+			}
+		}
+		task.Description = req.GetText()
+		if err := tx.Journal(actorLocal, procedure, req); err != nil {
+			return err
+		}
+		return tx.Put(task)
+	})
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	h.notify()
+	return task, nil
+}
+
+// Open turns a draft azima OPEN: its plan file front matter says status: open, and the lead is told to plan its tasks.
+func (h *Harness) Open(ctx context.Context, procedure string, req *planv1.TaskServiceOpenRequest) (*planv1.Task, error) {
+	h.sched.Lock()
+	defer h.sched.Unlock()
+	var task *planv1.Task
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		var err error
+		task, err = findAzima(ctx, tx, req.GetAzima())
+		if err != nil {
+			return err
+		}
+		if !task.GetDraft() {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("azima %s is not a draft", task.GetCode()))
+		}
+		if task.GetPlanFile() != "" && task.GetProjectId() != "" {
+			project, err := store.Get[*planv1.Project](ctx, tx, task.GetProjectId())
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+			if project != nil && project.GetDirectory() != "" {
+				planPath := filepath.Join(project.GetDirectory(), filepath.FromSlash(task.GetPlanFile()))
+				if _, err := plan.WriteStatus(planPath, "open"); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return connect.NewError(connect.CodeInternal, fmt.Errorf("write status: %w", err))
+				}
+			}
+		}
+		task.Draft = false
+		if err := tx.Journal(actorLocal, procedure, req); err != nil {
+			return err
+		}
+		return tx.Put(task)
+	})
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	h.notify()
+	h.wake()
+	h.mu.Lock()
+	tell := h.tell
+	h.mu.Unlock()
+	if tell != nil {
+		_ = tell(ctx, task.GetWishId(), fmt.Sprintf("Djinn: azima %s opened: plan its tasks", task.GetCode()))
+	}
+	return task, nil
+}
+
+// Move moves an azima and its unstarted parts to another wish, with its plan file reference.
+func (h *Harness) Move(ctx context.Context, procedure string, req *planv1.TaskServiceMoveRequest) (*planv1.Task, error) {
+	h.sched.Lock()
+	defer h.sched.Unlock()
+	var movedAzima *planv1.Task
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		targetWish, err := plan.ResolveWish(ctx, tx, req.GetWish())
+		if err != nil {
+			return err
+		}
+		azima, err := findAzima(ctx, tx, req.GetAzima(), targetWish.GetId())
+		if err != nil {
+			return err
+		}
+		if targetWish.GetId() == azima.GetWishId() {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("azima is already in this wish"))
+		}
+		sourceWish, err := store.Get[*planv1.Wish](ctx, tx, azima.GetWishId())
+		if err != nil {
+			return err
+		}
+
+		sourceTasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": sourceWish.GetId()})
+		if err != nil {
+			return err
+		}
+
+		moving := []*planv1.Task{azima}
+		movingIDs := map[string]bool{azima.GetId(): true}
+		queue := []string{azima.GetId()}
+		for len(queue) > 0 {
+			curr := queue[0]
+			queue = queue[1:]
+			for _, t := range sourceTasks {
+				if t.GetPartOf() == curr && !movingIDs[t.GetId()] {
+					movingIDs[t.GetId()] = true
+					moving = append(moving, t)
+					queue = append(queue, t.GetId())
+				}
+			}
+		}
+
+		for _, t := range moving {
+			if h.HasRun(t.GetId()) || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED {
+				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s runs: move it once it ended", t.GetCode()))
+			}
+			if !plan.IsAzima(t) {
+				if where := started(t, false); where != "" {
+					return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s has started (%s): move an azima before its parts start", t.GetCode(), where))
+				}
+			}
+		}
+
+		targetTasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": targetWish.GetId()})
+		if err != nil {
+			return err
+		}
+
+		targetCodes := map[string]bool{}
+		for _, t := range targetTasks {
+			targetCodes[strings.ToUpper(t.GetCode())] = true
+		}
+		for _, c := range targetWish.GetRetiredCodes() {
+			targetCodes[strings.ToUpper(c)] = true
+		}
+
+		for _, t := range moving {
+			var keptDeps []string
+			for _, depID := range t.GetDependsOn() {
+				if movingIDs[depID] {
+					keptDeps = append(keptDeps, depID)
+				}
+			}
+			t.DependsOn = keptDeps
+		}
+
+		allTarget := append(slices.Clone(targetTasks), moving...)
+		for _, t := range moving {
+			if cycle := plan.ClosesCycle(t, t.GetDependsOn(), t.GetPartOf(), allTarget); cycle != "" {
+				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the tasks of a wish form no cycle: %s", cycle))
+			}
+		}
+
+		if err := tx.Journal(actorLocal, procedure, req); err != nil {
+			return err
+		}
+
+		for _, t := range sourceTasks {
+			if movingIDs[t.GetId()] {
+				continue
+			}
+			origLen := len(t.GetDependsOn())
+			t.DependsOn = slices.DeleteFunc(t.DependsOn, func(id string) bool { return movingIDs[id] })
+			if len(t.GetDependsOn()) != origLen {
+				if err := tx.Put(t); err != nil {
+					return err
+				}
+			}
+		}
+
+		for _, t := range moving {
+			if pID := t.GetProjectId(); pID != "" && !slices.Contains(targetWish.GetProjectIds(), pID) {
+				targetWish.ProjectIds = append(targetWish.ProjectIds, pID)
+			}
+		}
+
+		for _, t := range moving {
+			if err := tx.Change(t); err != nil {
+				return err
+			}
+			if !slices.Contains(sourceWish.GetRetiredCodes(), t.GetCode()) {
+				sourceWish.RetiredCodes = append(sourceWish.RetiredCodes, t.GetCode())
+			}
+			t.WishId = targetWish.GetId()
+			codeKey := strings.ToUpper(t.GetCode())
+			if targetCodes[codeKey] {
+				letter := "W"
+				if plan.IsAzima(t) {
+					letter = "T"
+				}
+				newCode, err := nextNumber(ctx, tx, targetWish.GetId(), letter)
+				if err != nil {
+					return err
+				}
+				t.Code = newCode
+			}
+			targetCodes[strings.ToUpper(t.GetCode())] = true
+			if err := tx.Put(t); err != nil {
+				return err
+			}
+		}
+
+		if err := tx.Put(sourceWish); err != nil {
+			return err
+		}
+		if err := tx.Put(targetWish); err != nil {
+			return err
+		}
+
+		movedAzima = azima
+		return nil
+	})
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	h.notify()
+	h.wake()
+	return movedAzima, nil
+}
+
+// findAzima finds an azima by identifier or code across tasks in the store.
+func findAzima(ctx context.Context, r store.Reader, name string, notInWish ...string) (*planv1.Task, error) {
+	if name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("azima is required"))
+	}
+	if t, err := store.Get[*planv1.Task](ctx, r, name); err == nil {
+		if !plan.IsAzima(t) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s is work, not an azima", t.GetCode()))
+		}
+		return t, nil
+	}
+	tasks, err := store.List[*planv1.Task](ctx, r, nil)
+	if err != nil {
+		return nil, err
+	}
+	var matches []*planv1.Task
+	for _, t := range tasks {
+		if plan.IsAzima(t) && strings.EqualFold(t.GetCode(), name) {
+			matches = append(matches, t)
+		}
+	}
+	if len(notInWish) > 0 && notInWish[0] != "" && len(matches) > 1 {
+		var filtered []*planv1.Task
+		for _, m := range matches {
+			if m.GetWishId() != notInWish[0] {
+				filtered = append(filtered, m)
+			}
+		}
+		if len(filtered) > 0 {
+			matches = filtered
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("azima %s not found", name))
+	case 1:
+		return matches[0], nil
+	default:
+		actives, err := plan.ActiveWishes(ctx, r)
+		if err == nil {
+			for _, w := range actives {
+				for _, m := range matches {
+					if m.GetWishId() == w.GetId() {
+						return m, nil
+					}
+				}
+			}
+		}
+		return matches[0], nil
+	}
 }

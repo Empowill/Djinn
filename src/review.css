@@ -88,6 +88,9 @@ html[data-theme="light"] {
 .tone-later {
   --tone: var(--st-planned);
 }
+.tone-withdrawn {
+  --tone: var(--st-stopped);
+}
 .status-badge,
 .count-pill {
   display: inline-flex;
@@ -102,6 +105,7 @@ html[data-theme="light"] {
   white-space: nowrap;
 }
 .status-badge {
+  font-family: var(--font-sans);
   padding: 1px 9px 1px 7px;
   font-weight: 600;
 }
@@ -178,6 +182,9 @@ html[data-theme="light"] {
 .attention-item.level-blocking {
   --tone: var(--st-failed);
 }
+.attention-item.level-move {
+  --tone: var(--st-human);
+}
 .attention-item.level-action {
   --tone: var(--st-interrupted);
 }
@@ -188,6 +195,9 @@ html[data-theme="light"] {
   --tone: var(--st-done);
 }
 .attention-level {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--tone);
   font-weight: 600;
   min-width: 78px;
@@ -251,9 +261,13 @@ html[data-theme="light"] {
   column-gap: var(--space-3);
   align-items: start;
 }
-.task-grid,
-.azima-grid {
+.task-grid {
   --card-min: 760px;
+}
+.azima-list {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
 /* What waits for you in one column, the rest beside it on a wide view: questions are answered one after the other,
    so that none moves under the pointer when the one above goes. The rest (.main-side) stacks on its right, top
@@ -455,6 +469,11 @@ html[data-theme="light"] {
 .review .question-card.answered {
   --tone: var(--st-done);
   margin-bottom: 8px;
+}
+.review .question-card.withdrawn {
+  --tone: var(--st-stopped);
+  margin-bottom: 8px;
+  opacity: 0.85;
 }
 .question-top {
   display: flex;
@@ -727,6 +746,58 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
   border-color: color-mix(in srgb, var(--st-running) 45%, transparent);
   background: color-mix(in srgb, var(--st-running) 10%, transparent);
 }
+.question-menu-wrap {
+  position: relative;
+  display: inline-flex;
+  padding-top: 16px;
+  flex-shrink: 0;
+}
+.question-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  color: var(--muted);
+  background: transparent;
+}
+.question-menu-trigger:hover,
+.question-menu-trigger[aria-expanded="true"] {
+  color: var(--text);
+  border-color: var(--line-strong);
+  background: var(--n-28);
+}
+.question-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 60;
+  min-width: 180px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px color-mix(in srgb, black 35%, transparent);
+}
+.question-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  text-align: left;
+  color: var(--text);
+  font-size: var(--font-size-body);
+}
+.question-dropdown button:hover,
+.question-dropdown button:focus-visible {
+  background: var(--n-28);
+}
 
 /* Tasks: one row each, its state first. */
 .review .wish-task {
@@ -736,18 +807,14 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
   border-left-color: var(--tone, var(--line));
 }
 .review .wish-task-heading {
-  gap: 12px;
   padding: 10px 14px;
 }
 .review .wish-task-heading strong {
   color: var(--text);
   font-size: 13px;
 }
-.review .wish-task-heading .status-badge {
-  min-width: 112px;
-}
 .review .wish-task-note {
-  padding-left: 140px;
+  padding-left: 34px;
 }
 .review .wish-task-note.error {
   color: var(--st-failed);
@@ -1047,6 +1114,33 @@ html[data-theme="light"] .review .question-meta .wish-origin {
 }
 .review .action-center .decisions-section .section-heading h3 {
   color: var(--text);
+}
+
+/* The wish's title, edited in place. */
+.review .hero-copy > .wish-title {
+  cursor: text;
+  border-radius: 5px;
+}
+.review .hero-copy > .wish-title:hover,
+.review .hero-copy > .wish-title:focus-visible {
+  outline: 1px dashed var(--line-strong);
+  outline-offset: 4px;
+}
+.wish-title-edit {
+  display: block;
+  width: 100%;
+  max-width: 1100px;
+  margin: 8px 0 12px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 34px;
+  font-weight: 550;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
 }
 
 /* The wish's description, under its title: a few lines, edited in place. */

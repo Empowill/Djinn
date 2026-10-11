@@ -98,7 +98,7 @@
 .idle, .stop, .later { --c: var(--idle); --c-soft: var(--idle-soft); }
 .pause { --c: var(--pause); --c-soft: var(--pause-soft); }
 .dig { --c: var(--dig); --c-soft: var(--dig-soft); }
-.human { --c: var(--human); --c-soft: var(--human-soft); }
+.human, .move { --c: var(--human); --c-soft: var(--human-soft); }
 .rounds ol { margin: 0; padding-left: 18px; font-size: 13px; }
 .rounds time { font-family: var(--mono, ui-monospace, monospace); font-size: 12px; color: var(--muted); }
 

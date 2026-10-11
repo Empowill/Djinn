@@ -7,6 +7,8 @@
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../buf/validate/validate_pb";
+import type { LoadNotch } from "../../djinn/v1/load_pb";
+import { file_djinn_v1_load } from "../../djinn/v1/load_pb";
 import { file_djinn_v1_options } from "../../djinn/v1/options_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -14,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file ui/v1/ui.proto.
  */
 export const file_ui_v1_ui: GenFile = /*@__PURE__*/
-  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0IqIBCh9VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEAoIcGxhdGZvcm0YAiABKAkSIgoJcHJvdmlkZXJzGAMgAygLMg8udWkudjEuUHJvdmlkZXISFQoNZm9sZGVyX2RpYWxvZxgEIAEoCBIhCghzaG9ydGN1dBgFIAEoCzIPLnVpLnYxLlNob3J0Y3V0IlQKCFNob3J0Y3V0Eg0KBWNob3JkGAEgASgJEhUKDWRlZmF1bHRfY2hvcmQYAiABKAkSEQoJYXZhaWxhYmxlGAMgASgIEg8KB3Byb2JsZW0YBCABKAkiLgoIU2V0dGluZ3MSFQoIc2hvcnRjdXQYASABKAlIAIgBAUILCglfc2hvcnRjdXQiSAoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHY29tbWFuZBgEIAEoCSJXCh9VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0EhcKBXRpdGxlGAEgASgJQgi6SAVyAxjIARIbCglkaXJlY3RvcnkYAiABKAlCCLpIBXIDGIAgIjUKIFVpU2VydmljZUNob29zZURpcmVjdG9yeVJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCSIrChxVaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0EgsKA3VybBgBIAEoCSIsCh1VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZRILCgN1cmwYASABKAkiNQobVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0EhYKBWNob3JkGAEgASgJQge6SARyAhhAIkEKHFVpU2VydmljZVNldFNob3J0Y3V0UmVzcG9uc2USIQoIc2hvcnRjdXQYASABKAsyDy51aS52MS5TaG9ydGN1dCJCChRVaVNlcnZpY2VTaG93UmVxdWVzdBIPCgd3aXNoX2lkGAEgASgJEhkKCHRlcm1pbmFsGAIgASgJQge6SARyAhhAIicKFVVpU2VydmljZVNob3dSZXNwb25zZRIOCgZ3aW5kb3cYASABKAgiMQoYVWlTZXJ2aWNlT3BlbkxpbmtSZXF1ZXN0EhUKA3VybBgBIAEoCUIIukgFcgMYgCAiTwoZVWlTZXJ2aWNlT3BlbkxpbmtSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhEKCXRpbGFzbV9pZBgCIAEoCRIOCgZ3aW5kb3cYAyABKAgiGwoZVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdCJoChpVaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhAKCHRlcm1pbmFsGAIgASgJEhEKCXRpbGFzbV9pZBgDIAEoCRIUCgx1bmtub3duX2xpbmsYBCABKAkiHQobVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0IqoBChxVaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlEg8KB2N1cnJlbnQYASABKAkSDQoFcmVhZHkYAiABKAkSEwoLbm90X3Jlc3VtZWQYAyADKAkSEQoJbm90ZXNfdXJsGAQgASgJEhsKBWJ1aWxkGAUgASgLMgwudWkudjEuQnVpbGQSJQoKaW5zdGFsbGluZxgGIAEoCzIRLnVpLnYxLkluc3RhbGxpbmciTAoKSW5zdGFsbGluZxILCgNzaGEYASABKAkSIAoEc3RlcBgCIAEoDjISLnVpLnYxLkluc3RhbGxTdGVwEg8KB3dhaXRpbmcYAyABKAkirwEKBUJ1aWxkEg8KB3dpc2hfaWQYASABKAkSEgoKd2lzaF90aXRsZRgCIAEoCRISCgpwcm9qZWN0X2lkGAMgASgJEg8KB3Byb2plY3QYBCABKAkSDgoGYnJhbmNoGAUgASgJEgsKA3NoYRgGIAEoCRINCgV0YXNrcxgHIAMoCRIPCgdjaGFuZ2VzGAggAygJEg4KBmNoZWNrcxgJIAMoCRIPCgdpbnN0YWxsGAogASgJIjAKFlVpU2VydmljZVVwZGF0ZVJlcXVlc3QSFgoFYnVpbGQYASABKAlCB7pIBHICGEAiUAoXVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIRCgl0ZXJtaW5hbHMYAiABKAUSEQoJaW5zdGFsbGVkGAMgASgJKpkBCgtJbnN0YWxsU3RlcBIcChhJTlNUQUxMX1NURVBfVU5TUEVDSUZJRUQQABIYChRJTlNUQUxMX1NURVBfV0FJVElORxABEhoKFklOU1RBTExfU1RFUF9QUkVQQVJJTkcQAhIZChVJTlNUQUxMX1NURVBfQlVJTERJTkcQAxIbChdJTlNUQUxMX1NURVBfUkVTVEFSVElORxAEMsIGCglVaVNlcnZpY2USZQoOR2V0RW52aXJvbm1lbnQSJS51aS52MS5VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlcXVlc3QaJi51aS52MS5VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlIgTI8xgCEmgKD0Nob29zZURpcmVjdG9yeRImLnVpLnYxLlVpU2VydmljZUNob29zZURpcmVjdG9yeVJlcXVlc3QaJy51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXNwb25zZSIEyPMYAhJfCgxPcGVuRXh0ZXJuYWwSIy51aS52MS5VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0GiQudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVzcG9uc2UiBMjzGAISXAoLU2V0U2hvcnRjdXQSIi51aS52MS5VaVNlcnZpY2VTZXRTaG9ydGN1dFJlcXVlc3QaIy51aS52MS5VaVNlcnZpY2VTZXRTaG9ydGN1dFJlc3BvbnNlIgTI8xgCEkcKBFNob3cSGy51aS52MS5VaVNlcnZpY2VTaG93UmVxdWVzdBocLnVpLnYxLlVpU2VydmljZVNob3dSZXNwb25zZSIEyPMYAhJTCghPcGVuTGluaxIfLnVpLnYxLlVpU2VydmljZU9wZW5MaW5rUmVxdWVzdBogLnVpLnYxLlVpU2VydmljZU9wZW5MaW5rUmVzcG9uc2UiBMjzGAISWAoJV2F0Y2hTaG93EiAudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdBohLnVpLnYxLlVpU2VydmljZVdhdGNoU2hvd1Jlc3BvbnNlIgTI8xgCMAESXgoLV2F0Y2hVcGRhdGUSIi51aS52MS5VaVNlcnZpY2VXYXRjaFVwZGF0ZVJlcXVlc3QaIy51aS52MS5VaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlIgTI8xgCMAESTQoGVXBkYXRlEh0udWkudjEuVWlTZXJ2aWNlVXBkYXRlUmVxdWVzdBoeLnVpLnYxLlVpU2VydmljZVVwZGF0ZVJlc3BvbnNlIgTI8xgCQnYKCWNvbS51aS52MUIHVWlQcm90b1ABWitnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby91aS92MTt1aXYxogIDVVhYqgIFVWkuVjHKAgVVaVxWMeICEVVpXFYxXEdQQk1ldGFkYXRh6gIGVWk6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_options]);
+  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0IqIBCh9VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEAoIcGxhdGZvcm0YAiABKAkSIgoJcHJvdmlkZXJzGAMgAygLMg8udWkudjEuUHJvdmlkZXISFQoNZm9sZGVyX2RpYWxvZxgEIAEoCBIhCghzaG9ydGN1dBgFIAEoCzIPLnVpLnYxLlNob3J0Y3V0IlQKCFNob3J0Y3V0Eg0KBWNob3JkGAEgASgJEhUKDWRlZmF1bHRfY2hvcmQYAiABKAkSEQoJYXZhaWxhYmxlGAMgASgIEg8KB3Byb2JsZW0YBCABKAkiXwoIU2V0dGluZ3MSFQoIc2hvcnRjdXQYASABKAlIAIgBARImCgRsb2FkGAIgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoSAGIAQFCCwoJX3Nob3J0Y3V0QgcKBV9sb2FkIkgKCFByb3ZpZGVyEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJYXZhaWxhYmxlGAMgASgIEg8KB2NvbW1hbmQYBCABKAkiVwofVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVxdWVzdBIXCgV0aXRsZRgBIAEoCUIIukgFcgMYyAESGwoJZGlyZWN0b3J5GAIgASgJQgi6SAVyAxiAICI1CiBVaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXNwb25zZRIRCglkaXJlY3RvcnkYASABKAkiKwocVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBILCgN1cmwYASABKAkiLAodVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVzcG9uc2USCwoDdXJsGAEgASgJIjUKG1VpU2VydmljZVNldFNob3J0Y3V0UmVxdWVzdBIWCgVjaG9yZBgBIAEoCUIHukgEcgIYQCJBChxVaVNlcnZpY2VTZXRTaG9ydGN1dFJlc3BvbnNlEiEKCHNob3J0Y3V0GAEgASgLMg8udWkudjEuU2hvcnRjdXQiQgoUVWlTZXJ2aWNlU2hvd1JlcXVlc3QSDwoHd2lzaF9pZBgBIAEoCRIZCgh0ZXJtaW5hbBgCIAEoCUIHukgEcgIYQCInChVVaVNlcnZpY2VTaG93UmVzcG9uc2USDgoGd2luZG93GAEgASgIIjEKGFVpU2VydmljZU9wZW5MaW5rUmVxdWVzdBIVCgN1cmwYASABKAlCCLpIBXIDGIAgIk8KGVVpU2VydmljZU9wZW5MaW5rUmVzcG9uc2USDwoHd2lzaF9pZBgBIAEoCRIRCgl0aWxhc21faWQYAiABKAkSDgoGd2luZG93GAMgASgIIhsKGVVpU2VydmljZVdhdGNoU2hvd1JlcXVlc3QiaAoaVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2USDwoHd2lzaF9pZBgBIAEoCRIQCgh0ZXJtaW5hbBgCIAEoCRIRCgl0aWxhc21faWQYAyABKAkSFAoMdW5rbm93bl9saW5rGAQgASgJIh0KG1VpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdCKqAQocVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZRIPCgdjdXJyZW50GAEgASgJEg0KBXJlYWR5GAIgASgJEhMKC25vdF9yZXN1bWVkGAMgAygJEhEKCW5vdGVzX3VybBgEIAEoCRIbCgVidWlsZBgFIAEoCzIMLnVpLnYxLkJ1aWxkEiUKCmluc3RhbGxpbmcYBiABKAsyES51aS52MS5JbnN0YWxsaW5nIkwKCkluc3RhbGxpbmcSCwoDc2hhGAEgASgJEiAKBHN0ZXAYAiABKA4yEi51aS52MS5JbnN0YWxsU3RlcBIPCgd3YWl0aW5nGAMgASgJIjsKC1Rhc2tTdW1tYXJ5EgwKBGNvZGUYASABKAkSDQoFdGl0bGUYAiABKAkSDwoHc3VtbWFyeRgDIAEoCSLGAQoFQnVpbGQSDwoHd2lzaF9pZBgBIAEoCRISCgp3aXNoX3RpdGxlGAIgASgJEhIKCnByb2plY3RfaWQYAyABKAkSDwoHcHJvamVjdBgEIAEoCRIOCgZicmFuY2gYBSABKAkSCwoDc2hhGAYgASgJEg0KBXRhc2tzGAcgAygJEg8KB2NoYW5nZXMYCCADKAkSJQoJc3VtbWFyaWVzGAkgAygLMhIudWkudjEuVGFza1N1bW1hcnkSDwoHaW5zdGFsbBgKIAEoCSIwChZVaVNlcnZpY2VVcGRhdGVSZXF1ZXN0EhYKBWJ1aWxkGAEgASgJQge6SARyAhhAIlAKF1VpU2VydmljZVVwZGF0ZVJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEQoJdGVybWluYWxzGAIgASgFEhEKCWluc3RhbGxlZBgDIAEoCSqZAQoLSW5zdGFsbFN0ZXASHAoYSU5TVEFMTF9TVEVQX1VOU1BFQ0lGSUVEEAASGAoUSU5TVEFMTF9TVEVQX1dBSVRJTkcQARIaChZJTlNUQUxMX1NURVBfUFJFUEFSSU5HEAISGQoVSU5TVEFMTF9TVEVQX0JVSUxESU5HEAMSGwoXSU5TVEFMTF9TVEVQX1JFU1RBUlRJTkcQBDLCBgoJVWlTZXJ2aWNlEmUKDkdldEVudmlyb25tZW50EiUudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0GiYudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZSIEyPMYAhJoCg9DaG9vc2VEaXJlY3RvcnkSJi51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0GicudWkudjEuVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVzcG9uc2UiBMjzGAISXwoMT3BlbkV4dGVybmFsEiMudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBokLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlIgTI8xgCElwKC1NldFNob3J0Y3V0EiIudWkudjEuVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXNwb25zZSIEyPMYAhJHCgRTaG93EhsudWkudjEuVWlTZXJ2aWNlU2hvd1JlcXVlc3QaHC51aS52MS5VaVNlcnZpY2VTaG93UmVzcG9uc2UiBMjzGAISUwoIT3BlbkxpbmsSHy51aS52MS5VaVNlcnZpY2VPcGVuTGlua1JlcXVlc3QaIC51aS52MS5VaVNlcnZpY2VPcGVuTGlua1Jlc3BvbnNlIgTI8xgCElgKCVdhdGNoU2hvdxIgLnVpLnYxLlVpU2VydmljZVdhdGNoU2hvd1JlcXVlc3QaIS51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZSIEyPMYAjABEl4KC1dhdGNoVXBkYXRlEiIudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZSIEyPMYAjABEk0KBlVwZGF0ZRIdLnVpLnYxLlVpU2VydmljZVVwZGF0ZVJlcXVlc3QaHi51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXNwb25zZSIEyPMYAkJ2Cgljb20udWkudjFCB1VpUHJvdG9QAVorZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vdWkvdjE7dWl2MaICA1VYWKoCBVVpLlYxygIFVWlcVjHiAhFVaVxWMVxHUEJNZXRhZGF0YeoCBlVpOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_load, file_djinn_v1_options]);
 
 /**
  * @generated from message ui.v1.UiServiceGetEnvironmentRequest
@@ -133,6 +135,13 @@ export type Settings = Message<"ui.v1.Settings"> & {
    * @generated from field: optional string shortcut = 1;
    */
   shortcut?: string | undefined;
+
+  /**
+   * The operating load notch in effect on this machine. Unset: default (medium).
+   *
+   * @generated from field: optional djinn.v1.LoadNotch load = 2;
+   */
+  load?: LoadNotch | undefined;
 };
 
 /**
@@ -561,6 +570,41 @@ export const InstallingSchema: GenMessage<Installing> = /*@__PURE__*/
   messageDesc(file_ui_v1_ui, 19);
 
 /**
+ * TaskSummary is what a task of the build brought, and its worker's final words.
+ *
+ * @generated from message ui.v1.TaskSummary
+ */
+export type TaskSummary = Message<"ui.v1.TaskSummary"> & {
+  /**
+   * The task's code: W5.
+   *
+   * @generated from field: string code = 1;
+   */
+  code: string;
+
+  /**
+   * The task's title.
+   *
+   * @generated from field: string title = 2;
+   */
+  title: string;
+
+  /**
+   * The worker's summary: the last words of its run.
+   *
+   * @generated from field: string summary = 3;
+   */
+  summary: string;
+};
+
+/**
+ * Describes the message ui.v1.TaskSummary.
+ * Use `create(TaskSummarySchema)` to create a new message.
+ */
+export const TaskSummarySchema: GenMessage<TaskSummary> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 20);
+
+/**
  * Build is a wish's integration branch as Djinn pushed it (T07), to install.
  *
  * @generated from message ui.v1.Build
@@ -610,18 +654,18 @@ export type Build = Message<"ui.v1.Build"> & {
   tasks: string[];
 
   /**
-   * What changed: the titles of the commits the push brought, the latest first.
+   * The titles of the commits the push brought, the latest first.
    *
    * @generated from field: repeated string changes = 8;
    */
   changes: string[];
 
   /**
-   * What to check, one line per task: its code and title, then what its worker said last.
+   * What changed, one per task: its code and title, and its worker's summary.
    *
-   * @generated from field: repeated string checks = 9;
+   * @generated from field: repeated ui.v1.TaskSummary summaries = 9;
    */
-  checks: string[];
+  summaries: TaskSummary[];
 
   /**
    * The command that installs it: go tool task install.
@@ -636,7 +680,7 @@ export type Build = Message<"ui.v1.Build"> & {
  * Use `create(BuildSchema)` to create a new message.
  */
 export const BuildSchema: GenMessage<Build> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 20);
+  messageDesc(file_ui_v1_ui, 21);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateRequest
@@ -656,7 +700,7 @@ export type UiServiceUpdateRequest = Message<"ui.v1.UiServiceUpdateRequest"> & {
  * Use `create(UiServiceUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceUpdateRequestSchema: GenMessage<UiServiceUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 21);
+  messageDesc(file_ui_v1_ui, 22);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateResponse
@@ -689,7 +733,7 @@ export type UiServiceUpdateResponse = Message<"ui.v1.UiServiceUpdateResponse"> &
  * Use `create(UiServiceUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceUpdateResponseSchema: GenMessage<UiServiceUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 22);
+  messageDesc(file_ui_v1_ui, 23);
 
 /**
  * InstallStep is where an install stands.

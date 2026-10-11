@@ -9,6 +9,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
 )
@@ -82,8 +83,8 @@ func TestResumingFirst(t *testing.T) {
 }
 
 // TestDependencyResumes: a dependency Djinn resumes, interrupted or resuming, holds the task until it ends; one
-// resumed as a fork, or closed as continued in one, is its fork. A dependency failed (resumed maxResumes times among them) or stopped by a person
-// fails it.
+// resumed as a fork, or closed as continued in one, is its fork. A dependency stopped by a person
+// fails it; one failed holds the task waiting until it is replayed, continued or marked done.
 func TestDependencyResumes(t *testing.T) {
 	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE}
 	task := func(code string, s planv1.TaskStatus) *planv1.Task {
@@ -97,7 +98,7 @@ func TestDependencyResumes(t *testing.T) {
 		{"interrupted", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_INTERRUPTED)}, "waits for W1 (interrupted)", ""},
 		{"resuming", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_RESUMING)}, "waits for W1 (resuming)", ""},
 		{"resumed 3 times", []*planv1.Task{{Id: "W1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_FAILED,
-			Error: "resumed 3 times without finishing"}}, "", "its dependency W1 ended failed"},
+			Error: "resumed 3 times without finishing"}}, "waits while its dependency W1 is failed", ""},
 		{"stopped", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_STOPPED)}, "", "its dependency W1 ended stopped"},
 		{"forked, running", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_INTERRUPTED),
 			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING}},
@@ -107,7 +108,7 @@ func TestDependencyResumes(t *testing.T) {
 			{Id: "W6", WishId: "w", Code: "W6", ForkOf: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE}}, "", ""},
 		{"forked, failed", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_INTERRUPTED),
 			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_FAILED}},
-			"", "its dependency W1, resumed as W5, ended failed"},
+			"waits while its dependency W1, resumed as W5, is failed", ""},
 		{"closed as continued, running", []*planv1.Task{{Id: "W1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE,
 			Closed: &planv1.Closure{ContinuedIn: "W5"}},
 			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING}},
@@ -115,7 +116,7 @@ func TestDependencyResumes(t *testing.T) {
 		{"closed as continued, failed", []*planv1.Task{{Id: "W1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE,
 			Closed: &planv1.Closure{ContinuedIn: "W5"}},
 			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_FAILED}},
-			"", "its dependency W1, resumed as W5, ended failed"},
+			"waits while its dependency W1, resumed as W5, is failed", ""},
 		{"closed by hand, a fork done meanwhile", []*planv1.Task{{Id: "W1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE,
 			Closed: &planv1.Closure{Note: "merged"}},
 			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING}}, "", ""},
@@ -388,5 +389,169 @@ func TestWaitsForTheCommit(t *testing.T) {
 		if d.Why != c.want || d.Failed != "" || d.Commit != (c.want != "") {
 			t.Errorf("W5 %s: %+v; want %q", c.state, d, c.want)
 		}
+	}
+}
+
+// TestMemoryCommittableLimit: when machine Total is known, dispatch respects the load notch committable memory ceiling.
+func TestMemoryCommittableLimit(t *testing.T) {
+	at := time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC)
+	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
+	// Measured claude worker peak is 1 GiB.
+	done := &planv1.Task{Id: "done", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+		Provider: planv1.Provider_PROVIDER_CLAUDE, EndTime: timestamppb.New(at.Add(-time.Hour)),
+		Resources: &planv1.Resources{PeakMemoryBytes: machine.GiB}}
+
+	// One claude worker is already running at 1 GiB (forecast is 1 GiB).
+	busy := &planv1.Task{Id: "busy", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider: planv1.Provider_PROVIDER_CLAUDE, Resources: &planv1.Resources{MemoryBytes: machine.GiB}}
+
+	// Two pending claude tasks.
+	t1 := &planv1.Task{Id: "t1", Code: "W1", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Provider: planv1.Provider_PROVIDER_CLAUDE, Scheduled: true, CreateTime: timestamppb.New(at)}
+	t2 := &planv1.Task{Id: "t2", Code: "W2", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Provider: planv1.Provider_PROVIDER_CLAUDE, Scheduled: true, CreateTime: timestamppb.New(at.Add(time.Minute))}
+
+	tasks := []*planv1.Task{done, busy, t1, t2}
+
+	// 20 GiB total, 16 GiB available.
+	// On minimal load (20%), ceiling is 4.0 GiB.
+	// busy engaged is 1.5 GiB (1 GiB peak + 512 MiB margin).
+	// t1 forecast is 1.5 GiB.
+	// Total engaged with t1 would be 1.5 + 1.5 = 3.0 GiB <= 4.0 GiB -> t1 starts.
+	// Total engaged with t2 would be 3.0 + 1.5 = 4.5 GiB > 4.0 GiB -> t2 blocked by committable limit.
+	minPolicy := machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
+	m := &Machine{
+		Slots:     4,
+		Rule:      "test",
+		Running:   1,
+		Total:     20 * machine.GiB,
+		Available: 16 * machine.GiB,
+		Policy:    minPolicy,
+	}
+
+	got := map[string]string{}
+	for _, d := range New(tasks, []*planv1.Wish{wish}, nil, m).At(at).Pass() {
+		got[d.Task.GetId()] = d.Why
+	}
+
+	if got["t1"] != "" {
+		t.Errorf("t1 should start, but got why: %q", got["t1"])
+	}
+	wantWhy := "load minimal commits up to 3.9 GiB of memory, 3.0 GiB already engaged, needs 1.5 GiB"
+	if got["t2"] != wantWhy {
+		t.Errorf("t2 why:\ngot:  %q\nwant: %q", got["t2"], wantWhy)
+	}
+}
+
+func TestWorkerMemory(t *testing.T) {
+	at := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	policy := machine.Policy{
+		WorkerPeak:   2 * machine.GiB,
+		WorkerPeaks:  5,
+		WorkerMargin: 512 * machine.MiB,
+	}
+
+	// Ended claude task with peak 3 GiB.
+	doneClaude := &planv1.Task{
+		Id: "done-claude", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+		Provider: planv1.Provider_PROVIDER_CLAUDE, EndTime: timestamppb.New(at.Add(-time.Hour)),
+		Resources: &planv1.Resources{PeakMemoryBytes: 3 * machine.GiB},
+	}
+
+	// Running claude worker using 1 GiB: typical peak is 3 GiB (> 1 GiB), so forecast is 3 GiB + 512 MiB = 3.5 GiB.
+	runningClaude := &planv1.Task{
+		Id: "running-claude", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider:  planv1.Provider_PROVIDER_CLAUDE,
+		Resources: &planv1.Resources{MemoryBytes: 1 * machine.GiB},
+	}
+
+	// Running codex worker using 2.5 GiB: no past peak so fallback peak is WorkerPeak (2 GiB).
+	// Since uses (2.5 GiB) > peak (2 GiB), forecast is 2.5 GiB + 512 MiB = 3.0 GiB.
+	runningCodex := &planv1.Task{
+		Id: "running-codex", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider:  planv1.Provider_PROVIDER_CODEX,
+		Resources: &planv1.Resources{MemoryBytes: 2560 * machine.MiB}, // 2.5 GiB
+	}
+
+	// Running watcher using 100 MiB: should be ignored.
+	runningWatcher := &planv1.Task{
+		Id: "running-watcher", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider:  planv1.Provider_PROVIDER_WATCH,
+		Resources: &planv1.Resources{MemoryBytes: 100 * machine.MiB},
+	}
+
+	// Pending task: should be ignored.
+	pending := &planv1.Task{
+		Id: "pending", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Provider: planv1.Provider_PROVIDER_CLAUDE,
+	}
+
+	tasks := []*planv1.Task{doneClaude, runningClaude, runningCodex, runningWatcher, pending}
+
+	engaged, actual := WorkerMemory(tasks, policy)
+
+	wantEngaged := uint64((3*machine.GiB + 512*machine.MiB) + (2560*machine.MiB + 512*machine.MiB))
+	wantActual := uint64((1 * machine.GiB) + (2560 * machine.MiB))
+
+	if engaged != wantEngaged {
+		t.Errorf("engaged: got %d, want %d", engaged, wantEngaged)
+	}
+	if actual != wantActual {
+		t.Errorf("actual: got %d, want %d", actual, wantActual)
+	}
+
+	// Verify Situation.Engaged() matches
+	s := New(tasks, []*planv1.Wish{{Id: "w"}}, nil, &Machine{Policy: policy}).At(at)
+	if sEngaged := s.Engaged(); sEngaged != wantEngaged {
+		t.Errorf("Situation.Engaged(): got %d, want %d", sEngaged, wantEngaged)
+	}
+}
+
+// TestProviderPeaks: finished workers' peak memories are grouped by provider, latest first, ignoring
+// running tasks, watchers, and tasks with no peak memory.
+func TestProviderPeaks(t *testing.T) {
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	tasks := []*planv1.Task{
+		{
+			Id: "c1", Provider: planv1.Provider_PROVIDER_CLAUDE, Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			EndTime: timestamppb.New(now.Add(-2 * time.Hour)), Resources: &planv1.Resources{PeakMemoryBytes: 500 * machine.MiB},
+		},
+		{
+			Id: "c2", Provider: planv1.Provider_PROVIDER_CLAUDE, Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			EndTime: timestamppb.New(now.Add(-1 * time.Hour)), Resources: &planv1.Resources{PeakMemoryBytes: 800 * machine.MiB},
+		},
+		{
+			// Watcher: ignored.
+			Id: "c-watch", Provider: planv1.Provider_PROVIDER_WATCH, Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			EndTime: timestamppb.New(now), Resources: &planv1.Resources{PeakMemoryBytes: 100 * machine.MiB},
+		},
+		{
+			// Running: ignored.
+			Id: "c-run", Provider: planv1.Provider_PROVIDER_CLAUDE, Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+			Resources: &planv1.Resources{PeakMemoryBytes: 900 * machine.MiB},
+		},
+		{
+			// No peak memory: ignored.
+			Id: "c-no-peak", Provider: planv1.Provider_PROVIDER_CLAUDE, Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			EndTime: timestamppb.New(now),
+		},
+		{
+			Id: "k1", Provider: planv1.Provider_PROVIDER_CODEX, Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			EndTime: timestamppb.New(now.Add(-30 * time.Minute)), Resources: &planv1.Resources{PeakMemoryBytes: 1200 * machine.MiB},
+		},
+	}
+
+	peaks := ProviderPeaks(tasks)
+	// Claude should have [800 MiB, 500 MiB] (latest first).
+	wantClaude := []uint64{800 * machine.MiB, 500 * machine.MiB}
+	if !slices.Equal(peaks["claude"], wantClaude) {
+		t.Errorf("claude peaks: got %v, want %v", peaks["claude"], wantClaude)
+	}
+	wantCodex := []uint64{1200 * machine.MiB}
+	if !slices.Equal(peaks["codex"], wantCodex) {
+		t.Errorf("codex peaks: got %v, want %v", peaks["codex"], wantCodex)
+	}
+	if len(peaks) != 2 {
+		t.Errorf("expected 2 providers, got %d", len(peaks))
 	}
 }

@@ -43,7 +43,36 @@ func WithCapacity(c Capacity) Option { return func(h *Harness) { h.capacity = c 
 // its provider, as p weighs it (machine.Policy.WorkerRoom). djinn up gives the machine's; without it, the memory
 // holds no worker back. It needs WithCapacity.
 func WithMemory(available func() uint64, p machine.Policy) Option {
-	return func(h *Harness) { h.available, h.policy = available, p }
+	return func(h *Harness) {
+		h.available = available
+		h.policy.Store(&p)
+	}
+}
+
+// WithPolicy sets the policy Djinn runs with (operating load notch, limits).
+func WithPolicy(p machine.Policy) Option {
+	return func(h *Harness) { h.policy.Store(&p) }
+}
+
+// WithTotal gives the machine's total RAM in bytes (0 when unknown) for peak forecast committable limits.
+func WithTotal(total func() uint64) Option {
+	return func(h *Harness) { h.total = total }
+}
+
+// SetPolicy updates the scheduling policy and wakes the scheduler for the next pass.
+func (h *Harness) SetPolicy(p machine.Policy) {
+	h.sched.Lock()
+	h.policy.Store(&p)
+	h.sched.Unlock()
+	h.wake()
+}
+
+// Policy returns the current scheduling policy.
+func (h *Harness) Policy() machine.Policy {
+	if p := h.policy.Load(); p != nil {
+		return *p
+	}
+	return machine.Policy{}
 }
 
 // WithScopes runs each worker in a systemd scope of its own, which stopping, pausing and measuring it take whole, its
@@ -56,6 +85,40 @@ func (h *Harness) scope(name string) func() machine.Scope {
 		return nil
 	}
 	return func() machine.Scope { return h.scopes.New(name) }
+}
+
+// scopeFor gives each process of task t a scope of its own with its memory ceiling (Policy.WorkerMemory and/or
+// Policy.WorkerMemoryGuard); nil without scopes.
+func (h *Harness) scopeFor(t *planv1.Task) func() machine.Scope {
+	if h.scopes == nil {
+		return nil
+	}
+	if t == nil {
+		return h.scope("")
+	}
+	p := h.Policy()
+
+	if !h.scopes.MemoryController && h.scopes.Memory == 0 {
+		return func() machine.Scope { return h.scopes.New(t.GetCode()) }
+	}
+
+	var peak uint64
+	var measured int
+	if p.WorkerMemoryGuard > 0 && h.store != nil {
+		ctx := h.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		if tasks, err := store.List[*planv1.Task](ctx, h.store, nil); err == nil {
+			peaks := dispatch.ProviderPeaks(tasks)
+			peak, measured = p.Typical(peaks[dispatch.Provider(t)])
+		}
+	}
+	ceiling := p.WorkerMemoryCeiling(peak, measured)
+	if ceiling == 0 && p.WorkerMemoryGuard <= 0 && h.scopes.Memory > 0 {
+		ceiling = h.scopes.Memory
+	}
+	return func() machine.Scope { return h.scopes.NewWithMemory(t.GetCode(), ceiling) }
 }
 
 // WithTick sets how often the scheduler looks at the planned tasks again without being woken: the pressure of the
@@ -209,7 +272,10 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 			m.Gates = outside()
 		}
 		if h.available != nil {
-			m.Available, m.Policy = h.available(), h.policy
+			m.Available, m.Policy = h.available(), h.Policy()
+		}
+		if h.total != nil {
+			m.Total = h.total()
 		}
 	}
 	return dispatch.New(tasks, wishes, git, m).At(h.now()), nil
@@ -300,6 +366,11 @@ func (h *Harness) writeAlone(ctx context.Context, actor, method string, req prot
 			if err := tx.Put(task); err != nil {
 				return err
 			}
+			if method == methodResume && task.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && task.GetPartOf() != "" {
+				if err := reopenAzima(ctx, tx, task.GetPartOf(), task.GetCode()+" started"); err != nil {
+					return err
+				}
+			}
 		}
 		return tx.Put(te)
 	})
@@ -322,7 +393,7 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 		h.failPlanned(ctx, t, fmt.Sprintf("provider %s is not available", t.GetProvider()))
 		return nil
 	}
-	prompt, err := firstPrompt(h.store, t.GetId())
+	prompt, err := lastPrompt(ctx, h.store, t.GetId())
 	if err != nil {
 		h.failPlanned(ctx, t, err.Error())
 		return nil
@@ -367,7 +438,13 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 			h.finish(r, Result{ExitCode: -1, Err: fmt.Errorf("project %s: %w", project.GetName(), err)})
 			return nil
 		}
-		r.branch, r.from, r.checks = settings.Branch, plan.IntegrationBranchOf(wish, project.GetId()), settings.ChecksBrief()
+		r.branch, r.from, r.checks = settings.Branch, h.workerStartBranch(h.ctx, wish, project, settings, t), settings.ChecksBrief()
+		if questionWorker(t) {
+			p, _, fb := questionProvider(settings)
+			if t.GetProvider() == p {
+				r.fallback = fb
+			}
+		}
 	}
 	_, err = h.launch(h.ctx, r, provider, project, prep, prompt)
 	return err

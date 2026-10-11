@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+// The operating load slider that controls how much of the machine Djinn uses.
+package djinn.v1;
+
+import "buf/validate/validate.proto";
+import "djinn/v1/options.proto";
+
+// LoadNotch is the operating load slider notch that controls how much of the machine Djinn uses.
+enum LoadNotch {
+  // Not set.
+  LOAD_NOTCH_UNSPECIFIED = 0;
+  // Minimal load: 20% of the machine's capacity, low CPU priority.
+  LOAD_NOTCH_MINIMAL = 1;
+  // Light load (deprecated: maps to medium).
+  LOAD_NOTCH_LIGHT = 2 [deprecated = true];
+  // Medium load: default behavior, 50% of the machine's capacity, low CPU priority.
+  LOAD_NOTCH_MEDIUM = 3;
+  // High load: 80% of the machine's capacity, standard CPU priority.
+  LOAD_NOTCH_HIGH = 4;
+  // Max load: 100% of the machine's capacity, standard CPU priority.
+  LOAD_NOTCH_MAX = 5;
+  // Auto load: adapts operating load between minimal and chosen notch based on developer activity.
+  LOAD_NOTCH_AUTO = 6;
+  // Overclock load: 150% of the machine's capacity, accepts pressure, standard CPU priority.
+  LOAD_NOTCH_OVERCLOCK = 7;
+}
+
+// LoadService gets and sets the machine's operating load notch.
+service LoadService {
+  // Show the operating load notch in effect on this machine.
+  rpc Get(LoadServiceGetRequest) returns (LoadServiceGetResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Choose the operating load notch in effect on this machine.
+  rpc Set(LoadServiceSetRequest) returns (LoadServiceSetResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+
+  // Follow the operating load notch and live memory: engaged peak forecasts, real worker memory, and machine RAM.
+  rpc Watch(LoadServiceWatchRequest) returns (stream LoadServiceWatchResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+}
+
+message LoadServiceGetRequest {}
+
+message LoadServiceGetResponse {
+  // The notch in effect.
+  LoadNotch notch = 1;
+  // Whether auto mode is active.
+  bool auto = 2;
+  // The base rule's slots on this machine before notch scaling.
+  int32 base_slots = 3;
+  // Number of workers currently running.
+  int32 running_workers = 4;
+  // Total RAM of the machine, in bytes.
+  uint64 memory_total_bytes = 5;
+  // The chosen ceiling notch when auto mode is active.
+  LoadNotch chosen_notch = 6;
+}
+
+message LoadServiceSetRequest {
+  // The notch to set.
+  LoadNotch notch = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum = {defined_only: true, not_in: [0]}
+  ];
+}
+
+message LoadServiceSetResponse {
+  // The notch in effect.
+  LoadNotch notch = 1;
+  // Whether auto mode is active.
+  bool auto = 2;
+  // The chosen ceiling notch when auto mode is active.
+  LoadNotch chosen_notch = 3;
+}
+
+message LoadServiceWatchRequest {}
+
+message LoadServiceWatchResponse {
+  // Operating load notch in effect.
+  LoadNotch notch = 1;
+  // Engaged memory: sum of peak forecasts (Policy.WorkerRoom) for running workers, in bytes.
+  uint64 engaged_memory_bytes = 2;
+  // Real measured resident memory of running workers, in bytes.
+  uint64 worker_memory_bytes = 3;
+  // Total RAM of the machine, in bytes.
+  uint64 memory_total_bytes = 4;
+  // Available RAM of the machine, in bytes.
+  uint64 memory_available_bytes = 5;
+  // Whether auto mode is active.
+  bool auto = 6;
+  // The base rule's slots on this machine before notch scaling.
+  int32 base_slots = 7;
+  // Number of workers currently running.
+  int32 running_workers = 8;
+  // The chosen ceiling notch when auto mode is active.
+  LoadNotch chosen_notch = 9;
+}

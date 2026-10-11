@@ -3,12 +3,15 @@ import { type Timestamp, timestampDate } from "@bufbuild/protobuf/wkt";
 
 import {
   Allowance,
+  AzimaState,
   Choice,
   type KeptWorktree,
   type Mark,
   MarkKind,
   type Project,
+  type ProjectSync,
   Provider,
+  PushStrategy,
   type Question,
   RoundKind,
   type Task,
@@ -22,6 +25,16 @@ import { type TextKey, language, t } from "../i18n";
 
 // A djinn grants three wishes at a time, never more. The lamp refuses a fourth; the page only says so beforehand.
 export const MAX_ACTIVE = 3;
+
+// firstLine is a text's first line of words, trimmed to 140 characters.
+export function firstLine(text: string): string {
+  const line =
+    text
+      .split("\n")
+      .map((l) => l.replace(/^[#>*+\-\s]+/, "").trim())
+      .find(Boolean) ?? "";
+  return line.length > 140 ? `${line.slice(0, 139)}…` : line;
+}
 
 export function date(ts?: Timestamp): Date | undefined {
   return ts ? timestampDate(ts) : undefined;
@@ -64,6 +77,48 @@ export function taskTime(
   const title = end
     ? t("task.ran", { from: when(task.startTime), to: when(task.endTime) })
     : t("task.running_since", { when: when(task.startTime) });
+  return { text, title };
+}
+
+// azimaTime is how long an azima runs or ran: from its first part's start (or its own start) until now,
+// or how long it ran once ended; "" before it starts.
+// Its title says when it started, and when it ended.
+export function azimaTime(
+  azima: Task,
+  parts: readonly Task[],
+  now: number,
+): { text: string; title: string } {
+  const allTasks = [azima, ...parts];
+  const starts = allTasks
+    .map((t) => ({ task: t, date: date(t.startTime) }))
+    .filter((x): x is { task: Task; date: Date } => !!x.date);
+  if (starts.length === 0) return { text: "", title: "" };
+  starts.sort((a, b) => a.date.getTime() - b.date.getTime());
+  const firstStart = starts[0];
+
+  const finished =
+    azima.azima?.state === AzimaState.DONE || taskFinished(azima.status);
+  if (finished) {
+    const ends = allTasks
+      .map((t) => ({ task: t, date: date(t.endTime) }))
+      .filter((x): x is { task: Task; date: Date } => !!x.date);
+    if (ends.length === 0) return { text: "", title: "" };
+    ends.sort((a, b) => b.date.getTime() - a.date.getTime());
+    const lastEnd = ends[0];
+    const text = span(
+      Math.max(0, lastEnd.date.getTime() - firstStart.date.getTime()),
+    );
+    const title = t("task.ran", {
+      from: when(firstStart.task.startTime),
+      to: when(lastEnd.task.endTime),
+    });
+    return { text, title };
+  }
+
+  const text = span(Math.max(0, now - firstStart.date.getTime()));
+  const title = t("task.running_since", {
+    when: when(firstStart.task.startTime),
+  });
   return { text, title };
 }
 
@@ -140,7 +195,8 @@ export type Tone =
   | "human"
   | "proof"
   // An open question nothing waits for: it can wait.
-  | "later";
+  | "later"
+  | "withdrawn";
 
 // taskTone is a task's state in that language. A task Djinn resumes runs; one waiting for its provider's limit to
 // reset holds still, as a paused one; one cut short and resumed as another task (forkedAs) is stopped, no alarm.
@@ -226,7 +282,11 @@ export function answerText(question: Question): string {
 }
 
 export function isOpen(question: Question): boolean {
-  return !question.answer;
+  return !question.answer && !question.withdrawal;
+}
+
+export function isWithdrawn(question: Question): boolean {
+  return !!question.withdrawal;
 }
 
 export function allowanceOf(wish: Wish, projectId: string): Allowance {
@@ -276,7 +336,11 @@ export function usd(cost: number): string {
 // lamp reads it the same way (plan.Investigating).
 export function investigating(question: Question): boolean {
   const last = question.rounds?.at(-1);
-  return !question.answer && last?.kind === RoundKind.ENLIGHTEN;
+  return (
+    !question.answer &&
+    !question.withdrawal &&
+    last?.kind === RoundKind.ENLIGHTEN
+  );
 }
 
 // waitsForYou tells an open question that waits for your answer.
@@ -328,4 +392,135 @@ export function wishTone(
   if (running > 0) return "running";
   if (watching > 0) return "watching";
   return "planned";
+}
+
+// shortModel turns a provider's model identifier into a short, readable label:
+// "claude-sonnet-5-5" -> "sonnet 5.5", "gemini-3.8-flash-high" -> "gemini 3.8 flash", "gpt-5.5" -> "gpt-5.5".
+export function shortModel(model: string): string {
+  if (!model) return "";
+  let m = model.trim();
+  // Strip trailing snapshot date e.g. -20250929
+  m = m.replace(/-\d{8}$/, "");
+  // Strip provider / registry prefix e.g. anthropic/ or openai/
+  m = m.replace(/^[a-z0-9-._]+\//, "");
+  // Strip endpoint prefix e.g. us.anthropic.
+  m = m.replace(/^[a-z0-9-._]+\.(?=claude|gemini|gpt)/, "");
+
+  // Claude: claude-(sonnet|opus|haiku)-(X-Y|X.Y) -> $1 X.Y
+  const claudeMatch = /^claude-(sonnet|opus|haiku)-(\d+)[.-](\d+)$/.exec(m);
+  if (claudeMatch) {
+    return `${claudeMatch[1]} ${claudeMatch[2]}.${claudeMatch[3]}`;
+  }
+  // Claude: claude-(X-Y|X.Y)-(sonnet|opus|haiku) -> $3 X.Y
+  const claudeOldMatch = /^claude-(\d+)[.-](\d+)-(sonnet|opus|haiku)$/.exec(m);
+  if (claudeOldMatch) {
+    return `${claudeOldMatch[3]} ${claudeOldMatch[1]}.${claudeOldMatch[2]}`;
+  }
+  // Claude single tier: claude-(sonnet|opus|haiku) -> $1
+  const claudeTier = /^claude-(sonnet|opus|haiku)$/.exec(m);
+  if (claudeTier) {
+    return claudeTier[1];
+  }
+
+  // Gemini: gemini-X.Y-tier(-level)? -> gemini X.Y tier
+  // e.g. gemini-3.8-flash-high -> gemini 3.8 flash, gemini-3.8-flash-medium -> gemini 3.8 flash
+  // Strip -high, -medium, -low
+  if (m.startsWith("gemini-")) {
+    return m.replace(/-(high|medium|low)$/, "").replace(/-/g, " ");
+  }
+
+  // Codex / GPT: gpt-X.Y-codex -> gpt-X.Y, gpt-5.5 -> gpt-5.5
+  if (m.startsWith("gpt-")) {
+    return m.replace(/-(codex|preview)$/, "");
+  }
+
+  return m;
+}
+
+// syncDescription says how the integration branch stands against its remote target.
+export function syncDescription(sync?: ProjectSync): string {
+  if (!sync) return "";
+  const remote = sync.remote || "origin";
+  const target = sync.target || sync.branch || "";
+  if (sync.ahead > 0 && sync.behind > 0) {
+    return t("project.sync_ahead_behind", {
+      ahead: sync.ahead,
+      behind: sync.behind,
+      remote,
+      target,
+    });
+  }
+  if (sync.ahead > 0) {
+    return t("project.sync_ahead", {
+      count: sync.ahead,
+      remote,
+      target,
+    });
+  }
+  if (sync.behind > 0) {
+    return t("project.sync_behind", {
+      count: sync.behind,
+      remote,
+      target,
+    });
+  }
+  return "";
+}
+
+// slug keeps lower-case letters and digits, joined by single dashes, at most n characters cut on a dash.
+export function slug(s: string, n = 40): string {
+  const folded = s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  let res = "";
+  let dash = false;
+  for (let i = 0; i < folded.length; i++) {
+    const ch = folded[i];
+    if ((ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9")) {
+      if (dash && res.length > 0) {
+        res += "-";
+      }
+      res += ch;
+      dash = false;
+    } else {
+      dash = true;
+    }
+  }
+  if (res.length > n) {
+    res = res.slice(0, n);
+    const lastDash = res.lastIndexOf("-");
+    if (lastDash > 0) {
+      res = res.slice(0, lastDash);
+    }
+  }
+  return res.replace(/^-+|-+$/g, "");
+}
+
+// azimaBranchName gives the integration branch of an azima: djinn/<code-slug> or djinn/<code>.
+export function azimaBranchName(
+  azima?: { code?: string; title?: string } | null,
+): string {
+  if (!azima || !azima.code) return "";
+  const s = slug(azima.title || "", 40);
+  if (s) {
+    return `djinn/${azima.code}-${s}`;
+  }
+  return `djinn/${azima.code}`;
+}
+
+// effectivePushStrategy resolves the push strategy for a wish, falling back to its projects or WISH.
+export function effectivePushStrategy(
+  wish?: Wish,
+  projects?: readonly { pushStrategy?: PushStrategy }[],
+): PushStrategy {
+  if (wish?.pushStrategy) {
+    return wish.pushStrategy;
+  }
+  for (const p of projects ?? []) {
+    if (p.pushStrategy) {
+      return p.pushStrategy;
+    }
+  }
+  return PushStrategy.WISH;
 }

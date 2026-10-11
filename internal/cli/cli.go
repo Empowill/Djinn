@@ -140,7 +140,10 @@ func run(ctx context.Context, args []string, cfg Config) error {
 	}
 	name, err = pick(rest[1], names, command(sd)+" method")
 	if err != nil {
-		return err
+		var ok bool
+		if name, ok = aliasedMethod(rest[1], names, methods); !ok {
+			return err
+		}
 	}
 	md := methods[slices.Index(names, name)]
 	if help {
@@ -216,6 +219,7 @@ func running(ctx context.Context, cfg Config) (string, error) {
 }
 
 // call sends one unary request over Connect, in binary protobuf.
+// When md is paginated and the caller did not specify a page token, it loops to fetch all pages.
 func call(ctx context.Context, cfg Config, md protoreflect.MethodDescriptor, req *dynamicpb.Message) (*dynamicpb.Message, error) {
 	if md.IsStreamingClient() || md.IsStreamingServer() {
 		return nil, usageError{errors.New("streaming methods are not available on the command line")}
@@ -228,6 +232,36 @@ func call(ctx context.Context, cfg Config, md protoreflect.MethodDescriptor, req
 	if err != nil {
 		return nil, err
 	}
+
+	pageTokField := md.Input().Fields().ByName("page_token")
+	nextTokField := md.Output().Fields().ByName("next_page_token")
+	if pageTokField != nil && nextTokField != nil && !req.Has(pageTokField) {
+		reqCopy := proto.Clone(req).(*dynamicpb.Message)
+		for {
+			nextToken := res.Msg.Get(nextTokField).String()
+			if nextToken == "" {
+				break
+			}
+			reqCopy.Set(pageTokField, protoreflect.ValueOfString(nextToken))
+			nextRes, err := client.CallUnary(ctx, connect.NewRequest(reqCopy))
+			if err != nil {
+				return nil, err
+			}
+			for i := range md.Output().Fields().Len() {
+				fd := md.Output().Fields().Get(i)
+				if fd.IsList() {
+					dst := res.Msg.Mutable(fd).List()
+					src := nextRes.Msg.Get(fd).List()
+					for j := range src.Len() {
+						dst.Append(src.Get(j))
+					}
+				}
+			}
+			res.Msg.Set(nextTokField, nextRes.Msg.Get(nextTokField))
+		}
+		res.Msg.Clear(nextTokField)
+	}
+
 	return res.Msg, nil
 }
 
@@ -326,6 +360,33 @@ func aliased(word string, names []string, services []protoreflect.ServiceDescrip
 // aliases are the other names of a service's command.
 func aliases(sd protoreflect.ServiceDescriptor) []string {
 	out, _ := proto.GetExtension(sd.Options(), djinnv1.E_Alias).([]string)
+	return out
+}
+
+// aliasedMethod resolves a word no method's own name takes to the name of a method it is an alias of, in full or by
+// a unique prefix: djinn task set-agent is djinn task update.
+func aliasedMethod(word string, names []string, methods []protoreflect.MethodDescriptor) (string, bool) {
+	if slices.ContainsFunc(names, func(n string) bool { return strings.HasPrefix(n, word) }) {
+		return "", false
+	}
+	var found []string
+	for _, md := range methods {
+		mName := kebab(string(md.Name()))
+		for _, alias := range methodAliases(md) {
+			if (alias == word || strings.HasPrefix(alias, word)) && !slices.Contains(found, mName) {
+				found = append(found, mName)
+			}
+		}
+	}
+	if len(found) != 1 {
+		return "", false
+	}
+	return found[0], true
+}
+
+// methodAliases are the other names of a method's command.
+func methodAliases(md protoreflect.MethodDescriptor) []string {
+	out, _ := proto.GetExtension(md.Options(), djinnv1.E_MethodAlias).([]string)
 	return out
 }
 
@@ -446,7 +507,11 @@ func writeServiceHelp(w io.Writer, sd protoreflect.ServiceDescriptor) {
 	fmt.Fprintf(w, "%s\n\nUsage: djinn %s <method> [arguments] [flags]\n\nMethods:\n", comment(sd), command(sd))
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	for _, md := range public(sd) {
-		fmt.Fprintf(tw, "  %s\t%s\n", kebab(string(md.Name())), comment(md))
+		name := kebab(string(md.Name()))
+		if a := methodAliases(md); len(a) > 0 {
+			name += ", " + strings.Join(a, ", ")
+		}
+		fmt.Fprintf(tw, "  %s\t%s\n", name, comment(md))
 	}
 	for _, b := range Builtins {
 		if group(b) == command(sd) {
@@ -459,8 +524,7 @@ func writeServiceHelp(w io.Writer, sd protoreflect.ServiceDescriptor) {
 // writeText prints a response for a human: one "name: value" line per field set, nested messages indented, and
 // the content of the response directly when it holds a single field.
 func writeText(w io.Writer, m protoreflect.Message) {
-	if fields := m.Descriptor().Fields(); fields.Len() == 1 && fields.Get(0).Kind() == protoreflect.MessageKind {
-		fd := fields.Get(0)
+	if fd := singleContentField(m.Descriptor().Fields()); fd != nil && fd.Kind() == protoreflect.MessageKind {
 		switch {
 		case fd.IsList():
 			writeList(w, fd, m.Get(fd).List(), "")
@@ -470,6 +534,27 @@ func writeText(w io.Writer, m protoreflect.Message) {
 		}
 	}
 	writeFields(w, m, "")
+}
+
+// singleContentField returns the single content field of fields, ignoring pagination metadata
+// (next_page_token and total) if present.
+func singleContentField(fields protoreflect.FieldDescriptors) protoreflect.FieldDescriptor {
+	if fields.Len() == 1 {
+		return fields.Get(0)
+	}
+	var nonPagination []protoreflect.FieldDescriptor
+	for i := range fields.Len() {
+		fd := fields.Get(i)
+		name := string(fd.Name())
+		if name == "next_page_token" || name == "total" {
+			continue
+		}
+		nonPagination = append(nonPagination, fd)
+	}
+	if len(nonPagination) == 1 {
+		return nonPagination[0]
+	}
+	return nil
 }
 
 func writeFields(w io.Writer, m protoreflect.Message, indent string) {

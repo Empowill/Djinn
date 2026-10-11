@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/options.proto.
  */
 export const file_djinn_v1_options: GenFile = /*@__PURE__*/
-  fileDesc("ChZkamlubi92MS9vcHRpb25zLnByb3RvEghkamlubi52MSIYCgZVbmlxdWUSDgoGZmllbGRzGAEgAygJKlgKClZpc2liaWxpdHkSGgoWVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEhUKEVZJU0lCSUxJVFlfUFVCTElDEAESFwoTVklTSUJJTElUWV9JTlRFUk5BTBACKkYKBldyaXRlcxIWChJXUklURVNfVU5TUEVDSUZJRUQQABIRCg1XUklURVNfQ0hBTkdFEAESEQoNV1JJVEVTX0RFTEVURRACOlYKCnZpc2liaWxpdHkSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi5jgMgASgOMhQuZGppbm4udjEuVmlzaWJpbGl0eVIKdmlzaWJpbGl0eTo+CglhdXRvc3RhcnQSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi7jgMgASgIUglhdXRvc3RhcnQ6SgoGd3JpdGVzEh4uZ29vZ2xlLnByb3RvYnVmLk1ldGhvZE9wdGlvbnMYvI4DIAEoDjIQLmRqaW5uLnYxLldyaXRlc1IGd3JpdGVzOjcKBWFsaWFzEh8uZ29vZ2xlLnByb3RvYnVmLlNlcnZpY2VPcHRpb25zGL2OAyADKAlSBWFsaWFzOksKBnVuaXF1ZRIfLmdvb2dsZS5wcm90b2J1Zi5NZXNzYWdlT3B0aW9ucxi6jgMgAygLMhAuZGppbm4udjEuVW5pcXVlUgZ1bmlxdWU6MQoDZW52Eh0uZ29vZ2xlLnByb3RvYnVmLkZpZWxkT3B0aW9ucxi+jgMgASgJUgNlbnZCkAEKDGNvbS5kamlubi52MUIMT3B0aW9uc1Byb3RvUAFaMWdpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL2RqaW5uL3YxO2RqaW5udjGiAgNEWFiqAghEamlubi5WMcoCCERqaW5uXFYx4gIURGppbm5cVjFcR1BCTWV0YWRhdGHqAglEamlubjo6VjFiBnByb3RvMw", [file_google_protobuf_descriptor]);
+  fileDesc("ChZkamlubi92MS9vcHRpb25zLnByb3RvEghkamlubi52MSIYCgZVbmlxdWUSDgoGZmllbGRzGAEgAygJKlgKClZpc2liaWxpdHkSGgoWVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEhUKEVZJU0lCSUxJVFlfUFVCTElDEAESFwoTVklTSUJJTElUWV9JTlRFUk5BTBACKkYKBldyaXRlcxIWChJXUklURVNfVU5TUEVDSUZJRUQQABIRCg1XUklURVNfQ0hBTkdFEAESEQoNV1JJVEVTX0RFTEVURRACOlYKCnZpc2liaWxpdHkSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi5jgMgASgOMhQuZGppbm4udjEuVmlzaWJpbGl0eVIKdmlzaWJpbGl0eTo+CglhdXRvc3RhcnQSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi7jgMgASgIUglhdXRvc3RhcnQ6SgoGd3JpdGVzEh4uZ29vZ2xlLnByb3RvYnVmLk1ldGhvZE9wdGlvbnMYvI4DIAEoDjIQLmRqaW5uLnYxLldyaXRlc1IGd3JpdGVzOkMKDG1ldGhvZF9hbGlhcxIeLmdvb2dsZS5wcm90b2J1Zi5NZXRob2RPcHRpb25zGL+OAyADKAlSC21ldGhvZEFsaWFzOjcKBWFsaWFzEh8uZ29vZ2xlLnByb3RvYnVmLlNlcnZpY2VPcHRpb25zGL2OAyADKAlSBWFsaWFzOksKBnVuaXF1ZRIfLmdvb2dsZS5wcm90b2J1Zi5NZXNzYWdlT3B0aW9ucxi6jgMgAygLMhAuZGppbm4udjEuVW5pcXVlUgZ1bmlxdWU6MQoDZW52Eh0uZ29vZ2xlLnByb3RvYnVmLkZpZWxkT3B0aW9ucxi+jgMgASgJUgNlbnZCkAEKDGNvbS5kamlubi52MUIMT3B0aW9uc1Byb3RvUAFaMWdpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL2RqaW5uL3YxO2RqaW5udjGiAgNEWFiqAghEamlubi5WMcoCCERqaW5uXFYx4gIURGppbm5cVjFcR1BCTWV0YWRhdGHqAglEamlubjo6VjFiBnByb3RvMw", [file_google_protobuf_descriptor]);
 
 /**
  * Unique is one group of fields whose values, taken together, identify a stored message.
@@ -133,13 +133,22 @@ export const writes: GenExtension<MethodOptions, Writes> = /*@__PURE__*/
   extDesc(file_djinn_v1_options, 2);
 
 /**
+ * Another name of the method's command: djinn task set-agent answers as djinn task update. Typed in full, or by a
+ * prefix no method's own name takes.
+ *
+ * @generated from extension: repeated string method_alias = 51007;
+ */
+export const method_alias: GenExtension<MethodOptions, string[]> = /*@__PURE__*/
+  extDesc(file_djinn_v1_options, 3);
+
+/**
  * Another name of the service's command: djinn talisman answers as djinn tilasm. Typed in full, or by a prefix no
  * command's own name takes.
  *
  * @generated from extension: repeated string alias = 51005;
  */
 export const alias: GenExtension<ServiceOptions, string[]> = /*@__PURE__*/
-  extDesc(file_djinn_v1_options, 3);
+  extDesc(file_djinn_v1_options, 4);
 
 /**
  * Groups of fields that must be unique among stored messages of this type.
@@ -147,7 +156,7 @@ export const alias: GenExtension<ServiceOptions, string[]> = /*@__PURE__*/
  * @generated from extension: repeated djinn.v1.Unique unique = 51002;
  */
 export const unique: GenExtension<MessageOptions, Unique[]> = /*@__PURE__*/
-  extDesc(file_djinn_v1_options, 4);
+  extDesc(file_djinn_v1_options, 5);
 
 /**
  * The command line and djinn mcp fill the field from this environment variable when the caller leaves it empty:
@@ -156,5 +165,5 @@ export const unique: GenExtension<MessageOptions, Unique[]> = /*@__PURE__*/
  * @generated from extension: string env = 51006;
  */
 export const env: GenExtension<FieldOptions, string> = /*@__PURE__*/
-  extDesc(file_djinn_v1_options, 5);
+  extDesc(file_djinn_v1_options, 6);
 

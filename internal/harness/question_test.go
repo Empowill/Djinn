@@ -109,7 +109,7 @@ func TestConverter(t *testing.T) {
 	e := up(t, t.TempDir(), WithQuestionWorkers(), WithCapacity(lim.capacity))
 	lead := &told{}
 	e.h.TellLeads(lead.tell)
-	dir := fakeProject(t, "question_model: \"cheap\"\nquestion_budget_usd: 0.5\n")
+	dir := fakeProject(t, "answer_workers: true\nquestion_model: \"cheap\"\nquestion_budget_usd: 0.5\n")
 	wishID, _ := e.wish(t, dir)
 	busy := e.spawn(t, wishID, "wait") // It takes the one slot.
 	q := e.asker(wishID)
@@ -207,6 +207,172 @@ func TestInvestigator(t *testing.T) {
 	}
 }
 
+// TestQuestionWorkersDefaultsAndOverrides verifies:
+// - Defaults: an answer starts no converter; Enlighten me starts an investigator.
+// - Settings overrides: answer_workers starts converter; enlighten_workers turns investigator off.
+// - Harness overrides: WithAnswerWorkers(true) starts converter; WithEnlightenWorkers(false) stops investigator.
+// - Deprecated question_workers: sets both converter and investigator.
+func TestQuestionWorkersDefaultsAndOverrides(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	t.Run("defaults", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir())
+		wishID, _ := e.wish(t, fakeProject(t, ""))
+		q := e.asker(wishID)
+
+		// Defaults: answer starts no converter.
+		q1 := q.ask(t, "")
+		q.answer(t, q1.GetCode(), planv1.Choice_CHOICE_A, "")
+		if convs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER); len(convs) != 0 {
+			t.Fatalf("defaults: %d converters, want none", len(convs))
+		}
+
+		// Defaults: enlighten starts an investigator.
+		q2 := q.ask(t, "")
+		q.enlighten(t, q2.GetCode(), "tell me more")
+		invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+		if len(invs) != 1 {
+			t.Fatalf("defaults: %d investigators, want 1", len(invs))
+		}
+		if invs[0].GetQuestion() != "Q02" || invs[0].GetTitle() != "Q02: enlighten" {
+			t.Errorf("defaults: investigator: %v", invs[0])
+		}
+		e.ended(t, invs[0].GetId())
+	})
+
+	t.Run("override_answer_workers_settings", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir())
+		wishID, _ := e.wish(t, fakeProject(t, "answer_workers: true\n"))
+		q := e.asker(wishID)
+		q1 := q.ask(t, "")
+		q.answer(t, q1.GetCode(), planv1.Choice_CHOICE_A, "")
+		convs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)
+		if len(convs) != 1 {
+			t.Fatalf("%d converters, want 1", len(convs))
+		}
+		e.ended(t, convs[0].GetId())
+	})
+
+	t.Run("override_answer_workers_harness", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir(), WithAnswerWorkers(true))
+		wishID, _ := e.wish(t, fakeProject(t, ""))
+		q := e.asker(wishID)
+		q1 := q.ask(t, "")
+		q.answer(t, q1.GetCode(), planv1.Choice_CHOICE_A, "")
+		convs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)
+		if len(convs) != 1 {
+			t.Fatalf("%d converters, want 1", len(convs))
+		}
+		e.ended(t, convs[0].GetId())
+	})
+
+	t.Run("override_enlighten_workers_settings", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir())
+		wishID, _ := e.wish(t, fakeProject(t, "enlighten_workers: false\n"))
+		q := e.asker(wishID)
+		q1 := q.ask(t, "")
+		q.enlighten(t, q1.GetCode(), "tell me more")
+		if invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR); len(invs) != 0 {
+			t.Fatalf("%d investigators, want none", len(invs))
+		}
+	})
+
+	t.Run("override_enlighten_workers_harness", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir(), WithEnlightenWorkers(false))
+		wishID, _ := e.wish(t, fakeProject(t, ""))
+		q := e.asker(wishID)
+		q1 := q.ask(t, "")
+		q.enlighten(t, q1.GetCode(), "tell me more")
+		if invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR); len(invs) != 0 {
+			t.Fatalf("%d investigators, want none", len(invs))
+		}
+	})
+
+	t.Run("deprecated_question_workers_settings_on", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir())
+		wishID, _ := e.wish(t, fakeProject(t, "question_workers: true\n"))
+		q := e.asker(wishID)
+		q1 := q.ask(t, "")
+		q.answer(t, q1.GetCode(), planv1.Choice_CHOICE_A, "")
+		convs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)
+		if len(convs) != 1 {
+			t.Fatalf("%d converters, want 1", len(convs))
+		}
+		e.ended(t, convs[0].GetId())
+
+		q2 := q.ask(t, "")
+		q.enlighten(t, q2.GetCode(), "tell me more")
+		invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+		if len(invs) != 1 {
+			t.Fatalf("%d investigators, want 1", len(invs))
+		}
+		e.ended(t, invs[0].GetId())
+	})
+
+	t.Run("deprecated_question_workers_harness_on", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir(), WithQuestionWorkers(true))
+		wishID, _ := e.wish(t, fakeProject(t, ""))
+		q := e.asker(wishID)
+		q1 := q.ask(t, "")
+		q.answer(t, q1.GetCode(), planv1.Choice_CHOICE_A, "")
+		convs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)
+		if len(convs) != 1 {
+			t.Fatalf("%d converters, want 1", len(convs))
+		}
+		e.ended(t, convs[0].GetId())
+
+		q2 := q.ask(t, "")
+		q.enlighten(t, q2.GetCode(), "tell me more")
+		invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+		if len(invs) != 1 {
+			t.Fatalf("%d investigators, want 1", len(invs))
+		}
+		e.ended(t, invs[0].GetId())
+	})
+
+	t.Run("deprecated_question_workers_settings_off", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir())
+		wishID, _ := e.wish(t, fakeProject(t, "question_workers: false\n"))
+		q := e.asker(wishID)
+		q1 := q.ask(t, "")
+		q.answer(t, q1.GetCode(), planv1.Choice_CHOICE_A, "")
+		if convs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER); len(convs) != 0 {
+			t.Fatalf("%d converters, want none", len(convs))
+		}
+		q2 := q.ask(t, "")
+		q.enlighten(t, q2.GetCode(), "tell me more")
+		if invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR); len(invs) != 0 {
+			t.Fatalf("%d investigators, want none", len(invs))
+		}
+	})
+
+	t.Run("deprecated_question_workers_harness_off", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir(), WithQuestionWorkers(false))
+		wishID, _ := e.wish(t, fakeProject(t, ""))
+		q := e.asker(wishID)
+		q1 := q.ask(t, "")
+		q.answer(t, q1.GetCode(), planv1.Choice_CHOICE_A, "")
+		if convs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER); len(convs) != 0 {
+			t.Fatalf("%d converters, want none", len(convs))
+		}
+		q2 := q.ask(t, "")
+		q.enlighten(t, q2.GetCode(), "tell me more")
+		if invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR); len(invs) != 0 {
+			t.Fatalf("%d investigators, want none", len(invs))
+		}
+	})
+}
+
 // TestQuestionWorkersOff: a project's settings, or a harness without question workers, start none: the lead acts.
 func TestQuestionWorkersOff(t *testing.T) {
 	t.Parallel()
@@ -215,7 +381,7 @@ func TestQuestionWorkersOff(t *testing.T) {
 		settings string
 	}{
 		"settings": {opts: []Option{WithQuestionWorkers()}, settings: "question_workers: false\n"},
-		"harness":  {},
+		"harness":  {opts: []Option{WithQuestionWorkers(false)}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -242,7 +408,7 @@ func TestOneConverterAtATime(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir(), WithQuestionWorkers())
-	wishID, _ := e.wish(t, fakeProject(t, ""))
+	wishID, _ := e.wish(t, fakeProject(t, "answer_workers: true\n"))
 	q := e.asker(wishID)
 	asked := q.ask(t, "wait") // The converter works until a message comes: the second answer.
 	q.answer(t, asked.GetCode(), planv1.Choice_CHOICE_A, "")
@@ -268,6 +434,11 @@ func TestOneConverterAtATime(t *testing.T) {
 	}
 }
 
+const checkRule = " Check every task that ends: read its final note (djinn task watch <task>, or the line Djinn types): " +
+	"when it leaves an uncertainty (a choice it made in the developer's place, something it did not verify, a partial " +
+	"result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about " +
+	"it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too."
+
 // TestQuestionEndLine: what the lead hears when a question worker ends: what it spawned from its question, asked or
 // revised, and what is left to the lead.
 func TestQuestionEndLine(t *testing.T) {
@@ -284,7 +455,7 @@ func TestQuestionEndLine(t *testing.T) {
 		{Code: "W8", Decision: "Q03", CreateTime: later},
 	}
 	questions := []*planv1.Question{{Code: "Q04", TaskId: "c"}, {Code: "Q02"}}
-	if got, want := questionEndLine(conv, tasks, questions, ""), "Djinn: W5 (Q02 → tasks) ended: spawned W6, W7 from Q02; asked Q04."; got != want {
+	if got, want := questionEndLine(conv, tasks, questions, ""), "Djinn: W5 (Q02 → tasks) ended: spawned W6, W7 from Q02; asked Q04."+checkRule; got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
 	conv.Status, conv.Error = planv1.TaskStatus_TASK_STATUS_FAILED, "exit code 1"
@@ -333,7 +504,7 @@ func claudeQuestions(t *testing.T, fixture string) (e *env, lead *told, wishID s
 	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, plan.SettingsFile), []byte("provider: PROVIDER_CLAUDE\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, plan.SettingsFile), []byte("provider: PROVIDER_CLAUDE\nanswer_workers: true\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	wishID, _ = e.wish(t, dir)
@@ -379,12 +550,12 @@ func TestConverterRefusedThenSpawns(t *testing.T) {
 	}
 	prompt := events[0].GetText()
 	for _, want := range []string{"## How to work within your access", "in a Bash call of its own: no pipe", "Read, Grep and Glob tools",
-		"not that Bash is"} {
+		"not that Bash is", "Check every task that ends. Read its final note (`djinn task watch <task>"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the prompt misses %q", want)
 		}
 	}
-	if got, want := lead.all(), []string{wishID + ": Djinn: W1 (Q01 → tasks) ended: spawned W2 from Q01."}; !slices.Equal(got, want) {
+	if got, want := lead.all(), []string{wishID + ": Djinn: W1 (Q01 → tasks) ended: spawned W2 from Q01." + checkRule}; !slices.Equal(got, want) {
 		t.Errorf("the lead was told\n%q\nwant\n%q", got, want)
 	}
 	if n := len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)); n != 1 {
@@ -428,5 +599,74 @@ func TestQuestionWorkerGivesUp(t *testing.T) {
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
 		t.Errorf("the lead was told\n%q\nwant\n%q", got, want)
+	}
+}
+
+// TestQuestionWorkerProvider: when the project's provider cannot run read-only (antigravity), question workers
+// fall back to claude with sonnet, and the start event says why ("antigravity cannot run read-only: claude");
+// an explicit question_provider names the provider they run on instead.
+func TestQuestionWorkerProvider(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_CLAUDE] = Fake{}
+	e := upWith(t, t.TempDir(), providers, WithQuestionWorkers())
+
+	// Fallback to Claude when the project's provider is Antigravity.
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, plan.SettingsFile), []byte("provider: PROVIDER_ANTIGRAVITY\nanswer_workers: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wishID, _ := e.wish(t, dir)
+	q := e.asker(wishID)
+	asked := q.ask(t, "")
+	q.answer(t, asked.GetCode(), planv1.Choice_CHOICE_A, "")
+
+	converters := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)
+	if len(converters) != 1 {
+		t.Fatalf("%d converters, want 1", len(converters))
+	}
+	c := converters[0]
+	if c.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || c.GetModel() != plan.DefaultQuestionModel {
+		t.Errorf("converter provider = %s, model = %q; want claude, %s", c.GetProvider(), c.GetModel(), plan.DefaultQuestionModel)
+	}
+	e.ended(t, c.GetId())
+	events := e.watch(t.Context(), t, c.GetId(), 0)
+	if !slices.ContainsFunc(events, func(ev *planv1.TaskEvent) bool {
+		return strings.Contains(ev.GetText(), "started claude (antigravity cannot run read-only: claude)")
+	}) {
+		t.Errorf("no start event with fallback text: %v", events)
+	}
+
+	// question_provider explicitly set: runs on that provider without fallback.
+	dirExplicit := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dirExplicit, ".agents"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirExplicit, plan.SettingsFile), []byte("provider: PROVIDER_ANTIGRAVITY\nquestion_provider: PROVIDER_FAKE\nanswer_workers: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wishIDExplicit, _ := e.wish(t, dirExplicit)
+	qExplicit := e.asker(wishIDExplicit)
+	askedExplicit := qExplicit.ask(t, "")
+	qExplicit.answer(t, askedExplicit.GetCode(), planv1.Choice_CHOICE_A, "")
+
+	convertersExplicit := e.roles(t, wishIDExplicit, planv1.TaskRole_TASK_ROLE_CONVERTER)
+	if len(convertersExplicit) != 1 {
+		t.Fatalf("%d converters, want 1", len(convertersExplicit))
+	}
+	ce := convertersExplicit[0]
+	if ce.GetProvider() != planv1.Provider_PROVIDER_FAKE {
+		t.Errorf("converter provider = %s; want fake", ce.GetProvider())
+	}
+	e.ended(t, ce.GetId())
+	eventsExplicit := e.watch(t.Context(), t, ce.GetId(), 0)
+	if !slices.ContainsFunc(eventsExplicit, func(ev *planv1.TaskEvent) bool {
+		return strings.Contains(ev.GetText(), "started fake") && !strings.Contains(ev.GetText(), "cannot run read-only")
+	}) {
+		t.Errorf("start event for explicit provider: %v", eventsExplicit)
 	}
 }

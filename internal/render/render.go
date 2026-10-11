@@ -19,6 +19,7 @@ import (
 	"html/template"
 	"maps"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -317,7 +318,7 @@ func build(in Input) (*view, error) {
 	// Open questions, the blocking ones first, then those needed before something, then those that can wait; each in
 	// the order they were asked. Decisions, the latest first.
 	for _, q := range exp.GetQuestions() {
-		if q.GetAnswer() != nil {
+		if q.GetAnswer() != nil || q.GetWithdrawal() != nil {
 			continue
 		}
 		cq := question{
@@ -331,6 +332,8 @@ func build(in Input) (*view, error) {
 		case Blocking:
 			cq.Blocking = tr("page.blocking", "tasks", strings.Join(blocking[q.GetId()], ", "))
 			cq.Class, cq.Level, cq.Open = "bad", cq.Blocking, true
+		case Move:
+			cq.Class, cq.Level = "move", tr("page.level_move")
 		case Before:
 			cq.Class, cq.Level = "wait", q.GetBefore()
 		default:
@@ -392,7 +395,7 @@ func build(in Input) (*view, error) {
 
 	// The bar: each blocking question a line; the other questions too while they are few, else one line for those
 	// needed before something and one for those that can wait.
-	waiting, blocked, later := tr("page.status_waiting"), tr("page.level_blocking"), tr("page.level_later")
+	moveLevel, waiting, blocked, later := tr("page.level_move"), tr("page.status_waiting"), tr("page.level_blocking"), tr("page.level_later")
 	var others []question
 	for _, q := range v.Questions {
 		switch {
@@ -416,7 +419,7 @@ func build(in Input) (*view, error) {
 		for _, level := range []struct {
 			urgency            Urgency
 			class, level, text string
-		}{{Before, "wait", waiting, "page.bar_questions"}, {Later, "later", later, "page.bar_later"}} {
+		}{{Move, "move", moveLevel, "page.bar_moves"}, {Before, "wait", waiting, "page.bar_questions"}, {Later, "later", later, "page.bar_later"}} {
 			var group []question
 			var codes []string
 			for _, q := range others {
@@ -448,7 +451,7 @@ func build(in Input) (*view, error) {
 		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
 			continue
 		}
-		if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil {
+		if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil && q.GetWithdrawal() == nil {
 			addAction("bad", blocked, tr("page.action_waiting", "task", t.GetCode(), "question", q.GetCode()), "")
 		} else {
 			addAction("bad", blocked, tr("page.action_waiting_unknown", "task", t.GetCode()),
@@ -793,6 +796,31 @@ func ForkedAs(t *planv1.Task, tasks []*planv1.Task) string {
 	return ""
 }
 
+// TaskDealtWith tells whether a failed worker has been addressed: marked done, continued (or forked),
+// or a new task names it in its title, decision, forkOf, or as a correction/review target.
+func TaskDealtWith(t *planv1.Task, tasks []*planv1.Task) bool {
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE || t.GetContinuing() || t.GetClosed().GetContinuedIn() != "" || ForkedAs(t, tasks) != "" {
+		return true
+	}
+	code := t.GetCode()
+	if code == "" {
+		return false
+	}
+	word := regexp.MustCompile(`\b` + regexp.QuoteMeta(code) + `\b`)
+	for _, o := range tasks {
+		if o.GetId() == t.GetId() {
+			continue
+		}
+		if o.GetForkOf() == code || o.GetDecision() == code || word.MatchString(o.GetTitle()) {
+			return true
+		}
+		if slices.Contains(o.GetCorrection().GetFailure().GetTaskIds(), t.GetId()) || slices.Contains(o.GetReview().GetTaskIds(), t.GetId()) {
+			return true
+		}
+	}
+	return false
+}
+
 // NewestEnded orders finished tasks the latest ended first, then the latest created: the window, the page and the
 // brief show them so.
 func NewestEnded(a, b *planv1.Task) int {
@@ -940,6 +968,10 @@ func summary(
 	switch m := req.(type) {
 	case *planv1.WishServiceMakeRequest:
 		return m.GetTitle()
+	case *planv1.WishServiceRenameRequest:
+		return m.GetTitle()
+	case *planv1.WishServiceDescribeRequest:
+		return m.GetText()
 	case *planv1.QuestionServiceAskRequest:
 		return m.GetText()
 	case *planv1.QuestionServiceAnswerRequest:
@@ -949,6 +981,18 @@ func summary(
 		}
 		return strings.TrimSpace(code + " " + strings.ToLower(strings.TrimPrefix(m.GetChoice().String(), "CHOICE_")) +
 			" " + m.GetNote())
+	case *planv1.QuestionServiceMoveRequest:
+		code := m.GetQuestion().GetCode()
+		if q := questions[m.GetQuestion().GetId()]; q != nil {
+			code = q.GetCode()
+		}
+		return strings.TrimSpace(code + " -> " + m.GetWish())
+	case *planv1.QuestionServiceWithdrawRequest:
+		code := m.GetQuestion().GetCode()
+		if q := questions[m.GetQuestion().GetId()]; q != nil {
+			code = q.GetCode()
+		}
+		return strings.TrimSpace(code + " " + m.GetNote())
 	case *planv1.BlockServicePutRequest:
 		return strings.TrimSpace(m.GetKind() + " " + m.GetTitle())
 	case *planv1.TaskServiceSpawnRequest:

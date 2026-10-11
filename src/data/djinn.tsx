@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
 } from "react";
 
+import type { Change, Task } from "../../gen/ts/plan/v1/plan_pb";
 import { type Clients, createClients } from "./client";
 import { type DjinnFocus, createFocus } from "./focus";
 import {
@@ -73,10 +74,30 @@ export function useData<T>(select: (state: State) => T): T {
   return useSyncExternalStore(store.subscribe, read, read);
 }
 
+// useOptionalData selects a part of the store's state if a DjinnProvider is present, or returns fallback.
+export function useOptionalData<T>(
+  select: (state: State) => T,
+  fallback: T,
+): T {
+  const djinn = useDjinn();
+  const read = () => (djinn ? select(djinn.store.getState()) : fallback);
+  return useSyncExternalStore(
+    (notify) => (djinn ? djinn.store.subscribe(notify) : () => {}),
+    read,
+    read,
+  );
+}
+
 // useWishDetail reads a wish's tasks, questions and blocks while the screen shows it.
-export function useWishDetail(wishId: string): WishDetail {
+export function useWishDetail(
+  wishId: string,
+  kinds?: readonly Change[],
+): WishDetail {
   const { store } = useRequiredDjinn();
-  useEffect(() => (wishId ? store.open(wishId) : undefined), [store, wishId]);
+  useEffect(
+    () => (wishId ? store.open(wishId, kinds) : undefined),
+    [store, wishId, kinds],
+  );
   return useData((state) => state.details[wishId] ?? emptyDetail);
 }
 
@@ -92,17 +113,35 @@ export function useWishDetails(wishIds: readonly string[]) {
   return useData((state) => state.details);
 }
 
+// useTaskPrompt reads the task's first prompt alone, without loading its other events.
+export function useTaskPrompt(task: Task): string {
+  const djinn = useDjinn();
+  const cachedPrompt = useOptionalData(
+    (state) => state.prompts[task.id],
+    task.prompt || "",
+  );
+  useEffect(() => {
+    if (!cachedPrompt && !task.prompt && djinn && task.id) {
+      void djinn.store.readPrompt(task.id);
+    }
+  }, [cachedPrompt, task.prompt, djinn, task.id]);
+  return cachedPrompt || task.prompt || "";
+}
+
 const NO_EVENTS: never[] = [];
 
 // useTaskEvents follows a task's events while the screen shows them. A new status follows it again: a worker
 // started again sends more.
 export function useTaskEvents(taskId: string, status: number, follow = true) {
-  const { store } = useRequiredDjinn();
+  const djinn = useDjinn();
   useEffect(
-    () => (follow ? store.follow(taskId) : undefined),
-    [store, taskId, status, follow],
+    () => (follow && djinn && taskId ? djinn.store.follow(taskId) : undefined),
+    [djinn, taskId, status, follow],
   );
-  return useData((state) => state.events[taskId] ?? NO_EVENTS);
+  return useOptionalData(
+    (state) => state.events[taskId] ?? NO_EVENTS,
+    NO_EVENTS,
+  );
 }
 
 // useMachine reads the machine and its gates every few seconds while the screen shows them.

@@ -23,6 +23,7 @@ import {
 import {
   type FormEvent,
   type ReactNode,
+  memo,
   useEffect,
   useRef,
   useState,
@@ -40,8 +41,9 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { jump } from "./attention";
 import { type Decision } from "./data/decisions";
-import { useData, useTaskEvents } from "./data/djinn";
+import { useOptionalData, useTaskEvents, useTaskPrompt } from "./data/djinn";
 import {
+  shortModel,
   taskFinished,
   taskStatusText,
   taskTime,
@@ -86,7 +88,63 @@ export function agentOf(task: Task): string {
   return task.model ? `${name} · ${task.model}` : name;
 }
 
-export function WishTask({
+// promptPreview returns the first few lines of a prompt, trimmed and truncated with an ellipsis if long.
+export function promptPreview(
+  prompt: string,
+  maxLines = 3,
+  maxChars = 240,
+): string {
+  if (!prompt) return "";
+  const trimmed = prompt.trim();
+  if (!trimmed) return "";
+  const lines = trimmed
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (!lines.length) return "";
+  const hasMoreLines = lines.length > maxLines;
+  const taken = lines.slice(0, maxLines);
+  let text = taken.join("\n");
+  const hasMoreChars = text.length > maxChars;
+  if (hasMoreChars) {
+    text = text.slice(0, maxChars).trimEnd();
+  }
+  if (hasMoreLines || hasMoreChars) {
+    if (!text.endsWith("…") && !text.endsWith("...")) {
+      text += "…";
+    }
+  }
+  return text;
+}
+
+// TaskPromptFold shows a task's prompt in Markdown, folded after a few lines with a button to show all.
+function TaskPromptFold({ prompt }: { prompt: string }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!prompt.trim()) return null;
+  const lines = prompt.split(/\r?\n/).filter(Boolean);
+  const isLong = lines.length > 3 || prompt.length > 180;
+  return (
+    <div className="wish-task-prompt-section">
+      <span className="eyebrow">{t("task.prompt")}</span>
+      <div
+        className={`wish-task-prompt-body ${!expanded && isLong ? "folded" : "expanded"}`}
+      >
+        <MarkdownBody text={prompt} />
+      </div>
+      {isLong && (
+        <button
+          type="button"
+          className="text-button wish-task-prompt-toggle"
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? t("task.show_less") : t("task.show_all")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export const WishTask = memo(function WishTask({
   task,
   project,
   codes,
@@ -112,16 +170,18 @@ export function WishTask({
   decision?: Decision;
   // Brought into sight and opened, from its decision.
   focused?: boolean;
-  onStop: () => void;
-  onSend: (text: string) => Promise<unknown>;
+  onStop: (task: Task) => void;
+  onSend: (text: string, task: Task) => Promise<unknown>;
   // Pauses the task's worker (true) or lets it go on (false); none where djinn cannot pause one (Windows).
-  onHold?: (pause: boolean) => void;
-  onDecision?: () => void;
+  onHold?: (pause: boolean, task: Task) => void;
+  onDecision?: (task: Task) => void;
   // Marks the task done by hand, with a note; none where the task cannot be closed from here.
-  onDone?: (note: string) => Promise<unknown>;
+  onDone?: (note: string, task: Task) => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(focused);
   const [closing, setClosing] = useState(false);
+  const prompt = useTaskPrompt(task);
+  const preview = promptPreview(prompt);
   useEffect(() => {
     if (!focused) return;
     setOpen(true);
@@ -149,82 +209,109 @@ export function WishTask({
   const now = useNow(!taskFinished(task.status) && !!task.startTime);
   const time = taskTime(task, now);
   const work = taskWork(task, codes);
+  const hasActions =
+    holdable || stoppable || (!!onDone && closable(task.status));
   return (
     <article
       className={`wish-task tone-${tone} ${open ? "open" : ""} ${focused ? "focused" : ""}`}
       id={`task-${task.id}`}
     >
-      <div className="wish-task-row">
+      <div className={`wish-task-row ${hasActions ? "has-actions" : ""}`}>
         <button
           className="wish-task-heading"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
         >
-          <StatusBadge tone={tone} label={taskStatusText(task, forkedAs)} />
-          <span className="agent-code">{task.code}</span>
-          {project?.name && (
-            <span className="task-project">{project.name}</span>
-          )}
-          {/* Cut to the room left: the whole title shows on hover. */}
-          <strong title={task.title}>{task.title}</strong>
-          <span className="wish-task-meta">
-            {origin}
-            {time.text && (
-              <span className="task-time" title={time.title}>
-                {time.text}
+          <span className="wish-task-first-line">
+            <StatusBadge tone={tone} label={taskStatusText(task, forkedAs)} />
+            <span className="agent-code">{task.code}</span>
+            {/* Cut to the room left: the whole title shows on hover. */}
+            <span className="task-title-wrap">
+              <strong className="task-title">{task.title}</strong>
+              <span className="task-tooltip" role="tooltip">
+                <span className="task-tooltip-title">{task.title}</span>
+                {preview ? (
+                  <span className="task-tooltip-prompt">{preview}</span>
+                ) : null}
               </span>
-            )}
-            <TaskUsage usage={task.usage} />
-            {task.status === TaskStatus.RUNNING && task.resources?.readTime && (
-              <span
-                className="task-usage"
-                title={resourcesDetail(task.resources, true)}
+            </span>
+            <ChevronDown size={14} className={open ? "rotated" : ""} />
+          </span>
+          <span className="wish-task-second-line">
+            <span className="wish-task-meta">
+              {project?.name && (
+                <span className="task-project">{project.name}</span>
+              )}
+              {!watcher && task.model && (
+                <span className="task-model" title={task.model}>
+                  {shortModel(task.model)}
+                </span>
+              )}
+              {time.text && (
+                <span className="task-time" title={time.title}>
+                  {time.text}
+                </span>
+              )}
+              {origin}
+              <TaskUsage usage={task.usage} />
+              {task.status === TaskStatus.RUNNING &&
+                task.resources?.readTime && (
+                  <span
+                    className="task-usage"
+                    title={resourcesDetail(task.resources, true)}
+                  >
+                    {resourcesNow(task.resources)}
+                  </span>
+                )}
+            </span>
+          </span>
+        </button>
+        {hasActions && (
+          <span className="wish-task-actions">
+            {holdable && (
+              <button
+                className="icon-button"
+                onClick={() => onHold?.(!paused, task)}
+                title={t(paused ? "task.resume_detail" : "task.pause_detail")}
+                aria-label={t(paused ? "task.resume" : "task.pause")}
               >
-                {resourcesNow(task.resources)}
-              </span>
+                {paused ? <CirclePlay size={14} /> : <CirclePause size={14} />}
+              </button>
+            )}
+            {stoppable && (
+              <button
+                className="icon-button"
+                onClick={() => onStop(task)}
+                title={t("task.stop")}
+                aria-label={t("task.stop")}
+              >
+                <CircleStop size={14} />
+              </button>
+            )}
+            {onDone && closable(task.status) && (
+              <button
+                className="icon-button"
+                onClick={() => setClosing(!closing)}
+                title={t("task.mark_done_detail")}
+                aria-label={t("task.mark_done")}
+                aria-expanded={closing}
+              >
+                <CheckCircle2 size={14} />
+              </button>
             )}
           </span>
-          <ChevronDown size={14} className={open ? "rotated" : ""} />
-        </button>
-        {holdable && (
-          <button
-            className="icon-button"
-            onClick={() => onHold?.(!paused)}
-            title={t(paused ? "task.resume_detail" : "task.pause_detail")}
-            aria-label={t(paused ? "task.resume" : "task.pause")}
-          >
-            {paused ? <CirclePlay size={14} /> : <CirclePause size={14} />}
-          </button>
-        )}
-        {stoppable && (
-          <button
-            className="icon-button"
-            onClick={onStop}
-            title={t("task.stop")}
-            aria-label={t("task.stop")}
-          >
-            <CircleStop size={14} />
-          </button>
-        )}
-        {onDone && closable(task.status) && (
-          <button
-            className="icon-button"
-            onClick={() => setClosing(!closing)}
-            title={t("task.mark_done_detail")}
-            aria-label={t("task.mark_done")}
-            aria-expanded={closing}
-          >
-            <CheckCircle2 size={14} />
-          </button>
         )}
       </div>
       {decision && onDecision && (
         <p className="wish-task-note wish-task-decision">
-          <DecisionLink decision={decision} onOpen={onDecision} />
+          <DecisionLink decision={decision} onOpen={() => onDecision(task)} />
         </p>
       )}
       {closing && onDone && closable(task.status) && (
-        <DoneBox onDone={onDone} onCancel={() => setClosing(false)} />
+        <DoneBox
+          onDone={(note) => onDone(note, task)}
+          onCancel={() => setClosing(false)}
+        />
       )}
       {task.closed && (
         <p className="wish-task-note wish-task-closed">
@@ -264,14 +351,18 @@ export function WishTask({
         </p>
       )}
       {open && (
-        <TaskBody task={task} forkOf={codes?.get(task.forkOf ?? "") ?? ""} />
+        <TaskBody
+          task={task}
+          forkOf={codes?.get(task.forkOf ?? "") ?? ""}
+          prompt={prompt}
+        />
       )}
       {open && task.status === TaskStatus.RUNNING && !watcher && (
-        <SendBox onSend={onSend} />
+        <SendBox onSend={(text) => onSend(text, task)} />
       )}
     </article>
   );
-}
+});
 
 // taskWork says where the finished work of a task stands on its way into its wish's integration branch (T07), as the
 // page says it, and its tone: undefined for work Djinn does not integrate. codes name the correction worker's task.
@@ -403,22 +494,32 @@ function DoneBox({
   );
 }
 
-function TaskBody({ task, forkOf }: { task: Task; forkOf: string }) {
-  const events = useTaskEvents(task.id, task.status);
+function TaskBody({
+  task,
+  forkOf,
+  prompt,
+}: {
+  task: Task;
+  forkOf: string;
+  prompt: string;
+}) {
+  const [showLogs, setShowLogs] = useState(false);
+  const events = useTaskEvents(task.id, task.status, showLogs);
   const box = useRef<HTMLDivElement>(null);
   // Keep the newest event in sight while the worker runs, inside the box: the page stays where it is.
   useEffect(() => {
     const element = box.current;
-    if (element && !taskFinished(task.status))
+    if (element && showLogs && !taskFinished(task.status))
       element.scrollTop = element.scrollHeight;
-  }, [events.length, task.status]);
+  }, [events.length, task.status, showLogs]);
   // A finished worker's last text is its report: it shows first, as Markdown.
   const lastWord = taskFinished(task.status) ? lastText(events) : "";
   const spent = usageDetail(task.usage);
   const running = task.status === TaskStatus.RUNNING;
   const used = task.resources ? resourcesDetail(task.resources, running) : "";
   // Where Djinn does not measure workers (Windows), a running worker says so.
-  const unmeasured = useData((s) => !!s.machine?.workerMeasure) && running;
+  const unmeasured =
+    useOptionalData((s) => !!s.machine?.workerMeasure, false) && running;
   const scopes = task.writeScopes ?? [];
   return (
     <div className="wish-task-body">
@@ -442,30 +543,39 @@ function TaskBody({ task, forkOf }: { task: Task; forkOf: string }) {
         {used && <span>{used}</span>}
         {!used && unmeasured && <span>{t("resources.not_measured")}</span>}
       </div>
+      <TaskPromptFold prompt={prompt} />
       {lastWord && (
         <div className="wish-task-last-word">
           <span className="eyebrow">{t("page.last_word")}</span>
           <MarkdownBody text={lastWord} />
         </div>
       )}
-      <details
-        className="wish-task-events-fold"
-        open={!taskFinished(task.status)}
-      >
-        <summary>{t("task.events", { count: events.length })}</summary>
-        <div className="wish-task-events" ref={box} aria-live="polite">
-          {events.length === 0 ? (
-            <p className="muted-text">{t("task.no_events")}</p>
-          ) : (
-            <table className="compact-table event-table">
-              <tbody>
-                {events.map((event) => (
-                  <EventLine key={event.id} event={event} />
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+      <details className="wish-task-events-fold" open={showLogs}>
+        <summary
+          className="button secondary small wish-task-logs-button"
+          role="button"
+          onClick={(e) => {
+            e.preventDefault();
+            setShowLogs(!showLogs);
+          }}
+        >
+          {showLogs ? t("task.hide_logs") : t("task.see_logs")}
+        </summary>
+        {showLogs && (
+          <div className="wish-task-events" ref={box} aria-live="polite">
+            {events.length === 0 ? (
+              <p className="muted-text">{t("task.no_events")}</p>
+            ) : (
+              <table className="compact-table event-table">
+                <tbody>
+                  {events.map((event) => (
+                    <EventLine key={event.id} event={event} />
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
       </details>
     </div>
   );

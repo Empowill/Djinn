@@ -1,16 +1,18 @@
 // The bar that stays at the top of the flight plan and of a wish while something waits for you: one line each, the
 // most blocking first, in the colour of how much it holds up. A click takes you there. A question is blocking (red),
 // needed before something (orange, under its before words) or can wait (grey), as on its card.
-import { ArrowDownRight, BellRing } from "lucide-react";
+import { ArrowDownRight, BellRing, CircleUserRound } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { TaskStatus, type Wish } from "../gen/ts/plan/v1/plan_pb";
 import type { OpenQuestion, Waiting } from "./data/flight";
+import { firstLine } from "./data/format";
 import { t } from "./i18n";
 
-// How much a line holds up: a question workers wait on, a question needed before something, a worker that asks to
-// edit, a question that can wait, a wish ready to grant.
-export type Level = "blocking" | "question" | "action" | "later" | "ready";
+// How much a line holds up: a question workers wait on, a move only the developer can make, a question needed
+// before something, a worker that asks to edit, a question that can wait, a wish ready to grant.
+export type Level =
+  "blocking" | "move" | "question" | "action" | "later" | "ready";
 
 export interface Attention {
   key: string;
@@ -26,10 +28,11 @@ export interface Attention {
 
 const order: Record<Level, number> = {
   blocking: 0,
-  question: 1,
-  action: 2,
-  later: 3,
-  ready: 4,
+  move: 1,
+  question: 2,
+  action: 3,
+  later: 4,
+  ready: 5,
 };
 
 // attentionOf lists what waits for you, the most blocking first; origin marks a line with its wish.
@@ -40,11 +43,19 @@ export function attentionOf(
   origin?: (wish: Wish) => ReactNode,
 ): Attention[] {
   const out: Attention[] = [];
-  for (const { wish, item, blocking } of questions)
+  for (const { wish, item, blocking } of questions) {
+    const level: Level = blocking.length
+      ? "blocking"
+      : item.move
+        ? "move"
+        : item.before
+          ? "question"
+          : "later";
     out.push({
       key: item.id,
-      level: blocking.length ? "blocking" : item.before ? "question" : "later",
-      label: blocking.length ? undefined : item.before || undefined,
+      level,
+      label:
+        blocking.length || item.move ? undefined : item.before || undefined,
       target: `question-${item.id}`,
       code: item.code,
       text: blocking.length
@@ -52,15 +63,19 @@ export function attentionOf(
         : item.text,
       origin: origin?.(wish),
     });
+  }
   for (const { wish, item, question } of waiting) {
     // A worker that waits for an open question is already on that question's line.
     if (item.status === TaskStatus.WAITING && question) continue;
+    const failed = item.status === TaskStatus.FAILED;
     out.push({
       key: item.id,
       level: "action",
       target: `waiting-${item.id}`,
       code: item.code,
-      text: t("attention.worker_waits"),
+      text: failed
+        ? firstLine(item.error) || t("attention.worker_failed")
+        : t("attention.worker_waits"),
       origin: origin?.(wish),
     });
   }
@@ -78,6 +93,7 @@ export function attentionOf(
 
 const levelKeys = {
   blocking: "attention.level_blocking",
+  move: "attention.level_move",
   question: "attention.level_question",
   action: "attention.level_action",
   later: "attention.level_later",
@@ -86,7 +102,9 @@ const levelKeys = {
 
 // jump scrolls to an element, puts the focus on it and makes it glow a moment.
 export function jump(id: string) {
-  const element = document.getElementById(id);
+  const element =
+    document.getElementById(id) ??
+    document.getElementById(id.replace(/^waiting-/, "task-"));
   if (!element) return;
   const reduced = document.documentElement.dataset.motion === "reduced";
   element.scrollIntoView({
@@ -116,6 +134,9 @@ export function AttentionBar({ items }: { items: readonly Attention[] }) {
               onClick={() => jump(item.target)}
             >
               <span className="attention-level">
+                {item.level === "move" && (
+                  <CircleUserRound size={14} aria-hidden="true" />
+                )}
                 {item.label ?? t(levelKeys[item.level])}
               </span>
               {item.code && <b className="attention-code">{item.code}</b>}

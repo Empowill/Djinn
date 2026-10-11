@@ -1,0 +1,8 @@
+# Case: agy returns a retry prompt for exceeding output token limit; Djinn continues the turn, then done.
+{"event":"init","conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","init":{"cwd":"/work/project","tools":["ask_permission","run_command","view_file","write_to_file"],"permission_mode":"accept-edits","model":"gemini-3.8-flash-medium"}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":1,"state":"ACTIVE","step_type":"agent_response","text_delta":"Here is the partial output\n"}}
+{"event":"result","result":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","status":"SUCCESS","response":"Your previous response was cut off because it exceeded the output token limit. Please continue from where you left off, keeping your response shorter","duration_seconds":2.1,"num_turns":1,"usage":{"input_tokens":30384,"output_tokens":8192,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":38576}}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":2,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"and the remaining content.\n"}}
+{"event":"result","result":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","status":"SUCCESS","response":"and the remaining content.\n","duration_seconds":1.1,"num_turns":2,"usage":{"input_tokens":60800,"output_tokens":30,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":60830}}}

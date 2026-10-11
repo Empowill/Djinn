@@ -6,15 +6,21 @@ package machine
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"runtime"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 )
 
-// GiB is a gibibyte.
-const GiB = 1 << 30
+// MiB is a mebibyte; GiB is a gibibyte.
+const (
+	MiB = 1 << 20
+	GiB = 1 << 30
+)
 
 // Pressure is how much of the last 10 seconds tasks waited for a resource, in percent: Linux's pressure stall
 // information.
@@ -43,6 +49,8 @@ type Snapshot struct {
 // Policy turns a snapshot into a number of workers and a pressure verdict. Every threshold is a field: the
 // defaults are DefaultPolicy.
 type Policy struct {
+	// Notch is the operating load slider notch that controls how much of the machine Djinn uses.
+	Notch djinnv1.LoadNotch
 	// Workers, when above 0, is the number of workers, whatever the machine (djinn up --workers).
 	Workers int
 	// One worker per CoresPerWorker cores, and per MemoryPerWorker bytes beyond MemoryReserve; the smaller wins,
@@ -53,8 +61,13 @@ type Policy struct {
 	MaxWorkers      int
 	// WorkerMemory, when above 0, is the most memory a worker may hold, in bytes, where it runs in a systemd scope
 	// of its own (Scopes, djinn up --worker-memory): past it, the kernel reclaims, then kills a process of the worker.
-	// 0, the default: no ceiling.
+	// 0, the default: no ceiling. An expert setting, never tied to operating load notches.
 	WorkerMemory uint64
+	// WorkerMemoryGuard, when above 0, is an optional guardrail factor (typically 2 to 3) applied to the provider's
+	// observed typical peak (median of latest WorkerPeaks finished workers) to set a dynamic MemoryMax ceiling for
+	// each worker, at least its forecast (peak + WorkerMargin). 0, the default: disabled.
+	// Without measurements (measured == 0), no ceiling is set. Never tied to operating load notches.
+	WorkerMemoryGuard float64
 	// The machine is under pressure when, over the last 10 seconds, tasks waited for the CPU at least CPUPressure
 	// percent of the time, or for memory at least MemoryPressure percent (PSI "some").
 	CPUPressure    float64
@@ -74,6 +87,11 @@ type Policy struct {
 	WorkerPeak   uint64
 	WorkerPeaks  int
 	WorkerMargin uint64
+	// Share is the fraction of machine capacity this policy grants (0.20 to 1.50).
+	Share float64
+	// MemoryShare is the maximum fraction of total RAM Djinn may commit in peak forecasts (0.20 to 1.50).
+	// On max (1.0), all RAM except WorkerMargin may be committed; overclock (1.50) may exceed what the rule engages.
+	MemoryShare float64
 	// A local model runs on an NVIDIA or AMD GPU, its driver loaded, with ModelGPUMemory of its own; on Apple
 	// Silicon with ModelMemory of unified memory; else on the CPU, slowly, with ModelMemory. Its weights need
 	// ModelDisk free on the disk of the data folder.
@@ -82,33 +100,295 @@ type Policy struct {
 	ModelDisk      uint64
 }
 
-// DefaultPolicy is the policy Djinn runs with. A worker is mostly an agent waiting for its model; the heavy commands
-// it runs (builds, tests, code generation) go through gates. Two cores and 2 GiB a worker leaves room for them.
-func DefaultPolicy() Policy {
-	return Policy{
-		CoresPerWorker: 2, MemoryPerWorker: 2 * GiB, MemoryReserve: 2 * GiB, MaxWorkers: 16,
-		CPUPressure: 50, MemoryPressure: 10, LoadPerCore: 2, MemoryFree: 0.10, CommandMargin: 512 << 20,
-		WorkerPeak: GiB, WorkerPeaks: 10, WorkerMargin: 512 << 20,
-		ModelGPUMemory: 6 * GiB, ModelMemory: 16 * GiB, ModelDisk: 10 * GiB,
+// ManualNotches is the ordered list of 5 manual operating load notches.
+var ManualNotches = []djinnv1.LoadNotch{
+	djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL,
+	djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
+	djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+	djinnv1.LoadNotch_LOAD_NOTCH_MAX,
+	djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK,
+}
+
+// NotchIndex returns the index of a notch among the manual notches (0 to 4),
+// mapping LIGHT to MEDIUM (1).
+func NotchIndex(n djinnv1.LoadNotch) int {
+	switch n {
+	case djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL:
+		return 0
+	case djinnv1.LoadNotch_LOAD_NOTCH_LIGHT, djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM:
+		return 1
+	case djinnv1.LoadNotch_LOAD_NOTCH_HIGH:
+		return 2
+	case djinnv1.LoadNotch_LOAD_NOTCH_MAX:
+		return 3
+	case djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK:
+		return 4
+	default:
+		return 1
 	}
 }
 
-// Slots is the most workers the machine runs at once, and the rule that gave it.
-func (p Policy) Slots(s Snapshot) (int, string) {
-	if p.Workers > 0 {
-		return p.Workers, fmt.Sprintf("%d, set by djinn up --workers", p.Workers)
-	}
-	cores := max(s.Cores, 1)
-	byCores := max(cores/max(p.CoresPerWorker, 1), 1)
-	n, rule := byCores, fmt.Sprintf("one per %d cores of %d", p.CoresPerWorker, cores)
-	if s.MemoryTotal > 0 && p.MemoryPerWorker > 0 {
-		spare := uint64(0)
-		if s.MemoryTotal > p.MemoryReserve {
-			spare = s.MemoryTotal - p.MemoryReserve
+// NotchPolicy returns the policy of the operating load notch.
+// Medium is the default policy Djinn runs with.
+func NotchPolicy(notch djinnv1.LoadNotch) Policy {
+	switch notch {
+	case djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL:
+		return Policy{
+			Notch:           djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL,
+			CoresPerWorker:  2,
+			MemoryPerWorker: 2 * GiB,
+			MemoryReserve:   2 * GiB,
+			MaxWorkers:      16,
+			// Strict PSI pressure thresholds: yields at the slightest resource contention.
+			CPUPressure:    25,
+			MemoryPressure: 5,
+			// Strict load and memory limits without PSI: back off at 1 load per core or <20% free RAM.
+			LoadPerCore: 1.0,
+			MemoryFree:  0.20,
+			// 1 GiB gate margin: ample headroom for host commands.
+			CommandMargin:  1024 << 20,
+			WorkerPeak:     GiB,
+			WorkerPeaks:    10,
+			WorkerMargin:   512 << 20,
+			Share:          0.20,
+			MemoryShare:    0.20,
+			ModelGPUMemory: 6 * GiB,
+			ModelMemory:    16 * GiB,
+			ModelDisk:      10 * GiB,
 		}
-		byMemory := max(int(spare/p.MemoryPerWorker), 1)
-		memRule := fmt.Sprintf("one per %s of memory beyond %s, of %s", size(p.MemoryPerWorker), size(p.MemoryReserve),
-			size(s.MemoryTotal))
+	case djinnv1.LoadNotch_LOAD_NOTCH_LIGHT:
+		// Deprecated light notch maps to medium.
+		return NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
+	case djinnv1.LoadNotch_LOAD_NOTCH_HIGH:
+		return Policy{
+			Notch:           djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+			CoresPerWorker:  2,
+			MemoryPerWorker: 2 * GiB,
+			MemoryReserve:   2 * GiB,
+			MaxWorkers:      16,
+			// Tolerant PSI thresholds: permits temporary pressure spikes during parallel builds.
+			CPUPressure:    70,
+			MemoryPressure: 15,
+			// Tolerant non-PSI thresholds: 3.0 load per core or <5% free RAM.
+			LoadPerCore: 3.0,
+			MemoryFree:  0.05,
+			// 384 MiB gate margin: compact gate buffer allowing more concurrent gated commands.
+			CommandMargin:  384 << 20,
+			WorkerPeak:     GiB,
+			WorkerPeaks:    10,
+			WorkerMargin:   512 << 20,
+			Share:          0.80,
+			MemoryShare:    0.80,
+			ModelGPUMemory: 6 * GiB,
+			ModelMemory:    16 * GiB,
+			ModelDisk:      10 * GiB,
+		}
+	case djinnv1.LoadNotch_LOAD_NOTCH_MAX:
+		return Policy{
+			Notch:           djinnv1.LoadNotch_LOAD_NOTCH_MAX,
+			CoresPerWorker:  2,
+			MemoryPerWorker: 2 * GiB,
+			MemoryReserve:   2 * GiB,
+			MaxWorkers:      16,
+			// Aggressive PSI thresholds: keeps workers running unless heavily stalled.
+			CPUPressure:    90,
+			MemoryPressure: 25,
+			// Aggressive non-PSI thresholds: 5.0 load per core or <2% free RAM.
+			LoadPerCore: 5.0,
+			MemoryFree:  0.02,
+			// 256 MiB gate margin: minimum safe gate margin.
+			CommandMargin:  256 << 20,
+			WorkerPeak:     GiB,
+			WorkerPeaks:    10,
+			WorkerMargin:   512 << 20,
+			Share:          1.0,
+			MemoryShare:    1.0,
+			ModelGPUMemory: 6 * GiB,
+			ModelMemory:    16 * GiB,
+			ModelDisk:      10 * GiB,
+		}
+	case djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK:
+		return Policy{
+			Notch:           djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK,
+			CoresPerWorker:  2,
+			MemoryPerWorker: 2 * GiB,
+			MemoryReserve:   2 * GiB,
+			MaxWorkers:      16,
+			// Overclock accepts saturation and pressure.
+			CPUPressure:    95,
+			MemoryPressure: 40,
+			LoadPerCore:    8.0,
+			MemoryFree:     0.01,
+			// 128 MiB gate margin: very compact gate buffer.
+			CommandMargin:  128 << 20,
+			WorkerPeak:     GiB,
+			WorkerPeaks:    10,
+			WorkerMargin:   512 << 20,
+			Share:          1.50,
+			MemoryShare:    1.50,
+			ModelGPUMemory: 6 * GiB,
+			ModelMemory:    16 * GiB,
+			ModelDisk:      10 * GiB,
+		}
+	case djinnv1.LoadNotch_LOAD_NOTCH_AUTO:
+		// Auto mode dynamically chooses among the 5 notches; its initial fallback is Minimal.
+		return NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
+	default: // LOAD_NOTCH_MEDIUM or LOAD_NOTCH_UNSPECIFIED
+		return Policy{
+			Notch:           djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
+			CoresPerWorker:  2,
+			MemoryPerWorker: 2 * GiB,
+			MemoryReserve:   2 * GiB,
+			MaxWorkers:      16,
+			// Standard PSI thresholds: 50% CPU wait, 10% memory wait.
+			CPUPressure:    50,
+			MemoryPressure: 10,
+			// Standard non-PSI thresholds: 2.0 load per core or <10% free RAM.
+			LoadPerCore: 2.0,
+			MemoryFree:  0.10,
+			// 512 MiB gate margin: default gate margin.
+			CommandMargin:  512 << 20,
+			WorkerPeak:     GiB,
+			WorkerPeaks:    10,
+			WorkerMargin:   512 << 20,
+			Share:          0.50,
+			MemoryShare:    0.50,
+			ModelGPUMemory: 6 * GiB,
+			ModelMemory:    16 * GiB,
+			ModelDisk:      10 * GiB,
+		}
+	}
+}
+
+// DefaultPolicy is the policy Djinn runs with: medium operating load. A worker is mostly an agent waiting for its
+// model; the heavy commands it runs (builds, tests, code generation) go through gates. Two cores and 2 GiB a worker
+// leaves room for them.
+func DefaultPolicy() Policy {
+	return NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
+}
+
+// RuleMemory returns the memory the rule would engage on a machine with total RAM.
+func (p Policy) RuleMemory(total uint64) uint64 {
+	if total <= p.WorkerMargin {
+		return 0
+	}
+	return total - p.WorkerMargin
+}
+
+// CommittableLimit is the maximum memory Djinn commits to peak forecasts on a machine with total bytes of RAM.
+// It returns 0 when total is 0 or unknown. Overclock (150%) may exceed what the rule engages.
+func (p Policy) CommittableLimit(total uint64) uint64 {
+	if total == 0 {
+		return 0
+	}
+	share := p.Share
+	if share <= 0 {
+		share = p.MemoryShare
+	}
+	if share <= 0 {
+		return 0
+	}
+	ruleMem := p.RuleMemory(total)
+	if ruleMem == 0 {
+		return 0
+	}
+	return uint64(math.Round(float64(ruleMem) * share))
+}
+
+// NotchName returns the lowercase name of a load notch.
+func NotchName(notch djinnv1.LoadNotch) string {
+	switch notch {
+	case djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL:
+		return "minimal"
+	case djinnv1.LoadNotch_LOAD_NOTCH_LIGHT:
+		return "light"
+	case djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED:
+		return "medium"
+	case djinnv1.LoadNotch_LOAD_NOTCH_HIGH:
+		return "high"
+	case djinnv1.LoadNotch_LOAD_NOTCH_MAX:
+		return "max"
+	case djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK:
+		return "overclock"
+	case djinnv1.LoadNotch_LOAD_NOTCH_AUTO:
+		return "auto"
+	default:
+		return "medium"
+	}
+}
+
+// NotchName is the name of the policy's load notch.
+func (p Policy) NotchName() string {
+	return NotchName(p.Notch)
+}
+
+// LowPriority reports whether the load notch runs workers with low CPU priority.
+// Minimal and medium notches run with low CPU priority to yield CPU to developer applications;
+// high, max, and overclock run with standard priority.
+func LowPriority(notch djinnv1.LoadNotch) bool {
+	switch notch {
+	case djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL,
+		djinnv1.LoadNotch_LOAD_NOTCH_LIGHT,
+		djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM:
+		return true
+	default:
+		return false
+	}
+}
+
+// LowPriority reports whether the policy runs workers with low CPU priority.
+func (p Policy) LowPriority() bool {
+	return LowPriority(p.Notch)
+}
+
+// ParseNotch parses a string into a LoadNotch.
+func ParseNotch(s string) (djinnv1.LoadNotch, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "minimal":
+		return djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, nil
+	case "light":
+		// Old saved "light" maps to Medium.
+		return djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, nil
+	case "medium":
+		return djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, nil
+	case "high":
+		return djinnv1.LoadNotch_LOAD_NOTCH_HIGH, nil
+	case "max":
+		return djinnv1.LoadNotch_LOAD_NOTCH_MAX, nil
+	case "overclock":
+		return djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK, nil
+	case "auto":
+		return djinnv1.LoadNotch_LOAD_NOTCH_AUTO, nil
+	default:
+		return djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED, fmt.Errorf("unknown load notch %q: expected minimal, medium, high, max, overclock, or auto", s)
+	}
+}
+
+// BaseSlots is the number of worker slots the machine allows today under the standard rule:
+// one worker per 2 cores and per 2 GiB beyond 2 GiB reserve, min of both, up to 16, at least 1.
+func (p Policy) BaseSlots(s Snapshot) (int, string) {
+	cores := max(s.Cores, 1)
+	cpw := p.CoresPerWorker
+	if cpw <= 0 {
+		cpw = 2
+	}
+	byCores := max(cores/cpw, 1)
+	n, rule := byCores, fmt.Sprintf("one per %d cores of %d", cpw, cores)
+	mpw := p.MemoryPerWorker
+	if mpw == 0 {
+		mpw = 2 * GiB
+	}
+	res := p.MemoryReserve
+	if res == 0 {
+		res = 2 * GiB
+	}
+	if s.MemoryTotal > 0 {
+		spare := uint64(0)
+		if s.MemoryTotal > res {
+			spare = s.MemoryTotal - res
+		}
+		byMemory := max(int(spare/mpw), 1)
+		memRule := fmt.Sprintf("one per %s of memory beyond %s, of %s", size(mpw), size(res), size(s.MemoryTotal))
 		switch {
 		case byMemory < byCores:
 			n, rule = byMemory, memRule
@@ -116,10 +396,43 @@ func (p Policy) Slots(s Snapshot) (int, string) {
 			rule += ", and " + memRule
 		}
 	}
-	if p.MaxWorkers > 0 && n > p.MaxWorkers {
-		return p.MaxWorkers, fmt.Sprintf("%d, the most Djinn runs (%s gives more)", p.MaxWorkers, rule)
+	maxW := p.MaxWorkers
+	if maxW <= 0 {
+		maxW = 16
+	}
+	if n > maxW {
+		return maxW, fmt.Sprintf("%d, the most Djinn runs (%s gives more)", maxW, rule)
 	}
 	return n, fmt.Sprintf("%d: %s", n, rule)
+}
+
+// BaseSlots returns the number of slots given by the current machine rule without notch scaling.
+func BaseSlots(s Snapshot) int {
+	n, _ := DefaultPolicy().BaseSlots(s)
+	return n
+}
+
+// Slots is the most workers the machine runs at once, and the rule that gave it.
+// Each notch is a share of what the machine allows today: workers = round(share × BaseSlots, at least 1).
+func (p Policy) Slots(s Snapshot) (int, string) {
+	if p.Workers > 0 {
+		return p.Workers, fmt.Sprintf("%d, set by djinn up --workers", p.Workers)
+	}
+	base, rule := p.BaseSlots(s)
+	share := p.Share
+	if share <= 0 {
+		if p.Notch != 0 {
+			share = NotchPolicy(p.Notch).Share
+		} else {
+			share = 0.50
+		}
+	}
+	workers := max(1, int(math.Round(share*float64(base))))
+	if share == 1.0 {
+		return workers, rule
+	}
+	pct := int(math.Round(share * 100))
+	return workers, fmt.Sprintf("%d: %d%% of %d (%s)", workers, pct, base, rule)
 }
 
 // Pressure says why the machine is under pressure, or "" when it is not. Under pressure, no worker starts and no
@@ -179,13 +492,49 @@ func (p Policy) Typical(peaks []uint64) (uint64, int) {
 	return measured[n/2-1]/2 + measured[n/2]/2, n
 }
 
-// WorkerRoom says why the machine cannot hold another worker of provider yet, or "" when it can: the memory
-// available, less held (what the workers running may still take), holds peak, the typical peak of a worker of
-// provider measured over measured workers (Typical), plus WorkerMargin. A machine whose memory is unknown (available
-// 0) has room.
-func (p Policy) WorkerRoom(available, held uint64, provider string, peak uint64, measured int) string {
+// WorkerMemoryMax calculates the dynamic memory ceiling (MemoryMax in bytes) for a worker of a provider
+// with observed peak and measured count, using the guardrail factor.
+// When factor <= 0 or measured == 0, the guardrail sets no ceiling (returns 0).
+// When measured > 0, it returns at least the current forecast (peak + WorkerMargin), and factor * peak if larger.
+func (p Policy) WorkerMemoryMax(factor float64, peak uint64, measured int) uint64 {
+	if factor <= 0 || measured == 0 {
+		return 0
+	}
+	forecast := peak + p.WorkerMargin
+	scaled := uint64(math.Round(float64(peak) * factor))
+	return max(scaled, forecast)
+}
+
+// WorkerMemoryCeiling returns the memory ceiling in bytes for a worker of a provider,
+// evaluating the guardrail (if WorkerMemoryGuard > 0) against the hard ceiling WorkerMemory.
+// Returns 0 when no ceiling applies.
+func (p Policy) WorkerMemoryCeiling(peak uint64, measured int) uint64 {
+	guard := p.WorkerMemoryMax(p.WorkerMemoryGuard, peak, measured)
+	switch {
+	case p.WorkerMemory > 0 && guard > 0:
+		return min(p.WorkerMemory, guard)
+	case p.WorkerMemory > 0:
+		return p.WorkerMemory
+	default:
+		return guard
+	}
+}
+
+// WorkerRoom says why the machine cannot hold another worker of provider yet, or "" when it can: total memory
+// commits up to CommittableLimit in peak forecasts, and the memory available, less held (what the workers running
+// may still take), holds peak, the typical peak of a worker of provider measured over measured workers (Typical),
+// plus WorkerMargin. A machine whose memory is unknown (available 0) has room.
+func (p Policy) WorkerRoom(total, available, held, engaged uint64, provider string, peak uint64, measured int) string {
+	forecast := peak + p.WorkerMargin
+	if limit := p.CommittableLimit(total); total > 0 && limit > 0 && engaged+forecast > limit {
+		why := fmt.Sprintf("load %s commits up to %s of memory", p.NotchName(), size(limit))
+		if engaged > 0 {
+			why += fmt.Sprintf(", %s already engaged", size(engaged))
+		}
+		return why + fmt.Sprintf(", needs %s", size(forecast))
+	}
 	free := available - min(held, available)
-	if available == 0 || free >= peak+p.WorkerMargin {
+	if available == 0 || free >= forecast {
 		return ""
 	}
 	how := "none measured yet"
@@ -292,8 +641,12 @@ func (m *Monitor) Snapshot() Snapshot {
 	if !m.at.IsZero() && time.Since(m.at) < m.every {
 		return m.last
 	}
-	s, err := m.read()
-	if err != nil {
+	var s Snapshot
+	var err error
+	if m.read != nil {
+		s, err = m.read()
+	}
+	if m.read == nil || err != nil {
 		s = Snapshot{Cores: runtime.NumCPU()}
 	}
 	s.OS, s.Arch = runtime.GOOS, runtime.GOARCH
@@ -311,8 +664,9 @@ func (m *Monitor) Snapshot() Snapshot {
 // not).
 func (m *Monitor) Capacity() (slots int, rule, pressure string) {
 	s := m.Snapshot()
-	slots, rule = m.policy.Slots(s)
-	return slots, rule, m.policy.Pressure(s)
+	p := m.Policy()
+	slots, rule = p.Slots(s)
+	return slots, rule, p.Pressure(s)
 }
 
 // Available is the memory available to new programs now, in bytes; 0 when unknown.
@@ -324,8 +678,24 @@ func (m *Monitor) Available() uint64 {
 	return s.MemoryAvailable
 }
 
+// Total is the total memory of the machine in bytes; 0 when unknown.
+func (m *Monitor) Total() uint64 {
+	return m.Snapshot().MemoryTotal
+}
+
 // Pressure says why the machine is under pressure now, or "".
-func (m *Monitor) Pressure() string { return m.policy.Pressure(m.Snapshot()) }
+func (m *Monitor) Pressure() string { return m.Policy().Pressure(m.Snapshot()) }
 
 // Policy is the monitor's policy.
-func (m *Monitor) Policy() Policy { return m.policy }
+func (m *Monitor) Policy() Policy {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.policy
+}
+
+// SetPolicy sets the monitor's policy.
+func (m *Monitor) SetPolicy(p Policy) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.policy = p
+}

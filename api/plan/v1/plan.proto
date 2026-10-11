@@ -5,6 +5,7 @@ syntax = "proto3";
 package plan.v1;
 
 import "buf/validate/validate.proto";
+import "djinn/v1/load.proto";
 import "djinn/v1/options.proto";
 import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
@@ -33,6 +34,28 @@ message Project {
   repeated Summon summons = 7;
   // The last run of each of its checks, and of its setup, as Djinn integrated and pushed its wishes' work.
   repeated CheckRun check_runs = 8;
+  // Out of sync with its remote on the integration branch.
+  ProjectSync sync = 9;
+  // When Djinn pushes its integration branch: standard cadence or on demand.
+  ProjectPush push = 10;
+  // Push strategy for the project's wishes: one integration branch per wish (wish) or per azima (azima).
+  PushStrategy push_strategy = 11;
+}
+
+// ProjectSync says how the project's integration branch stands against its remote target for a wish.
+message ProjectSync {
+  // The wish whose integration branch this is.
+  string wish_id = 1;
+  // The local integration branch.
+  string branch = 2;
+  // The remote name: origin.
+  string remote = 3;
+  // The target branch on remote: feat/x.
+  string target = 4;
+  // How many commits the local branch is ahead of the remote target.
+  int32 ahead = 5;
+  // How many commits the local branch is behind the remote target.
+  int32 behind = 6;
 }
 
 // CheckRun is the last run of a project's check (ProjectCheck), or of its setup command.
@@ -134,13 +157,11 @@ message ProjectSettings {
   }];
   // The command that installs the project's new build, run in the project's folder of the integration worktree at
   // the commit: "go tool task install". Once Djinn has pushed the integration branch, the window proposes it, with
-  // what changed and what to check, and restarts Djinn on the build when it installed a newer Djinn. Its words are
+  // what changed, and restarts Djinn on the build when it installed a newer Djinn. Its words are
   // split on spaces, without a shell. Not set: nothing is proposed.
   optional string install = 9 [(buf.validate.field).string.max_len = 500];
-  // Djinn starts a small worker on each question of a wish's lead: after an answer, one that turns the decision into
-  // tasks; after "Enlighten me", one that investigates and revises the question. Not set: on. false: the lead is told
-  // to act on the answer itself, as before.
-  optional bool question_workers = 10;
+  // Deprecated: set answer_workers and enlighten_workers instead; sets both when given.
+  optional bool question_workers = 10 [deprecated = true];
   // Model of those question workers, a model of the workers' provider. Not set: sonnet for claude, the provider's own
   // default for another; empty: the provider's own default.
   optional string question_model = 11 [
@@ -183,6 +204,29 @@ message ProjectSettings {
   // left to the person's click. On a branch, a release never installs over the branch's build: main's merge brings it.
   // Not set: on.
   optional bool install_releases = 18;
+  // Kind of agent of the question workers. Not set: the project's provider when that provider can run
+  // read-only (claude, codex), else claude. A watcher is never a question worker.
+  optional Provider question_provider = 19 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0, 5]
+  }];
+  // When Djinn pushes the project's integration branch: standard (at each azima's end or on cadence) or on demand.
+  // Not set: standard.
+  optional ProjectPush push = 20 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // Djinn starts a small worker to turn a developer's answer into tasks. Not set: off (the lead turns answers into
+  // tasks itself).
+  optional bool answer_workers = 21;
+  // Djinn starts a small worker to investigate and revise a question after "Enlighten me". Not set: on.
+  optional bool enlighten_workers = 22;
+  // Push strategy for the project's wishes: one integration branch per wish (wish) or per azima (azima).
+  // Not set: wish.
+  optional PushStrategy push_strategy = 23 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.
@@ -195,6 +239,16 @@ enum MergeMain {
   MERGE_MAIN_COMMIT = 2;
   // Never: the person keeps the branch up with main.
   MERGE_MAIN_OFF = 3;
+}
+
+// ProjectPush is when Djinn pushes a project's integration branch: at today's cadence, or only by the developer.
+enum ProjectPush {
+  // Not set: standard.
+  PROJECT_PUSH_UNSPECIFIED = 0;
+  // Standard: pushes at an azima's end or on the cadence; the wish's push_mode still applies.
+  PROJECT_PUSH_STANDARD = 1;
+  // On demand: Djinn commits each task's work into the integration branch as now, but never pushes by itself and asks nothing; only the developer's Push does.
+  PROJECT_PUSH_ON_DEMAND = 2;
 }
 
 // ProjectCheck is a command Djinn runs on a project's work: checks { name: "lint" command: "go tool task lint" when:
@@ -246,6 +300,8 @@ enum SettingSource {
   SETTING_SOURCE_REPOSITORY = 2;
   // The developer's own file, in Djinn's data folder.
   SETTING_SOURCE_DEVELOPER = 3;
+  // The wish itself, set for this wish specifically.
+  SETTING_SOURCE_WISH = 4;
 }
 
 // ProjectSetting is one setting of a project, as its workers get it.
@@ -316,6 +372,9 @@ message Wish {
   // The codes of the wish's tasks and azimas that were deleted (djinn task delete), W12 or T27: never given again,
   // so that a commit, a plan file or a decision that names one names one task only.
   repeated string retired_codes = 19;
+  // Push strategy for the wish: wish (one integration branch per wish) or azima (one branch per azima).
+  // Unset: takes the project's default.
+  PushStrategy push_strategy = 20;
 }
 
 // PushMode is how Djinn pushes a wish's integration branch to its remote once a push is due.
@@ -326,6 +385,16 @@ enum PushMode {
   PUSH_MODE_AUTO = 1;
   // Djinn asks first: "Push feat/x to origin?", pushed in one click.
   PUSH_MODE_ASK = 2;
+}
+
+// PushStrategy is how a wish's tasks integrate their work into Git branches: one branch per wish or one per azima.
+enum PushStrategy {
+  // Not set: wish.
+  PUSH_STRATEGY_UNSPECIFIED = 0;
+  // Wish: one integration branch per wish and per project.
+  PUSH_STRATEGY_WISH = 1;
+  // Azima: one integration branch per azima.
+  PUSH_STRATEGY_AZIMA = 2;
 }
 
 // WishPush is where the push of a wish's integration branch to its remote stands, in one of its projects. Only Djinn
@@ -457,9 +526,10 @@ enum WishState {
 // The lead of a wish: an agent session the user talks to, in the lead's terminal. Never a secret: the provider and
 // the session's identifier, which the agent's own command line resumes.
 message Lead {
-  // Kind of agent: claude or codex.
+  // Kind of agent: claude, codex or antigravity.
   Provider provider = 1;
-  // Identifier of the session, as the agent names it: claude --resume takes it.
+  // Identifier of the session, as the agent names it: claude --resume takes it. An antigravity lead does not
+  // know its session id and leaves it empty; djinn wish resume resumes the folder's most recent conversation (agy --continue).
   string session_id = 2;
   // Folder the session runs in on this machine: an agent finds its sessions by folder. An export replaces it by
   // its project's name or ~, and an import puts this machine's folder back when it knows it.
@@ -712,6 +782,20 @@ message Task {
   // For a review worker, which Djinn starts by itself when a task's worktree holds changes not committed: what it
   // reviews. It works in that task's worktree, on its branch, and its branch integrates like any task's.
   TaskReview review = 46;
+  // What the task was asked to do, from its latest prompt: computed on every read, never stored.
+  string prompt = 47;
+  // Provider the task ran with before it was changed (TaskService.Update); empty if never changed.
+  Provider prior_provider = 48;
+  // For an azima: its description, read from its plan file's body or set when spawned or edited with djinn task describe.
+  string description = 49;
+  // For an azima: whether it is a draft (AzimaState.AZIMA_STATE_DRAFT), not ready to spawn parts into nor counted in wish progress.
+  bool draft = 50;
+  // How many times Djinn replayed the task on an environment failure (at most twice).
+  int32 env_replays = 51;
+  // Build (version) of djinn when the environment failure happened.
+  string env_build = 52 [(buf.validate.field).string.max_len = 128];
+  // Cause of the environment failure; empty when it failed for a work failure.
+  string env_cause = 53 [(buf.validate.field).string.max_len = 1024];
 }
 
 // TaskReview is what a review worker reviews: work its worker left in its worktree without committing it.
@@ -874,6 +958,14 @@ message Azima {
   int32 parts = 3;
   int32 parts_done = 4;
   int32 parts_running = 5;
+  // Integration branch of the azima: djinn/<code-slug>.
+  string branch = 6;
+  // Branch the azima is based on when stacked, empty when based on main.
+  string base_branch = 7;
+  // Out of sync with its remote on the azima's branch.
+  ProjectSync sync = 8;
+  // Pull request for the azima's branch, once it exists.
+  AzimaPr pr = 9;
 }
 
 // AzimaState is where an azima stands.
@@ -891,6 +983,24 @@ enum AzimaState {
   // Done-when box of its plan file waits for a proof no worker can give (Task.proof_needs). It waits for a person, a
   // machine, a release or a real model, never for work.
   AZIMA_STATE_AWAITING_PROOF = 4;
+  // A draft azima: not formalized yet, has a description but no parts spawned into it yet, and not counted in wish progress.
+  AZIMA_STATE_DRAFT = 5;
+}
+
+// AzimaPrState is where a pull request for an azima stands.
+enum AzimaPrState {
+  AZIMA_PR_STATE_UNSPECIFIED = 0;
+  AZIMA_PR_STATE_PROPOSED = 1;
+  AZIMA_PR_STATE_OPEN = 2;
+  AZIMA_PR_STATE_MERGED = 3;
+}
+
+// AzimaPr describes the pull request of an azima branch.
+message AzimaPr {
+  // The URL of the pull request.
+  string url = 1;
+  // Where the pull request stands: proposed, open, merged.
+  AzimaPrState state = 2;
 }
 
 // Resources is what a task's worker uses of the machine: its process group and every process it started, even one
@@ -1053,6 +1163,11 @@ message Question {
   // merge"): the question waits for the developer, orange, under those words. Empty: it can wait. A question a waiting
   // task needs is blocking whatever this says: Djinn computes that from the tasks.
   string before = 17 [(buf.validate.field).string.max_len = 100];
+  // A move only the developer can make through the interface or outside Djinn: push a tag, open a PR, create a
+  // release, test on a machine Djinn lacks, install an update. Shown as "Your move" in the attention bar.
+  bool move = 18;
+  // Closed without an answer, shown as withdrawn, not a decision, out of open questions.
+  Withdrawal withdrawal = 19;
 }
 
 // Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or
@@ -1163,6 +1278,14 @@ message Answer {
   google.protobuf.Timestamp create_time = 3;
 }
 
+// The withdrawal of an open question: closed without an answer, not a decision.
+message Withdrawal {
+  // Why the question was withdrawn.
+  string note = 1 [(buf.validate.field).string.max_len = 2000];
+  // When the question was withdrawn.
+  google.protobuf.Timestamp create_time = 2;
+}
+
 // QuestionRef points to a question by its code or by its identifier.
 message QuestionRef {
   oneof ref {
@@ -1199,6 +1322,16 @@ service QuestionService {
   // Revise an open question after investigating: its context, options or recommendation. The former ones stay in its
   // rounds, and the question waits for the developer again.
   rpc Revise(QuestionServiceReviseRequest) returns (QuestionServiceReviseResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Move an open question to another wish. Its code is retired in this wish; it receives the next code in the other.
+  rpc Move(QuestionServiceMoveRequest) returns (QuestionServiceMoveResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Withdraw an open question without an answer.
+  rpc Withdraw(QuestionServiceWithdrawRequest) returns (QuestionServiceWithdrawResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
@@ -1285,6 +1418,9 @@ message QuestionServiceAskRequest {
   // What the answer is needed before, in a few words, like "before the merge": the question waits for the developer
   // under those words. Empty: it can wait.
   string before = 8 [(buf.validate.field).string.max_len = 100];
+  // A move only the developer can make: push a tag, open or merge a PR, start a release, check on a Mac or Windows,
+  // grant a right, install and restart.
+  bool move = 9;
 }
 
 message QuestionServiceAskResponse {
@@ -1325,11 +1461,60 @@ message QuestionServiceListRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
+  // The most questions to return. Not set: 50. Max: 200.
+  int32 page_size = 4 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 200
+  }];
+  // The page token from a previous list response, to fetch the next page.
+  string page_token = 5 [(buf.validate.field).string.max_len = 500];
 }
 
 message QuestionServiceListResponse {
   // The questions.
   repeated Question questions = 1;
+  // Token to retrieve the next page, or empty if there are no more pages.
+  string next_page_token = 2;
+  // Total number of questions matching the request.
+  int32 total = 3;
+}
+
+message QuestionServiceMoveRequest {
+  // The question to move: its code, like Q03, or its identifier.
+  QuestionRef question = 1 [(buf.validate.field).required = true];
+  // The wish to move the question to: its code (W12), identifier, or title.
+  string wish = 2 [(buf.validate.field).string.max_len = 100];
+  // Move tasks naming this question as their decision along with it.
+  bool follow = 3;
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 4 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message QuestionServiceMoveResponse {
+  // The question moved, in its new wish.
+  Question question = 1;
+  // The tasks that followed the question into the new wish.
+  repeated Task tasks = 2;
+}
+
+message QuestionServiceWithdrawRequest {
+  // The question to withdraw: its code, like Q03, or its identifier.
+  QuestionRef question = 1 [(buf.validate.field).required = true];
+  // Why the question was withdrawn.
+  string note = 2 [(buf.validate.field).string.max_len = 2000];
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message QuestionServiceWithdrawResponse {
+  // The question, withdrawn.
+  Question question = 1;
 }
 
 // Projects Djinn works in.
@@ -1349,6 +1534,21 @@ service ProjectService {
   rpc Show(ProjectServiceShowRequest) returns (ProjectServiceShowResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Push the project's integration branch for a wish: runs push checks under gates, never with --force.
+  rpc Push(ProjectServicePushRequest) returns (ProjectServicePushResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Change when Djinn pushes the project's integration branch (standard cadence or on demand).
+  rpc SetPush(ProjectServiceSetPushRequest) returns (ProjectServiceSetPushResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
+  rpc PushStrategy(ProjectServicePushStrategyRequest) returns (ProjectServicePushStrategyResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
 }
 
@@ -1398,6 +1598,59 @@ message ProjectServiceShowResponse {
   // files resolve them. Their last runs are the project's check_runs.
   string setup = 6;
   repeated ProjectCheck checks = 7;
+}
+
+message ProjectServicePushRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // The wish whose integration branch to push; empty: the active wish on this project.
+  optional string wish = 2 [(buf.validate.field).string.max_len = 100];
+}
+
+message ProjectServicePushResponse {
+  // The push recorded.
+  IntegrationPush push = 1;
+}
+
+message ProjectServiceSetPushRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // When Djinn pushes: standard cadence or on demand.
+  ProjectPush push = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum = {
+      defined_only: true
+      not_in: [0]
+    }
+  ];
+}
+
+message ProjectServiceSetPushResponse {
+  // The project updated.
+  Project project = 1;
+}
+
+message ProjectServicePushStrategyRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // Push strategy for the project's wishes: wish or azima. Unset: show the current strategy and its source.
+  optional PushStrategy strategy = 2 [(buf.validate.field).enum.defined_only = true];
+}
+
+message ProjectServicePushStrategyResponse {
+  // The effective push strategy: wish or azima.
+  PushStrategy strategy = 1;
+  // Where the setting comes from: default, repository, or developer.
+  SettingSource source = 2;
 }
 
 // Skills: what a project's agents know how to do, one folder each in the Agent Skills format (a SKILL.md, maybe
@@ -1746,6 +1999,11 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Rename a wish: what you wish, in a sentence, in place of what it had.
+  rpc Rename(WishServiceRenameRequest) returns (WishServiceRenameResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the
   // store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks
   // running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
@@ -1768,6 +2026,11 @@ service WishService {
   // projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
   // itself or asks first. Only what is given changes.
   rpc SetIntegration(WishServiceSetIntegrationRequest) returns (WishServiceSetIntegrationResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Show or change the push strategy of a wish: wish (one branch per wish) or azima (one branch per azima).
+  rpc PushStrategy(WishServicePushStrategyRequest) returns (WishServicePushStrategyResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
@@ -1881,6 +2144,8 @@ message WishServiceWatchResponse {
   // them and keep the others. Unset in the first message, or when too many changed at once to send: then read again
   // what changes names.
   WishChanges changed = 3;
+  // The machine's operating load notch, when the change includes CHANGE_LOAD, or in the first message.
+  optional djinn.v1.LoadNotch load = 4;
 }
 
 // WishChanges are the tasks, questions and blocks of a wish that changed, whole.
@@ -1912,6 +2177,8 @@ enum Change {
   CHANGE_INBOX = 6;
   // Its tilasms: one put, restored or imported.
   CHANGE_TILASM = 7;
+  // The machine operating load notch changed.
+  CHANGE_LOAD = 8;
 }
 
 message WishServiceRenderRequest {
@@ -1996,11 +2263,30 @@ message WishServiceSetIntegrationRequest {
   }];
   // auto: Djinn pushes by itself; ask: it asks first. Unset: unchanged.
   PushMode push_mode = 6 [(buf.validate.field).enum.defined_only = true];
+  // Push strategy for the wish: wish or azima. Unset: unchanged.
+  optional PushStrategy push_strategy = 7 [(buf.validate.field).enum.defined_only = true];
 }
 
 message WishServiceSetIntegrationResponse {
   // The wish, with its integration settings.
   Wish wish = 1;
+}
+
+message WishServicePushStrategyRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Push strategy for the wish: wish or azima. Unset: show the current strategy and its source.
+  optional PushStrategy strategy = 2 [(buf.validate.field).enum.defined_only = true];
+}
+
+message WishServicePushStrategyResponse {
+  // The effective push strategy: wish or azima.
+  PushStrategy strategy = 1;
+  // Where the setting comes from: default, repository, developer, or wish.
+  SettingSource source = 2;
 }
 
 message WishServiceGrantRequest {
@@ -2116,6 +2402,9 @@ message WishServiceMakeRequest {
   repeated string project_ids = 2 [(buf.validate.field).repeated.items.string.uuid = true];
   // Make it paused: it waits, out of the three active wishes. Three being active, it is made paused anyway.
   bool paused = 3;
+  // Push strategy for the wish: wish (one integration branch per wish) or azima (one branch per azima).
+  // Unset: takes the project's default.
+  optional PushStrategy push_strategy = 4 [(buf.validate.field).enum.defined_only = true];
 }
 
 message WishServiceMakeResponse {
@@ -2197,7 +2486,7 @@ message WishServiceSetLeadRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.pattern = "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
   ];
-  // Kind of agent: claude (the default) or codex.
+  // Kind of agent: claude (the default), codex or antigravity.
   Provider provider = 3;
   // Folder the session runs in. By default, the folder of the wish's first project. Never the home folder, nor
   // a folder above it.
@@ -2221,6 +2510,24 @@ message WishServiceDescribeRequest {
 
 message WishServiceDescribeResponse {
   // The wish, with its description.
+  Wish wish = 1;
+}
+
+message WishServiceRenameRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What you wish, in a sentence.
+  string title = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 500
+  ];
+}
+
+message WishServiceRenameResponse {
+  // The wish, with its new title.
   Wish wish = 1;
 }
 
@@ -2453,11 +2760,22 @@ message BlockServiceListRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
+  // The most blocks to return. Not set: 50. Max: 200.
+  int32 page_size = 4 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 200
+  }];
+  // The page token from a previous list response, to fetch the next page.
+  string page_token = 5 [(buf.validate.field).string.max_len = 500];
 }
 
 message BlockServiceListResponse {
   // The blocks, by position.
   repeated Block blocks = 1;
+  // Token to retrieve the next page, or empty if there are no more pages.
+  string next_page_token = 2;
+  // Total number of blocks matching the request.
+  int32 total = 3;
 }
 
 message BlockServiceDeleteRequest {
@@ -2640,6 +2958,29 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Update a task: only the fields given change. A task not started (planned, waiting) may change everything; a running
+  // or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
+  // provider, model, prompt (for its next continue), and azima, never its dependencies once it ran.
+  rpc Update(TaskServiceUpdateRequest) returns (TaskServiceUpdateResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+    option (djinn.v1.method_alias) = "set-agent";
+  }
+  // Edit the description of an azima.
+  rpc Describe(TaskServiceDescribeRequest) returns (TaskServiceDescribeResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Open a draft azima: turns it open, ready for parts to be spawned, and notifies the wish's lead.
+  rpc Open(TaskServiceOpenRequest) returns (TaskServiceOpenResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Move an azima (a draft, or an azima no worker runs with parts that have not started) to another wish.
+  rpc Move(TaskServiceMoveRequest) returns (TaskServiceMoveResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 message TaskServiceSpawnRequest {
@@ -2725,6 +3066,10 @@ message TaskServiceSpawnRequest {
     (buf.validate.field).repeated.items.string.min_len = 1,
     (buf.validate.field).repeated.items.string.max_len = 1000
   ];
+  // For an azima: mark it as a draft (AzimaState.AZIMA_STATE_DRAFT), not ready to spawn parts into.
+  bool draft = 20;
+  // For an azima: its description, explaining its purpose or design before it is opened.
+  string description = 21 [(buf.validate.field).string.max_len = 20000];
 }
 
 message TaskServiceSpawnResponse {
@@ -2743,11 +3088,24 @@ message TaskServiceListRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
+  // The most tasks to return. Not set: 50. Max: 200.
+  int32 page_size = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 200
+  }];
+  // The page token from a previous list response, to fetch the next page.
+  string page_token = 4 [(buf.validate.field).string.max_len = 500];
+  // Only the failed tasks that wait for the lead.
+  bool failed = 5;
 }
 
 message TaskServiceListResponse {
   // The tasks.
   repeated Task tasks = 1;
+  // Token to retrieve the next page, or empty if there are no more pages.
+  string next_page_token = 2;
+  // Total number of tasks matching the request.
+  int32 total = 3;
 }
 
 message TaskServiceGetRequest {
@@ -2945,8 +3303,8 @@ message TaskServiceContinueRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.uuid = true
   ];
-  // What to ask its worker now, on its session.
-  string prompt = 2 [
+  // What to ask its worker now, on its session. Empty: uses the task's prompt (updated beforehand).
+  optional string prompt = 2 [
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 200000
   ];
@@ -2956,6 +3314,103 @@ message TaskServiceContinueRequest {
 
 message TaskServiceContinueResponse {
   // The task, planned again: running, or waiting with its reason.
+  Task task = 1;
+}
+
+message TaskServiceUpdateRequest {
+  // The task.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What the task does, in a sentence.
+  optional string title = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 500
+  ];
+  // What to ask the worker.
+  optional string prompt = 3 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 200000
+  ];
+  // Kind of agent that works on the task.
+  optional Provider provider = 4 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0, 5]
+  }];
+  // Model of the agent; empty for the provider's default.
+  optional string model = 5 [(buf.validate.field).string.max_len = 200];
+  // The azima the task belongs to: its code (T07) or its identifier. Empty: the task is part of no azima.
+  optional string part_of = 6 [(buf.validate.field).string.max_len = 64];
+  // What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
+  // Repeat it, or separate them with commas: --after W1,W2.
+  repeated string after = 7 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
+  // The decision the task comes from: an answered question's code (Q43), or the id of a block of kind decision. Empty: clear it.
+  optional string decision = 8 [
+    (buf.validate.field).string.pattern = "^(|[Qq][0-9]{2,3}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+  ];
+  // Most the worker may spend, in US dollars, when the provider can enforce it. 0: no limit.
+  optional double max_budget_usd = 9 [(buf.validate.field).double.gte = 0];
+  // A path the task writes, in the project's folder; empty for the whole folder.
+  repeated string write_scopes = 10 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
+}
+
+message TaskServiceUpdateResponse {
+  // The task, updated.
+  Task task = 1;
+}
+
+message TaskServiceDescribeRequest {
+  // The azima to describe: its code (T07) or identifier.
+  string azima = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 64
+  ];
+  // The description of the azima, explaining its purpose or design.
+  string text = 2 [(buf.validate.field).string.max_len = 20000];
+}
+
+message TaskServiceDescribeResponse {
+  // The azima updated.
+  Task task = 1;
+}
+
+message TaskServiceOpenRequest {
+  // The draft azima to open: its code (T07) or identifier.
+  string azima = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 64
+  ];
+}
+
+message TaskServiceOpenResponse {
+  // The azima opened.
+  Task task = 1;
+}
+
+message TaskServiceMoveRequest {
+  // The azima to move: its code (T07) or identifier.
+  string azima = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 64
+  ];
+  // The wish to move the azima to: its code (W12) or identifier.
+  string wish = 2 [(buf.validate.field).string.max_len = 64];
+}
+
+message TaskServiceMoveResponse {
+  // The azima moved, in its new wish.
   Task task = 1;
 }
 

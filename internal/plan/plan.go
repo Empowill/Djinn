@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
@@ -38,20 +39,34 @@ func Entities() []proto.Message {
 // identity of their own.
 const actor = "local"
 
+// Pusher pushes an integration branch and computes how far it is out of sync with its remote.
+type Pusher interface {
+	Push(ctx context.Context, wishID, projectID string) (*planv1.IntegrationPush, error)
+	Sync(ctx context.Context, wish *planv1.Wish, project *planv1.Project) (*planv1.ProjectSync, error)
+}
+
 // Option sets what the plan services reach beyond the store.
 type Option func(*options)
 
 type options struct {
-	leads    Leads
-	pages    *Pages
-	language string
-	home     string
-	watchers SpawnWatcher
-	workers  WishWorkers
-	answered []AnswerHook
-	show     func(wishID, tilasmID string) bool
-	url      func(id string) string
-	enlight  []func(context.Context, *planv1.Question, string)
+	leads           Leads
+	pages           *Pages
+	language        string
+	home            string
+	watchers        SpawnWatcher
+	workers         WishWorkers
+	answered        []AnswerHook
+	show            func(wishID, tilasmID string) bool
+	url             func(id string) string
+	enlight         []func(context.Context, *planv1.Question, string)
+	load            func() djinnv1.LoadNotch
+	loadBroadcaster *func(djinnv1.LoadNotch)
+	pusher          Pusher
+}
+
+// WithPusher gives ProjectService the pusher for pushing and computing sync status.
+func WithPusher(p Pusher) Option {
+	return func(o *options) { o.pusher = p }
 }
 
 // WithShowTilasm gives TilasmService.Open the window: show shows a tilasm in its wish's Tilasms tab, and tells whether
@@ -89,6 +104,14 @@ func WithEnlightened(f func(context.Context, *planv1.Question, string)) Option {
 	return func(o *options) { o.enlight = append(o.enlight, f) }
 }
 
+// WithLoad gives the wishes Djinn's current load notch, for WishService.Watch.
+func WithLoad(load func() djinnv1.LoadNotch) Option { return func(o *options) { o.load = load } }
+
+// WithLoadBroadcaster gives the caller what notifies the open Watch streams of a load notch change.
+func WithLoadBroadcaster(b *func(djinnv1.LoadNotch)) Option {
+	return func(o *options) { o.loadBroadcaster = b }
+}
+
 // Handlers returns the Connect handlers of the plan services, by path prefix.
 func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	var o options
@@ -97,10 +120,13 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	}
 	out := map[string]http.Handler{}
 	opt := connect.WithInterceptors(Validate)
-	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home}, opt)
+	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home, Pusher: o.pusher}, opt)
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers,
-		Workers: o.workers, Home: o.home}
+		Workers: o.workers, Home: o.home, Load: o.load}
+	if o.loadBroadcaster != nil {
+		*o.loadBroadcaster = wishes.ChangeLoad
+	}
 	var told Told
 	if o.leads != nil {
 		told = wishes.Answered // The lead learns each answer, after the harness, and what it did.
@@ -110,7 +136,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	if o.leads != nil {
 		o.enlight = append(o.enlight, wishes.Enlightened) // The lead learns each request to investigate, after the harness.
 	}
-	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle}
+	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle, Workers: o.workers}
 	p, h = planv1connect.NewQuestionServiceHandler(questions, opt)
 	out[p] = h
 	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
@@ -171,7 +197,77 @@ type Projects struct {
 	planv1connect.UnimplementedProjectServiceHandler
 	Store *store.Store
 	// Home is Djinn's data folder, which holds the developer's own settings of each project; empty: none are read.
-	Home string
+	Home   string
+	Pusher Pusher
+}
+
+func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) {
+	if project == nil {
+		return
+	}
+	repo, dev, _ := loadSettings(p.Home, project)
+	settings := ResolveSettings(repo, dev)
+	project.Push = settings.Push
+	project.PushStrategy = settings.PushStrategy
+
+	if p.Pusher != nil {
+		wish, _ := p.wishForProject(ctx, project.GetId(), "")
+		if wish != nil {
+			if sync, err := p.Pusher.Sync(ctx, wish, project); err == nil && sync != nil {
+				project.Sync = sync
+			}
+		}
+	}
+}
+
+func (p *Projects) wishForProject(ctx context.Context, projectID, wishNameOrID string) (*planv1.Wish, error) {
+	if wishNameOrID != "" {
+		if w, err := store.Get[*planv1.Wish](ctx, p.Store, wishNameOrID); err == nil {
+			return w, nil
+		}
+		all, err := store.List[*planv1.Wish](ctx, p.Store, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, w := range all {
+			if strings.EqualFold(w.GetId(), wishNameOrID) || strings.EqualFold(w.GetTitle(), wishNameOrID) {
+				return w, nil
+			}
+		}
+		return nil, fmt.Errorf("no wish %q", wishNameOrID)
+	}
+
+	wishes, err := store.List[*planv1.Wish](ctx, p.Store, nil)
+	if err != nil {
+		return nil, err
+	}
+	var bestActive, bestPaused, bestOther *planv1.Wish
+	for _, w := range wishes {
+		if !slices.Contains(w.GetProjectIds(), projectID) {
+			continue
+		}
+		switch w.GetState() {
+		case planv1.WishState_WISH_STATE_ACTIVE:
+			if bestActive == nil || w.GetRank() < bestActive.GetRank() {
+				bestActive = w
+			}
+		case planv1.WishState_WISH_STATE_PAUSED:
+			if bestPaused == nil || (w.GetCreateTime() != nil && bestPaused.GetCreateTime() != nil && w.GetCreateTime().AsTime().After(bestPaused.GetCreateTime().AsTime())) {
+				bestPaused = w
+			}
+		default:
+			if bestOther == nil || (w.GetCreateTime() != nil && bestOther.GetCreateTime() != nil && w.GetCreateTime().AsTime().After(bestOther.GetCreateTime().AsTime())) {
+				bestOther = w
+			}
+		}
+	}
+	if bestActive != nil {
+		return bestActive, nil
+	}
+	if bestPaused != nil {
+		return bestPaused, nil
+	}
+	return bestOther, nil
 }
 
 func (p *Projects) Add(
@@ -223,6 +319,7 @@ func (p *Projects) Add(
 	if err != nil {
 		return nil, err
 	}
+	p.fillProject(ctx, project)
 	return connect.NewResponse(&planv1.ProjectServiceAddResponse{Project: project}), nil
 }
 
@@ -232,6 +329,9 @@ func (p *Projects) List(
 	projects, err := store.List[*planv1.Project](ctx, p.Store, nil)
 	if err != nil {
 		return nil, Status(err)
+	}
+	for _, project := range projects {
+		p.fillProject(ctx, project)
 	}
 	return connect.NewResponse(&planv1.ProjectServiceListResponse{Projects: projects}), nil
 }
@@ -243,6 +343,7 @@ func (p *Projects) Show(
 	if err != nil {
 		return nil, Status(err)
 	}
+	p.fillProject(ctx, project)
 	repo, dev, problems := loadSettings(p.Home, project)
 	settings := ResolveSettings(repo, dev)
 	out := &planv1.ProjectServiceShowResponse{
@@ -253,6 +354,74 @@ func (p *Projects) Show(
 		out.Problems = append(out.Problems, err.Error())
 	}
 	return connect.NewResponse(out), nil
+}
+
+func (p *Projects) Push(
+	ctx context.Context, req *connect.Request[planv1.ProjectServicePushRequest],
+) (*connect.Response[planv1.ProjectServicePushResponse], error) {
+	if p.Pusher == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("push is unavailable"))
+	}
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	wish, err := p.wishForProject(ctx, project.GetId(), req.Msg.GetWish())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+	if wish == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("no wish for project %s", project.GetName()))
+	}
+	push, err := p.Pusher.Push(ctx, wish.GetId(), project.GetId())
+	if err != nil {
+		var cerr *connect.Error
+		if errors.As(err, &cerr) {
+			return nil, cerr
+		}
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	return connect.NewResponse(&planv1.ProjectServicePushResponse{Push: push}), nil
+}
+
+func (p *Projects) SetPush(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceSetPushRequest],
+) (*connect.Response[planv1.ProjectServiceSetPushResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	err = write(ctx, p.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		return SaveDeveloperPush(p.Home, project.GetId(), req.Msg.GetPush())
+	})
+	if err != nil {
+		return nil, Status(err)
+	}
+	p.fillProject(ctx, project)
+	return connect.NewResponse(&planv1.ProjectServiceSetPushResponse{Project: project}), nil
+}
+
+func (p *Projects) PushStrategy(
+	ctx context.Context, req *connect.Request[planv1.ProjectServicePushStrategyRequest],
+) (*connect.Response[planv1.ProjectServicePushStrategyResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	if req.Msg.Strategy != nil && req.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {
+		err = write(ctx, p.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+			return SaveDeveloperPushStrategy(p.Home, project.GetId(), req.Msg.GetStrategy())
+		})
+		if err != nil {
+			return nil, Status(err)
+		}
+	}
+	repo, dev, _ := loadSettings(p.Home, project)
+	settings := ResolveSettings(repo, dev)
+	return connect.NewResponse(&planv1.ProjectServicePushStrategyResponse{
+		Strategy: settings.PushStrategy,
+		Source:   settings.PushStrategyFrom,
+	}), nil
 }
 
 // unattached returns the project without a folder that has this remote, or else this name, case ignored; nil
@@ -329,6 +498,8 @@ type Wishes struct {
 	// Home is Djinn's data folder, which holds the tilasms' files; empty: a wish with tilasms neither exports nor
 	// imports.
 	Home string
+	// Load reports Djinn's current load notch; nil where djinn up does not run machine monitoring.
+	Load func() djinnv1.LoadNotch
 
 	watch watchers // the open Watch streams
 }
@@ -351,7 +522,10 @@ func (w *Wishes) Make(
 // makeWish stores the wish req asks for in tx: last by rank among the active ones, or paused. The caller journals
 // the command.
 func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest) (*planv1.Wish, error) {
-	wish := &planv1.Wish{Id: store.NewID(), Title: req.GetTitle(), CreateTime: timestamppb.Now()}
+	wish := &planv1.Wish{
+		Id: store.NewID(), Title: req.GetTitle(), CreateTime: timestamppb.Now(),
+		PushStrategy: req.GetPushStrategy(),
+	}
 	for _, id := range req.GetProjectIds() {
 		project, err := store.Get[*planv1.Project](ctx, tx, id)
 		if err != nil {
@@ -462,6 +636,32 @@ func (w *Wishes) Describe(
 	return connect.NewResponse(&planv1.WishServiceDescribeResponse{Wish: wish}), nil
 }
 
+// Rename sets the wish's title, in place of what it had.
+func (w *Wishes) Rename(
+	ctx context.Context, req *connect.Request[planv1.WishServiceRenameRequest],
+) (*connect.Response[planv1.WishServiceRenameResponse], error) {
+	title := strings.TrimSpace(req.Msg.GetTitle())
+	if title == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("title is required"))
+	}
+	var wish *planv1.Wish
+	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if wish, err = store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		wish.Title = title
+		return tx.Put(wish)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := fill(ctx, w.Store, wish); err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.WishServiceRenameResponse{Wish: wish}), nil
+}
+
 // AllowanceOf is the right wish allows its workers in the project projectID: ALLOWANCE_NONE when it allows none.
 func AllowanceOf(wish *planv1.Wish, projectID string) planv1.Allowance {
 	for _, a := range wish.GetAllowances() {
@@ -485,6 +685,8 @@ type Questions struct {
 	// Settle, when set, acts on an answer in the transaction that stores it, and returns what follows once it is
 	// stored, if anything: a question that routes a request files it, or makes its wish.
 	Settle Settle
+	// Workers tells whether a task is running.
+	Workers WishWorkers
 }
 
 // AnswerHook is called with a question once its answer is stored. It says what it did with the answer, for the
@@ -529,6 +731,7 @@ func (q *Questions) Ask(
 		Id: store.NewID(), WishId: req.Msg.GetWishId(), Text: req.Msg.GetText(), Options: req.Msg.GetOptions(),
 		Context: req.Msg.GetContext(), Recommendation: req.Msg.GetRecommendation(), CreateTime: timestamppb.Now(),
 		Icon: req.Msg.GetIcon(), TaskId: req.Msg.GetTaskId(), Before: strings.TrimSpace(req.Msg.GetBefore()),
+		Move: req.Msg.GetMove(),
 	}
 	if err := checkIcon(question.GetIcon()); err != nil {
 		return nil, err
@@ -548,13 +751,27 @@ func (q *Questions) Ask(
 	return connect.NewResponse(&planv1.QuestionServiceAskResponse{Question: question}), nil
 }
 
-// Ask stores question, new, in tx with the next code of its wish. The caller journals the command that asks it.
-func Ask(ctx context.Context, tx *store.Tx, question *planv1.Question) error {
-	// The next code follows the highest one of the wish. Questions are never deleted, so a code is never given
-	// twice; transactions run one at a time, and the unique index guards it anyway.
-	asked, err := store.List[*planv1.Question](ctx, tx, store.Where{"wish_id": question.GetWishId()})
+func (q *Questions) taskRuns(t *planv1.Task) bool {
+	if working(t) {
+		return true
+	}
+	if q.Workers != nil && q.Workers.HasRun(t.GetId()) {
+		return true
+	}
+	return false
+}
+
+// NextQuestionCode is the code of a new question of the wish wishID: Q01, Q02…
+// The number after the highest one its questions have or its retired codes had (Wish.retired_codes),
+// so that a code is never given twice, deleted or moved.
+func NextQuestionCode(ctx context.Context, r store.Reader, wishID string) (string, error) {
+	wish, err := store.Get[*planv1.Wish](ctx, r, wishID)
 	if err != nil {
-		return err
+		return "", err
+	}
+	asked, err := store.List[*planv1.Question](ctx, r, store.Where{"wish_id": wishID})
+	if err != nil {
+		return "", err
 	}
 	last := 0
 	for _, a := range asked {
@@ -563,10 +780,25 @@ func Ask(ctx context.Context, tx *store.Tx, question *planv1.Question) error {
 			last = n
 		}
 	}
-	if last >= maxCode {
-		return connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("this wish has used its %d question codes", maxCode))
+	for _, code := range wish.GetRetiredCodes() {
+		var n int
+		if _, err := fmt.Sscanf(code, "Q%d", &n); err == nil && n > last {
+			last = n
+		}
 	}
-	question.Code = fmt.Sprintf("Q%02d", last+1)
+	if last >= maxCode {
+		return "", connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("this wish has used its %d question codes", maxCode))
+	}
+	return fmt.Sprintf("Q%02d", last+1), nil
+}
+
+// Ask stores question, new, in tx with the next code of its wish. The caller journals the command that asks it.
+func Ask(ctx context.Context, tx *store.Tx, question *planv1.Question) error {
+	code, err := NextQuestionCode(ctx, tx, question.GetWishId())
+	if err != nil {
+		return err
+	}
+	question.Code = code
 	return tx.Put(question)
 }
 
@@ -579,6 +811,9 @@ func (q *Questions) Answer(
 		var err error
 		if question, err = find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId()); err != nil {
 			return err
+		}
+		if question.GetWithdrawal() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s was withdrawn", question.GetCode()))
 		}
 		if question.GetRoute() != nil && question.GetAnswer() != nil {
 			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
@@ -693,15 +928,232 @@ func (q *Questions) List(
 		return nil, Status(err)
 	}
 	since := req.Msg.GetSince()
-	res := &planv1.QuestionServiceListResponse{}
+	var matching []*planv1.Question
 	for _, question := range all {
-		if req.Msg.GetOpen() && question.GetAnswer() != nil {
+		if req.Msg.GetOpen() && (question.GetAnswer() != nil || question.GetWithdrawal() != nil) {
 			continue
 		}
 		if since != nil && question.GetCreateTime().AsTime().Before(since.AsTime()) {
 			continue
 		}
-		res.Questions = append(res.Questions, question)
+		matching = append(matching, question)
 	}
-	return connect.NewResponse(res), nil
+	page, nextToken, total, err := Paginate(matching, req.Msg.GetPageSize(), req.Msg.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.QuestionServiceListResponse{
+		Questions:     page,
+		NextPageToken: nextToken,
+		Total:         total,
+	}), nil
+}
+
+// Move moves an open question to another wish, optionally along with tasks that name it as their decision.
+func (q *Questions) Move(
+	ctx context.Context, req *connect.Request[planv1.QuestionServiceMoveRequest],
+) (*connect.Response[planv1.QuestionServiceMoveResponse], error) {
+	var movedQuestion *planv1.Question
+	var movedTasks []*planv1.Task
+	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		sourceQuestion, err := find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId())
+		if err != nil {
+			return err
+		}
+		if sourceQuestion.GetAnswer() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s is decided: ask a new one", sourceQuestion.GetCode()))
+		}
+		if sourceQuestion.GetWithdrawal() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s was withdrawn", sourceQuestion.GetCode()))
+		}
+		targetWish, err := ResolveWish(ctx, tx, req.Msg.GetWish())
+		if err != nil {
+			return err
+		}
+		if targetWish.GetId() == sourceQuestion.GetWishId() {
+			return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("question %s is already in %s", sourceQuestion.GetCode(), targetWish.GetTitle()))
+		}
+		sourceWish, err := store.Get[*planv1.Wish](ctx, tx, sourceQuestion.GetWishId())
+		if err != nil {
+			return err
+		}
+
+		oldCode := sourceQuestion.GetCode()
+		newCode, err := NextQuestionCode(ctx, tx, targetWish.GetId())
+		if err != nil {
+			return err
+		}
+
+		// Tasks naming this question with --decision
+		var following []*planv1.Task
+		if req.Msg.GetFollow() {
+			tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": sourceWish.GetId()})
+			if err != nil {
+				return err
+			}
+			for _, t := range tasks {
+				if strings.EqualFold(t.GetDecision(), oldCode) || t.GetDecision() == sourceQuestion.GetId() {
+					if q.taskRuns(t) {
+						return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s runs: wait for it to end", t.GetCode()))
+					}
+					following = append(following, t)
+				}
+			}
+		}
+
+		// Retire old question code in source wish
+		if !slices.Contains(sourceWish.GetRetiredCodes(), oldCode) {
+			sourceWish.RetiredCodes = append(sourceWish.RetiredCodes, oldCode)
+		}
+
+		// Prepare target tasks and taken codes for following tasks
+		targetTasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": targetWish.GetId()})
+		if err != nil {
+			return err
+		}
+		takenCodes := make(map[string]bool)
+		for _, c := range targetWish.GetRetiredCodes() {
+			takenCodes[strings.ToUpper(c)] = true
+		}
+		for _, tt := range targetTasks {
+			takenCodes[strings.ToUpper(tt.GetCode())] = true
+		}
+
+		validTargetTaskIDs := make(map[string]bool, len(targetTasks)+len(following))
+		for _, tt := range targetTasks {
+			validTargetTaskIDs[tt.GetId()] = true
+		}
+		for _, ft := range following {
+			validTargetTaskIDs[ft.GetId()] = true
+		}
+
+		nextNum := func(letter string) string {
+			last := 0
+			for c := range takenCodes {
+				var n int
+				if _, err := fmt.Sscanf(c, letter+"%d", &n); err == nil && n > last {
+					last = n
+				}
+			}
+			code := fmt.Sprintf("%s%d", letter, last+1)
+			takenCodes[strings.ToUpper(code)] = true
+			return code
+		}
+
+		for _, t := range following {
+			oldTaskCode := t.GetCode()
+			if !slices.Contains(sourceWish.GetRetiredCodes(), oldTaskCode) {
+				sourceWish.RetiredCodes = append(sourceWish.RetiredCodes, oldTaskCode)
+			}
+			if takenCodes[strings.ToUpper(t.GetCode())] {
+				letter := "W"
+				if IsAzima(t) {
+					letter = "T"
+				}
+				if len(t.GetCode()) > 0 {
+					r := rune(t.GetCode()[0])
+					if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+						letter = strings.ToUpper(string(r))
+					}
+				}
+				t.Code = nextNum(letter)
+			} else {
+				takenCodes[strings.ToUpper(t.GetCode())] = true
+			}
+			t.WishId = targetWish.GetId()
+			t.Decision = newCode
+
+			var validDeps []string
+			for _, depID := range t.GetDependsOn() {
+				if validTargetTaskIDs[depID] {
+					validDeps = append(validDeps, depID)
+				}
+			}
+			t.DependsOn = validDeps
+
+			if t.GetPartOf() != "" && !validTargetTaskIDs[t.GetPartOf()] {
+				t.PartOf = ""
+			}
+		}
+
+		// Cycle check in target wish
+		allTargetTasks := append(slices.Clone(targetTasks), following...)
+		for _, t := range following {
+			if cycle := ClosesCycle(t, t.GetDependsOn(), t.GetPartOf(), allTargetTasks); cycle != "" {
+				return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("task %s closes a cycle: %s", t.GetCode(), cycle))
+			}
+		}
+
+		// Save source wish (with retired codes)
+		if err := tx.Put(sourceWish); err != nil {
+			return err
+		}
+
+		// Save question in target wish
+		sourceQuestion.WishId = targetWish.GetId()
+		sourceQuestion.Code = newCode
+		if err := tx.Put(sourceQuestion); err != nil {
+			return err
+		}
+
+		// Save following tasks
+		for _, t := range following {
+			if err := tx.Put(t); err != nil {
+				return err
+			}
+		}
+
+		// Trace decision block in source wish's decision log
+		if _, err := PutBlock(ctx, tx, &planv1.BlockServicePutRequest{
+			WishId:  sourceWish.GetId(),
+			Kind:    "decision",
+			Title:   fmt.Sprintf("moved to %s as %s", targetWish.GetTitle(), newCode),
+			Content: sourceQuestion.GetText(),
+			Icon:    sourceQuestion.GetIcon(),
+		}); err != nil {
+			return err
+		}
+
+		movedQuestion = sourceQuestion
+		movedTasks = following
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if q.Workers != nil && len(movedTasks) > 0 {
+		q.Workers.Wake()
+	}
+	return connect.NewResponse(&planv1.QuestionServiceMoveResponse{
+		Question: movedQuestion,
+		Tasks:    movedTasks,
+	}), nil
+}
+
+// Withdraw closes an open question without an answer.
+func (q *Questions) Withdraw(
+	ctx context.Context, req *connect.Request[planv1.QuestionServiceWithdrawRequest],
+) (*connect.Response[planv1.QuestionServiceWithdrawResponse], error) {
+	var question *planv1.Question
+	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if question, err = find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		if question.GetAnswer() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s is decided: ask a new one", question.GetCode()))
+		}
+		if question.GetWithdrawal() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s was withdrawn", question.GetCode()))
+		}
+		question.Withdrawal = &planv1.Withdrawal{
+			Note:       req.Msg.GetNote(),
+			CreateTime: timestamppb.Now(),
+		}
+		return tx.Put(question)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.QuestionServiceWithdrawResponse{Question: question}), nil
 }

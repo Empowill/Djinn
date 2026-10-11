@@ -62,12 +62,24 @@ const (
 	QuestionServiceEnlightenProcedure = "/plan.v1.QuestionService/Enlighten"
 	// QuestionServiceReviseProcedure is the fully-qualified name of the QuestionService's Revise RPC.
 	QuestionServiceReviseProcedure = "/plan.v1.QuestionService/Revise"
+	// QuestionServiceMoveProcedure is the fully-qualified name of the QuestionService's Move RPC.
+	QuestionServiceMoveProcedure = "/plan.v1.QuestionService/Move"
+	// QuestionServiceWithdrawProcedure is the fully-qualified name of the QuestionService's Withdraw
+	// RPC.
+	QuestionServiceWithdrawProcedure = "/plan.v1.QuestionService/Withdraw"
 	// ProjectServiceAddProcedure is the fully-qualified name of the ProjectService's Add RPC.
 	ProjectServiceAddProcedure = "/plan.v1.ProjectService/Add"
 	// ProjectServiceListProcedure is the fully-qualified name of the ProjectService's List RPC.
 	ProjectServiceListProcedure = "/plan.v1.ProjectService/List"
 	// ProjectServiceShowProcedure is the fully-qualified name of the ProjectService's Show RPC.
 	ProjectServiceShowProcedure = "/plan.v1.ProjectService/Show"
+	// ProjectServicePushProcedure is the fully-qualified name of the ProjectService's Push RPC.
+	ProjectServicePushProcedure = "/plan.v1.ProjectService/Push"
+	// ProjectServiceSetPushProcedure is the fully-qualified name of the ProjectService's SetPush RPC.
+	ProjectServiceSetPushProcedure = "/plan.v1.ProjectService/SetPush"
+	// ProjectServicePushStrategyProcedure is the fully-qualified name of the ProjectService's
+	// PushStrategy RPC.
+	ProjectServicePushStrategyProcedure = "/plan.v1.ProjectService/PushStrategy"
 	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
 	SkillServiceSummonProcedure = "/plan.v1.SkillService/Summon"
 	// SkillServiceListProcedure is the fully-qualified name of the SkillService's List RPC.
@@ -102,6 +114,8 @@ const (
 	WishServiceResumeProcedure = "/plan.v1.WishService/Resume"
 	// WishServiceDescribeProcedure is the fully-qualified name of the WishService's Describe RPC.
 	WishServiceDescribeProcedure = "/plan.v1.WishService/Describe"
+	// WishServiceRenameProcedure is the fully-qualified name of the WishService's Rename RPC.
+	WishServiceRenameProcedure = "/plan.v1.WishService/Rename"
 	// WishServiceBriefProcedure is the fully-qualified name of the WishService's Brief RPC.
 	WishServiceBriefProcedure = "/plan.v1.WishService/Brief"
 	// WishServiceSnapshotProcedure is the fully-qualified name of the WishService's Snapshot RPC.
@@ -111,6 +125,9 @@ const (
 	// WishServiceSetIntegrationProcedure is the fully-qualified name of the WishService's
 	// SetIntegration RPC.
 	WishServiceSetIntegrationProcedure = "/plan.v1.WishService/SetIntegration"
+	// WishServicePushStrategyProcedure is the fully-qualified name of the WishService's PushStrategy
+	// RPC.
+	WishServicePushStrategyProcedure = "/plan.v1.WishService/PushStrategy"
 	// WishServiceGrantProcedure is the fully-qualified name of the WishService's Grant RPC.
 	WishServiceGrantProcedure = "/plan.v1.WishService/Grant"
 	// WishServicePauseProcedure is the fully-qualified name of the WishService's Pause RPC.
@@ -167,6 +184,14 @@ const (
 	TaskServiceContinueProcedure = "/plan.v1.TaskService/Continue"
 	// TaskServiceSendProcedure is the fully-qualified name of the TaskService's Send RPC.
 	TaskServiceSendProcedure = "/plan.v1.TaskService/Send"
+	// TaskServiceUpdateProcedure is the fully-qualified name of the TaskService's Update RPC.
+	TaskServiceUpdateProcedure = "/plan.v1.TaskService/Update"
+	// TaskServiceDescribeProcedure is the fully-qualified name of the TaskService's Describe RPC.
+	TaskServiceDescribeProcedure = "/plan.v1.TaskService/Describe"
+	// TaskServiceOpenProcedure is the fully-qualified name of the TaskService's Open RPC.
+	TaskServiceOpenProcedure = "/plan.v1.TaskService/Open"
+	// TaskServiceMoveProcedure is the fully-qualified name of the TaskService's Move RPC.
+	TaskServiceMoveProcedure = "/plan.v1.TaskService/Move"
 	// PlanServiceSyncProcedure is the fully-qualified name of the PlanService's Sync RPC.
 	PlanServiceSyncProcedure = "/plan.v1.PlanService/Sync"
 )
@@ -184,6 +209,10 @@ type QuestionServiceClient interface {
 	// Revise an open question after investigating: its context, options or recommendation. The former ones stay in its
 	// rounds, and the question waits for the developer again.
 	Revise(context.Context, *connect.Request[v1.QuestionServiceReviseRequest]) (*connect.Response[v1.QuestionServiceReviseResponse], error)
+	// Move an open question to another wish. Its code is retired in this wish; it receives the next code in the other.
+	Move(context.Context, *connect.Request[v1.QuestionServiceMoveRequest]) (*connect.Response[v1.QuestionServiceMoveResponse], error)
+	// Withdraw an open question without an answer.
+	Withdraw(context.Context, *connect.Request[v1.QuestionServiceWithdrawRequest]) (*connect.Response[v1.QuestionServiceWithdrawResponse], error)
 }
 
 // NewQuestionServiceClient constructs a client for the plan.v1.QuestionService service. By default,
@@ -228,6 +257,18 @@ func NewQuestionServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(questionServiceMethods.ByName("Revise")),
 			connect.WithClientOptions(opts...),
 		),
+		move: connect.NewClient[v1.QuestionServiceMoveRequest, v1.QuestionServiceMoveResponse](
+			httpClient,
+			baseURL+QuestionServiceMoveProcedure,
+			connect.WithSchema(questionServiceMethods.ByName("Move")),
+			connect.WithClientOptions(opts...),
+		),
+		withdraw: connect.NewClient[v1.QuestionServiceWithdrawRequest, v1.QuestionServiceWithdrawResponse](
+			httpClient,
+			baseURL+QuestionServiceWithdrawProcedure,
+			connect.WithSchema(questionServiceMethods.ByName("Withdraw")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -238,6 +279,8 @@ type questionServiceClient struct {
 	list      *connect.Client[v1.QuestionServiceListRequest, v1.QuestionServiceListResponse]
 	enlighten *connect.Client[v1.QuestionServiceEnlightenRequest, v1.QuestionServiceEnlightenResponse]
 	revise    *connect.Client[v1.QuestionServiceReviseRequest, v1.QuestionServiceReviseResponse]
+	move      *connect.Client[v1.QuestionServiceMoveRequest, v1.QuestionServiceMoveResponse]
+	withdraw  *connect.Client[v1.QuestionServiceWithdrawRequest, v1.QuestionServiceWithdrawResponse]
 }
 
 // Ask calls plan.v1.QuestionService.Ask.
@@ -265,6 +308,16 @@ func (c *questionServiceClient) Revise(ctx context.Context, req *connect.Request
 	return c.revise.CallUnary(ctx, req)
 }
 
+// Move calls plan.v1.QuestionService.Move.
+func (c *questionServiceClient) Move(ctx context.Context, req *connect.Request[v1.QuestionServiceMoveRequest]) (*connect.Response[v1.QuestionServiceMoveResponse], error) {
+	return c.move.CallUnary(ctx, req)
+}
+
+// Withdraw calls plan.v1.QuestionService.Withdraw.
+func (c *questionServiceClient) Withdraw(ctx context.Context, req *connect.Request[v1.QuestionServiceWithdrawRequest]) (*connect.Response[v1.QuestionServiceWithdrawResponse], error) {
+	return c.withdraw.CallUnary(ctx, req)
+}
+
 // QuestionServiceHandler is an implementation of the plan.v1.QuestionService service.
 type QuestionServiceHandler interface {
 	// Ask the developer a question. Offer up to four options to answer by letter, or none for a yes/no question.
@@ -278,6 +331,10 @@ type QuestionServiceHandler interface {
 	// Revise an open question after investigating: its context, options or recommendation. The former ones stay in its
 	// rounds, and the question waits for the developer again.
 	Revise(context.Context, *connect.Request[v1.QuestionServiceReviseRequest]) (*connect.Response[v1.QuestionServiceReviseResponse], error)
+	// Move an open question to another wish. Its code is retired in this wish; it receives the next code in the other.
+	Move(context.Context, *connect.Request[v1.QuestionServiceMoveRequest]) (*connect.Response[v1.QuestionServiceMoveResponse], error)
+	// Withdraw an open question without an answer.
+	Withdraw(context.Context, *connect.Request[v1.QuestionServiceWithdrawRequest]) (*connect.Response[v1.QuestionServiceWithdrawResponse], error)
 }
 
 // NewQuestionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -318,6 +375,18 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 		connect.WithSchema(questionServiceMethods.ByName("Revise")),
 		connect.WithHandlerOptions(opts...),
 	)
+	questionServiceMoveHandler := connect.NewUnaryHandler(
+		QuestionServiceMoveProcedure,
+		svc.Move,
+		connect.WithSchema(questionServiceMethods.ByName("Move")),
+		connect.WithHandlerOptions(opts...),
+	)
+	questionServiceWithdrawHandler := connect.NewUnaryHandler(
+		QuestionServiceWithdrawProcedure,
+		svc.Withdraw,
+		connect.WithSchema(questionServiceMethods.ByName("Withdraw")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.QuestionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case QuestionServiceAskProcedure:
@@ -330,6 +399,10 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 			questionServiceEnlightenHandler.ServeHTTP(w, r)
 		case QuestionServiceReviseProcedure:
 			questionServiceReviseHandler.ServeHTTP(w, r)
+		case QuestionServiceMoveProcedure:
+			questionServiceMoveHandler.ServeHTTP(w, r)
+		case QuestionServiceWithdrawProcedure:
+			questionServiceWithdrawHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -359,6 +432,14 @@ func (UnimplementedQuestionServiceHandler) Revise(context.Context, *connect.Requ
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Revise is not implemented"))
 }
 
+func (UnimplementedQuestionServiceHandler) Move(context.Context, *connect.Request[v1.QuestionServiceMoveRequest]) (*connect.Response[v1.QuestionServiceMoveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Move is not implemented"))
+}
+
+func (UnimplementedQuestionServiceHandler) Withdraw(context.Context, *connect.Request[v1.QuestionServiceWithdrawRequest]) (*connect.Response[v1.QuestionServiceWithdrawResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Withdraw is not implemented"))
+}
+
 // ProjectServiceClient is a client for the plan.v1.ProjectService service.
 type ProjectServiceClient interface {
 	// Add a folder as a project. It need not be a Git repository.
@@ -368,6 +449,12 @@ type ProjectServiceClient interface {
 	// Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
 	// .agents/settings.txtpb or your own file.
 	Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error)
+	// Push the project's integration branch for a wish: runs push checks under gates, never with --force.
+	Push(context.Context, *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error)
+	// Change when Djinn pushes the project's integration branch (standard cadence or on demand).
+	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
+	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
+	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
 }
 
 // NewProjectServiceClient constructs a client for the plan.v1.ProjectService service. By default,
@@ -401,14 +488,35 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		push: connect.NewClient[v1.ProjectServicePushRequest, v1.ProjectServicePushResponse](
+			httpClient,
+			baseURL+ProjectServicePushProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Push")),
+			connect.WithClientOptions(opts...),
+		),
+		setPush: connect.NewClient[v1.ProjectServiceSetPushRequest, v1.ProjectServiceSetPushResponse](
+			httpClient,
+			baseURL+ProjectServiceSetPushProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("SetPush")),
+			connect.WithClientOptions(opts...),
+		),
+		pushStrategy: connect.NewClient[v1.ProjectServicePushStrategyRequest, v1.ProjectServicePushStrategyResponse](
+			httpClient,
+			baseURL+ProjectServicePushStrategyProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("PushStrategy")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // projectServiceClient implements ProjectServiceClient.
 type projectServiceClient struct {
-	add  *connect.Client[v1.ProjectServiceAddRequest, v1.ProjectServiceAddResponse]
-	list *connect.Client[v1.ProjectServiceListRequest, v1.ProjectServiceListResponse]
-	show *connect.Client[v1.ProjectServiceShowRequest, v1.ProjectServiceShowResponse]
+	add          *connect.Client[v1.ProjectServiceAddRequest, v1.ProjectServiceAddResponse]
+	list         *connect.Client[v1.ProjectServiceListRequest, v1.ProjectServiceListResponse]
+	show         *connect.Client[v1.ProjectServiceShowRequest, v1.ProjectServiceShowResponse]
+	push         *connect.Client[v1.ProjectServicePushRequest, v1.ProjectServicePushResponse]
+	setPush      *connect.Client[v1.ProjectServiceSetPushRequest, v1.ProjectServiceSetPushResponse]
+	pushStrategy *connect.Client[v1.ProjectServicePushStrategyRequest, v1.ProjectServicePushStrategyResponse]
 }
 
 // Add calls plan.v1.ProjectService.Add.
@@ -426,6 +534,21 @@ func (c *projectServiceClient) Show(ctx context.Context, req *connect.Request[v1
 	return c.show.CallUnary(ctx, req)
 }
 
+// Push calls plan.v1.ProjectService.Push.
+func (c *projectServiceClient) Push(ctx context.Context, req *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error) {
+	return c.push.CallUnary(ctx, req)
+}
+
+// SetPush calls plan.v1.ProjectService.SetPush.
+func (c *projectServiceClient) SetPush(ctx context.Context, req *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error) {
+	return c.setPush.CallUnary(ctx, req)
+}
+
+// PushStrategy calls plan.v1.ProjectService.PushStrategy.
+func (c *projectServiceClient) PushStrategy(ctx context.Context, req *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error) {
+	return c.pushStrategy.CallUnary(ctx, req)
+}
+
 // ProjectServiceHandler is an implementation of the plan.v1.ProjectService service.
 type ProjectServiceHandler interface {
 	// Add a folder as a project. It need not be a Git repository.
@@ -435,6 +558,12 @@ type ProjectServiceHandler interface {
 	// Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
 	// .agents/settings.txtpb or your own file.
 	Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error)
+	// Push the project's integration branch for a wish: runs push checks under gates, never with --force.
+	Push(context.Context, *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error)
+	// Change when Djinn pushes the project's integration branch (standard cadence or on demand).
+	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
+	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
+	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
 }
 
 // NewProjectServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -464,6 +593,24 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServicePushHandler := connect.NewUnaryHandler(
+		ProjectServicePushProcedure,
+		svc.Push,
+		connect.WithSchema(projectServiceMethods.ByName("Push")),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectServiceSetPushHandler := connect.NewUnaryHandler(
+		ProjectServiceSetPushProcedure,
+		svc.SetPush,
+		connect.WithSchema(projectServiceMethods.ByName("SetPush")),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectServicePushStrategyHandler := connect.NewUnaryHandler(
+		ProjectServicePushStrategyProcedure,
+		svc.PushStrategy,
+		connect.WithSchema(projectServiceMethods.ByName("PushStrategy")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.ProjectService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProjectServiceAddProcedure:
@@ -472,6 +619,12 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServiceListHandler.ServeHTTP(w, r)
 		case ProjectServiceShowProcedure:
 			projectServiceShowHandler.ServeHTTP(w, r)
+		case ProjectServicePushProcedure:
+			projectServicePushHandler.ServeHTTP(w, r)
+		case ProjectServiceSetPushProcedure:
+			projectServiceSetPushHandler.ServeHTTP(w, r)
+		case ProjectServicePushStrategyProcedure:
+			projectServicePushStrategyHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -491,6 +644,18 @@ func (UnimplementedProjectServiceHandler) List(context.Context, *connect.Request
 
 func (UnimplementedProjectServiceHandler) Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Show is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) Push(context.Context, *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Push is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.SetPush is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.PushStrategy is not implemented"))
 }
 
 // SkillServiceClient is a client for the plan.v1.SkillService service.
@@ -875,6 +1040,8 @@ type WishServiceClient interface {
 	// Describe a wish: a few lines that say what it is for, its scope and where it goes, in place of what it had.
 	// Empty text takes it back to the title.
 	Describe(context.Context, *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error)
+	// Rename a wish: what you wish, in a sentence, in place of what it had.
+	Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error)
 	// The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the
 	// store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks
 	// running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
@@ -889,6 +1056,8 @@ type WishServiceClient interface {
 	// projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
 	// itself or asks first. Only what is given changes.
 	SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error)
+	// Show or change the push strategy of a wish: wish (one branch per wish) or azima (one branch per azima).
+	PushStrategy(context.Context, *connect.Request[v1.WishServicePushStrategyRequest]) (*connect.Response[v1.WishServicePushStrategyResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
@@ -988,6 +1157,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Describe")),
 			connect.WithClientOptions(opts...),
 		),
+		rename: connect.NewClient[v1.WishServiceRenameRequest, v1.WishServiceRenameResponse](
+			httpClient,
+			baseURL+WishServiceRenameProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Rename")),
+			connect.WithClientOptions(opts...),
+		),
 		brief: connect.NewClient[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse](
 			httpClient,
 			baseURL+WishServiceBriefProcedure,
@@ -1011,6 +1186,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+WishServiceSetIntegrationProcedure,
 			connect.WithSchema(wishServiceMethods.ByName("SetIntegration")),
+			connect.WithClientOptions(opts...),
+		),
+		pushStrategy: connect.NewClient[v1.WishServicePushStrategyRequest, v1.WishServicePushStrategyResponse](
+			httpClient,
+			baseURL+WishServicePushStrategyProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("PushStrategy")),
 			connect.WithClientOptions(opts...),
 		),
 		grant: connect.NewClient[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse](
@@ -1080,10 +1261,12 @@ type wishServiceClient struct {
 	setLead        *connect.Client[v1.WishServiceSetLeadRequest, v1.WishServiceSetLeadResponse]
 	resume         *connect.Client[v1.WishServiceResumeRequest, v1.WishServiceResumeResponse]
 	describe       *connect.Client[v1.WishServiceDescribeRequest, v1.WishServiceDescribeResponse]
+	rename         *connect.Client[v1.WishServiceRenameRequest, v1.WishServiceRenameResponse]
 	brief          *connect.Client[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse]
 	snapshot       *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
 	allow          *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
 	setIntegration *connect.Client[v1.WishServiceSetIntegrationRequest, v1.WishServiceSetIntegrationResponse]
+	pushStrategy   *connect.Client[v1.WishServicePushStrategyRequest, v1.WishServicePushStrategyResponse]
 	grant          *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
 	pause          *connect.Client[v1.WishServicePauseRequest, v1.WishServicePauseResponse]
 	activate       *connect.Client[v1.WishServiceActivateRequest, v1.WishServiceActivateResponse]
@@ -1135,6 +1318,11 @@ func (c *wishServiceClient) Describe(ctx context.Context, req *connect.Request[v
 	return c.describe.CallUnary(ctx, req)
 }
 
+// Rename calls plan.v1.WishService.Rename.
+func (c *wishServiceClient) Rename(ctx context.Context, req *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error) {
+	return c.rename.CallUnary(ctx, req)
+}
+
 // Brief calls plan.v1.WishService.Brief.
 func (c *wishServiceClient) Brief(ctx context.Context, req *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error) {
 	return c.brief.CallUnary(ctx, req)
@@ -1153,6 +1341,11 @@ func (c *wishServiceClient) Allow(ctx context.Context, req *connect.Request[v1.W
 // SetIntegration calls plan.v1.WishService.SetIntegration.
 func (c *wishServiceClient) SetIntegration(ctx context.Context, req *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error) {
 	return c.setIntegration.CallUnary(ctx, req)
+}
+
+// PushStrategy calls plan.v1.WishService.PushStrategy.
+func (c *wishServiceClient) PushStrategy(ctx context.Context, req *connect.Request[v1.WishServicePushStrategyRequest]) (*connect.Response[v1.WishServicePushStrategyResponse], error) {
+	return c.pushStrategy.CallUnary(ctx, req)
 }
 
 // Grant calls plan.v1.WishService.Grant.
@@ -1232,6 +1425,8 @@ type WishServiceHandler interface {
 	// Describe a wish: a few lines that say what it is for, its scope and where it goes, in place of what it had.
 	// Empty text takes it back to the title.
 	Describe(context.Context, *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error)
+	// Rename a wish: what you wish, in a sentence, in place of what it had.
+	Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error)
 	// The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the
 	// store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks
 	// running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
@@ -1246,6 +1441,8 @@ type WishServiceHandler interface {
 	// projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
 	// itself or asks first. Only what is given changes.
 	SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error)
+	// Show or change the push strategy of a wish: wish (one branch per wish) or azima (one branch per azima).
+	PushStrategy(context.Context, *connect.Request[v1.WishServicePushStrategyRequest]) (*connect.Response[v1.WishServicePushStrategyResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
@@ -1341,6 +1538,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Describe")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceRenameHandler := connect.NewUnaryHandler(
+		WishServiceRenameProcedure,
+		svc.Rename,
+		connect.WithSchema(wishServiceMethods.ByName("Rename")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceBriefHandler := connect.NewUnaryHandler(
 		WishServiceBriefProcedure,
 		svc.Brief,
@@ -1364,6 +1567,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		WishServiceSetIntegrationProcedure,
 		svc.SetIntegration,
 		connect.WithSchema(wishServiceMethods.ByName("SetIntegration")),
+		connect.WithHandlerOptions(opts...),
+	)
+	wishServicePushStrategyHandler := connect.NewUnaryHandler(
+		WishServicePushStrategyProcedure,
+		svc.PushStrategy,
+		connect.WithSchema(wishServiceMethods.ByName("PushStrategy")),
 		connect.WithHandlerOptions(opts...),
 	)
 	wishServiceGrantHandler := connect.NewUnaryHandler(
@@ -1438,6 +1647,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceResumeHandler.ServeHTTP(w, r)
 		case WishServiceDescribeProcedure:
 			wishServiceDescribeHandler.ServeHTTP(w, r)
+		case WishServiceRenameProcedure:
+			wishServiceRenameHandler.ServeHTTP(w, r)
 		case WishServiceBriefProcedure:
 			wishServiceBriefHandler.ServeHTTP(w, r)
 		case WishServiceSnapshotProcedure:
@@ -1446,6 +1657,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceAllowHandler.ServeHTTP(w, r)
 		case WishServiceSetIntegrationProcedure:
 			wishServiceSetIntegrationHandler.ServeHTTP(w, r)
+		case WishServicePushStrategyProcedure:
+			wishServicePushStrategyHandler.ServeHTTP(w, r)
 		case WishServiceGrantProcedure:
 			wishServiceGrantHandler.ServeHTTP(w, r)
 		case WishServicePauseProcedure:
@@ -1505,6 +1718,10 @@ func (UnimplementedWishServiceHandler) Describe(context.Context, *connect.Reques
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Describe is not implemented"))
 }
 
+func (UnimplementedWishServiceHandler) Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Rename is not implemented"))
+}
+
 func (UnimplementedWishServiceHandler) Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Brief is not implemented"))
 }
@@ -1519,6 +1736,10 @@ func (UnimplementedWishServiceHandler) Allow(context.Context, *connect.Request[v
 
 func (UnimplementedWishServiceHandler) SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.SetIntegration is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) PushStrategy(context.Context, *connect.Request[v1.WishServicePushStrategyRequest]) (*connect.Response[v1.WishServicePushStrategyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.PushStrategy is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error) {
@@ -1842,6 +2063,16 @@ type TaskServiceClient interface {
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
+	// Update a task: only the fields given change. A task not started (planned, waiting) may change everything; a running
+	// or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
+	// provider, model, prompt (for its next continue), and azima, never its dependencies once it ran.
+	Update(context.Context, *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error)
+	// Edit the description of an azima.
+	Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error)
+	// Open a draft azima: turns it open, ready for parts to be spawned, and notifies the wish's lead.
+	Open(context.Context, *connect.Request[v1.TaskServiceOpenRequest]) (*connect.Response[v1.TaskServiceOpenResponse], error)
+	// Move an azima (a draft, or an azima no worker runs with parts that have not started) to another wish.
+	Move(context.Context, *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error)
 }
 
 // NewTaskServiceClient constructs a client for the plan.v1.TaskService service. By default, it uses
@@ -1941,6 +2172,30 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Send")),
 			connect.WithClientOptions(opts...),
 		),
+		update: connect.NewClient[v1.TaskServiceUpdateRequest, v1.TaskServiceUpdateResponse](
+			httpClient,
+			baseURL+TaskServiceUpdateProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Update")),
+			connect.WithClientOptions(opts...),
+		),
+		describe: connect.NewClient[v1.TaskServiceDescribeRequest, v1.TaskServiceDescribeResponse](
+			httpClient,
+			baseURL+TaskServiceDescribeProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Describe")),
+			connect.WithClientOptions(opts...),
+		),
+		open: connect.NewClient[v1.TaskServiceOpenRequest, v1.TaskServiceOpenResponse](
+			httpClient,
+			baseURL+TaskServiceOpenProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Open")),
+			connect.WithClientOptions(opts...),
+		),
+		move: connect.NewClient[v1.TaskServiceMoveRequest, v1.TaskServiceMoveResponse](
+			httpClient,
+			baseURL+TaskServiceMoveProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Move")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1960,6 +2215,10 @@ type taskServiceClient struct {
 	done      *connect.Client[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse]
 	_continue *connect.Client[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse]
 	send      *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
+	update    *connect.Client[v1.TaskServiceUpdateRequest, v1.TaskServiceUpdateResponse]
+	describe  *connect.Client[v1.TaskServiceDescribeRequest, v1.TaskServiceDescribeResponse]
+	open      *connect.Client[v1.TaskServiceOpenRequest, v1.TaskServiceOpenResponse]
+	move      *connect.Client[v1.TaskServiceMoveRequest, v1.TaskServiceMoveResponse]
 }
 
 // Spawn calls plan.v1.TaskService.Spawn.
@@ -2032,6 +2291,26 @@ func (c *taskServiceClient) Send(ctx context.Context, req *connect.Request[v1.Ta
 	return c.send.CallUnary(ctx, req)
 }
 
+// Update calls plan.v1.TaskService.Update.
+func (c *taskServiceClient) Update(ctx context.Context, req *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error) {
+	return c.update.CallUnary(ctx, req)
+}
+
+// Describe calls plan.v1.TaskService.Describe.
+func (c *taskServiceClient) Describe(ctx context.Context, req *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error) {
+	return c.describe.CallUnary(ctx, req)
+}
+
+// Open calls plan.v1.TaskService.Open.
+func (c *taskServiceClient) Open(ctx context.Context, req *connect.Request[v1.TaskServiceOpenRequest]) (*connect.Response[v1.TaskServiceOpenResponse], error) {
+	return c.open.CallUnary(ctx, req)
+}
+
+// Move calls plan.v1.TaskService.Move.
+func (c *taskServiceClient) Move(ctx context.Context, req *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error) {
+	return c.move.CallUnary(ctx, req)
+}
+
 // TaskServiceHandler is an implementation of the plan.v1.TaskService service.
 type TaskServiceHandler interface {
 	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
@@ -2083,6 +2362,16 @@ type TaskServiceHandler interface {
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
+	// Update a task: only the fields given change. A task not started (planned, waiting) may change everything; a running
+	// or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
+	// provider, model, prompt (for its next continue), and azima, never its dependencies once it ran.
+	Update(context.Context, *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error)
+	// Edit the description of an azima.
+	Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error)
+	// Open a draft azima: turns it open, ready for parts to be spawned, and notifies the wish's lead.
+	Open(context.Context, *connect.Request[v1.TaskServiceOpenRequest]) (*connect.Response[v1.TaskServiceOpenResponse], error)
+	// Move an azima (a draft, or an azima no worker runs with parts that have not started) to another wish.
+	Move(context.Context, *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error)
 }
 
 // NewTaskServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -2178,6 +2467,30 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Send")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceUpdateHandler := connect.NewUnaryHandler(
+		TaskServiceUpdateProcedure,
+		svc.Update,
+		connect.WithSchema(taskServiceMethods.ByName("Update")),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceDescribeHandler := connect.NewUnaryHandler(
+		TaskServiceDescribeProcedure,
+		svc.Describe,
+		connect.WithSchema(taskServiceMethods.ByName("Describe")),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceOpenHandler := connect.NewUnaryHandler(
+		TaskServiceOpenProcedure,
+		svc.Open,
+		connect.WithSchema(taskServiceMethods.ByName("Open")),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceMoveHandler := connect.NewUnaryHandler(
+		TaskServiceMoveProcedure,
+		svc.Move,
+		connect.WithSchema(taskServiceMethods.ByName("Move")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TaskService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TaskServiceSpawnProcedure:
@@ -2208,6 +2521,14 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceContinueHandler.ServeHTTP(w, r)
 		case TaskServiceSendProcedure:
 			taskServiceSendHandler.ServeHTTP(w, r)
+		case TaskServiceUpdateProcedure:
+			taskServiceUpdateHandler.ServeHTTP(w, r)
+		case TaskServiceDescribeProcedure:
+			taskServiceDescribeHandler.ServeHTTP(w, r)
+		case TaskServiceOpenProcedure:
+			taskServiceOpenHandler.ServeHTTP(w, r)
+		case TaskServiceMoveProcedure:
+			taskServiceMoveHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -2271,6 +2592,22 @@ func (UnimplementedTaskServiceHandler) Continue(context.Context, *connect.Reques
 
 func (UnimplementedTaskServiceHandler) Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Send is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Update(context.Context, *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Update is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Describe is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Open(context.Context, *connect.Request[v1.TaskServiceOpenRequest]) (*connect.Response[v1.TaskServiceOpenResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Open is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Move(context.Context, *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Move is not implemented"))
 }
 
 // PlanServiceClient is a client for the plan.v1.PlanService service.

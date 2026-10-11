@@ -124,7 +124,7 @@ tasks:
     cmds:
       - npx vite build --config e2e/vite.config.ts --logLevel warn
       - go build -tags headless -o bin/djinn-e2e{{exeExt}} ./cmd/djinn
-      - npx playwright test --config e2e/playwright.config.ts
+      - npx playwright test --config e2e/playwright.config.ts {{.CLI_ARGS}}
 
   screenshots:
     desc: "Retake the README's screenshots (docs/screenshots/readme/), dark and light: a demonstration wish in English on the browser build, in a djinn of its own (e2e/readme.shot.ts)"

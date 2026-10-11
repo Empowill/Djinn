@@ -100,7 +100,7 @@
 .update-banner .update-banner-dismiss:hover {
   background: color-mix(in srgb, var(--st-investigating) 18%, transparent);
 }
-/* What changed and what to check, at the banner's full width under the title. */
+/* What changed, at the banner's full width under the title. */
 .update-banner-body strong {
   display: block;
   margin-top: var(--space-2);
@@ -115,6 +115,47 @@
   overflow-y: auto;
   color: var(--n-9c);
   overflow-wrap: anywhere;
+}
+.update-banner .update-banner-tasks {
+  max-height: 14em;
+  padding-left: 0;
+  list-style: none;
+}
+.update-banner-tasks > li {
+  margin-top: var(--space-1);
+}
+.update-banner-tasks > li:first-child {
+  margin-top: 0;
+}
+.update-banner-task summary {
+  cursor: pointer;
+  color: var(--text);
+}
+.update-banner-task summary code,
+.update-banner-task-line code {
+  color: var(--n-9c);
+  font-family: var(--mono);
+}
+.update-banner-task-line {
+  padding-left: 1.1em;
+  color: var(--text);
+}
+.update-banner-summary {
+  margin: var(--space-1) 0 var(--space-1) 1.1em;
+  color: var(--n-9c);
+  font-size: 0.9em;
+  line-height: var(--line-height-body);
+  overflow-wrap: anywhere;
+}
+.update-banner-commits {
+  margin-top: var(--space-2);
+}
+.update-banner-commits summary {
+  cursor: pointer;
+  color: var(--n-9c);
+}
+.update-banner-commits summary:hover {
+  color: var(--text);
 }
 /* The terminals that did not start again: their commands, in the mono type. */
 .update-banner .update-banner-terminals {

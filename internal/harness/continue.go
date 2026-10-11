@@ -54,13 +54,26 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 	if e := task.GetError(); e != "" {
 		text += " (" + e + ")"
 	}
-	if first := firstLine(req.GetPrompt()); first != "" {
+	turnPrompt := req.GetPrompt()
+	addPromptEvent := true
+	if req.Prompt == nil || *req.Prompt == "" {
+		lp, err := lastPrompt(ctx, h.store, id)
+		if err != nil {
+			return nil, plan.Status(err)
+		}
+		turnPrompt = lp
+		addPromptEvent = false
+	}
+	if first := firstLine(turnPrompt); first != "" {
 		text += ": " + first
 	}
 	t := proto.CloneOf(task)
 	// Its own resumes count again from none: a person asked for this turn.
 	t.Status, t.Error, t.ResumeAfter, t.Resumes, t.Closed, t.Continuing = planv1.TaskStatus_TASK_STATUS_RESUMING, "", nil, 0, nil, true
 	t.WaitReason = ""
+	if foreignModel(t.GetProvider(), t.GetModel()) {
+		t.Model = DefaultModel(t.GetProvider())
+	}
 	sit, err := h.situation(ctx, replaced(tasks, t))
 	if err != nil {
 		return nil, plan.Status(err)
@@ -78,12 +91,19 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err
 		}
+		if t.GetPartOf() != "" {
+			if err := reopenAzima(ctx, tx, t.GetPartOf(), t.GetCode()+" started"); err != nil {
+				return err
+			}
+		}
 		if err := tx.Put(t); err != nil {
 			return err
 		}
 		events := []Event{
 			{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text},
-			{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: req.GetPrompt()},
+		}
+		if addPromptEvent {
+			events = append(events, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: turnPrompt})
 		}
 		if why != "" {
 			events = append(events, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why})
@@ -98,6 +118,7 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 	if err != nil {
 		return nil, plan.Status(err)
 	}
+	_ = h.unblockDependencyFailed(ctx, t.GetCode())
 	h.notify()
 	if why == "" {
 		if err := h.relaunch(ctx, t); err != nil {
@@ -127,16 +148,14 @@ func (h *Harness) continuable(ctx context.Context, t *planv1.Task, running bool)
 	case !t.GetScheduled():
 		return refuse("was not run by this Djinn: spawn a task for it")
 	}
-	switch t.GetProvider() {
-	case planv1.Provider_PROVIDER_WATCH:
+	if t.GetProvider() == planv1.Provider_PROVIDER_WATCH {
 		return refuse("is a watcher, which has no session: spawn it again")
-	case planv1.Provider_PROVIDER_ANTIGRAVITY:
-		return refuse("runs antigravity, which cannot resume a session: spawn a task with a prompt instead")
 	}
 	if _, ok := h.providers[t.GetProvider()]; !ok {
 		return refuse("runs %s, which is not available", short(t.GetProvider()))
 	}
-	if t.GetSessionId() == "" {
+	providerChanged := t.GetPriorProvider() != planv1.Provider_PROVIDER_UNSPECIFIED && t.GetPriorProvider() != t.GetProvider()
+	if t.GetSessionId() == "" && !providerChanged {
 		return refuse("has no session to resume: its worker never said one")
 	}
 	if b := t.GetMaxBudgetUsd(); b > 0 && t.GetUsage().GetCostUsd() >= b {
@@ -187,11 +206,11 @@ func firstLine(s string) string {
 	return ""
 }
 
-// lastPrompt is the task's last prompt: what djinn task continue asked last. Its events are read from the last back,
+// lastPrompt is the task's last prompt: what djinn task continue or update asked last. Its events are read from the last back,
 // as far as that prompt (lastSeq).
-func lastPrompt(ctx context.Context, s *store.Store, taskID string) (string, error) {
+func lastPrompt(ctx context.Context, r store.Reader, taskID string) (string, error) {
 	var last *planv1.TaskEvent
-	err := store.Latest(ctx, s, store.Where{"task_id": taskID}, func(ev *planv1.TaskEvent) bool {
+	err := store.Latest(ctx, r, store.Where{"task_id": taskID}, func(ev *planv1.TaskEvent) bool {
 		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
 			last = ev
 		}

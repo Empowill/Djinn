@@ -63,6 +63,14 @@ func claudePlaying(env []string) (map[planv1.Provider]Provider, switchProvider) 
 	return providers, sw
 }
 
+// antigravityPlaying makes antigravity workers play env, then what play gives.
+func antigravityPlaying(env []string) (map[planv1.Provider]Provider, switchProvider) {
+	sw := switchProvider{Provider: Antigravity{Command: os.Args[0]}, mu: &sync.Mutex{}, env: &env}
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = sw
+	return providers, sw
+}
+
 func (e *env) list(t *testing.T, wishID string) []*planv1.Task {
 	t.Helper()
 	res, err := e.tasks.List(t.Context(), connect.NewRequest(&planv1.TaskServiceListRequest{WishId: wishID}))
@@ -280,7 +288,7 @@ func (p promptsProvider) spec(id string) Spec {
 	return p.specs[id]
 }
 
-// TestResumeFromTheFirstPromptKeepsTheChecks: a worker resumed from its first prompt, agy's or one whose session was
+// TestResumeFromTheFirstPromptKeepsTheChecks: a worker resumed from its first prompt, one whose session was
 // never known, is told the project's checks as at launch (briefed); one resumed on its session has them there already.
 func TestResumeFromTheFirstPromptKeepsTheChecks(t *testing.T) {
 	testx.Portable(t)
@@ -303,23 +311,27 @@ func TestResumeFromTheFirstPromptKeepsTheChecks(t *testing.T) {
 		return tk
 	}
 	unknown := task("W1", planv1.Provider_PROVIDER_FAKE, "")
-	agy := task("W2", planv1.Provider_PROVIDER_ANTIGRAVITY, "s-W2")
-	session := task("W3", planv1.Provider_PROVIDER_FAKE, "s-W3")
+	agyUnknown := task("W2", planv1.Provider_PROVIDER_ANTIGRAVITY, "")
+	agySession := task("W3", planv1.Provider_PROVIDER_ANTIGRAVITY, "s-W3")
+	session := task("W4", planv1.Provider_PROVIDER_FAKE, "s-W4")
 	e.down()
 
 	e = upWith(t, home, providers)
 	checks := "Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- lint`."
-	for _, tk := range []*planv1.Task{unknown, agy, session} {
+	for _, tk := range []*planv1.Task{unknown, agyUnknown, agySession, session} {
 		e.until(t, tk.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
 	}
-	for _, tk := range []*planv1.Task{unknown, agy} {
+	for _, tk := range []*planv1.Task{unknown, agyUnknown} {
 		spec := rec.spec(tk.GetId())
 		if !strings.HasPrefix(spec.Prompt, "text first prompt\n\n"+checks) || !strings.HasSuffix(spec.Prompt, "\n\n"+restartedLine) ||
 			spec.Resume != "" {
 			t.Errorf("%s resumed on %q with:\n%s", tk.GetCode(), spec.Resume, spec.Prompt)
 		}
 	}
-	if spec := rec.spec(session.GetId()); spec.Prompt != restartedLine || spec.Resume != "s-W3" {
-		t.Errorf("W3 resumed on %q with:\n%s", spec.Resume, spec.Prompt)
+	for _, tk := range []*planv1.Task{agySession, session} {
+		spec := rec.spec(tk.GetId())
+		if spec.Prompt != restartedLine || spec.Resume != tk.GetSessionId() {
+			t.Errorf("%s resumed on %q with:\n%s", tk.GetCode(), spec.Resume, spec.Prompt)
+		}
 	}
 }

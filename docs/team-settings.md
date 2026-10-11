@@ -47,21 +47,30 @@ install: "go tool task install"
 | `merge_main`     | When Djinn merges it: `MERGE_MAIN_RELEASE` (once main holds a release the branch lacks), `MERGE_MAIN_COMMIT` (once it holds any commit the branch lacks), `MERGE_MAIN_OFF`. | at each release |
 | `merge_main_minutes` | How often, in minutes, Djinn fetches main to look at it, at most. A release the running Djinn finds makes it look at once. | `60` |
 | `install_releases` | For the project a Djinn built from a checkout comes from: a newer release installs by itself while that checkout is on main. `false`: it is only offered. | on |
+| `push`           | When Djinn pushes the integration branch: `PROJECT_PUSH_STANDARD` (today's cadence: at an azima's end or 3 tasks and an hour), `PROJECT_PUSH_ON_DEMAND` (never pushes by itself, only the developer's push does). | `PROJECT_PUSH_STANDARD` |
+| `push_strategy`  | The branch strategy for integration and push: `PUSH_STRATEGY_WISH` (today's behavior: one integration branch per wish and project), `PUSH_STRATEGY_AZIMA` (one integration branch per azima). | `PUSH_STRATEGY_WISH` |
 
 A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
 
-Three more set the *question workers*, the small tasks Djinn starts by itself on a question of a wish: after an
-answer, `Q03 → tasks` turns the decision into tasks; after "Enlighten me", `Q03: enlighten` investigates and revises
-the question ([agent protocol](agent-protocol.md)). They run the `provider` above, read only, and take no slot.
+Five more set the *question workers*, the small tasks Djinn starts by itself on a question of a wish: after an
+answer, `Q03 → tasks` turns the decision into tasks (converter); after "Enlighten me", `Q03: enlighten` investigates and revises
+the question (investigator; see [agent protocol](agent-protocol.md)). They run read-only and take no slot: on the project's `provider`
+when that provider can run them read-only (claude, codex), falling back to claude otherwise; or on `question_provider`.
 
-| Setting               | What it sets                                                          | Not set                    |
-| --------------------- | --------------------------------------------------------------------- | -------------------------- |
-| `question_workers`    | `false`: none starts, the lead is told to act on each answer itself.  | on                         |
-| `question_model`      | Their model. `""`: the provider's default.                            | `sonnet` for claude, else the provider's default |
-| `question_budget_usd` | The most one may spend, when its provider can enforce it. `0`: no limit. | 2                       |
+| Setting               | What it sets                                                                                 | Not set                    |
+| --------------------- | -------------------------------------------------------------------------------------------- | -------------------------- |
+| `answer_workers`      | `true`: start a converter (`Q03 → tasks`) to turn an answer into tasks; `false`: the lead does it. | off                        |
+| `enlighten_workers`   | `false`: no investigator starts after "Enlighten me"; the lead investigates itself.           | on                         |
+| `question_workers`    | Deprecated: set `answer_workers` and `enlighten_workers` instead; sets both when given.      | `answer_workers: false`, `enlighten_workers: true` |
+| `question_provider`   | Their provider (`PROVIDER_CLAUDE`, `PROVIDER_CODEX`...).                                     | the project's provider when read-only, else claude |
+| `question_model`      | Their model. `""`: the provider's default.                                                   | `sonnet` for claude, else the provider's default |
+| `question_budget_usd` | The most one may spend, when its provider can enforce it. `0`: no limit.                    | 2                          |
 
-A file that sets `provider` resets `question_model` to its default too. `djinn up --question-workers=false` (or
-`DJINN_QUESTION_WORKERS=off`) turns them off for every project.
+A file that sets `provider` or `question_provider` resets `question_model` to its default too. When the project's
+provider cannot run read-only (like Antigravity), question workers fall back to claude with `question_model` (`sonnet`),
+and their start event says why (`antigravity cannot run read-only: claude`). On `djinn up`, `--answer-workers` (or
+`DJINN_ANSWER_WORKERS`) and `--enlighten-workers` (or `DJINN_ENLIGHTEN_WORKERS`) override the settings across all projects;
+`--question-workers` (or `DJINN_QUESTION_WORKERS`) is deprecated and sets both.
 
 ## Branch names
 
@@ -175,7 +184,7 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
   project), and in a worktree made anew. Failed, the merge is red.
 - **The workers know them.** The lead's brief lists each project's checks and when they run; each worker that edits a
   worktree gets them at the end of its first prompt, to run the commit checks (`djinn gate run lint -- go tool task
-  lint`) before it ends; again when it resumes from its first prompt (agy, or a session never known).
+  lint`) before it ends; again when it resumes from its first prompt (a session never known).
 - `djinn project show <project>` and the project's view in the window list the setup and the checks, each with its
   last run: the commit it checked, when, how long, and why it failed.
 
@@ -238,7 +247,8 @@ committed, committed as `1a2b3c4d`, conflict, red, corrected by W9, uncommitted,
 ### Pushing
 
 Pushing the integration branch to its remote is Djinn's, never an agent's: `.agents/permissions.txtpb` denies `git
-push` to every worker. Djinn checks it each time a task's merge ends, and a push is **due**:
+push` to every worker, and their environment makes the push impossible whatever the command ([no worker
+pushes](providers.md#no-worker-pushes)). Djinn checks it each time a task's merge ends, and a push is **due**:
 
 - when an azima ends: it is done or to validate, as its state says (every part finished: a failed part keeps it in
   progress, one cut short for good does not), and its last part is committed;
@@ -253,13 +263,28 @@ mode it asks a question first, "Push feat/x to origin? (3 commits: …)", which 
 nothing more is asked until you answer. A push the remote refuses (your branch is behind, or protected) is said in the
 tasks' events and asked about: push again once you have brought the remote's commits in, or leave it until the next
 push due. Each push is in the journal; the wish's head shows the last one, its commits on hover, and when.
-
 `djinn wish set-integration <wish> --push-after-minutes 30 --push-after-tasks 2 --push-mode ask` changes the hour, the
 count and the mode, for that wish.
 
+A project may choose its cadence with `push`: `PROJECT_PUSH_STANDARD` (the default cadence above, where the wish's
+`push_mode` still applies) or `PROJECT_PUSH_ON_DEMAND` (Djinn commits each task's work into the integration branch as
+now, but never pushes by itself and asks nothing; only the developer's push does). The window's project view and the
+side panel show when the integration branch is out of sync with its remote and offer a Push button and a cadence switch;
+`djinn project push <project> [--wish <wish>]` pushes from the command line. In On demand, the wish's head says
+"pushes on demand".
+
+A project also sets the default push strategy with `push_strategy`: `PUSH_STRATEGY_WISH` (the default: one
+integration branch per wish and per project) or `PUSH_STRATEGY_AZIMA` (one integration branch per azima).
+`djinn project push-strategy <project> [--strategy wish|azima]` shows or sets the developer's project default.
+Each wish can override this strategy: `djinn wish push-strategy <wish> [--strategy wish|azima]` (or
+`djinn wish set-integration <wish> --push-strategy wish|azima`) shows or sets the push strategy of that wish.
+A wish created without a value takes the project's default, and a project without a value defaults to `wish`.
+To protect branches already created and merged, switching push strategy is refused once any task of the wish has
+already been committed to its integration branch.
+
 Once Djinn has pushed in a project whose settings name an `install` command, the window proposes, as for a new
-version, to install it and restart on it, with what changed (the titles of the commits pushed) and what to check
-(each task, with the last paragraph its worker wrote). Nothing installs before your click. The command runs under the
+version, to install it and restart on it, with what changed (each task with the last paragraph its worker wrote folded
+under it, and the titles of the commits pushed folded at the end). Nothing installs before your click. The command runs under the
 gate `install`, at that commit, in the project's install worktree (set up as the integration's is), never in your
 checkout nor in an integration worktree: an install never waits for an integration to end. While it runs, the banner
 says what it waits for (another install, a gate and who holds it, the machine under pressure), then that it builds, then

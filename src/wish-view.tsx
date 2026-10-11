@@ -15,7 +15,15 @@ import {
   Trash2,
 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   Allowance,
@@ -27,32 +35,43 @@ import {
   type MarkKind,
   type Project,
   type Provider,
+  type Question,
   type Task,
   TaskStatus,
   type Wish,
   type WishExport,
   WishState,
+  PushStrategy,
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
-import { decisionOf, decisionsOf } from "./data/decisions";
-import { useClients, useData, usePausable, useWishDetail } from "./data/djinn";
+import { decisionOf, decisionsOf, isDecisionBlock } from "./data/decisions";
+import {
+  useClients,
+  useData,
+  useDjinn,
+  usePausable,
+  useWishDetail,
+} from "./data/djinn";
 import {
   type OpenQuestion,
   azimaGroups,
+  codeMapOf,
   forkedAs,
-  finishedTasks,
   investigatingQuestions,
   isAzima,
   movingTasks,
   openQuestions,
   spent,
+  taskMapOf,
   waitingTasks,
   azimasDone,
+  draftAzimas,
   workCount,
 } from "./data/flight";
 import {
   allowanceOf,
   deletedText,
+  firstLine,
   MAX_ACTIVE,
   isActive,
   noLead,
@@ -63,6 +82,8 @@ import {
   wishStateText,
   runningOf,
   wishTone,
+  effectivePushStrategy,
+  isWithdrawn,
 } from "./data/format";
 import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
@@ -74,9 +95,16 @@ import { MarkdownBody } from "./markdown-body";
 import { OlderLine, useRecent } from "./older";
 import { useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
+import { OperatingLoad } from "./operating-load";
 import { CountPill, StatusBadge } from "./status";
-import { AzimaCard, azimaFinished } from "./azima";
-import { TaskSections, type View, ViewTabs } from "./task-tabs";
+import {
+  AzimaCard,
+  azimaFinished,
+  DraftAzimaCard,
+  MoveAzimaDialog,
+} from "./azima";
+import { MoveQuestionDialog, WithdrawQuestionDialog } from "./wish-dialogs";
+import { kindsForView, TaskSections, type View, ViewTabs } from "./task-tabs";
 import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
@@ -86,7 +114,9 @@ import {
   LastPushes,
   LeadButton,
   MainMerges,
+  PushStrategySelector,
   WishDescription,
+  WishTitle,
   recordedAgent,
 } from "./wish-head";
 
@@ -106,14 +136,28 @@ export function WishView({
   opening?: Opening;
   onToast: (text: string) => void;
 }) {
+  const djinn = useDjinn();
+  const store = djinn?.store;
   const allProjects = useData((s) => s.projects);
+  const projectById = useMemo(
+    () => new Map(allProjects.map((p) => [p.id, p])),
+    [allProjects],
+  );
+  const allWishes = useData((s) => s.wishes);
   const pausable = usePausable();
-  const detail = useWishDetail(wish.id);
-  const projects = projectsOf(wish, allProjects);
+  const initialKinds = useMemo(
+    () => kindsForView(opening ? "tilasms" : "main"),
+    [opening],
+  );
+  const detail = useWishDetail(wish.id, initialKinds);
+  const projects = useMemo(
+    () => projectsOf(wish, allProjects),
+    [wish, allProjects],
+  );
   const open = openQuestions(wish, detail);
   const digging = investigatingQuestions(wish, detail);
   const waiting = waitingTasks(wish, detail);
-  const codes = new Map(detail.tasks.map((task) => [task.id, task.code]));
+  const codes = codeMapOf(detail.tasks);
   // Read again only when the wish's questions, blocks or tasks change, not at every render of the screen.
   const forAgents = useMemo(() => agentBlocks(detail.blocks), [detail.blocks]);
   const decisions = useMemo(
@@ -124,6 +168,22 @@ export function WishView({
     () => decisions.map((item) => ({ item })),
     [decisions],
   );
+  const decisionsTotal = useMemo(() => {
+    if (detail.questionsTotal === undefined) return undefined;
+    const withdrawnCount = detail.questions.filter(isWithdrawn).length;
+    const answeredCount = Math.max(
+      0,
+      detail.questionsTotal - open.length - withdrawnCount,
+    );
+    const decisionBlocksCount = detail.blocks.filter(isDecisionBlock).length;
+    return Math.max(decisionItems.length, answeredCount + decisionBlocksCount);
+  }, [
+    detail.questionsTotal,
+    open.length,
+    detail.questions,
+    detail.blocks,
+    decisionItems.length,
+  ]);
   const { running, watching } = runningOf(detail.tasks);
   const done = detail.tasks.filter(
     (task) => task.status === TaskStatus.DONE && !isAzima(task),
@@ -134,28 +194,76 @@ export function WishView({
   const granted = wish.state === WishState.GRANTED;
   const [view, setView] = useState<View>(opening ? "tilasms" : "main");
   const [deleting, setDeleting] = useState(false);
+  const [movingAzima, setMovingAzima] = useState<Task | null>(null);
+  const [movingQuestion, setMovingQuestion] = useState<Question | null>(null);
+  const [withdrawingQuestion, setWithdrawingQuestion] =
+    useState<Question | null>(null);
   // What a link between a decision and a task brings into sight in the other tab: its id.
   const [focus, setFocus] = useState("");
-  const show = (to: View, id = "") => (setView(to), setFocus(id));
+  const show = useCallback(
+    (to: View, id = "") => {
+      setView(to);
+      setFocus(id);
+      if (store) void store.loadKinds(wish.id, kindsForView(to));
+    },
+    [store, wish.id],
+  );
   // The tilasm a link opened: the Tilasms tab shows it, again at each new request.
   const [opened, setOpened] = useState(opening);
   useEffect(() => {
     if (!opening) return;
     setView("tilasms");
     setOpened(opening);
-  }, [opening]);
-  const moving = movingTasks(detail.tasks);
-  const finished = finishedTasks(detail.tasks);
+    if (store) void store.loadKinds(wish.id, kindsForView("tilasms"));
+  }, [opening, store, wish.id]);
+  const moving = useMemo(() => movingTasks(detail.tasks), [detail.tasks]);
   // The done azimas fold, apart (src/task-tabs.tsx); a link to one, or to one of its parts, shows them.
-  const azimas = azimaGroups(detail.tasks);
-  const doneAzimas = azimas.filter((x) => azimaFinished(x.azima));
-  const showDone = doneAzimas.some(
-    (x) => x.azima.id === focus || x.parts.some((p) => p.id === focus),
+  const azimas = useMemo(() => azimaGroups(detail.tasks), [detail.tasks]);
+  const activeAzimas = useMemo(
+    () => azimas.filter((x) => !azimaFinished(x.azima)),
+    [azimas],
   );
-  const byId = new Map(detail.tasks.map((task) => [task.id, task]));
+  const doneAzimas = useMemo(
+    () => azimas.filter((x) => azimaFinished(x.azima)),
+    [azimas],
+  );
+  const showDone = useMemo(
+    () =>
+      doneAzimas.some(
+        (x) => x.azima.id === focus || x.parts.some((p) => p.id === focus),
+      ),
+    [doneAzimas, focus],
+  );
+  const drafts = useMemo(() => draftAzimas(detail.tasks), [detail.tasks]);
+  const showDrafts = useMemo(
+    () => drafts.some((x) => x.id === focus),
+    [drafts, focus],
+  );
+  const spentDetail = useMemo(() => spent(detail.tasks), [detail.tasks]);
+  const byId = taskMapOf(detail.tasks);
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !store) return;
+    const onScroll = () => {
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 300) {
+        if (view === "tasks") {
+          void store.loadMore(wish.id, Change.TASK);
+        } else if (view === "decisions") {
+          void store.loadMore(wish.id, Change.QUESTION);
+          void store.loadMore(wish.id, Change.BLOCK);
+        } else if (view === "agents") {
+          void store.loadMore(wish.id, Change.BLOCK);
+        } else if (view === "main") {
+          void store.loadMore(wish.id, Change.BLOCK);
+        }
+      }
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [store, wish.id, view]);
   const {
     clients,
     act: write,
@@ -163,56 +271,274 @@ export function WishView({
     answer,
     enlighten,
     mark,
+    move,
+    withdraw,
   } = useWrites(onToast);
-  const act = (
-    run: () => Promise<unknown>,
-    changes: Change[],
-    done?: string | (() => string),
-  ) => write(wish.id, run, changes, done);
-  const renderTask = (task: Task) => (
-    <WishTask
-      key={task.id}
-      task={task}
-      codes={codes}
-      forkedAs={forkedAs(task, detail.tasks)}
-      decision={decisionOf(task, decisions)}
-      focused={focus === task.id}
-      onDecision={() => show("decisions", decisionOf(task, decisions)?.id)}
-      project={allProjects.find((p) => p.id === task.projectId)}
-      onStop={() =>
-        quiet(act(() => clients.tasks.stop({ taskId: task.id }), [Change.TASK]))
-      }
-      onSend={(text) =>
-        act(() => clients.tasks.send({ taskId: task.id, text }), [])
-      }
-      onHold={
-        pausable
-          ? (pause) =>
-              quiet(
-                act(
-                  () =>
-                    pause
-                      ? clients.tasks.pause({ taskId: task.id })
-                      : clients.tasks.resume({ taskId: task.id }),
-                  [Change.TASK],
-                ),
-              )
-          : undefined
-      }
-      onDone={(note) =>
+  const act = useCallback(
+    (
+      run: () => Promise<unknown>,
+      changes: Change[],
+      done?: string | (() => string),
+    ) => write(wish.id, run, changes, done),
+    [write, wish.id],
+  );
+
+  const handleStop = useCallback(
+    (task: Task) => {
+      quiet(
+        write(task.wishId, () => clients.tasks.stop({ taskId: task.id }), [
+          Change.TASK,
+        ]),
+      );
+    },
+    [quiet, write, clients.tasks],
+  );
+
+  const handleSend = useCallback(
+    (text: string, task: Task) =>
+      write(
+        task.wishId,
+        () => clients.tasks.send({ taskId: task.id, text }),
+        [],
+      ),
+    [write, clients.tasks],
+  );
+
+  const handleHold = useCallback(
+    (pause: boolean, task: Task) => {
+      quiet(
+        write(
+          task.wishId,
+          () =>
+            pause
+              ? clients.tasks.pause({ taskId: task.id })
+              : clients.tasks.resume({ taskId: task.id }),
+          [Change.TASK],
+        ),
+      );
+    },
+    [quiet, write, clients.tasks],
+  );
+
+  const handleDone = useCallback(
+    (note: string, task: Task) =>
+      write(
+        task.wishId,
+        () =>
+          clients.tasks.done({
+            taskId: task.id,
+            note,
+            by: Closer.DEVELOPER,
+          }),
+        [Change.TASK],
+        t("task.marked_done", { task: task.code }),
+      ),
+    [write, clients.tasks],
+  );
+
+  const handleDecision = useCallback(
+    (task: Task) => {
+      const d = decisionOf(task, decisions);
+      show("decisions", d?.id);
+    },
+    [decisions, show],
+  );
+
+  const renderTask = useCallback(
+    (task: Task) => (
+      <WishTask
+        key={task.id}
+        task={task}
+        codes={codes}
+        forkedAs={forkedAs(task, detail.tasks)}
+        decision={decisionOf(task, decisions)}
+        focused={focus === task.id}
+        onDecision={handleDecision}
+        project={projectById.get(task.projectId)}
+        onStop={handleStop}
+        onSend={handleSend}
+        onHold={pausable ? handleHold : undefined}
+        onDone={handleDone}
+      />
+    ),
+    [
+      codes,
+      detail.tasks,
+      decisions,
+      focus,
+      handleDecision,
+      projectById,
+      handleStop,
+      handleSend,
+      pausable,
+      handleHold,
+      handleDone,
+    ],
+  );
+
+  const effectiveStrategy = useMemo(
+    () => effectivePushStrategy(wish, projects),
+    [wish, projects],
+  );
+  const isPerAzima = effectiveStrategy === PushStrategy.AZIMA;
+
+  const handlePushStrategy = useCallback(
+    (strategy: PushStrategy) => {
+      quiet(
         act(
+          () => clients.wishes.pushStrategy({ wishId: wish.id, strategy }),
+          [Change.WISH, Change.TASK],
+        ),
+      );
+    },
+    [quiet, act, clients.wishes, wish.id],
+  );
+
+  const handlePushAzima = useCallback(
+    (azima: Task) =>
+      act(
+        () =>
+          clients.projects.push({
+            project: azima.projectId || projects[0]?.id || "",
+            wish: wish.id,
+          }),
+        [Change.WISH, Change.TASK],
+      ),
+    [act, clients.projects, projects, wish.id],
+  );
+
+  const handleOpenPr = useCallback(
+    (url: string) => {
+      void clients.ui
+        .openExternal({ url })
+        .catch(() => window.open(url, "_blank", "noopener"));
+    },
+    [clients.ui],
+  );
+
+  const handleValidateAzima = useCallback(
+    (azima: Task) => {
+      quiet(
+        write(
+          azima.wishId,
           () =>
             clients.tasks.done({
-              taskId: task.id,
-              note,
+              taskId: azima.id,
+              note: t("azima.validated_note"),
               by: Closer.DEVELOPER,
             }),
           [Change.TASK],
-          t("task.marked_done", { task: task.code }),
-        )
-      }
-    />
+          t("azima.validated", { code: azima.code }),
+        ),
+      );
+    },
+    [quiet, write, clients.tasks],
   );
+
+  const renderAzima = useCallback(
+    ({ azima, parts }: { azima: Task; parts: readonly Task[] }) => (
+      <AzimaCard
+        key={azima.id}
+        azima={azima}
+        parts={parts}
+        tasks={byId}
+        render={renderTask}
+        focus={focus}
+        onValidate={handleValidateAzima}
+        isPerAzima={isPerAzima}
+        onPush={handlePushAzima}
+        onOpenPr={handleOpenPr}
+      />
+    ),
+    [
+      byId,
+      renderTask,
+      focus,
+      handleValidateAzima,
+      isPerAzima,
+      handlePushAzima,
+      handleOpenPr,
+    ],
+  );
+
+  const handleOpenDraft = useCallback(
+    (draft: Task) => {
+      quiet(
+        act(
+          () => clients.tasks.open({ azima: draft.id }),
+          [Change.TASK],
+          t("azima.opened_toast", { code: draft.code }),
+        ),
+      );
+    },
+    [quiet, act, clients.tasks],
+  );
+
+  const handleMoveDraft = useCallback((draft: Task) => {
+    setMovingAzima(draft);
+  }, []);
+
+  const renderDraft = useCallback(
+    (draft: Task) => (
+      <DraftAzimaCard
+        key={draft.id}
+        azima={draft}
+        tasks={byId}
+        focus={focus}
+        onOpen={() => handleOpenDraft(draft)}
+        onMove={() => handleMoveDraft(draft)}
+      />
+    ),
+    [byId, focus, handleOpenDraft, handleMoveDraft],
+  );
+
+  const handleQuestionAnswer = useCallback(
+    (choice: Choice, note: string, q?: Question) => {
+      if (q) return answer(q.wishId, q.id, choice, note);
+      return Promise.resolve();
+    },
+    [answer],
+  );
+
+  const handleQuestionMark = useCallback(
+    (kind: MarkKind, remove: boolean, q?: Question) => {
+      if (q) return mark(q.wishId, q.id, kind, remove);
+      return Promise.resolve();
+    },
+    [mark],
+  );
+
+  const handleQuestionEnlighten = useCallback(
+    (note: string, q?: Question) => {
+      if (q) return enlighten(q.wishId, q.id, note);
+      return Promise.resolve();
+    },
+    [enlighten],
+  );
+
+  const handleTaskFocus = useCallback(
+    (id: string) => show("tasks", id),
+    [show],
+  );
+  const checkNoLead = useCallback(() => noLead(wish), [wish]);
+  const handleDecisionsMore = useCallback(() => {
+    if (store) {
+      void store.loadMore(wish.id, Change.QUESTION);
+      void store.loadMore(wish.id, Change.BLOCK);
+    }
+  }, [store, wish.id]);
+  const handleGrant = useCallback(
+    () =>
+      quiet(
+        act(
+          () => clients.wishes.grant({ wishId: wish.id }),
+          [Change.WISH],
+          t("wish.granted_toast"),
+        ),
+      ),
+    [quiet, act, clients.wishes, wish.id],
+  );
+
   // lead resumes the wish's lead, or starts one of another agent; what Djinn says of it shows as a toast: a terminal
   // that runs a program already, a session Djinn does not know.
   const lead = (provider?: Provider) => {
@@ -249,6 +575,7 @@ export function WishView({
           ))}
           <strong>{wish.title}</strong>
         </div>
+        <OperatingLoad />
         <div className="topbar-actions">
           {granted ? (
             <button
@@ -351,6 +678,46 @@ export function WishView({
           }}
         />
       )}
+      {movingAzima && (
+        <MoveAzimaDialog
+          azima={movingAzima}
+          wishes={allWishes}
+          currentWishId={wish.id}
+          onClose={() => setMovingAzima(null)}
+          onMove={(targetWishId) => {
+            const target = movingAzima;
+            setMovingAzima(null);
+            quiet(
+              act(
+                () =>
+                  clients.tasks.move({
+                    azima: target.id,
+                    wish: targetWishId,
+                  }),
+                [Change.TASK, Change.WISH],
+                t("azima.moved_toast", { code: target.code }),
+              ),
+            );
+          }}
+        />
+      )}
+      {movingQuestion && (
+        <MoveQuestionDialog
+          question={movingQuestion}
+          wishes={allWishes}
+          currentWishId={wish.id}
+          onClose={() => setMovingQuestion(null)}
+          onMove={move}
+        />
+      )}
+      {withdrawingQuestion && (
+        <WithdrawQuestionDialog
+          question={withdrawingQuestion}
+          currentWishId={wish.id}
+          onClose={() => setWithdrawingQuestion(null)}
+          onWithdraw={withdraw}
+        />
+      )}
       <div className="mission-scroll" ref={keepPlace}>
         <AttentionBar items={attention} />
         <div className="hero mission-header review-head">
@@ -358,7 +725,18 @@ export function WishView({
             <span className="eyebrow">
               {projects.map((p) => p.name).join(" · ") || t("wish.no_project")}
             </span>
-            <h1>{wish.title}</h1>
+            <WishTitle
+              key={wish.id + wish.title}
+              title={wish.title}
+              onSave={(title) =>
+                quiet(
+                  act(
+                    () => clients.wishes.rename({ wishId: wish.id, title }),
+                    [Change.WISH],
+                  ),
+                )
+              }
+            />
             <WishDescription
               key={wish.id + wish.description}
               title={wish.title}
@@ -457,6 +835,11 @@ export function WishView({
                   <Clock3 size={13} />
                   {when(wish.createTime)}
                 </span>
+                <PushStrategySelector
+                  wish={wish}
+                  projects={projects}
+                  onChange={handlePushStrategy}
+                />
                 <LastPushes pushes={wish.pushes} projects={projects} />
                 <MainMerges mains={wish.mains} projects={projects} />
               </div>
@@ -472,7 +855,7 @@ export function WishView({
             view={view}
             main={t("tabs.wish")}
             tasks={workCount(detail.tasks)}
-            decisions={decisions.length}
+            decisions={decisionsTotal ?? decisions.length}
             tilasms={detail.tilasms.length}
             agents={forAgents.length}
             onView={(to) => show(to)}
@@ -493,9 +876,11 @@ export function WishView({
           {view === "decisions" && (
             <DecisionLog
               items={decisionItems}
-              noLead={() => noLead(wish)}
+              total={decisionsTotal}
+              noLead={checkNoLead}
               focus={focus}
-              onTask={(id) => show("tasks", id)}
+              onTask={handleTaskFocus}
+              onMore={handleDecisionsMore}
             />
           )}
           {view === "tasks" &&
@@ -506,36 +891,15 @@ export function WishView({
             ) : (
               <TaskSections
                 moving={moving}
-                finished={finished}
-                azimas={azimas.filter((x) => !azimaFinished(x.azima))}
+                azimas={activeAzimas}
                 doneAzimas={doneAzimas}
+                drafts={drafts}
                 fold={wish.id}
                 showDone={showDone}
-                renderAzima={({ azima, parts }) => (
-                  <AzimaCard
-                    key={azima.id}
-                    azima={azima}
-                    parts={parts}
-                    tasks={byId}
-                    render={renderTask}
-                    focus={focus}
-                    onValidate={() =>
-                      quiet(
-                        act(
-                          () =>
-                            clients.tasks.done({
-                              taskId: azima.id,
-                              note: t("azima.validated_note"),
-                              by: Closer.DEVELOPER,
-                            }),
-                          [Change.TASK],
-                          t("azima.validated", { code: azima.code }),
-                        ),
-                      )
-                    }
-                  />
-                )}
-                aside={<SpentLine spent={spent(detail.tasks)} />}
+                showDrafts={showDrafts}
+                renderAzima={renderAzima}
+                renderDraft={renderDraft}
+                aside={<SpentLine spent={spentDetail} />}
                 render={renderTask}
               />
             ))}
@@ -577,15 +941,11 @@ export function WishView({
                                 question={q}
                                 blocking={blocking}
                                 noLead={noLead(wish)}
-                                onAnswer={(choice, note) =>
-                                  answer(wish.id, q.id, choice, note)
-                                }
-                                onMark={(kind, remove) =>
-                                  mark(wish.id, q.id, kind, remove)
-                                }
-                                onEnlighten={(note) =>
-                                  enlighten(wish.id, q.id, note)
-                                }
+                                onAnswer={handleQuestionAnswer}
+                                onMark={handleQuestionMark}
+                                onEnlighten={handleQuestionEnlighten}
+                                onMove={setMovingQuestion}
+                                onWithdraw={setWithdrawingQuestion}
                               />
                             ))}
                           </AnimatePresence>
@@ -593,18 +953,7 @@ export function WishView({
                       )}
                       {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
                       {wish.ready && (
-                        <GrantCard
-                          wish={wish}
-                          onGrant={() =>
-                            quiet(
-                              act(
-                                () => clients.wishes.grant({ wishId: wish.id }),
-                                [Change.WISH],
-                                t("wish.granted_toast"),
-                              ),
-                            )
-                          }
-                        />
+                        <GrantCard wish={wish} onGrant={handleGrant} />
                       )}
                     </section>
                   )}
@@ -612,19 +961,24 @@ export function WishView({
                   {digging.length > 0 && (
                     <InvestigatingSection
                       questions={digging}
-                      onAnswer={(q, choice, note) =>
-                        answer(wish.id, q, choice, note)
-                      }
-                      onMark={(q, kind, remove) =>
-                        mark(wish.id, q, kind, remove)
-                      }
+                      onAnswer={handleQuestionAnswer}
+                      onMark={handleQuestionMark}
+                      onMove={setMovingQuestion}
+                      onWithdraw={setWithdrawingQuestion}
                     />
                   )}
                 </div>
               )}
 
               <div className="main-side">
-                <Journal wish={wish} blocks={detail.blocks} />
+                <Journal
+                  wish={wish}
+                  blocks={detail.blocks}
+                  total={detail.blocksTotal}
+                  onMore={() => {
+                    if (store) void store.loadMore(wish.id, Change.BLOCK);
+                  }}
+                />
 
                 {projects.length > 0 && (
                   <Rights
@@ -655,14 +1009,14 @@ export function WishView({
 }
 
 // GrantCard proposes to grant a wish: Djinn proposes, only you grant.
-export function GrantCard({
+export const GrantCard = memo(function GrantCard({
   wish,
   origin,
   onGrant,
 }: {
   wish: Wish;
   origin?: ReactNode;
-  onGrant: () => void;
+  onGrant: (wish?: Wish) => void;
 }) {
   return (
     <article className="step-result-action wish-grant" id={`grant-${wish.id}`}>
@@ -673,26 +1027,42 @@ export function GrantCard({
         </span>
         <h3>{t("wish.ready_title")}</h3>
       </div>
-      <button type="button" className="button accent" onClick={onGrant}>
+      <button
+        type="button"
+        className="button accent"
+        onClick={() => onGrant(wish)}
+      >
         <Sparkles size={14} />
         {t("wish.grant")}
       </button>
     </article>
   );
-}
+});
 
 // InvestigatingSection holds the questions you asked to investigate: they wait for the lead's revision, and can still
 // be answered.
-export function InvestigatingSection({
+export const InvestigatingSection = memo(function InvestigatingSection({
   questions,
   origin = false,
   onAnswer,
   onMark,
+  onMove,
+  onWithdraw,
 }: {
   questions: OpenQuestion[];
   origin?: boolean;
-  onAnswer: (id: string, choice: Choice, note: string) => Promise<void>;
-  onMark: (id: string, kind: MarkKind, remove: boolean) => Promise<void>;
+  onAnswer: (
+    choice: Choice,
+    note: string,
+    question?: Question,
+  ) => Promise<void>;
+  onMark: (
+    kind: MarkKind,
+    remove: boolean,
+    question?: Question,
+  ) => Promise<void>;
+  onMove?: (question: Question) => void;
+  onWithdraw?: (question: Question) => void;
 }) {
   return (
     <section
@@ -712,24 +1082,37 @@ export function InvestigatingSection({
           question={item}
           blocking={blocking}
           noLead={noLead(wish)}
-          origin={origin ? <WishOrigin wish={wish} /> : undefined}
-          onAnswer={(choice, note) => onAnswer(item.id, choice, note)}
-          onMark={(kind, remove) => onMark(item.id, kind, remove)}
+          origin={origin ? wishOrigin(wish) : undefined}
+          onAnswer={onAnswer}
+          onMark={onMark}
+          onMove={onMove}
+          onWithdraw={onWithdraw}
         />
       ))}
     </section>
   );
+});
+
+const originCache = new WeakMap<Wish, ReactNode>();
+
+export function wishOrigin(wish: Wish): ReactNode {
+  let node = originCache.get(wish);
+  if (!node) {
+    node = <WishOrigin wish={wish} />;
+    originCache.set(wish, node);
+  }
+  return node;
 }
 
 // WishOrigin marks a line with its wish, in the flight plan of several wishes: its rank and its title.
-export function WishOrigin({ wish }: { wish: Wish }) {
+export const WishOrigin = memo(function WishOrigin({ wish }: { wish: Wish }) {
   return (
     <span className="wish-origin" title={wish.title}>
       {wish.rank > 0 && <b>{wish.rank}</b>}
       {wish.title}
     </span>
   );
-}
+});
 
 // WaitingTasks are the workers that wait for the user: for an answer before they edit.
 export function WaitingTasks({
@@ -751,11 +1134,13 @@ export function WaitingTasks({
       {waiting.map(({ item, question, wish }) => (
         <p className="plan-line" key={item.id} id={`waiting-${item.id}`}>
           <StatusBadge tone={taskTone(item)} label={taskStatusText(item)} />
-          {origin && <WishOrigin wish={wish} />}
+          {origin && wishOrigin(wish)}
           <span>
-            {question
-              ? t("page.action_waiting", { task: item.code, question })
-              : t("page.action_waiting_unknown", { task: item.code })}
+            {item.status === TaskStatus.FAILED
+              ? firstLine(item.error) || t("attention.worker_failed")
+              : question
+                ? t("page.action_waiting", { task: item.code, question })
+                : t("page.action_waiting_unknown", { task: item.code })}
           </span>
         </p>
       ))}
@@ -766,7 +1151,17 @@ export function WaitingTasks({
 // Journal is the story of the wish: its log blocks at once, and the commands that changed it once asked for. The
 // latest entries show, the older ones fold behind a line (older.tsx).
 // WishService.Snapshot reads the whole wish, events included: it is read on a click, then again as the wish changes.
-function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
+function Journal({
+  wish,
+  blocks,
+  total,
+  onMore,
+}: {
+  wish: Wish;
+  blocks: Block[];
+  total?: number;
+  onMore?: () => void;
+}) {
   const clients = useClients();
   const [shown, setShown] = useState(false);
   const [commands, setCommands] = useState(false);
@@ -795,7 +1190,8 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
     () => journal(commands ? exp : undefined, blocks),
     [commands, exp, blocks],
   );
-  const { shown: recent, more } = useRecent(entries.length);
+  const totalCount = commands ? entries.length : (total ?? entries.length);
+  const { shown: recent, more } = useRecent(totalCount);
   return (
     <section
       className="wish-section wish-journal"
@@ -810,9 +1206,7 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
           <ChevronRight size={14} className={shown ? "rotated-90" : ""} />
           <h3>
             {t("page.journal")}
-            {entries.length > 0 && (
-              <span className="count">{entries.length}</span>
-            )}
+            {totalCount > 0 && <span className="count">{totalCount}</span>}
           </h3>
         </button>
         {shown && (
@@ -838,20 +1232,27 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
       )}
       {shown && (
         <OlderLine
-          hidden={entries.length - recent}
+          hidden={totalCount - recent}
           label={(count, hidden) =>
             count < hidden
               ? t("wish.journal_older_some", { count, hidden })
               : t("wish.journal_older", { count })
           }
-          onShow={more}
+          onShow={() => {
+            more();
+            onMore?.();
+          }}
         />
       )}
     </section>
   );
 }
 
-function JournalEntry({ entry }: { entry: Entry }) {
+export const JournalEntry = memo(function JournalEntry({
+  entry,
+}: {
+  entry: Entry;
+}) {
   return (
     <tr className={entry.command ? "command" : "log"}>
       <td>
@@ -864,7 +1265,7 @@ function JournalEntry({ entry }: { entry: Entry }) {
       </td>
     </tr>
   );
-}
+});
 
 const modes = [Allowance.NONE, Allowance.EDIT, Allowance.AUTO] as const;
 const modeKeys = {

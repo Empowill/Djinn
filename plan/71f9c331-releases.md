@@ -109,19 +109,27 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
     VERSION=v0.0.0-dryrun BINARY=<a GOOS=darwin build>` on Linux wrote `bin/release/djinn_darwin_universal_app.zip`,
     11 entries, `djinn` 0755)
   - [x] The release workflow builds it next to the bare archive, checks it and ships it with the sums.
-    (`release.yml`, job `macos`; `actionlint` v1.7.12 passes; never run)
-  - [ ] The dry run passes on GitHub: the bundle is well formed and opens. (needs: the lead to put `release.yml` on
-    the default branch, then `gh workflow run release.yml --ref <branch> -f version=v0.0.0-dryrun`)
+    (`release.yml`, job `macos`; `actionlint` v1.7.12 passes; dry run dispatched 2026-10-10, run 38049665651)
+  - [ ] The dry run passes on GitHub: the bundle is well formed and opens.
+    - [x] Dry run 38049665651 (2026-10-10, W243, macos-15 arm64): the universal binary builds, `lipo -info`
+      confirms `x86_64 arm64`, runs and prints `djinn v0.0.0-dryrun`. Djinn.app is laid out, unzips with `ditto`,
+      `plutil` lints `Info.plist`, `CFBundleIdentifier` is `io.github.empowill.djinn`, binary matches `cmp`, and runs
+      from inside the bundle. It proved that `codesign --verify` cannot check `$app/Contents/MacOS/djinn` directly on an
+      unsigned bundle without failing on missing bundle resources: moved to standalone binary and added
+      `CFBundleURLTypes` checking. The full pass with `open` and artifact upload awaits the next run.
   - [ ] Opened on a Mac from Finder: the window, the icon in the Dock and Launchpad, a notification. (needs: a Mac)
 
 ## Decided along the way
 - **The CI is GitHub Actions.** `.github/workflows/ci.yml`, on every pull request and every push to `main`: `go tool
   task lint` and `go tool task test` (Go, interface, end-to-end in headless Chromium) on Linux; `test-go` on macOS and
   Windows. Windows reports without blocking until it is green once (T11).
-- **A tag builds, a person publishes.** `.github/workflows/release.yml`, on a `v*` tag: it checks that the tag carries
-  `dist/` and that Djinn builds without CGO (the `go install` fallback), builds every target, and opens a **draft**
-  release with the archives, `SHA256SUMS`, `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md` and the install scripts. A
-  maintainer reads it and publishes it; only then is it the latest. A tag with a `-` (`v0.0.1-test`) is a pre-release.
+- **How to release: create the release on GitHub's page, from main.** `.github/workflows/release.yml`
+  runs on `release: published`, builds the interface itself in CI (`npm ci`, `task ui`) when the tag has no `dist/`,
+  builds every target, and attaches the archives, `SHA256SUMS`, `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md` and
+  the install scripts to the existing release (`gh release upload --clobber`). The release's text stays what the
+  developer wrote; when it is empty, `docs/releases/<tag>.md` fills it (`gh release edit --notes-file`). A tag pushed
+  with `dist/` inside (`go tool task release`) still works, opening a draft release. Rerunning replaces the assets.
+  A tag with a `-` (`v0.0.1-test`) is a pre-release.
 - **Every step runs by hand, the CI adds nothing.** `go tool task release-build VERSION=… [GOOS= GOARCH= CGO=]`
   builds one archive into `bin/release/` (Windows from Linux too), `release-build-macos` the universal one (`lipo`,
   macOS only), `release-sums` the sums. `tools/releasepack` packs and sums, portable. They use the `dist/` already

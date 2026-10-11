@@ -252,13 +252,13 @@ func catalog() []catalogCase {
 		{provider: "antigravity", fixture: "permission-denied-notice",
 			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "USAGE", "ERROR"},
 			err:  `agy stopped: it cannot run commands headless (git grep -n "RestartFile"). Run this task with claude or codex.`},
-		{provider: "antigravity", fixture: "resume", spec: Spec{Resume: "055a398f-db14-4c5f-abbb-1bf03f8120a7"},
+		{provider: "antigravity", fixture: "resume", spec: Spec{Resume: "9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f"},
 			want: []string{"STATUS", "TEXT", "USAGE"},
 			check: func(t *testing.T, events []Event, args, _ string) {
-				if !strings.HasSuffix(args, "--conversation\n055a398f-db14-4c5f-abbb-1bf03f8120a7") {
+				if !strings.HasSuffix(args, "--conversation\n9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f") {
 					t.Errorf("args = %q", args)
 				}
-				if ev := event(t, events, "STATUS"); ev.SessionID != "055a398f-db14-4c5f-abbb-1bf03f8120a7" {
+				if ev := event(t, events, "STATUS"); ev.SessionID != "9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f" {
 					t.Errorf("session = %q", ev.SessionID)
 				}
 			}},
@@ -288,7 +288,7 @@ func catalog() []catalogCase {
 				}
 				list := strings.Split(args, "\n")
 				i := slices.Index(list, "--project")
-				if i < 0 || !slices.Contains(list, "--sandbox") {
+				if i < 0 || slices.Contains(list, "--sandbox") {
 					t.Fatalf("args = %q", args)
 				}
 				dir, _ := agyProjectsDir()
@@ -301,8 +301,12 @@ func catalog() []catalogCase {
 					t.Fatalf("project %s: %v", b, err)
 				}
 				g := f.PermissionGrants.PermissionGrants
-				if len(g.Allow) != 3 || !strings.HasPrefix(g.Allow[0], "write_file(") || g.Allow[2] != "command(git commit)" ||
-					!slices.Equal(g.Deny, []string{"command(git push)"}) {
+				home, _ := os.UserHomeDir()
+				if !slices.Contains(g.Allow, "command(git commit)") ||
+					!slices.ContainsFunc(g.Allow, func(s string) bool { return strings.HasPrefix(s, "write_file(") }) ||
+					!slices.ContainsFunc(g.Allow, func(s string) bool { return strings.HasPrefix(s, "read_file(") }) ||
+					!slices.Contains(g.Deny, "command(git push)") ||
+					!slices.Contains(g.Deny, "read_file("+filepath.Join(home, ".ssh")+")") {
 					t.Errorf("grants = %+v", g)
 				}
 			}},
@@ -327,8 +331,69 @@ func catalog() []catalogCase {
 				if err != nil || json.Unmarshal(b, &f) != nil {
 					t.Fatalf("project %s: %v", b, err)
 				}
-				if g := f.PermissionGrants.PermissionGrants; !slices.Contains(g.Allow, "command(*)") || !slices.Equal(g.Deny, []string{"command(git push)"}) {
+				if g := f.PermissionGrants.PermissionGrants; !slices.Contains(g.Allow, "command(*)") || !slices.Contains(g.Deny, "command(git push)") {
 					t.Errorf("grants = %+v", g)
+				}
+			}},
+		{provider: "antigravity", fixture: "malformed-call",
+			want: []string{"STATUS", "STATUS", "USAGE", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, _, input string) {
+				statuses := texts(events, "STATUS")
+				if len(statuses) < 2 || !strings.Contains(statuses[1], "continued: "+agyContinuePrompt) {
+					t.Errorf("statuses = %q", statuses)
+				}
+				if !strings.Contains(input, agyContinuePrompt) {
+					t.Errorf("input lacks continue prompt: %q", input)
+				}
+			}},
+		{provider: "antigravity", fixture: "token-limit",
+			want: []string{"STATUS", "TEXT", "STATUS", "USAGE", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, _, input string) {
+				textsList := texts(events, "TEXT")
+				if len(textsList) < 2 || textsList[0] != "Here is the partial output [cut]" || textsList[1] != "and the remaining content." {
+					t.Errorf("texts = %q", textsList)
+				}
+				statuses := texts(events, "STATUS")
+				if len(statuses) < 2 || !strings.Contains(statuses[1], "continued: "+agyContinuePrompt) {
+					t.Errorf("statuses = %q", statuses)
+				}
+				if !strings.Contains(input, agyContinuePrompt) {
+					t.Errorf("input lacks continue prompt: %q", input)
+				}
+			}},
+		{provider: "antigravity", fixture: "retry-failed",
+			want: []string{"STATUS", "STATUS", "USAGE", "STATUS", "USAGE", "STATUS", "USAGE", "ERROR", "USAGE"},
+			err:  "Model error: retries remaining: 0, please retry",
+			check: func(t *testing.T, events []Event, _, input string) {
+				statuses := texts(events, "STATUS")
+				if len(statuses) < 4 {
+					t.Errorf("statuses = %q", statuses)
+				}
+				if n := strings.Count(input, agyContinuePrompt); n != 3 {
+					t.Errorf("continuations in input = %d, want 3; input = %q", n, input)
+				}
+			}},
+		{provider: "antigravity", fixture: "error-event",
+			want: []string{"STATUS", "STATUS", "USAGE", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, _, input string) {
+				statuses := texts(events, "STATUS")
+				if len(statuses) < 2 || !strings.Contains(statuses[1], "continued: "+agyContinuePrompt) {
+					t.Errorf("statuses = %q", statuses)
+				}
+				if !strings.Contains(input, agyContinuePrompt) {
+					t.Errorf("input lacks continue prompt: %q", input)
+				}
+			}},
+		{provider: "antigravity", fixture: "w316-end",
+			want: []string{"STATUS", "STATUS", "USAGE", "STATUS", "USAGE", "STATUS", "USAGE", "TOOL_CALL", "TOOL_RESULT", "TEXT", "ERROR", "USAGE"},
+			err:  "Your previous response contained an improperly formatted function call",
+			check: func(t *testing.T, events []Event, _, input string) {
+				statuses := texts(events, "STATUS")
+				if len(statuses) < 4 {
+					t.Errorf("statuses = %q", statuses)
+				}
+				if n := strings.Count(input, agyContinuePrompt); n != 3 {
+					t.Errorf("continuations in input = %d, want 3; input = %q", n, input)
 				}
 			}},
 		{provider: "antigravity", fixture: "two-turns", send: []string{"And then?"},
@@ -569,7 +634,7 @@ func TestProviderArgs(t *testing.T) {
 		{Spec{ReadOnly: true}, nil, true},
 		{Spec{Resume: "c1", Fork: true}, nil, true},
 		{Spec{Dir: "/w", Permissions: &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_AUTO}},
-			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits", "--sandbox",
+			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits",
 				"--project", agyProjectID("/w")}, false},
 		{Spec{Dir: "/w", Permissions: &djinnv1.Permissions{Edit: true, Network: true}},
 			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits", "--project", agyProjectID("/w")}, false},

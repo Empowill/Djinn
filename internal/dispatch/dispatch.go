@@ -32,7 +32,9 @@ type Machine struct {
 	// worker back. Policy weighs it against what a worker of the task's provider typically takes
 	// (machine.Policy.WorkerRoom).
 	Available uint64
-	Policy    machine.Policy
+	// Total is the machine's total RAM in bytes; 0 when unknown.
+	Total  uint64
+	Policy machine.Policy
 }
 
 // Situation is what a pass knows: every task, every wish, which projects are in Git, and the machine. Its zero
@@ -56,6 +58,7 @@ type Situation struct {
 // New is the situation of tasks and wishes, all of them as the store lists them (oldest first), the projects in Git being git (a project not in it is
 // not), and machine what the machine allows (nil: nothing limits).
 func New(tasks []*planv1.Task, wishes []*planv1.Wish, git map[string]bool, machine *Machine) *Situation {
+	plan.FillAzimas(tasks)
 	s := &Situation{
 		tasks: tasks, byID: make(map[string]*planv1.Task, len(tasks)), wishes: make(map[string]*planv1.Wish, len(wishes)),
 		rank: map[string]int{}, git: git, machine: machine, started: map[string]bool{}, reading: map[string]bool{},
@@ -209,14 +212,21 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 		}
 		switch d.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_DONE:
+			if plan.IsAzima(d) && (d.GetAzima() == nil || d.GetAzima().GetState() != planv1.AzimaState_AZIMA_STATE_DONE) {
+				break
+			}
 			// Work Djinn integrates counts once committed into the wish's integration branch, which the task starts
 			// from (T07); until then it waits, through a conflict or red tests a worker corrects too.
 			if waits, state := uncommitted(d); waits && why == "" {
 				why = fmt.Sprintf("waits for %s to be committed%s", d.GetCode(), state)
 			}
 			continue
-		case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED:
-			// Failed covers a task resumed maxResumes times without finishing: Djinn resumes it no more.
+		case planv1.TaskStatus_TASK_STATUS_FAILED:
+			if why == "" {
+				why = fmt.Sprintf("waits while its dependency %s is failed", ended)
+			}
+			continue
+		case planv1.TaskStatus_TASK_STATUS_STOPPED:
 			return "", fmt.Sprintf("its dependency %s ended %s", ended, status(d.GetStatus()))
 		}
 		// Interrupted or resuming: Djinn resumes it by itself, so the task waits for it. An azima waits to be marked
@@ -322,13 +332,15 @@ func (s *Situation) limited(t *planv1.Task) string {
 	return fmt.Sprintf("%s waits for %s", provider(t), cmp.Or(holder.GetWaitReason(), "its usage limit"))
 }
 
-// provider names the task's agent; none is claude.
-func provider(t *planv1.Task) string {
+// Provider names the task's agent; none is claude.
+func Provider(t *planv1.Task) string {
 	if t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED {
 		return "claude"
 	}
 	return strings.ToLower(strings.TrimPrefix(t.GetProvider().String(), "PROVIDER_"))
 }
+
+func provider(t *planv1.Task) string { return Provider(t) }
 
 // full says why the task's worker may not start now, or "" when it may: a slot is free (a question worker takes none),
 // and the memory holds a worker of its provider. Once the memory holds a task, the ones after it wait for it: they keep their order.
@@ -363,30 +375,54 @@ func (s *Situation) full(t *planv1.Task) string {
 		return fmt.Sprintf("%s goes first: %s", s.short.GetCode(), s.shortWhy)
 	}
 	peak, measured := s.typical(provider(t))
-	why := m.Policy.WorkerRoom(m.Available, s.growing(), provider(t), peak, measured)
+	why := m.Policy.WorkerRoom(m.Total, m.Available, s.growing(), s.engaged(), provider(t), peak, measured)
 	if why != "" {
 		s.short, s.shortWhy = t, why
 	}
 	return why
 }
 
+// ProviderPeaks returns the measured peak memories of finished workers, by provider, the latest first.
+func ProviderPeaks(tasks []*planv1.Task) map[string][]uint64 {
+	var ended []*planv1.Task
+	for _, t := range tasks {
+		if t.GetEndTime() != nil && t.GetResources().GetPeakMemoryBytes() > 0 && !Watcher(t) {
+			ended = append(ended, t)
+		}
+	}
+	slices.SortStableFunc(ended, func(a, b *planv1.Task) int {
+		return b.GetEndTime().AsTime().Compare(a.GetEndTime().AsTime())
+	})
+	peaks := map[string][]uint64{}
+	for _, t := range ended {
+		p := Provider(t)
+		peaks[p] = append(peaks[p], t.GetResources().GetPeakMemoryBytes())
+	}
+	return peaks
+}
+
+// WorkerMemory returns the engaged memory (sum of peak forecasts for running workers)
+// and actual resident memory of running workers.
+func WorkerMemory(tasks []*planv1.Task, p machine.Policy) (engaged, actual uint64) {
+	peaks := ProviderPeaks(tasks)
+	margin := p.WorkerMargin
+	for _, t := range tasks {
+		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || Watcher(t) {
+			continue
+		}
+		peak, _ := p.Typical(peaks[provider(t)])
+		uses := t.GetResources().GetMemoryBytes()
+		engaged += max(peak, uses) + margin
+		actual += uses
+	}
+	return engaged, actual
+}
+
 // typical is the typical peak memory of a worker of the provider, and how many measured workers gave it
 // (machine.Policy.Typical): the finished workers of that provider, the latest first.
 func (s *Situation) typical(name string) (uint64, int) {
 	if s.peaks == nil {
-		var ended []*planv1.Task
-		for _, t := range s.tasks {
-			if t.GetEndTime() != nil && t.GetResources().GetPeakMemoryBytes() > 0 && !Watcher(t) {
-				ended = append(ended, t)
-			}
-		}
-		slices.SortStableFunc(ended, func(a, b *planv1.Task) int {
-			return b.GetEndTime().AsTime().Compare(a.GetEndTime().AsTime())
-		})
-		s.peaks = map[string][]uint64{}
-		for _, t := range ended {
-			s.peaks[provider(t)] = append(s.peaks[provider(t)], t.GetResources().GetPeakMemoryBytes())
-		}
+		s.peaks = ProviderPeaks(s.tasks)
 	}
 	return s.machine.Policy.Typical(s.peaks[name])
 }
@@ -407,6 +443,30 @@ func (s *Situation) growing() uint64 {
 		} else if !running {
 			sum += peak
 		}
+	}
+	return sum
+}
+
+// Engaged is the sum of peak forecasts of the workers running or started in this pass.
+func (s *Situation) Engaged() uint64 {
+	return s.engaged()
+}
+
+// engaged is the sum of peak forecasts of the workers running or started in this pass.
+func (s *Situation) engaged() uint64 {
+	if s.machine == nil {
+		return 0
+	}
+	var sum uint64
+	margin := s.machine.Policy.WorkerMargin
+	for _, t := range s.tasks {
+		running := t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && !Watcher(t)
+		if !running && !s.started[t.GetId()] && !s.reading[t.GetId()] {
+			continue
+		}
+		peak, _ := s.typical(provider(t))
+		uses := t.GetResources().GetMemoryBytes()
+		sum += max(peak, uses) + margin
 	}
 	return sum
 }

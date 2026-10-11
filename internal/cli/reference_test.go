@@ -118,21 +118,26 @@ func TestFlagSet(t *testing.T) {
 	c := Command{Name: "x", Flags: []Param{
 		{Name: "--on", Type: "bool", Default: "true", Help: "On."},
 		{Name: "--n", Type: "int", Help: "N."},
+		{Name: "--f", Type: "float", Default: "1.5", Help: "F."},
 		{Name: "--s", Type: "string", Help: "S."},
 	}}
 	var on bool
 	var n int
+	var f float64
 	var s string
-	fs := c.FlagSet(map[string]any{"on": &on, "n": &n, "s": &s})
+	fs := c.FlagSet(map[string]any{"on": &on, "n": &n, "f": &f, "s": &s})
 	if !on {
 		t.Error("--on does not default to true")
 	}
-	if err := fs.Parse([]string{"--on=false", "--n", "3", "--s=a"}); err != nil || on || n != 3 || s != "a" {
-		t.Errorf("parse: %v, %v %d %q", err, on, n, s)
+	if f != 1.5 {
+		t.Errorf("--f does not default to 1.5, got %v", f)
+	}
+	if err := fs.Parse([]string{"--on=false", "--n", "3", "--f=2.5", "--s=a"}); err != nil || on || n != 3 || f != 2.5 || s != "a" {
+		t.Errorf("parse: %v, %v %d %f %q", err, on, n, f, s)
 	}
 	for name, vars := range map[string]map[string]any{
-		"a flag without its variable": {"on": &on, "n": &n},
-		"a variable without its flag": {"on": &on, "n": &n, "s": &s, "t": &s},
+		"a flag without its variable": {"on": &on, "n": &n, "f": &f},
+		"a variable without its flag": {"on": &on, "n": &n, "f": &f, "s": &s, "t": &s},
 	} {
 		func() {
 			defer func() {

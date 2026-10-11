@@ -81,7 +81,7 @@ func (c Claude) args(spec Spec) []string {
 		// session so (claude takes --session-id with --resume only when it forks).
 		args = append(args, "--session-id", spec.TaskID)
 	}
-	if spec.Model != "" {
+	if spec.Model != "" && !foreignModel(planv1.Provider_PROVIDER_CLAUDE, spec.Model) {
 		args = append(args, "--model", spec.Model)
 	}
 	if spec.MaxBudgetUSD > 0 {
@@ -257,7 +257,9 @@ func parseClaude(raw string) ([]Event, *turnEnd) {
 			if m.Model != "" {
 				text += ", model " + m.Model
 			}
-			add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text).SessionID = m.SessionID
+			ev := add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
+			ev.SessionID = m.SessionID
+			ev.Model = m.Model
 		}
 		if m.Subtype == "thinking_tokens" {
 			return nil, nil // An estimate of the thinking under way; the result counts it.

@@ -334,6 +334,20 @@ func (tx *Tx) Delete(m proto.Message) error {
 	return nil
 }
 
+// Change notes entities that changed outside of Put or Delete (such as an entity moved to another wish),
+// to be reported to OnCommit hooks. Like Put, it follows the command that caused it.
+func (tx *Tx) Change(ms ...proto.Message) error {
+	if !tx.journal {
+		return errors.New("store: journal the command before changing an entity")
+	}
+	for _, m := range ms {
+		if m != nil {
+			tx.changed = append(tx.changed, proto.Clone(m))
+		}
+	}
+	return nil
+}
+
 // Command is an entry of the journal.
 type Command struct {
 	Seq     int64

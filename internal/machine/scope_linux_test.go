@@ -40,7 +40,7 @@ func TestProbeScopesFallback(t *testing.T) {
 	args := fakeSystemdRun(t, "echo /user.slice/user-1000.slice/user@1000.service/app.slice/djinn-probe-0a1b2c3d.scope; "+
 		"echo none; echo 1073741824")
 	s, notes, err := ProbeScopes(t.Context(), 150, 1<<30)
-	if err != nil || s.CPU != 0 || s.Memory != 1<<30 || len(notes) != 1 || !strings.Contains(notes[0], "cpu controller") {
+	if err != nil || s.CPU != 0 || s.Memory != 1<<30 || !s.MemoryController || len(notes) != 1 || !strings.Contains(notes[0], "cpu controller") {
 		t.Fatalf("a user systemd without the cpu controller: %+v, %q, %v", s, notes, err)
 	}
 	b, err := os.ReadFile(args)
@@ -53,5 +53,12 @@ func TestProbeScopesFallback(t *testing.T) {
 	}
 	if c := s.New("W3").Cgroup; !strings.HasPrefix(c, "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/djinn-W3-") {
 		t.Errorf("a worker's cgroup: %q", c)
+	}
+
+	fakeSystemdRun(t, "echo /user.slice/user-1000.slice/user@1000.service/app.slice/djinn-probe-0a1b2c3d.scope; "+
+		"echo 150000 100000; echo none")
+	s2, notes2, err := ProbeScopes(t.Context(), 150, 0)
+	if err != nil || s2.CPU != 150 || s2.MemoryController || len(notes2) != 0 {
+		t.Fatalf("a user systemd without memory controller: %+v, %q, %v", s2, notes2, err)
 	}
 }

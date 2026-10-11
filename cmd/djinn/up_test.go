@@ -495,7 +495,7 @@ func TestWindowTerminalOpensInAProject(t *testing.T) {
 func TestWorkerScopesFallback(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	var out bytes.Buffer
-	if s := workerScopes(t.Context(), &out, 150, 1<<30); s != nil {
+	if s := workerScopes(t.Context(), &out, 150, 1<<30, 0); s != nil {
 		t.Errorf("scopes %+v without systemd-run", s)
 	}
 	if got := out.String(); strings.Count(got, "\n") != 1 || !strings.Contains(got, "no systemd scope per worker") ||
@@ -503,14 +503,19 @@ func TestWorkerScopesFallback(t *testing.T) {
 		t.Errorf("djinn up said %q", got)
 	}
 	out.Reset()
-	workerScopes(t.Context(), &out, 0, 0)
+	workerScopes(t.Context(), &out, 0, 0, 0)
 	if got := out.String(); strings.Contains(got, "uncapped") || !strings.HasSuffix(got, "workers run in their process group\n") {
 		t.Errorf("without caps, djinn up said %q", got)
 	}
+	out.Reset()
+	workerScopes(t.Context(), &out, 0, 0, 2.5)
+	if got := out.String(); !strings.HasSuffix(got, "workers run in their process group, uncapped\n") {
+		t.Errorf("with guardrail without systemd-run, djinn up said %q", got)
+	}
 }
 
-// TestOnOff: $DJINN_QUESTION_WORKERS reads on or off, in any case, and what strconv.ParseBool reads; anything else is
-// an error that says what it expects.
+// TestOnOff: $DJINN_ANSWER_WORKERS, $DJINN_ENLIGHTEN_WORKERS, $DJINN_QUESTION_WORKERS read on or off, in any case,
+// and what strconv.ParseBool reads; anything else is an error that says what it expects.
 func TestOnOff(t *testing.T) {
 	for v, want := range map[string]bool{"on": true, "OFF": false, " off ": false, "true": true, "0": false} { //nolint:gocritic // " off " checks that the value is trimmed
 		if got, err := onOff(v); err != nil || got != want {
@@ -543,5 +548,16 @@ func TestProfiles(t *testing.T) {
 	body, err := io.ReadAll(res.Body)
 	if err != nil || res.StatusCode != http.StatusOK || !strings.Contains(string(body), "up") {
 		t.Errorf("GET %scmdline: %d %q, %v; want djinn's command line", server.ProfilePath, res.StatusCode, body, err)
+	}
+}
+
+// TestWorkerMemoryGuardFlag: invalid values for --worker-memory-guard or $DJINN_WORKER_MEMORY_GUARD return an error.
+func TestWorkerMemoryGuardFlag(t *testing.T) {
+	if _, err := runUp([]string{"--worker-memory-guard", "-1"}); err == nil || !strings.Contains(err.Error(), "--worker-memory-guard -1") {
+		t.Errorf("runUp with negative guard: got %v, want error", err)
+	}
+	t.Setenv("DJINN_WORKER_MEMORY_GUARD", "invalid")
+	if _, err := runUp(nil); err == nil || !strings.Contains(err.Error(), "DJINN_WORKER_MEMORY_GUARD") {
+		t.Errorf("runUp with invalid env guard: got %v, want error", err)
 	}
 }

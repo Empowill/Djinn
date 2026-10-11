@@ -89,7 +89,7 @@ func ReadDoneWhen(body []byte) DoneWhen {
 			continue
 		}
 		d.Unchecked++
-		text, need, ok := cutNeeds(b.text)
+		text, need, ok := CutNeeds(b.text)
 		if ok {
 			provers, reviewer := Provers(need)
 			needs = append(needs, &planv1.ProofNeed{Box: text, Needs: need, Provers: provers, Reviewer: reviewer})
@@ -120,9 +120,9 @@ func struck(text string) bool {
 	return ok && strings.Contains(rest, "~~")
 }
 
-// cutNeeds splits a box's text from its needs: "(needs: …)", a parenthesis that opens on them, to its closing one.
+// CutNeeds splits a box's text from its needs: "(needs: …)", a parenthesis that opens on them, to its closing one.
 // False when the box says none, or leaves the parenthesis open.
-func cutNeeds(text string) (rest, needs string, ok bool) {
+func CutNeeds(text string) (rest, needs string, ok bool) {
 	i := strings.Index(text, "(needs:")
 	if i < 0 {
 		return text, "", false
@@ -144,6 +144,21 @@ func cutNeeds(text string) (rest, needs string, ok bool) {
 		}
 	}
 	return text, "", false
+}
+
+// ReadTaskItemNeeds parses an unchecked markdown task item ("- [ ] text (needs: ...)") and splits its box text
+// from its needs. Returns false when the line is not an unchecked task item, is struck through, or has no needs.
+func ReadTaskItemNeeds(line string) (box, needs string, ok bool) {
+	line = strings.ReplaceAll(line, "\t", "    ")
+	m := boxLine.FindStringSubmatch(line)
+	if m == nil || m[2] != " " {
+		return "", "", false
+	}
+	text := strings.TrimSpace(m[3])
+	if struck(text) {
+		return "", "", false
+	}
+	return CutNeeds(text)
 }
 
 // The words that name who or what gives a proof. Each is matched on whole words, case aside.

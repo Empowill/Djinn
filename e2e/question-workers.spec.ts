@@ -80,7 +80,7 @@ test("rubbing the lamp starts a converter, which spawns a task from the decision
   fs.mkdirSync(path.join(project, ".agents"));
   fs.writeFileSync(
     path.join(project, ".agents", "settings.txtpb"),
-    "provider: PROVIDER_FAKE\n",
+    "provider: PROVIDER_FAKE\nanswer_workers: true\n",
   );
   const djinn = (...args: string[]) =>
     execFileSync(binary, args, { env: env(home), encoding: "utf8" });
@@ -137,14 +137,15 @@ test("rubbing the lamp starts a converter, which spawns a task from the decision
     expect(spawned.decision).toBe("Q01");
     expect(spawned.role ?? "").toBe("");
 
-    // The window shows both, and the decision log links the decision to the task.
+    // The Tasks tab has no finished section; the decision log links the decision to the task it spawned.
     const tasksTab = page.getByRole("tab", { name: /^Tasks/ });
     await expect(tasksTab).toHaveText("Tasks2");
     await tasksTab.click();
-    const finished = page.locator(".tasks-finished .wish-task");
-    await expect(finished).toHaveCount(2);
-    await expect(finished.filter({ hasText: "Q01 → tasks" })).toHaveCount(1);
-    await expect(finished.filter({ hasText: "Use SQLite" })).toHaveCount(1);
+    await expect(page.locator(".tasks-finished")).toHaveCount(0);
+
+    const decisionsTab = page.getByRole("tab", { name: /^Decisions/ });
+    await decisionsTab.click();
+    await expect(page.locator(".decision-tasks")).toContainText("W2");
     expect(errors).toEqual([]);
   } finally {
     await down(running);

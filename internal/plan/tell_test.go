@@ -22,8 +22,8 @@ func (c clients) answer(t *testing.T, q *planv1.Question, choice planv1.Choice, 
 func TestAnswerLine(t *testing.T) {
 	q := &planv1.Question{Code: "Q43", WishId: "w1", Options: []string{"Olive", "Paraffin"}}
 	for choice, want := range map[planv1.Choice]string{
-		planv1.Choice_CHOICE_B:   `Djinn: Q43 answered B — "Paraffin". Note: "brighter, then cheaper". Act on it: djinn wish brief w1 has the context.`,
-		planv1.Choice_CHOICE_YES: `Djinn: Q43 answered yes. Note: "brighter, then cheaper". Act on it: djinn wish brief w1 has the context.`,
+		planv1.Choice_CHOICE_B:   `Djinn: Q43 answered B — "Paraffin". Note: "brighter, then cheaper". Turn it into tasks: you hold the plan's graph (djinn wish brief w1).`,
+		planv1.Choice_CHOICE_YES: `Djinn: Q43 answered yes. Note: "brighter, then cheaper". Turn it into tasks: you hold the plan's graph (djinn wish brief w1).`,
 	} {
 		q.Answer = &planv1.Answer{Choice: choice, Note: "brighter,\nthen cheaper"}
 		if got := AnswerLine(q, "", ""); got != want {
@@ -31,7 +31,7 @@ func TestAnswerLine(t *testing.T) {
 		}
 	}
 	q.Answer = &planv1.Answer{Choice: planv1.Choice_CHOICE_A}
-	if got, want := AnswerLine(q, "", ""), `Djinn: Q43 answered A — "Olive". Act on it: djinn wish brief w1 has the context.`; got != want {
+	if got, want := AnswerLine(q, "", ""), `Djinn: Q43 answered A — "Olive". Turn it into tasks: you hold the plan's graph (djinn wish brief w1).`; got != want {
 		t.Errorf("without a note:\n got %s\nwant %s", got, want)
 	}
 	if got, want := EnlightenLine(q, "what does each cost?", ""),
@@ -94,8 +94,8 @@ func TestAnswerReachesTheLead(t *testing.T) {
 		t.Errorf("opened %q, want %q", leads.opened, want)
 	}
 	want := []string{
-		terminal + `: Djinn: Q02 answered A — "Brass". Note: "the old one". Act on it: djinn wish brief ` + id + " has the context.",
-		terminal + ": Djinn: Q03 answered yes. Act on it: djinn wish brief " + id + " has the context.",
+		terminal + `: Djinn: Q02 answered A — "Brass". Note: "the old one". Turn it into tasks: you hold the plan's graph (djinn wish brief ` + id + ").",
+		terminal + ": Djinn: Q03 answered yes. Turn it into tasks: you hold the plan's graph (djinn wish brief " + id + ").",
 	}
 	if strings.Join(leads.said, "\n") != strings.Join(want, "\n") {
 		t.Errorf("said\n%s\nwant\n%s", strings.Join(leads.said, "\n"), strings.Join(want, "\n"))
@@ -114,6 +114,18 @@ func TestAnswerReachesTheLead(t *testing.T) {
 	}
 	leads.said = leads.said[:len(leads.said)-1]
 
+	// A converter worker was started for the question: the lead hears that the worker turns it into tasks.
+	qConv := c.ask(t, id)
+	c.put(t, &planv1.Task{
+		Id: "task-conv", WishId: id, Code: "W12", Question: qConv.GetCode(),
+		Role: planv1.TaskRole_TASK_ROLE_CONVERTER, Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+	})
+	c.answer(t, qConv, planv1.Choice_CHOICE_YES, "")
+	if got, want := leads.said[len(leads.said)-1], terminal+": Djinn: "+qConv.GetCode()+" answered yes. W12 turns it into tasks; you will hear when it ends."; got != want {
+		t.Errorf("with converter: said\n%s\nwant\n%s", got, want)
+	}
+	leads.said = leads.said[:len(leads.said)-1]
+
 	// The lead's terminal runs a shell: the line would run as a command, so it is not typed.
 	leads.running[terminal], leads.said = []string{"/bin/sh"}, nil
 	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
@@ -129,8 +141,8 @@ func TestAnswerReachesTheLead(t *testing.T) {
 	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
 	delete(leads.running, terminal)
 	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
-	if len(leads.said) != 1 || !strings.Contains(leads.said[0], "Q06 answered yes") || len(leads.opened) != 1 {
-		t.Errorf("paused: said %q, opened %q; want Q05 told, nothing reopened", leads.said, leads.opened)
+	if len(leads.said) != 1 || !strings.Contains(leads.said[0], "Q07 answered yes") || len(leads.opened) != 1 {
+		t.Errorf("paused: said %q, opened %q; want Q07 told, nothing reopened", leads.said, leads.opened)
 	}
 }
 
@@ -166,5 +178,22 @@ func TestEnlightenReachesTheLead(t *testing.T) {
 		"And the \"smoke\" of the wick — and why?\". Investigate, then revise Q01: djinn wish brief " + id + " has the context."
 	if len(leads.said) != 1 || leads.said[0] != want {
 		t.Errorf("said %q, want %q", leads.said, want)
+	}
+
+	leads.said = nil
+	// An investigator worker was started: the lead hears that the worker investigates.
+	qInv := c.ask(t, id)
+	c.put(t, &planv1.Task{
+		Id: "task-inv", WishId: id, Code: "W13", Question: qInv.GetCode(),
+		Role: planv1.TaskRole_TASK_ROLE_INVESTIGATOR, Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+	})
+	if _, err := c.questions.Enlighten(ctx, connect.NewRequest(&planv1.QuestionServiceEnlightenRequest{
+		WishId: id, Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: qInv.GetCode()}}, Note: "investigate this",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	wantInv := LeadTerminal(id) + ": Djinn: " + qInv.GetCode() + `, the developer wants to know more before answering. Note: "investigate this". W13 investigates, then revises it; you will hear when it ends.`
+	if len(leads.said) != 1 || leads.said[0] != wantInv {
+		t.Errorf("with investigator: said %q, want %q", leads.said, wantInv)
 	}
 }

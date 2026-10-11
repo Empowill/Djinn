@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -119,7 +120,7 @@ func (h *Harness) keepUp(ctx context.Context, wish *planv1.Wish, projectID strin
 		looked(held("")) // The wish integrates into main itself.
 		return
 	case err == nil:
-		err = fetchMain(ctx, repo, ref)
+		err = h.fetchMain(ctx, wish.GetId(), repo, ref)
 	}
 	if err != nil {
 		looked(held(err.Error()))
@@ -218,7 +219,7 @@ func (h *Harness) mergeAndCheckMain(
 	if release != "" {
 		msg = fmt.Sprintf("Merge %s (%s) into %s", shown, release, branch)
 	}
-	if _, err := git(ctx, wt, "merge", "--no-ff", "--no-edit", "--quiet", "-m", msg, mainSha); err != nil {
+	if _, err := git(ctx, wt, "merge", "--no-ff", "--no-edit", "-m", msg, mainSha); err != nil {
 		conflicts := conflicted(ctx, wt)
 		conflict := func(why string) (string, *planv1.IntegrationFailure, string) {
 			_, _ = git(ctx, wt, "merge", "--abort")
@@ -369,7 +370,7 @@ func (h *Harness) mainMerged(
 		h.built(Built{
 			WishID: wish.GetId(), WishTitle: wish.GetTitle(), ProjectID: project.GetId(), Project: project.GetName(), Branch: branch,
 			Sha: sha, Changes: record.GetCommits(), Install: settings.Install,
-			Checks: []string{fmt.Sprintf("%s merged into %s: %s", shown, branch, commitsText(int(record.GetCount()), nil)+", "+release)},
+			Summaries: []TaskSummary{{Title: fmt.Sprintf("%s merged into %s: %s", shown, branch, commitsText(int(record.GetCount()), nil)+", "+release)}},
 		})
 	}
 }
@@ -450,10 +451,13 @@ func mainRef(ctx context.Context, repo, name string) (main, ref string, err erro
 	return "", "", errors.New("the project has no main branch: name it with main_branch in its settings")
 }
 
+// reTagClash matches git's error line when a tag fetch is rejected because it would clobber an existing local tag.
+var reTagClash = regexp.MustCompile(`!\s+\[rejected\]\s+(\S+)\s+->\s+(\S+)\s+\(would clobber existing tag\)`)
+
 // fetchMain fetches ref, the project's main branch as mainRef gives it, and the tags, from its remote into the
 // repository holding repo, with the person's own credentials and without ever prompting for them; a local branch
-// fetches nothing.
-func fetchMain(ctx context.Context, repo, ref string) error {
+// fetches nothing. Clashing tags are reported once on the wish wishID, without stopping the merge of main.
+func (h *Harness) fetchMain(ctx context.Context, wishID, repo, ref string) error {
 	remoteBranch, ok := strings.CutPrefix(ref, "refs/remotes/")
 	if !ok {
 		return nil
@@ -461,14 +465,63 @@ func fetchMain(ctx context.Context, repo, ref string) error {
 	remote, target, _ := strings.Cut(remoteBranch, "/")
 	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", repo, "fetch", "--quiet", "--tags", remote, "+refs/heads/"+target+":"+ref)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd := exec.CommandContext(ctx, "git", "-C", repo, "fetch", "--no-tags", remote, "+refs/heads/"+target+":"+ref)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("fetch %s from %s: %s", target, remote, cmp.Or(strings.TrimSpace(out.String()), err.Error()))
 	}
+	tagCmd := exec.CommandContext(ctx, "git", "-C", repo, "fetch", "--tags", remote)
+	tagCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
+	var tagOut bytes.Buffer
+	tagCmd.Stdout, tagCmd.Stderr = &tagOut, &tagOut
+	_ = tagCmd.Run()
+	if wishID != "" {
+		seen := make(map[string]bool)
+		for _, m := range reTagClash.FindAllStringSubmatch(tagOut.String(), -1) {
+			tag := m[1]
+			if seen[tag] {
+				continue
+			}
+			seen[tag] = true
+			if err := h.reportTagClash(ctx, wishID, remote, tag); err != nil {
+				log.Printf("djinn: report tag clash: %v", err)
+			}
+		}
+	}
 	return nil
+}
+
+// reportTagClash records once on wish wishID that the local tag differs from remote's, tolerating the clash.
+func (h *Harness) reportTagClash(ctx context.Context, wishID, remote, tag string) error {
+	msg := fmt.Sprintf("tag %s differs from %s's: kept the local one", tag, remote)
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		blocks, err := store.List[*planv1.Block](ctx, tx, store.Where{"wish_id": wishID})
+		if err != nil {
+			return err
+		}
+		for _, b := range blocks {
+			if b.GetTitle() == msg || b.GetContent() == msg {
+				return nil
+			}
+		}
+		req := &planv1.BlockServicePutRequest{
+			WishId:  wishID,
+			Kind:    "report",
+			Title:   msg,
+			Content: msg,
+		}
+		if err := tx.Journal(actorHarness, planv1connect.BlockServicePutProcedure, req); err != nil {
+			return err
+		}
+		_, err = plan.PutBlock(ctx, tx, req)
+		return err
+	})
+	if err == nil {
+		h.notify()
+	}
+	return err
 }
 
 // shortRef is a ref as a person names it: origin/main, main.
@@ -587,7 +640,7 @@ func (h *Harness) Release(ctx context.Context, build string, dirty bool, tag str
 	}
 	released := commitOf(ctx, repo, "refs/tags/"+tag)
 	if released == "" { // A release the repository does not know yet: main and the tags are fetched.
-		if err := fetchMain(ctx, repo, ref); err != nil {
+		if err := h.fetchMain(ctx, "", repo, ref); err != nil {
 			log.Printf("djinn: release %s: %v", tag, err)
 		}
 		if released = commitOf(ctx, repo, "refs/tags/"+tag); released == "" {

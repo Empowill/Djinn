@@ -28,13 +28,17 @@ test("a worker paused from its card holds, then goes on once resumed", async ({
   // Three wishes at a time: the earlier specs' wishes make way.
   const listed = JSON.parse(djinn("wish", "list", "--json")).wishes ?? [];
   for (const w of listed.filter(
-    (w: { state: string }) => w.state === "WISH_STATE_ACTIVE",
+    (w: { state?: string }) =>
+      w.state !== "WISH_STATE_PAUSED" && w.state !== "WISH_STATE_GRANTED",
   ))
     djinn("wish", "pause", w.id);
 
   const title = `Hold still ${randomUUID().slice(0, 8)}`;
-  const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
-    .id as string;
+  const made = JSON.parse(djinn("wish", "make", title, "--json")).wish;
+  const wishId = made.id as string;
+  if (made.state !== "WISH_STATE_ACTIVE") {
+    djinn("wish", "activate", wishId);
+  }
   const taskId = JSON.parse(
     djinn(
       "task",
@@ -63,6 +67,7 @@ test("a worker paused from its card holds, then goes on once resumed", async ({
       card.getByRole("button", { name: "Pause the worker" }),
     ).toHaveCount(0);
     await card.getByRole("button", { name: /Work a long while/ }).click();
+    await card.locator(".wish-task-events-fold summary").click();
     await expect(
       card.locator(".wish-event").getByText(/^paused: /),
     ).toBeVisible();

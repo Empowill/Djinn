@@ -8,15 +8,19 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/ui"
 )
 
 // Antigravity runs Google's Antigravity CLI headless: `agy --input-format stream-json --output-format stream-json`,
@@ -57,10 +61,11 @@ func (a Antigravity) args(spec Spec) ([]string, error) {
 			return nil, fmt.Errorf("agy cannot run without editing yet (the project's %s says edit: false): %w; use claude or codex",
 				filepath.ToSlash(PermissionsFile), ErrReadOnly)
 		}
+		// No --sandbox, the developer's choice (Q66, 10/10/2026): agy's sandbox cannot reach Djinn's socket, so a
+		// worker's `djinn gate run lint` asked for the "unsandboxed" permission, which a headless run cannot grant
+		// (W228, agy 1.3.3), and some tasks need the network. The grants of its project still hold: writes to the
+		// worktree and its Git folders only, the project's denied commands and git push refused.
 		args = append(args, "--mode", "accept-edits")
-		if !p.GetNetwork() {
-			args = append(args, "--sandbox")
-		}
 		args = append(args, "--project", agyProjectID(spec.Dir))
 	}
 	if spec.SkillsDir != "" {
@@ -73,7 +78,7 @@ func (a Antigravity) args(spec Spec) ([]string, error) {
 		}
 		args = append(args, "--conversation", spec.Resume)
 	}
-	if spec.Model != "" {
+	if spec.Model != "" && !foreignModel(planv1.Provider_PROVIDER_ANTIGRAVITY, spec.Model) {
 		args = append(args, "--model", spec.Model)
 	}
 	// agy has no spending cap: MaxBudgetUSD is not enforced.
@@ -143,6 +148,100 @@ const agyEveryCommand = "command(*)"
 // agyAlwaysDenied are denied to an agy worker in AUTO whatever the project denies: pushing is the orchestrator's.
 var agyAlwaysDenied = []string{"git push"}
 
+// appendUnique appends items to slice only if they are non-empty and not already present.
+func appendUnique(slice []string, items ...string) []string {
+	for _, item := range items {
+		if item != "" && !slices.Contains(slice, item) {
+			slice = append(slice, item)
+		}
+	}
+	return slice
+}
+
+var (
+	agyCachesOnce sync.Once
+	cachedGoRoot  string
+	cachedMod     string
+	cachedBuild   string
+	cachedNpm     string
+)
+
+func agyCaches() (goRoot, modCache, buildCache, npmCache string) {
+	agyCachesOnce.Do(func() {
+		home, _ := os.UserHomeDir()
+		if out, err := exec.Command("go", "env", "GOROOT", "GOMODCACHE", "GOCACHE").Output(); err == nil {
+			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+			if len(lines) >= 3 {
+				cachedGoRoot = strings.TrimSpace(lines[0])
+				cachedMod = strings.TrimSpace(lines[1])
+				cachedBuild = strings.TrimSpace(lines[2])
+			}
+		}
+		if cachedGoRoot == "" {
+			cachedGoRoot = os.Getenv("GOROOT")
+		}
+		if cachedMod == "" && home != "" {
+			cachedMod = filepath.Join(home, "go", "pkg", "mod")
+		}
+		if cachedBuild == "" && home != "" {
+			cachedBuild = filepath.Join(home, ".cache", "go-build")
+		}
+		if out, err := exec.Command("npm", "config", "get", "cache").Output(); err == nil {
+			cachedNpm = strings.TrimSpace(string(out))
+		}
+		if cachedNpm == "" && home != "" {
+			cachedNpm = filepath.Join(home, ".npm")
+		}
+	})
+	return cachedGoRoot, cachedMod, cachedBuild, cachedNpm
+}
+
+// djinnDataDir is ui.Home by default; tests can override or set DJINN_HOME.
+var djinnDataDir = ui.Home
+
+// djinnDenials finds paths inside dir to deny when some keepPaths must remain accessible.
+// Sibling directories and files that do not contain any keepPath are denied with read_file(<path>).
+func djinnDenials(dir string, keepPaths []string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var denials []string
+	for _, entry := range entries {
+		entryPath := filepath.Join(dir, entry.Name())
+		matched := false
+		for _, k := range keepPaths {
+			if k == entryPath {
+				matched = true
+				break
+			}
+		}
+		if matched {
+			continue
+		}
+		isAncestor := false
+		for _, k := range keepPaths {
+			if strings.HasPrefix(k, entryPath+string(filepath.Separator)) {
+				isAncestor = true
+				break
+			}
+		}
+		isDir := entry.IsDir()
+		if !isDir && entry.Type()&os.ModeSymlink != 0 {
+			if fi, err := os.Stat(entryPath); err == nil && fi.IsDir() {
+				isDir = true
+			}
+		}
+		if isAncestor && isDir {
+			denials = append(denials, djinnDenials(entryPath, keepPaths)...)
+		} else {
+			denials = append(denials, "read_file("+entryPath+")")
+		}
+	}
+	slices.Sort(denials)
+	return denials
+}
+
 // agyProject is the agy project of a worker with permissions: what its permissions give, as agy's grants (real
 // runs, agy 1.3.3, 2026-10-10, docs/providers.md).
 //
@@ -153,19 +252,85 @@ var agyAlwaysDenied = []string{"git push"}
 // A command(<p>) grant lets a command starting with p run without approval, command(*) any command, in the sandbox
 // still; a deny grant wins over any allow one, the user's settings' and command(*) included, in every part of a
 // compound command (`a && git push`) and after an env prefix, and its command fails without ending the turn.
+//
+// For reading, agy headless requires explicit read_file grants (W254, W269). Djinn grants read_file on what a
+// worker needs to read: the repository (main checkout and .git), Go's root, module and build caches, npm's cache,
+// /usr and /etc read-only, and the user's home with denials for secrets and Djinn's own data folder except the
+// task's worktree.
 func agyProject(spec Spec) agyProjectFile {
 	p := spec.Permissions
 	f := agyProjectFile{ID: agyProjectID(spec.Dir), Name: "Djinn " + filepath.Base(spec.Dir)}
 	g := agyGrants{Allow: []string{}}
-	gitDirs := agyGitDirs(spec.Dir)
-	if p.GetEdit() {
-		for _, d := range append([]string{spec.Dir}, gitDirs...) {
-			g.Allow = append(g.Allow, "write_file("+d+")")
+	gitDirs, repoCheckout := agyGitInfo(spec.Dir)
+
+	cleanDir := filepath.Clean(spec.Dir)
+	var keepPaths []string
+	addKeep := func(path string) {
+		if path == "" {
+			return
+		}
+		clean := filepath.Clean(path)
+		if !slices.Contains(keepPaths, clean) {
+			keepPaths = append(keepPaths, clean)
+		}
+		if resolved, err := filepath.EvalSymlinks(clean); err == nil && resolved != clean {
+			cleanResolved := filepath.Clean(resolved)
+			if !slices.Contains(keepPaths, cleanResolved) {
+				keepPaths = append(keepPaths, cleanResolved)
+			}
 		}
 	}
+	addKeep(cleanDir)
+	addKeep(repoCheckout)
+	for _, d := range gitDirs {
+		addKeep(d)
+	}
+	if spec.SkillsDir != "" {
+		addKeep(spec.SkillsDir)
+	}
+
+	if p.GetEdit() {
+		for _, d := range append([]string{cleanDir}, gitDirs...) {
+			g.Allow = appendUnique(g.Allow, "write_file("+d+")")
+		}
+	}
+
+	// Reads: repository (main checkout and .git), Go root, module and build caches, npm cache, /usr, /etc, and user's home.
+	g.Allow = appendUnique(g.Allow, "read_file("+cleanDir+")")
+	if repoCheckout != "" {
+		g.Allow = appendUnique(g.Allow, "read_file("+repoCheckout+")")
+	}
+	for _, d := range gitDirs {
+		g.Allow = appendUnique(g.Allow, "read_file("+d+")")
+	}
+	if spec.SkillsDir != "" {
+		g.Allow = appendUnique(g.Allow, "read_file("+filepath.Clean(spec.SkillsDir)+")")
+	}
+	goRoot, modCache, buildCache, npmCache := agyCaches()
+	if goRoot != "" {
+		g.Allow = appendUnique(g.Allow, "read_file("+filepath.Clean(goRoot)+")")
+	}
+	if modCache != "" {
+		g.Allow = appendUnique(g.Allow, "read_file("+filepath.Clean(modCache)+")")
+	}
+	if buildCache != "" {
+		g.Allow = appendUnique(g.Allow, "read_file("+filepath.Clean(buildCache)+")")
+	}
+	if npmCache != "" {
+		g.Allow = appendUnique(g.Allow, "read_file("+filepath.Clean(npmCache)+")")
+	}
+	if runtime.GOOS != "windows" {
+		g.Allow = appendUnique(g.Allow, "read_file(/usr)", "read_file(/etc)")
+	}
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		cleanHome := filepath.Clean(home)
+		g.Allow = appendUnique(g.Allow, "read_file("+cleanHome+")")
+	}
+
 	denied := slices.Clone(p.GetDeniedCommands())
 	if effectiveMode(p) == djinnv1.Mode_MODE_AUTO {
-		g.Allow = append(g.Allow, agyEveryCommand)
+		g.Allow = appendUnique(g.Allow, agyEveryCommand)
 		for _, c := range agyAlwaysDenied {
 			if !slices.Contains(denied, c) {
 				denied = append(denied, c)
@@ -173,47 +338,112 @@ func agyProject(spec Spec) agyProjectFile {
 		}
 	} else {
 		for _, c := range p.GetCommands() {
-			g.Allow = append(g.Allow, "command("+c+")")
+			g.Allow = appendUnique(g.Allow, "command("+c+")")
 		}
 	}
+
 	for _, c := range denied {
-		g.Deny = append(g.Deny, "command("+c+")")
+		g.Deny = appendUnique(g.Deny, "command("+c+")")
 	}
+
+	// Denials for secrets in user's home.
+	if home != "" {
+		cleanHome := filepath.Clean(home)
+		secretNames := []string{
+			".ssh",
+			".gnupg",
+			filepath.Join(".config", "gh"),
+			filepath.Join(".config", "gcloud"),
+			".aws",
+			".netrc",
+			".git-credentials",
+		}
+		for _, s := range secretNames {
+			p := filepath.Join(cleanHome, s)
+			keepSecret := false
+			for _, k := range keepPaths {
+				if k == p || strings.HasPrefix(k, p+string(filepath.Separator)) {
+					keepSecret = true
+					break
+				}
+			}
+			if !keepSecret {
+				g.Deny = appendUnique(g.Deny, "read_file("+p+")")
+			}
+		}
+	}
+
+	// Denials for Djinn's own data folder except the task's worktree.
+	if djinnDir, err := djinnDataDir(); err == nil && djinnDir != "" {
+		cleanDjinn := filepath.Clean(djinnDir)
+		anyInside := false
+		for _, k := range keepPaths {
+			rel, err := filepath.Rel(cleanDjinn, k)
+			if err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
+				anyInside = true
+				break
+			}
+		}
+		if anyInside {
+			for _, d := range djinnDenials(cleanDjinn, keepPaths) {
+				g.Deny = appendUnique(g.Deny, d)
+			}
+		} else {
+			g.Deny = appendUnique(g.Deny, "read_file("+cleanDjinn+")")
+		}
+	}
+
 	f.PermissionGrants.PermissionGrants = g
 	return f
+}
+
+// agyGitInfo returns Git's folders for the work tree holding dir (same as agyGitDirs),
+// and the repository's main checkout folder when one is found.
+func agyGitInfo(dir string) (gitDirs []string, repoCheckout string) {
+	for d := filepath.Clean(dir); ; d = filepath.Dir(d) {
+		dotGit := filepath.Join(d, ".git")
+		info, err := os.Stat(dotGit)
+		switch {
+		case err == nil && info.IsDir():
+			return []string{dotGit}, d
+		case err == nil:
+			b, err := os.ReadFile(dotGit)
+			gitDir, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir:")
+			if err != nil || !ok {
+				return nil, ""
+			}
+			gitDir = absFrom(d, strings.TrimSpace(gitDir))
+			repoDir := ""
+			b, err = os.ReadFile(filepath.Join(gitDir, "commondir"))
+			if err != nil {
+				if filepath.Base(gitDir) == ".git" {
+					repoDir = filepath.Dir(gitDir)
+				}
+				return []string{gitDir}, repoDir
+			}
+			common := absFrom(gitDir, strings.TrimSpace(string(b)))
+			if filepath.Base(common) == ".git" {
+				repoDir = filepath.Dir(common)
+			} else {
+				repoDir = common
+			}
+			if rel, err := filepath.Rel(common, gitDir); err == nil && filepath.IsLocal(rel) {
+				return []string{common}, repoDir
+			}
+			return []string{common, gitDir}, repoDir
+		}
+		if filepath.Dir(d) == d {
+			return nil, ""
+		}
+	}
 }
 
 // agyGitDirs are Git's folders for the work tree holding dir: its .git folder; in a linked worktree, the folder
 // its .git file names and the repository's common folder (the commondir file there), when not inside it. None
 // outside Git.
 func agyGitDirs(dir string) []string {
-	for d := filepath.Clean(dir); ; d = filepath.Dir(d) {
-		dotGit := filepath.Join(d, ".git")
-		info, err := os.Stat(dotGit)
-		switch {
-		case err == nil && info.IsDir():
-			return []string{dotGit}
-		case err == nil:
-			b, err := os.ReadFile(dotGit)
-			gitDir, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir:")
-			if err != nil || !ok {
-				return nil
-			}
-			gitDir = absFrom(d, strings.TrimSpace(gitDir))
-			b, err = os.ReadFile(filepath.Join(gitDir, "commondir"))
-			if err != nil {
-				return []string{gitDir}
-			}
-			common := absFrom(gitDir, strings.TrimSpace(string(b)))
-			if rel, err := filepath.Rel(common, gitDir); err == nil && filepath.IsLocal(rel) {
-				return []string{common}
-			}
-			return []string{common, gitDir}
-		}
-		if filepath.Dir(d) == d {
-			return nil
-		}
-	}
+	dirs, _ := agyGitInfo(dir)
+	return dirs
 }
 
 // absFrom is path, absolute, relative to dir when it is not.
@@ -265,8 +495,10 @@ type agyLine struct {
 	Init           *struct {
 		Model string `json:"model"`
 	} `json:"init"`
-	StepUpdate *agyStep   `json:"step_update"`
-	Result     *agyResult `json:"result"`
+	StepUpdate *agyStep        `json:"step_update"`
+	Result     *agyResult      `json:"result"`
+	Error      json.RawMessage `json:"error"`
+	Message    json.RawMessage `json:"message"`
 }
 
 type agyStep struct {
@@ -285,12 +517,15 @@ type agyStep struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	} `json:"tool_info"`
+	Error   json.RawMessage `json:"error"`
+	Message json.RawMessage `json:"message"`
 }
 
 type agyResult struct {
 	ConversationID string    `json:"conversation_id"`
 	Status         string    `json:"status"`
 	Error          string    `json:"error"`
+	Response       string    `json:"response"`
 	NumTurns       int       `json:"num_turns"`
 	Usage          *agyUsage `json:"usage"`
 	// DeniedActions are the permissions agy refused in the turn, headless mode unable to ask for them:
@@ -308,12 +543,69 @@ type agyUsage struct {
 	CacheReadTokens int64 `json:"cache_read_tokens"`
 }
 
+// agyContinuePrompt is what Djinn says when agy ended its turn on one of its own model retry prompts.
+const agyContinuePrompt = "continue where you stopped, keep answers and edits short"
+
+// extractAgyError extracts an error message string from agy error JSON payloads, handling strings or nested objects.
+func extractAgyError(raw json.RawMessage, fallback string) string {
+	if len(raw) > 0 {
+		var s string
+		if json.Unmarshal(raw, &s) == nil && s != "" {
+			return s
+		}
+		var obj struct {
+			Message json.RawMessage `json:"message"`
+			Error   json.RawMessage `json:"error"`
+			Content json.RawMessage `json:"content"`
+		}
+		if json.Unmarshal(raw, &obj) == nil {
+			if str := extractAgyError(obj.Message, ""); str != "" {
+				return str
+			}
+			if str := extractAgyError(obj.Error, ""); str != "" {
+				return str
+			}
+			if str := extractAgyError(obj.Content, ""); str != "" {
+				return str
+			}
+		}
+	}
+	return fallback
+}
+
+// isAgyRetryPrompt says whether text is one of agy's own retry prompts to its model (malformed
+// function call, output token limit, or transient model retry error) rather than the agent's final answer.
+func isAgyRetryPrompt(text string) bool {
+	lower := strings.ToLower(text)
+	switch {
+	case strings.Contains(lower, "improperly formatted function call"):
+		return true
+	case strings.Contains(lower, "malformed function call"):
+		return true
+	case strings.Contains(lower, "properly formatted function call"):
+		return true
+	case strings.Contains(lower, "output token limit"):
+		return true
+	case strings.Contains(lower, "retries remaining"):
+		return true
+	case strings.Contains(lower, "model error") && strings.Contains(lower, "retry"):
+		return true
+	default:
+		return false
+	}
+}
+
 // agyParser reads agy's stream-json. The agent's text comes in deltas: it is gathered per step, and said once
 // the step is done.
 type agyParser struct {
 	text    map[int]*strings.Builder // text of the agent_response steps under way, by step index
 	order   []int                    // their indexes, in the order they started
 	toolsIn map[int]bool             // tool steps whose call is said already
+	retries int                      // retry prompt continuations sent by Djinn
+
+	sessionID   string
+	turnEnded   bool
+	turnRetried bool
 
 	// The last tool step started, and whether it gave an output: a denial ends the turn, and the denied step
 	// ends without output, or does not end (real runs, agy 1.3.0).
@@ -322,6 +614,46 @@ type agyParser struct {
 	lastAnswered bool
 	denied       string // the permission named by the denial notice on the error output, when one came
 	failed       bool   // a result said the turn failed: the notice adds nothing
+}
+
+func (p *agyParser) retryOrEnd(events *lineEvents, convID, retryText string) *turnEnd {
+	if p.turnEnded {
+		return nil
+	}
+	p.turnEnded = true
+	if p.retries < 3 {
+		p.retries++
+		p.turnRetried = true
+		ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "continued: "+agyContinuePrompt)
+		ev.SessionID = convID
+		return &turnEnd{retry: agyContinuePrompt}
+	}
+	p.failed = true
+	events.add(planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, retryText)
+	return &turnEnd{failure: retryText}
+}
+
+func (p *agyParser) errorEvent(events *lineEvents, m *agyLine) *turnEnd {
+	convID := m.ConversationID
+	if convID == "" {
+		convID = p.sessionID
+	}
+	errText := extractAgyError(m.Error, extractAgyError(m.Message, ""))
+	if isAgyRetryPrompt(errText) {
+		*events = append(*events, p.cut()...)
+		return p.retryOrEnd(events, convID, errText)
+	}
+	if p.turnEnded {
+		return nil
+	}
+	p.turnEnded = true
+	p.failed = true
+	*events = append(*events, p.cut()...)
+	if errText == "" {
+		errText = "agy error"
+	}
+	events.add(planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, errText)
+	return &turnEnd{failure: errText}
 }
 
 func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
@@ -334,15 +666,22 @@ func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
 	what, silent := m.Event, false
 	switch {
 	case m.Event == "init":
+		p.sessionID = m.ConversationID
 		text := "session " + m.ConversationID
+		var model string
 		if m.Init != nil && m.Init.Model != "" {
 			text += ", model " + m.Init.Model
+			model = m.Init.Model
 		}
-		events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text).SessionID = m.ConversationID
+		ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
+		ev.SessionID = m.ConversationID
+		ev.Model = model
 	case m.Event == "step_update" && m.StepUpdate != nil:
 		s := m.StepUpdate
 		what = "step " + s.StepType + " " + s.State
-		silent = p.step(&events, s)
+		silent, end = p.step(&events, s)
+	case m.Event == "error":
+		end = p.errorEvent(&events, &m)
 	case m.Event == "result" && m.Result != nil:
 		end = p.result(&events, m.Result)
 	}
@@ -353,9 +692,33 @@ func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
 }
 
 // step reads a step update, and says whether Djinn knows its kind: a known step may say nothing yet.
-func (p *agyParser) step(events *lineEvents, s *agyStep) bool {
+func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
+	if s.ConversationID != "" {
+		p.sessionID = s.ConversationID
+	}
+	if p.turnRetried && (s.StepType == "user_input" || s.StepType == "agent_response" || s.StepType == "tool") {
+		p.turnEnded = false
+		p.turnRetried = false
+	}
+	if s.StepType == "user_input" {
+		p.turnEnded = false
+	}
+	stepErr := extractAgyError(s.Error, extractAgyError(s.Message, ""))
+	if s.ToolInfo != nil && s.ToolInfo.Error != nil && stepErr == "" {
+		stepErr = s.ToolInfo.Error.Message
+	}
+	if isAgyRetryPrompt(stepErr) {
+		convID := s.ConversationID
+		if convID == "" {
+			convID = p.sessionID
+		}
+		delete(p.toolsIn, s.StepIndex)
+		p.forget(s.StepIndex)
+		*events = append(*events, p.cut()...)
+		return true, p.retryOrEnd(events, convID, stepErr)
+	}
 	switch s.StepType {
-	case "user_input", "checkpoint":
+	case "user_input", "checkpoint", "system_message":
 		// The prompt Djinn sent, and agy's own bookkeeping: nothing to say.
 	case "agent_response":
 		b := p.text[s.StepIndex]
@@ -415,32 +778,49 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) bool {
 			delete(p.toolsIn, s.StepIndex)
 		}
 	default:
-		return false
+		return false, nil
 	}
-	return true
+	return true, nil
 }
 
 func (p *agyParser) result(events *lineEvents, r *agyResult) *turnEnd {
-	end := &turnEnd{}
-	*events = append(*events, p.cut()...)
-	// SUCCESS, or ERROR, CANCELED, INTERRUPTED, INVALID, WAITING (--print-timeout reached), RUNNING.
-	switch {
-	case r.Status != "SUCCESS":
-		end.failure = r.Error
-		if end.failure == "" {
-			end.failure = "agy ended its turn with status " + r.Status
-		}
-	case len(r.DeniedActions) > 0:
-		// A turn with a denial says SUCCESS, but the denial ended it: the work was not done.
-		actions := make([]string, len(r.DeniedActions))
-		for i, a := range r.DeniedActions {
-			actions[i] = a.Action
-		}
-		end.failure = p.deniedReason(actions)
+	convID := r.ConversationID
+	if convID == "" {
+		convID = p.sessionID
 	}
-	if end.failure != "" {
-		p.failed = true
-		events.add(planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, end.failure)
+	*events = append(*events, p.cut()...)
+	retryText := ""
+	if isAgyRetryPrompt(r.Error) {
+		retryText = r.Error
+	} else if isAgyRetryPrompt(r.Response) {
+		retryText = r.Response
+	}
+	var end *turnEnd
+	if !p.turnEnded {
+		if retryText != "" {
+			end = p.retryOrEnd(events, convID, retryText)
+		} else {
+			p.turnEnded = true
+			end = &turnEnd{}
+			switch {
+			case r.Status != "SUCCESS":
+				end.failure = r.Error
+				if end.failure == "" {
+					end.failure = "agy ended its turn with status " + r.Status
+				}
+			case len(r.DeniedActions) > 0:
+				// A turn with a denial says SUCCESS, but the denial ended it: the work was not done.
+				actions := make([]string, len(r.DeniedActions))
+				for i, a := range r.DeniedActions {
+					actions[i] = a.Action
+				}
+				end.failure = p.deniedReason(actions)
+			}
+			if end.failure != "" {
+				p.failed = true
+				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, end.failure)
+			}
+		}
 	}
 	// The usage of a result is what the whole conversation spent so far. agy gives no cost: tokens only. Its
 	// thinking tokens are counted as written ones.

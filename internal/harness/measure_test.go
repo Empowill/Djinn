@@ -65,6 +65,17 @@ func TestMeasurePeaks(t *testing.T) {
 	if len(uses) != 1 || uses[0].GetCode() != task.GetCode() || uses[0].GetResources().GetMemoryBytes() != 200<<20 {
 		t.Errorf("uses = %v, want %s at 200 MiB", uses, task.GetCode())
 	}
+	pol := machine.Policy{WorkerPeak: 1 * machine.GiB, WorkerMargin: 512 * machine.MiB}
+	engaged, actual, err := e.h.WorkerMemory(t.Context(), pol)
+	if err != nil {
+		t.Fatalf("WorkerMemory: %v", err)
+	}
+	if wantEngaged := uint64(1*machine.GiB + 512*machine.MiB); engaged != wantEngaged {
+		t.Errorf("engaged = %d, want %d", engaged, wantEngaged)
+	}
+	if wantActual := uint64(200 << 20); actual != wantActual {
+		t.Errorf("actual = %d, want %d", actual, wantActual)
+	}
 	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +85,13 @@ func TestMeasurePeaks(t *testing.T) {
 	}
 	if uses := e.h.Uses(); len(uses) != 0 {
 		t.Errorf("uses once stopped = %v", uses)
+	}
+	engagedAfter, actualAfter, err := e.h.WorkerMemory(t.Context(), pol)
+	if err != nil {
+		t.Fatalf("WorkerMemory after stop: %v", err)
+	}
+	if engagedAfter != 0 || actualAfter != 0 {
+		t.Errorf("after stop: engaged = %d, actual = %d, want 0", engagedAfter, actualAfter)
 	}
 }
 

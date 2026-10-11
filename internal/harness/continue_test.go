@@ -20,7 +20,7 @@ import (
 
 func (e *env) continueTask(t *testing.T, id, prompt string) (*planv1.Task, error) {
 	t.Helper()
-	res, err := e.tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{TaskId: id, Prompt: prompt}))
+	res, err := e.tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{TaskId: id, Prompt: &prompt}))
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +179,6 @@ func TestContinueRefused(t *testing.T) {
 		edit func(*planv1.Task)
 		want string
 	}{
-		{"antigravity", func(t *planv1.Task) { t.Provider = planv1.Provider_PROVIDER_ANTIGRAVITY }, "cannot resume a session"},
 		{"watcher", func(t *planv1.Task) { t.Provider = planv1.Provider_PROVIDER_WATCH }, "has no session"},
 		{"no session", func(t *planv1.Task) { t.SessionId = "" }, "has no session to resume"},
 		{"imported", func(t *planv1.Task) { t.Scheduled = false }, "was not run by this Djinn"},
@@ -266,5 +265,42 @@ func TestContinueCommand(t *testing.T) {
 	}
 	if done := e.ended(t, first.GetId()); done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Errorf("continued from the command line: %v", done)
+	}
+}
+
+// TestContinueAntigravity: an antigravity task is continued on its conversation, its usage summed and its worktree kept.
+func TestContinueAntigravity(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	success, _, _ := fake{provider: "antigravity", fixture: "success"}.env(t)
+	resume, args, _ := fake{provider: "antigravity", fixture: "resume"}.env(t)
+	providers, sw := antigravityPlaying(success)
+	e := upWith(t, t.TempDir(), providers)
+	wishID, _ := e.wish(t, gitRepo(t))
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Turn one", Prompt: "x", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+	first := e.ended(t, id)
+	if first.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || first.GetSessionId() != "9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f" {
+		t.Fatalf("first run: %v", first)
+	}
+	sw.play(resume)
+	got, err := e.continueTask(t, id, "Turn two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		t.Fatalf("continued: %v", got)
+	}
+	done := e.ended(t, id)
+	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("after continuation: %v", done)
+	}
+	if b, err := os.ReadFile(args); err != nil || !strings.Contains(string(b), "--conversation\n9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f") {
+		t.Errorf("resumed worker arguments: %q, %v", b, err)
 	}
 }

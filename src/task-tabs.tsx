@@ -1,15 +1,45 @@
 // The tasks have a tab of their own, in a wish's view and in the flight plan, next to the rest. In it, a list: at the
 // top what moves or waits for someone, by status (running, cut short and failed first, then waiting and paused, the
 // planned ones last); then the azimas of the plan, each with the work part of it (src/azima.tsx), the done ones folded
-// (Fold); at the bottom every finished task, the latest ended first. The decisions have the next tab
-// (src/decision-log.tsx), then a wish's tilasms (src/tilasms.tsx), and last, discreet, its blocks for agents
-// (src/agent-blocks.tsx).
+// (Fold). The decisions have the next tab (src/decision-log.tsx), then a wish's tilasms (src/tilasms.tsx), and last,
+// discreet, its blocks for agents (src/agent-blocks.tsx).
 import { ChevronDown } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 
+import { Change } from "../gen/ts/plan/v1/plan_pb";
 import { t } from "./i18n";
 
 export type View = "main" | "tasks" | "decisions" | "tilasms" | "agents";
+
+const KINDS_MAIN: readonly Change[] = [
+  Change.TASK,
+  Change.QUESTION,
+  Change.BLOCK,
+];
+const KINDS_TASKS: readonly Change[] = [Change.TASK];
+const KINDS_DECISIONS: readonly Change[] = [
+  Change.QUESTION,
+  Change.BLOCK,
+  Change.TASK,
+];
+const KINDS_TILASMS: readonly Change[] = [Change.TILASM, Change.TASK];
+const KINDS_AGENTS: readonly Change[] = [Change.BLOCK, Change.TASK];
+
+// kindsForView gives the kinds of changes a view needs to display: a tab loaded on demand reads only its kinds.
+export function kindsForView(view: View): readonly Change[] {
+  switch (view) {
+    case "main":
+      return KINDS_MAIN;
+    case "tasks":
+      return KINDS_TASKS;
+    case "decisions":
+      return KINDS_DECISIONS;
+    case "tilasms":
+      return KINDS_TILASMS;
+    case "agents":
+      return KINDS_AGENTS;
+  }
+}
 
 export function ViewTabs({
   view,
@@ -72,12 +102,16 @@ export function Fold({
   id,
   count,
   open = false,
+  labelHidden,
+  labelShown,
   children,
 }: {
   // Its key for the window's session: the same key, the same state.
   id: string;
   count: number;
   open?: boolean;
+  labelHidden?: string;
+  labelShown?: string;
   children: ReactNode;
 }) {
   const [shown, setShown] = useState(() => open || unfolded.has(id));
@@ -101,37 +135,45 @@ export function Fold({
         onClick={() => show(!shown)}
       >
         <ChevronDown size={14} className={shown ? "rotated" : ""} />
-        {shown ? t("tasks.hide_finished") : t("tasks.show_finished", { count })}
+        {shown
+          ? (labelShown ?? t("tasks.hide_finished"))
+          : (labelHidden ?? t("tasks.show_finished", { count }))}
       </button>
       {shown && children}
     </>
   );
 }
 
-// TaskSections lays out the Tasks tab: the tasks that move or wait, then the azimas with the work part of them, the
-// done ones folded, then the finished tasks, each in the order given. Without azimas, their section is hidden.
-export function TaskSections<T, A = never>({
+// TaskSections lays out the Tasks tab: the tasks that move or wait, then the azimas in a single column with the work
+// part of them, drafts, and the done ones folded at the end. Without azimas or drafts, their sections are hidden.
+export function TaskSections<T, A = never, D = never>({
   moving,
-  finished,
   render,
   azimas = [],
   doneAzimas = [],
   renderAzima,
+  drafts = [],
+  renderDraft,
   fold = "",
   showDone = false,
+  showDrafts = false,
   aside,
 }: {
   moving: readonly T[];
-  finished: readonly T[];
   render: (item: T) => ReactNode;
   // The azimas not done yet, then the done ones, behind their Fold.
   azimas?: readonly A[];
   doneAzimas?: readonly A[];
   renderAzima?: (azima: A) => ReactNode;
-  // The key of the done azimas' Fold: the wish's id, or the flight plan's.
+  // The draft azimas, behind their Fold at the end of the Tasks tab.
+  drafts?: readonly D[];
+  renderDraft?: (draft: D) => ReactNode;
+  // The key of the folds: the wish's id, or the flight plan's.
   fold?: string;
   // The done azimas show: a link brings one of them, or one of their parts, into sight.
   showDone?: boolean;
+  // The draft azimas show: a link brings one into sight.
+  showDrafts?: boolean;
   // Beside the first title: what the tasks spent.
   aside?: ReactNode;
 }) {
@@ -167,34 +209,44 @@ export function TaskSections<T, A = never>({
             </h2>
           </div>
           {azimas.length > 0 && (
-            <div className="card-grid azima-grid">
-              {azimas.map(renderAzima)}
+            <div className="azima-list">{azimas.map(renderAzima)}</div>
+          )}
+          {drafts.length > 0 && renderDraft && (
+            <div className="tasks-drafts">
+              <Fold
+                id={`drafts:${fold}`}
+                count={drafts.length}
+                open={showDrafts}
+                labelHidden={t("tasks.show_drafts", { count: drafts.length })}
+                labelShown={t("tasks.hide_drafts")}
+              >
+                <div className="azima-list">{drafts.map(renderDraft)}</div>
+              </Fold>
             </div>
           )}
           <Fold id={`azimas:${fold}`} count={doneAzimas.length} open={showDone}>
-            <div className="card-grid azima-grid">
-              {doneAzimas.map(renderAzima)}
-            </div>
+            <div className="azima-list">{doneAzimas.map(renderAzima)}</div>
           </Fold>
         </section>
       )}
-      <section
-        className="wish-section tasks-finished"
-        aria-label={t("tasks.done")}
-      >
-        <div className="section-title">
-          <h2>
-            {t("tasks.done")}
-            <span className="count">{finished.length}</span>
-          </h2>
-        </div>
-        {finished.length === 0 && (
-          <p className="muted-text">{t("tasks.none_done")}</p>
+      {!(azimas.length + doneAzimas.length > 0 && renderAzima) &&
+        drafts.length > 0 &&
+        renderDraft && (
+          <section
+            className="wish-section tasks-drafts"
+            aria-label={t("tasks.show_drafts", { count: drafts.length })}
+          >
+            <Fold
+              id={`drafts:${fold}`}
+              count={drafts.length}
+              open={showDrafts}
+              labelHidden={t("tasks.show_drafts", { count: drafts.length })}
+              labelShown={t("tasks.hide_drafts")}
+            >
+              <div className="azima-list">{drafts.map(renderDraft)}</div>
+            </Fold>
+          </section>
         )}
-        {finished.length > 0 && (
-          <div className="card-grid task-grid">{finished.map(render)}</div>
-        )}
-      </section>
     </div>
   );
 }

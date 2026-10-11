@@ -39,6 +39,9 @@ djinn up --browser    # no window: prints the URL to open in your browser
   Ctrl+Q (Cmd+Q on macOS), or stop `djinn up`.
 - **How many workers at once.** The machine decides: one per 2 cores and per 2 GiB of memory.
   `djinn up --workers 4` (1 to 16) sets it. The status bar shows `Workers 2/4`, and whether the page is `Live`.
+- **Worker CPU and memory limits.** On Linux, workers run in systemd user scopes. CPU can be capped with
+  `--worker-cpu` (e.g. `150` for 1.5 cores). Memory limits can be set with an expert static ceiling (`--worker-memory`)
+  or an adaptive guardrail based on observed provider peaks (`--worker-memory-guard 2.5`): [worker memory](worker-memory.md).
 
 ### The terminal
 
@@ -140,8 +143,9 @@ reads until you say it may edit: it shows as **Waits for your answer**.
 
 ### The Tasks tab
 
-What moves or waits for someone first (running, failed, then waiting and paused, the planned ones last), then every
-finished task, the latest first, with what they spent. Each task, coded `W1`, `W2`…, shows how long it runs (or ran),
+What moves or waits for someone first (running, failed, then waiting and paused, the planned ones last), then the
+azimas with the work part of them, the done ones folded, with what they spent. Finished tasks show under their azima.
+Each task, coded `W1`, `W2`…, shows how long it runs (or ran),
 its project, its title, its status and what it spent; a running one, the CPU and memory its worker uses (not measured
 on Windows yet). Opened: when it started and ended, the files it writes, its budget, its worker's last word, where its
 work stands, and its events as they come.
@@ -172,8 +176,15 @@ _The two screenshots show a demonstration wish, with fictional data._
 ### Azimas
 
 The lead's plan is a graph of azimas, coded `T01`, `T02`…: parts of the plan that no worker runs, which work is part
-of. The Tasks tab groups the work under its azima, under **Azimas**, with its progress and what it waits for; the top
-of the wish counts the azimas done before the tasks.
+of. The Tasks tab displays the azimas in a single column from top to bottom, each row taking the full width to show
+its code, goal, state, progress (parts done, running, and waiting), time, and dependencies, with the work part of it
+folded underneath. The tasks inside an azima may flow in columns on a wide screen, but the azimas themselves stay in
+a single list. The top of the wish counts the azimas done before the tasks.
+
+The order of azimas is stable between renders and between days, so an azima stays at the same place: first the azimas
+that move (a worker running), then those waiting for the developer (awaiting proof / to validate), then the ready ones
+not started, then blocked ones, then drafts, and last the done ones folded at the end. Within each group, azimas follow
+the plan's code order, never an order by time or by counts that change every minute.
 
 An azima is **Open**, **In progress**, **To validate** or **Done**. Once every task part of it is finished, it is
 **To validate**: nothing is left for Djinn. Its card says what validating it takes, box by box of its plan file (a
@@ -210,12 +221,14 @@ when a task waits for the answer, orange under the words the lead gave ("before 
 The cards, the bar of what waits for you and the brief list them in that order.
 
 - **Rub the lamp** answers with the option selected and your note: the recommended one is selected first, so one
-  click takes it; pick another and the lamp sends that one. With no option recommended, pick one first. A question
-  without options takes a written answer, sent the same way.
-- **Enlighten me**, on its left, asks the lead to dig first, in one click: the note you typed says what to dig into
-  (empty, it digs in general). The question folds to one line, **Being investigated** with what you asked, out of the
-  way of the questions that wait for you; a click opens it, and you may still decide now. Revised, it opens again and
-  waits for your answer. Its rounds fold below the card.
+  click takes it; pick another and the lamp sends that one. With no option recommended, pick one first. The lead
+  turns your answer into tasks itself, in one pass, holding the plan's graph (`answer_workers: true` in settings
+  starts a converter worker instead). A question without options takes a written answer, sent the same way.
+- **Enlighten me**, on its left, starts an investigator worker to dig first, in one click (`enlighten_workers: false`
+  lets the lead investigate itself): the note you typed says what to dig into (empty, it digs in general). The question
+  folds to one line, **Being investigated** with what you asked, out of the way of the questions that wait for you; a
+  click opens it, and you may still decide now. Revised, it opens again and waits for your answer. Its rounds fold
+  below the card.
 
 Your answer goes to the lead and the workers. An answered question is a decision. A wish without a lead session has no
 lead to tell: the card says so, and the answer waits in the wish's brief for the next lead.
@@ -296,7 +309,7 @@ to be committed, committed, conflict, red, corrected by another task. A conflict
 correction worker; past two attempts, Djinn asks you. Before it pushes the branch, at an azima's end or after an hour
 and three tasks committed, it runs the checks named for `push`: red, the push is held, and Djinn asks you if they stay
 red. `djinn project show` and the project's view in the window list the checks and how each last ran. When the settings also name an install command, the window
-proposes the batch it committed, with **What changed** and **What to check**; **Install and restart** installs it,
+proposes the batch it committed, with **What changed**; **Install and restart** installs it,
 nothing before your click. Details: [integration](team-settings.md#integration).
 
 Djinn also keeps the wish's branch up with the project's main branch: it fetches main at most hourly, and once main
@@ -322,7 +335,7 @@ gates are held. `djinn command list` shows what each command cost (CPU time, pea
 Nothing is lost. Stopping Djinn interrupts the workers; the next `djinn up` resumes each one by itself, in the same
 task, worktree and session, in the order of the wishes' ranks and within the machine's slots. It does not resume a
 task imported from another machine, a task of a granted wish, or a task whose worktree is gone; after three resumes, a
-task fails. Such a task is history: it shows among the finished tasks, never in what waits for you.
+task fails. Such a task is history: it shows among the finished parts of its azima, never in what waits for you.
 `djinn task continue <task-id> --prompt "…"` gives it a new turn of its own session, or **Mark done** closes it.
 
 A worker stopped by its provider's usage limit shows "Waiting for the limit", then resumes once the limit resets.
@@ -344,6 +357,6 @@ over it: Djinn merges main into the wishes' branches instead, and proposes their
 
 - **Documentation**, in Connections & preferences: **Open** shows Djinn's concepts and its API, also served at
   `/docs/` while `djinn up` runs.
-- [Agent protocol](agent-protocol.md) · [Providers](providers.md) · [Adaptable wishes](adaptable-wishes.md)
+- [Agent protocol](agent-protocol.md) · [Providers](providers.md) · [Adaptable wishes](adaptable-wishes.md) · [Worker memory](worker-memory.md)
 - The language follows the system (English or French); change it, and the theme, in **Connections & preferences**.
 - To build Djinn, or work on it: [`CONTRIBUTING.md`](../CONTRIBUTING.md).

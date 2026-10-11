@@ -22,6 +22,7 @@ import (
 
 	"github.com/empowill/djinn"
 	"github.com/empowill/djinn/gen/go/demo/v1/demov1connect"
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
@@ -53,25 +54,53 @@ var readMachine func() (machine.Snapshot, error)
 // everything here is closed.
 func runUp(args []string) (restart bool, err error) {
 	var (
-		browser, warmWorkers, questionWorkers     bool
+		browser, warmWorkers                      bool
+		answerWorkers, enlightenWorkers           bool
+		questionWorkers                           bool
 		profiles                                  bool
 		port, maxWorkers, workerCPU, workerMemory int
+		workerMemoryGuard                         float64
 		term, termDir                             string
 	)
 	flags := cli.Up.FlagSet(map[string]any{
 		"browser": &browser, "port": &port, "terminal": &term, "terminal-dir": &termDir, "workers": &maxWorkers,
 		"warm-workers": &warmWorkers, "worker-cpu": &workerCPU, "worker-memory": &workerMemory,
+		"worker-memory-guard": &workerMemoryGuard,
+		"answer-workers":      &answerWorkers, "enlighten-workers": &enlightenWorkers,
 		"question-workers": &questionWorkers, "pprof": &profiles,
 	})
 	if err := flags.Parse(args); err != nil {
 		return false, err
 	}
-	if v := os.Getenv("DJINN_QUESTION_WORKERS"); v != "" && !flagSet(flags, "question-workers") {
+	var answerSet, enlightenSet bool
+	if flagSet(flags, "question-workers") {
+		answerSet, answerWorkers = true, questionWorkers
+		enlightenSet, enlightenWorkers = true, questionWorkers
+	} else if v := os.Getenv("DJINN_QUESTION_WORKERS"); v != "" {
 		on, err := onOff(v)
 		if err != nil {
 			return false, fmt.Errorf("DJINN_QUESTION_WORKERS: %w", err)
 		}
-		questionWorkers = on
+		answerSet, answerWorkers = true, on
+		enlightenSet, enlightenWorkers = true, on
+	}
+	if flagSet(flags, "answer-workers") {
+		answerSet = true
+	} else if v := os.Getenv("DJINN_ANSWER_WORKERS"); v != "" {
+		on, err := onOff(v)
+		if err != nil {
+			return false, fmt.Errorf("DJINN_ANSWER_WORKERS: %w", err)
+		}
+		answerSet, answerWorkers = true, on
+	}
+	if flagSet(flags, "enlighten-workers") {
+		enlightenSet = true
+	} else if v := os.Getenv("DJINN_ENLIGHTEN_WORKERS"); v != "" {
+		on, err := onOff(v)
+		if err != nil {
+			return false, fmt.Errorf("DJINN_ENLIGHTEN_WORKERS: %w", err)
+		}
+		enlightenSet, enlightenWorkers = true, on
 	}
 	if v := os.Getenv("DJINN_PPROF"); v != "" && !flagSet(flags, "pprof") {
 		on, err := onOff(v)
@@ -107,6 +136,14 @@ func runUp(args []string) (restart bool, err error) {
 	if workerMemory < 0 {
 		return false, fmt.Errorf("--worker-memory %d: expected MiB, or 0 for no cap", workerMemory)
 	}
+	if workerMemoryGuard == 0 && os.Getenv("DJINN_WORKER_MEMORY_GUARD") != "" {
+		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKER_MEMORY_GUARD"), &workerMemoryGuard); err != nil {
+			return false, fmt.Errorf("DJINN_WORKER_MEMORY_GUARD: %w", err)
+		}
+	}
+	if workerMemoryGuard < 0 {
+		return false, fmt.Errorf("--worker-memory-guard %g: expected a positive factor (e.g. 2 to 3), or 0 to turn off", workerMemoryGuard)
+	}
 	home, err := ui.Home()
 	if err != nil {
 		return false, err
@@ -126,25 +163,34 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	defer db.Close()
 	// The workers stop before the database closes: deferred calls run last first.
-	policy := machine.DefaultPolicy()
+	savedNotch := machine.ReadNotch(home)
+	policy := machine.NotchPolicy(savedNotch)
 	policy.Workers = maxWorkers
 	policy.WorkerMemory = uint64(workerMemory) << 20
+	policy.WorkerMemoryGuard = workerMemoryGuard
 	read := readMachine
 	if read == nil {
 		read = machine.Reader(home)
 	}
 	monitor := machine.NewMonitor(policy, read)
-	opts := []harness.Option{harness.WithCapacity(monitor.Capacity), harness.WithMemory(monitor.Available, policy)}
+	opts := []harness.Option{
+		harness.WithCapacity(monitor.Capacity),
+		harness.WithMemory(monitor.Available, policy),
+		harness.WithTotal(monitor.Total),
+	}
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
 	}
 	if warmWorkers {
 		opts = append(opts, harness.WithWarm())
 	}
-	if questionWorkers {
-		opts = append(opts, harness.WithQuestionWorkers())
+	if answerSet {
+		opts = append(opts, harness.WithAnswerWorkers(answerWorkers))
 	}
-	if scopes := workerScopes(ctx, os.Stderr, workerCPU, policy.WorkerMemory); scopes != nil {
+	if enlightenSet {
+		opts = append(opts, harness.WithEnlightenWorkers(enlightenWorkers))
+	}
+	if scopes := workerScopes(ctx, os.Stderr, workerCPU, policy.WorkerMemory, policy.WorkerMemoryGuard); scopes != nil {
 		opts = append(opts, harness.WithScopes(scopes))
 	}
 	// The integration of finished work runs its gen, setup and checks under the gates, as djinn gate run does.
@@ -159,7 +205,7 @@ func runUp(args []string) (restart bool, err error) {
 	// A batch committed in a project that names an install command: the window proposes to install it. The
 	// integration starts once the window's service is there.
 	var uiSvc *ui.Service
-	opts = append(opts, harness.WithBuilt(func(b harness.Built) { uiSvc.SetBuild(buildOf(b)) }))
+	opts = append(opts, harness.WithBuilt(func(b harness.Built) { uiSvc.SetBuild(buildOf(b)) }), harness.WithVersion(version))
 	workers := harness.New(db, home, harness.Providers(), opts...)
 	defer workers.Close()
 	if err := workers.Recover(ctx); err != nil {
@@ -276,7 +322,18 @@ func runUp(args []string) (restart bool, err error) {
 		uiSvc.PresentTilasm(wishID, tilasmID)
 		return uiSvc.Window
 	}
-	svc := services(db, home, workers, terminals, uiSvc, pages, plan.WithShowTilasm(showTilasm), plan.WithTilasmURL(tilasmURL))
+	var broadcastLoad func(djinnv1.LoadNotch)
+	svc := services(db, home, workers, terminals, uiSvc, pages,
+		plan.WithShowTilasm(showTilasm), plan.WithTilasmURL(tilasmURL),
+		plan.WithLoad(func() djinnv1.LoadNotch { return monitor.Policy().Notch }),
+		plan.WithLoadBroadcaster(&broadcastLoad),
+	)
+	loadPrefix, loadHandler := machine.LoadHandler(home, monitor, workers.SetPolicy, func(n djinnv1.LoadNotch) {
+		if broadcastLoad != nil {
+			broadcastLoad(n)
+		}
+	}, workers.WorkerMemory, machine.WithLoadRunningWorkers(workers.Running))
+	svc[loadPrefix] = loadHandler
 	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running, workers.Uses)
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates)
@@ -362,7 +419,7 @@ func services(
 	out := plan.Handlers(db, append([]plan.Option{plan.WithAnswered(h.Answered), plan.WithEnlightened(h.Enlightened),
 		plan.WithLeads(leads{terminals, uiSvc}),
 		plan.WithPages(pages), plan.WithLanguage(language), plan.WithWatchers(h.SpawnWatcher), plan.WithHome(home),
-		plan.WithWorkers(h)}, more...)...)
+		plan.WithWorkers(h), plan.WithPusher(h)}, more...)...)
 	// A watcher wakes the lead of its wish, as an answer does; its done line offers to grant a wish made from a
 	// template.
 	wishes := &plan.Wishes{Store: db, Leads: leads{terminals, uiSvc}, Language: language, Workers: h}
@@ -489,17 +546,20 @@ func registerLinks(w io.Writer) {
 }
 
 // workerScopes are the systemd scopes the workers run in, one each, their CPU capped at cpu percent of a core and
-// their memory at memory bytes (0: uncapped); nil where there are none: djinn up says why, once, and workers run in
-// their process group.
-func workerScopes(ctx context.Context, w io.Writer, cpu int, memory uint64) *machine.Scopes {
+// their memory at memory bytes (0: uncapped) or dynamically guarded (guard > 0); nil where there are none: djinn up
+// says why, once, and workers run in their process group.
+func workerScopes(ctx context.Context, w io.Writer, cpu int, memory uint64, guard float64) *machine.Scopes {
 	scopes, notes, err := machine.ProbeScopes(ctx, cpu, memory)
 	if err != nil {
 		uncapped := ""
-		if cpu > 0 || memory > 0 {
+		if cpu > 0 || memory > 0 || guard > 0 {
 			uncapped = ", uncapped"
 		}
 		fmt.Fprintf(w, "djinn: %v; workers run in their process group%s\n", err, uncapped)
 		return nil
+	}
+	if guard > 0 && !scopes.MemoryController && memory == 0 {
+		notes = append(notes, fmt.Errorf("%w: systemd does not give the memory controller to your user (%s)", machine.ErrNoMemoryLimit, machine.Delegate).Error())
 	}
 	for _, note := range notes {
 		fmt.Fprintf(w, "djinn: %s\n", note)
@@ -511,6 +571,9 @@ func workerScopes(ctx context.Context, w io.Writer, cpu int, memory uint64) *mac
 	if scopes.Memory > 0 {
 		caps = append(caps, fmt.Sprintf("its memory at %d MiB", scopes.Memory>>20))
 	}
+	if guard > 0 && (scopes.MemoryController || memory > 0) {
+		caps = append(caps, fmt.Sprintf("its memory guarded at %gx provider peak", guard))
+	}
 	if len(caps) > 0 {
 		fmt.Fprintf(w, "djinn: each worker runs in a systemd scope of its own, %s\n", strings.Join(caps, ", "))
 	}
@@ -519,8 +582,16 @@ func workerScopes(ctx context.Context, w io.Writer, cpu int, memory uint64) *mac
 
 // buildOf is a build committed, as the window proposes it.
 func buildOf(b harness.Built) *uiv1.Build {
+	summaries := make([]*uiv1.TaskSummary, len(b.Summaries))
+	for i, s := range b.Summaries {
+		summaries[i] = &uiv1.TaskSummary{
+			Code:    s.Code,
+			Title:   s.Title,
+			Summary: s.Summary,
+		}
+	}
 	return &uiv1.Build{
 		WishId: b.WishID, WishTitle: b.WishTitle, ProjectId: b.ProjectID, Project: b.Project, Branch: b.Branch, Sha: b.Sha,
-		Tasks: b.Tasks, Changes: b.Changes, Checks: b.Checks, Install: b.Install,
+		Tasks: b.Tasks, Changes: b.Changes, Summaries: summaries, Install: b.Install,
 	}
 }

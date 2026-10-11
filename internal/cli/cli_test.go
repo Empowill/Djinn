@@ -23,6 +23,7 @@ import (
 	_ "github.com/empowill/djinn/gen/go/backup/v1"
 	_ "github.com/empowill/djinn/gen/go/demo/v1"
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
+	"github.com/empowill/djinn/gen/go/djinn/v1/djinnv1connect"
 	_ "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
@@ -110,6 +111,11 @@ func TestConvention(t *testing.T) {
 			name: "djinn wish describe <wish> --text",
 			args: []string{wishID, "--text", "Ship the API.\nIts scope: the store."},
 			want: &planv1.WishServiceDescribeRequest{WishId: wishID, Text: "Ship the API.\nIts scope: the store."},
+		},
+		{
+			name: "djinn wish rename <wish> --title",
+			args: []string{wishID, "--title", "Djinn orchestrator"},
+			want: &planv1.WishServiceRenameRequest{WishId: wishID, Title: "Djinn orchestrator"},
 		},
 		{
 			name: "a string and a list of strings in one input, repeated",
@@ -277,9 +283,23 @@ type tasks struct {
 func (f tasks) Get(_ context.Context, req *connect.Request[planv1.TaskServiceGetRequest]) (*connect.Response[planv1.TaskServiceGetResponse], error) {
 	f.record(req.Msg)
 	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: &planv1.Task{
-		Id: req.Msg.GetTaskId(), Code: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE, Integration: &planv1.TaskIntegration{
+		Id: req.Msg.GetTaskId(), Code: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE, Model: "claude-sonnet-5-5", Integration: &planv1.TaskIntegration{
 			State: planv1.IntegrationState_INTEGRATION_STATE_RED, Branch: "feat/x", Reason: "test exited 1", CorrectedBy: "W9",
 		},
+	}}), nil
+}
+
+func (f tasks) List(_ context.Context, req *connect.Request[planv1.TaskServiceListRequest]) (*connect.Response[planv1.TaskServiceListResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&planv1.TaskServiceListResponse{Tasks: []*planv1.Task{
+		{Id: taskID, WishId: req.Msg.GetWishId(), Code: "W1", Title: "Ship it", Status: planv1.TaskStatus_TASK_STATUS_DONE, Model: "claude-sonnet-5-5"},
+	}}), nil
+}
+
+func (f tasks) Update(_ context.Context, req *connect.Request[planv1.TaskServiceUpdateRequest]) (*connect.Response[planv1.TaskServiceUpdateResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&planv1.TaskServiceUpdateResponse{Task: &planv1.Task{
+		Id: req.Msg.GetTaskId(), Code: "W5", Model: req.Msg.GetModel(),
 	}}), nil
 }
 
@@ -298,12 +318,64 @@ func (f questions) Ask(_ context.Context, req *connect.Request[planv1.QuestionSe
 	return connect.NewResponse(&planv1.QuestionServiceAskResponse{Question: question()}), nil
 }
 
+func (f questions) List(_ context.Context, req *connect.Request[planv1.QuestionServiceListRequest]) (*connect.Response[planv1.QuestionServiceListResponse], error) {
+	f.record(req.Msg)
+	if req.Msg.GetPageToken() == "" {
+		return connect.NewResponse(&planv1.QuestionServiceListResponse{
+			Questions: []*planv1.Question{
+				{Id: "11111111-1111-1111-1111-111111111111", Code: "Q01", Text: "First?"},
+			},
+			NextPageToken: "page-2",
+			Total:         2,
+		}), nil
+	}
+	return connect.NewResponse(&planv1.QuestionServiceListResponse{
+		Questions: []*planv1.Question{
+			{Id: "22222222-2222-2222-2222-222222222222", Code: "Q02", Text: "Second?"},
+		},
+		Total: 2,
+	}), nil
+}
+
 func (f projects) List(_ context.Context, req *connect.Request[planv1.ProjectServiceListRequest]) (*connect.Response[planv1.ProjectServiceListResponse], error) {
 	f.record(req.Msg)
 	return connect.NewResponse(&planv1.ProjectServiceListResponse{Projects: []*planv1.Project{
 		{Id: projectID, Name: "api", Directory: "/src/api"},
 		{Id: wishID, Name: "web", Directory: "/src/web"},
 	}}), nil
+}
+
+func (f projects) PushStrategy(_ context.Context, req *connect.Request[planv1.ProjectServicePushStrategyRequest]) (*connect.Response[planv1.ProjectServicePushStrategyResponse], error) {
+	f.record(req.Msg)
+	strategy := planv1.PushStrategy_PUSH_STRATEGY_WISH
+	source := planv1.SettingSource_SETTING_SOURCE_DEFAULT
+	if req.Msg.Strategy != nil && req.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {
+		strategy = req.Msg.GetStrategy()
+		source = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
+	}
+	return connect.NewResponse(&planv1.ProjectServicePushStrategyResponse{
+		Strategy: strategy,
+		Source:   source,
+	}), nil
+}
+
+type wishes struct {
+	planv1connect.UnimplementedWishServiceHandler
+	*fake
+}
+
+func (f wishes) PushStrategy(_ context.Context, req *connect.Request[planv1.WishServicePushStrategyRequest]) (*connect.Response[planv1.WishServicePushStrategyResponse], error) {
+	f.record(req.Msg)
+	strategy := planv1.PushStrategy_PUSH_STRATEGY_WISH
+	source := planv1.SettingSource_SETTING_SOURCE_DEFAULT
+	if req.Msg.Strategy != nil && req.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {
+		strategy = req.Msg.GetStrategy()
+		source = planv1.SettingSource_SETTING_SOURCE_WISH
+	}
+	return connect.NewResponse(&planv1.WishServicePushStrategyResponse{
+		Strategy: strategy,
+		Source:   source,
+	}), nil
 }
 
 func question() *planv1.Question {
@@ -313,6 +385,26 @@ func question() *planv1.Question {
 	}
 }
 
+type loads struct {
+	djinnv1connect.UnimplementedLoadServiceHandler
+	*fake
+}
+
+func (f loads) Get(_ context.Context, req *connect.Request[djinnv1.LoadServiceGetRequest]) (*connect.Response[djinnv1.LoadServiceGetResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&djinnv1.LoadServiceGetResponse{Notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM}), nil
+}
+
+func (f loads) Set(_ context.Context, req *connect.Request[djinnv1.LoadServiceSetRequest]) (*connect.Response[djinnv1.LoadServiceSetResponse], error) {
+	f.record(req.Msg)
+	resp := &djinnv1.LoadServiceSetResponse{Notch: req.Msg.GetNotch()}
+	if req.Msg.GetNotch() == djinnv1.LoadNotch_LOAD_NOTCH_AUTO {
+		resp.Notch = djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL
+		resp.Auto = true
+	}
+	return connect.NewResponse(resp), nil
+}
+
 // serve starts the fake server and returns a function that runs a command line against it.
 func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr string)) {
 	t.Helper()
@@ -320,8 +412,10 @@ func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr 
 	mux := http.NewServeMux()
 	mux.Handle(planv1connect.NewQuestionServiceHandler(questions{fake: f}))
 	mux.Handle(planv1connect.NewProjectServiceHandler(projects{fake: f}))
+	mux.Handle(planv1connect.NewWishServiceHandler(wishes{fake: f}))
 	mux.Handle(planv1connect.NewTilasmServiceHandler(tilasms{fake: f}))
 	mux.Handle(planv1connect.NewTaskServiceHandler(tasks{fake: f}))
+	mux.Handle(djinnv1connect.NewLoadServiceHandler(loads{fake: f}))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return f, func(args ...string) (int, string, string) {
@@ -346,7 +440,9 @@ func TestRun(t *testing.T) {
 		{name: "text output", args: []string{"question", "answer", "Q03", "B", "--note", "ok"}, wantOut: "answer:\n  choice: b\n  note: ok\n", wantCalled: true},
 		{name: "json output", args: []string{"--json", "q", "answer", questionID, "a"}, wantOut: `"CHOICE_A"`, wantCalled: true},
 		{name: "where a task's work stands", args: []string{"task", "get", wishID}, wantOut: "status: done\n" +
+			"model: claude-sonnet-5-5\n" +
 			"integration:\n  state: red\n  branch: feat/x\n  reason: test exited 1\n  corrected_by: W9\n", wantCalled: true},
+		{name: "task list output", args: []string{"task", "list", "--wish-id", wishID}, wantOut: "model: claude-sonnet-5-5\n", wantCalled: true},
 		{name: "list output", args: []string{"pr", "l"}, wantOut: "- id: " + projectID + "\n  name: api\n", wantCalled: true},
 		{name: "server error", args: []string{"q", "answer", "Q99", "a"}, wantCode: 1, wantErr: "not_found: no question Q99", wantCalled: true},
 		{name: "validation before sending", args: []string{"q", "answer"}, wantCode: 2, wantErr: "<question>: value is required; expected a match of ^Q[0-9]{2,3}$ or a UUID\n  <choice>: value is required; expected one of yes, no, a, b, c, d"},
@@ -354,15 +450,25 @@ func TestRun(t *testing.T) {
 		{name: "rule on a repeated flag", args: []string{"q", "ask", "Which?", wishID, "--options", "a", "--options", "b", "--options", "c", "--options", "d", "--options", "e"}, wantCode: 2, wantErr: "--options: must contain no more than 4 item(s)"},
 		{name: "rule on a flag", args: []string{"q", "answer", "Q03", "b", "--wish-id", "W1"}, wantCode: 2, wantErr: "--wish-id: must be a valid UUID; expected a UUID"},
 		{name: "ambiguous method", args: []string{"question", "a"}, wantCode: 2, wantErr: `question method "a" is ambiguous: ask, answer`},
-		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, machine, mark, plan, project, question, skill, task, tilasm, wish`},
+		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, load, machine, mark, plan, project, question, skill, task, tilasm, wish`},
+		{name: "load get", args: []string{"load", "get"}, wantOut: "notch: medium\n", wantCalled: true},
+		{name: "load set", args: []string{"load", "set", "minimal"}, wantOut: "notch: minimal\n", wantCalled: true},
+		{name: "load set auto", args: []string{"load", "set", "auto"}, wantOut: "notch: minimal\nauto: true\n", wantCalled: true},
 		{name: "internal service is hidden", args: []string{"ui", "get-environment"}, wantCode: 2, wantErr: `unknown command "ui"`},
 		{name: "version", args: []string{"v"}, wantOut: "djinn test\n"},
 		{name: "talisman answers as tilasm", args: []string{"talisman", "list", "--search", "model"}, wantOut: "code: L01", wantCalled: true},
 		{name: "an alias by a prefix no command takes", args: []string{"tali", "l"}, wantOut: "code: L01", wantCalled: true},
 		{name: "a prefix a command takes is not an alias's", args: []string{"t", "list"}, wantCode: 2, wantErr: `command "t" is ambiguous: task, tilasm`},
 		{name: "help names the alias", args: []string{"help"}, wantOut: "  tilasm, talisman "},
-		{name: "help comes from the proto comments", args: []string{"q", "answer", "--help"}, wantOut: "Usage: djinn question answer <question> <choice> [flags]\n\nAnswer a question, which turns it into a decision."},
-		{name: "help command", args: []string{"help", "pr"}, wantOut: "Methods:\n  add    Add a folder as a project."},
+		{name: "method alias set-agent answers as update", args: []string{"task", "set-agent", taskID, "--model", "o3"}, wantOut: "code: W5\nmodel: o3", wantCalled: true},
+		{name: "help on service names the method alias", args: []string{"help", "task"}, wantOut: "  update, set-agent "},
+		{name: "help command", args: []string{"help", "pr"}, wantOut: "Methods:\n  add             Add a folder as a project."},
+		{name: "paginated list loops across pages", args: []string{"q", "list"}, wantOut: "code: Q01\n  text: First?\n- id: 22222222-2222-2222-2222-222222222222\n  code: Q02\n  text: Second?\n", wantCalled: true},
+		{name: "paginated list with explicit page-token", args: []string{"q", "list", "--page-token", "page-2"}, wantOut: "code: Q02\n  text: Second?\n", wantCalled: true},
+		{name: "project push strategy show", args: []string{"project", "push-strategy", "api"}, wantOut: "strategy: wish\nsource: default\n", wantCalled: true},
+		{name: "project push strategy set", args: []string{"project", "push-strategy", "api", "--strategy", "azima"}, wantOut: "strategy: azima\nsource: developer\n", wantCalled: true},
+		{name: "wish push strategy show", args: []string{"wish", "push-strategy", wishID}, wantOut: "strategy: wish\nsource: default\n", wantCalled: true},
+		{name: "wish push strategy set", args: []string{"wish", "push-strategy", wishID, "--strategy", "azima"}, wantOut: "strategy: azima\nsource: wish\n", wantCalled: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

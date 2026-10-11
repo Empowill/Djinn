@@ -73,7 +73,9 @@ test("a build committed is proposed, and installs only on update(sha)", async ()
             sha: "abc",
             tasks: ["W5"],
             changes: ["Work of W5"],
-            checks: ["W5 Work of W5: check the banner"],
+            summaries: [
+              { code: "W5", title: "Work of W5", summary: "check the banner" },
+            ],
           },
         };
         await new Promise(() => {});
@@ -93,7 +95,9 @@ test("a build committed is proposed, and installs only on update(sha)", async ()
     sha: "abc",
     tasks: ["W5"],
     changes: ["Work of W5"],
-    checks: ["W5 Work of W5: check the banner"],
+    summaries: [
+      { code: "W5", title: "Work of W5", summary: "check the banner" },
+    ],
   });
   assert.deepEqual(asked, []);
   assert.deepEqual(await djinnUpdate.update("abc"), {

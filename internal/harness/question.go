@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,9 +28,36 @@ import (
 // methodQuestion is what the journal records when Djinn starts a question worker; the request is the spawn.
 const methodQuestion = "harness/question"
 
-// WithQuestionWorkers lets the harness start question workers: djinn up gives it unless told not to. Without it, the
-// lead is told to act on each answer itself.
-func WithQuestionWorkers() Option { return func(h *Harness) { h.questions = true } }
+// WithAnswerWorkers lets the harness start answer workers: false by default.
+func WithAnswerWorkers(on ...bool) Option {
+	val := true
+	if len(on) > 0 {
+		val = on[0]
+	}
+	return func(h *Harness) { h.answerWorkers = &val }
+}
+
+// WithEnlightenWorkers lets the harness start enlighten workers: true by default.
+func WithEnlightenWorkers(on ...bool) Option {
+	val := true
+	if len(on) > 0 {
+		val = on[0]
+	}
+	return func(h *Harness) { h.enlightenWorkers = &val }
+}
+
+// WithQuestionWorkers sets both answer workers and enlighten workers: deprecated, use WithAnswerWorkers and
+// WithEnlightenWorkers instead.
+func WithQuestionWorkers(on ...bool) Option {
+	val := true
+	if len(on) > 0 {
+		val = on[0]
+	}
+	return func(h *Harness) {
+		h.answerWorkers = &val
+		h.enlightenWorkers = &val
+	}
+}
 
 // questionWorker tells whether Djinn started the task on a question.
 func questionWorker(t *planv1.Task) bool { return dispatch.QuestionWorker(t) }
@@ -59,7 +87,10 @@ func (h *Harness) askWorker(ctx context.Context, q *planv1.Question, role planv1
 func (h *Harness) startQuestionWorker(
 	ctx context.Context, q *planv1.Question, role planv1.TaskRole, note string, before *planv1.Task,
 ) (*planv1.Task, error) {
-	if !h.questions {
+	if role == planv1.TaskRole_TASK_ROLE_CONVERTER && h.answerWorkers != nil && !*h.answerWorkers {
+		return nil, nil
+	}
+	if role == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && h.enlightenWorkers != nil && !*h.enlightenWorkers {
 		return nil, nil
 	}
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
@@ -82,8 +113,23 @@ func (h *Harness) startQuestionWorker(
 	if err != nil {
 		return nil, err
 	}
-	if !settings.QuestionWorkers {
-		return nil, nil
+	switch role {
+	case planv1.TaskRole_TASK_ROLE_CONVERTER:
+		allow := settings.AnswerWorkers
+		if settings.AnswerWorkersFrom == planv1.SettingSource_SETTING_SOURCE_DEFAULT && h.answerWorkers != nil {
+			allow = *h.answerWorkers
+		}
+		if !allow {
+			return nil, nil
+		}
+	case planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
+		allow := settings.EnlightenWorkers
+		if settings.EnlightenWorkersFrom == planv1.SettingSource_SETTING_SOURCE_DEFAULT && h.enlightenWorkers != nil {
+			allow = *h.enlightenWorkers
+		}
+		if !allow {
+			return nil, nil
+		}
 	}
 	brief, err := plan.BuildBrief(ctx, h.store, h.home, wish.GetId())
 	if err != nil {
@@ -93,10 +139,33 @@ func (h *Harness) startQuestionWorker(
 	if role == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
 		title, prompt = investigatorPrompt(q, note, retryText(before), brief.Moving)
 	}
+	provider, model, _ := questionProvider(settings)
+	task := &planv1.Task{Role: role, Question: q.GetCode()}
+	if role == planv1.TaskRole_TASK_ROLE_CONVERTER {
+		task.Decision = q.GetCode()
+	}
 	return h.spawn(ctx, methodQuestion, &planv1.TaskServiceSpawnRequest{
-		WishId: wish.GetId(), ProjectId: project.GetId(), Title: title, Prompt: prompt, Provider: settings.Provider,
-		Model: settings.QuestionModel, MaxBudgetUsd: settings.QuestionBudgetUSD,
-	}, &planv1.Task{Role: role, Question: q.GetCode()})
+		WishId: wish.GetId(), ProjectId: project.GetId(), Title: title, Prompt: prompt, Provider: provider,
+		Model: model, MaxBudgetUsd: settings.QuestionBudgetUSD,
+	}, task)
+}
+
+// questionProvider returns the provider and model for a question worker given the project's settings,
+// and why it fell back to Claude if it did.
+func questionProvider(s plan.Settings) (provider planv1.Provider, model, fallback string) {
+	provider = s.QuestionProvider
+	model = s.QuestionModel
+	if provider != planv1.Provider_PROVIDER_UNSPECIFIED {
+		if provider == planv1.Provider_PROVIDER_CLAUDE && model == "" {
+			model = plan.DefaultQuestionModel
+		}
+		return provider, model, ""
+	}
+	if plan.CanReadOnly(s.Provider) {
+		return s.Provider, s.QuestionModel, ""
+	}
+	return planv1.Provider_PROVIDER_CLAUDE, cmp.Or(s.QuestionModel, plan.DefaultQuestionModel),
+		fmt.Sprintf("%s cannot run read-only: %s", short(s.Provider), short(planv1.Provider_PROVIDER_CLAUDE))
 }
 
 // tellAgain gives the question worker t, which still works on q, the developer's new answer or note: one worker per
@@ -198,9 +267,9 @@ func converterPrompt(q *planv1.Question, retry, brief string) (title, prompt str
 		"(`djinn task list --wish-id %[2]s`): group what goes together, never mix what does not, and spawn no duplicate "+
 		"of a task that exists. Open a new azima (`--kind azima`, one sentence a user reads as a feature) only for a "+
 		"will no existing one carries. A task that extends an azima beyond its goal: say so in your last line, the "+
-		"lead rephrases its goal.\n"+
+		"lead rephrases its goal. Check every task that ends. Read its final note (`djinn task watch <task>`, or the line Djinn types): when it leaves an uncertainty (a choice it made in the developer's place, something it did not verify, a partial result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too.\n"+
 		"3. If the answer leaves something open, do not guess: ask it, `djinn question ask \"…\" %[2]s --options \"…\" "+
-		"--options \"…\" --recommendation \"…\" --context \"…\"`, its context naming %[1]s.\n"+
+		"--options \"…\" --recommendation \"…\" --context \"…\"`, its context naming %[1]s. Every move only the developer can make (push a tag, merge or open a pull request, create a release, try something on a machine Djinn does not have, grant a right, install and restart) is asked as a question (`djinn question ask`, with what exactly to run or click, and why now), the moment it becomes due; never left in a note or a terminal line.\n"+
 		"4. If the decision calls for no work, spawn nothing and say why in one sentence.\n"+
 		"5. End with one line: what you spawned or asked.\n\n", code, wish)
 	b.WriteString(questionAccess + retry + "## Where the wish stands\n\n" + brief)
@@ -428,6 +497,8 @@ func questionEndLine(t *planv1.Task, tasks []*planv1.Task, questions []*planv1.Q
 		line += fmt.Sprintf(" Nothing came of %s: act on it, djinn wish brief %s has the context.", code, wish)
 	case t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE:
 		line += fmt.Sprintf(" Check what is left of %s: djinn wish brief %s has the context.", code, wish)
+	case len(spawned) > 0:
+		line += " Check every task that ends: read its final note (djinn task watch <task>, or the line Djinn types): when it leaves an uncertainty (a choice it made in the developer's place, something it did not verify, a partial result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too."
 	}
 	return line
 }

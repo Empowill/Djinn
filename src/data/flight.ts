@@ -26,12 +26,14 @@ export interface OpenQuestion extends Item<Question> {
   blocking: string[];
 }
 
-// Something that waits for the user and is not a question: a worker that waits for an answer, one cut short.
+export const EMPTY_BLOCKING: string[] = [];
+
 // urgency is how much an open question holds up, as the lamp computes it (internal/render.UrgencyOf): 0 blocking, a
-// task waits for it; 1 needed before something, its before words; 2 it can wait.
+// task waits for it; 1 a move only the developer can make; 2 needed before something, its before words; 3 it can wait.
 export function urgency(question: OpenQuestion): number {
   if (question.blocking.length) return 0;
-  return question.item.before ? 1 : 2;
+  if (question.item.move) return 1;
+  return question.item.before ? 2 : 3;
 }
 
 // byUrgency orders open questions: blocking, then before X, then can wait. A sort keeps the order within a level.
@@ -39,6 +41,7 @@ export function byUrgency(a: OpenQuestion, b: OpenQuestion): number {
   return urgency(a) - urgency(b);
 }
 
+// Something that waits for the user and is not a question: a worker that waits for an answer, one cut short.
 export interface Waiting extends Item<Task> {
   // The code of the question the task waits for, when it is open.
   question: string;
@@ -57,6 +60,7 @@ export interface FlightPlan {
   // part of an azima is in its azima's group, between them.
   moving: Item<Task>[];
   azimas: Item<AzimaGroup>[];
+  drafts: Item<Task>[];
   // The proofs a person can give, of the azimas whose work is done: they wait for the person, never as work.
   proofs: Item<Proof>[];
   finished: Item<Task>[];
@@ -86,6 +90,7 @@ const time = (ts?: { seconds: bigint; nanos: number }) =>
 // say. Djinn resumes by itself every task it can (resuming), so one left cut short (taken over by a fork, imported
 // from another machine, its worktree gone) is history. Every other one still moves, or waits for someone.
 export function finishedTask(task: Task): boolean {
+  if (isAzima(task)) return task.azima?.state === AzimaState.DONE;
   return (
     task.status === TaskStatus.DONE ||
     task.status === TaskStatus.STOPPED ||
@@ -105,6 +110,13 @@ export function isAzima(task: Task): boolean {
   return task.kind === TaskKind.AZIMA;
 }
 
+// isDraftAzima tells a draft azima: not ready to spawn parts into, not counted in progress.
+export function isDraftAzima(task: Task): boolean {
+  return (
+    isAzima(task) && (task.draft || task.azima?.state === AzimaState.DRAFT)
+  );
+}
+
 // loose are the tasks the Tasks tab lists on their own: work part of no azima among tasks.
 function loose(tasks: readonly Task[]): Task[] {
   const azimas = new Set(tasks.filter(isAzima).map((x) => x.id));
@@ -118,14 +130,10 @@ export function azimasDone(tasks: readonly Task[]): {
   proof: number;
   count: number;
 } {
-  const azimas = tasks.filter(isAzima);
-  const done = azimas.filter(
-    (x) => x.azima?.state === AzimaState.DONE || x.status === TaskStatus.DONE,
-  ).length;
+  const azimas = tasks.filter((x) => isAzima(x) && !isDraftAzima(x));
+  const done = azimas.filter((x) => x.azima?.state === AzimaState.DONE).length;
   const proof = azimas.filter(
-    (x) =>
-      x.azima?.state === AzimaState.AWAITING_PROOF &&
-      x.status !== TaskStatus.DONE,
+    (x) => x.azima?.state === AzimaState.AWAITING_PROOF,
   ).length;
   return { done, proof, count: azimas.length };
 }
@@ -144,12 +152,7 @@ export function givenByAPerson(need: ProofNeed): boolean {
 // awaitedProofs are the proofs a person can give, of the azimas that await theirs, by code.
 export function awaitedProofs(tasks: readonly Task[]): Proof[] {
   return tasks
-    .filter(
-      (x) =>
-        isAzima(x) &&
-        x.azima?.state === AzimaState.AWAITING_PROOF &&
-        x.status !== TaskStatus.DONE,
-    )
+    .filter((x) => isAzima(x) && x.azima?.state === AzimaState.AWAITING_PROOF)
     .sort((a, b) => compareCodes(a.code, b.code))
     .flatMap((azima) =>
       azima.proofNeeds.filter(givenByAPerson).map((need) => ({ azima, need })),
@@ -186,21 +189,30 @@ export function compareCodes(a: string, b: string): number {
   return pa < pb ? -1 : pa > pb ? 1 : na - nb || (a < b ? -1 : a > b ? 1 : 0);
 }
 
-// azimaRank orders the azimas as the brief does: the ready ones first, those under way before the open ones, then
-// the blocked ones, then those awaiting their proof, the done ones last. Where an azima stands is the lamp's
-// (Task.azima).
-function azimaRank(task: Task): number {
+// azimaRank orders the azimas in a stable order between renders and between days:
+// 0: azimas that move (a worker running on one of its parts, or in progress)
+// 1: azimas waiting for the developer (awaiting proof / to validate)
+// 2: ready azimas not started (open and ready to begin)
+// 3: blocked azimas (waiting for unfinished dependencies)
+// 4: drafts (not ready to spawn parts into)
+// 5: done azimas (finished, folded at the end)
+// Within each group, azimas are ordered strictly by the plan's code order (compareCodes),
+// never by time or by a count that changes every minute.
+export function azimaRank(task: Task): number {
+  if (isDraftAzima(task) || task.azima?.state === AzimaState.DRAFT) return 4;
   const state = task.azima?.state ?? AzimaState.OPEN;
-  if (state === AzimaState.DONE || task.status === TaskStatus.DONE) return 4;
-  if (state === AzimaState.AWAITING_PROOF) return 3;
-  if (task.azima && !task.azima.ready) return 2;
-  return state === AzimaState.IN_PROGRESS ? 0 : 1;
+  if (state === AzimaState.DONE) return 5;
+  if ((task.azima?.partsRunning ?? 0) > 0 || state === AzimaState.IN_PROGRESS)
+    return 0;
+  if (state === AzimaState.AWAITING_PROOF) return 1;
+  if (task.azima && !task.azima.ready) return 3;
+  return 2;
 }
 
 // azimaGroups are the azimas among tasks with their parts, in the order of azimaRank, then by code.
 export function azimaGroups(tasks: readonly Task[]): AzimaGroup[] {
   return tasks
-    .filter(isAzima)
+    .filter((x) => isAzima(x) && !isDraftAzima(x))
     .sort((a, b) => azimaRank(a) - azimaRank(b) || compareCodes(a.code, b.code))
     .map((azima) => {
       const parts = tasks.filter((x) => x.partOf === azima.id);
@@ -212,6 +224,13 @@ export function azimaGroups(tasks: readonly Task[]): AzimaGroup[] {
         ],
       };
     });
+}
+
+// draftAzimas are the draft azimas among tasks, ordered by code.
+export function draftAzimas(tasks: readonly Task[]): Task[] {
+  return tasks
+    .filter(isDraftAzima)
+    .sort((a, b) => compareCodes(a.code, b.code));
 }
 
 // The order of the tasks that move or wait: what runs or broke first (running, cut short, failed, resuming), then
@@ -272,7 +291,11 @@ function questionsWhere(
   const blocks = blocking(detail.tasks);
   return detail.questions
     .filter(keep)
-    .map((item) => ({ wish, item, blocking: blocks.get(item.id) ?? [] }))
+    .map((item) => ({
+      wish,
+      item,
+      blocking: blocks.get(item.id) ?? EMPTY_BLOCKING,
+    }))
     .sort(byUrgency);
 }
 
@@ -290,14 +313,39 @@ export function forkedAs(task: Task, tasks: readonly Task[]): string {
   );
 }
 
+// taskDealtWith tells whether a failed worker has been addressed: marked done, continued (or forked),
+// or a new task names it in its title, decision, forkOf, or as a correction/review target.
+export function taskDealtWith(task: Task, tasks: readonly Task[]): boolean {
+  if (task.status === TaskStatus.DONE) return true;
+  if (task.continuing) return true;
+  if (task.closed?.continuedIn) return true;
+  if (forkedAs(task, tasks) !== "") return true;
+  const code = task.code;
+  if (!code) return false;
+  const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const word = new RegExp(`\\b${escaped}\\b`);
+  return tasks.some(
+    (other) =>
+      other.id !== task.id &&
+      (other.forkOf === code ||
+        other.decision === code ||
+        word.test(other.title) ||
+        (other.correction?.failure?.taskIds ?? []).includes(task.id) ||
+        (other.review?.taskIds ?? []).includes(task.id)),
+  );
+}
+
 // waitingTasks are a wish's tasks that wait for the user: for an answer before they edit, or cut short by a stop and
 // not resumed. A task Djinn resumes by itself (RESUMING), or one resumed as another task, is not the user's move.
 export function waitingTasks(wish: Wish, detail: WishDetail): Waiting[] {
   const questions = new Map(detail.questions.map((q) => [q.id, q]));
   return detail.tasks
     .filter(
-      // Only a worker that asks something waits for the user: Djinn resumes the ones it cut short by itself.
-      (task) => task.status === TaskStatus.WAITING,
+      (task) =>
+        task.status === TaskStatus.WAITING ||
+        (task.status === TaskStatus.FAILED &&
+          !taskDealtWith(task, detail.tasks) &&
+          !(task.envCause && (task.envReplays ?? 0) < 2)),
     )
     .map((item) => {
       const q = questions.get(item.editQuestionId);
@@ -318,6 +366,7 @@ export function flightPlan(
     running: [],
     moving: [],
     azimas: [],
+    drafts: [],
     proofs: [],
     finished: [],
     decisions: [],
@@ -344,6 +393,8 @@ export function flightPlan(
       plan.finished.push({ wish, item });
     for (const item of azimaGroups(detail.tasks))
       plan.azimas.push({ wish, item });
+    for (const item of draftAzimas(detail.tasks))
+      plan.drafts.push({ wish, item });
     for (const item of awaitedProofs(detail.tasks))
       plan.proofs.push({ wish, item });
     for (const item of decisionsOf(
@@ -357,7 +408,13 @@ export function flightPlan(
   plan.questions.sort(byUrgency);
   plan.decisions.sort((a, b) => later(a.item.at, b.item.at));
   plan.moving.sort((a, b) => byMotion(a.item, b.item));
+  plan.azimas.sort(
+    (a, b) =>
+      azimaRank(a.item.azima) - azimaRank(b.item.azima) ||
+      compareCodes(a.item.azima.code, b.item.azima.code),
+  );
   plan.finished.sort((a, b) => newestEnded(a.item, b.item));
+  plan.drafts.sort((a, b) => compareCodes(a.item.code, b.item.code));
   return plan;
 }
 
@@ -409,4 +466,33 @@ export function spent(tasks: readonly Task[]): Spent {
     else out.withoutCost++;
   }
   return out;
+}
+
+const taskMaps = new WeakMap<readonly Task[], ReadonlyMap<string, Task>>();
+const EMPTY_TASKS: Task[] = [];
+
+// taskMapOf returns a map of tasks by id, cached by the tasks array reference.
+export function taskMapOf(
+  tasks: readonly Task[] = EMPTY_TASKS,
+): ReadonlyMap<string, Task> {
+  let m = taskMaps.get(tasks);
+  if (!m) {
+    m = new Map(tasks.map((task) => [task.id, task]));
+    taskMaps.set(tasks, m);
+  }
+  return m;
+}
+
+const codeMaps = new WeakMap<readonly Task[], ReadonlyMap<string, string>>();
+
+// codeMapOf returns a map of task codes by id, cached by the tasks array reference.
+export function codeMapOf(
+  tasks: readonly Task[] = EMPTY_TASKS,
+): ReadonlyMap<string, string> {
+  let m = codeMaps.get(tasks);
+  if (!m) {
+    m = new Map(tasks.map((task) => [task.id, task.code]));
+    codeMaps.set(tasks, m);
+  }
+  return m;
 }

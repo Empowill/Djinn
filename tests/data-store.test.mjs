@@ -62,7 +62,21 @@ function server(data) {
       list: () => (count("projects"), { projects: data.projects }),
     });
     service(TaskService, {
-      list: () => (count("tasks"), { tasks: data.tasks }),
+      list: (req) => {
+        count("tasks");
+        if (data.listTasks) return data.listTasks(req);
+        return {
+          tasks: data.tasks,
+          total: data.tasksTotal ?? data.tasks.length,
+          nextPageToken: data.tasksNextToken ?? "",
+        };
+      },
+      get: (req) => {
+        count("taskGet");
+        if (data.getTask) return data.getTask(req);
+        const task = data.tasks?.find((t) => t.id === req.taskId);
+        return { task };
+      },
       watch: async function* (req) {
         count("events");
         for (const event of data.events.filter((e) => e.seq > req.afterSeq))
@@ -70,10 +84,26 @@ function server(data) {
       },
     });
     service(QuestionService, {
-      list: () => (count("questions"), { questions: data.questions }),
+      list: (req) => {
+        count("questions");
+        if (data.listQuestions) return data.listQuestions(req);
+        return {
+          questions: data.questions,
+          total: data.questionsTotal ?? data.questions.length,
+          nextPageToken: data.questionsNextToken ?? "",
+        };
+      },
     });
     service(BlockService, {
-      list: () => (count("blocks"), { blocks: data.blocks }),
+      list: (req) => {
+        count("blocks");
+        if (data.listBlocks) return data.listBlocks(req);
+        return {
+          blocks: data.blocks,
+          total: data.blocksTotal ?? data.blocks.length,
+          nextPageToken: data.blocksNextToken ?? "",
+        };
+      },
     });
     service(InboxService, {
       list: () => (count("inbox"), { items: data.inbox }),
@@ -87,7 +117,16 @@ function sample() {
   return {
     wishes: [{ id: wishId, title: "Ship the lamp", rank: 1, state: 1 }],
     projects: [{ id: "p1", name: "lamp" }],
-    tasks: [{ id: taskId, wishId, code: "T01", title: "Polish", status: 2 }],
+    tasks: [
+      {
+        id: taskId,
+        wishId,
+        code: "T01",
+        title: "Polish",
+        status: 2,
+        prompt: "Polish the brass with care",
+      },
+    ],
     questions: [{ id: "q1", wishId, code: "Q01", text: "Oil?" }],
     blocks: [{ id: "b1", wishId, title: "Lexicon", content: "A wick." }],
     inbox: [{ id: "i1", source: "babysit-mr", text: "Babysit !12" }],
@@ -202,6 +241,36 @@ test("a task's events come in order, and a second follow reads only what is new"
   state = await until(store, (s) => s.events[taskId]?.length === 3);
   assert.equal(state.events[taskId][2].text, "ended");
   assert.equal(reads.events, 2);
+});
+
+test("reading a task's prompt gets the task alone without following its events", async () => {
+  const data = sample();
+  const { clients, reads } = server(data);
+  const store = createStore(clients, 10);
+  const prompt = await store.readPrompt(taskId);
+  assert.equal(prompt, "Polish the brass with care");
+  assert.equal(reads.taskGet, 1);
+  assert.equal(reads.events, undefined);
+  // A second read takes the prompt from the store's cache.
+  const cached = await store.readPrompt(taskId);
+  assert.equal(cached, "Polish the brass with care");
+  assert.equal(reads.taskGet, 1);
+});
+
+test("opening a wish does not follow its tasks' events until follow is requested", async () => {
+  const data = sample();
+  const { clients, reads } = server(data);
+  const store = createStore(clients, 10);
+  store.open(wishId);
+  await until(store, (s) => s.details[wishId]?.tasks.length === 1);
+  assert.equal(reads.events, undefined);
+
+  // Following the task starts reading its events.
+  const release = store.follow(taskId);
+  await until(store, (s) => s.events[taskId]?.length === 2);
+  assert.equal(reads.events, 1);
+  assert.equal(store.getState().prompts[taskId], "Polish the brass");
+  release();
 });
 
 test("a write the page made is read at once", async () => {
@@ -339,5 +408,252 @@ test("a change the page does not know reads everything again", async () => {
   );
   assert.equal(reads.blocks, before.blocks + 1);
   assert.equal(reads.questions, before.questions + 1);
+  stop();
+});
+
+test("opening with specific kinds only reads those kinds", async () => {
+  const data = sample();
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wishId, [Change.TASK]);
+  const state = await until(store, (s) => s.details[wishId]?.loaded);
+  assert.equal(reads.tasks, 1);
+  assert.equal(reads.questions, undefined);
+  assert.equal(reads.blocks, undefined);
+  assert.equal(state.details[wishId].tasks.length, 1);
+  assert.deepEqual(state.details[wishId].questions, []);
+  assert.deepEqual(state.details[wishId].blocks, []);
+  assert.equal(state.details[wishId].loadedKinds.has(Change.TASK), true);
+  assert.equal(state.details[wishId].loadedKinds.has(Change.QUESTION), false);
+
+  // Load questions on demand
+  await store.loadKinds(wishId, [Change.QUESTION]);
+  const state2 = store.getState();
+  assert.equal(reads.tasks, 1, "tasks was not re-read");
+  assert.equal(reads.questions, 1, "questions was read");
+  assert.equal(reads.blocks, undefined);
+  assert.equal(state2.details[wishId].questions.length, 1);
+  assert.equal(state2.details[wishId].loadedKinds.has(Change.QUESTION), true);
+
+  // Calling loadKinds for already loaded kind does not trigger re-read
+  await store.loadKinds(wishId, [Change.TASK]);
+  assert.equal(reads.tasks, 1);
+
+  stop();
+});
+
+test("watch updates ignore unrequested kinds and only update loaded kinds", async () => {
+  const data = sample();
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wishId, [Change.TASK]);
+  await until(store, (s) => s.details[wishId]?.loadedKinds.has(Change.TASK));
+  const before = { ...reads };
+
+  // Watch event arrives with changes for TASK and QUESTION
+  watch.push({
+    wishId,
+    changes: [Change.TASK, Change.QUESTION],
+    changed: carried({
+      tasks: [{ ...data.tasks[0], status: 4 }],
+      questions: [{ id: "q1", wishId, code: "Q01", text: "New text?" }],
+    }),
+  });
+
+  const state = await until(
+    store,
+    (s) => s.details[wishId]?.tasks[0]?.status === 4,
+  );
+  assert.equal(state.details[wishId].tasks[0].status, 4);
+  assert.deepEqual(state.details[wishId].questions, []);
+  assert.equal(reads.tasks, before.tasks);
+  assert.equal(
+    reads.questions,
+    undefined,
+    "questions was never read from server",
+  );
+
+  stop();
+});
+
+test("loadMore fetches the next page and merges items", async () => {
+  const data = sample();
+  const task1 = { id: `${taskId}1`, wishId, code: "T01", title: "Task 1" };
+  const task2 = { id: `${taskId}2`, wishId, code: "T02", title: "Task 2" };
+  data.listTasks = (req) => {
+    if (req.pageToken === "token-p2") {
+      return {
+        tasks: [task2],
+        total: 2,
+        nextPageToken: "",
+      };
+    }
+    return {
+      tasks: [task1],
+      total: 2,
+      nextPageToken: "token-p2",
+    };
+  };
+
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wishId, [Change.TASK]);
+  await until(store, (s) => s.details[wishId]?.loadedKinds.has(Change.TASK));
+
+  const state1 = store.getState().details[wishId];
+  assert.equal(state1.tasks.length, 1);
+  assert.equal(state1.tasks[0].id, task1.id);
+  assert.equal(state1.tasksTotal, 2);
+  assert.equal(state1.tasksNextToken, "token-p2");
+  assert.equal(reads.tasks, 1);
+
+  await store.loadMore(wishId, Change.TASK);
+  const state2 = store.getState().details[wishId];
+  assert.equal(reads.tasks, 2);
+  assert.equal(state2.tasks.length, 2);
+  assert.deepEqual(
+    state2.tasks.map((t) => t.code),
+    ["T01", "T02"],
+  );
+  assert.equal(state2.tasksTotal, 2);
+  assert.equal(state2.tasksNextToken, "");
+
+  // Calling loadMore when nextToken is empty does nothing
+  await store.loadMore(wishId, Change.TASK);
+  assert.equal(reads.tasks, 2);
+
+  stop();
+});
+
+test("incremental changes adjust server totals", async () => {
+  const data = sample();
+  data.tasksTotal = 10;
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wishId, [Change.TASK]);
+  await until(store, (s) => s.details[wishId]?.loadedKinds.has(Change.TASK));
+  assert.equal(store.getState().details[wishId].tasksTotal, 10);
+
+  const newTask = { id: `${taskId}8`, wishId, code: "T02", title: "New" };
+  watch.push({
+    wishId,
+    changes: [Change.TASK],
+    changed: carried({ tasks: [newTask] }),
+  });
+  await until(store, (s) => s.details[wishId]?.tasks.length === 2);
+  assert.equal(store.getState().details[wishId].tasksTotal, 11);
+
+  watch.push({
+    wishId,
+    changes: [Change.TASK],
+    changed: carried({ deleted: [newTask.id] }),
+  });
+  await until(store, (s) => s.details[wishId]?.tasks.length === 1);
+  assert.equal(store.getState().details[wishId].tasksTotal, 10);
+
+  stop();
+});
+
+test("a move removes the azima from the first wish's detail and adds it to the second's", async () => {
+  const data = sample();
+  const wish1 = wishId;
+  const wish2 = "01a11833-a440-7479-a067-52615c91da72";
+  data.wishes.push({
+    id: wish2,
+    title: "Collaborative Djinn",
+    rank: 2,
+    state: 1,
+  });
+
+  const azima = {
+    id: `${taskId}1`,
+    wishId: wish1,
+    code: "T01",
+    title: "Azima",
+    kind: 2,
+  };
+  const part = {
+    id: `${taskId}2`,
+    wishId: wish1,
+    code: "W01",
+    title: "Part",
+    partOf: azima.id,
+  };
+  const allTasks = [azima, part];
+  data.listTasks = (req) => {
+    const tasks = allTasks.filter((t) => t.wishId === req.wishId);
+    return { tasks, total: tasks.length, nextPageToken: "" };
+  };
+
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wish1, [Change.TASK]);
+  store.open(wish2, [Change.TASK]);
+  await until(
+    store,
+    (s) =>
+      s.details[wish1]?.loadedKinds.has(Change.TASK) &&
+      s.details[wish2]?.loadedKinds.has(Change.TASK),
+  );
+
+  assert.equal(store.getState().details[wish1].tasks.length, 2);
+  assert.equal(store.getState().details[wish1].tasksTotal, 2);
+  assert.equal(store.getState().details[wish2].tasks.length, 0);
+  assert.equal(store.getState().details[wish2].tasksTotal, 0);
+  const before = { ...reads };
+
+  // Move azima and part from wish1 to wish2.
+  const movedAzima = { ...azima, wishId: wish2, code: "T02" };
+  const movedPart = { ...part, wishId: wish2, partOf: movedAzima.id };
+  watch.push({
+    wishId: wish1,
+    changes: [Change.TASK],
+    changed: carried({ deleted: [azima.id, part.id] }),
+  });
+  watch.push({
+    wishId: wish2,
+    changes: [Change.TASK],
+    changed: carried({ tasks: [movedAzima, movedPart] }),
+  });
+
+  const state = await until(
+    store,
+    (s) =>
+      s.details[wish1]?.tasks.length === 0 &&
+      s.details[wish2]?.tasks.length === 2,
+  );
+
+  assert.equal(state.details[wish1].tasks.length, 0);
+  assert.equal(state.details[wish1].tasksTotal, 0);
+  assert.equal(state.details[wish2].tasks.length, 2);
+  assert.equal(state.details[wish2].tasksTotal, 2);
+  assert.deepEqual(
+    state.details[wish2].tasks.map((t) => t.id),
+    [movedAzima.id, movedPart.id],
+  );
+  assert.equal(state.details[wish2].tasks[0].code, "T02");
+  assert.equal(state.details[wish2].tasks[1].partOf, movedAzima.id);
+  assert.equal(reads.tasks, before.tasks, "tasks was not re-read from server");
+
   stop();
 });

@@ -54,7 +54,10 @@ func TestAzimaRoundTrip(t *testing.T) {
 	if tasks[0].GetAzima() != nil {
 		t.Error("WithAzimas changed the store's message")
 	}
-	want := &planv1.Azima{State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1}
+	want := &planv1.Azima{
+		State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1,
+		Branch: "djinn/T07-the-orchestrator",
+	}
 	if !proto.Equal(filled[0].GetAzima(), want) || filled[1].GetAzima() != nil {
 		t.Errorf("azima: %v, part: %v", filled[0].GetAzima(), filled[1].GetAzima())
 	}
@@ -87,16 +90,18 @@ func TestFillAzimas(t *testing.T) {
 		task("W3", work, planv1.TaskStatus_TASK_STATUS_PAUSED, "T4"),
 		task("W4", work, failed, "T5"),
 		task("T5", plan, pending, "", "W2"),
+		{Id: "T6", Code: "T6", Kind: plan, Status: pending, Draft: true},
 	}
 	FillAzimas(tasks)
 	for code, want := range map[string]*planv1.Azima{
-		"T1": {State: planv1.AzimaState_AZIMA_STATE_DONE, Ready: true},
-		"T2": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 2, PartsDone: 1},
+		"T1": {State: planv1.AzimaState_AZIMA_STATE_DONE, Ready: true, Branch: "djinn/T1"},
+		"T2": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 2, PartsDone: 1, Branch: "djinn/T2", BaseBranch: "djinn/T1"},
 		// Its part T4 is under way, through W3.
-		"T3": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Parts: 1},
-		"T4": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1},
+		"T3": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Parts: 1, Branch: "djinn/T3", BaseBranch: "djinn/T2"},
+		"T4": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1, Branch: "djinn/T4"},
 		// A failed part is not progress.
-		"T5": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Parts: 1},
+		"T5": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Parts: 1, Branch: "djinn/T5", BaseBranch: "djinn/T2"},
+		"T6": {State: planv1.AzimaState_AZIMA_STATE_DRAFT, Ready: true, Branch: "djinn/T6"},
 	} {
 		i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetCode() == code })
 		if got := tasks[i].GetAzima(); !proto.Equal(got, want) {
@@ -234,6 +239,80 @@ func TestAzimaFiles(t *testing.T) {
 	check(nil, false, "")
 }
 
+// TestDraftAzimaFile: a plan file with status: draft is parsed as a draft, its description holding its goal and body;
+// WriteDescription updates its markdown body, and WriteStatus updates its status.
+func TestDraftAzimaFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, PlanDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\ncode: T31\nstatus: draft\nafter: T07\n---\n\n# T31 · Spreading work over machines\n\n## Goal\nAnticipate and research.\n\n## Design\nDetails here.\n"
+	path := filepath.Join(dir, PlanDir, "t31-draft.md")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files, err := ReadAzimaFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+	f := files[0]
+	if !f.Draft() {
+		t.Errorf("Draft() = false, want true")
+	}
+	if f.Done() || f.Closes() {
+		t.Errorf("Done()=%v, Closes()=%v, want false", f.Done(), f.Closes())
+	}
+	if f.Code != "T31" || f.Title != "Spreading work over machines" {
+		t.Errorf("Code=%q, Title=%q", f.Code, f.Title)
+	}
+	if !slices.Equal(f.After, []string{"T07"}) {
+		t.Errorf("After=%v, want [T07]", f.After)
+	}
+	wantDesc := "## Goal\nAnticipate and research.\n\n## Design\nDetails here."
+	if f.Description != wantDesc {
+		t.Errorf("Description = %q, want %q", f.Description, wantDesc)
+	}
+
+	// WriteDescription replaces the description while preserving the front matter and title.
+	newDesc := "## Goal\nRevised goal.\n\n## Research\nSome research."
+	changed, err := WriteDescription(path, newDesc)
+	if err != nil || !changed {
+		t.Fatalf("WriteDescription: changed=%v, err=%v", changed, err)
+	}
+	files, err = ReadAzimaFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files[0].Description != newDesc {
+		t.Errorf("updated description = %q, want %q", files[0].Description, newDesc)
+	}
+	if !files[0].Draft() || files[0].Code != "T31" {
+		t.Errorf("front matter was damaged: draft=%v, code=%q", files[0].Draft(), files[0].Code)
+	}
+
+	// WriteStatus changes status from draft to open.
+	changed, err = WriteStatus(path, "open")
+	if err != nil || !changed {
+		t.Fatalf("WriteStatus: changed=%v, err=%v", changed, err)
+	}
+	files, err = ReadAzimaFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files[0].Draft() {
+		t.Errorf("after WriteStatus(open), Draft() is still true")
+	}
+	if files[0].Status != "open" {
+		t.Errorf("Status = %q, want open", files[0].Status)
+	}
+	if files[0].Description != newDesc {
+		t.Errorf("WriteStatus damaged description: %q", files[0].Description)
+	}
+}
+
 func TestCompareCodes(t *testing.T) {
 	codes := []string{"T10", "W2", "T2", "t3", "T01", "W10"}
 	slices.SortFunc(codes, CompareCodes)
@@ -274,6 +353,12 @@ func TestBriefAzimas(t *testing.T) {
 	t12 := azima("T12", "Updates", pending)
 	t12.ProofNeeds = []*planv1.ProofNeed{{Box: "Updated.", Needs: "a published release, then a person",
 		Provers: []planv1.Prover{planv1.Prover_PROVER_RELEASE, planv1.Prover_PROVER_PERSON}}}
+	t31 := azima("T31", "Spreading work", pending)
+	t31.Draft = true
+	l1 := &planv1.Tilasm{
+		Id: store.NewID(), WishId: wishID, Code: "L01", Title: "Work across machines",
+		Cites: []string{t31.GetId()}, CreateTime: day,
+	}
 	built := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W3", Title: "Build it", PartOf: t11.GetId(),
 		Status: done, CreateTime: day}
 	updated := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W4", Title: "Update it", PartOf: t12.GetId(),
@@ -288,12 +373,12 @@ func TestBriefAzimas(t *testing.T) {
 		if err := tx.Journal(actor, "test/put", t1); err != nil {
 			return err
 		}
-		for _, task := range []*planv1.Task{t1, t2, t3, t4, t5, t10, t11, t12, running, planned, built, updated, dropped} {
+		for _, task := range []*planv1.Task{t1, t2, t3, t4, t5, t10, t11, t12, t31, running, planned, built, updated, dropped} {
 			if err := tx.Put(task); err != nil {
 				return err
 			}
 		}
-		return nil
+		return tx.Put(l1)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +397,8 @@ func TestBriefAzimas(t *testing.T) {
 		"- **T5** Spread the work: waits for T3, T4 (after T2, T3, T4); open\n" +
 		"- **T10** Releases: waits for T4; open\n" +
 		"- Work done, waiting for its proof: T11 needs a Windows machine, Clément's review; T12 needs a release, a person.\n" +
-		"- Done: T1, T2.\n"
+		"- Done: T1, T2.\n" +
+		"- Drafts: T31 Spreading work — open with djinn task open T31 (explained by L01).\n"
 	if azimas != want {
 		t.Errorf("azimas =\n%s\nwant\n%s", azimas, want)
 	}
@@ -320,12 +406,90 @@ func TestBriefAzimas(t *testing.T) {
 		!strings.Contains(rest, "- **W2** Draw it (part of T3): planned") {
 		t.Errorf("work:\n%s", rest)
 	}
-	for _, code := range []string{"**T1**", "**T3**", "**T5**", "**T11**"} {
+	for _, code := range []string{"**T1**", "**T3**", "**T5**", "**T11**", "**T31**"} {
 		if strings.Contains(rest, code) {
 			t.Errorf("an azima is listed as work: %s\n%s", code, rest)
 		}
 	}
 	if !strings.Contains(brief.Stable, "--part-of <azima>") || !strings.Contains(brief.Stable, "djinn plan sync <wish>") {
 		t.Errorf("the rules leave the azimas out:\n%s", brief.Stable)
+	}
+}
+
+// TestHasUnfinishedParts: tells whether an azima has unfinished parts or nested azimas with unfinished parts.
+func TestHasUnfinishedParts(t *testing.T) {
+	azima := func(id, partOf string, status planv1.TaskStatus) *planv1.Task {
+		return &planv1.Task{Id: id, Code: id, Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: status, PartOf: partOf}
+	}
+	work := func(id, partOf string, status planv1.TaskStatus) *planv1.Task {
+		return &planv1.Task{Id: id, Code: id, Kind: planv1.TaskKind_TASK_KIND_WORK, Status: status, PartOf: partOf}
+	}
+	const (
+		done    = planv1.TaskStatus_TASK_STATUS_DONE
+		pending = planv1.TaskStatus_TASK_STATUS_PENDING
+		running = planv1.TaskStatus_TASK_STATUS_RUNNING
+		stopped = planv1.TaskStatus_TASK_STATUS_STOPPED
+		failed  = planv1.TaskStatus_TASK_STATUS_FAILED
+	)
+	tasks := []*planv1.Task{
+		azima("T1", "", done),
+		work("W1", "T1", done),
+		work("W2", "T1", stopped),
+
+		azima("T2", "", done),
+		work("W3", "T2", done),
+		work("W4", "T2", running),
+
+		azima("T3", "", done),
+		azima("T3_sub", "T3", done),
+		work("W5", "T3_sub", done),
+
+		azima("T4", "", done),
+		azima("T4_sub", "T4", done),
+		work("W6", "T4_sub", pending),
+
+		azima("T5", "", done),
+		azima("T5_sub", "T5", pending),
+		work("W7", "T5_sub", done),
+
+		azima("T6", "", done),
+		work("W8", "T6", failed),
+	}
+
+	if HasUnfinishedParts("T1", tasks) {
+		t.Errorf("T1 has unfinished parts, want false")
+	}
+	if !HasUnfinishedParts("T2", tasks) {
+		t.Errorf("T2 has no unfinished parts, want true (W4 running)")
+	}
+	if HasUnfinishedParts("T3", tasks) {
+		t.Errorf("T3 has unfinished parts, want false")
+	}
+	if !HasUnfinishedParts("T4", tasks) {
+		t.Errorf("T4 has no unfinished parts, want true (W6 pending)")
+	}
+	if !HasUnfinishedParts("T5", tasks) {
+		t.Errorf("T5 has no unfinished parts, want true (T5_sub pending)")
+	}
+	if !HasUnfinishedParts("T6", tasks) {
+		t.Errorf("T6 has no unfinished parts, want true (W8 failed)")
+	}
+
+	FillAzimas(tasks)
+	for id, wantState := range map[string]planv1.AzimaState{
+		"T1":     planv1.AzimaState_AZIMA_STATE_DONE,
+		"T2":     planv1.AzimaState_AZIMA_STATE_IN_PROGRESS,
+		"T3":     planv1.AzimaState_AZIMA_STATE_DONE,
+		"T3_sub": planv1.AzimaState_AZIMA_STATE_DONE,
+		"T4":     planv1.AzimaState_AZIMA_STATE_IN_PROGRESS,
+		"T4_sub": planv1.AzimaState_AZIMA_STATE_IN_PROGRESS,
+		"T5":     planv1.AzimaState_AZIMA_STATE_IN_PROGRESS,
+		"T5_sub": planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF,
+		"T6":     planv1.AzimaState_AZIMA_STATE_IN_PROGRESS,
+	} {
+		i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetId() == id })
+		if got := tasks[i].GetAzima().GetState(); got != wantState {
+			t.Errorf("%s state: %v, want %v", id, got, wantState)
+		}
 	}
 }

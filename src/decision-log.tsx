@@ -6,10 +6,10 @@
 // latest decisions show, the older ones fold behind a line (older.tsx); a long note folds under its first line, and
 // its body is rendered once opened.
 import { Bot, CornerDownRight } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, memo, useEffect, useState } from "react";
 
 import { type Decision, BY_LEAD } from "./data/decisions";
-import { answerText, when } from "./data/format";
+import { answerText, firstLine, when } from "./data/format";
 import { t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
 import { OlderLine, useRecent } from "./older";
@@ -23,12 +23,16 @@ const LONG_NOTE_LINES = 6;
 
 export function DecisionLog<T extends { item: Decision }>({
   items,
+  total,
   origin,
   noLead,
   focus = "",
   onTask,
+  onMore,
 }: {
   items: readonly T[];
+  // How many decisions there are in all, from the server; without it, items.length.
+  total?: number;
   // Where a decision comes from, in the flight plan of several wishes: its wish.
   origin?: (item: T) => ReactNode;
   // The decision's wish has no lead session: its answer told no lead.
@@ -37,10 +41,13 @@ export function DecisionLog<T extends { item: Decision }>({
   focus?: string;
   // Opens a task in the Tasks tab.
   onTask: (taskId: string) => void;
+  // Loads more decisions from the server when unfolded.
+  onMore?: () => void;
 }) {
+  const totalCount = total !== undefined ? total : items.length;
   // A decision a task leads back to shows, folded or not.
   const { shown, more } = useRecent(
-    items.length,
+    totalCount,
     focus ? items.findIndex((item) => item.item.id === focus) : -1,
   );
   useEffect(() => {
@@ -59,7 +66,7 @@ export function DecisionLog<T extends { item: Decision }>({
       <div className="section-title">
         <h2>
           {t("tabs.decisions")}
-          <span className="count">{items.length}</span>
+          <span className="count">{totalCount}</span>
         </h2>
         <p>{t("decision.detail")}</p>
       </div>
@@ -79,13 +86,16 @@ export function DecisionLog<T extends { item: Decision }>({
         </div>
       )}
       <OlderLine
-        hidden={items.length - shown}
+        hidden={totalCount - shown}
         label={(count, hidden) =>
           count < hidden
             ? t("decision.older_some", { count, hidden })
             : t("decision.older", { count })
         }
-        onShow={more}
+        onShow={() => {
+          more();
+          onMore?.();
+        }}
       />
     </section>
   );
@@ -110,7 +120,7 @@ export function Who({ decision: d }: { decision: Decision }) {
   );
 }
 
-function DecisionRow({
+const DecisionRow = memo(function DecisionRow({
   decision: d,
   origin,
   noLead,
@@ -179,7 +189,7 @@ function DecisionRow({
       </div>
     </article>
   );
-}
+});
 
 // FoldedNote is a long note under its first line: its Markdown is rendered once opened, not for every decision.
 function FoldedNote({ note }: { note: string }) {
@@ -222,14 +232,4 @@ export function DecisionLink({
       {t("decision.from", { decision: label })}
     </a>
   );
-}
-
-// firstLine is a note's first line of text, for its folded summary.
-function firstLine(text: string): string {
-  const line =
-    text
-      .split("\n")
-      .map((l) => l.replace(/^[#>*+\-\s]+/, "").trim())
-      .find(Boolean) ?? "";
-  return line.length > 140 ? `${line.slice(0, 139)}…` : line;
 }

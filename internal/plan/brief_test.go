@@ -111,6 +111,7 @@ func TestBrief(t *testing.T) {
 		"**W3** Reopen the leads: resuming by itself, the account's session limit, resets at 07:20",
 		"**W4** Pause a worker: resumed as W5",
 		"**To follow up on a task, continue it**", "Fork it only to start a different task from its context",
+		"`djinn task update <task>`",
 		"`djinn wish route \"<request>\" --wish-id <wish> --ask`", "`--provider watch --prompt \"<command>\"`",
 		"`--restart` starts again", "`metadata.djinn.wish`", "`djinn skill list`",
 		// The decisions say who took them, and what they led to.
@@ -119,6 +120,10 @@ func TestBrief(t *testing.T) {
 		// Everything for the developer is a question; a resolved one is resolved; blocks are for agents.
 		"Everything for the developer is a question", "with none when you really do not know what to think",
 		"goes in its `--context`", "ask again, a new question, only on a real doubt", "**Blocks are for agents**",
+		"Every move only the developer can make (push a tag, merge or open a pull request, create a release",
+		"--move",
+		"**Check every task that ends.**",
+		"Read its final note (`djinn task watch <task>`, or the line Djinn types)",
 		// An azima carries one clear goal, and new work finds its azima first.
 		"**An azima carries one clear goal**", "rephrase its goal (its plan file's Goal and its title",
 		"open a new azima only for a will no existing one carries",
@@ -263,15 +268,24 @@ func TestResumeFromBrief(t *testing.T) {
 		t.Errorf("resume after exit = %v, opened %q", res, leads.opened)
 	}
 
-	// Codex and Antigravity get the same first message; Djinn cannot know their session.
-	for p, program := range map[planv1.Provider]string{
-		planv1.Provider_PROVIDER_CODEX: "codex ", planv1.Provider_PROVIDER_ANTIGRAVITY: "agy -i ",
-	} {
-		id := makeWish("Lead with " + p.String())
-		res := resume(id, p)
+	// Codex gets the same first message; Djinn cannot know its session.
+	{
+		id := makeWish("Lead with Codex")
+		res := resume(id, planv1.Provider_PROVIDER_CODEX)
 		got := leads.opened[len(leads.opened)-1]
-		if got != program+"'"+StartLine(id)+"' in "+folder || res.GetWish().GetLead() != nil || res.GetNote() == "" {
-			t.Errorf("%s: opened %q, resume %v", p, got, res)
+		if got != "codex '"+StartLine(id)+"' in "+folder || res.GetWish().GetLead() != nil || res.GetNote() == "" {
+			t.Errorf("codex: opened %q, resume %v", got, res)
+		}
+	}
+	// Antigravity starts from the brief; its folder becomes the wish's lead, resumed with agy --continue.
+	{
+		id := makeWish("Lead with Antigravity")
+		res := resume(id, planv1.Provider_PROVIDER_ANTIGRAVITY)
+		got := leads.opened[len(leads.opened)-1]
+		lead := res.GetWish().GetLead()
+		if got != "agy -i '"+StartLine(id)+"' in "+folder || lead.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY ||
+			lead.GetSessionId() != "" || lead.GetDirectory() != folder || res.GetNote() == "" {
+			t.Errorf("antigravity: opened %q, resume %v", got, res)
 		}
 	}
 	// The fake agent has no terminal.
@@ -563,5 +577,32 @@ func TestBriefOrder(t *testing.T) {
 	// A wish that never had a lead says nothing of one.
 	if bare, err := BuildBrief(ctx, c.store, "", c.wish(t)); err != nil || strings.Contains(bare.Moving, "## The last lead") {
 		t.Errorf("a wish without a lead (%v):\n%s", err, bare.Moving)
+	}
+}
+
+// TestBriefRunningTaskModel: a running task's line includes the model when set.
+func TestBriefRunningTaskModel(t *testing.T) {
+	ctx := t.Context()
+	c, wish, _ := source(t)
+	tasks, err := store.List[*planv1.Task](ctx, c.store, store.Where{"wish_id": wish.GetId(), "code": "W1"})
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("W1: %v, %v", tasks, err)
+	}
+	task := tasks[0]
+	task.Model = "claude-sonnet-4-5"
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("test", "test/put", task); err != nil {
+			return err
+		}
+		return tx.Put(task)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wish.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(brief.Moving, "(claude · claude-sonnet-4-5, since ") {
+		t.Errorf("brief = %s\nwant to contain (claude · claude-sonnet-4-5, since ", brief.Moving)
 	}
 }

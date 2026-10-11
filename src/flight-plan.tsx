@@ -4,19 +4,34 @@
 // questions you asked to investigate. The tasks of every wish
 // have a tab of their own (task-tabs.tsx), and so have their decisions (decision-log.tsx). Every line shows the wish
 // it comes from, and an answer, a stop or a grant goes back to it. Each wish keeps its own view; an empty section is hidden.
-import { type CSSProperties, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   Change,
+  type Choice,
   Closer,
+  type MarkKind,
+  type Question,
   type Task,
   TaskStatus,
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import { AttentionBar, attentionOf } from "./attention";
-import { decisionOf } from "./data/decisions";
+import { type Decision, decisionOf } from "./data/decisions";
 import { useData, usePausable, useWishDetails } from "./data/djinn";
-import { flightPlan, spent } from "./data/flight";
+import {
+  type AzimaGroup,
+  flightPlan,
+  isAzima,
+  spent,
+  taskMapOf,
+} from "./data/flight";
 import {
   investigating,
   noLead,
@@ -31,8 +46,16 @@ import { Inbox } from "./inbox";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
 import { CountPill, StatusBadge } from "./status";
-import { AzimaCard, azimaFinished, proofWords } from "./azima";
+import {
+  AzimaCard,
+  azimaFinished,
+  DraftAzimaCard,
+  MoveAzimaDialog,
+  proofWords,
+} from "./azima";
+import { MoveQuestionDialog, WithdrawQuestionDialog } from "./wish-dialogs";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
+import { OperatingLoad } from "./operating-load";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
@@ -41,7 +64,7 @@ import {
   GrantCard,
   InvestigatingSection,
   WaitingTasks,
-  WishOrigin,
+  wishOrigin,
 } from "./wish-view";
 
 export function FlightPlan({
@@ -55,87 +78,324 @@ export function FlightPlan({
   onToast: (text: string) => void;
 }) {
   const projects = useData((s) => s.projects);
+  const allWishes = useData((s) => s.wishes);
+  const projectById = useMemo(
+    () => new Map(projects.map((p) => [p.id, p])),
+    [projects],
+  );
   const pausable = usePausable();
-  const details = useWishDetails(wishes.map((w) => w.id));
-  const plan = flightPlan(wishes, details);
+  const wishIds = useMemo(() => wishes.map((w) => w.id), [wishes]);
+  const details = useWishDetails(wishIds);
+  const plan = useMemo(() => flightPlan(wishes, details), [wishes, details]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
-  const { clients, act, quiet, answer, enlighten, mark } = useWrites(onToast);
+  const { clients, act, quiet, answer, enlighten, mark, move, withdraw } =
+    useWrites(onToast);
   const waits =
     plan.questions.length +
     plan.waiting.length +
     plan.ready.length +
     plan.proofs.length;
-  const attention = attentionOf(
-    plan.questions,
-    plan.waiting,
-    plan.ready,
-    (wish) => <WishOrigin wish={wish} />,
+  const renderAttentionOrigin = useCallback(
+    (wish: Wish) => wishOrigin(wish),
+    [],
+  );
+  const attention = useMemo(
+    () =>
+      attentionOf(
+        plan.questions,
+        plan.waiting,
+        plan.ready,
+        renderAttentionOrigin,
+      ),
+    [plan.questions, plan.waiting, plan.ready, renderAttentionOrigin],
   );
   const [view, setView] = useState<View>("main");
+  const [movingAzima, setMovingAzima] = useState<{
+    wishId: string;
+    task: Task;
+  } | null>(null);
+  const [movingQuestion, setMovingQuestion] = useState<{
+    wishId: string;
+    question: Question;
+  } | null>(null);
+  const [withdrawingQuestion, setWithdrawingQuestion] = useState<{
+    wishId: string;
+    question: Question;
+  } | null>(null);
   // What a link between a decision and a task brings into sight in the other tab: its id.
   const [focus, setFocus] = useState("");
-  const show = (to: View, id = "") => (setView(to), setFocus(id));
-  const wishOf = new Map(plan.investigating.map((x) => [x.item.id, x.wish]));
-  // A task's decision, among those of its wish: two wishes may each have a Q01.
-  const decisionOfTask = (task: Task, wish: Wish) =>
-    decisionOf(
-      task,
-      plan.decisions.filter((d) => d.wish.id === wish.id).map((d) => d.item),
-    );
+  const show = useCallback((to: View, id = "") => {
+    setView(to);
+    setFocus(id);
+  }, []);
 
-  const renderTask = (wish: Wish, item: Task) => (
-    <WishTask
-      key={item.id}
-      task={item}
-      origin={<WishOrigin wish={wish} />}
-      decision={decisionOfTask(item, wish)}
-      focused={focus === item.id}
-      onDecision={() => show("decisions", decisionOfTask(item, wish)?.id)}
-      project={projects.find((p) => p.id === item.projectId)}
-      onStop={() =>
-        quiet(
-          act(wish.id, () => clients.tasks.stop({ taskId: item.id }), [
-            Change.TASK,
-          ]),
-        )
+  const wishById = useMemo(
+    () => new Map(wishes.map((w) => [w.id, w])),
+    [wishes],
+  );
+
+  const decisionsByWishId = useMemo(() => {
+    const map = new Map<string, Decision[]>();
+    for (const d of plan.decisions) {
+      let list = map.get(d.wish.id);
+      if (!list) {
+        list = [];
+        map.set(d.wish.id, list);
       }
-      onSend={(text) =>
-        act(wish.id, () => clients.tasks.send({ taskId: item.id, text }), [])
-      }
-      onHold={
-        pausable
-          ? (pause) =>
-              quiet(
-                act(
-                  wish.id,
-                  () =>
-                    pause
-                      ? clients.tasks.pause({ taskId: item.id })
-                      : clients.tasks.resume({ taskId: item.id }),
-                  [Change.TASK],
-                ),
-              )
-          : undefined
-      }
-      onDone={(note) =>
+      list.push(d.item);
+    }
+    return map;
+  }, [plan.decisions]);
+
+  // A task's decision, among those of its wish: two wishes may each have a Q01.
+  const decisionOfTask = useCallback(
+    (task: Task, wish: Wish) =>
+      decisionOf(task, decisionsByWishId.get(wish.id) ?? []),
+    [decisionsByWishId],
+  );
+
+  const handleDecision = useCallback(
+    (task: Task) => {
+      const wish = wishById.get(task.wishId);
+      if (!wish) return;
+      const d = decisionOfTask(task, wish);
+      show("decisions", d?.id);
+    },
+    [wishById, decisionOfTask, show],
+  );
+
+  const handleStop = useCallback(
+    (task: Task) => {
+      quiet(
+        act(task.wishId, () => clients.tasks.stop({ taskId: task.id }), [
+          Change.TASK,
+        ]),
+      );
+    },
+    [quiet, act, clients.tasks],
+  );
+
+  const handleSend = useCallback(
+    (text: string, task: Task) =>
+      act(task.wishId, () => clients.tasks.send({ taskId: task.id, text }), []),
+    [act, clients.tasks],
+  );
+
+  const handleHold = useCallback(
+    (pause: boolean, task: Task) => {
+      quiet(
+        act(
+          task.wishId,
+          () =>
+            pause
+              ? clients.tasks.pause({ taskId: task.id })
+              : clients.tasks.resume({ taskId: task.id }),
+          [Change.TASK],
+        ),
+      );
+    },
+    [quiet, act, clients.tasks],
+  );
+
+  const handleDone = useCallback(
+    (note: string, task: Task) =>
+      act(
+        task.wishId,
+        () =>
+          clients.tasks.done({
+            taskId: task.id,
+            note,
+            by: Closer.DEVELOPER,
+          }),
+        [Change.TASK],
+        t("task.marked_done", { task: task.code }),
+      ),
+    [act, clients.tasks],
+  );
+
+  const renderTask = useCallback(
+    (item: Task) => {
+      const wish = wishById.get(item.wishId);
+      return (
+        <WishTask
+          key={item.id}
+          task={item}
+          origin={wish ? wishOrigin(wish) : undefined}
+          decision={wish ? decisionOfTask(item, wish) : undefined}
+          focused={focus === item.id}
+          onDecision={handleDecision}
+          project={projectById.get(item.projectId)}
+          onStop={handleStop}
+          onSend={handleSend}
+          onHold={pausable ? handleHold : undefined}
+          onDone={handleDone}
+        />
+      );
+    },
+    [
+      wishById,
+      decisionOfTask,
+      focus,
+      handleDecision,
+      projectById,
+      handleStop,
+      handleSend,
+      pausable,
+      handleHold,
+      handleDone,
+    ],
+  );
+
+  // The tasks of a wish, by id: what an azima waits for.
+  const tasksOf = useCallback(
+    (wish: Wish) => taskMapOf(details[wish.id]?.tasks ?? []),
+    [details],
+  );
+
+  const handleValidateAzima = useCallback(
+    (azima: Task) =>
+      act(
+        azima.wishId,
+        () =>
+          clients.tasks.done({
+            taskId: azima.id,
+            note: t("azima.validated_note"),
+            by: Closer.DEVELOPER,
+          }),
+        [Change.TASK],
+        t("azima.validated", { code: azima.code }),
+      ),
+    [act, clients.tasks],
+  );
+
+  const activeAzimas = useMemo(
+    () => plan.azimas.filter((x) => !azimaFinished(x.item.azima)),
+    [plan.azimas],
+  );
+  const doneAzimas = useMemo(
+    () => plan.azimas.filter((x) => azimaFinished(x.item.azima)),
+    [plan.azimas],
+  );
+  const showDone = useMemo(
+    () =>
+      doneAzimas.some(
+        ({ item }) =>
+          item.azima.id === focus || item.parts.some((p) => p.id === focus),
+      ),
+    [doneAzimas, focus],
+  );
+
+  const renderAzimaItem = useCallback(
+    ({ wish, item }: { wish: Wish; item: AzimaGroup }) => (
+      <AzimaCard
+        key={item.azima.id}
+        azima={item.azima}
+        parts={item.parts}
+        tasks={tasksOf(wish)}
+        origin={wishOrigin(wish)}
+        render={renderTask}
+        focus={focus}
+        onValidate={handleValidateAzima}
+      />
+    ),
+    [tasksOf, renderTask, focus, handleValidateAzima],
+  );
+
+  const renderMovingItem = useCallback(
+    ({ item }: { wish: Wish; item: Task }) => renderTask(item),
+    [renderTask],
+  );
+
+  const showDrafts = useMemo(
+    () => plan.drafts.some(({ item }) => item.id === focus),
+    [plan.drafts, focus],
+  );
+
+  const handleOpenDraft = useCallback(
+    (wish: Wish, task: Task) => {
+      quiet(
         act(
           wish.id,
-          () =>
-            clients.tasks.done({
-              taskId: item.id,
-              note,
-              by: Closer.DEVELOPER,
-            }),
+          () => clients.tasks.open({ azima: task.id }),
           [Change.TASK],
-          t("task.marked_done", { task: item.code }),
-        )
-      }
-    />
+          t("azima.opened_toast", { code: task.code }),
+        ),
+      );
+    },
+    [quiet, act, clients.tasks],
   );
-  // The tasks of a wish, by id: what an azima waits for.
-  const tasksOf = (wish: Wish) =>
-    new Map((details[wish.id]?.tasks ?? []).map((task) => [task.id, task]));
+
+  const handleMoveDraft = useCallback((wish: Wish, task: Task) => {
+    setMovingAzima({ wishId: wish.id, task });
+  }, []);
+
+  const renderDraftItem = useCallback(
+    ({ wish, item }: { wish: Wish; item: Task }) => (
+      <DraftAzimaCard
+        key={item.id}
+        azima={item}
+        tasks={tasksOf(wish)}
+        origin={wishOrigin(wish)}
+        focus={focus}
+        onOpen={() => handleOpenDraft(wish, item)}
+        onMove={() => handleMoveDraft(wish, item)}
+      />
+    ),
+    [tasksOf, focus, handleOpenDraft, handleMoveDraft],
+  );
+
+  const handleQuestionAnswer = useCallback(
+    (choice: Choice, note: string, q?: Question) => {
+      if (q) return answer(q.wishId, q.id, choice, note);
+      return Promise.resolve();
+    },
+    [answer],
+  );
+
+  const handleQuestionMark = useCallback(
+    (kind: MarkKind, remove: boolean, q?: Question) => {
+      if (q) return mark(q.wishId, q.id, kind, remove);
+      return Promise.resolve();
+    },
+    [mark],
+  );
+
+  const handleQuestionEnlighten = useCallback(
+    (note: string, q?: Question) => {
+      if (q) return enlighten(q.wishId, q.id, note);
+      return Promise.resolve();
+    },
+    [enlighten],
+  );
+
+  const handleGrant = useCallback(
+    (wish?: Wish) => {
+      if (!wish) return;
+      quiet(
+        act(
+          wish.id,
+          () => clients.wishes.grant({ wishId: wish.id }),
+          [Change.WISH],
+          t("wish.granted_toast"),
+        ),
+      );
+    },
+    [quiet, act, clients.wishes],
+  );
+
+  const renderDecisionOrigin = useCallback(
+    ({ wish }: { wish: Wish }) => wishOrigin(wish),
+    [],
+  );
+  const checkDecisionNoLead = useCallback(
+    ({ wish }: { wish: Wish }) => noLead(wish),
+    [],
+  );
+  const handleTaskFocus = useCallback(
+    (id: string) => show("tasks", id),
+    [show],
+  );
 
   return (
     <div className="wish-view flight-plan review">
@@ -143,6 +403,7 @@ export function FlightPlan({
         <div className="breadcrumbs">
           <strong>{t("plan.title")}</strong>
         </div>
+        <OperatingLoad />
       </header>
       <div className="mission-scroll" ref={keepPlace}>
         <AttentionBar items={attention} />
@@ -169,7 +430,6 @@ export function FlightPlan({
             main={t("plan.title")}
             tasks={
               plan.moving.length +
-              plan.finished.length +
               plan.azimas.reduce((n, { item }) => n + item.parts.length, 0)
             }
             decisions={plan.decisions.length}
@@ -178,52 +438,24 @@ export function FlightPlan({
           {view === "decisions" && (
             <DecisionLog
               items={plan.decisions}
-              origin={({ wish }) => <WishOrigin wish={wish} />}
-              noLead={({ wish }) => noLead(wish)}
+              origin={renderDecisionOrigin}
+              noLead={checkDecisionNoLead}
               focus={focus}
-              onTask={(id) => show("tasks", id)}
+              onTask={handleTaskFocus}
             />
           )}
           {view === "tasks" && (
             <TaskSections
               moving={plan.moving}
-              finished={plan.finished}
-              azimas={plan.azimas.filter((x) => !azimaFinished(x.item.azima))}
-              doneAzimas={plan.azimas.filter((x) =>
-                azimaFinished(x.item.azima),
-              )}
+              azimas={activeAzimas}
+              doneAzimas={doneAzimas}
+              drafts={plan.drafts}
               fold="plan"
-              showDone={plan.azimas.some(
-                ({ item }) =>
-                  azimaFinished(item.azima) &&
-                  (item.azima.id === focus ||
-                    item.parts.some((p) => p.id === focus)),
-              )}
-              renderAzima={({ wish, item }) => (
-                <AzimaCard
-                  key={item.azima.id}
-                  azima={item.azima}
-                  parts={item.parts}
-                  tasks={tasksOf(wish)}
-                  origin={<WishOrigin wish={wish} />}
-                  render={(task) => renderTask(wish, task)}
-                  focus={focus}
-                  onValidate={() =>
-                    act(
-                      wish.id,
-                      () =>
-                        clients.tasks.done({
-                          taskId: item.azima.id,
-                          note: t("azima.validated_note"),
-                          by: Closer.DEVELOPER,
-                        }),
-                      [Change.TASK],
-                      t("azima.validated", { code: item.azima.code }),
-                    )
-                  }
-                />
-              )}
-              render={({ wish, item }) => renderTask(wish, item)}
+              showDone={showDone}
+              showDrafts={showDrafts}
+              renderAzima={renderAzimaItem}
+              renderDraft={renderDraftItem}
+              render={renderMovingItem}
             />
           )}
           {view === "main" && <Inbox onOpen={onOpen} onToast={onToast} />}
@@ -247,9 +479,10 @@ export function FlightPlan({
                         );
                         const done =
                           detail?.tasks.filter(
-                            (x) => x.status === TaskStatus.DONE,
+                            (x) => x.status === TaskStatus.DONE && !isAzima(x),
                           ).length ?? 0;
-                        const total = detail?.tasks.length ?? 0;
+                        const total =
+                          detail?.tasks.filter((x) => !isAzima(x)).length ?? 0;
                         const failed =
                           detail?.tasks.filter(
                             (x) => x.status === TaskStatus.FAILED,
@@ -381,17 +614,23 @@ export function FlightPlan({
                             <WishQuestion
                               key={item.id}
                               question={item}
-                              origin={<WishOrigin wish={wish} />}
+                              origin={wishOrigin(wish)}
                               blocking={blocking}
                               noLead={noLead(wish)}
-                              onAnswer={(choice, note) =>
-                                answer(wish.id, item.id, choice, note)
+                              onAnswer={handleQuestionAnswer}
+                              onMark={handleQuestionMark}
+                              onEnlighten={handleQuestionEnlighten}
+                              onMove={(q) =>
+                                setMovingQuestion({
+                                  wishId: wish.id,
+                                  question: q,
+                                })
                               }
-                              onMark={(kind, remove) =>
-                                mark(wish.id, item.id, kind, remove)
-                              }
-                              onEnlighten={(note) =>
-                                enlighten(wish.id, item.id, note)
+                              onWithdraw={(q) =>
+                                setWithdrawingQuestion({
+                                  wishId: wish.id,
+                                  question: q,
+                                })
                               }
                             />
                           ))}
@@ -422,7 +661,7 @@ export function FlightPlan({
                                   needs: item.need.needs,
                                 })}
                               />
-                              <WishOrigin wish={wish} />
+                              {wishOrigin(wish)}
                               <span>
                                 {t("plan.proof_line", {
                                   azima: item.azima.code,
@@ -437,17 +676,8 @@ export function FlightPlan({
                         <GrantCard
                           key={wish.id}
                           wish={wish}
-                          origin={<WishOrigin wish={wish} />}
-                          onGrant={() =>
-                            quiet(
-                              act(
-                                wish.id,
-                                () => clients.wishes.grant({ wishId: wish.id }),
-                                [Change.WISH],
-                                t("wish.granted_toast"),
-                              ),
-                            )
-                          }
+                          origin={wishOrigin(wish)}
+                          onGrant={handleGrant}
                         />
                       ))}
                     </section>
@@ -459,11 +689,19 @@ export function FlightPlan({
                     <InvestigatingSection
                       questions={plan.investigating}
                       origin
-                      onAnswer={(id, choice, note) =>
-                        answer(wishOf.get(id)!.id, id, choice, note)
+                      onAnswer={handleQuestionAnswer}
+                      onMark={handleQuestionMark}
+                      onMove={(q) =>
+                        setMovingQuestion({
+                          wishId: q.wishId,
+                          question: q,
+                        })
                       }
-                      onMark={(id, kind, remove) =>
-                        mark(wishOf.get(id)!.id, id, kind, remove)
+                      onWithdraw={(q) =>
+                        setWithdrawingQuestion({
+                          wishId: q.wishId,
+                          question: q,
+                        })
                       }
                     />
                   </div>
@@ -478,6 +716,47 @@ export function FlightPlan({
           )}
         </div>
       </div>
+      {movingAzima && (
+        <MoveAzimaDialog
+          azima={movingAzima.task}
+          wishes={wishes}
+          currentWishId={movingAzima.wishId}
+          onClose={() => setMovingAzima(null)}
+          onMove={(targetWishId) => {
+            const moving = movingAzima;
+            setMovingAzima(null);
+            quiet(
+              act(
+                moving.wishId,
+                () =>
+                  clients.tasks.move({
+                    azima: moving.task.id,
+                    wish: targetWishId,
+                  }),
+                [Change.TASK, Change.WISH],
+                t("azima.moved_toast", { code: moving.task.code }),
+              ),
+            );
+          }}
+        />
+      )}
+      {movingQuestion && (
+        <MoveQuestionDialog
+          question={movingQuestion.question}
+          wishes={allWishes.length > 0 ? allWishes : wishes}
+          currentWishId={movingQuestion.wishId}
+          onClose={() => setMovingQuestion(null)}
+          onMove={move}
+        />
+      )}
+      {withdrawingQuestion && (
+        <WithdrawQuestionDialog
+          question={withdrawingQuestion.question}
+          currentWishId={withdrawingQuestion.wishId}
+          onClose={() => setWithdrawingQuestion(null)}
+          onWithdraw={withdraw}
+        />
+      )}
     </div>
   );
 }

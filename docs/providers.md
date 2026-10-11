@@ -104,6 +104,22 @@ for skills. Djinn's own: [`.agents/permissions.txtpb`](../.agents/permissions.tx
 Reading is always allowed. A word holds no wildcard nor shell operator (the file is refused otherwise), so a
 prefix never widens into a pattern.
 
+#### No worker pushes
+
+Pushing is the orchestrator's. A denied `git push` is only a first line: a prefix, it lets `sh -c "git push"` or
+`git -C . push` through, under Claude's rules as under agy's deny grants. So Djinn makes the push impossible by
+environment, for every worker whatever its provider (Claude, Codex, Antigravity, the fake; question workers and warm
+ones alike): their environment gives Git a command-line configuration (`GIT_CONFIG_COUNT`, after the user's own)
+that includes, in the project's repository only (`includeIf.gitdir` on its `.git` and its worktrees), Djinn's
+`git/no-push.gitconfig`. It holds one empty `pushInsteadOf`, a prefix of every URL: any push from the worker, to a
+remote, to one it added, to a path or URL on the command line, `--no-verify` or not, goes to the
+`djinn-workers-do-not-push://` transport, which Git does not have, and fails. Fetching, committing, merging,
+rebasing, stashing and worktrees work as before, and the project's own hooks still run. Other repositories (the
+ones a project's tests make) push as before. The orchestrator's push from the integration worktree runs in Djinn's
+own environment, which never holds the guard. What the guard does not stop: a command that clears Git's environment
+first, or a remote given an explicit `pushurl` (which `pushInsteadOf` leaves alone).
+`TestGitGuardKeepsWorkersFromPushing` (`internal/harness/guard_test.go`) proves each case.
+
 Next to it, `.agents/settings.txtpb` gives the project's workers their default agent, model, budget and branch
 name, shared by the team, your own file winning: [team settings](team-settings.md).
 
@@ -112,9 +128,9 @@ name, shared by the team, your own file winning: [team settings](team-settings.m
 | Field             | Claude (`--settings` inline, `--permission-mode`)                    | Codex (`thread/start`, `turn/start`, approvals)                                                   | Antigravity (command line, Djinn's agy project)     |
 | ----------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `edit`            | allow, or deny, `Edit`, `Write`, `NotebookEdit`                      | `sandbox: workspace-write` and turn `sandboxPolicy: workspaceWrite`, else `read-only`; file-change approvals accepted only with `edit`, inside the workspace | `--mode accept-edits`, and `write_file` grants of the worker's folder and Git's folders; without `edit`, refused |
-| `commands`        | allow `Bash(<p> *)` and `PowerShell(<p> *)`                          | LISTED: `approvalPolicy: untrusted`, and Djinn accepts a command approval when the command is listed | LISTED: `command(<p>)` grants; AUTO: `command(*)`, every command, in the sandbox still |
+| `commands`        | allow `Bash(<p> *)` and `PowerShell(<p> *)`                          | LISTED: `approvalPolicy: untrusted`, and Djinn accepts a command approval when the command is listed | LISTED: `command(<p>)` grants; AUTO: `command(*)`, every command |
 | `denied_commands` | deny `Bash(<p> *)` and `PowerShell(<p> *)`                           | LISTED: Djinn declines them. AUTO: **lost**, codex's reviewer decides                              | deny `command(<p>)` grants; AUTO adds `git push`   |
-| `network`         | allow, or deny, `WebFetch` and `WebSearch`                           | `networkAccess` of the sandbox policy; a command approval asking for the network is declined without it | off: `--sandbox`, which only restricts more      |
+| `network`         | allow, or deny, `WebFetch` and `WebSearch`                           | `networkAccess` of the sandbox policy; a command approval asking for the network is declined without it | not cut: no `--sandbox`, which would cut Djinn's own socket (`djinn gate`); the developer's choice, Q66 (agy 1.3.3, 2026-10-10) |
 | `mode`            | LISTED: `--permission-mode dontAsk`; AUTO: `--permission-mode auto`  | AUTO: `approvalPolicy: on-request`, `approvalsReviewer: auto_review`                              | AUTO: runs as `accept-edits`, with `command(*)` above |
 
 What is verified and what is supposed:
@@ -154,7 +170,8 @@ What is verified and what is supposed:
   (see [Antigravity](#antigravity)). So Djinn writes one project of its own per worktree. In AUTO it grants
   `command(*)`: any command runs, in the sandbox, but the denied ones (real runs, agy 1.3.3, 2026-10-10). **Lost:**
   a review of what runs (agy has no auto mode: `command(*)` approves every command, where Claude's classifier reviews
-  them); a deny grant is a prefix, so `sh -c "git push"` or `git -C . push` gets past it (as past Claude's rules);
+  them); a deny grant is a prefix, so `sh -c "git push"` or `git -C . push` gets past it (as past Claude's rules), and
+  only Djinn's environment then keeps the push from happening ([no worker pushes](#no-worker-pushes));
   in LISTED, a command neither listed nor granted by the user's settings is denied, and the denial ends the turn;
   in both, a command that asks to leave the sandbox (`unsandboxed`) is denied, and the denial ends the turn.
 
@@ -251,7 +268,7 @@ resumes without finishing, the task fails, saying so. What each agent gets:
 | ------ | ------------------------------------------------------------------------------------------------------------------ |
 | Claude | `--resume <session>`, and "Djinn restarted while you worked; your worktree is as you left it. Continue your task." |
 | Codex  | `thread/resume` on its thread, and the same line                                                                   |
-| agy    | its first prompt again, its checks with it, then that line, in the same worktree: its resume is not verified       |
+| agy    | `--conversation <session>`, and the resume line (restarted, limit, answer, continue), like claude; from the first prompt only when no conversation id is known |
 
 The limits Djinn recognizes, in the failure a worker ends with (`internal/harness/limit.go`): Claude's
 `rate_limit_event` with status `rejected` (its `rateLimitType` and `resetsAt`) and its messages "You've hit your
@@ -411,6 +428,8 @@ accept-edits`, `--sandbox` without the network and `--project <Djinn's agy proje
 `--model`; outside a project, refused until a real capture proves a read-only mode. No `-p`: it takes the prompt as its value, and stream-json
 input replaces it. Each message on the input is `{"event":"user","message":{"content":"…"}}` and runs one turn;
 the input is closed once every message has its result. agy cannot fork a conversation, and has no spending cap.
+ 
+**Resume.** A worker's worktree is its own isolated workspace. When resumed (after a restart, a session limit, an answer, or `djinn task continue`), Djinn resumes an agy worker with `--conversation <id>` and its resume line, falling back to the first prompt only when no conversation id is known. An Antigravity lead starts interactively with `agy -i '<start line>'` in the wish's project directory; because interactive `agy` does not expose its conversation id on launch, Djinn records the lead by provider and folder (without a session id), and resumes it with `agy --continue` in the lead's folder, documented as "the folder's most recent conversation".
 
 **Stream.** `{"event":"init","conversation_id":…}`, then `step_update` lines (`step_type` `user_input`,
 `agent_response` with `text_delta`, `tool` with `tool_info` {name, parameters, output}, `checkpoint`), and one
@@ -467,7 +486,25 @@ resumes a conversation in the project it began in; rewritten at each start, remo
 `write_file` of the worker's folder and of Git's folders for it (the `.git` folder, or a linked worktree's folder in
 the repository and the repository's common `.git`, read from the `.git` and `commondir` files, without running
 git), `command(<p>)` for each listed command in LISTED, `command(*)` in AUTO, and deny `command(<p>)` for each denied one,
-with `git push` always denied in AUTO, since pushing is the orchestrator's. Djinn writes nothing else of agy's,
+with `git push` always denied in AUTO, since pushing is the orchestrator's (a first line: see
+[no worker pushes](#no-worker-pushes)).
+
+**Reads and denials (W254, W269, 2026-10-10).** By default headless agy cannot prompt for `read_file` outside the
+workspace, so reading Go's sources (`/usr/local/go/src/…`), caches, or external files failed. Djinn grants
+`read_file(<dir>)` for what a worker needs to read: the repository (its main checkout and `.git`), Go's root
+(`go env GOROOT`), Go module and build caches (`go env GOMODCACHE GOCACHE`), npm's cache (`npm config get cache`),
+`/usr` and `/etc` read-only (on non-Windows), and the user's home folder (`~`). In agy, a deny grant wins over any
+allow grant (prefix matching). Djinn adds deny `read_file(<dir>)` for secrets (`~/.ssh`, `~/.gnupg`, `~/.config/gh`,
+`~/.config/gcloud`, `~/.aws`, `~/.netrc`, `~/.git-credentials`) and Djinn's own data folder (`~/.config/djinn` or
+`$DJINN_HOME`), recursively denying sibling projects, sibling worktrees, and database files while keeping only the
+task's own worktree accessible.
+
+**Model retry prompts (W258, W281, 2026-10-10).** agy sometimes ends its turn on its own internal retry prompts to
+its model (improperly formatted function call, exceeding the output token limit, or transient model retry errors)
+instead of an agent answer or fatal error. When agy's result is one of these retry prompts, Djinn continues the
+conversation itself in the same session with a short prompt ("continue where you stopped, keep answers and edits short"),
+up to 3 times per task, recording each continuation as a `STATUS` event of the task; if it repeats 3 times in a row,
+the task fails with the error. Djinn writes nothing else of agy's,
 reads nothing of it, and leaves the user's settings alone. The run recorded in `testdata/antigravity/commit.jsonl`
 wrote a file, then ran `git status`, `git add`, `git commit`, `git diff` and `git log` in the worktree, all
 sandboxed, nothing denied, no network granted.
@@ -485,7 +522,8 @@ and denying `command(git push)`, the user's settings untouched (`wc`, `echo`, `p
 - The deny grant wins: `git push origin w1`, `echo x && git push origin w1` and `GIT_TRACE=0 git push origin w1` end
   in `ERROR`, "Permission denied for command(…). Matches user-configured deny rule.", and the turn goes on to the
   next command (recorded in `testdata/antigravity/auto.jsonl`). It is a prefix: `sh -c "git push origin w1"` and
-  `git -C . push origin w1` ran, and failed only for want of a remote.
+  `git -C . push origin w1` ran, and failed only for want of a remote; Djinn's environment now refuses them all
+  ([no worker pushes](#no-worker-pushes)).
 - The network stays off under `--sandbox`: `curl https://example.com` and `git ls-remote https://github.com/…` gave
   "Could not resolve host". `command(*)` does not let a command out of the sandbox: asked to run `touch` outside the
   worktree with `BypassSandbox: true`, agy asked for `unsandboxed`, which headless denied (ending the turn), and no
@@ -550,3 +588,6 @@ use a personal or licensed account.
 | Second message          | `antigravity/two-turns.jsonl`                     | by hand, **supposed** | two turns in one process                                           |
 | Commit in a worktree    | `antigravity/commit.jsonl`                        | **real**, W208        | LISTED: a file written, Git run in the sandbox, nothing denied     |
 | AUTO, a command denied  | `antigravity/auto.jsonl`                          | **real**, W226        | compound commands run; `git push` is a `permission denied: …` status, the turn goes on, the task done |
+| Malformed call retry    | `antigravity/malformed-call.jsonl`                | by hand, from W258    | retry prompt continued; done on second turn                         |
+| Token limit retry       | `antigravity/token-limit.jsonl`                   | by hand, from W281    | partial output `[cut]`, token limit prompt continued; done on second turn |
+| Three retries failed    | `antigravity/retry-failed.jsonl`                  | by hand               | three retry prompts continued in a row; fourth fails the task       |

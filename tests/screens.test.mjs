@@ -9,35 +9,50 @@ const s = await bundle(
   "screens",
   `export {
   createElement,
+  act,
   __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE as reactInternals,
 } from "react";
+export { createRoot } from "react-dom/client";
 export { renderToStaticMarkup } from "react-dom/server";
 export { createRouterTransport } from "@connectrpc/connect";
 export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
 export { WishSidebar } from "@/src/wish-sidebar.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
-export { WishTask } from "@/src/wish-task.tsx";
+export { WishTask, promptPreview } from "@/src/wish-task.tsx";
+export {
+  azimaTime,
+  shortModel,
+  effectivePushStrategy,
+  azimaBranchName,
+} from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
-export { attentionOf } from "@/src/attention.tsx";
+export { attentionOf, AttentionBar } from "@/src/attention.tsx";
 export { TaskSections } from "@/src/task-tabs.tsx";
 export {
   azimaGroups,
-  finishedTasks,
+  azimaRank,
+  draftAzimas,
   flightPlan,
   movingTasks,
+  taskDealtWith,
+  waitingTasks,
 } from "@/src/data/flight.ts";
-export { AzimaCard, azimaFinished } from "@/src/azima.tsx";
+export { AzimaCard, azimaFinished, DraftAzimaCard } from "@/src/azima.tsx";
 export {
   FolderField,
   ProjectChecks,
+  ProjectPanel,
   ShortcutField,
 } from "@/src/wish-dialogs.tsx";
 export {
   LastPushes,
   LeadButton,
   LeadMenu,
+  MainMerges,
+  PushStrategySelector,
   WishDescription,
+  WishTitle,
   recordedAgent,
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView } from "@/src/update-banner.tsx";
@@ -73,9 +88,11 @@ function live(component, props) {
         };
         return [states[i], set];
       },
+      useEffect() {},
     };
     try {
-      return component(props);
+      const fn = typeof component === "function" ? component : component.type;
+      return fn(props);
     } finally {
       internals.H = before;
     }
@@ -600,6 +617,7 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
             title: "Light the wick",
             status: s.TaskStatus.FAILED,
             error: "exit code 1",
+            continuing: true,
           },
         ],
       }),
@@ -784,6 +802,268 @@ test("a task shows its tokens and its cost; a Codex task, its tokens only", () =
   assert.doesNotMatch(codex, /\$/);
 });
 
+test("shortModel formats model identifiers cleanly", () => {
+  assert.equal(s.shortModel("claude-sonnet-5-5-20250929"), "sonnet 5.5");
+  assert.equal(s.shortModel("gemini-3.8-flash-high"), "gemini 3.8 flash");
+  assert.equal(s.shortModel("gpt-5.5"), "gpt-5.5");
+  assert.equal(s.shortModel("claude-3-7-sonnet"), "sonnet 3.7");
+  assert.equal(s.shortModel("claude-opus-4-0"), "opus 4.0");
+  assert.equal(s.shortModel("gemini-pro"), "gemini pro");
+  assert.equal(s.shortModel("anthropic/claude-3.5-sonnet"), "sonnet 3.5");
+});
+
+test("a task card shows the model chosen for the worker; watchers do not show it", () => {
+  const card = (task) =>
+    s.renderToStaticMarkup(h(s.WishTask, { task, onStop() {} }));
+
+  // Regular task with model
+  const claude = card({
+    id: "t1",
+    code: "W1",
+    title: "Trim the wick",
+    status: s.TaskStatus.RUNNING,
+    model: "claude-sonnet-5-5-20250929",
+  });
+  assert.match(
+    claude,
+    /<span class="task-model" title="claude-sonnet-5-5-20250929">sonnet 5\.5<\/span>/,
+  );
+
+  // Question worker task with model
+  const questionWorker = card({
+    id: "t2",
+    code: "W2",
+    title: "Investigate Q01",
+    status: s.TaskStatus.RUNNING,
+    provider: s.Provider.ANTIGRAVITY,
+    model: "gemini-3.8-flash-high",
+    question: "q1",
+  });
+  assert.match(
+    questionWorker,
+    /<span class="task-model" title="gemini-3.8-flash-high">gemini 3\.8 flash<\/span>/,
+  );
+
+  // Correction worker task with model
+  const correctionWorker = card({
+    id: "t3",
+    code: "W3",
+    title: "Correct integration failure",
+    status: s.TaskStatus.RUNNING,
+    provider: s.Provider.CODEX,
+    model: "gpt-5.5",
+    correction: { attempts: 1 },
+  });
+  assert.match(
+    correctionWorker,
+    /<span class="task-model" title="gpt-5.5">gpt-5\.5<\/span>/,
+  );
+
+  // Watcher task does not show model even if set
+  const watcher = card({
+    id: "t4",
+    code: "W4",
+    title: "Watch checks",
+    status: s.TaskStatus.RUNNING,
+    provider: s.Provider.WATCH,
+    model: "claude-sonnet-5-5",
+  });
+  assert.doesNotMatch(watcher, /task-model/);
+
+  // Task with empty model does not show badge
+  const noModel = card({
+    id: "t5",
+    code: "W5",
+    title: "No model",
+    status: s.TaskStatus.RUNNING,
+    model: "",
+  });
+  assert.doesNotMatch(noModel, /task-model/);
+});
+
+test("a task row reads on two lines: status, code and long title on the first, details on the second", () => {
+  const longTitle =
+    "Configure the multi-environment deployment pipeline with automated rollbacks and canary release verification across staging and production clusters";
+  const task = {
+    id: "t1",
+    code: "W42",
+    title: longTitle,
+    status: s.TaskStatus.RUNNING,
+    model: "claude-sonnet-5-5-20250929",
+    startTime: { seconds: 1760000000n, nanos: 0 },
+  };
+  const markup = s.renderToStaticMarkup(
+    h(s.WishTask, {
+      task,
+      project: { id: "p1", name: "Djinn Core" },
+      onStop() {},
+    }),
+  );
+
+  // 1. Two-line layout structure
+  assert.match(markup, /class="wish-task-row has-actions"/);
+  assert.match(markup, /<button class="wish-task-heading"/);
+  assert.match(markup, /<span class="wish-task-first-line">/);
+  assert.match(markup, /<span class="wish-task-second-line">/);
+
+  // 2. First line: status badge, code, whole title without string truncation, and chevron
+  const firstLine = markup.match(
+    /<span class="wish-task-first-line">([\s\S]*?)<\/span><span class="wish-task-second-line">/,
+  )?.[1];
+  assert.ok(firstLine, "first line exists");
+  assert.match(firstLine, /<span class="status-badge/);
+  assert.match(firstLine, /<span class="agent-code">W42<\/span>/);
+  assert.match(
+    firstLine,
+    new RegExp(`<strong class="task-title">${longTitle}</strong>`),
+  );
+  // Full title preserved, not truncated into characters + ellipsis in markup
+  assert.doesNotMatch(firstLine, /<strong class="task-title">[^<]*…<\/strong>/);
+
+  // Verify the order of elements in the first line: status -> code -> title
+  const statusIdx = firstLine.indexOf('class="status-badge');
+  const codeIdx = firstLine.indexOf('class="agent-code"');
+  const titleIdx = firstLine.indexOf('class="task-title"');
+  assert.ok(statusIdx < codeIdx, "status comes before code");
+  assert.ok(codeIdx < titleIdx, "code comes before title");
+
+  // 3. Second line: project, model, elapsed time in order (status badge moved to first line)
+  const secondLine = markup.match(
+    /<span class="wish-task-second-line">([\s\S]*?)<\/span><\/button>/,
+  )?.[1];
+  assert.ok(secondLine, "second line exists");
+  assert.match(secondLine, /<span class="task-project">Djinn Core<\/span>/);
+  assert.match(
+    secondLine,
+    /<span class="task-model" title="claude-sonnet-5-5-20250929">sonnet 5\.5<\/span>/,
+  );
+  assert.doesNotMatch(secondLine, /<span class="status-badge/);
+
+  // Verify the order of elements in the second line: project -> model -> time
+  const projectIdx = secondLine.indexOf('class="task-project"');
+  const modelIdx = secondLine.indexOf('class="task-model"');
+  const timeIdx = secondLine.indexOf('class="task-time"');
+  assert.ok(projectIdx < modelIdx, "project comes before model");
+  assert.ok(modelIdx < timeIdx, "model comes before time");
+
+  // 4. Action buttons aligned in actions block outside the heading button
+  assert.match(
+    markup,
+    /<span class="wish-task-actions">[\s\S]*?<\/span><\/div>/,
+  );
+  assert.match(markup, /aria-label="Stop the worker"/);
+});
+
+test("a task row and an azima row both start with their status badge: state -> code -> title", () => {
+  // 1. Task row starts with its status badge before code and title
+  const task = {
+    id: "t1",
+    code: "W42",
+    title: "Configure the deployment pipeline",
+    status: s.TaskStatus.RUNNING,
+  };
+  const taskMarkup = s.renderToStaticMarkup(
+    h(s.WishTask, {
+      task,
+      project: { id: "p1", name: "Djinn Core" },
+      onStop() {},
+    }),
+  );
+  const taskFirstLine = taskMarkup.match(
+    /<span class="wish-task-first-line">([\s\S]*?)<\/span><span class="wish-task-second-line">/,
+  )?.[1];
+  assert.ok(taskFirstLine, "task first line exists");
+  const taskStatusIdx = taskFirstLine.indexOf('class="status-badge');
+  const taskCodeIdx = taskFirstLine.indexOf('class="agent-code"');
+  const taskTitleIdx = taskFirstLine.indexOf('class="task-title"');
+  assert.ok(taskStatusIdx !== -1, "task status badge is present in first line");
+  assert.ok(taskCodeIdx !== -1, "task agent code is present in first line");
+  assert.ok(taskTitleIdx !== -1, "task title is present in first line");
+  assert.ok(taskStatusIdx < taskCodeIdx, "task status comes before code");
+  assert.ok(taskCodeIdx < taskTitleIdx, "task code comes before title");
+
+  // 2. Azima row starts with its status badge before code and title
+  const azima = {
+    id: "a1",
+    code: "T1",
+    title: "Ship the lamp",
+    kind: s.TaskKind.AZIMA,
+    azima: { state: s.AzimaState.IN_PROGRESS, partsRunning: 1 },
+  };
+  const azimaMarkup = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima,
+      parts: [],
+      tasks: new Map(),
+      render() {
+        return null;
+      },
+    }),
+  );
+  const azimaHeading = azimaMarkup.match(
+    /<button[^>]*class="azima-heading"[^>]*>([\s\S]*?)<\/button>/,
+  )?.[1];
+  assert.ok(azimaHeading, "azima heading exists");
+  const azimaStatusIdx = azimaHeading.indexOf('class="status-badge');
+  const azimaCodeIdx = azimaHeading.indexOf('class="agent-code"');
+  const azimaTitleIdx = azimaHeading.indexOf("<strong");
+  assert.ok(azimaStatusIdx !== -1, "azima status badge is present in heading");
+  assert.ok(azimaCodeIdx !== -1, "azima agent code is present in heading");
+  assert.ok(azimaTitleIdx !== -1, "azima title is present in heading");
+  assert.ok(azimaStatusIdx < azimaCodeIdx, "azima status comes before code");
+  assert.ok(azimaCodeIdx < azimaTitleIdx, "azima code comes before title");
+});
+
+test("a task card shows its prompt on hover, and opened shows prompt and no logs until the button", () => {
+  const task = {
+    id: "t1",
+    code: "W1",
+    title: "Trim the wick of the brass lamp",
+    prompt:
+      "First instruction line\nSecond instruction line\nThird line\nFourth line",
+    status: s.TaskStatus.DONE,
+  };
+
+  // Unopened card: title has no native title attribute; tooltip contains full title and prompt preview.
+  const unopened = s.renderToStaticMarkup(h(s.WishTask, { task, onStop() {} }));
+  assert.match(
+    unopened,
+    /<strong class="task-title">Trim the wick of the brass lamp<\/strong>/,
+  );
+  assert.doesNotMatch(unopened, /<strong[^>]*title=/);
+  assert.match(unopened, /<span class="task-tooltip" role="tooltip">/);
+  assert.match(
+    unopened,
+    /<span class="task-tooltip-title">Trim the wick of the brass lamp<\/span>/,
+  );
+  assert.match(
+    unopened,
+    /<span class="task-tooltip-prompt">First instruction line\nSecond instruction line\nThird line…<\/span>/,
+  );
+  assert.doesNotMatch(unopened, /wish-task-body/);
+
+  // Opened card: shows full title, prompt in Markdown with fold, and See logs button without logs.
+  const opened = s.renderToStaticMarkup(
+    h(s.WishTask, { task, focused: true, onStop() {} }),
+  );
+  assert.match(opened, /wish-task-prompt-section/);
+  assert.match(opened, /wish-task-prompt-body/);
+  assert.match(opened, /First instruction line/);
+  assert.match(opened, /wish-task-logs-button/);
+  assert.match(opened, /See logs/);
+  // Logs are deferred: event container is not rendered until logs are toggled.
+  assert.doesNotMatch(opened, /class="wish-task-events"/);
+});
+
+test("promptPreview truncates long prompts to a few lines with an ellipsis", () => {
+  assert.equal(s.promptPreview(""), "");
+  assert.equal(s.promptPreview("Short prompt"), "Short prompt");
+  assert.equal(
+    s.promptPreview("Line 1\nLine 2\nLine 3\nLine 4"),
+    "Line 1\nLine 2\nLine 3…",
+  );
+});
+
 test("a running task shows what its worker uses now; its facts, the peaks too", () => {
   const resources = {
     cpuPercent: 34.4,
@@ -898,7 +1178,7 @@ test("a task a fork continues links to its fork; a code no card holds stays text
   );
 });
 
-test("the Tasks tab lists what moves or waits by status, then the finished tasks, the latest first", () => {
+test("the Tasks tab lists what moves or waits by status", () => {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
   const tasks = [
     ["W1", s.TaskStatus.PENDING],
@@ -925,7 +1205,6 @@ test("the Tasks tab lists what moves or waits by status, then the finished tasks
   const html = s.renderToStaticMarkup(
     h(s.TaskSections, {
       moving: s.movingTasks(tasks),
-      finished: s.finishedTasks(tasks),
       render: (task) =>
         h(s.WishTask, {
           key: task.id,
@@ -939,26 +1218,11 @@ test("the Tasks tab lists what moves or waits by status, then the finished tasks
   const order = [...html.matchAll(/<span class="agent-code">(W\d)</g)].map(
     (m) => m[1],
   );
-  // W7, cut short and not resumed by Djinn, is history: among the finished ones.
-  assert.deepEqual(order, [
-    "W8",
-    "W5",
-    "W3",
-    "W6",
-    "W1",
-    "W4",
-    "W9",
-    "W2",
-    "W7",
-  ]);
-  assert.ok(
-    html.indexOf("Moving or waiting") < html.indexOf("Task W8") &&
-      html.indexOf("Finished") > html.indexOf("Task W1") &&
-      html.indexOf("Finished") < html.indexOf("Task W4"),
-  );
+  assert.deepEqual(order, ["W8", "W5", "W3", "W6", "W1"]);
+  assert.ok(html.indexOf("Moving or waiting") < html.indexOf("Task W8"));
   assert.match(html, /Moving or waiting<span class="count">5<\/span>/);
-  assert.match(html, /Finished<span class="count">4<\/span>/);
-  assert.match(html, /Closed by you, [^<]+: merged/);
+  assert.doesNotMatch(html, /tasks-finished/);
+  assert.doesNotMatch(html, /Finished/);
 });
 
 test("the Tasks tab groups work under its azima, which says what it waits for and its progress, and never waits", () => {
@@ -1022,7 +1286,6 @@ test("the Tasks tab groups work under its azima, which says what it waits for an
     s.renderToStaticMarkup(
       h(s.TaskSections, {
         moving: s.movingTasks(tasks),
-        finished: s.finishedTasks(tasks),
         azimas: groups.filter((x) => !s.azimaFinished(x.azima)),
         doneAzimas: groups.filter((x) => s.azimaFinished(x.azima)),
         fold: `test-${focus}`,
@@ -1043,8 +1306,8 @@ test("the Tasks tab groups work under its azima, which says what it waits for an
     [...html.matchAll(/<span class="agent-code">([TW]\d+)</g)].map((m) => m[1]);
   const html = sections();
   // Work of no azima moves or waits on its own; T2, under way, opened on its parts (running, planned), its finished
-  // one folded; T10 waits; T1, done, folded and not rendered; the finished work of no azima last, never folded.
-  assert.deepEqual(codes(html), ["W4", "T2", "W2", "W3", "T10", "W5"]);
+  // one folded; T10 waits; T1, done, folded and not rendered.
+  assert.deepEqual(codes(html), ["W4", "T2", "W2", "W3", "T10"]);
   const folds = [
     ...html.matchAll(
       /<button type="button" class="fold-line" aria-expanded="false">.*?<\/button>/g,
@@ -1059,7 +1322,6 @@ test("the Tasks tab groups work under its azima, which says what it waits for an
     "W3",
     "W1",
     "T10",
-    "W5",
   ]);
   assert.match(
     sections("W1"),
@@ -1072,11 +1334,11 @@ test("the Tasks tab groups work under its azima, which says what it waits for an
     "W3",
     "T10",
     "T1",
-    "W5",
   ]);
   assert.match(html, /Moving or waiting<span class="count">1<\/span>/);
   assert.match(html, /Azimas<span class="count">3<\/span>/);
-  assert.match(html, /Finished<span class="count">1<\/span>/);
+  assert.doesNotMatch(html, /tasks-finished/);
+  assert.doesNotMatch(html, /Finished/);
   assert.match(html, /Waits for T2</);
   assert.match(html, /after T1</);
   assert.match(html, /1\/3/);
@@ -1213,7 +1475,7 @@ test("the flight plan merges the active wishes: their questions, the blocking on
   assert.match(html, /W2 waits for your answer to Q01 before it may edit\./);
   assert.match(
     html,
-    /id="view-tab-tasks"[^>]*>Tasks<span class="count">3<\/span>/,
+    /id="view-tab-tasks"[^>]*>Tasks<span class="count">2<\/span>/,
   );
   assert.doesNotMatch(html, /Taste the oils/);
   assert.match(
@@ -1905,7 +2167,7 @@ test("the Tasks tab says where each task's work stands on its way into the wish'
   assert.match(waits, /waits for W2 to be committed/);
 });
 
-test("the update banner proposes to install a build committed, with what changed and what to check", () => {
+test("the update banner proposes to install a build committed, with what changed", () => {
   const build = {
     wishTitle: "Run Djinn on itself",
     project: "djinn",
@@ -1913,7 +2175,18 @@ test("the update banner proposes to install a build committed, with what changed
     sha: "1a2b3c4d5e6f",
     tasks: ["W5", "W6"],
     changes: ["Work of W6", "Work of W5"],
-    checks: ["W5 Work of W5: To check: the banner shows the build."],
+    summaries: [
+      {
+        code: "W5",
+        title: "Work of W5",
+        summary: "To check: the banner shows the build.",
+      },
+      {
+        code: "W6",
+        title: "Work of W6",
+        summary: "Done: W6 finished.",
+      },
+    ],
   };
   const banner = (phase = { kind: "idle" }, dismissedBuild = "", installing) =>
     s.renderToStaticMarkup(
@@ -1939,16 +2212,17 @@ test("the update banner proposes to install a build committed, with what changed
     html,
     /W5, W6 pushed with feat\/wails-go of djinn <code>1a2b3c4d<\/code>/,
   );
+  assert.doesNotMatch(html, /What to check/);
   assert.match(
     html,
-    /What changed<\/strong><ul><li>Work of W6<\/li><li>Work of W5<\/li><\/ul>/,
+    /<ul class="update-banner-tasks"><li><details class="update-banner-task"><summary><code>W5<\/code> Work of W5<\/summary><div class="update-banner-summary">To check: the banner shows the build\.<\/div><\/details><\/li><li><details class="update-banner-task"><summary><code>W6<\/code> Work of W6<\/summary><div class="update-banner-summary">Done: W6 finished\.<\/div><\/details><\/li><\/ul>/,
   );
   assert.match(
     html,
-    /What to check<\/strong><ul><li>W5 Work of W5: To check: the banner shows the build.<\/li><\/ul>/,
+    /<details class="update-banner-commits"><summary>commits<\/summary><ul><li>Work of W6<\/li><li>Work of W5<\/li><\/ul><\/details>/,
   );
   // The mark and the actions head the banner, beside the title: Install and restart in brass, Dismiss in violet; what
-  // changed and what to check come below, at its full width.
+  // changed comes below, at its full width.
   assert.match(html, /<span class="brand small"><span class="brand-mark"><img/);
   assert.match(
     html,
@@ -2115,6 +2389,82 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
   assert.equal(fp.moving.length + fp.waiting.length, 0);
 });
 
+test("an azima whose status is done while its state is in progress shows in progress: the card and the wish pill", async () => {
+  const wishId = "01a11833-a440-7479-a067-52615c91da71";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const azimaTask = {
+    id: "t1",
+    wishId,
+    code: "T1",
+    title: "Lay the ground",
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.DONE,
+    dependsOn: [],
+    proofNeeds: [],
+    azima: {
+      state: s.AzimaState.IN_PROGRESS,
+      partsRunning: 1,
+      parts: 2,
+      partsDone: 1,
+    },
+  };
+  const part1 = {
+    id: "w1",
+    wishId,
+    code: "W1",
+    title: "Foundations",
+    status: s.TaskStatus.DONE,
+    partOf: "t1",
+  };
+  const part2 = {
+    id: "w2",
+    wishId,
+    code: "W2",
+    title: "Plumbing",
+    status: s.TaskStatus.RUNNING,
+    partOf: "t1",
+  };
+  const tasks = [azimaTask, part1, part2];
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+
+  // The card shows in progress with its tone and badge, never done.
+  const card = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: azimaTask,
+      parts: [part1, part2],
+      tasks: byId,
+      render: () => null,
+    }),
+  );
+  assert.match(card, /azima-card tone-running/);
+  assert.match(
+    card,
+    /<span class="status-badge tone-running">.*?<span>In progress<\/span><\/span>/,
+  );
+  assert.doesNotMatch(card, /tone-done/);
+  assert.doesNotMatch(card, />Done<\/span>/);
+
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+    service(s.TaskService, { list: () => ({ tasks }) });
+    service(s.QuestionService, { list: () => ({ questions: [] }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const close = djinn.store.open(wishId);
+  await djinn.store.changed(wishId, [s.Change.WISH]);
+  close();
+
+  // The wish's head pill counts 0 done of 1 azimas, not 1 done.
+  const page = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: lamp, onToast() {} })),
+  );
+  assert.match(page, /title="0 of 1 azimas done"/);
+  assert.match(page, /<b>0<\/b>\/ 1 azimas<\/span>/);
+  assert.doesNotMatch(page, /title="1 of 1 azimas done"/);
+  assert.doesNotMatch(page, /<b>1<\/b>\/ 1 azimas<\/span>/);
+});
+
 test("Lead is split: the button resumes the recorded lead, the arrow lists this machine's agents", () => {
   const agents = [
     { id: "codex", name: "Codex", available: false, command: "codex" },
@@ -2135,6 +2485,10 @@ test("Lead is split: the button resumes the recorded lead, the arrow lists this 
   assert.equal(
     s.recordedAgent({ provider: s.Provider.CODEX, sessionId: "" }),
     undefined,
+  );
+  assert.equal(
+    s.recordedAgent({ provider: s.Provider.ANTIGRAVITY, sessionId: "" }),
+    s.Provider.ANTIGRAVITY,
   );
   const props = {
     recorded,
@@ -2222,19 +2576,45 @@ test("the wish's description shows under its title, the title until one is writt
   );
 });
 
-test("the attention bar says how much each question holds up: blocking, before X, can wait", () => {
+test("the wish's title shows in the head and edits in place", () => {
+  const titled = s.renderToStaticMarkup(
+    h(s.WishTitle, {
+      title: "Ship the lamp",
+      onSave() {},
+    }),
+  );
+  assert.match(
+    titled,
+    /<h1 class="wish-title" role="button" tabindex="0" title="Click to rename the wish">Ship the lamp<\/h1>/,
+  );
+  const editing = s.renderToStaticMarkup(
+    h(s.WishTitle, {
+      title: "Ship the lamp",
+      editing: true,
+      onSave() {},
+    }),
+  );
+  assert.match(
+    editing,
+    /<input type="text" class="wish-title-edit" aria-label="Title" maxLength="500" autofocus="" value="Ship the lamp"\/>/,
+  );
+});
+
+test("the attention bar says how much each question holds up: blocking, your move, before X, can wait", () => {
   const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
-  const q = (id, before = "") => ({
+  const q = (id, before = "", move = false) => ({
     id,
     code: id.toUpperCase(),
     text: id,
     before,
+    move,
   });
   const items = s.attentionOf(
     [
       { wish: w, item: q("q1", "before the merge"), blocking: ["W1"] },
       { wish: w, item: q("q2", "before the demo"), blocking: [] },
       { wish: w, item: q("q3"), blocking: [] },
+      { wish: w, item: q("q4", "", true), blocking: [] },
     ],
     [
       {
@@ -2249,12 +2629,134 @@ test("the attention bar says how much each question holds up: blocking, before X
     items.map((i) => [i.key, i.level, i.label]),
     [
       ["q1", "blocking", undefined],
+      ["q4", "move", undefined],
       ["q2", "question", "before the demo"],
       ["t9", "action", undefined],
       ["q3", "later", undefined],
       ["ready-w1", "ready", undefined],
     ],
   );
+  const markup = s.renderToStaticMarkup(h(s.AttentionBar, { items }));
+  assert.match(markup, /<button class="attention-item level-move"/);
+  assert.match(
+    markup,
+    /<span class="attention-level"><svg[^>]*class="lucide lucide-circle-user-round[^>]*>.*<\/svg>Your move<\/span>/,
+  );
+});
+
+test("the attention bar shows a failed worker until it is dealt with (continued, done, or a new task names it)", () => {
+  const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const failedTask = {
+    id: "t1",
+    wishId: "w1",
+    code: "W1",
+    title: "Light the wick",
+    status: s.TaskStatus.FAILED,
+    error: "exit code 1: fuel line broken\nstack trace follows",
+  };
+
+  // 1. Initially, undealt-with failed task is in waitingTasks and attentionOf.
+  let tasks = [failedTask];
+  let waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 1);
+  assert.equal(waiting[0].item.id, "t1");
+
+  let items = s.attentionOf([], waiting, []);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].key, "t1");
+  assert.equal(items[0].level, "action");
+  assert.equal(items[0].target, "waiting-t1");
+  assert.equal(items[0].code, "W1");
+  assert.equal(items[0].text, "exit code 1: fuel line broken");
+
+  // 2. When marked done: dealt with, disappears from attention bar.
+  tasks = [{ ...failedTask, status: s.TaskStatus.DONE }];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
+
+  // 3. When continuing: true: dealt with, disappears.
+  tasks = [{ ...failedTask, continuing: true }];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
+
+  // 4. When closed.continuedIn is set: dealt with, disappears.
+  tasks = [{ ...failedTask, closed: { continuedIn: "t2" } }];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
+
+  // 5. When forked by another task (forkOf === "W1"): dealt with, disappears.
+  tasks = [
+    failedTask,
+    {
+      id: "t2",
+      wishId: "w1",
+      code: "W2",
+      title: "Forked",
+      status: s.TaskStatus.RUNNING,
+      forkOf: "W1",
+    },
+  ];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
+
+  // 6. When another task has decision === "W1": dealt with, disappears.
+  tasks = [
+    failedTask,
+    {
+      id: "t2",
+      wishId: "w1",
+      code: "W2",
+      title: "Follow up",
+      status: s.TaskStatus.RUNNING,
+      decision: "W1",
+    },
+  ];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
+
+  // 7. When another task's title names W1: dealt with, disappears.
+  tasks = [
+    failedTask,
+    {
+      id: "t2",
+      wishId: "w1",
+      code: "W2",
+      title: "Fix W1 build error",
+      status: s.TaskStatus.RUNNING,
+    },
+  ];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
+
+  // 8. When another task's correction failure taskIds includes t1.id: dealt with, disappears.
+  tasks = [
+    failedTask,
+    {
+      id: "t2",
+      wishId: "w1",
+      code: "W2",
+      title: "Correct W1",
+      status: s.TaskStatus.RUNNING,
+      correction: { failure: { taskIds: ["t1"] } },
+    },
+  ];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
+
+  // 9. When another task's review taskIds includes t1.id: dealt with, disappears.
+  tasks = [
+    failedTask,
+    {
+      id: "t2",
+      wishId: "w1",
+      code: "W2",
+      title: "Review W1",
+      status: s.TaskStatus.RUNNING,
+      review: { taskIds: ["t1"] },
+    },
+  ];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
 });
 
 test("the wish's head says where Djinn last pushed its integration branch, and a push refused", () => {
@@ -2324,6 +2826,24 @@ test("the wish's head says a push its checks hold, why on hover", () => {
   );
 });
 
+test("the wish's head says the merge of main waits, why visible and on hover", () => {
+  const html = s.renderToStaticMarkup(
+    h(s.MainMerges, {
+      mains: [
+        {
+          projectId: "p1",
+          held: "fetch main from origin: fatal: repository 'foo' does not exist\nfatal: Could not read from remote repository.",
+        },
+      ],
+      projects: [{ id: "p1", name: "app" }],
+    }),
+  );
+  assert.match(
+    html,
+    /<span class="wish-push-refused" title="fetch main from origin: fatal: repository &#x27;foo&#x27; does not exist\nfatal: Could not read from remote repository\.">The merge of main waits: fetch main from origin: fatal: repository &#x27;foo&#x27; does not exist<\/span>/,
+  );
+});
+
 test("the project view lists the setup and the checks, when each runs, and how each last ran", () => {
   const none = s.renderToStaticMarkup(
     h(s.ProjectChecks, { setup: "", checks: [], runs: [] }),
@@ -2384,4 +2904,1118 @@ test("the project view lists the setup and the checks, when each runs, and how e
     html,
     /<strong>test<\/strong><p><code>go tool task test<\/code><\/p><p class="muted-text">Not run yet\.<\/p>/,
   );
+});
+
+function setupMockDom() {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+  class MockElement {
+    constructor(nodeType, nodeName) {
+      this.nodeType = nodeType;
+      this.nodeName = nodeName;
+      this.tagName = nodeName;
+      this.childNodes = [];
+      this.parentNode = null;
+      this.attributes = {};
+      this.style = {};
+      this.ownerDocument = globalThis.document;
+      this.namespaceURI = "http://www.w3.org/1999/xhtml";
+    }
+    get children() {
+      return this.childNodes.filter((c) => c.nodeType === 1);
+    }
+    appendChild(child) {
+      child.parentNode = this;
+      this.childNodes.push(child);
+      return child;
+    }
+    removeChild(child) {
+      const idx = this.childNodes.indexOf(child);
+      if (idx !== -1) {
+        this.childNodes.splice(idx, 1);
+        child.parentNode = null;
+      }
+      return child;
+    }
+    insertBefore(child, before) {
+      child.parentNode = this;
+      const idx = this.childNodes.indexOf(before);
+      if (idx !== -1) this.childNodes.splice(idx, 0, child);
+      else this.childNodes.push(child);
+      return child;
+    }
+    setAttribute(k, v) {
+      this.attributes[k] = String(v);
+    }
+    removeAttribute(k) {
+      delete this.attributes[k];
+    }
+    addEventListener() {}
+    removeEventListener() {}
+  }
+
+  globalThis.HTMLIFrameElement = class HTMLIFrameElement {};
+  globalThis.HTMLElement = MockElement;
+  globalThis.Element = MockElement;
+  globalThis.Node = MockElement;
+
+  globalThis.addEventListener = () => {};
+  globalThis.removeEventListener = () => {};
+  globalThis.CSS = { escape: (str) => str, supports: () => false };
+  globalThis.MutationObserver = class MutationObserver {
+    observe() {}
+    disconnect() {}
+    takeRecords() {
+      return [];
+    }
+  };
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+
+  globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+  globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+
+  globalThis.document = {
+    nodeType: 9,
+    createElement(tag) {
+      return new MockElement(1, tag.toUpperCase());
+    },
+    createElementNS(ns, tag) {
+      return new MockElement(1, tag.toUpperCase());
+    },
+    createTextNode(text) {
+      const el = new MockElement(3, "#text");
+      el.nodeValue = text;
+      return el;
+    },
+    createComment(data) {
+      const el = new MockElement(8, "#comment");
+      el.data = data;
+      return el;
+    },
+    documentElement: new MockElement(1, "HTML"),
+    body: new MockElement(1, "BODY"),
+    activeElement: null,
+    addEventListener() {},
+    removeEventListener() {},
+    defaultView: globalThis,
+  };
+  globalThis.window = globalThis;
+  return new MockElement(1, "DIV");
+}
+
+test("a card does not re-render when another card changes in a list", async () => {
+  const container = setupMockDom();
+  const wishId = "01a118fa-4308-736a-9ff9-5fc373a4294f";
+  const activeWish = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+
+  // 1. In WishView, when question Q02 changes, Q01 does not re-render.
+  let questions = [
+    { id: "q1", wishId, code: "Q01", text: "Question 1", options: ["A", "B"] },
+    { id: "q2", wishId, code: "Q02", text: "Question 2", options: ["X", "Y"] },
+  ];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, {
+      list: () => ({ wishes: [activeWish] }),
+      describe: () => ({ wish: activeWish }),
+      watch: async function* () {},
+    });
+    service(s.TaskService, { list: () => ({ tasks: [] }) });
+    service(s.QuestionService, { list: () => ({ questions }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+  });
+
+  const djinn = s.createDjinn(transport, 10);
+  const close = djinn.store.open(wishId);
+  await djinn.store.changed(wishId, [s.Change.WISH]);
+
+  const questionRenders = {};
+  const origQuestionType = s.WishQuestion.type;
+  s.WishQuestion.type = function SpiedWishQuestion(props) {
+    questionRenders[props.question.id] =
+      (questionRenders[props.question.id] || 0) + 1;
+    return origQuestionType(props);
+  };
+
+  const root = s.createRoot(container);
+  s.act(() => {
+    root.render(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishView, { wish: activeWish, onToast() {} }),
+      ),
+    );
+  });
+
+  assert.equal(questionRenders.q1, 1, "Q1 renders once initially");
+  assert.equal(questionRenders.q2, 1, "Q2 renders once initially");
+
+  // Modify question 2 and notify the store.
+  questions = [
+    { id: "q1", wishId, code: "Q01", text: "Question 1", options: ["A", "B"] },
+    {
+      id: "q2",
+      wishId,
+      code: "Q02",
+      text: "Question 2 modified",
+      options: ["X", "Y"],
+    },
+  ];
+  await s.act(async () => {
+    await djinn.store.changed(wishId, [s.Change.QUESTION]);
+  });
+
+  assert.equal(questionRenders.q1, 1, "Q1 does not re-render when Q2 changes");
+  assert.equal(questionRenders.q2, 2, "Q2 re-renders when Q2 changes");
+  s.WishQuestion.type = origQuestionType;
+  close();
+
+  // 2. In TaskSections, when task T02 changes, T01 does not re-render.
+  const taskRenders = {};
+  const origTaskType = s.WishTask.type;
+  s.WishTask.type = function SpiedWishTask(props) {
+    taskRenders[props.task.id] = (taskRenders[props.task.id] || 0) + 1;
+    return origTaskType(props);
+  };
+
+  const task1 = {
+    id: "t1",
+    wishId,
+    code: "W1",
+    title: "Task 1",
+    status: s.TaskStatus.RUNNING,
+  };
+  const task2 = {
+    id: "t2",
+    wishId,
+    code: "W2",
+    title: "Task 2",
+    status: s.TaskStatus.RUNNING,
+  };
+
+  const onStop = () => {};
+  const onSend = async () => {};
+  const renderTask = (t) =>
+    h(s.WishTask, { key: t.id, task: t, onStop, onSend });
+
+  const taskRoot = s.createRoot(setupMockDom());
+  s.act(() => {
+    taskRoot.render(
+      h(s.TaskSections, {
+        moving: [task1, task2],
+        azimas: [],
+        doneAzimas: [],
+        render: renderTask,
+      }),
+    );
+  });
+
+  assert.equal(taskRenders.t1, 1, "T1 renders once initially");
+  assert.equal(taskRenders.t2, 1, "T2 renders once initially");
+
+  const task2Updated = { ...task2, status: s.TaskStatus.DONE };
+  s.act(() => {
+    taskRoot.render(
+      h(s.TaskSections, {
+        moving: [task1, task2Updated],
+        azimas: [],
+        doneAzimas: [],
+        render: renderTask,
+      }),
+    );
+  });
+
+  assert.equal(taskRenders.t1, 1, "T1 does not re-render when T2 changes");
+  assert.equal(taskRenders.t2, 2, "T2 re-renders when T2 changes");
+  s.WishTask.type = origTaskType;
+  s.act(() => {
+    root.unmount();
+    taskRoot.unmount();
+  });
+
+  for (const h of process._getActiveHandles()) {
+    if (
+      h &&
+      typeof h.unref === "function" &&
+      h.constructor?.name === "MessagePort"
+    ) {
+      h.unref();
+    }
+  }
+});
+
+test("the wish's head says when pushes are on demand", () => {
+  const onDemandOnly = s.renderToStaticMarkup(
+    h(s.LastPushes, {
+      pushes: [],
+      projects: [{ id: "p1", name: "app", push: s.ProjectPush.ON_DEMAND }],
+    }),
+  );
+  assert.match(
+    onDemandOnly,
+    /<span class="wish-push-on-demand">pushes on demand<\/span>/,
+  );
+  assert.doesNotMatch(onDemandOnly, /Pushed/);
+
+  const last = {
+    branch: "feat/x",
+    remote: "origin",
+    count: 2,
+    commits: ["Work of W2", "Work of W1"],
+    pushTime: { seconds: 1791640800n, nanos: 0 },
+  };
+  const both = s.renderToStaticMarkup(
+    h(s.LastPushes, {
+      pushes: [{ projectId: "p1", last, refused: "" }],
+      projects: [{ id: "p1", name: "app", push: s.ProjectPush.ON_DEMAND }],
+    }),
+  );
+  assert.match(both, /Pushed feat\/x to origin, 2 commits/);
+  assert.match(
+    both,
+    /<span class="wish-push-on-demand">pushes on demand<\/span>/,
+  );
+});
+
+test("the side panel shows when a project's integration branch is out of sync and offers a push button", () => {
+  const project = {
+    id: "p1",
+    name: "lamp",
+    directory: "/tmp/lamp",
+    git: true,
+    sync: {
+      ahead: 3,
+      behind: 1,
+      remote: "origin",
+      branch: "feat/x",
+      target: "feat/x",
+    },
+  };
+  const html = s.renderToStaticMarkup(
+    h(s.WishSidebar, {
+      wishes: [],
+      projects: [project],
+      selectedWishId: "",
+      selectedProjectId: "",
+      collapsed: false,
+      onSelectWish() {},
+      onSelectProject() {},
+      onMove() {},
+      onNewProject() {},
+      onPush() {},
+    }),
+  );
+  assert.match(html, /class="project-sync-row"/);
+  assert.match(html, /3 commits ahead of origin\/feat\/x, 1 behind/);
+  assert.match(
+    html,
+    /<button type="button" class="button accent small"[^>]*>Push<\/button>/,
+  );
+
+  const collapsedHtml = s.renderToStaticMarkup(
+    h(s.WishSidebar, {
+      wishes: [],
+      projects: [project],
+      selectedWishId: "",
+      selectedProjectId: "",
+      collapsed: true,
+      onSelectWish() {},
+      onSelectProject() {},
+      onMove() {},
+      onNewProject() {},
+      onPush() {},
+    }),
+  );
+  assert.doesNotMatch(collapsedHtml, /class="project-sync-row"/);
+});
+
+test("the project panel displays the push cadence setting, out-of-sync status, and push button", () => {
+  const p1 = {
+    id: "p1",
+    name: "app",
+    git: true,
+    directory: "/tmp/app",
+    remote: "git@github.com:org/app.git",
+    push: s.ProjectPush.STANDARD,
+    sync: {
+      ahead: 3,
+      behind: 0,
+      remote: "origin",
+      branch: "feat/x",
+      target: "feat/x",
+    },
+  };
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.ProjectService, {
+      show: () => ({ project: p1 }),
+      push: () => ({}),
+      setPush: () => ({ project: p1 }),
+    });
+    service(s.SkillService, {
+      list: () => ({ skills: [] }),
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const html = s.renderToStaticMarkup(
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(s.ProjectPanel, { project: p1, onClose() {} }),
+    ),
+  );
+  assert.match(html, /3 commits ahead of origin\/feat\/x/);
+  assert.match(
+    html,
+    /<button type="button" class="button accent small"[^>]*>Push<\/button>/,
+  );
+  assert.match(
+    html,
+    /Pushes at an azima(?:'|&#x27;)s end or after 3 tasks and an hour\./,
+  );
+  assert.match(
+    html,
+    /<button type="button" class="active">Standard<\/button><button type="button" class="">On demand<\/button>/,
+  );
+
+  const p2 = {
+    ...p1,
+    push: s.ProjectPush.ON_DEMAND,
+    sync: undefined,
+  };
+  const htmlOnDemand = s.renderToStaticMarkup(
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(s.ProjectPanel, { project: p2, onClose() {} }),
+    ),
+  );
+  assert.match(htmlOnDemand, /Pushes only when you ask\./);
+  assert.doesNotMatch(
+    htmlOnDemand,
+    /<button type="button" class="button accent small"[^>]*>Push<\/button>/,
+  );
+  assert.match(
+    htmlOnDemand,
+    /<button type="button" class="">Standard<\/button><button type="button" class="active">On demand<\/button>/,
+  );
+});
+
+test("draft azimas: fold, card with description, actions, and flight plan", () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const draft = (code, title, extra = {}) => ({
+    id: code,
+    code,
+    title,
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    draft: true,
+    description: "Explore multi-machine distribution.",
+    dependsOn: [],
+    createTime: at(1),
+    azima: { state: s.AzimaState.DRAFT },
+    ...extra,
+  });
+  const regular = (code, title, extra = {}) => ({
+    id: code,
+    code,
+    title,
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    draft: false,
+    dependsOn: [],
+    createTime: at(1),
+    azima: { state: s.AzimaState.OPEN, ready: true },
+    ...extra,
+  });
+  const work = (code, status) => ({
+    id: code,
+    code,
+    title: `Task ${code}`,
+    status,
+    dependsOn: [],
+    createTime: at(1),
+  });
+
+  const d1 = draft("T31", "Spread work over other machines", {
+    description: "Anticipate spreading work across nodes before launch.",
+  });
+  const d2 = draft("T32", "Cold storage backup", { description: "" });
+  const openAzima = regular("T01", "Core pipeline");
+  const runningWork = work("W01", s.TaskStatus.RUNNING);
+
+  const allTasks = [d1, d2, openAzima, runningWork];
+  const byId = new Map(allTasks.map((t) => [t.id, t]));
+
+  // 1. Flight plan: drafts are collected in drafts, NOT in moving, waiting, or azimas.
+  const myWish = wish("w1", "Multi-machine", s.WishState.ACTIVE, 1);
+  const plan = s.flightPlan([myWish], {
+    [myWish.id]: {
+      wish: myWish,
+      tasks: allTasks,
+      questions: [],
+      blocks: [],
+      allowances: [],
+      runs: [],
+      loaded: true,
+    },
+  });
+  assert.equal(plan.drafts.length, 2);
+  assert.deepEqual(
+    plan.drafts.map((x) => x.item.code),
+    ["T31", "T32"],
+  );
+  // Drafts are not moving tasks:
+  assert.deepEqual(
+    plan.moving.map((x) => x.item.code),
+    ["W01"],
+  );
+  // Drafts are not in active azimas list:
+  assert.deepEqual(
+    plan.azimas.map((x) => x.item.azima.code),
+    ["T01"],
+  );
+
+  // 2. DraftAzimaCard rendered directly: shows draft badge, code, title.
+  let openedCode = "";
+  let movedCode = "";
+  const cardComponent = (az) =>
+    h(s.DraftAzimaCard, {
+      key: az.id,
+      azima: az,
+      tasks: byId,
+      onOpen: () => {
+        openedCode = az.code;
+      },
+      onMove: () => {
+        movedCode = az.code;
+      },
+      focus: az.id,
+    });
+
+  const cardHtml = s.renderToStaticMarkup(cardComponent(d1));
+  assert.match(cardHtml, /azima-card tone-later open/);
+  assert.match(cardHtml, /<span class="agent-code">T31<\/span>/);
+  assert.match(cardHtml, /<strong title="Spread work over other machines">/);
+  assert.match(
+    cardHtml,
+    /Anticipate spreading work across nodes before launch\./,
+  );
+  assert.match(cardHtml, />Open this azima<\/button>/);
+  assert.match(cardHtml, />Move<\/button>/);
+
+  // When card has no description: shows muted "No description yet."
+  const emptyCardHtml = s.renderToStaticMarkup(cardComponent(d2));
+  assert.match(emptyCardHtml, /No description yet\./);
+
+  // Clicking open and move triggers callbacks:
+  const liveCard = live(s.DraftAzimaCard, {
+    azima: d1,
+    tasks: byId,
+    onOpen: () => {
+      openedCode = d1.code;
+    },
+    onMove: () => {
+      movedCode = d1.code;
+    },
+    focus: d1.id,
+  });
+  const buttons = liveCard.all("button");
+  const openBtn = buttons.find((b) => b.props.children === "Open this azima");
+  const moveBtn = buttons.find((b) => b.props.children === "Move");
+  assert.ok(openBtn && moveBtn);
+  openBtn.props.onClick();
+  assert.equal(openedCode, "T31");
+  moveBtn.props.onClick();
+  assert.equal(movedCode, "T31");
+
+  // 3. TaskSections fold: "Later: 2 drafts"
+  const sectionsHtml = s.renderToStaticMarkup(
+    h(s.TaskSections, {
+      moving: s.movingTasks(allTasks),
+      azimas: s.azimaGroups(allTasks),
+      doneAzimas: [],
+      drafts: s.draftAzimas(allTasks),
+      showDrafts: false,
+      renderDraft: (draft) => cardComponent(draft),
+      render: () => null,
+    }),
+  );
+  assert.match(sectionsHtml, /Later: 2 drafts/);
+  // When fold is closed, cards are not rendered
+  assert.doesNotMatch(sectionsHtml, /Anticipate spreading work/);
+
+  // When fold is open: cards are rendered
+  const openSectionsHtml = s.renderToStaticMarkup(
+    h(s.TaskSections, {
+      moving: s.movingTasks(allTasks),
+      azimas: s.azimaGroups(allTasks),
+      doneAzimas: [],
+      drafts: s.draftAzimas(allTasks),
+      showDrafts: true,
+      renderDraft: (draft) => cardComponent(draft),
+      render: () => null,
+    }),
+  );
+  assert.match(openSectionsHtml, /Hide drafts/);
+  assert.match(
+    openSectionsHtml,
+    /Anticipate spreading work across nodes before launch\./,
+  );
+});
+
+test("azimas are ordered in a stable 6-tier order and laid out in a single column", () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const azima = (code, title, extra) => ({
+    id: code,
+    code,
+    title,
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    dependsOn: [],
+    proofNeeds: [],
+    createTime: at(100),
+    ...extra,
+  });
+  const work = (code, status, partOf, start, end) => ({
+    id: code,
+    code,
+    title: `Task ${code}`,
+    status,
+    partOf,
+    dependsOn: [],
+    createTime: at(100),
+    startTime: start ? at(start) : undefined,
+    endTime: end ? at(end) : undefined,
+  });
+
+  // Six tiers of azimas:
+  // Tier 0: Moving (parts running or state in progress)
+  const aMoving1 = azima("T02", "Moving orchestrator", {
+    startTime: at(150),
+    azima: {
+      state: s.AzimaState.IN_PROGRESS,
+      ready: true,
+      parts: 3,
+      partsDone: 1,
+      partsRunning: 1,
+    },
+  });
+  const aMoving2 = azima("T01", "Moving builder", {
+    azima: {
+      state: s.AzimaState.OPEN,
+      ready: true,
+      parts: 2,
+      partsDone: 0,
+      partsRunning: 1,
+    },
+  });
+  // Tier 1: Awaiting proof
+  const aProof1 = azima("T04", "Validate release", {
+    azima: {
+      state: s.AzimaState.AWAITING_PROOF,
+      ready: true,
+      parts: 2,
+      partsDone: 2,
+    },
+  });
+  const aProof2 = azima("T03", "Review design", {
+    azima: {
+      state: s.AzimaState.AWAITING_PROOF,
+      ready: true,
+      parts: 1,
+      partsDone: 1,
+    },
+  });
+  // Tier 2: Ready not started
+  const aReady1 = azima("T06", "Ready pipeline B", {
+    azima: { state: s.AzimaState.OPEN, ready: true },
+  });
+  const aReady2 = azima("T05", "Ready pipeline A", {
+    azima: { state: s.AzimaState.OPEN, ready: true },
+  });
+  // Tier 3: Blocked
+  const aBlocked1 = azima("T08", "Blocked consumer", {
+    azima: { state: s.AzimaState.OPEN, ready: false },
+  });
+  const aBlocked2 = azima("T07", "Blocked worker", {
+    azima: { state: s.AzimaState.OPEN, ready: false },
+  });
+  // Tier 4: Draft
+  const aDraft1 = azima("T31", "Draft expansion", {
+    draft: true,
+    azima: { state: s.AzimaState.DRAFT },
+  });
+  const aDraft2 = azima("T30", "Draft caching", {
+    draft: true,
+  });
+  // Tier 5: Done
+  const aDone1 = azima("T10", "Done setup", {
+    status: s.TaskStatus.DONE,
+    startTime: at(110),
+    endTime: at(140),
+    azima: {
+      state: s.AzimaState.DONE,
+      ready: true,
+      parts: 1,
+      partsDone: 1,
+    },
+  });
+  const aDone2 = azima("T09", "Done foundation", {
+    status: s.TaskStatus.DONE,
+    startTime: at(105),
+    endTime: at(125),
+    azima: {
+      state: s.AzimaState.DONE,
+      ready: true,
+      parts: 1,
+      partsDone: 1,
+    },
+  });
+
+  // Parts for T02 (1 done, 1 running, 1 waiting)
+  const w1 = work("W01", s.TaskStatus.DONE, "T02", 150, 180);
+  const w2 = work("W02", s.TaskStatus.RUNNING, "T02", 185);
+  const w3 = work("W03", s.TaskStatus.WAITING, "T02");
+  // Part for T01 (1 running)
+  const w4 = work("W04", s.TaskStatus.RUNNING, "T01", 160);
+
+  // 1. Verify azimaRank for each tier
+  assert.equal(s.azimaRank(aMoving1), 0);
+  assert.equal(s.azimaRank(aMoving2), 0);
+  assert.equal(s.azimaRank(aProof1), 1);
+  assert.equal(s.azimaRank(aProof2), 1);
+  assert.equal(s.azimaRank(aReady1), 2);
+  assert.equal(s.azimaRank(aReady2), 2);
+  assert.equal(s.azimaRank(aBlocked1), 3);
+  assert.equal(s.azimaRank(aBlocked2), 3);
+  assert.equal(s.azimaRank(aDraft1), 4);
+  assert.equal(s.azimaRank(aDraft2), 4);
+  assert.equal(s.azimaRank(aDone1), 5);
+  assert.equal(s.azimaRank(aDone2), 5);
+
+  // Azimas in shuffled input order
+  const allTasks = [
+    aDone1,
+    aBlocked1,
+    aReady1,
+    aProof1,
+    aMoving1,
+    aDraft1,
+    w1,
+    w2,
+    w3,
+    w4,
+    aDraft2,
+    aMoving2,
+    aProof2,
+    aReady2,
+    aBlocked2,
+    aDone2,
+  ];
+
+  // 2. azimaGroups orders non-drafts strictly by azimaRank, then compareCodes
+  const groups = s.azimaGroups(allTasks);
+  const groupCodes = groups.map((g) => g.azima.code);
+  assert.deepEqual(groupCodes, [
+    // Tier 0 (moving, ordered by code)
+    "T01",
+    "T02",
+    // Tier 1 (awaiting proof, ordered by code)
+    "T03",
+    "T04",
+    // Tier 2 (ready, ordered by code)
+    "T05",
+    "T06",
+    // Tier 3 (blocked, ordered by code)
+    "T07",
+    "T08",
+    // Tier 5 (done, ordered by code)
+    "T09",
+    "T10",
+  ]);
+
+  // Drafts are collected separately, ordered by code
+  const drafts = s.draftAzimas(allTasks);
+  assert.deepEqual(
+    drafts.map((d) => d.code),
+    ["T30", "T31"],
+  );
+
+  // 3. Flight plan azimas are sorted by azimaRank, then compareCodes
+  const testWish = wish("w_test", "Azima layout wish", s.WishState.ACTIVE, 1);
+  const plan = s.flightPlan([testWish], {
+    [testWish.id]: {
+      wish: testWish,
+      tasks: allTasks,
+      questions: [],
+      blocks: [],
+      allowances: [],
+      runs: [],
+      loaded: true,
+    },
+  });
+  assert.deepEqual(
+    plan.azimas.map((x) => x.item.azima.code),
+    ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10"],
+  );
+  assert.deepEqual(
+    plan.drafts.map((x) => x.item.code),
+    ["T30", "T31"],
+  );
+
+  // 4. Layout: TaskSections renders in a single column (.azima-list), never .azima-grid
+  const byId = new Map(allTasks.map((t) => [t.id, t]));
+  const card = (task) =>
+    h(s.WishTask, {
+      key: task.id,
+      task,
+      onStop() {},
+      async onSend() {},
+      async onDone() {},
+    });
+  const renderAzima = ({ azima, parts }) =>
+    h(s.AzimaCard, {
+      key: azima.id,
+      azima,
+      parts,
+      tasks: byId,
+      render: card,
+    });
+  const renderDraft = (draft) =>
+    h(s.DraftAzimaCard, {
+      key: draft.id,
+      azima: draft,
+      tasks: byId,
+      onOpen() {},
+      onMove() {},
+    });
+
+  const activeAzimas = groups.filter((g) => !s.azimaFinished(g.azima));
+  const doneAzimas = groups.filter((g) => s.azimaFinished(g.azima));
+
+  const sectionsHtml = s.renderToStaticMarkup(
+    h(s.TaskSections, {
+      moving: s.movingTasks(allTasks),
+      azimas: activeAzimas,
+      doneAzimas,
+      drafts,
+      showDone: true,
+      showDrafts: true,
+      renderAzima,
+      renderDraft,
+      render: card,
+    }),
+  );
+
+  // Must have .azima-list and never .azima-grid
+  assert.match(sectionsHtml, /<div class="azima-list">/);
+  assert.doesNotMatch(sectionsHtml, /azima-grid/);
+
+  // The active azimas appear in single column in exact stable order
+  const activeOrder = [
+    ...sectionsHtml.matchAll(/<span class="agent-code">(T\d+)<\/span>/g),
+  ].map((m) => m[1]);
+  assert.deepEqual(activeOrder, [
+    "T01",
+    "T02",
+    "T03",
+    "T04",
+    "T05",
+    "T06",
+    "T07",
+    "T08",
+    "T30",
+    "T31",
+    "T09",
+    "T10",
+  ]);
+
+  // Fold order: drafts fold appears before done fold
+  const closedFoldsHtml = s.renderToStaticMarkup(
+    h(s.TaskSections, {
+      moving: s.movingTasks(allTasks),
+      azimas: activeAzimas,
+      doneAzimas,
+      drafts,
+      showDone: false,
+      showDrafts: false,
+      renderAzima,
+      renderDraft,
+      render: card,
+    }),
+  );
+  const draftsFoldIndex = closedFoldsHtml.indexOf("Later: 2 drafts");
+  const doneFoldIndex = closedFoldsHtml.indexOf("Show the 2 finished");
+  assert.ok(
+    draftsFoldIndex > 0 && doneFoldIndex > draftsFoldIndex,
+    "drafts fold must appear before done fold",
+  );
+
+  // 5. Azima row details: code, goal, state, progress bar, counts, parts text, time
+  const t2CardHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: aMoving1,
+      parts: [w1, w2, w3],
+      tasks: byId,
+      render: card,
+      focus: aMoving1.id,
+    }),
+  );
+
+  // Code, goal (title), state badge
+  assert.match(t2CardHtml, /<span class="agent-code">T02<\/span>/);
+  assert.match(t2CardHtml, /Moving orchestrator/);
+  assert.match(
+    t2CardHtml,
+    /<span class="status-badge tone-running">[\s\S]*?<span>In progress<\/span><\/span>/,
+  );
+
+  // Progress: segmented bar, counts (1/3), parts detail (1 done, 1 running, 1 waiting)
+  assert.match(t2CardHtml, /<span class="azima-bar-done" style="width:33\.33/);
+  assert.match(
+    t2CardHtml,
+    /<span class="azima-bar-running" style="width:33\.33/,
+  );
+  assert.match(t2CardHtml, /<span class="azima-progress-counts">1\/3<\/span>/);
+  assert.match(
+    t2CardHtml,
+    /<span class="azima-progress-parts"[^>]*>1 done, 1 running, 1 waiting<\/span>/,
+  );
+
+  // Time: azimaTime formats running duration
+  assert.match(t2CardHtml, /<span class="task-time"/);
+
+  // Parts wrapped in .card-grid.task-grid inside .azima-parts (flowing in columns on wide screens)
+  assert.match(
+    t2CardHtml,
+    /<div class="azima-parts"><div class="card-grid task-grid">/,
+  );
+
+  // 6. Test azimaTime function directly
+  const nowMs = 200_000;
+  const runningTime = s.azimaTime(aMoving1, [w1, w2, w3], nowMs);
+  assert.ok(runningTime.text.length > 0);
+  assert.match(runningTime.title, /running since/i);
+
+  const doneTime = s.azimaTime(aDone1, [], nowMs);
+  assert.equal(doneTime.text, "30s");
+  assert.match(doneTime.title, /ran from .* to/i);
+});
+
+test("the wish shows its push strategy and azima cards show branch, sync and PR in per-azima mode", () => {
+  // 1. Effective strategy resolution
+  const wDefault = { id: "w1", pushStrategy: s.PushStrategy.UNSPECIFIED };
+  const pDefault = [{ id: "p1", pushStrategy: s.PushStrategy.UNSPECIFIED }];
+  const pAzima = [{ id: "p1", pushStrategy: s.PushStrategy.AZIMA }];
+  const wWish = { id: "w1", pushStrategy: s.PushStrategy.WISH };
+  const wAzima = { id: "w1", pushStrategy: s.PushStrategy.AZIMA };
+
+  assert.equal(
+    s.effectivePushStrategy(wDefault, pDefault),
+    s.PushStrategy.WISH,
+  );
+  assert.equal(s.effectivePushStrategy(wDefault, pAzima), s.PushStrategy.AZIMA);
+  assert.equal(s.effectivePushStrategy(wWish, pAzima), s.PushStrategy.WISH);
+  assert.equal(s.effectivePushStrategy(wAzima, pDefault), s.PushStrategy.AZIMA);
+
+  // 2. PushStrategySelector component
+  let chosenStrategy = null;
+  const selectorHtml = s.renderToStaticMarkup(
+    h(s.PushStrategySelector, {
+      wish: wDefault,
+      projects: pAzima,
+      onChange: (strat) => {
+        chosenStrategy = strat;
+      },
+    }),
+  );
+  assert.match(selectorHtml, /class="wish-push-strategy"/);
+  assert.match(selectorHtml, /aria-label="Push strategy"/);
+  assert.match(selectorHtml, /Per wish<\/button>/);
+  assert.match(
+    selectorHtml,
+    /<button[^>]*class="active"[^>]*>Per azima<\/button>/,
+  );
+
+  // Test live clicking
+  const liveSelector = live(s.PushStrategySelector, {
+    wish: wDefault,
+    projects: pAzima,
+    onChange: (strat) => {
+      chosenStrategy = strat;
+    },
+  });
+  const buttons = liveSelector.all("button");
+  const wishBtn = buttons.find((b) => b.props.children === "Per wish");
+  assert.ok(wishBtn);
+  wishBtn.props.onClick();
+  assert.equal(chosenStrategy, s.PushStrategy.WISH);
+
+  // 3. Azima branch naming helper
+  const taskT27 = {
+    id: "a27",
+    code: "T27",
+    title: "Djinn stays fast",
+    azima: {},
+  };
+  assert.equal(s.azimaBranchName(taskT27), "djinn/T27-djinn-stays-fast");
+
+  // 4. AzimaCard in default (per-wish) mode does not show branch, sync or PR
+  const defaultCardHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: {
+        ...taskT27,
+        azima: {
+          branch: "djinn/T27-djinn-stays-fast",
+          sync: { ahead: 1, behind: 0 },
+        },
+      },
+      parts: [],
+      tasks: new Map(),
+      render: () => null,
+      isPerAzima: false,
+    }),
+  );
+  assert.doesNotMatch(defaultCardHtml, /azima-branch/);
+  assert.doesNotMatch(defaultCardHtml, /azima-actions/);
+
+  // 5. AzimaCard in per-azima mode with branch, base branch, sync, push button, and PR
+  let pushedAzima = null;
+  let openedPrUrl = null;
+  const azimaPerAzima = {
+    ...taskT27,
+    azima: {
+      branch: "djinn/T27-djinn-stays-fast",
+      baseBranch: "djinn/T26-split-the-branch",
+      sync: { ahead: 2, behind: 0 },
+      pr: {
+        state: s.AzimaPrState.OPEN,
+        url: "https://github.com/Empowill/Djinn/pull/42",
+      },
+    },
+  };
+
+  const perAzimaHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: azimaPerAzima,
+      parts: [],
+      tasks: new Map(),
+      render: () => null,
+      isPerAzima: true,
+      onPush: (a) => {
+        pushedAzima = a;
+      },
+      onOpenPr: (url) => {
+        openedPrUrl = url;
+      },
+    }),
+  );
+
+  // Branch and base branch
+  assert.match(
+    perAzimaHtml,
+    /<span class="azima-branch"[^>]*>djinn\/T27-djinn-stays-fast<\/span>/,
+  );
+  assert.match(
+    perAzimaHtml,
+    /<span class="azima-base-branch"[^>]*>based on djinn\/T26-split-the-branch<\/span>/,
+  );
+
+  // Sync state and push button
+  assert.match(
+    perAzimaHtml,
+    /<span class="azima-sync-status"[^>]*>2 commits ahead of origin\/<\/span>/,
+  );
+  assert.match(
+    perAzimaHtml,
+    /<button[^>]*class="button accent small"[^>]*>Push<\/button>/,
+  );
+
+  // PR link with state "PR open"
+  assert.match(
+    perAzimaHtml,
+    /<a href="https:\/\/github\.com\/Empowill\/Djinn\/pull\/42" class="azima-pr-link"/,
+  );
+  assert.match(perAzimaHtml, /PR open/);
+
+  // Test live click on push and PR
+  const liveAzimaCard = live(s.AzimaCard, {
+    azima: azimaPerAzima,
+    parts: [],
+    tasks: new Map(),
+    render: () => null,
+    isPerAzima: true,
+    onPush: (a) => {
+      pushedAzima = a;
+    },
+    onOpenPr: (url) => {
+      openedPrUrl = url;
+    },
+  });
+  const cardButtons = liveAzimaCard.all("button");
+  const pushBtn = cardButtons.find((b) => b.props.children === "Push");
+  assert.ok(pushBtn);
+  const fakeEvent = { stopPropagation() {}, preventDefault() {} };
+  pushBtn.props.onClick(fakeEvent);
+  assert.equal(pushedAzima?.id, "a27");
+
+  const prLink = liveAzimaCard
+    .all("a")
+    .find((a) => a.props.className === "azima-pr-link");
+  assert.ok(prLink);
+  prLink.props.onClick(fakeEvent);
+  assert.equal(openedPrUrl, "https://github.com/Empowill/Djinn/pull/42");
+
+  // 6. Test pushed state (clean sync) and other PR states (PROPOSED, MERGED, and badge without URL)
+  const cleanAndProposedHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: {
+        ...taskT27,
+        azima: {
+          branch: "djinn/T27-djinn-stays-fast",
+          sync: { ahead: 0, behind: 0, target: "origin" },
+          pr: { state: s.AzimaPrState.PROPOSED },
+        },
+      },
+      parts: [],
+      tasks: new Map(),
+      render: () => null,
+      isPerAzima: true,
+    }),
+  );
+  assert.match(
+    cleanAndProposedHtml,
+    /<span class="azima-pushed-status">Pushed<\/span>/,
+  );
+  assert.match(
+    cleanAndProposedHtml,
+    /<span class="azima-pr-badge">PR proposed<\/span>/,
+  );
+  assert.doesNotMatch(cleanAndProposedHtml, /<button[^>]*>Push<\/button>/);
+
+  const mergedHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: {
+        ...taskT27,
+        azima: {
+          sync: { ahead: 0, behind: 0, branch: "main" },
+          pr: { state: s.AzimaPrState.MERGED },
+        },
+      },
+      parts: [],
+      tasks: new Map(),
+      render: () => null,
+      isPerAzima: true,
+    }),
+  );
+  assert.match(mergedHtml, /<span class="azima-pushed-status">Pushed<\/span>/);
+  assert.match(mergedHtml, /<span class="azima-pr-badge">PR merged<\/span>/);
+
+  // 7. Verify T27: AzimaCard is memoized (React.memo)
+  assert.equal(typeof s.AzimaCard, "object");
+  assert.equal(s.AzimaCard.$$typeof, Symbol.for("react.memo"));
 });

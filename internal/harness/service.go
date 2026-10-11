@@ -11,6 +11,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -49,13 +50,32 @@ func (s *Tasks) List(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	if tasks, err = s.h.withAzimas(ctx, tasks); err != nil {
+	if req.Msg.GetFailed() {
+		var filtered []*planv1.Task
+		for _, t := range tasks {
+			if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED &&
+				!render.TaskDealtWith(t, tasks) &&
+				!(t.GetEnvCause() != "" && t.GetEnvReplays() < 2) {
+				filtered = append(filtered, t)
+			}
+		}
+		tasks = filtered
+	}
+	page, nextToken, total, err := plan.Paginate(tasks, req.Msg.GetPageSize(), req.Msg.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	if page, err = s.h.withAzimas(ctx, page); err != nil {
 		return nil, plan.Status(err)
 	}
-	if err := plan.FillTilasms(ctx, s.h.store, tasks); err != nil {
+	if err := plan.FillTilasms(ctx, s.h.store, page); err != nil {
 		return nil, plan.Status(err)
 	}
-	return connect.NewResponse(&planv1.TaskServiceListResponse{Tasks: tasks}), nil
+	return connect.NewResponse(&planv1.TaskServiceListResponse{
+		Tasks:         page,
+		NextPageToken: nextToken,
+		Total:         total,
+	}), nil
 }
 
 func (s *Tasks) Get(
@@ -71,6 +91,9 @@ func (s *Tasks) Get(
 	}
 	if err := plan.FillTilasms(ctx, s.h.store, filled); err != nil {
 		return nil, plan.Status(err)
+	}
+	if p, err := lastPrompt(ctx, s.h.store, task.GetId()); err == nil {
+		filled[0].Prompt = p
 	}
 	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: filled[0]}), nil
 }
@@ -190,4 +213,44 @@ func (s *Tasks) Send(
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.TaskServiceSendResponse{Event: ev}), nil
+}
+
+func (s *Tasks) Update(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceUpdateRequest],
+) (*connect.Response[planv1.TaskServiceUpdateResponse], error) {
+	task, err := s.h.Update(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceUpdateResponse{Task: task}), nil
+}
+
+func (s *Tasks) Describe(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceDescribeRequest],
+) (*connect.Response[planv1.TaskServiceDescribeResponse], error) {
+	task, err := s.h.DescribeTask(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceDescribeResponse{Task: task}), nil
+}
+
+func (s *Tasks) Open(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceOpenRequest],
+) (*connect.Response[planv1.TaskServiceOpenResponse], error) {
+	task, err := s.h.Open(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceOpenResponse{Task: task}), nil
+}
+
+func (s *Tasks) Move(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceMoveRequest],
+) (*connect.Response[planv1.TaskServiceMoveResponse], error) {
+	task, err := s.h.Move(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceMoveResponse{Task: task}), nil
 }
