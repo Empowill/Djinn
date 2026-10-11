@@ -1,15 +1,25 @@
-// Every request finds its wish, against the real djinn up --browser (see global-setup.ts): a lead hands a request over
-// with djinn wish route --ask, the developer rubs the lamp on the card, and the window shows the new wish with its
-// lead started on the request in its own terminal. The lead is a fake claude on djinn's PATH.
+// Every request finds its wish, against the real djinn up --browser (see global-setup.ts): the lead hands a request over
+// with djinn wish route --ask, the developer rubs the lamp on the card, and Djinn makes the new wish, the request in
+// its blocks, and tells the one lead where the request went, in its terminal: no second lead starts. The lead is a
+// fake claude on djinn's PATH that repeats what it reads.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import {
+  dropLead,
+  leadFolder,
+  leadRows as rows,
+  runningTerminals,
+  setLead,
+} from "./lead";
 
 const binary = path.resolve(
   __dirname,
   "../bin/djinn-e2e" + (process.platform === "win32" ? ".exe" : ""),
 );
+// Not the session of the other specs: one session runs in one terminal.
+const session = "8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d";
 
 function djinn(...args: string[]): string {
   return execFileSync(binary, args, {
@@ -20,7 +30,9 @@ function djinn(...args: string[]): string {
 
 test.skip(process.platform === "win32", "the fake claude is a shell script");
 
-test("a request routed to a new wish starts its lead there, at a rub of the lamp", async ({
+test.afterEach(dropLead);
+
+test("a request routed to a new wish makes it, and the one lead is told, at a rub of the lamp", async ({
   page,
 }) => {
   // Three wishes at a time: the earlier specs' wishes make way.
@@ -36,6 +48,11 @@ test("a request routed to a new wish starts its lead there, at a rub of the lamp
   djinn("project", "add", folder, "--name", "brass");
   const here = JSON.parse(djinn("wish", "make", "Route from here", "--json"))
     .wish.id as string;
+  // The lead runs, on its session.
+  const leadDir = leadFolder();
+  setLead(session, leadDir);
+  djinn("lead", "resume");
+
   const request = "wax the brass canoe paddles";
   const asked = JSON.parse(
     djinn("wish", "route", request, "--wish-id", here, "--ask", "--json"),
@@ -58,24 +75,35 @@ test("a request routed to a new wish starts its lead there, at a rub of the lamp
   await expect(card).toContainText(request);
   await card.getByRole("button", { name: "Rub the lamp" }).click();
 
-  // The window goes to the new wish, its lead running in its own terminal, on the brief and the request.
-  await expect(page.locator(".hero h1")).toHaveText(title);
+  // The new wish, active, the request in its blocks.
+  const nav = page.locator(".wish-nav").filter({ hasText: title });
+  await expect(nav).toBeVisible();
   const made = JSON.parse(djinn("wish", "list", "--json")).wishes.find(
     (w: { title: string }) => w.title === title,
   );
   expect(made.state).toBe("WISH_STATE_ACTIVE");
-  expect(made.lead.session_id).toBeTruthy();
-  const terminal = page.getByRole("region", { name: "Terminal" });
-  await expect(
-    terminal.locator(".lead-terminal-command").first(),
-  ).toContainText(`claude --session-id ${made.lead.session_id}`);
-  await expect(page.locator(".lead-terminal .xterm-rows")).toContainText(
-    "this wish was made for it: " + request,
-  );
   const blocks = JSON.parse(
     djinn("block", "list", made.id, "--kind", "request", "--json"),
   ).blocks;
   expect(blocks.map((b: { content: string }) => b.content)).toEqual([request]);
+
+  // The one lead is told where the request went: typed, so echoed, then read after Enter, the fake lead says it again.
+  await expect(
+    rows(
+      page,
+      `Djinn: ${asked.question.code} answered: the request went to the new wish "${title}"`,
+    ),
+  ).toHaveCount(2, { timeout: 15_000 });
+  // No second lead: the lead's terminal is the only one that runs claude, on its own session.
+  const claudes = (await runningTerminals()).filter((t) =>
+    t.command.join(" ").includes("claude"),
+  );
+  expect(claudes.map((t) => t.name)).toEqual(["lead"]);
+  expect(claudes[0].command.join(" ")).toContain(`claude --resume ${session}`);
+
+  // The new wish opens from the side panel.
+  await nav.click();
+  await expect(page.locator(".hero h1")).toHaveText(title);
 
   djinn("wish", "pause", made.id);
   djinn("wish", "pause", here);

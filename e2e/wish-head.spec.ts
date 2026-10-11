@@ -1,11 +1,13 @@
 // The buttons at the top of a wish, against the real djinn up --browser (see global-setup.ts): Share writes the wish's
-// export (binary protobuf), a file the command line imports again; Lead resumes the wish's lead in its own terminal. The lead is a fake
-// claude on djinn's PATH. The trash has its own spec (wish-lifecycle.spec.ts).
+// export (binary protobuf), a file the command line imports again; Lead resumes the one lead in its terminal, focused
+// on the wish. The lead is a fake claude on djinn's PATH that repeats what it reads. The trash has its own spec
+// (wish-lifecycle.spec.ts).
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { dropLead, leadFolder, leadRows, setLead } from "./lead";
 
 const binary = path.resolve(
   __dirname,
@@ -74,14 +76,15 @@ test("Share writes the wish's export, which imports again", async ({
 
 test.describe("Lead", () => {
   test.skip(process.platform === "win32", "the fake claude is a shell script");
+  test.afterEach(dropLead);
 
-  test("Lead resumes the wish's lead in its own terminal", async ({ page }) => {
-    const folder = fs.realpathSync(
-      fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "lead-")),
-    );
+  test("Lead resumes the one lead in its terminal, focused on the wish", async ({
+    page,
+  }) => {
+    const folder = leadFolder();
     const title = `Lead from the button ${randomUUID().slice(0, 8)}`;
     const wishId = await open(page, title);
-    djinn("wish", "set-lead", wishId, session, "--directory", folder);
+    setLead(session, folder);
 
     await page
       .locator(".topbar-actions")
@@ -92,10 +95,12 @@ test.describe("Lead", () => {
       terminal.locator(".lead-terminal-command").first(),
     ).toContainText(`claude --resume ${session}`);
     await expect(
-      page
-        .locator(".lead-terminal .xterm-rows > div")
-        .filter({ hasText: `fake-claude --resume ${session} in ${folder}` }),
+      leadRows(page, `fake-claude --resume ${session} in ${folder}`),
     ).toHaveCount(1);
+    // Typed in the lead, so echoed, then read after Enter: the fake lead says it again.
+    await expect(
+      leadRows(page, `Focus on the wish ${title} (${wishId})`),
+    ).toHaveCount(2);
     djinn("wish", "delete", wishId);
   });
 });

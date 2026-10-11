@@ -4,10 +4,12 @@ import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
 // A spec's djinn is not the one a Djinn worker running it reports to: the commands the specs run must not name that
-// worker's task ((djinn.v1.env) fills --task-id from it).
+// worker's task ((djinn.v1.env) fills --task-id from it), nor, run from a lead's terminal, its lead (DJINN_LEAD makes
+// an answer the lead's, which djinn tells no lead).
 delete process.env.DJINN_TASK_ID;
 delete process.env.DJINN_WISH_ID;
 delete process.env.DJINN_ADDR;
+delete process.env.DJINN_LEAD;
 process.env.DJINN_TEST = "1";
 
 // The render performance spec (e2e/wish-render.spec.ts) runs on demand on the real-size wish of W174:

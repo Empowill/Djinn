@@ -90,7 +90,9 @@ test("a request that matches a skill's template makes its wish, whose watcher of
     .getByRole("button", { name: "Rub the lamp" })
     .click();
 
-  // The new wish, its template recorded, its watcher started at once in the project.
+  // The new wish, its template recorded, its watcher started at once in the project. No lead of its own starts: the
+  // one lead is told; the new wish opens from the side panel.
+  await page.locator(".wish-nav").filter({ hasText: title }).click();
   await expect(page.locator(".hero h1")).toHaveText(title);
   const made = JSON.parse(djinn("wish", "list", "--json")).wishes.find(
     (w: { title: string }) => w.title === title,

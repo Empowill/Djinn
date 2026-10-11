@@ -1,20 +1,18 @@
-// Each wish shows its own lead, against the real djinn up --browser (see global-setup.ts): the wish shown in the
-// window brings its lead's terminal while it runs; otherwise the tab shown stays, and no terminal starts by itself. The leads are a fake
-// claude on djinn's PATH that says how it was called, then repeats what it reads.
+// One lead for every wish, against the real djinn up --browser (see global-setup.ts): Lead, on any wish, brings the
+// same lead's terminal and focuses it on that wish; switching the wish shown leaves that terminal as it is, and no
+// terminal starts by itself. The lead is a fake claude on djinn's PATH that says how it was called, then repeats what
+// it reads.
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import fs from "node:fs";
 import path from "node:path";
+import { dropLead, leadFolder, leadRows as rows, setLead } from "./lead";
 
 const binary = path.resolve(
   __dirname,
   "../bin/djinn-e2e" + (process.platform === "win32" ? ".exe" : ""),
 );
-// Not the sessions of the other specs: one session runs in one terminal.
-const sessions = {
-  brass: "3d5e7f90-1a2b-4c3d-8e4f-5a6b7c8d9e01",
-  glass: "9e8d7c6b-5a4f-4e3d-9c2b-1a0f9e8d7c02",
-};
+// Not the session of the other specs: one session runs in one terminal.
+const session = "3d5e7f90-1a2b-4c3d-8e4f-5a6b7c8d9e01";
 
 function djinn(...args: string[]): string {
   return execFileSync(binary, args, {
@@ -23,33 +21,28 @@ function djinn(...args: string[]): string {
   });
 }
 
-// wishWithLead makes a wish whose lead runs, in a folder of its own.
-function wishWithLead(title: string, session: string) {
-  const folder = fs.realpathSync(
-    fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "lead-")),
-  );
-  const id = JSON.parse(djinn("wish", "make", title, "--json")).wish
-    .id as string;
-  djinn("wish", "set-lead", id, session, "--directory", folder);
-  expect(djinn("wish", "resume", id)).toContain(`terminal: lead-${id}`);
-  return { id, folder };
+function wish(title: string) {
+  return JSON.parse(djinn("wish", "make", title, "--json")).wish.id as string;
 }
 
-function rows(page: Page, text: string) {
-  return page.locator(".lead-terminal .xterm-rows > div").filter({
-    hasText: text,
-  });
+// lead clicks Lead at the top of the wish shown.
+async function lead(page: Page) {
+  await page
+    .locator(".topbar-actions")
+    .getByRole("button", { name: "Lead", exact: true })
+    .click();
 }
 
 test.skip(process.platform === "win32", "the fake claude is a shell script");
 
 const made: string[] = [];
-// The next specs find room for their wishes, and no leftover leads running.
+// The next specs find room for their wishes, and no lead running.
 test.afterAll(async () => {
   for (const id of made) djinn("wish", "delete", id);
 });
+test.afterEach(dropLead);
 
-test("switching the wish switches the terminal to its own lead", async ({
+test("Lead on each wish focuses the one lead on it, whatever wish is shown", async ({
   page,
 }) => {
   // Three wishes at a time: the earlier specs' wishes make way.
@@ -59,48 +52,62 @@ test("switching the wish switches the terminal to its own lead", async ({
   ))
     djinn("wish", "pause", w.id);
 
-  const glass = wishWithLead("Glass lamp", sessions.glass);
-  // Resumed last, so the window opens on it: djinn asked to show it.
-  const brass = wishWithLead("Brass lamp", sessions.brass);
-  const none = JSON.parse(
-    djinn("wish", "make", "Lamp without a lead", "--json"),
-  ).wish.id as string;
-  made.push(glass.id, brass.id, none);
+  const folder = leadFolder();
+  setLead(session, folder);
+  const glass = wish("Glass lamp");
+  const brass = wish("Brass lamp");
+  const other = wish("Lamp left alone");
+  made.push(glass, brass, other);
 
   const url = new URL(process.env.DJINN_URL!);
   url.pathname = "/";
   await page.goto(url.toString());
   const terminal = page.getByRole("region", { name: "Terminal" });
   const command = terminal.locator(".lead-terminal-command").first();
-  const brassLine = `fake-claude --resume ${sessions.brass} in ${brass.folder}`;
-  const glassLine = `fake-claude --resume ${sessions.glass} in ${glass.folder}`;
-  await expect(command).toContainText(`claude --resume ${sessions.brass}`);
-  await expect(rows(page, brassLine)).toHaveCount(1);
+  const started = `fake-claude --resume ${session} in ${folder}`;
+  // No terminal starts by itself.
+  await expect(command).toHaveCount(0);
 
-  // Something typed to Brass's lead: it says it back.
+  // Lead on Brass: the lead resumes on its session, told to focus on Brass.
+  await page.locator(".wish-nav", { hasText: "Brass lamp" }).click();
+  await lead(page);
+  await expect(command).toContainText(`claude --resume ${session}`);
+  await expect(rows(page, started)).toHaveCount(1);
+  await expect(
+    rows(page, `Focus on the wish Brass lamp (${brass})`),
+  ).toHaveCount(2);
+
+  // Something typed to the lead: it says it back.
   await page.locator(".lead-terminal .xterm").click();
   await page.keyboard.type("polish the brass");
   await page.keyboard.press("Enter");
   await expect(rows(page, "polish the brass")).toHaveCount(2);
 
-  // The other wish, its own lead.
-  await page.locator(".wish-nav", { hasText: "Glass lamp" }).click();
-  await expect(command).toContainText(`claude --resume ${sessions.glass}`);
-  await expect(rows(page, glassLine)).toHaveCount(1);
-  await expect(rows(page, brassLine)).toHaveCount(0);
-
-  // A wish whose lead does not run: the tab shown stays, and no other terminal starts.
-  await page.locator(".wish-nav", { hasText: "Lamp without a lead" }).click();
-  await expect(command).toContainText(`claude --resume ${sessions.glass}`);
-  await expect(terminal.getByRole("tab", { name: "Terminal" })).toHaveCount(0);
-
-  // Back to Brass: the same lead, what it said still there.
-  await page.locator(".wish-nav", { hasText: "Brass lamp" }).click();
-  await expect(command).toContainText(`claude --resume ${sessions.brass}`);
-  await expect(rows(page, brassLine)).toHaveCount(1);
+  // Another wish shown: the same lead stays, what it said still there, and no other terminal starts.
+  await page.locator(".wish-nav", { hasText: "Lamp left alone" }).click();
+  await expect(page.locator(".hero h1")).toHaveText("Lamp left alone");
+  await expect(command).toContainText(`claude --resume ${session}`);
   await expect(rows(page, "polish the brass")).toHaveCount(2);
+  await expect(terminal.locator(".lead-terminal-tab")).toHaveCount(1);
 
-  // The flight plan shows no wish: the tab shown stays.
+  // Lead on Glass: the same lead, not started again, now told to focus on Glass.
+  await page.locator(".wish-nav", { hasText: "Glass lamp" }).click();
+  await lead(page);
+  await expect(
+    rows(page, `Focus on the wish Glass lamp (${glass})`),
+  ).toHaveCount(2);
+  await expect(rows(page, started)).toHaveCount(1);
+  await expect(rows(page, "polish the brass")).toHaveCount(2);
+  await expect(terminal.locator(".lead-terminal-tab")).toHaveCount(1);
+  expect(
+    (
+      JSON.parse(djinn("lead", "get", "--json")).lead as {
+        session_id: string;
+      }
+    ).session_id,
+  ).toBe(session);
+
+  // The flight plan shows no wish: the lead stays shown.
   await page.locator(".plan-nav").click();
-  await expect(command).toContainText(`claude --resume ${sessions.brass}`);
+  await expect(command).toContainText(`claude --resume ${session}`);
 });

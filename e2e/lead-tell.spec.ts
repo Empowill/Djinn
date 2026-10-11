@@ -1,10 +1,11 @@
-// An answer reaches the lead, against the real djinn up --browser (see global-setup.ts): the wish's lead does not run,
-// djinn reopens it on its session, and types the answer in its terminal, then Enter. The lead is a fake claude on
+// An answer reaches the one lead, against the real djinn up --browser (see global-setup.ts): answered while the lead
+// does not run, it waits, and djinn types it in the lead's terminal, then Enter, once the lead is resumed on its
+// session; answered in another wish while the lead runs, it goes to the same lead at once. The lead is a fake claude on
 // djinn's PATH that says each line it reads.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import fs from "node:fs";
 import path from "node:path";
+import { dropLead, leadFolder, leadRows as rows, setLead } from "./lead";
 
 const binary = path.resolve(
   __dirname,
@@ -33,9 +34,40 @@ async function show(terminal: string) {
   expect(res.ok).toBe(true);
 }
 
+// askAndAnswer asks a question with two options in a wish, and answers it from a plain shell, as the developer.
+function askAndAnswer(wishId: string, first: string, second: string) {
+  const asked = JSON.parse(
+    djinn(
+      "question",
+      "ask",
+      `Which lamp first, ${first} or ${second}?`,
+      wishId,
+      "--options",
+      first,
+      "--options",
+      second,
+      "--json",
+    ),
+  );
+  const code = asked.question.code as string;
+  djinn(
+    "question",
+    "answer",
+    code,
+    "b",
+    "--wish-id",
+    wishId,
+    "--note",
+    "lighter",
+  );
+  return code;
+}
+
 test.skip(process.platform === "win32", "the fake claude is a shell script");
 
-test("an answer is typed in the terminal of the wish's lead, reopened", async ({
+test.afterEach(dropLead);
+
+test("an answer waits for the lead, then is typed in its terminal once resumed; another wish's goes to the same lead", async ({
   page,
 }) => {
   // Three wishes at a time: the earlier specs' wishes make way.
@@ -45,47 +77,40 @@ test("an answer is typed in the terminal of the wish's lead, reopened", async ({
   ))
     djinn("wish", "pause", w.id);
 
-  const folder = fs.realpathSync(
-    fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "lead-")),
-  );
+  const folder = leadFolder();
   const wishId = JSON.parse(djinn("wish", "make", "Tell the lead", "--json"))
     .wish.id as string;
-  djinn("wish", "set-lead", wishId, session, "--directory", folder);
-  djinn(
-    "question",
-    "ask",
-    "Which lamp first?",
-    wishId,
-    "--options",
-    "Brass",
-    "--options",
-    "Glass",
-  );
-  djinn(
-    "question",
-    "answer",
-    "Q01",
-    "b",
-    "--wish-id",
-    wishId,
-    "--note",
-    "lighter",
-  );
+  const other = JSON.parse(
+    djinn("wish", "make", "Tell the same lead", "--json"),
+  ).wish.id as string;
+  setLead(session, folder);
+  const first = askAndAnswer(wishId, "Brass", "Glass");
 
-  djinn("wish", "resume", wishId);
+  djinn("lead", "resume");
 
-  await show(`lead-${wishId}`);
+  await show("lead");
   const url = new URL(process.env.DJINN_URL!);
   url.pathname = "/";
   await page.goto(url.toString());
-  const rows = page.locator(".lead-terminal .xterm-rows > div");
   await expect(
-    rows.filter({ hasText: `fake-claude --resume ${session} in ${folder}` }),
+    rows(page, `fake-claude --resume ${session} in ${folder}`),
   ).toHaveCount(1);
   // Typed, so echoed, then read after Enter: the fake lead says it again.
+  await expect(rows(page, `Djinn: ${first} answered B — "Glass"`)).toHaveCount(
+    2,
+    { timeout: 15_000 },
+  );
+
+  // The lead runs: an answer in another wish reaches it at once, in the same terminal.
+  const second = askAndAnswer(other, "Copper", "Tin");
+  await expect(rows(page, `Djinn: ${second} answered B — "Tin"`)).toHaveCount(
+    2,
+    { timeout: 15_000 },
+  );
   await expect(
-    rows.filter({ hasText: 'Djinn: Q01 answered B — "Glass"' }),
-  ).toHaveCount(2, { timeout: 15_000 });
+    rows(page, `fake-claude --resume ${session} in ${folder}`),
+  ).toHaveCount(1);
 
   djinn("wish", "delete", wishId);
+  djinn("wish", "delete", other);
 });

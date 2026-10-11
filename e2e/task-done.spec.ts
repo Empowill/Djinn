@@ -1,6 +1,6 @@
 // Mark a task done from the window, against the real djinn up --browser (see global-setup.ts): in the Tasks tab, an
 // interrupted task, imported with its wish, leaves what moves or waits and tops the finished tasks, saying who closed
-// it and why; a cancelled task says who cancelled it and why. Every run makes
+// it and why; a cancelled task wears its own badge, which says on hover who cancelled it and why. Every run makes
 // fresh identifiers, so --repeat-each works on the same djinn.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
@@ -138,7 +138,9 @@ test("a task marked done leaves what moves and tops the finished tasks", async (
   }
 });
 
-test("a cancelled task says who cancelled it and why", async ({ page }) => {
+test("a cancelled task says who cancelled it and why, on hover", async ({
+  page,
+}) => {
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   const wishId = randomUUID();
@@ -187,13 +189,20 @@ test("a cancelled task says who cancelled it and why", async ({ page }) => {
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await page.getByRole("tab", { name: /^Tasks/ }).click();
+    // Its only part finished, the azima shows folded: opening it is the click.
     const azima = page.locator(".azima-card");
+    const heading = azima.locator(".azima-heading");
+    await expect(heading).toHaveAttribute("aria-expanded", "false");
+    await heading.click();
     const card = azima
       .locator(".wish-task")
       .filter({ hasText: "Dropped on the way" });
-    await expect(card.locator(".wish-task-closed")).toContainText(
-      /Cancelled by the lead, .+: superseded/,
-    );
+    // Its own muted badge, never the done one; who cancelled it and why on hover, compact, with no note under it.
+    const badge = card.locator(".status-badge");
+    await expect(badge).toHaveText("Cancelled");
+    await expect(badge).toHaveClass(/tone-cancelled/);
+    await expect(badge).toHaveAttribute("title", "By the lead: superseded");
+    await expect(card.locator(".wish-task-closed")).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
     try {
