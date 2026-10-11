@@ -1,7 +1,8 @@
-// An azima of the plan in the Tasks tab: a task no worker runs, with the work part of it under it. Its heading says
-// where it stands (open, in progress, awaiting its proof, done: the lamp's, Task.azima), what it waits for (its after
-// codes), and its progress. Opened, what its proof needs, box by box, then its parts, as the Tasks tab shows any task:
-// under work that still moves, the finished parts fold behind "show the N finished" (src/task-tabs.tsx).
+// An azima of the plan in the Tasks tab: a task no worker runs, with the work part of it under it. Its heading, one line,
+// says where it stands (open, in progress, awaiting its proof, done: the lamp's, Task.azima), what it still waits for,
+// and its progress; the rest is on hover. Opened, its description and what its proof needs, box by box, on the left,
+// its parts on the right, as the Tasks tab shows any task: under work that still moves, the finished parts fold behind
+// "show the N finished" (src/task-tabs.tsx).
 // An azima never waits for the person as work: its proof is no task.
 import { BadgeCheck, ChevronDown, ExternalLink } from "lucide-react";
 import {
@@ -275,6 +276,24 @@ export const AzimaCard = memo(function AzimaCard({
   };
 
   const hasActions = isOutOfSync || canPush || isPushed || Boolean(prText);
+  // The heading reads at a glance: its state, code, title, what it waits for, its bar. The rest is on hover: its
+  // branches and what comes before it on its title; its parts, counted by state, and its time on its bar; what its
+  // proof needs on its badge, and in the card opened.
+  const facts = [
+    azima.title,
+    isPerAzima && branch,
+    isPerAzima && baseBranch && t("azima.based_on", { branch: baseBranch }),
+    after.length > 0 && t("page.after", { tasks: after.join(", ") }),
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const progress = [
+    t("azima.progress", { done, count: total }),
+    t("azima.progress_parts", { done, running, waiting }),
+    time.text && [time.text, time.title].filter(Boolean).join(" · "),
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   return (
     <section
@@ -295,27 +314,9 @@ export const AzimaCard = memo(function AzimaCard({
             title={needs}
           />
           <span className="agent-code">{azima.code}</span>
-          <strong title={azima.title}>{azima.title}</strong>
+          <strong title={facts}>{azima.title}</strong>
           <span className="azima-meta">
             {origin}
-            {isPerAzima && branch && (
-              <span className="azima-branch" title={branch}>
-                {branch}
-              </span>
-            )}
-            {isPerAzima && baseBranch && (
-              <span
-                className="azima-base-branch"
-                title={t("azima.based_on", { branch: baseBranch })}
-              >
-                {t("azima.based_on", { branch: baseBranch })}
-              </span>
-            )}
-            {proof && (
-              <span className="azima-needs" title={needs}>
-                {proofWords(proofNeeds)}
-              </span>
-            )}
             {state !== AzimaState.DONE && waits.length > 0 && (
               <span
                 className="azima-waits"
@@ -324,18 +325,8 @@ export const AzimaCard = memo(function AzimaCard({
                 {t("azima.waits", { tasks: waits.join(", ") })}
               </span>
             )}
-            {state !== AzimaState.DONE &&
-              waits.length === 0 &&
-              after.length > 0 && (
-                <span className="azima-after">
-                  {t("page.after", { tasks: after.join(", ") })}
-                </span>
-              )}
             {total > 0 && (
-              <span
-                className="azima-progress"
-                title={t("azima.progress", { done, count: total })}
-              >
+              <span className="azima-progress" title={progress}>
                 <span className="azima-bar" aria-hidden="true">
                   <span
                     className="azima-bar-done"
@@ -349,19 +340,6 @@ export const AzimaCard = memo(function AzimaCard({
                 <span className="azima-progress-counts">
                   {done}/{total}
                 </span>
-              </span>
-            )}
-            {total > 0 && (
-              <span
-                className="azima-progress-parts"
-                title={t("azima.progress_parts", { done, running, waiting })}
-              >
-                {t("azima.progress_parts", { done, running, waiting })}
-              </span>
-            )}
-            {time.text && (
-              <span className="task-time" title={time.title}>
-                {time.text}
               </span>
             )}
           </span>
@@ -523,7 +501,16 @@ export function DraftAzimaCard({
       >
         <StatusBadge tone="later" label={t("azima.state_draft")} />
         <span className="agent-code">{azima.code}</span>
-        <strong title={azima.title}>{azima.title}</strong>
+        <strong
+          title={[
+            azima.title,
+            after.length > 0 && t("page.after", { tasks: after.join(", ") }),
+          ]
+            .filter(Boolean)
+            .join("\n")}
+        >
+          {azima.title}
+        </strong>
         <span className="azima-meta">
           {origin}
           {waits.length > 0 && (
@@ -532,11 +519,6 @@ export function DraftAzimaCard({
               title={t("page.after", { tasks: after.join(", ") })}
             >
               {t("azima.waits", { tasks: waits.join(", ") })}
-            </span>
-          )}
-          {waits.length === 0 && after.length > 0 && (
-            <span className="azima-after">
-              {t("page.after", { tasks: after.join(", ") })}
             </span>
           )}
         </span>

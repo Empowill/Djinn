@@ -1,6 +1,8 @@
 // The azimas of a wish in the window, against the real djinn up --browser (see global-setup.ts): in the Tasks tab, the
 // work part of an azima is grouped under it, each azima says what it waits for and its progress, and none is ever
-// said to wait for you. What is finished folds, the done azimas and the finished parts, until a click shows it. Every run makes fresh identifiers, so --repeat-each works on the same djinn.
+// said to wait for you. What is finished folds, the done azimas and the finished parts, until a click shows it. Opened,
+// an azima's Markdown description is on the left, its parts on the right; a narrow window stacks them. Every run makes
+// fresh identifiers, so --repeat-each works on the same djinn.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -68,6 +70,8 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
         task("T2", "The orchestrator", "PENDING", {
           ...azima,
           depends_on: [ids.T1],
+          description:
+            "Split the **orchestrator** in two:\n\n- the scheduler\n- the runner",
         }),
         task("T3", "Spread the work", "PENDING", {
           ...azima,
@@ -108,8 +112,56 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
     ]);
     const t2 = azimas.locator(".azima-card").first();
     await expect(t2.locator(".azima-heading")).toContainText("In progress");
+    // Its heading reads at a glance: what comes before it, its parts by state, on hover only.
     await expect(t2.locator(".azima-progress")).toHaveText("1/2");
-    await expect(t2.locator(".azima-after")).toHaveText("after T1");
+    await expect(t2.locator(".azima-progress")).toHaveAttribute(
+      "title",
+      "1 of 2 parts done\n1 done, 0 running, 1 waiting",
+    );
+    await expect(t2.locator(".azima-heading strong")).toHaveAttribute(
+      "title",
+      "The orchestrator\nafter T1",
+    );
+    await expect(t2.locator(".azima-heading")).not.toContainText("after T1");
+    await expect(t2.locator(".azima-heading")).not.toContainText("1 done");
+    // Opened: its description, Markdown rendered, on the left, at most 40% of the card; its parts on the right.
+    await expect(t2.locator(".azima-description strong")).toHaveText(
+      "orchestrator",
+    );
+    await expect(t2.locator(".azima-description li")).toHaveText([
+      "the scheduler",
+      "the runner",
+    ]);
+    // Measured at once: the page may scroll between two calls.
+    const columns = () =>
+      t2.locator(".azima-body").evaluate((body) => {
+        const rect = (selector: string) =>
+          body.querySelector(selector)!.getBoundingClientRect();
+        const [side, work] = [rect(".azima-side"), rect(".azima-parts")];
+        return {
+          width: body.getBoundingClientRect().width,
+          side: {
+            x: side.x,
+            y: side.y,
+            width: side.width,
+            bottom: side.bottom,
+          },
+          work: { x: work.x, y: work.y },
+        };
+      });
+    const wide = await columns();
+    expect(wide.side.x + wide.side.width).toBeLessThanOrEqual(wide.work.x);
+    expect(wide.side.width).toBeLessThanOrEqual(wide.width * 0.4 + 1);
+    expect(Math.abs(wide.side.y - wide.work.y)).toBeLessThan(2);
+    // A narrow window stacks them: the description, then the parts.
+    await page.setViewportSize({ width: 700, height: 1000 });
+    await expect
+      .poll(async () => {
+        const narrow = await columns();
+        return narrow.work.y >= narrow.side.bottom - 1;
+      })
+      .toBe(true);
+    await page.setViewportSize({ width: 1440, height: 1000 });
     // Opened on its work: what waits, what is done folded under it; a click shows it.
     await expect(t2.locator(".wish-task .agent-code")).toHaveText(["W2"]);
     await t2.locator(".fold-line").click();
@@ -139,6 +191,11 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
     await expect(t3.locator(".azima-parts")).toContainText(
       "No work is part of it yet.",
     );
+    // No description: its parts take the whole width.
+    await expect(t3.locator(".azima-side")).toHaveCount(0);
+    const t3Body = (await t3.locator(".azima-body").boundingBox())!;
+    const t3Parts = (await t3.locator(".azima-parts").boundingBox())!;
+    expect(t3Parts.width).toBeGreaterThan(t3Body.width * 0.9);
     await expect(page.locator(".tasks-finished")).toHaveCount(0);
     await expect(page.locator(".tone-waiting")).toHaveCount(0);
 

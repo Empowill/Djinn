@@ -611,11 +611,13 @@
   color: var(--muted);
   font: var(--font-size-body) var(--mono);
 }
+/* What it still waits for: one short chip. */
 .azima-waits {
   color: var(--text);
-}
-.azima-needs {
-  color: var(--st-proof);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  padding: 1px 6px;
+  white-space: nowrap;
 }
 .azima-progress {
   display: inline-flex;
@@ -625,7 +627,7 @@
 /* How much of its work is done: a thin bar, its numbers beside it. */
 .azima-bar {
   display: flex;
-  width: 48px;
+  width: 64px;
   height: 4px;
   border-radius: 2px;
   background: var(--line);
@@ -643,9 +645,6 @@
 }
 .azima-progress-counts {
   display: inline-block;
-}
-.azima-progress-parts {
-  color: var(--muted);
 }
 /* Opened: its description on the left, a measure that reads (about 60 characters, never more than 40% of the card), in
    sight while its parts scroll on the right, one per row, the width of their column. A narrow card stacks them. */
@@ -744,18 +743,6 @@
   display: flex;
   gap: var(--space-2);
   align-items: center;
-}
-.azima-branch {
-  color: var(--n-c4);
-  background: var(--n-20);
-  border: 1px solid var(--n-38);
-  border-radius: var(--radius-control);
-  padding: 1px 6px;
-  font-size: var(--font-size-body);
-}
-.azima-base-branch {
-  color: var(--n-8f);
-  font-size: var(--font-size-body);
 }
 .azima-sync-status {
   font-size: var(--font-size-body);

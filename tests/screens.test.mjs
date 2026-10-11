@@ -1955,7 +1955,9 @@ test("the Tasks tab groups work under its azima, which says what it waits for an
   assert.doesNotMatch(html, /tasks-finished/);
   assert.doesNotMatch(html, /Finished/);
   assert.match(html, /Waits for T2</);
-  assert.match(html, /after T1</);
+  // What comes before an azima that waits for nothing is on its title's hover, not in its heading.
+  assert.match(html, /<strong title="[^"]*\nafter T1">/);
+  assert.doesNotMatch(html, />after T1</);
   assert.match(html, /1\/3/);
   assert.match(html, /In progress/);
   // No azima is ever said to wait for you.
@@ -2999,10 +3001,8 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
     card,
     /<span class="status-badge tone-proof" title="Its work is done: to validate\n• The same scenario runs on macOS\. Needs a Mac\n[^"]*then validate it: it is done\.">.*<span>To validate<\/span>/,
   );
-  assert.match(
-    card,
-    /<span class="azima-needs" title="Its work is done: to validate\n• The same scenario runs on macOS\. Needs a Mac\n[^"]*">a Mac<\/span>/,
-  );
+  // What it needs is on its badge's hover and in the card opened, not in its heading.
+  assert.doesNotMatch(card, /azima-needs|>a Mac</);
   assert.doesNotMatch(card, /tone-waiting/);
 
   const transport = s.createRouterTransport(({ service }) => {
@@ -4611,20 +4611,23 @@ test("azimas are ordered in a stable 6-tier order and laid out in a single colum
     /<span class="status-badge tone-running">[\s\S]*?<span>In progress<\/span><\/span>/,
   );
 
-  // Progress: segmented bar, counts (1/3), parts detail (1 done, 1 running, 1 waiting)
+  // Progress: segmented bar and its counts (1/3); the parts by state and the time only on the bar's hover, never
+  // said twice in the heading.
   assert.match(t2CardHtml, /<span class="azima-bar-done" style="width:33\.33/);
   assert.match(
     t2CardHtml,
     /<span class="azima-bar-running" style="width:33\.33/,
   );
-  assert.match(t2CardHtml, /<span class="azima-progress-counts">1\/3<\/span>/);
   assert.match(
     t2CardHtml,
-    /<span class="azima-progress-parts"[^>]*>1 done, 1 running, 1 waiting<\/span>/,
+    /<span class="azima-progress" title="1 of 3 parts done\n1 done, 1 running, 1 waiting\n[^"]+ · Running since [^"]+">/i,
   );
-
-  // Time: azimaTime formats running duration
-  assert.match(t2CardHtml, /<span class="task-time"/);
+  assert.match(t2CardHtml, /<span class="azima-progress-counts">1\/3<\/span>/);
+  const t2Heading = t2CardHtml.match(
+    /<button[^>]*class="azima-heading"[^>]*>[\s\S]*?<\/button>/,
+  )[0];
+  assert.doesNotMatch(t2Heading, /azima-progress-parts|task-time/);
+  assert.doesNotMatch(t2Heading, />1 done, 1 running, 1 waiting</);
 
   // Parts one per row in .azima-parts, the whole width when the azima has no description.
   assert.match(
@@ -4717,7 +4720,7 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
       isPerAzima: false,
     }),
   );
-  assert.doesNotMatch(defaultCardHtml, /azima-branch/);
+  assert.doesNotMatch(defaultCardHtml, /T27-djinn-stays-fast/);
   assert.doesNotMatch(defaultCardHtml, /azima-actions/);
 
   // 5. AzimaCard in per-azima mode with branch, base branch, sync, push button, and PR
@@ -4752,15 +4755,12 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
     }),
   );
 
-  // Branch and base branch
+  // Branch and base branch: on its title's hover, not in its heading.
   assert.match(
     perAzimaHtml,
-    /<span class="azima-branch"[^>]*>djinn\/T27-djinn-stays-fast<\/span>/,
+    /<strong title="[^"]*\ndjinn\/T27-djinn-stays-fast\nbased on djinn\/T26-split-the-branch">/,
   );
-  assert.match(
-    perAzimaHtml,
-    /<span class="azima-base-branch"[^>]*>based on djinn\/T26-split-the-branch<\/span>/,
-  );
+  assert.doesNotMatch(perAzimaHtml, /azima-branch|azima-base-branch/);
 
   // Sync state and push button
   assert.match(
@@ -5400,7 +5400,10 @@ test("azima counters and states in the window are right before any azima is open
   assert.equal(s.azimaFinished(azima2), false);
   assert.match(cardInProgress, /class="azima-progress"/);
   assert.match(cardInProgress, /200\/250<\/span>/);
-  assert.match(cardInProgress, /title="200 done, 5 running, 45 waiting"/);
+  assert.match(
+    cardInProgress,
+    /class="azima-progress" title="200 of 250 parts done\n200 done, 5 running, 45 waiting"/,
+  );
   assert.match(cardInProgress, /status-badge tone-running/);
 
   // A1 is done with 180/180 parts done, parts: []
