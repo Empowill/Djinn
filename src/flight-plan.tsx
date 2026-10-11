@@ -253,6 +253,21 @@ export function FlightPlan({
     [details],
   );
 
+  const handleTurnComments = useCallback(
+    (task: Task) =>
+      act(
+        task.wishId,
+        () =>
+          clients.tasks.turnComments({
+            taskId: task.id,
+            by: Closer.DEVELOPER,
+          }),
+        [Change.TASK],
+        t("task.turn_comments_done", { task: task.code }),
+      ),
+    [act, clients.tasks],
+  );
+
   const renderTask = useCallback(
     function row(item: Task): ReactNode {
       const wish = wishById.get(item.wishId);
@@ -275,6 +290,7 @@ export function FlightPlan({
           nested={merges?.map(row)}
           mergeOpen={nest.host.get(focus) === item.id}
           alsoMerged={nest.links.get(item.id)}
+          onTurnComments={handleTurnComments}
         />
       );
     },
@@ -290,6 +306,7 @@ export function FlightPlan({
       pausable,
       handleHold,
       handleDone,
+      handleTurnComments,
     ],
   );
 

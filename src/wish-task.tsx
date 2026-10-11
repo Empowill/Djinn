@@ -187,6 +187,7 @@ export const WishTask = memo(function WishTask({
   nested,
   mergeOpen = false,
   alsoMerged,
+  onTurnComments,
 }: {
   task: Task;
   project?: Project;
@@ -214,6 +215,8 @@ export const WishTask = memo(function WishTask({
   mergeOpen?: boolean;
   // The merges that bring this work in too but show under another task: a link to that task each.
   alsoMerged?: readonly { merge: Task; host: Task }[];
+  // Turns the comments on its diff that went to no worker into work; none where it cannot be done from here.
+  onTurnComments?: (task: Task) => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(focused);
   const [closing, setClosing] = useState(false);
@@ -432,6 +435,7 @@ export const WishTask = memo(function WishTask({
           task={task}
           forkOf={codes?.get(task.forkOf ?? "") ?? ""}
           prompt={prompt}
+          onTurnComments={onTurnComments}
         />
       )}
       {open && task.status === TaskStatus.RUNNING && !watcher && (
@@ -645,10 +649,12 @@ function TaskBody({
   task,
   forkOf,
   prompt,
+  onTurnComments,
 }: {
   task: Task;
   forkOf: string;
   prompt: string;
+  onTurnComments?: (task: Task) => Promise<unknown>;
 }) {
   const [showLogs, setShowLogs] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
@@ -730,6 +736,9 @@ function TaskBody({
           </div>
         )}
       </details>
+      {onTurnComments && commentsWaiting(task) && (
+        <TurnCommentsButton task={task} onTurn={onTurnComments} />
+      )}
       <details className="wish-task-diff-fold" open={showDiff}>
         <summary
           className="button secondary small wish-task-diff-button"
@@ -744,6 +753,40 @@ function TaskBody({
         {showDiff && <TaskDiffView task={task} />}
       </details>
     </div>
+  );
+}
+
+// commentsWaiting tells whether an ended task has comments on its diff that went to no worker and are not resolved:
+// TaskService.TurnComments takes them. A cancelled task's work is dropped, comments with it.
+function commentsWaiting(task: Task): boolean {
+  const ended =
+    task.status === TaskStatus.DONE ||
+    task.status === TaskStatus.FAILED ||
+    task.status === TaskStatus.STOPPED ||
+    task.status === TaskStatus.INTERRUPTED;
+  return ended && (task.comments ?? []).some((c) => !c.resolved && !c.sentTo);
+}
+
+export function TurnCommentsButton({
+  task,
+  onTurn,
+}: {
+  task: Task;
+  onTurn: (task: Task) => Promise<unknown>;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      className="button secondary small wish-task-turn-comments-button"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        onTurn(task).finally(() => setBusy(false));
+      }}
+    >
+      {t("task.turn_comments")}
+    </button>
   );
 }
 
