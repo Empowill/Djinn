@@ -58,7 +58,6 @@ import {
   codeMapOf,
   forkedAs,
   investigatingQuestions,
-  isAzima,
   movingTasks,
   openQuestions,
   spent,
@@ -68,6 +67,7 @@ import {
   azimasDone,
   draftAzimas,
   workCount,
+  workDoneCount,
 } from "./data/flight";
 import {
   allowanceOf,
@@ -189,9 +189,7 @@ export function WishView({
     decisionItems.length,
   ]);
   const { running, watching } = runningOf(detail.tasks);
-  const done = detail.tasks.filter(
-    (task) => task.status === TaskStatus.DONE && !isAzima(task),
-  ).length;
+  const done = workDoneCount(detail.tasks);
   // The azimas' progress, then the work's: the azimas are not counted as tasks.
   const azimaProgress = azimasDone(detail.tasks);
   const work = workCount(detail.tasks);
@@ -224,11 +222,11 @@ export function WishView({
   // The done azimas fold, apart (src/task-tabs.tsx); a link to one, or to one of its parts, shows them.
   const azimas = useMemo(() => azimaGroups(detail.tasks), [detail.tasks]);
   const activeAzimas = useMemo(
-    () => azimas.filter((x) => !azimaFinished(x.azima, x.parts)),
+    () => azimas.filter((x) => !azimaFinished(x.azima)),
     [azimas],
   );
   const doneAzimas = useMemo(
-    () => azimas.filter((x) => azimaFinished(x.azima, x.parts)),
+    () => azimas.filter((x) => azimaFinished(x.azima)),
     [azimas],
   );
   const showDone = useMemo(

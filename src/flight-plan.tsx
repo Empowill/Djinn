@@ -283,11 +283,11 @@ export function FlightPlan({
   );
 
   const activeAzimas = useMemo(
-    () => plan.azimas.filter((x) => !azimaFinished(x.item.azima, x.item.parts)),
+    () => plan.azimas.filter((x) => !azimaFinished(x.item.azima)),
     [plan.azimas],
   );
   const doneAzimas = useMemo(
-    () => plan.azimas.filter((x) => azimaFinished(x.item.azima, x.item.parts)),
+    () => plan.azimas.filter((x) => azimaFinished(x.item.azima)),
     [plan.azimas],
   );
   const showDone = useMemo(

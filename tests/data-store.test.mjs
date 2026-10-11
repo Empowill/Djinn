@@ -20,12 +20,15 @@ const {
   AzimaState,
   azimaGroups,
   loose,
+  azimasDone,
+  workCount,
+  workDoneCount,
 } = await bundle(
   "store",
   `export { createStore } from "@/src/data/store.ts";
 export { createClients } from "@/src/data/client.ts";
 export { createRouterTransport } from "@connectrpc/connect";
-export { azimaGroups, loose } from "@/src/data/flight.ts";
+export { azimaGroups, loose, azimasDone, workCount, workDoneCount } from "@/src/data/flight.ts";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 
@@ -966,6 +969,78 @@ test("window throttles task re-reads during rapid changes and never enters a tig
     reads.tasks <= 4,
     `expected throttled task reads <= 4, got ${reads.tasks}`,
   );
+
+  stop();
+});
+
+test("a wish with more tasks than one page has right azima counters before any azima is opened", async () => {
+  const data = sample();
+  // 430 tasks total: 2 azimas with server counts, only page 1 (50 tasks) loaded first
+  const azima1 = {
+    id: "az-1",
+    wishId,
+    code: "T1",
+    title: "Orchestrator",
+    kind: TaskKind.AZIMA,
+    status: TaskStatus.RUNNING,
+    azima: {
+      state: AzimaState.IN_PROGRESS,
+      ready: true,
+      parts: 250,
+      partsDone: 200,
+      partsRunning: 2,
+    },
+  };
+  const azima2 = {
+    id: "az-2",
+    wishId,
+    code: "T2",
+    title: "Groundwork",
+    kind: TaskKind.AZIMA,
+    status: TaskStatus.DONE,
+    azima: {
+      state: AzimaState.DONE,
+      ready: true,
+      parts: 180,
+      partsDone: 180,
+      partsRunning: 0,
+    },
+  };
+  // Page 1 tasks: azima1, azima2, and 48 parts of azima1
+  const page1Tasks = [azima1, azima2];
+  for (let i = 1; i <= 48; i++) {
+    page1Tasks.push({
+      id: `task-part-${i}`,
+      wishId,
+      code: `T${i + 2}`,
+      title: `Part ${i}`,
+      kind: TaskKind.WORKER,
+      partOf: "az-1",
+      status: i <= 20 ? TaskStatus.DONE : TaskStatus.PENDING,
+    });
+  }
+
+  data.tasks = page1Tasks;
+  data.tasksTotal = 430;
+  data.tasksNextToken = "token-page-2";
+
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wishId);
+  await until(store, (s) => s.details[wishId]?.loaded);
+
+  const detail = store.getState().details[wishId];
+  assert.equal(detail.tasks.length, 50);
+  assert.equal(detail.tasksNextToken, "token-page-2");
+
+  // Before any azima is opened, counters use server Task.azima fields:
+  assert.deepEqual(azimasDone(detail.tasks), { done: 1, proof: 0, count: 2 });
+  assert.equal(workCount(detail.tasks), 430);
+  assert.equal(workDoneCount(detail.tasks), 380);
 
   stop();
 });

@@ -548,12 +548,12 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
   ];
   assert.deepEqual(f.azimasDone(runningAzima), { done: 0, proof: 0, count: 1 });
 
-  // An azima whose task merges or whose merge failed is not done.
+  // An azima whose task merges or whose merge failed is in progress (computed by the server).
   const mergingAzimas = [
     {
       id: "a1",
       kind: f.TaskKind.AZIMA,
-      azima: { state: f.AzimaState.DONE },
+      azima: { state: f.AzimaState.IN_PROGRESS },
     },
     {
       id: "w3",
@@ -564,7 +564,7 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
     {
       id: "a2",
       kind: f.TaskKind.AZIMA,
-      azima: { state: f.AzimaState.DONE },
+      azima: { state: f.AzimaState.IN_PROGRESS },
     },
     {
       id: "w4",
@@ -586,7 +586,7 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
     {
       id: "a4",
       kind: f.TaskKind.AZIMA,
-      azima: { state: f.AzimaState.AWAITING_PROOF },
+      azima: { state: f.AzimaState.IN_PROGRESS },
     },
     {
       id: "w6",
@@ -600,6 +600,50 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
     proof: 0,
     count: 4,
   });
+
+  // Azima counters use server Task.azima fields, right before any azima is opened (e.g. paginated wish >50 tasks).
+  const paginatedWishTasks = [
+    {
+      id: "az1",
+      kind: f.TaskKind.AZIMA,
+      azima: {
+        state: f.AzimaState.IN_PROGRESS,
+        parts: 200,
+        partsDone: 150,
+        partsRunning: 2,
+      },
+    },
+    {
+      id: "az2",
+      kind: f.TaskKind.AZIMA,
+      azima: {
+        state: f.AzimaState.DONE,
+        parts: 100,
+        partsDone: 100,
+        partsRunning: 0,
+      },
+    },
+    {
+      id: "az3",
+      kind: f.TaskKind.AZIMA,
+      azima: {
+        state: f.AzimaState.AWAITING_PROOF,
+        parts: 130,
+        partsDone: 130,
+        partsRunning: 0,
+      },
+    },
+    // Only a small page of parts is loaded into the store (e.g. page 1 of 50 tasks)
+    { id: "p1", status: S.DONE, partOf: "az1" },
+    { id: "p2", status: S.RUNNING, partOf: "az1" },
+  ];
+  assert.deepEqual(f.azimasDone(paginatedWishTasks), {
+    done: 1,
+    proof: 1,
+    count: 3,
+  });
+  assert.equal(f.workCount(paginatedWishTasks), 430);
+  assert.equal(f.workDoneCount(paginatedWishTasks), 380);
 });
 
 test("open questions come blocking, then your move, then before X, then can wait, across the wishes", () => {
