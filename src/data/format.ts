@@ -9,6 +9,7 @@ import {
   Allowance,
   AzimaState,
   Choice,
+  IntegrationState,
   type KeptWorktree,
   type Mark,
   MarkKind,
@@ -306,7 +307,8 @@ const taskStatusKeys: Record<TaskStatus, TextKey> = {
 // taskStatusText names where a task stands: a task Djinn resumes once its provider's limit resets waits for the
 // limit; one cut short and resumed as another task (forkedAs) says which; a running watcher watches.
 export function taskStatusText(
-  task: Pick<Task, "status" | "resumeAfter"> & Partial<Pick<Task, "provider">>,
+  task: Pick<Task, "status" | "resumeAfter"> &
+    Partial<Pick<Task, "provider" | "integration">>,
   forkedAs = "",
 ): string {
   if (watcherRuns(task)) return t("task.status_watching");
@@ -314,6 +316,20 @@ export function taskStatusText(
     return t("task.status_limit");
   if (task.status === TaskStatus.INTERRUPTED && forkedAs)
     return t("task.status_forked", { task: forkedAs });
+  if (task.status === TaskStatus.DONE) {
+    switch (task.integration?.state) {
+      case IntegrationState.PENDING:
+      case IntegrationState.INTEGRATING:
+        return t("task.status_merging");
+      case IntegrationState.CONFLICT:
+      case IntegrationState.RED:
+        return t("task.status_merge_failed");
+      case IntegrationState.UNCOMMITTED:
+        return t("task.status_to_review");
+      default:
+        return t("task.status_done");
+    }
+  }
   return t(taskStatusKeys[task.status]);
 }
 
@@ -339,7 +355,8 @@ export type Tone =
 // reset holds still, as a paused one; one cut short and resumed as another task (forkedAs) is stopped, no alarm.
 // None of them is the person's move. A running watcher has its own tone: it sleeps until its command prints.
 export function taskTone(
-  task: Pick<Task, "status" | "resumeAfter"> & Partial<Pick<Task, "provider">>,
+  task: Pick<Task, "status" | "resumeAfter"> &
+    Partial<Pick<Task, "provider" | "integration">>,
   forkedAs = "",
 ): Tone {
   const status = task.status;
@@ -351,7 +368,18 @@ export function taskTone(
     case TaskStatus.RESUMING:
       return "running";
     case TaskStatus.DONE:
-      return "done";
+      switch (task.integration?.state) {
+        case IntegrationState.PENDING:
+        case IntegrationState.INTEGRATING:
+          return "running";
+        case IntegrationState.CONFLICT:
+        case IntegrationState.RED:
+          return "failed";
+        case IntegrationState.UNCOMMITTED:
+          return "waiting";
+        default:
+          return "done";
+      }
     case TaskStatus.FAILED:
       return "failed";
     case TaskStatus.INTERRUPTED:

@@ -850,7 +850,7 @@ func TestWorkStands(t *testing.T) {
 	}}
 	html := page(t, Input{Export: exp, Language: "en"})
 	for code, want := range map[string]string{
-		"W2": `<p class="work pause">Done, waiting to be committed</p>`,
+		"W2": `<p class="work pause">Waiting to be committed</p>`,
 		"W3": `<p class="work ok">Committed into feat/x as 1a2b3c4d</p>`,
 		"W4": `<p class="work fail">Conflict, not committed: W4 conflicts with feat/x in a.go, corrected by W9</p>`,
 		"W5": `<p class="work fail">Red tests, not committed: test exited 1</p>`,
@@ -859,6 +859,19 @@ func TestWorkStands(t *testing.T) {
 	} {
 		if row := between(html, `<tr id="t-`+code+`">`, "</tr>"); !strings.Contains(row, want) {
 			t.Errorf("%s's row lacks %s:\n%s", code, want, row)
+		}
+	}
+	for code, wantStatus := range map[string]string{
+		"W1": `<span class="st ok"><i aria-hidden="true">✓</i>Done</span>`,
+		"W2": `<span class="st run"><i aria-hidden="true"></i>Merging</span>`,
+		"W3": `<span class="st ok"><i aria-hidden="true">✓</i>Done</span>`,
+		"W4": `<span class="st fail"><i aria-hidden="true">✕</i>Merge failed</span>`,
+		"W5": `<span class="st fail"><i aria-hidden="true">✕</i>Merge failed</span>`,
+		"W6": `<span class="st run"><i aria-hidden="true"></i>Merging</span>`,
+		"W7": `<span class="st wait"><i aria-hidden="true">?</i>To review</span>`,
+	} {
+		if row := between(html, `<tr id="t-`+code+`">`, "</tr>"); !strings.Contains(row, wantStatus) {
+			t.Errorf("%s's row lacks status %s:\n%s", code, wantStatus, row)
 		}
 	}
 	if row := between(html, `<tr id="t-W1">`, "</tr>"); strings.Contains(row, `class="work`) {

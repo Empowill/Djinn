@@ -21,7 +21,13 @@ import {
   TaskStatus,
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
-import { compareCodes, finishedTask, isAzima } from "./data/flight";
+import {
+  compareCodes,
+  finishedTask,
+  isAzima,
+  isTaskMerging,
+  isTaskMergingOrFailed,
+} from "./data/flight";
 import {
   azimaBranchName,
   azimaTime,
@@ -37,23 +43,43 @@ import { Fold } from "./task-tabs";
 // azimaTone and azimaLabel say where an azima stands: done in green, under way in blue while a worker runs on one of
 // its parts, its work done and its proof awaited in olive, planned grey otherwise. Never orange: an azima waits for no
 // one's answer.
-function azimaState(azima: Task): AzimaState {
+function azimaState(azima: Task, parts?: readonly Task[]): AzimaState {
   if (azima.draft || azima.azima?.state === AzimaState.DRAFT)
     return AzimaState.DRAFT;
-  return azima.azima?.state ?? AzimaState.OPEN;
+  const state = azima.azima?.state ?? AzimaState.OPEN;
+  if (
+    (state === AzimaState.DONE || state === AzimaState.AWAITING_PROOF) &&
+    parts?.some((p) =>
+      isAzima(p) ? !azimaFinished(p) : isTaskMergingOrFailed(p),
+    )
+  ) {
+    return AzimaState.IN_PROGRESS;
+  }
+  return state;
 }
 
 // azimaFinished tells a done azima: the Tasks tab folds it.
-export function azimaFinished(azima: Task): boolean {
-  return azimaState(azima) === AzimaState.DONE;
+export function azimaFinished(azima: Task, parts?: readonly Task[]): boolean {
+  return azimaState(azima, parts) === AzimaState.DONE;
 }
 
-function azimaTone(azima: Task): Tone {
-  switch (azimaState(azima)) {
+function azimaTone(azima: Task, parts?: readonly Task[]): Tone {
+  const state = azimaState(azima, parts);
+  switch (state) {
     case AzimaState.DONE:
       return "done";
-    case AzimaState.IN_PROGRESS:
-      return azima.azima?.partsRunning ? "running" : "planned";
+    case AzimaState.IN_PROGRESS: {
+      const running =
+        (azima.azima?.partsRunning ?? 0) > 0 ||
+        (parts?.some(
+          (p) =>
+            p.status === TaskStatus.RUNNING ||
+            p.status === TaskStatus.RESUMING ||
+            isTaskMerging(p),
+        ) ??
+          false);
+      return running ? "running" : "planned";
+    }
     case AzimaState.AWAITING_PROOF:
       return "proof";
     case AzimaState.DRAFT:
@@ -137,7 +163,7 @@ export const AzimaCard = memo(function AzimaCard({
   onValidate?: (azima: Task) => void;
 }) {
   const [pushing, setPushing] = useState(false);
-  const state = azimaState(azima);
+  const state = azimaState(azima, parts);
   const holds = focus === azima.id || parts.some((x) => x.id === focus);
   const [open, setOpen] = useState(
     holds || (state !== AzimaState.DONE && parts.some((x) => !finishedTask(x))),
@@ -161,11 +187,14 @@ export const AzimaCard = memo(function AzimaCard({
     .sort(compareCodes);
   const done = parts.filter((x) =>
     isAzima(x)
-      ? x.azima?.state === AzimaState.DONE
-      : x.status === TaskStatus.DONE,
+      ? azimaFinished(x)
+      : x.status === TaskStatus.DONE && !isTaskMergingOrFailed(x),
   ).length;
   const running = parts.filter(
-    (x) => x.status === TaskStatus.RUNNING || x.status === TaskStatus.RESUMING,
+    (x) =>
+      x.status === TaskStatus.RUNNING ||
+      x.status === TaskStatus.RESUMING ||
+      isTaskMerging(x),
   ).length;
   const waiting = Math.max(0, parts.length - done - running);
   const isRunning =
@@ -229,7 +258,7 @@ export const AzimaCard = memo(function AzimaCard({
 
   return (
     <section
-      className={`azima-card tone-${azimaTone(azima)} ${open ? "open" : ""}`}
+      className={`azima-card tone-${azimaTone(azima, parts)} ${open ? "open" : ""}`}
       id={`task-${azima.id}`}
       aria-label={`${azima.code} ${azima.title}`}
     >
@@ -241,7 +270,7 @@ export const AzimaCard = memo(function AzimaCard({
           aria-expanded={open}
         >
           <StatusBadge
-            tone={azimaTone(azima)}
+            tone={azimaTone(azima, parts)}
             label={t(labels[state])}
             title={needs}
           />

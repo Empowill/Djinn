@@ -3,6 +3,7 @@
 // wish sorts the same way); what the lamp decides (a wish's rank, whether it is ready) comes from the lamp.
 import {
   AzimaState,
+  IntegrationState,
   type ProofNeed,
   Prover,
   Provider,
@@ -124,6 +125,41 @@ function loose(tasks: readonly Task[]): Task[] {
   return tasks.filter((x) => !isAzima(x) && !azimas.has(x.partOf));
 }
 
+// isTaskMerging tells whether a done task's work is currently merging.
+export function isTaskMerging(task: Task): boolean {
+  if (task.status !== TaskStatus.DONE) return false;
+  const s = task.integration?.state;
+  return s === IntegrationState.PENDING || s === IntegrationState.INTEGRATING;
+}
+
+// isTaskMergingOrFailed tells whether a done task's work is merging or failed to merge.
+export function isTaskMergingOrFailed(task: Task): boolean {
+  if (task.status !== TaskStatus.DONE) return false;
+  const s = task.integration?.state;
+  return (
+    s === IntegrationState.PENDING ||
+    s === IntegrationState.INTEGRATING ||
+    s === IntegrationState.CONFLICT ||
+    s === IntegrationState.RED
+  );
+}
+
+// azimaHasMergingOrFailed tells whether any task part of the azima (recursively) is merging or merge-failed.
+export function azimaHasMergingOrFailed(
+  azimaId: string,
+  tasks: readonly Task[],
+): boolean {
+  const parts = tasks.filter((t) => t.partOf === azimaId);
+  for (const part of parts) {
+    if (isAzima(part)) {
+      if (azimaHasMergingOrFailed(part.id, tasks)) return true;
+    } else if (isTaskMergingOrFailed(part)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // azimasDone is how many azimas are done, how many await their proof (their work done), and how many there are:
 // their progress, as the work's is in tasks.
 export function azimasDone(tasks: readonly Task[]): {
@@ -132,9 +168,15 @@ export function azimasDone(tasks: readonly Task[]): {
   count: number;
 } {
   const azimas = tasks.filter((x) => isAzima(x) && !isDraftAzima(x));
-  const done = azimas.filter((x) => x.azima?.state === AzimaState.DONE).length;
+  const done = azimas.filter(
+    (x) =>
+      x.azima?.state === AzimaState.DONE &&
+      !azimaHasMergingOrFailed(x.id, tasks),
+  ).length;
   const proof = azimas.filter(
-    (x) => x.azima?.state === AzimaState.AWAITING_PROOF,
+    (x) =>
+      x.azima?.state === AzimaState.AWAITING_PROOF &&
+      !azimaHasMergingOrFailed(x.id, tasks),
   ).length;
   return { done, proof, count: azimas.length };
 }

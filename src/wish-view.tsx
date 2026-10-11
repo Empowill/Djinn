@@ -220,11 +220,11 @@ export function WishView({
   // The done azimas fold, apart (src/task-tabs.tsx); a link to one, or to one of its parts, shows them.
   const azimas = useMemo(() => azimaGroups(detail.tasks), [detail.tasks]);
   const activeAzimas = useMemo(
-    () => azimas.filter((x) => !azimaFinished(x.azima)),
+    () => azimas.filter((x) => !azimaFinished(x.azima, x.parts)),
     [azimas],
   );
   const doneAzimas = useMemo(
-    () => azimas.filter((x) => azimaFinished(x.azima)),
+    () => azimas.filter((x) => azimaFinished(x.azima, x.parts)),
     [azimas],
   );
   const showDone = useMemo(
