@@ -104,6 +104,7 @@ func TestCrossVet(t *testing.T) {
 	root := repoRoot(t)
 
 	t.Run("windows", func(t *testing.T) {
+		t.Parallel()
 		cmd := exec.CommandContext(t.Context(), "go", "vet", "-tags", "headless", "./cmd/djinn/...")
 		cmd.Dir = root
 		cmd.Env = append(os.Environ(), "GOOS=windows", "CGO_ENABLED=0")
@@ -114,6 +115,7 @@ func TestCrossVet(t *testing.T) {
 	})
 
 	t.Run("darwin", func(t *testing.T) {
+		t.Parallel()
 		cmd := exec.CommandContext(t.Context(), "go", "vet", "./cmd/djinn/...")
 		cmd.Dir = root
 		cmd.Env = append(os.Environ(), "GOOS=darwin", "CGO_ENABLED=0")
