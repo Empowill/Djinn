@@ -144,7 +144,8 @@ func briefRules(iq planv1.InstallQuestions) string {
 		"- **A request that comes back is a template.** A skill holds one under `metadata.djinn.wish` in its `SKILL.md` " +
 		"(`title`, `match`, `watch`, `restart`, `done_when`): a routed request it matches becomes a wish that follows the " +
 		"skill, its watcher started. When the developer asks for the same kind of work again, propose one. " +
-		"`djinn skill list` shows the templates, or why one cannot be used.\n\n" +
+		"`djinn skill list` shows the templates, or why one cannot be used.\n" +
+		"- **To try a command by hand, start a Djinn of your own with its own data folder; never create a wish, a question or a task in the person's Djinn to test.**\n\n" +
 		"## Commands\n\n" +
 		"`<wish>` is the wish's identifier, given above.\n\n" +
 		"- `djinn wish brief <wish>`: this brief, up to date.\n" +

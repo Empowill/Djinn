@@ -1335,6 +1335,10 @@ message Answer {
   string note = 2;
   // When the question was answered.
   google.protobuf.Timestamp create_time = 3;
+  // Who answered: the developer, the lead, or a worker (task_id).
+  Closer actor = 4;
+  // The task whose worker answered; empty when the developer or lead did.
+  string task_id = 5;
 }
 
 // The withdrawal of an open question: closed without an answer, not a decision.
@@ -1343,6 +1347,10 @@ message Withdrawal {
   string note = 1 [(buf.validate.field).string.max_len = 2000];
   // When the question was withdrawn.
   google.protobuf.Timestamp create_time = 2;
+  // Who withdrew: the developer, the lead, or a worker (task_id).
+  Closer actor = 3;
+  // The task whose worker withdrew; empty when the developer or lead did.
+  string task_id = 4;
 }
 
 // QuestionRef points to a question by its code or by its identifier.
@@ -1503,6 +1511,22 @@ message QuestionServiceAnswerRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
+  // The task whose worker answers; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead or
+  // the developer.
+  string task_id = 5 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
+  ];
+  // Who answers: CLOSER_DEVELOPER from the window or an external shell, CLOSER_LEAD from the lead's terminal (or
+  // DJINN_LEAD), CLOSER_UNSPECIFIED with task_id for a worker.
+  Closer by = 6 [(buf.validate.field).enum.defined_only = true];
+  // Wish of the lead whose terminal answers; by default $DJINN_LEAD, which Djinn sets in the lead's terminal.
+  string lead = 7 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_LEAD"
+  ];
 }
 
 message QuestionServiceAnswerResponse {
@@ -1568,6 +1592,21 @@ message QuestionServiceWithdrawRequest {
   string wish_id = 3 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
+  ];
+  // The task whose worker withdraws; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead or
+  // the developer.
+  string task_id = 4 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
+  ];
+  // Who withdraws; by default the lead (or a worker if task_id is set). The window and developer CLI say developer.
+  Closer by = 5 [(buf.validate.field).enum.defined_only = true];
+  // Wish of the lead whose terminal withdraws; by default $DJINN_LEAD, which Djinn sets in the lead's terminal.
+  string lead = 6 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_LEAD"
   ];
 }
 

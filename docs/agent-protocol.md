@@ -44,11 +44,15 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   its option's letter (`B: …`): the developer applies it in one click, "Rub the lamp". `--before "before the merge"`
   says what the answer is needed before; without it the question can wait. A question a waiting task needs is
   blocking whatever it says: the window, the page and the brief list blocking, then before X, then can wait.
+  `djinn question move <question> --wish <wish> [--follow]` moves an open question to another wish (retiring its code
+  in this wish, taking the next code in the other; `--follow` moves tasks naming this question as their decision along
+  with it). `djinn question withdraw <question> [--note "…"]` withdraws an open question without an answer.
 - **Moves only the developer can make.** Granting a right, pushing a tag, opening or merging a PR, starting a
   release, checking on a Mac or Windows, installing and restarting: the lead asks them through `djinn question ask`,
-  with the exact command in the question. In a project whose builds are installed after each push (such as Djinn itself,
-  or with `install_questions: when_needed`), ask the developer to install or restart only when necessary, and say why
-  in the question; never as routine.
+  with the exact command in the question. In a project with `install_questions: never` (such as Djinn itself), Djinn
+  never asks a question to install or restart (the window proposes each new build, to install or skip); with
+  `install_questions: when_needed`, ask the developer to install or restart only when necessary, and say why in the
+  question; never as routine.
 - **When Djinn misbehaves.** When Djinn misbehaves while the developer is away, the lead may stop the damage without
   touching code: redirect the wish's integration to another branch, stop workers, withdraw useless questions. The lead
   may also revert a faulty merge on the integration branch, telling the developer at once; every other commit on the
@@ -76,19 +80,32 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   the wish's lead, then Enter:
   `Djinn: Q43 answered B — "<option>". Note: "<note>". Turn it into tasks: you hold the plan's graph (djinn wish brief <wish>).`
   Answers Djinn settles itself (an edit question, a question on work that failed to integrate, a routed request, a
-  grant) say what Djinn did. The agent reads each line as a message, queued while it works. The line waits until the
-  developer has not typed in that terminal for three seconds, and lines go out in order. A lead that does not run is
-  reopened on its session first, as `djinn wish resume` does, without taking the window; only an active wish's.
-  An answer Djinn does not settle itself always goes to the wish's lead, or to the principal lead (W329); a wish without
-  a lead session keeps the answer in its brief's decisions (`internal/plan/tell.go`).
+  grant) say what Djinn did. Answers given by the lead itself are not echoed back. The agent reads each line as a message,
+  queued while it works; each line is typed with Enter and paced so consecutive lines are submitted cleanly and never
+  clump or remain in the prompt box. The line waits until the developer has not typed in that terminal for three seconds,
+  and lines go out in order. A lead that does not run is reopened on its session first, as `djinn wish resume` does,
+  without taking the window; only an active wish's.
+  When an answer arrives in a wish without a running lead, Djinn routes the answer to the principal lead's terminal
+  (the principal wish is explicitly set with `djinn wish principal <wish-id> --principal`, or defaults to the
+  lowest-rank active wish, rank 1), noting the wish's title and ID. If no lead runs at all across wishes, the question
+  is marked as waiting for a lead (`waiting_lead: true`), and the next lead to start or resume on any wish is told of
+  all waiting answers. The principal lead's brief lists open answers without a lead under `## Open answers without a lead`.
+  A wish without a lead session keeps the answer in its brief's decisions (`internal/plan/tell.go`).
 - **Tasks.** `djinn task spawn` starts a worker. A task that cannot start yet waits, and says why.
   `djinn task watch <task>` follows its events; `djinn task stop <task>` stops it.
+  `djinn task update <task-id>` (or `djinn task set-agent`) updates a task: only the given fields change.
+  Before starting (planned, waiting), any field may change; while running or paused, only its title;
+  once finished (done, failed, stopped, cut short), title, provider, model, prompt (for its next continue),
+  azima, and integration (`--integration none` clears it; refused while merging); never its dependencies once it ran.
   When writing a worker's prompt, ask for the commit checks and the targeted tests, never "run the whole test suite"; the push checks are Djinn's.
 - **The plan is a graph of azimas.** An azima (Arabic ʿazīma, the incantation that binds and commands a djinn) is a
   part of the plan, coded `T07`: a task of kind `AZIMA` that no worker runs, the scheduler never starts, and that never
   waits for the developer. `djinn plan sync <wish>` reads them from the projects' `plan/*.md` and writes each one's
-  `after:` line back from the store; `djinn task spawn <wish> --kind azima --title "…"` makes one. The lead plans work
-  as a graph, never as a line:
+  `after:` line back from the store; `djinn task spawn <wish> --kind azima --title "…"` makes one. An azima can also
+  be created as a draft (`DRAFT`), or opened into active work (`djinn task open <azima>`) which marks it open, ready
+  for parts to be spawned, and notifies the wish's lead. An azima (a draft, or an azima no worker runs with parts
+  that have not started) can be moved to another wish with `djinn task move <azima> --wish <wish>`.
+  The lead plans work as a graph, never as a line:
   - give each azima one clear goal, one sentence a user reads as a feature, a will of its own; when a task extends
     it, rephrase its goal (its plan file's **Goal** and its title, then `djinn plan sync`) rather than let it drift;
   - before adding tasks or azimas, an answer turned into tasks included, look for the azima they belong to: group
@@ -128,8 +145,10 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   in a discreet last tab, **For agents**, folded, with no mark. What the developer must see is a question.
 - **Who did it.** `djinn block put`, `djinn question ask` and `djinn question revise` take `--task-id`, by default
   `$DJINN_TASK_ID`, which Djinn sets for every worker (`(djinn.v1.env)` in the protos): a worker's decision block
-  reads "By W12" in the decision log, its revision "Revised by W12" on the page; the lead's, run without the
-  variable, stay the lead's.
+  reads "By W12" in the decision log, its revision "Revised by W12" on the page. Djinn marks the lead's terminal
+  with `$DJINN_LEAD` (its wish ID): `djinn question answer` and `djinn question withdraw` take `--lead` from it,
+  attributing them to the lead and not echoing them back; a plain shell has neither variable, attributing answers
+  to the developer so they reach the lead as a message.
 - **The page.** `djinn wish sync <wish>` renders the wish's page in Go and prints its file, kept up to date. The lead
   republishes that file as it is; it never writes the HTML.
 - **The developer's word.** `djinn wish grant <wish>` says a wish is done. Only the developer says it.
@@ -157,3 +176,8 @@ Djinn reads each worker's stream into the same task events, stored with the task
 
 The kinds are typed in `api/plan/v1/plan.proto` (`TaskEventKind`); their content stays free text. Tests never call
 a model: every provider case is a recorded stream, replayed through the real process path.
+
+The scheduler starts planned and resuming tasks in a strict 5-tier dispatch order (investigators and converters first,
+then corrections and reviews, resumed work tasks, work tasks unblocking others on the critical path, and other work tasks).
+When slots are full or memory is short, investigators preempt the lowest-priority work task: pausing it or interrupting
+it to resume later without spending a resume attempt. Details: [scheduler order and preemption](providers.md#the-schedulers-order-and-preemption).

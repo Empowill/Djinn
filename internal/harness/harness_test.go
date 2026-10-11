@@ -18,6 +18,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -91,7 +92,14 @@ func upWith(t *testing.T, home string, providers map[planv1.Provider]Provider, o
 	}
 	mux.Handle(Handler(h))
 	mux.Handle(PlanHandler(h))
-	srv := httptest.NewServer(mux)
+	var srvHandler http.Handler = mux
+	srvHandler = server.WorkerContext(srvHandler, func(ctx context.Context, peerPID int, token string) context.Context {
+		if caller := h.Caller(peerPID, token); caller != nil {
+			return plan.WithCaller(ctx, caller)
+		}
+		return ctx
+	})
+	srv := httptest.NewServer(srvHandler)
 	e.srv = srv
 	e.tasks = planv1connect.NewTaskServiceClient(srv.Client(), srv.URL)
 	e.project = planv1connect.NewProjectServiceClient(srv.Client(), srv.URL)

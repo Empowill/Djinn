@@ -14,9 +14,9 @@ import (
 // fastVoice shortens the delays of Say for a test.
 func fastVoice(t *testing.T, q, s, w time.Duration) {
 	t.Helper()
-	old := [...]time.Duration{quiet, settle, warmup, enter}
-	quiet, settle, warmup, enter = q, s, w, 20*time.Millisecond
-	t.Cleanup(func() { quiet, settle, warmup, enter = old[0], old[1], old[2], old[3] })
+	old := [...]time.Duration{quiet, settle, warmup, enter, afterEnter}
+	quiet, settle, warmup, enter, afterEnter = q, s, w, 20*time.Millisecond, 20*time.Millisecond
+	t.Cleanup(func() { quiet, settle, warmup, enter, afterEnter = old[0], old[1], old[2], old[3], old[4] })
 }
 
 // echoes is a program that says each line it reads, as the lead takes each line typed.
@@ -125,4 +125,39 @@ func TestSayRefuses(t *testing.T) {
 	if err := m.Say("lead-w1", "hello"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("program ended: %v, want ErrNotFound", err)
 	}
+}
+
+func TestSaySeveralLinesSubmittedMidOutput(t *testing.T) {
+	fastVoice(t, 100*time.Millisecond, 30*time.Millisecond, 2*time.Second)
+	m := NewManager(Config{})
+	// A program that outputs text mid-turn while reading lines.
+	prog := `printf 'ready\n'; (for i in 1 2 3 4 5; do printf 'output %s\n' "$i"; sleep 0.02; done) & while read -r l; do printf 'got[%s]\n' "$l"; [ "$l" = "fourth line" ] && exit 0; done`
+	term := sh(t, m, "lead-w1", "-c", prog)
+	output(t, term, 0, contains("ready"))
+
+	// Rapidly send several lines while output is happening.
+	lines := []string{"first line", "second line", "third line", "fourth line"}
+	for _, l := range lines {
+		if err := m.Say("lead-w1", l); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out := output(t, term, 0, contains("got[fourth line]"))
+	lastIdx := -1
+	for _, l := range lines {
+		idx := strings.Index(out, "got["+l+"]")
+		if idx < 0 {
+			t.Fatalf("missing submission for %q in output:\n%s", l, out)
+		}
+		if idx <= lastIdx {
+			t.Fatalf("line %q (idx %d) appeared out of order (previous %d) in output:\n%s", l, idx, lastIdx, out)
+		}
+		lastIdx = idx
+	}
+	if strings.Count(out, "got[") != len(lines) {
+		t.Fatalf("want exactly %d lines read, got:\n%s", len(lines), out)
+	}
+	term.Hangup()
+	end(t, term)
 }
