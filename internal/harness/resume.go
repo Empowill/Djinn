@@ -512,7 +512,7 @@ func (h *Harness) unblockDependencyFailed(ctx context.Context, dep string) error
 		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
 			errStr := t.GetError()
 			if strings.Contains(errStr, "ended failed") || strings.Contains(errStr, "is failed") ||
-				(strings.Contains(errStr, "dependency") && strings.Contains(errStr, "fail")) {
+				(strings.Contains(errStr, "dependency") && (strings.Contains(errStr, "fail") || strings.Contains(errStr, "stop"))) {
 				matches := dep == "" || strings.Contains(errStr, dep)
 				if !matches && dep != "" {
 					for _, d := range t.GetDependsOn() {

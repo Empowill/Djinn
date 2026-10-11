@@ -523,6 +523,16 @@ func build(in Input) (*view, error) {
 				ct.Closed += ": " + n
 			}
 		}
+		if c := t.GetCancelled(); c != nil {
+			key := "page.cancelled_by_lead"
+			if c.GetActor() == planv1.Closer_CLOSER_DEVELOPER {
+				key = "page.cancelled_by_you"
+			}
+			ct.Closed = tr(key)
+			if n := strings.TrimSpace(c.GetNote()); n != "" {
+				ct.Closed += ": " + n
+			}
+		}
 		ct.Status, ct.StatusClass = status(t.GetStatus(), tr)
 		forked := ""
 		switch t.GetStatus() {
@@ -583,7 +593,7 @@ func build(in Input) (*view, error) {
 		case planv1.TaskStatus_TASK_STATUS_PENDING:
 			v.Planned = append(v.Planned, ct)
 		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED,
-			planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			planv1.TaskStatus_TASK_STATUS_INTERRUPTED, planv1.TaskStatus_TASK_STATUS_CANCELLED:
 			// Cut short and not resumed: Djinn resumes every task it can by itself, so this one is history.
 			v.Finished = append(v.Finished, ct)
 		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_RESUMING:
@@ -607,14 +617,15 @@ func build(in Input) (*view, error) {
 		planv1.TaskStatus_TASK_STATUS_WAITING, planv1.TaskStatus_TASK_STATUS_FAILED,
 		planv1.TaskStatus_TASK_STATUS_INTERRUPTED, planv1.TaskStatus_TASK_STATUS_RUNNING,
 		planv1.TaskStatus_TASK_STATUS_RESUMING, planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_DONE,
-		planv1.TaskStatus_TASK_STATUS_STOPPED,
+		planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_CANCELLED,
 	} {
 		if n := byStatus[s]; n > 0 {
 			delete(byStatus, s)
 			label, class := status(s, tr)
 			href := "#tasks"
 			if s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_DONE ||
-				s == planv1.TaskStatus_TASK_STATUS_STOPPED || s == planv1.TaskStatus_TASK_STATUS_RESUMING {
+				s == planv1.TaskStatus_TASK_STATUS_STOPPED || s == planv1.TaskStatus_TASK_STATUS_RESUMING ||
+				s == planv1.TaskStatus_TASK_STATUS_CANCELLED {
 				href = "#running"
 			}
 			v.Counts = append(v.Counts, count{Class: class, Label: label, Href: href, Count: n})
@@ -1059,6 +1070,7 @@ func status(s planv1.TaskStatus, tr func(string, ...string) string) (string, str
 		planv1.TaskStatus_TASK_STATUS_WAITING:     {"page.status_waiting", "wait"},
 		planv1.TaskStatus_TASK_STATUS_PAUSED:      {"page.status_paused", "pause"},
 		planv1.TaskStatus_TASK_STATUS_RESUMING:    {"page.status_resuming", "run"},
+		planv1.TaskStatus_TASK_STATUS_CANCELLED:   {"page.status_cancelled", "stop"},
 	}
 	if k, ok := keys[s]; ok {
 		return tr(k[0]), k[1]

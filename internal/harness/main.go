@@ -157,24 +157,21 @@ func (h *Harness) correctionOver(c *planv1.Task) bool {
 		return true
 	}
 	switch c.GetStatus() {
-	case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED:
+	case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_CANCELLED:
 		return !h.running(c.GetId())
 	case planv1.TaskStatus_TASK_STATUS_DONE:
 		in := c.GetIntegration()
 		return in == nil || in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || in.GetQuestionId() != ""
 	}
-	if isCancelled(c) {
-		return !h.running(c.GetId())
-	}
 	return false
 }
 
-// isCancelled tells whether c is a cancelled task (W420 status).
+// isCancelled tells whether c is a cancelled task.
 func isCancelled(c *planv1.Task) bool {
 	if c == nil {
 		return false
 	}
-	return c.GetStatus() == 10 || c.GetStatus().String() == "TASK_STATUS_CANCELLED"
+	return c.GetStatus() == planv1.TaskStatus_TASK_STATUS_CANCELLED
 }
 
 // mergeMain merges main's commit mainSha, as shown names main, into branch at old, in the wish's integration

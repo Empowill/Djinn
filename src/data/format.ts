@@ -345,6 +345,7 @@ const taskStatusKeys: Record<TaskStatus, TextKey> = {
   [TaskStatus.WAITING]: "task.status_waiting",
   [TaskStatus.PAUSED]: "task.status_paused",
   [TaskStatus.RESUMING]: "task.status_resuming",
+  [TaskStatus.CANCELLED]: "task.status_cancelled",
 };
 
 // taskStatusText names where a task stands: a task Djinn resumes once its provider's limit resets waits for the

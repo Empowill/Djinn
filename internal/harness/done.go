@@ -32,6 +32,8 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 	switch s := task.GetStatus(); {
 	case s == planv1.TaskStatus_TASK_STATUS_DONE:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is done already", task.GetCode()))
+	case s == planv1.TaskStatus_TASK_STATUS_CANCELLED:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is cancelled already", task.GetCode()))
 	case running || s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED:
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
 			fmt.Errorf("task %s is %s: stop it first (djinn task stop)", task.GetCode(), short(s)))

@@ -51,17 +51,6 @@ func (s *Tasks) fillTasks(ctx context.Context, tasks []*planv1.Task) ([]*planv1.
 		return nil, plan.Status(err)
 	}
 	s.h.FillModels(ctx, filled)
-	s.h.mu.Lock()
-	for _, t := range filled {
-		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
-			if r := s.h.runs[t.GetId()]; r != nil && !r.lastActivity.IsZero() {
-				t.LastActivityTime = timestamppb.New(r.lastActivity)
-			} else if t.LastActivityTime == nil {
-				t.LastActivityTime = t.StartTime
-			}
-		}
-	}
-	s.h.mu.Unlock()
 	return filled, nil
 }
 
@@ -245,6 +234,16 @@ func (s *Tasks) Done(
 	return connect.NewResponse(&planv1.TaskServiceDoneResponse{Task: task}), nil
 }
 
+func (s *Tasks) Cancel(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceCancelRequest],
+) (*connect.Response[planv1.TaskServiceCancelResponse], error) {
+	task, err := s.h.Cancel(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceCancelResponse{Task: task}), nil
+}
+
 func (s *Tasks) Continue(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceContinueRequest],
 ) (*connect.Response[planv1.TaskServiceContinueResponse], error) {
@@ -322,6 +321,17 @@ func (h *Harness) Now() time.Time {
 // FillModels fills the forecast model on planned or waiting tasks whose model is empty,
 // and ensures watchers and azimas have no model.
 func (h *Harness) FillModels(ctx context.Context, tasks []*planv1.Task) {
+	h.mu.Lock()
+	for _, t := range tasks {
+		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
+			if r := h.runs[t.GetId()]; r != nil && !r.lastActivity.IsZero() {
+				t.LastActivityTime = timestamppb.New(r.lastActivity)
+			} else if t.LastActivityTime == nil {
+				t.LastActivityTime = t.StartTime
+			}
+		}
+	}
+	h.mu.Unlock()
 	for _, t := range tasks {
 		if watching(t) || t.GetProvider() == planv1.Provider_PROVIDER_WATCH || t.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA || t.GetAzima() != nil {
 			t.Model = ""

@@ -616,6 +616,8 @@ enum TaskStatus {
   // its provider's usage limit stopped it. The scheduler starts it again like a planned task, first, once
   // Task.resume_after has passed. Not the person's move.
   TASK_STATUS_RESUMING = 9;
+  // Cancelled: its worker was stopped, its worktree removed, and its work discarded.
+  TASK_STATUS_CANCELLED = 10;
 }
 
 // TaskAccess says where the rights of a task's worker come from (docs/providers.md, "What a worker may do").
@@ -845,6 +847,8 @@ message Task {
   google.protobuf.Duration waiting_before_start = 60;
   // When the worker last produced an event (output, tool call, status).
   google.protobuf.Timestamp last_activity_time = 61;
+  // Who cancelled the task, when and why (TaskService.Cancel). Empty for a task that was not cancelled.
+  Cancellation cancelled = 62;
 }
 
 // TaskRun is a single run of a task's worker.
@@ -1096,7 +1100,17 @@ message Closure {
   string continued_in = 4;
 }
 
-// Closer says who marked a task done by hand, or continued it.
+// Cancellation records a task cancelled: its worker was stopped, its worktree removed, and its work discarded.
+message Cancellation {
+  // Who cancelled it.
+  Closer actor = 1;
+  // When.
+  google.protobuf.Timestamp create_time = 2;
+  // Why, in a few words; may be empty.
+  string note = 3;
+}
+
+// Closer says who marked a task done by hand, continued it, or cancelled it.
 enum Closer {
   // Not set.
   CLOSER_UNSPECIFIED = 0;
@@ -3081,6 +3095,13 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Cancel a task: stops its worker if it runs or is paused, records who cancelled it, when and why, removes its
+  // worktree while keeping the branch, and drops its work from integration. Refused on a task done or cancelled
+  // already, and on an azima.
+  rpc Cancel(TaskServiceCancelRequest) returns (TaskServiceCancelResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own
   // session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task.
   // Refused while it runs, when its worktree is gone, or when its agent cannot resume a session. To start another
@@ -3584,6 +3605,23 @@ message TaskServiceDoneRequest {
 
 message TaskServiceDoneResponse {
   // The task, done.
+  Task task = 1;
+}
+
+message TaskServiceCancelRequest {
+  // The task.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Why it was cancelled, in a few words.
+  string note = 2 [(buf.validate.field).string.max_len = 2000];
+  // Who cancelled it; by default the lead. The window says developer.
+  Closer by = 3 [(buf.validate.field).enum.defined_only = true];
+}
+
+message TaskServiceCancelResponse {
+  // The task, cancelled.
   Task task = 1;
 }
 

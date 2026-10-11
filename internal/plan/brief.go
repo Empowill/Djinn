@@ -379,7 +379,7 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool, openAnswers ...
 		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
 			running = append(running, t)
 		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED,
-			planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			planv1.TaskStatus_TASK_STATUS_INTERRUPTED, planv1.TaskStatus_TASK_STATUS_CANCELLED:
 			// Cut short and not resumed by Djinn, which resumes every task it can: history.
 			done = append(done, t)
 		default:
@@ -433,6 +433,12 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool, openAnswers ...
 			fmt.Fprintf(&b, "- **%s** %s: %s", t.GetCode(), clipLine(t.GetTitle()), word)
 			if c := t.GetClosed(); c != nil {
 				b.WriteString(", closed by the " + CloserWord(c.GetActor()))
+				if n := clipLine(c.GetNote()); n != "" {
+					b.WriteString(": " + n)
+				}
+			}
+			if c := t.GetCancelled(); c != nil {
+				b.WriteString(", by the " + CloserWord(c.GetActor()))
 				if n := clipLine(c.GetNote()); n != "" {
 					b.WriteString(": " + n)
 				}
@@ -691,7 +697,7 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 				if IsAzima(dep) {
 					depDone = dep.GetAzima().GetState() == planv1.AzimaState_AZIMA_STATE_DONE
 				} else {
-					depDone = dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !taskMergingOrFailed(dep)
+					depDone = (dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !taskMergingOrFailed(dep)) || dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_CANCELLED
 				}
 			}
 			if !depDone {
