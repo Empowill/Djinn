@@ -11,6 +11,7 @@ import { when } from "./data/format";
 import { isLog } from "./data/journal";
 import { t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
+import { SafeSvg } from "./safe-svg";
 
 // agentBlocks are the blocks of the For agents tab: neither a decision nor a log.
 export function agentBlocks(blocks: readonly Block[]): Block[] {
@@ -53,6 +54,7 @@ const AgentBlock = memo(function AgentBlock({
 }) {
   const [open, setOpen] = useState(false);
   const markdown = !block.mediaType || block.mediaType === "text/markdown";
+  const svg = block.mediaType === "image/svg+xml";
   return (
     <article className="wish-block agent-block" id={`block-${block.id}`}>
       <button
@@ -72,6 +74,8 @@ const AgentBlock = memo(function AgentBlock({
         <div className="wish-block-body prose">
           {markdown ? (
             <MarkdownBody text={block.content} />
+          ) : svg ? (
+            <SafeSvg source={block.content} />
           ) : (
             <pre className="wish-block-raw">{block.content}</pre>
           )}

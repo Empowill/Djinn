@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import { useDjinn } from "./data/djinn";
 import { isDjinnLink, openDjinnLink } from "./data/links";
 import { MermaidDiagram } from "./mermaid-diagram";
+import { SafeSvg } from "./safe-svg";
 import "./agent-chat.css";
 import { t } from "./i18n";
 function MarkdownCode({ children }: { children?: ReactNode }) {
@@ -20,6 +21,8 @@ function MarkdownCode({ children }: { children?: ReactNode }) {
   const text = String(code?.props.children || "").replace(/\n$/, "");
   if (code?.props.className === "language-mermaid")
     return <MermaidDiagram source={text} />;
+  if (code?.props.className === "language-svg")
+    return <SafeSvg source={text} />;
   return (
     <div className="ac-code">
       <div className="ac-code-heading">

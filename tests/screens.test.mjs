@@ -72,6 +72,7 @@ export {
 export { TilasmList } from "@/src/tilasms.tsx";
 export { AgentBlocks } from "@/src/agent-blocks.tsx";
 export { MarkdownBody } from "@/src/markdown-body.tsx";
+export { SafeSvg, sanitizeSvg } from "@/src/safe-svg.tsx";
 export { openDjinnLink, parseDjinnLink } from "@/src/data/links.ts";
 export { ConnectError, Code } from "@connectrpc/connect";
 export { readDrop } from "@/src/data/tilasms.ts";
@@ -2679,6 +2680,42 @@ test("a djinn:// link in Markdown stays a link that opens what it names in place
   assert.match(view, /id="view-tab-tilasms" aria-selected="true"/);
   assert.match(view, new RegExp(`<iframe[^>]*src="/tilasm/${id}/"`));
   assert.match(view, /<section class="tilasm-view" aria-label="Model">/);
+});
+
+test("a fenced svg or standalone svg block renders safely in Markdown and AgentBlocks", () => {
+  // 1. MarkdownBody with fenced ```svg
+  const mdHtml = s.renderToStaticMarkup(
+    h(s.MarkdownBody, {
+      text: 'Diagram:\n\n```svg\n<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" /><script>alert(\'bad\')</script></svg>\n```',
+    }),
+  );
+  assert.match(mdHtml, /<div class="dia-frame">/);
+  assert.match(mdHtml, /<circle cx="50" cy="50" r="40"\s*\/?>/);
+  assert.doesNotMatch(mdHtml, /<script/);
+  assert.doesNotMatch(mdHtml, /alert/);
+
+  // 2. sanitizeSvg security checks
+  const dirty = `<svg viewBox="0 0 100 100" onload="alert('evil')" onclick="doEvil()">
+    <script>alert('pwn')</script>
+    <foreignObject><iframe src="https://attacker.com"></iframe></foreignObject>
+    <a href="https://attacker.com" xlink:href="javascript:alert(1)"><text>Link</text></a>
+    <a href="#safe-anchor"><rect width="10" height="10" /></a>
+  </svg>`;
+  const clean = s.sanitizeSvg(dirty);
+  assert.doesNotMatch(clean, /<script/i);
+  assert.doesNotMatch(clean, /alert/i);
+  assert.doesNotMatch(clean, /onload/i);
+  assert.doesNotMatch(clean, /onclick/i);
+  assert.doesNotMatch(clean, /foreignObject/i);
+  assert.doesNotMatch(clean, /iframe/i);
+  assert.doesNotMatch(clean, /attacker\.com/i);
+  assert.match(clean, /href="#safe-anchor"/);
+  assert.match(clean, /<rect width="10" height="10"\s*\/?>/);
+
+  // 3. SafeSvg component rendering
+  const svgHtml = s.renderToStaticMarkup(h(s.SafeSvg, { source: clean }));
+  assert.match(svgHtml, /<div class="dia-frame">/);
+  assert.match(svgHtml, /<rect width="10" height="10"\s*\/?>/);
 });
 
 test("the Tasks tab says where each task's work stands on its way into the wish's branch", () => {

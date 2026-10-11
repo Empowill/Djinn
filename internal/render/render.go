@@ -16,6 +16,7 @@ import (
 	"cmp"
 	_ "embed"
 	"fmt"
+	"html"
 	"html/template"
 	"maps"
 	"os"
@@ -234,6 +235,7 @@ type task struct {
 type block struct {
 	Kind, Title, Task, Updated string
 	Markdown                   bool
+	SVG                        bool
 	HTML                       template.HTML
 	Text                       string
 	// Long blocks are folded under their title.
@@ -650,10 +652,13 @@ func build(in Input) (*view, error) {
 		if t := tasks[b.GetTaskId()]; t != nil {
 			cb.Task = tr("page.about_task", "task", t.GetCode())
 		}
-		if isMarkdown(b.GetMediaType()) {
+		switch {
+		case isMarkdown(b.GetMediaType()):
 			cb.Markdown, cb.HTML = true, md(b.GetContent())
 			cb.Diagram = strings.Contains(string(cb.HTML), `<code class="language-mermaid">`)
-		} else {
+		case isSVG(b.GetMediaType()):
+			cb.SVG, cb.HTML = true, template.HTML(SanitizeSVG(b.GetContent())) //nolint:gosec // Sanitized SVG.
+		default:
 			cb.Text = b.GetContent()
 		}
 		if cb.Title == "" && cb.HTML == "" && cb.Text == "" {
@@ -750,6 +755,108 @@ func firstLine(source string, n int) string {
 	return ""
 }
 
+var (
+	reSvgCodeBlock = regexp.MustCompile(`(?is)<pre><code class="language-svg">(.*?)</code></pre>`)
+	reSvgComment   = regexp.MustCompile(`(?s)<!--.*?-->`)
+	reSvgOnEvent   = regexp.MustCompile(`(?i)\s+on[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)`)
+	reSvgHref      = regexp.MustCompile(`(?i)\s+(?:xlink:)?href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))`)
+	reSvgSrc       = regexp.MustCompile(`(?i)\s+src\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)`)
+	reSvgImport    = regexp.MustCompile(`(?i)@import\b[^;]*;?`)
+	reSvgExpr      = regexp.MustCompile(`(?i)expression\s*\([^)]*\)`)
+	reSvgURL       = regexp.MustCompile(`(?i)url\s*\(\s*(['"]?)([^)'"]*)(['"]?)\s*\)`)
+	reSvgStyleTag  = regexp.MustCompile(`(?is)<style\b[^>]*>(.*?)</style\s*>`)
+	reSvgStyleAttr = regexp.MustCompile(`(?i)\s+style\s*=\s*("([^"]*)"|'([^']*)')`)
+
+	dangerousSvgPatterns = func() []*regexp.Regexp {
+		tags := []string{
+			"script", "foreignobject", "iframe", "object", "embed", "applet",
+			"audio", "video", "form", "input", "button", "link", "meta",
+		}
+		var pats []*regexp.Regexp
+		for _, tag := range tags {
+			pats = append(pats,
+				regexp.MustCompile(`(?is)<`+tag+`\b.*?</`+tag+`\s*>`),
+				regexp.MustCompile(`(?is)<`+tag+`\b[^>]*>`),
+				regexp.MustCompile(`(?is)</`+tag+`\s*>`),
+			)
+		}
+		return pats
+	}()
+)
+
+// cleanSvgStyle strips non-local url(), @import, and expression() from CSS in style tags/attributes.
+func cleanSvgStyle(css string) string {
+	css = reSvgImport.ReplaceAllString(css, "")
+	css = reSvgExpr.ReplaceAllString(css, "none")
+	return reSvgURL.ReplaceAllStringFunc(css, func(m string) string {
+		sub := reSvgURL.FindStringSubmatch(m)
+		if len(sub) >= 3 && strings.HasPrefix(strings.TrimSpace(sub[2]), "#") {
+			return m
+		}
+		return "none"
+	})
+}
+
+// SanitizeSVG strips dangerous elements, scripts, event handlers, and external URLs from SVG markup.
+func SanitizeSVG(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	lower := strings.ToLower(raw)
+	start := strings.Index(lower, "<svg")
+	end := strings.LastIndex(lower, "</svg>")
+	if start == -1 || end == -1 || end < start {
+		return ""
+	}
+	s := raw[start : end+len("</svg>")]
+
+	s = reSvgComment.ReplaceAllString(s, "")
+
+	for _, re := range dangerousSvgPatterns {
+		s = re.ReplaceAllString(s, "")
+	}
+
+	s = reSvgOnEvent.ReplaceAllString(s, "")
+
+	s = reSvgHref.ReplaceAllStringFunc(s, func(m string) string {
+		sub := reSvgHref.FindStringSubmatch(m)
+		val := ""
+		for i := 1; i < len(sub); i++ {
+			if sub[i] != "" {
+				val = sub[i]
+				break
+			}
+		}
+		if strings.HasPrefix(strings.TrimSpace(val), "#") {
+			return m
+		}
+		return ""
+	})
+
+	s = reSvgSrc.ReplaceAllString(s, "")
+
+	s = reSvgStyleTag.ReplaceAllStringFunc(s, func(m string) string {
+		sub := reSvgStyleTag.FindStringSubmatch(m)
+		if len(sub) < 2 {
+			return m
+		}
+		return "<style>" + cleanSvgStyle(sub[1]) + "</style>"
+	})
+
+	s = reSvgStyleAttr.ReplaceAllStringFunc(s, func(m string) string {
+		sub := reSvgStyleAttr.FindStringSubmatch(m)
+		val := sub[2]
+		quote := `"`
+		if val == "" {
+			val = sub[3]
+			quote = `'`
+		}
+		return " style=" + quote + cleanSvgStyle(val) + quote
+	})
+
+	return strings.TrimSpace(s)
+}
+
 // md renders Markdown, without raw HTML.
 func md(source string) template.HTML {
 	if strings.TrimSpace(source) == "" {
@@ -759,13 +866,32 @@ func md(source string) template.HTML {
 	if err := markdown.Convert([]byte(source), &b); err != nil {
 		return template.HTML("<pre>" + template.HTMLEscapeString(source) + "</pre>") //nolint:gosec // The source is escaped.
 	}
-	return template.HTML(b.String()) //nolint:gosec // goldmark leaves raw HTML and dangerous links out.
+	rendered := b.String()
+	rendered = reSvgCodeBlock.ReplaceAllStringFunc(rendered, func(m string) string {
+		sub := reSvgCodeBlock.FindStringSubmatch(m)
+		if len(sub) < 2 {
+			return m
+		}
+		raw := html.UnescapeString(sub[1])
+		safe := SanitizeSVG(raw)
+		if safe == "" {
+			return m
+		}
+		return `<div class="dia-frame">` + safe + `</div>`
+	})
+	return template.HTML(rendered) //nolint:gosec // goldmark leaves raw HTML and dangerous links out, and SVGs are sanitized.
 }
 
 func isMarkdown(mediaType string) bool {
 	base, _, _ := strings.Cut(mediaType, ";")
 	base = strings.ToLower(strings.TrimSpace(base))
 	return base == "" || base == "text/markdown"
+}
+
+func isSVG(mediaType string) bool {
+	base, _, _ := strings.Cut(mediaType, ";")
+	base = strings.ToLower(strings.TrimSpace(base))
+	return base == "image/svg+xml"
 }
 
 func choice(q *planv1.Question, tr func(string, ...string) string) string {
