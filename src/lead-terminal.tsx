@@ -229,9 +229,15 @@ function LeadTerminal({
     let current = true;
     api.running().then(
       (names) => {
-        if (!current || !names.includes(lead(wishId))) return;
-        add({ name: lead(wishId) });
-        setName(lead(wishId));
+        if (!current) return;
+        if (names.includes(lead(wishId))) {
+          add({ name: lead(wishId) });
+          setName(lead(wishId));
+        } else {
+          setName((shown) =>
+            shown.startsWith("lead-") && shown !== lead(wishId) ? "" : shown,
+          );
+        }
       },
       () => undefined, // djinn up restarts: the terminal shown stays, and says so.
     );
@@ -252,7 +258,11 @@ function LeadTerminal({
             .filter((n) => !have.some((x) => x.name === n))
             .map((n) => ({ name: n })),
         ]);
-        const first = names.find((n) => n.startsWith("lead-")) ?? names[0];
+        const matchingLead = wishId
+          ? names.find((n) => n === lead(wishId))
+          : undefined;
+        const nonLead = names.find((n) => !n.startsWith("lead-"));
+        const first = matchingLead ?? nonLead;
         setName((shown) => shown || first || "");
       },
       () => undefined,
@@ -260,7 +270,7 @@ function LeadTerminal({
     return () => {
       current = false;
     };
-  }, [api]);
+  }, [api, wishId]);
   useEffect(() => {
     if (!request) return;
     ended.current = undefined;
@@ -300,7 +310,7 @@ function LeadTerminal({
   // The emulator, the program, and the links between them.
   useEffect(() => {
     const element = host.current;
-    if (!element || !name) return;
+    if (!element || !name || collapsed) return;
     const term = new Terminal({
       fontFamily: '"IBM Plex Mono", monospace',
       fontSize: 13,
@@ -449,7 +459,7 @@ function LeadTerminal({
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [api, djinn, generation, name]);
+  }, [api, collapsed, djinn, generation, name]);
 
   // A terminal with no folder to open in starts once a project has one, made here or from the command line.
   const noFolder =
