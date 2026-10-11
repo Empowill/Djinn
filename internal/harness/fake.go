@@ -37,7 +37,7 @@ type Fake struct{}
 
 func (Fake) Start(ctx context.Context, spec Spec) (Worker, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	w := &fakeWorker{events: make(chan Event), cancel: cancel, done: make(chan struct{}), sent: make(chan struct{}, 1)}
+	w := &fakeWorker{events: make(chan Event), cancel: cancel, done: make(chan struct{}), sent: make(chan struct{}, 1), lowPriority: spec.LowPriority}
 	go w.play(ctx, spec)
 	return w, nil
 }
@@ -50,9 +50,10 @@ type fakeWorker struct {
 
 	sent chan struct{} // a message came (wait)
 
-	mu    sync.Mutex
-	inbox []string
-	held  chan struct{} // while paused; closed when resumed
+	mu          sync.Mutex
+	inbox       []string
+	held        chan struct{} // while paused; closed when resumed
+	lowPriority bool
 }
 
 func (w *fakeWorker) Events() <-chan Event { return w.events }
@@ -95,6 +96,19 @@ func (w *fakeWorker) Resume() error {
 		w.held = nil
 	}
 	return nil
+}
+
+func (w *fakeWorker) SetPriority(low bool) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.lowPriority = low
+	return nil
+}
+
+func (w *fakeWorker) IsLowPriority() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.lowPriority
 }
 
 // hold waits while the worker is paused. It says false when the worker is stopped meanwhile.

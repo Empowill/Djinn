@@ -98,6 +98,11 @@ func KillCgroup(dir string) error {
 	return writeCgroup(dir, "cgroup.kill", "1")
 }
 
+// SetCgroupWeight sets the CPU weight of the cgroup folder dir (1 to 10000, 100 is default, 10 for low priority).
+func SetCgroupWeight(dir string, weight int) error {
+	return writeCgroup(dir, "cpu.weight", strconv.Itoa(weight))
+}
+
 // writeCgroup writes v to a file of the cgroup folder dir, which must exist: a cgroup file is never created.
 func writeCgroup(dir, name, v string) error {
 	f, err := os.OpenFile(filepath.Join(dir, name), os.O_WRONLY, 0)
