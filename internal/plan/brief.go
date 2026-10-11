@@ -341,7 +341,7 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool, openAnswers ...
 		codes[t.GetId()] = t.GetCode()
 	}
 	for _, p := range wish.GetPushes() {
-		if held := p.GetHeld(); held != "" {
+		if held := p.GetHeld(); held != "" && !p.GetUnchecked() {
 			var proj string
 			if len(exp.GetProjects()) > 1 {
 				for _, pr := range exp.GetProjects() {

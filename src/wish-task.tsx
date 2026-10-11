@@ -156,6 +156,16 @@ function isMemoryWait(reason?: string): boolean {
   );
 }
 
+export function isGreenWait(reason?: string): boolean {
+  return Boolean(reason && reason.includes("to be green again"));
+}
+
+export function compactGreenWait(reason?: string): string {
+  if (!reason) return "";
+  const idx = reason.indexOf(" (push checks red at ");
+  return idx > 0 ? reason.slice(0, idx) : reason;
+}
+
 export const WishTask = memo(function WishTask({
   task,
   project,
@@ -361,6 +371,10 @@ export const WishTask = memo(function WishTask({
             task.error
           ) : isMemoryWait(task.waitReason) ? (
             <span title={task.waitReason}>{t("task.waits_for_memory")}</span>
+          ) : isGreenWait(task.waitReason) ? (
+            <span title={task.waitReason}>
+              {compactGreenWait(task.waitReason)}
+            </span>
           ) : (
             task.waitReason || (watcher && task.lastLine)
           )}

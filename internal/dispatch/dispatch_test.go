@@ -1091,3 +1091,107 @@ func TestOverclockRoomForOneMore(t *testing.T) {
 		t.Errorf("w5 should start (room for one more), but blocked with why: %q", w5Dec.Why)
 	}
 }
+
+// TestPushHeld: while a wish's push is held on red push checks, the scheduler starts only
+// push-check correction workers, other correction workers, and read-only question workers.
+// Every other planned task of that wish in that project waits for the branch to be green again.
+func TestPushHeld(t *testing.T) {
+	wish := &planv1.Wish{
+		Id:    "w",
+		State: planv1.WishState_WISH_STATE_ACTIVE,
+		IntegrationBranches: []*planv1.IntegrationBranch{
+			{ProjectId: "p1", Branch: "feat/wails-go"},
+		},
+		Pushes: []*planv1.WishPush{
+			{
+				ProjectId: "p1",
+				Held:      "at 12345678, test: exit status 1",
+				FailedSha: "1234567890abcdef",
+				Failure: &planv1.IntegrationFailure{
+					Reason: "test: exit status 1",
+					Base:   "1234567890abcdef",
+				},
+				CorrectedBy: "corr-push",
+			},
+		},
+	}
+
+	workTask := &planv1.Task{
+		Id: "work", WishId: "w", ProjectId: "p1", Code: "W1",
+		Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true,
+	}
+	pushCorr := &planv1.Task{
+		Id: "corr-push", WishId: "w", ProjectId: "p1", Code: "W2",
+		Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true,
+		Correction: &planv1.TaskCorrection{Attempt: 1},
+	}
+	otherCorr := &planv1.Task{
+		Id: "corr-other", WishId: "w", ProjectId: "p1", Code: "W3",
+		Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true,
+		Correction: &planv1.TaskCorrection{Attempt: 1},
+	}
+	questionWorker := &planv1.Task{
+		Id: "quest", WishId: "w", ProjectId: "p1", Code: "W4",
+		Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true,
+		Role: planv1.TaskRole_TASK_ROLE_INVESTIGATOR,
+	}
+	otherProjTask := &planv1.Task{
+		Id: "other-proj", WishId: "w", ProjectId: "p2", Code: "W5",
+		Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true,
+	}
+
+	tasks := []*planv1.Task{workTask, pushCorr, otherCorr, questionWorker, otherProjTask}
+	git := map[string]bool{"p1": true, "p2": true}
+	sit := New(tasks, []*planv1.Wish{wish}, git, nil)
+
+	// Work task must wait with the exact format
+	wantWhy := "waits for feat/wails-go to be green again (push checks red at 12345678: test)"
+	if why, failed := sit.Blocker(workTask); why != wantWhy || failed != "" {
+		t.Errorf("workTask: Blocker = (%q, %q); want (%q, %q)", why, failed, wantWhy, "")
+	}
+
+	// Push-check correction worker starts
+	if why, failed := sit.Blocker(pushCorr); why != "" || failed != "" {
+		t.Errorf("pushCorr: Blocker = (%q, %q); want empty", why, failed)
+	}
+
+	// Other correction worker starts
+	if why, failed := sit.Blocker(otherCorr); why != "" || failed != "" {
+		t.Errorf("otherCorr: Blocker = (%q, %q); want empty", why, failed)
+	}
+
+	// Question worker (investigator) starts
+	if why, failed := sit.Blocker(questionWorker); why != "" || failed != "" {
+		t.Errorf("questionWorker: Blocker = (%q, %q); want empty", why, failed)
+	}
+
+	// Other project task starts
+	if why, failed := sit.Blocker(otherProjTask); why != "" || failed != "" {
+		t.Errorf("otherProjTask: Blocker = (%q, %q); want empty", why, failed)
+	}
+
+	// Unchecked push lifts gate
+	wish.Pushes[0].Unchecked = true
+	sit = New(tasks, []*planv1.Wish{wish}, git, nil)
+	if why, failed := sit.Blocker(workTask); why != "" || failed != "" {
+		t.Errorf("unchecked push: Blocker = (%q, %q); want empty", why, failed)
+	}
+
+	// Held cleared lifts gate
+	wish.Pushes[0].Unchecked = false
+	wish.Pushes[0].Held = ""
+	sit = New(tasks, []*planv1.Wish{wish}, git, nil)
+	if why, failed := sit.Blocker(workTask); why != "" || failed != "" {
+		t.Errorf("cleared push: Blocker = (%q, %q); want empty", why, failed)
+	}
+
+	// Fallback parsing from Held string when Failure is nil
+	wish.Pushes[0].Held = "at abcdef12, lint: failed"
+	wish.Pushes[0].Failure = nil
+	wish.Pushes[0].FailedSha = ""
+	sit = New(tasks, []*planv1.Wish{wish}, git, nil)
+	wantWhyFallback := "waits for feat/wails-go to be green again (push checks red at abcdef12: lint)"
+	if why, failed := sit.Blocker(workTask); why != wantWhyFallback || failed != "" {
+		t.Errorf("fallback: Blocker = (%q, %q); want (%q, %q)", why, failed, wantWhyFallback, "")
+	}
+}

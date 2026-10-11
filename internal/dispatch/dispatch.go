@@ -346,6 +346,9 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 	if why != "" {
 		return why, ""
 	}
+	if why := s.pushHeld(t); why != "" {
+		return why, ""
+	}
 	if why := s.limited(t); why != "" {
 		return why, ""
 	}
@@ -433,11 +436,72 @@ func (s *Situation) integrationBranch(d *planv1.Task) string {
 		if b := plan.IntegrationBranchOf(wish, d.GetProjectId()); b != "" {
 			return b
 		}
+		if p := plan.PushStateOf(wish, d.GetProjectId()); p != nil && p.GetLast().GetBranch() != "" {
+			return p.GetLast().GetBranch()
+		}
 		if len(wish.GetIntegrationBranches()) > 0 {
 			return wish.GetIntegrationBranches()[0].GetBranch()
 		}
 	}
 	return "the integration branch"
+}
+
+func short8(sha string) string { return sha[:min(8, len(sha))] }
+
+// pushCheckHeld extracts the short sha and check name for a held push.
+func pushCheckHeld(p *planv1.WishPush) (sha, check string) {
+	if f := p.GetFailure(); f != nil {
+		sha = short8(cmp.Or(p.GetFailedSha(), f.GetBase()))
+		check, _, _ = strings.Cut(f.GetReason(), ":")
+		check = strings.TrimSpace(check)
+		if check == "" {
+			check = f.GetCommand()
+		}
+	}
+	if sha == "" {
+		sha = short8(p.GetFailedSha())
+	}
+	if (sha == "" || check == "") && strings.HasPrefix(p.GetHeld(), "at ") {
+		rest := strings.TrimPrefix(p.GetHeld(), "at ")
+		shaPart, whyPart, ok := strings.Cut(rest, ", ")
+		if ok {
+			if sha == "" {
+				sha = short8(shaPart)
+			}
+			if check == "" {
+				check, _, _ = strings.Cut(whyPart, ":")
+				check = strings.TrimSpace(check)
+			}
+		}
+	}
+	if sha == "" {
+		sha = "HEAD"
+	}
+	if check == "" {
+		check = "checks"
+	}
+	return sha, check
+}
+
+// pushHeld tells whether t waits because the push of its wish's integration branch is held on red push checks.
+func (s *Situation) pushHeld(t *planv1.Task) string {
+	if t.GetCorrection() != nil || QuestionWorker(t) {
+		return ""
+	}
+	wish := s.wishes[t.GetWishId()]
+	if wish == nil || t.GetProjectId() == "" {
+		return ""
+	}
+	p := plan.PushStateOf(wish, t.GetProjectId())
+	if p == nil || p.GetHeld() == "" || p.GetUnchecked() {
+		return ""
+	}
+	if p.GetCorrectedBy() == t.GetId() {
+		return ""
+	}
+	branch := s.integrationBranch(t)
+	sha, check := pushCheckHeld(p)
+	return fmt.Sprintf("waits for %s to be green again (push checks red at %s: %s)", branch, sha, check)
 }
 
 // forkedAs is the task that took over d: d itself, or, when d was cut short and resumed as a fork of its session

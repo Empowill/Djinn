@@ -165,12 +165,7 @@ func (h *Harness) pushPass(ctx context.Context) {
 
 // pushState is where the push of wish's integration branch stands in the project projectID; nil before anything.
 func pushState(wish *planv1.Wish, projectID string) *planv1.WishPush {
-	for _, p := range wish.GetPushes() {
-		if strings.EqualFold(p.GetProjectId(), projectID) {
-			return p
-		}
-	}
-	return nil
+	return plan.PushStateOf(wish, projectID)
 }
 
 // lastPush is when wish last pushed its integration branch, as state says: when it was made, before any push.
@@ -824,6 +819,7 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 				log.Printf("djinn: question %s: %v", q.GetCode(), err)
 				return "Djinn could not take the answer: " + err.Error(), true
 			}
+			h.pushSteps(ctx, committed, fmt.Sprintf("integration: you chose to push %s without push checks (%s)", branch, q.GetCode()))
 			h.notify()
 			h.kickIntegrate()
 			return "Djinn pushes at the integration's next pass, without the push checks", true

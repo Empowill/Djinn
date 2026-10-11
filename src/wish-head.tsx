@@ -297,7 +297,8 @@ export function LastPushes({
         const push = pushes.find((p) => p.projectId === id);
         const onDemand = project?.push === ProjectPush.ON_DEMAND;
         const last = push?.last;
-        if (!last && !push?.refused && !push?.held && !onDemand) return null;
+        const held = Boolean(push?.held && !push?.unchecked);
+        if (!last && !push?.refused && !held && !onDemand) return null;
         const name =
           projects.length > 1 ? (project?.name ?? push?.projectId) : undefined;
         return (
@@ -319,7 +320,7 @@ export function LastPushes({
                 {t("wish.push_refused")}
               </span>
             )}
-            {push?.held && (
+            {push?.held && !push?.unchecked && (
               <span
                 className="wish-push-refused"
                 title={[
