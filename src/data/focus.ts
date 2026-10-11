@@ -24,7 +24,12 @@ export interface DjinnFocus {
   show(focus: Partial<Focus>): void;
 }
 
-const none: Focus = { wishId: "", terminal: "", tilasmId: "", unknownLink: "" };
+export const none: Focus = {
+  wishId: "",
+  terminal: "",
+  tilasmId: "",
+  unknownLink: "",
+};
 
 const RECENT = 60_000;
 

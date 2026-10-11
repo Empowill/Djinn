@@ -2,7 +2,7 @@ import React, { useEffect, useSyncExternalStore } from "react";
 
 import { LoadNotch } from "../gen/ts/djinn/v1/load_pb";
 import type { Clients } from "./data/client";
-import { useClients } from "./data/djinn";
+import { type Djinn, useDjinn } from "./data/djinn";
 import { t } from "./i18n";
 import { memory } from "./usage";
 import "./operating-load.css";
@@ -35,7 +35,22 @@ class LoadManager {
   private listeners = new Set<() => void>();
   private abort: AbortController | null = null;
   private clients: Clients | null = null;
+  private djinn: Djinn | null = null;
+  private unsubscribeLoad: (() => void) | null = null;
   private stopTimer: ReturnType<typeof setTimeout> | null = null;
+
+  setDjinn(djinn: Djinn) {
+    if (this.djinn === djinn) return;
+    this.djinn = djinn;
+    this.clients = djinn.clients;
+    if (this.stopTimer) {
+      clearTimeout(this.stopTimer);
+      this.stopTimer = null;
+    }
+    if (this.listeners.size > 0) {
+      this.restart();
+    }
+  }
 
   setClients(clients: Clients) {
     if (this.clients === clients) return;
@@ -87,33 +102,54 @@ class LoadManager {
   }
 
   private start() {
-    if (!this.clients) return;
+    if (!this.clients && !this.djinn) return;
     this.abort = new AbortController();
     const signal = this.abort.signal;
 
-    void this.clients.load
-      .get({}, { signal })
-      .then((res) => {
+    if (this.clients) {
+      void this.clients.load
+        .get({}, { signal })
+        .then((res) => {
+          if (signal.aborted) return;
+          const auto = Boolean(res.auto);
+          const notch = res.notch || this.data.notch;
+          const chosenNotch = res.chosenNotch || this.data.chosenNotch || notch;
+          const baseSlots = res.baseSlots || this.data.baseSlots;
+          const runningWorkers = res.runningWorkers ?? this.data.runningWorkers;
+          const memoryTotalBytes =
+            res.memoryTotalBytes || this.data.memoryTotalBytes;
+          this.data = {
+            ...this.data,
+            notch,
+            auto,
+            chosenNotch,
+            baseSlots,
+            runningWorkers,
+            memoryTotalBytes,
+          };
+          this.notify();
+        })
+        .catch(() => {});
+    }
+
+    if (this.djinn?.load) {
+      this.unsubscribeLoad = this.djinn.load.subscribe((res) => {
         if (signal.aborted) return;
-        const auto = Boolean(res.auto);
-        const notch = res.notch || this.data.notch;
-        const chosenNotch = res.chosenNotch || this.data.chosenNotch || notch;
-        const baseSlots = res.baseSlots || this.data.baseSlots;
-        const runningWorkers = res.runningWorkers ?? this.data.runningWorkers;
-        const memoryTotalBytes =
-          res.memoryTotalBytes || this.data.memoryTotalBytes;
         this.data = {
-          ...this.data,
-          notch,
-          auto,
-          chosenNotch,
-          baseSlots,
-          runningWorkers,
-          memoryTotalBytes,
+          notch: res.notch || this.data.notch,
+          auto: Boolean(res.auto),
+          chosenNotch: res.chosenNotch || this.data.chosenNotch || res.notch,
+          engagedMemoryBytes: res.engagedMemoryBytes,
+          workerMemoryBytes: res.workerMemoryBytes,
+          memoryTotalBytes: res.memoryTotalBytes,
+          memoryAvailableBytes: res.memoryAvailableBytes,
+          baseSlots: res.baseSlots || this.data.baseSlots,
+          runningWorkers: res.runningWorkers ?? this.data.runningWorkers,
         };
         this.notify();
-      })
-      .catch(() => {});
+      });
+      return;
+    }
 
     void (async () => {
       while (!signal.aborted) {
@@ -146,6 +182,10 @@ class LoadManager {
     if (this.stopTimer) {
       clearTimeout(this.stopTimer);
       this.stopTimer = null;
+    }
+    if (this.unsubscribeLoad) {
+      this.unsubscribeLoad();
+      this.unsubscribeLoad = null;
     }
     this.abort?.abort();
     this.abort = null;
@@ -558,11 +598,17 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
 });
 
 export const OperatingLoad = React.memo(function OperatingLoad() {
-  const clients = useClients();
+  const djinn = useDjinn();
+
+  if (djinn) {
+    loadManager.setDjinn(djinn);
+  }
 
   useEffect(() => {
-    loadManager.setClients(clients);
-  }, [clients]);
+    if (djinn) {
+      loadManager.setDjinn(djinn);
+    }
+  }, [djinn]);
 
   return (
     <div className="operating-load" role="group" aria-label={t("load.label")}>

@@ -14,6 +14,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/fsx"
@@ -525,5 +526,88 @@ func TestWriteAtomicRetriesARefusedRename(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(path); string(got) != "new" {
 		t.Errorf("file = %q, want the new content", got)
+	}
+}
+
+func TestWatchUnified(t *testing.T) {
+	s, _ := newService(t)
+	mux := http.NewServeMux()
+	mux.Handle(uiv1connect.NewUiServiceHandler(s))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := uiv1connect.NewUiServiceClient(srv.Client(), srv.URL)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	stream, err := client.Watch(ctx, connect.NewRequest(&uiv1.UiServiceWatchRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stream.Close() })
+
+	// First message contains initial update.
+	if !stream.Receive() {
+		t.Fatalf("first message failed: %v", stream.Err())
+	}
+	initMsg := stream.Msg()
+	if initMsg.GetUpdate() == nil || initMsg.GetUpdate().GetCurrent() != "test" {
+		t.Fatalf("initial message update = %v, want current 'test'", initMsg.GetUpdate())
+	}
+
+	// Trigger Present
+	s.Present("w-1", "t-1")
+	if !stream.Receive() {
+		t.Fatalf("show message failed: %v", stream.Err())
+	}
+	showMsg := stream.Msg()
+	if showMsg.GetShow() == nil || showMsg.GetShow().GetWishId() != "w-1" || showMsg.GetShow().GetTerminal() != "t-1" {
+		t.Fatalf("show msg = %v, want wish w-1 and terminal t-1", showMsg)
+	}
+
+	// Trigger SetReady
+	s.SetReady("2.0.0", "https://notes")
+	if !stream.Receive() {
+		t.Fatalf("update message failed: %v", stream.Err())
+	}
+	updateMsg := stream.Msg()
+	if updateMsg.GetUpdate() == nil || updateMsg.GetUpdate().GetReady() != "2.0.0" {
+		t.Fatalf("update msg = %v, want ready 2.0.0", updateMsg)
+	}
+}
+
+func TestWatchUnifiedWithLoad(t *testing.T) {
+	s, _ := newService(t)
+	s.WatchLoad = func(ctx context.Context, send func(*djinnv1.LoadServiceWatchResponse) error) error {
+		_ = send(&djinnv1.LoadServiceWatchResponse{Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH})
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	mux := http.NewServeMux()
+	mux.Handle(uiv1connect.NewUiServiceHandler(s))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := uiv1connect.NewUiServiceClient(srv.Client(), srv.URL)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	stream, err := client.Watch(ctx, connect.NewRequest(&uiv1.UiServiceWatchRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stream.Close() })
+
+	// First message contains initial update.
+	if !stream.Receive() {
+		t.Fatalf("first message failed: %v", stream.Err())
+	}
+	// Second message contains the load message from WatchLoad.
+	if !stream.Receive() {
+		t.Fatalf("load message failed: %v", stream.Err())
+	}
+	loadMsg := stream.Msg()
+	if loadMsg.GetLoad() == nil || loadMsg.GetLoad().GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
+		t.Fatalf("load msg = %v, want notch HIGH", loadMsg)
 	}
 }

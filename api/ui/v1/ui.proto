@@ -49,6 +49,10 @@ service UiService {
   rpc WatchUpdate(UiServiceWatchUpdateRequest) returns (stream UiServiceWatchUpdateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
+  // What the window is asked to show and whether a newer Djinn waits, in a single stream.
+  rpc Watch(UiServiceWatchRequest) returns (stream UiServiceWatchResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
   // Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
   // as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
   // sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
@@ -198,6 +202,17 @@ message UiServiceWatchUpdateResponse {
   // The install of a build that runs now (Update), and where it stands; unset for none. The window says it in place
   // of the build's buttons: what it waits for, then that it builds, then that Djinn restarts.
   Installing installing = 6;
+}
+
+message UiServiceWatchRequest {}
+
+message UiServiceWatchResponse {
+  // A request to show something in the window, if any.
+  UiServiceWatchShowResponse show = 1;
+  // A change in the update state, if any.
+  UiServiceWatchUpdateResponse update = 2;
+  // A change in the operating load, if any.
+  djinn.v1.LoadServiceWatchResponse load = 3;
 }
 
 // Installing is an install of a build that runs now, and where it stands.

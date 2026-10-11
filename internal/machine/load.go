@@ -104,6 +104,15 @@ func WithLoadClock(clock func() time.Time) LoadOption {
 	}
 }
 
+// WithLoadStreamer provides a function that can be called to stream load changes.
+func WithLoadStreamer(attach func(func(ctx context.Context, send func(*djinnv1.LoadServiceWatchResponse) error) error)) LoadOption {
+	return func(s *loadService) {
+		if attach != nil {
+			attach(s.Stream)
+		}
+	}
+}
+
 // WithLoadSignal sets the activity signal function used for auto mode.
 func WithLoadSignal(signal ActivitySignal) LoadOption {
 	return func(s *loadService) {
@@ -355,9 +364,8 @@ func (s *loadService) Set(
 	}), nil
 }
 
-func (s *loadService) Watch(
-	ctx context.Context, _ *connect.Request[djinnv1.LoadServiceWatchRequest],
-	stream *connect.ServerStream[djinnv1.LoadServiceWatchResponse],
+func (s *loadService) Stream(
+	ctx context.Context, send func(*djinnv1.LoadServiceWatchResponse) error,
 ) error {
 	kick := make(chan struct{}, 1)
 	s.mu.Lock()
@@ -391,7 +399,7 @@ func (s *loadService) Watch(
 	sendIfChanged := func() error {
 		current := s.snapshot(ctx)
 		if !proto.Equal(current, lastSent) {
-			if err := stream.Send(current); err != nil {
+			if err := send(current); err != nil {
 				return err
 			}
 			lastSent = current
@@ -438,4 +446,11 @@ func (s *loadService) Watch(
 			}
 		}
 	}
+}
+
+func (s *loadService) Watch(
+	ctx context.Context, _ *connect.Request[djinnv1.LoadServiceWatchRequest],
+	stream *connect.ServerStream[djinnv1.LoadServiceWatchResponse],
+) error {
+	return s.Stream(ctx, stream.Send)
 }

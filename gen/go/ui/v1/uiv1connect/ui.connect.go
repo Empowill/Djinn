@@ -52,6 +52,8 @@ const (
 	UiServiceWatchShowProcedure = "/ui.v1.UiService/WatchShow"
 	// UiServiceWatchUpdateProcedure is the fully-qualified name of the UiService's WatchUpdate RPC.
 	UiServiceWatchUpdateProcedure = "/ui.v1.UiService/WatchUpdate"
+	// UiServiceWatchProcedure is the fully-qualified name of the UiService's Watch RPC.
+	UiServiceWatchProcedure = "/ui.v1.UiService/Watch"
 	// UiServiceUpdateProcedure is the fully-qualified name of the UiService's Update RPC.
 	UiServiceUpdateProcedure = "/ui.v1.UiService/Update"
 )
@@ -82,6 +84,8 @@ type UiServiceClient interface {
 	// Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
 	// change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
 	WatchUpdate(context.Context, *connect.Request[v1.UiServiceWatchUpdateRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchUpdateResponse], error)
+	// What the window is asked to show and whether a newer Djinn waits, in a single stream.
+	Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchResponse], error)
 	// Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
 	// as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
 	// sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
@@ -148,6 +152,12 @@ func NewUiServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(uiServiceMethods.ByName("WatchUpdate")),
 			connect.WithClientOptions(opts...),
 		),
+		watch: connect.NewClient[v1.UiServiceWatchRequest, v1.UiServiceWatchResponse](
+			httpClient,
+			baseURL+UiServiceWatchProcedure,
+			connect.WithSchema(uiServiceMethods.ByName("Watch")),
+			connect.WithClientOptions(opts...),
+		),
 		update: connect.NewClient[v1.UiServiceUpdateRequest, v1.UiServiceUpdateResponse](
 			httpClient,
 			baseURL+UiServiceUpdateProcedure,
@@ -167,6 +177,7 @@ type uiServiceClient struct {
 	openLink        *connect.Client[v1.UiServiceOpenLinkRequest, v1.UiServiceOpenLinkResponse]
 	watchShow       *connect.Client[v1.UiServiceWatchShowRequest, v1.UiServiceWatchShowResponse]
 	watchUpdate     *connect.Client[v1.UiServiceWatchUpdateRequest, v1.UiServiceWatchUpdateResponse]
+	watch           *connect.Client[v1.UiServiceWatchRequest, v1.UiServiceWatchResponse]
 	update          *connect.Client[v1.UiServiceUpdateRequest, v1.UiServiceUpdateResponse]
 }
 
@@ -210,6 +221,11 @@ func (c *uiServiceClient) WatchUpdate(ctx context.Context, req *connect.Request[
 	return c.watchUpdate.CallServerStream(ctx, req)
 }
 
+// Watch calls ui.v1.UiService.Watch.
+func (c *uiServiceClient) Watch(ctx context.Context, req *connect.Request[v1.UiServiceWatchRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchResponse], error) {
+	return c.watch.CallServerStream(ctx, req)
+}
+
 // Update calls ui.v1.UiService.Update.
 func (c *uiServiceClient) Update(ctx context.Context, req *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error) {
 	return c.update.CallUnary(ctx, req)
@@ -241,6 +257,8 @@ type UiServiceHandler interface {
 	// Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
 	// change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
 	WatchUpdate(context.Context, *connect.Request[v1.UiServiceWatchUpdateRequest], *connect.ServerStream[v1.UiServiceWatchUpdateResponse]) error
+	// What the window is asked to show and whether a newer Djinn waits, in a single stream.
+	Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest], *connect.ServerStream[v1.UiServiceWatchResponse]) error
 	// Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
 	// as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
 	// sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
@@ -303,6 +321,12 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 		connect.WithSchema(uiServiceMethods.ByName("WatchUpdate")),
 		connect.WithHandlerOptions(opts...),
 	)
+	uiServiceWatchHandler := connect.NewServerStreamHandler(
+		UiServiceWatchProcedure,
+		svc.Watch,
+		connect.WithSchema(uiServiceMethods.ByName("Watch")),
+		connect.WithHandlerOptions(opts...),
+	)
 	uiServiceUpdateHandler := connect.NewUnaryHandler(
 		UiServiceUpdateProcedure,
 		svc.Update,
@@ -327,6 +351,8 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 			uiServiceWatchShowHandler.ServeHTTP(w, r)
 		case UiServiceWatchUpdateProcedure:
 			uiServiceWatchUpdateHandler.ServeHTTP(w, r)
+		case UiServiceWatchProcedure:
+			uiServiceWatchHandler.ServeHTTP(w, r)
 		case UiServiceUpdateProcedure:
 			uiServiceUpdateHandler.ServeHTTP(w, r)
 		default:
@@ -368,6 +394,10 @@ func (UnimplementedUiServiceHandler) WatchShow(context.Context, *connect.Request
 
 func (UnimplementedUiServiceHandler) WatchUpdate(context.Context, *connect.Request[v1.UiServiceWatchUpdateRequest], *connect.ServerStream[v1.UiServiceWatchUpdateResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.WatchUpdate is not implemented"))
+}
+
+func (UnimplementedUiServiceHandler) Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest], *connect.ServerStream[v1.UiServiceWatchResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.Watch is not implemented"))
 }
 
 func (UnimplementedUiServiceHandler) Update(context.Context, *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error) {
