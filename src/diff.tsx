@@ -1,14 +1,17 @@
-// TaskDiffView displays git diffs for a task: changed files list, then unified and side-by-side diff viewers.
-import { memo, useEffect, useState } from "react";
+import { create } from "@bufbuild/protobuf";
+import { type FormEvent, memo, useEffect, useState } from "react";
 import {
   DiffHunk,
   DiffLine,
   DiffLineKind,
-  Task,
+  type Task,
+  type TaskComment,
+  TaskCommentSchema,
   TaskDiffFile,
   TaskFileDiff,
+  type TaskServiceDiffResponse,
 } from "../gen/ts/plan/v1/plan_pb";
-import { useClients } from "./data/djinn";
+import { useDjinn } from "./data/djinn";
 import { t } from "./i18n";
 import "./diff.css";
 
@@ -80,7 +83,165 @@ function pairHunkLines(lines: readonly DiffLine[]): SplitRow[] {
   return rows;
 }
 
-export function UnifiedView({ hunks }: { hunks: readonly DiffHunk[] }) {
+function extractExcerpt(
+  hunks: readonly DiffHunk[],
+  startLine: number,
+  endLine: number,
+): string {
+  const lines: string[] = [];
+  for (const hunk of hunks) {
+    for (const l of hunk.lines) {
+      const num = l.newLine > 0 ? l.newLine : l.oldLine;
+      if (num >= startLine && num <= endLine) {
+        lines.push(l.text);
+      }
+    }
+  }
+  return lines.join("\n");
+}
+
+export interface CommentBoxProps {
+  startLine: number;
+  endLine: number;
+  taskId?: string;
+  filePath?: string;
+  commit?: string;
+  excerpt?: string;
+  onCancel: () => void;
+  onCommentAdded?: (comment: TaskComment) => void;
+}
+
+export function CommentBox({
+  startLine,
+  endLine,
+  taskId,
+  filePath,
+  commit,
+  excerpt,
+  onCancel,
+  onCommentAdded,
+}: CommentBoxProps) {
+  const djinn = useDjinn();
+  const clients = djinn?.clients;
+  const [text, setText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const title =
+    startLine === endLine
+      ? t("diff.comment_on_line", { line: startLine })
+      : t("diff.comment_on_lines", { start: startLine, end: endLine });
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = text.trim();
+    if (!trimmed || submitting) return;
+    if (!clients || !taskId) {
+      onCommentAdded?.(
+        create(TaskCommentSchema, {
+          id: "preview-id",
+          file: filePath ?? "",
+          line: startLine,
+          endLine: endLine,
+          commit: commit ?? "",
+          text: trimmed,
+          excerpt: excerpt ?? "",
+        }),
+      );
+      onCancel();
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await clients.tasks.comment({
+        taskId,
+        text: trimmed,
+        file: filePath ?? "",
+        line: startLine,
+        endLine: endLine,
+        commit: commit ?? "",
+        excerpt: excerpt ?? "",
+      });
+      if (res.comment) {
+        onCommentAdded?.(res.comment);
+      }
+      onCancel();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form className="diff-comment-box" onSubmit={handleSubmit}>
+      <div className="diff-comment-box-title">{title}</div>
+      <textarea
+        className="diff-comment-textarea"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={t("diff.comment_placeholder")}
+        aria-label={title}
+        autoFocus
+        rows={3}
+      />
+      {error && <div className="diff-error">{error}</div>}
+      <div className="diff-comment-box-actions">
+        <button
+          type="button"
+          className="diff-comment-btn-cancel"
+          onClick={onCancel}
+          disabled={submitting}
+        >
+          {t("diff.comment_cancel")}
+        </button>
+        <button
+          type="submit"
+          className="diff-comment-btn-submit"
+          disabled={submitting || !text.trim()}
+        >
+          {t("diff.comment_submit")}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+export interface UnifiedViewProps {
+  hunks: readonly DiffHunk[];
+  comments?: readonly TaskComment[];
+  taskId?: string;
+  filePath?: string;
+  headCommit?: string;
+  onCommentAdded?: (comment: TaskComment) => void;
+}
+
+export function UnifiedView({
+  hunks,
+  comments,
+  taskId,
+  filePath,
+  headCommit,
+  onCommentAdded,
+}: UnifiedViewProps) {
+  const [activeRange, setActiveRange] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
+
+  const handleLineClick = (lineNum: number, event: React.MouseEvent) => {
+    if (lineNum <= 0) return;
+    if (event.shiftKey && activeRange) {
+      setActiveRange({
+        start: Math.min(activeRange.start, lineNum),
+        end: Math.max(activeRange.start, lineNum),
+      });
+    } else {
+      setActiveRange({ start: lineNum, end: lineNum });
+    }
+  };
+
   return (
     <div className="diff-container">
       {hunks.map((hunk, hIdx) => (
@@ -88,30 +249,146 @@ export function UnifiedView({ hunks }: { hunks: readonly DiffHunk[] }) {
           <div className="diff-hunk-header">{hunk.header}</div>
           <div className="diff-lines-unified">
             {hunk.lines.map((line, lIdx) => {
+              const lineNum = line.newLine > 0 ? line.newLine : line.oldLine;
+              const isSelected =
+                activeRange !== null &&
+                lineNum > 0 &&
+                lineNum >= activeRange.start &&
+                lineNum <= activeRange.end;
               const rowClass =
-                line.kind === DiffLineKind.ADDED
+                (line.kind === DiffLineKind.ADDED
                   ? "line-added"
                   : line.kind === DiffLineKind.DELETED
                     ? "line-deleted"
-                    : "line-context";
+                    : "line-context") + (isSelected ? " line-selected" : "");
               const marker =
                 line.kind === DiffLineKind.ADDED
                   ? "+"
                   : line.kind === DiffLineKind.DELETED
                     ? "-"
                     : " ";
+
+              const lineComments = (comments ?? []).filter((c) => {
+                if (c.file && filePath && c.file !== filePath) return false;
+                const end = c.endLine > 0 ? c.endLine : c.line;
+                return end === lineNum;
+              });
+
+              const showCommentBox =
+                activeRange !== null && activeRange.end === lineNum;
+
               return (
-                <div key={lIdx} className={`diff-line-row ${rowClass}`}>
-                  <span className="diff-cell-num">
-                    {line.oldLine > 0 ? line.oldLine : ""}
-                  </span>
-                  <span className="diff-cell-num">
-                    {line.newLine > 0 ? line.newLine : ""}
-                  </span>
-                  <span className="diff-cell-marker">{marker}</span>
-                  <span className="diff-cell-code">
-                    <LineTokens line={line} />
-                  </span>
+                <div key={lIdx} style={{ display: "contents" }}>
+                  <div
+                    className={`diff-line-row ${rowClass}`}
+                    onClick={(e) => handleLineClick(lineNum, e)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleLineClick(
+                          lineNum,
+                          e as unknown as React.MouseEvent,
+                        );
+                      }
+                    }}
+                  >
+                    <span className="diff-cell-num">
+                      {line.oldLine > 0 ? line.oldLine : ""}
+                    </span>
+                    <span className="diff-cell-num">
+                      {line.newLine > 0 ? line.newLine : ""}
+                    </span>
+                    <span className="diff-cell-marker">{marker}</span>
+                    <span className="diff-cell-code">
+                      <button
+                        type="button"
+                        className="diff-add-comment-btn"
+                        title={t("diff.add_comment")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveRange({ start: lineNum, end: lineNum });
+                        }}
+                      >
+                        +
+                      </button>
+                      <LineTokens line={line} />
+                    </span>
+                  </div>
+
+                  {lineComments.map((comment, cIdx) => (
+                    <div
+                      key={comment.id || `c-${lineNum}-${cIdx}`}
+                      className="diff-comment-row"
+                    >
+                      <span className="diff-cell-num" />
+                      <span className="diff-cell-num" />
+                      <span className="diff-cell-marker" />
+                      <div className="diff-cell-code diff-comment-cell">
+                        <div
+                          className={`diff-comment-item ${comment.resolved ? "resolved" : ""}`}
+                        >
+                          <div className="diff-comment-header">
+                            <span className="diff-comment-range">
+                              {comment.line === comment.endLine ||
+                              comment.endLine === 0
+                                ? t("diff.comment_on_line", {
+                                    line: comment.line,
+                                  })
+                                : t("diff.comment_on_lines", {
+                                    start: comment.line,
+                                    end: comment.endLine,
+                                  })}
+                            </span>
+                            {comment.commit && (
+                              <span
+                                className="diff-comment-commit"
+                                title={comment.commit}
+                              >
+                                {comment.commit.slice(0, 7)}
+                              </span>
+                            )}
+                            {comment.resolved && (
+                              <span className="diff-comment-resolved-badge">
+                                {t("diff.resolved")}
+                              </span>
+                            )}
+                          </div>
+                          <div className="diff-comment-text">
+                            {comment.text}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {showCommentBox && (
+                    <div className="diff-comment-row">
+                      <span className="diff-cell-num" />
+                      <span className="diff-cell-num" />
+                      <span className="diff-cell-marker" />
+                      <div className="diff-cell-code diff-comment-cell">
+                        <CommentBox
+                          startLine={activeRange.start}
+                          endLine={activeRange.end}
+                          taskId={taskId}
+                          filePath={filePath}
+                          commit={headCommit}
+                          excerpt={extractExcerpt(
+                            hunks,
+                            activeRange.start,
+                            activeRange.end,
+                          )}
+                          onCancel={() => setActiveRange(null)}
+                          onCommentAdded={(newComment) => {
+                            setActiveRange(null);
+                            onCommentAdded?.(newComment);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -122,7 +399,16 @@ export function UnifiedView({ hunks }: { hunks: readonly DiffHunk[] }) {
   );
 }
 
-export function SplitView({ hunks }: { hunks: readonly DiffHunk[] }) {
+export interface SplitViewProps {
+  hunks: readonly DiffHunk[];
+  comments?: readonly TaskComment[];
+  taskId?: string;
+  filePath?: string;
+  headCommit?: string;
+  onCommentAdded?: (comment: TaskComment) => void;
+}
+
+export function SplitView({ hunks }: SplitViewProps) {
   return (
     <div className="diff-container">
       {hunks.map((hunk, hIdx) => {
@@ -197,18 +483,24 @@ export function SplitView({ hunks }: { hunks: readonly DiffHunk[] }) {
 }
 
 function SingleFileDiff({
-  taskId,
+  task,
   file,
   viewMode,
   onToggleMode,
+  comments,
+  onCommentAdded,
 }: {
-  taskId: string;
+  task: Task;
   file: TaskDiffFile;
   viewMode: "unified" | "split";
   onToggleMode: (mode: "unified" | "split") => void;
+  comments: readonly TaskComment[];
+  onCommentAdded: (comment: TaskComment) => void;
 }) {
-  const clients = useClients();
+  const djinn = useDjinn();
+  const clients = djinn?.clients;
   const [fileDiff, setFileDiff] = useState<TaskFileDiff | null>(null);
+  const [headCommit, setHeadCommit] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -216,25 +508,31 @@ function SingleFileDiff({
     let active = true;
     setLoading(true);
     setError(null);
+    if (!clients) {
+      setLoading(false);
+      return;
+    }
     clients.tasks
       .diff({
-        task: { ref: { case: "id", value: taskId } },
+        task: { ref: { case: "id", value: task.id } },
         file: file.path,
       })
-      .then((res) => {
+      .then((res: TaskServiceDiffResponse) => {
         if (!active) return;
         setFileDiff(res.file ?? null);
+        setHeadCommit(res.head);
         setLoading(false);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         if (!active) return;
-        setError(err.message || String(err));
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg);
         setLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [clients, taskId, file.path]);
+  }, [clients, task.id, file.path]);
 
   return (
     <div className="single-file-diff">
@@ -279,9 +577,23 @@ function SingleFileDiff({
       {!loading && !error && !fileDiff?.tooLarge && !fileDiff?.binary && (
         <>
           {viewMode === "unified" ? (
-            <UnifiedView hunks={fileDiff?.hunks ?? []} />
+            <UnifiedView
+              hunks={fileDiff?.hunks ?? []}
+              comments={comments}
+              taskId={task.id}
+              filePath={file.path}
+              headCommit={headCommit}
+              onCommentAdded={onCommentAdded}
+            />
           ) : (
-            <SplitView hunks={fileDiff?.hunks ?? []} />
+            <SplitView
+              hunks={fileDiff?.hunks ?? []}
+              comments={comments}
+              taskId={task.id}
+              filePath={file.path}
+              headCommit={headCommit}
+              onCommentAdded={onCommentAdded}
+            />
           )}
         </>
       )}
@@ -294,34 +606,52 @@ export const TaskDiffView = memo(function TaskDiffView({
 }: {
   task: Task;
 }) {
-  const clients = useClients();
+  const djinn = useDjinn();
+  const clients = djinn?.clients;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [files, setFiles] = useState<TaskDiffFile[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"unified" | "split">("unified");
+  const [localComments, setLocalComments] = useState<readonly TaskComment[]>(
+    task.comments ?? [],
+  );
+
+  useEffect(() => {
+    setLocalComments(task.comments ?? []);
+  }, [task.comments]);
+
+  const handleCommentAdded = (newComment: TaskComment) => {
+    setLocalComments((prev) => [...prev, newComment]);
+  };
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
+    if (!clients) {
+      setLoading(false);
+      return;
+    }
     clients.tasks
       .diff({
         task: { ref: { case: "id", value: task.id } },
         file: "",
       })
-      .then((res) => {
+      .then((res: TaskServiceDiffResponse) => {
         if (!active) return;
         setFiles(res.files);
         setLoading(false);
         if (res.files.length > 0) {
-          const firstVisible = res.files.find((f) => !f.folded) ?? res.files[0];
+          const firstVisible =
+            res.files.find((f: TaskDiffFile) => !f.folded) ?? res.files[0];
           setSelectedPath(firstVisible.path);
         }
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         if (!active) return;
-        setError(err.message || String(err));
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg);
         setLoading(false);
       });
     return () => {
@@ -398,10 +728,12 @@ export const TaskDiffView = memo(function TaskDiffView({
 
       {selectedFile && (
         <SingleFileDiff
-          taskId={task.id}
+          task={task}
           file={selectedFile}
           viewMode={viewMode}
           onToggleMode={setViewMode}
+          comments={localComments}
+          onCommentAdded={handleCommentAdded}
         />
       )}
     </div>

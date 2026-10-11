@@ -41,7 +41,12 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { jump } from "./attention";
 import { type Decision } from "./data/decisions";
-import { useOptionalData, useTaskEvents, useTaskPrompt } from "./data/djinn";
+import {
+  useDjinn,
+  useOptionalData,
+  useTaskEvents,
+  useTaskPrompt,
+} from "./data/djinn";
 import {
   cancelledText,
   taskActivity,
@@ -629,6 +634,42 @@ function TaskBody({
           </div>
         )}
       </details>
+      {task.comments && task.comments.length > 0 && (
+        <div className="wish-task-comments">
+          <div className="wish-task-comments-header">
+            <span className="eyebrow">{t("task.comments")}</span>
+            {taskFinished(task.status) && <TurnCommentsButton task={task} />}
+          </div>
+          <div className="wish-task-comments-list">
+            {task.comments.map((c) => (
+              <div
+                key={c.id}
+                className={`wish-task-comment-item ${c.resolved ? "resolved" : ""}`}
+              >
+                <div className="wish-task-comment-meta">
+                  <span className="wish-task-comment-file">{c.file}</span>
+                  <span className="wish-task-comment-lines">
+                    {c.line === c.endLine || c.endLine === 0
+                      ? `:${c.line}`
+                      : `:${c.line}-${c.endLine}`}
+                  </span>
+                  {c.resolved && (
+                    <span className="diff-comment-resolved-badge">
+                      {t("diff.resolved")}
+                    </span>
+                  )}
+                </div>
+                <div className="wish-task-comment-text">{c.text}</div>
+                {c.excerpt && (
+                  <pre className="wish-task-comment-excerpt">
+                    <code>{c.excerpt}</code>
+                  </pre>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <details className="wish-task-diff-fold" open={showDiff}>
         <summary
           className="button secondary small wish-task-diff-button"
@@ -643,6 +684,49 @@ function TaskBody({
         {showDiff && <TaskDiffView task={task} />}
       </details>
     </div>
+  );
+}
+
+export function TurnCommentsButton({ task }: { task: Task }) {
+  const djinn = useDjinn();
+  const clients = djinn?.clients;
+  const [busy, setBusy] = useState(false);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+
+  const handleClick = async () => {
+    if (!clients || busy) return;
+    setBusy(true);
+    const isResumable =
+      task.provider === Provider.ANTIGRAVITY ||
+      task.provider === Provider.CLAUDE;
+    setStatusMsg(
+      isResumable
+        ? t("task.turn_comments_continuing")
+        : t("task.turn_comments_spawning"),
+    );
+    try {
+      const res = await clients.tasks.turnComments({ taskId: task.id });
+      if (res.continued) {
+        setStatusMsg(t("task.turn_comments_done"));
+      } else {
+        setStatusMsg(t("task.turn_comments_done"));
+      }
+    } catch {
+      setStatusMsg(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className="button secondary small wish-task-turn-comments-button"
+      onClick={handleClick}
+      disabled={busy}
+    >
+      {statusMsg ?? t("task.turn_comments")}
+    </button>
   );
 }
 
