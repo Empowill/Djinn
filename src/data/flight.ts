@@ -170,15 +170,9 @@ export function azimasDone(tasks: readonly Task[]): {
   count: number;
 } {
   const azimas = tasks.filter((x) => isAzima(x) && !isDraftAzima(x));
-  const done = azimas.filter(
-    (x) =>
-      x.azima?.state === AzimaState.DONE &&
-      !azimaHasMergingOrFailed(x.id, tasks),
-  ).length;
+  const done = azimas.filter((x) => x.azima?.state === AzimaState.DONE).length;
   const proof = azimas.filter(
-    (x) =>
-      x.azima?.state === AzimaState.AWAITING_PROOF &&
-      !azimaHasMergingOrFailed(x.id, tasks),
+    (x) => x.azima?.state === AzimaState.AWAITING_PROOF,
   ).length;
   return { done, proof, count: azimas.length };
 }
@@ -206,7 +200,33 @@ export function awaitedProofs(tasks: readonly Task[]): Proof[] {
 
 // workCount is how many tasks of work there are: the azimas are the plan, not work.
 export function workCount(tasks: readonly Task[]): number {
+  const azimas = tasks.filter((x) => isAzima(x) && !isDraftAzima(x));
+  const hasServerParts = azimas.some((a) => (a.azima?.parts ?? 0) > 0);
+  if (hasServerParts) {
+    const serverParts = azimas.reduce((n, a) => n + (a.azima?.parts ?? 0), 0);
+    const looseTasks = tasks.filter((x) => !isAzima(x) && !x.partOf).length;
+    return serverParts + looseTasks;
+  }
   return tasks.filter((x) => !isAzima(x)).length;
+}
+
+// workDoneCount is how many work tasks are done: using server azima.partsDone when available.
+export function workDoneCount(tasks: readonly Task[]): number {
+  const azimas = tasks.filter((x) => isAzima(x) && !isDraftAzima(x));
+  const hasServerParts = azimas.some((a) => (a.azima?.parts ?? 0) > 0);
+  if (hasServerParts) {
+    const serverDone = azimas.reduce(
+      (n, a) => n + (a.azima?.partsDone ?? 0),
+      0,
+    );
+    const looseDone = tasks.filter(
+      (x) => x.status === TaskStatus.DONE && !isAzima(x) && !x.partOf,
+    ).length;
+    return serverDone + looseDone;
+  }
+  return tasks.filter(
+    (task) => task.status === TaskStatus.DONE && !isAzima(task),
+  ).length;
 }
 
 // finishedTasks are the tasks at the bottom of the Tasks tab, the latest ended first: work part of no azima.

@@ -22,13 +22,7 @@ import {
   TaskStatus,
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
-import {
-  compareCodes,
-  finishedTask,
-  isAzima,
-  isTaskMerging,
-  isTaskMergingOrFailed,
-} from "./data/flight";
+import { compareCodes, finishedTask, isAzima } from "./data/flight";
 import {
   azimaBranchName,
   azimaTime,
@@ -44,41 +38,24 @@ import { Fold } from "./task-tabs";
 // azimaTone and azimaLabel say where an azima stands: done in green, under way in blue while a worker runs on one of
 // its parts, its work done and its proof awaited in olive, planned grey otherwise. Never orange: an azima waits for no
 // one's answer.
-function azimaState(azima: Task, parts?: readonly Task[]): AzimaState {
+function azimaState(azima: Task, _parts?: readonly Task[]): AzimaState {
   if (azima.draft || azima.azima?.state === AzimaState.DRAFT)
     return AzimaState.DRAFT;
-  const state = azima.azima?.state ?? AzimaState.OPEN;
-  if (
-    (state === AzimaState.DONE || state === AzimaState.AWAITING_PROOF) &&
-    parts?.some((p) =>
-      isAzima(p) ? !azimaFinished(p) : isTaskMergingOrFailed(p),
-    )
-  ) {
-    return AzimaState.IN_PROGRESS;
-  }
-  return state;
+  return azima.azima?.state ?? AzimaState.OPEN;
 }
 
 // azimaFinished tells a done azima: the Tasks tab folds it.
-export function azimaFinished(azima: Task, parts?: readonly Task[]): boolean {
-  return azimaState(azima, parts) === AzimaState.DONE;
+export function azimaFinished(azima: Task, _parts?: readonly Task[]): boolean {
+  return azimaState(azima, _parts) === AzimaState.DONE;
 }
 
-function azimaTone(azima: Task, parts?: readonly Task[]): Tone {
-  const state = azimaState(azima, parts);
+function azimaTone(azima: Task, _parts?: readonly Task[]): Tone {
+  const state = azimaState(azima, _parts);
   switch (state) {
     case AzimaState.DONE:
       return "done";
     case AzimaState.IN_PROGRESS: {
-      const running =
-        (azima.azima?.partsRunning ?? 0) > 0 ||
-        (parts?.some(
-          (p) =>
-            p.status === TaskStatus.RUNNING ||
-            p.status === TaskStatus.RESUMING ||
-            isTaskMerging(p),
-        ) ??
-          false);
+      const running = (azima.azima?.partsRunning ?? 0) > 0;
       return running ? "running" : "planned";
     }
     case AzimaState.AWAITING_PROOF:
@@ -193,18 +170,19 @@ export const AzimaCard = memo(function AzimaCard({
     )
     .map((x) => x.code)
     .sort(compareCodes);
-  const done = parts.filter((x) =>
-    isAzima(x)
-      ? azimaFinished(x)
-      : x.status === TaskStatus.DONE && !isTaskMergingOrFailed(x),
-  ).length;
-  const running = parts.filter(
-    (x) =>
-      x.status === TaskStatus.RUNNING ||
-      x.status === TaskStatus.RESUMING ||
-      isTaskMerging(x),
-  ).length;
-  const waiting = Math.max(0, parts.length - done - running);
+  const total = azima.azima?.parts ?? parts.length;
+  const done =
+    azima.azima?.partsDone ??
+    parts.filter((x) =>
+      isAzima(x) ? azimaFinished(x) : x.status === TaskStatus.DONE,
+    ).length;
+  const running =
+    azima.azima?.partsRunning ??
+    parts.filter(
+      (x) =>
+        x.status === TaskStatus.RUNNING || x.status === TaskStatus.RESUMING,
+    ).length;
+  const waiting = Math.max(0, total - done - running);
   const isRunning =
     state === AzimaState.IN_PROGRESS ||
     (azima.azima?.partsRunning ?? 0) > 0 ||
@@ -319,27 +297,27 @@ export const AzimaCard = memo(function AzimaCard({
                   {t("page.after", { tasks: after.join(", ") })}
                 </span>
               )}
-            {parts.length > 0 && (
+            {total > 0 && (
               <span
                 className="azima-progress"
-                title={t("azima.progress", { done, count: parts.length })}
+                title={t("azima.progress", { done, count: total })}
               >
                 <span className="azima-bar" aria-hidden="true">
                   <span
                     className="azima-bar-done"
-                    style={{ width: `${(100 * done) / parts.length}%` }}
+                    style={{ width: `${(100 * done) / total}%` }}
                   />
                   <span
                     className="azima-bar-running"
-                    style={{ width: `${(100 * running) / parts.length}%` }}
+                    style={{ width: `${(100 * running) / total}%` }}
                   />
                 </span>
                 <span className="azima-progress-counts">
-                  {done}/{parts.length}
+                  {done}/{total}
                 </span>
               </span>
             )}
-            {parts.length > 0 && (
+            {total > 0 && (
               <span
                 className="azima-progress-parts"
                 title={t("azima.progress_parts", { done, running, waiting })}

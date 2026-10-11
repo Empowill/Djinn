@@ -5242,3 +5242,158 @@ test("operating load forecast: binding resource (memory-bound vs cpu-bound) and 
   assert.match(cpuText, /CPU: up to 3 workers/);
   assert.match(memText, /Memory: 37 GB of 48 GB/); // (48 - 2) * 0.8 = 36.8 GB rounded to 37 GB
 });
+
+test("azima counters and states in the window are right before any azima is opened on a wish with more tasks than one page", async () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const wishId = "01a11833-a440-7479-a067-52615c91da71";
+  const lamp = wish(wishId, "Large wish", s.WishState.ACTIVE, 1, {
+    createTime: at(1),
+  });
+
+  const azima1 = {
+    id: "A1",
+    wishId,
+    code: "T1",
+    title: "Lay the ground",
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.DONE,
+    azima: {
+      state: s.AzimaState.DONE,
+      ready: true,
+      parts: 180,
+      partsDone: 180,
+      partsRunning: 0,
+    },
+    dependsOn: [],
+    createTime: at(1),
+  };
+  const azima2 = {
+    id: "A2",
+    wishId,
+    code: "T2",
+    title: "The orchestrator",
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.RUNNING,
+    azima: {
+      state: s.AzimaState.IN_PROGRESS,
+      ready: true,
+      parts: 250,
+      partsDone: 200,
+      partsRunning: 5,
+    },
+    dependsOn: ["T1"],
+    createTime: at(1),
+  };
+
+  // 1. AzimaCard rendered directly before any parts are loaded (parts: [])
+  // A2 is in progress with 200/250 parts done, 5 running, 45 waiting
+  const cardInProgress = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: azima2,
+      parts: [],
+      tasks: new Map([[azima2.id, azima2]]),
+      render: () => null,
+    }),
+  );
+  assert.equal(s.azimaFinished(azima2), false);
+  assert.match(cardInProgress, /class="azima-progress"/);
+  assert.match(cardInProgress, /200\/250<\/span>/);
+  assert.match(cardInProgress, /title="200 done, 5 running, 45 waiting"/);
+  assert.match(cardInProgress, /status-badge tone-running/);
+
+  // A1 is done with 180/180 parts done, parts: []
+  const cardDone = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: azima1,
+      parts: [],
+      tasks: new Map([[azima1.id, azima1]]),
+      render: () => null,
+    }),
+  );
+  assert.equal(s.azimaFinished(azima1), true);
+  assert.match(cardDone, /class="azima-progress"/);
+  assert.match(cardDone, /180\/180<\/span>/);
+  assert.match(cardDone, /status-badge tone-done/);
+
+  // 2. Full window WishView with only page 1 loaded from the server
+  // (e.g. 50 tasks out of 430 total)
+  const page1Tasks = [azima1, azima2];
+  for (let i = 1; i <= 48; i++) {
+    page1Tasks.push({
+      id: `W${i}`,
+      wishId,
+      code: `W${i}`,
+      title: `Task ${i}`,
+      kind: s.TaskKind.WORKER,
+      status: i <= 20 ? s.TaskStatus.DONE : s.TaskStatus.PENDING,
+      partOf: "A2",
+      dependsOn: [],
+      createTime: at(1),
+    });
+  }
+
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+    service(s.ProjectService, { list: () => ({ projects: [] }) });
+    service(s.TaskService, {
+      list: () => ({
+        tasks: page1Tasks,
+        total: 430,
+        nextPageToken: "page-2",
+      }),
+    });
+    service(s.QuestionService, { list: () => ({ questions: [] }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+  });
+
+  const djinn = s.createDjinn(transport, 10);
+  await djinn.store.changed("", [s.Change.WISH, s.Change.PROJECT]);
+  const close = djinn.store.open(wishId);
+  await djinn.store.changed(wishId, [s.Change.TASK]);
+  close();
+
+  const view = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: lamp, onToast() {} })),
+  );
+
+  // Azima pill: 1 done out of 2 azimas
+  assert.match(
+    view,
+    /title="1 of 2 azimas done"[^>]*>.*?<b>1<\/b>\s*\/ 2 azimas<\/span>/,
+  );
+  // Work pill: 380 done out of 430 total tasks across the wish
+  assert.match(
+    view,
+    /title="380 of 430 tasks done"[^>]*>.*?<b>380<\/b>\s*\/ 430 done<\/span>/,
+  );
+
+  // 3. Tasks tab / TaskSections: azimas partition into active and done using server state,
+  // and AzimaCard in progress renders 200/250 right away before opening
+  const groups = s.azimaGroups(page1Tasks);
+  const active = groups.filter((x) => !s.azimaFinished(x.azima));
+  const done = groups.filter((x) => s.azimaFinished(x.azima));
+  assert.equal(active.length, 1);
+  assert.equal(done.length, 1);
+  assert.equal(active[0].azima.code, "T2");
+  assert.equal(done[0].azima.code, "T1");
+
+  const tasksTab = s.renderToStaticMarkup(
+    h(s.TaskSections, {
+      moving: [],
+      azimas: active,
+      doneAzimas: done,
+      fold: wishId,
+      showDone: false,
+      renderAzima: ({ azima, parts }) =>
+        h(s.AzimaCard, {
+          key: azima.id,
+          azima,
+          parts,
+          tasks: new Map(page1Tasks.map((t) => [t.id, t])),
+          render: () => null,
+        }),
+      render: () => null,
+    }),
+  );
+  assert.match(tasksTab, /200\/250<\/span>/);
+});
