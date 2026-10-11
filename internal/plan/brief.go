@@ -634,7 +634,7 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 				if IsAzima(dep) {
 					depDone = dep.GetAzima().GetState() == planv1.AzimaState_AZIMA_STATE_DONE
 				} else {
-					depDone = dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE
+					depDone = dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !taskMergingOrFailed(dep)
 				}
 			}
 			if !depDone {

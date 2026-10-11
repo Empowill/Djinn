@@ -529,6 +529,15 @@ func build(in Input) (*view, error) {
 			if forked = ForkedAs(t, exp.GetTasks()); forked != "" {
 				ct.Status, ct.StatusClass, ct.Error = tr("page.status_forked", "task", forked), "stop", ""
 			}
+		case planv1.TaskStatus_TASK_STATUS_DONE:
+			switch t.GetIntegration().GetState() {
+			case planv1.IntegrationState_INTEGRATION_STATE_PENDING, planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING:
+				ct.Status, ct.StatusClass = tr("page.status_merging"), "run"
+			case planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, planv1.IntegrationState_INTEGRATION_STATE_RED:
+				ct.Status, ct.StatusClass = tr("page.status_merge_failed"), "fail"
+			case planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
+				ct.Status, ct.StatusClass = tr("page.status_to_review"), "wait"
+			}
 		}
 		var after []string
 		for _, id := range t.GetDependsOn() {

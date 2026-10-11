@@ -465,7 +465,7 @@ func TestBriefWorkStands(t *testing.T) {
 		"- **W6** Next: planned, waits for W2 to be committed\n",
 		"- **W7** Work: changes not committed, not merged, reviewed by W2\n" +
 			"- **W1** Work: done\n" +
-			"- **W2** Work: done, waiting to be committed\n" +
+			"- **W2** Work: waiting to be committed\n" +
 			"- **W3** Work: committed into feat/x as 1a2b3c4d\n" +
 			"- **W4** Work: conflict, not committed: W4 conflicts with feat/x in a.go, corrected by W9\n",
 	} {

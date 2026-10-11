@@ -369,6 +369,55 @@ test("a watcher has its own tone while its command runs", () => {
   );
 });
 
+test("a done task derives its badge text and tone from its integration state", () => {
+  const S = f.TaskStatus;
+  const I = f.IntegrationState;
+  const taskWith = (integration) => ({
+    status: S.DONE,
+    integration: integration ? { state: integration } : undefined,
+  });
+
+  // PENDING or INTEGRATING -> Merging, running tone
+  assert.equal(f.taskStatusText(taskWith(I.PENDING)), "Merging");
+  assert.equal(f.taskTone(taskWith(I.PENDING)), "running");
+  assert.equal(f.taskStatusText(taskWith(I.INTEGRATING)), "Merging");
+  assert.equal(f.taskTone(taskWith(I.INTEGRATING)), "running");
+
+  // CONFLICT or RED -> Merge failed, failed tone
+  assert.equal(f.taskStatusText(taskWith(I.CONFLICT)), "Merge failed");
+  assert.equal(f.taskTone(taskWith(I.CONFLICT)), "failed");
+  assert.equal(f.taskStatusText(taskWith(I.RED)), "Merge failed");
+  assert.equal(f.taskTone(taskWith(I.RED)), "failed");
+
+  // UNCOMMITTED -> To review, waiting tone
+  assert.equal(f.taskStatusText(taskWith(I.UNCOMMITTED)), "To review");
+  assert.equal(f.taskTone(taskWith(I.UNCOMMITTED)), "waiting");
+
+  // COMMITTED or no integration -> Done, done tone
+  assert.equal(f.taskStatusText(taskWith(I.COMMITTED)), "Done");
+  assert.equal(f.taskTone(taskWith(I.COMMITTED)), "done");
+  assert.equal(f.taskStatusText(taskWith(undefined)), "Done");
+  assert.equal(f.taskTone(taskWith(undefined)), "done");
+
+  // Non-done tasks keep their status text/tone regardless of integration
+  assert.equal(
+    f.taskStatusText({ status: S.RUNNING, integration: { state: I.PENDING } }),
+    "Running",
+  );
+  assert.equal(
+    f.taskTone({ status: S.RUNNING, integration: { state: I.PENDING } }),
+    "running",
+  );
+  assert.equal(
+    f.taskStatusText({ status: S.FAILED, integration: { state: I.CONFLICT } }),
+    "Failed",
+  );
+  assert.equal(
+    f.taskTone({ status: S.FAILED, integration: { state: I.CONFLICT } }),
+    "failed",
+  );
+});
+
 test("a wish deleted says which worktrees stay, and why", () => {
   assert.equal(f.deletedText("Oil", []), "“Oil” deleted.");
   assert.equal(
@@ -498,6 +547,59 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
     },
   ];
   assert.deepEqual(f.azimasDone(runningAzima), { done: 0, proof: 0, count: 1 });
+
+  // An azima whose task merges or whose merge failed is not done.
+  const mergingAzimas = [
+    {
+      id: "a1",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.DONE },
+    },
+    {
+      id: "w3",
+      status: S.DONE,
+      partOf: "a1",
+      integration: { state: f.IntegrationState.PENDING },
+    },
+    {
+      id: "a2",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.DONE },
+    },
+    {
+      id: "w4",
+      status: S.DONE,
+      partOf: "a2",
+      integration: { state: f.IntegrationState.CONFLICT },
+    },
+    {
+      id: "a3",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.DONE },
+    },
+    {
+      id: "w5",
+      status: S.DONE,
+      partOf: "a3",
+      integration: { state: f.IntegrationState.COMMITTED },
+    },
+    {
+      id: "a4",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.AWAITING_PROOF },
+    },
+    {
+      id: "w6",
+      status: S.DONE,
+      partOf: "a4",
+      integration: { state: f.IntegrationState.INTEGRATING },
+    },
+  ];
+  assert.deepEqual(f.azimasDone(mergingAzimas), {
+    done: 1,
+    proof: 0,
+    count: 4,
+  });
 });
 
 test("open questions come blocking, then your move, then before X, then can wait, across the wishes", () => {

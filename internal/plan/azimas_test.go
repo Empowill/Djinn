@@ -91,6 +91,9 @@ func TestFillAzimas(t *testing.T) {
 		task("W4", work, failed, "T5"),
 		task("T5", plan, pending, "", "W2"),
 		{Id: "T6", Code: "T6", Kind: plan, Status: pending, Draft: true},
+		task("T7", plan, done, ""),
+		{Id: "W5", Code: "W5", Kind: work, Status: done, PartOf: "T7", Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_PENDING}},
+		task("T8", plan, pending, "", "T7"),
 	}
 	FillAzimas(tasks)
 	for code, want := range map[string]*planv1.Azima{
@@ -102,6 +105,10 @@ func TestFillAzimas(t *testing.T) {
 		// A failed part is not progress.
 		"T5": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Parts: 1, Branch: "djinn/T5", BaseBranch: "djinn/T2"},
 		"T6": {State: planv1.AzimaState_AZIMA_STATE_DRAFT, Ready: true, Branch: "djinn/T6"},
+		// T7 has a done part whose work is merging: in progress, partsRunning=1, partsDone=0.
+		"T7": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1, PartsDone: 0, Branch: "djinn/T7"},
+		// T8 waits for T7, which is not done yet: Ready is false.
+		"T8": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: false, Branch: "djinn/T8", BaseBranch: "djinn/T7"},
 	} {
 		i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetCode() == code })
 		if got := tasks[i].GetAzima(); !proto.Equal(got, want) {
@@ -454,6 +461,15 @@ func TestHasUnfinishedParts(t *testing.T) {
 
 		azima("T6", "", done),
 		work("W8", "T6", failed),
+
+		azima("T7", "", done),
+		{Id: "W9", Code: "W9", Kind: planv1.TaskKind_TASK_KIND_WORK, Status: done, PartOf: "T7", Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_PENDING}},
+
+		azima("T8", "", done),
+		{Id: "W10", Code: "W10", Kind: planv1.TaskKind_TASK_KIND_WORK, Status: done, PartOf: "T8", Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_CONFLICT}},
+
+		azima("T9", "", done),
+		{Id: "W11", Code: "W11", Kind: planv1.TaskKind_TASK_KIND_WORK, Status: done, PartOf: "T9", Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED}},
 	}
 
 	if HasUnfinishedParts("T1", tasks) {
@@ -474,6 +490,15 @@ func TestHasUnfinishedParts(t *testing.T) {
 	if !HasUnfinishedParts("T6", tasks) {
 		t.Errorf("T6 has no unfinished parts, want true (W8 failed)")
 	}
+	if !HasUnfinishedParts("T7", tasks) {
+		t.Errorf("T7 has no unfinished parts, want true (W9 merging)")
+	}
+	if !HasUnfinishedParts("T8", tasks) {
+		t.Errorf("T8 has no unfinished parts, want true (W10 merge conflict)")
+	}
+	if HasUnfinishedParts("T9", tasks) {
+		t.Errorf("T9 has unfinished parts, want false (W11 committed)")
+	}
 
 	FillAzimas(tasks)
 	for id, wantState := range map[string]planv1.AzimaState{
@@ -486,6 +511,9 @@ func TestHasUnfinishedParts(t *testing.T) {
 		"T5":     planv1.AzimaState_AZIMA_STATE_IN_PROGRESS,
 		"T5_sub": planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF,
 		"T6":     planv1.AzimaState_AZIMA_STATE_IN_PROGRESS,
+		"T7":     planv1.AzimaState_AZIMA_STATE_IN_PROGRESS,
+		"T8":     planv1.AzimaState_AZIMA_STATE_IN_PROGRESS,
+		"T9":     planv1.AzimaState_AZIMA_STATE_DONE,
 	} {
 		i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetId() == id })
 		if got := tasks[i].GetAzima().GetState(); got != wantState {

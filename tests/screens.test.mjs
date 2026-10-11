@@ -2640,13 +2640,29 @@ test("the Tasks tab says where each task's work stands on its way into the wish'
   });
   assert.deepEqual(notes, [
     "W1 done",
-    "W2 waiting: Done, waiting to be committed",
+    "W2 waiting: Waiting to be committed",
     "W3 done: Committed into feat/x as 1a2b3c4d",
     "W4 failed: Conflict, not committed: W4 conflicts with feat/x in a.go, corrected by W9",
     "W5 failed: Red tests, not committed: test exited 1",
     "W6 running: Being committed into feat/x",
     "W8 waiting: Changes not committed, not merged, reviewed by W9",
     "W10 done: Committed into feat/x as 1a2b3c4d, reviewed by W9",
+  ]);
+  const badges = tasks.map((task) => {
+    const m = card(task).match(
+      /<span class="status-badge tone-([a-z]+)">[\s\S]*?<span>([^<]*)<\/span><\/span>/,
+    );
+    return m ? `${task.code} ${m[1]}: ${m[2]}` : `${task.code} none`;
+  });
+  assert.deepEqual(badges, [
+    "W1 done: Done",
+    "W2 running: Merging",
+    "W3 done: Done",
+    "W4 failed: Merge failed",
+    "W5 failed: Merge failed",
+    "W6 running: Merging",
+    "W8 waiting: To review",
+    "W10 done: Done",
   ]);
   // A task that waits for another's work to be committed says so.
   const waits = card({

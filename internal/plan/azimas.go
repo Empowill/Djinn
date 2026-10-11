@@ -68,7 +68,7 @@ func FillAzimas(tasks []*planv1.Task) {
 			if IsAzima(p) {
 				return state(p) != planv1.AzimaState_AZIMA_STATE_DONE
 			}
-			return !Finished(p)
+			return !Finished(p) || taskMergingOrFailed(p)
 		})
 		// left tells whether a part is still to finish: work not finished, or an azima neither done nor to validate.
 		left := slices.ContainsFunc(parts[t.GetId()], func(p *planv1.Task) bool {
@@ -76,7 +76,7 @@ func FillAzimas(tasks []*planv1.Task) {
 				ps := state(p)
 				return ps != planv1.AzimaState_AZIMA_STATE_DONE && ps != planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF
 			}
-			return !Finished(p)
+			return !Finished(p) || taskMergingOrFailed(p)
 		})
 		switch {
 		case t.GetDraft():
@@ -118,10 +118,10 @@ func FillAzimas(tasks []*planv1.Task) {
 				if state(p) == planv1.AzimaState_AZIMA_STATE_DONE {
 					e.PartsDone++
 				}
-			} else if p.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+			} else if p.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !taskMergingOrFailed(p) {
 				e.PartsDone++
 			}
-			if working(p) {
+			if working(p) || taskMerging(p) {
 				e.PartsRunning++
 			}
 		}
@@ -132,7 +132,7 @@ func FillAzimas(tasks []*planv1.Task) {
 				if IsAzima(dep) {
 					depDone = state(dep) == planv1.AzimaState_AZIMA_STATE_DONE
 				} else {
-					depDone = dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE
+					depDone = dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !taskMergingOrFailed(dep)
 				}
 			}
 			if !depDone {
@@ -275,7 +275,7 @@ func HasUnfinishedParts(id string, tasks []*planv1.Task) bool {
 			if t.GetAzima().GetState() != planv1.AzimaState_AZIMA_STATE_DONE {
 				return true
 			}
-		} else if !Finished(t) {
+		} else if !Finished(t) || taskMergingOrFailed(t) {
 			return true
 		}
 	}
@@ -312,6 +312,28 @@ func working(t *planv1.Task) bool {
 		return true
 	}
 	return false
+}
+
+// taskMerging tells whether a done task's work is currently merging.
+func taskMerging(t *planv1.Task) bool {
+	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		return false
+	}
+	s := t.GetIntegration().GetState()
+	return s == planv1.IntegrationState_INTEGRATION_STATE_PENDING ||
+		s == planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING
+}
+
+// taskMergingOrFailed tells whether a done task's work is merging or failed to merge.
+func taskMergingOrFailed(t *planv1.Task) bool {
+	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		return false
+	}
+	s := t.GetIntegration().GetState()
+	return s == planv1.IntegrationState_INTEGRATION_STATE_PENDING ||
+		s == planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING ||
+		s == planv1.IntegrationState_INTEGRATION_STATE_CONFLICT ||
+		s == planv1.IntegrationState_INTEGRATION_STATE_RED
 }
 
 // CompareCodes orders task codes as a person reads them: by letter, then by number, T2 before T10.
