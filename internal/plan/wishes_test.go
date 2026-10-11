@@ -3,6 +3,8 @@ package plan
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -13,6 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -608,5 +611,150 @@ func TestWishPushStrategy(t *testing.T) {
 	}
 	if showExplicit.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_AZIMA || showExplicit.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_WISH {
 		t.Errorf("explicit wish strategy = %v from %v; want azima from wish", showExplicit.Msg.GetStrategy(), showExplicit.Msg.GetSource())
+	}
+}
+
+// TestWishRename: a wish can be renamed; the new title is validated (non-empty, max length 500),
+// journaled, and reflected in lists, brief, rendered page, and exports.
+func TestWishRename(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+
+	// 1. Make a wish with initial title.
+	wish, err := c.make(t, "Djinn sur Wails", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := wish.GetId()
+
+	// 2. Rename it to "Djinn orchestrator".
+	res, err := c.wishes.Rename(ctx, connect.NewRequest(&planv1.WishServiceRenameRequest{
+		WishId: id,
+		Title:  "Djinn orchestrator",
+	}))
+	if err != nil {
+		t.Fatalf("rename wish: %v", err)
+	}
+	if got := res.Msg.GetWish().GetTitle(); got != "Djinn orchestrator" {
+		t.Errorf("rename returned title %q; want %q", got, "Djinn orchestrator")
+	}
+
+	// Verify listed wish has the new title.
+	listed := c.list(t)
+	if len(listed) == 0 || listed[0].GetTitle() != "Djinn orchestrator" {
+		t.Errorf("listed wish title = %v; want Djinn orchestrator", listed)
+	}
+
+	// 3. Validation: empty title -> InvalidArgument.
+	_, err = c.wishes.Rename(ctx, connect.NewRequest(&planv1.WishServiceRenameRequest{
+		WishId: id,
+		Title:  "",
+	}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("rename with empty title err = %v; want InvalidArgument", err)
+	}
+
+	// 4. Validation: whitespace only title -> InvalidArgument.
+	_, err = c.wishes.Rename(ctx, connect.NewRequest(&planv1.WishServiceRenameRequest{
+		WishId: id,
+		Title:  "   \t\n  ",
+	}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("rename with whitespace-only title err = %v; want InvalidArgument", err)
+	}
+
+	// 5. Leading/trailing whitespace gets trimmed.
+	res, err = c.wishes.Rename(ctx, connect.NewRequest(&planv1.WishServiceRenameRequest{
+		WishId: id,
+		Title:  "  Renamed Trimmed  ",
+	}))
+	if err != nil {
+		t.Fatalf("rename with whitespace padding: %v", err)
+	}
+	if got := res.Msg.GetWish().GetTitle(); got != "Renamed Trimmed" {
+		t.Errorf("trimmed title = %q; want %q", got, "Renamed Trimmed")
+	}
+
+	// 6. Unknown wish ID -> NotFound.
+	_, err = c.wishes.Rename(ctx, connect.NewRequest(&planv1.WishServiceRenameRequest{
+		WishId: store.NewID(),
+		Title:  "New Title",
+	}))
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("rename unknown wish err = %v; want NotFound", err)
+	}
+
+	// 7. Brief shows the new title.
+	briefRes, err := c.wishes.Brief(ctx, connect.NewRequest(&planv1.WishServiceBriefRequest{WishId: id}))
+	if err != nil {
+		t.Fatalf("brief: %v", err)
+	}
+	if !strings.Contains(briefRes.Msg.GetText(), "# The wish: Renamed Trimmed") {
+		t.Errorf("brief does not contain new title: %s", briefRes.Msg.GetText())
+	}
+
+	// 8. Render shows the new title.
+	renderRes, err := c.wishes.Render(ctx, connect.NewRequest(&planv1.WishServiceRenderRequest{
+		WishId: id,
+		File:   filepath.Join(t.TempDir(), "render.html"),
+	}))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html, err := os.ReadFile(renderRes.Msg.GetFile())
+	if err != nil {
+		t.Fatalf("read rendered page: %v", err)
+	}
+	if !strings.Contains(string(html), "Renamed Trimmed") {
+		t.Errorf("rendered page does not contain new title")
+	}
+
+	// 9. Export shows the new title, includes make and rename commands, and an imported wish retains it.
+	expFile := filepath.Join(t.TempDir(), "export.djinn")
+	expRes, err := c.wishes.Export(ctx, connect.NewRequest(&planv1.WishServiceExportRequest{
+		WishId: id,
+		File:   expFile,
+	}))
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	data, err := os.ReadFile(expRes.Msg.GetFile())
+	if err != nil {
+		t.Fatalf("read export file: %v", err)
+	}
+	exp, err := decode(data)
+	if err != nil {
+		t.Fatalf("decode export: %v", err)
+	}
+	if exp.GetWish().GetTitle() != "Renamed Trimmed" {
+		t.Errorf("exported wish title = %q; want %q", exp.GetWish().GetTitle(), "Renamed Trimmed")
+	}
+	hasMake := false
+	hasRename := false
+	for _, cmd := range exp.GetCommands() {
+		if cmd.GetMethod() == planv1connect.WishServiceMakeProcedure {
+			hasMake = true
+		}
+		if cmd.GetMethod() == planv1connect.WishServiceRenameProcedure {
+			hasRename = true
+		}
+	}
+	if !hasMake {
+		t.Errorf("export missing make command in journal: %v", exp.GetCommands())
+	}
+	if !hasRename {
+		t.Errorf("export missing rename command in journal: %v", exp.GetCommands())
+	}
+
+	dst := serve(t)
+	_, err = dst.wishes.Import(ctx, connect.NewRequest(&planv1.WishServiceImportRequest{
+		File: expFile,
+	}))
+	if err != nil {
+		t.Fatalf("import exported wish: %v", err)
+	}
+	dstList := dst.list(t)
+	if len(dstList) == 0 || dstList[0].GetTitle() != "Renamed Trimmed" {
+		t.Errorf("imported wish title = %v; want Renamed Trimmed", dstList)
 	}
 }

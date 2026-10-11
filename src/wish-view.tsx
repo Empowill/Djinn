@@ -116,6 +116,7 @@ import {
   MainMerges,
   PushStrategySelector,
   WishDescription,
+  WishTitle,
   recordedAgent,
 } from "./wish-head";
 
@@ -724,7 +725,18 @@ export function WishView({
             <span className="eyebrow">
               {projects.map((p) => p.name).join(" · ") || t("wish.no_project")}
             </span>
-            <h1>{wish.title}</h1>
+            <WishTitle
+              key={wish.id + wish.title}
+              title={wish.title}
+              onSave={(title) =>
+                quiet(
+                  act(
+                    () => clients.wishes.rename({ wishId: wish.id, title }),
+                    [Change.WISH],
+                  ),
+                )
+              }
+            />
             <WishDescription
               key={wish.id + wish.description}
               title={wish.title}

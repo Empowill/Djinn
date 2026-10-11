@@ -636,6 +636,32 @@ func (w *Wishes) Describe(
 	return connect.NewResponse(&planv1.WishServiceDescribeResponse{Wish: wish}), nil
 }
 
+// Rename sets the wish's title, in place of what it had.
+func (w *Wishes) Rename(
+	ctx context.Context, req *connect.Request[planv1.WishServiceRenameRequest],
+) (*connect.Response[planv1.WishServiceRenameResponse], error) {
+	title := strings.TrimSpace(req.Msg.GetTitle())
+	if title == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("title is required"))
+	}
+	var wish *planv1.Wish
+	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if wish, err = store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		wish.Title = title
+		return tx.Put(wish)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := fill(ctx, w.Store, wish); err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.WishServiceRenameResponse{Wish: wish}), nil
+}
+
 // AllowanceOf is the right wish allows its workers in the project projectID: ALLOWANCE_NONE when it allows none.
 func AllowanceOf(wish *planv1.Wish, projectID string) planv1.Allowance {
 	for _, a := range wish.GetAllowances() {

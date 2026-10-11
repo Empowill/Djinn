@@ -1116,6 +1116,33 @@ html[data-theme="light"] .review .question-meta .wish-origin {
   color: var(--text);
 }
 
+/* The wish's title, edited in place. */
+.review .hero-copy > .wish-title {
+  cursor: text;
+  border-radius: 5px;
+}
+.review .hero-copy > .wish-title:hover,
+.review .hero-copy > .wish-title:focus-visible {
+  outline: 1px dashed var(--line-strong);
+  outline-offset: 4px;
+}
+.wish-title-edit {
+  display: block;
+  width: 100%;
+  max-width: 1100px;
+  margin: 8px 0 12px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 34px;
+  font-weight: 550;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+}
+
 /* The wish's description, under its title: a few lines, edited in place. */
 .review .hero-copy > .wish-description {
   margin: -4px 0 12px;

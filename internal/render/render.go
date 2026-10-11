@@ -968,6 +968,10 @@ func summary(
 	switch m := req.(type) {
 	case *planv1.WishServiceMakeRequest:
 		return m.GetTitle()
+	case *planv1.WishServiceRenameRequest:
+		return m.GetTitle()
+	case *planv1.WishServiceDescribeRequest:
+		return m.GetText()
 	case *planv1.QuestionServiceAskRequest:
 		return m.GetText()
 	case *planv1.QuestionServiceAnswerRequest:

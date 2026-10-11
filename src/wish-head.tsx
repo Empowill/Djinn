@@ -40,6 +40,60 @@ export function recordedAgent(lead?: Lead): Provider | undefined {
     : lead.provider;
 }
 
+export function WishTitle({
+  title,
+  editing: startEditing = false,
+  onSave,
+}: {
+  title: string;
+  editing?: boolean;
+  onSave: (title: string) => void;
+}) {
+  const [editing, setEditing] = useState(startEditing);
+  if (!editing)
+    return (
+      <h1
+        className="wish-title"
+        role="button"
+        tabIndex={0}
+        title={t("wish.rename_detail")}
+        onClick={() => setEditing(true)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            setEditing(true);
+          }
+        }}
+      >
+        {title}
+      </h1>
+    );
+  return (
+    <input
+      type="text"
+      className="wish-title-edit"
+      aria-label={t("wish.title")}
+      defaultValue={title}
+      maxLength={500}
+      autoFocus
+      onBlur={(event) => {
+        setEditing(false);
+        const text = event.currentTarget.value.trim();
+        if (text && text !== title.trim()) onSave(text);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          // Left as it was: the blur that follows saves nothing.
+          event.currentTarget.value = title;
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
 export function WishDescription({
   title,
   description,
