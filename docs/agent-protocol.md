@@ -49,6 +49,10 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   with the exact command in the question. In a project whose builds are installed after each push (such as Djinn itself,
   or with `install_questions: when_needed`), ask the developer to install or restart only when necessary, and say why
   in the question; never as routine.
+- **When Djinn misbehaves.** When Djinn misbehaves while the developer is away, the lead may stop the damage without
+  touching code: redirect the wish's integration to another branch, stop workers, withdraw useless questions. The lead
+  may also revert a faulty merge on the integration branch, telling the developer at once; every other commit on the
+  integration branch waits for the developer's agreement, asked first (`djinn question ask`).
 - **Investigations.** "Enlighten me" in the window (`djinn question enlighten <question> --note …`) asks to find out
   more before deciding: the question waits for a revision, and the brief lists it under "To investigate". Its
   question worker (below), or else the lead, answers with `djinn question revise <question> --context …
