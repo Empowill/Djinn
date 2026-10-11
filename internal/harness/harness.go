@@ -148,6 +148,7 @@ type run struct {
 	final    bool                 // the task is getting its final status: an answer waits for done instead
 	answers  []*planv1.Question   // answers to the task's edit question, for the pump to apply
 	use      *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one
+	samples  *workerRing          // recent measurement samples (measure.go)
 	subs     map[chan *planv1.TaskEvent]struct{}
 
 	// Owned by whoever writes the task: Spawn, then the pump.

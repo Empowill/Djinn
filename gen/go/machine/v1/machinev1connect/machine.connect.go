@@ -41,6 +41,8 @@ const (
 const (
 	// MachineServiceShowProcedure is the fully-qualified name of the MachineService's Show RPC.
 	MachineServiceShowProcedure = "/machine.v1.MachineService/Show"
+	// MachineServiceSeriesProcedure is the fully-qualified name of the MachineService's Series RPC.
+	MachineServiceSeriesProcedure = "/machine.v1.MachineService/Series"
 	// GateServiceHoldProcedure is the fully-qualified name of the GateService's Hold RPC.
 	GateServiceHoldProcedure = "/machine.v1.GateService/Hold"
 	// GateServiceListProcedure is the fully-qualified name of the GateService's List RPC.
@@ -56,6 +58,8 @@ type MachineServiceClient interface {
 	// Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at
 	// once, what each running worker uses, and whether it can run a local model.
 	Show(context.Context, *connect.Request[v1.MachineServiceShowRequest]) (*connect.Response[v1.MachineServiceShowResponse], error)
+	// Series returns the CPU and memory measurement series of running workers, the machine total and djinn itself over the last N minutes.
+	Series(context.Context, *connect.Request[v1.MachineServiceSeriesRequest]) (*connect.Response[v1.MachineServiceSeriesResponse], error)
 }
 
 // NewMachineServiceClient constructs a client for the machine.v1.MachineService service. By
@@ -76,12 +80,20 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		series: connect.NewClient[v1.MachineServiceSeriesRequest, v1.MachineServiceSeriesResponse](
+			httpClient,
+			baseURL+MachineServiceSeriesProcedure,
+			connect.WithSchema(machineServiceMethods.ByName("Series")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // machineServiceClient implements MachineServiceClient.
 type machineServiceClient struct {
-	show *connect.Client[v1.MachineServiceShowRequest, v1.MachineServiceShowResponse]
+	show   *connect.Client[v1.MachineServiceShowRequest, v1.MachineServiceShowResponse]
+	series *connect.Client[v1.MachineServiceSeriesRequest, v1.MachineServiceSeriesResponse]
 }
 
 // Show calls machine.v1.MachineService.Show.
@@ -89,11 +101,18 @@ func (c *machineServiceClient) Show(ctx context.Context, req *connect.Request[v1
 	return c.show.CallUnary(ctx, req)
 }
 
+// Series calls machine.v1.MachineService.Series.
+func (c *machineServiceClient) Series(ctx context.Context, req *connect.Request[v1.MachineServiceSeriesRequest]) (*connect.Response[v1.MachineServiceSeriesResponse], error) {
+	return c.series.CallUnary(ctx, req)
+}
+
 // MachineServiceHandler is an implementation of the machine.v1.MachineService service.
 type MachineServiceHandler interface {
 	// Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at
 	// once, what each running worker uses, and whether it can run a local model.
 	Show(context.Context, *connect.Request[v1.MachineServiceShowRequest]) (*connect.Response[v1.MachineServiceShowResponse], error)
+	// Series returns the CPU and memory measurement series of running workers, the machine total and djinn itself over the last N minutes.
+	Series(context.Context, *connect.Request[v1.MachineServiceSeriesRequest]) (*connect.Response[v1.MachineServiceSeriesResponse], error)
 }
 
 // NewMachineServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -110,10 +129,19 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	machineServiceSeriesHandler := connect.NewUnaryHandler(
+		MachineServiceSeriesProcedure,
+		svc.Series,
+		connect.WithSchema(machineServiceMethods.ByName("Series")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/machine.v1.MachineService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case MachineServiceShowProcedure:
 			machineServiceShowHandler.ServeHTTP(w, r)
+		case MachineServiceSeriesProcedure:
+			machineServiceSeriesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -125,6 +153,10 @@ type UnimplementedMachineServiceHandler struct{}
 
 func (UnimplementedMachineServiceHandler) Show(context.Context, *connect.Request[v1.MachineServiceShowRequest]) (*connect.Response[v1.MachineServiceShowResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.MachineService.Show is not implemented"))
+}
+
+func (UnimplementedMachineServiceHandler) Series(context.Context, *connect.Request[v1.MachineServiceSeriesRequest]) (*connect.Response[v1.MachineServiceSeriesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.MachineService.Series is not implemented"))
 }
 
 // GateServiceClient is a client for the machine.v1.GateService service.

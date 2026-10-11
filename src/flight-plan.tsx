@@ -60,6 +60,7 @@ import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
 import { WishTask } from "./wish-task";
+import { ConsumptionPanel } from "./consumption-panel";
 import {
   GrantCard,
   InvestigatingSection,
@@ -712,6 +713,8 @@ export function FlightPlan({
                 wishes.length > 0 &&
                 waits + plan.running.length + plan.investigating.length ===
                   0 && <p className="muted-text">{t("plan.calm")}</p>}
+
+              <ConsumptionPanel />
             </>
           )}
         </div>

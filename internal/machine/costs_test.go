@@ -127,3 +127,83 @@ func TestCosts(t *testing.T) {
 		t.Errorf("an unknown project: %v", err)
 	}
 }
+
+func TestGateCostWaitAndHeld(t *testing.T) {
+	ctx := t.Context()
+	db, err := store.Open(ctx, "", plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &planv1.Project{Id: store.NewID(), Name: "app", Directory: dir}
+	if err := db.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("test", "setup", app); err != nil {
+			return err
+		}
+		return tx.Put(app)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle(CostsHandler(db))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := machinev1connect.NewCommandServiceClient(srv.Client(), srv.URL)
+
+	// Record 10 runs with varying wait and held times
+	// held: 10s, 20s, 30s, 40s, 50s, 60s, 70s, 80s, 90s, 100s
+	// wait: 1s, 2s, 3s, 4s, 5s, 6s, 7s, 8s, 9s, 10s
+	for i := 1; i <= 10; i++ {
+		_, err := client.Record(ctx, connect.NewRequest(&machinev1.CommandServiceRecordRequest{
+			Directory:   dir,
+			Command:     "go tool task lint",
+			Gate:        "lint",
+			WaitSeconds: float64(i),
+			HeldSeconds: float64(i * 10),
+			CpuSeconds:  float64(i),
+			Seconds:     float64(i * 10),
+		}))
+		if err != nil {
+			t.Fatalf("run %d failed: %v", i, err)
+		}
+	}
+
+	res, err := client.List(ctx, connect.NewRequest(&machinev1.CommandServiceListRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	costs := res.Msg.GetCosts()
+	if len(costs) != 1 {
+		t.Fatalf("expected 1 cost entry, got %d", len(costs))
+	}
+	c := costs[0]
+	if c.GetRuns() != 10 {
+		t.Errorf("runs = %d, want 10", c.GetRuns())
+	}
+	if c.GetGate() != "lint" {
+		t.Errorf("gate = %q, want lint", c.GetGate())
+	}
+	if c.GetProjectName() != "app" {
+		t.Errorf("projectName = %q, want app", c.GetProjectName())
+	}
+	if c.GetLastHeldSeconds() != 100 {
+		t.Errorf("lastHeld = %v, want 100", c.GetLastHeldSeconds())
+	}
+	if c.GetLastWaitSeconds() != 10 {
+		t.Errorf("lastWait = %v, want 10", c.GetLastWaitSeconds())
+	}
+	if c.GetP50HeldSeconds() < 50 || c.GetP50HeldSeconds() > 60 {
+		t.Errorf("p50Held = %v, want ~55", c.GetP50HeldSeconds())
+	}
+	if c.GetP95HeldSeconds() < 90 {
+		t.Errorf("p95Held = %v, want >= 90", c.GetP95HeldSeconds())
+	}
+	if len(c.GetRecentHeldSeconds()) != 10 {
+		t.Errorf("recentHeld length = %d, want 10", len(c.GetRecentHeldSeconds()))
+	}
+}

@@ -213,6 +213,24 @@ func runUp(args []string) (restart bool, err error) {
 	workers.HeldGates(gates.Held, gates.Waiting)
 	workers.GatesOutside(gates.Outside)
 	gates.Freed(workers.Wake)
+	gates.ProjectResolver(func(taskID, dir string) string {
+		_, name, _ := machine.Project(ctx, db, taskID, dir)
+		return name
+	})
+	seriesRec := machine.NewSeriesRecorder(monitor, machine.ReadWorker)
+	seriesRec.Sample()
+	go func() {
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				seriesRec.Sample()
+			}
+		}
+	}()
 	if machine.NotMeasured == "" {
 		// A gate's holder is a process of its own, in no worker's scope: read from its processes.
 		gates.Measure(5*time.Second, func(pid int) (machine.Group, error) { return machine.ReadWorker(pid, "") })
@@ -331,7 +349,11 @@ func runUp(args []string) (restart bool, err error) {
 		}
 	}, workers.WorkerMemory, machine.WithLoadRunningWorkers(workers.Running))
 	svc[loadPrefix] = loadHandler
-	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running, workers.Uses)
+	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running, workers.Uses,
+		machine.WithSeriesRecorder(seriesRec),
+		machine.WithSeriesWorkers(workers.RunsSeries),
+		machine.WithSeriesIntervals(gates.Intervals),
+	)
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates)
 	svc[gatePrefix] = gateHandler

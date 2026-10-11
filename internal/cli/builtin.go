@@ -175,8 +175,22 @@ Djinn takes it back after an hour, the command going on.`,
 	},
 }
 
+// MachineCommands is djinn machine commands.
+var MachineCommands = Command{
+	Name:    "machine commands",
+	Usage:   "djinn machine commands [flags]",
+	Summary: "Print what the commands run under the gates cost in each project.",
+	Help: `Print what the commands run under the gates cost in each project: their runs, p50, p95 and last of their
+held time and wait, mean CPU time, peak memory, last exit code, and a sparkline of held time over recent runs,
+the slowest first.`,
+	Flags: []Param{
+		{Name: "--project", Type: "string", Help: "Show only commands of this project (name or ID)."},
+		{Name: "--addr", Type: "string", Env: "DJINN_ADDR", Help: "Address of the djinn server (default $DJINN_ADDR, then the one djinn up writes)."},
+	},
+}
+
 // Builtins are the commands written by hand, in the order the help lists them.
-var Builtins = []Command{Up, Open, Update, Backup, Restore, Version, MCP, GateRun}
+var Builtins = []Command{Up, Open, Update, Backup, Restore, Version, MCP, GateRun, MachineCommands}
 
 // Builtin returns the command written by hand whose words args start with, the longest, and the arguments after them.
 func Builtin(args []string) (Command, []string, bool) {

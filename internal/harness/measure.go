@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 	"slices"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -88,8 +89,17 @@ func (h *Harness) measure(r *run, m *meter) {
 	use := &machinev1.WorkerUse{
 		TaskId: t.GetId(), WishId: t.GetWishId(), Code: t.GetCode(), Title: t.GetTitle(), Resources: res,
 	}
+	point := &machinev1.WorkerPoint{
+		Time:        timestamppb.New(now),
+		CpuPercent:  cpu,
+		MemoryBytes: g.Memory,
+	}
 	h.mu.Lock()
 	r.use = use
+	if r.samples == nil {
+		r.samples = newWorkerRing(maxWorkerSamples)
+	}
+	r.samples.Add(point)
 	h.mu.Unlock()
 	if !worth(m.written, res) {
 		return
@@ -170,4 +180,124 @@ func (h *Harness) WorkerMemory(ctx context.Context, p machine.Policy) (engaged, 
 	h.mu.Unlock()
 	engaged, actual = dispatch.WorkerMemory(tasks, p)
 	return engaged, actual, nil
+}
+
+const maxWorkerSamples = 1440 // 120 minutes at 5s intervals
+
+type workerRing struct {
+	buf  []*machinev1.WorkerPoint
+	head int
+	full bool
+}
+
+func newWorkerRing(capacity int) *workerRing {
+	return &workerRing{buf: make([]*machinev1.WorkerPoint, capacity)}
+}
+
+func (w *workerRing) Add(p *machinev1.WorkerPoint) {
+	w.buf[w.head] = p
+	w.head++
+	if w.head >= len(w.buf) {
+		w.head = 0
+		w.full = true
+	}
+}
+
+func (w *workerRing) Points(cutoff time.Time) []*machinev1.WorkerPoint {
+	if len(w.buf) == 0 {
+		return nil
+	}
+	var out []*machinev1.WorkerPoint
+	if !w.full {
+		for i := 0; i < w.head; i++ {
+			if w.buf[i] != nil && (cutoff.IsZero() || !w.buf[i].GetTime().AsTime().Before(cutoff)) {
+				out = append(out, w.buf[i])
+			}
+		}
+		return out
+	}
+	for i := w.head; i < len(w.buf); i++ {
+		if w.buf[i] != nil && (cutoff.IsZero() || !w.buf[i].GetTime().AsTime().Before(cutoff)) {
+			out = append(out, w.buf[i])
+		}
+	}
+	for i := 0; i < w.head; i++ {
+		if w.buf[i] != nil && (cutoff.IsZero() || !w.buf[i].GetTime().AsTime().Before(cutoff)) {
+			out = append(out, w.buf[i])
+		}
+	}
+	return out
+}
+
+// RunsSeries returns the measurement series for all running workers since cutoff,
+// associating each worker with gate intervals matching its task ID.
+func (h *Harness) RunsSeries(cutoff time.Time, gateIntervals []*machinev1.GateInterval) []*machinev1.WorkerSeries {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	intervalsByTask := make(map[string][]*machinev1.GateInterval)
+	for _, iv := range gateIntervals {
+		if iv.GetTaskId() != "" {
+			intervalsByTask[iv.GetTaskId()] = append(intervalsByTask[iv.GetTaskId()], iv)
+		}
+	}
+
+	var out []*machinev1.WorkerSeries
+	for _, r := range h.runs {
+		if r.paused || r.light {
+			continue
+		}
+		t := r.task
+		if t == nil {
+			continue
+		}
+		var pts []*machinev1.WorkerPoint
+		if r.samples != nil {
+			pts = r.samples.Points(cutoff)
+		}
+		var peakMem uint64
+		var peakCPU float64
+		if t.GetResources() != nil {
+			peakMem = t.GetResources().GetPeakMemoryBytes()
+			peakCPU = t.GetResources().GetPeakCpuPercent()
+		}
+		for _, p := range pts {
+			if p.GetMemoryBytes() > peakMem {
+				peakMem = p.GetMemoryBytes()
+			}
+			if p.GetCpuPercent() > peakCPU {
+				peakCPU = p.GetCpuPercent()
+			}
+		}
+
+		ws := &machinev1.WorkerSeries{
+			TaskId:          t.GetId(),
+			WishId:          t.GetWishId(),
+			Code:            t.GetCode(),
+			Title:           t.GetTitle(),
+			Provider:        t.GetProvider(),
+			Model:           t.GetModel(),
+			Points:          pts,
+			Gates:           intervalsByTask[t.GetId()],
+			PeakMemoryBytes: peakMem,
+			PeakCpuPercent:  peakCPU,
+		}
+		out = append(out, ws)
+	}
+	slices.SortFunc(out, func(a, b *machinev1.WorkerSeries) int {
+		return strings.Compare(a.GetCode(), b.GetCode())
+	})
+	return out
+}
+
+// AddWorkerSample appends a sample point for taskID (useful in tests).
+func (h *Harness) AddWorkerSample(taskID string, p *machinev1.WorkerPoint) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if r, ok := h.runs[taskID]; ok {
+		if r.samples == nil {
+			r.samples = newWorkerRing(maxWorkerSamples)
+		}
+		r.samples.Add(p)
+	}
 }
