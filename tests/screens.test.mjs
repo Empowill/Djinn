@@ -1751,7 +1751,14 @@ test("diff views render inline comments and a comment box; an ended task card of
       hunks: [
         {
           header: "@@ -1 +0,0 @@",
-          lines: [{ kind: s.DiffLineKind.DELETED, oldLine: 1, newLine: 0, text: "gone" }],
+          lines: [
+            {
+              kind: s.DiffLineKind.DELETED,
+              oldLine: 1,
+              newLine: 0,
+              text: "gone",
+            },
+          ],
         },
       ],
       comments: [],
@@ -1765,7 +1772,13 @@ test("diff views render inline comments and a comment box; an ended task card of
   const card = (status, comments, onTurnComments = async () => {}) =>
     s.renderToStaticMarkup(
       h(s.WishTask, {
-        task: { id: "t1", code: "W1", title: "Trim the wick", status, comments },
+        task: {
+          id: "t1",
+          code: "W1",
+          title: "Trim the wick",
+          status,
+          comments,
+        },
         focused: true,
         onStop() {},
         onTurnComments,
@@ -1776,10 +1789,22 @@ test("diff views render inline comments and a comment box; an ended task card of
   assert.match(taskCard, /Turn comments into work/);
   assert.doesNotMatch(taskCard, /Please add a comment explaining this line\./);
   const sent = comments.map((c) => ({ ...c, sentTo: "t2" }));
-  assert.doesNotMatch(card(s.TaskStatus.DONE, sent), /wish-task-turn-comments-button/);
-  assert.doesNotMatch(card(s.TaskStatus.RUNNING, comments), /wish-task-turn-comments-button/);
-  assert.doesNotMatch(card(s.TaskStatus.CANCELLED, comments), /wish-task-turn-comments-button/);
-  assert.doesNotMatch(card(s.TaskStatus.DONE, comments, null), /wish-task-turn-comments-button/);
+  assert.doesNotMatch(
+    card(s.TaskStatus.DONE, sent),
+    /wish-task-turn-comments-button/,
+  );
+  assert.doesNotMatch(
+    card(s.TaskStatus.RUNNING, comments),
+    /wish-task-turn-comments-button/,
+  );
+  assert.doesNotMatch(
+    card(s.TaskStatus.CANCELLED, comments),
+    /wish-task-turn-comments-button/,
+  );
+  assert.doesNotMatch(
+    card(s.TaskStatus.DONE, comments, null),
+    /wish-task-turn-comments-button/,
+  );
 });
 
 test("promptPreview truncates long prompts to a few lines with an ellipsis", () => {

@@ -85,7 +85,9 @@ test("a comment on a line of a running task's diff goes to its worker", async ({
     await page.getByRole("tab", { name: /^Tasks/ }).click();
     await page.getByRole("button", { name: /Trim the wick/ }).click();
     await page.locator(".wish-task-diff-button").click();
-    const line = page.locator(".diff-line-row").filter({ hasText: "a long wick" });
+    const line = page
+      .locator(".diff-line-row")
+      .filter({ hasText: "a long wick" });
     await line.hover();
     await line.getByRole("button", { name: "Add comment" }).click();
     await page.getByLabel("Comment on line 1").fill("Trim it shorter");
