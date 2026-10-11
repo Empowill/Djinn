@@ -1,11 +1,11 @@
 # Instruction replies: backend handoff
 
-To W6 successor task `01a12c04-f2b3-71d0-9046-d25ed68896c1`, which owns the remaining translated interface for I04.
+To W16 successor task `01a12c28-96a6-77a5-b2b9-ff2df9cd4765`, which owns the remaining translated interface for I04.
 
 The backend adds an additive `InstructionReply` message and a public `InstructionService.Reply` RPC. The generated
-TypeScript client is included with this backend contract and must stay aligned with the committed proto; W6 should
+TypeScript client is included with this backend contract and must stay aligned with the committed proto; W16 should
 use these generated files without restoring stale outputs. If the proto changes later, run exactly one gated generation
-with `djinn gate run codegen -- go tool task gen` before making display changes. W6 owns all remaining translated
+with `djinn gate run codegen -- go tool task gen` before making display changes. W16 owns all remaining translated
 display and synced-page rendering for the reply history.
 
 ```proto
