@@ -181,6 +181,9 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
   at once when no work of the wish is left to commit in the project, Djinn starts a correction worker (within
   `correction_attempts`). If the correction fails, or its attempts are spent, or none can start, Djinn asks you: try
   again with a new correction worker, take the push checks over yourself, or push without the push checks this once.
+  A correction stopped on request stays the correction for ten minutes, time to continue it on another agent. A
+  question about the push withdrawn, or the branch moved since its checks were red (even pushed by hand), runs the
+  push checks again: green, the hold lifts; red at a new commit, Djinn withdraws a stale question and acts again.
 - **The setup** makes the integration worktree, and the install worktree, ready before the first command there (a
   check, `generate`, `install`): once, then again when the setup command or a lock file changes (`package-lock.json`,
   `go.sum`, `yarn.lock`, `pnpm-lock.yaml`, `Cargo.lock`, `poetry.lock`, `uv.lock` and the like, anywhere in the
