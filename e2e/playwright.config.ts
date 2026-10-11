@@ -6,6 +6,9 @@ import { defineConfig, devices } from "@playwright/test";
 // worker's task ((djinn.v1.env) fills --task-id from it).
 delete process.env.DJINN_TASK_ID;
 delete process.env.DJINN_WISH_ID;
+delete process.env.DJINN_ADDR;
+process.env.DJINN_TEST = "1";
+
 // The render performance spec (e2e/wish-render.spec.ts) runs on demand on the real-size wish of W174:
 // `go tool task e2e -- e2e/wish-render.spec.ts` (or --grep @render). It is kept out of the default e2e run.
 const args = process.argv.slice(2);

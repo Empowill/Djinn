@@ -8,10 +8,13 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	"connectrpc.com/connect"
@@ -85,6 +88,109 @@ func New(version string) (*Service, error) {
 	return &Service{Home: home, Version: version, Open: openBrowser}, nil
 }
 
+func isTemp(p string) bool {
+	if p == "" {
+		return false
+	}
+	clean := filepath.Clean(p)
+	tmp := filepath.Clean(os.TempDir())
+	if strings.HasPrefix(clean, tmp+string(filepath.Separator)) || strings.HasPrefix(clean, "/tmp/") || strings.HasPrefix(clean, "/var/tmp/") {
+		return true
+	}
+	if eval, err := filepath.EvalSymlinks(clean); err == nil {
+		if strings.HasPrefix(eval, tmp+string(filepath.Separator)) || strings.HasPrefix(eval, "/tmp/") || strings.HasPrefix(eval, "/var/tmp/") {
+			return true
+		}
+	}
+	return false
+}
+
+var (
+	realConfigDir string
+	realHomeDir   string
+)
+
+func init() {
+	if u, err := user.Current(); err == nil && u.HomeDir != "" && !isTemp(u.HomeDir) {
+		realHomeDir = u.HomeDir
+	} else if h, err := os.UserHomeDir(); err == nil && !isTemp(h) {
+		realHomeDir = h
+	}
+	if c, err := os.UserConfigDir(); err == nil && !isTemp(c) {
+		realConfigDir = c
+	} else if realHomeDir != "" {
+		realConfigDir = filepath.Join(realHomeDir, ".config")
+	}
+}
+
+// InTest reports whether the current process is running under `go test` or with DJINN_TEST=1.
+func InTest() bool {
+	return testing.Testing() || os.Getenv("DJINN_TEST") == "1"
+}
+
+// RealHome returns the default data directory of the user: ~/.config/djinn (or djinn-dev for a development build).
+func RealHome() string {
+	config := realConfigDir
+	if config == "" {
+		if c, err := os.UserConfigDir(); err == nil && !isTemp(c) {
+			config = c
+		} else if realHomeDir != "" {
+			config = filepath.Join(realHomeDir, ".config")
+		}
+	}
+	if config == "" {
+		return ""
+	}
+	name := "djinn"
+	if Develop {
+		name = "djinn-dev"
+	}
+	return filepath.Join(config, name)
+}
+
+// IsRealHome reports whether path points to the user's real Djinn data directory.
+func IsRealHome(path string) bool {
+	if path == "" || isTemp(path) {
+		return false
+	}
+	clean := filepath.Clean(path)
+	if strings.HasPrefix(clean, "~/") && realHomeDir != "" {
+		clean = filepath.Clean(filepath.Join(realHomeDir, clean[2:]))
+	}
+	cleanEval, errEval := filepath.EvalSymlinks(clean)
+
+	var candidates []string
+	add := func(base string) {
+		if base == "" || isTemp(base) {
+			return
+		}
+		candidates = append(candidates, filepath.Join(base, "djinn"), filepath.Join(base, "djinn-dev"))
+	}
+	add(realConfigDir)
+	if realHomeDir != "" {
+		add(filepath.Join(realHomeDir, ".config"))
+		if runtime.GOOS == "darwin" {
+			add(filepath.Join(realHomeDir, "Library", "Application Support"))
+		}
+		if runtime.GOOS == "windows" {
+			add(filepath.Join(realHomeDir, "AppData", "Roaming"))
+		}
+	}
+
+	for _, cand := range candidates {
+		candClean := filepath.Clean(cand)
+		if clean == candClean {
+			return true
+		}
+		if errEval == nil {
+			if candEval, err := filepath.EvalSymlinks(candClean); err == nil && cleanEval == candEval {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Develop is set by a development build of djinn, one built from a checkout rather than installed at a version: its
 // data directory is then djinn-dev, so that the djinn being built never reaches the user's own djinn, its window,
 // its socket or its wishes. DJINN_HOME still decides when it is set.
@@ -92,20 +198,24 @@ var Develop bool
 
 // Home is the data directory: $DJINN_HOME, by default ~/.config/djinn (djinn-dev for a development build).
 func Home() (string, error) {
-	if home := os.Getenv("DJINN_HOME"); home != "" {
-		return home, nil
+	home := os.Getenv("DJINN_HOME")
+	if home == "" {
+		// The system's place for user configuration: ~/.config on Linux, ~/Library/Application Support on macOS,
+		// %AppData% on Windows.
+		config, err := os.UserConfigDir()
+		if err != nil {
+			return "", fmt.Errorf("data directory: %w", err)
+		}
+		name := "djinn"
+		if Develop {
+			name = "djinn-dev"
+		}
+		home = filepath.Join(config, name)
 	}
-	// The system's place for user configuration: ~/.config on Linux, ~/Library/Application Support on macOS,
-	// %AppData% on Windows.
-	config, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("data directory: %w", err)
+	if InTest() && IsRealHome(home) {
+		return "", fmt.Errorf("refusing to use real data directory (%s) under test: set DJINN_HOME to a temporary directory", home)
 	}
-	name := "djinn"
-	if Develop {
-		name = "djinn-dev"
-	}
-	return filepath.Join(config, name), nil
+	return home, nil
 }
 
 // providers are the agent command lines Djinn knows: the agent, its name, and the program that runs it.

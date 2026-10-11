@@ -42,6 +42,7 @@ import (
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 func TestMain(m *testing.M) {
@@ -72,7 +73,10 @@ func TestMain(m *testing.M) {
 		main()
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	cleanup := testx.Guard()
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }
 
 // calmMachine is this machine, its cores and memory, never under pressure. A djinn up of a test starts its workers
