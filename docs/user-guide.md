@@ -43,13 +43,17 @@ djinn up --browser    # no window: prints the URL to open in your browser
   `--worker-cpu` (e.g. `150` for 1.5 cores). Memory limits can be set with an expert static ceiling (`--worker-memory`)
   or an adaptive guardrail based on observed provider peaks (`--worker-memory-guard 2.5`): [worker memory](worker-memory.md).
 - **Operating load slider.** Controls how much of the machine Djinn uses: five manual notches (**Minimal**,
-  **Medium**, **High**, **Max**, **Overclock**), or **Auto**. In Auto mode, Djinn dynamically follows developer
+  **Medium**, **High**, **Max**, **Overclock**), or **Auto** (`light` is accepted as an alias for `medium`).
+  The UI displays a dual gauge forecast: CPU (target workers and standard versus low CPU priority) and Memory
+  (peak memory Djinn may engage against current usage and total machine RAM). The **Overclock** notch pushes up to
+  150 % of standard memory capacity with an amber visual pulse. In Auto mode, Djinn dynamically follows developer
   activity: keyboard and mouse inactivity from the desktop session, combined with the CPU and memory load of programs
   outside Djinn. When you type or move the mouse, or other programs put the machine under heavy load, the notch drops
   directly to Minimal to yield the machine to you; when idle for a few minutes with little load, it slowly climbs back
   towards your chosen ceiling. Where no session idle source is available (SSH, headless, unsupported desktop), it falls
   back to host load alone. In Auto, lowering the notch lowers CPU priority and stops starting new workers, never
-  pausing running ones (Decision Q124 (C)).
+  pausing running ones (Decision Q124 (C)). From the command line: `djinn load get`, `djinn load set minimal` (or any notch),
+  and `djinn load watch`.
 
 ### The terminal
 
@@ -80,7 +84,10 @@ skill of app without a copy.
 
 **New wish** (top of the side panel) opens **Make a wish**: what you wish, in a sentence, and the projects it works
 on. Or from a terminal, or from your lead: `djinn wish make "…"`. Under the wish's title, a click gives it the few
-lines it opens with: what it is for, its scope, where it goes (`djinn wish describe <wish-id> --text "…"`).
+lines it opens with: what it is for, its scope, where it goes (`djinn wish describe <wish-id> --text "…"`). Clicking
+the title allows you to rename it (`djinn wish rename <wish-id> --title "…"`). Beside the title, a star button marks
+it as the **Principal** wish (**Mark as principal**): its lead coordinates and receives answers from wishes without an active
+lead (`djinn wish principal <wish-id> --principal`). When unset, the active wish with the lowest rank is principal.
 
 **Three wishes are active at most.** That guards your attention; the machine decides how many workers run. You may
 have as many wishes as you like: with three active already, a new one is made paused (**Make it paused**). The side
@@ -99,7 +106,7 @@ At the top of a wish:
   one with commits or changes not committed stays, and every branch stays.
 
 From a terminal: `djinn wish pause <wish-id>`, `djinn wish activate <wish-id>`, `djinn wish move <wish-id> --to 1`,
-`djinn wish delete <wish-id>`.
+`djinn wish rename <wish-id> --title "…"`, `djinn wish principal <wish-id> --principal`, `djinn wish delete <wish-id>`.
 
 ## The lead
 
@@ -153,10 +160,17 @@ reads until you say it may edit: it shows as **Waits for your answer**.
 
 What moves or waits for someone first (running, failed, then waiting and paused, the planned ones last), then the
 azimas with the work part of them, the done ones folded, with what they spent. Finished tasks show under their azima.
-Each task, coded `W1`, `W2`…, shows how long it runs (or ran),
-its project, its title, its status and what it spent; a running one, the CPU and memory its worker uses (not measured
-on Windows yet). Opened: when it started and ended, the files it writes, its budget, its worker's last word, where its
-work stands, and its events as they come.
+
+Each task is displayed as a two-line row:
+- The first line displays the status badge first (**Running**, **Waits for your answer**, **Planned**, **Done**,
+  **Failed**, etc.), its code `W1`, `W2`…, and its title, with the full prompt on hover.
+- The second line gives its project, agent provider and model, duration (or waiting time: for a slot, dependency,
+  or gate), token counts and cost estimate, and for a running worker its live CPU and memory usage (not measured
+  on Windows yet).
+
+Clicking a task opens its card body: when it started and ended, the files it writes, its budget, its folded prompt,
+diffs, its worker's last word, where its work stands, its events, and folded terminal logs with **See logs** (or
+**Hide logs**).
 
 - **Send** an instruction to a running worker, in the box under its events. "Received" shows once the worker said
   something after it.
@@ -202,11 +216,21 @@ that move (a worker running), then those waiting for the developer (awaiting pro
 not started, then blocked ones, then drafts, and last the done ones folded at the end. Within each group, azimas follow
 the plan's code order, never an order by time or by counts that change every minute.
 
-An azima is **Open**, **In progress**, **To validate** or **Done**. Once every task part of it is finished, it is
-**To validate**: nothing is left for Djinn. Its card says what validating it takes, box by box of its plan file (a
-person, a machine, a release or a real model gives each proof), and its **Validate** button marks it done. An azima
-whose plan file says done stays **In progress** while work part of it still runs or waits. The flight plan lists the
-proofs a person can give among the **Proofs you can give**.
+An azima is **Draft**, **Open**, **In progress**, **To validate** or **Done**. A draft azima holds tasks planned for later:
+**Open this azima** (`djinn task open <azima>`) turns it open, ready for parts to be spawned, and notifies the wish's lead.
+**Move** (`djinn task move <azima> --wish <wish>`) moves an azima (a draft, or an azima no worker runs with parts that have
+not started) to another wish.
+
+Each wish has a **Push strategy**: **Per wish** (one integration branch per wish and project) or **Per azima** (one
+integration branch per azima, named `azima/<azima-code>-<slug>`). In the wish header, the push strategy can be switched,
+or set from a terminal with `djinn wish push-strategy <wish-id> --strategy wish|azima`. For an azima with its own branch,
+status badges show **PR proposed**, **PR open** or **PR merged**, with buttons to open or merge the PR. An individual
+**Push** button (`djinn project push <project> --wish <wish>`) pushes the branch on demand when you choose.
+
+Once every task part of an azima is finished, it is **To validate**: nothing is left for Djinn. Its card says what
+validating it takes, box by box of its plan file (a person, a machine, a release or a real model gives each proof), and
+its **Validate** button marks it done. An azima whose plan file says done stays **In progress** while work part of it
+still runs or waits. The flight plan lists the proofs a person can give among the **Proofs you can give**.
 
 ### The Decisions tab
 
@@ -236,6 +260,9 @@ recommendation first, then the options A to D, then what is at stake. Its colour
 when a task waits for the answer, orange under the words the lead gave ("before the merge"), grey when it **Can wait**.
 The cards, the bar of what waits for you and the brief list them in that order.
 
+When work leaves a move only the developer can make (push a tag, open or merge a PR, start a release, check on a Mac or
+Windows, install when needed), Djinn or the agent asks it as a question with the exact command.
+
 - **Rub the lamp** answers with the option selected and your note: the recommended one is selected first, so one
   click takes it; pick another and the lamp sends that one. With no option recommended, pick one first. The lead
   turns your answer into tasks itself, in one pass, holding the plan's graph (`answer_workers: true` in settings
@@ -255,8 +282,15 @@ The cards, the bar of what waits for you and the brief list them in that order.
   - Arrows (Up/Down/Left/Right) or 1–4 pick an option when focus is on the card and not in the note.
   The shortcuts stay on the card: they never intercept keys from the terminal or other inputs.
 
-Your answer goes to the lead and the workers. An answered question is a decision. A wish without a lead session has no
-lead to tell: the card says so, and the answer waits in the wish's brief for the next lead.
+Your answer goes to the lead and the workers. An answered question is a decision. When a question is answered in a
+wish without a running lead, Djinn routes the answer to the terminal of the principal lead (`principal: true` or
+rank 1 active wish), noting the wish name and id. If no lead runs on any wish, Djinn marks the question as waiting for
+a lead; the next lead to start or resume is told of all waiting answers, and the principal lead's brief lists them under
+**Open answers without a lead.**
+
+An open question can be moved to another wish (`djinn question move <question> --wish <wish>`), with `--follow` to
+bring tasks following this decision along with it. A question no longer relevant can be withdrawn without an answer
+(`djinn question withdraw <question> --note "…"`), marked **Withdrawn**.
 
 **From anywhere.** In the window, a question asked in an active wish also shows as a system notification: a click
 shows the wish, a button answers it (one per option, or **Yes**). The browser shows none; on macOS, notifications need
@@ -331,14 +365,18 @@ When a project's settings name its checks, Djinn brings finished work into the w
 ends, it merges the task's branch in a worktree of its own (made ready by the `setup` command), runs the checks named
 for `commit` through their gates, and moves the branch when they pass. Each task says where its work stands: waiting
 to be committed, committed, conflict, red, corrected by another task. A conflict in code or a red check start a
-correction worker; past two attempts, Djinn asks you. Before it pushes the branch, at an azima's end or after an hour
-and three tasks committed, it runs the checks named for `push`: red, the push is held, and Djinn starts a correction
-worker; if that fails or attempts are spent, it asks you. `djinn project show` and the project's view in the window list the checks and how each last ran. When the settings also name an install command, the window
-proposes the batch it committed, with **What changed**; **Install and restart** installs it,
-nothing before your click. With `install_questions: when_needed` (set in Djinn itself, whose builds install after each push),
-Djinn raises no routine install question: the banner and post-push install are enough, and it asks only when necessary
-(e.g. a build carries a fix for a task you are waiting on, a change that takes effect after restart and matters now, or the running
-build is broken), saying why in the question. Details: [integration](team-settings.md#integration).
+correction worker; past two attempts, Djinn asks you.
+
+Each project defines its push cadence: **Standard** (pushes at an azima's end or after an hour and three tasks committed)
+or **On demand** (pushes only when you click **Push** or run `djinn project push <project> [--wish <wish>]`). You can
+switch cadence in the project view or with `djinn project set-push <project> standard|on_demand`. Before it pushes the branch,
+it runs the checks named for `push`: red, the push is held, and Djinn starts a correction worker; if that fails or attempts
+are spent, it asks you. `djinn project show` and the project's view in the window list the checks and how each last ran.
+When the settings also name an install command, the window proposes the batch it committed, with **What changed** displaying
+folded task summaries; **Install and restart** installs it, nothing before your click. With `install_questions: when_needed`
+(set in Djinn itself, whose builds install after each push), Djinn raises no routine install question: the banner and post-push
+install are enough, and it asks only when necessary (e.g. a build carries a fix for a task you are waiting on, a change that
+takes effect after restart and matters now, or the running build is broken), saying why in the question. Details: [integration](team-settings.md#integration).
 
 Djinn also keeps the wish's branch up with the project's main branch: it fetches main at most hourly, and once main
 holds a release the branch lacks, it merges main in the same way, tested, never rebasing; a conflict starts a
@@ -383,8 +421,8 @@ over it: Djinn merges main into the wishes' branches instead, and proposes their
 
 ## More
 
-- **Documentation**, in Connections & preferences: **Open** shows Djinn's concepts and its API, also served at
-  `/docs/` while `djinn up` runs.
+- **Documentation**, in Connections & preferences: **Open** displays the documentation window over the interface,
+  synchronized with the window's theme (also served at `/docs/` while `djinn up` runs).
 - [Agent protocol](agent-protocol.md) · [Providers](providers.md) · [Adaptable wishes](adaptable-wishes.md) · [Worker memory](worker-memory.md)
 - The language follows the system (English or French); change it, and the theme, in **Connections & preferences**.
 - To build Djinn, or work on it: [`CONTRIBUTING.md`](../CONTRIBUTING.md).
