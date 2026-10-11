@@ -19,7 +19,7 @@ func TestPreemptForSlot(t *testing.T) {
 	t.Parallel()
 
 	lim := &limit{slots: 1}
-	e := up(t, t.TempDir(), WithQuestionWorkers(), WithCapacity(lim.capacity), WithTick(20*time.Millisecond))
+	e := up(t, t.TempDir(), WithEnlightenWorkers(), WithCapacity(lim.capacity), WithTick(20*time.Millisecond))
 	wishID, _ := e.wish(t, fakeProject(t, ""))
 
 	// Work task takes the one slot.
@@ -94,7 +94,7 @@ func TestPreemptForMemory(t *testing.T) {
 		return free
 	}
 
-	e := up(t, t.TempDir(), WithQuestionWorkers(), WithCapacity((&limit{slots: 4}).capacity),
+	e := up(t, t.TempDir(), WithEnlightenWorkers(), WithCapacity((&limit{slots: 4}).capacity),
 		WithMemory(available, machine.DefaultPolicy()), WithTick(20*time.Millisecond))
 	wishID, _ := e.wish(t, fakeProject(t, ""))
 
@@ -173,7 +173,7 @@ func TestPreemptExclusions(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
-	e := up(t, t.TempDir(), WithQuestionWorkers())
+	e := up(t, t.TempDir(), WithEnlightenWorkers())
 	wishID, _ := e.wish(t, fakeProject(t, ""))
 
 	task := e.mustSpawn(t, wishID, "Work", "wait", nil)
@@ -244,7 +244,7 @@ func TestPreemptWindowsNeverPauses(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
-	e := up(t, t.TempDir(), WithQuestionWorkers())
+	e := up(t, t.TempDir(), WithEnlightenWorkers())
 	wishID, _ := e.wish(t, fakeProject(t, ""))
 
 	w1 := e.mustSpawn(t, wishID, "Work 1", "wait", nil)

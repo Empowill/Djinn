@@ -496,24 +496,6 @@ func TestRecoverLeavesPlannedTasks(t *testing.T) {
 	}
 }
 
-// envClaude is Claude played by the test binary: the fake's environment is added to every worker's,
-// and each one records its input and its arguments in files named after its task, in dir.
-type envClaude struct {
-	Claude
-	env []string
-	dir string
-}
-
-func (c envClaude) with(spec Spec) Spec {
-	spec.Env = append(append(spec.Env, c.env...), "DJINN_FAKE_INPUT="+filepath.Join(c.dir, "input-"+spec.TaskID),
-		"DJINN_FAKE_ARGS="+filepath.Join(c.dir, "args-"+spec.TaskID))
-	return spec
-}
-
-func (c envClaude) Start(ctx context.Context, spec Spec) (Worker, error) {
-	return c.Claude.Start(ctx, c.with(spec))
-}
-
 // waitFor polls cond until it holds, or fails after a few seconds.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()

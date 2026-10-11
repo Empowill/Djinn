@@ -67,7 +67,7 @@ Djinn decides when it spawns a task, and records the outcome in the task's `acce
    mode. Only the first answer counts; a task stopped on request stays stopped. An agent that cannot run
    read-only (Antigravity) does not start before the answer.
 
-**A question worker** (`Task.role`, the converter or the investigator Djinn starts on a question, see the [agent
+**A question worker** (`Task.role`, the investigator Djinn starts on a question, see the [agent
 protocol](agent-protocol.md)) skips these rules: its access is `DJINN`, the same everywhere. It reads, in its
 project's folder without a worktree (or an empty folder of its own outside any project), and runs only djinn's
 commands to read the wish and plan from the question (`wish brief`, `task list`, `task get`, `question list`, `block

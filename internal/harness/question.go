@@ -21,21 +21,12 @@ import (
 )
 
 // A question worker is a small task Djinn starts by itself on a question of a wish, so that the lead stays informed
-// without being in the loop: after an answer, a converter turns the decision into tasks; after "Enlighten me", an
-// investigator reads, then revises the question. It reads and runs djinn's commands only (TASK_ACCESS_DJINN), in its
-// project's folder, and takes no slot. The project's settings turn them off, and choose their model and budget.
+// without being in the loop: after "Enlighten me", an investigator reads, then revises the question. It reads and
+// runs djinn's commands only (TASK_ACCESS_DJINN), in its project's folder, and takes no slot. The project's
+// settings turn them off, and choose their model and budget.
 
 // methodQuestion is what the journal records when Djinn starts a question worker; the request is the spawn.
 const methodQuestion = "harness/question"
-
-// WithAnswerWorkers lets the harness start answer workers: false by default.
-func WithAnswerWorkers(on ...bool) Option {
-	val := true
-	if len(on) > 0 {
-		val = on[0]
-	}
-	return func(h *Harness) { h.answerWorkers = &val }
-}
 
 // WithEnlightenWorkers lets the harness start enlighten workers: true by default.
 func WithEnlightenWorkers(on ...bool) Option {
@@ -44,19 +35,6 @@ func WithEnlightenWorkers(on ...bool) Option {
 		val = on[0]
 	}
 	return func(h *Harness) { h.enlightenWorkers = &val }
-}
-
-// WithQuestionWorkers sets both answer workers and enlighten workers: deprecated, use WithAnswerWorkers and
-// WithEnlightenWorkers instead.
-func WithQuestionWorkers(on ...bool) Option {
-	val := true
-	if len(on) > 0 {
-		val = on[0]
-	}
-	return func(h *Harness) {
-		h.answerWorkers = &val
-		h.enlightenWorkers = &val
-	}
 }
 
 // questionWorker tells whether Djinn started the task on a question.
@@ -87,10 +65,10 @@ func (h *Harness) askWorker(ctx context.Context, q *planv1.Question, role planv1
 func (h *Harness) startQuestionWorker(
 	ctx context.Context, q *planv1.Question, role planv1.TaskRole, note string, before *planv1.Task,
 ) (*planv1.Task, error) {
-	if role == planv1.TaskRole_TASK_ROLE_CONVERTER && h.answerWorkers != nil && !*h.answerWorkers {
+	if role != planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
 		return nil, nil
 	}
-	if role == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && h.enlightenWorkers != nil && !*h.enlightenWorkers {
+	if h.enlightenWorkers != nil && !*h.enlightenWorkers {
 		return nil, nil
 	}
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
@@ -113,37 +91,20 @@ func (h *Harness) startQuestionWorker(
 	if err != nil {
 		return nil, err
 	}
-	switch role {
-	case planv1.TaskRole_TASK_ROLE_CONVERTER:
-		allow := settings.AnswerWorkers
-		if settings.AnswerWorkersFrom == planv1.SettingSource_SETTING_SOURCE_DEFAULT && h.answerWorkers != nil {
-			allow = *h.answerWorkers
-		}
-		if !allow {
-			return nil, nil
-		}
-	case planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
-		allow := settings.EnlightenWorkers
-		if settings.EnlightenWorkersFrom == planv1.SettingSource_SETTING_SOURCE_DEFAULT && h.enlightenWorkers != nil {
-			allow = *h.enlightenWorkers
-		}
-		if !allow {
-			return nil, nil
-		}
+	allow := settings.EnlightenWorkers
+	if settings.EnlightenWorkersFrom == planv1.SettingSource_SETTING_SOURCE_DEFAULT && h.enlightenWorkers != nil {
+		allow = *h.enlightenWorkers
+	}
+	if !allow {
+		return nil, nil
 	}
 	brief, err := plan.BuildBrief(ctx, h.store, h.home, wish.GetId())
 	if err != nil {
 		return nil, err
 	}
-	title, prompt := converterPrompt(q, retryText(before), brief.Moving)
-	if role == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
-		title, prompt = investigatorPrompt(q, note, retryText(before), brief.Moving)
-	}
+	title, prompt := investigatorPrompt(q, note, retryText(before), brief.Moving)
 	provider, model, _ := questionProvider(settings)
 	task := &planv1.Task{Role: role, Question: q.GetCode()}
-	if role == planv1.TaskRole_TASK_ROLE_CONVERTER {
-		task.Decision = q.GetCode()
-	}
 	return h.spawn(ctx, methodQuestion, &planv1.TaskServiceSpawnRequest{
 		WishId: wish.GetId(), ProjectId: project.GetId(), Title: title, Prompt: prompt, Provider: provider,
 		Model: model, MaxBudgetUsd: settings.QuestionBudgetUSD,
@@ -241,39 +202,6 @@ func retryText(before *planv1.Task) string {
 	return fmt.Sprintf("## Before you\n\n%s had this job before you, and ended without doing anything after this call "+
 		"was refused: %s. Only that form was refused, not Bash: work as the section above says, and do the job.\n\n",
 		before.GetCode(), strings.TrimPrefix(before.GetError(), refusedPrefix))
-}
-
-// converterPrompt is the title and the prompt of the converter of the answered question q, in a wish whose brief's
-// moving part is brief; retry says why it starts again, if it does.
-func converterPrompt(q *planv1.Question, retry, brief string) (title, prompt string) {
-	code, wish := q.GetCode(), q.GetWishId()
-	var b strings.Builder
-	fmt.Fprintf(&b, "You are a question worker of Djinn. The developer answered %s in wish %s. Your one job: turn "+
-		"this decision into tasks for workers. You write no code, edit no file and run no gate: you only plan, with "+
-		"Djinn's command line. The wish's lead is told what you did when you end.\n\n", code, wish)
-	questionText(&b, q)
-	fmt.Fprintf(&b, "## The answer\n\n%s\n\n", answerText(q))
-	if n := strings.TrimSpace(q.GetAnswer().GetNote()); n != "" {
-		b.WriteString("The developer's note:\n\n" + n + "\n\n")
-	}
-	fmt.Fprintf(&b, "## What to do\n\n"+
-		"1. Read what you need: the brief below, `djinn task list --wish-id %[2]s`, the code (with Read, Grep and "+
-		"Glob).\n"+
-		"2. For each piece of work the decision calls for: `djinn task spawn %[2]s --title \"…\" --prompt \"…\" "+
-		"--decision %[1]s`. A clear title; a prompt a worker can follow alone: what to do, in which files, how to "+
-		"check it (the tests to run, through `djinn gate run`). `--part-of T07` puts it in the azima of the plan it "+
-		"serves; `--after W3` only when it needs W3's result, so that tasks that do not need each other run side by "+
-		"side; `--later` plans a task without starting it now. First look for the azima each task belongs to "+
-		"(`djinn task list --wish-id %[2]s`): group what goes together, never mix what does not, and spawn no duplicate "+
-		"of a task that exists. Open a new azima (`--kind azima`, one sentence a user reads as a feature) only for a "+
-		"will no existing one carries. A task that extends an azima beyond its goal: say so in your last line, the "+
-		"lead rephrases its goal. Check every task that ends. Read its final note (`djinn task watch <task>`, or the line Djinn types): when it leaves an uncertainty (a choice it made in the developer's place, something it did not verify, a partial result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too.\n"+
-		"3. If the answer leaves something open, do not guess: ask it, `djinn question ask \"…\" %[2]s --options \"…\" "+
-		"--options \"…\" --recommendation \"…\" --context \"…\"`, its context naming %[1]s. Every move only the developer can make (push a tag, merge or open a pull request, create a release, try something on a machine Djinn does not have, grant a right, install and restart) is asked as a question (`djinn question ask`, with what exactly to run or click, and why now), the moment it becomes due; never left in a note or a terminal line.\n"+
-		"4. If the decision calls for no work, spawn nothing and say why in one sentence.\n"+
-		"5. End with one line: what you spawned or asked.\n\n", code, wish)
-	b.WriteString(questionAccess + retry + "## Where the wish stands\n\n" + brief)
-	return code + " → tasks", b.String()
 }
 
 // investigatorPrompt is the title and the prompt of the investigator of q, which the developer wants to know more
@@ -494,8 +422,6 @@ func questionEndLine(t *planv1.Task, tasks []*planv1.Task, questions []*planv1.Q
 		line += fmt.Sprintf(" Djinn starts it again: %s, told to run each djinn command alone; you will hear when it ends.", retry)
 	case t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && !revised:
 		line += fmt.Sprintf(" %s still waits for a revision: djinn task get %s has what it found.", code, t.GetId())
-	case t.GetRole() == planv1.TaskRole_TASK_ROLE_CONVERTER && len(did) == 0:
-		line += fmt.Sprintf(" Nothing came of %s: act on it, djinn wish brief %s has the context.", code, wish)
 	case t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE:
 		line += fmt.Sprintf(" Check what is left of %s: djinn wish brief %s has the context.", code, wish)
 	case len(spawned) > 0:
@@ -515,8 +441,5 @@ func statusText(t *planv1.Task) string {
 
 // questionStart is what a question worker's start event says it is.
 func questionStart(t *planv1.Task) string {
-	if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
-		return "investigates " + t.GetQuestion() + ", then revises it"
-	}
-	return "turns the decision " + t.GetQuestion() + " into tasks"
+	return "investigates " + t.GetQuestion() + ", then revises it"
 }

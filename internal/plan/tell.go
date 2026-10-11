@@ -71,18 +71,13 @@ func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, did string) {
 		return
 	}
 	if did != "" {
-		w.tell(ctx, q, AnswerLine(q, "", did))
-		return
-	}
-	worker := w.workerOf(ctx, q, planv1.TaskRole_TASK_ROLE_CONVERTER)
-	if worker != "" {
-		w.tell(ctx, q, AnswerLine(q, worker, ""))
+		w.tell(ctx, q, AnswerLine(q, did))
 		return
 	}
 
 	ownTerminal := LeadTerminal(q.GetWishId())
 	if w.Leads != nil && w.Leads.Running(ownTerminal) {
-		w.tell(ctx, q, AnswerLine(q, "", ""))
+		w.tell(ctx, q, AnswerLine(q, ""))
 		return
 	}
 
@@ -133,7 +128,7 @@ func (w *Wishes) tellWaitingAnswers(ctx context.Context, wishID, terminal string
 		}
 		var line string
 		if q.GetWishId() == wishID {
-			line = AnswerLine(q, "", "")
+			line = AnswerLine(q, "")
 		} else {
 			qWish, err := store.Get[*planv1.Wish](ctx, w.Store, q.GetWishId())
 			if err != nil {
@@ -202,9 +197,8 @@ func (w *Wishes) tell(ctx context.Context, q *planv1.Question, line string) {
 }
 
 // AnswerLine is the line that tells a lead the answer to q: the choice, the option and the note, on one line; then
-// what Djinn did with it, when did says it settled it; else the question worker that turns it into tasks, when worker
-// names one, or else that the lead turns it into tasks itself.
-func AnswerLine(q *planv1.Question, worker, did string) string {
+// what Djinn did with it, when did says it settled it; or else that the lead turns it into tasks itself.
+func AnswerLine(q *planv1.Question, did string) string {
 	choice := choiceText(q)
 	if letter, option, ok := strings.Cut(choice, ": "); ok {
 		choice = fmt.Sprintf("%s — %q", letter, option)
@@ -216,10 +210,6 @@ func AnswerLine(q *planv1.Question, worker, did string) string {
 	}
 	if did != "" {
 		fmt.Fprintf(&b, " %s.", strings.TrimSuffix(did, "."))
-		return b.String()
-	}
-	if worker != "" {
-		fmt.Fprintf(&b, " %s turns it into tasks; you will hear when it ends.", worker)
 		return b.String()
 	}
 	fmt.Fprintf(&b, " Turn it into tasks: you hold the plan's graph (djinn wish brief %s).", q.GetWishId())

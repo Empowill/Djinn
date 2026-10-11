@@ -28,9 +28,10 @@ const (
 // Answered takes the answer to a question: when it is a task's edit question, a yes starts the task's worker again,
 // allowed to edit the project's files and to run no command, through the scheduler when no worker runs it; a no
 // leaves it reading only. When Djinn asked it about work that failed to integrate, it settles that work
-// (answerIntegration); about a push, it pushes or waits (answerPush). Any other answer is a decision: a converter
-// turns it into tasks (question.go). Only the first answer counts. The plan services call it once the answer is
-// stored. It says what Djinn did with the answer, for the lead; "" when the answer is the lead's to act on.
+// (answerIntegration); about a push, it pushes or waits (answerPush). Any other answer is a decision for the wish's
+// lead to turn into tasks, or for the principal lead when the wish has no lead. Only the first answer counts. The plan
+// services call it once the answer is stored. It says what Djinn did with the answer, for the lead; "" when the
+// answer is the lead's to act on.
 func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 	if q.GetAnswer() == nil {
 		return ""
@@ -64,11 +65,6 @@ func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 		default:
 			did = append(did, "Djinn keeps "+t.GetCode()+" reading only")
 		}
-	}
-	// A decision for the lead to act on: a converter turns it into tasks. An edit question, a question on work that
-	// failed to integrate, one about a push, a routed request, a grant and a move are settled by Djinn itself.
-	if len(tasks) == 0 && len(did) == 0 && q.GetRoute() == nil && !q.GetGrant() && !q.GetMove() {
-		h.askWorker(ctx, q, planv1.TaskRole_TASK_ROLE_CONVERTER, "")
 	}
 	return strings.Join(slices.DeleteFunc(did, func(d string) bool { return d == "" }), "; ")
 }

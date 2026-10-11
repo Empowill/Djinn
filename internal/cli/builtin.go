@@ -61,19 +61,9 @@ address in the data folder, for the other commands.`,
 				"no ceiling applies; default $DJINN_WORKER_MEMORY_GUARD.",
 		},
 		{
-			Name: "--answer-workers", Type: "bool", Default: "false", Env: "DJINN_ANSWER_WORKERS",
-			Help: "Start a worker to turn a developer's answer into tasks; default $DJINN_ANSWER_WORKERS (on or off), " +
-				"else off (the lead turns answers into tasks itself).",
-		},
-		{
 			Name: "--enlighten-workers", Type: "bool", Default: "true", Env: "DJINN_ENLIGHTEN_WORKERS",
 			Help: `Start a worker to investigate and revise a question after "Enlighten me"; default ` +
 				"$DJINN_ENLIGHTEN_WORKERS (on or off), else on.",
-		},
-		{
-			Name: "--question-workers", Type: "bool", Env: "DJINN_QUESTION_WORKERS",
-			Help: "Deprecated: set --answer-workers and --enlighten-workers instead; sets both when given; " +
-				"default $DJINN_QUESTION_WORKERS.",
 		},
 		{
 			Name: "--pprof", Type: "bool", Env: "DJINN_PPROF",

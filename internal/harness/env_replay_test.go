@@ -242,29 +242,29 @@ func TestQuestionWorkerStartFailureRetriedOnce(t *testing.T) {
 	providers[planv1.Provider_PROVIDER_CLAUDE] = Fake{}
 
 	home := t.TempDir()
-	e := upWith(t, home, providers, WithQuestionWorkers())
+	e := upWith(t, home, providers, WithEnlightenWorkers())
 
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	// Configure question_provider as ANTIGRAVITY (which fails at start with ErrReadOnly).
-	if err := os.WriteFile(filepath.Join(dir, plan.SettingsFile), []byte("provider: PROVIDER_ANTIGRAVITY\nquestion_provider: PROVIDER_ANTIGRAVITY\nanswer_workers: true\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, plan.SettingsFile), []byte("provider: PROVIDER_ANTIGRAVITY\nquestion_provider: PROVIDER_ANTIGRAVITY\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	wishID, _ := e.wish(t, dir)
 	q := e.asker(wishID)
 	asked := q.ask(t, "")
-	q.answer(t, asked.GetCode(), planv1.Choice_CHOICE_A, "")
+	q.enlighten(t, asked.GetCode(), "tell me more")
 
-	converters := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)
-	if len(converters) != 1 {
-		t.Fatalf("%d converters, want 1", len(converters))
+	investigators := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+	if len(investigators) != 1 {
+		t.Fatalf("%d investigators, want 1", len(investigators))
 	}
-	c := converters[0]
+	c := investigators[0]
 
-	// The converter was retried on Claude.
+	// The investigator was retried on Claude.
 	e.ended(t, c.GetId())
 	events := e.watch(t.Context(), t, c.GetId(), 0)
 	if !slices.ContainsFunc(events, func(ev *planv1.TaskEvent) bool {

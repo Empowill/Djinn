@@ -52,6 +52,9 @@ func ReadSettingsWithWarnings(path string) (*planv1.ProjectSettings, []string, e
 	if line, why := secretIn(b); line > 0 {
 		return nil, nil, fmt.Errorf("%s: line %d %s; this file holds no secret: remove it", path, line, why)
 	}
+	if line, key := removedKeyIn(b); line > 0 {
+		return nil, nil, fmt.Errorf("%s: line %d names %s: this key was removed; delete the line", path, line, key)
+	}
 	s := &planv1.ProjectSettings{}
 	normalized := normalizeInstallQuestions.ReplaceAllFunc(b, func(match []byte) []byte {
 		parts := normalizeInstallQuestions.FindSubmatch(match)
@@ -99,7 +102,24 @@ var (
 
 	// normalizeInstallQuestions matches lowercase enum values for install_questions so prototext can parse them.
 	normalizeInstallQuestions = regexp.MustCompile(`(?m)^(\s*install_questions\s*:\s*)["']?(never|when_needed|always)["']?`)
+	// removedSettingsField matches setting keys that have been removed from ProjectSettings.
+	removedSettingsField = regexp.MustCompile(`(?i)^\s*(answer_workers|question_workers)\b`)
 )
+
+// removedKeyIn returns the first line of b that names a removed key, and the key; 0 when none does.
+func removedKeyIn(b []byte) (int, string) {
+	lines := bufio.NewScanner(bytes.NewReader(b))
+	for n := 1; lines.Scan(); n++ {
+		line := lines.Text()
+		if idx := strings.IndexByte(line, '#'); idx >= 0 {
+			line = line[:idx]
+		}
+		if m := removedSettingsField.FindStringSubmatch(line); m != nil {
+			return n, strings.ToLower(m[1])
+		}
+	}
+	return 0, ""
+}
 
 // secretIn returns the first line of b that looks like it holds a secret, and why; 0 when none does: a field name
 // that says so, a word that starts like a well-known key, or a long run of letters and digits.
@@ -157,12 +177,8 @@ type Settings struct {
 	// How many correction workers Djinn starts for a batch that conflicts in code or tests red, before it asks.
 	CorrectionAttempts int
 
-	// AnswerWorkers says whether Djinn starts a question worker after an answer to turn it into tasks.
 	// EnlightenWorkers says whether Djinn starts an investigator after a request to investigate ("Enlighten me").
-	// QuestionWorkers is deprecated: when set in settings, it sets both.
-	AnswerWorkers     bool
 	EnlightenWorkers  bool
-	QuestionWorkers   bool
 	QuestionProvider  planv1.Provider
 	QuestionModel     string
 	QuestionBudgetUSD float64
@@ -181,8 +197,8 @@ type Settings struct {
 
 	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom            planv1.SettingSource
 	ChecksFrom, AttemptsFrom, InstallFrom, TestOneFrom                                                 planv1.SettingSource
-	AnswerWorkersFrom, EnlightenWorkersFrom                                                            planv1.SettingSource
-	QuestionWorkersFrom, QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                   planv1.SettingSource
+	EnlightenWorkersFrom                                                                               planv1.SettingSource
+	QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                                        planv1.SettingSource
 	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom, PushStrategyFrom planv1.SettingSource
 	InstallQuestionsFrom                                                                               planv1.SettingSource
 }
@@ -211,8 +227,8 @@ func CanResume(p planv1.Provider) bool {
 	}
 }
 
-// Defaults of the question workers: a cheaper model is enough to turn a decision into tasks, or to read and revise a
-// question; and a cap, so that one never runs long.
+// Defaults of the question workers: a cheaper model is enough to read and revise a question; and a cap, so that one
+// never runs long.
 const (
 	DefaultQuestionModel     = "sonnet" // for claude; another provider's own default
 	DefaultQuestionBudgetUSD = 2.0
@@ -227,9 +243,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		Provider: planv1.Provider_PROVIDER_CLAUDE, Branch: DefaultBranch, CorrectionAttempts: DefaultCorrectionAttempts,
 		ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
 		SetupFrom: def, ChecksFrom: def, InstallFrom: def, TestOneFrom: def, AttemptsFrom: def,
-		AnswerWorkers: false, AnswerWorkersFrom: def,
 		EnlightenWorkers: true, EnlightenWorkersFrom: def,
-		QuestionWorkers: false, QuestionWorkersFrom: def,
 		QuestionProviderFrom: def, QuestionBudgetUSD: DefaultQuestionBudgetUSD,
 		QuestionModelFrom: def, QuestionBudgetFrom: def,
 		MergeMain: DefaultMergeMain, MergeMainEvery: DefaultMergeMainEvery, InstallReleases: true,
@@ -279,19 +293,9 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		if f.settings.Install != nil {
 			s.Install, s.InstallFrom = f.settings.GetInstall(), f.from
 		}
-		if f.settings.QuestionWorkers != nil {
-			v := f.settings.GetQuestionWorkers()
-			s.AnswerWorkers, s.AnswerWorkersFrom = v, f.from
-			s.EnlightenWorkers, s.EnlightenWorkersFrom = v, f.from
-			s.QuestionWorkers, s.QuestionWorkersFrom = v, f.from
-		}
-		if f.settings.AnswerWorkers != nil {
-			s.AnswerWorkers, s.AnswerWorkersFrom = f.settings.GetAnswerWorkers(), f.from
-		}
 		if f.settings.EnlightenWorkers != nil {
 			s.EnlightenWorkers, s.EnlightenWorkersFrom = f.settings.GetEnlightenWorkers(), f.from
 		}
-		s.QuestionWorkers = s.AnswerWorkers && s.EnlightenWorkers
 		if f.settings.QuestionProvider != nil {
 			s.QuestionProvider, s.QuestionProviderFrom = f.settings.GetQuestionProvider(), f.from
 			s.QuestionModel, s.QuestionModelFrom, questionModel = "", def, false
@@ -416,7 +420,6 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "correction_attempts", Value: strconv.Itoa(s.CorrectionAttempts), Source: s.AttemptsFrom},
 		{Name: "install", Value: s.Install, Source: s.InstallFrom},
 		{Name: "install_questions", Value: InstallQuestionsWord(s.InstallQuestions), Source: s.InstallQuestionsFrom},
-		{Name: "answer_workers", Value: strconv.FormatBool(s.AnswerWorkers), Source: s.AnswerWorkersFrom},
 		{Name: "enlighten_workers", Value: strconv.FormatBool(s.EnlightenWorkers), Source: s.EnlightenWorkersFrom},
 		{Name: "question_provider", Value: questionProviderName(s.QuestionProvider), Source: s.QuestionProviderFrom},
 		{Name: "question_model", Value: s.QuestionModel, Source: s.QuestionModelFrom},
