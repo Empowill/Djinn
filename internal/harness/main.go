@@ -157,13 +157,27 @@ func (h *Harness) correctionOver(c *planv1.Task) bool {
 		return true
 	}
 	switch c.GetStatus() {
-	case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_CANCELLED:
+	case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_CANCELLED:
 		return !h.running(c.GetId())
+	case planv1.TaskStatus_TASK_STATUS_STOPPED:
+		return !h.running(c.GetId()) && !h.stoppedLately(c)
 	case planv1.TaskStatus_TASK_STATUS_DONE:
 		in := c.GetIntegration()
 		return in == nil || in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || in.GetQuestionId() != ""
 	}
 	return false
+}
+
+// stopGrace is how long a correction or review worker stopped on request stays the correction: a lead who moves it to
+// another agent stops it, changes its provider or model, and continues it within a minute; a person who changes its
+// prompt, a few. Past it, the worker is over, and Djinn goes on without it. While it lasts, the push stays held.
+const stopGrace = 10 * time.Minute
+
+// stoppedLately tells whether c was stopped on request less than stopGrace ago: it may be continued, as the same task.
+// A stop with no end time is an old one.
+func (h *Harness) stoppedLately(c *planv1.Task) bool {
+	end := c.GetEndTime()
+	return c.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED && end != nil && h.now().Sub(end.AsTime()) < stopGrace
 }
 
 // isCancelled tells whether c is a cancelled task.

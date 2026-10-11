@@ -280,7 +280,8 @@ func correctedIDs(batch []*planv1.Task) []string {
 
 // correctionsEnded settles the work of the correction and review workers among tasks that ended without being done:
 // one that failed counts as an attempt, the next one starting while the attempts are not spent; one stopped or cancelled
-// by the lead clears its links and settles silently (the record shows why).
+// by the lead clears its links and settles silently (the record shows why), a stopped one once it stayed stopped
+// stopGrace: continued before, it is still the correction.
 func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 	for _, c := range tasks {
 		if h.running(c.GetId()) {
@@ -291,6 +292,9 @@ func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 		}
 		cancelled := isCancelled(c)
 		stopped := c.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED
+		if h.stoppedLately(c) {
+			continue // It may be continued, and still be the correction (stopGrace).
+		}
 		noRecord := c.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && c.GetIntegration() == nil
 		if cancelled || stopped || noRecord {
 			worker := "correction"
