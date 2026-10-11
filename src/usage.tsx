@@ -112,9 +112,14 @@ export function usageDetail(
   }
   const est = estimateCost(usage, model, provider);
   if (est.hasPrice) {
-    out.push(
-      t("usage.estimated", { cost: usd(est.costUsd), date: est.tableDate }),
-    );
+    let estText = t("usage.estimated", {
+      cost: usd(est.costUsd),
+      date: est.tableDate,
+    });
+    if (provider === Provider.ANTIGRAVITY) {
+      estText += ` (${t("usage.antigravity_estimate")})`;
+    }
+    out.push(estText);
   } else {
     out.push(t("usage.no_price"));
   }
@@ -153,15 +158,13 @@ export function TaskUsage({
   if (total > 0n) {
     items.push(t("usage.tokens", { count: tokens(total) }));
   }
-  if (u.costUsd > 0) {
-    items.push(t("usage.reported", { cost: usd(u.costUsd) }));
-  }
   if (est.hasPrice) {
+    if (u.costUsd > 0) {
+      items.push(t("usage.reported", { cost: usd(u.costUsd) }));
+    }
     items.push(
       t("usage.estimated", { cost: usd(est.costUsd), date: est.tableDate }),
     );
-  } else {
-    items.push(t("usage.no_price"));
   }
 
   return (

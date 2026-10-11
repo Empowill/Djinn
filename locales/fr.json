@@ -613,6 +613,7 @@
   "update.ready": "Une nouvelle version de Djinn est prête",
   "update.restarting": "Redémarrage…",
   "update.versions": "{current} → {ready}",
+  "usage.antigravity_estimate": "une estimation aux prix de l’API, pas la facture",
   "usage.cache_read": "cache lu {count}",
   "usage.cache_write": "cache écrit {count}",
   "usage.estimated": "{cost} estimé, prix du {date}",

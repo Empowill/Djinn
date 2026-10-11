@@ -1029,11 +1029,11 @@ test("a task shows its tokens, estimated cost, reported cost, or missing price",
   );
   assert.match(
     claude,
-    /51\.4K tokens · \$0\.003 reported · \$0\.066 estimated, prices of 2026-10-11/,
+    /51\.4K tokens · \$0\.003 reported · \$0\.04 estimated, prices of 2026-10-11/,
   );
   assert.match(
     claude,
-    /input 4 · output 409 · cache read 38\.2K · cache written 12\.8K · \$0\.003 reported · \$0\.066 estimated, prices of 2026-10-11/,
+    /input 4 · output 409 · cache read 38\.2K · cache written 12\.8K · \$0\.003 reported · \$0\.04 estimated, prices of 2026-10-11/,
   );
 
   const codex = s.renderToStaticMarkup(
@@ -1051,11 +1051,11 @@ test("a task shows its tokens, estimated cost, reported cost, or missing price",
   );
   assert.match(
     codex,
-    /6\.5K tokens · \$0\.012 estimated, prices of 2026-10-11/,
+    /6\.5K tokens · \$0\.018 estimated, prices of 2026-10-11/,
   );
   assert.match(
     codex,
-    /input 1\.2K · output 300 · cache read 5K · \$0\.012 estimated, prices of 2026-10-11/,
+    /input 1\.2K · output 300 · cache read 5K · \$0\.018 estimated, prices of 2026-10-11/,
   );
 
   const unpriced = s.renderToStaticMarkup(
@@ -1071,8 +1071,26 @@ test("a task shows its tokens, estimated cost, reported cost, or missing price",
       onStop() {},
     }),
   );
-  assert.match(unpriced, /300 tokens · no price in the table/);
+  assert.match(unpriced, />300 tokens<\/span>/);
+  assert.doesNotMatch(unpriced, />300 tokens · /);
+  assert.match(unpriced, /title="[^"]*no price in the table[^"]*"/);
   assert.doesNotMatch(unpriced, /\$/);
+
+  const antigravity = s.renderToStaticMarkup(
+    h(s.WishTask, {
+      task: {
+        id: "t4",
+        code: "W4",
+        title: "Test antigravity",
+        status: s.TaskStatus.DONE,
+        provider: s.Provider.ANTIGRAVITY,
+        model: "gemini-3.8-flash-high",
+        usage: usage(1000, 200, 0, 0, 0),
+      },
+      onStop() {},
+    }),
+  );
+  assert.match(antigravity, /an estimate at API prices, not the bill/);
 
   // When usage unit is switched to tokens, costs are hidden
   s.setUsageUnit("tokens");
@@ -1979,7 +1997,7 @@ test("the flight plan merges the active wishes: their questions, the blocking on
   // What each wish spent: the first with its cost, the second in tokens only with missing price note.
   assert.match(
     html,
-    /input 10 · output 400 · cache read 38K · cache written 12K · \$0\.42 reported · \$0\.062 estimated, prices of 2026-10-11/,
+    /input 10 · output 400 · cache read 38K · cache written 12K · \$0\.42 reported · \$0\.038 estimated, prices of 2026-10-11/,
   );
   assert.match(html, /input 1\.2K · output 300 · cache read 5K/);
   assert.match(html, /1 task without a price in the table/);

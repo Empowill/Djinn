@@ -154,11 +154,8 @@ export function resolveModelToTable(
     case "flash":
     case "gemini-flash":
       return "gemini-3.8-flash-high";
-    case "pro":
-    case "gemini-pro":
-      return "gemini-3.1-pro-high";
     case "codex":
-      return "gpt-5.1-codex";
+      return "gpt-5.3-codex";
   }
 
   // Prefix match against known models (e.g. "claude-sonnet-4-5-20250929" -> "claude-sonnet-4-5")
