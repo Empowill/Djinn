@@ -211,17 +211,20 @@ function LeadTerminal({
     ...tabs.filter((x) => x.name.startsWith("lead-")),
     ...tabs.filter((x) => !x.name.startsWith("lead-")),
   ].map((x) => x.name);
-  // Show the terminal djinn asks for, such as a wish's lead.
+  // Show the terminal djinn asks for, such as a wish's lead: never start a lead from here.
   useEffect(
     () =>
       djinn.focus.subscribe((focus) => {
         if (!focus.terminal) return;
-        ended.current = undefined;
-        add({ name: focus.terminal });
-        setName(focus.terminal);
-        setCollapsed(false);
+        void api.running().then((names) => {
+          if (!names.includes(focus.terminal)) return;
+          ended.current = undefined;
+          add({ name: focus.terminal });
+          setName(focus.terminal);
+          setCollapsed(false);
+        });
       }),
-    [djinn],
+    [api, djinn],
   );
   // Show the lead of the wish shown while it runs: never start a lead from here.
   useEffect(() => {

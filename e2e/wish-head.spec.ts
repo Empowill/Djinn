@@ -20,20 +20,6 @@ function djinn(...args: string[]): string {
   });
 }
 
-// show asks djinn for a terminal, as the command line asks for the lead's.
-async function show(terminal: string) {
-  const url = new URL(process.env.DJINN_URL!);
-  const res = await fetch(new URL("/ui.v1.UiService/Show", url), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${url.searchParams.get("token")}`,
-    },
-    body: JSON.stringify({ terminal }),
-  });
-  expect(res.ok).toBe(true);
-}
-
 // open makes a wish set aside, and shows it in the window.
 async function open(page: import("@playwright/test").Page, title: string) {
   const wishId = JSON.parse(djinn("wish", "make", title, "--paused", "--json"))
@@ -88,8 +74,6 @@ test("Share writes the wish's export, which imports again", async ({
 
 test.describe("Lead", () => {
   test.skip(process.platform === "win32", "the fake claude is a shell script");
-  // The next specs find the window's own terminal again.
-  test.afterAll(() => show("main"));
 
   test("Lead resumes the wish's lead in its own terminal", async ({ page }) => {
     const folder = fs.realpathSync(

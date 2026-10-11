@@ -18,22 +18,7 @@ function djinn(...args: string[]): string {
   });
 }
 
-async function show(terminal: string) {
-  const url = new URL(process.env.DJINN_URL!);
-  const res = await fetch(new URL("/ui.v1.UiService/Show", url), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${url.searchParams.get("token")}`,
-    },
-    body: JSON.stringify({ terminal }),
-  });
-  expect(res.ok).toBe(true);
-}
-
 test.skip(process.platform === "win32", "the fake claude is a shell script");
-
-test.afterAll(() => show("main"));
 
 test("a request routed to a new wish starts its lead there, at a rub of the lamp", async ({
   page,

@@ -146,6 +146,6 @@ test("a source runs once plugged in; its assigned merge request becomes a card t
     ).plugged,
   ).toBeFalsy();
   djinn("task", "stop", tasks[0].id);
-  djinn("wish", "pause", made.id);
-  djinn("wish", "pause", here);
+  djinn("wish", "delete", made.id);
+  djinn("wish", "delete", here);
 });
