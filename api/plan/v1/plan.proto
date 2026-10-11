@@ -2889,6 +2889,12 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // File diff of a task against its base: with no file given, the files changed and their counts; with a file, the
+  // unified diff of that file with syntax tokens.
+  rpc Diff(TaskServiceDiffRequest) returns (TaskServiceDiffResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
   // started is stopped at once.
   rpc Stop(TaskServiceStopRequest) returns (TaskServiceStopResponse) {
@@ -3122,6 +3128,157 @@ message TaskServiceGetRequest {
 message TaskServiceGetResponse {
   // The task.
   Task task = 1;
+}
+
+// The change status of a file in a diff.
+enum DiffStatus {
+  DIFF_STATUS_UNSPECIFIED = 0;
+  DIFF_STATUS_MODIFIED = 1;
+  DIFF_STATUS_ADDED = 2;
+  DIFF_STATUS_DELETED = 3;
+  DIFF_STATUS_RENAMED = 4;
+  DIFF_STATUS_COPIED = 5;
+}
+
+// Kind of line in a unified diff hunk.
+enum DiffLineKind {
+  DIFF_LINE_KIND_UNSPECIFIED = 0;
+  DIFF_LINE_KIND_CONTEXT = 1;
+  DIFF_LINE_KIND_ADDED = 2;
+  DIFF_LINE_KIND_DELETED = 3;
+  DIFF_LINE_KIND_HUNK = 4;
+}
+
+// A syntax-highlighted token in a diff line.
+message DiffToken {
+  // Text content of the token.
+  string text = 1;
+  // Syntax category for theme colouring (keyword, string, comment, number, type, function, operator, etc.).
+  string category = 2;
+}
+
+// A single line within a diff hunk.
+message DiffLine {
+  // Kind of diff line: context, added, deleted, or hunk header.
+  DiffLineKind kind = 1;
+  // Line number in the old file (1-based, 0 if added).
+  int32 old_line = 2;
+  // Line number in the new file (1-based, 0 if deleted).
+  int32 new_line = 3;
+  // Text content of the line without prefix.
+  string text = 4;
+  // Syntax tokens for the line text.
+  repeated DiffToken tokens = 5;
+}
+
+// A hunk in a unified diff.
+message DiffHunk {
+  // Hunk header text, e.g. "@@ -10,6 +10,8 @@ func main()".
+  string header = 1;
+  // Starting line number in the old file.
+  int32 old_start = 2;
+  // Number of lines in the old file hunk.
+  int32 old_lines = 3;
+  // Starting line number in the new file.
+  int32 new_start = 4;
+  // Number of lines in the new file hunk.
+  int32 new_lines = 5;
+  // The lines belonging to this hunk.
+  repeated DiffLine lines = 6;
+}
+
+// A file changed by a task, with added/deleted line counts and flags.
+message TaskDiffFile {
+  // Path of the file, relative to the repository root.
+  string path = 1;
+  // Previous path when the file was renamed.
+  string old_path = 2;
+  // Number of lines added.
+  int32 added = 3;
+  // Number of lines deleted.
+  int32 deleted = 4;
+  // Whether the file is binary.
+  bool binary = 5;
+  // Whether the file was renamed.
+  bool renamed = 6;
+  // Whether the file matches generated globs.
+  bool generated = 7;
+  // Whether the file is a package or dependency lock file.
+  bool lock = 8;
+  // Whether the file should be folded by default in the diff view (generated || lock || binary).
+  bool folded = 9;
+  // Change status of the file.
+  DiffStatus status = 10;
+}
+
+// The diff of a single file, with hunks or a truncation message when too large.
+message TaskFileDiff {
+  // Path of the file, relative to the repository root.
+  string path = 1;
+  // Previous path when renamed.
+  string old_path = 2;
+  // Change status.
+  DiffStatus status = 3;
+  // Whether the file is binary.
+  bool binary = 4;
+  // Whether the file matches generated globs.
+  bool generated = 5;
+  // Whether the file is a lock file.
+  bool lock = 6;
+  // Whether folded by default.
+  bool folded = 7;
+  // Total lines added in this file.
+  int32 added = 8;
+  // Total lines deleted in this file.
+  int32 deleted = 9;
+  // Unified diff hunks with syntax tokens.
+  repeated DiffHunk hunks = 10;
+  // Whether the diff was cut because it exceeded the size threshold.
+  bool too_large = 11;
+  // Total lines of diff when cut.
+  int32 total_lines = 12;
+  // Shell command to inspect the full diff.
+  string command = 13;
+  // Full unified diff patch text.
+  string patch = 14;
+}
+
+// Reference to a task, by code (W1, T07) or by UUID.
+message TaskRef {
+  oneof ref {
+    option (buf.validate.oneof).required = true;
+    // Short code, like W1 or T07.
+    string code = 1 [(buf.validate.field).string.pattern = "^[WTwt][0-9]{1,4}$"];
+    // Identifier, a UUID.
+    string id = 2 [(buf.validate.field).string.uuid = true];
+  }
+}
+
+message TaskServiceDiffRequest {
+  // Task to inspect.
+  TaskRef task = 1 [
+    (buf.validate.field).required = true
+  ];
+  // File path to show unified diff for. When empty, returns the list of changed files.
+  string file = 2 [
+    (buf.validate.field).string.max_len = 1000
+  ];
+  // Wish identifier when task is given by code and wish cannot be inferred from context.
+  string wish_id = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TaskServiceDiffResponse {
+  // Changed files with line counts and folded flags (when no file is requested).
+  repeated TaskDiffFile files = 1;
+  // Diff for the requested file (when file is requested).
+  TaskFileDiff file = 2;
+  // Base commit or ref used for comparison.
+  string base = 3;
+  // Head commit or ref used for comparison.
+  string head = 4;
 }
 
 message TaskServiceStopRequest {

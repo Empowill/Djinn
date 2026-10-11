@@ -254,3 +254,13 @@ func (s *Tasks) Move(
 	}
 	return connect.NewResponse(&planv1.TaskServiceMoveResponse{Task: task}), nil
 }
+
+func (s *Tasks) Diff(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceDiffRequest],
+) (*connect.Response[planv1.TaskServiceDiffResponse], error) {
+	resp, err := s.h.Diff(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
+}
