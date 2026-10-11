@@ -3056,7 +3056,7 @@ service TaskService {
   }
   // Update a task: only the fields given change. A task not started (planned, waiting) may change everything; a running
   // or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
-  // provider, model, prompt (for its next continue), and azima, never its dependencies once it ran.
+  // provider, model, prompt (for its next continue), azima, and integration (none clears it), never its dependencies once it ran.
   rpc Update(TaskServiceUpdateRequest) returns (TaskServiceUpdateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -3608,6 +3608,8 @@ message TaskServiceUpdateRequest {
     (buf.validate.field).repeated.items.string.min_len = 1,
     (buf.validate.field).repeated.items.string.max_len = 1000
   ];
+  // Clear the task's integration record: "none" removes it. Refused while the task merges.
+  optional string integration = 11 [(buf.validate.field).string = {in: ["none"]}];
 }
 
 message TaskServiceUpdateResponse {

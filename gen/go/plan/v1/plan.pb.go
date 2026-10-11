@@ -15587,7 +15587,9 @@ type TaskServiceUpdateRequest struct {
 	// Most the worker may spend, in US dollars, when the provider can enforce it. 0: no limit.
 	MaxBudgetUsd *float64 `protobuf:"fixed64,9,opt,name=max_budget_usd,json=maxBudgetUsd,proto3,oneof" json:"max_budget_usd,omitempty"`
 	// A path the task writes, in the project's folder; empty for the whole folder.
-	WriteScopes   []string `protobuf:"bytes,10,rep,name=write_scopes,json=writeScopes,proto3" json:"write_scopes,omitempty"`
+	WriteScopes []string `protobuf:"bytes,10,rep,name=write_scopes,json=writeScopes,proto3" json:"write_scopes,omitempty"`
+	// Clear the task's integration record: "none" removes it. Refused while the task merges.
+	Integration   *string `protobuf:"bytes,11,opt,name=integration,proto3,oneof" json:"integration,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -15690,6 +15692,13 @@ func (x *TaskServiceUpdateRequest) GetWriteScopes() []string {
 		return x.WriteScopes
 	}
 	return nil
+}
+
+func (x *TaskServiceUpdateRequest) GetIntegration() string {
+	if x != nil && x.Integration != nil {
+		return *x.Integration
+	}
+	return ""
 }
 
 type TaskServiceUpdateResponse struct {
@@ -17263,7 +17272,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x02by\x18\x03 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02byB\t\n" +
 	"\a_prompt\"@\n" +
 	"\x1bTaskServiceContinueResponse\x12!\n" +
-	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\x9b\x05\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xdf\x05\n" +
 	"\x18TaskServiceUpdateRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12%\n" +
 	"\x05title\x18\x02 \x01(\tB\n" +
@@ -17276,7 +17285,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\bdecision\x18\b \x01(\tBf\xbaHcra2_^(|[Qq][0-9]{2,3}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$H\x05R\bdecision\x88\x01\x01\x129\n" +
 	"\x0emax_budget_usd\x18\t \x01(\x01B\x0e\xbaH\v\x12\t)\x00\x00\x00\x00\x00\x00\x00\x00H\x06R\fmaxBudgetUsd\x88\x01\x01\x124\n" +
 	"\fwrite_scopes\x18\n" +
-	" \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\vwriteScopesB\b\n" +
+	" \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\vwriteScopes\x122\n" +
+	"\vintegration\x18\v \x01(\tB\v\xbaH\br\x06R\x04noneH\aR\vintegration\x88\x01\x01B\b\n" +
 	"\x06_titleB\t\n" +
 	"\a_promptB\v\n" +
 	"\t_providerB\b\n" +
@@ -17284,7 +17294,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\n" +
 	"\b_part_ofB\v\n" +
 	"\t_decisionB\x11\n" +
-	"\x0f_max_budget_usd\">\n" +
+	"\x0f_max_budget_usdB\x0e\n" +
+	"\f_integration\">\n" +
 	"\x19TaskServiceUpdateResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"_\n" +
 	"\x1aTaskServiceDescribeRequest\x12\"\n" +

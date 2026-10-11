@@ -183,25 +183,6 @@ func (h *Harness) integratePass(ctx context.Context) {
 			waiting = append(waiting, t)
 			continue
 		}
-		if t.GetIntegration() == nil && t.GetBranch() != "" && !plan.IsAzima(t) {
-			project, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
-			if err == nil && project.GetGit() {
-				settings, err := plan.LoadSettings(h.home, project)
-				if err != nil {
-					in := pending("", fmt.Sprintf("settings unreadable: %v", err))
-					in.UpdateTime = timestamppb.New(h.now())
-					t.Integration = in
-					_ = h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Put(t) })
-					waiting = append(waiting, t)
-				} else if settings.Integrates() {
-					in := pending("", "")
-					in.UpdateTime = timestamppb.New(h.now())
-					t.Integration = in
-					_ = h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Put(t) })
-					waiting = append(waiting, t)
-				}
-			}
-		}
 	}
 	slices.SortStableFunc(waiting, func(a, b *planv1.Task) int {
 		return a.GetEndTime().AsTime().Compare(b.GetEndTime().AsTime())
@@ -292,10 +273,12 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	for _, t := range settled {
 		h.dropWorktree(ctx, project, t)
 	}
-	oldSha := ""
-	if commit != nil {
-		oldSha = commit.GetOldSha()
+	if commit == nil || commit.GetOldSha() == in.GetSha() {
+		h.tellLead(ctx, wish.GetId(), leadAlreadyInLine(codes(batch), branch))
+		h.wake()
+		return true
 	}
+	oldSha := commit.GetOldSha()
 	moves := h.handleMergeMoves(ctx, wish, project, branch, oldSha, in.GetSha(), settled)
 	leadLine := leadMergeLine(codes(batch), branch, in.GetSha(), moves)
 	h.tellLead(ctx, wish.GetId(), leadLine)
@@ -1402,25 +1385,35 @@ func (h *Harness) handleMergeMoves(
 
 	// 1. Tag created locally
 	var tags []string
-	tagArgs := []string{"tag", "--merged", sha}
 	if oldSha != "" && oldSha != sha {
-		tagArgs = append(tagArgs, "--no-merged", oldSha)
-	}
-	if out, err := git(ctx, repo, tagArgs...); err == nil && strings.TrimSpace(out) != "" {
-		for _, t := range strings.Fields(out) {
-			if t != "" && !slices.Contains(tags, t) {
-				tags = append(tags, t)
+		if out, err := git(ctx, repo, "tag", "--merged", sha, "--no-merged", oldSha); err == nil && strings.TrimSpace(out) != "" {
+			for _, t := range strings.Fields(out) {
+				if t != "" && !slices.Contains(tags, t) {
+					tags = append(tags, t)
+				}
 			}
 		}
 	}
-	if out, err := git(ctx, repo, "tag", "--points-at", sha); err == nil && strings.TrimSpace(out) != "" {
-		for _, t := range strings.Fields(out) {
-			if t != "" && !slices.Contains(tags, t) {
-				tags = append(tags, t)
-			}
+	var remTags map[string]string
+	var remote string
+	if len(tags) > 0 {
+		remote, _ = pushTarget(ctx, repo, branch)
+		if remote == "" {
+			remote = "origin"
 		}
+		remTags, _ = remoteTags(ctx, repo, remote)
 	}
 	for _, tag := range tags {
+		localSha, err := git(ctx, repo, "rev-parse", "refs/tags/"+tag+"^{commit}")
+		if err != nil {
+			localSha, _ = git(ctx, repo, "rev-parse", "refs/tags/"+tag)
+		}
+		localSha = strings.TrimSpace(localSha)
+		if remTags != nil {
+			if remoteSha, ok := remTags[tag]; ok && remoteSha == localSha {
+				continue
+			}
+		}
 		moveName := tagMoveName(tag)
 		if !slices.Contains(moves, moveName) {
 			moves = append(moves, moveName)
@@ -1428,10 +1421,6 @@ func (h *Harness) handleMergeMoves(
 				return strings.Contains(q.GetText(), tag)
 			})
 			if !asked {
-				remote, _ := pushTarget(ctx, repo, branch)
-				if remote == "" {
-					remote = "origin"
-				}
 				q := tagMoveQuestion(wish.GetId(), tag, remote)
 				if err := h.askMove(ctx, q); err == nil {
 					existing = append(existing, q)

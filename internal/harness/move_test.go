@@ -127,6 +127,91 @@ func TestMergeMoveTag(t *testing.T) {
 	}
 }
 
+// TestMergeMoveTagAlreadyOnRemoteNotProposed: if a tag is already on the remote at the same commit,
+// Djinn never proposes pushing it.
+func TestMergeMoveTagAlreadyOnRemoteNotProposed(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	bare := in.remote(t)
+
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	// Create local tag v1.0.0 on W1's commit before merge
+	in.git(t, w1.GetWorktree(), "tag", "v1.0.0")
+	// Push the tag to remote at the same commit
+	in.git(t, w1.GetWorktree(), "push", bare, "refs/tags/v1.0.0")
+
+	in.pass(t, 0)
+
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range questions {
+		if strings.Contains(q.GetText(), "v1.0.0") {
+			t.Fatalf("unexpected question asked for tag v1.0.0 already on remote: %v", q)
+		}
+	}
+}
+
+// TestMergeMoveTagOnRemoteAtDifferentCommitProposed: if a tag exists on remote at another commit,
+// Djinn proposes pushing it.
+func TestMergeMoveTagOnRemoteAtDifferentCommitProposed(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	bare := in.remote(t)
+
+	// Create tag on remote pointing to current base commit
+	in.git(t, in.repo, "tag", "v1.0.0")
+	in.git(t, in.repo, "push", bare, "refs/tags/v1.0.0")
+	in.git(t, in.repo, "tag", "-d", "v1.0.0")
+
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	// Point local tag v1.0.0 to W1's new commit
+	in.git(t, w1.GetWorktree(), "tag", "v1.0.0")
+
+	in.pass(t, 0)
+
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tagQ *planv1.Question
+	for _, q := range questions {
+		if strings.Contains(q.GetText(), "v1.0.0") {
+			tagQ = q
+			break
+		}
+	}
+	if tagQ == nil {
+		t.Fatalf("expected question for tag v1.0.0 at different commit, got none")
+	}
+}
+
+// TestRemoteTags: remoteTags returns peeled tags correctly.
+func TestRemoteTags(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	bare := in.remote(t)
+
+	// Create lightweight tag
+	in.git(t, in.repo, "tag", "v1.0.0")
+	// Create annotated tag
+	in.git(t, in.repo, "tag", "-a", "v2.0.0", "-m", "release v2.0.0")
+	in.git(t, in.repo, "push", bare, "refs/tags/v1.0.0", "refs/tags/v2.0.0")
+
+	tags, err := remoteTags(t.Context(), in.repo, "origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	headSha := in.git(t, in.repo, "rev-parse", "HEAD")
+	if tags["v1.0.0"] != headSha {
+		t.Errorf("v1.0.0 sha = %q, want %q", tags["v1.0.0"], headSha)
+	}
+	if tags["v2.0.0"] != headSha {
+		t.Errorf("v2.0.0 sha = %q, want %q (peeled)", tags["v2.0.0"], headSha)
+	}
+}
+
 // TestComputedQuestionLevels verifies that every question Djinn raises itself gets its level:
 // - developer moves (W258) -> before what they unblock (tag push, release dry run, open PR)
 // - red push check, refused push, failed integration, correction past attempts -> "before the push"
@@ -916,10 +1001,11 @@ func TestMoveTemplatesNoUnfilledFormatVerbs(t *testing.T) {
 		}
 	}
 
-	// leadMergeLine
+	// leadMergeLine & leadAlreadyInLine
 	assertNoVerb("leadMergeLine.empty", leadMergeLine("W1", "main", "1234567890abcdef", nil))
 	assertNoVerb("leadMergeLine.withMoves", leadMergeLine("W1, W2", "feat/test", "1234567890abcdef", []string{"start a release", "push tag v1.0.0"}))
 	assertNoVerb("leadMergeLine.percentInMoves", leadMergeLine("W1", "main", "1234567890abcdef", []string{"100% verified"}))
+	assertNoVerb("leadAlreadyInLine", leadAlreadyInLine("W1", "main"))
 
 	// needsMoveName & needsMoveQuestion
 	assertNoVerb("needsMoveName.normal", needsMoveName("Window opens", "a Mac"))
