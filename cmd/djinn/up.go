@@ -180,6 +180,8 @@ func runUp(args []string) (restart bool, err error) {
 	var uiSvc *ui.Service
 	opts = append(opts, harness.WithBuilt(func(b harness.Built) { uiSvc.SetBuild(buildOf(b)) }), harness.WithVersion(version))
 	workers := harness.New(db, home, harness.Providers(), opts...)
+	// What the workers hold is left out of the memory available: the memory Djinn may commit counts it back in.
+	monitor.SetWorkerMemory(workers.Resident)
 	defer workers.Close()
 	if err := workers.Recover(ctx); err != nil {
 		return false, err

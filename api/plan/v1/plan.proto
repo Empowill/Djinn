@@ -1176,6 +1176,14 @@ message Resources {
   google.protobuf.Timestamp read_time = 6;
   // 95th percentile of resident memory_bytes read over its worker's measurement series.
   uint64 p95_memory_bytes = 7;
+  // 50th percentile of the same series: Overclock engages a worker at it (machine.Policy.Percentile).
+  uint64 p50_memory_bytes = 8;
+  // 60th percentile of the same series: Max engages a worker at it.
+  uint64 p60_memory_bytes = 9;
+  // 70th percentile of the same series: High engages a worker at it.
+  uint64 p70_memory_bytes = 10;
+  // 80th percentile of the same series: Medium engages a worker at it.
+  uint64 p80_memory_bytes = 11;
 }
 
 // Closure records a task marked done by hand: its worker's own done records none.

@@ -1581,11 +1581,11 @@ func (h *Harness) end(r *run, res Result) {
 	nowPb := timestamppb.New(now)
 	t.EndTime, t.ExitCode = nowPb, int32(res.ExitCode)
 	if r.samples != nil {
-		if p95 := r.samples.P95Memory(); p95 > 0 {
+		if pct := r.samples.MemoryPercentiles(); pct.p95 > 0 {
 			if t.Resources == nil {
 				t.Resources = &planv1.Resources{}
 			}
-			t.Resources.P95MemoryBytes = p95
+			pct.set(t.Resources)
 		}
 	}
 	if t.Resources != nil && t.Resources.P95MemoryBytes == 0 && t.Resources.PeakMemoryBytes > 0 {

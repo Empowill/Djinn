@@ -61,7 +61,7 @@ func (s *service) Show(
 		Os: snap.OS, Arch: snap.Arch, Cores: int32(snap.Cores), MemoryTotalBytes: snap.MemoryTotal,
 		MemoryAvailableBytes: snap.MemoryAvailable, Workers: int32(slots), WorkersRule: rule,
 		Pressure: p.Pressure(snap), ReadTime: timestamppb.New(snap.Time),
-		Load: p.Notch,
+		Load: p.Notch, WorkerPercentile: int32(p.MemoryPercentile()), WorkerEngagedAt: p.EngagedAt(),
 	}
 	if snap.LoadKnown {
 		out.Load1 = &snap.Load1
@@ -124,7 +124,7 @@ func (s *service) Series(
 	}
 
 	limitShare := policy.Share
-	limitMemory := policy.CommittableLimit(policy.AvailableMemory(snap))
+	limitMemory := policy.CommittableLimit(policy.CommitMemory(snap))
 
 	cores := snap.Cores
 	if cores <= 0 {

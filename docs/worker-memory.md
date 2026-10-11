@@ -49,14 +49,16 @@ djinn up
 ### How the guardrail is computed
 
 1. **Observed peak memory:**
-   For a given task provider, Djinn takes the median peak memory across the **latest 10 finished tasks** of that
-   provider (the same statistical baseline computed for dispatch forecasting). Watchers and tasks without recorded
-   resource usage are excluded.
+   For a given task provider, Djinn takes the median of the p95 memory across the **latest 10 finished tasks** of that
+   provider, whatever the operating load notch (dispatch forecasts at the notch's own percentile instead: see the
+   operating load slider in the [user guide](user-guide.md)). Watchers and tasks without recorded resource usage are
+   excluded.
 
 2. **Multiplier and forecast floor:**
    When enabled with factor $F$ (e.g., $2.5$), the ceiling is scaled to $F \times \text{peak}$.
    To prevent premature termination on slight normal variations, the ceiling is also floored at the current
-   memory forecast ($\text{peak} + \text{margin}$, where margin defaults to 256 MiB):
+   memory forecast ($\text{peak} + \text{margin}$, the notch's margin: 512 MiB at Minimal and Medium, 384 MiB at
+   High, 256 MiB at Max and Overclock):
    $$\text{MemoryMax} = \max\bigl(F \times \text{peak},\; \text{peak} + \text{margin}\bigr)$$
 
 3. **Without measurements, no ceiling:**

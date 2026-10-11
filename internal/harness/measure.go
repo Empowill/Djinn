@@ -95,7 +95,7 @@ func (h *Harness) measure(r *run, m *meter) {
 		r.samples = newWorkerRing(maxWorkerSamples)
 	}
 	r.samples.Add(point)
-	p95 := r.samples.P95Memory()
+	pct := r.samples.MemoryPercentiles()
 	h.mu.Unlock()
 
 	t := r.task
@@ -103,9 +103,9 @@ func (h *Harness) measure(r *run, m *meter) {
 		CpuPercent: cpu, MemoryBytes: g.Memory, Processes: int32(g.Processes),
 		PeakCpuPercent:  max(t.GetResources().GetPeakCpuPercent(), cpu),
 		PeakMemoryBytes: max(t.GetResources().GetPeakMemoryBytes(), g.Memory, g.Peak),
-		P95MemoryBytes:  p95,
 		ReadTime:        timestamppb.New(now),
 	}
+	pct.set(res)
 	t.Resources = res // Replaced at each reading, never changed: Uses shares it.
 	use := &machinev1.WorkerUse{
 		TaskId: t.GetId(), WishId: t.GetWishId(), Code: t.GetCode(), Title: t.GetTitle(), Resources: res,
@@ -145,7 +145,8 @@ func worth(was, now *planv1.Resources) bool {
 	ratio := func(a, b uint64) bool { return math.Abs(float64(a)-float64(b)) >= 0.05*float64(max(a, 1)) }
 	if ratio(was.GetMemoryBytes(), now.GetMemoryBytes()) ||
 		ratio(was.GetPeakMemoryBytes(), now.GetPeakMemoryBytes()) ||
-		ratio(was.GetP95MemoryBytes(), now.GetP95MemoryBytes()) {
+		ratio(was.GetP95MemoryBytes(), now.GetP95MemoryBytes()) ||
+		ratio(was.GetP50MemoryBytes(), now.GetP50MemoryBytes()) {
 		return true
 	}
 	if elapsed >= minCPUInterval {
@@ -157,13 +158,17 @@ func worth(was, now *planv1.Resources) bool {
 	return false
 }
 
-// fresh clears what the task's last worker was using, keeping its peaks and p95, as a new worker starts.
+// fresh clears what the task's last worker was using, keeping its peaks and percentiles, as a new worker starts.
 func fresh(t *planv1.Task) {
 	if res := t.GetResources(); res != nil {
 		t.Resources = &planv1.Resources{
 			PeakCpuPercent:  res.GetPeakCpuPercent(),
 			PeakMemoryBytes: res.GetPeakMemoryBytes(),
 			P95MemoryBytes:  res.GetP95MemoryBytes(),
+			P50MemoryBytes:  res.GetP50MemoryBytes(),
+			P60MemoryBytes:  res.GetP60MemoryBytes(),
+			P70MemoryBytes:  res.GetP70MemoryBytes(),
+			P80MemoryBytes:  res.GetP80MemoryBytes(),
 		}
 	}
 }
@@ -220,7 +225,21 @@ func (h *Harness) WorkerMemory(ctx context.Context, p machine.Policy) (engaged, 
 	return engaged, actual, nil
 }
 
-// WorkerForecast returns the typical forecast peak memory per worker across providers in use,
+// Resident returns the resident memory of the workers running or paused, as last read, watchers left out: what the
+// memory available already leaves out, which the memory Djinn may commit counts back in (machine.Monitor.SetWorkerMemory).
+func (h *Harness) Resident() uint64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var sum uint64
+	for _, r := range h.runs {
+		if !r.watcher && r.use != nil {
+			sum += r.use.GetResources().GetMemoryBytes()
+		}
+	}
+	return sum
+}
+
+// WorkerForecast returns the typical forecast memory per worker across providers in use, at the notch's percentile,
 // or p.WorkerForecast() if none is measured.
 func (h *Harness) WorkerForecast() uint64 {
 	p := h.Policy()
@@ -284,15 +303,20 @@ func (w *workerRing) Points(cutoff time.Time) []*machinev1.WorkerPoint {
 
 // P95 calculates the 95th percentile of uint64 values using linear interpolation.
 func P95(vals []uint64) uint64 {
-	if len(vals) == 0 {
-		return 0
-	}
 	sorted := slices.Clone(vals)
 	slices.Sort(sorted)
+	return percentile(sorted, 95)
+}
+
+// percentile is the q-th percentile of sorted values, with linear interpolation; 0 without values.
+func percentile(sorted []uint64, q int) uint64 {
+	if len(sorted) == 0 {
+		return 0
+	}
 	if len(sorted) == 1 {
 		return sorted[0]
 	}
-	idx := 0.95 * float64(len(sorted)-1)
+	idx := float64(q) / 100 * float64(len(sorted)-1)
 	low := int(math.Floor(idx))
 	high := int(math.Ceil(idx))
 	if low == high {
@@ -302,10 +326,20 @@ func P95(vals []uint64) uint64 {
 	return uint64(math.Round(float64(sorted[low])*(1-weight) + float64(sorted[high])*weight))
 }
 
-// P95Memory returns the 95th percentile resident memory across recorded samples.
-func (w *workerRing) P95Memory() uint64 {
+// memoryPercentiles is a worker's resident memory at the percentiles the operating load notches engage it at
+// (machine.Policy.Percentile).
+type memoryPercentiles struct{ p50, p60, p70, p80, p95 uint64 }
+
+// set writes them on res.
+func (m memoryPercentiles) set(res *planv1.Resources) {
+	res.P50MemoryBytes, res.P60MemoryBytes, res.P70MemoryBytes = m.p50, m.p60, m.p70
+	res.P80MemoryBytes, res.P95MemoryBytes = m.p80, m.p95
+}
+
+// memory is the resident memory of the recorded samples, sorted; samples read as 0 left out.
+func (w *workerRing) memory() []uint64 {
 	if w == nil || len(w.buf) == 0 {
-		return 0
+		return nil
 	}
 	var vals []uint64
 	limit := len(w.buf)
@@ -317,7 +351,23 @@ func (w *workerRing) P95Memory() uint64 {
 			vals = append(vals, p.GetMemoryBytes())
 		}
 	}
-	return P95(vals)
+	slices.Sort(vals)
+	return vals
+}
+
+// P95Memory returns the 95th percentile resident memory across recorded samples.
+func (w *workerRing) P95Memory() uint64 {
+	return percentile(w.memory(), 95)
+}
+
+// MemoryPercentiles returns the 50th, 60th, 70th, 80th and 95th percentiles of resident memory across recorded
+// samples, from one sort.
+func (w *workerRing) MemoryPercentiles() memoryPercentiles {
+	vals := w.memory()
+	return memoryPercentiles{
+		p50: percentile(vals, 50), p60: percentile(vals, 60), p70: percentile(vals, 70), p80: percentile(vals, 80),
+		p95: percentile(vals, 95),
+	}
 }
 
 // RunsSeries returns the measurement series for all running workers since cutoff,

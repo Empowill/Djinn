@@ -308,6 +308,17 @@ When an investigator cannot start, Djinn makes room:
 - **Memory short**: A pause frees the slot and CPU but not the memory held by the stopped process. When memory blocks an investigator, Djinn interrupts the running work task of lowest priority so that it resumes later in its session or conversation (`plan.CanResume`), entering status `RESUMING` with the reason `"made room for Qxx: enlighten"`, without spending a resume attempt.
 - **Exclusions**: Djinn never preempts a task holding or waiting for a gate, never a correction or review worker, never a provider that cannot resume, and never pauses on Windows where process tree suspension is refused. At most one task is preempted per investigator. Each preemption records an event on both tasks and an entry in the journal (`harness/preempt`).
 
+### Memory a worker is engaged at
+
+A worker is engaged at a percentile of its memory readings that falls as the notch rises (Minimal p95, Medium p80,
+High p70, Max p60, Overclock p50), plus the notch's margin (512 MiB up to Medium, 384 MiB at High, 256 MiB at Max and
+Overclock): a running worker past its warm-up at that percentile of its own series (or what it holds now, if more), a
+new one at the median of the latest 10 finished workers' value at it. Another worker starts when what the workers are
+engaged at, plus its forecast, stays within the notch's share of what Djinn could use with no worker running (the
+memory available plus what the workers running hold, less the 2 GiB reserve), and the memory available, less what the
+workers running may still take beyond what they hold, holds its forecast. The pressure check (PSI), the memory free,
+the worker memory guardrail and the gates stay the safety net.
+
 ### Operating load runtime adjustments
 
 When the operating load notch changes, Djinn immediately adjusts running workers without waiting for subsequent scheduler decisions:

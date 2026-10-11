@@ -77,12 +77,23 @@ func TestMeasurePeaks(t *testing.T) {
 	if wantActual := uint64(200 << 20); actual != wantActual {
 		t.Errorf("actual = %d, want %d", actual, wantActual)
 	}
+	if got := e.h.Resident(); got != 200<<20 {
+		t.Errorf("Resident = %d, want 200 MiB", got)
+	}
 	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
 		t.Fatal(err)
 	}
 	e.watch(t.Context(), t, task.GetId(), 0)
 	if got := e.get(t, task.GetId()).GetResources(); got.GetPeakMemoryBytes() != 400<<20 {
 		t.Errorf("stopped: resources = %v, want its peak kept", got)
+	}
+	// Most readings were 200 MiB: the series' median, which Overclock engages a worker at.
+	if got := e.get(t, task.GetId()).GetResources(); got.GetP50MemoryBytes() != 200<<20 ||
+		got.GetP80MemoryBytes() < got.GetP50MemoryBytes() || got.GetP95MemoryBytes() < got.GetP80MemoryBytes() {
+		t.Errorf("stopped: resources = %v, want its percentiles from p50 at 200 MiB", got)
+	}
+	if got := e.h.Resident(); got != 0 {
+		t.Errorf("Resident once stopped = %d", got)
 	}
 	if uses := e.h.Uses(); len(uses) != 0 {
 		t.Errorf("uses once stopped = %v", uses)
@@ -139,6 +150,7 @@ func TestWorth(t *testing.T) {
 		"memory":                  {was, same(func(r *planv1.Resources) { r.MemoryBytes = 1060 }), true},
 		"peak memory":             {was, same(func(r *planv1.Resources) { r.PeakMemoryBytes = 2200 }), true},
 		"p95 memory":              {was, same(func(r *planv1.Resources) { r.P95MemoryBytes = 2100 }), true},
+		"p50 memory":              {was, same(func(r *planv1.Resources) { r.P50MemoryBytes = 2100 }), true},
 		"CPU barely moved at 30s": {was, same(func(r *planv1.Resources) { r.ReadTime = timestamppb.New(at.Add(30 * time.Second)); r.CpuPercent = 50 }), false},
 		"CPU moved at 30s":        {was, same(func(r *planv1.Resources) { r.ReadTime = timestamppb.New(at.Add(30 * time.Second)); r.CpuPercent = 65 }), true},
 		"peak CPU moved at 30s": {was, same(func(r *planv1.Resources) {
@@ -193,5 +205,29 @@ func TestWorkerRingP95(t *testing.T) {
 	// idx = 3.8; low = 3 (500), high = 4 (600); 500*0.2 + 600*0.8 = 580
 	if got := ring.P95Memory(); got != 580 {
 		t.Errorf("wrapped ring P95: got %d, want 580", got)
+	}
+}
+
+// TestWorkerRingPercentiles: the percentiles the notches engage a worker at, from one series.
+func TestWorkerRingPercentiles(t *testing.T) {
+	t.Parallel()
+	ring := newWorkerRing(20)
+	if got := ring.MemoryPercentiles(); got != (memoryPercentiles{}) {
+		t.Errorf("empty ring: %+v", got)
+	}
+	// 11 readings, 100 to 1100, and one read as 0, left out.
+	ring.Add(&machinev1.WorkerPoint{})
+	for i := 11; i >= 1; i-- {
+		ring.Add(&machinev1.WorkerPoint{MemoryBytes: uint64(i * 100)})
+	}
+	want := memoryPercentiles{p50: 600, p60: 700, p70: 800, p80: 900, p95: 1050}
+	if got := ring.MemoryPercentiles(); got != want {
+		t.Errorf("percentiles = %+v, want %+v", got, want)
+	}
+	res := &planv1.Resources{}
+	want.set(res)
+	if res.GetP50MemoryBytes() != 600 || res.GetP60MemoryBytes() != 700 || res.GetP70MemoryBytes() != 800 ||
+		res.GetP80MemoryBytes() != 900 || res.GetP95MemoryBytes() != 1050 {
+		t.Errorf("set: %v", res)
 	}
 }

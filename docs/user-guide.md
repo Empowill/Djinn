@@ -54,6 +54,16 @@ djinn up --browser    # no window: prints the URL to open in your browser
   back to host load alone. In Auto, lowering the notch lowers CPU priority and stops starting new workers, never
   pausing running ones (Decision Q124 (C)). From the command line: `djinn load get`, `djinn load set minimal` (or any notch),
   and `djinn load watch`.
+  Each notch engages a worker's memory at a percentile of its readings (a running worker at its own, a new one at the
+  median of the latest 10 finished workers' value), plus a margin; builds and tests spike a worker's memory, and the
+  gates already run them one at a time. The memory Djinn may commit counts its running workers' own memory once, back
+  into what it could use with no worker running. `djinn load get` and `djinn machine show` say it (`worker_engaged_at:
+  engaged at p50 (overclock)`):
+  - **Minimal**: p95, 512 MiB margin (`light`, an alias for `medium`, takes Medium's).
+  - **Medium**: p80, 512 MiB margin.
+  - **High**: p70, 384 MiB margin.
+  - **Max**: p60, 256 MiB margin.
+  - **Overclock**: p50, 256 MiB margin.
 
 ### The terminal
 
