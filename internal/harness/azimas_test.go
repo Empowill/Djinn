@@ -259,6 +259,7 @@ func TestSyncPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	files = slices.DeleteFunc(files, func(f plan.AzimaFile) bool { return f.Wish != "" })
 	newer := []string{"T25", "T26", "T27"}
 	// A made azima takes its file's after line, once.
 	t26 := slices.IndexFunc(files, func(f plan.AzimaFile) bool { return f.Code == "T26" })
@@ -266,7 +267,7 @@ func TestSyncPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, dir)
+	wishID, projectID := e.wish(t, dir)
 	// T01…T20, as a plan import left them before kinds: tasks with the files' ids, which no worker ran.
 	err = e.db.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal("local", "test", &planv1.Task{}); err != nil {
@@ -357,6 +358,7 @@ func TestSyncPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	again = slices.DeleteFunc(again, func(f plan.AzimaFile) bool { return f.Wish != "" })
 	for _, f := range again {
 		if !slices.Equal(f.After, after(f.Code)) {
 			t.Errorf("%s says after %v, the store %v", f.Path, f.After, after(f.Code))
@@ -419,6 +421,21 @@ func TestSyncPlan(t *testing.T) {
 	}
 	if got := e.get(t, id("T02")); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
 		t.Errorf("T02: %v", got)
+	}
+
+	// A second wish for "Collaborative Djinn" reads only its own 4 moved azimas without clashing.
+	wCollab, err := e.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Collaborative Djinn", ProjectIds: []string{projectID},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resCollab, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wCollab.Msg.GetWish().GetId()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resCollab.Msg.GetAzimas()) != 4 {
+		t.Errorf("collab sync azimas = %d, want 4", len(resCollab.Msg.GetAzimas()))
 	}
 }
 
@@ -1097,6 +1114,45 @@ func TestMoveAzima(t *testing.T) {
 	w1Stored, err := store.Get[*planv1.Wish](ctx, e.db, wish1)
 	if err != nil || !slices.Contains(w1Stored.GetRetiredCodes(), "T1") {
 		t.Errorf("source wish retired codes: %v", w1Stored.GetRetiredCodes())
+	}
+
+	// The plan file of the moved azima was updated with wish and the renumbered code.
+	planPath := filepath.Join(dir1, "plan", "one.md")
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatalf("read moved plan file: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "code: T2") {
+		t.Errorf("plan file does not contain 'code: T2':\n%s", content)
+	}
+	if !strings.Contains(content, "wish: "+wish2) {
+		t.Errorf("plan file does not contain 'wish: %s':\n%s", wish2, content)
+	}
+	if !strings.Contains(content, "# T2 · one.md") {
+		t.Errorf("plan file does not contain '# T2 · one.md':\n%s", content)
+	}
+
+	// Syncing source wish succeeds without error: the moved azima file belongs to wish2 and is ignored.
+	sync1, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wish1}))
+	if err != nil {
+		t.Fatalf("sync source wish: %v", err)
+	}
+	if len(sync1.Msg.GetMade()) > 0 || len(sync1.Msg.GetChanged()) > 0 {
+		t.Errorf("source wish sync made=%v changed=%v, want none", sync1.Msg.GetMade(), sync1.Msg.GetChanged())
+	}
+
+	// Syncing target wish succeeds and reads the moved azima.
+	sync2, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wish2}))
+	if err != nil {
+		t.Fatalf("sync target wish: %v", err)
+	}
+	var sync2Codes []string
+	for _, a := range sync2.Msg.GetAzimas() {
+		sync2Codes = append(sync2Codes, a.GetCode())
+	}
+	if !slices.Contains(sync2Codes, "T2") {
+		t.Errorf("target wish azimas = %v, want T2", sync2Codes)
 	}
 }
 

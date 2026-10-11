@@ -365,6 +365,13 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 		var reopenedEvents []struct{ id, reason string }
 		for _, src := range sources {
 			for _, f := range src.files {
+				belongs, err := belongsToWish(ctx, tx, f, wish)
+				if err != nil {
+					return err
+				}
+				if !belongs {
+					continue
+				}
 				key := strings.ToUpper(f.Code)
 				if other, ok := codes[key]; ok {
 					return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("%s and %s both give the code %s", other, f.Path, f.Code))
@@ -558,6 +565,68 @@ func azimaID(ctx context.Context, r store.Reader, fileID string) (string, error)
 		return "", err
 	}
 	return store.NewID(), nil
+}
+
+// belongsToWish tells whether an azima file belongs to the given wish.
+// If f.Wish is set, it matches by wish title, identifier, or slug.
+// If f.ID is set and the task exists in the store, its wish_id decides.
+func belongsToWish(ctx context.Context, tx *store.Tx, f plan.AzimaFile, wish *planv1.Wish) (bool, error) {
+	if f.Wish != "" {
+		trimmed := strings.TrimSpace(f.Wish)
+		matchesWish := strings.EqualFold(trimmed, wish.GetTitle()) ||
+			strings.EqualFold(trimmed, wish.GetId()) ||
+			strings.EqualFold(trimmed, plan.Slug(wish.GetTitle(), 40))
+		if !matchesWish {
+			resolved, err := plan.ResolveWish(ctx, tx, trimmed)
+			if err == nil && resolved != nil && resolved.GetId() == wish.GetId() {
+				matchesWish = true
+			}
+		}
+		if !matchesWish {
+			return false, nil
+		}
+	}
+	if f.ID != "" {
+		existing, err := store.Get[*planv1.Task](ctx, tx, f.ID)
+		if err == nil && existing != nil && existing.GetWishId() != "" {
+			return existing.GetWishId() == wish.GetId(), nil
+		}
+	}
+	return true, nil
+}
+
+// resolvePlanFilePath finds the path of an azima's plan file on disk.
+func resolvePlanFilePath(ctx context.Context, r store.Reader, t *planv1.Task, wishes ...*planv1.Wish) string {
+	if t.GetPlanFile() == "" {
+		return ""
+	}
+	if filepath.IsAbs(t.GetPlanFile()) {
+		if _, err := os.Stat(t.GetPlanFile()); err == nil {
+			return t.GetPlanFile()
+		}
+	}
+	var projectIDs []string
+	if t.GetProjectId() != "" {
+		projectIDs = append(projectIDs, t.GetProjectId())
+	}
+	for _, w := range wishes {
+		if w != nil {
+			projectIDs = append(projectIDs, w.GetProjectIds()...)
+		}
+	}
+	for _, pID := range projectIDs {
+		if pID == "" {
+			continue
+		}
+		project, err := store.Get[*planv1.Project](ctx, r, pID)
+		if err == nil && project != nil && project.GetDirectory() != "" {
+			candidate := filepath.Join(project.GetDirectory(), filepath.FromSlash(t.GetPlanFile()))
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+		}
+	}
+	return ""
 }
 
 // DescribeTask sets the description of an azima, and writes it back to its plan file if it has one.
@@ -769,6 +838,20 @@ func (h *Harness) Move(ctx context.Context, procedure string, req *planv1.TaskSe
 				t.Code = newCode
 			}
 			targetCodes[strings.ToUpper(t.GetCode())] = true
+			if plan.IsAzima(t) {
+				if planPath := resolvePlanFilePath(ctx, tx, t, sourceWish, targetWish); planPath != "" {
+					wishName := targetWish.GetTitle()
+					if wishName == "" || (sourceWish != nil && strings.EqualFold(wishName, sourceWish.GetTitle())) {
+						wishName = targetWish.GetId()
+					}
+					if _, err := plan.WriteWish(planPath, wishName); err != nil && !errors.Is(err, os.ErrNotExist) {
+						return connect.NewError(connect.CodeInternal, fmt.Errorf("write plan file wish: %w", err))
+					}
+					if _, err := plan.WriteCode(planPath, t.GetCode()); err != nil && !errors.Is(err, os.ErrNotExist) {
+						return connect.NewError(connect.CodeInternal, fmt.Errorf("write plan file code: %w", err))
+					}
+				}
+			}
 			if err := tx.Put(t); err != nil {
 				return err
 			}

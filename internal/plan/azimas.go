@@ -342,6 +342,7 @@ type AzimaFile struct {
 	Path   string
 	ID     string
 	Code   string
+	Wish   string
 	Phase  string
 	Status string
 	Title  string
@@ -363,12 +364,16 @@ func (f AzimaFile) Draft() bool { return strings.EqualFold(f.Status, "draft") }
 // checked. A draft azima never closes.
 func (f AzimaFile) Closes() bool { return !f.Draft() && (f.Done() || f.DoneWhen.AllChecked()) }
 
-// ReadAzimaFiles reads the plan files of a project's folder: plan/*.md with a front matter that gives a code, and their
+// ReadAzimaFiles reads the plan files of a project's folder: plan/*.md (and plan/*/*.md) with a front matter that gives a code, and their
 // Done-when section. A file without one (the README) is not an azima's.
 func ReadAzimaFiles(project string) ([]AzimaFile, error) {
 	names, err := filepath.Glob(filepath.Join(project, PlanDir, "*.md"))
 	if err != nil {
 		return nil, err
+	}
+	subNames, err := filepath.Glob(filepath.Join(project, PlanDir, "*", "*.md"))
+	if err == nil {
+		names = append(names, subNames...)
 	}
 	slices.Sort(names)
 	var out []AzimaFile
@@ -381,7 +386,16 @@ func ReadAzimaFiles(project string) ([]AzimaFile, error) {
 		if !ok {
 			continue
 		}
-		f.Path = PlanDir + "/" + filepath.Base(name)
+		rel, err := filepath.Rel(project, name)
+		if err != nil {
+			f.Path = PlanDir + "/" + filepath.Base(name)
+		} else {
+			f.Path = filepath.ToSlash(rel)
+		}
+		dir := filepath.Dir(f.Path)
+		if f.Wish == "" && dir != PlanDir && strings.HasPrefix(dir, PlanDir+"/") {
+			f.Wish = filepath.Base(dir)
+		}
 		out = append(out, f)
 	}
 	return out, nil
@@ -405,6 +419,8 @@ func parseAzimaFile(data []byte) (AzimaFile, bool) {
 			f.ID = value
 		case "code":
 			f.Code = value
+		case "wish":
+			f.Wish = strings.Trim(value, `"'`)
 		case "phase":
 			f.Phase = value
 		case "status":
@@ -617,4 +633,145 @@ func WriteDescription(file string, text string) (bool, error) {
 		return false, err
 	}
 	return true, os.WriteFile(file, newContent, info.Mode().Perm())
+}
+
+// WriteWish sets or removes the wish of an azima in its plan file's front matter.
+// If wish is empty, it removes any wish: line.
+// It tells whether the file changed.
+func WriteWish(file string, wish string) (bool, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return false, err
+	}
+	lines, body, ok := splitFrontMatter(data)
+	if !ok {
+		return false, nil
+	}
+	nl := "\n"
+	if bytes.HasPrefix(data, []byte("---\r\n")) {
+		nl = "\r\n"
+	}
+	var out []string
+	found := false
+	trimmedWish := strings.TrimSpace(wish)
+	wishLine := ""
+	if trimmedWish != "" {
+		if strings.ContainsAny(trimmedWish, ":#\"'\n\r") {
+			wishLine = fmt.Sprintf("wish: %q", trimmedWish)
+		} else {
+			wishLine = "wish: " + trimmedWish
+		}
+	}
+	for _, line := range lines {
+		key, _, hasKey := strings.Cut(line, ":")
+		if hasKey && strings.TrimSpace(key) == "wish" {
+			if wishLine != "" {
+				out = append(out, wishLine)
+			}
+			found = true
+		} else {
+			out = append(out, line)
+		}
+	}
+	if !found && wishLine != "" {
+		insertAt := -1
+		for i, line := range out {
+			key, _, hasKey := strings.Cut(line, ":")
+			if hasKey {
+				k := strings.TrimSpace(key)
+				if k == "code" || k == "id" {
+					insertAt = i + 1
+				}
+			}
+		}
+		if insertAt >= 0 && insertAt <= len(out) {
+			out = slices.Insert(out, insertAt, wishLine)
+		} else {
+			out = append(out, wishLine)
+		}
+	}
+	if slices.Equal(out, lines) {
+		return false, nil
+	}
+	var b bytes.Buffer
+	b.WriteString("---" + nl)
+	for _, line := range out {
+		b.WriteString(line + nl)
+	}
+	b.WriteString("---" + nl)
+	b.Write(body)
+	info, err := os.Stat(file)
+	if err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
+}
+
+// WriteCode updates an azima's code in its plan file's front matter and title heading.
+// It tells whether the file changed.
+func WriteCode(file string, code string) (bool, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return false, err
+	}
+	lines, body, ok := splitFrontMatter(data)
+	if !ok {
+		return false, nil
+	}
+	nl := "\n"
+	if bytes.HasPrefix(data, []byte("---\r\n")) {
+		nl = "\r\n"
+	}
+	trimmedCode := strings.TrimSpace(code)
+	var oldCode string
+	var out []string
+	found := false
+	for _, line := range lines {
+		key, val, hasKey := strings.Cut(line, ":")
+		if hasKey && strings.TrimSpace(key) == "code" {
+			oldCode = strings.TrimSpace(val)
+			out = append(out, "code: "+trimmedCode)
+			found = true
+		} else {
+			out = append(out, line)
+		}
+	}
+	if !found {
+		out = append([]string{"code: " + trimmedCode}, out...)
+	}
+
+	newBody := body
+	if oldCode != "" && oldCode != trimmedCode {
+		sc := bufio.NewScanner(bytes.NewReader(body))
+		for sc.Scan() {
+			line := sc.Text()
+			if strings.HasPrefix(line, "# ") {
+				heading := strings.TrimPrefix(line, "# ")
+				if strings.HasPrefix(heading, oldCode) {
+					rest := strings.TrimPrefix(heading, oldCode)
+					if rest == "" || strings.ContainsAny(rest[:1], " ·:-—") {
+						newLine := "# " + trimmedCode + rest
+						newBody = bytes.Replace(body, []byte(line), []byte(newLine), 1)
+					}
+				}
+				break
+			}
+		}
+	}
+
+	if slices.Equal(out, lines) && bytes.Equal(newBody, body) {
+		return false, nil
+	}
+	var b bytes.Buffer
+	b.WriteString("---" + nl)
+	for _, line := range out {
+		b.WriteString(line + nl)
+	}
+	b.WriteString("---" + nl)
+	b.Write(newBody)
+	info, err := os.Stat(file)
+	if err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
 }
