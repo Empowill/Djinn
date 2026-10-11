@@ -9,6 +9,7 @@ import {
   type ReactNode,
   memo,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -173,6 +174,13 @@ export const AzimaCard = memo(function AzimaCard({
   }, [holds]);
   const moving = parts.filter((x) => !finishedTask(x));
   const finished = parts.filter((x) => finishedTask(x));
+  const prevMoving = useRef(moving.length);
+  useEffect(() => {
+    if (prevMoving.current === 0 && moving.length > 0) {
+      setOpen(true);
+    }
+    prevMoving.current = moving.length;
+  }, [moving.length]);
   const deps = (azima.dependsOn ?? [])
     .map((id) => tasks.get(id))
     .filter((x): x is Task => !!x);
@@ -392,6 +400,11 @@ export const AzimaCard = memo(function AzimaCard({
       </div>
       {open && (
         <div className="azima-parts">
+          {azima.description && (
+            <div className="azima-description">
+              <p className="azima-description-text">{azima.description}</p>
+            </div>
+          )}
           {proof && (
             <div className="azima-proof">
               <p>{t("azima.to_validate_title")}</p>

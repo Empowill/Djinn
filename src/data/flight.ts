@@ -120,7 +120,7 @@ export function isDraftAzima(task: Task): boolean {
 }
 
 // loose are the tasks the Tasks tab lists on their own: work part of no azima among tasks.
-function loose(tasks: readonly Task[]): Task[] {
+export function loose(tasks: readonly Task[]): Task[] {
   const azimas = new Set(tasks.filter(isAzima).map((x) => x.id));
   return tasks.filter((x) => !isAzima(x) && !azimas.has(x.partOf));
 }

@@ -38,10 +38,12 @@ func fillWish(tb testing.TB, db *store.Store, n size) (string, []*planv1.Task) {
 		t := &planv1.Task{
 			Id: store.NewID(), WishId: wish.GetId(), Code: fmt.Sprintf("W%d", i+1), Title: text(120),
 			Status: planv1.TaskStatus_TASK_STATUS_DONE, Provider: planv1.Provider_PROVIDER_CLAUDE,
+			Model:  harness.DefaultModel(planv1.Provider_PROVIDER_CLAUDE),
 			Branch: text(60), Worktree: text(100), CreateTime: now, StartTime: now, EndTime: now, LastLine: text(100),
 		}
 		if i%(n.tasks/n.azimas) == 0 {
 			t.Kind, t.Status = planv1.TaskKind_TASK_KIND_AZIMA, planv1.TaskStatus_TASK_STATUS_PENDING
+			t.Model = ""
 			azima = t.GetId()
 		} else {
 			t.PartOf = azima
