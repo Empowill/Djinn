@@ -280,7 +280,9 @@ func TestLeadWatchFallbackLine(t *testing.T) {
 		w, s, leads := leadWatchFixture(t, planv1.Provider_PROVIDER_CODEX)
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
-		go func() { _, _ = s.Watch(ctx, connect.NewRequest(&planv1.LeadServiceWatchRequest{Timeout: durationpb.New(time.Minute)})) }()
+		go func() {
+			_, _ = s.Watch(ctx, connect.NewRequest(&planv1.LeadServiceWatchRequest{Timeout: durationpb.New(time.Minute)}))
+		}()
 		time.Sleep(20 * time.Millisecond)
 		notify(t, w, planv1.LeadEventKind_LEAD_EVENT_KIND_FAILED, "W1", "Djinn: W1 failed")
 		if said := waitSaid(leads, 1); len(said) != 1 {
