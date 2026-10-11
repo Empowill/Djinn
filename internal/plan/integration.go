@@ -33,6 +33,16 @@ func IntegrationBranchOf(wish *planv1.Wish, projectID string) string {
 	return ""
 }
 
+// PushStateOf is the state of the push of wish in the project projectID; nil when none is recorded.
+func PushStateOf(wish *planv1.Wish, projectID string) *planv1.WishPush {
+	for _, p := range wish.GetPushes() {
+		if strings.EqualFold(p.GetProjectId(), projectID) {
+			return p
+		}
+	}
+	return nil
+}
+
 // SetIntegrationBranch records branch as wish's integration branch in the project projectID, in place of the one it
 // had.
 func SetIntegrationBranch(wish *planv1.Wish, projectID, branch string) {

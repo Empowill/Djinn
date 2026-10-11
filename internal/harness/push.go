@@ -165,12 +165,7 @@ func (h *Harness) pushPass(ctx context.Context) {
 
 // pushState is where the push of wish's integration branch stands in the project projectID; nil before anything.
 func pushState(wish *planv1.Wish, projectID string) *planv1.WishPush {
-	for _, p := range wish.GetPushes() {
-		if strings.EqualFold(p.GetProjectId(), projectID) {
-			return p
-		}
-	}
-	return nil
+	return plan.PushStateOf(wish, projectID)
 }
 
 // lastPush is when wish last pushed its integration branch, as state says: when it was made, before any push.
