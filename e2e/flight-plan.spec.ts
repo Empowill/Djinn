@@ -346,9 +346,11 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await azimaCard.locator(".azima-heading").click();
   const w2 = page.locator(".wish-task").filter({ hasText: "Read the map" });
   await expect(w2.locator(".task-usage")).toContainText("6.5K tokens");
+  // W1's report is a note for agents: it waits in their tab with the other blocks, no section of its own.
+  await page.getByRole("tab", { name: /^For agents/ }).click();
+  await expect(page.locator(".wish-block")).toContainText("About W1");
   await page.getByRole("tab", { name: /^Wish/ }).click();
-  // W1's report has a section of its own on the wish, with who wrote it.
-  await expect(page.locator("#reports .report-card")).toContainText("By W1");
+  await expect(page.locator("#reports")).toHaveCount(0);
   // The journal is folded: a click opens it.
   await page.getByRole("button", { name: /^Journal/ }).click();
   await expect(page.locator(".journal-list")).toContainText("Kick-off");

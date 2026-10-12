@@ -1046,7 +1046,7 @@ test("a copy button copies the exact command and says so, and never answers the 
   assert.deepEqual(answered, [s.Choice.A]);
 });
 
-test("a wish's reports have a section of their own after what waits for you, and its question links the one it names", async () => {
+test("a wish's reports are notes for agents, with no section nor count of their own, and its question links the one it names", async () => {
   const wishId = "01a130b1-398a-7072-be60-ce928cb7241e";
   const dew = wish(wishId, "Dew", s.WishState.ACTIVE, 1);
   const transport = s.createRouterTransport(({ service }) => {
@@ -1109,38 +1109,22 @@ test("a wish's reports have a section of their own after what waits for you, and
   const html = s.renderToStaticMarkup(
     h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: dew, onToast() {} })),
   );
-  // After the questions, before the journal: the reports, each with its title, its author and its first view.
-  const section = html.indexOf(
-    '<section class="wish-section wish-reports" id="reports"',
-  );
-  assert.ok(
-    section > html.indexOf('id="action-center"'),
-    "after what waits for you",
-  );
-  assert.ok(section < html.indexOf('class="main-side"'), "before the journal");
-  assert.match(
+  // No section for the reports: neither its heading nor a card, and the report is not shown on the wish.
+  assert.doesNotMatch(
     html,
-    /<h2>Reports<span class="count">1<\/span><\/h2><p>What the workers found out, to read before you decide\.<\/p>/,
+    /wish-reports|id="reports"|report-card|Open the report/,
   );
-  assert.match(
-    html,
-    /<article class="report-card" id="report-b1">.*<h3>Payroll for acme: feasibility<\/h3><span class="eyebrow">By W1<\/span>/,
-  );
-  assert.match(html, /13 fields in one request/);
+  assert.doesNotMatch(html, /<h2>Reports/);
   assert.doesNotMatch(html, /What is left to know/);
-  assert.match(
-    html,
-    /class="read-more" aria-expanded="false"><svg[^>]*>.*?<\/svg>Open the report<\/button>/,
-  );
   // The question names it: its card links it.
   assert.match(
     html,
     /question-report-link.*Report: Payroll for acme: feasibility/,
   );
-  // The For agents tab keeps the other blocks only.
+  // The For agents tab holds it with the other blocks.
   assert.match(
     html,
-    /id="view-tab-agents" aria-selected="false" class="discreet">For agents<span class="count">1<\/span>/,
+    /id="view-tab-agents" aria-selected="false" class="discreet">For agents<span class="count">2<\/span>/,
   );
 });
 

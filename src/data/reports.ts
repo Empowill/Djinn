@@ -1,6 +1,7 @@
-// The reports of a wish: its blocks of kind report (djinn block put --kind report), what a worker found out and
-// wrote for the developer to read. The wish's screen gives them a section of their own, and a question that names one
-// links it. Djinn computes nothing else from them: a report stays smoke.
+// The reports of a wish: its blocks of kind report (djinn block put --kind report), what a worker found out, a note
+// for the agents like any block (the For agents tab lists it with the others). Nothing counts them for the developer:
+// what concerns them comes as a question, whose card links the report it names to open on demand. Djinn computes
+// nothing else from them: a report stays smoke.
 import { timestampMs } from "@bufbuild/protobuf/wkt";
 
 import type { Block, Question } from "../../gen/ts/plan/v1/plan_pb";

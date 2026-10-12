@@ -1,6 +1,5 @@
-// The For agents tab of a wish: the blocks its lead and workers wrote for one another (a hand-off, a reference),
-// every kind but the decisions, which have their own tab, the logs, which the journal shows, and the reports, which
-// the wish's screen shows in a section of their own (src/wish-reports.tsx). Nothing in
+// The For agents tab of a wish: the blocks its lead and workers wrote for one another (a hand-off, a reference, a
+// report), every kind but the decisions, which have their own tab, and the logs, which the journal shows. Nothing in
 // it waits for the developer: whatever does is a question. Each block is folded under its title; opened, Markdown is
 // rendered, another media type shown as it is. No mark: a block is not read nor approved.
 import { ChevronRight } from "lucide-react";
@@ -10,14 +9,13 @@ import { type Block } from "../gen/ts/plan/v1/plan_pb";
 import { isDecisionBlock } from "./data/decisions";
 import { when } from "./data/format";
 import { isLog } from "./data/journal";
-import { isReport } from "./data/reports";
 import { t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
 import { SafeSvg } from "./safe-svg";
 
-// agentBlocks are the blocks of the For agents tab: neither a decision, a log nor a report.
+// agentBlocks are the blocks of the For agents tab: neither a decision nor a log.
 export function agentBlocks(blocks: readonly Block[]): Block[] {
-  return blocks.filter((b) => !isLog(b) && !isDecisionBlock(b) && !isReport(b));
+  return blocks.filter((b) => !isLog(b) && !isDecisionBlock(b));
 }
 
 export function AgentBlocks({

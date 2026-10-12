@@ -2,7 +2,8 @@
 // - the card reads top-down: what is at stake, its report, the recommendation, then the options, the gestures, the
 //   note; the context's first view keeps the options in sight on a laptop, and Read more unfolds the rest in place;
 // - a command in an option or in the context is selectable and copies exactly, and copying never answers;
-// - the report has a section of its own after what waits for you, folded to its first view, and the card opens it.
+// - the card opens the report it names, on demand; the report itself is a note for agents: no section of its own on
+//   the wish, it waits in the For agents tab with the other blocks.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -181,22 +182,12 @@ test("a long question reads top-down, its commands copy without answering, and t
       card.locator(".question-report-body").getByText("What is left to know"),
     ).toBeVisible();
 
-    // The report's own section: after what waits for you, folded to its first view, with who wrote it.
-    const reports = page.locator("#reports");
-    await expect(reports).toBeVisible();
-    expect(await top(reports)).toBeGreaterThan(
-      await top(page.locator("#action-center")),
-    );
-    const report = reports.locator(".report-card");
-    await expect(report.locator("h3")).toHaveText(REPORT_TITLE);
-    await expect(report.locator(".eyebrow")).toContainText("By the lead");
-    await expect(report.getByText("What is left to know")).toHaveCount(0);
-    await report.getByRole("button", { name: "Open the report" }).click();
-    await expect(report.getByText("What is left to know")).toBeVisible();
-    // It is no longer among the blocks for agents.
-    await expect(page.getByRole("tab", { name: /^For agents/ })).toHaveText(
-      "For agents0",
-    );
+    // No section of reports on the wish: the report waits among the blocks for agents.
+    await expect(page.locator("#reports")).toHaveCount(0);
+    const forAgents = page.getByRole("tab", { name: /^For agents/ });
+    await expect(forAgents).toHaveText("For agents1");
+    await forAgents.click();
+    await expect(page.locator(".agent-block h3")).toHaveText(REPORT_TITLE);
 
     expect(errors).toEqual([]);
   } finally {

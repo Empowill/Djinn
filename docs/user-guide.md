@@ -389,6 +389,10 @@ not for you: they wait in the last tab of the wish, **For agents**, with their c
 click opens one: Markdown, shown as written, where a `mermaid` code block is drawn as a diagram, which **Expand**
 enlarges. A block of kind `decision` shows in the **Decisions** tab instead, the log blocks in the journal.
 
+A report (a block of kind `report`) is one of these notes: nothing counts it nor asks you to read it. When one
+concerns you, it comes as a question that names it, by its title or its id: the card then shows **Report:** and the
+report's title, which opens it in place.
+
 ## Grant a wish
 
 When every task is finished, none done with problems, and no question is open, Djinn proposes to grant the wish:
