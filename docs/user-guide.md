@@ -142,6 +142,12 @@ Every new lead, of any agent, starts by running `djinn brief`: every active wish
 open questions, what runs and waits, its azimas), then Djinn's rules and the projects' (`AGENTS.md`, `CLAUDE.md`,
 `CONTRIBUTING.md`). `djinn wish brief <wish-id>` gives one wish's detail. No model writes it.
 
+The lead talks to you only in the window: everything it has to tell you, a report or "done as you asked" included,
+is a question in the wish concerned, often a yes/no acknowledgement with "OK, nothing to do" as an option, and it
+withdraws one as soon as a task or Djinn does what it asked. When it does not fully understand an answer, it asks
+again before starting any work. It writes nothing for you in its terminal; a line you type there is answered in the
+window.
+
 From a terminal, `djinn lead resume` does what **Lead** does, and starts Djinn if it does not run;
 `djinn lead resume --provider codex` picks the agent. `djinn lead set <session-id> --directory <folder>`
 records a session you started yourself. `djinn lead tell "…"` writes to the running lead as if you typed it in its

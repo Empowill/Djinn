@@ -33,8 +33,8 @@ You lead a wish made for one merge request: bring it to a merge, and nothing els
    into one task.
 3. Review each worker's diff, then commit and push once for the round, as the project's rules say.
 4. Answer threads only with what was done, in the developer's name only if they asked you to.
-5. Nothing to do (a pipeline still running, a thread that needs the developer, an approval to wait for): wait for the
-   next line.
+5. Nothing to do (a pipeline still running, an approval to wait for): wait for the next line. A thread that needs
+   the developer is a question in the wish (`djinn question ask`); say nothing in your terminal.
 
 ## Never
 
