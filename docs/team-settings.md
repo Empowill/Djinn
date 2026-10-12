@@ -220,6 +220,10 @@ brings it there by itself, no model ([T07](../plan/8e8d3d76-orchestrator.md)):
    the branch, clean, follows by a fast-forward. With changes not committed, it is left as it is, and so is the
    branch: moved under it, your next commit would undo the work. The task stays pending, saying why, and the branch
    moves once your changes are committed or put aside, without testing again.
+   Djinn merges and commits as you, with git's `user.name` and `user.email`, and never invents an identity: without
+   one, the task stays pending, saying the fix (`git config --global user.name "Your Name"` and
+   `git config --global user.email you@example.com`, or without `--global` in the project's repository), never a
+   conflict; the next pass merges it once git has one.
 5. **Red** (a commit check, or the setup), or a **conflict** in code: the branch stays as it was, and the task says
    what failed. The tasks that end
    after it are committed on their own meanwhile.
