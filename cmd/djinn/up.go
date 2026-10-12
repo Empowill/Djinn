@@ -570,6 +570,9 @@ func services(
 	// line says they wait.
 	h.NotifyLead(wishes.Notify)
 	wishes.RemindLead()
+	// A request to investigate the last djinn up stored but left without a follow-up gets its investigator, or the
+	// lead's event, now.
+	h.ResumeInvestigations()
 	h.OnWatched(wishes.Watched)
 	// The inbox sources of the projects' skills run until djinn up stops; what they print waits for a click.
 	h.RunSources((&plan.Inbox{Wishes: wishes}).Receive)
