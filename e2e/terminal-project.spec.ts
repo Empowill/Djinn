@@ -7,6 +7,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { withAgents } from "./agents";
+
 const binary = path.resolve(
   __dirname,
   "../bin/djinn-e2e" + (process.platform === "win32" ? ".exe" : ""),
@@ -35,10 +37,11 @@ test("without a project, the terminal asks for one, then opens in it", async ({
   home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "djinn-e2e-")));
   const folder = path.join(home, "lamp");
   fs.mkdirSync(folder);
+  // The fake agents on its PATH: with none ready, the setup of the agents would cover the window.
   proc = spawn(binary, ["up", "--browser"], {
     stdio: ["ignore", "pipe", "inherit"],
     env: {
-      ...process.env,
+      ...withAgents(process.env),
       DJINN_HOME: path.join(home, "data"),
       SHELL: "/bin/sh",
     },

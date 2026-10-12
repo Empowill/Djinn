@@ -9,18 +9,21 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { withAgents } from "./agents";
+
 const binary = path.resolve(
   __dirname,
   "../bin/djinn-e2e" + (process.platform === "win32" ? ".exe" : ""),
 );
 
-// up starts djinn up --browser on home, and gives its URL once it answers.
+// up starts djinn up --browser on home, and gives its URL once it answers. Its PATH has the fake agents: with none
+// ready, the setup of the agents would cover the window.
 async function up(
   home: string,
 ): Promise<{ url: string; proc: ChildProcess; exited: Promise<unknown> }> {
   const proc = spawn(binary, ["up", "--browser"], {
     stdio: ["ignore", "pipe", "inherit"],
-    env: { ...process.env, DJINN_HOME: home },
+    env: { ...withAgents(process.env), DJINN_HOME: home },
   });
   const exited = new Promise((resolve) => proc.once("exit", resolve));
   const url = await new Promise<string>((resolve, reject) => {
