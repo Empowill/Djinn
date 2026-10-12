@@ -195,24 +195,64 @@ func (h *Harness) watchdog(ctx context.Context, tasks []*planv1.Task) (anyLost b
 	return anyLost
 }
 
+// maxWakes is how many times in a row the watchdog wakes a worker it found silent, idle or lost, or whose stream went
+// idle: found so once more, its task fails, saying so, and its lead is told once. A run that ends otherwise (done, a
+// usage limit, a restart of Djinn) ends the row. Usage-limit resumes are counted apart (maxResumes): a worker that
+// waited for its limits is woken all the same.
+const maxWakes = 3
+
+// runWoken is why a run ended that the watchdog ended to wake its worker (TaskRun.reason).
+const runWoken = "wake"
+
+// wakes counts the last runs of t in a row that the watchdog ended to wake its worker, before the one that runs.
+func wakes(t *planv1.Task) int {
+	runs := t.GetRuns()
+	if len(runs) > 0 && runs[len(runs)-1].GetEndTime() == nil {
+		runs = runs[:len(runs)-1]
+	}
+	n := 0
+	for i := len(runs) - 1; i >= 0 && runs[i].GetReason() == runWoken; i-- {
+		n++
+	}
+	return n
+}
+
+// canWake tells whether the watchdog wakes the worker of t rather than failing it: its agent can resume its session,
+// and it was not woken maxWakes times in a row.
+func canWake(t *planv1.Task) bool { return plan.CanResume(t.GetProvider()) && wakes(t) < maxWakes }
+
+// notWoken is the error of a task the watchdog does not wake, ended for why.
+func notWoken(t *planv1.Task, why string) string {
+	if !plan.CanResume(t.GetProvider()) {
+		return why
+	}
+	return fmt.Sprintf("%s; woken %d times in a row, it is not woken again", why, wakes(t))
+}
+
+// markWoken makes t, whose worker the watchdog ended for why, wait to be continued on its session: its last run ends woken.
+func markWoken(t *planv1.Task, why string, end *timestamppb.Timestamp) {
+	t.Status, t.Error, t.Continuing, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true, why
+	if len(t.Runs) > 0 && t.Runs[len(t.Runs)-1].GetEndTime() == nil {
+		t.Runs[len(t.Runs)-1].EndTime = end
+	}
+	if len(t.Runs) > 0 {
+		t.Runs[len(t.Runs)-1].Reason = runWoken
+	}
+}
+
 // endLostProcess ends a task whose status is RUNNING but that the harness has no run for (a lost process).
 func (h *Harness) endLostProcess(ctx context.Context, t *planv1.Task) {
 	now := h.now()
 	nowPb := timestamppb.New(now)
-	canResume := plan.CanResume(t.GetProvider()) && t.GetResumes() < maxResumes
 	t = proto.CloneOf(t)
 	t.EndTime = nowPb
-	if canResume {
-		t.Status = planv1.TaskStatus_TASK_STATUS_RESUMING
-		t.WaitReason = whyLost
-		t.Continuing = true
-		t.Resumes++
-		t.Error = ""
+	if canWake(t) {
+		markWoken(t, whyLost, nowPb)
 		h.writeAlone(ctx, actorHarness, methodEvent, nil, t.GetId(), nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: agyContinuePrompt})
 		h.writeAlone(ctx, actorHarness, methodEnd, nil, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "resuming: lost process; continued"})
 	} else {
 		t.Status = planv1.TaskStatus_TASK_STATUS_FAILED
-		t.Error = "lost process: worker is not running"
+		t.Error = notWoken(t, "lost process: worker is not running")
 		h.writeAlone(ctx, actorHarness, methodEnd, nil, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "failed: " + t.GetError()})
 	}
 	h.tellWorkerFailed(t)

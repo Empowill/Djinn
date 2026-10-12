@@ -1628,21 +1628,15 @@ func (h *Harness) end(r *run, res Result) {
 		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy
 	case stopping:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, cmp.Or(stoppingReason, "stopped on request")
-	case watchdogEnd:
-		if plan.CanResume(t.GetProvider()) && t.GetResumes() < maxResumes {
-			t.Status, t.Error, t.Continuing = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true
-			t.WaitReason = watchdogReason
-			t.Resumes++
-		} else {
-			t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, watchdogReason
+	case watchdogEnd || streamIdleEnd:
+		why := streamIdleReason
+		if watchdogEnd {
+			why = watchdogReason
 		}
-	case streamIdleEnd:
-		if plan.CanResume(t.GetProvider()) && t.GetResumes() < maxResumes {
-			t.Status, t.Error, t.Continuing = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true
-			t.WaitReason = streamIdleReason
-			t.Resumes++
+		if canWake(t) {
+			markWoken(t, why, nowPb)
 		} else {
-			t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, streamIdleReason
+			t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, notWoken(t, why)
 		}
 	case shelved:
 		shelve(t)

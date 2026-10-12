@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
@@ -60,8 +61,11 @@ func TestWatchdogSilentWorkerResumes(t *testing.T) {
 	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Fatalf("status = %v, want DONE", done.GetStatus())
 	}
-	if done.GetResumes() != 1 {
-		t.Errorf("resumes = %d, want 1", done.GetResumes())
+	if done.GetResumes() != 0 {
+		t.Errorf("resumes = %d, want 0: a wake spends no usage-limit resume", done.GetResumes())
+	}
+	if runs := done.GetRuns(); len(runs) != 2 || runs[0].GetReason() != runWoken {
+		t.Errorf("runs = %v, want the first woken", runs)
 	}
 
 	events := e.watch(t.Context(), t, id, 0)
@@ -240,8 +244,11 @@ func TestWatchdogLostProcessResumesAndStopSucceeds(t *testing.T) {
 	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Fatalf("status = %v, want DONE", done.GetStatus())
 	}
-	if done.GetResumes() != 1 {
-		t.Errorf("resumes = %d, want 1", done.GetResumes())
+	if done.GetResumes() != 0 {
+		t.Errorf("resumes = %d, want 0: a wake spends no usage-limit resume", done.GetResumes())
+	}
+	if runs := done.GetRuns(); len(runs) != 2 || runs[0].GetReason() != runWoken {
+		t.Errorf("runs = %v, want the first woken", runs)
 	}
 
 	events := e.watch(t.Context(), t, task2.GetId(), 0)
@@ -470,8 +477,11 @@ func TestWatchdogDeadProcessEnds(t *testing.T) {
 	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Fatalf("status = %v, want DONE (after continuation)", done.GetStatus())
 	}
-	if done.GetResumes() != 1 {
-		t.Errorf("resumes = %d, want 1", done.GetResumes())
+	if done.GetResumes() != 0 {
+		t.Errorf("resumes = %d, want 0: a wake spends no usage-limit resume", done.GetResumes())
+	}
+	if runs := done.GetRuns(); len(runs) != 2 || runs[0].GetReason() != runWoken {
+		t.Errorf("runs = %v, want the first woken", runs)
 	}
 }
 
@@ -668,5 +678,139 @@ func TestWatcherLife(t *testing.T) {
 	}
 	if wait, _ := l.ended(dead, true, 0); wait != time.Second {
 		t.Errorf("after an exit 0, a death waits %s, want a second", wait)
+	}
+}
+
+// TestWatchdogWakesAfterUsageLimitResumes replays W485's check of the watchdog: wakes and usage-limit resumes spent
+// one count (Task.resumes), so a worker resumed three times on its usage limits failed at its first silence or its
+// first lost process, although its agent could resume it. Now its wakes are counted apart: it is woken.
+func TestWatchdogWakesAfterUsageLimitResumes(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	limited := &planv1.Task{Provider: planv1.Provider_PROVIDER_CLAUDE, Resumes: maxResumes,
+		Runs: []*planv1.TaskRun{{Reason: "limit", EndTime: timestamppb.Now()}, {Reason: "limit", EndTime: timestamppb.Now()},
+			{Reason: "limit", EndTime: timestamppb.Now()}, {}}}
+	if !canWake(limited) {
+		t.Errorf("a silent worker resumed %d times on its limits is not woken", maxResumes)
+	}
+
+	e := up(t, t.TempDir())
+	wishID, _ := e.wish(t, gitRepo(t))
+	task := e.spawn(t, wishID, "wait")
+	id := task.GetId()
+	running := e.until(t, id, func(tk *planv1.Task) bool {
+		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
+	})
+	running.Resumes = maxResumes
+	putTaskInDB(t, e.db, running)
+	e.h.mu.Lock()
+	e.h.runs[id].task.Resumes = maxResumes
+	delete(e.h.runs, id)
+	e.h.mu.Unlock()
+	e.h.Wake()
+
+	done := e.ended(t, id)
+	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("status = %v (%s), want DONE: the lost worker is woken", done.GetStatus(), done.GetError())
+	}
+	if runs := done.GetRuns(); len(runs) != 2 || runs[0].GetReason() != runWoken {
+		t.Errorf("runs = %v, want the first woken", runs)
+	}
+}
+
+// TestWatchdogGivesUpAfterWakes: a worker silent run after run is woken maxWakes times in a row; silent once more,
+// its task fails saying so, and its lead is told once that it failed.
+func TestWatchdogGivesUpAfterWakes(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	clock := &fakeClock{at: time.Date(2026, 10, 12, 10, 0, 0, 0, time.UTC)}
+	dead := func(pid int, cgroup string) (machine.Group, error) { return machine.Group{Processes: 0}, nil }
+	var told []string
+	var toldMu sync.Mutex
+	tell := func(ctx context.Context, wishID, line string) error {
+		toldMu.Lock()
+		defer toldMu.Unlock()
+		told = append(told, line)
+		return nil
+	}
+	waitEnv, _, _ := fake{provider: "claude", fixture: "success", end: "wait"}.env(t)
+	providers, _ := claudePlaying(waitEnv)
+	e := upWith(t, t.TempDir(), providers,
+		WithClock(clock.now),
+		WithSilenceLimit(100*time.Millisecond),
+		WithMeasure(10*time.Millisecond, dead),
+		WithTellDelay(10*time.Millisecond),
+	)
+	e.h.TellLeads(tell)
+	wishID, _ := e.wish(t, gitRepo(t))
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Silent worker", Prompt: "x", Provider: planv1.Provider_PROVIDER_CLAUDE,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+
+	for run := 1; run <= maxWakes+1; run++ {
+		e.until(t, id, func(tk *planv1.Task) bool {
+			return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && len(tk.GetRuns()) == run && tk.GetSessionId() != ""
+		})
+		clock.set(clock.now().Add(15 * time.Minute))
+		e.h.Wake()
+	}
+
+	done := e.ended(t, id)
+	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
+		t.Fatalf("status = %v, want FAILED after %d wakes", done.GetStatus(), maxWakes)
+	}
+	want := fmt.Sprintf("silent for 15 min; woken %d times in a row", maxWakes)
+	if !strings.Contains(done.GetError(), want) {
+		t.Errorf("error = %q, want %q", done.GetError(), want)
+	}
+	if runs := done.GetRuns(); len(runs) != maxWakes+1 || wakes(&planv1.Task{Runs: runs[:maxWakes]}) != maxWakes ||
+		runs[maxWakes].GetReason() != "failed" {
+		t.Errorf("runs = %v, want %d woken, then one failed", runs, maxWakes)
+	}
+
+	e.h.batcher.Flush(t.Context())
+	toldMu.Lock()
+	defer toldMu.Unlock()
+	if n := strings.Count(strings.Join(told, "\n"), "The move is yours."); n != 1 {
+		t.Errorf("lead told of the failure %d times, want once: %v", n, told)
+	}
+}
+
+// TestWakes counts the woken runs in a row, the last ones: a run that ended otherwise ends the row.
+func TestWakes(t *testing.T) {
+	t.Parallel()
+	runs := func(reasons ...string) *planv1.Task {
+		task := &planv1.Task{}
+		for _, r := range reasons {
+			task.Runs = append(task.Runs, &planv1.TaskRun{Reason: r, EndTime: timestamppb.Now()})
+		}
+		return task
+	}
+	running := func(task *planv1.Task) *planv1.Task {
+		task.Runs = append(task.Runs, &planv1.TaskRun{})
+		return task
+	}
+	for _, c := range []struct {
+		task *planv1.Task
+		want int
+	}{
+		{runs(), 0},
+		{runs(runWoken, runWoken, ""), 0},
+		{runs(runWoken, "limit", runWoken, runWoken), 2},
+		{runs(runWoken, runWoken, runWoken), 3},
+		{running(runs(runWoken, runWoken)), 2},
+	} {
+		if got := wakes(c.task); got != c.want {
+			t.Errorf("wakes(%v) = %d, want %d", c.task.GetRuns(), got, c.want)
+		}
+	}
+	if canWake(&planv1.Task{Provider: planv1.Provider_PROVIDER_WATCH}) {
+		t.Error("a watcher's task is woken as a worker; its command is started again instead")
 	}
 }
