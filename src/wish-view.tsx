@@ -1359,7 +1359,7 @@ export function wishOrigin(wish: Wish): ReactNode {
   return node;
 }
 
-// WishOrigin marks a line with its wish, in the flight plan of several wishes: its rank and its title.
+// WishOrigin marks a line with its wish, in the flying carpet of several wishes: its rank and its title.
 export const WishOrigin = memo(function WishOrigin({ wish }: { wish: Wish }) {
   return (
     <span className="wish-origin" title={wish.title}>

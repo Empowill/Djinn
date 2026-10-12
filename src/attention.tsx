@@ -1,4 +1,4 @@
-// The bar that stays at the top of the flight plan and of a wish while something waits for you: one line each, the
+// The bar that stays at the top of the flying carpet and of a wish while something waits for you: one line each, the
 // most blocking first, in the colour of how much it holds up. A click takes you there, in whatever tab, wish or fold
 // it is; a line the page cannot show any more is not a button. A move's line has its main link beside it, a button
 // that opens where the developer acts (a pull request, a CI run). A question is blocking (red), needed before something
@@ -169,7 +169,7 @@ export function jump(id: string): boolean {
   return true;
 }
 
-// The tab of a page (a wish or the flight plan) that shows a line's target: the decisions show the answered
+// The tab of a page (a wish or the flying carpet) that shows a line's target: the decisions show the answered
 // questions, the tasks a task asked for itself (task-<id>, as the resources panel asks), the first tab all the rest.
 export type Tab = "main" | "decisions" | "tasks";
 

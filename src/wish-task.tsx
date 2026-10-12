@@ -225,7 +225,7 @@ export const WishTask = memo(function WishTask({
   project?: Project;
   // The codes of the wish's tasks, by id: what this one waits for, what it was forked from.
   codes?: ReadonlyMap<string, string>;
-  // Where the task comes from, in the flight plan of several wishes: its wish.
+  // Where the task comes from, in the flying carpet of several wishes: its wish.
   origin?: ReactNode;
   // The task that took over this one, cut short: its code.
   forkedAs?: string;

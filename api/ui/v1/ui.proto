@@ -101,7 +101,7 @@ message UiServiceGetEnvironmentResponse {
 }
 
 // The global shortcut that brings the window forward from anywhere on the desktop, on the wish with the newest open
-// question, else on the flight plan.
+// question, else on the flying carpet.
 message Shortcut {
   // The chord in effect, such as Ctrl+Alt+Space; empty when off.
   string chord = 1;
@@ -384,7 +384,7 @@ message UiServiceOpenNotificationSettingsRequest {}
 message UiServiceOpenNotificationSettingsResponse {}
 
 message UiServiceViewRequest {
-  // The wish the page shows; empty for none (the flight plan, a dialog of its own).
+  // The wish the page shows; empty for none (the flying carpet, a dialog of its own).
   string wish_id = 1 [(buf.validate.field).string.max_len = 64];
 }
 

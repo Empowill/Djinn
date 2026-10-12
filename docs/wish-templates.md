@@ -177,8 +177,8 @@ turns the automatic watcher off; `--babysit` still works.
 ## The inbox: what comes from outside
 
 A merge request assigned to you, a mention in a thread: a skill may also declare a **source**, a command that prints
-what comes from outside. Djinn runs it, and each item it prints becomes a card in the inbox, at the top of the flight
-plan, with the route Djinn proposes, as for a request handed over: a wish to file it in, or a new one, from the
+what comes from outside. Djinn runs it, and each item it prints becomes a card in the inbox, at the top of the flying
+carpet, with the route Djinn proposes, as for a request handed over: a wish to file it in, or a new one, from the
 skill's template when the item matches it. Nothing is made until you click; "Dismiss" sets an item aside.
 
 **A source runs only once you plug it in, on your machine.** Declaring one in a skill runs nothing: a clone of the

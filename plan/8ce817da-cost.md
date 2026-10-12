@@ -214,7 +214,7 @@ the context its task needs, no more.
   cleanup in Recover remains to delete leftover worktrees and branches (`djinn-warm-…`) from older versions.
 - [x] Every worker's tokens and cost show per wish in the interface. (branch `w30-ui`: each task shows its tokens and
   its cost, the detail on hover and opened (input, output, cache read, cache written); a wish shows its total, and the
-  flight plan each active wish's; Codex and Antigravity give tokens only, so their tasks show no cost and the total
+  flying carpet each active wish's; Codex and Antigravity give tokens only, so their tasks show no cost and the total
   says how many have none. `src/usage.tsx`, `tests/data-flight.test.mjs`, the token tests of
   `tests/screens.test.mjs`, `e2e/flight-plan.spec.ts`)
 - [x] A lead starts from a brief built out of the store (`djinn wish brief`, T13).

@@ -1,4 +1,5 @@
-// The flight plan of the active wishes, merged (T13): a bar at the top while something waits for you, then each
+// The flying carpet was called the flight plan: this file, FlightPlan and the flight-plan class keep that name.
+// The flying carpet of the active wishes, merged (T13): a bar at the top while something waits for you, then each
 // wish at a glance, then what waits for you (the open questions of every wish, the blocking ones first, the workers
 // that wait, the wishes Djinn proposes to grant, the proofs you can give of the azimas whose work is done), and the
 // questions you asked to investigate. The tasks of every wish

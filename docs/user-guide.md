@@ -1,6 +1,6 @@
 # Djinn user guide
 
-How to get going with Djinn, then use its flight plan day to day. Djinn is one command, `djinn`: a window, a local
+How to get going with Djinn, then use its flying carpet day to day. Djinn is one command, `djinn`: a window, a local
 server, and a command line your agents use to drive a wish. You say what you wish; a lead (Claude Code, Codex or
 Antigravity) splits it into tasks; workers do them; you answer the questions and grant the wish.
 
@@ -156,7 +156,7 @@ choice is on screen. In a wish, the pill **Write to the lead** at the bottom doe
 (Cmd/Ctrl+I opens it; Enter sends, Shift+Enter breaks the line, Escape folds it and keeps the draft).
 
 When the lead's agent asks for your approval in its terminal (a command to run, a folder to trust), the bar of what
-waits for you shows it first, in the flight plan and in every wish, with its options as buttons, and a notification
+waits for you shows it first, in the flying carpet and in every wish, with its options as buttons, and a notification
 says so. A button answers in the terminal as its keys would, only while the terminal still shows that very choice: a
 different command needs a new click.
 
@@ -167,9 +167,9 @@ reopening it starts nothing. Only **Lead**, or `djinn lead resume`, starts it ag
 Djinn takes the lead back at every start, in the lead's terminal. The first start after an update from a Djinn that had
 one lead per wish keeps the lead of the first active wish as the one lead.
 
-## The flight plan
+## The flying carpet
 
-**Flight plan**, at the top of the side panel, shows every active wish together:
+**Flying carpet**, at the top of the side panel, shows every active wish together:
 
 - a bar at the top while something waits for you, the most blocking first; a click takes you there;
 - the [inbox](#the-inbox), when a source found something;
@@ -178,7 +178,7 @@ one lead per wish keeps the lead of the first active wish as the one lead.
   **Proofs you can give** (see [azimas](#azimas));
 - the questions you asked the lead to investigate.
 
-Each line names its wish; an answer, a stop or a grant goes back to it. Like a wish, the flight plan has a **Tasks**
+Each line names its wish; an answer, a stop or a grant goes back to it. Like a wish, the flying carpet has a **Tasks**
 tab and a **Decisions** tab, with the tasks and decisions of every active wish. An empty section is hidden.
 
 ## A wish's view
@@ -227,7 +227,7 @@ Interrupted, Stopped, Paused, Waiting for the limit, Resuming, Resumed as anothe
 
 ### Usage and cost estimates
 
-Every task, wish, and the flight plan show token breakdowns (input, output, cache read, thinking) and an estimated cost computed from an embedded price table (`internal/usage/prices.yaml`), marked "estimated, prices of <table date>".
+Every task, wish, and the flying carpet show token breakdowns (input, output, cache read, thinking) and an estimated cost computed from an embedded price table (`internal/usage/prices.yaml`), marked "estimated, prices of <table date>".
 
 - **Estimated vs. reported**: Claude reports monetary cost directly in its stream, which Djinn preserves and shows labelled "reported" alongside the estimate. For providers without stream costs (Codex, Antigravity), Djinn converts tokens to cost using the price table.
 - **Comparable across providers**: A switch in usage views toggles between currency ($) and tokens, so comparisons across models and providers remain consistent without flattening when a model has no price.
@@ -299,7 +299,7 @@ depended on, keeps working as it is: Djinn never cuts it again nor rewrites it.
 Once every task part of an azima is finished, it is **To validate**: nothing is left for Djinn. Its card says what
 validating it takes, box by box of its plan file (a person, a machine, a release or a real model gives each proof), and
 its **Validate** button marks it done. An azima whose plan file says done stays **In progress** while work part of it
-still runs or waits. The flight plan lists the proofs a person can give among the **Proofs you can give**.
+still runs or waits. The flying carpet lists the proofs a person can give among the **Proofs you can give**.
 
 ### The Review tab
 
@@ -443,7 +443,7 @@ opens](wish-templates.md#babysitting-what-a-task-opens).
 ## The inbox
 
 A skill may also declare a *source*: a command that prints what comes from outside, like the merge requests assigned
-to you. Each item becomes a card in the **Inbox**, at the top of the flight plan, with where Djinn proposes to send it:
+to you. Each item becomes a card in the **Inbox**, at the top of the flying carpet, with where Djinn proposes to send it:
 a wish to file it in, or a new one. The side panel counts the new items, and the window shows each one as a system
 notification. Nothing is made until you click; **Rub the lamp** takes the recommended route, **Dismiss** sets the item
 aside for good. Djinn only reads a source: it never comments, reacts or replies. `djinn inbox list` lists the items.

@@ -1,6 +1,7 @@
-// The flight plan of the active wishes, merged from what the store read of each: one list of questions, of what
+// The flying carpet of the active wishes, merged from what the store read of each: one list of questions, of what
 // waits, of what runs, of the decisions. Every item keeps its wish. The order is the page's (the Go page of a
 // wish sorts the same way); what the lamp decides (a wish's rank, whether it is ready) comes from the lamp.
+// The flying carpet was called the flight plan: this file, flightPlan and FlightPlan keep that name.
 import {
   AzimaState,
   type Block,
@@ -578,7 +579,7 @@ export function waitingTasks(wish: Wish, detail: WishDetail): Waiting[] {
     });
 }
 
-// flightPlan merges the flight plans of the wishes given, in their order (the active ones, by rank).
+// flightPlan merges the flying carpets of the wishes given, in their order (the active ones, by rank).
 export function flightPlan(
   wishes: readonly Wish[],
   details: Readonly<Record<string, WishDetail | undefined>>,

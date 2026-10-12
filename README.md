@@ -83,7 +83,7 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 
 - **One wish, one lead.** Say what you wish. Its lead, Claude Code or Codex, splits it into tasks, each one a worker in
   its own worktree. One lead is principal across active wishes to field shared decisions. Tasks can wait as drafts and
-  move between wishes as priorities shift. Three wishes are active at most; the flight plan shows them together.
+  move between wishes as priorities shift. Three wishes are active at most; the flying carpet shows them together.
 - **A visible team.** Two-line task rows show each worker's status first, prompt, live events, diffs, terminal logs and
   what it cost. An operating load cursor (from Minimal to Overclock, or Auto) meters concurrency to the machine,
   giving investigators top priority. Send instructions while workers run, or talk to the lead in its terminal.

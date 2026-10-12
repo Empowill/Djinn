@@ -1,4 +1,4 @@
-// The resources panel of the flight plan against the real djinn up --browser (see global-setup.ts), its series and
+// The resources panel of the flying carpet against the real djinn up --browser (see global-setup.ts), its series and
 // commands replaced by fixtures (W502): the charts say the value under the pointer and at the arrow keys, grow as new
 // samples come without losing the point shown, and a worker's eye opens its task in its wish, on the Tasks tab. The
 // commands of a project no active wish works on do not show.
@@ -260,7 +260,7 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   await routeResources(page, w1, wishId, title, projectId);
   await page.setViewportSize({ width: 1440, height: 1400 });
   await page.goto(process.env.DJINN_URL!);
-  await expect(page.locator(".hero h1")).toHaveText("Flight plan");
+  await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
 
   const panel = page.locator(".consumption-panel");
   await panel.scrollIntoViewIfNeeded();

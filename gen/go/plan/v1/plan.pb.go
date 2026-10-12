@@ -4313,7 +4313,7 @@ func (x *Usage) GetThinkingTokens() int64 {
 	return 0
 }
 
-// A task is one item of a wish's flight plan, done in one project.
+// A task is one item of a wish's flying carpet, done in one project.
 type Task struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Identifier, a UUIDv7.

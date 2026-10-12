@@ -737,7 +737,7 @@ use a personal or licensed account.
 
 ## Tokens and cost estimates across providers
 
-Every task, wish, and the flight plan show token counts (input, output, cache read, thinking) and an estimated cost computed from an embedded price table (`internal/usage/prices.yaml`), marked "estimated, prices of <table date>".
+Every task, wish, and the flying carpet show token counts (input, output, cache read, thinking) and an estimated cost computed from an embedded price table (`internal/usage/prices.yaml`), marked "estimated, prices of <table date>".
 
 | Provider | Stream tokens | Stream cost | Estimated cost |
 | -------- | ------------- | ----------- | -------------- |

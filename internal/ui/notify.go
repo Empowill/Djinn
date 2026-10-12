@@ -84,7 +84,7 @@ var choices = map[string]planv1.Choice{
 // Notices tells the user, by a system notification, of what waits for them in an active wish: a question asked
 // (the edit question of a task included), a task that waits for an answer or failed, or a wish that became ready to
 // review. A click brings the window forward on the wish, there; a button answers the question. It tells of each new
-// inbox item too, and of the choice the lead shows: a click brings the window forward, where the flight plan shows
+// inbox item too, and of the choice the lead shows: a click brings the window forward, where the flying carpet shows
 // the inbox and the attention bar the lead's choice. Each event shows once, and none of a wish while the window is in
 // front on it. Without a notifier (a headless build, the browser) it shows nothing.
 type Notices struct {

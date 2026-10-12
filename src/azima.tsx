@@ -172,7 +172,7 @@ export const AzimaCard = memo(function AzimaCard({
   parts: readonly Task[];
   // The tasks of its wish, by id: what it waits for.
   tasks: ReadonlyMap<string, Task>;
-  // Where it comes from, in the flight plan of several wishes: its wish.
+  // Where it comes from, in the flying carpet of several wishes: its wish.
   origin?: ReactNode;
   render: (task: Task) => ReactNode;
   // What a link brings into sight: the azima, or one of its parts, opens on it.

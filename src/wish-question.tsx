@@ -66,7 +66,7 @@ export const WishQuestion = memo(function WishQuestion({
   onWithdraw,
 }: {
   question: Question;
-  // Where the question comes from, in the flight plan of several wishes: its wish.
+  // Where the question comes from, in the flying carpet of several wishes: its wish.
   origin?: ReactNode;
   // The codes of the tasks that wait for this answer.
   blocking?: readonly string[];

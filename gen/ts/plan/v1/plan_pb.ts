@@ -1483,7 +1483,7 @@ export const UsageSchema: GenMessage<Usage> = /*@__PURE__*/
   messageDesc(file_plan_v1_plan, 18);
 
 /**
- * A task is one item of a wish's flight plan, done in one project.
+ * A task is one item of a wish's flying carpet, done in one project.
  *
  * @generated from message plan.v1.Task
  */

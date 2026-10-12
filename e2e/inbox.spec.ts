@@ -1,6 +1,6 @@
 // The inbox, against the real djinn up --browser (see global-setup.ts): a project's skill declares a source and a wish
 // template. The source runs nothing until plugged in: the empty inbox lists it with "Plug in". Plugged in, it prints a
-// merge request assigned to you, which becomes a card in the flight plan, proposing the template's wish; a click makes
+// merge request assigned to you, which becomes a card in the flying carpet, proposing the template's wish; a click makes
 // the wish, with its watcher. The source and the watcher are fakes: shell scripts.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
@@ -44,7 +44,7 @@ test.skip(
 test("a source runs once plugged in; its assigned merge request becomes a card that proposes the babysit template; a click makes the wish with its watcher", async ({
   page,
 }) => {
-  // Three wishes at a time: the earlier specs' wishes make way, and one stays active for the flight plan.
+  // Three wishes at a time: the earlier specs' wishes make way, and one stays active for the flying carpet.
   const listed = JSON.parse(djinn("wish", "list", "--json")).wishes ?? [];
   for (const w of listed.filter(
     (w: { state: string }) => w.state === "WISH_STATE_ACTIVE",

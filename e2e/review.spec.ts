@@ -1,6 +1,6 @@
 // Review and decide at a glance, against the real djinn up --browser (see global-setup.ts): the bar of what waits,
 // "Enlighten me" read by the lead in the brief, a revision from the command line, "Rub the lamp" read back from the
-// command line, a block for agents only in its discreet tab, folded, with no mark. Screenshots of the flight plan and of the wish, dark and
+// command line, a block for agents only in its discreet tab, folded, with no mark. Screenshots of the flying carpet and of the wish, dark and
 // light, go to test-results/e2e/.
 import { type Page, expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
@@ -81,7 +81,7 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   for (const w of wishes().filter((w) => w.state === "WISH_STATE_ACTIVE"))
     djinn("wish", "pause", w.id);
   // W501: a wish shown by a link, then deleted, as operating-load.spec.ts leaves it: the show of the last minute that
-  // each reload below gets must not take the window from this spec's wish to the flight plan.
+  // each reload below gets must not take the window from this spec's wish to the flying carpet.
   const shown = JSON.parse(djinn("wish", "make", "Shown then gone", "--json"))
     .wish.id as string;
   djinn("open", `djinn://wish/${shown}`);
@@ -133,7 +133,7 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   // Tall enough for a screenshot to hold most of the page: it scrolls inside the window.
   await page.setViewportSize({ width: 1440, height: 2200 });
   await page.goto(process.env.DJINN_URL!);
-  await expect(page.locator(".hero h1")).toHaveText("Flight plan");
+  await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
   // The bar of what waits: one line per question and one for the worker that failed, a click goes there; the one
   // needed before the first light under those words, the worker needing an action, the other that can wait. W3,
   // cut short and not resumed by Djinn, asks nothing: it is history.

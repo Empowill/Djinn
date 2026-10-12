@@ -983,7 +983,7 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
   align-items: center;
 }
 
-/* The tabs of a view: the wish or the flight plan, and the tasks, which say how many they are. */
+/* The tabs of a view: the wish or the flying carpet, and the tasks, which say how many they are. */
 .view-tabs {
   display: flex;
   gap: 4px;
@@ -1078,7 +1078,7 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
   margin-top: 10px;
 }
 
-/* The flight plan: each wish at a glance. */
+/* The flying carpet: each wish at a glance. */
 .review .plan-wish {
   background: var(--surface);
   gap: 10px;
