@@ -21,7 +21,8 @@ import (
 // agent's official documentation (read 2026-10-08); where it documents none, the field is empty and the answer
 // unknown, never guessed.
 type agent struct {
-	id, name string
+	// id is the agent's identifier, the one the lead's menu reads; program is the command that runs it.
+	id, name, program string
 	// version are the arguments that print the version; nil: none documented.
 	version []string
 	// status are the arguments that exit 0 when signed in and 1 when not; nil: none documented.
@@ -36,21 +37,21 @@ var agents = []agent{
 	{
 		// code.claude.com/docs/en/setup and /cli-reference: "claude auth status … Exits with code 0 if logged in,
 		// 1 if not."
-		id: "claude", name: "Claude Code", version: []string{"--version"}, status: []string{"auth", "status"},
+		id: "claude", name: "Claude Code", program: "claude", version: []string{"--version"}, status: []string{"auth", "status"},
 		install:        "curl -fsSL https://claude.ai/install.sh | bash",
 		installWindows: `powershell -NoProfile -Command "irm https://claude.ai/install.ps1 | iex"`,
 		login:          "claude auth login",
 	},
 	{
 		// github.com/openai/codex README; `codex login status` exits 0 when logged in, 1 when not.
-		id: "codex", name: "Codex", version: []string{"--version"}, status: []string{"login", "status"},
+		id: "codex", name: "Codex", program: "codex", version: []string{"--version"}, status: []string{"login", "status"},
 		install: "npm install -g @openai/codex",
 		login:   "codex login",
 	},
 	{
 		// antigravity.google/docs/cli/install: the first run of agy signs in. No version flag nor status command is
 		// documented.
-		id: "agy", name: "Antigravity",
+		id: "antigravity", name: "Antigravity", program: "agy",
 		install:        "curl -fsSL https://antigravity.google/cli/install.sh | bash",
 		installWindows: `powershell -NoProfile -Command "irm https://antigravity.google/cli/install.ps1 | iex"`,
 		login:          "agy",
@@ -81,13 +82,13 @@ func launchPath() string {
 
 func checkAgent(ctx context.Context, a agent, path string) *uiv1.Provider {
 	p := &uiv1.Provider{
-		Id: a.id, Name: a.name, Command: a.id, InstallCommand: a.install, LoginCommand: a.login,
+		Id: a.id, Name: a.name, Command: a.program, InstallCommand: a.install, LoginCommand: a.login,
 		State: uiv1.ProviderState_PROVIDER_STATE_MISSING,
 	}
 	if runtime.GOOS == "windows" && a.installWindows != "" {
 		p.InstallCommand = a.installWindows
 	}
-	command, err := machine.LookPath(a.id, path)
+	command, err := machine.LookPath(a.program, path)
 	if err != nil {
 		return p
 	}

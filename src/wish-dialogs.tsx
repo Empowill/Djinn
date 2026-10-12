@@ -623,7 +623,8 @@ const agentStates: Record<ProviderState, { label: TextKey; dot: string }> = {
   [ProviderState.UNKNOWN]: { label: "settings.agent_unknown", dot: "blocked" },
 };
 
-// AgentSetting is one agent: installed or not, its version, signed in or not, and the command that takes it further.
+// AgentSetting is one agent on one line: its name and version, where it stands, and the command that takes it further
+// (install it, sign it in), which says what it does on hover.
 function AgentSetting({ agent }: { agent: Provider }) {
   const state = agentStates[agent.state] ?? agentStates[ProviderState.UNKNOWN];
   const next =
@@ -638,23 +639,20 @@ function AgentSetting({ agent }: { agent: Provider }) {
             }
           : undefined;
   return (
-    <div className="provider-setting">
+    <div
+      className="provider-setting"
+      title={agent.available ? agent.command : undefined}
+    >
       <span className="provider-glyph">
-        {agent.id === "codex" ? "⬡" : agent.id === "agy" ? "◆" : "✳"}
+        {agent.id === "codex" ? "⬡" : agent.id === "antigravity" ? "◆" : "✳"}
       </span>
       <div>
         <h3>{agent.name}</h3>
-        <span className="muted-text">
-          {agent.available
-            ? [agent.version, agent.command].filter(Boolean).join(" · ")
-            : t("settings.agent_missing")}
-        </span>
-        {next?.command && (
-          <small>
-            {next.label} <code>{next.command}</code>
-          </small>
-        )}
+        {agent.version && <span className="muted-text">{agent.version}</span>}
       </div>
+      {next?.command && (
+        <code title={`${next.label} ${next.command}`}>{next.command}</code>
+      )}
       <span className="status-text">
         <span className={`status-dot ${state.dot}`} />
         {t(state.label)}
@@ -674,14 +672,19 @@ export function Settings({
 }) {
   const clients = useClients();
   const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
+  const [agents, setAgents] = useState<Provider[]>();
   const [theme, setTheme] = useState<Theme>(chosenTheme);
   useEffect(() => {
     let live = true;
-    // Checking the agents runs each one's status command: it takes up to a few seconds.
     clients.ui
-      .getEnvironment({ agents: true })
+      .getEnvironment({})
       .then((res) => live && setEnv(res))
       .catch(() => undefined);
+    // Checking the agents runs each one's status command: it takes up to a few seconds, so the rest does not wait.
+    clients.ui
+      .getEnvironment({ agents: true })
+      .then((res) => live && setAgents(res.providers))
+      .catch(() => live && setAgents([]));
     return () => {
       live = false;
     };
@@ -694,12 +697,12 @@ export function Settings({
       wide
     >
       <div className="provider-settings">
-        {env === undefined && (
+        {agents === undefined && (
           <div className="provider-setting">
             <span className="muted-text">{t("settings.agent_checking")}</span>
           </div>
         )}
-        {env?.providers.map((p) => (
+        {agents?.map((p) => (
           <AgentSetting agent={p} key={p.id} />
         ))}
       </div>

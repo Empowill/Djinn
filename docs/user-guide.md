@@ -22,8 +22,11 @@ Workers and leads run the agents you already have, as you installed and signed i
 - Claude Code: `npm install -g @anthropic-ai/claude-code`
 - Antigravity, optional: [`providers.md`](providers.md#antigravity).
 
-**Connections & preferences** (bottom of the side panel) shows which command lines Djinn finds. Djinn asks for no API
-key, and stores none: the account each agent signs in with pays for it.
+**Connections & preferences** (bottom of the side panel) shows, one line per agent, whether Djinn finds it, its
+version, and whether it is signed in (`claude auth status`, `codex login status`; Antigravity has no such command, so
+its sign-in shows as unknown), with the command to install it or sign it in. Djinn looks where its workers and leads
+look: its PATH, your login shell's, and the installers' folders. Djinn asks for no API key, and stores none: the
+account each agent signs in with pays for it.
 
 ## Start Djinn: `djinn up`
 

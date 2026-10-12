@@ -61,9 +61,9 @@ esac
 `)
 	got := byID(environment(t, dir, true))
 	if len(got) != 3 {
-		t.Fatalf("providers = %v; want claude, codex and agy", got)
+		t.Fatalf("providers = %v; want claude, codex and antigravity", got)
 	}
-	claude, codex, agy := got["claude"], got["codex"], got["agy"]
+	claude, codex, agy := got["claude"], got["codex"], got["antigravity"]
 	if claude.GetState() != uiv1.ProviderState_PROVIDER_STATE_READY || !claude.GetAvailable() ||
 		claude.GetVersion() != "2.1.294" || claude.GetCommand() != filepath.Join(dir, "claude") ||
 		claude.GetLoginCommand() != "claude auth login" || claude.GetInstallCommand() == "" {
@@ -85,7 +85,7 @@ func TestGetEnvironmentAgyUnknown(t *testing.T) {
 	dir := t.TempDir()
 	ran := filepath.Join(t.TempDir(), "ran")
 	fake(t, dir, "agy", "/usr/bin/touch "+ran+"\n")
-	agy := byID(environment(t, dir, true))["agy"]
+	agy := byID(environment(t, dir, true))["antigravity"]
 	if agy.GetState() != uiv1.ProviderState_PROVIDER_STATE_UNKNOWN || !agy.GetAvailable() || agy.GetVersion() != "" ||
 		agy.GetLoginCommand() != "agy" {
 		t.Errorf("agy = %v; want installed, sign-in unknown, no version", agy)
@@ -127,7 +127,7 @@ func TestGetEnvironmentWithoutAgents(t *testing.T) {
 	t.Setenv("PATH", dir)
 	got := byID(environment(t, dir, false))
 	if len(got) != 3 || !got["claude"].GetAvailable() || got["claude"].GetCommand() != filepath.Join(dir, "claude") ||
-		got["codex"].GetAvailable() || got["agy"].GetAvailable() {
+		got["codex"].GetAvailable() || got["antigravity"].GetAvailable() {
 		t.Errorf("providers = %v; want only the fake Claude command available", got)
 	}
 	if _, err := os.Stat(ran); err == nil {
@@ -156,5 +156,20 @@ func TestPanelAndLaunchAgree(t *testing.T) {
 	}
 	if got, err := exec.LookPath("claude"); err != nil || got != claude.GetCommand() {
 		t.Errorf("a worker finds claude at %q, %v; the panel says %s", got, err, claude.GetCommand())
+	}
+}
+
+// The panel and the lead's menu name each agent alike: the menu reads antigravity, whose program is agy.
+func TestPanelAndMenuShareIDs(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	quick, checked := byID(environment(t, dir, false)), byID(environment(t, dir, true))
+	if len(quick) != len(checked) {
+		t.Fatalf("menu = %v, panel = %v; want the same agents", quick, checked)
+	}
+	for id, p := range quick {
+		if c, ok := checked[id]; !ok || c.GetCommand() != p.GetCommand() {
+			t.Errorf("%s: menu %v, panel %v; want the same agent and command", id, p, c)
+		}
 	}
 }
