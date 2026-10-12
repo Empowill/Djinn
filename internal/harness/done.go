@@ -92,17 +92,13 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 	}
 	task.Closed = &planv1.Closure{Actor: by, CreateTime: now, Note: req.GetNote()}
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		seq, err := lastSeq(ctx, tx, id)
-		if err != nil {
-			return err
-		}
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err
 		}
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		if err := tx.Put(newEvent(id, seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})); err != nil {
+		if err := putEvents(ctx, tx, newEvent(id, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})); err != nil {
 			return err
 		}
 		if task.GetIntegration() == nil {
@@ -111,7 +107,7 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 			}
 		}
 		if task.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING {
-			return tx.Put(newEvent(id, seq+2, Event{
+			return putEvents(ctx, tx, newEvent(id, Event{
 				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
 				Text: "integration: pending, to be merged into the integration branch",
 			}))
@@ -146,17 +142,13 @@ func (h *Harness) doneSeen(ctx context.Context, procedure string, req *planv1.Ta
 	}
 	task.Closed = &planv1.Closure{Actor: by, CreateTime: timestamppb.Now(), Note: req.GetNote()}
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
-		seq, err := lastSeq(ctx, tx, task.GetId())
-		if err != nil {
-			return err
-		}
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err
 		}
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		return tx.Put(newEvent(task.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
+		return putEvents(ctx, tx, newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
 	})
 	if err != nil {
 		return nil, plan.Status(err)

@@ -236,11 +236,7 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 			return err
 		}
 		if promptGiven {
-			seq, err := lastSeq(ctx, tx, id)
-			if err != nil {
-				return err
-			}
-			if err := tx.Put(newEvent(id, seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: *req.Prompt})); err != nil {
+			if err := putEvents(ctx, tx, newEvent(id, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: *req.Prompt})); err != nil {
 				return err
 			}
 		}
@@ -255,11 +251,7 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 			}
 		}
 		if integrationGiven && t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING {
-			seq, err := lastSeq(ctx, tx, id)
-			if err != nil {
-				return err
-			}
-			if err := tx.Put(newEvent(id, seq+1, Event{
+			if err := putEvents(ctx, tx, newEvent(id, Event{
 				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: pending, to be merged into the integration branch",
 			})); err != nil {
 				return err

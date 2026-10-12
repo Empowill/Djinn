@@ -94,17 +94,13 @@ func (h *Harness) Cancel(ctx context.Context, procedure string, req *planv1.Task
 	}
 
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		seq, err := lastSeq(ctx, tx, id)
-		if err != nil {
-			return err
-		}
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err
 		}
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		if err := tx.Put(newEvent(id, seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})); err != nil {
+		if err := putEvents(ctx, tx, newEvent(id, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})); err != nil {
 			return err
 		}
 		if err := h.clearCorrectionLinks(ctx, tx, task.GetWishId(), task.GetId()); err != nil {
@@ -118,15 +114,11 @@ func (h *Harness) Cancel(ctx context.Context, procedure string, req *planv1.Task
 			if !slices.Contains(dep.GetDependsOn(), task.GetId()) {
 				continue
 			}
-			depSeq, err := lastSeq(ctx, tx, dep.GetId())
-			if err != nil {
-				return err
-			}
 			code := task.GetCode()
 			if code == "" {
 				code = task.GetId()
 			}
-			if err := tx.Put(newEvent(dep.GetId(), depSeq+1, Event{
+			if err := putEvents(ctx, tx, newEvent(dep.GetId(), Event{
 				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
 				Text: fmt.Sprintf("dependency %s was cancelled", code),
 			})); err != nil {

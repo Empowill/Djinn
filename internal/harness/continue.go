@@ -85,10 +85,6 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 	}
 	t.WaitReason = why
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		seq, err := lastSeq(ctx, tx, id)
-		if err != nil {
-			return err
-		}
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err
 		}
@@ -109,8 +105,8 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 		if why != "" {
 			events = append(events, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why})
 		}
-		for i, ev := range events {
-			if err := tx.Put(newEvent(id, seq+1+int64(i), ev)); err != nil {
+		for _, ev := range events {
+			if err := putEvents(ctx, tx, newEvent(id, ev)); err != nil {
 				return err
 			}
 		}
@@ -257,12 +253,8 @@ func closeParent(ctx context.Context, tx *store.Tx, parent *planv1.Task, fork st
 		parent.EndTime = now
 	}
 	parent.Closed = &planv1.Closure{Actor: planv1.Closer_CLOSER_LEAD, CreateTime: now, Note: note, ContinuedIn: fork}
-	seq, err := lastSeq(ctx, tx, parent.GetId())
-	if err != nil {
-		return err
-	}
 	if err := tx.Put(parent); err != nil {
 		return err
 	}
-	return tx.Put(newEvent(parent.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
+	return putEvents(ctx, tx, newEvent(parent.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
 }

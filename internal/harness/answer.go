@@ -176,14 +176,10 @@ func (h *Harness) answer(id string, q *planv1.Question) error {
 	if err != nil || task.GetAccess() != planv1.TaskAccess_TASK_ACCESS_ASKING {
 		return err
 	}
-	seq, err := lastSeq(context.Background(), h.store, id)
-	if err != nil {
-		return err
-	}
 	if !yes(q) || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_CANCELLED || task.GetClosed() != nil || task.GetCancelled() != nil || !task.GetScheduled() {
 		// Nothing starts: the answer is recorded with the task, a task waiting for it is done. A task imported from
 		// another Djinn is not this one's to start.
-		r := &run{id: id, task: task, seq: seq}
+		r := &run{id: id, task: task}
 		h.applyAnswer(r, q)
 		return nil
 	}
@@ -228,18 +224,14 @@ func (h *Harness) grant(ctx context.Context, id string, q *planv1.Question) erro
 		events = append(events, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + t.GetWaitReason()})
 	}
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		seq, err := lastSeq(ctx, tx, id)
-		if err != nil {
-			return err
-		}
 		if err := tx.Journal(actorHarness, methodAnswer, t); err != nil {
 			return err
 		}
 		if err := tx.Put(t); err != nil {
 			return err
 		}
-		for i, ev := range events {
-			if err := tx.Put(newEvent(id, seq+1+int64(i), ev)); err != nil {
+		for _, ev := range events {
+			if err := putEvents(ctx, tx, newEvent(id, ev)); err != nil {
 				return err
 			}
 		}
