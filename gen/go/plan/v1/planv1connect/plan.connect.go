@@ -2142,9 +2142,10 @@ func (UnimplementedBlockServiceHandler) Delete(context.Context, *connect.Request
 // MarkServiceClient is a client for the plan.v1.MarkService service.
 type MarkServiceClient interface {
 	// Mark a question: read, or approved as it is. Approving an open question answers it with the option its
-	// recommendation names, as djinn question answer does. A block takes no mark: blocks are for agents.
+	// recommendation names, as djinn question answer does. Mark a task reviewed, once its diff was read. A block takes
+	// no mark: blocks are for agents.
 	Put(context.Context, *connect.Request[v1.MarkServicePutRequest]) (*connect.Response[v1.MarkServicePutResponse], error)
-	// List the marks on a wish's questions, the latest last.
+	// List the marks on a wish's questions and tasks, the latest last.
 	List(context.Context, *connect.Request[v1.MarkServiceListRequest]) (*connect.Response[v1.MarkServiceListResponse], error)
 }
 
@@ -2194,9 +2195,10 @@ func (c *markServiceClient) List(ctx context.Context, req *connect.Request[v1.Ma
 // MarkServiceHandler is an implementation of the plan.v1.MarkService service.
 type MarkServiceHandler interface {
 	// Mark a question: read, or approved as it is. Approving an open question answers it with the option its
-	// recommendation names, as djinn question answer does. A block takes no mark: blocks are for agents.
+	// recommendation names, as djinn question answer does. Mark a task reviewed, once its diff was read. A block takes
+	// no mark: blocks are for agents.
 	Put(context.Context, *connect.Request[v1.MarkServicePutRequest]) (*connect.Response[v1.MarkServicePutResponse], error)
-	// List the marks on a wish's questions, the latest last.
+	// List the marks on a wish's questions and tasks, the latest last.
 	List(context.Context, *connect.Request[v1.MarkServiceListRequest]) (*connect.Response[v1.MarkServiceListResponse], error)
 }
 

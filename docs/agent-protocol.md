@@ -73,7 +73,8 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   A decision may take several rounds.
 - **Marks.** The open questions the developer marked read, from the window: `djinn mark list <wish>`, and the
   brief's "Marked by the developer". Approving an open question (`djinn mark put Q03 approved`) answers it with
-  its recommendation. A block takes no mark: Djinn refuses one.
+  its recommendation. A task the developer reviewed, from the window's Review tab, is marked reviewed (`djinn mark put
+  W3 reviewed`); a task takes no other mark. A block takes no mark: Djinn refuses one.
 - **Investigators clarify questions; the lead turns answers into tasks.** Djinn does not turn answers into tasks
   with workers: the DAG is the lead's responsibility (keeping it free of conflicts so workers do not collide along an
   iterative and de-risked path), and the lead turns each answer into tasks itself, in one pass,

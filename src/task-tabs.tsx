@@ -1,8 +1,9 @@
 // The tasks have a tab of their own, in a wish's view and in the flight plan, next to the rest. In it, a list: at the
 // top what moves or waits for someone, by status (running, cut short and failed first, then waiting and paused, the
 // planned ones last); then the azimas of the plan, each with the work part of it (src/azima.tsx), the done ones folded
-// (Fold). The decisions have the next tab (src/decision-log.tsx), then a wish's tilasms (src/tilasms.tsx), and last,
-// discreet, its blocks for agents (src/agent-blocks.tsx).
+// (Fold). A wish's merged work has the next tab, to review (src/review-tab.tsx), the decisions the one after
+// (src/decision-log.tsx), then a wish's tilasms (src/tilasms.tsx), and last, discreet, its blocks for agents
+// (src/agent-blocks.tsx).
 import { ChevronDown, GitBranch, List } from "lucide-react";
 import {
   type ReactNode,
@@ -14,7 +15,8 @@ import {
 import { Change } from "../gen/ts/plan/v1/plan_pb";
 import { t } from "./i18n";
 
-export type View = "main" | "tasks" | "decisions" | "tilasms" | "agents";
+export type View =
+  "main" | "tasks" | "review" | "decisions" | "tilasms" | "agents";
 
 const KINDS_MAIN: readonly Change[] = [
   Change.TASK,
@@ -36,6 +38,7 @@ export function kindsForView(view: View): readonly Change[] {
     case "main":
       return KINDS_MAIN;
     case "tasks":
+    case "review":
       return KINDS_TASKS;
     case "decisions":
       return KINDS_DECISIONS;
@@ -50,6 +53,7 @@ export function ViewTabs({
   view,
   main,
   tasks,
+  review,
   decisions,
   tilasms,
   agents,
@@ -60,6 +64,8 @@ export function ViewTabs({
   main: string;
   // How many tasks the Tasks tab holds.
   tasks: number;
+  // How many tasks the Review tab holds still to review; without it, a view with no such tab (the flight plan).
+  review?: number;
   // How many decisions the Decisions tab holds.
   decisions: number;
   // How many tilasms the Tilasms tab holds; without it, a view with no such tab (the flight plan).
@@ -71,8 +77,10 @@ export function ViewTabs({
   const tabs: { id: View; label: string; count: number }[] = [
     { id: "main", label: main, count: -1 },
     { id: "tasks", label: t("wish.tasks"), count: tasks },
-    { id: "decisions", label: t("tabs.decisions"), count: decisions },
   ];
+  if (review !== undefined)
+    tabs.push({ id: "review", label: t("tabs.review"), count: review });
+  tabs.push({ id: "decisions", label: t("tabs.decisions"), count: decisions });
   if (tilasms !== undefined)
     tabs.push({ id: "tilasms", label: t("tabs.tilasms"), count: tilasms });
   if (agents !== undefined)
