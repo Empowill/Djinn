@@ -1700,7 +1700,8 @@ message QuestionServiceAskRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_len = 2000
   ];
-  // An option the developer can pick; repeat for each one, up to four.
+  // An option the developer can pick; repeat for each one, up to four. A command in backticks, or a djinn command,
+  // gets a copy button.
   repeated string options = 2 [
     (buf.validate.field).repeated.max_items = 4,
     (buf.validate.field).repeated.items.string.min_len = 1
@@ -1710,7 +1711,8 @@ message QuestionServiceAskRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.uuid = true
   ];
-  // What is at stake, in Markdown: what the answer changes, what each option costs.
+  // What is at stake, in Markdown: what the answer changes, what each option costs. Naming a report of the wish (a
+  // block of kind report) by its title or its id links it on the card; an inline code gets a copy button.
   string context = 4 [(buf.validate.field).string.max_len = 20000];
   // The option you recommend, and why, in Markdown.
   string recommendation = 5 [(buf.validate.field).string.max_len = 20000];

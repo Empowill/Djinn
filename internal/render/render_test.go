@@ -353,10 +353,10 @@ func TestBusyPage(t *testing.T) {
 			t.Errorf("the page lacks %q", s)
 		}
 	}
-	// In an open card, the recommendation comes first, then the options, then the context.
+	// An open card reads top-down: what is at stake, then the recommendation, then the options.
 	card := between(html, `id="q-Q90"`, "</details>")
-	if i, j, k := strings.Index(card, `class="recom"`), strings.Index(card, `class="options"`), strings.Index(card, `class="context"`); i < 0 || i > j || j > k {
-		t.Errorf("a card shows the recommendation, the options, then the context:\n%s", card)
+	if i, j, k := strings.Index(card, `class="context"`), strings.Index(card, `class="recom"`), strings.Index(card, `class="options"`); i < 0 || i > j || j > k {
+		t.Errorf("a card shows the context, the recommendation, then the options:\n%s", card)
 	}
 
 	// Who runs now: the running worker as a card, the finished work folded below.

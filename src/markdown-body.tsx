@@ -1,4 +1,5 @@
-import { memo, useState, isValidElement, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
+import { memo, useMemo, useState, isValidElement, type ReactNode } from "react";
 import ReactMarkdown, {
   type Components,
   defaultUrlTransform,
@@ -6,9 +7,11 @@ import ReactMarkdown, {
 import remarkGfm from "remark-gfm";
 import { useDjinn } from "./data/djinn";
 import { isDjinnLink, openDjinnLink } from "./data/links";
+import { foldMarkdown } from "./data/text";
 import { MermaidDiagram } from "./mermaid-diagram";
 import { SafeSvg } from "./safe-svg";
 import "./agent-chat.css";
+import { Command } from "./copy-command";
 import { t } from "./i18n";
 function MarkdownCode({ children }: { children?: ReactNode }) {
   const [copied, setCopied] = useState(false);
@@ -113,24 +116,81 @@ const components: Components = {
   ),
   img: ({ alt }) => <span>Image{alt ? ` : ${alt}` : ""}</span>,
 };
+// The same, each inline code a command to copy: a question's context names what to run. A code block's code holds a
+// line break and stays as it is, inside its block, which has its own copy button.
+const copyComponents: Components = {
+  ...components,
+  code: ({ className, children }) =>
+    className || /\n/.test(String(children)) ? (
+      <code className={className}>{children}</code>
+    ) : (
+      <Command text={String(children)} />
+    ),
+};
 
 // Markdown as the agents write it. Memoised: a card that re-renders (a key typed in its comment box) does not parse
 // its text again.
 export const MarkdownBody = memo(function MarkdownBody({
   text,
+  copy = false,
 }: {
   text: string;
+  // Each inline code has a copy button.
+  copy?: boolean;
 }) {
   return (
     <div className="ac-markdown">
       <ReactMarkdown
         remarkPlugins={plugins}
         skipHtml
-        components={components}
+        components={copy ? copyComponents : components}
         urlTransform={urlTransform}
       >
         {text}
       </ReactMarkdown>
     </div>
+  );
+});
+
+// FoldedMarkdown is a long Markdown text in its first view (src/data/text.ts), its first section or so, and a button
+// that unfolds the rest in place, and folds it again.
+export const FoldedMarkdown = memo(function FoldedMarkdown({
+  text,
+  more,
+  less,
+  copy = false,
+}: {
+  text: string;
+  // What the button says, folded and unfolded.
+  more: string;
+  less: string;
+  copy?: boolean;
+}) {
+  const fold = useMemo(() => foldMarkdown(text), [text]);
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <div className={`prose${fold.more && !open ? " folded-text" : ""}`}>
+        <MarkdownBody
+          text={fold.more && !open ? fold.head : text}
+          copy={copy}
+        />
+      </div>
+      {fold.more && (
+        <button
+          type="button"
+          className="read-more"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          <ChevronDown
+            size={14}
+            aria-hidden="true"
+            className={open ? "rotated" : ""}
+          />
+          {open ? less : more}
+        </button>
+      )}
+    </>
   );
 });
