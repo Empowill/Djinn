@@ -554,6 +554,19 @@ func mainState(wish *planv1.Wish, projectID string) *planv1.WishMain {
 // branch when the repository has a remote (refs/remotes/origin/main), else the local one. name is the main_branch
 // setting; not set, the remote's default branch (its HEAD, as a clone records it), else main, else master.
 func mainRef(ctx context.Context, repo, name string) (main, ref string, err error) {
+	memo := passMemoOf(ctx)
+	if main, ref, ok := memo.mainOf(repo, name); ok {
+		return main, ref, nil
+	}
+	main, ref, err = findMain(ctx, repo, name)
+	if err == nil {
+		memo.keepMain(repo, name, main, ref)
+	}
+	return main, ref, err
+}
+
+// findMain is mainRef, read from git.
+func findMain(ctx context.Context, repo, name string) (main, ref string, err error) {
 	if name != "" {
 		remote, target := pushTarget(ctx, repo, name)
 		if remote == "" {
