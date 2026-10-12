@@ -263,6 +263,24 @@ func TestReleaseSource(t *testing.T) {
 	}
 }
 
+// TestE2EBuildLooksForNoRelease: the djinn of the e2e, built by CI from a checkout without tags, names itself by a
+// pseudo-version older than any release; it offered v0.1.0 from the module proxy, and the banner covered the load
+// slider the specs click (CI run 38248154434). Stamped a test build, it looks for no release.
+func TestE2EBuildLooksForNoRelease(t *testing.T) {
+	asset, check, stamped := releaseAsset, checkReleases, stampedTestBuild
+	t.Cleanup(func() { releaseAsset, checkReleases, stampedTestBuild = asset, check, stamped })
+	releaseAsset, checkReleases = "", true
+	const ci = "v0.0.0-20261012122000-97dd90d8abcd"
+	stampedTestBuild = func() bool { return false }
+	if src, err := releaseSource(ci); err != nil || fmt.Sprintf("%T", src) != "main.proxySource" {
+		t.Fatalf("a go build of a checkout without tags: %T, %v; want the module proxy", src, err)
+	}
+	stampedTestBuild = func() bool { return true }
+	if src, err := releaseSource(ci); err != nil || src != nil {
+		t.Errorf("the e2e build: %T, %v; want no source", src, err)
+	}
+}
+
 // TestLocalBuild reads the commit a build from a checkout comes from in its version, as go tool task install stamps it.
 func TestLocalBuild(t *testing.T) {
 	for _, c := range []struct {

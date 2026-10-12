@@ -27,6 +27,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/empowill/djinn/internal/harness"
+	"github.com/empowill/djinn/internal/ui"
 )
 
 var (
@@ -46,6 +47,10 @@ var (
 	goCommand = "go"
 	// checkReleases is off in the tests that serve no fake release: they never reach the network.
 	checkReleases = true
+	// stampedTestBuild tells whether this binary was built for the e2e (ui.StampedTestBuild), which looks for no
+	// release: built from a checkout without tags, as CI's, it names itself v0.0.0-…, any release is newer, and the
+	// banner offering it covered the controls the specs click.
+	stampedTestBuild = ui.StampedTestBuild
 )
 
 // sumsFile is the checksum file of a release (tools/releasepack): no line for the archive, no update.
@@ -68,11 +73,11 @@ type source interface {
 
 // releaseSource is where a Djinn of version looks for a newer one: the releases for a release binary, the module
 // proxy for a version go install built, the releases again for a build from a checkout, any release being newer to
-// it; nothing for a development build.
+// it; nothing for a development build nor for a build of the e2e.
 func releaseSource(version string) (source, error) {
 	_, _, local := localBuild(version)
 	switch {
-	case !checkReleases:
+	case !checkReleases || stampedTestBuild():
 		return nil, nil
 	case releaseAsset != "":
 		return newGitHubSource(releaseAsset, version)

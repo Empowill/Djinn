@@ -1,6 +1,7 @@
 // The update banner against the real djinn up --browser (see global-setup.ts), its update stream replaced by builds of
 // two branches and a newer Djinn ready (W468): each on one line, named by commit, branch and wish, what it adds and
-// lacks unfolded on demand, the other branch's build folded, and a × that dismisses it for good, across a reload.
+// lacks unfolded on demand, the other branch's build folded, and a × that dismisses it for good, across a reload; on
+// a row of its own, over none of the toolbar's controls.
 // Screenshots, dark and light, go to test-results/e2e/update-banner-*.png.
 import { type MessageInitShape, create, toBinary } from "@bufbuild/protobuf";
 import { type Page, expect, test } from "@playwright/test";
@@ -106,6 +107,15 @@ test("the update banner names each build, unfolds what it holds, and its × dism
       .boundingBox();
     expect(head!.height).toBeLessThan(40);
   }
+  // The banner takes its own row above the app: no control of the toolbar lies under it, the load slider's notches
+  // first (laid over the app, it took their clicks).
+  const box = await banner.boundingBox();
+  const load = await page.locator(".operating-load").boundingBox();
+  expect(load!.y).toBeGreaterThanOrEqual(box!.y + box!.height);
+  for (const notch of ["minimal", "overclock", "auto"])
+    await page
+      .locator(`.operating-load-notch[data-notch="${notch}"]`)
+      .click({ trial: true, timeout: 2_000 });
   for (const theme of ["dark", "light"]) {
     await page.evaluate((v) => localStorage.setItem("djinn.theme", v), theme);
     await page.reload();
