@@ -18,6 +18,13 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
+// A task's seal is the set of constraints Djinn gives the worker of a task (docs/providers.md, "A task's seal"). Its
+// budgets are here, enforced by the Lamplighter: SilenceLimit, TaskMaxWallTime and TaskMaxTurns. The rest is decided
+// where it applies: the access and how each agent's sandbox applies it (decideAccess, accessSpec), the wakes
+// (maxWakes) and usage-limit resumes (maxResumes), the spending cap (Task.max_budget_usd), the push guard and the
+// worker's identity (gitGuard, plan.WorkerGuard), the write scopes (dispatch), the load notch's CPU priority
+// (lowPriority) and the worker's memory ceiling (scopeFor), the slots and the gates.
+
 // SilenceLimit is how long a worker may produce no event before the Lamplighter checks its process tree and CPU:
 // long builds and test runs print periodically; background tasks in agy might execute commands, and any gated
 // command is excluded by checking the gate it holds or waits for. An idle or dead worker past this limit is ended.

@@ -33,6 +33,31 @@ reason in the task's error, whatever the provider. Two places decide:
 A refused permission is not an error in itself: Claude and Codex tell the agent, which goes on and ends its turn
 (`permission denied: …` is a `STATUS`). Antigravity's denial ends its turn: the task fails (below).
 
+## A task's seal
+
+A task's seal is the set of constraints Djinn gives the worker of a task: what it may spend, what it may touch, how
+it shares the machine. Each part comes from a default of Djinn, the project's settings (`.agents/settings.txtpb`,
+the developer's file over the repository's), the wish (its allowance), the task's spawn request, or Djinn's own
+flags; none of it is the worker's to change.
+
+| Part | What it bounds | Where it comes from |
+| ---- | -------------- | ------------------- |
+| Silence limit | 15 minutes without an event, no process busy, no gate held or awaited: the Lamplighter ends the worker, then [wakes it](#when-djinn-resumes-a-worker) | Djinn's default (`SilenceLimit`) |
+| Wall time | 2 hours of work over all its runs, gate waits included; past it the task is stopped, "budget exceeded", and stays stopped | Djinn's default (`TaskMaxWallTime`) |
+| Model turns | 500 turns in one run (`Task.turns`, shown `37/500`); past it the run is stopped; `djinn task continue` gives 500 again | Djinn's default (`TaskMaxTurns`) |
+| Wakes and resumes | 3 wakes in a row, 3 resumes on usage limits, 2 replays after an environment failure | Djinn's defaults |
+| Spending cap | US dollars over its runs; Claude alone enforces it (`--max-budget-usd`), Codex and Antigravity have none | the spawn request (`max_budget_usd`), else the project's `max_budget_usd`; a question worker's, `question_budget_usd` (2 by default) |
+| Access | editing, the auto mode, its commands and the network ([what a worker may do](#what-a-worker-may-do)), applied by each agent's own sandbox | the wish's allowance (`djinn wish allow`), else `.agents/permissions.txtpb`, else the agent's own configuration, else the developer's answer |
+| No push | every `git push` of the worker goes nowhere ([no worker pushes](#no-worker-pushes)) | always |
+| Its calls to Djinn | what it may call with its token (`DJINN_WORKER_TOKEN`): its own wish's questions, blocks and tilasms, its own task, reads; never a new wish | always (`plan.WorkerGuard`) |
+| Write scopes | outside Git, two tasks whose scopes overlap never run together | the spawn request (`write_scopes`) |
+| CPU priority | `nice 10` at the Minimal to Medium load notches ([operating load](#operating-load-runtime-adjustments)) | the machine's load notch |
+| Memory and slots | a memory ceiling in its own scope, a slot among the workers, room to start | `djinn up --workers`, `--worker-memory`, `--worker-memory-guard`, `--worker-cpu`, and the load notch |
+| Gates | one holder per gate, held an hour at most unless its holder states another timeout | Djinn's defaults ([gates](user-guide.md#gates)) |
+
+The task carries only some of it: its turns and their limit (`turns`), its spending cap, its access, its write
+scopes. The other parts are Djinn's, and the same for every task.
+
 ## What a worker may do
 
 **Cross-agent first: a project says once, in `.agents/permissions.txtpb`, what any agent may do in it, and Djinn
