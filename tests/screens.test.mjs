@@ -3656,6 +3656,51 @@ test("the attention bar says how much each question holds up: blocking, your mov
   );
 });
 
+test("the choice the lead's agent shows is the first, blocking line of the attention bar, its options as buttons", () => {
+  const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const prompt = {
+    title: "Would you like to run the following command?",
+    lines: ["Reason: read the wish", "$ djinn wish brief"],
+    options: ["Yes, proceed (y)", "No, cancel"],
+  };
+  const items = s.attentionOf(
+    [{ wish: w, item: { id: "q1", code: "Q1", text: "q1" }, blocking: ["W1"] }],
+    [],
+    [],
+    undefined,
+    prompt,
+  );
+  assert.deepEqual(
+    items.map((i) => [i.key, i.level, i.label]),
+    [
+      ["lead-prompt", "blocking", "Lead approval"],
+      ["q1", "blocking", undefined],
+    ],
+  );
+  const djinn = s.createDjinn(
+    s.createRouterTransport(() => {}),
+    10,
+  );
+  const markup = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.AttentionBar, { items })),
+  );
+  assert.match(markup, /2 things wait for you/);
+  assert.match(
+    markup,
+    /<li><div id="lead-prompt" class="attention-item attention-prompt level-blocking"><div class="attention-prompt-head"><span class="attention-level"><svg[^>]*>.*?<\/svg>Lead approval<\/span><span class="attention-text">Would you like to run the following command\?<\/span><\/div><pre class="attention-prompt-lines">Reason: read the wish\n\$ djinn wish brief<\/pre>/,
+  );
+  assert.match(
+    markup,
+    /<button class="button secondary small">Yes, proceed \(y\)<\/button><button class="button secondary small">No, cancel<\/button>/,
+  );
+  // Without options, no choice shows: no line.
+  assert.equal(
+    s.attentionOf([], [], [], undefined, { title: "", lines: [], options: [] })
+      .length,
+    0,
+  );
+});
+
 test("a line of the attention bar takes you to its target in another tab, a folded part or another wish; a line gone is plain text", () => {
   const w1 = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
   const w2 = wish("w2", "Light the lamp", s.WishState.ACTIVE, 2);

@@ -63,6 +63,7 @@ type options struct {
 	enlight         []func(context.Context, *planv1.Question, string)
 	load            func() djinnv1.LoadNotch
 	loadBroadcaster *func(djinnv1.LoadNotch)
+	leadBroadcaster *func()
 	pusher          Pusher
 	fillModels      func(context.Context, []*planv1.Task)
 	clock           func() time.Time
@@ -116,6 +117,12 @@ func WithLoadBroadcaster(b *func(djinnv1.LoadNotch)) Option {
 	return func(o *options) { o.loadBroadcaster = b }
 }
 
+// WithLeadBroadcaster gives the caller what tells the open Watch streams that the choice the lead shows in its
+// terminal came, changed or went (Wishes.ChangeLead).
+func WithLeadBroadcaster(b *func()) Option {
+	return func(o *options) { o.leadBroadcaster = b }
+}
+
 // WithFillModels sets the function that fills forecast models on tasks for Watch.
 func WithFillModels(f func(context.Context, []*planv1.Task)) Option {
 	return func(o *options) { o.fillModels = f }
@@ -140,6 +147,9 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 		Workers: o.workers, Home: o.home, Load: o.load, FillModels: o.fillModels, Clock: o.clock}
 	if o.loadBroadcaster != nil {
 		*o.loadBroadcaster = wishes.ChangeLoad
+	}
+	if o.leadBroadcaster != nil {
+		*o.leadBroadcaster = wishes.ChangeLead
 	}
 	var told Told
 	if o.leads != nil {

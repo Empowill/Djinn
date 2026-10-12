@@ -36,7 +36,16 @@ type Leads interface {
 	Command(name string) []string
 	// Close hangs up the running terminal called name, as closing it in the window does; none runs, nothing.
 	Close(name string)
+	// Prompt is the choice the program of the terminal called name shows now, as read from its screen: an approval,
+	// a folder to trust. Nil when it shows none, or runs nothing.
+	Prompt(name string) *planv1.LeadPrompt
+	// Choose picks the option index (from 0) of the choice the terminal called name shows, as its keys would. It
+	// returns ErrNoChoice, typing nothing, when the screen no longer shows the choice of title, lines and options.
+	Choose(name, title string, lines, options []string, index int) error
 }
+
+// ErrNoChoice says that the lead's terminal no longer shows the choice the window showed: answered there, or changed.
+var ErrNoChoice = errors.New("the lead no longer shows this choice")
 
 // LeadTerminal is the name of the terminal of the lead.
 const LeadTerminal = "lead"
@@ -254,17 +263,42 @@ func (s *LeadService) Tell(
 	return connect.NewResponse(&planv1.LeadServiceTellResponse{Waiting: waiting}), nil
 }
 
+// Choose answers the choice the lead's agent shows in its terminal, as its keys would: the window's answer to an
+// approval. The lead's terminal never runs a shell (P9), so the keys go to the agent.
+func (s *LeadService) Choose(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceChooseRequest],
+) (*connect.Response[planv1.LeadServiceChooseResponse], error) {
+	if s.Wishes.Leads == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this server runs no terminal"))
+	}
+	if s.Wishes.Leads.Command(LeadTerminal) == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
+			"the lead does not run: djinn lead resume starts it"))
+	}
+	m := req.Msg
+	err := s.Wishes.Leads.Choose(LeadTerminal, m.GetTitle(), m.GetLines(), m.GetOptions(), int(m.GetOption())-1)
+	switch {
+	case errors.Is(err, ErrNoChoice):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	case err != nil:
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("the lead's terminal: %w", err))
+	}
+	return connect.NewResponse(&planv1.LeadServiceChooseResponse{}), nil
+}
+
 func (s *LeadService) Get(
 	ctx context.Context, req *connect.Request[planv1.LeadServiceGetRequest],
 ) (*connect.Response[planv1.LeadServiceGetResponse], error) {
 	lead, err := store.Get[*planv1.Lead](ctx, s.Wishes.Store, "lead")
-	if errors.Is(err, store.ErrNotFound) {
-		return connect.NewResponse(&planv1.LeadServiceGetResponse{}), nil
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, Status(err)
 	}
-	return connect.NewResponse(&planv1.LeadServiceGetResponse{Lead: lead}), nil
+	res := &planv1.LeadServiceGetResponse{Lead: lead}
+	// The choice the lead shows comes with it: the window shows it in its attention bar, whatever page is open.
+	if s.Wishes.Leads != nil && s.Wishes.Leads.Command(LeadTerminal) != nil {
+		res.Prompt = s.Wishes.Leads.Prompt(LeadTerminal)
+	}
+	return connect.NewResponse(res), nil
 }
 
 func (s *LeadService) Brief(

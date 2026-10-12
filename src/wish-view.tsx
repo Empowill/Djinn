@@ -173,6 +173,7 @@ export function WishView({
   );
   const allWishes = useData((s) => s.wishes);
   const leadRecord = useData((s) => s.lead);
+  const leadPrompt = useData((s) => s.leadPrompt);
   const pausable = usePausable();
   const initialKinds = useMemo(
     () => kindsForView(opening ? "tilasms" : "main"),
@@ -627,6 +628,8 @@ export function WishView({
     [...open, ...waitingLead],
     waiting,
     wish.ready ? [wish] : [],
+    undefined,
+    leadPrompt,
   );
   // What the wish's tabs show of the bar's lines: the open questions, the waiting workers and the grant in the
   // first tab, the answered questions in the decisions.
