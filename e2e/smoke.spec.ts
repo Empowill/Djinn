@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -7,6 +9,18 @@ function djinnURL(pathname = "/"): string {
   const url = new URL(process.env.DJINN_URL!);
   url.pathname = pathname;
   return url.toString();
+}
+
+// djinn runs the e2e binary on the djinn the specs drive (global-setup.ts).
+function djinn(...args: string[]): string {
+  const binary = path.resolve(
+    __dirname,
+    "../bin/djinn-e2e" + (process.platform === "win32" ? ".exe" : ""),
+  );
+  return execFileSync(binary, args, {
+    env: { ...process.env, DJINN_HOME: process.env.DJINN_E2E_HOME },
+    encoding: "utf8",
+  });
 }
 
 // collectErrors records the uncaught exceptions and console errors of the page.
@@ -96,8 +110,11 @@ test("sidebar geometry stays stable while the new-wish dialog opens", async ({
 });
 
 // In the macOS window the traffic lights sit over the top of the sidebar, and the top 16 px of the window are the
-// native drag strip (window.go): no control of the main view may start inside it.
+// native drag strip (window.go): no control of the main view may start inside it, a wish's actions included.
 test("native mac titlebar reserves only its chrome space", async ({ page }) => {
+  const title = `Mind the strip ${randomUUID().slice(0, 8)}`;
+  const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
+    .id as string;
   await page.addInitScript(() => {
     const userAgent = navigator.userAgent;
     Object.defineProperty(navigator, "userAgent", {
@@ -126,12 +143,24 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
     "no-drag",
   );
 
-  const controls = page.locator(".main-shell .topbar button:visible");
-  await expect(controls.first()).toBeVisible();
-  for (const box of await controls.evaluateAll((els) =>
-    els.map((el) => el.getBoundingClientRect().top),
-  ))
-    expect(box).toBeGreaterThanOrEqual(16);
+  try {
+    await page.locator(".sidebar").getByRole("button", { name: title }).click();
+    await expect(
+      page.locator(".main-shell .topbar").getByRole("button", {
+        name: "Delete this wish",
+      }),
+    ).toBeVisible();
+    const controls = page.locator(".main-shell .topbar button:visible");
+    for (const [name, top] of await controls.evaluateAll((els) =>
+      els.map((el) => [
+        el.getAttribute("aria-label") ?? el.textContent,
+        el.getBoundingClientRect().top,
+      ]),
+    ))
+      expect(top, `${name}`).toBeGreaterThanOrEqual(16);
+  } finally {
+    djinn("wish", "delete", wishId);
+  }
 });
 
 // The browser has no folder dialog: the path is typed, and the button of the native window is not there.

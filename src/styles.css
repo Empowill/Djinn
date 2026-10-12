@@ -1907,6 +1907,11 @@ html[data-motion="reduced"] *::after {
 html.native-mac .sidebar {
   padding-top: 28px;
 }
+/* The topbar keeps its height, its controls centred below the strip: a 32px
+   action starts at 16px. */
+html.native-mac .topbar {
+  padding-top: 8px;
+}
 html.native-mac .sidebar-brand,
 html.native-mac .topbar {
   --wails-draggable: drag;
