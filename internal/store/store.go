@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -23,6 +24,8 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
+
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // File is the database of the machine, in the data directory.
@@ -129,7 +132,13 @@ type Reader interface {
 }
 
 func (s *Store) query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return s.db.QueryContext(ctx, query, args...)
+	start := time.Now()
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if took := time.Since(start); took > logx.Slow {
+		// Waiting for the connection, or the query itself: its SQL, never its arguments.
+		logx.L().Warn("database query slow", "took", took.Round(time.Millisecond), "sql", logx.Cut(query, 80))
+	}
+	return rows, err
 }
 
 func (s *Store) table(md protoreflect.MessageDescriptor) (*table, error) {
@@ -298,6 +307,7 @@ type Tx struct {
 	tx      *sql.Tx
 	s       *Store
 	journal string
+	method  string // The journal's method, for the log.
 	changed []proto.Message
 }
 
@@ -305,7 +315,21 @@ type Tx struct {
 // command that caused it: call Journal before Put.
 func (s *Store) Tx(ctx context.Context, fn func(*Tx) error) error {
 	t := &Tx{ctx: ctx, s: s}
-	if err := s.tx(ctx, func(tx *sql.Tx) error { t.tx = tx; return fn(t) }); err != nil {
+	asked := time.Now()
+	var began time.Time
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		began = time.Now()
+		if waited := began.Sub(asked); waited > logx.Slow {
+			logx.L().Warn("database waited", "took", waited.Round(time.Millisecond))
+		}
+		t.tx = tx
+		return fn(t)
+	})
+	// A transaction that holds the one connection long holds up every other call (W504).
+	if !began.IsZero() && time.Since(began) > logx.Slow {
+		logx.Took(slog.LevelWarn, "transaction held the database", began, "method", t.method)
+	}
+	if err != nil {
 		return err
 	}
 	if len(t.changed) > 0 {
@@ -351,7 +375,7 @@ func (tx *Tx) Journal(actor, method string, req proto.Message) error {
 		id.String(), actor, at, method, b); err != nil {
 		return fmt.Errorf("journal %s: %w", method, err)
 	}
-	tx.journal = id.String()
+	tx.journal, tx.method = id.String(), method
 	return nil
 }
 

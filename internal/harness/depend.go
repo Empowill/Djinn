@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -23,7 +24,7 @@ import (
 // had: tasks of their wish, by code or identifier. All or none: a dependency on itself, a task whose worker runs, or a
 // graph that would close a cycle refuses them all, naming the cycle. The scheduler then looks again.
 func (h *Harness) Depend(ctx context.Context, procedure string, req *planv1.TaskServiceDependRequest) ([]*planv1.Task, error) {
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	var set []*planv1.Task
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -171,7 +172,7 @@ func (h *Harness) block(ctx context.Context, tx *store.Tx, task *planv1.Task, na
 // identifier, or none. One that would close a cycle with what the tasks depend on is refused, naming it. A grouping,
 // never a wait: the scheduler looks at what the task depends on only.
 func (h *Harness) Group(ctx context.Context, procedure string, req *planv1.TaskServiceGroupRequest) (*planv1.Task, error) {
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	h.mu.Lock()
 	running := h.runs[req.GetTaskId()] != nil

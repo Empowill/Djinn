@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path"
@@ -23,6 +24,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/gitx"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -218,6 +220,9 @@ func (h *Harness) recoverIntegrations(ctx context.Context, tasks []*planv1.Task)
 // branches whose push is due after each commit, and the pushes the person approved; then it merges main into the
 // integration branches where it is due (main.go).
 func (h *Harness) integratePass(ctx context.Context) {
+	start := time.Now()
+	logx.L().Debug("integration pass begins")
+	defer func() { logx.Took(slog.LevelDebug, "integration pass ended", start) }()
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
 		log.Printf("djinn: integrate: %v", err)
@@ -299,10 +304,14 @@ func (h *Harness) integratePass(ctx context.Context) {
 			h.tellLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MERGED, g.wishID, strings.Join(g.codes, ", "), leadLine)
 		}
 	}
-	h.pushApproved(ctx)
-	h.pushPass(ctx)
-	h.mainPass(ctx)
-	h.computedMovesPass(ctx)
+	for _, pass := range []struct {
+		name string
+		run  func(context.Context)
+	}{{"approved pushes", h.pushApproved}, {"push", h.pushPass}, {"main", h.mainPass}, {"moves", h.computedMovesPass}} {
+		start := time.Now()
+		pass.run(ctx)
+		logx.Took(slog.LevelDebug, "pass ended", start, "pass", pass.name)
+	}
 }
 
 // running tells whether a worker runs for the task id: a task continued after it was done.
@@ -347,7 +356,7 @@ func taskBatchCodes(batch []*planv1.Task) []string {
 // whether it is committed. A task whose worktree holds changes not committed is not merged: a review worker judges
 // them. The worktrees of the work committed are removed when clean.
 func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, batch []*planv1.Task) (bool, *mergedBatch) {
-	h.integrateMu.Lock() // The push checks use the integration worktree too.
+	logx.Lock(&h.integrateMu, "integration") // The push checks use the integration worktree too.
 	defer h.integrateMu.Unlock()
 	settings, err := plan.LoadSettings(h.home, project)
 	var branch, why string
@@ -1427,7 +1436,9 @@ func runCommand(ctx context.Context, dir string, args []string) (string, int, er
 	cmd.WaitDelay = gitx.WaitDelay
 	out := &tailBuffer{max: 16 << 10}
 	cmd.Stdout, cmd.Stderr = out, out
+	start := time.Now()
 	err := cmd.Run()
+	logx.Ran(ctx, cmd, start, err)
 	var exit *exec.ExitError
 	switch {
 	case errors.As(err, &exit):

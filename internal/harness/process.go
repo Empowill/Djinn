@@ -5,13 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 )
 
@@ -55,6 +58,7 @@ func startCommand(
 	if scope != nil {
 		sc = scope()
 	}
+	program := filepath.Base(name) // Logged without its arguments, which may hold a prompt.
 	atLevel := false
 	if lowPriority || len(sc.Prefix) > 0 {
 		// The prefix, and nice at low priority, run the program found here, and a missing one fails here, as without
@@ -93,6 +97,8 @@ func startCommand(
 		return nil, err
 	}
 	applyPriority(cmd, lowPriority && !atLevel)
+	started := time.Now()
+	logx.L().Info("process started", "program", program, "pid", cmd.Process.Pid, "dir", dir)
 	p := &process{cmd: cmd, cgroup: sc.Cgroup, stdin: stdin, grace: grace, lines: make(chan line, 64), done: make(chan struct{}), blanks: blanks}
 	var read sync.WaitGroup
 	read.Add(2)
@@ -105,6 +111,8 @@ func startCommand(
 		read.Wait()
 		close(p.lines)
 		p.res = exitResult(cmd, err)
+		logx.Took(slog.LevelInfo, "process ended", started, "program", program, "pid", cmd.Process.Pid,
+			"exit", cmd.ProcessState.ExitCode())
 		close(p.done)
 	}()
 	return p, nil

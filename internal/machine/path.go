@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // The one place where Djinn looks for the agents: the window's agents panel says what it finds there, and the
@@ -147,7 +149,10 @@ func loginPath(ctx context.Context, shell string) (string, error) {
 	cmd.Stdout = &out
 	cmd.WaitDelay = loginWaitDelay
 	detach(cmd)
-	if err := cmd.Run(); err != nil {
+	start := time.Now()
+	err := cmd.Run()
+	logx.Ran(ctx, cmd, start, err)
+	if err != nil {
 		return "", fmt.Errorf("%s: %w", shell, err)
 	}
 	lines := strings.Split(out.String(), "\n")

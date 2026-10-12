@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -21,7 +22,7 @@ import (
 func (h *Harness) Delete(ctx context.Context, procedure string, req *planv1.TaskServiceDeleteRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
 	var task *planv1.Task
-	h.sched.Lock() // Serialize deletion with scheduler passes and graph edits (Spawn, Depend, Group).
+	logx.Lock(&h.sched, "scheduler") // Serialize deletion with scheduler passes and graph edits (Spawn, Depend, Group).
 	defer h.sched.Unlock()
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
 		var err error

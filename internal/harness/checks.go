@@ -18,6 +18,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -179,7 +180,7 @@ func (h *Harness) pushChecks(
 		return "", "", "", false
 	}
 	running(checks[0].GetName())
-	h.integrateMu.Lock() // The push checks use the integration worktree.
+	logx.Lock(&h.integrateMu, "integration") // The push checks use the integration worktree.
 	defer h.integrateMu.Unlock()
 	wt := integrationDir(h.home, project.GetId(), wish.GetId())
 	dir, _, err := integrationWorktree(ctx, project.GetDirectory(), wt, sha)

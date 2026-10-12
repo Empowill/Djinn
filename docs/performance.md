@@ -143,9 +143,11 @@ with everything it started (its process group), and a killed command's output is
 
 To see where a frozen djinn up waits, without stopping it:
 
-- **On Linux and macOS**, send it `SIGUSR2`: it writes the stacks of all its goroutines to `goroutines.txt` in its data
-  folder and goes on. This is the one command to run before restarting a djinn that does not answer; the process that
-  holds the data folder's socket is djinn up, whatever its command line (`djinn open` from the desktop menu):
+- **Anywhere**, run `djinn debug dump`: it writes the stacks of all its goroutines to a new `goroutines-<time>.txt` in
+  the log folder of its data folder (`~/.config/djinn/logs` on Linux) and prints its path ([when Djinn is
+  stuck](user-guide.md#when-djinn-is-stuck)). This is the one command to run before restarting a djinn that does not
+  answer. On Linux and macOS, `SIGUSR2` does the same; the process that holds the data folder's socket is djinn up,
+  whatever its command line (`djinn open` from the desktop menu):
 
   ```bash
   kill -USR2 "$(lsof -t ~/.config/djinn/djinn.sock)"   # macOS: ~/Library/Application\ Support/djinn/djinn.sock
@@ -153,6 +155,6 @@ To see where a frozen djinn up waits, without stopping it:
 
   A djinn built before W504 ignores the signal. `SIGUSR1` is no good: WebKit takes it over in the window's process.
   In the dump, look for goroutines waiting in `database/sql.(*DB).conn` (waiting for the connection), and the one
-  holding it. The dump is kept minimal on purpose: W511 adds structured logs and dumps on a slow shutdown.
-- **Anywhere**, start it with `--pprof` (or `DJINN_PPROF=on`): it serves Go's profiles at `/debug/pprof/` on its own
+  holding it.
+- **For profiles**, start it with `--pprof` (or `DJINN_PPROF=on`): it serves Go's profiles at `/debug/pprof/` on its own
   address, `goroutine?debug=2` for the stacks, `profile?seconds=30` for where its CPU goes.
