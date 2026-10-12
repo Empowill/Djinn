@@ -897,6 +897,9 @@ func (h *Harness) commitBatch(
 	if err != nil {
 		return wait("the branch " + branch + " is not in the project's repository")
 	}
+	if err := checkIdentity(ctx, repo); errors.Is(err, errNoIdentity) {
+		return wait(noIdentity)
+	}
 	taskIDs := ids(batch)
 	key := wish.GetId() + "/" + project.GetId() + "/" + branch
 	done, ok := h.tested[key]
@@ -1016,6 +1019,10 @@ func (h *Harness) mergeAndTest(
 		conflicts := conflicted(ctx, wt)
 		var why string
 		switch {
+		case errors.Is(err, errNoIdentity):
+			// Not a conflict: the person sets the identity, and the next pass merges.
+			_, _ = git(ctx, wt, "merge", "--abort")
+			return wait(noIdentity)
 		case len(conflicts) == 0:
 			_, _ = git(ctx, wt, "merge", "--abort")
 			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, fmt.Sprintf("merge %s: %v", t.GetCode(), err), nil)
