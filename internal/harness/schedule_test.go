@@ -879,6 +879,27 @@ func TestStartAnyway(t *testing.T) {
 		!strings.Contains(err.Error(), "waits for W1") {
 		t.Errorf("forcing a task held by a dependency: %v", err)
 	}
+	// Its provider's usage limit holds it as well: forced, it is refused; Start frees the machine only.
+	limit := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W9", Title: "Limited", Provider: held.GetProvider(),
+		Status: planv1.TaskStatus_TASK_STATUS_RESUMING, Scheduled: true, CreateTime: timestamppb.Now(),
+		ResumeAfter: timestamppb.New(time.Now().Add(time.Hour)), WaitReason: "the session limit"}
+	put := func(task *planv1.Task) {
+		if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+			if err := tx.Journal("test", "put", task); err != nil {
+				return err
+			}
+			return tx.Put(task)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(limit)
+	if _, err := start(held.GetId()); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+		!strings.Contains(err.Error(), "waits for the session limit") {
+		t.Errorf("forcing a task held by its provider's usage limit: %v", err)
+	}
+	limit.Status, limit.ResumeAfter, limit.WaitReason = planv1.TaskStatus_TASK_STATUS_CANCELLED, nil, ""
+	put(limit)
 	got, err := start(held.GetId())
 	if err != nil {
 		t.Fatal(err)

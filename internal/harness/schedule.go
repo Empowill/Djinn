@@ -585,8 +585,10 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 	return err
 }
 
-// Start starts a planned task that waits for the machine alone, now: the developer asked for it, whatever the slots
-// and the pressure. A task held by anything else (its wish, a dependency, a write scope) is refused, with why.
+// Start starts a planned task that waits for the machine alone, now: the developer asked for it, whatever the slots,
+// the pressure and the memory. A task held by anything else (its wish, a dependency, a push hold, its provider's usage
+// limit, a write scope) is refused, with why, and so is one that waits for a task going first: Start frees the
+// machine, never the priority order. The scheduler's pass decides, as it would now.
 func (h *Harness) Start(ctx context.Context, procedure string, req *planv1.TaskServiceStartRequest) (*planv1.Task, error) {
 	h.sched.Lock()
 	defer h.sched.Unlock()
@@ -605,8 +607,10 @@ func (h *Harness) Start(ctx context.Context, procedure string, req *planv1.TaskS
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	if why, failed := s.Held(task); why != "" || failed != "" {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s waits for more than the machine: %s", task.GetCode(), cmp.Or(failed, why)))
+	for _, d := range s.Pass() {
+		if d.Task.GetId() == task.GetId() && (d.Failed != "" || d.Why != "" && !d.Machine) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s waits for more than the machine: %s", task.GetCode(), cmp.Or(d.Failed, d.Why)))
+		}
 	}
 	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Journal(actorLocal, procedure, req) }); err != nil {
 		return nil, plan.Status(err)

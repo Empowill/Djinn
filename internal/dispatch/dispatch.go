@@ -128,7 +128,8 @@ type Decision struct {
 	// It waits for a dependency's work to be committed into the wish's integration branch: the integration commits
 	// that work at once.
 	Commit bool
-	// It waits for the machine alone: no slot free, or the machine under pressure. Forced, it may start.
+	// It waits for the machine alone: no slot free, the machine under pressure, or its memory short. Forced
+	// (djinn task start), it may start. A task that waits for one going first before it does not.
 	Machine bool
 }
 
@@ -171,10 +172,11 @@ func (s *Situation) Pass() []Decision {
 		why, failed := s.Held(t)
 		machine := false
 		if why == "" && failed == "" {
-			if why = s.full(t); why == "" {
+			var first bool
+			if why, first = s.full(t); why == "" {
 				s.Start(t)
 			}
-			machine = why != ""
+			machine = why != "" && !first
 		}
 		out = append(out, Decision{Task: t, Why: why, Failed: failed, Commit: why != "" && s.awaitsCommit(t),
 			Machine: machine})
@@ -324,11 +326,12 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 	if why, failed = s.Held(t); why != "" || failed != "" {
 		return why, failed
 	}
-	return s.full(t), ""
+	why, _ = s.full(t)
+	return why, ""
 }
 
-// Held is Blocker without the machine: what holds the task whatever the machine allows. A task forced to start
-// (djinn task start) needs Held empty.
+// Held is Blocker without the machine: what holds the task whatever the machine allows (its wish, a dependency, a
+// push hold, its provider's usage limit, a write scope). A task forced to start (djinn task start) needs Held empty.
 func (s *Situation) Held(t *planv1.Task) (why, failed string) {
 	if wish, ok := s.wishes[t.GetWishId()]; ok && !plan.Active(wish) {
 		return "its wish is " + strings.ToLower(strings.TrimPrefix(wish.GetState().String(), "WISH_STATE_")), ""
@@ -595,13 +598,14 @@ func provider(t *planv1.Task) string { return Provider(t) }
 
 // full says why the task's worker may not start now, or "" when it may: a slot is free (a question worker takes none),
 // and the memory holds a worker of its provider. Once the memory holds a task, the ones after it wait for it: they keep their order.
-func (s *Situation) full(t *planv1.Task) string {
+// first tells that the task waits for one before it in that order, not for the machine: djinn task start never jumps it.
+func (s *Situation) full(t *planv1.Task) (why string, first bool) {
 	m := s.machine
 	if m == nil || Watcher(t) { // A watcher sleeps until its command prints: no slot.
-		return ""
+		return "", false
 	}
 	if m.Pressure != "" {
-		return "the machine is under pressure: " + m.Pressure
+		return "the machine is under pressure: " + m.Pressure, false
 	}
 	// A slot each for the workers running and the gates held outside them.
 	if running := m.Running + len(s.started); running+m.Gates >= m.Slots && !QuestionWorker(t) {
@@ -616,31 +620,31 @@ func (s *Situation) full(t *planv1.Task) string {
 		default:
 			workers += fmt.Sprintf(" and %d gates are held outside the workers", m.Gates)
 		}
-		return workers + ", the most this machine holds (" + m.Rule + ")"
+		return workers + ", the most this machine holds (" + m.Rule + ")", false
 	}
 	// Then the memory: it must hold what a worker of the task's provider typically takes.
 	if m.Available == 0 {
-		return ""
+		return "", false
 	}
 	if s.short != nil {
 		switch {
 		case s.short.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
-			return "an investigator goes first: " + s.shortWhy
+			return "an investigator goes first: " + s.shortWhy, true
 		case s.short.GetCorrection() != nil:
-			return "a correction goes first: " + s.shortWhy
+			return "a correction goes first: " + s.shortWhy, true
 		case s.short.GetReview() != nil:
-			return "a review goes first: " + s.shortWhy
+			return "a review goes first: " + s.shortWhy, true
 		default:
 			code := cmp.Or(s.short.GetCode(), "a work task")
-			return fmt.Sprintf("%s goes first: %s", code, s.shortWhy)
+			return fmt.Sprintf("%s goes first: %s", code, s.shortWhy), true
 		}
 	}
 	peak, measured := s.typical(provider(t))
-	why := m.Policy.WorkerRoom(m.Total, m.Available, s.growing(), s.engaged(), provider(t), peak, measured)
+	why = m.Policy.WorkerRoom(m.Total, m.Available, s.growing(), s.engaged(), provider(t), peak, measured)
 	if why != "" {
 		s.short, s.shortWhy = t, why
 	}
-	return why
+	return why, false
 }
 
 // ProviderPeaks returns the measured p95 memories (falling back to peak memories if p95 is unset)
