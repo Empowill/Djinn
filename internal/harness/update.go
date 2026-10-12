@@ -19,7 +19,7 @@ import (
 // A task not started (planned, waiting) may change everything; a running or paused task may change its title only;
 // a finished task (done, failed, stopped, cut short) may change title, provider/model, prompt (for its next continue),
 // azima, and integration (none clears it, pending puts a done task's work back in line); never its dependencies once
-// it ran.
+// it ran. An azima changes its branch only (nameAzimaBranch).
 func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.TaskServiceUpdateRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
 	h.answering.Lock()
@@ -30,6 +30,17 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	task, err := store.Get[*planv1.Task](ctx, h.store, id)
 	if err != nil {
 		return nil, plan.Status(err)
+	}
+	if req.Branch != nil {
+		if !plan.IsAzima(task) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"task %s is work: only an azima has a branch of its own; a work task's branch is Djinn's", task.GetCode()))
+		}
+		if req.Title != nil || req.Prompt != nil || req.Provider != nil || req.Model != nil || req.PartOf != nil || req.After != nil ||
+			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--branch goes alone: name an azima's branch in a call of its own"))
+		}
+		return h.nameAzimaBranch(ctx, procedure, req, task)
 	}
 	if task.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is an azima of the plan: no worker runs it", task.GetCode()))

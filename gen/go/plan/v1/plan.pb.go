@@ -5879,9 +5879,10 @@ type Azima struct {
 	Parts        int32 `protobuf:"varint,3,opt,name=parts,proto3" json:"parts,omitempty"`
 	PartsDone    int32 `protobuf:"varint,4,opt,name=parts_done,json=partsDone,proto3" json:"parts_done,omitempty"`
 	PartsRunning int32 `protobuf:"varint,5,opt,name=parts_running,json=partsRunning,proto3" json:"parts_running,omitempty"`
-	// The azima's own branch under the per-azima push strategy, djinn/<code>-<slug of its title>: cut from main, its
-	// work merged into it, kept up with main, and landing in main. Recorded once Djinn cuts it (cut_from), so that a
-	// title changed later does not rename it; named from the code and title before.
+	// The azima's own branch under the per-azima push strategy, djinn/<code>-<slug of its title>, or the one the
+	// developer named (named): cut from main, its work merged into it, kept up with main, and landing in main. Recorded
+	// once Djinn cuts or adopts it (cut_from), so that a title changed later does not rename it; named from the code and
+	// title before.
 	Branch string `protobuf:"bytes,6,opt,name=branch,proto3" json:"branch,omitempty"`
 	// The branch it lands in: the project's main branch, as Djinn named it when it cut the branch. Empty before, and for a
 	// branch made before Djinn cut them from main (stacked on another azima's), which keeps working as it is.
@@ -5895,7 +5896,11 @@ type Azima struct {
 	CutFrom string `protobuf:"bytes,10,opt,name=cut_from,json=cutFrom,proto3" json:"cut_from,omitempty"`
 	// Where its branch stands against main, as a wish's integration branch does (Wish.mains): Djinn merges main into it
 	// by the same merge_main rules.
-	Main          *WishMain `protobuf:"bytes,11,opt,name=main,proto3" json:"main,omitempty"`
+	Main *WishMain `protobuf:"bytes,11,opt,name=main,proto3" json:"main,omitempty"`
+	// The developer named its branch (djinn task update <azima> --branch): adopted as it was, or cut from main under that
+	// name. In a project whose settings name no check, Djinn merges the azima's work into it untested, as into a wish's
+	// own branch; never into a branch Djinn named.
+	Named         bool `protobuf:"varint,12,opt,name=named,proto3" json:"named,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6005,6 +6010,13 @@ func (x *Azima) GetMain() *WishMain {
 		return x.Main
 	}
 	return nil
+}
+
+func (x *Azima) GetNamed() bool {
+	if x != nil {
+		return x.Named
+	}
+	return false
 }
 
 // AzimaPr describes the pull request of an azima branch.
@@ -17870,7 +17882,12 @@ type TaskServiceUpdateRequest struct {
 	// saying why, when Djinn does not integrate it.
 	Integration *string `protobuf:"bytes,11,opt,name=integration,proto3,oneof" json:"integration,omitempty"`
 	// Force clearing the integration record even if the task's branch holds unmerged commits.
-	Force         *bool `protobuf:"varint,12,opt,name=force,proto3,oneof" json:"force,omitempty"`
+	Force *bool `protobuf:"varint,12,opt,name=force,proto3,oneof" json:"force,omitempty"`
+	// An azima's own branch under the per-azima push strategy, named as the project's convention requires
+	// (ET-1234-<slug>): a branch that exists is adopted as it is, recorded with the main it lands in and the commit of
+	// main it was cut from (their merge base); one that does not is cut from main under that name. Refused on a work
+	// task, and while a merge runs into the azima's branch.
+	Branch        *string `protobuf:"bytes,13,opt,name=branch,proto3,oneof" json:"branch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -17987,6 +18004,13 @@ func (x *TaskServiceUpdateRequest) GetForce() bool {
 		return *x.Force
 	}
 	return false
+}
+
+func (x *TaskServiceUpdateRequest) GetBranch() string {
+	if x != nil && x.Branch != nil {
+		return *x.Branch
+	}
+	return ""
 }
 
 type TaskServiceUpdateResponse struct {
@@ -19139,7 +19163,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x03box\x18\x01 \x01(\tR\x03box\x12\x14\n" +
 	"\x05needs\x18\x02 \x01(\tR\x05needs\x12)\n" +
 	"\aprovers\x18\x03 \x03(\x0e2\x0f.plan.v1.ProverR\aprovers\x12\x1a\n" +
-	"\breviewer\x18\x04 \x01(\tR\breviewer\"\xe9\x02\n" +
+	"\breviewer\x18\x04 \x01(\tR\breviewer\"\xff\x02\n" +
 	"\x05Azima\x12)\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x13.plan.v1.AzimaStateR\x05state\x12\x14\n" +
 	"\x05ready\x18\x02 \x01(\bR\x05ready\x12\x14\n" +
@@ -19154,7 +19178,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x02pr\x18\t \x01(\v2\x10.plan.v1.AzimaPrR\x02pr\x12\x19\n" +
 	"\bcut_from\x18\n" +
 	" \x01(\tR\acutFrom\x12%\n" +
-	"\x04main\x18\v \x01(\v2\x11.plan.v1.WishMainR\x04main\"H\n" +
+	"\x04main\x18\v \x01(\v2\x11.plan.v1.WishMainR\x04main\x12\x14\n" +
+	"\x05named\x18\f \x01(\bR\x05named\"H\n" +
 	"\aAzimaPr\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12+\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x15.plan.v1.AzimaPrStateR\x05state\"E\n" +
@@ -19992,7 +20017,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x02by\x18\x03 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02byB\t\n" +
 	"\a_prompt\"@\n" +
 	"\x1bTaskServiceContinueResponse\x12!\n" +
-	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\x8d\x06\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xc1\x06\n" +
 	"\x18TaskServiceUpdateRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12%\n" +
 	"\x05title\x18\x02 \x01(\tB\n" +
@@ -20007,7 +20032,9 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\fwrite_scopes\x18\n" +
 	" \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\vwriteScopes\x12;\n" +
 	"\vintegration\x18\v \x01(\tB\x14\xbaH\x11r\x0fR\x04noneR\apendingH\aR\vintegration\x88\x01\x01\x12\x19\n" +
-	"\x05force\x18\f \x01(\bH\bR\x05force\x88\x01\x01B\b\n" +
+	"\x05force\x18\f \x01(\bH\bR\x05force\x88\x01\x01\x12'\n" +
+	"\x06branch\x18\r \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xfa\x01H\tR\x06branch\x88\x01\x01B\b\n" +
 	"\x06_titleB\t\n" +
 	"\a_promptB\v\n" +
 	"\t_providerB\b\n" +
@@ -20017,7 +20044,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\t_decisionB\x11\n" +
 	"\x0f_max_budget_usdB\x0e\n" +
 	"\f_integrationB\b\n" +
-	"\x06_force\">\n" +
+	"\x06_forceB\t\n" +
+	"\a_branch\">\n" +
 	"\x19TaskServiceUpdateResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"_\n" +
 	"\x1aTaskServiceDescribeRequest\x12\"\n" +

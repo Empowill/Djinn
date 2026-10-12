@@ -1199,9 +1199,10 @@ message Azima {
   int32 parts = 3;
   int32 parts_done = 4;
   int32 parts_running = 5;
-  // The azima's own branch under the per-azima push strategy, djinn/<code>-<slug of its title>: cut from main, its
-  // work merged into it, kept up with main, and landing in main. Recorded once Djinn cuts it (cut_from), so that a
-  // title changed later does not rename it; named from the code and title before.
+  // The azima's own branch under the per-azima push strategy, djinn/<code>-<slug of its title>, or the one the
+  // developer named (named): cut from main, its work merged into it, kept up with main, and landing in main. Recorded
+  // once Djinn cuts or adopts it (cut_from), so that a title changed later does not rename it; named from the code and
+  // title before.
   string branch = 6;
   // The branch it lands in: the project's main branch, as Djinn named it when it cut the branch. Empty before, and for a
   // branch made before Djinn cut them from main (stacked on another azima's), which keeps working as it is.
@@ -1216,6 +1217,10 @@ message Azima {
   // Where its branch stands against main, as a wish's integration branch does (Wish.mains): Djinn merges main into it
   // by the same merge_main rules.
   WishMain main = 11;
+  // The developer named its branch (djinn task update <azima> --branch): adopted as it was, or cut from main under that
+  // name. In a project whose settings name no check, Djinn merges the azima's work into it untested, as into a wish's
+  // own branch; never into a branch Djinn named.
+  bool named = 12;
 }
 
 // AzimaState is where an azima stands.
@@ -4179,6 +4184,14 @@ message TaskServiceUpdateRequest {
   optional string integration = 11 [(buf.validate.field).string = {in: ["none", "pending"]}];
   // Force clearing the integration record even if the task's branch holds unmerged commits.
   optional bool force = 12;
+  // An azima's own branch under the per-azima push strategy, named as the project's convention requires
+  // (ET-1234-<slug>): a branch that exists is adopted as it is, recorded with the main it lands in and the commit of
+  // main it was cut from (their merge base); one that does not is cut from main under that name. Refused on a work
+  // task, and while a merge runs into the azima's branch.
+  optional string branch = 13 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 250
+  }];
 }
 
 message TaskServiceUpdateResponse {

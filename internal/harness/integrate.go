@@ -158,7 +158,7 @@ func (h *Harness) pendIntegration(t *planv1.Task) (bool, string) {
 		if err != nil {
 			return false, ""
 		}
-		if _, why := uncheckedBranch(ctx, wish, project, settings); why != "" {
+		if _, why := h.uncheckedBranch(ctx, wish, project, settings, t); why != "" {
 			into := cmp.Or(plan.IntegrationBranchOf(wish, project.GetId()), plan.CheckedOutBranch(ctx, project.GetDirectory()))
 			if !branchHoldsUnmergedCommits(ctx, project.GetDirectory(), t.GetBranch(), into) {
 				return false, ""
@@ -172,13 +172,21 @@ func (h *Harness) pendIntegration(t *planv1.Task) (bool, string) {
 	return true, ""
 }
 
-// uncheckedBranch is the branch Djinn merges the work of wish into in project, a project whose settings name no
-// check: the wish's own integration branch there, as djinn wish set-integration names it; merged as any work, no
-// check run (W4 of wish Dew, 12/10/2026). Otherwise "" and why the work stays out: Djinn commits nothing untested into
-// the project's main branch, nor into an azima's branch, which lands there.
-func uncheckedBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings) (string, string) {
+// uncheckedBranch is the branch Djinn merges the work of t, a task of wish, into in project, a project whose settings
+// name no check: the wish's own integration branch there, as djinn wish set-integration names it; per azima, the
+// branch the developer named for t's azima (djinn task update <azima> --branch), cut from main if it was deleted since;
+// merged as any work, no check run (W4 of wish Dew, 12/10/2026). Otherwise "" and why the work stays out: Djinn commits
+// nothing untested into the project's main branch, nor into an azima's branch Djinn named, which lands there.
+func (h *Harness) uncheckedBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, t *planv1.Task) (string, string) {
 	if strat, _ := plan.ResolveWishPushStrategy(wish, settings); strat == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
-		return "", errNoChecks.Error() + ", and Djinn merges no untested work into an azima's branch"
+		if azima, err := h.taskAzima(ctx, t); err == nil && azima.GetAzima().GetNamed() {
+			branch, err := h.azimaBranch(ctx, project, settings, azima)
+			if err != nil {
+				return "", err.Error()
+			}
+			return branch, ""
+		}
+		return "", errNoChecks.Error() + ", and Djinn merges no untested work into a branch it named for an azima"
 	}
 	branch := plan.IntegrationBranchOf(wish, project.GetId())
 	if branch != "" {
@@ -355,7 +363,7 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	case err != nil:
 		why = fmt.Sprintf("settings unreadable: %v", err)
 	case !settings.Integrates():
-		if branch, why = uncheckedBranch(ctx, wish, project, settings); why != "" {
+		if branch, why = h.uncheckedBranch(ctx, wish, project, settings, batch[0]); why != "" {
 			branch = plan.IntegrationBranchOf(wish, project.GetId())
 		}
 	default:

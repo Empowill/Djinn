@@ -139,9 +139,6 @@ func (h *Harness) keepUp(ctx context.Context, wish *planv1.Wish, projectID strin
 		return
 	}
 	var lines []mainLine
-	if branch := plan.IntegrationBranchOf(wish, projectID); branch != "" {
-		lines = append(lines, mainLine{wish: wish, project: project, branch: branch})
-	}
 	if strat, _ := plan.ResolveWishPushStrategy(wish, settings); strat == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
 		for _, azima := range h.wishAzimas(ctx, wish) {
 			branch := azimaBranchName(azima)
@@ -152,6 +149,11 @@ func (h *Harness) keepUp(ctx context.Context, wish *planv1.Wish, projectID strin
 			}
 			lines = append(lines, mainLine{wish: wish, project: project, branch: branch, azima: azima})
 		}
+	}
+	// The wish's integration branch first; an azima that adopted it keeps it up as its own.
+	if branch := plan.IntegrationBranchOf(wish, projectID); branch != "" &&
+		!slices.ContainsFunc(lines, func(l mainLine) bool { return l.branch == branch }) {
+		lines = slices.Insert(lines, 0, mainLine{wish: wish, project: project, branch: branch})
 	}
 	fetched := map[string]error{} // main is fetched once for every line of a look.
 	for _, l := range lines {
@@ -416,11 +418,10 @@ func (h *Harness) mainFailed(
 // merge among tasks, just committed: the wish's integration branch, or the azima's whose branch in.Branch is.
 func (h *Harness) settleMain(ctx context.Context, wish *planv1.Wish, project *planv1.Project, tasks []*planv1.Task, in *planv1.TaskIntegration) {
 	l := mainLine{wish: wish, project: project, branch: plan.IntegrationBranchOf(wish, project.GetId())}
-	if b := in.GetBranch(); b != "" && !strings.EqualFold(b, l.branch) {
-		for _, azima := range h.wishAzimas(ctx, wish) {
-			if azimaBranchName(azima) == b {
-				l.branch, l.azima = b, azima
-			}
+	// Per azima, the wish's branch is the azima's when it adopted it (keepUp).
+	if b := in.GetBranch(); b != "" && (!strings.EqualFold(b, l.branch) || h.pushesPerAzima(ctx, h.store, wish)) {
+		if azima := azimaOwning(h.wishAzimas(ctx, wish), b); azima != nil {
+			l.branch, l.azima = b, azima
 		}
 	}
 	for _, c := range tasks {

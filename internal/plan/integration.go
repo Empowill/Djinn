@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -119,6 +120,37 @@ func MergeRunning(wish *planv1.Wish, tasks []*planv1.Task, projectID string) str
 	return ""
 }
 
+// AzimaMergeRunning says, in a phrase, what merges into branch, the own branch of azima among tasks, the tasks of its
+// wish, now: a batch of work being merged into it, a correction or review worker of the azima bringing work into it, or
+// one settling main's merge; "" when none does. While one runs, the azima's branch is not renamed under it.
+func AzimaMergeRunning(azima *planv1.Task, tasks []*planv1.Task, branch string) string {
+	byID := map[string]*planv1.Task{}
+	for _, t := range tasks {
+		byID[t.GetId()] = t
+	}
+	var merging, merges []string
+	for _, t := range tasks {
+		if in := t.GetIntegration(); in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING &&
+			strings.EqualFold(in.GetBranch(), branch) {
+			merging = append(merging, t.GetCode())
+		}
+		if IsMerge(t) && !Finished(t) && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED &&
+			AzimaOf(t, byID).GetId() == azima.GetId() {
+			merges = append(merges, t.GetCode())
+		}
+	}
+	switch {
+	case len(merging) > 0:
+		return fmt.Sprintf("the work of %s is being merged into %s", strings.Join(merging, ", "), branch)
+	case len(merges) > 0:
+		return fmt.Sprintf("%s brings work into %s", strings.Join(merges, ", "), branch)
+	}
+	if id := azima.GetAzima().GetMain().GetCorrectedBy(); id != "" {
+		return fmt.Sprintf("%s settles the merge of main into %s", cmp.Or(byID[id].GetCode(), "a correction worker"), branch)
+	}
+	return ""
+}
+
 // createIntegrationBranch makes branch in the repository of the project projectID, at the tip of wish's integration
 // branch there (the branch its checkout is on, for a wish that records none); a branch of that name already there is
 // left as it is.
@@ -207,11 +239,8 @@ func (w *Wishes) SetIntegration(
 				if err != nil {
 					return err
 				}
-				for _, t := range tasks {
-					if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
-						return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-							"cannot switch push strategy: work of wish %q is already merged into its integration branch", wish.GetTitle()))
-					}
+				if err := RefuseStranding(wish, tasks, s); err != nil {
+					return err
 				}
 				if s == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
 					if err := RefuseSwitchToAzima(tasks); err != nil {
@@ -256,11 +285,8 @@ func (w *Wishes) PushStrategy(
 				if err != nil {
 					return err
 				}
-				for _, t := range tasks {
-					if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
-						return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-							"cannot switch push strategy: work of wish %q is already merged into its integration branch", wish.GetTitle()))
-					}
+				if err := RefuseStranding(wish, tasks, newStrategy); err != nil {
+					return err
 				}
 				if newStrategy == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
 					if err := RefuseSwitchToAzima(tasks); err != nil {

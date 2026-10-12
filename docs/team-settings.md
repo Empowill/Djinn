@@ -313,8 +313,10 @@ integration branch per wish and per project) or `PUSH_STRATEGY_AZIMA` (one integ
 Each wish can override this strategy: `djinn wish push-strategy <wish> [--strategy wish|azima]` (or
 `djinn wish set-integration <wish> --push-strategy wish|azima`) shows or sets the push strategy of that wish.
 A wish created without a value takes the project's default, and a project without a value defaults to `wish`.
-To protect branches already created and merged, switching push strategy is refused once any task of the wish has
-already been committed to its integration branch.
+To protect work already merged, switching push strategy is refused when it would strand merged work: to per azima, when
+the work of an azima is merged into a branch (the wish's integration branch) that is not that azima's own; to per wish,
+when work is merged into an azima's branch that is not the wish's integration branch. Work of no azima stays in the
+wish's integration branch either way. The refusal names the work and the branch it lives on, and how to keep it there.
 
 Per azima, each azima has a branch of its own, `djinn/<code>-<slug of its title>` (`djinn/T07-the-orchestrator`),
 which works like a wish's integration branch:
@@ -339,6 +341,30 @@ which works like a wish's integration branch:
 
 A branch made before, stacked on the branch of the azima it depended on, keeps working as it is: its work merges into
 it, main is merged into it, and nothing of it is rewritten.
+
+**Naming an azima's branch.** A project whose branches must follow a convention (a ticket's key, `ET-1234-<slug>`, that
+its forge or its sync tools require) names each azima's branch: `djinn task update <azima> --branch ET-1234-the-fix`.
+A branch that exists is adopted as it is, never cut again nor moved: Djinn records it with the main it lands in and the
+commit of main it was cut from, their merge base. One that does not exist is cut from main under that name. It is
+refused on a work task, for main itself, for another azima's branch, while a merge runs into the azima's branch (or into
+the wish's, when it adopts it), and when the azima's branch so far holds commits the named one lacks. Where the branch
+stands against main and its pull request follow the branch: Djinn finds an open one by the branch, and the azima's
+card and the lead's brief show the branch and its pull request. In a project whose settings name no check, Djinn merges
+the azima's work into a branch named this way untested, as into a wish's own branch; never into a branch it named.
+
+**Switching a wish to per azima when its work already lives on the wish's branch.** A wish that pushed per wish, one
+azima carrying its subject, has that azima's work merged into the wish's integration branch, `ET-1234-the-fix`, perhaps
+pushed and with a merge request open. Switching to per azima as it is would give the azima a new branch cut from main,
+the merged work left behind: Djinn refuses, naming it. Have the azima adopt the branch its work lives on, then switch:
+
+```
+djinn task update T1 --branch ET-1234-the-fix
+djinn wish push-strategy <wish> --strategy azima
+```
+
+Nothing is cut again or moved: the azima's work keeps merging into `ET-1234-the-fix`, main is merged into it by the
+same rules, it is pushed as before, and the merge request already open on it is the azima's. While the azima's branch is
+the wish's integration branch, work of no azima goes there too.
 
 Once Djinn has pushed in a project whose settings name an `install` command, the window proposes, as for a new
 version, to install it and restart on it, with what changed (each task with the last paragraph its worker wrote folded

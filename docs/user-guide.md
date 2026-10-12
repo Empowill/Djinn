@@ -278,6 +278,12 @@ main by the same rules as a wish's branch ([keeping up with main](team-settings.
 main: its pull request, opened when you say so after Djinn proposes it, targets main and follows each push of the
 branch; Djinn never re-targets it.
 
+A project whose branches follow a convention (a ticket's key) names an azima's branch with `djinn task update <azima>
+--branch <name>`: a branch that exists is adopted as it is, one that does not is cut from main under that name. A wish
+whose work already lives on its integration branch switches to per azima once the azima carrying it adopts that branch;
+before, Djinn refuses the switch, which would strand that work, and says how
+([naming an azima's branch](team-settings.md#pushing)).
+
 Under the per-azima strategy no azima waits for another: each branch holds main and its own work, nothing else. Djinn
 refuses an azima after another, directly or through their work (`djinn task spawn --after`, `djinn task depend`,
 `djinn task update`, `djinn task group`, an `after:` line of a plan file at `djinn plan sync`), and refuses switching a
