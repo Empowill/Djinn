@@ -686,7 +686,7 @@ func (w *Wishes) routeTo(
 	if err := tx.Journal(actor, planv1connect.WishServiceMakeProcedure, makeReq); err != nil {
 		return nil, err
 	}
-	wish, err := makeWish(ctx, tx, makeReq)
+	wish, err := makeWish(ctx, tx, makeReq, "")
 	if err != nil {
 		return nil, err
 	}

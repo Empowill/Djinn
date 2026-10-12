@@ -11209,7 +11209,7 @@ func (x *WishServiceMoveResponse) GetPaused() []*Wish {
 
 type WishServiceMakeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// What you wish, in a sentence.
+	// A title for the wish, in a sentence. May be omitted with --prompt: the lead writes its title at startup.
 	Title string `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
 	// A project the wish works on; repeat for each one.
 	ProjectIds []string `protobuf:"bytes,2,rep,name=project_ids,json=projectIds,proto3" json:"project_ids,omitempty"`
@@ -11217,7 +11217,10 @@ type WishServiceMakeRequest struct {
 	Paused bool `protobuf:"varint,3,opt,name=paused,proto3" json:"paused,omitempty"`
 	// Push strategy for the wish: wish (one integration branch per wish) or azima (one branch per azima).
 	// Unset: takes the project's default.
-	PushStrategy  *PushStrategy `protobuf:"varint,4,opt,name=push_strategy,json=pushStrategy,proto3,enum=plan.v1.PushStrategy,oneof" json:"push_strategy,omitempty"`
+	PushStrategy *PushStrategy `protobuf:"varint,4,opt,name=push_strategy,json=pushStrategy,proto3,enum=plan.v1.PushStrategy,oneof" json:"push_strategy,omitempty"`
+	// The full original request in Markdown, stored as a creation block. Without a title, the wish gets a neutral
+	// provisional title until its lead writes one. Either title or prompt must contain non-whitespace text.
+	Prompt        string `protobuf:"bytes,5,opt,name=prompt,proto3" json:"prompt,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -11278,6 +11281,13 @@ func (x *WishServiceMakeRequest) GetPushStrategy() PushStrategy {
 		return *x.PushStrategy
 	}
 	return PushStrategy_PUSH_STRATEGY_UNSPECIFIED
+}
+
+func (x *WishServiceMakeRequest) GetPrompt() string {
+	if x != nil {
+		return x.Prompt
+	}
+	return ""
 }
 
 type WishServiceMakeResponse struct {
@@ -18589,14 +18599,16 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x02to\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02(\x01R\x02to\"g\n" +
 	"\x17WishServiceMoveResponse\x12%\n" +
 	"\x06wishes\x18\x01 \x03(\v2\r.plan.v1.WishR\x06wishes\x12%\n" +
-	"\x06paused\x18\x02 \x03(\v2\r.plan.v1.WishR\x06paused\"\xe0\x01\n" +
-	"\x16WishServiceMakeRequest\x12!\n" +
-	"\x05title\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\xf4\x03R\x05title\x12.\n" +
+	"\x06paused\x18\x02 \x03(\v2\r.plan.v1.WishR\x06paused\"\xa1\x03\n" +
+	"\x16WishServiceMakeRequest\x12\"\n" +
+	"\x05title\x18\x01 \x01(\tB\f\xbaH\x05r\x03\x18\xf4\x03\x88\xf4\x18\x01R\x05title\x12.\n" +
 	"\vproject_ids\x18\x02 \x03(\tB\r\xbaH\n" +
 	"\x92\x01\a\"\x05r\x03\xb0\x01\x01R\n" +
 	"projectIds\x12\x16\n" +
 	"\x06paused\x18\x03 \x01(\bR\x06paused\x12I\n" +
-	"\rpush_strategy\x18\x04 \x01(\x0e2\x15.plan.v1.PushStrategyB\b\xbaH\x05\x82\x01\x02\x10\x01H\x00R\fpushStrategy\x88\x01\x01B\x10\n" +
+	"\rpush_strategy\x18\x04 \x01(\x0e2\x15.plan.v1.PushStrategyB\b\xbaH\x05\x82\x01\x02\x10\x01H\x00R\fpushStrategy\x88\x01\x01\x12!\n" +
+	"\x06prompt\x18\x05 \x01(\tB\t\xbaH\x06r\x04\x18\xc0\x84=R\x06prompt:\x9a\x01\xbaH\x96\x01\x1a\x93\x01\n" +
+	"\fwish.request\x12&a nonblank title or prompt is required\x1a[this.title.matches('[^\\\\s\\\\p{Z}\\\\x{0085}]') || this.prompt.matches('[^\\\\s\\\\p{Z}\\\\x{0085}]')B\x10\n" +
 	"\x0e_push_strategy\"<\n" +
 	"\x17WishServiceMakeResponse\x12!\n" +
 	"\x04wish\x18\x01 \x01(\v2\r.plan.v1.WishR\x04wish\"\x18\n" +

@@ -2600,9 +2600,14 @@ message WishServiceMoveResponse {
 }
 
 message WishServiceMakeRequest {
-  // What you wish, in a sentence.
+  option (buf.validate.message).cel = {
+    id: "wish.request"
+    message: "a nonblank title or prompt is required"
+    expression: "this.title.matches('[^\\\\s\\\\p{Z}\\\\x{0085}]') || this.prompt.matches('[^\\\\s\\\\p{Z}\\\\x{0085}]')"
+  };
+  // A title for the wish, in a sentence. May be omitted with --prompt: the lead writes its title at startup.
   string title = 1 [
-    (buf.validate.field).required = true,
+    (djinn.v1.positional) = true,
     (buf.validate.field).string.max_len = 500
   ];
   // A project the wish works on; repeat for each one.
@@ -2612,6 +2617,9 @@ message WishServiceMakeRequest {
   // Push strategy for the wish: wish (one integration branch per wish) or azima (one branch per azima).
   // Unset: takes the project's default.
   optional PushStrategy push_strategy = 4 [(buf.validate.field).enum.defined_only = true];
+  // The full original request in Markdown, stored as a creation block. Without a title, the wish gets a neutral
+  // provisional title until its lead writes one. Either title or prompt must contain non-whitespace text.
+  string prompt = 5 [(buf.validate.field).string.max_len = 1000000];
 }
 
 message WishServiceMakeResponse {

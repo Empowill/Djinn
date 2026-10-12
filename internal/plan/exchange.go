@@ -232,6 +232,11 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 	}
 	var out []*planv1.Command
 	var failed error
+	// A new wish reuses its creation command's identifier. Older wishes can only match by their original title
+	// and timestamp.
+	var made *planv1.Command
+	var legacy []*planv1.Command
+	var imported bool
 	others, _ := store.List[*planv1.Wish](ctx, r, nil)
 	// Only the methods of the API make a wish's history: "/plan.v1.WishService/Make"… The harness's entries, a
 	// worker's events most of all, are not even read.
@@ -243,19 +248,31 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 		}
 		switch m := req.(type) {
 		case *planv1.WishServiceImportDataRequest:
-			imported, err := decode(m.GetData())
-			if err == nil && strings.EqualFold(imported.GetWish().GetId(), wish.GetId()) {
+			carried, err := decode(m.GetData())
+			if err == nil && strings.EqualFold(carried.GetWish().GetId(), wish.GetId()) {
 				// The import set the wish as the file held it: what came before is in the file, or was replaced.
-				out = slices.Clone(imported.GetCommands())
+				out = slices.Clone(carried.GetCommands())
+				made = nil
+				legacy = nil
+				// An imported wish already carries its creation history; local Make commands cannot add to it.
+				imported = true
 			}
 			return false
 		case *planv1.WishServiceMakeRequest:
-			if !within(c.At, wish.GetCreateTime().AsTime()) {
+			if imported {
 				return false
 			}
-			if m.GetTitle() != wish.GetTitle() {
+			if !strings.EqualFold(c.ID, wish.GetId()) {
+				if !within(c.At, wish.GetCreateTime().AsTime()) {
+					return false
+				}
 				for _, o := range others {
-					if o.GetId() != wish.GetId() && o.GetTitle() == m.GetTitle() && within(c.At, o.GetCreateTime().AsTime()) {
+					if o.GetId() == wish.GetId() {
+						continue
+					}
+					// Another wish's own creation, or one of the same title made then.
+					if strings.EqualFold(c.ID, o.GetId()) ||
+						m.GetTitle() != wish.GetTitle() && o.GetTitle() == m.GetTitle() && within(c.At, o.GetCreateTime().AsTime()) {
 						return false
 					}
 				}
@@ -276,11 +293,26 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 			failed = err
 			return false
 		}
-		out = append(out, &planv1.Command{
+		command := &planv1.Command{
 			Id: c.ID, Actor: c.Actor, At: timestamppb.New(c.At), Method: c.Method, Request: packed,
-		})
+		}
+		if _, ok := req.(*planv1.WishServiceMakeRequest); ok {
+			if strings.EqualFold(c.ID, wish.GetId()) {
+				made = command
+			} else {
+				legacy = append(legacy, command)
+			}
+		} else {
+			out = append(out, command)
+		}
 		return false
 	})
+	if made != nil {
+		out = append(out, made)
+	} else {
+		out = append(out, legacy...)
+	}
+	slices.SortStableFunc(out, func(a, b *planv1.Command) int { return a.GetAt().AsTime().Compare(b.GetAt().AsTime()) })
 	return out, errors.Join(err, failed)
 }
 

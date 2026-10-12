@@ -108,6 +108,16 @@ func TestConvention(t *testing.T) {
 		},
 		{name: "empty request", args: nil, want: &planv1.ProjectServiceListRequest{}},
 		{
+			name: "wish title keeps its positional spelling",
+			args: []string{"A short title", "--paused"},
+			want: &planv1.WishServiceMakeRequest{Title: "A short title", Paused: true},
+		},
+		{
+			name: "wish prompt may omit positional title",
+			args: []string{"--paused", "--prompt", "**The request**\n\n- Keep the complete text"},
+			want: &planv1.WishServiceMakeRequest{Prompt: "**The request**\n\n- Keep the complete text", Paused: true},
+		},
+		{
 			name: "djinn wish describe <wish> --text",
 			args: []string{wishID, "--text", "Ship the API.\nIts scope: the store."},
 			want: &planv1.WishServiceDescribeRequest{WishId: wishID, Text: "Ship the API.\nIts scope: the store."},
@@ -463,6 +473,7 @@ func TestRun(t *testing.T) {
 		{name: "load set", args: []string{"load", "set", "minimal"}, wantOut: "notch: minimal\n", wantCalled: true},
 		{name: "load set auto", args: []string{"load", "set", "auto"}, wantOut: "notch: minimal\nauto: true\n", wantCalled: true},
 		{name: "internal service is hidden", args: []string{"ui", "get-environment"}, wantCode: 2, wantErr: `unknown command "ui"`},
+		{name: "optional positional help", args: []string{"wish", "make", "--help"}, wantOut: "Usage: djinn wish make [<title>] [flags]"},
 		{name: "version", args: []string{"v"}, wantOut: "djinn test\n"},
 		{name: "talisman answers as tilasm", args: []string{"talisman", "list", "--search", "model"}, wantOut: "code: L01", wantCalled: true},
 		{name: "an alias by a prefix no command takes", args: []string{"tali", "l"}, wantOut: "code: L01", wantCalled: true},
@@ -689,5 +700,31 @@ func TestEveryMethodSaysWhatItChanges(t *testing.T) {
 		if !slices.Contains(deletes, want) {
 			t.Errorf("%s does not delete: %v", want, deletes)
 		}
+	}
+}
+
+// Make accepts either input, but still rejects missing, blank and oversized titles.
+func TestMakeInputValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		args  []string
+		valid bool
+	}{
+		{"legacy title", []string{"Short title"}, true},
+		{"prompt only", []string{"--prompt", "A complete request"}, true},
+		{"missing inputs", nil, false},
+		{"blank inputs", []string{" ", "--prompt", "\n\t"}, false},
+		{"oversized title", []string{strings.Repeat("x", 501)}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := parse(local(t, &planv1.WishServiceMakeRequest{}), tt.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = check(msg, label)
+			if (err == nil) != tt.valid {
+				t.Errorf("valid=%v, error=%v", tt.valid, err)
+			}
+		})
 	}
 }
