@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -557,21 +558,61 @@ func (w *Wishes) Make(
 	var wish *planv1.Wish
 	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
-		wish, err = makeWish(ctx, tx, req.Msg)
+		wish, err = makeWish(ctx, tx, req.Msg, w.Language)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
+	if req.Msg.GetPrompt() != "" {
+		// The one lead names a wish made from a request, and plans it.
+		e := &planv1.LeadEvent{
+			Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_REQUEST, WishId: wish.GetId(),
+			Text: MadeLine(wish, req.Msg.GetTitle() == ""),
+		}
+		if err := w.Notify(ctx, e); err != nil {
+			log.Printf("djinn: wish %s: tell the lead about a wish made from a request: %v", wish.GetId(), err)
+		}
+	}
 	return connect.NewResponse(&planv1.WishServiceMakeResponse{Wish: wish}), nil
 }
 
-// makeWish stores the wish req asks for in tx: last by rank among the active ones, or paused. The caller journals
-// the command.
-func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest) (*planv1.Wish, error) {
+// MadeLine is the line that tells the lead a wish was made from a request: it names it when its title is
+// provisional, and plans it from its brief, which holds the request whole. Short enough for a digest's line.
+func MadeLine(wish *planv1.Wish, provisional bool) string {
+	if provisional {
+		return fmt.Sprintf("Djinn: a wish was made from a request: name it, djinn wish rename %s \"<title>\", then plan "+
+			"it from its brief, which holds the request.", wish.GetId())
+	}
+	return fmt.Sprintf("Djinn: a wish was made from a request: plan it from djinn wish brief %s, which holds the "+
+		"request whole.", wish.GetId())
+}
+
+// makeWish stores the wish req asks for in tx: last by rank among the active ones, or paused, with its request in a
+// creation block. Its texts are in language. The caller journals the command, whose identifier the wish takes.
+func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest, language string) (*planv1.Wish, error) {
+	title := req.GetTitle()
+	if title == "" {
+		title = locales.T(language, "wish.provisional_title", nil)
+	}
 	wish := &planv1.Wish{
-		Id: store.NewID(), Title: req.GetTitle(), CreateTime: timestamppb.Now(),
+		// Reuse the creation command's UUID to identify it exactly after a rename or export, with no extra field.
+		Id: tx.JournalID(), Title: title, CreateTime: timestamppb.Now(),
 		PushStrategy: req.GetPushStrategy(),
+	}
+	put := func() error {
+		if err := tx.Put(wish); err != nil {
+			return err
+		}
+		if prompt := req.GetPrompt(); prompt != "" {
+			return tx.Put(&planv1.Block{
+				Id: store.NewID(), WishId: wish.GetId(), Kind: creationKind,
+				Title: locales.T(language, "wish.original_request", nil), Content: prompt,
+				MediaType: "text/markdown", Position: gap,
+				CreateTime: wish.GetCreateTime(), UpdateTime: wish.GetCreateTime(),
+			})
+		}
+		return nil
 	}
 	for _, id := range req.GetProjectIds() {
 		project, err := store.Get[*planv1.Project](ctx, tx, id)
@@ -587,7 +628,7 @@ func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequ
 	}
 	if req.GetPaused() {
 		wish.State = planv1.WishState_WISH_STATE_PAUSED
-		return wish, tx.Put(wish)
+		return wish, put()
 	}
 	actives, err := ActiveWishes(ctx, tx)
 	if err != nil {
@@ -596,13 +637,13 @@ func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequ
 	if len(actives) >= MaxActive {
 		// Three wishes are active: the new one waits, paused, until you make it active.
 		wish.State = planv1.WishState_WISH_STATE_PAUSED
-		return wish, tx.Put(wish)
+		return wish, put()
 	}
 	if err := renumber(tx, actives); err != nil {
 		return nil, err
 	}
 	wish.State, wish.Rank = planv1.WishState_WISH_STATE_ACTIVE, int32(len(actives)+1)
-	return wish, tx.Put(wish)
+	return wish, put()
 }
 
 func (w *Wishes) List(

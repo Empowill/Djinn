@@ -15,6 +15,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
@@ -378,6 +379,25 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		b.WriteString("- Djinn proposes to grant it: every task is finished and no question is open. Granting is the developer's word.\n")
 	}
 
+	// The original request starts every new lead whole, even after it falls out of the latest blocks. Render
+	// each distinct creation text once and leave its duplicates out of the shortened block section below.
+	originals := map[string]bool{}
+	for _, bl := range exp.GetBlocks() {
+		if !strings.EqualFold(bl.GetKind(), creationKind) || originals[bl.GetContent()] {
+			continue
+		}
+		if len(originals) == 0 {
+			b.WriteString("\n## Original request\n\n")
+		}
+		originals[bl.GetContent()] = true
+		b.WriteString(bl.GetContent() + "\n")
+	}
+	if len(originals) > 0 && needsTitle(exp) {
+		b.WriteString("\nFirst, write a concise title in the developer's language, using the language of the complete " +
+			"original request above when no preference is given, then run " +
+			"`djinn wish rename <wish> \"<title>\"`. The current title is provisional; keep the original request whole.\n")
+	}
+
 	codes := map[string]string{}
 	for _, t := range exp.GetTasks() {
 		codes[t.GetId()] = t.GetCode()
@@ -571,7 +591,9 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		}
 	}
 
-	blocks := slices.Clone(exp.GetBlocks())
+	blocks := slices.DeleteFunc(slices.Clone(exp.GetBlocks()), func(bl *planv1.Block) bool {
+		return originals[bl.GetContent()]
+	})
 	if len(blocks) > 0 {
 		slices.SortStableFunc(blocks, func(x, y *planv1.Block) int {
 			return cmp.Or(blockTime(y).Compare(blockTime(x)), strings.Compare(y.GetId(), x.GetId()))
@@ -757,6 +779,24 @@ func CloserWord(c planv1.Closer) string {
 		return "plan file"
 	}
 	return "lead"
+}
+
+// needsTitle only asks the lead to name a prompt-only creation that has never been renamed. Explicit titles
+// and older title-only wishes keep their existing behavior, including on restart or a change of provider.
+func needsTitle(exp *planv1.WishExport) bool {
+	needed := false
+	for _, c := range exp.GetCommands() {
+		if c.GetMethod() == planv1connect.WishServiceRenameProcedure {
+			return false
+		}
+		if c.GetMethod() == planv1connect.WishServiceMakeProcedure {
+			var m planv1.WishServiceMakeRequest
+			if err := c.GetRequest().UnmarshalTo(&m); err == nil {
+				needed = m.GetTitle() == "" && m.GetPrompt() != ""
+			}
+		}
+	}
+	return needed
 }
 
 // waitText says why a task that is not finished nor running waits.

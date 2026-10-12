@@ -144,6 +144,10 @@ func TestMCPListTools(t *testing.T) {
 			t.Errorf("%s: annotations %v, want %v", name, got, want)
 		}
 	}
+	makeTool := list.Tools[slices.Index(names, "wish_make")]
+	if len(makeTool.InputSchema.Required) != 0 {
+		t.Errorf("wish_make permits prompt-only requests, required %v", makeTool.InputSchema.Required)
+	}
 	tool := list.Tools[slices.Index(names, "question_answer")]
 	if tool.Description != "Answer a question, which turns it into a decision." {
 		t.Errorf("description %q", tool.Description)

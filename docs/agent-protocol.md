@@ -17,6 +17,13 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
 - **A wish describes itself.** Its description is a few lines: what it is for, its scope, where it goes.
   `djinn wish describe <wish> --text "…"` sets it; the developer edits it in the wish's head, under its title (a
   click, saved when the field is left). Until someone writes one, the title stands for it.
+- **A wish made from its request keeps it whole.** `djinn wish make "<title>"` still makes a wish from a title.
+  `djinn wish make --prompt "<Markdown>"` makes it from the developer's whole request, under a provisional title
+  ("New wish", in the developer's language) unless a title comes with it. The request is a `creation` block, written
+  in the transaction that makes the wish and journals the command, whose identifier the wish takes: its export carries
+  exactly that creation. The brief shows it once, whole, under "Original request", outside the latest blocks and their
+  limits, scrubbed like the rest. Djinn queues a `request` event for the lead: it names a provisional wish with
+  `djinn wish rename <wish> "<title>"`, in the developer's language, then plans it. Once renamed, the brief stops asking.
 - **The lead asks through Djinn, and delegates.** Everything for the developer is a question, the lead's own
   included: `djinn question ask`, with options and a recommendation, or with none when the lead really does not know
   what to think, the analysis behind it in its `--context`. One written in the lead's terminal reaches neither the
@@ -91,7 +98,7 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   - moves only when a question was actually asked on that merge (`: push tag v1.0.0`, `: start a release`);
   - an actionable failure (a work worker failed or was cut short; an integration failed; push checks stay red; a main merge failed);
   - an answer or question for the lead to act on (developer answers, an "Enlighten me" when enlighten workers are
-    disabled, a filed request or inbox item, an azima opened to plan its tasks);
+    disabled, a filed request or inbox item, a wish made from a request, an azima opened to plan its tasks);
   - a task ending without failure (the lead's cue to check its final note, revised questions, or spawned tasks);
   - a watcher waking the lead;
   - Djinn restarted: `Djinn: restarted on version v1.4.0: 2 workers interrupted (W12, W14), resumed by Djinn: W12; not
