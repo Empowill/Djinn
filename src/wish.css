@@ -941,6 +941,38 @@
   font-size: 14px;
   line-height: 1.7;
 }
+/* The smoke follows the selected theme, so the request surface keeps a translucent plane over the solver without
+   hiding its texture behind an opaque card. */
+html[data-theme="light"] .wish-creation-content::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 1;
+  width: min(40%, 640px);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--bg) 91%, transparent),
+    color-mix(in srgb, var(--bg) 62%, transparent)
+  );
+  content: "";
+  pointer-events: none;
+}
+html[data-theme="light"] .wish-creation-intro h1,
+html[data-theme="light"] .wish-composer-input {
+  color: var(--text);
+}
+html[data-theme="light"] .wish-composer .wish-composer-input {
+  background: transparent;
+}
+html[data-theme="light"] .wish-creation-request {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--bg) 68%, transparent),
+    transparent 100%
+  );
+}
+html[data-theme="light"] .wish-composer-caret {
+  background: var(--text);
+}
 .wish-creation-form[hidden] {
   display: none;
 }
@@ -1027,7 +1059,7 @@
   width: 1px;
   height: 1.65em;
   opacity: 0;
-  background: #fff;
+  background: var(--n-ff);
   animation: wish-composer-caret 1s steps(1, end) infinite;
 }
 .wish-composer:focus-within .wish-composer-caret {
@@ -1051,7 +1083,7 @@
   overflow-y: auto;
   overflow-wrap: anywhere;
   background: transparent;
-  color: #eee;
+  color: var(--n-eb);
   font-size: 16px;
   line-height: 1.65;
   letter-spacing: normal;
@@ -1186,7 +1218,7 @@
   border: 1px solid var(--line-strong);
   border-radius: 10px;
   background: var(--surface-raised);
-  box-shadow: 0 12px 32px #00000070;
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--shadow) 43.9%, transparent);
 }
 .wish-dropdown-options {
   display: grid;
