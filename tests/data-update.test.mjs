@@ -114,6 +114,7 @@ test("a build committed is proposed, and installs only on update(sha)", async ()
     ],
     base: "0123",
     running: true,
+    continues: "",
     changesCount: 1,
     lacks: ["Work of W4"],
     lacksCount: 1,

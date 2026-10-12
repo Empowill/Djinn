@@ -572,14 +572,19 @@ func TestBuildsByBranch(t *testing.T) {
 	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/clement-port@e60f8fc", "feat/wails-go@ccc"}) {
 		t.Errorf("builds = %v, want the running branch first, one per branch and project", got)
 	}
+	// W527: a branch that carries the running line on comes after it, before the parallel ones.
+	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/robustness", Sha: "bbb", Continues: "feat/wails-go"})
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/robustness@bbb", "feat/clement-port@e60f8fc", "feat/wails-go@ccc"}) {
+		t.Errorf("builds = %v, want the line carried on second", got)
+	}
 	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/clement-port", Sha: "e70"})
-	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/clement-port@e70", "feat/wails-go@ccc"}) {
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/robustness@bbb", "feat/clement-port@e70", "feat/wails-go@ccc"}) {
 		t.Errorf("builds = %v, want the newer push of feat/clement-port in place of its last", got)
 	}
 	if _, err := s.Update(t.Context(), connect.NewRequest(&uiv1.UiServiceUpdateRequest{Build: "e70"})); err != nil {
 		t.Fatal(err)
 	}
-	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/wails-go@ccc"}) {
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/robustness@bbb", "feat/wails-go@ccc"}) {
 		t.Errorf("builds = %v, want the others kept once one is installed", got)
 	}
 	if _, err := s.Update(t.Context(), connect.NewRequest(&uiv1.UiServiceUpdateRequest{Build: "e60f8fc"})); code(err) != connect.CodeFailedPrecondition {

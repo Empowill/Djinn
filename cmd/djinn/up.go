@@ -780,6 +780,7 @@ func buildOf(b harness.Built) *uiv1.Build {
 		WishId: b.WishID, WishTitle: b.WishTitle, ProjectId: b.ProjectID, Project: b.Project, Branch: b.Branch, Sha: b.Sha,
 		Tasks: b.Tasks, Changes: b.Changes, Summaries: summaries, Install: b.Install,
 		Base: b.Base, Running: b.Running, ChangesCount: int32(b.ChangesCount), Lacks: b.Lacks, LacksCount: int32(b.LacksCount),
+		Continues: b.Continues,
 	}
 }
 

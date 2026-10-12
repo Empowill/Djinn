@@ -60,6 +60,9 @@ export interface BuildProposal {
   base: string;
   // The running Djinn was built from its branch.
   running: boolean;
+  // The branch of the running Djinn whose line it carries on from another branch: it holds the running commit
+  // (W527). Empty for a build of that branch and for a parallel one.
+  continues: string;
   // How many commits it adds to the running Djinn: changes holds the latest.
   changesCount: number;
   // The commits the running Djinn holds and it does not, the latest first, and how many.
@@ -83,6 +86,7 @@ export function buildProposal(b: Build): BuildProposal {
     })),
     base: b.base,
     running: b.running,
+    continues: b.continues,
     changesCount: b.changesCount,
     lacks: [...b.lacks],
     lacksCount: b.lacksCount,

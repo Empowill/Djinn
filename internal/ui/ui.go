@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -488,7 +489,7 @@ func (s *Service) SetReadyBuild(version string, build *uiv1.Build) {
 
 // SetBuild proposes to install build, the last push of an integration branch, in place of the one proposed before
 // for the same branch of the same project: each branch keeps its own, the branch the running Djinn was built from
-// first.
+// first, then those that carry its line on (W527), then the parallel ones.
 func (s *Service) SetBuild(build *uiv1.Build) {
 	if build == nil {
 		return
@@ -500,16 +501,19 @@ func (s *Service) SetBuild(build *uiv1.Build) {
 	} else {
 		s.builds = append(s.builds, build)
 	}
-	slices.SortStableFunc(s.builds, func(a, b *uiv1.Build) int {
-		switch {
-		case a.GetRunning() == b.GetRunning():
-			return 0
-		case a.GetRunning():
-			return -1
-		}
-		return 1
-	})
+	slices.SortStableFunc(s.builds, func(a, b *uiv1.Build) int { return cmp.Compare(lineRank(a), lineRank(b)) })
 	s.notifyUpdate()
+}
+
+// lineRank orders a build against the running Djinn: of its branch, then carrying its line on, then parallel.
+func lineRank(b *uiv1.Build) int {
+	switch {
+	case b.GetRunning():
+		return 0
+	case b.GetContinues() != "":
+		return 1
+	}
+	return 2
 }
 
 // sameBranch tells whether a and b are builds of the same integration branch of the same project.

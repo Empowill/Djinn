@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"regexp"
 	"slices"
@@ -63,8 +64,8 @@ var mergeSubject = regexp.MustCompile(`^Merge branch '([^']+)' into (\S+)$`)
 const compareTasks = 100
 
 // compare fills b, a build of project, with what it holds against the running Djinn when the project's repository
-// holds the commit that one was built from: Base, Running, the tasks merged since (Tasks, Summaries), the commits it
-// adds (Changes, ChangesCount) and those it lacks (Lacks, LacksCount). It leaves b as it is otherwise.
+// holds the commit that one was built from: Base, Running, Continues, the tasks merged since (Tasks, Summaries), the
+// commits it adds (Changes, ChangesCount) and those it lacks (Lacks, LacksCount). It leaves b as it is otherwise.
 func (h *Harness) compare(ctx context.Context, project *planv1.Project, b *Built) {
 	repo := project.GetDirectory()
 	if b.Sha == "" || repo == "" {
@@ -75,7 +76,14 @@ func (h *Harness) compare(ctx context.Context, project *planv1.Project, b *Built
 		return
 	}
 	b.Base = base
-	b.Running = b.Branch != "" && h.runningBranch(ctx, project, base) == b.Branch
+	running := h.runningBranch(ctx, project, base)
+	b.Running = b.Branch != "" && running == b.Branch
+	b.Continues = ""
+	// Another branch whose build holds the running commit carries its line on: a wish's integration branch moved to
+	// one cut at the running branch's tip (W527) is an update, not a parallel branch.
+	if !b.Running && b.Branch != "" && b.Sha != base && isAncestor(ctx, repo, base, b.Sha) {
+		b.Continues = cmp.Or(running, base[:min(8, len(base))])
+	}
 	b.Changes, b.ChangesCount = commitTitles(ctx, repo, base+".."+b.Sha)
 	b.Lacks, b.LacksCount = commitTitles(ctx, repo, b.Sha+".."+base)
 	b.Tasks, b.Summaries = nil, nil
