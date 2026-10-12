@@ -33,6 +33,7 @@ import (
 //	exit:2         it exits with this code
 //	keep:<name>    it counts its runs in its state folder, DJINN_HOME/watchers/$DJINN_TASK_ID/<name>, silently
 //	die-before:3   while the last keep counted fewer runs, it says so on its error output and exits with code 1
+//	from:2         while the last keep counted fewer runs, it waits until it is stopped
 //	wait           it waits until it is stopped
 //
 // wait sleeps, it does not block on an empty select: in a test binary without cgo, as on macOS and Windows, the
@@ -56,6 +57,10 @@ func fakeWatch(steps []string) int {
 			if n, _ := strconv.Atoi(arg); kept < n {
 				fmt.Fprintf(os.Stderr, "died at run %d\n", kept)
 				return 1
+			}
+		case "from":
+			if n, _ := strconv.Atoi(arg); kept < n {
+				time.Sleep(time.Hour)
 			}
 		case "say":
 			fmt.Println(arg)
@@ -426,6 +431,45 @@ func TestWatcherResumes(t *testing.T) {
 	}
 	if want := "Djinn: restarted on version unknown: 1 watcher resumed: W1."; len(restarts) < 2 || restarts[len(restarts)-1] != want {
 		t.Errorf("restart events %q, want the last %q", restarts, want)
+	}
+	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestWatcherResumedSaysItOnce: PR #2, 12/10/2026. A watcher Djinn starts again tells its lead nothing when its first
+// paragraph says again what its task said last: the babysit-pr watcher says its checks again on its first look, as
+// what it printed while a Djinn hung reached no lead. What follows wakes the lead as before.
+func TestWatcherResumedSaysItOnce(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	e := up(t, home, WithTick(20*time.Millisecond))
+	lead := &told{}
+	e.h.TellLeads(lead.tell)
+	wishID, _ := e.wish(t, gitRepo(t))
+	// Each run waits a little before it speaks: the test gives the lead to the Djinn started again before that.
+	cmd := watchCommand("keep:runs", "sleep:100ms", "say:CI red", "sleep:100ms", "from:2", "say:CI green", "wait")
+	task, err := e.spawnWatch(t, wishID, cmd, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "CI red" })
+	e.down()
+	e = up(t, home, WithTick(20*time.Millisecond))
+	again := &told{}
+	e.h.TellLeads(again.tell)
+	e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "CI green" })
+	// The lead is told a paragraph after its task records it, and the paragraphs of a watcher in order.
+	deadline := time.Now().Add(5 * time.Second)
+	for len(again.all()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := lead.all(); len(got) != 1 || !strings.Contains(got[0], "says: CI red.") {
+		t.Errorf("before the restart, the lead was told %q", got)
+	}
+	if got := again.all(); len(got) != 1 || !strings.Contains(got[0], "says: CI green.") {
+		t.Errorf("after the restart, the lead was told %q", got)
 	}
 	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
 		t.Fatal(err)

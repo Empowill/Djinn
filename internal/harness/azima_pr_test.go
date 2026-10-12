@@ -635,10 +635,10 @@ func TestBabysitPRWatchesEveryAzimaPR(t *testing.T) {
 		t.Fatalf("watch.sh failed: %s (%v)", out, err)
 	}
 	outStr := string(out)
-	if !strings.Contains(outStr, "PR #101 · checks failed: lint") {
+	if !strings.Contains(outStr, "PR #101 · checks failed at a1: lint") {
 		t.Errorf("output missing PR 101 failure: %s", outStr)
 	}
-	if !strings.Contains(outStr, "PR #102 · all checks pass (2)") {
+	if !strings.Contains(outStr, "PR #102 · all checks pass at b2 (2)") {
 		t.Errorf("output missing PR 102 pass: %s", outStr)
 	}
 

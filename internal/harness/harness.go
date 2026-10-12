@@ -1237,6 +1237,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	if r.watcher {
 		// Its state folder, DJINN_HOME/watchers/<task>, outlives each run of its command (watcherLife).
 		spec.Env = append(spec.Env, "DJINN_HOME="+h.home)
+		spec.LastLine = t.GetLastLine()
 	}
 	spec.Scope = h.scopeFor(t)
 	spec.LowPriority = h.lowPriority()

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 )
 
 // fakeGh is a gh for the tests: it records each call's first words in $GH_DATA/calls, and answers for the look it is
@@ -57,7 +59,9 @@ exec cat "$answers/$name-$n.json"
 // TestBabysitPRSpeaksOnlyForTheLead: Djinn's babysit-pr watcher prints a paragraph only for what needs the lead,
 // each once, even across restarts: a check that newly fails (again after a new push), all checks passing after a
 // push, a new comment or review, changes requested, a conflict, a failed look, the merge. Pending checks and partial
-// passes print nothing. A fake gh on the PATH serves the pull request, one look at a time, without a pause.
+// passes print nothing. A restart says the checks again on its first look, which Djinn tells no lead when its task
+// said it last (TestBabysitPRNewPushFailingTheSameCheck). A fake gh on the PATH serves the pull request, one look at
+// a time, without a pause.
 func TestBabysitPRSpeaksOnlyForTheLead(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
@@ -156,18 +160,20 @@ func TestBabysitPRSpeaksOnlyForTheLead(t *testing.T) {
 		looks int
 		want  []string
 	}{
-		{4, []string{"PR #12 · checks failed: lint"}},
-		{4, []string{"PR #12 · checks failed: lint"}}, // the restart says nothing of look 5; look 7 does
+		{4, []string{"PR #12 · checks failed at a1: lint"}},
+		// The restart says the checks again on look 5; look 7 says the new push's failure.
+		{4, []string{"PR #12 · checks failed at a1: lint", "PR #12 · checks failed at b2: lint"}},
 		{5, []string{
-			"PR #12 · all checks pass (3)",
+			"PR #12 · all checks pass at c3 (3)",
 			"PR #12 · new comment by a-reviewer\nlatest comment, by a-reviewer: Could this name say what it holds?",
 			"PR #12 · changes requested · new comment by carol\nlatest comment, by carol: Please split this function.",
 		}},
 		{3, []string{
-			"PR #12 · mergeable: CONFLICTING",
+			"PR #12 · all checks pass at c3 (3) · mergeable: CONFLICTING",
 			"PR #12: gh failed, trying again: error connecting to api.github.com",
 		}},
-		{0, []string{"MERGED: PR #12 is merged."}},
+		// Look 17 fails, said already; 18, the first that reads the pull request, says the checks again.
+		{0, []string{"PR #12 · all checks pass at c3 (3)", "MERGED: PR #12 is merged."}},
 	} {
 		if got := run(step.looks); !slices.Equal(got, step.want) {
 			t.Errorf("run %d, paragraphs:\n%s\nwant:\n%s", i+1, strings.Join(got, "\n--\n"), strings.Join(step.want, "\n--\n"))
@@ -188,5 +194,107 @@ func TestBabysitPRSpeaksOnlyForTheLead(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, "watchers", "w1", "babysit-pr-12")); err != nil {
 		t.Errorf("no state under DJINN_HOME: %v", err)
+	}
+}
+
+// TestBabysitPRNewPushFailingTheSameCheck: PR #2, 12/10/2026. The watcher said "checks failed: Lint and test (Linux)"
+// at 9d62c3ad; the next push, afe2ff14, failed the same check, and the lead was never told. Two causes. Djinn tells
+// the lead a paragraph only when it differs from the last one, and the second said the same words. And Djinn hung
+// before it recorded that paragraph, then was killed: the watcher kept it as said, and the one Djinn started again
+// said nothing. Run as Djinn runs it, each new failure now wakes the lead once, a restart once again only when the
+// task did not record it last, and a re-run's failure too.
+func TestBabysitPRNewPushFailingTheSameCheck(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("the watcher is a POSIX shell script, for Linux and macOS")
+	}
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("the fake gh filters with jq")
+	}
+	script, err := filepath.Abs(filepath.Join("..", "..", ".agents", "skills", "babysit-pr", "watch.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, bin, data, home := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(fakeGh), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	view := func(head string) string {
+		return fmt.Sprintf(`{"state":"OPEN","mergeable":"MERGEABLE","reviewDecision":"","headRefOid":%q,"comments":[],"reviews":[]}`, head)
+	}
+	check := func(bucket string, job int) string {
+		return fmt.Sprintf(`[{"name":"Lint and test (Linux)","bucket":%q,"link":"https://github.com/o/r/actions/runs/%d/job/%d"},`+
+			`{"name":"Tests (Windows)","bucket":"pass","link":""}]`, bucket, job, job)
+	}
+	const a, b, c = "9d62c3ad11", "afe2ff1422", "c0ffee3333"
+	for name, body := range map[string]string{
+		"view-1.json": view(a), "checks-1.json": check("fail", 1),
+		"view-2.json": view(b), "checks-2.json": check("pending", 2),
+		"checks-3.json": check("fail", 2), // the same check fails on the new push
+		"view-4.json":   view(c), "checks-4.json": check("pending", 3),
+		"checks-5.json": check("fail", 3),    // and again, as Djinn hangs
+		"checks-7.json": check("pending", 4), // a re-run
+		"checks-8.json": check("fail", 4),
+	} {
+		if err := os.WriteFile(filepath.Join(data, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env := []string{"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"), "GH_DATA=" + data,
+		"DJINN_HOME=" + home, "DJINN_TASK_ID=w488"}
+	command := func(looks int) string { return fmt.Sprintf("sh '%s' 2 0.1 %d", script, looks) }
+
+	// watcher runs the script for so many looks as Djinn's watcher of a task whose last line is last, and gives each
+	// paragraph with whether it woke the lead.
+	watcher := func(looks int, last string) []string {
+		t.Helper()
+		w, err := Watch{Quiet: 30 * time.Millisecond}.Start(t.Context(), Spec{Dir: dir, Prompt: command(looks), Env: env, LastLine: last})
+		if err != nil {
+			t.Fatal(err)
+		}
+		events, res := watchEvents(t, w)
+		if res.ExitCode != 0 || res.Err != nil {
+			t.Fatalf("watch.sh: %+v", res)
+		}
+		var got []string
+		for _, ev := range events {
+			if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TEXT {
+				got = append(got, fmt.Sprintf("%s wake=%v", ev.Text, ev.Watched.Wake))
+			}
+		}
+		return got
+	}
+	failed := func(head string, job int) string {
+		return fmt.Sprintf("PR #2 · checks failed at %.7s: Lint and test (Linux)\nLint and test (Linux): https://github.com/o/r/actions/runs/%d/job/%d", head, job, job)
+	}
+	firstLine := func(s string) string { first, _, _ := strings.Cut(s, "\n"); return first }
+
+	for i, step := range []struct {
+		looks int
+		last  string
+		want  []string
+	}{
+		// Looks 1 to 3: A fails, B is pushed, the same check fails on it.
+		{3, "", []string{failed(a, 1) + " wake=true", failed(b, 2) + " wake=true"}},
+		// Looks 4 and 5 printed to a Djinn that hung, then was killed: the next one says the checks again.
+		{0, "", nil},
+		// Looks 6 to 8: that one, then the re-run's failure.
+		{3, firstLine(failed(b, 2)), []string{failed(c, 3) + " wake=true", failed(c, 4) + " wake=true"}},
+		// Look 9, after another restart: what the task said last.
+		{1, firstLine(failed(c, 4)), []string{failed(c, 4) + " wake=false"}},
+	} {
+		var got []string
+		if step.looks == 0 {
+			cmd := exec.CommandContext(t.Context(), "sh", script, "2", "0", "2")
+			cmd.Dir, cmd.Env = dir, append(os.Environ(), env...)
+			if out, err := cmd.CombinedOutput(); err != nil || !strings.Contains(string(out), failed(c, 3)) {
+				t.Fatalf("the paragraph lost with Djinn: %v\n%s", err, out)
+			}
+		} else {
+			got = watcher(step.looks, step.last)
+		}
+		if !slices.Equal(got, step.want) {
+			t.Errorf("step %d, paragraphs:\n%s\nwant:\n%s", i+1, strings.Join(got, "\n--\n"), strings.Join(step.want, "\n--\n"))
+		}
 	}
 }

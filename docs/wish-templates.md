@@ -67,15 +67,18 @@ review, a review decision that turns to `CHANGES_REQUESTED`, the pull request no
 partial passes say nothing:
 
 ```
-PR #12 · checks failed: lint
-PR #12 · all checks pass (5)
+PR #12 · checks failed at 3f2a9c1: lint
+lint: https://github.com/o/r/actions/runs/123/job/456
+PR #12 · all checks pass at 3f2a9c1 (5)
 PR #12 · changes requested · new comment by a-reviewer
 latest comment, by a-reviewer: Could this name say what it holds?
 ```
 
 It prints `MERGED: PR #12 is merged.` and exits on the merge, `CLOSED: …` on a close without one. What it said is
 kept under `$DJINN_HOME/watchers/<task>/`, never in the repository: a watcher Djinn starts again does not say it
-again. It is a POSIX shell script, for Linux and macOS; on Windows only the `sh` of Git for Windows could run it, and
+again, but for the checks, which its first look says again; Djinn does not wake the lead when that is the task's last
+line. Each paragraph names its head commit and the failed jobs: Djinn tells the lead a paragraph only when it differs
+from the last one, and the same failure on a new push must not read as the old one. It is a POSIX shell script, for Linux and macOS; on Windows only the `sh` of Git for Windows could run it, and
 no test does. Copy the folder into your project to use it there, with the line in your `.agents/permissions.txtpb`.
 
 ## Djinn's own: babysit-mr, for GitLab

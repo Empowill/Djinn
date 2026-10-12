@@ -64,8 +64,8 @@ type Watched struct {
 	Command string
 	// Watching says the command still watches: it runs, or starts again.
 	Watching bool
-	// Wake says the wish's lead is told: not when the paragraph says again what the last one said, nor when the
-	// watcher was stopped.
+	// Wake says the wish's lead is told: not when the paragraph says again what the last one said, even before Djinn
+	// started the watcher again (Spec.LastLine), nor when the watcher was stopped.
 	Wake bool
 }
 
@@ -364,6 +364,10 @@ func (w *watchWorker) read(p *process, next func(Result) bool) Result {
 func (w *watchWorker) paragraph(lines, raw []string, watching bool) {
 	text := strings.Join(lines, "\n")
 	wake := text != w.last && w.ctx.Err() == nil
+	if w.last == "" && clipRunes(lines[0], watchLineMax) == w.spec.LastLine {
+		// The first paragraph since Djinn started it again says what its task said last: the lead knows it already.
+		wake = false
+	}
 	w.last = text
 	if wake {
 		w.told = watching
