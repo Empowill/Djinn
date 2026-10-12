@@ -134,6 +134,30 @@ func (w *Wishes) Enlightened(ctx context.Context, q *planv1.Question, note strin
 	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN, EnlightenLine(q, note, ""))
 }
 
+// Approved tells the lead that the developer approved the answer the lead or a worker gave q: the decision is the
+// developer's now. Marks calls it once the approval is stored, and only for such an answer (decision Q173).
+func (w *Wishes) Approved(ctx context.Context, q *planv1.Question) {
+	by := "you"
+	if id := q.GetAnswer().GetTaskId(); id != "" {
+		by = "a worker"
+		if t, err := store.Get[*planv1.Task](ctx, w.Store, id); err == nil && t.GetCode() != "" {
+			by = t.GetCode()
+		}
+	}
+	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_APPROVED, ApprovedLine(q, by))
+}
+
+// ApprovedLine is the line that tells a lead the developer approved the answer by gave q (you, or a worker's code):
+// the decision is theirs now.
+func ApprovedLine(q *planv1.Question, by string) string {
+	choice := choiceText(q)
+	if letter, option, ok := strings.Cut(choice, ": "); ok {
+		choice = fmt.Sprintf("%s — %q", letter, option)
+	}
+	return fmt.Sprintf("Djinn: %s approved by the developer, as %s answered it: %s. The decision is theirs now.",
+		q.GetCode(), by, choice)
+}
+
 // workerOf is the code of the question worker of role that works on q, started just before the lead is told; ""
 // when none does.
 func (w *Wishes) workerOf(ctx context.Context, q *planv1.Question, role planv1.TaskRole) string {

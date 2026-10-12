@@ -242,7 +242,8 @@ var leadWatchHow = map[planv1.Provider]string{
 // LeadWatchRule is the brief's rule on djinn lead watch, with how each agent runs it.
 func LeadWatchRule() string {
 	return "- **Wait on `djinn lead watch`, not on typed lines (Decision Q191).** What you must act on (a task that " +
-		"ended or failed, a merge, an answer or an \"Enlighten me\", a move left to you, Djinn restarted) waits in your queue. " +
+		"ended or failed, a merge, an answer or an \"Enlighten me\", the developer's approval of a decision you or a " +
+		"worker took, a move left to you, Djinn restarted) waits in your queue. " +
 		"`djinn lead watch` blocks until something waits, then prints a digest, a line per event (details: " +
 		"`djinn task watch <task>`, `djinn wish brief <wish>`), and a cursor. Keep one watch running: start it when you " +
 		"start; when it ends, whatever it printed, start the next one first, `djinn lead watch --after <cursor>` with " +

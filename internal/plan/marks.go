@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -30,6 +31,9 @@ type Marks struct {
 	Told Told
 	// Settle, when set, acts on the answer an approval gives, as Questions.Settle.
 	Settle Settle
+	// Approved, when set, is called with a question once the developer approved the answer the lead or a worker
+	// gave it: the only approval that tells the lead something (decision Q173).
+	Approved func(context.Context, *planv1.Question)
 }
 
 func (m *Marks) Put(
@@ -37,7 +41,7 @@ func (m *Marks) Put(
 ) (*connect.Response[planv1.MarkServicePutResponse], error) {
 	msg := req.Msg
 	var marked *planv1.Marked
-	var answered *planv1.Question
+	var answered, endorsed *planv1.Question
 	var then func(context.Context)
 	err := write(ctx, m.Store, req.Spec(), msg, func(tx *store.Tx) error {
 		question, block, err := target(ctx, tx, msg.GetTarget(), msg.GetWishId())
@@ -47,6 +51,9 @@ func (m *Marks) Put(
 		mark := &planv1.Mark{Kind: msg.GetKind(), Actor: actor, CreateTime: timestamppb.Now()}
 		if question != nil {
 			if msg.GetKind() == planv1.MarkKind_MARK_KIND_APPROVED && !msg.GetRemove() {
+				if agentAnswered(question) && !hasMark(question, planv1.MarkKind_MARK_KIND_APPROVED) {
+					endorsed = question
+				}
 				if question.GetWithdrawal() != nil {
 					return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s was withdrawn", question.GetCode()))
 				}
@@ -83,7 +90,21 @@ func (m *Marks) Put(
 	if answered != nil {
 		afterAnswer(ctx, m.Answered, m.Told, answered)
 	}
+	if endorsed != nil && m.Approved != nil {
+		m.Approved(ctx, proto.CloneOf(endorsed))
+	}
 	return connect.NewResponse(&planv1.MarkServicePutResponse{Marked: marked}), nil
+}
+
+// agentAnswered tells a question the lead or a worker answered: a decision of theirs, until the developer approves it.
+func agentAnswered(q *planv1.Question) bool {
+	a := q.GetAnswer()
+	return a != nil && (a.GetActor() == planv1.Closer_CLOSER_LEAD || a.GetTaskId() != "")
+}
+
+// hasMark tells whether q bears a mark of kind.
+func hasMark(q *planv1.Question, kind planv1.MarkKind) bool {
+	return slices.ContainsFunc(q.GetMarks(), func(m *planv1.Mark) bool { return m.GetKind() == kind })
 }
 
 // target finds what a mark goes on: a question by its code, or a question or a block by its identifier.

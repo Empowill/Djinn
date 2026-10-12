@@ -570,7 +570,7 @@ message Lead {
 }
 
 // LeadEvent is something the lead must act on, kept for it until its session acknowledges it: a task that ended or
-// failed, a real merge, the developer's answer or enlightenment, a move left to the lead, Djinn restarted. Djinn
+// failed, a real merge, the developer's answer, approval or enlightenment, a move left to the lead, Djinn restarted. Djinn
 // queues one wherever it used to type a line in the lead's terminal (decision Q173 already keeps the rest to the
 // journal), whatever wish it is about: the one lead serves them all. djinn lead watch hands them out in batches;
 // one not acknowledged comes back on the next watch.
@@ -615,6 +615,9 @@ enum LeadEventKind {
   LEAD_EVENT_KIND_WATCH = 8;
   // A request came in for a wish: filed from the inbox, a wish made from one, or an azima opened to plan.
   LEAD_EVENT_KIND_REQUEST = 9;
+  // The developer approved a decision the lead or a worker took: a question they answered. An approval that
+  // answers an open question is an answer; one of the developer's own decisions changes nothing for the lead.
+  LEAD_EVENT_KIND_APPROVED = 10;
 }
 
 // Allowance is a right the developer allows a wish's workers in one of its projects, an explicit decision that
