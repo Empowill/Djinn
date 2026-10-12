@@ -1,12 +1,13 @@
 // The light theme everywhere, against the real djinn up --browser (see global-setup.ts): the system's theme by
 // default, then dark and light chosen in the settings, on the dialogs, the lead's blocks (Markdown, code, Mermaid) and
 // the terminal. Screenshots of each, dark and light, go to test-results/e2e/theme-*.png.
-import { type Page, expect, test } from "@playwright/test";
+import { type Locator, type Page, expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { disableWishSmokeWebGL } from "./wish-smoke-fixture";
 
 const binary = path.resolve(
   __dirname,
@@ -43,6 +44,104 @@ const background = (page: Page, selector: string) =>
       const style = getComputedStyle(e);
       return `${style.backgroundColor} ${style.backgroundImage}`;
     });
+
+const MIN_EVOLVED_SMOKE_GLYPHS = 100;
+const EVOLVED_SMOKE_TIMEOUT_MS = 20_000;
+
+function visibleSmokeGlyphs(layers: string[]): number {
+  return layers.reduce(
+    (count, layer) => count + (layer.match(/\S/g)?.length ?? 0),
+    0,
+  );
+}
+
+/**
+ * Wait until the smoke surface has either applied a visible worker frame or
+ * truthfully switched to its readable fallback.  A screenshot taken after
+ * the creation controls appear can still catch the intentionally hidden
+ * backing canvas before the first frame; the data attributes establish the
+ * first visible frame, then this helper waits for evolved ASCII density.
+ */
+async function waitForSettledSmoke(
+  smoke: Locator,
+): Promise<"rendered" | "fallback"> {
+  const canvas = smoke.locator(".wish-smoke-canvas");
+  const readState = async () => {
+    const [ready, visible, error, workerError, fallbackVisible] =
+      await Promise.all([
+        canvas.getAttribute("data-ready"),
+        canvas.getAttribute("data-visible"),
+        canvas.getAttribute("data-error"),
+        canvas.getAttribute("data-worker-error"),
+        smoke.locator(".wish-smoke-fallback").isVisible(),
+      ]);
+    if (ready === "true" && visible === "true") return "rendered" as const;
+    if (error || workerError || fallbackVisible) return "fallback" as const;
+    return "pending" as const;
+  };
+  await expect
+    .poll(readState, {
+      timeout: 60_000,
+      intervals: [100, 250, 500, 1_000],
+    })
+    .toMatch(/^(rendered|fallback)$/);
+  const state = await readState();
+
+  if (state === "fallback") {
+    await expect(smoke.locator(".wish-smoke-fallback")).toBeVisible();
+    return state;
+  }
+
+  // The worker applies ASCII layers and the backing frame together.  The
+  // worker's first ready frame can contain only the edge of the warmup field;
+  // require a substantive evolved frame before saving a screenshot.  A real
+  // fallback remains an honest success path if the worker later fails.
+  const evolvedAt = Date.now();
+  let lastGlyphCount = 0;
+  let fallbackObserved = false;
+  await expect
+    .poll(
+      async () => {
+        const [ready, visible, error, workerError, fallbackVisible, layers] =
+          await Promise.all([
+            canvas.getAttribute("data-ready"),
+            canvas.getAttribute("data-visible"),
+            canvas.getAttribute("data-error"),
+            canvas.getAttribute("data-worker-error"),
+            smoke.locator(".wish-smoke-fallback").isVisible(),
+            smoke.locator(".wish-smoke-ascii pre").allTextContents(),
+          ]);
+        if (error || workerError || fallbackVisible) {
+          fallbackObserved = true;
+          return "fallback";
+        }
+        if (ready !== "true" || visible !== "true") return "pending";
+        lastGlyphCount = visibleSmokeGlyphs(layers);
+        return lastGlyphCount >= MIN_EVOLVED_SMOKE_GLYPHS
+          ? `rendered:${lastGlyphCount}`
+          : `pending:${lastGlyphCount}`;
+      },
+      {
+        timeout: EVOLVED_SMOKE_TIMEOUT_MS,
+        intervals: [100, 250, 500, 1_000],
+        message: `wait for at least ${MIN_EVOLVED_SMOKE_GLYPHS} evolved smoke glyphs`,
+      },
+    )
+    .toMatch(/^(fallback|rendered:\d+)$/);
+  if (
+    fallbackObserved ||
+    (await smoke.locator(".wish-smoke-fallback").isVisible())
+  ) {
+    await expect(smoke.locator(".wish-smoke-fallback")).toBeVisible();
+    return "fallback";
+  }
+  console.info(
+    `settled smoke: ${lastGlyphCount} visible glyphs after ${Date.now() - evolvedAt}ms`,
+  );
+  await expect(canvas).toHaveAttribute("data-ready", "true");
+  await expect(canvas).toHaveAttribute("data-visible", "true");
+  return state;
+}
 
 test("the dialogs, the lead's blocks and the terminal follow the theme, the system's by default", async ({
   page,
@@ -208,6 +307,7 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
       await page.getByRole("button", { name: "New wish" }).first().click();
       const creation = page.locator(".wish-creation");
       await expect(creation).toBeVisible();
+      await waitForSettledSmoke(creation.locator(".wish-smoke"));
       await page.screenshot({
         path: path.join(shots, `theme-new-wish-${theme}.png`),
       });
@@ -225,4 +325,132 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
     } catch {}
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("the light creation fallback keeps its status readable when WebGL is unavailable", async ({
+  page,
+}) => {
+  await disableWishSmokeWebGL(page);
+  await page.addInitScript(() => localStorage.setItem("djinn.theme", "light"));
+  await page.goto(process.env.DJINN_URL!);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.getByRole("button", { name: "New wish" }).first().click();
+
+  const creation = page.locator(".wish-creation");
+  const smoke = creation.locator(".wish-smoke");
+  await expect(creation.locator(".wish-creation-intro h1")).toHaveCSS(
+    "opacity",
+    "1",
+  );
+  await expect(creation.getByRole("textbox")).toBeVisible();
+  await expect(creation.locator(".wish-creation-controls")).toBeVisible();
+  await expect(
+    creation.locator(".wish-creation-footer .button.accent"),
+  ).toBeVisible();
+  await expect(smoke.locator(".wish-smoke-canvas")).toHaveAttribute(
+    "data-error",
+    /./,
+  );
+  const fallback = smoke.locator(".wish-smoke-fallback");
+  await expect(fallback).toBeVisible();
+  const contrast = await smoke.evaluate((element) => {
+    const channel = (value: string) => {
+      const match = value.match(/\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+      return match.length >= 3 ? match.slice(0, 3) : [0, 0, 0];
+    };
+    const luminance = (rgb: number[]) =>
+      rgb.reduce((sum, value, index) => {
+        const linear =
+          value / 255 <= 0.03928
+            ? value / 255 / 12.92
+            : ((value / 255 + 0.055) / 1.055) ** 2.4;
+        return sum + linear * [0.2126, 0.7152, 0.0722][index];
+      }, 0);
+    const style = getComputedStyle(element);
+    const text = getComputedStyle(
+      element.querySelector(".wish-smoke-fallback")!,
+    );
+    const foreground = luminance(channel(text.color));
+    const background = luminance(channel(style.backgroundColor));
+    return (
+      (Math.max(foreground, background) + 0.05) /
+      (Math.min(foreground, background) + 0.05)
+    );
+  });
+  expect(contrast).toBeGreaterThan(4.5);
+  await page.screenshot({
+    path: path.join(shots, "theme-smoke-fallback-light.png"),
+    fullPage: true,
+  });
+  await page.keyboard.press("Escape");
+});
+
+test("the light smoke canvas fallback keeps its ASCII palette readable when workers are unavailable", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("djinn.theme", "light");
+    Object.defineProperty(globalThis, "Worker", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  // This path renders the ASCII fallback on the page thread. Keep the palette
+  // fixture compact so it checks readability without becoming a performance test.
+  await page.setViewportSize({ width: 800, height: 600 });
+  await page.goto(process.env.DJINN_URL!);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.getByRole("button", { name: "New wish" }).first().click();
+
+  const creation = page.locator(".wish-creation");
+  await expect(creation.locator(".wish-creation-intro h1")).toHaveCSS(
+    "opacity",
+    "1",
+  );
+  await expect(creation.getByRole("textbox")).toBeVisible();
+  await expect(creation.locator(".wish-creation-controls")).toBeVisible();
+  await expect(
+    creation.locator(".wish-creation-footer .button.accent"),
+  ).toBeVisible();
+  const smoke = page.locator(".wish-creation .wish-smoke");
+  await expect(smoke.locator(".wish-smoke-worker-canvas")).toHaveCount(0);
+  const canvas = smoke.locator(".wish-smoke-canvas");
+  const error = await canvas.getAttribute("data-error");
+  if (error) {
+    await expect(smoke.locator(".wish-smoke-fallback")).toBeVisible();
+  } else {
+    await expect(canvas).toHaveAttribute("data-visible", "true");
+    const palette = await smoke.evaluate((element) => ({
+      foreground: getComputedStyle(
+        element.querySelector(".wish-smoke-ascii pre")!,
+      ).color,
+      background: getComputedStyle(element).backgroundColor,
+      layers: element.querySelectorAll(".wish-smoke-ascii pre").length,
+    }));
+    expect(palette.layers).toBe(8);
+    const channel = (value: string) =>
+      value
+        .match(/\d+(?:\.\d+)?/g)
+        ?.map(Number)
+        .slice(0, 3) ?? [0, 0, 0];
+    const luminance = (rgb: number[]) =>
+      rgb.reduce((sum, value, index) => {
+        const linear =
+          value / 255 <= 0.03928
+            ? value / 255 / 12.92
+            : ((value / 255 + 0.055) / 1.055) ** 2.4;
+        return sum + linear * [0.2126, 0.7152, 0.0722][index];
+      }, 0);
+    const foreground = luminance(channel(palette.foreground));
+    const background = luminance(channel(palette.background));
+    const contrast =
+      (Math.max(foreground, background) + 0.05) /
+      (Math.min(foreground, background) + 0.05);
+    expect(contrast).toBeGreaterThan(4.5);
+  }
+  await page.screenshot({
+    path: path.join(shots, "theme-smoke-fallback-canvas-light.png"),
+    fullPage: true,
+  });
+  await page.keyboard.press("Escape");
 });
