@@ -224,6 +224,16 @@ button.attention-item:hover {
 .attention-item > svg {
   color: var(--muted);
 }
+/* A move's line, its main link beside it. */
+.attention-with-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.attention-with-link .move-link {
+  flex: none;
+  padding: 4px 9px;
+}
 /* The lead's choice: its question, what it is about, then its options as buttons, under one another. */
 .attention-prompt {
   flex-direction: column;

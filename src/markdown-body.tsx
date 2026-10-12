@@ -5,14 +5,14 @@ import ReactMarkdown, {
   defaultUrlTransform,
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useDjinn } from "./data/djinn";
-import { isDjinnLink, openDjinnLink } from "./data/links";
-import { foldMarkdown } from "./data/text";
+import { isDjinnLink } from "./data/links";
+import { djinnAutolinks, foldMarkdown } from "./data/text";
 import { MermaidDiagram } from "./mermaid-diagram";
 import { SafeSvg } from "./safe-svg";
 import "./agent-chat.css";
 import { Command } from "./copy-command";
 import { t } from "./i18n";
+import { Link } from "./link";
 function MarkdownCode({ children }: { children?: ReactNode }) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -60,48 +60,6 @@ function MarkdownCode({ children }: { children?: ReactNode }) {
     </div>
   );
 }
-// A link: a djinn:// one opens what it names in place, a tilasm or a wish; in the window, the system's browser opens
-// an http(s) one; anything else stays text.
-function MarkdownLink({
-  href,
-  children,
-}: {
-  href?: string;
-  children?: ReactNode;
-}) {
-  const djinn = useDjinn();
-  if (href && isDjinnLink(href))
-    return (
-      <a
-        href={href}
-        className="djinn-link"
-        onClick={(e) => {
-          e.preventDefault();
-          if (djinn) void openDjinnLink(djinn, href);
-        }}
-      >
-        {children}
-      </a>
-    );
-  if (!href || !/^https?:\/\//i.test(href)) return <span>{children}</span>;
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={(e) => {
-        if (!djinn) return;
-        e.preventDefault();
-        void djinn.clients.ui
-          .openExternal({ url: href })
-          .catch(() => window.open(href, "_blank", "noopener"));
-      }}
-    >
-      {children}
-    </a>
-  );
-}
-
 // Stable across renders: a components object made in the render gives react-markdown a new component type each time,
 // so every code block and every Mermaid frame below it was unmounted and mounted again at each render of the card,
 // at each key typed in its comment box.
@@ -111,9 +69,7 @@ const urlTransform = (url: string) =>
   isDjinnLink(url) ? url : defaultUrlTransform(url);
 const components: Components = {
   pre: ({ children }) => <MarkdownCode>{children}</MarkdownCode>,
-  a: ({ href, children }) => (
-    <MarkdownLink href={href}>{children}</MarkdownLink>
-  ),
+  a: ({ href, children }) => <Link href={href}>{children}</Link>,
   img: ({ alt }) => <span>Image{alt ? ` : ${alt}` : ""}</span>,
 };
 // The same, each inline code a command to copy: a question's context names what to run. A code block's code holds a
@@ -128,7 +84,7 @@ const copyComponents: Components = {
     ),
 };
 
-// Markdown as the agents write it. Memoised: a card that re-renders (a key typed in its comment box) does not parse
+// Markdown as the agents write it, its links clickable, a bare djinn:// one included. Memoised: a card that re-renders (a key typed in its comment box) does not parse
 // its text again.
 export const MarkdownBody = memo(function MarkdownBody({
   text,
@@ -146,7 +102,7 @@ export const MarkdownBody = memo(function MarkdownBody({
         components={copy ? copyComponents : components}
         urlTransform={urlTransform}
       >
-        {text}
+        {djinnAutolinks(text)}
       </ReactMarkdown>
     </div>
   );

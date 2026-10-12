@@ -1,4 +1,5 @@
-// The first view of a long Markdown text, the commands of a line of text, and the report a question names. Run with
+// The first view of a long Markdown text, the commands and links of a line of text, a move's main link, and the report
+// a question names. Run with
 // `go tool task test-ui`.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -7,7 +8,13 @@ import { bundle } from "./bundle.mjs";
 
 const s = await bundle(
   "text",
-  `export { foldMarkdown, commandParts } from "@/src/data/text.ts";
+  `export {
+  foldMarkdown,
+  commandParts,
+  djinnAutolinks,
+  linksOf,
+} from "@/src/data/text.ts";
+export { linkName, mainLink } from "@/src/data/links.ts";
 export { isReport, reportOf, reportsOf } from "@/src/data/reports.ts";
 export * as dew from "@/e2e/report-question.ts";`,
 );
@@ -87,6 +94,99 @@ test("an option's commands: between backticks, or a djinn command up to a comma 
     { text: "Let djinn decide later" },
   ]);
   assert.deepEqual(s.commandParts("Olive"), [{ text: "Olive" }]);
+});
+
+const MR = "https://gitlab.com/empowill/app/-/merge_requests/123";
+const TILASM = "djinn://tilasm/01a130b1-398a-7072-be60-ce928cb7241e";
+
+test("a line's links: a web address or a djinn:// link, without the punctuation after it", () => {
+  assert.deepEqual(
+    s.commandParts(`Review MR !123 and take it out of draft: ${MR}.`),
+    [
+      { text: "Review MR !123 and take it out of draft: " },
+      { text: MR, href: true },
+      { text: "." },
+    ],
+  );
+  // A closing bracket it did not open is the sentence's; one it opened is its own.
+  assert.deepEqual(
+    s.commandParts(
+      `See the diagram (${TILASM}), then https://en.wikipedia.org/wiki/Lamp_(object)`,
+    ),
+    [
+      { text: "See the diagram (" },
+      { text: TILASM, href: true },
+      { text: "), then " },
+      { text: "https://en.wikipedia.org/wiki/Lamp_(object)", href: true },
+    ],
+  );
+  // A link inside a command stays in the command, to copy whole.
+  assert.deepEqual(s.commandParts(`Run \`gh pr ready ${MR}\``), [
+    { text: "Run " },
+    { text: `gh pr ready ${MR}`, code: true },
+  ]);
+  assert.deepEqual(s.commandParts("No link: https:// alone"), [
+    { text: "No link: https:// alone" },
+  ]);
+  assert.deepEqual(s.linksOf(`[!123](${MR}) and <${TILASM}>`), [MR, TILASM]);
+});
+
+test("a bare djinn:// link in Markdown becomes a link; one in code or already a link stays", () => {
+  assert.equal(
+    s.djinnAutolinks(`The diagram: ${TILASM}.`),
+    `The diagram: <${TILASM}>.`,
+  );
+  for (const kept of [
+    `[the diagram](${TILASM})`,
+    `<${TILASM}>`,
+    `\`djinn open ${TILASM}\``,
+    "```sh\ndjinn open " + TILASM + "\n```",
+    "No link here",
+  ])
+    assert.equal(s.djinnAutolinks(kept), kept);
+});
+
+test("a move's main link: the first of its title, context, recommendation and options, named by what it is", () => {
+  assert.equal(
+    s.mainLink({
+      text: "Review MR !123 and take it out of draft",
+      context: `The task opened [!123](${MR}) as a draft; CI: https://gitlab.com/empowill/app/-/pipelines/9`,
+      recommendation: "A: mark it ready",
+      options: [],
+    }),
+    MR,
+  );
+  assert.equal(
+    s.mainLink({
+      text: "Push the tag",
+      context: "",
+      recommendation: "",
+      options: ["Done: `git push origin v1`", `Later, see ${TILASM}`],
+    }),
+    TILASM,
+  );
+  assert.equal(s.mainLink({ text: "Install", options: [] }), undefined);
+  assert.deepEqual(s.linkName(MR), { kind: "mr", number: "123" });
+  assert.deepEqual(s.linkName("https://github.com/o/r/pull/12/files"), {
+    kind: "pr",
+    number: "12",
+  });
+  assert.deepEqual(s.linkName("https://github.com/o/r/issues/5"), {
+    kind: "issue",
+    number: "5",
+  });
+  assert.deepEqual(s.linkName("https://gitlab.com/o/r/-/pipelines/9"), {
+    kind: "pipeline",
+    number: "9",
+  });
+  assert.deepEqual(s.linkName("https://github.com/o/r/actions/runs/77"), {
+    kind: "run",
+  });
+  assert.deepEqual(s.linkName(TILASM), { kind: "tilasm" });
+  assert.deepEqual(s.linkName("https://jira.example.com/browse/EMP-4"), {
+    kind: "host",
+    host: "jira.example.com",
+  });
 });
 
 test("a question links the report its context names, by id or by title", () => {

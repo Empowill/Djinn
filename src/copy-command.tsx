@@ -6,6 +6,7 @@ import { type MouseEvent, memo, useEffect, useState } from "react";
 
 import { commandParts } from "./data/text";
 import { t } from "./i18n";
+import { Link } from "./link";
 
 // How long the button says it copied.
 const COPIED_MS = 1500;
@@ -65,7 +66,8 @@ export function Command({ text }: { text: string }) {
   );
 }
 
-// CommandText is a line of plain text, an option of a question, its commands copyable (src/data/text.ts).
+// CommandText is a line of plain text, a question's title or option, its commands copyable and its links clickable
+// (src/data/text.ts).
 export const CommandText = memo(function CommandText({
   text,
 }: {
@@ -74,7 +76,15 @@ export const CommandText = memo(function CommandText({
   return (
     <>
       {commandParts(text).map((part, i) =>
-        part.code ? <Command key={i} text={part.text} /> : part.text,
+        part.code ? (
+          <Command key={i} text={part.text} />
+        ) : part.href ? (
+          <Link key={i} href={part.text} className="text-link">
+            {part.text}
+          </Link>
+        ) : (
+          part.text
+        ),
       )}
     </>
   );

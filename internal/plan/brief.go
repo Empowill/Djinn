@@ -105,6 +105,14 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"(`djinn question withdraw`) the moment a task or Djinn does what it asked. A line the developer types in your " +
 		"terminal is a request like any other: answer it in the window, and a decision taken there gets a block of kind " +
 		"decision.\n" +
+		"- **You keep the developer's moves.** You organise the work, so the list of what only the developer can do " +
+		"is yours to keep complete and true. Each such move is one `--move` question whose title is a call to action, " +
+		"its verb first (\"Review MR !123 and take it out of draft\"), with clickable links to where they act: the " +
+		"PR or MR, the CI run, the ticket, the file and line, each as its full URL (or `djinn://` link), and every " +
+		"command to run in a code block, to copy as it is. The window shows a move's first link as a button. When a " +
+		"task opens a pull or merge request, ask \"Review it and take it out of draft\" with its link at once: " +
+		"opening it as a draft is the agent's job, marking it ready is the developer's. No move is left implied in a " +
+		"note, a block or your terminal; withdraw a move the moment it is done or superseded.\n" +
 		"- **Delegate.** You lead; workers do the work. Code, investigations, fixes and checks go to tasks, even small " +
 		"ones, several side by side; keep for yourself what only the lead does: talk with the developer, plan, check " +
 		"what comes back.\n" +

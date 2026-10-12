@@ -3,6 +3,7 @@
 // djinn open, which does the same through djinn up.
 import type { Clients } from "./client";
 import type { DjinnFocus } from "./focus";
+import { linksOf } from "./text";
 
 export interface DjinnLink {
   kind: "tilasm" | "wish";
@@ -53,4 +54,56 @@ export async function openDjinnLink(
     }
   }
   djinn.focus.show({ unknownLink: href });
+}
+
+// What a link names, for the button that opens it: a pull or merge request, an issue, a CI run, a Djinn link, or
+// else its host.
+export type LinkName =
+  | { kind: "pr" | "mr" | "issue" | "pipeline"; number: string }
+  | { kind: "run" | "tilasm" | "wish" }
+  | { kind: "host"; host: string };
+
+// linkName reads what a link names from its address, as GitHub and GitLab write them.
+export function linkName(href: string): LinkName {
+  const djinn = parseDjinnLink(href);
+  if (djinn) return { kind: djinn.kind };
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return { kind: "host", host: href };
+  }
+  const path = url.pathname;
+  const n = (re: RegExp) => re.exec(path)?.[1];
+  const mr = n(/\/-\/merge_requests\/(\d+)/);
+  if (mr) return { kind: "mr", number: mr };
+  const pr = n(/\/pull\/(\d+)/);
+  if (pr) return { kind: "pr", number: pr };
+  const issue = n(/\/(?:-\/)?issues\/(\d+)/);
+  if (issue) return { kind: "issue", number: issue };
+  const pipeline = n(/\/-\/pipelines\/(\d+)/);
+  if (pipeline) return { kind: "pipeline", number: pipeline };
+  if (/\/actions\/runs\/\d+|\/-\/jobs\/\d+/.test(path)) return { kind: "run" };
+  return { kind: "host", host: url.host };
+}
+
+// mainLink is where a move question sends the developer to act: the first link of its title, its context, its
+// recommendation, then its options.
+export function mainLink(q: {
+  text: string;
+  context?: string;
+  recommendation?: string;
+  options?: readonly string[];
+}): string | undefined {
+  for (const text of [
+    q.text,
+    q.context,
+    q.recommendation,
+    ...(q.options ?? []),
+  ])
+    if (text) {
+      const [link] = linksOf(text);
+      if (link) return link;
+    }
+  return undefined;
 }
