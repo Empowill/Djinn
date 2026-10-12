@@ -27,6 +27,9 @@ type Leads interface {
 	// Say types line into the running terminal called name, then Enter, once the person is not typing there. It
 	// returns at once; the lines go out in order.
 	Say(name, line string) error
+	// SayText is Say for a text the person wrote: its line breaks stay line breaks for a program that takes a
+	// paste. It tells whether the text waits for the person, typing there or before a choice on screen.
+	SayText(name, text string) (waiting bool, err error)
 	// Running tells whether the terminal called name runs.
 	Running(name string) bool
 	// Command is the command line of the running terminal called name; nil when none runs.
@@ -207,6 +210,48 @@ func (s *LeadService) Resume(
 	}
 	s.Wishes.Leads.Show(req.Msg.GetWishId(), res.GetTerminal())
 	return connect.NewResponse(res), nil
+}
+
+// Tell types what the developer writes in the lead's terminal, as their own words: the lead must run there, never a
+// shell, where the text would run as a command. About a wish, the text starts by naming it.
+func (s *LeadService) Tell(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceTellRequest],
+) (*connect.Response[planv1.LeadServiceTellResponse], error) {
+	if s.Wishes.Leads == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this server runs no terminal"))
+	}
+	text := strings.TrimSpace(req.Msg.GetText())
+	if text == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text: nothing to say"))
+	}
+	if id := req.Msg.GetWishId(); id != "" {
+		wish, err := store.Get[*planv1.Wish](ctx, s.Wishes.Store, id)
+		if err != nil {
+			return nil, Status(err)
+		}
+		text = fmt.Sprintf("About wish %s (%s): %s", wish.GetTitle(), wish.GetId(), text)
+	}
+	lead, err := store.Get[*planv1.Lead](ctx, s.Wishes.Store, "lead")
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, Status(err)
+	}
+	command := s.Wishes.Leads.Command(LeadTerminal)
+	switch {
+	case !hasLead(lead):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
+			"Djinn has no lead: djinn lead resume starts one"))
+	case command == nil:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
+			"the lead does not run: djinn lead resume starts it"))
+	case !runsLead(command, lead):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"the lead's terminal runs %s, not the lead: exit it there, then djinn lead resume", strings.Join(command, " ")))
+	}
+	waiting, err := s.Wishes.Leads.SayText(LeadTerminal, text)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the lead's terminal: %w", err))
+	}
+	return connect.NewResponse(&planv1.LeadServiceTellResponse{Waiting: waiting}), nil
 }
 
 func (s *LeadService) Get(

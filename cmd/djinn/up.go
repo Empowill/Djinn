@@ -478,6 +478,8 @@ func (l leads) Open(name, line, dir, exclusive string) ([]string, string, bool, 
 
 func (l leads) Say(name, line string) error { return l.terminals.Say(name, line) }
 
+func (l leads) SayText(name, text string) (bool, error) { return l.terminals.SayText(name, text) }
+
 func (l leads) Running(name string) bool { return l.terminals.IsRunning(name) }
 
 func (l leads) Command(name string) []string {
