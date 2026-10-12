@@ -136,16 +136,23 @@ waited. A task's gate wait now reads only its gate events, and only those past t
 runs has a deadline (`internal/gitx`): 5 minutes for one that reaches a remote, 10 for one that stays in the
 repository, and its output is let go 5 s after it is killed, even when an ssh it started still holds it.
 
+The same commands held djinn up's shutdown: it waits for the integration's pass to end, and a git killed at the
+stop whose ssh still held its output, or a project's check (`go tool task test`) whose test runner did, kept that
+pass running, for good or for as long as the tests ran, until the developer forced Djinn to quit. A check now dies
+with everything it started (its process group), and a killed command's output is let go after 5 s.
+
 To see where a frozen djinn up waits, without stopping it:
 
 - **On Linux and macOS**, send it `SIGUSR2`: it writes the stacks of all its goroutines to `goroutines.txt` in its data
-  folder (`~/.config/djinn` on Linux) and logs where in `djinn.log`.
+  folder and goes on. This is the one command to run before restarting a djinn that does not answer; the process that
+  holds the data folder's socket is djinn up, whatever its command line (`djinn open` from the desktop menu):
 
   ```bash
-  kill -USR2 "$(pgrep -f 'djinn up' | head -1)"
+  kill -USR2 "$(lsof -t ~/.config/djinn/djinn.sock)"   # macOS: ~/Library/Application\ Support/djinn/djinn.sock
   ```
 
-  `SIGUSR1` is no good: WebKit takes it over in the window's process. Look for goroutines waiting in
-  `database/sql.(*DB).conn` (waiting for the connection), and the one holding it.
+  A djinn built before W504 ignores the signal. `SIGUSR1` is no good: WebKit takes it over in the window's process.
+  In the dump, look for goroutines waiting in `database/sql.(*DB).conn` (waiting for the connection), and the one
+  holding it. The dump is kept minimal on purpose: W511 adds structured logs and dumps on a slow shutdown.
 - **Anywhere**, start it with `--pprof` (or `DJINN_PPROF=on`): it serves Go's profiles at `/debug/pprof/` on its own
   address, `goroutine?debug=2` for the stacks, `profile?seconds=30` for where its CPU goes.

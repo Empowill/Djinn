@@ -1417,7 +1417,14 @@ type gateWaitKey struct{}
 func runCommand(ctx context.Context, dir string, args []string) (string, int, error) {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
-	cmd.WaitDelay = gitx.WaitDelay // Killed at ctx's end, it may leave a child holding its output.
+	// At ctx's end (Djinn stops), what the command started dies with it: a check's test runner, left alone, would
+	// hold the output open, and Djinn's shutdown with it, for as long as the tests run (W504).
+	ownGroup(cmd, false)
+	cmd.Cancel = func() error {
+		kill(&process{cmd: cmd})
+		return nil
+	}
+	cmd.WaitDelay = gitx.WaitDelay
 	out := &tailBuffer{max: 16 << 10}
 	cmd.Stdout, cmd.Stderr = out, out
 	err := cmd.Run()
