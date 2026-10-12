@@ -456,8 +456,10 @@ task fails. Such a task is history: it shows among the finished parts of its azi
 A worker stopped by its provider's usage limit shows "Waiting for the limit", then resumes once the limit resets.
 
 A watchdog guards against runaway workers. A worker that prints nothing for 15 minutes, with no process busy and no
-gate held or awaited, is ended (continued when its provider can resume); a watcher (`--provider watch`) is never ended
-for its silence, which is its normal state. A task is stopped, "budget exceeded", past
+gate held or awaited, is ended (continued when its provider can resume). A watcher (`--provider watch`) is
+supervised apart, for as long as its wish needs it: never ended for its silence, which is its normal state, nor for
+a budget; a command of it that dies starts again in the same task, and only five deaths in a row fail it, its lead
+told why. A task is stopped, "budget exceeded", past
 2 hours of work in total across its runs, or a worker past 500 model turns in one run; `djinn task continue` gives a
 stopped worker 500 turns again, not more time. A Claude worker's count grows as it works; Antigravity
 reports its own at the end of each answer, Codex none.
