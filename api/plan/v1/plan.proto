@@ -35,19 +35,25 @@ message Project {
   repeated Summon summons = 7;
   // The last run of each of its checks, and of its setup, as Djinn integrated and pushed its wishes' work.
   repeated CheckRun check_runs = 8;
-  // Out of sync with its remote on the integration branch.
-  ProjectSync sync = 9;
   // When Djinn pushes its integration branch: standard cadence or on demand.
   ProjectPush push = 10;
   // Push strategy for the project's wishes: one integration branch per wish (wish) or per azima (azima).
   PushStrategy push_strategy = 11;
+  // How each branch Djinn pushes in the project stands against its remote, computed on every read: the integration
+  // branch of each active or paused wish there, then the own branch of each of their azimas, once the branch exists.
+  repeated ProjectSync syncs = 12;
+
+  // The one sync of the integration branch of a single wish, which syncs replaced.
+  reserved 9;
+  reserved "sync";
 }
 
-// ProjectSync says how the project's integration branch stands against its remote target for a wish.
+// ProjectSync says how a branch Djinn pushes stands against its remote target: a wish's integration branch, or an
+// azima's own branch.
 message ProjectSync {
-  // The wish whose integration branch this is.
+  // The wish whose branch this is.
   string wish_id = 1;
-  // The local integration branch.
+  // The local branch.
   string branch = 2;
   // The remote name: origin.
   string remote = 3;
@@ -57,6 +63,12 @@ message ProjectSync {
   int32 ahead = 5;
   // How many commits the local branch is behind the remote target.
   int32 behind = 6;
+  // The azima whose own branch this is; empty for the wish's integration branch. Its code and title, and the wish's
+  // title, as they are when read: what the branch belongs to, said on hover.
+  string azima_id = 7;
+  string azima_code = 8;
+  string azima_title = 9;
+  string wish_title = 10;
 }
 
 // CheckRun is the last run of a project's check (ProjectCheck), or of its setup command.
@@ -1880,8 +1892,12 @@ message ProjectServicePushRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_len = 100
   ];
-  // The wish whose integration branch to push; empty: the active wish on this project.
+  // The wish whose integration branch to push; empty: the wish whose branch this is, else the active wish on this
+  // project.
   optional string wish = 2 [(buf.validate.field).string.max_len = 100];
+  // Only this branch: the wish's integration branch or one of its azimas' own branches (Project.syncs); empty: every
+  // branch of the wish that Djinn pushes.
+  optional string branch = 3 [(buf.validate.field).string.max_len = 255];
 }
 
 message ProjectServicePushResponse {

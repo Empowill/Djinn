@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
@@ -341,22 +342,21 @@ func TestWishMake(t *testing.T) {
 }
 
 type testPusher struct {
-	pushedWish, pushedProject string
+	pushedWish, pushedProject, pushedBranch string
+	// The wish of the azima branch Syncs gives.
+	azimaWish string
 }
 
-func (p *testPusher) Push(ctx context.Context, wishID, projectID string) (*planv1.IntegrationPush, error) {
-	p.pushedWish, p.pushedProject = wishID, projectID
+func (p *testPusher) Push(ctx context.Context, wishID, projectID, branch string) (*planv1.IntegrationPush, error) {
+	p.pushedWish, p.pushedProject, p.pushedBranch = wishID, projectID, branch
 	return &planv1.IntegrationPush{WishId: wishID, ProjectId: projectID, Count: 2}, nil
 }
 
-func (p *testPusher) Sync(ctx context.Context, wish *planv1.Wish, project *planv1.Project) (*planv1.ProjectSync, error) {
-	return &planv1.ProjectSync{
-		WishId: wish.GetId(),
-		Branch: "feat/x",
-		Remote: "origin",
-		Target: "feat/x",
-		Ahead:  3,
-		Behind: 1,
+// Syncs gives each wish of the project its integration branch, and the last one an azima branch too.
+func (p *testPusher) Syncs(ctx context.Context, project *planv1.Project) ([]*planv1.ProjectSync, error) {
+	return []*planv1.ProjectSync{
+		{WishId: "w1", Branch: "feat/x", Remote: "origin", Target: "feat/x", Ahead: 3, Behind: 1},
+		{WishId: p.azimaWish, Branch: "djinn/T1-azima", Remote: "origin", Target: "djinn/T1-azima", Ahead: 1, AzimaId: "a1"},
 	}, nil
 }
 
@@ -397,8 +397,9 @@ func TestProjectPushAndSetPush(t *testing.T) {
 		t.Fatalf("List = %d projects, want 1", len(list.Msg.GetProjects()))
 	}
 	gotP := list.Msg.GetProjects()[0]
-	if gotP.GetSync() == nil || gotP.GetSync().GetAhead() != 3 || gotP.GetSync().GetBehind() != 1 {
-		t.Errorf("project sync = %v, want ahead 3, behind 1", gotP.GetSync())
+	if syncs := gotP.GetSyncs(); len(syncs) != 2 || syncs[0].GetAhead() != 3 || syncs[0].GetBehind() != 1 ||
+		syncs[1].GetAzimaId() != "a1" {
+		t.Errorf("project syncs = %v, want feat/x ahead 3 behind 1, then the azima's branch", syncs)
 	}
 
 	// Change push setting to ON_DEMAND
@@ -434,8 +435,31 @@ func TestProjectPushAndSetPush(t *testing.T) {
 	if pushRes.Msg.GetPush().GetWishId() != wishID || pushRes.Msg.GetPush().GetProjectId() != projectID {
 		t.Errorf("Push response: %v", pushRes.Msg.GetPush())
 	}
-	if pusher.pushedWish != wishID || pusher.pushedProject != projectID {
-		t.Errorf("pusher received wish=%s project=%s", pusher.pushedWish, pusher.pushedProject)
+	if pusher.pushedWish != wishID || pusher.pushedProject != projectID || pusher.pushedBranch != "" {
+		t.Errorf("pusher received wish=%s project=%s branch=%s", pusher.pushedWish, pusher.pushedProject, pusher.pushedBranch)
+	}
+
+	// One branch, of the wish named.
+	_, err = c.projects.Push(ctx, connect.NewRequest(&planv1.ProjectServicePushRequest{
+		Project: projectName, Wish: proto.String(wishID), Branch: proto.String("feat/x"),
+	}))
+	if err != nil || pusher.pushedWish != wishID || pusher.pushedBranch != "feat/x" {
+		t.Errorf("Push of feat/x: wish=%s branch=%s, %v; want %s, feat/x", pusher.pushedWish, pusher.pushedBranch, err, wishID)
+	}
+	// One branch, no wish named: the branch's own wish, which the syncs tell.
+	other, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Other wish", ProjectIds: []string{projectID},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pusher.azimaWish = other.Msg.GetWish().GetId()
+	_, err = c.projects.Push(ctx, connect.NewRequest(&planv1.ProjectServicePushRequest{
+		Project: projectName, Branch: proto.String("djinn/T1-azima"),
+	}))
+	if err != nil || pusher.pushedWish != pusher.azimaWish || pusher.pushedBranch != "djinn/T1-azima" {
+		t.Errorf("Push of an azima branch: wish=%s branch=%s, %v; want %s, djinn/T1-azima",
+			pusher.pushedWish, pusher.pushedBranch, err, pusher.azimaWish)
 	}
 }
 

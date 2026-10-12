@@ -280,10 +280,13 @@ count and the mode, for that wish.
 
 A project may choose its cadence with `push`: `PROJECT_PUSH_STANDARD` (the default cadence above, where the wish's
 `push_mode` still applies) or `PROJECT_PUSH_ON_DEMAND` (Djinn commits each task's work into the integration branch as
-now, but never pushes by itself and asks nothing; only the developer's push does). The window's project view and the
-side panel show when the integration branch is out of sync with its remote and offer a Push button and a cadence switch;
-`djinn project push <project> [--wish <wish>]` pushes from the command line. In On demand, the wish's head says
-"pushes on demand".
+now, but never pushes by itself and asks nothing; only the developer's push does). The side panel's project row, the
+window's project view and an azima's card list each branch Djinn pushes that is out of sync with its remote, one line
+each: the integration branch of every active or paused wish there, and every azima's own branch, as `feat/x ↑2 ↓1`
+(commits to push, commits the remote has that the branch lacks), its wish and azima on hover; a small button pushes
+that branch alone. Past three branches, the lines fold behind the first two. The project view has the cadence switch;
+`djinn project push <project> [--wish <wish>] [--branch <branch>]` pushes from the command line. In On demand, the
+wish's head says "pushes on demand".
 
 A project also sets the default push strategy with `push_strategy`: `PUSH_STRATEGY_WISH` (the default: one
 integration branch per wish and per project) or `PUSH_STRATEGY_AZIMA` (one integration branch per azima).

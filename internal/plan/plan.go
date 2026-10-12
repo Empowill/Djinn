@@ -41,10 +41,11 @@ func Entities() []proto.Message {
 // identity of their own.
 const actor = "local"
 
-// Pusher pushes an integration branch and computes how far it is out of sync with its remote.
+// Pusher pushes a wish's branches, all or only one, and computes how far each branch it pushes in a project is out of
+// sync with its remote.
 type Pusher interface {
-	Push(ctx context.Context, wishID, projectID string) (*planv1.IntegrationPush, error)
-	Sync(ctx context.Context, wish *planv1.Wish, project *planv1.Project) (*planv1.ProjectSync, error)
+	Push(ctx context.Context, wishID, projectID, branch string) (*planv1.IntegrationPush, error)
+	Syncs(ctx context.Context, project *planv1.Project) ([]*planv1.ProjectSync, error)
 }
 
 // Option sets what the plan services reach beyond the store.
@@ -227,11 +228,8 @@ func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) {
 	project.PushStrategy = settings.PushStrategy
 
 	if p.Pusher != nil {
-		wish, _ := p.wishForProject(ctx, project.GetId(), "")
-		if wish != nil {
-			if sync, err := p.Pusher.Sync(ctx, wish, project); err == nil && sync != nil {
-				project.Sync = sync
-			}
+		if syncs, err := p.Pusher.Syncs(ctx, project); err == nil {
+			project.Syncs = syncs
 		}
 	}
 }
@@ -383,14 +381,27 @@ func (p *Projects) Push(
 	if err != nil {
 		return nil, Status(err)
 	}
-	wish, err := p.wishForProject(ctx, project.GetId(), req.Msg.GetWish())
+	branch, wishName := req.Msg.GetBranch(), req.Msg.GetWish()
+	if branch != "" && wishName == "" {
+		// The branch says whose it is.
+		syncs, err := p.Pusher.Syncs(ctx, project)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		for _, sync := range syncs {
+			if sync.GetBranch() == branch {
+				wishName = sync.GetWishId()
+			}
+		}
+	}
+	wish, err := p.wishForProject(ctx, project.GetId(), wishName)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeNotFound, err)
 	}
 	if wish == nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("no wish for project %s", project.GetName()))
 	}
-	push, err := p.Pusher.Push(ctx, wish.GetId(), project.GetId())
+	push, err := p.Pusher.Push(ctx, wish.GetId(), project.GetId(), branch)
 	if err != nil {
 		var cerr *connect.Error
 		if errors.As(err, &cerr) {

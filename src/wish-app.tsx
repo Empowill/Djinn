@@ -5,7 +5,7 @@ import { Plus, Settings2, Upload } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Change } from "../gen/ts/plan/v1/plan_pb";
+import { Change, type ProjectSync } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import {
   useClients,
@@ -149,14 +149,13 @@ export function WishApp() {
   };
 
   const pushProject = useCallback(
-    (id: string) => {
+    (id: string, sync: ProjectSync) =>
       clients.projects
-        .push({ project: id })
+        .push({ project: id, wish: sync.wishId, branch: sync.branch })
         .then(() => {
           void data.changed("", [Change.PROJECT]);
         })
-        .catch((err) => setToast(message(err)));
-    },
+        .catch((err) => setToast(message(err))),
     [clients, data],
   );
 

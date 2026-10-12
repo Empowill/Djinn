@@ -17,6 +17,7 @@ export { renderToStaticMarkup } from "react-dom/server";
 export { createRouterTransport } from "@connectrpc/connect";
 export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
 export { WishSidebar } from "@/src/wish-sidebar.tsx";
+export { SyncLine, SyncLines } from "@/src/project-sync.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
 export {
@@ -184,6 +185,10 @@ function live(component, props) {
       useEffect() {},
       useSyncExternalStore(subscribe, getSnapshot) {
         return getSnapshot();
+      },
+      // A context reads its default: no provider above.
+      use(context) {
+        return context._currentValue;
       },
     };
     try {
@@ -4792,56 +4797,171 @@ test("the wish's head says when pushes are on demand", () => {
   );
 });
 
-test("the side panel shows when a project's integration branch is out of sync and offers a push button", () => {
+// A branch Djinn pushes, as ProjectService sends it in Project.syncs.
+const projectSync = (branch, ahead, behind, extra = {}) => ({
+  wishId: "w1",
+  wishTitle: "Lamp",
+  branch,
+  remote: "origin",
+  target: branch,
+  ahead,
+  behind,
+  azimaId: "",
+  azimaCode: "",
+  azimaTitle: "",
+  ...extra,
+});
+
+test("the side panel lists each branch of a project out of sync, one short line each, with a small push button", () => {
   const project = {
     id: "p1",
     name: "lamp",
     directory: "/tmp/lamp",
     git: true,
-    sync: {
-      ahead: 3,
-      behind: 1,
-      remote: "origin",
-      branch: "feat/x",
-      target: "feat/x",
-    },
+    syncs: [
+      projectSync("feat/x", 3, 1),
+      projectSync("feat/clean", 0, 0, { wishTitle: "Gong" }),
+      projectSync("djinn/T27-djinn-stays-fast", 2, 0, {
+        azimaId: "a27",
+        azimaCode: "T27",
+        azimaTitle: "Djinn stays fast",
+      }),
+    ],
   };
-  const html = s.renderToStaticMarkup(
-    h(s.WishSidebar, {
-      wishes: [],
-      projects: [project],
-      selectedWishId: "",
-      selectedProjectId: "",
-      collapsed: false,
-      onSelectWish() {},
-      onSelectProject() {},
-      onMove() {},
-      onNewProject() {},
-      onPush() {},
-    }),
-  );
-  assert.match(html, /class="project-sync-row"/);
-  assert.match(html, /3 commits ahead of origin\/feat\/x, 1 behind/);
+  const sidebar = (extra) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [],
+        projects: [project],
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed: false,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+        onPush() {},
+        ...extra,
+      }),
+    );
+  const html = sidebar();
+  // The branch first, then its counts with their symbols; never the long sentence nor origin/ in sight.
   assert.match(
     html,
-    /<button type="button" class="button accent small"[^>]*>Push<\/button>/,
+    /<div class="sync-line" title="Integration branch of the wish Lamp\n3 commits ahead of origin\/feat\/x, 1 behind"><span class="sync-branch">feat\/x<\/span><span class="sync-counts"><span class="sync-ahead">↑3<\/span><span class="sync-behind">↓1<\/span><\/span><button type="button" class="icon-button sync-push" title="Push feat\/x" aria-label="Push feat\/x">/,
+  );
+  assert.match(
+    html,
+    /<div class="sync-line" title="Branch of the azima T27 Djinn stays fast, wish Lamp\n2 commits ahead of origin\/djinn\/T27-djinn-stays-fast"><span class="sync-branch">djinn\/T27-djinn-stays-fast<\/span><span class="sync-counts"><span class="sync-ahead">↑2<\/span><\/span>/,
+  );
+  // In sync, a branch does not show.
+  assert.doesNotMatch(html, /feat\/clean/);
+  assert.equal(html.match(/class="sync-line"/g).length, 2);
+  assert.doesNotMatch(html, /sync-fold/);
+  assert.doesNotMatch(html, /button accent/);
+  assert.doesNotMatch(html, />[^<]*origin\/[^<]*</);
+
+  // Collapsed, or nothing out of sync: no line.
+  assert.doesNotMatch(sidebar({ collapsed: true }), /sync-line/);
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [],
+        projects: [{ ...project, syncs: [projectSync("feat/x", 0, 0)] }],
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed: false,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    ),
+    /sync-lines/,
   );
 
-  const collapsedHtml = s.renderToStaticMarkup(
-    h(s.WishSidebar, {
-      wishes: [],
-      projects: [project],
-      selectedWishId: "",
-      selectedProjectId: "",
-      collapsed: true,
-      onSelectWish() {},
-      onSelectProject() {},
-      onMove() {},
-      onNewProject() {},
+  // Its button pushes that branch of that project.
+  const pushed = [];
+  const lines = live(s.WishSidebar, {
+    wishes: [],
+    projects: [project],
+    selectedWishId: "",
+    selectedProjectId: "",
+    collapsed: false,
+    onSelectWish() {},
+    onSelectProject() {},
+    onMove() {},
+    onNewProject() {},
+    onPush: (id, sync) => pushed.push(`${id} ${sync.wishId} ${sync.branch}`),
+  }).one(s.SyncLines);
+  lines.onPush(project.syncs[2]);
+  assert.deepEqual(pushed, ["p1 w1 djinn/T27-djinn-stays-fast"]);
+});
+
+test("more than three branches out of sync fold behind the first two; while one pushes, every button waits and says why", async () => {
+  const syncs = [
+    projectSync("feat/a", 1, 0),
+    projectSync("feat/b", 0, 2),
+    projectSync("feat/in-sync", 0, 0),
+    projectSync("feat/c", 4, 1),
+    projectSync("feat/d", 5, 0),
+  ];
+  let release;
+  const pushed = [];
+  const lines = live(s.SyncLines, {
+    syncs,
+    onPush: (sync) => {
+      pushed.push(sync.branch);
+      return new Promise((resolve) => {
+        release = resolve;
+      });
+    },
+  });
+  const branches = () => lines.all(s.SyncLine).map((x) => x.props.sync.branch);
+  assert.deepEqual(branches(), ["feat/a", "feat/b"]);
+  const fold = lines.one("sync-fold");
+  assert.equal(fold["aria-expanded"], false);
+  assert.match(lines.html(), /<span>2 more branches<\/span>/);
+  fold.onClick({ stopPropagation() {} });
+  assert.deepEqual(branches(), ["feat/a", "feat/b", "feat/c", "feat/d"]);
+  assert.match(lines.html(), /<span>Fewer branches<\/span>/);
+
+  // A push runs: its own button says so, the others that one runs; none pushes again.
+  lines.all(s.SyncLine)[2].props.onPush();
+  assert.deepEqual(pushed, ["feat/c"]);
+  const busy = lines.all(s.SyncLine).map((x) => x.props.busy);
+  assert.deepEqual(busy, [
+    "A push is running: wait for it to end",
+    "A push is running: wait for it to end",
+    "Pushing feat/c…",
+    "A push is running: wait for it to end",
+  ]);
+  lines.all(s.SyncLine)[0].props.onPush();
+  assert.deepEqual(pushed, ["feat/c"]);
+  release();
+  await lines.settle();
+  assert.deepEqual(
+    lines.all(s.SyncLine).map((x) => x.props.busy),
+    ["", "", "", ""],
+  );
+
+  // The line itself: its button disabled with the reason as its title.
+  const waiting = s.renderToStaticMarkup(
+    h(s.SyncLine, {
+      sync: syncs[3],
+      busy: "A push is running: wait for it to end",
       onPush() {},
     }),
   );
-  assert.doesNotMatch(collapsedHtml, /class="project-sync-row"/);
+  assert.match(
+    waiting,
+    /<button type="button" class="icon-button sync-push" disabled="" title="A push is running: wait for it to end" aria-label="A push is running: wait for it to end">/,
+  );
+  // Three lines never fold.
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(h(s.SyncLines, { syncs: syncs.slice(0, 4) })),
+    /sync-fold/,
+  );
 });
 
 test("the project panel displays the push cadence setting, out-of-sync status, and push button", () => {
@@ -4852,13 +4972,7 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
     directory: "/tmp/app",
     remote: "git@github.com:org/app.git",
     push: s.ProjectPush.STANDARD,
-    sync: {
-      ahead: 3,
-      behind: 0,
-      remote: "origin",
-      branch: "feat/x",
-      target: "feat/x",
-    },
+    syncs: [projectSync("feat/x", 3, 0), projectSync("feat/y", 0, 0)],
   };
   const transport = s.createRouterTransport(({ service }) => {
     service(s.ProjectService, {
@@ -4878,11 +4992,12 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
       h(s.ProjectPanel, { project: p1, onClose() {} }),
     ),
   );
-  assert.match(html, /3 commits ahead of origin\/feat\/x/);
+  // The same short line as the side panel's: the branch, its counts, a small grey button.
   assert.match(
     html,
-    /<button type="button" class="button accent small"[^>]*>Push<\/button>/,
+    /<div class="sync-line" title="Integration branch of the wish Lamp\n3 commits ahead of origin\/feat\/x"><span class="sync-branch">feat\/x<\/span><span class="sync-counts"><span class="sync-ahead">↑3<\/span><\/span><button type="button" class="icon-button sync-push" title="Push feat\/x"/,
   );
+  assert.doesNotMatch(html, /feat\/y|button accent/);
   assert.match(
     html,
     /Pushes at an azima(?:'|&#x27;)s end or after 3 tasks and an hour\./,
@@ -4895,7 +5010,7 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
   const p2 = {
     ...p1,
     push: s.ProjectPush.ON_DEMAND,
-    sync: undefined,
+    syncs: [],
   };
   const htmlOnDemand = s.renderToStaticMarkup(
     h(
@@ -4905,10 +5020,7 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
     ),
   );
   assert.match(htmlOnDemand, /Pushes only when you ask\./);
-  assert.doesNotMatch(
-    htmlOnDemand,
-    /<button type="button" class="button accent small"[^>]*>Push<\/button>/,
-  );
+  assert.doesNotMatch(htmlOnDemand, /sync-line/);
   assert.match(
     htmlOnDemand,
     /<button type="button" class="">Standard<\/button><button type="button" class="active">On demand<\/button>/,
@@ -5717,7 +5829,13 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
       branch: "djinn/T27-djinn-stays-fast",
       baseBranch: "main",
       cutFrom: "0123456789abcdef0123456789abcdef01234567",
-      sync: { ahead: 2, behind: 0 },
+      sync: {
+        ahead: 2,
+        behind: 0,
+        branch: "djinn/T27-djinn-stays-fast",
+        remote: "origin",
+        target: "djinn/T27-djinn-stays-fast",
+      },
       pr: {
         state: s.AzimaPrState.OPEN,
         url: "https://github.com/Empowill/Djinn/pull/42",
@@ -5741,9 +5859,15 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
     }),
   );
 
-  // Closed, its heading says nothing of its branch, neither shown nor on hover.
+  // Closed, its heading says nothing of its branch, neither shown nor on hover: only its line out of sync names it.
   assert.match(perAzimaHtml, /<strong title="Djinn stays fast">/);
-  assert.doesNotMatch(perAzimaHtml, /azima-landing|T27-djinn-stays-fast/);
+  assert.doesNotMatch(perAzimaHtml, /azima-landing/);
+  assert.doesNotMatch(
+    perAzimaHtml.match(
+      /<button type="button" class="azima-heading".*?<\/button>/,
+    )[0],
+    /T27-djinn-stays-fast/,
+  );
 
   // Opened, its branch, the commit of main it was cut from, and that it lands in main, across the card.
   const openedHtml = s.renderToStaticMarkup(
@@ -5795,15 +5919,12 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
     /azima-landing/,
   );
 
-  // Sync state and push button
+  // Sync state and push button: the short line of the side panel.
   assert.match(
     perAzimaHtml,
-    /<span class="azima-sync-status"[^>]*>2 commits ahead of origin\/<\/span>/,
+    /<div class="sync-line" title="2 commits ahead of origin\/djinn\/T27-djinn-stays-fast"><span class="sync-branch">djinn\/T27-djinn-stays-fast<\/span><span class="sync-counts"><span class="sync-ahead">↑2<\/span><\/span><button type="button" class="icon-button sync-push" title="Push djinn\/T27-djinn-stays-fast"/,
   );
-  assert.match(
-    perAzimaHtml,
-    /<button[^>]*class="button accent small"[^>]*>Push<\/button>/,
-  );
+  assert.doesNotMatch(perAzimaHtml, /button accent/);
 
   // PR link with state "PR open"
   assert.match(
@@ -5826,12 +5947,13 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
       openedPrUrl = url;
     },
   });
-  const cardButtons = liveAzimaCard.all("button");
-  const pushBtn = cardButtons.find((b) => b.props.children === "Push");
-  assert.ok(pushBtn);
   const fakeEvent = { stopPropagation() {}, preventDefault() {} };
-  pushBtn.props.onClick(fakeEvent);
+  liveAzimaCard.one(s.SyncLine).onPush();
   assert.equal(pushedAzima?.id, "a27");
+  assert.equal(
+    liveAzimaCard.one(s.SyncLine).busy,
+    "Pushing djinn/T27-djinn-stays-fast…",
+  );
 
   const prLink = liveAzimaCard
     .all("a")
@@ -5865,7 +5987,28 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
     cleanAndProposedHtml,
     /<span class="azima-pr-badge">PR proposed<\/span>/,
   );
-  assert.doesNotMatch(cleanAndProposedHtml, /<button[^>]*>Push<\/button>/);
+  assert.doesNotMatch(cleanAndProposedHtml, /sync-line/);
+
+  // Its project's syncs tell how its branch stands, over what the task recorded.
+  const fromProjectHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: { ...taskT27, azima: { branch: "djinn/T27-djinn-stays-fast" } },
+      sync: projectSync("djinn/T27-djinn-stays-fast", 1, 3, {
+        azimaId: "a27",
+        azimaCode: "T27",
+        azimaTitle: "Djinn stays fast",
+      }),
+      parts: [],
+      tasks: new Map(),
+      render: () => null,
+      isPerAzima: true,
+      onPush() {},
+    }),
+  );
+  assert.match(
+    fromProjectHtml,
+    /<span class="sync-branch">djinn\/T27-djinn-stays-fast<\/span><span class="sync-counts"><span class="sync-ahead">↑1<\/span><span class="sync-behind">↓3<\/span><\/span>/,
+  );
 
   const mergedHtml = s.renderToStaticMarkup(
     h(s.AzimaCard, {
