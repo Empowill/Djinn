@@ -238,6 +238,16 @@
 .task-time {
   font-variant-numeric: tabular-nums;
 }
+/* The model turns of its run against the limit Djinn stops it at: warns as it nears it. */
+.task-turns {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-variant-numeric: tabular-nums;
+}
+.task-turns.warning {
+  color: var(--st-waiting);
+}
 .task-model {
   flex-shrink: 0;
   color: var(--st-investigating);
