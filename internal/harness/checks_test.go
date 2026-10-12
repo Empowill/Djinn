@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
@@ -88,6 +89,77 @@ func TestSetupOncePerWorktree(t *testing.T) {
 	in.pass(t, time.Second)
 	if runs, _ := in.ran(); !slices.Equal(runs, []string{"lint"}) {
 		t.Errorf("W2, no lock file changed: %q; want lint only", runs)
+	}
+}
+
+// linted records a run of lint by task's worker through djinn gate run, as the costs service keeps it: exiting code,
+// on the tree of its worktree's last commit.
+func (in *integration) linted(t *testing.T, task *planv1.Task, code int32) {
+	t.Helper()
+	tree := in.git(t, task.GetWorktree(), "rev-parse", "HEAD^{tree}")
+	err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		all, err := store.List[*machinev1.CommandCost](t.Context(), tx, store.Where{"project_id": in.projectID})
+		if err != nil {
+			return err
+		}
+		cost := &machinev1.CommandCost{Id: store.NewID(), ProjectId: in.projectID, Command: "lint", Gate: "lint"}
+		if len(all) > 0 {
+			cost = all[0]
+		}
+		cost.RecentRuns = append(cost.RecentRuns, &machinev1.CommandRun{Gate: "lint", ExitCode: code, TaskId: task.GetId(), Tree: tree})
+		if err := tx.Journal("local", "test/linted", cost); err != nil {
+			return err
+		}
+		return tx.Put(cost)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestCommitLintPassedByTheWorker: Djinn does not run a commit check again when the task's worker passed it, through
+// its gate, on the very tree Djinn is about to commit, and says so in the task's events; nor the setup, nothing left
+// to run. A file changed after the worker's lint, or a lint that failed last, and the check runs as before.
+func TestCommitLintPassedByTheWorker(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.checking(t, "setup: \"setup\"\n"+lintAtCommit, map[string]int{"setup": 0, "lint": 0})
+	const skipped = "commit checks: lint passed by the worker on this tree, not run again"
+	said := func(task *planv1.Task) bool {
+		return slices.ContainsFunc(in.events(t, task), func(e *planv1.TaskEvent) bool { return e.GetText() == skipped })
+	}
+
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	in.linted(t, w1, 0)
+	in.pass(t, 0)
+	if runs, gates := in.ran(); len(runs) != 0 || len(gates) != 0 {
+		t.Errorf("W1, linted by its worker on the same tree: runs %q, gates %q; want none", runs, gates)
+	}
+	if got := in.states(t, w1); got != "W1 COMMITTED" || !said(w1) {
+		t.Errorf("W1: %s, said %v", got, said(w1))
+	}
+
+	// The worker linted, then changed a file and committed it: Djinn lints.
+	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
+	in.linted(t, w2, 0)
+	in.leave(t, w2, map[string]string{"app/src/b.txt": "b, changed after the lint\n"})
+	commitAll(t, w2.GetWorktree(), "Change after the lint")
+	in.pass(t, time.Second)
+	if runs, _ := in.ran(); !slices.Equal(runs, []string{"setup", "lint"}) || said(w2) {
+		t.Errorf("W2, a file changed after the worker's lint: runs %q, said %v; want setup then lint", runs, said(w2))
+	}
+
+	// The worker's last lint failed on this very tree, an earlier one passed: Djinn lints, and its red stops the merge.
+	w3 := in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
+	in.linted(t, w3, 0)
+	in.linted(t, w3, 1)
+	in.exit("lint", 1)
+	in.pass(t, time.Second)
+	if runs, _ := in.ran(); !slices.Equal(runs, []string{"lint"}) || said(w3) {
+		t.Errorf("W3, its worker's last lint failed: runs %q, said %v; want lint", runs, said(w3))
+	}
+	if got := in.states(t, w3); got != "W3 RED" {
+		t.Errorf("W3: %s; want RED from Djinn's own lint", got)
 	}
 }
 

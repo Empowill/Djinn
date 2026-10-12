@@ -248,6 +248,11 @@ message CommandRun {
   double held_seconds = 7;
   // Gate name.
   string gate = 8;
+  // Task that ran it; empty when none did.
+  string task_id = 9;
+  // Git tree the command ran on, its worktree's changes and files not tracked included: the same before and after it
+  // ran. Empty when its folder is not in a git worktree, or the worktree changed while it ran.
+  string tree = 10;
 }
 
 // GateService grants the gates: shared resources, such as code generation (codegen), the local stack (stack), an
@@ -450,6 +455,10 @@ message CommandServiceRecordRequest {
   double held_seconds = 9;
   // Gate that was held.
   string gate = 10;
+  // Git tree the command ran on, its worktree's changes and files not tracked included: the same before and after it
+  // ran. Empty when its folder is not in a git worktree, or the worktree changed while it ran. Djinn skips a commit
+  // check its task's worker passed on the tree it is about to commit.
+  string tree = 11 [(buf.validate.field).string.max_len = 64];
 }
 
 message CommandServiceRecordResponse {
