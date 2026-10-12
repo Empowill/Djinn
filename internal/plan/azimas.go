@@ -11,6 +11,7 @@ import (
 	"cmp"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -511,9 +512,10 @@ func ReadAzimaFiles(project string) ([]AzimaFile, error) {
 		} else {
 			f.Path = filepath.ToSlash(rel)
 		}
-		dir := filepath.Dir(f.Path)
+		// f.Path has slashes: path, not filepath, splits it on Windows too.
+		dir := path.Dir(f.Path)
 		if f.Wish == "" && dir != PlanDir && strings.HasPrefix(dir, PlanDir+"/") {
-			f.Wish = filepath.Base(dir)
+			f.Wish = path.Base(dir)
 		}
 		out = append(out, f)
 	}
