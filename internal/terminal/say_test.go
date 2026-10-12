@@ -249,11 +249,41 @@ func TestSayWaitsForAChoice(t *testing.T) {
 	output(t, term, from, contains(`line "Q04 answered: A. Continue."`))
 }
 
+// TestSayTypesNothingIntoAnApproval: the line Djinn types when events wait and the lead watches none (always for a
+// Codex lead, whose watch tells it nothing) waits while an approval of Claude Code or Codex is on screen. Typed
+// there, its Enter would answer the approval for the developer, usually "Yes". The approval gets the developer's keys
+// only, then the line goes.
+func TestSayTypesNothingIntoAnApproval(t *testing.T) {
+	for _, agent := range []string{"claude", "codex"} {
+		t.Run(agent, func(t *testing.T) {
+			_, term := fakeLead(t)
+			from := term.End()
+			if err := term.Write([]byte(agent + "-approval\r")); err != nil {
+				t.Fatal(err)
+			}
+			output(t, term, from, contains("to cancel"))
+			from = term.End()
+			say(t, term, "Djinn: 2 events waiting, run djinn lead watch")
+			time.Sleep(quiet + settle + 20*hold)
+			if out := read(term, from); strings.Contains(out, "chose") || strings.Contains(out, "line") {
+				t.Fatalf("typed into the approval:\n%q", out)
+			}
+			if err := term.Write([]byte("\x1b[B\r")); err != nil { // The developer picks the second option.
+				t.Fatal(err)
+			}
+			out := output(t, term, from, contains(`line "Djinn: 2 events waiting, run djinn lead watch" pasted, enter apart`))
+			if !strings.Contains(out, `chose "\x1b[B\r"`) {
+				t.Fatalf("the approval got another answer than the developer's:\n%q", out)
+			}
+		})
+	}
+}
+
 // recordedEnv gives the fake lead the folder of the agents' screens as recorded: testdata.
 const recordedEnv = "DJINN_TERMINAL_RECORDED"
 
-// The approval below is written by hand from the words in the binary (claude 2.1.295) and the layout of its screen;
-// Claude Code's folder trust is recorded (testdata/claude-trust.out).
+// The approvals below are written by hand from the words in the binaries (claude 2.1.295, codex-cli 0.162.0-alpha.2)
+// and the layout of their screens; Claude Code's folder trust is recorded (testdata/claude-trust.out).
 const (
 	claudeApproval = "\x1b[38;5;220m" + "────────────────────────────────────────" + "\x1b[39m\r\n" +
 		" Bash command\r\n\r\n" +
@@ -265,6 +295,16 @@ const (
 		"      /Users/me/CODE/dolmen\r\n" +
 		"   3. No, and tell Claude what to do differently (esc)\r\n\r\n" +
 		" \x1b[2mEsc to cancel · Tab to amend\x1b[22m\r\n"
+	codexApproval = "› Run the tests\r\n\r\n" +
+		"• I use the djinn skill. I check:\r\n" +
+		"  1. the tasks\r\n  2. the questions\r\n\r\n" +
+		"  Would you like to run the following command?\r\n\r\n" +
+		"  Reason: Allow Djinn to read the wish?\r\n\r\n" +
+		"  $ djinn wish brief 01a11f56\r\n\r\n" +
+		"\x1b[1m› 1. Yes, proceed (y)\x1b[0m\r\n" +
+		"  2. Yes, and don't ask again for commands that start with `djinn` (p)\r\n" +
+		"  3. No, and tell Codex what to do differently (esc)\r\n\r\n" +
+		"  Press enter to confirm or esc to cancel\r\n"
 )
 
 // screens are what the fake lead shows for a line, and whether it is a choice that the next key answers.
@@ -279,7 +319,9 @@ var screens = map[string]struct {
 		"Enter to confirm · Esc to exit\r\n", true},
 	"onboarding": {"Choose the text style that looks best with your terminal\r\n❯ 1. Dark mode\r\n  2. Light mode\r\n\r\n" +
 		"Enter to confirm\r\n", true},
-	"approval": {claudeApproval, true},
+	// Approvals: arrows move, only Enter confirms.
+	"claude-approval": {claudeApproval, true},
+	"codex-approval":  {codexApproval, true},
 	// A choice's words in what the agent wrote, and a choice scrolled away: neither is a choice on screen.
 	"prose":    {"To stop it, press Esc to cancel.\r\nThe dialog said Esc to cancel it.\r\n", false},
 	"scrolled": {"Esc to cancel\r\n" + strings.Repeat("working…\r\n", 30), false},
@@ -287,8 +329,8 @@ var screens = map[string]struct {
 
 // TestLeadProcess is the fake lead the Say tests run in a terminal, not a test. In raw mode with bracketed paste, as
 // Claude Code and Codex are, it reports each line it gets: whether it came as a paste, and whether Enter came in a
-// read of its own. A line of screens shows its screen; a choice stays until a key answers it, then is erased in
-// place, as Claude Code redraws. The line trust shows Claude Code's folder trust as
+// read of its own. A line of screens shows its screen; a choice stays until a key answers it (an approval, until
+// Enter), then is erased in place, as Claude Code redraws. The line trust shows Claude Code's folder trust as
 // recorded (claude 2.1.295), the line "replay <file>" a screen of testdata as recorded; after "replay
 // <agent>-idle.out", the keys "Est" and Ctrl+U draw what that agent drew for them, as recorded (<agent>-est.out,
 // <agent>-cleared.out). It erases as an agent's prompt does: Ctrl+W and Alt+Backspace a word, Ctrl+U and Esc twice
@@ -407,7 +449,7 @@ func TestLeadProcess(t *testing.T) {
 				} else if screen, ok := screens[string(line)]; ok {
 					fmt.Print(screen.out)
 					if screen.choice {
-						approval = string(line) == "approval"
+						approval = strings.HasSuffix(string(line), "-approval")
 						erase = strings.Repeat("\x1b[1A\x1b[2K", strings.Count(screen.out, "\n"))
 					}
 				}

@@ -51,15 +51,16 @@ var ErrFull = errors.New("too many lines wait for this terminal")
 
 // voice is what Say needs to know of a terminal.
 type voice struct {
-	started   time.Time   // when the program started
-	output    time.Time   // the last output of the program
-	typed     time.Time   // the last key of the person
-	lines     chan string // the lines waiting, read by speak; nil until the first one
-	draft     []rune      // what the person typed at the prompt since it was last sent or cleared, a rune per character
-	recalled  bool        // a line of the history may be at the prompt
-	escaped   bool        // the last key was Esc alone
-	lastTyped byte        // the last byte typed
-	paste     bool        // the program takes bracketed paste
+	started   time.Time     // when the program started
+	output    time.Time     // the last output of the program
+	typed     time.Time     // the last key of the person
+	lines     chan string   // the lines waiting, read by speak; nil until the first one
+	hushed    chan struct{} // closed once speak returned; nil until the first line
+	draft     []rune        // what the person typed at the prompt since it was last sent or cleared, a rune per character
+	recalled  bool          // a line of the history may be at the prompt
+	escaped   bool          // the last key was Esc alone
+	lastTyped byte          // the last byte typed
+	paste     bool          // the program takes bracketed paste
 }
 
 // Say types line into the running terminal of name: see Terminal.Say. ErrNotFound when none runs.
@@ -92,8 +93,8 @@ func (t *Terminal) Say(line string) error {
 		return ErrExited
 	}
 	if t.voice.lines == nil {
-		t.voice.lines = make(chan string, SayQueue)
-		go t.speak(t.voice.lines)
+		t.voice.lines, t.voice.hushed = make(chan string, SayQueue), make(chan struct{})
+		go t.speak(t.voice.lines, t.voice.hushed)
 	}
 	select {
 	case t.voice.lines <- line:
@@ -103,8 +104,9 @@ func (t *Terminal) Say(line string) error {
 	}
 }
 
-// speak types the lines as they come, until the program ends.
-func (t *Terminal) speak(lines <-chan string) {
+// speak types the lines as they come, until the program ends; then it closes hushed.
+func (t *Terminal) speak(lines <-chan string, hushed chan<- struct{}) {
+	defer close(hushed)
 	for {
 		select {
 		case <-t.done:
