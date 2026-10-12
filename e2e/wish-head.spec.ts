@@ -188,18 +188,22 @@ test("the head says where the wish's work lands, and a click changes the branch"
     const chip = page.locator(".hero-meta button.wish-lands");
     await expect(chip).toHaveText("Lands in main");
 
-    // Read in both themes.
+    // Read in both themes, switched as the settings do: a reload within a minute of the Lead test above would show
+    // its wish again, the one djinn was last asked to show.
     for (const theme of ["dark", "light"] as const) {
-      await page.evaluate((v) => localStorage.setItem("djinn.theme", v), theme);
-      await page.reload();
+      await page.evaluate((v) => {
+        localStorage.setItem("djinn.theme", v);
+        document.documentElement.dataset.theme = v;
+      }, theme);
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       await expect(chip).toBeVisible();
-      expect(
-        await contrast(page, ".hero-meta .wish-lands code"),
-      ).toBeGreaterThanOrEqual(4.5);
-      expect(
-        await contrast(page, ".hero-meta .wish-lands > span"),
-      ).toBeGreaterThanOrEqual(4.5);
+      // Polled: the colours fade from one theme to the other.
+      await expect
+        .poll(() => contrast(page, ".hero-meta .wish-lands code"))
+        .toBeGreaterThanOrEqual(4.5);
+      await expect
+        .poll(() => contrast(page, ".hero-meta .wish-lands > span"))
+        .toBeGreaterThanOrEqual(4.5);
     }
 
     // The picker lists the project's branches; a new name is made from the current one.
