@@ -99,6 +99,8 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   - an actionable failure (a work worker failed or was cut short; an integration failed; push checks stay red; a main merge failed);
   - an answer or question for the lead to act on (developer answers, an "Enlighten me" when enlighten workers are
     disabled, a filed request or inbox item, a wish made from a request, an azima opened to plan its tasks);
+  - the developer's approval of a decision the lead or a worker took (a question they answered); approving an open
+    question is its answer, and approving one of the developer's own decisions, or one approved already, tells nothing;
   - a task ending without failure (the lead's cue to check its final note, revised questions, or spawned tasks);
   - a watcher waking the lead;
   - Djinn restarted: `Djinn: restarted on version v1.4.0: 2 workers interrupted (W12, W14), resumed by Djinn: W12; not
@@ -106,7 +108,7 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   Everything else goes to the journal and the window.
 - **The lead's events wait in a queue; the lead watches it (Decision Q191).** Each of these is a `LeadEvent` in the
   store, with an id (a UUIDv7), a time, a kind (`ended`, `failed`, `merged`, `answer`, `enlighten`, `move`, `restart`,
-  `watch`, `request`), the wish and the code it is about, and its line; one queue for the one lead, whatever the wish
+  `watch`, `request`, `approved`), the wish and the code it is about, and its line; one queue for the one lead, whatever the wish
   (`internal/plan/leadwatch.go`). `djinn lead watch [--after <cursor>] [--timeout 1h]` blocks until an event waits,
   lets the events settle (2 seconds of quiet, 10 at most: the lines of one integration pass, or a failure and the
   correction Djinn starts for it, come within a second or two, and one digest is one turn of the lead instead of

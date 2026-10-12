@@ -174,7 +174,11 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
 	out[p] = h
-	p, h = planv1connect.NewMarkServiceHandler(&Marks{Store: s, Answered: o.answered, Told: told, Settle: wishes.settle}, opt)
+	marks := &Marks{Store: s, Answered: o.answered, Told: told, Settle: wishes.settle}
+	if o.leads != nil {
+		marks.Approved = wishes.Approved // The lead learns that the developer approved its decision, or a worker's.
+	}
+	p, h = planv1connect.NewMarkServiceHandler(marks, opt)
 	out[p] = h
 	p, h = planv1connect.NewSkillServiceHandler(&Skills{Store: s}, opt)
 	out[p] = h

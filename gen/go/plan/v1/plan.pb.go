@@ -499,21 +499,25 @@ const (
 	LeadEventKind_LEAD_EVENT_KIND_WATCH LeadEventKind = 8
 	// A request came in for a wish: filed from the inbox, a wish made from one, or an azima opened to plan.
 	LeadEventKind_LEAD_EVENT_KIND_REQUEST LeadEventKind = 9
+	// The developer approved a decision the lead or a worker took: a question they answered. An approval that
+	// answers an open question is an answer; one of the developer's own decisions changes nothing for the lead.
+	LeadEventKind_LEAD_EVENT_KIND_APPROVED LeadEventKind = 10
 )
 
 // Enum value maps for LeadEventKind.
 var (
 	LeadEventKind_name = map[int32]string{
-		0: "LEAD_EVENT_KIND_UNSPECIFIED",
-		1: "LEAD_EVENT_KIND_ENDED",
-		2: "LEAD_EVENT_KIND_FAILED",
-		3: "LEAD_EVENT_KIND_MERGED",
-		4: "LEAD_EVENT_KIND_ANSWER",
-		5: "LEAD_EVENT_KIND_ENLIGHTEN",
-		6: "LEAD_EVENT_KIND_MOVE",
-		7: "LEAD_EVENT_KIND_RESTART",
-		8: "LEAD_EVENT_KIND_WATCH",
-		9: "LEAD_EVENT_KIND_REQUEST",
+		0:  "LEAD_EVENT_KIND_UNSPECIFIED",
+		1:  "LEAD_EVENT_KIND_ENDED",
+		2:  "LEAD_EVENT_KIND_FAILED",
+		3:  "LEAD_EVENT_KIND_MERGED",
+		4:  "LEAD_EVENT_KIND_ANSWER",
+		5:  "LEAD_EVENT_KIND_ENLIGHTEN",
+		6:  "LEAD_EVENT_KIND_MOVE",
+		7:  "LEAD_EVENT_KIND_RESTART",
+		8:  "LEAD_EVENT_KIND_WATCH",
+		9:  "LEAD_EVENT_KIND_REQUEST",
+		10: "LEAD_EVENT_KIND_APPROVED",
 	}
 	LeadEventKind_value = map[string]int32{
 		"LEAD_EVENT_KIND_UNSPECIFIED": 0,
@@ -526,6 +530,7 @@ var (
 		"LEAD_EVENT_KIND_RESTART":     7,
 		"LEAD_EVENT_KIND_WATCH":       8,
 		"LEAD_EVENT_KIND_REQUEST":     9,
+		"LEAD_EVENT_KIND_APPROVED":    10,
 	}
 )
 
@@ -3743,7 +3748,7 @@ func (x *Lead) GetDirectory() string {
 }
 
 // LeadEvent is something the lead must act on, kept for it until its session acknowledges it: a task that ended or
-// failed, a real merge, the developer's answer or enlightenment, a move left to the lead, Djinn restarted. Djinn
+// failed, a real merge, the developer's answer, approval or enlightenment, a move left to the lead, Djinn restarted. Djinn
 // queues one wherever it used to type a line in the lead's terminal (decision Q173 already keeps the rest to the
 // journal), whatever wish it is about: the one lead serves them all. djinn lead watch hands them out in batches;
 // one not acknowledged comes back on the next watch.
@@ -19089,7 +19094,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16WISH_STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11WISH_STATE_ACTIVE\x10\x01\x12\x15\n" +
 	"\x11WISH_STATE_PAUSED\x10\x02\x12\x16\n" +
-	"\x12WISH_STATE_GRANTED\x10\x03*\xad\x02\n" +
+	"\x12WISH_STATE_GRANTED\x10\x03*\xcb\x02\n" +
 	"\rLeadEventKind\x12\x1f\n" +
 	"\x1bLEAD_EVENT_KIND_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15LEAD_EVENT_KIND_ENDED\x10\x01\x12\x1a\n" +
@@ -19100,7 +19105,9 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x14LEAD_EVENT_KIND_MOVE\x10\x06\x12\x1b\n" +
 	"\x17LEAD_EVENT_KIND_RESTART\x10\a\x12\x19\n" +
 	"\x15LEAD_EVENT_KIND_WATCH\x10\b\x12\x1b\n" +
-	"\x17LEAD_EVENT_KIND_REQUEST\x10\t*b\n" +
+	"\x17LEAD_EVENT_KIND_REQUEST\x10\t\x12\x1c\n" +
+	"\x18LEAD_EVENT_KIND_APPROVED\x10\n" +
+	"*b\n" +
 	"\tAllowance\x12\x19\n" +
 	"\x15ALLOWANCE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eALLOWANCE_NONE\x10\x01\x12\x12\n" +
