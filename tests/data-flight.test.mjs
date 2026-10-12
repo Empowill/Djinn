@@ -12,6 +12,8 @@ export * from "@/src/data/journal.ts";
 export {
   cancelledText,
   deletedText,
+  isTaskMerging,
+  runningOf,
   span,
   taskFinished,
   taskStatusText,
@@ -207,6 +209,166 @@ test("the Tasks tab: what moves or waits by status, then the finished tasks, the
   assert.deepEqual(
     plan.moving.map(({ wish, item }) => `${wish.id}:${item.code}`),
     ["w2:W5"],
+  );
+});
+
+test("a done task is settled once its work is committed, has none to merge, or its integration is cleared", () => {
+  const I = f.IntegrationState;
+  const done = (state, extra = {}) => ({
+    id: `t${state}`,
+    code: `W${state}`,
+    status: f.TaskStatus.DONE,
+    integration: state === undefined ? undefined : { state },
+    ...extra,
+  });
+  const nest = f.mergeNest([]);
+  const settled = (task) => f.settledTask(task, nest);
+  // Work committed, no work to merge (no integration: no branch, or cleared): folded with the finished.
+  assert.equal(settled(done(I.COMMITTED)), true);
+  assert.equal(settled(done(undefined)), true);
+  assert.equal(settled(done(I.UNSPECIFIED)), true);
+  // Work on its way: waiting for its batch, merging, in conflict, red, or left not committed. It stays in sight.
+  for (const state of [
+    I.PENDING,
+    I.INTEGRATING,
+    I.CONFLICT,
+    I.RED,
+    I.UNCOMMITTED,
+  ])
+    assert.equal(settled(done(state)), false, `state ${state}`);
+  // A cancelled or stopped task has no work to merge: whatever its integration says, it is settled.
+  assert.equal(
+    settled(done(I.PENDING, { status: f.TaskStatus.CANCELLED })),
+    true,
+  );
+  assert.equal(
+    settled(done(I.CONFLICT, { status: f.TaskStatus.STOPPED })),
+    true,
+  );
+  // A task whose correction is done but merging moves with it, until that correction's work is committed.
+  const conflicted = done(I.COMMITTED, { id: "w1", code: "W1" });
+  const correction = (state) => ({
+    id: "w2",
+    code: "W2",
+    status: f.TaskStatus.DONE,
+    integration: { state },
+    correction: { failure: { taskIds: ["w1"] } },
+  });
+  const merging = [conflicted, correction(I.INTEGRATING)];
+  assert.equal(f.settledTask(conflicted, f.mergeNest(merging)), false);
+  const committed = [conflicted, correction(I.COMMITTED)];
+  assert.equal(f.settledTask(conflicted, f.mergeNest(committed)), true);
+});
+
+test("work that merges stays among the moving tasks, then folds with the finished once committed", () => {
+  const I = f.IntegrationState;
+  const tasks = (state) => [
+    {
+      id: "a1",
+      code: "T1",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.IN_PROGRESS },
+    },
+    {
+      id: "w8",
+      code: "W8",
+      status: f.TaskStatus.DONE,
+      partOf: "a1",
+      endTime: at(20),
+      integration: { state },
+    },
+    {
+      id: "w1",
+      code: "W1",
+      status: f.TaskStatus.DONE,
+      partOf: "a1",
+      endTime: at(10),
+      integration: { state: I.COMMITTED },
+    },
+    {
+      id: "w5",
+      code: "W5",
+      status: f.TaskStatus.DONE,
+      endTime: at(30),
+      integration: { state },
+    },
+    {
+      id: "w9",
+      code: "W9",
+      status: f.TaskStatus.PENDING,
+      waitReason: "waits for W8 to be committed",
+    },
+  ];
+  const merging = tasks(I.PENDING);
+  assert.deepEqual(
+    f.movingTasks(merging).map((x) => x.code),
+    ["W5", "W9"],
+  );
+  assert.deepEqual(f.finishedTasks(merging), []);
+  // Within its azima, W8 comes first among the moving parts, never behind "show the N finished".
+  const [group] = f.azimaGroups(merging);
+  assert.deepEqual(
+    group.parts.map((x) => x.code),
+    ["W8", "W1"],
+  );
+  const nest = f.mergeNest(merging);
+  assert.deepEqual(
+    group.parts.filter((x) => !f.settledTask(x, nest)).map((x) => x.code),
+    ["W8"],
+  );
+  // The flight plan does the same, and counts the work that merges as running.
+  const lamp = wish("w1", "Ship the lamp", 1);
+  const plan = f.flightPlan([lamp], { w1: detail(merging, []) });
+  assert.deepEqual(
+    plan.moving.map(({ item }) => item.code),
+    ["W5", "W9"],
+  );
+  assert.deepEqual(
+    plan.running.map(({ item }) => item.code),
+    ["W8", "W5"],
+  );
+  // Committed, it folds with the finished, and runs no more.
+  const committed = tasks(I.COMMITTED);
+  assert.deepEqual(
+    f.movingTasks(committed).map((x) => x.code),
+    ["W9"],
+  );
+  assert.deepEqual(
+    f.finishedTasks(committed).map((x) => x.code),
+    ["W5"],
+  );
+  const after = f.flightPlan([lamp], { w1: detail(committed, []) });
+  assert.deepEqual(after.running, []);
+  assert.deepEqual(
+    after.finished.map(({ item }) => item.code),
+    ["W5"],
+  );
+});
+
+test("work that merges counts as running: a worker at work, not a watcher", () => {
+  const I = f.IntegrationState;
+  const S = f.TaskStatus;
+  const done = (state) => ({ status: S.DONE, integration: { state } });
+  assert.equal(f.isTaskMerging(done(I.PENDING)), true);
+  assert.equal(f.isTaskMerging(done(I.INTEGRATING)), true);
+  for (const state of [I.COMMITTED, I.CONFLICT, I.RED, I.UNCOMMITTED])
+    assert.equal(f.isTaskMerging(done(state)), false, `state ${state}`);
+  // Only a done task merges: a running one runs already.
+  assert.equal(
+    f.isTaskMerging({ status: S.RUNNING, integration: { state: I.PENDING } }),
+    false,
+  );
+  assert.deepEqual(
+    f.runningOf([
+      { status: S.RUNNING },
+      { status: S.RUNNING, provider: f.Provider.WATCH },
+      done(I.PENDING),
+      done(I.INTEGRATING),
+      done(I.COMMITTED),
+      done(I.CONFLICT),
+      { status: S.DONE },
+    ]),
+    { running: 3, watching: 1 },
   );
 });
 

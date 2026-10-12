@@ -51,7 +51,7 @@ install: "go tool task install"
 | `merge_main_minutes` | How often, in minutes, Djinn fetches main to look at it, at most. A release the running Djinn finds makes it look at once. | `60` |
 | `install_releases` | For the project a Djinn built from a checkout comes from: a newer release installs by itself while that checkout is on main. `false`: it is only offered. | on |
 | `push`           | When Djinn pushes the integration branch: `PROJECT_PUSH_STANDARD` (today's cadence: at an azima's end or 3 tasks and an hour), `PROJECT_PUSH_ON_DEMAND` (never pushes by itself, only the developer's push does). | `PROJECT_PUSH_STANDARD` |
-| `push_strategy`  | The branch strategy for integration and push: `PUSH_STRATEGY_WISH` (today's behavior: one integration branch per wish and project), `PUSH_STRATEGY_AZIMA` (one integration branch per azima). | `PUSH_STRATEGY_WISH` |
+| `push_strategy`  | The branch strategy for integration and push: `PUSH_STRATEGY_WISH` (today's behavior: one integration branch per wish and project), `PUSH_STRATEGY_AZIMA` (one branch per azima, `djinn/<code>-<slug>`, cut from main and landing in main). | `PUSH_STRATEGY_WISH` |
 
 A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
 
@@ -280,10 +280,13 @@ count and the mode, for that wish.
 
 A project may choose its cadence with `push`: `PROJECT_PUSH_STANDARD` (the default cadence above, where the wish's
 `push_mode` still applies) or `PROJECT_PUSH_ON_DEMAND` (Djinn commits each task's work into the integration branch as
-now, but never pushes by itself and asks nothing; only the developer's push does). The window's project view and the
-side panel show when the integration branch is out of sync with its remote and offer a Push button and a cadence switch;
-`djinn project push <project> [--wish <wish>]` pushes from the command line. In On demand, the wish's head says
-"pushes on demand".
+now, but never pushes by itself and asks nothing; only the developer's push does). The side panel's project row, the
+window's project view and an azima's card list each branch Djinn pushes that is out of sync with its remote, one line
+each: the integration branch of every active or paused wish there, and every azima's own branch, as `feat/x ↑2 ↓1`
+(commits to push, commits the remote has that the branch lacks), its wish and azima on hover; a small button pushes
+that branch alone. Past three branches, the lines fold behind the first two. The project view has the cadence switch;
+`djinn project push <project> [--wish <wish>] [--branch <branch>]` pushes from the command line. In On demand, the
+wish's head says "pushes on demand".
 
 A project also sets the default push strategy with `push_strategy`: `PUSH_STRATEGY_WISH` (the default: one
 integration branch per wish and per project) or `PUSH_STRATEGY_AZIMA` (one integration branch per azima).
@@ -293,6 +296,30 @@ Each wish can override this strategy: `djinn wish push-strategy <wish> [--strate
 A wish created without a value takes the project's default, and a project without a value defaults to `wish`.
 To protect branches already created and merged, switching push strategy is refused once any task of the wish has
 already been committed to its integration branch.
+
+Per azima, each azima has a branch of its own, `djinn/<code>-<slug of its title>` (`djinn/T07-the-orchestrator`),
+which works like a wish's integration branch:
+
+- **Cut from main** when the azima is made (by `djinn task spawn --kind azima` or `djinn plan sync`): main's commit as
+  Djinn knows it, never another azima's branch. An azima made before its wish was switched gets its branch when its
+  first part starts, or its first work is merged. Djinn records on the azima its branch, the main it lands in and the
+  commit it was cut from (`djinn task get <azima> --json`: `azima.branch`, `azima.base_branch`, `azima.cut_from`); a
+  title changed later keeps the branch's name. It is never cut again while it exists, and never rebased.
+- **Its work merges into it** as a wish's does ([integration](#integration)); work of no azima goes to the wish's
+  integration branch.
+- **It keeps up with main** by the same `merge_main` rules ([keeping up with main](#keeping-up-with-main)), where it
+  stands recorded on the azima (`azima.main`).
+- **It lands in main.** Once its parts are committed and its branch pushed, Djinn proposes its pull request to main;
+  you open it. It targets main from the start and is never re-targeted; each push of the branch updates it. Its card
+  shows it proposed, open or merged; merged, the azima is done.
+- **No azima waits for another**, each branch holding main and its own work: Djinn refuses an azima after another,
+  directly or through their work (`djinn task spawn --after`, `djinn task depend`, `djinn task update`,
+  `djinn task group`, a plan file's `after:` line at `djinn plan sync`), and refuses switching a wish, or a project's
+  default, to per azima while azimas depend on each other, naming them. Tasks inside one azima wait for each other as
+  usual.
+
+A branch made before, stacked on the branch of the azima it depended on, keeps working as it is: its work merges into
+it, main is merged into it, and nothing of it is rewritten.
 
 Once Djinn has pushed in a project whose settings name an `install` command, the window proposes, as for a new
 version, to install it and restart on it, with what changed (each task with the last paragraph its worker wrote folded
@@ -311,12 +338,19 @@ workers, naming them), or when the running build is broken (a crash or failed ch
 (set in Djinn's own settings: the window proposes each new build, to install or skip), no install questions are asked.
 
 The commands' words are split on spaces, without a shell. The integration branch of a wish is, in each project, the
-branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it.
+branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it, or
+the chip that names it in the wish's head, to a local branch (`djinn project branches <project>` lists them, Djinn's
+task branches left out) or to a new one made from it (`--create-branch`). A change is refused while a merge into the
+branch runs (a batch merged and tested, a correction or review worker, main's merge settled), Djinn naming it. Per wish,
+a wish's work lands in that branch; per azima, an azima's work lands in main through its own branch and pull request.
 
 ## Keeping up with main
 
 A wish's integration branch is a branch of its own (`feat/x`); others merge into the project's main branch meanwhile.
-Djinn keeps the branch up with main by itself, no model, in each project whose settings name a check:
+Djinn keeps the branch up with main by itself, no model, in each project whose settings name a check; per azima, it keeps
+each azima's branch up the same way (an azima not done, not a draft), main fetched once for them all, a correction worker
+part of the azima, and where the branch stands recorded on the azima. An azima's branch with nothing of its own beyond
+main simply moves to main's commit:
 
 1. **When it looks.** At most every `merge_main_minutes` (an hour by default), and at once when the running Djinn finds
    a new release, Djinn fetches main from its remote, with the tags, through git with your own credentials, never

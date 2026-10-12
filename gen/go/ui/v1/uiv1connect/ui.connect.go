@@ -93,7 +93,8 @@ type UiServiceClient interface {
 	// opens after it.
 	WatchShow(context.Context, *connect.Request[v1.UiServiceWatchShowRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchShowResponse], error)
 	// Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-	// change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
+	// change. With the leads that a restart could not resume, once, and the last build pushed of each integration branch
+	// that is not installed.
 	WatchUpdate(context.Context, *connect.Request[v1.UiServiceWatchUpdateRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchUpdateResponse], error)
 	// What the window is asked to show and whether a newer Djinn waits, in a single stream.
 	Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchResponse], error)
@@ -324,7 +325,8 @@ type UiServiceHandler interface {
 	// opens after it.
 	WatchShow(context.Context, *connect.Request[v1.UiServiceWatchShowRequest], *connect.ServerStream[v1.UiServiceWatchShowResponse]) error
 	// Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-	// change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
+	// change. With the leads that a restart could not resume, once, and the last build pushed of each integration branch
+	// that is not installed.
 	WatchUpdate(context.Context, *connect.Request[v1.UiServiceWatchUpdateRequest], *connect.ServerStream[v1.UiServiceWatchUpdateResponse]) error
 	// What the window is asked to show and whether a newer Djinn waits, in a single stream.
 	Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest], *connect.ServerStream[v1.UiServiceWatchResponse]) error

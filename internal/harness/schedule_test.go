@@ -60,8 +60,8 @@ func (e *env) release(t *testing.T, id string) {
 		if err == nil {
 			return
 		}
-		// Running, its worker may not be there yet.
-		if connect.CodeOf(err) != connect.CodeFailedPrecondition || time.Now().After(deadline) {
+		// Running, its worker may not be there yet; ended, it never will be: its script has no wait.
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || time.Now().After(deadline) || e.get(t, id).GetEndTime() != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(5 * time.Millisecond)

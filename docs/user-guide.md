@@ -59,6 +59,16 @@ djinn up --browser    # no window: prints the URL to open in your browser
   back to host load alone. In Auto, lowering the notch lowers CPU priority and stops starting new workers, never
   pausing running ones (Decision Q124 (C)). From the command line: `djinn load get`, `djinn load set minimal` (or any notch),
   and `djinn load watch`.
+  Each notch engages a worker's memory at a percentile of its readings (a running worker at its own, a new one at the
+  median of the latest 10 finished workers' value), plus a margin; builds and tests spike a worker's memory, and the
+  gates already run them one at a time. The memory Djinn may commit counts its running workers' own memory once, back
+  into what it could use with no worker running. `djinn load get` and `djinn machine show` say it (`worker_engaged_at:
+  engaged at p50 (overclock)`):
+  - **Minimal**: p95, 512 MiB margin (`light`, an alias for `medium`, takes Medium's).
+  - **Medium**: p80, 512 MiB margin.
+  - **High**: p70, 384 MiB margin.
+  - **Max**: p60, 256 MiB margin.
+  - **Overclock**: p50, 256 MiB margin.
 
 ### The terminal
 
@@ -168,8 +178,8 @@ tab and a **Decisions** tab, with the tasks and decisions of every active wish. 
 ## A wish's view
 
 The **Wish** tab: what waits for you (**Your move**), the questions being investigated, the journal (**Show the
-commands**), and the **Rights** of its workers in each project. Beside it, the **Tasks**, **Decisions** and
-**Tilasms** tabs, and last, discreet, **For agents**.
+commands**), and the **Rights** of its workers in each project. Beside it, the **Tasks**, **Review**, **Decisions**
+and **Tilasms** tabs, and last, discreet, **For agents**.
 
 **Rights** says what the wish's workers may do in a project, for every task to come: **The project decides** (its
 own configuration), **Edit the files**, or **Edit, in auto mode**. A worker in a folder outside Git with no rule
@@ -184,8 +194,9 @@ Each task is displayed as a two-line row:
 - The first line displays the status badge first (**Running**, **Waits for your answer**, **Planned**, **Done**,
   **Failed**, etc.), its code `W1`, `W2`…, and its title, with the full prompt on hover.
 - The second line gives its project, agent provider and model, duration (or waiting time: for a slot, dependency,
-  or gate), token counts and cost estimate, and for a running worker its live CPU and memory usage (not measured
-  on Windows yet).
+  or gate), its model turns against the watchdog's limit (`37/500`, its run's; it turns orange past 80%, and its
+  hover gives the total over its runs), token counts and cost estimate, and for a running worker its live CPU and
+  memory usage (not measured on Windows yet).
 
 Clicking a task opens its card body: when it started and ended, the files it writes, its budget, its folded prompt,
 diffs, its worker's last word, where its work stands, its events, and folded terminal logs with **See logs** (or
@@ -241,15 +252,44 @@ An azima is **Draft**, **Open**, **In progress**, **To validate** or **Done**. A
 not started) to another wish.
 
 Each wish has a **Push strategy**: **Per wish** (one integration branch per wish and project) or **Per azima** (one
-integration branch per azima, named `azima/<azima-code>-<slug>`). In the wish header, the push strategy can be switched,
-or set from a terminal with `djinn wish push-strategy <wish-id> --strategy wish|azima`. For an azima with its own branch,
-status badges show **PR proposed**, **PR open** or **PR merged**, with buttons to open or merge the PR. An individual
-**Push** button (`djinn project push <project> --wish <wish>`) pushes the branch on demand when you choose.
+branch per azima, named `djinn/<code>-<slug of its title>`: `djinn/T07-the-orchestrator`). In the wish header, the push
+strategy can be switched, or set from a terminal with `djinn wish push-strategy <wish-id> --strategy wish|azima`. For an
+azima with its own branch, status badges show **PR proposed**, **PR open** or **PR merged**, with buttons to open or
+merge the PR. An individual **Push** button (`djinn project push <project> --wish <wish>`) pushes the branch on demand
+when you choose.
+
+**Where work lands.** Per wish, a wish's work lands in its integration branch, in each project the branch your checkout
+was on when the wish was made: the chip beside the push strategy names it (with the project, when the wish has several),
+and a click on it changes it to another local branch or to a new one made from it (`djinn wish set-integration <wish>
+--branch feat/x`, `--create-branch` for a new one), refused while a merge into it runs. Per azima, each azima's work
+lands in main through its own branch and pull request, which its card shows once opened, and work of no azima in the wish's
+integration branch; `djinn wish brief` and `djinn brief` say it in a line for each wish.
+
+An azima's branch works like a wish's integration branch. Djinn cuts it from main when the azima is made (an azima made
+before its wish was switched gets its branch when its first part starts), and records it on the azima: its card, opened,
+shows the branch, the commit of main it was cut from, and that it lands in main. The azima's work merges into it, and Djinn keeps it up with
+main by the same rules as a wish's branch ([keeping up with main](team-settings.md#keeping-up-with-main)). It lands in
+main: its pull request, opened when you say so after Djinn proposes it, targets main and follows each push of the
+branch; Djinn never re-targets it.
+
+Under the per-azima strategy no azima waits for another: each branch holds main and its own work, nothing else. Djinn
+refuses an azima after another, directly or through their work (`djinn task spawn --after`, `djinn task depend`,
+`djinn task update`, `djinn task group`, an `after:` line of a plan file at `djinn plan sync`), and refuses switching a
+wish to per azima while its azimas depend on each other: the window says which in a line, and the switch stays on per
+wish. Tasks inside one azima wait for each other as usual. A branch made before, stacked on the branch of the azima it
+depended on, keeps working as it is: Djinn never cuts it again nor rewrites it.
 
 Once every task part of an azima is finished, it is **To validate**: nothing is left for Djinn. Its card says what
 validating it takes, box by box of its plan file (a person, a machine, a release or a real model gives each proof), and
 its **Validate** button marks it done. An azima whose plan file says done stays **In progress** while work part of it
 still runs or waits. The flight plan lists the proofs a person can give among the **Proofs you can give**.
+
+### The Review tab
+
+The wish's merged work, a line per task, the merges Djinn started under the task they serve; the tab counts what is
+left to review. A click on a line opens its diff, with the comments on its lines; its box marks it reviewed, kept with
+who checked it and when, and the lead reads it in its brief and with `djinn mark list`. What is reviewed folds at the
+end. **See the diff** stays on each task's card in the Tasks tab.
 
 ### The Decisions tab
 
@@ -393,8 +433,12 @@ or **On demand** (pushes only when you click **Push** or run `djinn project push
 switch cadence in the project view or with `djinn project set-push <project> standard|on_demand`. Before it pushes the branch,
 it runs the checks named for `push`: red, the push is held, and Djinn starts a correction worker; if that fails or attempts
 are spent, it asks you. `djinn project show` and the project's view in the window list the checks and how each last ran.
-When the settings also name an install command, the window proposes the batch it committed, with **What changed** displaying
-folded task summaries; **Install and restart** installs it, nothing before your click. With `install_questions: when_needed`,
+When the settings also name an install command, the window proposes the build it pushed, one per integration branch:
+on one line, its commit, the branch and wish it comes from, and against the running Djinn the tasks it adds, or "older
+than the running Djinn on 3 commits" when the running Djinn holds commits it lacks; **Details** unfolds the tasks merged
+since, each with its title and folded summary, and the commits' titles, folded. The build of the branch the running
+Djinn was built from comes first; the other branches' builds are folded under one line that names them, each with its
+own **Install and restart** and ×. Nothing installs before your click; × hides that build until a newer one comes. With `install_questions: when_needed`,
 Djinn raises no routine install question: the banner and post-push install are enough, and it asks only when necessary
 (e.g. a build carries a fix for a task you are waiting on, a change that takes effect after restart and matters now, or
 the running build is broken), saying why in the question; with `install_questions: never` (set in Djinn itself), no
@@ -431,11 +475,14 @@ A worker stopped by its provider's usage limit shows "Waiting for the limit", th
 A watchdog guards against runaway workers. A worker that prints nothing for 15 minutes, with no process busy and no
 gate held or awaited, is ended (continued when its provider can resume). A task is stopped, "budget exceeded", past
 2 hours of work in total across its runs, or a worker past 500 model turns in one run; `djinn task continue` gives a
-stopped worker 500 turns again, not more time.
+stopped worker 500 turns again, not more time. A Claude worker's count grows as it works; Antigravity
+reports its own at the end of each answer, Codex none.
 
 At every start, the lead of the first active wish comes back on its session, in its folder. The lead terminals come
 back after an update or a crash too, on the same sessions; not after you quit. When a newer Djinn is installed, a
-banner offers **Update**, with its **Release notes** when it has some: nothing restarts without that click. After the
+banner offers **Update**, with its **Release notes** when it has some: nothing restarts without that click. A Djinn
+built from a checkout is named as a build is (its commit, branch and wish, what it adds and lacks); × hides it until
+another version is installed. After the
 restart, it lists the terminals that did not start again.
 
 A Djinn you built from your checkout of Djinn (`go tool task install`) watches the releases too. With your checkout

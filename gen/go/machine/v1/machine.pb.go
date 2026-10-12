@@ -188,9 +188,14 @@ type Machine struct {
 	// Why the workers' CPU and memory are not measured on this machine; empty where they are (Linux, macOS).
 	WorkerMeasure string `protobuf:"bytes,19,opt,name=worker_measure,json=workerMeasure,proto3" json:"worker_measure,omitempty"`
 	// Operating load notch in effect on this machine.
-	Load          v1.LoadNotch `protobuf:"varint,20,opt,name=load,proto3,enum=djinn.v1.LoadNotch" json:"load,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Load v1.LoadNotch `protobuf:"varint,20,opt,name=load,proto3,enum=djinn.v1.LoadNotch" json:"load,omitempty"`
+	// The percentile of its memory series a worker is engaged at under this notch: 95 at Minimal down to 50 at
+	// Overclock.
+	WorkerPercentile int32 `protobuf:"varint,21,opt,name=worker_percentile,json=workerPercentile,proto3" json:"worker_percentile,omitempty"`
+	// The same in words, like "engaged at p50 (overclock)".
+	WorkerEngagedAt string `protobuf:"bytes,22,opt,name=worker_engaged_at,json=workerEngagedAt,proto3" json:"worker_engaged_at,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Machine) Reset() {
@@ -361,6 +366,20 @@ func (x *Machine) GetLoad() v1.LoadNotch {
 		return x.Load
 	}
 	return v1.LoadNotch(0)
+}
+
+func (x *Machine) GetWorkerPercentile() int32 {
+	if x != nil {
+		return x.WorkerPercentile
+	}
+	return 0
+}
+
+func (x *Machine) GetWorkerEngagedAt() string {
+	if x != nil {
+		return x.WorkerEngagedAt
+	}
+	return ""
 }
 
 // WorkerUse is what the worker of a running task uses of the machine.
@@ -2230,7 +2249,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\n" +
 	"some_avg10\x18\x01 \x01(\x01R\tsomeAvg10\x12\x1d\n" +
 	"\n" +
-	"full_avg10\x18\x02 \x01(\x01R\tfullAvg10\"\xa0\x06\n" +
+	"full_avg10\x18\x02 \x01(\x01R\tfullAvg10\"\xf9\x06\n" +
 	"\aMachine\x12\x0e\n" +
 	"\x02os\x18\x01 \x01(\tR\x02os\x12\x12\n" +
 	"\x04arch\x18\x02 \x01(\tR\x04arch\x12\x14\n" +
@@ -2253,7 +2272,9 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\vworker_uses\x18\x12 \x03(\v2\x15.machine.v1.WorkerUseR\n" +
 	"workerUses\x12%\n" +
 	"\x0eworker_measure\x18\x13 \x01(\tR\rworkerMeasure\x12'\n" +
-	"\x04load\x18\x14 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x04loadB\b\n" +
+	"\x04load\x18\x14 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x04load\x12+\n" +
+	"\x11worker_percentile\x18\x15 \x01(\x05R\x10workerPercentile\x12*\n" +
+	"\x11worker_engaged_at\x18\x16 \x01(\tR\x0fworkerEngagedAtB\b\n" +
 	"\x06_load1\"\xb1\x01\n" +
 	"\tWorkerUse\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x17\n" +

@@ -80,6 +80,11 @@ message Machine {
   string worker_measure = 19;
   // Operating load notch in effect on this machine.
   djinn.v1.LoadNotch load = 20;
+  // The percentile of its memory series a worker is engaged at under this notch: 95 at Minimal down to 50 at
+  // Overclock.
+  int32 worker_percentile = 21;
+  // The same in words, like "engaged at p50 (overclock)".
+  string worker_engaged_at = 22;
 }
 
 // WorkerUse is what the worker of a running task uses of the machine.

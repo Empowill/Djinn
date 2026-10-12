@@ -14,7 +14,13 @@ import {
   type Wish,
 } from "../../gen/ts/plan/v1/plan_pb";
 import { type Decision, decisionsOf, later } from "./decisions";
-import { investigating, isOpen, waitsForYou, watcherRuns } from "./format";
+import {
+  investigating,
+  isOpen,
+  isTaskMerging,
+  waitsForYou,
+  watcherRuns,
+} from "./format";
 import { estimateCost, getPriceTable } from "./prices";
 import type { WishDetail } from "./store";
 
@@ -61,6 +67,7 @@ export interface FlightPlan {
   waiting: Waiting[];
   // The wishes Djinn proposes to grant.
   ready: Wish[];
+  // What runs: workers at work, and work that merges (isTaskMerging).
   running: Item<Task>[];
   // The tasks that move or wait, by status, then those done or stopped, the latest ended first: the Tasks tab. Work
   // part of an azima is in its azima's group, between them.
@@ -207,18 +214,29 @@ export function mergeNest(tasks: readonly Task[]): MergeNest {
   return nest;
 }
 
-// settledTask tells a finished task whose merges are finished too: a task whose merge still runs moves with it.
-export function settledTask(task: Task, nest: MergeNest): boolean {
+// workOnItsWay tells a done task whose work is not in its wish's integration branch yet: waiting for its batch,
+// merging, in conflict, red, or left not committed. Something still moves or waits on it. Work committed, a task with
+// no work to merge (no branch, cancelled) or whose integration was cleared has none on its way.
+export function workOnItsWay(task: Task): boolean {
+  if (task.status !== TaskStatus.DONE) return false;
+  const s = task.integration?.state;
   return (
-    finishedTask(task) && (nest.under.get(task.id) ?? []).every(finishedTask)
+    s === IntegrationState.PENDING ||
+    s === IntegrationState.INTEGRATING ||
+    s === IntegrationState.CONFLICT ||
+    s === IntegrationState.RED ||
+    s === IntegrationState.UNCOMMITTED
   );
 }
 
-// isTaskMerging tells whether a done task's work is currently merging.
-export function isTaskMerging(task: Task): boolean {
-  if (task.status !== TaskStatus.DONE) return false;
-  const s = task.integration?.state;
-  return s === IntegrationState.PENDING || s === IntegrationState.INTEGRATING;
+// ended tells a finished task whose work is in, or has none to bring in (workOnItsWay).
+const ended = (task: Task) => finishedTask(task) && !workOnItsWay(task);
+
+// settledTask tells a finished task whose work is committed, and whose merges are settled too: the Tasks tab and an
+// azima fold it with the finished. A task whose work merges, or failed to, or whose merge still runs moves with it:
+// one that waits for it to be committed points at a card in sight.
+export function settledTask(task: Task, nest: MergeNest): boolean {
+  return ended(task) && (nest.under.get(task.id) ?? []).every(ended);
 }
 
 // isTaskMergingOrFailed tells whether a done task's work is merging or failed to merge.
@@ -576,7 +594,8 @@ export function flightPlan(
     for (const item of detail.tasks) {
       if (
         item.status === TaskStatus.RUNNING ||
-        item.status === TaskStatus.RESUMING
+        item.status === TaskStatus.RESUMING ||
+        isTaskMerging(item)
       )
         plan.running.push({ wish, item });
     }
@@ -622,11 +641,13 @@ export interface ProviderSpent {
   costUsd: number;
   estimatedCostUsd: number;
   withoutCost: number;
+  priced: number;
   withoutPrice: number;
   tasks: number;
 }
 
-// Spent is what tasks spent, summed: tokens always, the reported cost when available, and the estimated cost.
+// Spent is what tasks spent, summed: tokens always, and the cost: what the agents reported, and for the tasks with no
+// reported cost, their tokens at the table's prices. The two parts add up to the price (costUsd + estimatedCostUsd).
 export interface Spent {
   inputTokens: bigint;
   outputTokens: bigint;
@@ -634,11 +655,14 @@ export interface Spent {
   cacheWriteTokens: bigint;
   thinkingTokens: bigint;
   costUsd: number;
+  // The estimate of the tasks without a reported cost.
   estimatedCostUsd: number;
   tableDate: string;
   // The tasks that spent tokens without a cost.
   withoutCost: number;
-  // The tasks that spent tokens without a price in the table.
+  // The tasks without a cost the table priced.
+  priced: number;
+  // The tasks without a cost nor a price in the table.
   withoutPrice: number;
   // The tasks that spent something.
   tasks: number;
@@ -680,6 +704,7 @@ export function spent(tasks: readonly Task[]): Spent {
     estimatedCostUsd: 0,
     tableDate: table.date,
     withoutCost: 0,
+    priced: 0,
     withoutPrice: 0,
     tasks: 0,
     byProvider: [],
@@ -702,14 +727,16 @@ export function spent(tasks: readonly Task[]): Spent {
     out.cacheWriteTokens += writeTok;
     out.thinkingTokens += thinkTok;
 
-    if (usage.costUsd > 0) out.costUsd += usage.costUsd;
-    else out.withoutCost++;
-
+    // A reported cost is the price; the table prices only the tasks without one.
+    const reported = usage.costUsd > 0;
     const est = estimateCost(usage, model, provider);
-    if (est.hasPrice) {
-      out.estimatedCostUsd += est.costUsd;
-    } else {
-      out.withoutPrice++;
+    if (reported) out.costUsd += usage.costUsd;
+    else {
+      out.withoutCost++;
+      if (est.hasPrice) {
+        out.priced++;
+        out.estimatedCostUsd += est.costUsd;
+      } else out.withoutPrice++;
     }
 
     const prov = provider ?? Provider.UNSPECIFIED;
@@ -725,6 +752,7 @@ export function spent(tasks: readonly Task[]): Spent {
         costUsd: 0,
         estimatedCostUsd: 0,
         withoutCost: 0,
+        priced: 0,
         withoutPrice: 0,
         tasks: 0,
       };
@@ -736,12 +764,13 @@ export function spent(tasks: readonly Task[]): Spent {
     pSpent.cacheReadTokens += readTok;
     pSpent.cacheWriteTokens += writeTok;
     pSpent.thinkingTokens += thinkTok;
-    if (usage.costUsd > 0) pSpent.costUsd += usage.costUsd;
-    else pSpent.withoutCost++;
-    if (est.hasPrice) {
-      pSpent.estimatedCostUsd += est.costUsd;
-    } else {
-      pSpent.withoutPrice++;
+    if (reported) pSpent.costUsd += usage.costUsd;
+    else {
+      pSpent.withoutCost++;
+      if (est.hasPrice) {
+        pSpent.priced++;
+        pSpent.estimatedCostUsd += est.costUsd;
+      } else pSpent.withoutPrice++;
     }
   }
 

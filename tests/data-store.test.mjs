@@ -94,6 +94,8 @@ function server(data) {
         count("events");
         for (const event of data.events.filter((e) => e.seq > req.afterSeq))
           yield { event };
+        // A running task's watch stays open.
+        if (data.running) await new Promise(() => {});
       },
     });
     service(QuestionService, {
@@ -254,6 +256,26 @@ test("a task's events come in order, and a second follow reads only what is new"
   state = await until(store, (s) => s.events[taskId]?.length === 3);
   assert.equal(state.events[taskId][2].text, "ended");
   assert.equal(reads.events, 2);
+});
+
+// task-pause.spec.ts saw "resumed" twice: the new status followed again while the old follow still held the event.
+test("a task followed again as its status changes keeps each event once", async () => {
+  const data = { ...sample(), running: true };
+  const { clients, reads } = server(data);
+  const store = createStore(clients, 10);
+  const release = store.follow(taskId);
+  // Less than the 50 ms the events wait for the screen.
+  await new Promise((r) => setTimeout(r, 10));
+  release();
+  const again = store.follow(taskId);
+  await until(store, (s) => s.events[taskId]?.length >= 2);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.deepEqual(
+    store.getState().events[taskId].map((e) => e.seq),
+    [1n, 2n],
+  );
+  assert.equal(reads.events, 2);
+  again();
 });
 
 test("reading a task's prompt gets the task alone without following its events", async () => {

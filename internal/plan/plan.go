@@ -42,10 +42,11 @@ func Entities() []proto.Message {
 // identity of their own.
 const actor = "local"
 
-// Pusher pushes an integration branch and computes how far it is out of sync with its remote.
+// Pusher pushes a wish's branches, all or only one, and computes how far each branch it pushes in a project is out of
+// sync with its remote.
 type Pusher interface {
-	Push(ctx context.Context, wishID, projectID string) (*planv1.IntegrationPush, error)
-	Sync(ctx context.Context, wish *planv1.Wish, project *planv1.Project) (*planv1.ProjectSync, error)
+	Push(ctx context.Context, wishID, projectID, branch string) (*planv1.IntegrationPush, error)
+	Syncs(ctx context.Context, project *planv1.Project) ([]*planv1.ProjectSync, error)
 }
 
 // Option sets what the plan services reach beyond the store.
@@ -250,11 +251,8 @@ func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) {
 	project.PushStrategy = settings.PushStrategy
 
 	if p.Pusher != nil {
-		wish, _ := p.wishForProject(ctx, project.GetId(), "")
-		if wish != nil {
-			if sync, err := p.Pusher.Sync(ctx, wish, project); err == nil && sync != nil {
-				project.Sync = sync
-			}
+		if syncs, err := p.Pusher.Syncs(ctx, project); err == nil {
+			project.Syncs = syncs
 		}
 	}
 }
@@ -406,14 +404,27 @@ func (p *Projects) Push(
 	if err != nil {
 		return nil, Status(err)
 	}
-	wish, err := p.wishForProject(ctx, project.GetId(), req.Msg.GetWish())
+	branch, wishName := req.Msg.GetBranch(), req.Msg.GetWish()
+	if branch != "" && wishName == "" {
+		// The branch says whose it is.
+		syncs, err := p.Pusher.Syncs(ctx, project)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		for _, sync := range syncs {
+			if sync.GetBranch() == branch {
+				wishName = sync.GetWishId()
+			}
+		}
+	}
+	wish, err := p.wishForProject(ctx, project.GetId(), wishName)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeNotFound, err)
 	}
 	if wish == nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("no wish for project %s", project.GetName()))
 	}
-	push, err := p.Pusher.Push(ctx, wish.GetId(), project.GetId())
+	push, err := p.Pusher.Push(ctx, wish.GetId(), project.GetId(), branch)
 	if err != nil {
 		var cerr *connect.Error
 		if errors.As(err, &cerr) {
@@ -450,6 +461,11 @@ func (p *Projects) PushStrategy(
 	}
 	if req.Msg.Strategy != nil && req.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {
 		err = write(ctx, p.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+			if req.Msg.GetStrategy() == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
+				if err := refuseProjectSwitchToAzima(ctx, tx, project.GetId()); err != nil {
+					return err
+				}
+			}
 			return SaveDeveloperPushStrategy(p.Home, project.GetId(), req.Msg.GetStrategy())
 		})
 		if err != nil {
@@ -462,6 +478,67 @@ func (p *Projects) PushStrategy(
 		Strategy: settings.PushStrategy,
 		Source:   settings.PushStrategyFrom,
 	}), nil
+}
+
+// Branches lists the local branches of a project's repository, the latest commit first, without the branches of
+// Djinn's tasks: where a wish's work may land.
+func (p *Projects) Branches(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceBranchesRequest],
+) (*connect.Response[planv1.ProjectServiceBranchesResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	out := &planv1.ProjectServiceBranchesResponse{}
+	dir := project.GetDirectory()
+	if !project.GetGit() || dir == "" {
+		return connect.NewResponse(out), nil
+	}
+	refs, err := gitOut(ctx, dir, "for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads")
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	tasks, err := store.List[*planv1.Task](ctx, p.Store, nil)
+	if err != nil {
+		return nil, Status(err)
+	}
+	workers := map[string]bool{}
+	for _, t := range tasks {
+		if t.GetBranch() != "" && strings.EqualFold(t.GetProjectId(), project.GetId()) && !IsAzima(t) {
+			workers[strings.ToLower(t.GetBranch())] = true
+		}
+	}
+	for _, b := range strings.Fields(refs) {
+		if !workers[strings.ToLower(b)] {
+			out.Branches = append(out.Branches, b)
+		}
+	}
+	out.CheckedOut = CheckedOutBranch(ctx, dir)
+	return connect.NewResponse(out), nil
+}
+
+// refuseProjectSwitchToAzima refuses making per azima the push strategy of the project projectID while a wish of it
+// that takes the project's strategy, not granted, has azimas that wait for each other (RefuseSwitchToAzima).
+func refuseProjectSwitchToAzima(ctx context.Context, tx *store.Tx, projectID string) error {
+	wishes, err := store.List[*planv1.Wish](ctx, tx, nil)
+	if err != nil {
+		return err
+	}
+	for _, w := range wishes {
+		if w.GetPushStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED || w.GetState() == planv1.WishState_WISH_STATE_GRANTED ||
+			!slices.Contains(w.GetProjectIds(), projectID) {
+			continue
+		}
+		tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": w.GetId()})
+		if err != nil {
+			return err
+		}
+		if deps := AzimaDependencies(tasks); len(deps) > 0 {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"per azima refused: the azimas of wish %q depend on each other (%s)", w.GetTitle(), AzimaDependenciesText(deps)))
+		}
+	}
+	return nil
 }
 
 // unattached returns the project without a folder that has this remote, or else this name, case ignored; nil

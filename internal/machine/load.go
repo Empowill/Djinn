@@ -333,6 +333,8 @@ func (s *loadService) snapshot(ctx context.Context) *djinnv1.LoadServiceWatchRes
 		resp.CpuSlots = int32(cpuSlots)
 		resp.MemorySlots = int32(memSlots)
 		resp.BaseSlots = int32(baseSlots)
+		resp.WorkerPercentile = int32(policy.MemoryPercentile())
+		resp.WorkerEngagedAt = policy.EngagedAt()
 	}
 	if s.workerMemory != nil {
 		engaged, actual, err := s.workerMemory(ctx, policy)
@@ -392,6 +394,8 @@ func (s *loadService) Get(
 		resp.CpuSlots = int32(cpuSlots)
 		resp.MemorySlots = int32(memSlots)
 		resp.BaseSlots = int32(baseSlots)
+		resp.WorkerPercentile = int32(policy.MemoryPercentile())
+		resp.WorkerEngagedAt = policy.EngagedAt()
 	}
 	if s.runningWorkers != nil {
 		resp.RunningWorkers = int32(s.runningWorkers())

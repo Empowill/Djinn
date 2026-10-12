@@ -202,6 +202,13 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		if cycle := plan.ClosesCycle(task, newDeps, newAzima, tasks); cycle != "" {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the tasks of a wish form no cycle: %s", cycle))
 		}
+		wish, err := store.Get[*planv1.Wish](ctx, h.store, task.GetWishId())
+		if err != nil {
+			return nil, plan.Status(err)
+		}
+		if err := h.refuseAzimaDependencies(ctx, h.store, wish, t); err != nil {
+			return nil, plan.Status(err)
+		}
 	}
 
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {

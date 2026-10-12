@@ -308,6 +308,17 @@ When an investigator cannot start, Djinn makes room:
 - **Memory short**: A pause frees the slot and CPU but not the memory held by the stopped process. When memory blocks an investigator, Djinn interrupts the running work task of lowest priority so that it resumes later in its session or conversation (`plan.CanResume`), entering status `RESUMING` with the reason `"made room for Qxx: enlighten"`, without spending a resume attempt.
 - **Exclusions**: Djinn never preempts a task holding or waiting for a gate, never a correction or review worker, never a provider that cannot resume, and never pauses on Windows where process tree suspension is refused. At most one task is preempted per investigator. Each preemption records an event on both tasks and an entry in the journal (`harness/preempt`).
 
+### Memory a worker is engaged at
+
+A worker is engaged at a percentile of its memory readings that falls as the notch rises (Minimal p95, Medium p80,
+High p70, Max p60, Overclock p50), plus the notch's margin (512 MiB up to Medium, 384 MiB at High, 256 MiB at Max and
+Overclock): a running worker past its warm-up at that percentile of its own series (or what it holds now, if more), a
+new one at the median of the latest 10 finished workers' value at it. Another worker starts when what the workers are
+engaged at, plus its forecast, stays within the notch's share of what Djinn could use with no worker running (the
+memory available plus what the workers running hold, less the 2 GiB reserve), and the memory available, less what the
+workers running may still take beyond what they hold, holds its forecast. The pressure check (PSI), the memory free,
+the worker memory guardrail and the gates stay the safety net.
+
 ### Operating load runtime adjustments
 
 When the operating load notch changes, Djinn immediately adjusts running workers without waiting for subsequent scheduler decisions:
@@ -421,6 +432,7 @@ error subtype (`error_max_turns`, `error_during_execution`…) fails the turn ev
 | Unknown lines                                 | `claude/unknown-line.jsonl`      | by hand                                     | each kept as `OTHER`, raw                                                                                           |
 | Process dies mid-turn                         | `claude/process-dies.jsonl`      | by hand                                     | error "claude ended before the end of its turn"; task failed                                                        |
 | Max turns reached, `is_error` false           | `claude/max-turns.jsonl`         | by hand                                     | error `error_max_turns` from the subtype; task failed, though claude exits 0                                        |
+| Turns counted as they come                    | `claude/turns-mid-run.jsonl`     | by hand, from `tool-call.jsonl`             | a model turn per assistant message id, on its first event; a subagent's line (`parent_tool_use_id`) is none       |
 | Second message                                | `claude/two-turns.jsonl`         | by hand                                     | two turns in one process                                                                                            |
 | Message sent during the turn                  | `claude/mid-turn-message.jsonl`  | by hand, from W59's real result             | one result with `queued_turn_count` 0 answers both messages: the input is closed and the worker ends               |
 | Session limit reached                         | `claude/session-limit.jsonl`     | **real**, claude 2.1.293                    | `rate_limit_event` `rejected` gives the limit and its `resetsAt`; error "You've hit your session limit · resets 7:20am (Europe/Paris)"; the task waits for the reset, then resumes |

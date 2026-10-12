@@ -27,7 +27,7 @@ func TestPreemptForSlot(t *testing.T) {
 	e.until(t, w1.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
 
 	q := e.asker(wishID)
-	asked := q.ask(t, "Which database?")
+	asked := q.ask(t, "wait") // It works until the test lets it go.
 	q.enlighten(t, asked.GetCode(), "Investigate PostgreSQL vs SQLite")
 
 	investigators := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
@@ -104,7 +104,7 @@ func TestPreemptForMemory(t *testing.T) {
 
 	// An investigator is triggered. With 2 GiB free, another 1.5 GiB cannot fit, so memory is short.
 	q := e.asker(wishID)
-	asked := q.ask(t, "Which cache?")
+	asked := q.ask(t, "wait") // It works until the test lets it go.
 	q.enlighten(t, asked.GetCode(), "Investigate Redis vs Memcached")
 
 	investigators := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)

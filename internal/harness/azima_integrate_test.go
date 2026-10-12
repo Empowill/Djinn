@@ -1,12 +1,16 @@
 package harness
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -22,6 +26,16 @@ func (in *integration) setAzimaStrategy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// stored is the task id as the store holds it, what Djinn records of an azima included.
+func (in *integration) stored(t *testing.T, id string) *planv1.Task {
+	t.Helper()
+	task, err := store.Get[*planv1.Task](t.Context(), in.db, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return task
 }
 
 // TestAzimaIndependentBranchesFromMain verifies that two independent azimas get two branches created from main,
@@ -88,280 +102,321 @@ func TestAzimaIndependentBranchesFromMain(t *testing.T) {
 	}
 }
 
-// TestAzimaDependentBranchStacked verifies that a dependent azima starts from the branch of the azima it depends on
-// while that dependency is not merged into main.
-func TestAzimaDependentBranchStacked(t *testing.T) {
+// TestAzimaBranchCutFromMainWhenMade: under the per-azima strategy an azima's branch is cut from main's commit the
+// moment the azima is made, and recorded on it: its branch, the main it lands in, the commit. Main moving on later
+// does not cut it again: its work merges into the branch as cut, which keeps its name once the title changes.
+func TestAzimaBranchCutFromMainWhenMade(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
 	in.setAzimaStrategy(t)
+	cut := in.tip(t)
 
-	t1 := in.azima(t, in.wishID, "Base")
-	t2 := in.azima(t, in.wishID, "Dependent", t1.GetCode())
-	part1 := func(task *planv1.Task) { task.PartOf = t1.GetId() }
-	part2 := func(task *planv1.Task) { task.PartOf = t2.GetId() }
-
-	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, part1)
-	in.pass(t, 0)
-
-	b1 := "djinn/T1-base"
-	sha1 := in.git(t, in.repo, "rev-parse", "refs/heads/"+b1)
-
-	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, part2)
-	in.pass(t, 0)
-
-	b2 := "djinn/T2-dependent"
-	sha2 := in.git(t, in.repo, "rev-parse", "refs/heads/"+b2)
-
-	// sha1 (tip of base azima) must be an ancestor of sha2 (dependent branch tip).
-	if _, err := git(t.Context(), in.repo, "merge-base", "--is-ancestor", sha1, sha2); err != nil {
-		t.Fatalf("%s is not an ancestor of %s: %v", b1, b2, err)
+	t1 := in.azima(t, in.wishID, "One Alpha")
+	b1 := "djinn/T1-one-alpha"
+	if got := in.git(t, in.repo, "rev-parse", "refs/heads/"+b1); got != cut {
+		t.Fatalf("%s at %s when made, want main's %s", b1, got, cut)
+	}
+	want := &planv1.Azima{Branch: b1, BaseBranch: in.branch, CutFrom: cut}
+	if got := in.stored(t, t1.GetId()).GetAzima(); got.GetBranch() != want.GetBranch() ||
+		got.GetBaseBranch() != want.GetBaseBranch() || got.GetCutFrom() != want.GetCutFrom() {
+		t.Fatalf("recorded %v, want %v", got, want)
+	}
+	if got := in.get(t, t1.GetId()).GetAzima(); got.GetBaseBranch() != in.branch || got.GetCutFrom() != cut {
+		t.Errorf("read %v, want it to land in %s, cut from %s", got, in.branch, cut)
 	}
 
-	task2 := in.get(t, w2.GetId())
-	if task2.GetIntegration().GetBranch() != b2 {
-		t.Fatalf("w2 branch = %s, want %s", task2.GetIntegration().GetBranch(), b2)
-	}
-	if task2.GetIntegration().GetSha() != sha2 {
-		t.Fatalf("w2 sha = %s, want %s", task2.GetIntegration().GetSha(), sha2)
-	}
-}
-
-// TestAzimaDependentStartsFromMainWhenBaseMerged verifies that when the base azima is already merged into main,
-// a later dependent azima starts from main.
-func TestAzimaDependentStartsFromMainWhenBaseMerged(t *testing.T) {
-	testx.Portable(t)
-	in := integrating(t)
-	in.setAzimaStrategy(t)
-
-	t1 := in.azima(t, in.wishID, "Base")
-	part1 := func(task *planv1.Task) { task.PartOf = t1.GetId() }
-
-	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, part1)
-	in.pass(t, 0)
-
-	b1 := "djinn/T1-base"
-	in.git(t, in.repo, "checkout", in.branch)
-	in.git(t, in.repo, "merge", "--no-ff", b1, "-m", "Merge "+b1+" into main")
-	newMainSha := in.tip(t)
-
-	t2 := in.azima(t, in.wishID, "Dependent", t1.GetCode())
-	part2 := func(task *planv1.Task) { task.PartOf = t2.GetId() }
-
-	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, part2)
-	in.pass(t, 0)
-
-	b2 := "djinn/T2-dependent"
-	sha2 := in.git(t, in.repo, "rev-parse", "refs/heads/"+b2)
-
-	// Dependent branch starts from main (which includes the merge commit newMainSha).
-	if _, err := git(t.Context(), in.repo, "merge-base", "--is-ancestor", newMainSha, sha2); err != nil {
-		t.Fatalf("merged main %s is not an ancestor of %s: %v", newMainSha, b2, err)
-	}
-
-	task2 := in.get(t, w2.GetId())
-	if task2.GetIntegration().GetBranch() != b2 {
-		t.Fatalf("w2 branch = %s, want %s", task2.GetIntegration().GetBranch(), b2)
-	}
-}
-
-// TestAzimaFollowMainRebaseUnpushed verifies that an unpushed stacked branch rebases on main when the base azima is
-// merged into main, and task integration SHAs are updated.
-func TestAzimaFollowMainRebaseUnpushed(t *testing.T) {
-	testx.Portable(t)
-	in := integrating(t)
-	in.setAzimaStrategy(t)
-
-	t1 := in.azima(t, in.wishID, "Base")
-	t2 := in.azima(t, in.wishID, "Dependent", t1.GetCode())
-	part1 := func(task *planv1.Task) { task.PartOf = t1.GetId() }
-	part2 := func(task *planv1.Task) { task.PartOf = t2.GetId() }
-
-	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, part1)
-	in.pass(t, 0)
-
-	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, part2)
-	in.pass(t, 0)
-
-	b2 := "djinn/T2-dependent"
-	w2OldSha := in.get(t, w2.GetId()).GetIntegration().GetSha()
-
-	// Merge base azima T1 into main.
-	b1 := "djinn/T1-base"
-	in.git(t, in.repo, "checkout", in.branch)
-	in.git(t, in.repo, "merge", "--no-ff", b1, "-m", "Merge "+b1+" into main")
-	newMainSha := in.tip(t)
-
-	// Follow main in integration pass.
-	in.pass(t, 0)
-
-	sha2Rebased := in.git(t, in.repo, "rev-parse", "refs/heads/"+b2)
-
-	// b2 now contains the new mainSha.
-	if _, err := git(t.Context(), in.repo, "merge-base", "--is-ancestor", newMainSha, sha2Rebased); err != nil {
-		t.Fatalf("new main %s is not an ancestor of rebased %s: %v", newMainSha, b2, err)
-	}
-
-	// Task W2's integration SHA was updated.
-	w2New := in.get(t, w2.GetId())
-	if w2New.GetIntegration().GetSha() == w2OldSha {
-		t.Fatal("w2 integration sha was not updated after rebase")
-	}
-	if w2New.GetIntegration().GetSha() != sha2Rebased {
-		t.Fatalf("w2 sha = %s, want %s", w2New.GetIntegration().GetSha(), sha2Rebased)
-	}
-}
-
-// TestAzimaFollowMainRebaseUnpushedWithRemoteAskMode verifies that when a remote exists but the branch was never pushed
-// (e.g. ask mode where push has not been approved), Djinn rebases the unpushed branch onto main.
-func TestAzimaFollowMainRebaseUnpushedWithRemoteAskMode(t *testing.T) {
-	testx.Portable(t)
-	in := integrating(t)
-	in.setAzimaStrategy(t)
-	in.remote(t)
-	if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
-		WishId: in.wishID, PushMode: planv1.PushMode_PUSH_MODE_ASK,
-	})); err != nil {
+	// Its first work ends; then main moves on, and the title changes.
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+	writeFile(t, in.repo, "app/src/later.txt", "later\n")
+	in.git(t, in.repo, "add", ".")
+	in.git(t, in.repo, "commit", "--quiet", "-m", "Later on main")
+	later := in.tip(t)
+	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		a, err := store.Get[*planv1.Task](t.Context(), tx, t1.GetId())
+		if err != nil {
+			return err
+		}
+		a.Title = "Renamed"
+		if err := tx.Journal("test", "rename", a); err != nil {
+			return err
+		}
+		return tx.Put(a)
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	t1 := in.azima(t, in.wishID, "Base")
-	t2 := in.azima(t, in.wishID, "Dependent", t1.GetCode())
-	part1 := func(task *planv1.Task) { task.PartOf = t1.GetId() }
-	part2 := func(task *planv1.Task) { task.PartOf = t2.GetId() }
-
-	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, part1)
 	in.pass(t, 0)
-
-	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, part2)
-	in.pass(t, 0)
-
-	b2 := "djinn/T2-dependent"
-	w2OldSha := in.get(t, w2.GetId()).GetIntegration().GetSha()
-
-	// Merge base azima T1 into main.
-	b1 := "djinn/T1-base"
-	in.git(t, in.repo, "checkout", in.branch)
-	in.git(t, in.repo, "merge", "--no-ff", b1, "-m", "Merge "+b1+" into main")
-	newMainSha := in.tip(t)
-
-	// Follow main in integration pass.
-	in.pass(t, 0)
-
-	sha2Rebased := in.git(t, in.repo, "rev-parse", "refs/heads/"+b2)
-
-	// b2 now contains the new mainSha.
-	if _, err := git(t.Context(), in.repo, "merge-base", "--is-ancestor", newMainSha, sha2Rebased); err != nil {
-		t.Fatalf("new main %s is not an ancestor of rebased %s: %v", newMainSha, b2, err)
+	if got := in.get(t, w1.GetId()).GetIntegration(); got.GetBranch() != b1 ||
+		got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+		t.Fatalf("w1 integration = %v, want committed into %s", got, b1)
 	}
-
-	// Task W2's integration SHA was updated.
-	w2New := in.get(t, w2.GetId())
-	if w2New.GetIntegration().GetSha() == w2OldSha {
-		t.Fatal("w2 integration sha was not updated after rebase")
+	if base := in.git(t, in.repo, "merge-base", "refs/heads/"+b1, later); base != cut {
+		t.Errorf("%s cut again: its merge base with main is %s, want %s", b1, base, cut)
 	}
-	if w2New.GetIntegration().GetSha() != sha2Rebased {
-		t.Fatalf("w2 sha = %s, want %s", w2New.GetIntegration().GetSha(), sha2Rebased)
+	if got := in.stored(t, t1.GetId()).GetAzima().GetCutFrom(); got != cut {
+		t.Errorf("cut_from = %s, want %s", got, cut)
+	}
+	if _, err := git(t.Context(), in.repo, "rev-parse", "--verify", "--quiet", "refs/heads/djinn/T1-renamed"); err == nil {
+		t.Error("a renamed azima got a second branch")
 	}
 }
 
-// TestAzimaFollowMainMergePushed verifies that an already pushed stacked branch merges main without force when the
-// base azima is merged into main.
-func TestAzimaFollowMainMergePushed(t *testing.T) {
+// TestAzimaBranchCutWhenItsFirstPartStarts: an azima made before its wish was switched to per azima has no branch;
+// its first part to start cuts it from main, recorded, and starts from it.
+func TestAzimaBranchCutWhenItsFirstPartStarts(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
+	t1 := in.azima(t, in.wishID, "Made Before")
+	b1 := "djinn/T1-made-before"
+	if _, err := git(t.Context(), in.repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+b1); err == nil {
+		t.Fatalf("%s cut under the per-wish strategy", b1)
+	}
 	in.setAzimaStrategy(t)
-	in.remote(t)
+	cut := in.tip(t)
 
-	t1 := in.azima(t, in.wishID, "Base")
-	t2 := in.azima(t, in.wishID, "Dependent", t1.GetCode())
-	part1 := func(task *planv1.Task) { task.PartOf = t1.GetId() }
-	part2 := func(task *planv1.Task) { task.PartOf = t2.GetId() }
-
-	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, part1)
-	in.pass(t, 0)
-
-	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, part2)
-	in.pass(t, 0)
-
-	b2 := "djinn/T2-dependent"
-	// Push b2 to origin and update remote tracking ref.
-	in.git(t, in.repo, "push", "origin", b2)
-	b2PushedSha := in.git(t, in.repo, "rev-parse", "refs/heads/"+b2)
-	in.git(t, in.repo, "update-ref", "refs/remotes/origin/"+b2, b2PushedSha)
-
-	// Merge base azima T1 into main.
-	b1 := "djinn/T1-base"
-	in.git(t, in.repo, "checkout", in.branch)
-	in.git(t, in.repo, "merge", "--no-ff", b1, "-m", "Merge "+b1+" into main")
-	newMainSha := in.tip(t)
-
-	// Follow main in integration pass.
-	in.pass(t, 0)
-
-	sha2Merged := in.git(t, in.repo, "rev-parse", "refs/heads/"+b2)
-
-	// b2 contains newMainSha.
-	if _, err := git(t.Context(), in.repo, "merge-base", "--is-ancestor", newMainSha, sha2Merged); err != nil {
-		t.Fatalf("new main %s is not an ancestor of %s: %v", newMainSha, b2, err)
+	part := &planv1.Task{
+		Id: store.NewID(), WishId: in.wishID, ProjectId: in.projectID, Code: "W1", Title: "First part", PartOf: t1.GetId(),
+		Status: planv1.TaskStatus_TASK_STATUS_PENDING, CreateTime: timestamppb.Now(),
 	}
-
-	// b2PushedSha is still an ancestor: no force-push, merge instead of rebase.
-	if _, err := git(t.Context(), in.repo, "merge-base", "--is-ancestor", b2PushedSha, sha2Merged); err != nil {
-		t.Fatalf("previously pushed tip %s is not an ancestor of %s (history rewritten): %v", b2PushedSha, b2, err)
+	putTask(t, in.db, part, "first part")
+	wish, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	// Tip commit message confirms a merge.
-	lastMsg := in.git(t, in.repo, "log", "-n", "1", "--format=%s", sha2Merged)
-	if !strings.Contains(lastMsg, "Merge branch") {
-		t.Fatalf("expected merge commit message, got %q", lastMsg)
+	project, err := store.Get[*planv1.Project](t.Context(), in.db, in.projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err := plan.LoadSettings(in.home, project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if from := in.h.workerStartBranch(t.Context(), wish, project, settings, part); from != b1 {
+		t.Fatalf("the part starts from %q, want %s", from, b1)
+	}
+	if got := in.git(t, in.repo, "rev-parse", "refs/heads/"+b1); got != cut {
+		t.Errorf("%s at %s, want main's %s", b1, got, cut)
+	}
+	if got := in.stored(t, t1.GetId()).GetAzima(); got.GetCutFrom() != cut || got.GetBranch() != b1 {
+		t.Errorf("recorded %v, want %s cut from %s", got, b1, cut)
 	}
 }
 
-// TestAzimaFollowMainConflictLeavesToLead verifies that a conflict when following main tells the lead
-// and leaves QuestionId empty, asking no question to the developer.
-func TestAzimaFollowMainConflictLeavesToLead(t *testing.T) {
+// TestAzimaBranchKeepsUpWithMain: an azima's branch keeps up with main as a wish's integration branch does, by the
+// same merge_main rules: main merged into it, never a rebase, its state recorded on the azima. One that holds
+// nothing of its own beyond main moves to main's commit.
+func TestAzimaBranchKeepsUpWithMain(t *testing.T) {
+	testx.Portable(t)
+	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+	u.setAzimaStrategy(t)
+	t1 := u.azima(t, u.wishID, "With Work")
+	t2 := u.azima(t, u.wishID, "Without Work")
+	b1, b2 := "djinn/T1-with-work", "djinn/T2-without-work"
+	u.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+	u.pass(t, 0)
+	worked := u.git(t, u.repo, "rev-parse", "refs/heads/"+b1)
+
+	fix := u.onMain(t, "Fix on main", map[string]string{"app/src/fix.txt": "fix\n"})
+	u.pass(t, 2*time.Hour) // The next look at main, as merge_main_minutes says.
+
+	tip := u.git(t, u.repo, "rev-parse", "refs/heads/"+b1)
+	if !isAncestor(t.Context(), u.repo, fix, tip) || !isAncestor(t.Context(), u.repo, worked, tip) {
+		t.Fatalf("%s at %s: holds main's %s: %v, its work %s: %v", b1, tip, fix, isAncestor(t.Context(), u.repo, fix, tip),
+			worked, isAncestor(t.Context(), u.repo, worked, tip))
+	}
+	if parents := strings.Fields(u.git(t, u.repo, "log", "-1", "--format=%P", tip)); len(parents) != 2 || parents[0] != worked {
+		t.Errorf("%s's tip has parents %v: want a merge onto %s", b1, parents, worked)
+	}
+	state := u.stored(t, t1.GetId()).GetAzima().GetMain()
+	if state.GetLast().GetMainSha() != fix || state.GetLast().GetBranch() != b1 || state.GetLast().GetNewSha() != tip ||
+		state.GetHeld() != "" {
+		t.Errorf("T1's state against main = %v", state)
+	}
+	if got := u.git(t, u.repo, "rev-parse", "refs/heads/"+b2); got != fix {
+		t.Errorf("%s at %s: want main's %s, nothing of its own to merge", b2, got, fix)
+	}
+	if got := u.stored(t, t2.GetId()).GetAzima().GetMain().GetLast().GetNewSha(); got != fix {
+		t.Errorf("T2's last merge of main moved it to %s, want %s", got, fix)
+	}
+
+	// merge_main off: main stays out, as for the wish's branch.
+	writeFile(t, u.home, filepath.Join("projects", u.projectID, "settings.txtpb"),
+		"provider: PROVIDER_FAKE\ngenerated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\nmerge_main: MERGE_MAIN_OFF\n")
+	u.onMain(t, "Another fix", map[string]string{"app/src/fix2.txt": "fix\n"})
+	u.pass(t, 2*time.Hour)
+	if got := u.git(t, u.repo, "rev-parse", "refs/heads/"+b1); got != tip {
+		t.Errorf("merge_main off, %s moved to %s", b1, got)
+	}
+}
+
+// TestAzimaBranchMainConflictStartsACorrection: main conflicting with an azima's branch starts a correction worker
+// as for a wish's, part of the azima: its work merges into the azima's branch, which then holds main, recorded on the
+// azima as merged by it.
+func TestAzimaBranchMainConflictStartsACorrection(t *testing.T) {
+	testx.Portable(t)
+	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+	u.setAzimaStrategy(t)
+	t1 := u.azima(t, u.wishID, "Readme")
+	b1 := "djinn/T1-readme"
+	u.finished(t, "W1", map[string]string{"app/README.md": "# Branch\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+	u.pass(t, 0)
+	old := u.git(t, u.repo, "rev-parse", "refs/heads/"+b1)
+	theirs := u.onMain(t, "Main's readme", map[string]string{"app/README.md": "# Main\n"})
+	u.correctWith(func(dir, _ string) string {
+		writeFile(t, dir, "README.md", "# Main and Branch\n")
+		commitAll(t, dir, "Settle the readme with main")
+		return ""
+	})
+
+	u.pass(t, 2*time.Hour)
+	state := u.stored(t, t1.GetId()).GetAzima().GetMain()
+	if got := u.git(t, u.repo, "rev-parse", "refs/heads/"+b1); got != old || state.GetCorrectedBy() == "" {
+		t.Fatalf("after the conflict: %s at %s, %v", b1, got, state)
+	}
+	c := u.ended(t, state.GetCorrectedBy())
+	if c.GetPartOf() != t1.GetId() || c.GetCorrection().GetFailure().GetMainSha() != theirs {
+		t.Fatalf("the correction worker %v", c)
+	}
+
+	u.pass(t, time.Second)
+	tip := u.git(t, u.repo, "rev-parse", "refs/heads/"+b1)
+	if !isAncestor(t.Context(), u.repo, theirs, tip) || u.git(t, u.repo, "show", tip+":app/README.md") != "# Main and Branch" {
+		t.Fatalf("after the correction: %s", u.git(t, u.repo, "show", tip+":app/README.md"))
+	}
+	state = u.stored(t, t1.GetId()).GetAzima().GetMain()
+	if state.GetCorrectedBy() != "" || state.GetHeld() != "" || state.GetLast().GetCorrectedBy() != c.GetId() ||
+		state.GetLast().GetMainSha() != theirs {
+		t.Errorf("T1's state against main after the correction: %v", state)
+	}
+}
+
+// TestAzimaOldStackedBranchKeepsWorking: a branch made by the old rule, stacked on the branch of the azima it depended
+// on and pushed, is never cut again nor rewritten: its new work merges into it, and once the azima it was stacked on
+// lands in main, main is merged into it, its pushed history kept.
+func TestAzimaOldStackedBranchKeepsWorking(t *testing.T) {
+	testx.Portable(t)
+	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+	// Made per wish, T2 after T1, then switched before Djinn refused that.
+	t1 := u.azima(t, u.wishID, "Base")
+	t2 := u.azima(t, u.wishID, "Dependent", t1.GetCode())
+	if err := u.db.Tx(t.Context(), func(tx *store.Tx) error {
+		w, err := store.Get[*planv1.Wish](t.Context(), tx, u.wishID)
+		if err != nil {
+			return err
+		}
+		w.PushStrategy = planv1.PushStrategy_PUSH_STRATEGY_AZIMA
+		if err := tx.Journal("test", "switched", w); err != nil {
+			return err
+		}
+		return tx.Put(w)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b1, b2 := "djinn/T1-base", "djinn/T2-dependent"
+	stack := filepath.Join(t.TempDir(), "stack")
+	u.git(t, u.repo, "worktree", "add", "--quiet", "-b", b1, stack, u.main)
+	writeFile(t, stack, "app/src/base.txt", "base\n")
+	commitAll(t, stack, "Base work")
+	u.git(t, stack, "switch", "--quiet", "-c", b2)
+	writeFile(t, stack, "app/src/dependent.txt", "dependent\n")
+	commitAll(t, stack, "Dependent work")
+	u.git(t, stack, "switch", "--quiet", "--detach")
+	u.git(t, u.repo, "push", "--quiet", "origin", b1, b2)
+	pushed := u.git(t, u.repo, "rev-parse", "refs/heads/"+b2)
+
+	// T1 lands in main, as its merged pull request does.
+	u.git(t, u.other, "fetch", "--quiet", "origin", b1)
+	u.git(t, u.other, "merge", "--quiet", "--no-ff", "-m", "Merge "+b1, "FETCH_HEAD")
+	u.git(t, u.other, "push", "--quiet", "origin", "HEAD:refs/heads/"+u.main)
+	landed := u.git(t, u.other, "rev-parse", "HEAD")
+
+	w2 := u.finished(t, "W2", map[string]string{"app/src/more.txt": "more\n"}, func(task *planv1.Task) { task.PartOf = t2.GetId() })
+	u.pass(t, 0)
+
+	tip := u.git(t, u.repo, "rev-parse", "refs/heads/"+b2)
+	if !isAncestor(t.Context(), u.repo, pushed, tip) {
+		t.Fatalf("%s rewritten: its pushed %s is not in %s", b2, pushed, tip)
+	}
+	if got := u.get(t, w2.GetId()).GetIntegration(); got.GetBranch() != b2 || got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+		t.Errorf("W2 integration = %v, want committed into %s", got, b2)
+	}
+	if !isAncestor(t.Context(), u.repo, landed, tip) {
+		t.Errorf("%s does not hold main's %s", b2, landed)
+	}
+	if got := u.stored(t, t2.GetId()).GetAzima().GetCutFrom(); got != "" {
+		t.Errorf("an old branch recorded as cut from %s", got)
+	}
+}
+
+// TestPerAzimaRefusesAzimaDependencies: in a wish that pushes per azima, no azima waits for another: spawning one
+// after another, spawning work of one after work of another, setting such a dependency (depend, update), grouping
+// such work into an azima, or syncing a plan file whose after line names another azima, are refused, naming them. Work waiting for work
+// of its own azima is as usual.
+func TestPerAzimaRefusesAzimaDependencies(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
 	in.setAzimaStrategy(t)
-	in.noCorrection(t)
-	lead := &leadListener{}
-	in.h.TellLeads(lead.tell)
+	ctx := t.Context()
+	refused := func(what string, err error, want string) {
+		t.Helper()
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no azima waits for another") ||
+			!strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v, want refused naming %q", what, err, want)
+		}
+	}
 
 	t1 := in.azima(t, in.wishID, "Base")
-	t2 := in.azima(t, in.wishID, "Dependent", t1.GetCode())
-	part1 := func(task *planv1.Task) { task.PartOf = t1.GetId() }
-	part2 := func(task *planv1.Task) { task.PartOf = t2.GetId() }
+	_, err := in.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: in.wishID, Title: "Dependent", Kind: planv1.TaskKind_TASK_KIND_AZIMA, DependsOn: []string{t1.GetCode()},
+	}))
+	refused("spawn --after", err, "(T2 after T1)")
+	t2 := in.azima(t, in.wishID, "Other")
 
-	in.finished(t, "W1", map[string]string{"app/src/conflict.txt": "from T1\n"}, part1)
-	in.pass(t, 0)
-
-	w2 := in.finished(t, "W2", map[string]string{"app/src/conflict.txt": "from T2\n"}, part2)
-	in.pass(t, 0)
-
-	// Merge T1 into main and add conflicting edit on main.
-	b1 := "djinn/T1-base"
-	in.git(t, in.repo, "checkout", in.branch)
-	in.git(t, in.repo, "merge", "--no-ff", b1, "-m", "Merge "+b1+" into main")
-	writeFile(t, in.repo, "app/src/conflict.txt", "from main\n")
-	in.git(t, in.repo, "commit", "-a", "-m", "Conflicting change on main")
-
-	// Follow main fails with conflict.
-	in.pass(t, 0)
-
-	w2Task := in.get(t, w2.GetId())
-	if w2Task.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_CONFLICT {
-		t.Fatalf("w2 state = %v, want CONFLICT", w2Task.GetIntegration().GetState())
+	work := func(code, partOf string, deps ...string) *planv1.Task {
+		task := &planv1.Task{
+			Id: store.NewID(), WishId: in.wishID, ProjectId: in.projectID, Code: code, Title: "Work " + code, PartOf: partOf,
+			DependsOn: deps, Status: planv1.TaskStatus_TASK_STATUS_PENDING, CreateTime: timestamppb.Now(),
+		}
+		putTask(t, in.db, task, "work")
+		return task
 	}
-	qid := w2Task.GetIntegration().GetQuestionId()
-	if qid != "" {
-		t.Fatalf("expected empty question_id on conflicted task, got %s", qid)
+	w1 := work("W1", t1.GetId())
+	_, err = in.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: in.wishID, Title: "Builds on W1", Prompt: "build", PartOf: t2.GetCode(), DependsOn: []string{w1.GetCode()}, Later: true,
+	}))
+	refused("spawn work of T2 after W1", err, "(T2 after T1)")
+
+	w2 := work("W2", t2.GetId())
+	_, err = in.tasks.Depend(ctx, connect.NewRequest(&planv1.TaskServiceDependRequest{TaskId: w2.GetId(), After: []string{"W1"}}))
+	refused("depend", err, "(T2 after T1)")
+	_, err = in.tasks.Depend(ctx, connect.NewRequest(&planv1.TaskServiceDependRequest{TaskId: t2.GetId(), After: []string{"T1"}}))
+	refused("depend an azima", err, "(T2 after T1)")
+	_, err = in.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{TaskId: w2.GetId(), After: []string{"W1"}}))
+	refused("update --after", err, "(T2 after T1)")
+
+	loose := work("W3", "", w1.GetId())
+	_, err = in.group(t, loose, t2.GetCode())
+	refused("group", err, "(T2 after T1)")
+
+	// Inside one azima, as usual.
+	w4 := work("W4", t2.GetId())
+	if _, err := in.tasks.Depend(ctx, connect.NewRequest(&planv1.TaskServiceDependRequest{TaskId: w4.GetId(), After: []string{"W2"}})); err != nil {
+		t.Errorf("work after work of its own azima: %v", err)
 	}
-	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
-	if err != nil || len(questions) != 0 {
-		t.Fatalf("expected 0 questions, got %d (%v)", len(questions), err)
+	if _, err := in.group(t, loose, t1.GetCode()); err != nil {
+		t.Errorf("work after work of the azima it joins: %v", err)
 	}
-	if paras := lead.all(); len(paras) == 0 || !strings.Contains(paras[len(paras)-1], "The move is yours: retry a correction, drop the work") {
-		t.Errorf("expected lead notification, got %v", paras)
+
+	writeFile(t, in.repo, "app/plan/third.md", "---\ncode: T3\nstatus: open\nafter: T1\n---\n\n# T3 · Third\n")
+	_, err = in.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: in.wishID}))
+	refused("plan sync", err, "(T3 after T1)")
+	writeFile(t, in.repo, "app/plan/third.md", "---\ncode: T3\nstatus: open\n---\n\n# T3 · Third\n")
+	if _, err := in.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: in.wishID})); err != nil {
+		t.Fatalf("plan sync without after: %v", err)
+	}
+	// Made from its file, its branch is cut from main.
+	if got := in.git(t, in.repo, "rev-parse", "refs/heads/djinn/T3-third"); got != in.tip(t) {
+		t.Errorf("djinn/T3-third at %s, want main's %s", got, in.tip(t))
 	}
 }
 

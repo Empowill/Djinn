@@ -245,6 +245,16 @@
 .task-time {
   font-variant-numeric: tabular-nums;
 }
+/* The model turns of its run against the limit Djinn stops it at: warns as it nears it. */
+.task-turns {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-variant-numeric: tabular-nums;
+}
+.task-turns.warning {
+  color: var(--st-waiting);
+}
 .task-model {
   flex-shrink: 0;
   color: var(--st-investigating);
@@ -455,6 +465,13 @@
 }
 .wish-spent small {
   color: var(--muted-dim);
+}
+/* The price, one figure: its hover tells what the agents reported and what the table estimated. */
+.wish-spent .spent-price {
+  color: var(--n-e7);
+  cursor: help;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
 }
 .wish-spent .usage-unit-switch {
   background: transparent;
@@ -789,9 +806,8 @@
   gap: var(--space-2);
   align-items: center;
 }
-.azima-sync-status {
-  font-size: var(--font-size-body);
-  color: var(--st-waiting);
+.azima-actions .sync-line {
+  max-width: 240px;
 }
 .azima-pushed-status {
   font-size: var(--font-size-body);
@@ -1515,4 +1531,102 @@ html[data-theme="light"] .wish-composer-caret {
   .wish-composer {
     animation: none;
   }
+}
+/* Where the wish's work lands: a chip per project, its integration branch, a click away from the picker that changes
+   it; per azima, a quiet chip that says each azima lands in main. */
+.wish-lands-chip {
+  position: relative;
+}
+.wish-lands {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 7px;
+  border: 1px solid var(--n-38);
+  border-radius: 5px;
+  background: var(--n-1c);
+  color: var(--n-c4);
+  font-size: var(--font-size-body);
+}
+button.wish-lands:hover,
+button.wish-lands[aria-expanded="true"] {
+  border-color: var(--n-5e);
+  color: var(--n-e7);
+}
+.wish-lands b {
+  font-weight: 600;
+}
+.wish-lands code,
+.branch-option code,
+.azima-landing code {
+  font-family: var(--mono);
+  color: var(--n-e7);
+}
+.branch-picker {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  width: 320px;
+  max-width: 80vw;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--shadow) 35%, transparent);
+}
+.branch-picker input {
+  margin-bottom: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--n-38);
+  border-radius: 5px;
+  background: var(--n-14);
+  color: var(--text);
+  font: var(--font-size-body) var(--mono);
+}
+.branch-picker > p {
+  margin: 0;
+  padding: 6px 8px;
+}
+.branch-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  text-align: left;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.branch-option:not(:disabled):hover,
+.branch-option:not(:disabled):focus-visible {
+  background: var(--n-28);
+}
+.branch-option.current {
+  cursor: default;
+}
+.branch-option.new {
+  justify-content: flex-start;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 5px 5px;
+  color: var(--n-c4);
+}
+/* An opened azima's own branch, across the card above its description and its parts. */
+.azima-landing {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0 0 var(--space-3);
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.azima-landing > span + span::before,
+.azima-landing > code + span::before {
+  content: "· ";
 }

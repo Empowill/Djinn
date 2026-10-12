@@ -81,6 +81,9 @@ type updater struct {
 	releases source    // where a newer release comes from; nil for a development build
 	// fit says what a release found means for a Djinn built from a checkout (harness.Release); nil for another one.
 	fit func(ctx context.Context, tag string) (harness.ReleaseFit, error)
+	// describe names the newer Djinn of a version as a build (harness.DescribeVersion): nil when no project holds its
+	// commit. Nil: it is not named.
+	describe func(ctx context.Context, version string) *uiv1.Build
 
 	mu         sync.Mutex
 	started    os.FileInfo // the file this djinn started from
@@ -90,6 +93,7 @@ type updater struct {
 	installed  string      // the release installed by itself, not to install again
 	installing bool
 	restarting bool
+	named      string // the version ready last named, or being named
 }
 
 // newUpdater returns the updater of a djinn of version. A development build never updates: workers rebuild it all the
@@ -169,6 +173,16 @@ func (u *updater) publish() {
 		ready, notes = u.offer.Version, u.offer.Notes
 	}
 	u.ui.SetReady(ready, notes)
+	if ready != u.named {
+		u.named = ready
+		if ready != "" && u.describe != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				defer cancel()
+				u.ui.SetReadyBuild(ready, u.describe(ctx, ready))
+			}()
+		}
+	}
 }
 
 // watchReleases asks the source for a newer release at once, then every releaseCheck, until ctx is done. It only

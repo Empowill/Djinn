@@ -483,7 +483,7 @@ func TestPushMethod(t *testing.T) {
 		t.Fatal("pushed before Push method called")
 	}
 
-	push, err := in.h.Push(t.Context(), in.wishID, in.projectID)
+	push, err := in.h.Push(t.Context(), in.wishID, in.projectID, "")
 	if err != nil {
 		t.Fatalf("Push failed: %v", err)
 	}
@@ -500,7 +500,7 @@ func TestPushMethod(t *testing.T) {
 	}
 
 	// Push when up to date: returns error
-	_, err = in.h.Push(t.Context(), in.wishID, in.projectID)
+	_, err = in.h.Push(t.Context(), in.wishID, in.projectID, "")
 	if err == nil || !strings.Contains(err.Error(), "nothing to push") {
 		t.Fatalf("expected nothing to push error, got %v", err)
 	}
@@ -509,7 +509,7 @@ func TestPushMethod(t *testing.T) {
 	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
 	in.pass(t, 0)
 	in.testCode, in.testOut = 1, "test failed"
-	_, err = in.h.Push(t.Context(), in.wishID, in.projectID)
+	_, err = in.h.Push(t.Context(), in.wishID, in.projectID, "")
 	if err == nil || !strings.Contains(err.Error(), "the push is held") {
 		t.Fatalf("expected held push error, got %v", err)
 	}
@@ -527,7 +527,7 @@ func TestPushMethod(t *testing.T) {
 	in.git(t, other, "push", "--quiet", "origin", in.branch)
 	theirs := in.remoteTip(t, bare)
 
-	_, err = in.h.Push(t.Context(), in.wishID, in.projectID)
+	_, err = in.h.Push(t.Context(), in.wishID, in.projectID, "")
 	if err == nil || !strings.Contains(err.Error(), "refused the push") {
 		t.Fatalf("expected refused push error, got %v", err)
 	}
@@ -555,11 +555,8 @@ func TestPushSync(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sync, err := in.h.Sync(t.Context(), wish, project)
-	if err != nil {
-		t.Fatalf("Sync: %v", err)
-	}
-	if sync.GetAhead() != 0 || sync.GetBehind() != 0 {
+	sync := in.syncOf(t, project, in.branch)
+	if sync.GetWishId() != wish.GetId() || sync.GetAhead() != 0 || sync.GetBehind() != 0 {
 		t.Fatalf("initial sync: ahead=%d behind=%d, want 0/0", sync.GetAhead(), sync.GetBehind())
 	}
 
@@ -568,10 +565,7 @@ func TestPushSync(t *testing.T) {
 	in.pass(t, 0)
 
 	// 2 tasks integrated: 2 task commits + 2 merge commits = 4 commits ahead of origin
-	sync, err = in.h.Sync(t.Context(), wish, project)
-	if err != nil {
-		t.Fatalf("Sync: %v", err)
-	}
+	sync = in.syncOf(t, project, in.branch)
 	if sync.GetAhead() != 4 || sync.GetBehind() != 0 {
 		t.Fatalf("after 2 tasks integrated: ahead=%d behind=%d, want 4/0", sync.GetAhead(), sync.GetBehind())
 	}
@@ -585,11 +579,118 @@ func TestPushSync(t *testing.T) {
 
 	in.git(t, in.repo, "fetch", "origin")
 
-	sync, err = in.h.Sync(t.Context(), wish, project)
-	if err != nil {
-		t.Fatalf("Sync: %v", err)
-	}
+	sync = in.syncOf(t, project, in.branch)
 	if sync.GetAhead() != 4 || sync.GetBehind() != 1 {
 		t.Fatalf("with remote ahead: ahead=%d behind=%d, want 4/1", sync.GetAhead(), sync.GetBehind())
+	}
+}
+
+// syncOf is the sync of branch among the project's, failing without one.
+func (in *integration) syncOf(t *testing.T, project *planv1.Project, branch string) *planv1.ProjectSync {
+	t.Helper()
+	syncs, err := in.h.Syncs(t.Context(), project)
+	if err != nil {
+		t.Fatalf("Syncs: %v", err)
+	}
+	for _, s := range syncs {
+		if s.GetBranch() == branch {
+			return s
+		}
+	}
+	t.Fatalf("no sync of %s among %v", branch, syncs)
+	return nil
+}
+
+// TestPushSyncs: a project holds a sync for each branch Djinn pushes there that exists: the integration branch of each
+// active or paused wish, the active first, each followed by its azimas' own branches; not a granted wish's. Its push
+// button pushes that branch alone.
+func TestPushSyncs(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	bare := in.remote(t)
+	ctx := t.Context()
+
+	// A commit on top of the integration branch, on a branch of its own.
+	branchAhead := func(branch string, commits int) {
+		tip := in.git(t, in.repo, "rev-parse", "refs/heads/"+in.branch)
+		for i := range commits {
+			tip = in.git(t, in.repo, "commit-tree", tip+"^{tree}", "-p", tip, "-m", fmt.Sprintf("%s %d", branch, i))
+		}
+		in.git(t, in.repo, "update-ref", "refs/heads/"+branch, tip)
+	}
+	branchAhead("feat/other", 1)
+	branchAhead("djinn/T1-stays-fast", 2)
+	branchAhead("feat/old", 3)
+	err := in.db.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("local", "test", &planv1.Wish{}); err != nil {
+			return err
+		}
+		for _, w := range []*planv1.Wish{
+			{Id: store.NewID(), Title: "Paused", State: planv1.WishState_WISH_STATE_PAUSED},
+			{Id: store.NewID(), Title: "Granted", State: planv1.WishState_WISH_STATE_GRANTED},
+		} {
+			w.ProjectIds = []string{in.projectID}
+			plan.SetIntegrationBranch(w, in.projectID, map[string]string{"Paused": "feat/other", "Granted": "feat/old"}[w.GetTitle()])
+			if err := tx.Put(w); err != nil {
+				return err
+			}
+		}
+		for code, title := range map[string]string{"T1": "Stays fast", "T2": "Not cut yet"} {
+			err := tx.Put(&planv1.Task{
+				Id: store.NewID(), WishId: in.wishID, ProjectId: in.projectID, Code: code, Title: title,
+				Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := store.Get[*planv1.Project](ctx, in.db, in.projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	syncs, err := in.h.Syncs(ctx, project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, s := range syncs {
+		got = append(got, fmt.Sprintf("%s %s/%s ↑%d ↓%d %s %s", s.GetBranch(), s.GetRemote(), s.GetTarget(), s.GetAhead(),
+			s.GetBehind(), s.GetWishTitle(), s.GetAzimaCode()))
+	}
+	wish, err := store.Get[*planv1.Wish](ctx, in.db, in.wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		fmt.Sprintf("%s origin/%s ↑0 ↓0 %s ", in.branch, in.branch, wish.GetTitle()),
+		fmt.Sprintf("djinn/T1-stays-fast origin/djinn/T1-stays-fast ↑2 ↓0 %s T1", wish.GetTitle()),
+		"feat/other origin/feat/other ↑1 ↓0 Paused ",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("syncs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+
+	// Its button pushes the azima's branch alone.
+	if _, err := in.h.Push(ctx, in.wishID, in.projectID, "djinn/T1-stays-fast"); err != nil {
+		t.Fatalf("Push of the azima's branch: %v", err)
+	}
+	if got := in.git(t, bare, "for-each-ref", "--format=%(refname:short)", "refs/heads"); got != in.branch+"\ndjinn/T1-stays-fast" &&
+		got != "djinn/T1-stays-fast\n"+in.branch {
+		t.Errorf("origin holds %q, want the integration branch and the azima's only", got)
+	}
+	if s := in.syncOf(t, project, "djinn/T1-stays-fast"); s.GetAhead() != 0 {
+		t.Errorf("the azima's branch pushed: ahead %d, want 0", s.GetAhead())
+	}
+	// A branch of another wish, or none of Djinn's, is not the wish's to push.
+	for _, branch := range []string{"feat/other", "main-of-someone"} {
+		if _, err := in.h.Push(ctx, in.wishID, in.projectID, branch); err == nil || !strings.Contains(err.Error(), "no branch Djinn pushes") {
+			t.Errorf("Push of %s: %v, want refused", branch, err)
+		}
 	}
 }

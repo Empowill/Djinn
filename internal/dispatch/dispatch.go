@@ -640,7 +640,7 @@ func (s *Situation) full(t *planv1.Task) (why string, first bool) {
 		}
 	}
 	peak, measured := s.typical(provider(t))
-	why = m.Policy.WorkerRoom(m.Total, m.Available, s.growing(), s.engaged(), provider(t), peak, measured)
+	why = m.Policy.WorkerRoom(m.Total, m.Available, s.resident(), s.growing(), s.engaged(), provider(t), peak, measured)
 	if why != "" {
 		s.short, s.shortWhy = t, why
 	}
@@ -648,15 +648,18 @@ func (s *Situation) full(t *planv1.Task) (why string, first bool) {
 }
 
 // ProviderPeaks returns the measured p95 memories (falling back to peak memories if p95 is unset)
-// of finished workers, by provider, the latest first.
+// of finished workers, by provider, the latest first: the worker memory guardrail's baseline, never tied to the notch.
 func ProviderPeaks(tasks []*planv1.Task) map[string][]uint64 {
+	return ProviderMemory(tasks, 95)
+}
+
+// ProviderMemory returns the memory of finished workers at percentile of their series (MemoryAt), by provider, the
+// latest first.
+func ProviderMemory(tasks []*planv1.Task, percentile int) map[string][]uint64 {
 	var ended []*planv1.Task
 	for _, t := range tasks {
-		if t.GetEndTime() != nil && !Watcher(t) {
-			res := t.GetResources()
-			if res != nil && (res.GetP95MemoryBytes() > 0 || res.GetPeakMemoryBytes() > 0) {
-				ended = append(ended, t)
-			}
+		if t.GetEndTime() != nil && !Watcher(t) && MemoryAt(t.GetResources(), percentile) > 0 {
+			ended = append(ended, t)
 		}
 	}
 	slices.SortStableFunc(ended, func(a, b *planv1.Task) int {
@@ -665,13 +668,27 @@ func ProviderPeaks(tasks []*planv1.Task) map[string][]uint64 {
 	peaks := map[string][]uint64{}
 	for _, t := range ended {
 		p := Provider(t)
-		val := t.GetResources().GetP95MemoryBytes()
-		if val == 0 {
-			val = t.GetResources().GetPeakMemoryBytes()
-		}
-		peaks[p] = append(peaks[p], val)
+		peaks[p] = append(peaks[p], MemoryAt(t.GetResources(), percentile))
 	}
 	return peaks
+}
+
+// MemoryAt is a worker's memory at percentile of its series: the 50th, 60th, 70th, 80th or 95th, the first of them at
+// or above percentile; the 95th when that one was never recorded (a worker measured before Djinn kept it), then the
+// peak.
+func MemoryAt(res *planv1.Resources, percentile int) uint64 {
+	var v uint64
+	switch {
+	case percentile <= 50:
+		v = res.GetP50MemoryBytes()
+	case percentile <= 60:
+		v = res.GetP60MemoryBytes()
+	case percentile <= 70:
+		v = res.GetP70MemoryBytes()
+	case percentile <= 80:
+		v = res.GetP80MemoryBytes()
+	}
+	return cmp.Or(v, res.GetP95MemoryBytes(), res.GetPeakMemoryBytes())
 }
 
 // WorkerPeakWarmup is the delay before a running worker's own measured p95 memory replaces
@@ -730,30 +747,29 @@ func taskRunDuration(t *planv1.Task, now time.Time) time.Duration {
 	return 0
 }
 
-// workerEngaged returns the memory engaged by a worker: max(measured p95, resident memory) + margin
-// once running for at least WorkerPeakWarmup or when paused with measures, and typical forecast + margin
-// before that or without measurements.
+// workerEngaged returns the memory engaged by a worker: what it is expected to hold (workerExpected) + margin.
 func workerEngaged(t *planv1.Task, p machine.Policy, typical uint64, now time.Time) uint64 {
-	p95 := t.GetResources().GetP95MemoryBytes()
-	peak := t.GetResources().GetPeakMemoryBytes()
-	measure := p95
-	if measure == 0 {
-		measure = peak
-	}
+	return workerExpected(t, p, typical, now) + p.WorkerMargin
+}
+
+// workerExpected returns the memory a worker is expected to hold: max(its own memory at the notch's percentile,
+// resident memory) once running for at least WorkerPeakWarmup or when paused with measures, and max(typical, resident
+// memory) before that or without measurements, typical being its provider's at that percentile.
+func workerExpected(t *planv1.Task, p machine.Policy, typical uint64, now time.Time) uint64 {
+	measure := MemoryAt(t.GetResources(), p.MemoryPercentile())
 	uses := t.GetResources().GetMemoryBytes()
 	hasMeasure := measure > 0 || uses > 0
-	margin := p.WorkerMargin
 
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED {
 		if hasMeasure {
-			return max(measure, uses) + margin
+			return max(measure, uses)
 		}
-		return typical + margin
+		return typical
 	}
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && hasMeasure && taskRunDuration(t, now) >= WorkerPeakWarmup {
-		return max(measure, uses) + margin
+		return max(measure, uses)
 	}
-	return max(typical, uses) + margin
+	return max(typical, uses)
 }
 
 // WorkerMemory returns the engaged memory (sum of peak forecasts or measured peaks for running workers)
@@ -763,7 +779,7 @@ func WorkerMemory(tasks []*planv1.Task, p machine.Policy, at ...time.Time) (enga
 	if len(at) > 0 && !at[0].IsZero() {
 		now = at[0]
 	}
-	peaks := ProviderPeaks(tasks)
+	peaks := ProviderMemory(tasks, p.MemoryPercentile())
 	for _, t := range tasks {
 		alive := t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED
 		if !alive || Watcher(t) {
@@ -777,10 +793,10 @@ func WorkerMemory(tasks []*planv1.Task, p machine.Policy, at ...time.Time) (enga
 	return engaged, actual
 }
 
-// TypicalForecast returns the measured peak forecast per worker of the providers in use (or all measured providers),
-// or p.WorkerForecast() when none is measured.
+// TypicalForecast returns the measured forecast per worker of the providers in use (or all measured providers), at
+// the notch's percentile (machine.Policy.Percentile), or p.WorkerForecast() when none is measured.
 func TypicalForecast(tasks []*planv1.Task, p machine.Policy) uint64 {
-	peaks := ProviderPeaks(tasks)
+	peaks := ProviderMemory(tasks, p.MemoryPercentile())
 	if len(peaks) == 0 {
 		return p.WorkerForecast()
 	}
@@ -818,30 +834,45 @@ func TypicalForecast(tasks []*planv1.Task, p machine.Policy) uint64 {
 	return p.WorkerForecast()
 }
 
-// typical is the typical peak memory of a worker of the provider, and how many measured workers gave it
-// (machine.Policy.Typical): the finished workers of that provider, the latest first.
+// typical is the typical memory of a worker of the provider at the notch's percentile, and how many measured workers
+// gave it (machine.Policy.Typical): the finished workers of that provider, the latest first.
 func (s *Situation) typical(name string) (uint64, int) {
 	if s.peaks == nil {
-		s.peaks = ProviderPeaks(s.tasks)
+		s.peaks = ProviderMemory(s.tasks, s.machine.Policy.MemoryPercentile())
 	}
 	return s.machine.Policy.Typical(s.peaks[name])
 }
 
-// growing is the memory the workers running may still take: for each, the typical peak of its provider less what it
-// uses now (all of it before its first reading), and in full for each worker this pass started, question workers
-// included. A paused worker keeps its memory.
+// growing is the memory the workers running may still take beyond what they hold: for each, what it is expected to
+// hold (workerExpected, as engaged counts it) less what it uses now (all of it before its first reading), and the
+// typical memory of its provider for each worker this pass started, question workers included. A paused worker keeps
+// its memory.
 func (s *Situation) growing() uint64 {
 	var sum uint64
+	now := cmp.Or(s.now, time.Now())
 	for _, t := range s.tasks {
 		alive := (s.taskRunning(t) || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED) && !Watcher(t)
 		if !alive && !s.started[t.GetId()] && !s.reading[t.GetId()] {
 			continue
 		}
 		peak, _ := s.typical(provider(t))
-		if uses := t.GetResources().GetMemoryBytes(); alive && uses < peak {
-			sum += peak - uses
-		} else if !alive {
+		if !alive {
 			sum += peak
+			continue
+		}
+		if expected, uses := workerExpected(t, s.machine.Policy, peak, now), t.GetResources().GetMemoryBytes(); uses < expected {
+			sum += expected - uses
+		}
+	}
+	return sum
+}
+
+// resident is the memory the workers running hold now, as last read: the memory available already leaves it out.
+func (s *Situation) resident() uint64 {
+	var sum uint64
+	for _, t := range s.tasks {
+		if (s.taskRunning(t) || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED) && !Watcher(t) {
+			sum += t.GetResources().GetMemoryBytes()
 		}
 	}
 	return sum
