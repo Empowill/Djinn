@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
@@ -281,7 +282,7 @@ func (h *Harness) schedule(ctx context.Context) {
 					continue
 				}
 			}
-			h.setWaiting(ctx, t, d.Why)
+			h.setWaiting(ctx, t, d.Why, d.Machine)
 		default:
 			var preemptedCode string
 			if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && h.slotsFull() {
@@ -435,21 +436,22 @@ func (h *Harness) GatesOutside(n func() int) {
 	h.outside = n
 }
 
-// setWaiting records why a planned task waits, when the reason changed, with an event.
-func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string) {
+// setWaiting records why a planned task waits, and whether for the machine alone, when the reason changed, with an
+// event.
+func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, machine bool) {
 	why = grantedWhy(t, shelvedWhy(t, preemptedWaitReason(t, why)))
-	if t.GetWaitReason() == why {
+	if t.GetWaitReason() == why && t.GetMachineWait() == machine {
 		return
 	}
 	t = proto.CloneOf(t)
-	t.WaitReason = why
+	t.WaitReason, t.MachineWait = why, machine
 	h.writeAlone(ctx, actorHarness, methodWait, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why})
 }
 
 // failPlanned ends a planned task that never will start.
 func (h *Harness) failPlanned(ctx context.Context, t *planv1.Task, why string) {
 	t = proto.CloneOf(t)
-	t.Status, t.Error, t.WaitReason, t.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, why, "", timestamppb.Now()
+	t.Status, t.Error, t.WaitReason, t.MachineWait, t.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, why, "", false, timestamppb.Now()
 	h.writeAlone(ctx, actorHarness, methodEnd, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "failed: " + why})
 	h.wake() // Its own dependents fail in turn.
 }
@@ -500,7 +502,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		return h.relaunch(ctx, t, preemptedCode)
 	}
 	t = proto.CloneOf(t)
-	t.WaitReason = ""
+	t.WaitReason, t.MachineWait = "", false
 	provider, ok := h.providers[t.GetProvider()]
 	if !ok {
 		h.failPlanned(ctx, t, fmt.Sprintf("provider %s is not available", t.GetProvider()))
@@ -524,7 +526,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		var err error
 		if settings, err = plan.LoadSettings(h.home, project); err != nil {
-			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err))
+			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false)
 			return nil
 		}
 	}
@@ -581,6 +583,43 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 	}
 	_, err = h.launch(h.ctx, r, provider, project, prep, prompt)
 	return err
+}
+
+// Start starts a planned task that waits for the machine alone, now: the developer asked for it, whatever the slots,
+// the pressure and the memory. A task held by anything else (its wish, a dependency, a push hold, its provider's usage
+// limit, a write scope) is refused, with why, and so is one that waits for a task going first: Start frees the
+// machine, never the priority order. The scheduler's pass decides, as it would now.
+func (h *Harness) Start(ctx context.Context, procedure string, req *planv1.TaskServiceStartRequest) (*planv1.Task, error) {
+	h.sched.Lock()
+	defer h.sched.Unlock()
+	task, err := store.Get[*planv1.Task](ctx, h.store, req.GetTaskId())
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if !planned(task) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is not planned: %s", task.GetCode(), short(task.GetStatus())))
+	}
+	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	s, err := h.situation(ctx, tasks)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	for _, d := range s.Pass() {
+		if d.Task.GetId() == task.GetId() && (d.Failed != "" || d.Why != "" && !d.Machine) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s waits for more than the machine: %s", task.GetCode(), cmp.Or(d.Failed, d.Why)))
+		}
+	}
+	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Journal(actorLocal, procedure, req) }); err != nil {
+		return nil, plan.Status(err)
+	}
+	if err := h.launchPlanned(ctx, task); err != nil {
+		return nil, plan.Status(err)
+	}
+	task, err = store.Get[*planv1.Task](ctx, h.store, task.GetId())
+	return task, plan.Status(err)
 }
 
 // resolveDeps turns what a spawn names as dependencies, codes (W1, any case) or identifiers of tasks of the same

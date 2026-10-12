@@ -4153,7 +4153,10 @@ type Task struct {
 	// Who cancelled the task, when and why (TaskService.Cancel). Empty for a task that was not cancelled.
 	Cancelled *Cancellation `protobuf:"bytes,62,opt,name=cancelled,proto3" json:"cancelled,omitempty"`
 	// Comments on lines or ranges of the task's diff (TaskService.Comment).
-	Comments      []*TaskComment `protobuf:"bytes,63,rep,name=comments,proto3" json:"comments,omitempty"`
+	Comments []*TaskComment `protobuf:"bytes,63,rep,name=comments,proto3" json:"comments,omitempty"`
+	// The planned task waits for the machine alone: no slot is free, or the machine is under pressure. djinn task
+	// start starts it anyway.
+	MachineWait   bool `protobuf:"varint,64,opt,name=machine_wait,json=machineWait,proto3" json:"machine_wait,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4627,6 +4630,13 @@ func (x *Task) GetComments() []*TaskComment {
 		return x.Comments
 	}
 	return nil
+}
+
+func (x *Task) GetMachineWait() bool {
+	if x != nil {
+		return x.MachineWait
+	}
+	return false
 }
 
 // TaskRun is a single run of a task's worker.
@@ -15894,6 +15904,96 @@ func (x *TaskServiceResumeResponse) GetTask() *Task {
 	return nil
 }
 
+type TaskServiceStartRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The task.
+	TaskId        string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskServiceStartRequest) Reset() {
+	*x = TaskServiceStartRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[190]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskServiceStartRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskServiceStartRequest) ProtoMessage() {}
+
+func (x *TaskServiceStartRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[190]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskServiceStartRequest.ProtoReflect.Descriptor instead.
+func (*TaskServiceStartRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{190}
+}
+
+func (x *TaskServiceStartRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+type TaskServiceStartResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The task, its worker started.
+	Task          *Task `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskServiceStartResponse) Reset() {
+	*x = TaskServiceStartResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[191]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskServiceStartResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskServiceStartResponse) ProtoMessage() {}
+
+func (x *TaskServiceStartResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[191]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskServiceStartResponse.ProtoReflect.Descriptor instead.
+func (*TaskServiceStartResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{191}
+}
+
+func (x *TaskServiceStartResponse) GetTask() *Task {
+	if x != nil {
+		return x.Task
+	}
+	return nil
+}
+
 type TaskServiceWatchRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The task.
@@ -15908,7 +16008,7 @@ type TaskServiceWatchRequest struct {
 
 func (x *TaskServiceWatchRequest) Reset() {
 	*x = TaskServiceWatchRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[190]
+	mi := &file_plan_v1_plan_proto_msgTypes[192]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15920,7 +16020,7 @@ func (x *TaskServiceWatchRequest) String() string {
 func (*TaskServiceWatchRequest) ProtoMessage() {}
 
 func (x *TaskServiceWatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[190]
+	mi := &file_plan_v1_plan_proto_msgTypes[192]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15933,7 +16033,7 @@ func (x *TaskServiceWatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceWatchRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceWatchRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{190}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{192}
 }
 
 func (x *TaskServiceWatchRequest) GetTaskId() string {
@@ -15967,7 +16067,7 @@ type TaskServiceWatchResponse struct {
 
 func (x *TaskServiceWatchResponse) Reset() {
 	*x = TaskServiceWatchResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[191]
+	mi := &file_plan_v1_plan_proto_msgTypes[193]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15979,7 +16079,7 @@ func (x *TaskServiceWatchResponse) String() string {
 func (*TaskServiceWatchResponse) ProtoMessage() {}
 
 func (x *TaskServiceWatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[191]
+	mi := &file_plan_v1_plan_proto_msgTypes[193]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15992,7 +16092,7 @@ func (x *TaskServiceWatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceWatchResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceWatchResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{191}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{193}
 }
 
 func (x *TaskServiceWatchResponse) GetEvent() *TaskEvent {
@@ -16014,7 +16114,7 @@ type TaskServiceCleanRequest struct {
 
 func (x *TaskServiceCleanRequest) Reset() {
 	*x = TaskServiceCleanRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[192]
+	mi := &file_plan_v1_plan_proto_msgTypes[194]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16026,7 +16126,7 @@ func (x *TaskServiceCleanRequest) String() string {
 func (*TaskServiceCleanRequest) ProtoMessage() {}
 
 func (x *TaskServiceCleanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[192]
+	mi := &file_plan_v1_plan_proto_msgTypes[194]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16039,7 +16139,7 @@ func (x *TaskServiceCleanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceCleanRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceCleanRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{192}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{194}
 }
 
 func (x *TaskServiceCleanRequest) GetTaskId() string {
@@ -16066,7 +16166,7 @@ type TaskServiceCleanResponse struct {
 
 func (x *TaskServiceCleanResponse) Reset() {
 	*x = TaskServiceCleanResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[193]
+	mi := &file_plan_v1_plan_proto_msgTypes[195]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16078,7 +16178,7 @@ func (x *TaskServiceCleanResponse) String() string {
 func (*TaskServiceCleanResponse) ProtoMessage() {}
 
 func (x *TaskServiceCleanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[193]
+	mi := &file_plan_v1_plan_proto_msgTypes[195]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16091,7 +16191,7 @@ func (x *TaskServiceCleanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceCleanResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceCleanResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{193}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{195}
 }
 
 func (x *TaskServiceCleanResponse) GetTask() *Task {
@@ -16119,7 +16219,7 @@ type TaskServiceDependRequest struct {
 
 func (x *TaskServiceDependRequest) Reset() {
 	*x = TaskServiceDependRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[194]
+	mi := &file_plan_v1_plan_proto_msgTypes[196]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16131,7 +16231,7 @@ func (x *TaskServiceDependRequest) String() string {
 func (*TaskServiceDependRequest) ProtoMessage() {}
 
 func (x *TaskServiceDependRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[194]
+	mi := &file_plan_v1_plan_proto_msgTypes[196]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16144,7 +16244,7 @@ func (x *TaskServiceDependRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceDependRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceDependRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{194}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{196}
 }
 
 func (x *TaskServiceDependRequest) GetTaskId() string {
@@ -16188,7 +16288,7 @@ type TaskAfter struct {
 
 func (x *TaskAfter) Reset() {
 	*x = TaskAfter{}
-	mi := &file_plan_v1_plan_proto_msgTypes[195]
+	mi := &file_plan_v1_plan_proto_msgTypes[197]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16200,7 +16300,7 @@ func (x *TaskAfter) String() string {
 func (*TaskAfter) ProtoMessage() {}
 
 func (x *TaskAfter) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[195]
+	mi := &file_plan_v1_plan_proto_msgTypes[197]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16213,7 +16313,7 @@ func (x *TaskAfter) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskAfter.ProtoReflect.Descriptor instead.
 func (*TaskAfter) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{195}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{197}
 }
 
 func (x *TaskAfter) GetTask() string {
@@ -16242,7 +16342,7 @@ type TaskServiceDependResponse struct {
 
 func (x *TaskServiceDependResponse) Reset() {
 	*x = TaskServiceDependResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[196]
+	mi := &file_plan_v1_plan_proto_msgTypes[198]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16254,7 +16354,7 @@ func (x *TaskServiceDependResponse) String() string {
 func (*TaskServiceDependResponse) ProtoMessage() {}
 
 func (x *TaskServiceDependResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[196]
+	mi := &file_plan_v1_plan_proto_msgTypes[198]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16267,7 +16367,7 @@ func (x *TaskServiceDependResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceDependResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceDependResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{196}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{198}
 }
 
 func (x *TaskServiceDependResponse) GetTask() *Task {
@@ -16296,7 +16396,7 @@ type TaskServiceGroupRequest struct {
 
 func (x *TaskServiceGroupRequest) Reset() {
 	*x = TaskServiceGroupRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[197]
+	mi := &file_plan_v1_plan_proto_msgTypes[199]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16308,7 +16408,7 @@ func (x *TaskServiceGroupRequest) String() string {
 func (*TaskServiceGroupRequest) ProtoMessage() {}
 
 func (x *TaskServiceGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[197]
+	mi := &file_plan_v1_plan_proto_msgTypes[199]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16321,7 +16421,7 @@ func (x *TaskServiceGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceGroupRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceGroupRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{197}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{199}
 }
 
 func (x *TaskServiceGroupRequest) GetTaskId() string {
@@ -16348,7 +16448,7 @@ type TaskServiceGroupResponse struct {
 
 func (x *TaskServiceGroupResponse) Reset() {
 	*x = TaskServiceGroupResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[198]
+	mi := &file_plan_v1_plan_proto_msgTypes[200]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16360,7 +16460,7 @@ func (x *TaskServiceGroupResponse) String() string {
 func (*TaskServiceGroupResponse) ProtoMessage() {}
 
 func (x *TaskServiceGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[198]
+	mi := &file_plan_v1_plan_proto_msgTypes[200]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16373,7 +16473,7 @@ func (x *TaskServiceGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceGroupResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceGroupResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{198}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{200}
 }
 
 func (x *TaskServiceGroupResponse) GetTask() *Task {
@@ -16393,7 +16493,7 @@ type TaskServiceDeleteRequest struct {
 
 func (x *TaskServiceDeleteRequest) Reset() {
 	*x = TaskServiceDeleteRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[199]
+	mi := &file_plan_v1_plan_proto_msgTypes[201]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16405,7 +16505,7 @@ func (x *TaskServiceDeleteRequest) String() string {
 func (*TaskServiceDeleteRequest) ProtoMessage() {}
 
 func (x *TaskServiceDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[199]
+	mi := &file_plan_v1_plan_proto_msgTypes[201]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16418,7 +16518,7 @@ func (x *TaskServiceDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceDeleteRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{199}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{201}
 }
 
 func (x *TaskServiceDeleteRequest) GetTaskId() string {
@@ -16438,7 +16538,7 @@ type TaskServiceDeleteResponse struct {
 
 func (x *TaskServiceDeleteResponse) Reset() {
 	*x = TaskServiceDeleteResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[200]
+	mi := &file_plan_v1_plan_proto_msgTypes[202]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16450,7 +16550,7 @@ func (x *TaskServiceDeleteResponse) String() string {
 func (*TaskServiceDeleteResponse) ProtoMessage() {}
 
 func (x *TaskServiceDeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[200]
+	mi := &file_plan_v1_plan_proto_msgTypes[202]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16463,7 +16563,7 @@ func (x *TaskServiceDeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceDeleteResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceDeleteResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{200}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{202}
 }
 
 func (x *TaskServiceDeleteResponse) GetTask() *Task {
@@ -16489,7 +16589,7 @@ type TaskServiceDoneRequest struct {
 
 func (x *TaskServiceDoneRequest) Reset() {
 	*x = TaskServiceDoneRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[201]
+	mi := &file_plan_v1_plan_proto_msgTypes[203]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16501,7 +16601,7 @@ func (x *TaskServiceDoneRequest) String() string {
 func (*TaskServiceDoneRequest) ProtoMessage() {}
 
 func (x *TaskServiceDoneRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[201]
+	mi := &file_plan_v1_plan_proto_msgTypes[203]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16514,7 +16614,7 @@ func (x *TaskServiceDoneRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceDoneRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceDoneRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{201}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{203}
 }
 
 func (x *TaskServiceDoneRequest) GetTaskId() string {
@@ -16555,7 +16655,7 @@ type TaskServiceDoneResponse struct {
 
 func (x *TaskServiceDoneResponse) Reset() {
 	*x = TaskServiceDoneResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[202]
+	mi := &file_plan_v1_plan_proto_msgTypes[204]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16567,7 +16667,7 @@ func (x *TaskServiceDoneResponse) String() string {
 func (*TaskServiceDoneResponse) ProtoMessage() {}
 
 func (x *TaskServiceDoneResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[202]
+	mi := &file_plan_v1_plan_proto_msgTypes[204]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16580,7 +16680,7 @@ func (x *TaskServiceDoneResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceDoneResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceDoneResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{202}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{204}
 }
 
 func (x *TaskServiceDoneResponse) GetTask() *Task {
@@ -16604,7 +16704,7 @@ type TaskServiceCancelRequest struct {
 
 func (x *TaskServiceCancelRequest) Reset() {
 	*x = TaskServiceCancelRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[203]
+	mi := &file_plan_v1_plan_proto_msgTypes[205]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16616,7 +16716,7 @@ func (x *TaskServiceCancelRequest) String() string {
 func (*TaskServiceCancelRequest) ProtoMessage() {}
 
 func (x *TaskServiceCancelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[203]
+	mi := &file_plan_v1_plan_proto_msgTypes[205]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16629,7 +16729,7 @@ func (x *TaskServiceCancelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceCancelRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceCancelRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{203}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{205}
 }
 
 func (x *TaskServiceCancelRequest) GetTaskId() string {
@@ -16663,7 +16763,7 @@ type TaskServiceCancelResponse struct {
 
 func (x *TaskServiceCancelResponse) Reset() {
 	*x = TaskServiceCancelResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[204]
+	mi := &file_plan_v1_plan_proto_msgTypes[206]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16675,7 +16775,7 @@ func (x *TaskServiceCancelResponse) String() string {
 func (*TaskServiceCancelResponse) ProtoMessage() {}
 
 func (x *TaskServiceCancelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[204]
+	mi := &file_plan_v1_plan_proto_msgTypes[206]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16688,7 +16788,7 @@ func (x *TaskServiceCancelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceCancelResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceCancelResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{204}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{206}
 }
 
 func (x *TaskServiceCancelResponse) GetTask() *Task {
@@ -16712,7 +16812,7 @@ type TaskServiceContinueRequest struct {
 
 func (x *TaskServiceContinueRequest) Reset() {
 	*x = TaskServiceContinueRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[205]
+	mi := &file_plan_v1_plan_proto_msgTypes[207]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16724,7 +16824,7 @@ func (x *TaskServiceContinueRequest) String() string {
 func (*TaskServiceContinueRequest) ProtoMessage() {}
 
 func (x *TaskServiceContinueRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[205]
+	mi := &file_plan_v1_plan_proto_msgTypes[207]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16737,7 +16837,7 @@ func (x *TaskServiceContinueRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceContinueRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceContinueRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{205}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{207}
 }
 
 func (x *TaskServiceContinueRequest) GetTaskId() string {
@@ -16771,7 +16871,7 @@ type TaskServiceContinueResponse struct {
 
 func (x *TaskServiceContinueResponse) Reset() {
 	*x = TaskServiceContinueResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[206]
+	mi := &file_plan_v1_plan_proto_msgTypes[208]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16783,7 +16883,7 @@ func (x *TaskServiceContinueResponse) String() string {
 func (*TaskServiceContinueResponse) ProtoMessage() {}
 
 func (x *TaskServiceContinueResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[206]
+	mi := &file_plan_v1_plan_proto_msgTypes[208]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16796,7 +16896,7 @@ func (x *TaskServiceContinueResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceContinueResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceContinueResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{206}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{208}
 }
 
 func (x *TaskServiceContinueResponse) GetTask() *Task {
@@ -16839,7 +16939,7 @@ type TaskServiceUpdateRequest struct {
 
 func (x *TaskServiceUpdateRequest) Reset() {
 	*x = TaskServiceUpdateRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[207]
+	mi := &file_plan_v1_plan_proto_msgTypes[209]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16851,7 +16951,7 @@ func (x *TaskServiceUpdateRequest) String() string {
 func (*TaskServiceUpdateRequest) ProtoMessage() {}
 
 func (x *TaskServiceUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[207]
+	mi := &file_plan_v1_plan_proto_msgTypes[209]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16864,7 +16964,7 @@ func (x *TaskServiceUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceUpdateRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{207}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{209}
 }
 
 func (x *TaskServiceUpdateRequest) GetTaskId() string {
@@ -16961,7 +17061,7 @@ type TaskServiceUpdateResponse struct {
 
 func (x *TaskServiceUpdateResponse) Reset() {
 	*x = TaskServiceUpdateResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[208]
+	mi := &file_plan_v1_plan_proto_msgTypes[210]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16973,7 +17073,7 @@ func (x *TaskServiceUpdateResponse) String() string {
 func (*TaskServiceUpdateResponse) ProtoMessage() {}
 
 func (x *TaskServiceUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[208]
+	mi := &file_plan_v1_plan_proto_msgTypes[210]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16986,7 +17086,7 @@ func (x *TaskServiceUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceUpdateResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{208}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{210}
 }
 
 func (x *TaskServiceUpdateResponse) GetTask() *Task {
@@ -17008,7 +17108,7 @@ type TaskServiceDescribeRequest struct {
 
 func (x *TaskServiceDescribeRequest) Reset() {
 	*x = TaskServiceDescribeRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[209]
+	mi := &file_plan_v1_plan_proto_msgTypes[211]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17020,7 +17120,7 @@ func (x *TaskServiceDescribeRequest) String() string {
 func (*TaskServiceDescribeRequest) ProtoMessage() {}
 
 func (x *TaskServiceDescribeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[209]
+	mi := &file_plan_v1_plan_proto_msgTypes[211]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17033,7 +17133,7 @@ func (x *TaskServiceDescribeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceDescribeRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceDescribeRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{209}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{211}
 }
 
 func (x *TaskServiceDescribeRequest) GetAzima() string {
@@ -17060,7 +17160,7 @@ type TaskServiceDescribeResponse struct {
 
 func (x *TaskServiceDescribeResponse) Reset() {
 	*x = TaskServiceDescribeResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[210]
+	mi := &file_plan_v1_plan_proto_msgTypes[212]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17072,7 +17172,7 @@ func (x *TaskServiceDescribeResponse) String() string {
 func (*TaskServiceDescribeResponse) ProtoMessage() {}
 
 func (x *TaskServiceDescribeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[210]
+	mi := &file_plan_v1_plan_proto_msgTypes[212]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17085,7 +17185,7 @@ func (x *TaskServiceDescribeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceDescribeResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceDescribeResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{210}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{212}
 }
 
 func (x *TaskServiceDescribeResponse) GetTask() *Task {
@@ -17105,7 +17205,7 @@ type TaskServiceOpenRequest struct {
 
 func (x *TaskServiceOpenRequest) Reset() {
 	*x = TaskServiceOpenRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[211]
+	mi := &file_plan_v1_plan_proto_msgTypes[213]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17117,7 +17217,7 @@ func (x *TaskServiceOpenRequest) String() string {
 func (*TaskServiceOpenRequest) ProtoMessage() {}
 
 func (x *TaskServiceOpenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[211]
+	mi := &file_plan_v1_plan_proto_msgTypes[213]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17130,7 +17230,7 @@ func (x *TaskServiceOpenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceOpenRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceOpenRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{211}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{213}
 }
 
 func (x *TaskServiceOpenRequest) GetAzima() string {
@@ -17150,7 +17250,7 @@ type TaskServiceOpenResponse struct {
 
 func (x *TaskServiceOpenResponse) Reset() {
 	*x = TaskServiceOpenResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[212]
+	mi := &file_plan_v1_plan_proto_msgTypes[214]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17162,7 +17262,7 @@ func (x *TaskServiceOpenResponse) String() string {
 func (*TaskServiceOpenResponse) ProtoMessage() {}
 
 func (x *TaskServiceOpenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[212]
+	mi := &file_plan_v1_plan_proto_msgTypes[214]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17175,7 +17275,7 @@ func (x *TaskServiceOpenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceOpenResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceOpenResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{212}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{214}
 }
 
 func (x *TaskServiceOpenResponse) GetTask() *Task {
@@ -17197,7 +17297,7 @@ type TaskServiceMoveRequest struct {
 
 func (x *TaskServiceMoveRequest) Reset() {
 	*x = TaskServiceMoveRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[213]
+	mi := &file_plan_v1_plan_proto_msgTypes[215]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17209,7 +17309,7 @@ func (x *TaskServiceMoveRequest) String() string {
 func (*TaskServiceMoveRequest) ProtoMessage() {}
 
 func (x *TaskServiceMoveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[213]
+	mi := &file_plan_v1_plan_proto_msgTypes[215]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17222,7 +17322,7 @@ func (x *TaskServiceMoveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceMoveRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceMoveRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{213}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{215}
 }
 
 func (x *TaskServiceMoveRequest) GetAzima() string {
@@ -17249,7 +17349,7 @@ type TaskServiceMoveResponse struct {
 
 func (x *TaskServiceMoveResponse) Reset() {
 	*x = TaskServiceMoveResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[214]
+	mi := &file_plan_v1_plan_proto_msgTypes[216]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17261,7 +17361,7 @@ func (x *TaskServiceMoveResponse) String() string {
 func (*TaskServiceMoveResponse) ProtoMessage() {}
 
 func (x *TaskServiceMoveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[214]
+	mi := &file_plan_v1_plan_proto_msgTypes[216]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17274,7 +17374,7 @@ func (x *TaskServiceMoveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceMoveResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceMoveResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{214}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{216}
 }
 
 func (x *TaskServiceMoveResponse) GetTask() *Task {
@@ -17306,7 +17406,7 @@ type TaskServiceCommentRequest struct {
 
 func (x *TaskServiceCommentRequest) Reset() {
 	*x = TaskServiceCommentRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[215]
+	mi := &file_plan_v1_plan_proto_msgTypes[217]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17318,7 +17418,7 @@ func (x *TaskServiceCommentRequest) String() string {
 func (*TaskServiceCommentRequest) ProtoMessage() {}
 
 func (x *TaskServiceCommentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[215]
+	mi := &file_plan_v1_plan_proto_msgTypes[217]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17331,7 +17431,7 @@ func (x *TaskServiceCommentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceCommentRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceCommentRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{215}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{217}
 }
 
 func (x *TaskServiceCommentRequest) GetTaskId() string {
@@ -17395,7 +17495,7 @@ type TaskServiceCommentResponse struct {
 
 func (x *TaskServiceCommentResponse) Reset() {
 	*x = TaskServiceCommentResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[216]
+	mi := &file_plan_v1_plan_proto_msgTypes[218]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17407,7 +17507,7 @@ func (x *TaskServiceCommentResponse) String() string {
 func (*TaskServiceCommentResponse) ProtoMessage() {}
 
 func (x *TaskServiceCommentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[216]
+	mi := &file_plan_v1_plan_proto_msgTypes[218]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17420,7 +17520,7 @@ func (x *TaskServiceCommentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceCommentResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceCommentResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{216}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{218}
 }
 
 func (x *TaskServiceCommentResponse) GetComment() *TaskComment {
@@ -17449,7 +17549,7 @@ type TaskServiceTurnCommentsRequest struct {
 
 func (x *TaskServiceTurnCommentsRequest) Reset() {
 	*x = TaskServiceTurnCommentsRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[217]
+	mi := &file_plan_v1_plan_proto_msgTypes[219]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17461,7 +17561,7 @@ func (x *TaskServiceTurnCommentsRequest) String() string {
 func (*TaskServiceTurnCommentsRequest) ProtoMessage() {}
 
 func (x *TaskServiceTurnCommentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[217]
+	mi := &file_plan_v1_plan_proto_msgTypes[219]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17474,7 +17574,7 @@ func (x *TaskServiceTurnCommentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceTurnCommentsRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceTurnCommentsRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{217}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{219}
 }
 
 func (x *TaskServiceTurnCommentsRequest) GetTaskId() string {
@@ -17503,7 +17603,7 @@ type TaskServiceTurnCommentsResponse struct {
 
 func (x *TaskServiceTurnCommentsResponse) Reset() {
 	*x = TaskServiceTurnCommentsResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[218]
+	mi := &file_plan_v1_plan_proto_msgTypes[220]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17515,7 +17615,7 @@ func (x *TaskServiceTurnCommentsResponse) String() string {
 func (*TaskServiceTurnCommentsResponse) ProtoMessage() {}
 
 func (x *TaskServiceTurnCommentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[218]
+	mi := &file_plan_v1_plan_proto_msgTypes[220]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17528,7 +17628,7 @@ func (x *TaskServiceTurnCommentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceTurnCommentsResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceTurnCommentsResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{218}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{220}
 }
 
 func (x *TaskServiceTurnCommentsResponse) GetTask() *Task {
@@ -17557,7 +17657,7 @@ type PlanServiceSyncRequest struct {
 
 func (x *PlanServiceSyncRequest) Reset() {
 	*x = PlanServiceSyncRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[219]
+	mi := &file_plan_v1_plan_proto_msgTypes[221]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17569,7 +17669,7 @@ func (x *PlanServiceSyncRequest) String() string {
 func (*PlanServiceSyncRequest) ProtoMessage() {}
 
 func (x *PlanServiceSyncRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[219]
+	mi := &file_plan_v1_plan_proto_msgTypes[221]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17582,7 +17682,7 @@ func (x *PlanServiceSyncRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanServiceSyncRequest.ProtoReflect.Descriptor instead.
 func (*PlanServiceSyncRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{219}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{221}
 }
 
 func (x *PlanServiceSyncRequest) GetWishId() string {
@@ -17617,7 +17717,7 @@ type PlanServiceSyncResponse struct {
 
 func (x *PlanServiceSyncResponse) Reset() {
 	*x = PlanServiceSyncResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[220]
+	mi := &file_plan_v1_plan_proto_msgTypes[222]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17629,7 +17729,7 @@ func (x *PlanServiceSyncResponse) String() string {
 func (*PlanServiceSyncResponse) ProtoMessage() {}
 
 func (x *PlanServiceSyncResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[220]
+	mi := &file_plan_v1_plan_proto_msgTypes[222]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17642,7 +17742,7 @@ func (x *PlanServiceSyncResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanServiceSyncResponse.ProtoReflect.Descriptor instead.
 func (*PlanServiceSyncResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{220}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{222}
 }
 
 func (x *PlanServiceSyncResponse) GetAzimas() []*Task {
@@ -17918,7 +18018,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
 	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\x12'\n" +
-	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\xc6\x13\n" +
+	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\xe9\x13\n" +
 	"\x04Task\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1d\n" +
@@ -17995,7 +18095,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x14waiting_before_start\x18< \x01(\v2\x19.google.protobuf.DurationR\x12waitingBeforeStart\x12H\n" +
 	"\x12last_activity_time\x18= \x01(\v2\x1a.google.protobuf.TimestampR\x10lastActivityTime\x123\n" +
 	"\tcancelled\x18> \x01(\v2\x15.plan.v1.CancellationR\tcancelled\x120\n" +
-	"\bcomments\x18? \x03(\v2\x14.plan.v1.TaskCommentR\bcomments:\x13\xd2\xf3\x18\x0f\n" +
+	"\bcomments\x18? \x03(\v2\x14.plan.v1.TaskCommentR\bcomments\x12!\n" +
+	"\fmachine_wait\x18@ \x01(\bR\vmachineWait:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"\x93\x01\n" +
 	"\aTaskRun\x129\n" +
@@ -18812,6 +18913,10 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x18TaskServiceResumeRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\">\n" +
 	"\x19TaskServiceResumeResponse\x12!\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"?\n" +
+	"\x17TaskServiceStartRequest\x12$\n" +
+	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\"=\n" +
+	"\x18TaskServiceStartResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"w\n" +
 	"\x17TaskServiceWatchRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12$\n" +
@@ -19202,7 +19307,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06Delete\x12\".plan.v1.BlockServiceDeleteRequest\x1a#.plan.v1.BlockServiceDeleteResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x022\xb3\x01\n" +
 	"\vMarkService\x12P\n" +
 	"\x03Put\x12\x1e.plan.v1.MarkServicePutRequest\x1a\x1f.plan.v1.MarkServicePutResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12R\n" +
-	"\x04List\x12\x1f.plan.v1.MarkServiceListRequest\x1a .plan.v1.MarkServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x012\xc6\x0f\n" +
+	"\x04List\x12\x1f.plan.v1.MarkServiceListRequest\x1a .plan.v1.MarkServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x012\x9e\x10\n" +
 	"\vTaskService\x12V\n" +
 	"\x05Spawn\x12 .plan.v1.TaskServiceSpawnRequest\x1a!.plan.v1.TaskServiceSpawnResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12R\n" +
 	"\x04List\x12\x1f.plan.v1.TaskServiceListRequest\x1a .plan.v1.TaskServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12O\n" +
@@ -19210,7 +19315,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04Diff\x12\x1f.plan.v1.TaskServiceDiffRequest\x1a .plan.v1.TaskServiceDiffResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12S\n" +
 	"\x04Stop\x12\x1f.plan.v1.TaskServiceStopRequest\x1a .plan.v1.TaskServiceStopResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
 	"\x05Pause\x12 .plan.v1.TaskServicePauseRequest\x1a!.plan.v1.TaskServicePauseResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12Y\n" +
-	"\x06Resume\x12!.plan.v1.TaskServiceResumeRequest\x1a\".plan.v1.TaskServiceResumeResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12T\n" +
+	"\x06Resume\x12!.plan.v1.TaskServiceResumeRequest\x1a\".plan.v1.TaskServiceResumeResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
+	"\x05Start\x12 .plan.v1.TaskServiceStartRequest\x1a!.plan.v1.TaskServiceStartResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12T\n" +
 	"\x05Watch\x12 .plan.v1.TaskServiceWatchRequest\x1a!.plan.v1.TaskServiceWatchResponse\"\x04\xc8\xf3\x18\x010\x01\x12V\n" +
 	"\x05Clean\x12 .plan.v1.TaskServiceCleanRequest\x1a!.plan.v1.TaskServiceCleanResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x02\x12Y\n" +
 	"\x06Depend\x12!.plan.v1.TaskServiceDependRequest\x1a\".plan.v1.TaskServiceDependResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
@@ -19243,7 +19349,7 @@ func file_plan_v1_plan_proto_rawDescGZIP() []byte {
 }
 
 var file_plan_v1_plan_proto_enumTypes = make([]protoimpl.EnumInfo, 30)
-var file_plan_v1_plan_proto_msgTypes = make([]protoimpl.MessageInfo, 221)
+var file_plan_v1_plan_proto_msgTypes = make([]protoimpl.MessageInfo, 223)
 var file_plan_v1_plan_proto_goTypes = []any{
 	(MergeMain)(0),                             // 0: plan.v1.MergeMain
 	(ProjectPush)(0),                           // 1: plan.v1.ProjectPush
@@ -19465,53 +19571,55 @@ var file_plan_v1_plan_proto_goTypes = []any{
 	(*TaskServicePauseResponse)(nil),           // 217: plan.v1.TaskServicePauseResponse
 	(*TaskServiceResumeRequest)(nil),           // 218: plan.v1.TaskServiceResumeRequest
 	(*TaskServiceResumeResponse)(nil),          // 219: plan.v1.TaskServiceResumeResponse
-	(*TaskServiceWatchRequest)(nil),            // 220: plan.v1.TaskServiceWatchRequest
-	(*TaskServiceWatchResponse)(nil),           // 221: plan.v1.TaskServiceWatchResponse
-	(*TaskServiceCleanRequest)(nil),            // 222: plan.v1.TaskServiceCleanRequest
-	(*TaskServiceCleanResponse)(nil),           // 223: plan.v1.TaskServiceCleanResponse
-	(*TaskServiceDependRequest)(nil),           // 224: plan.v1.TaskServiceDependRequest
-	(*TaskAfter)(nil),                          // 225: plan.v1.TaskAfter
-	(*TaskServiceDependResponse)(nil),          // 226: plan.v1.TaskServiceDependResponse
-	(*TaskServiceGroupRequest)(nil),            // 227: plan.v1.TaskServiceGroupRequest
-	(*TaskServiceGroupResponse)(nil),           // 228: plan.v1.TaskServiceGroupResponse
-	(*TaskServiceDeleteRequest)(nil),           // 229: plan.v1.TaskServiceDeleteRequest
-	(*TaskServiceDeleteResponse)(nil),          // 230: plan.v1.TaskServiceDeleteResponse
-	(*TaskServiceDoneRequest)(nil),             // 231: plan.v1.TaskServiceDoneRequest
-	(*TaskServiceDoneResponse)(nil),            // 232: plan.v1.TaskServiceDoneResponse
-	(*TaskServiceCancelRequest)(nil),           // 233: plan.v1.TaskServiceCancelRequest
-	(*TaskServiceCancelResponse)(nil),          // 234: plan.v1.TaskServiceCancelResponse
-	(*TaskServiceContinueRequest)(nil),         // 235: plan.v1.TaskServiceContinueRequest
-	(*TaskServiceContinueResponse)(nil),        // 236: plan.v1.TaskServiceContinueResponse
-	(*TaskServiceUpdateRequest)(nil),           // 237: plan.v1.TaskServiceUpdateRequest
-	(*TaskServiceUpdateResponse)(nil),          // 238: plan.v1.TaskServiceUpdateResponse
-	(*TaskServiceDescribeRequest)(nil),         // 239: plan.v1.TaskServiceDescribeRequest
-	(*TaskServiceDescribeResponse)(nil),        // 240: plan.v1.TaskServiceDescribeResponse
-	(*TaskServiceOpenRequest)(nil),             // 241: plan.v1.TaskServiceOpenRequest
-	(*TaskServiceOpenResponse)(nil),            // 242: plan.v1.TaskServiceOpenResponse
-	(*TaskServiceMoveRequest)(nil),             // 243: plan.v1.TaskServiceMoveRequest
-	(*TaskServiceMoveResponse)(nil),            // 244: plan.v1.TaskServiceMoveResponse
-	(*TaskServiceCommentRequest)(nil),          // 245: plan.v1.TaskServiceCommentRequest
-	(*TaskServiceCommentResponse)(nil),         // 246: plan.v1.TaskServiceCommentResponse
-	(*TaskServiceTurnCommentsRequest)(nil),     // 247: plan.v1.TaskServiceTurnCommentsRequest
-	(*TaskServiceTurnCommentsResponse)(nil),    // 248: plan.v1.TaskServiceTurnCommentsResponse
-	(*PlanServiceSyncRequest)(nil),             // 249: plan.v1.PlanServiceSyncRequest
-	(*PlanServiceSyncResponse)(nil),            // 250: plan.v1.PlanServiceSyncResponse
-	(*timestamppb.Timestamp)(nil),              // 251: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),                // 252: google.protobuf.Duration
-	(v1.LoadNotch)(0),                          // 253: djinn.v1.LoadNotch
-	(*TilasmExport)(nil),                       // 254: plan.v1.TilasmExport
-	(*anypb.Any)(nil),                          // 255: google.protobuf.Any
+	(*TaskServiceStartRequest)(nil),            // 220: plan.v1.TaskServiceStartRequest
+	(*TaskServiceStartResponse)(nil),           // 221: plan.v1.TaskServiceStartResponse
+	(*TaskServiceWatchRequest)(nil),            // 222: plan.v1.TaskServiceWatchRequest
+	(*TaskServiceWatchResponse)(nil),           // 223: plan.v1.TaskServiceWatchResponse
+	(*TaskServiceCleanRequest)(nil),            // 224: plan.v1.TaskServiceCleanRequest
+	(*TaskServiceCleanResponse)(nil),           // 225: plan.v1.TaskServiceCleanResponse
+	(*TaskServiceDependRequest)(nil),           // 226: plan.v1.TaskServiceDependRequest
+	(*TaskAfter)(nil),                          // 227: plan.v1.TaskAfter
+	(*TaskServiceDependResponse)(nil),          // 228: plan.v1.TaskServiceDependResponse
+	(*TaskServiceGroupRequest)(nil),            // 229: plan.v1.TaskServiceGroupRequest
+	(*TaskServiceGroupResponse)(nil),           // 230: plan.v1.TaskServiceGroupResponse
+	(*TaskServiceDeleteRequest)(nil),           // 231: plan.v1.TaskServiceDeleteRequest
+	(*TaskServiceDeleteResponse)(nil),          // 232: plan.v1.TaskServiceDeleteResponse
+	(*TaskServiceDoneRequest)(nil),             // 233: plan.v1.TaskServiceDoneRequest
+	(*TaskServiceDoneResponse)(nil),            // 234: plan.v1.TaskServiceDoneResponse
+	(*TaskServiceCancelRequest)(nil),           // 235: plan.v1.TaskServiceCancelRequest
+	(*TaskServiceCancelResponse)(nil),          // 236: plan.v1.TaskServiceCancelResponse
+	(*TaskServiceContinueRequest)(nil),         // 237: plan.v1.TaskServiceContinueRequest
+	(*TaskServiceContinueResponse)(nil),        // 238: plan.v1.TaskServiceContinueResponse
+	(*TaskServiceUpdateRequest)(nil),           // 239: plan.v1.TaskServiceUpdateRequest
+	(*TaskServiceUpdateResponse)(nil),          // 240: plan.v1.TaskServiceUpdateResponse
+	(*TaskServiceDescribeRequest)(nil),         // 241: plan.v1.TaskServiceDescribeRequest
+	(*TaskServiceDescribeResponse)(nil),        // 242: plan.v1.TaskServiceDescribeResponse
+	(*TaskServiceOpenRequest)(nil),             // 243: plan.v1.TaskServiceOpenRequest
+	(*TaskServiceOpenResponse)(nil),            // 244: plan.v1.TaskServiceOpenResponse
+	(*TaskServiceMoveRequest)(nil),             // 245: plan.v1.TaskServiceMoveRequest
+	(*TaskServiceMoveResponse)(nil),            // 246: plan.v1.TaskServiceMoveResponse
+	(*TaskServiceCommentRequest)(nil),          // 247: plan.v1.TaskServiceCommentRequest
+	(*TaskServiceCommentResponse)(nil),         // 248: plan.v1.TaskServiceCommentResponse
+	(*TaskServiceTurnCommentsRequest)(nil),     // 249: plan.v1.TaskServiceTurnCommentsRequest
+	(*TaskServiceTurnCommentsResponse)(nil),    // 250: plan.v1.TaskServiceTurnCommentsResponse
+	(*PlanServiceSyncRequest)(nil),             // 251: plan.v1.PlanServiceSyncRequest
+	(*PlanServiceSyncResponse)(nil),            // 252: plan.v1.PlanServiceSyncResponse
+	(*timestamppb.Timestamp)(nil),              // 253: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),                // 254: google.protobuf.Duration
+	(v1.LoadNotch)(0),                          // 255: djinn.v1.LoadNotch
+	(*TilasmExport)(nil),                       // 256: plan.v1.TilasmExport
+	(*anypb.Any)(nil),                          // 257: google.protobuf.Any
 }
 var file_plan_v1_plan_proto_depIdxs = []int32{
-	251, // 0: plan.v1.Project.create_time:type_name -> google.protobuf.Timestamp
+	253, // 0: plan.v1.Project.create_time:type_name -> google.protobuf.Timestamp
 	33,  // 1: plan.v1.Project.summons:type_name -> plan.v1.Summon
 	32,  // 2: plan.v1.Project.check_runs:type_name -> plan.v1.CheckRun
 	31,  // 3: plan.v1.Project.sync:type_name -> plan.v1.ProjectSync
 	1,   // 4: plan.v1.Project.push:type_name -> plan.v1.ProjectPush
 	5,   // 5: plan.v1.Project.push_strategy:type_name -> plan.v1.PushStrategy
 	2,   // 6: plan.v1.CheckRun.when:type_name -> plan.v1.CheckWhen
-	251, // 7: plan.v1.CheckRun.end_time:type_name -> google.protobuf.Timestamp
-	251, // 8: plan.v1.Summon.create_time:type_name -> google.protobuf.Timestamp
+	253, // 7: plan.v1.CheckRun.end_time:type_name -> google.protobuf.Timestamp
+	253, // 8: plan.v1.Summon.create_time:type_name -> google.protobuf.Timestamp
 	13,  // 9: plan.v1.ProjectSettings.provider:type_name -> plan.v1.Provider
 	35,  // 10: plan.v1.ProjectSettings.checks:type_name -> plan.v1.ProjectCheck
 	0,   // 11: plan.v1.ProjectSettings.merge_main:type_name -> plan.v1.MergeMain
@@ -19521,10 +19629,10 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	6,   // 15: plan.v1.ProjectSettings.install_questions:type_name -> plan.v1.InstallQuestions
 	2,   // 16: plan.v1.ProjectCheck.when:type_name -> plan.v1.CheckWhen
 	3,   // 17: plan.v1.ProjectSetting.source:type_name -> plan.v1.SettingSource
-	251, // 18: plan.v1.Wish.create_time:type_name -> google.protobuf.Timestamp
+	253, // 18: plan.v1.Wish.create_time:type_name -> google.protobuf.Timestamp
 	46,  // 19: plan.v1.Wish.allowances:type_name -> plan.v1.ProjectAllowance
 	7,   // 20: plan.v1.Wish.state:type_name -> plan.v1.WishState
-	251, // 21: plan.v1.Wish.grant_time:type_name -> google.protobuf.Timestamp
+	253, // 21: plan.v1.Wish.grant_time:type_name -> google.protobuf.Timestamp
 	43,  // 22: plan.v1.Wish.template:type_name -> plan.v1.WishTemplate
 	42,  // 23: plan.v1.Wish.integration_branches:type_name -> plan.v1.IntegrationBranch
 	4,   // 24: plan.v1.Wish.push_mode:type_name -> plan.v1.PushMode
@@ -19533,23 +19641,23 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	5,   // 27: plan.v1.Wish.push_strategy:type_name -> plan.v1.PushStrategy
 	39,  // 28: plan.v1.WishPush.last:type_name -> plan.v1.IntegrationPush
 	53,  // 29: plan.v1.WishPush.failure:type_name -> plan.v1.IntegrationFailure
-	251, // 30: plan.v1.IntegrationPush.push_time:type_name -> google.protobuf.Timestamp
+	253, // 30: plan.v1.IntegrationPush.push_time:type_name -> google.protobuf.Timestamp
 	41,  // 31: plan.v1.WishMain.last:type_name -> plan.v1.MainMerge
-	251, // 32: plan.v1.WishMain.check_time:type_name -> google.protobuf.Timestamp
-	251, // 33: plan.v1.MainMerge.merge_time:type_name -> google.protobuf.Timestamp
+	253, // 32: plan.v1.WishMain.check_time:type_name -> google.protobuf.Timestamp
+	253, // 33: plan.v1.MainMerge.merge_time:type_name -> google.protobuf.Timestamp
 	13,  // 34: plan.v1.Lead.provider:type_name -> plan.v1.Provider
-	251, // 35: plan.v1.LeadEvent.create_time:type_name -> google.protobuf.Timestamp
+	253, // 35: plan.v1.LeadEvent.create_time:type_name -> google.protobuf.Timestamp
 	8,   // 36: plan.v1.LeadEvent.kind:type_name -> plan.v1.LeadEventKind
-	251, // 37: plan.v1.LeadEvent.ack_time:type_name -> google.protobuf.Timestamp
+	253, // 37: plan.v1.LeadEvent.ack_time:type_name -> google.protobuf.Timestamp
 	9,   // 38: plan.v1.ProjectAllowance.allowance:type_name -> plan.v1.Allowance
 	10,  // 39: plan.v1.Task.status:type_name -> plan.v1.TaskStatus
 	13,  // 40: plan.v1.Task.provider:type_name -> plan.v1.Provider
 	47,  // 41: plan.v1.Task.usage:type_name -> plan.v1.Usage
-	251, // 42: plan.v1.Task.create_time:type_name -> google.protobuf.Timestamp
-	251, // 43: plan.v1.Task.start_time:type_name -> google.protobuf.Timestamp
-	251, // 44: plan.v1.Task.end_time:type_name -> google.protobuf.Timestamp
+	253, // 42: plan.v1.Task.create_time:type_name -> google.protobuf.Timestamp
+	253, // 43: plan.v1.Task.start_time:type_name -> google.protobuf.Timestamp
+	253, // 44: plan.v1.Task.end_time:type_name -> google.protobuf.Timestamp
 	11,  // 45: plan.v1.Task.access:type_name -> plan.v1.TaskAccess
-	251, // 46: plan.v1.Task.resume_after:type_name -> google.protobuf.Timestamp
+	253, // 46: plan.v1.Task.resume_after:type_name -> google.protobuf.Timestamp
 	60,  // 47: plan.v1.Task.closed:type_name -> plan.v1.Closure
 	59,  // 48: plan.v1.Task.resources:type_name -> plan.v1.Resources
 	16,  // 49: plan.v1.Task.kind:type_name -> plan.v1.TaskKind
@@ -19560,38 +19668,38 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	12,  // 54: plan.v1.Task.role:type_name -> plan.v1.TaskRole
 	51,  // 55: plan.v1.Task.review:type_name -> plan.v1.TaskReview
 	13,  // 56: plan.v1.Task.prior_provider:type_name -> plan.v1.Provider
-	251, // 57: plan.v1.Task.first_start_time:type_name -> google.protobuf.Timestamp
+	253, // 57: plan.v1.Task.first_start_time:type_name -> google.protobuf.Timestamp
 	49,  // 58: plan.v1.Task.runs:type_name -> plan.v1.TaskRun
-	252, // 59: plan.v1.Task.running:type_name -> google.protobuf.Duration
-	252, // 60: plan.v1.Task.waiting_gate:type_name -> google.protobuf.Duration
-	252, // 61: plan.v1.Task.paused:type_name -> google.protobuf.Duration
-	252, // 62: plan.v1.Task.waiting_before_start:type_name -> google.protobuf.Duration
-	251, // 63: plan.v1.Task.last_activity_time:type_name -> google.protobuf.Timestamp
+	254, // 59: plan.v1.Task.running:type_name -> google.protobuf.Duration
+	254, // 60: plan.v1.Task.waiting_gate:type_name -> google.protobuf.Duration
+	254, // 61: plan.v1.Task.paused:type_name -> google.protobuf.Duration
+	254, // 62: plan.v1.Task.waiting_before_start:type_name -> google.protobuf.Duration
+	253, // 63: plan.v1.Task.last_activity_time:type_name -> google.protobuf.Timestamp
 	61,  // 64: plan.v1.Task.cancelled:type_name -> plan.v1.Cancellation
 	50,  // 65: plan.v1.Task.comments:type_name -> plan.v1.TaskComment
-	251, // 66: plan.v1.TaskRun.start_time:type_name -> google.protobuf.Timestamp
-	251, // 67: plan.v1.TaskRun.end_time:type_name -> google.protobuf.Timestamp
-	251, // 68: plan.v1.TaskComment.create_time:type_name -> google.protobuf.Timestamp
-	251, // 69: plan.v1.TaskComment.resolve_time:type_name -> google.protobuf.Timestamp
+	253, // 66: plan.v1.TaskRun.start_time:type_name -> google.protobuf.Timestamp
+	253, // 67: plan.v1.TaskRun.end_time:type_name -> google.protobuf.Timestamp
+	253, // 68: plan.v1.TaskComment.create_time:type_name -> google.protobuf.Timestamp
+	253, // 69: plan.v1.TaskComment.resolve_time:type_name -> google.protobuf.Timestamp
 	53,  // 70: plan.v1.TaskCorrection.failure:type_name -> plan.v1.IntegrationFailure
 	14,  // 71: plan.v1.IntegrationFailure.state:type_name -> plan.v1.IntegrationState
 	14,  // 72: plan.v1.TaskIntegration.state:type_name -> plan.v1.IntegrationState
-	251, // 73: plan.v1.TaskIntegration.update_time:type_name -> google.protobuf.Timestamp
+	253, // 73: plan.v1.TaskIntegration.update_time:type_name -> google.protobuf.Timestamp
 	53,  // 74: plan.v1.TaskIntegration.failure:type_name -> plan.v1.IntegrationFailure
 	15,  // 75: plan.v1.ProofNeed.provers:type_name -> plan.v1.Prover
 	17,  // 76: plan.v1.Azima.state:type_name -> plan.v1.AzimaState
 	31,  // 77: plan.v1.Azima.sync:type_name -> plan.v1.ProjectSync
 	58,  // 78: plan.v1.Azima.pr:type_name -> plan.v1.AzimaPr
 	18,  // 79: plan.v1.AzimaPr.state:type_name -> plan.v1.AzimaPrState
-	251, // 80: plan.v1.Resources.read_time:type_name -> google.protobuf.Timestamp
+	253, // 80: plan.v1.Resources.read_time:type_name -> google.protobuf.Timestamp
 	19,  // 81: plan.v1.Closure.actor:type_name -> plan.v1.Closer
-	251, // 82: plan.v1.Closure.create_time:type_name -> google.protobuf.Timestamp
+	253, // 82: plan.v1.Closure.create_time:type_name -> google.protobuf.Timestamp
 	19,  // 83: plan.v1.Cancellation.actor:type_name -> plan.v1.Closer
-	251, // 84: plan.v1.Cancellation.create_time:type_name -> google.protobuf.Timestamp
+	253, // 84: plan.v1.Cancellation.create_time:type_name -> google.protobuf.Timestamp
 	20,  // 85: plan.v1.TaskEvent.kind:type_name -> plan.v1.TaskEventKind
 	47,  // 86: plan.v1.TaskEvent.usage:type_name -> plan.v1.Usage
-	251, // 87: plan.v1.TaskEvent.create_time:type_name -> google.protobuf.Timestamp
-	251, // 88: plan.v1.Question.create_time:type_name -> google.protobuf.Timestamp
+	253, // 87: plan.v1.TaskEvent.create_time:type_name -> google.protobuf.Timestamp
+	253, // 88: plan.v1.Question.create_time:type_name -> google.protobuf.Timestamp
 	68,  // 89: plan.v1.Question.answer:type_name -> plan.v1.Answer
 	67,  // 90: plan.v1.Question.marks:type_name -> plan.v1.Mark
 	66,  // 91: plan.v1.Question.rounds:type_name -> plan.v1.Round
@@ -19601,13 +19709,13 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	22,  // 95: plan.v1.RouteOption.kind:type_name -> plan.v1.RouteKind
 	43,  // 96: plan.v1.RouteOption.template:type_name -> plan.v1.WishTemplate
 	23,  // 97: plan.v1.Round.kind:type_name -> plan.v1.RoundKind
-	251, // 98: plan.v1.Round.create_time:type_name -> google.protobuf.Timestamp
+	253, // 98: plan.v1.Round.create_time:type_name -> google.protobuf.Timestamp
 	24,  // 99: plan.v1.Mark.kind:type_name -> plan.v1.MarkKind
-	251, // 100: plan.v1.Mark.create_time:type_name -> google.protobuf.Timestamp
+	253, // 100: plan.v1.Mark.create_time:type_name -> google.protobuf.Timestamp
 	21,  // 101: plan.v1.Answer.choice:type_name -> plan.v1.Choice
-	251, // 102: plan.v1.Answer.create_time:type_name -> google.protobuf.Timestamp
+	253, // 102: plan.v1.Answer.create_time:type_name -> google.protobuf.Timestamp
 	19,  // 103: plan.v1.Answer.actor:type_name -> plan.v1.Closer
-	251, // 104: plan.v1.Withdrawal.create_time:type_name -> google.protobuf.Timestamp
+	253, // 104: plan.v1.Withdrawal.create_time:type_name -> google.protobuf.Timestamp
 	19,  // 105: plan.v1.Withdrawal.actor:type_name -> plan.v1.Closer
 	70,  // 106: plan.v1.QuestionServiceEnlightenRequest.question:type_name -> plan.v1.QuestionRef
 	63,  // 107: plan.v1.QuestionServiceEnlightenResponse.question:type_name -> plan.v1.Question
@@ -19618,7 +19726,7 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	21,  // 112: plan.v1.QuestionServiceAnswerRequest.choice:type_name -> plan.v1.Choice
 	19,  // 113: plan.v1.QuestionServiceAnswerRequest.by:type_name -> plan.v1.Closer
 	63,  // 114: plan.v1.QuestionServiceAnswerResponse.question:type_name -> plan.v1.Question
-	251, // 115: plan.v1.QuestionServiceListRequest.since:type_name -> google.protobuf.Timestamp
+	253, // 115: plan.v1.QuestionServiceListRequest.since:type_name -> google.protobuf.Timestamp
 	63,  // 116: plan.v1.QuestionServiceListResponse.questions:type_name -> plan.v1.Question
 	70,  // 117: plan.v1.QuestionServiceMoveRequest.question:type_name -> plan.v1.QuestionRef
 	63,  // 118: plan.v1.QuestionServiceMoveResponse.question:type_name -> plan.v1.Question
@@ -19641,10 +19749,10 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	97,  // 135: plan.v1.SkillServiceListResponse.skills:type_name -> plan.v1.Skill
 	30,  // 136: plan.v1.SkillServiceUnsummonResponse.project:type_name -> plan.v1.Project
 	25,  // 137: plan.v1.InboxItem.state:type_name -> plan.v1.InboxState
-	251, // 138: plan.v1.InboxItem.create_time:type_name -> google.protobuf.Timestamp
+	253, // 138: plan.v1.InboxItem.create_time:type_name -> google.protobuf.Timestamp
 	64,  // 139: plan.v1.InboxItem.route:type_name -> plan.v1.Route
-	251, // 140: plan.v1.InboxItem.settle_time:type_name -> google.protobuf.Timestamp
-	251, // 141: plan.v1.PluggedSource.create_time:type_name -> google.protobuf.Timestamp
+	253, // 140: plan.v1.InboxItem.settle_time:type_name -> google.protobuf.Timestamp
+	253, // 141: plan.v1.PluggedSource.create_time:type_name -> google.protobuf.Timestamp
 	105, // 142: plan.v1.InboxServiceSourcesResponse.sources:type_name -> plan.v1.InboxSource
 	105, // 143: plan.v1.InboxServicePlugResponse.source:type_name -> plan.v1.InboxSource
 	105, // 144: plan.v1.InboxServiceUnplugResponse.source:type_name -> plan.v1.InboxSource
@@ -19656,7 +19764,7 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	63,  // 150: plan.v1.WishServiceRouteResponse.question:type_name -> plan.v1.Question
 	26,  // 151: plan.v1.WishServiceWatchResponse.changes:type_name -> plan.v1.Change
 	123, // 152: plan.v1.WishServiceWatchResponse.changed:type_name -> plan.v1.WishChanges
-	253, // 153: plan.v1.WishServiceWatchResponse.load:type_name -> djinn.v1.LoadNotch
+	255, // 153: plan.v1.WishServiceWatchResponse.load:type_name -> djinn.v1.LoadNotch
 	48,  // 154: plan.v1.WishChanges.tasks:type_name -> plan.v1.Task
 	63,  // 155: plan.v1.WishChanges.questions:type_name -> plan.v1.Question
 	185, // 156: plan.v1.WishChanges.blocks:type_name -> plan.v1.Block
@@ -19689,7 +19797,7 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	30,  // 183: plan.v1.WishServiceSnapshotResponse.projects:type_name -> plan.v1.Project
 	30,  // 184: plan.v1.ProjectMatch.project:type_name -> plan.v1.Project
 	27,  // 185: plan.v1.ProjectMatch.match:type_name -> plan.v1.ProjectMatchKind
-	251, // 186: plan.v1.WishExport.create_time:type_name -> google.protobuf.Timestamp
+	253, // 186: plan.v1.WishExport.create_time:type_name -> google.protobuf.Timestamp
 	37,  // 187: plan.v1.WishExport.wish:type_name -> plan.v1.Wish
 	167, // 188: plan.v1.WishExport.projects:type_name -> plan.v1.ProjectRef
 	48,  // 189: plan.v1.WishExport.tasks:type_name -> plan.v1.Task
@@ -19697,9 +19805,9 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	63,  // 191: plan.v1.WishExport.questions:type_name -> plan.v1.Question
 	185, // 192: plan.v1.WishExport.blocks:type_name -> plan.v1.Block
 	168, // 193: plan.v1.WishExport.commands:type_name -> plan.v1.Command
-	254, // 194: plan.v1.WishExport.tilasms:type_name -> plan.v1.TilasmExport
-	251, // 195: plan.v1.Command.at:type_name -> google.protobuf.Timestamp
-	255, // 196: plan.v1.Command.request:type_name -> google.protobuf.Any
+	256, // 194: plan.v1.WishExport.tilasms:type_name -> plan.v1.TilasmExport
+	253, // 195: plan.v1.Command.at:type_name -> google.protobuf.Timestamp
+	257, // 196: plan.v1.Command.request:type_name -> google.protobuf.Any
 	13,  // 197: plan.v1.LeadServiceSetRequest.provider:type_name -> plan.v1.Provider
 	44,  // 198: plan.v1.LeadServiceSetResponse.lead:type_name -> plan.v1.Lead
 	13,  // 199: plan.v1.LeadServiceResumeRequest.provider:type_name -> plan.v1.Provider
@@ -19707,9 +19815,9 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	44,  // 201: plan.v1.LeadServiceGetResponse.lead:type_name -> plan.v1.Lead
 	169, // 202: plan.v1.LeadServiceGetResponse.prompt:type_name -> plan.v1.LeadPrompt
 	176, // 203: plan.v1.LeadServiceGetResponse.exit:type_name -> plan.v1.LeadExit
-	252, // 204: plan.v1.LeadServiceWatchRequest.timeout:type_name -> google.protobuf.Duration
-	251, // 205: plan.v1.Block.create_time:type_name -> google.protobuf.Timestamp
-	251, // 206: plan.v1.Block.update_time:type_name -> google.protobuf.Timestamp
+	254, // 204: plan.v1.LeadServiceWatchRequest.timeout:type_name -> google.protobuf.Duration
+	253, // 205: plan.v1.Block.create_time:type_name -> google.protobuf.Timestamp
+	253, // 206: plan.v1.Block.update_time:type_name -> google.protobuf.Timestamp
 	67,  // 207: plan.v1.Block.marks:type_name -> plan.v1.Mark
 	185, // 208: plan.v1.BlockServicePutResponse.block:type_name -> plan.v1.Block
 	185, // 209: plan.v1.BlockServiceListResponse.blocks:type_name -> plan.v1.Block
@@ -19736,192 +19844,195 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	62,  // 230: plan.v1.TaskServiceSendResponse.event:type_name -> plan.v1.TaskEvent
 	48,  // 231: plan.v1.TaskServicePauseResponse.task:type_name -> plan.v1.Task
 	48,  // 232: plan.v1.TaskServiceResumeResponse.task:type_name -> plan.v1.Task
-	62,  // 233: plan.v1.TaskServiceWatchResponse.event:type_name -> plan.v1.TaskEvent
-	48,  // 234: plan.v1.TaskServiceCleanResponse.task:type_name -> plan.v1.Task
-	225, // 235: plan.v1.TaskServiceDependRequest.also:type_name -> plan.v1.TaskAfter
-	48,  // 236: plan.v1.TaskServiceDependResponse.task:type_name -> plan.v1.Task
-	48,  // 237: plan.v1.TaskServiceDependResponse.also:type_name -> plan.v1.Task
-	48,  // 238: plan.v1.TaskServiceGroupResponse.task:type_name -> plan.v1.Task
-	48,  // 239: plan.v1.TaskServiceDeleteResponse.task:type_name -> plan.v1.Task
-	19,  // 240: plan.v1.TaskServiceDoneRequest.by:type_name -> plan.v1.Closer
-	48,  // 241: plan.v1.TaskServiceDoneResponse.task:type_name -> plan.v1.Task
-	19,  // 242: plan.v1.TaskServiceCancelRequest.by:type_name -> plan.v1.Closer
-	48,  // 243: plan.v1.TaskServiceCancelResponse.task:type_name -> plan.v1.Task
-	19,  // 244: plan.v1.TaskServiceContinueRequest.by:type_name -> plan.v1.Closer
-	48,  // 245: plan.v1.TaskServiceContinueResponse.task:type_name -> plan.v1.Task
-	13,  // 246: plan.v1.TaskServiceUpdateRequest.provider:type_name -> plan.v1.Provider
-	48,  // 247: plan.v1.TaskServiceUpdateResponse.task:type_name -> plan.v1.Task
-	48,  // 248: plan.v1.TaskServiceDescribeResponse.task:type_name -> plan.v1.Task
-	48,  // 249: plan.v1.TaskServiceOpenResponse.task:type_name -> plan.v1.Task
-	48,  // 250: plan.v1.TaskServiceMoveResponse.task:type_name -> plan.v1.Task
-	50,  // 251: plan.v1.TaskServiceCommentResponse.comment:type_name -> plan.v1.TaskComment
-	48,  // 252: plan.v1.TaskServiceCommentResponse.task:type_name -> plan.v1.Task
-	19,  // 253: plan.v1.TaskServiceTurnCommentsRequest.by:type_name -> plan.v1.Closer
-	48,  // 254: plan.v1.TaskServiceTurnCommentsResponse.task:type_name -> plan.v1.Task
-	48,  // 255: plan.v1.PlanServiceSyncResponse.azimas:type_name -> plan.v1.Task
-	75,  // 256: plan.v1.QuestionService.Ask:input_type -> plan.v1.QuestionServiceAskRequest
-	77,  // 257: plan.v1.QuestionService.Answer:input_type -> plan.v1.QuestionServiceAnswerRequest
-	79,  // 258: plan.v1.QuestionService.List:input_type -> plan.v1.QuestionServiceListRequest
-	71,  // 259: plan.v1.QuestionService.Enlighten:input_type -> plan.v1.QuestionServiceEnlightenRequest
-	73,  // 260: plan.v1.QuestionService.Revise:input_type -> plan.v1.QuestionServiceReviseRequest
-	81,  // 261: plan.v1.QuestionService.Move:input_type -> plan.v1.QuestionServiceMoveRequest
-	83,  // 262: plan.v1.QuestionService.Withdraw:input_type -> plan.v1.QuestionServiceWithdrawRequest
-	85,  // 263: plan.v1.ProjectService.Add:input_type -> plan.v1.ProjectServiceAddRequest
-	87,  // 264: plan.v1.ProjectService.List:input_type -> plan.v1.ProjectServiceListRequest
-	89,  // 265: plan.v1.ProjectService.Show:input_type -> plan.v1.ProjectServiceShowRequest
-	91,  // 266: plan.v1.ProjectService.Push:input_type -> plan.v1.ProjectServicePushRequest
-	93,  // 267: plan.v1.ProjectService.SetPush:input_type -> plan.v1.ProjectServiceSetPushRequest
-	95,  // 268: plan.v1.ProjectService.PushStrategy:input_type -> plan.v1.ProjectServicePushStrategyRequest
-	98,  // 269: plan.v1.SkillService.Summon:input_type -> plan.v1.SkillServiceSummonRequest
-	100, // 270: plan.v1.SkillService.List:input_type -> plan.v1.SkillServiceListRequest
-	102, // 271: plan.v1.SkillService.Unsummon:input_type -> plan.v1.SkillServiceUnsummonRequest
-	113, // 272: plan.v1.InboxService.List:input_type -> plan.v1.InboxServiceListRequest
-	115, // 273: plan.v1.InboxService.Dismiss:input_type -> plan.v1.InboxServiceDismissRequest
-	117, // 274: plan.v1.InboxService.Route:input_type -> plan.v1.InboxServiceRouteRequest
-	107, // 275: plan.v1.InboxService.Sources:input_type -> plan.v1.InboxServiceSourcesRequest
-	109, // 276: plan.v1.InboxService.Plug:input_type -> plan.v1.InboxServicePlugRequest
-	111, // 277: plan.v1.InboxService.Unplug:input_type -> plan.v1.InboxServiceUnplugRequest
-	147, // 278: plan.v1.WishService.Make:input_type -> plan.v1.WishServiceMakeRequest
-	149, // 279: plan.v1.WishService.List:input_type -> plan.v1.WishServiceListRequest
-	151, // 280: plan.v1.WishService.Export:input_type -> plan.v1.WishServiceExportRequest
-	153, // 281: plan.v1.WishService.Import:input_type -> plan.v1.WishServiceImportRequest
-	155, // 282: plan.v1.WishService.ImportData:input_type -> plan.v1.WishServiceImportDataRequest
-	157, // 283: plan.v1.WishService.Describe:input_type -> plan.v1.WishServiceDescribeRequest
-	159, // 284: plan.v1.WishService.Rename:input_type -> plan.v1.WishServiceRenameRequest
-	161, // 285: plan.v1.WishService.Brief:input_type -> plan.v1.WishServiceBriefRequest
-	163, // 286: plan.v1.WishService.Snapshot:input_type -> plan.v1.WishServiceSnapshotRequest
-	128, // 287: plan.v1.WishService.Allow:input_type -> plan.v1.WishServiceAllowRequest
-	130, // 288: plan.v1.WishService.SetIntegration:input_type -> plan.v1.WishServiceSetIntegrationRequest
-	132, // 289: plan.v1.WishService.PushStrategy:input_type -> plan.v1.WishServicePushStrategyRequest
-	134, // 290: plan.v1.WishService.Principal:input_type -> plan.v1.WishServicePrincipalRequest
-	136, // 291: plan.v1.WishService.Grant:input_type -> plan.v1.WishServiceGrantRequest
-	138, // 292: plan.v1.WishService.Pause:input_type -> plan.v1.WishServicePauseRequest
-	140, // 293: plan.v1.WishService.Activate:input_type -> plan.v1.WishServiceActivateRequest
-	142, // 294: plan.v1.WishService.Delete:input_type -> plan.v1.WishServiceDeleteRequest
-	145, // 295: plan.v1.WishService.Move:input_type -> plan.v1.WishServiceMoveRequest
-	124, // 296: plan.v1.WishService.Render:input_type -> plan.v1.WishServiceRenderRequest
-	126, // 297: plan.v1.WishService.Sync:input_type -> plan.v1.WishServiceSyncRequest
-	119, // 298: plan.v1.WishService.Route:input_type -> plan.v1.WishServiceRouteRequest
-	121, // 299: plan.v1.WishService.Watch:input_type -> plan.v1.WishServiceWatchRequest
-	170, // 300: plan.v1.LeadService.Set:input_type -> plan.v1.LeadServiceSetRequest
-	172, // 301: plan.v1.LeadService.Resume:input_type -> plan.v1.LeadServiceResumeRequest
-	174, // 302: plan.v1.LeadService.Get:input_type -> plan.v1.LeadServiceGetRequest
-	183, // 303: plan.v1.LeadService.Brief:input_type -> plan.v1.LeadServiceBriefRequest
-	177, // 304: plan.v1.LeadService.Watch:input_type -> plan.v1.LeadServiceWatchRequest
-	179, // 305: plan.v1.LeadService.Tell:input_type -> plan.v1.LeadServiceTellRequest
-	181, // 306: plan.v1.LeadService.Choose:input_type -> plan.v1.LeadServiceChooseRequest
-	186, // 307: plan.v1.BlockService.Put:input_type -> plan.v1.BlockServicePutRequest
-	188, // 308: plan.v1.BlockService.List:input_type -> plan.v1.BlockServiceListRequest
-	190, // 309: plan.v1.BlockService.Delete:input_type -> plan.v1.BlockServiceDeleteRequest
-	194, // 310: plan.v1.MarkService.Put:input_type -> plan.v1.MarkServicePutRequest
-	196, // 311: plan.v1.MarkService.List:input_type -> plan.v1.MarkServiceListRequest
-	198, // 312: plan.v1.TaskService.Spawn:input_type -> plan.v1.TaskServiceSpawnRequest
-	200, // 313: plan.v1.TaskService.List:input_type -> plan.v1.TaskServiceListRequest
-	202, // 314: plan.v1.TaskService.Get:input_type -> plan.v1.TaskServiceGetRequest
-	210, // 315: plan.v1.TaskService.Diff:input_type -> plan.v1.TaskServiceDiffRequest
-	212, // 316: plan.v1.TaskService.Stop:input_type -> plan.v1.TaskServiceStopRequest
-	216, // 317: plan.v1.TaskService.Pause:input_type -> plan.v1.TaskServicePauseRequest
-	218, // 318: plan.v1.TaskService.Resume:input_type -> plan.v1.TaskServiceResumeRequest
-	220, // 319: plan.v1.TaskService.Watch:input_type -> plan.v1.TaskServiceWatchRequest
-	222, // 320: plan.v1.TaskService.Clean:input_type -> plan.v1.TaskServiceCleanRequest
-	224, // 321: plan.v1.TaskService.Depend:input_type -> plan.v1.TaskServiceDependRequest
-	227, // 322: plan.v1.TaskService.Group:input_type -> plan.v1.TaskServiceGroupRequest
-	229, // 323: plan.v1.TaskService.Delete:input_type -> plan.v1.TaskServiceDeleteRequest
-	231, // 324: plan.v1.TaskService.Done:input_type -> plan.v1.TaskServiceDoneRequest
-	233, // 325: plan.v1.TaskService.Cancel:input_type -> plan.v1.TaskServiceCancelRequest
-	235, // 326: plan.v1.TaskService.Continue:input_type -> plan.v1.TaskServiceContinueRequest
-	214, // 327: plan.v1.TaskService.Send:input_type -> plan.v1.TaskServiceSendRequest
-	237, // 328: plan.v1.TaskService.Update:input_type -> plan.v1.TaskServiceUpdateRequest
-	239, // 329: plan.v1.TaskService.Describe:input_type -> plan.v1.TaskServiceDescribeRequest
-	241, // 330: plan.v1.TaskService.Open:input_type -> plan.v1.TaskServiceOpenRequest
-	243, // 331: plan.v1.TaskService.Move:input_type -> plan.v1.TaskServiceMoveRequest
-	245, // 332: plan.v1.TaskService.Comment:input_type -> plan.v1.TaskServiceCommentRequest
-	247, // 333: plan.v1.TaskService.TurnComments:input_type -> plan.v1.TaskServiceTurnCommentsRequest
-	249, // 334: plan.v1.PlanService.Sync:input_type -> plan.v1.PlanServiceSyncRequest
-	76,  // 335: plan.v1.QuestionService.Ask:output_type -> plan.v1.QuestionServiceAskResponse
-	78,  // 336: plan.v1.QuestionService.Answer:output_type -> plan.v1.QuestionServiceAnswerResponse
-	80,  // 337: plan.v1.QuestionService.List:output_type -> plan.v1.QuestionServiceListResponse
-	72,  // 338: plan.v1.QuestionService.Enlighten:output_type -> plan.v1.QuestionServiceEnlightenResponse
-	74,  // 339: plan.v1.QuestionService.Revise:output_type -> plan.v1.QuestionServiceReviseResponse
-	82,  // 340: plan.v1.QuestionService.Move:output_type -> plan.v1.QuestionServiceMoveResponse
-	84,  // 341: plan.v1.QuestionService.Withdraw:output_type -> plan.v1.QuestionServiceWithdrawResponse
-	86,  // 342: plan.v1.ProjectService.Add:output_type -> plan.v1.ProjectServiceAddResponse
-	88,  // 343: plan.v1.ProjectService.List:output_type -> plan.v1.ProjectServiceListResponse
-	90,  // 344: plan.v1.ProjectService.Show:output_type -> plan.v1.ProjectServiceShowResponse
-	92,  // 345: plan.v1.ProjectService.Push:output_type -> plan.v1.ProjectServicePushResponse
-	94,  // 346: plan.v1.ProjectService.SetPush:output_type -> plan.v1.ProjectServiceSetPushResponse
-	96,  // 347: plan.v1.ProjectService.PushStrategy:output_type -> plan.v1.ProjectServicePushStrategyResponse
-	99,  // 348: plan.v1.SkillService.Summon:output_type -> plan.v1.SkillServiceSummonResponse
-	101, // 349: plan.v1.SkillService.List:output_type -> plan.v1.SkillServiceListResponse
-	103, // 350: plan.v1.SkillService.Unsummon:output_type -> plan.v1.SkillServiceUnsummonResponse
-	114, // 351: plan.v1.InboxService.List:output_type -> plan.v1.InboxServiceListResponse
-	116, // 352: plan.v1.InboxService.Dismiss:output_type -> plan.v1.InboxServiceDismissResponse
-	118, // 353: plan.v1.InboxService.Route:output_type -> plan.v1.InboxServiceRouteResponse
-	108, // 354: plan.v1.InboxService.Sources:output_type -> plan.v1.InboxServiceSourcesResponse
-	110, // 355: plan.v1.InboxService.Plug:output_type -> plan.v1.InboxServicePlugResponse
-	112, // 356: plan.v1.InboxService.Unplug:output_type -> plan.v1.InboxServiceUnplugResponse
-	148, // 357: plan.v1.WishService.Make:output_type -> plan.v1.WishServiceMakeResponse
-	150, // 358: plan.v1.WishService.List:output_type -> plan.v1.WishServiceListResponse
-	152, // 359: plan.v1.WishService.Export:output_type -> plan.v1.WishServiceExportResponse
-	154, // 360: plan.v1.WishService.Import:output_type -> plan.v1.WishServiceImportResponse
-	156, // 361: plan.v1.WishService.ImportData:output_type -> plan.v1.WishServiceImportDataResponse
-	158, // 362: plan.v1.WishService.Describe:output_type -> plan.v1.WishServiceDescribeResponse
-	160, // 363: plan.v1.WishService.Rename:output_type -> plan.v1.WishServiceRenameResponse
-	162, // 364: plan.v1.WishService.Brief:output_type -> plan.v1.WishServiceBriefResponse
-	164, // 365: plan.v1.WishService.Snapshot:output_type -> plan.v1.WishServiceSnapshotResponse
-	129, // 366: plan.v1.WishService.Allow:output_type -> plan.v1.WishServiceAllowResponse
-	131, // 367: plan.v1.WishService.SetIntegration:output_type -> plan.v1.WishServiceSetIntegrationResponse
-	133, // 368: plan.v1.WishService.PushStrategy:output_type -> plan.v1.WishServicePushStrategyResponse
-	135, // 369: plan.v1.WishService.Principal:output_type -> plan.v1.WishServicePrincipalResponse
-	137, // 370: plan.v1.WishService.Grant:output_type -> plan.v1.WishServiceGrantResponse
-	139, // 371: plan.v1.WishService.Pause:output_type -> plan.v1.WishServicePauseResponse
-	141, // 372: plan.v1.WishService.Activate:output_type -> plan.v1.WishServiceActivateResponse
-	143, // 373: plan.v1.WishService.Delete:output_type -> plan.v1.WishServiceDeleteResponse
-	146, // 374: plan.v1.WishService.Move:output_type -> plan.v1.WishServiceMoveResponse
-	125, // 375: plan.v1.WishService.Render:output_type -> plan.v1.WishServiceRenderResponse
-	127, // 376: plan.v1.WishService.Sync:output_type -> plan.v1.WishServiceSyncResponse
-	120, // 377: plan.v1.WishService.Route:output_type -> plan.v1.WishServiceRouteResponse
-	122, // 378: plan.v1.WishService.Watch:output_type -> plan.v1.WishServiceWatchResponse
-	171, // 379: plan.v1.LeadService.Set:output_type -> plan.v1.LeadServiceSetResponse
-	173, // 380: plan.v1.LeadService.Resume:output_type -> plan.v1.LeadServiceResumeResponse
-	175, // 381: plan.v1.LeadService.Get:output_type -> plan.v1.LeadServiceGetResponse
-	184, // 382: plan.v1.LeadService.Brief:output_type -> plan.v1.LeadServiceBriefResponse
-	178, // 383: plan.v1.LeadService.Watch:output_type -> plan.v1.LeadServiceWatchResponse
-	180, // 384: plan.v1.LeadService.Tell:output_type -> plan.v1.LeadServiceTellResponse
-	182, // 385: plan.v1.LeadService.Choose:output_type -> plan.v1.LeadServiceChooseResponse
-	187, // 386: plan.v1.BlockService.Put:output_type -> plan.v1.BlockServicePutResponse
-	189, // 387: plan.v1.BlockService.List:output_type -> plan.v1.BlockServiceListResponse
-	191, // 388: plan.v1.BlockService.Delete:output_type -> plan.v1.BlockServiceDeleteResponse
-	195, // 389: plan.v1.MarkService.Put:output_type -> plan.v1.MarkServicePutResponse
-	197, // 390: plan.v1.MarkService.List:output_type -> plan.v1.MarkServiceListResponse
-	199, // 391: plan.v1.TaskService.Spawn:output_type -> plan.v1.TaskServiceSpawnResponse
-	201, // 392: plan.v1.TaskService.List:output_type -> plan.v1.TaskServiceListResponse
-	203, // 393: plan.v1.TaskService.Get:output_type -> plan.v1.TaskServiceGetResponse
-	211, // 394: plan.v1.TaskService.Diff:output_type -> plan.v1.TaskServiceDiffResponse
-	213, // 395: plan.v1.TaskService.Stop:output_type -> plan.v1.TaskServiceStopResponse
-	217, // 396: plan.v1.TaskService.Pause:output_type -> plan.v1.TaskServicePauseResponse
-	219, // 397: plan.v1.TaskService.Resume:output_type -> plan.v1.TaskServiceResumeResponse
-	221, // 398: plan.v1.TaskService.Watch:output_type -> plan.v1.TaskServiceWatchResponse
-	223, // 399: plan.v1.TaskService.Clean:output_type -> plan.v1.TaskServiceCleanResponse
-	226, // 400: plan.v1.TaskService.Depend:output_type -> plan.v1.TaskServiceDependResponse
-	228, // 401: plan.v1.TaskService.Group:output_type -> plan.v1.TaskServiceGroupResponse
-	230, // 402: plan.v1.TaskService.Delete:output_type -> plan.v1.TaskServiceDeleteResponse
-	232, // 403: plan.v1.TaskService.Done:output_type -> plan.v1.TaskServiceDoneResponse
-	234, // 404: plan.v1.TaskService.Cancel:output_type -> plan.v1.TaskServiceCancelResponse
-	236, // 405: plan.v1.TaskService.Continue:output_type -> plan.v1.TaskServiceContinueResponse
-	215, // 406: plan.v1.TaskService.Send:output_type -> plan.v1.TaskServiceSendResponse
-	238, // 407: plan.v1.TaskService.Update:output_type -> plan.v1.TaskServiceUpdateResponse
-	240, // 408: plan.v1.TaskService.Describe:output_type -> plan.v1.TaskServiceDescribeResponse
-	242, // 409: plan.v1.TaskService.Open:output_type -> plan.v1.TaskServiceOpenResponse
-	244, // 410: plan.v1.TaskService.Move:output_type -> plan.v1.TaskServiceMoveResponse
-	246, // 411: plan.v1.TaskService.Comment:output_type -> plan.v1.TaskServiceCommentResponse
-	248, // 412: plan.v1.TaskService.TurnComments:output_type -> plan.v1.TaskServiceTurnCommentsResponse
-	250, // 413: plan.v1.PlanService.Sync:output_type -> plan.v1.PlanServiceSyncResponse
-	335, // [335:414] is the sub-list for method output_type
-	256, // [256:335] is the sub-list for method input_type
-	256, // [256:256] is the sub-list for extension type_name
-	256, // [256:256] is the sub-list for extension extendee
-	0,   // [0:256] is the sub-list for field type_name
+	48,  // 233: plan.v1.TaskServiceStartResponse.task:type_name -> plan.v1.Task
+	62,  // 234: plan.v1.TaskServiceWatchResponse.event:type_name -> plan.v1.TaskEvent
+	48,  // 235: plan.v1.TaskServiceCleanResponse.task:type_name -> plan.v1.Task
+	227, // 236: plan.v1.TaskServiceDependRequest.also:type_name -> plan.v1.TaskAfter
+	48,  // 237: plan.v1.TaskServiceDependResponse.task:type_name -> plan.v1.Task
+	48,  // 238: plan.v1.TaskServiceDependResponse.also:type_name -> plan.v1.Task
+	48,  // 239: plan.v1.TaskServiceGroupResponse.task:type_name -> plan.v1.Task
+	48,  // 240: plan.v1.TaskServiceDeleteResponse.task:type_name -> plan.v1.Task
+	19,  // 241: plan.v1.TaskServiceDoneRequest.by:type_name -> plan.v1.Closer
+	48,  // 242: plan.v1.TaskServiceDoneResponse.task:type_name -> plan.v1.Task
+	19,  // 243: plan.v1.TaskServiceCancelRequest.by:type_name -> plan.v1.Closer
+	48,  // 244: plan.v1.TaskServiceCancelResponse.task:type_name -> plan.v1.Task
+	19,  // 245: plan.v1.TaskServiceContinueRequest.by:type_name -> plan.v1.Closer
+	48,  // 246: plan.v1.TaskServiceContinueResponse.task:type_name -> plan.v1.Task
+	13,  // 247: plan.v1.TaskServiceUpdateRequest.provider:type_name -> plan.v1.Provider
+	48,  // 248: plan.v1.TaskServiceUpdateResponse.task:type_name -> plan.v1.Task
+	48,  // 249: plan.v1.TaskServiceDescribeResponse.task:type_name -> plan.v1.Task
+	48,  // 250: plan.v1.TaskServiceOpenResponse.task:type_name -> plan.v1.Task
+	48,  // 251: plan.v1.TaskServiceMoveResponse.task:type_name -> plan.v1.Task
+	50,  // 252: plan.v1.TaskServiceCommentResponse.comment:type_name -> plan.v1.TaskComment
+	48,  // 253: plan.v1.TaskServiceCommentResponse.task:type_name -> plan.v1.Task
+	19,  // 254: plan.v1.TaskServiceTurnCommentsRequest.by:type_name -> plan.v1.Closer
+	48,  // 255: plan.v1.TaskServiceTurnCommentsResponse.task:type_name -> plan.v1.Task
+	48,  // 256: plan.v1.PlanServiceSyncResponse.azimas:type_name -> plan.v1.Task
+	75,  // 257: plan.v1.QuestionService.Ask:input_type -> plan.v1.QuestionServiceAskRequest
+	77,  // 258: plan.v1.QuestionService.Answer:input_type -> plan.v1.QuestionServiceAnswerRequest
+	79,  // 259: plan.v1.QuestionService.List:input_type -> plan.v1.QuestionServiceListRequest
+	71,  // 260: plan.v1.QuestionService.Enlighten:input_type -> plan.v1.QuestionServiceEnlightenRequest
+	73,  // 261: plan.v1.QuestionService.Revise:input_type -> plan.v1.QuestionServiceReviseRequest
+	81,  // 262: plan.v1.QuestionService.Move:input_type -> plan.v1.QuestionServiceMoveRequest
+	83,  // 263: plan.v1.QuestionService.Withdraw:input_type -> plan.v1.QuestionServiceWithdrawRequest
+	85,  // 264: plan.v1.ProjectService.Add:input_type -> plan.v1.ProjectServiceAddRequest
+	87,  // 265: plan.v1.ProjectService.List:input_type -> plan.v1.ProjectServiceListRequest
+	89,  // 266: plan.v1.ProjectService.Show:input_type -> plan.v1.ProjectServiceShowRequest
+	91,  // 267: plan.v1.ProjectService.Push:input_type -> plan.v1.ProjectServicePushRequest
+	93,  // 268: plan.v1.ProjectService.SetPush:input_type -> plan.v1.ProjectServiceSetPushRequest
+	95,  // 269: plan.v1.ProjectService.PushStrategy:input_type -> plan.v1.ProjectServicePushStrategyRequest
+	98,  // 270: plan.v1.SkillService.Summon:input_type -> plan.v1.SkillServiceSummonRequest
+	100, // 271: plan.v1.SkillService.List:input_type -> plan.v1.SkillServiceListRequest
+	102, // 272: plan.v1.SkillService.Unsummon:input_type -> plan.v1.SkillServiceUnsummonRequest
+	113, // 273: plan.v1.InboxService.List:input_type -> plan.v1.InboxServiceListRequest
+	115, // 274: plan.v1.InboxService.Dismiss:input_type -> plan.v1.InboxServiceDismissRequest
+	117, // 275: plan.v1.InboxService.Route:input_type -> plan.v1.InboxServiceRouteRequest
+	107, // 276: plan.v1.InboxService.Sources:input_type -> plan.v1.InboxServiceSourcesRequest
+	109, // 277: plan.v1.InboxService.Plug:input_type -> plan.v1.InboxServicePlugRequest
+	111, // 278: plan.v1.InboxService.Unplug:input_type -> plan.v1.InboxServiceUnplugRequest
+	147, // 279: plan.v1.WishService.Make:input_type -> plan.v1.WishServiceMakeRequest
+	149, // 280: plan.v1.WishService.List:input_type -> plan.v1.WishServiceListRequest
+	151, // 281: plan.v1.WishService.Export:input_type -> plan.v1.WishServiceExportRequest
+	153, // 282: plan.v1.WishService.Import:input_type -> plan.v1.WishServiceImportRequest
+	155, // 283: plan.v1.WishService.ImportData:input_type -> plan.v1.WishServiceImportDataRequest
+	157, // 284: plan.v1.WishService.Describe:input_type -> plan.v1.WishServiceDescribeRequest
+	159, // 285: plan.v1.WishService.Rename:input_type -> plan.v1.WishServiceRenameRequest
+	161, // 286: plan.v1.WishService.Brief:input_type -> plan.v1.WishServiceBriefRequest
+	163, // 287: plan.v1.WishService.Snapshot:input_type -> plan.v1.WishServiceSnapshotRequest
+	128, // 288: plan.v1.WishService.Allow:input_type -> plan.v1.WishServiceAllowRequest
+	130, // 289: plan.v1.WishService.SetIntegration:input_type -> plan.v1.WishServiceSetIntegrationRequest
+	132, // 290: plan.v1.WishService.PushStrategy:input_type -> plan.v1.WishServicePushStrategyRequest
+	134, // 291: plan.v1.WishService.Principal:input_type -> plan.v1.WishServicePrincipalRequest
+	136, // 292: plan.v1.WishService.Grant:input_type -> plan.v1.WishServiceGrantRequest
+	138, // 293: plan.v1.WishService.Pause:input_type -> plan.v1.WishServicePauseRequest
+	140, // 294: plan.v1.WishService.Activate:input_type -> plan.v1.WishServiceActivateRequest
+	142, // 295: plan.v1.WishService.Delete:input_type -> plan.v1.WishServiceDeleteRequest
+	145, // 296: plan.v1.WishService.Move:input_type -> plan.v1.WishServiceMoveRequest
+	124, // 297: plan.v1.WishService.Render:input_type -> plan.v1.WishServiceRenderRequest
+	126, // 298: plan.v1.WishService.Sync:input_type -> plan.v1.WishServiceSyncRequest
+	119, // 299: plan.v1.WishService.Route:input_type -> plan.v1.WishServiceRouteRequest
+	121, // 300: plan.v1.WishService.Watch:input_type -> plan.v1.WishServiceWatchRequest
+	170, // 301: plan.v1.LeadService.Set:input_type -> plan.v1.LeadServiceSetRequest
+	172, // 302: plan.v1.LeadService.Resume:input_type -> plan.v1.LeadServiceResumeRequest
+	174, // 303: plan.v1.LeadService.Get:input_type -> plan.v1.LeadServiceGetRequest
+	183, // 304: plan.v1.LeadService.Brief:input_type -> plan.v1.LeadServiceBriefRequest
+	177, // 305: plan.v1.LeadService.Watch:input_type -> plan.v1.LeadServiceWatchRequest
+	179, // 306: plan.v1.LeadService.Tell:input_type -> plan.v1.LeadServiceTellRequest
+	181, // 307: plan.v1.LeadService.Choose:input_type -> plan.v1.LeadServiceChooseRequest
+	186, // 308: plan.v1.BlockService.Put:input_type -> plan.v1.BlockServicePutRequest
+	188, // 309: plan.v1.BlockService.List:input_type -> plan.v1.BlockServiceListRequest
+	190, // 310: plan.v1.BlockService.Delete:input_type -> plan.v1.BlockServiceDeleteRequest
+	194, // 311: plan.v1.MarkService.Put:input_type -> plan.v1.MarkServicePutRequest
+	196, // 312: plan.v1.MarkService.List:input_type -> plan.v1.MarkServiceListRequest
+	198, // 313: plan.v1.TaskService.Spawn:input_type -> plan.v1.TaskServiceSpawnRequest
+	200, // 314: plan.v1.TaskService.List:input_type -> plan.v1.TaskServiceListRequest
+	202, // 315: plan.v1.TaskService.Get:input_type -> plan.v1.TaskServiceGetRequest
+	210, // 316: plan.v1.TaskService.Diff:input_type -> plan.v1.TaskServiceDiffRequest
+	212, // 317: plan.v1.TaskService.Stop:input_type -> plan.v1.TaskServiceStopRequest
+	216, // 318: plan.v1.TaskService.Pause:input_type -> plan.v1.TaskServicePauseRequest
+	218, // 319: plan.v1.TaskService.Resume:input_type -> plan.v1.TaskServiceResumeRequest
+	220, // 320: plan.v1.TaskService.Start:input_type -> plan.v1.TaskServiceStartRequest
+	222, // 321: plan.v1.TaskService.Watch:input_type -> plan.v1.TaskServiceWatchRequest
+	224, // 322: plan.v1.TaskService.Clean:input_type -> plan.v1.TaskServiceCleanRequest
+	226, // 323: plan.v1.TaskService.Depend:input_type -> plan.v1.TaskServiceDependRequest
+	229, // 324: plan.v1.TaskService.Group:input_type -> plan.v1.TaskServiceGroupRequest
+	231, // 325: plan.v1.TaskService.Delete:input_type -> plan.v1.TaskServiceDeleteRequest
+	233, // 326: plan.v1.TaskService.Done:input_type -> plan.v1.TaskServiceDoneRequest
+	235, // 327: plan.v1.TaskService.Cancel:input_type -> plan.v1.TaskServiceCancelRequest
+	237, // 328: plan.v1.TaskService.Continue:input_type -> plan.v1.TaskServiceContinueRequest
+	214, // 329: plan.v1.TaskService.Send:input_type -> plan.v1.TaskServiceSendRequest
+	239, // 330: plan.v1.TaskService.Update:input_type -> plan.v1.TaskServiceUpdateRequest
+	241, // 331: plan.v1.TaskService.Describe:input_type -> plan.v1.TaskServiceDescribeRequest
+	243, // 332: plan.v1.TaskService.Open:input_type -> plan.v1.TaskServiceOpenRequest
+	245, // 333: plan.v1.TaskService.Move:input_type -> plan.v1.TaskServiceMoveRequest
+	247, // 334: plan.v1.TaskService.Comment:input_type -> plan.v1.TaskServiceCommentRequest
+	249, // 335: plan.v1.TaskService.TurnComments:input_type -> plan.v1.TaskServiceTurnCommentsRequest
+	251, // 336: plan.v1.PlanService.Sync:input_type -> plan.v1.PlanServiceSyncRequest
+	76,  // 337: plan.v1.QuestionService.Ask:output_type -> plan.v1.QuestionServiceAskResponse
+	78,  // 338: plan.v1.QuestionService.Answer:output_type -> plan.v1.QuestionServiceAnswerResponse
+	80,  // 339: plan.v1.QuestionService.List:output_type -> plan.v1.QuestionServiceListResponse
+	72,  // 340: plan.v1.QuestionService.Enlighten:output_type -> plan.v1.QuestionServiceEnlightenResponse
+	74,  // 341: plan.v1.QuestionService.Revise:output_type -> plan.v1.QuestionServiceReviseResponse
+	82,  // 342: plan.v1.QuestionService.Move:output_type -> plan.v1.QuestionServiceMoveResponse
+	84,  // 343: plan.v1.QuestionService.Withdraw:output_type -> plan.v1.QuestionServiceWithdrawResponse
+	86,  // 344: plan.v1.ProjectService.Add:output_type -> plan.v1.ProjectServiceAddResponse
+	88,  // 345: plan.v1.ProjectService.List:output_type -> plan.v1.ProjectServiceListResponse
+	90,  // 346: plan.v1.ProjectService.Show:output_type -> plan.v1.ProjectServiceShowResponse
+	92,  // 347: plan.v1.ProjectService.Push:output_type -> plan.v1.ProjectServicePushResponse
+	94,  // 348: plan.v1.ProjectService.SetPush:output_type -> plan.v1.ProjectServiceSetPushResponse
+	96,  // 349: plan.v1.ProjectService.PushStrategy:output_type -> plan.v1.ProjectServicePushStrategyResponse
+	99,  // 350: plan.v1.SkillService.Summon:output_type -> plan.v1.SkillServiceSummonResponse
+	101, // 351: plan.v1.SkillService.List:output_type -> plan.v1.SkillServiceListResponse
+	103, // 352: plan.v1.SkillService.Unsummon:output_type -> plan.v1.SkillServiceUnsummonResponse
+	114, // 353: plan.v1.InboxService.List:output_type -> plan.v1.InboxServiceListResponse
+	116, // 354: plan.v1.InboxService.Dismiss:output_type -> plan.v1.InboxServiceDismissResponse
+	118, // 355: plan.v1.InboxService.Route:output_type -> plan.v1.InboxServiceRouteResponse
+	108, // 356: plan.v1.InboxService.Sources:output_type -> plan.v1.InboxServiceSourcesResponse
+	110, // 357: plan.v1.InboxService.Plug:output_type -> plan.v1.InboxServicePlugResponse
+	112, // 358: plan.v1.InboxService.Unplug:output_type -> plan.v1.InboxServiceUnplugResponse
+	148, // 359: plan.v1.WishService.Make:output_type -> plan.v1.WishServiceMakeResponse
+	150, // 360: plan.v1.WishService.List:output_type -> plan.v1.WishServiceListResponse
+	152, // 361: plan.v1.WishService.Export:output_type -> plan.v1.WishServiceExportResponse
+	154, // 362: plan.v1.WishService.Import:output_type -> plan.v1.WishServiceImportResponse
+	156, // 363: plan.v1.WishService.ImportData:output_type -> plan.v1.WishServiceImportDataResponse
+	158, // 364: plan.v1.WishService.Describe:output_type -> plan.v1.WishServiceDescribeResponse
+	160, // 365: plan.v1.WishService.Rename:output_type -> plan.v1.WishServiceRenameResponse
+	162, // 366: plan.v1.WishService.Brief:output_type -> plan.v1.WishServiceBriefResponse
+	164, // 367: plan.v1.WishService.Snapshot:output_type -> plan.v1.WishServiceSnapshotResponse
+	129, // 368: plan.v1.WishService.Allow:output_type -> plan.v1.WishServiceAllowResponse
+	131, // 369: plan.v1.WishService.SetIntegration:output_type -> plan.v1.WishServiceSetIntegrationResponse
+	133, // 370: plan.v1.WishService.PushStrategy:output_type -> plan.v1.WishServicePushStrategyResponse
+	135, // 371: plan.v1.WishService.Principal:output_type -> plan.v1.WishServicePrincipalResponse
+	137, // 372: plan.v1.WishService.Grant:output_type -> plan.v1.WishServiceGrantResponse
+	139, // 373: plan.v1.WishService.Pause:output_type -> plan.v1.WishServicePauseResponse
+	141, // 374: plan.v1.WishService.Activate:output_type -> plan.v1.WishServiceActivateResponse
+	143, // 375: plan.v1.WishService.Delete:output_type -> plan.v1.WishServiceDeleteResponse
+	146, // 376: plan.v1.WishService.Move:output_type -> plan.v1.WishServiceMoveResponse
+	125, // 377: plan.v1.WishService.Render:output_type -> plan.v1.WishServiceRenderResponse
+	127, // 378: plan.v1.WishService.Sync:output_type -> plan.v1.WishServiceSyncResponse
+	120, // 379: plan.v1.WishService.Route:output_type -> plan.v1.WishServiceRouteResponse
+	122, // 380: plan.v1.WishService.Watch:output_type -> plan.v1.WishServiceWatchResponse
+	171, // 381: plan.v1.LeadService.Set:output_type -> plan.v1.LeadServiceSetResponse
+	173, // 382: plan.v1.LeadService.Resume:output_type -> plan.v1.LeadServiceResumeResponse
+	175, // 383: plan.v1.LeadService.Get:output_type -> plan.v1.LeadServiceGetResponse
+	184, // 384: plan.v1.LeadService.Brief:output_type -> plan.v1.LeadServiceBriefResponse
+	178, // 385: plan.v1.LeadService.Watch:output_type -> plan.v1.LeadServiceWatchResponse
+	180, // 386: plan.v1.LeadService.Tell:output_type -> plan.v1.LeadServiceTellResponse
+	182, // 387: plan.v1.LeadService.Choose:output_type -> plan.v1.LeadServiceChooseResponse
+	187, // 388: plan.v1.BlockService.Put:output_type -> plan.v1.BlockServicePutResponse
+	189, // 389: plan.v1.BlockService.List:output_type -> plan.v1.BlockServiceListResponse
+	191, // 390: plan.v1.BlockService.Delete:output_type -> plan.v1.BlockServiceDeleteResponse
+	195, // 391: plan.v1.MarkService.Put:output_type -> plan.v1.MarkServicePutResponse
+	197, // 392: plan.v1.MarkService.List:output_type -> plan.v1.MarkServiceListResponse
+	199, // 393: plan.v1.TaskService.Spawn:output_type -> plan.v1.TaskServiceSpawnResponse
+	201, // 394: plan.v1.TaskService.List:output_type -> plan.v1.TaskServiceListResponse
+	203, // 395: plan.v1.TaskService.Get:output_type -> plan.v1.TaskServiceGetResponse
+	211, // 396: plan.v1.TaskService.Diff:output_type -> plan.v1.TaskServiceDiffResponse
+	213, // 397: plan.v1.TaskService.Stop:output_type -> plan.v1.TaskServiceStopResponse
+	217, // 398: plan.v1.TaskService.Pause:output_type -> plan.v1.TaskServicePauseResponse
+	219, // 399: plan.v1.TaskService.Resume:output_type -> plan.v1.TaskServiceResumeResponse
+	221, // 400: plan.v1.TaskService.Start:output_type -> plan.v1.TaskServiceStartResponse
+	223, // 401: plan.v1.TaskService.Watch:output_type -> plan.v1.TaskServiceWatchResponse
+	225, // 402: plan.v1.TaskService.Clean:output_type -> plan.v1.TaskServiceCleanResponse
+	228, // 403: plan.v1.TaskService.Depend:output_type -> plan.v1.TaskServiceDependResponse
+	230, // 404: plan.v1.TaskService.Group:output_type -> plan.v1.TaskServiceGroupResponse
+	232, // 405: plan.v1.TaskService.Delete:output_type -> plan.v1.TaskServiceDeleteResponse
+	234, // 406: plan.v1.TaskService.Done:output_type -> plan.v1.TaskServiceDoneResponse
+	236, // 407: plan.v1.TaskService.Cancel:output_type -> plan.v1.TaskServiceCancelResponse
+	238, // 408: plan.v1.TaskService.Continue:output_type -> plan.v1.TaskServiceContinueResponse
+	215, // 409: plan.v1.TaskService.Send:output_type -> plan.v1.TaskServiceSendResponse
+	240, // 410: plan.v1.TaskService.Update:output_type -> plan.v1.TaskServiceUpdateResponse
+	242, // 411: plan.v1.TaskService.Describe:output_type -> plan.v1.TaskServiceDescribeResponse
+	244, // 412: plan.v1.TaskService.Open:output_type -> plan.v1.TaskServiceOpenResponse
+	246, // 413: plan.v1.TaskService.Move:output_type -> plan.v1.TaskServiceMoveResponse
+	248, // 414: plan.v1.TaskService.Comment:output_type -> plan.v1.TaskServiceCommentResponse
+	250, // 415: plan.v1.TaskService.TurnComments:output_type -> plan.v1.TaskServiceTurnCommentsResponse
+	252, // 416: plan.v1.PlanService.Sync:output_type -> plan.v1.PlanServiceSyncResponse
+	337, // [337:417] is the sub-list for method output_type
+	257, // [257:337] is the sub-list for method input_type
+	257, // [257:257] is the sub-list for extension type_name
+	257, // [257:257] is the sub-list for extension extendee
+	0,   // [0:257] is the sub-list for field type_name
 }
 
 func init() { file_plan_v1_plan_proto_init() }
@@ -19951,16 +20062,16 @@ func file_plan_v1_plan_proto_init() {
 		(*TaskRef_Code)(nil),
 		(*TaskRef_Id)(nil),
 	}
-	file_plan_v1_plan_proto_msgTypes[201].OneofWrappers = []any{}
-	file_plan_v1_plan_proto_msgTypes[205].OneofWrappers = []any{}
+	file_plan_v1_plan_proto_msgTypes[203].OneofWrappers = []any{}
 	file_plan_v1_plan_proto_msgTypes[207].OneofWrappers = []any{}
+	file_plan_v1_plan_proto_msgTypes[209].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_plan_v1_plan_proto_rawDesc), len(file_plan_v1_plan_proto_rawDesc)),
 			NumEnums:      30,
-			NumMessages:   221,
+			NumMessages:   223,
 			NumExtensions: 0,
 			NumServices:   10,
 		},

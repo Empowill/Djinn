@@ -727,9 +727,10 @@ func (h *Harness) spawn(
 		return nil, plan.Status(err)
 	}
 	var why, failed string
+	var machine bool
 	for _, d := range sit.Pass() {
 		if d.Task == task {
-			why, failed = d.Why, d.Failed
+			why, failed, machine = d.Why, d.Failed, d.Machine
 		}
 	}
 	var preemptedCode string
@@ -743,7 +744,7 @@ func (h *Harness) spawn(
 				if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
 					for _, d := range sit2.Pass() {
 						if d.Task == task {
-							why, failed = d.Why, d.Failed
+							why, failed, machine = d.Why, d.Failed, d.Machine
 						}
 					}
 				}
@@ -757,7 +758,7 @@ func (h *Harness) spawn(
 					if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
 						for _, d := range sit2.Pass() {
 							if d.Task == task {
-								why, failed = d.Why, d.Failed
+								why, failed, machine = d.Why, d.Failed, d.Machine
 							}
 						}
 					}
@@ -777,7 +778,7 @@ func (h *Harness) spawn(
 			if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
 				for _, d := range sit2.Pass() {
 					if d.Task == task {
-						why, failed = d.Why, d.Failed
+						why, failed, machine = d.Why, d.Failed, d.Machine
 					}
 				}
 			}
@@ -787,11 +788,12 @@ func (h *Harness) spawn(
 	case failed != "":
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the task would never start: %s", failed))
 	case settingsErr != nil:
-		why = fmt.Sprintf("settings unreadable: %v", settingsErr)
+		why, machine = fmt.Sprintf("settings unreadable: %v", settingsErr), false
 	case req.GetLater() && why == "":
 		why = "planned: it starts at the scheduler's next pass"
 	}
 	if why != "" {
+		task.MachineWait = machine
 		return h.plan(ctx, procedure, req, task, parent, prompt, why)
 	}
 
@@ -1019,7 +1021,7 @@ func (h *Harness) launch(
 					_ = os.RemoveAll(skillsDir)
 					task.Branch, task.Worktree = "", ""
 					h.forget(r)
-					h.setWaiting(ctx, task, depWhy)
+					h.setWaiting(ctx, task, depWhy, false)
 					return store.Get[*planv1.Task](ctx, h.store, task.GetId())
 				}
 				dir, err = addWorktreeFrom(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), sha)
@@ -1946,7 +1948,8 @@ func (h *Harness) stopPlanned(ctx context.Context, procedure string, req *planv1
 	if dispatch.Resuming(task) {
 		why = "stopped on request while it waited to resume"
 	}
-	task.Status, task.Error, task.WaitReason, task.ResumeAfter, task.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, why, "", nil, timestamppb.Now()
+	task.Status, task.Error, task.WaitReason, task.MachineWait, task.ResumeAfter, task.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, why, "", false,
+		nil, timestamppb.Now()
 	h.writeAlone(ctx, actorLocal, procedure, req, task.GetId(), task, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "stopped: " + task.GetError()})
 	h.sched.Unlock()
 	h.wake() // Its dependents fail in turn.

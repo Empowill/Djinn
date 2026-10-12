@@ -1447,6 +1447,37 @@ test("a task card waiting for branch to be green again shows compact reason", ()
   );
 });
 
+test("a task card offers Start anyway from machine_wait, not from its reason's text", () => {
+  const reason =
+    "the machine is under pressure: the system reports memory pressure";
+  const card = (task) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: {
+          id: "t1",
+          code: "W1",
+          title: "Waiting task",
+          status: s.TaskStatus.PENDING,
+          waitReason: reason,
+          ...task,
+        },
+        onStop() {},
+        onStart() {},
+      }),
+    );
+  const held = card({ machineWait: true });
+  assert.match(held, /class="wish-task-note machine-wait"/);
+  assert.match(held, /<strong>Waits for the machine<\/strong>/);
+  assert.match(held, /Start anyway/);
+  // The same words, but held by more than the machine (a usage limit, a push hold, a task going first): no button.
+  assert.doesNotMatch(card({ machineWait: false }), /Start anyway/);
+  // Running: whatever it carries, nothing to start.
+  assert.doesNotMatch(
+    card({ machineWait: true, status: s.TaskStatus.RUNNING }),
+    /Start anyway/,
+  );
+});
+
 test("a task row reads on two lines: status, code and long title on the first, details on the second", () => {
   const longTitle =
     "Configure the multi-environment deployment pipeline with automated rollbacks and canary release verification across staging and production clusters";

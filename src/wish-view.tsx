@@ -338,6 +338,17 @@ export function WishView({
     [quiet, write, clients.tasks],
   );
 
+  const handleStart = useCallback(
+    (task: Task) => {
+      quiet(
+        write(task.wishId, () => clients.tasks.start({ taskId: task.id }), [
+          Change.TASK,
+        ]),
+      );
+    },
+    [quiet, write, clients.tasks],
+  );
+
   const handleSend = useCallback(
     (text: string, task: Task) =>
       write(
@@ -417,6 +428,7 @@ export function WishView({
           onDecision={handleDecision}
           project={projectById.get(task.projectId)}
           onStop={handleStop}
+          onStart={handleStart}
           onSend={handleSend}
           onHold={pausable ? handleHold : undefined}
           onDone={handleDone}
@@ -437,6 +449,7 @@ export function WishView({
       handleDecision,
       projectById,
       handleStop,
+      handleStart,
       handleSend,
       pausable,
       handleHold,

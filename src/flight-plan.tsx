@@ -213,6 +213,17 @@ export function FlightPlan({
     [quiet, act, clients.tasks],
   );
 
+  const handleStart = useCallback(
+    (task: Task) => {
+      quiet(
+        act(task.wishId, () => clients.tasks.start({ taskId: task.id }), [
+          Change.TASK,
+        ]),
+      );
+    },
+    [quiet, act, clients.tasks],
+  );
+
   const handleSend = useCallback(
     (text: string, task: Task) =>
       act(task.wishId, () => clients.tasks.send({ taskId: task.id, text }), []),
@@ -287,6 +298,7 @@ export function FlightPlan({
           onDecision={handleDecision}
           project={projectById.get(item.projectId)}
           onStop={handleStop}
+          onStart={handleStart}
           onSend={handleSend}
           onHold={pausable ? handleHold : undefined}
           onDone={handleDone}
@@ -306,6 +318,7 @@ export function FlightPlan({
       handleDecision,
       projectById,
       handleStop,
+      handleStart,
       handleSend,
       pausable,
       handleHold,

@@ -513,3 +513,27 @@ func TestAutoCustomThresholds(t *testing.T) {
 		t.Fatalf("drop: changed=%v notch=%v", changed, notch)
 	}
 }
+
+// TestSystemActivitySignalMacOSLevel: macOS's memory level counts as activity at the level that holds workers at the
+// notch in effect: warning keeps Auto at Minimal, only critical brings it down from Medium up.
+func TestSystemActivitySignalMacOSLevel(t *testing.T) {
+	for _, tt := range []struct {
+		notch djinnv1.LoadNotch
+		level int
+		want  bool
+	}{
+		{djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, 1, false},
+		{djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, MemoryWarning, true},
+		{djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, MemoryWarning, false},
+		{djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, MemoryCritical, true},
+		{djinnv1.LoadNotch_LOAD_NOTCH_MAX, MemoryWarning, false},
+		{djinnv1.LoadNotch_LOAD_NOTCH_MAX, MemoryCritical, true},
+	} {
+		m := NewMonitor(NotchPolicy(tt.notch), func() (Snapshot, error) {
+			return Snapshot{Cores: 8, MemoryLevel: tt.level, MemoryTotal: 16 * GiB}, nil
+		})
+		if got := SystemActivitySignal(m)(); got != tt.want {
+			t.Errorf("%s at level %d: activity %v, want %v", tt.notch, tt.level, got, tt.want)
+		}
+	}
+}
