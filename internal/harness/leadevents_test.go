@@ -2,6 +2,8 @@ package harness
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -70,26 +72,70 @@ func TestRestartQueuedForTheLead(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
+	e.down()
 	running := &planv1.Task{Id: store.NewID(), WishId: store.NewID(), Code: "W7", Title: "cut short",
 		Status: planv1.TaskStatus_TASK_STATUS_RUNNING, StartTime: timestamppb.Now()}
-	putTask(t, e.db, running, "work")
-	e.down()
+	putStored(t, home, running, "work")
 	e = up(t, home, WithVersion("v9.9.9"))
 	defer e.down()
+	want := "Djinn: restarted on version v9.9.9: 1 worker interrupted (W7); not resumed, the move is yours: W7."
+	if restarts := restartEvents(t, e); len(restarts) != 2 || restarts[1] != want {
+		t.Errorf("restart events %q, want the second %q", restarts, want)
+	}
+}
+
+// TestRestartNamesTheWorkerStopped: djinn up stops while a worker runs, and records its task interrupted; the next
+// restart names it, though no task was left running, and says the move is the lead's: its worktree is gone. The line
+// said no worker was running.
+func TestRestartNamesTheWorkerStopped(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	e := up(t, home)
+	wishID, _ := e.wish(t, gitRepo(t))
+	task := e.spawn(t, wishID, "text working\nsleep 1h")
+	e.untilText(t, task.GetId(), "working")
+	e.down()
+	stopped := storedTask(t, home, task.GetId())
+	if stopped.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
+		t.Fatalf("after the stop: %v", stopped)
+	}
+	if err := os.RemoveAll(stopped.GetWorktree()); err != nil {
+		t.Fatal(err)
+	}
+	e = up(t, home, WithVersion("v9.9.9"))
+	defer e.down()
+	want := fmt.Sprintf("Djinn: restarted on version v9.9.9: 1 worker interrupted (%[1]s); not resumed, the move is yours: %[1]s.",
+		task.GetCode())
+	if restarts := restartEvents(t, e); len(restarts) != 2 || restarts[1] != want {
+		t.Errorf("restart events %q, want the second %q", restarts, want)
+	}
+	// Once told, it is not told again: the next restart finds it interrupted before it started.
+	e.down()
+	e = up(t, home, WithVersion("v9.9.9"))
+	want = "Djinn: restarted on version v9.9.9: no worker was running."
+	if restarts := restartEvents(t, e); len(restarts) != 3 || restarts[2] != want {
+		t.Errorf("restart events %q, want the third %q", restarts, want)
+	}
+}
+
+// restartEvents are the texts of the restart events queued for the lead, oldest first.
+func restartEvents(t *testing.T, e *env) []string {
+	t.Helper()
 	events, err := store.List[*planv1.LeadEvent](t.Context(), e.db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	slices.SortFunc(events, func(a, b *planv1.LeadEvent) int {
+		return a.GetCreateTime().AsTime().Compare(b.GetCreateTime().AsTime())
+	})
 	var restarts []string
 	for _, ev := range events {
 		if ev.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART && ev.GetAckSessionId() == "" {
 			restarts = append(restarts, ev.GetText())
 		}
 	}
-	want := "Djinn: restarted on version v9.9.9: 1 worker interrupted (W7); not resumed, the move is yours: W7."
-	if len(restarts) != 2 || restarts[1] != want {
-		t.Errorf("restart events %q, want the second %q", restarts, want)
-	}
+	return restarts
 }
 
 func TestRestartLine(t *testing.T) {

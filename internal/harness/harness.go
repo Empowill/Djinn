@@ -285,8 +285,10 @@ func (h *Harness) Close() {
 
 // Recover marks as interrupted the tasks a previous djinn up left running: their workers died with it. They keep
 // what resuming them needs (provider, session, worktree). Then every interrupted task Djinn may resume waits for the
-// scheduler to resume it (queueInterrupted). First, the azimas stored as work before tasks had kinds become azimas
-// (migrateAzimas), and a task part of an azima that is gone becomes part of none (ungroupOrphans).
+// scheduler to resume it (queueInterrupted). The lead's restart event names the workers the last djinn up left
+// running, and those it stopped as it ended, interrupted since it started (lastStart). First, the azimas stored as
+// work before tasks had kinds become azimas (migrateAzimas), and a task part of an azima that is gone becomes part of
+// none (ungroupOrphans).
 func (h *Harness) Recover(ctx context.Context) error {
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
@@ -313,10 +315,20 @@ func (h *Harness) Recover(ctx context.Context) error {
 			}
 		}
 	}
+	lastStart, err := h.lastStart(ctx)
+	if err != nil {
+		return err
+	}
 	var interrupted []string
 	for _, t := range tasks {
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
+		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			// Stopped as the last djinn up ended (end): its worker ran, resumed by Djinn or not.
+			if !lastStart.IsZero() && t.GetEndTime().AsTime().After(lastStart) && !watching(t) {
+				interrupted = append(interrupted, t.GetCode())
+			}
+			continue
 		default:
 			continue
 		}
@@ -364,6 +376,22 @@ func (h *Harness) Recover(ctx context.Context) error {
 		return fmt.Errorf("tell the lead of the restart: %w", err)
 	}
 	return h.recoverAzimas(ctx, tasks)
+}
+
+// lastStart is when the last djinn up started: the time of its restart event, the latest one. Zero when none is left
+// (the first start, or the lead acknowledged it long ago and it was dropped).
+func (h *Harness) lastStart(ctx context.Context) (time.Time, error) {
+	events, err := store.List[*planv1.LeadEvent](ctx, h.store, nil)
+	if err != nil {
+		return time.Time{}, err
+	}
+	var last time.Time
+	for _, e := range events {
+		if e.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART && e.GetCreateTime().AsTime().After(last) {
+			last = e.GetCreateTime().AsTime()
+		}
+	}
+	return last, nil
 }
 
 // restartLine is what the lead's restart event says: the version Djinn started on, the workers the last djinn up

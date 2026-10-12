@@ -416,8 +416,8 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	crashed := proto.CloneOf(got)
 	crashed.Id, crashed.Code, crashed.Status = store.NewID(), "W9", planv1.TaskStatus_TASK_STATUS_RUNNING
 	crashed.EndTime, crashed.Error, crashed.Resumes = nil, "", 0
-	putTask(t, e.db, crashed, "x")
 	e.down()
+	putStored(t, home, crashed, "x")
 	e = up(t, home)
 	events = e.watch(t.Context(), t, crashed.GetId(), 0)
 	after := e.get(t, crashed.GetId())
@@ -427,6 +427,19 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	if got := eventKinds(events); !slices.Equal(got, []string{"PROMPT", "STATUS", "STATUS", "STATUS", "STATUS", "TEXT", "STATUS"}) {
 		t.Errorf("crashed task events: %v", got)
 	}
+}
+
+// putStored puts task and its prompt in the store of a djinn up that is down, as a crash left it. Put in the store of
+// a djinn up that runs, a task left running without a worker is the Lamplighter's: a lost process it ends at its next
+// pass, before or after the next restart (CI run 38281321513, macOS).
+func putStored(t *testing.T, home string, task *planv1.Task, prompt string) {
+	t.Helper()
+	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	putTask(t, db, task, prompt)
 }
 
 // storedTask reads a task from the store of a djinn up that is down.
