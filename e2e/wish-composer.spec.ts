@@ -1,6 +1,5 @@
 // Creation UI owns this spec. Requests are intercepted so these checks never launch a model, write a wish,
-// or depend on automatic title generation. The page itself is served by the isolated Djinn test server. The smoke
-// behind the page (X3) is not mounted yet: its cases come with it.
+// or depend on automatic title generation. The page itself is served by the isolated Djinn test server.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
@@ -17,6 +16,7 @@ import {
   ProviderState,
   UiServiceGetEnvironmentResponseSchema,
 } from "../gen/ts/ui/v1/ui_pb";
+import { disableWishSmokeWebGL } from "./wish-smoke-fixture";
 
 const alpha = "11111111-1111-4111-8111-111111111111";
 const beta = "22222222-2222-4222-8222-222222222222";
@@ -43,10 +43,13 @@ async function openComposer(
   projects = true,
   locale = "en",
   agentReady = true,
+  solver = false,
 ) {
   if (locale === "fr") {
     await page.emulateMedia({ reducedMotion: "reduce" });
   }
+  // The smoke's solver takes about a minute to show glyphs on a software WebGL2: only the @solver cases run it.
+  if (!solver) await disableWishSmokeWebGL(page);
   await page.addInitScript((locale) => {
     localStorage.setItem("djinn.language", locale);
   }, locale);
@@ -130,7 +133,36 @@ async function openComposer(
   return { region, editor };
 }
 
-test("focus, animated prompt and minimal tags preserve the request payload", async ({
+test("cold creation stays interactive before smoke preparation", async ({
+  page,
+}) => {
+  const { region, editor } = await openComposer(page);
+
+  // The decorative renderer is deliberately disabled in this contract test:
+  // opening the creation flow must still focus and enable the native editor
+  // while smoke preparation is incomplete.
+  await expect(editor).toBeFocused();
+  await expect(editor).toBeEnabled();
+  await expect(region.locator(".wish-smoke-canvas")).not.toHaveAttribute(
+    "data-ready",
+    "true",
+  );
+  await expect(region.locator(".wish-creation-intro h1")).toBeVisible();
+  await expect(region.locator(".wish-creation-controls")).toBeVisible();
+
+  await page.locator(".app-toolbar-back").click();
+  await expect(region).toHaveCount(0);
+  await page.locator(".sidebar .new-mission").click();
+  const reopened = page.getByRole("region", {
+    name: titles.en,
+    exact: true,
+  });
+  const reopenedEditor = reopened.getByRole("textbox", { name: titles.en });
+  await expect(reopenedEditor).toBeFocused();
+  await expect(reopenedEditor).toBeEnabled();
+});
+
+test("focus, animated prompt, smoke and minimal tags preserve the request payload", async ({
   page,
 }) => {
   const { region, editor } = await openComposer(page);
@@ -139,6 +171,10 @@ test("focus, animated prompt and minimal tags preserve the request payload", asy
   );
   await expect(region.locator(".wish-composer-tools")).toHaveCount(0);
   await expect(region.locator(".agent-warning")).toHaveCount(0);
+  await expect(region.locator(".wish-smoke-canvas")).toHaveAttribute(
+    "data-zoom",
+    "10",
+  );
 
   const requests: ReturnType<
     typeof fromBinary<typeof WishServiceMakeRequestSchema>
@@ -292,6 +328,209 @@ test("French empty creation keeps the title and caret visible", async ({
   expect(Math.abs(submitCenter - footerCenter)).toBeLessThan(2);
   await page.screenshot({ path: "test-results/e2e/wish-creation-fr.png" });
 });
+
+test(
+  "French creation keeps its smoke visible through every resize",
+  { tag: "@solver" },
+  async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const { region } = await openComposer(page, 0, true, "fr", true, true);
+    const smoke = region.locator(".wish-smoke-canvas");
+    await expect(smoke).toHaveAttribute("data-zoom", "10");
+    await expect(smoke).toHaveAttribute("data-ready", "true", {
+      timeout: 150_000,
+    });
+    await expect(smoke).toHaveAttribute("data-visible", "true", {
+      timeout: 30_000,
+    });
+    const asciiLayers = region.locator(".wish-smoke-ascii pre");
+    await expect(asciiLayers).toHaveCount(8);
+    const hasAscii = async () =>
+      (await asciiLayers.allTextContents()).some((text) => /\S/.test(text));
+    await expect.poll(hasAscii).toBe(true);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.waitForTimeout(250);
+    await page.evaluate(() => {
+      const root = document.querySelector<HTMLElement>(".wish-smoke-ascii");
+      if (!root) return;
+      let sawBlank = false;
+      const observer = new MutationObserver(() => {
+        const texts = Array.from(
+          root.querySelectorAll("pre"),
+          (pre) => pre.textContent || "",
+        );
+        if (texts.length === 8 && texts.every((text) => !/\S/.test(text)))
+          sawBlank = true;
+      });
+      observer.observe(root, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+      (
+        window as Window & {
+          __wishSmokeResizeBlank?: () => boolean;
+        }
+      ).__wishSmokeResizeBlank = () => {
+        observer.disconnect();
+        return sawBlank;
+      };
+    });
+
+    const readSmokeLayout = () =>
+      page.evaluate(() => {
+        const surface = document.querySelector<HTMLElement>(".wish-smoke");
+        const ascii = surface?.querySelector<HTMLElement>(".wish-smoke-ascii");
+        const pre = ascii?.querySelector<HTMLElement>("pre");
+        if (!surface || !ascii || !pre) return null;
+        const row = (pre.textContent || "").split("\n")[0] || "";
+        const layerTexts = Array.from(
+          ascii.querySelectorAll("pre"),
+          (layer) => layer.textContent || "",
+        );
+        const preWidth = Number.parseFloat(pre.style.width);
+        const preHeight = Number.parseFloat(pre.style.height);
+        const lineHeight = Number.parseFloat(
+          getComputedStyle(ascii).lineHeight,
+        );
+        const surfaceBox = surface.getBoundingClientRect();
+        const asciiBox = ascii.getBoundingClientRect();
+        return {
+          surfaceWidth: surfaceBox.width,
+          surfaceHeight: surfaceBox.height,
+          preWidth,
+          preHeight,
+          charWidth: row.length ? preWidth / row.length : 0,
+          lineHeight,
+          widthGap: surfaceBox.width - preWidth,
+          heightGap: surfaceBox.height - preHeight,
+          bottomDelta: Math.abs(
+            pre.getBoundingClientRect().bottom - asciiBox.bottom,
+          ),
+          rows: (pre.textContent || "").split("\n").length,
+          hasAscii: layerTexts.some((text) => /\S/.test(text)),
+        };
+      });
+    const isCommittedSmokeLayout = (
+      layout: Awaited<ReturnType<typeof readSmokeLayout>>,
+    ) =>
+      layout !== null &&
+      Number.isFinite(layout.preWidth) &&
+      Number.isFinite(layout.preHeight) &&
+      layout.charWidth > 0 &&
+      layout.lineHeight > 0 &&
+      layout.widthGap >= -0.75 &&
+      layout.widthGap < layout.charWidth + 0.75 &&
+      layout.heightGap >= -0.75 &&
+      layout.heightGap < layout.lineHeight + 0.75 &&
+      layout.bottomDelta < 1 &&
+      layout.rows > 1 &&
+      layout.hasAscii;
+    const waitForSmokeLayoutCommit = async (
+      previous: Awaited<ReturnType<typeof readSmokeLayout>>,
+    ) => {
+      await expect
+        .poll(
+          async () => {
+            const current = await readSmokeLayout();
+            if (!isCommittedSmokeLayout(current)) return false;
+            if (!previous || !current) return true;
+            return (
+              Math.abs(current.surfaceWidth - previous.surfaceWidth) > 1 ||
+              Math.abs(current.surfaceHeight - previous.surfaceHeight) > 1 ||
+              Math.abs(current.preWidth - previous.preWidth) > 1 ||
+              Math.abs(current.preHeight - previous.preHeight) > 1
+            );
+          },
+          { timeout: 10_000 },
+        )
+        .toBe(true);
+      const committed = await readSmokeLayout();
+      expect(isCommittedSmokeLayout(committed)).toBe(true);
+      expect(committed).not.toBeNull();
+      expect(committed!.widthGap).toBeGreaterThanOrEqual(-0.75);
+      expect(committed!.widthGap).toBeLessThan(committed!.charWidth + 0.75);
+      expect(committed!.heightGap).toBeGreaterThanOrEqual(-0.75);
+      expect(committed!.heightGap).toBeLessThan(committed!.lineHeight + 0.75);
+      expect(committed!.bottomDelta).toBeLessThan(1);
+      return committed;
+    };
+
+    let previousLayout = await readSmokeLayout();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    previousLayout = await waitForSmokeLayoutCommit(previousLayout);
+    await expect(asciiLayers).toHaveCount(8);
+    await expect.poll(hasAscii, { timeout: 10_000 }).toBe(true);
+
+    await page.locator(".sidebar-toggle").click();
+    previousLayout = await waitForSmokeLayoutCommit(previousLayout);
+    await page.locator(".sidebar-toggle").click();
+    previousLayout = await waitForSmokeLayoutCommit(previousLayout);
+
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await waitForSmokeLayoutCommit(previousLayout);
+    await expect.poll(hasAscii, { timeout: 10_000 }).toBe(true);
+    const sawBlank = await page.evaluate(
+      () =>
+        (
+          window as Window & {
+            __wishSmokeResizeBlank?: () => boolean;
+          }
+        ).__wishSmokeResizeBlank?.() ?? false,
+    );
+    expect(sawBlank).toBe(false);
+    await page.screenshot({
+      path: "test-results/e2e/wish-creation-smoke-fr.png",
+    });
+  },
+);
+
+test(
+  "6K smoke keeps native HTML and backing canvas within budgets",
+  { tag: "@solver" },
+  async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.setViewportSize({ width: 6016, height: 3384 });
+    const { region } = await openComposer(page, 0, true, "fr", true, true);
+    const smoke = region.locator(".wish-smoke-canvas");
+    await expect(smoke).toHaveAttribute("data-ready", "true", {
+      timeout: 150_000,
+    });
+    const asciiLayers = region.locator(".wish-smoke-ascii pre");
+    await expect(asciiLayers).toHaveCount(8);
+    await expect
+      .poll(async () =>
+        (await asciiLayers.allTextContents()).some((text) => /\S/.test(text)),
+      )
+      .toBe(true);
+    const budget = await asciiLayers.first().evaluate((layer) => {
+      const canvas = layer
+        .closest(".wish-smoke")
+        ?.querySelector(
+          ".wish-smoke-worker-canvas",
+        ) as HTMLCanvasElement | null;
+      const text = layer.textContent || "";
+      const rows = text.split("\n");
+      return {
+        fontSize: Number.parseFloat(getComputedStyle(layer).fontSize),
+        columns: Math.max(...rows.map((row) => row.length)),
+        rows: rows.length,
+        canvasWidth: canvas?.width || 0,
+        canvasHeight: canvas?.height || 0,
+      };
+    });
+    expect(budget.fontSize).toBeGreaterThan(10);
+    expect(budget.columns * budget.rows).toBeLessThanOrEqual(18_000);
+    expect(budget.columns).toBeLessThanOrEqual(240);
+    expect(budget.rows).toBeLessThanOrEqual(120);
+    expect(budget.canvasWidth).toBeLessThanOrEqual(2048);
+    expect(budget.canvasHeight).toBeLessThanOrEqual(2048);
+    expect(budget.canvasWidth * budget.canvasHeight).toBeLessThanOrEqual(
+      1_500_000,
+    );
+  },
+);
 
 test("native textarea keeps pasted markup literal", async ({ page }) => {
   const { region, editor } = await openComposer(page);

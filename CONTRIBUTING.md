@@ -151,6 +151,10 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
     to open the wish, switch tabs, show a change arriving) against millisecond budgets. A story that touches the window
     (interface under the UI folder, the stream it reads, the server calls it makes) runs this spec before it ends;
     other stories do not. Kept out of the default `go tool task e2e` run.
+  - **The creation page's smoke:** the cases tagged `@solver` run its WebGL2 solver, which takes about a minute to
+    show glyphs on the software WebGL2 of a headless browser; `go tool task e2e -- e2e/wish-composer.spec.ts --grep
+    @solver` (or `e2e/theme.spec.ts`) runs them, the default run leaves them out. A story that changes the smoke runs
+    them, and `go tool task e2e-native -- -run TestNativeSmokeGeometry` on the native window.
 - `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it. `go tool task format` fixes what
   can be.
   - Go: [golangci-lint](.golangci.yml), pinned in its own module (`tools/golangci/go.mod`): nothing to install. It

@@ -53,6 +53,7 @@ import {
 import { type Theme, chosenTheme, setTheme as applyTheme } from "./theme";
 import { WishComposer } from "./wish-composer";
 import { WishDropdown } from "./wish-dropdown";
+import { WishSmoke } from "./wish-smoke";
 import { MAX_PROMPT_CHARACTERS, promptTooLong } from "./wish-composer-markdown";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { WorkspaceAction } from "./workspace-action";
@@ -240,6 +241,7 @@ export function MakeWish({
             onSubmit={(event) => void submit(event)}
             aria-busy={busy}
           >
+            <WishSmoke />
             <div className="wish-creation-workspace">
               <div className="wish-creation-request">
                 <label
