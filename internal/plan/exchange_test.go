@@ -367,6 +367,46 @@ func TestScrubberFollowsLinks(t *testing.T) {
 	}
 }
 
+// On Windows, %TEMP% gives a folder with a short name (C:\Users\RUNNER~1) while a project's folder is stored with long
+// names: the scrubber replaces both forms, and a path that mixes them, as a prompt written under %TEMP% holds (CI of
+// PR #2, where the brief kept such a path).
+func TestScrubberShortNames(t *testing.T) {
+	const (
+		long = `C:\Users\runneradmin\AppData\Local\Temp\TestBrief1`
+		mix  = `C:\Users\RUNNER~1\AppData\Local\Temp\TestBrief1`
+		all  = `C:\Users\RUNNER~1\AppData\Local\Temp\TESTBR~1`
+	)
+	short := map[string]string{`C:\Users\runneradmin`: `C:\Users\RUNNER~1`, long: all}
+	saved := shortName
+	t.Cleanup(func() { shortName = saved })
+	shortName = func(path string) (string, bool) {
+		if strings.HasSuffix(path, ":") {
+			t.Errorf("short name asked for %q, the current folder of a drive", path)
+		}
+		got, from := path, ""
+		for l, s := range short { // The longest folder named: the system shortens every folder of the path.
+			if rest, ok := strings.CutPrefix(path, l); ok && len(l) > len(from) {
+				got, from = s+rest, l
+			}
+		}
+		return got, true
+	}
+
+	s := newScrubber([]*planv1.Project{{Name: "api", Directory: long + `\001`}}, long+`\002`, "djinn-data")
+	for in, want := range map[string]string{
+		mix + `\001/internal`:         "api/internal",
+		mix + `\001\cmd\main.go`:      `api\cmd\main.go`,
+		all + `\001\go.mod`:           `api\go.mod`,
+		long + `\001\go.mod`:          `api\go.mod`,
+		mix + `\002/state`:            "djinn-data/state",
+		`C:\Users\RUNNER~1\Documents`: `C:\Users\RUNNER~1\Documents`,
+	} {
+		if got := s.r.Replace("In " + in + "."); got != "In "+want+"." {
+			t.Errorf("scrub(%q) = %q, want %q", in, got, "In "+want+".")
+		}
+	}
+}
+
 func TestImportFindsProjects(t *testing.T) {
 	ctx := t.Context()
 	src, wish, _ := source(t)
