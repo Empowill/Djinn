@@ -491,8 +491,9 @@ func TestBeforeStartRunsBeforeTheProgram(t *testing.T) {
 	output(t, term, 0, contains("got set"))
 }
 
-// TestServiceNeverOpensAShellForALead attaches the window to a lead's terminal while its lead runs, and refuses to
-// start the default shell under that name: a text told to the lead would run there as a command.
+// TestServiceNeverOpensAShellForALead attaches the window to the lead's terminal while the lead runs, and refuses to
+// start the default shell under that name, with DJINN_LEAD=1: a line Djinn types to the lead would run there as a
+// command. A command the window names (a restart) still runs there, and a terminal of another name gets the shell.
 func TestServiceNeverOpensAShellForALead(t *testing.T) {
 	m := NewManager(Config{Command: []string{"/bin/sh"}, Dir: t.TempDir()})
 	t.Cleanup(m.Close)
@@ -504,19 +505,47 @@ func TestServiceNeverOpensAShellForALead(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
 	ctx := t.Context()
-	_, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead-w1", Cols: 80, Rows: 24}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("open a lead's terminal that runs nothing: %v, want failed precondition", err)
+	refused := func(when string) {
+		t.Helper()
+		_, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead", Cols: 80, Rows: 24}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+			t.Fatalf("open the lead's terminal %s: %v, want failed precondition", when, err)
+		}
+		if m.Lookup("lead") != nil {
+			t.Fatalf("a shell started under the lead's name %s", when)
+		}
 	}
-	if m.Lookup("lead-w1") != nil {
-		t.Fatal("a shell started under the lead's name")
-	}
-	lead := sh(t, m, "lead-w1")
-	open, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead-w1", Cols: 90, Rows: 20}))
+	refused("that runs nothing")
+
+	lead := sh(t, m, "lead", "-c", "echo lead here; exec cat")
+	output(t, lead, 0, contains("lead here"))
+	open, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead", Cols: 90, Rows: 20}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := open.Msg.GetTerminal(); got.GetId() != lead.ID || !open.Msg.GetAttached() || got.GetCols() != 90 {
-		t.Fatalf("opened %v, want attached to %s at 90 columns", open.Msg, lead.ID)
+	if got := open.Msg.GetTerminal(); got.GetId() != lead.ID || !open.Msg.GetAttached() || got.GetCols() != 90 ||
+		open.Msg.GetEndOffset() == 0 {
+		t.Fatalf("opened %v, want attached to %s at 90 columns, with the end of what it wrote", open.Msg, lead.ID)
+	}
+
+	// The lead ended: still no shell under its name.
+	lead.Hangup()
+	select {
+	case <-lead.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatal("the lead did not end")
+	}
+	refused("whose lead ended")
+
+	// A command the window names runs there; another terminal gets the shell.
+	again, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
+		Name: "lead", Command: []string{"/bin/sh", "-c", "exec cat"}, Cols: 80, Rows: 24,
+	}))
+	if err != nil || again.Msg.GetAttached() || again.Msg.GetTerminal().GetCommand()[0] != "/bin/sh" {
+		t.Fatalf("restart the lead's command: %v, %v", again.Msg, err)
+	}
+	shell, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "main", Cols: 80, Rows: 24}))
+	if err != nil || shell.Msg.GetAttached() {
+		t.Fatalf("open the window's shell: %v, %v", shell.Msg, err)
 	}
 }

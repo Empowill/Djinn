@@ -2,6 +2,8 @@ package plan
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -381,5 +383,54 @@ func TestLeadAnswerNotToldToLead(t *testing.T) {
 	if saved3.GetAnswer().GetActor() != planv1.Closer_CLOSER_UNSPECIFIED || saved3.GetAnswer().GetTaskId() != taskID {
 		t.Errorf("worker answer: actor = %v, taskId = %q, want CLOSER_UNSPECIFIED and %q",
 			saved3.GetAnswer().GetActor(), saved3.GetAnswer().GetTaskId(), taskID)
+	}
+}
+
+// TestTellNeverTypesIntoAShell: a line for the lead goes only to a terminal that runs the lead. For a wish that is
+// not active, Tell reopens nothing, and refuses the lead's terminal when it runs a shell, where the line would run as
+// a command; for an active one, it refuses such a terminal too.
+func TestTellNeverTypesIntoAShell(t *testing.T) {
+	ctx := t.Context()
+	leads := &fakeLeads{}
+	c := serve(t, WithLeads(leads))
+	project, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Paused", ProjectIds: []string{project.Msg.GetProject().GetId()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := made.Msg.GetWish().GetId()
+	if _, err := c.wishes.Pause(ctx, connect.NewRequest(&planv1.WishServicePauseRequest{WishId: id})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
+		t.Fatal(err)
+	}
+	w := &Wishes{Store: c.store, Leads: leads}
+
+	if err := w.Tell(ctx, id, "Djinn: hello"); !errors.Is(err, ErrNoLead) {
+		t.Errorf("tell about a paused wish while no lead runs: %v, want ErrNoLead", err)
+	}
+	leads.running = map[string][]string{LeadTerminal: {"/bin/sh"}}
+	if err := w.Tell(ctx, id, "Djinn: hello"); !errors.Is(err, ErrNoLead) || !strings.Contains(err.Error(), "/bin/sh") {
+		t.Errorf("tell about a paused wish while the lead's terminal runs a shell: %v, want ErrNoLead", err)
+	}
+	if err := w.Tell(ctx, "", "Djinn: hello"); err == nil || !strings.Contains(err.Error(), "not the lead") {
+		t.Errorf("tell the lead while its terminal runs a shell: %v, want a refusal", err)
+	}
+	if len(leads.opened) != 0 || len(leads.said) != 0 {
+		t.Fatalf("opened %q, said %q: nothing goes to a shell", leads.opened, leads.said)
+	}
+
+	leads.running[LeadTerminal] = []string{"/bin/sh", "-c", "claude --resume " + session}
+	if err := w.Tell(ctx, id, "Djinn: hello"); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{LeadTerminal + ": Djinn: hello"}; len(leads.opened) != 0 || !slices.Equal(leads.said, want) {
+		t.Errorf("tell a running lead about a paused wish: opened %q, said %q, want %q", leads.opened, leads.said, want)
 	}
 }

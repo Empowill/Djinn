@@ -56,6 +56,13 @@ func (f *fakeLeads) Running(name string) bool {
 	return ok
 }
 
+func (f *fakeLeads) Command(name string) []string {
+	if f == nil {
+		return nil
+	}
+	return f.running[name]
+}
+
 func (f *fakeLeads) Close(name string) {
 	if _, ok := f.running[name]; ok {
 		delete(f.running, name)
