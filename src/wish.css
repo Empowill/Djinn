@@ -588,9 +588,6 @@
 .journal-list li.log > div {
   flex-direction: column;
 }
-.icon-button.danger:hover {
-  color: var(--danger);
-}
 
 /* An azima of the plan in the Tasks tab: its heading, then, opened, the work part of it, set in. */
 .azima-card {

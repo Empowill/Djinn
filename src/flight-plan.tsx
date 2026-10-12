@@ -464,7 +464,7 @@ export function FlightPlan({
 
   return (
     <div className="wish-view flight-plan review">
-      <PageHeader actions={<OperatingLoad />}>
+      <PageHeader middle={<OperatingLoad />}>
         <strong>{t("plan.title")}</strong>
       </PageHeader>
       <div className="mission-scroll" ref={keepPlace}>

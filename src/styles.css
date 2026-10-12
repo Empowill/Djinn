@@ -372,8 +372,10 @@ html[data-theme="light"] .wordmark-period {
 .profile > svg {
   color: var(--n-79);
 }
+.app.sidebar-collapsed {
+  --sidebar-width: 67px;
+}
 .sidebar-collapsed .sidebar {
-  width: 67px;
   padding: 0 10px;
 }
 .sidebar-collapsed .sidebar-brand {
@@ -444,9 +446,11 @@ html[data-theme="light"] .wordmark-period {
   flex-shrink: 0;
 }
 
+/* The page header spans the window under the sidebar's top, its controls centred on the toolbar's (P19). Above the
+   attention bar that sticks under it, so that the lead's menu opens over the bar. */
 .page-header {
   position: relative;
-  z-index: 6;
+  z-index: 7;
   height: 64px;
   gap: 12px;
   margin-left: calc(-1 * var(--sidebar-width));
@@ -454,12 +458,8 @@ html[data-theme="light"] .wordmark-period {
   padding-left: 100px;
   border-bottom: 0;
 }
-.sidebar-collapsed .page-header {
-  margin-left: 0;
-  width: 100%;
-}
 .page-header > .breadcrumbs {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
 }
@@ -493,15 +493,18 @@ html[data-theme="light"] .wordmark-period {
   background: var(--surface-raised);
   color: var(--accent);
 }
+.app .page-header-action.button.secondary.danger:hover {
+  color: var(--danger);
+}
 .page-header-action svg {
   width: 16px;
   height: 16px;
 }
-.page-header-action.wish-provider {
-  flex: 0 0 auto;
-  width: auto;
-  padding: 0 8px;
-  font-size: var(--font-size-body, 12px);
+/* The labelled actions (Pause, Activate, Lead) keep their words, at the height of the icon actions. */
+.page-header .topbar-actions .button.small {
+  height: 32px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .button {
   display: inline-flex;
@@ -1569,9 +1572,6 @@ html[data-theme="light"] .wordmark-period {
     display: none;
   }
 
-  .page-header-action.wish-provider > span {
-    display: inline;
-  }
   .question-context {
     font-size: var(--font-size-body, 12px);
   }
@@ -1996,11 +1996,6 @@ html[data-motion="reduced"] *::after {
 html.native-mac .sidebar {
   padding-top: 28px;
 }
-/* The topbar keeps its height, its controls centred below the strip: a 32px
-   action starts at 16px. */
-html.native-mac .topbar {
-  padding-top: 8px;
-}
 html.native-mac .sidebar-brand,
 html.native-mac .topbar {
   --wails-draggable: drag;
@@ -2054,9 +2049,16 @@ html.native-mac .app-toolbar-toggle {
   height: 20px;
   padding: 2px;
 }
+/* In the macOS window the header's row is the toolbar's, beside the traffic lights, from the 6 px drag strip down; the
+   header keeps the height of the operating-load gauge, which hangs from that row. */
 html.native-mac .page-header {
-  height: 32px;
+  align-items: flex-start;
+  padding-top: 6px;
   padding-left: 166px;
+}
+html.native-mac .page-header > .breadcrumbs,
+html.native-mac .page-header > .topbar-actions {
+  height: 20px;
 }
 html.native-mac .page-header-action {
   flex-basis: 20px;
@@ -2065,27 +2067,15 @@ html.native-mac .page-header-action {
   height: 20px;
   padding: 2px;
 }
-html.native-mac .page-header-action.wish-provider {
-  flex-basis: auto;
-  width: auto;
-  padding: 2px 5px;
+html.native-mac .page-header .topbar-actions .button.small {
+  height: 20px;
+  padding: 0 6px;
 }
 .app .page-header {
   padding-left: max(calc(var(--sidebar-width) + 26px), 100px);
 }
 html.native-mac .app .page-header {
   padding-left: max(calc(var(--sidebar-width) + 26px), 166px);
-}
-.app.sidebar-collapsed .page-header {
-  padding-left: 100px;
-}
-html.native-mac .app.sidebar-collapsed .page-header {
-  padding-left: 166px;
-}
-@media (max-width: 540px) {
-  .app .page-header-action.wish-provider > span {
-    display: none;
-  }
 }
 /* Room for the toolbar above the sidebar's brand. */
 html:not(.native-mac) .sidebar {

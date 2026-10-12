@@ -643,9 +643,9 @@ export function WishView({
   return (
     <div className="wish-view review">
       <PageHeader
+        middle={<OperatingLoad />}
         actions={
           <>
-            <OperatingLoad />
             {granted ? (
               <button
                 className="button secondary small"
@@ -717,14 +717,13 @@ export function WishView({
             >
               <Download size={16} aria-hidden="true" />
             </PageHeaderAction>
-            <button
-              className="icon-button danger"
-              title={t("wish.delete")}
-              aria-label={t("wish.delete")}
+            <PageHeaderAction
+              className="danger"
+              label={t("wish.delete")}
               onClick={() => setDeleting(true)}
             >
-              <Trash2 size={15} />
-            </button>
+              <Trash2 size={16} aria-hidden="true" />
+            </PageHeaderAction>
           </>
         }
       >

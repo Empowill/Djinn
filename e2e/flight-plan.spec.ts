@@ -151,51 +151,59 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   // With wishes active, the window opens on their flight plan.
   await expect(page.locator(".hero h1")).toHaveText("Flight plan");
 
+  // The page header's row is the window's toolbar's, its breadcrumbs where the page's content starts, past the
+  // sidebar or its rail, past the traffic lights in the macOS window, where the row is the lights' and the gauge
+  // hangs from it. The toolbar holds only the sidebar's toggle until the creation page brings Back (P23).
   const pageHeader = page.locator(".page-header");
   const appToolbar = page.locator(".app-toolbar");
-  const assertHeaderChrome = async (left: number, size = 32) => {
+  // fits is false where the header is narrower than its content: the operating-load gauge does not narrow (as on
+  // feat/wails-go's topbar), and pushes the actions past the window's edge.
+  const assertHeaderChrome = async (left: number, size = 32, fits = true) => {
+    // The sidebar's width glides for 180 ms when it folds: the breadcrumbs reach their place at its end.
+    const breadcrumbs = pageHeader.locator(".breadcrumbs");
+    await expect
+      .poll(async () => (await breadcrumbs.boundingBox())?.x)
+      .toBeCloseTo(left, 0);
     const headerBox = await pageHeader.boundingBox();
-    const breadcrumbsBox = await pageHeader
-      .locator(".breadcrumbs")
-      .boundingBox();
-    const backBox = await appToolbar.locator(".app-toolbar-back").boundingBox();
+    const breadcrumbsBox = await breadcrumbs.boundingBox();
     const toggleBox = await appToolbar
       .locator(".app-toolbar-toggle")
       .boundingBox();
     expect(headerBox).not.toBeNull();
     expect(breadcrumbsBox).not.toBeNull();
-    expect(backBox).not.toBeNull();
     expect(toggleBox).not.toBeNull();
     expect(breadcrumbsBox!.x).toBeCloseTo(left, 0);
-    await expect(pageHeader).toHaveCSS("height", `${size === 20 ? 32 : 64}px`);
-    expect(backBox).toMatchObject({ width: size, height: size });
+    await expect(pageHeader).toHaveCSS("height", "64px");
     expect(toggleBox).toMatchObject({ width: size, height: size });
-    const headerCenter = headerBox!.y + headerBox!.height / 2;
+    const rowCenter = toggleBox!.y + toggleBox!.height / 2;
     expect(
-      Math.abs(headerCenter - (backBox!.y + backBox!.height / 2)),
-    ).toBeLessThan(1);
-    expect(
-      Math.abs(headerCenter - (toggleBox!.y + toggleBox!.height / 2)),
+      Math.abs(rowCenter - (breadcrumbsBox!.y + breadcrumbsBox!.height / 2)),
     ).toBeLessThan(1);
     const actions = pageHeader.locator(".topbar-actions");
     if (await actions.count()) {
       const actionsBox = await actions.boundingBox();
       const iconActionBox = await actions
-        .locator(".page-header-action:not(.wish-provider)")
+        .locator(".page-header-action")
         .first()
         .boundingBox();
       expect(actionsBox).not.toBeNull();
       expect(iconActionBox).toMatchObject({ width: size, height: size });
       expect(
-        Math.abs(headerCenter - (iconActionBox!.y + iconActionBox!.height / 2)),
+        Math.abs(rowCenter - (iconActionBox!.y + iconActionBox!.height / 2)),
       ).toBeLessThan(1);
+      // The labelled actions too: Pause, Lead and its arrow.
+      for (const box of await actions
+        .locator("button:visible")
+        .evaluateAll((els) => els.map((el) => el.getBoundingClientRect())))
+        expect(Math.abs(rowCenter - (box.y + box.height / 2))).toBeLessThan(1);
       const rightInset = await pageHeader.evaluate((element) =>
         Number.parseFloat(getComputedStyle(element).paddingRight),
       );
-      expect(actionsBox!.x + actionsBox!.width).toBeCloseTo(
-        headerBox!.x + headerBox!.width - rightInset,
-        0,
-      );
+      if (fits)
+        expect(actionsBox!.x + actionsBox!.width).toBeCloseTo(
+          headerBox!.x + headerBox!.width - rightInset,
+          0,
+        );
     }
   };
 
@@ -265,17 +273,24 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   // its journal.
   await page.locator(".plan-wish").filter({ hasText: lampTitle }).click();
   await expect(page.locator(".hero h1")).toHaveText(lampTitle);
-  await expect(pageHeader.locator(".page-header-action")).toHaveCount(4);
+  // Share and Delete are icons; Pause and Lead keep their words. The operating-load gauge sits between.
+  await expect(pageHeader.locator(".page-header-action")).toHaveCount(2);
+  await expect(
+    pageHeader.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
+  await expect(
+    pageHeader.getByRole("group", { name: "Operating load" }),
+  ).toBeVisible();
   await assertHeaderChrome(248);
   await page.setViewportSize({ width: 760, height: 1000 });
-  await assertHeaderChrome(100);
+  await assertHeaderChrome(100, 32, false);
   await page.evaluate(() =>
     document.documentElement.classList.add("native-mac"),
   );
-  await assertHeaderChrome(166, 20);
+  await assertHeaderChrome(166, 20, false);
   await page.locator(".sidebar-toggle").click();
   await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
-  await assertHeaderChrome(166, 20);
+  await assertHeaderChrome(166, 20, false);
   await page.locator(".sidebar-toggle").click();
   await expect(page.locator(".wish-app")).not.toHaveClass(/sidebar-collapsed/);
   await page.evaluate(() =>
