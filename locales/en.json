@@ -727,6 +727,8 @@
   "wish.kept_worktree": "{code} keeps its worktree, on {branch}: {why}.",
   "wish.lead_agents": "Choose the agent",
   "wish.lead_agents_detail": "Start a lead of another agent found on this machine",
+  "wish.lead_ended": "The lead ended (code {code}): its tab keeps its last output. Lead starts it again",
+  "wish.lead_failed": "The lead could not start: {error}. Lead tries again",
   "wish.lead_missing": "{command} is not installed on this machine",
   "wish.lead_new": "Starts a new lead from the brief",
   "wish.lead_recorded": "The lead: resumes it, focused on this wish",

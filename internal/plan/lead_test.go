@@ -27,6 +27,7 @@ type fakeLeads struct {
 	closed  []string                      // name of each running terminal closed
 	waiting bool                          // what SayText says of the texts said
 	prompts map[string]*planv1.LeadPrompt // the choice each terminal shows, by name
+	exits   map[string]*planv1.LeadExit   // how the program of each ended terminal ended, by name
 	chosen  []string                      // terminal: option of each choice answered
 	err     error
 }
@@ -90,6 +91,8 @@ func (f *fakeLeads) SayText(name, text string) (bool, error) {
 }
 
 func (f *fakeLeads) Prompt(name string) *planv1.LeadPrompt { return f.prompts[name] }
+
+func (f *fakeLeads) Exit(name string) *planv1.LeadExit { return f.exits[name] }
 
 func (f *fakeLeads) Choose(name, title string, lines, options []string, index int) error {
 	p := f.prompts[name]
@@ -545,6 +548,56 @@ func TestLeadTell(t *testing.T) {
 
 // TestLeadChoose: the choice the lead's agent shows comes with the lead, and the window's answer goes to the lead's
 // terminal, only while that very choice shows: the same options on another command need a new decision.
+// TestLeadStartFailureVisibleUntilRetry: why the lead could not start, and how it ended, stay on LeadService.Get, for
+// the window to show beside Lead, until Lead starts it again.
+func TestLeadStartFailureVisibleUntilRetry(t *testing.T) {
+	ctx := t.Context()
+	leads := &fakeLeads{err: errors.New("agent executable unavailable")}
+	c := serve(t, WithLeads(leads))
+	if _, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
+		t.Fatal(err)
+	}
+	watcher := watch(t, c.wishes, "")
+	get := func() *planv1.LeadServiceGetResponse {
+		t.Helper()
+		res, err := c.lead.Get(ctx, connect.NewRequest(&planv1.LeadServiceGetRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg
+	}
+	resume := connect.NewRequest(&planv1.LeadServiceResumeRequest{})
+	if _, err := c.lead.Resume(ctx, resume); code(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("start: %v", err)
+	}
+	if msg := next(t, watcher); !slices.Contains(msg.GetChanges(), planv1.Change_CHANGE_WISH) {
+		t.Fatalf("the failure did not reach the window: %v", msg)
+	}
+	if got := get(); got.GetStartError() != "agent executable unavailable" || got.GetExit() != nil {
+		t.Fatalf("failure not visible: %v", got)
+	}
+	if got := get(); got.GetStartError() == "" {
+		t.Fatal("the failure went once read")
+	}
+
+	leads.err = nil
+	if _, err := c.lead.Resume(ctx, resume); err != nil {
+		t.Fatal(err)
+	}
+	if got := get(); got.GetStartError() != "" || got.GetExit() != nil {
+		t.Fatalf("the retry did not clear the failure: %v", got)
+	}
+	// The lead ends at once: how stays shown, until Lead starts it again.
+	delete(leads.running, LeadTerminal)
+	leads.exits = map[string]*planv1.LeadExit{LeadTerminal: {Code: 2}}
+	if got := get(); got.GetExit() == nil || got.GetExit().GetCode() != 2 {
+		t.Fatalf("exit not visible: %v", got)
+	}
+}
+
 func TestLeadChoose(t *testing.T) {
 	ctx := t.Context()
 	choose := func(c clients, req *planv1.LeadServiceChooseRequest) error {

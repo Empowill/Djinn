@@ -53,6 +53,7 @@ func (s *syncLeads) SayText(name, text string) (bool, error) {
 	return s.f.SayText(name, text)
 }
 func (s *syncLeads) Prompt(name string) *planv1.LeadPrompt { return nil }
+func (s *syncLeads) Exit(name string) *planv1.LeadExit     { return nil }
 func (s *syncLeads) Choose(name, title string, lines, options []string, index int) error {
 	return ErrNoChoice
 }

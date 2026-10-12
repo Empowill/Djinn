@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"connectrpc.com/connect"
 
@@ -32,6 +33,9 @@ type Leads interface {
 	SayText(name, text string) (waiting bool, err error)
 	// Running tells whether the terminal called name runs.
 	Running(name string) bool
+	// Exit is how the program of the terminal called name ended, kept until a program starts there again; nil while
+	// it runs, or when none ran.
+	Exit(name string) *planv1.LeadExit
 	// Command is the command line of the running terminal called name; nil when none runs.
 	Command(name string) []string
 	// Close hangs up the running terminal called name, as closing it in the window does; none runs, nothing.
@@ -145,7 +149,50 @@ func (s *LeadService) Set(
 	return connect.NewResponse(&planv1.LeadServiceSetResponse{Lead: lead}), nil
 }
 
+// leadFailure is why the last LeadService.Resume could not start the lead, as it answered, until one starts or
+// attaches to it: the window shows it beside Lead, whatever page is open. Like the lead's terminal, Djinn keeps it in
+// memory only.
+type leadFailure struct {
+	mu   sync.Mutex
+	text string
+}
+
+// set records the outcome of a start, err nil for a success, and tells whether that changes what LeadService.Get says.
+func (f *leadFailure) set(err error) bool {
+	text := ""
+	if err != nil {
+		text = err.Error()
+		var ce *connect.Error
+		if errors.As(err, &ce) {
+			text = ce.Message()
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	changed := f.text != text
+	f.text = text
+	return changed
+}
+
+func (f *leadFailure) get() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.text
+}
+
+// Resume starts the lead, or attaches to it, and keeps why it could not: the window shows it until Lead is clicked
+// again.
 func (s *LeadService) Resume(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceResumeRequest],
+) (*connect.Response[planv1.LeadServiceResumeResponse], error) {
+	res, err := s.resume(ctx, req)
+	if s.Wishes.leadFailure.set(err) {
+		s.Wishes.ChangeLead()
+	}
+	return res, err
+}
+
+func (s *LeadService) resume(
 	ctx context.Context, req *connect.Request[planv1.LeadServiceResumeRequest],
 ) (*connect.Response[planv1.LeadServiceResumeResponse], error) {
 	if s.Wishes.Leads == nil {
@@ -293,10 +340,14 @@ func (s *LeadService) Get(
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, Status(err)
 	}
-	res := &planv1.LeadServiceGetResponse{Lead: lead}
-	// The choice the lead shows comes with it: the window shows it in its attention bar, whatever page is open.
-	if s.Wishes.Leads != nil && s.Wishes.Leads.Command(LeadTerminal) != nil {
-		res.Prompt = s.Wishes.Leads.Prompt(LeadTerminal)
+	res := &planv1.LeadServiceGetResponse{Lead: lead, StartError: s.Wishes.leadFailure.get()}
+	// The choice the lead shows comes with it: the window shows it in its attention bar, whatever page is open. So
+	// does how it ended, beside Lead, until Lead starts it again.
+	if s.Wishes.Leads != nil {
+		if s.Wishes.Leads.Command(LeadTerminal) != nil {
+			res.Prompt = s.Wishes.Leads.Prompt(LeadTerminal)
+		}
+		res.Exit = s.Wishes.Leads.Exit(LeadTerminal)
 	}
 	return connect.NewResponse(res), nil
 }

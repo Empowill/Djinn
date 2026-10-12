@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -225,8 +226,16 @@ func runUp(args []string) (restart bool, err error) {
 	leadNotes := newLeadNote(home, os.Stderr)
 	// The window's terminal opens in the first project, never in the home folder, where djinn starts from a menu.
 	var leadPrompted atomic.Pointer[func()] // what follows the choice the lead shows, once the window's services run
+	var leadChanged atomic.Pointer[func()]  // what tells the window that the lead started or ended, once they run
 	terminals := terminal.NewManager(terminal.Config{
-		Command: terminal.ShellCommand(term), Dir: termDir, BeforeStart: beforeStart(), Changed: leadNotes.update,
+		Command: terminal.ShellCommand(term), Dir: termDir, BeforeStart: beforeStart(),
+		// A lead that ends shows beside Lead in the window, with its exit code, until Lead starts it again.
+		Changed: func() {
+			leadNotes.update()
+			if f := leadChanged.Load(); f != nil {
+				(*f)()
+			}
+		},
 		Folder: func() (string, error) { return plan.FirstProjectFolder(ctx, db) },
 		// A choice the lead's agent shows (an approval, a folder to trust) shows in the window's attention bar, and
 		// as a notification.
@@ -262,7 +271,7 @@ func runUp(args []string) (restart bool, err error) {
 	// After an update, the terminals that ran before it run again; after a crash, the leads.
 	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, lead.GetSessionId(), os.Stderr))
 	// Then the lead, unless a lead came back already.
-	resumeLead(ctx, db, home, terminals, uiSvc, os.Stderr)
+	leadFailed := resumeLead(ctx, db, home, terminals, uiSvc, os.Stderr)
 	updates, err := newUpdater(version, uiSvc, terminals, leadNotes, stop)
 	if err != nil {
 		return false, err
@@ -336,7 +345,7 @@ func runUp(args []string) (restart bool, err error) {
 	svc := services(db, home, workers, terminals, uiSvc, pages,
 		plan.WithShowTilasm(showTilasm), plan.WithTilasmURL(tilasmURL),
 		plan.WithLoad(func() djinnv1.LoadNotch { return monitor.Policy().Notch }),
-		plan.WithLoadBroadcaster(&broadcastLoad), plan.WithLeadBroadcaster(&changeLead),
+		plan.WithLoadBroadcaster(&broadcastLoad), plan.WithLeadBroadcaster(&changeLead), plan.WithLeadFailed(leadFailed),
 	)
 	loadPrefix, loadHandler := machine.LoadHandler(home, monitor, workers.SetPolicy, func(n djinnv1.LoadNotch) {
 		if broadcastLoad != nil {
@@ -413,6 +422,24 @@ func runUp(args []string) (restart bool, err error) {
 		notices.LeadPrompt(leads{terminals, uiSvc}.Prompt(plan.LeadTerminal))
 	}
 	leadPrompted.Store(&prompted)
+	// The window learns that the lead's terminal started or ended, not that another terminal did.
+	var leadSeen struct {
+		sync.Mutex
+		t      *terminal.Terminal
+		exited bool
+	}
+	leadChange := func() {
+		t := terminals.Latest(plan.LeadTerminal)
+		exited := t != nil && t.Exited()
+		leadSeen.Lock()
+		same := leadSeen.t == t && leadSeen.exited == exited
+		leadSeen.t, leadSeen.exited = t, exited
+		leadSeen.Unlock()
+		if !same {
+			changeLead()
+		}
+	}
+	leadChanged.Store(&leadChange)
 
 	// A link macOS gives the app, clicked anywhere: the window shows it, or says it does not know it.
 	openLinks := func(raw string) {
@@ -496,6 +523,19 @@ func (l leads) Say(name, line string) error { return l.terminals.Say(name, line)
 func (l leads) SayText(name, text string) (bool, error) { return l.terminals.SayText(name, text) }
 
 func (l leads) Running(name string) bool { return l.terminals.IsRunning(name) }
+
+// Exit is how the lead's program ended on its own: a lead closed on request (its tab's ×, another agent, Djinn
+// stopping) is no news.
+func (l leads) Exit(name string) *planv1.LeadExit {
+	t := l.terminals.Latest(name)
+	if t == nil || t.HungUp() {
+		return nil
+	}
+	if _, _, exited, code := t.State(); exited {
+		return &planv1.LeadExit{Code: int32(code)}
+	}
+	return nil
+}
 
 func (l leads) Command(name string) []string {
 	if t := l.terminals.Lookup(name); t != nil {

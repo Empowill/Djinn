@@ -490,6 +490,12 @@ the app-server answered, so it goes through Djinn itself once this branch is mer
 cheapest model>`, then `djinn task watch <task> --raw --json > turn.jsonl`. A second run asking to run
 `go test ./...` in that folder shows a permission request.
 
+**The lead.** A Codex lead runs `codex` interactive in the window's terminal, without permission flags: its own
+configuration decides. Codex's `--approve-for-me` (its Auto) selects `workspace-write` and the automatic review of
+approvals by itself, and Codex refuses it beside `--sandbox` or `--ask-for-approval`. `codex --help` returns before it
+checks these conflicts: only a start of the installed CLI shows them, as a lead that ends at once. Djinn keeps how
+the lead's program ended, with its output, until Lead starts it again (`TestExitedCodexLeadIsRetainedUntilExplicitResume`).
+
 ## Antigravity
 
 **Command.** `agy --input-format stream-json --output-format stream-json`, then, with permissions, `--mode

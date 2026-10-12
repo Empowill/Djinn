@@ -2,7 +2,8 @@
 // in a tab. It shows only when djinn serves the page (a DjinnProvider); elsewhere the app renders alone. None opens by
 // itself: the lead of the wish shown comes as a tab while it runs, first; you open a terminal with + or Ctrl+Shift+T,
 // or one at a project's root (its button in the side panel). Every tab closes with its ×, or when its program ends
-// (Ctrl+D, exit); a lead's comes back from the Lead button. One shows at a time.
+// (Ctrl+D, exit), except the lead's: an ended lead keeps its last output there until Lead, or its Restart, starts it
+// again. One shows at a time.
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { type ITheme, Terminal } from "@xterm/xterm";
@@ -26,6 +27,7 @@ import {
 } from "react";
 
 import { Change } from "../gen/ts/plan/v1/plan_pb";
+import { message } from "./data/client";
 import { type Djinn, useData, useDjinn, useStore } from "./data/djinn";
 import type { TerminalInfo } from "./data/terminal";
 import "./lead-terminal.css";
@@ -152,6 +154,9 @@ function LeadTerminal({
   const [generation, setGeneration] = useState(0); // A restart opens a new program.
   // The terminal shown, "" while none is open.
   const [name, setName] = useState("");
+  // The lead's tab shows a lead that ended: a lead started again comes in its place.
+  const endedLead = useRef(false);
+  endedLead.current = name === LEAD && status.kind === "exited";
   const [adding, setAdding] = useState(false);
   // Every terminal the panel holds, each in a tab: the leads first, then the others in the order they came.
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -201,6 +206,9 @@ function LeadTerminal({
         if (!focus.terminal) return;
         void api.running().then((names) => {
           if (!names.includes(focus.terminal)) return;
+          // The lead started again (Lead, djinn lead resume): its tab, showing the one that ended, shows the new one.
+          if (focus.terminal === LEAD && endedLead.current)
+            setGeneration((g) => g + 1);
           ended.current = undefined;
           add({ name: focus.terminal });
           setName(focus.terminal);
@@ -233,6 +241,13 @@ function LeadTerminal({
       current = false;
     };
   }, [api]);
+  // A lead that ended keeps its tab, after a reload too, once LeadService.Get says so; closed, it stays closed.
+  const leadEnded = useData((s) => !!s.leadExit);
+  useEffect(() => {
+    if (!leadEnded) return;
+    add({ name: LEAD });
+    setName((shown) => shown || LEAD);
+  }, [leadEnded]);
   useEffect(() => {
     if (!request) return;
     ended.current = undefined;
@@ -285,9 +300,15 @@ function LeadTerminal({
             : {}),
       },
       (next) => {
-        // A terminal ends with its program, Ctrl+D or exit: its tab goes.
-        if (next.kind === "exited") closeTabRef.current(name);
-        else setStatus(next);
+        if (next.kind !== "exited") return setStatus(next);
+        // A terminal ends with its program, Ctrl+D or exit: its tab goes. The lead's stays, its output read, unless
+        // a lead runs there again already: then it shows that one.
+        if (name !== LEAD) return closeTabRef.current(name);
+        setStatus(next);
+        void api.running().then(
+          (names) => names.includes(LEAD) && setGeneration((g) => g + 1),
+          () => undefined,
+        );
       },
       () => onNewRef.current(),
     );
@@ -298,7 +319,7 @@ function LeadTerminal({
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [collapsed, djinn, generation, name]);
+  }, [api, collapsed, djinn, generation, name]);
 
   // A terminal with no folder to open in starts once a project has one, made here or from the command line.
   const noFolder =
@@ -422,7 +443,16 @@ function LeadTerminal({
         {(status.kind === "exited" ||
           (status.kind === "error" && !noProject)) && (
           <button
-            onClick={() => setGeneration((g) => g + 1)}
+            onClick={() =>
+              name === LEAD
+                ? // The lead starts again as Lead starts it, never on its old command line.
+                  void djinn.clients.lead.resume({}).then(
+                    () => setGeneration((g) => g + 1),
+                    (error) =>
+                      setStatus({ kind: "error", message: message(error) }),
+                  )
+                : setGeneration((g) => g + 1)
+            }
             title={t("terminal.restart")}
           >
             <RotateCcw size={13} />

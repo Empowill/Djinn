@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   type Lead,
+  type LeadExit,
   ProjectPush,
   Provider,
   PushStrategy,
@@ -41,6 +42,22 @@ export function recordedAgent(lead?: Lead): Provider | undefined {
   return lead.provider === Provider.UNSPECIFIED
     ? Provider.CLAUDE
     : lead.provider;
+}
+
+// leadTrouble is what the dot beside Lead says, from LeadService.Get: why the lead could not start, or how its program
+// ended, until Lead starts it again. Failed unless it ended with code 0. Undefined while it runs, or never ran.
+export function leadTrouble(
+  exit?: LeadExit,
+  startError?: string,
+): { text: string; failed: boolean } | undefined {
+  if (startError)
+    return { text: t("wish.lead_failed", { error: startError }), failed: true };
+  if (exit)
+    return {
+      text: t("wish.lead_ended", { code: exit.code }),
+      failed: exit.code !== 0,
+    };
+  return undefined;
 }
 
 export function WishTitle({
@@ -156,6 +173,7 @@ export function LeadButton({
   recorded,
   agents: given,
   open: startOpen = false,
+  trouble,
   loadAgents,
   onLead,
   onPick,
@@ -164,6 +182,8 @@ export function LeadButton({
   recorded?: Provider;
   agents?: Agent[];
   open?: boolean;
+  // The lead could not start, or ended: a dot on Lead, its tooltip saying why (leadTrouble).
+  trouble?: { text: string; failed: boolean };
   loadAgents: () => Promise<Agent[]>;
   onLead: () => void;
   onPick: (provider: Provider) => void;
@@ -200,11 +220,17 @@ export function LeadButton({
     <div className="split-button" ref={root}>
       <button
         className="button secondary small"
-        title={t("wish.resume_detail")}
+        title={trouble?.text ?? t("wish.resume_detail")}
         onClick={onLead}
       >
         <Terminal size={14} />
         <span>{t("wish.resume")}</span>
+        {trouble && (
+          <span
+            className={trouble.failed ? "lead-dot failed" : "lead-dot"}
+            aria-hidden="true"
+          />
+        )}
       </button>
       <button
         className="button secondary small split-arrow"

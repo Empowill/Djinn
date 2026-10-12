@@ -38,8 +38,9 @@ func (s *Service) Open(
 	attached := true
 	if len(command) == 0 && msg.GetName() == plan.LeadTerminal {
 		// The lead's terminal runs the lead (the Lead button, djinn lead resume), never the default shell with
-		// DJINN_LEAD=1: a line Djinn types to the lead would run there as a command.
-		if t = s.m.Lookup(msg.GetName()); t == nil {
+		// DJINN_LEAD=1: a line Djinn types to the lead would run there as a command. A lead that ended is attached
+		// to, its output and exit code kept: only Lead starts it again.
+		if t = s.m.Latest(msg.GetName()); t == nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the lead does not run: Lead resumes it"))
 		}
 	} else {
