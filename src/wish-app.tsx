@@ -25,6 +25,7 @@ import { platformShortcut, TooltipButton } from "./tooltip";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
 import { Docs } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
+import { startWishSmokePrewarm } from "./wish-smoke";
 import { type Opening, type Reaching, WishView } from "./wish-view";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
@@ -288,9 +289,12 @@ export function WishApp() {
         </div>
         {/* Folded, the sidebar is a rail of icons that keeps each wish's counts (Q03). */}
         <div className="sidebar-content">
+          {/* The creation page's smoke warms up when the person reaches for New wish, never at start (report §3). */}
           <TooltipButton
             className="new-mission"
             onClick={() => setModal("make")}
+            onPointerEnter={startWishSmokePrewarm}
+            onFocus={startWishSmokePrewarm}
             label={t("app.new_wish")}
             tooltip={t("app.new_wish")}
             shortcut={newWishShortcut.label}
