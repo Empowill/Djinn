@@ -9,6 +9,11 @@
 # Every step runs by hand too: `go tool task release-build`, `release-build-macos`, `release-macos-app`,
 # `release-sums`.
 #
+# A release made with a new tag (`gh release create vX.Y.Z --target main`, or GitHub's page) fires two runs: the
+# release published, and the push of the tag GitHub creates for it (v0.1.0's tag started a push run). Both would
+# build and upload the same assets: the later run cancels the earlier (concurrency), and either attaches them to the
+# release. A draft published once its assets are attached (a pushed tag's draft) builds nothing again.
+#
 # A dry run builds every target (each Linux variant, Windows, macOS universal and Djinn.app) from a branch, checks
 # the archives (checksums, the app bundle, install scripts), and keeps everything as the run's artifacts:
 # `gh workflow run release.yml --ref <branch> -f version=v0.0.0-dryrun`, then `gh run download`. No tag, release nor asset
@@ -32,9 +37,17 @@ permissions:
 env:
   VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
+# One run per tag (or per branch for a dry run): the release and the push of its tag never race to upload.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   check:
     name: The tag is a release
+    # A release published with its assets already attached (the draft a pushed tag opened) needs no build: every job
+    # waits on this one, so all are skipped.
+    if: ${{ !contains(github.event.release.assets.*.name, 'SHA256SUMS') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

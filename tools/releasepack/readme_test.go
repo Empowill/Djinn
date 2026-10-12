@@ -76,6 +76,9 @@ func TestReadmeInstallLines(t *testing.T) {
 	}
 }
 
+// The notes of a release follow the release-notes skill (.agents/skills/release-notes/SKILL.md): the install first,
+// sections that each say what is not checked yet, what was fixed, how to upgrade, the credits, and the changelog.
+// A release page resolves no relative link, and a task or question code means nothing outside the developer's Djinn.
 func TestReleaseNotes(t *testing.T) {
 	notes := read(t, "docs/releases/v0.1.1.md")
 	if !strings.HasPrefix(notes, "# Djinn v0.1.1\n") {
@@ -85,32 +88,29 @@ func TestReleaseNotes(t *testing.T) {
 	if !strings.Contains(workflow, `docs/releases/$GITHUB_REF_NAME.md`) || !strings.Contains(workflow, `--notes-file`) {
 		t.Errorf(".github/workflows/release.yml does not use --notes-file with docs/releases/$GITHUB_REF_NAME.md")
 	}
-	for _, azima := range []string{
-		"Djinn is a native window, the same interface as in the browser",
-		"What waits for you comes first, every question reads clearly",
-		"Every request finds its wish",
-		"Djinn decides, starts, resumes, integrates and pushes the workers' work by itself",
-		"Workers start fast, with the right context and the right model",
-		"Djinn can hand a task to Google's Antigravity CLI",
-		"One wish spans several projects, and a project's skills serve in another",
-		"Everything starts from the protos",
-		"Djinn runs on Windows as well as on macOS and Linux",
-		"Your wishes follow you",
-		"Djinn installs in a few minutes, and updates from inside the app",
-		"Every release ships ready-made binaries for each target",
-	} {
-		if !strings.Contains(notes, azima) {
-			t.Errorf("v0.1.1.md missing azima goal: %s", azima)
-		}
-	}
 	for _, section := range []string{
 		"## Install",
-		"## Under the hood",
+		"**Still needs:**",
+		"## Fixed",
+		"## Upgrading from v0.1.0",
+		"## Credits",
 		"## License",
+		"**Full changelog**: https://github.com/Empowill/Djinn/compare/v0.1.0...v0.1.1",
 	} {
 		if !strings.Contains(notes, section) {
-			t.Errorf("v0.1.1.md missing section: %s", section)
+			t.Errorf("v0.1.1.md missing: %s", section)
 		}
+	}
+	if strings.Index(notes, "## Install") > strings.Index(notes, "\n## Djinn") {
+		t.Errorf("v0.1.1.md: the install does not come first")
+	}
+	for _, link := range regexp.MustCompile(`\]\(([^)]*)\)`).FindAllStringSubmatch(notes, -1) {
+		if !strings.HasPrefix(link[1], "https://") {
+			t.Errorf("v0.1.1.md: link %q is not absolute", link[1])
+		}
+	}
+	if code := regexp.MustCompile(`\b[WQ][0-9]+\b`).FindString(notes); code != "" {
+		t.Errorf("v0.1.1.md names the task or question %s", code)
 	}
 }
 
