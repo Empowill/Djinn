@@ -16,6 +16,7 @@ import {
 } from "../../gen/ts/plan/v1/plan_pb";
 import { type Decision, decisionsOf, later } from "./decisions";
 import {
+  doneWithProblems,
   investigating,
   isOpen,
   isTaskMerging,
@@ -238,9 +239,13 @@ const ended = (task: Task) => finishedTask(task) && !workOnItsWay(task);
 
 // settledTask tells a finished task whose work is committed, and whose merges are settled too: the Tasks tab and an
 // azima fold it with the finished. A task whose work merges, or failed to, or whose merge still runs moves with it:
-// one that waits for it to be committed points at a card in sight.
+// one that waits for it to be committed points at a card in sight. One done with problems waits for you: in sight.
 export function settledTask(task: Task, nest: MergeNest): boolean {
-  return ended(task) && (nest.under.get(task.id) ?? []).every(ended);
+  return (
+    ended(task) &&
+    !doneWithProblems(task) &&
+    (nest.under.get(task.id) ?? []).every(ended)
+  );
 }
 
 // isTaskMergingOrFailed tells whether a done task's work is merging or failed to merge.
@@ -546,14 +551,16 @@ export function taskDealtWith(task: Task, tasks: readonly Task[]): boolean {
   );
 }
 
-// waitingTasks are a wish's tasks that wait for the user: for an answer before they edit, or cut short by a stop and
-// not resumed. A task Djinn resumes by itself (RESUMING), or one resumed as another task, is not the user's move.
+// waitingTasks are a wish's tasks that wait for the user: for an answer before they edit, cut short by a stop and
+// not resumed, or done with problems nobody looked at (doneWithProblems). A task Djinn resumes by itself (RESUMING),
+// or one resumed as another task, is not the user's move.
 export function waitingTasks(wish: Wish, detail: WishDetail): Waiting[] {
   const questions = new Map(detail.questions.map((q) => [q.id, q]));
   return detail.tasks
     .filter(
       (task) =>
         task.status === TaskStatus.WAITING ||
+        doneWithProblems(task) ||
         (task.status === TaskStatus.FAILED &&
           !taskDealtWith(task, detail.tasks) &&
           !(task.envCause && (task.envReplays ?? 0) < 2)),

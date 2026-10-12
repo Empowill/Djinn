@@ -2364,7 +2364,8 @@ type TaskServiceClient interface {
 	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
 	// Mark a task done that no worker runs now: planned, waiting, cut short, failed, stopped or imported. It records
 	// who closed it, when and why; a task waiting on it may start. A running or paused task is stopped first; a task
-	// done already is refused. A task no longer useful is cancelled (Cancel), not marked done.
+	// done already is refused, but one its permissions refused calls of (Task.refused): it is closed as seen, and its
+	// wish may be proposed for the grant. A task no longer useful is cancelled (Cancel), not marked done.
 	Done(context.Context, *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error)
 	// Cancel a task: stops its worker if it runs or is paused, records who cancelled it, when and why, removes its
 	// worktree while keeping the branch, and drops its work from integration. Refused on a task done or cancelled
@@ -2743,7 +2744,8 @@ type TaskServiceHandler interface {
 	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
 	// Mark a task done that no worker runs now: planned, waiting, cut short, failed, stopped or imported. It records
 	// who closed it, when and why; a task waiting on it may start. A running or paused task is stopped first; a task
-	// done already is refused. A task no longer useful is cancelled (Cancel), not marked done.
+	// done already is refused, but one its permissions refused calls of (Task.refused): it is closed as seen, and its
+	// wish may be proposed for the grant. A task no longer useful is cancelled (Cancel), not marked done.
 	Done(context.Context, *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error)
 	// Cancel a task: stops its worker if it runs or is paused, records who cancelled it, when and why, removes its
 	// worktree while keeping the branch, and drops its work from integration. Refused on a task done or cancelled

@@ -346,6 +346,14 @@ func TestReady(t *testing.T) {
 			{Id: "1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED},
 			{Id: "5", WishId: "w", Code: "W5", ForkOf: "W2", Status: planv1.TaskStatus_TASK_STATUS_DONE},
 		}, nil, true},
+		// W507: a research worker whose permissions refused 6 calls ended done, saying it could not do its job.
+		{"a task done with refused calls", []*planv1.Task{
+			{Id: "1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE, Refused: &planv1.TaskRefusals{Count: 6, Names: []string{"Read", "Glob"}}},
+		}, nil, false},
+		{"a task done with refused calls, marked done since", []*planv1.Task{
+			{Id: "1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE, Refused: &planv1.TaskRefusals{Count: 6},
+				Closed: &planv1.Closure{Actor: planv1.Closer_CLOSER_DEVELOPER}},
+		}, nil, true},
 		{"a draft azima does not count towards ready", []*planv1.Task{
 			{Id: "1", WishId: "w", Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING, Draft: true},
 		}, nil, false},

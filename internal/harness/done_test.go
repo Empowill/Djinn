@@ -100,6 +100,68 @@ func TestDone(t *testing.T) {
 	}
 }
 
+// TestDoneWithProblems (W507): a task its worker ended done while its permissions refused calls holds its wish's
+// grant back; marked done, it is closed as seen, its status and its refusals kept, and Djinn proposes the grant. A
+// second time, it is done already.
+func TestDoneWithProblems(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	e := up(t, t.TempDir())
+	w, err := e.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Install Wispr Flow on Linux"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := w.Msg.GetWish().GetId()
+	task := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W1", Title: "Find a way", CreateTime: timestamppb.Now(),
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, EndTime: timestamppb.Now(),
+		Refused: &planv1.TaskRefusals{Count: 6, Names: []string{"Read", "Glob"}}}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "put", task); err != nil {
+			return err
+		}
+		return tx.Put(task)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ready := func() bool {
+		t.Helper()
+		res, err := e.wishes.List(t.Context(), connect.NewRequest(&planv1.WishServiceListRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range res.Msg.GetWishes() {
+			if w.GetId() == wishID {
+				return w.GetReady()
+			}
+		}
+		t.Fatalf("wish %s not listed", wishID)
+		return false
+	}
+	if ready() {
+		t.Error("a wish whose only task is done with refused calls is proposed for the grant")
+	}
+	if _, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
+		TaskId: task.GetId(), Note: "read it, nothing was needed", By: planv1.Closer_CLOSER_DEVELOPER})); err != nil {
+		t.Fatal(err)
+	}
+	got := e.get(t, task.GetId())
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetRefused().GetCount() != 6 ||
+		got.GetClosed().GetActor() != planv1.Closer_CLOSER_DEVELOPER || got.GetClosed().GetNote() != "read it, nothing was needed" {
+		t.Errorf("marked done: %v", got)
+	}
+	events, _ := store.List[*planv1.TaskEvent](t.Context(), e.db, store.Where{"task_id": task.GetId()})
+	if want := "marked done by the developer, was done with 6 refused calls: read it, nothing was needed"; len(events) != 1 || events[0].GetText() != want {
+		t.Errorf("events %v, want %q", events, want)
+	}
+	if !ready() {
+		t.Error("its task seen, the wish is not proposed for the grant")
+	}
+	_, err = e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: task.GetId()}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "done already") {
+		t.Errorf("done twice: %v", err)
+	}
+}
+
 func cmpOr(c, def planv1.Closer) planv1.Closer {
 	if c == planv1.Closer_CLOSER_UNSPECIFIED {
 		return def

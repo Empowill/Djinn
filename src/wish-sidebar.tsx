@@ -143,10 +143,10 @@ export function WishSidebar({
                 label={t("plan.watching", { count: count.watching })}
               />
             )}
+            {/* A rank, never a count: "#3" beside the pills, which count (W507). */}
             {rank ? (
               <small className="wish-rank">
-                <GripVertical size={11} aria-hidden="true" />
-                {rank}
+                <GripVertical size={11} aria-hidden="true" />#{rank}
               </small>
             ) : null}
           </>

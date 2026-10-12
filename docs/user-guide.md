@@ -194,7 +194,8 @@ reads until you say it may edit: it shows as **Waits for your answer**.
 ### The Tasks tab
 
 What moves or waits for someone first (running, failed, then waiting and paused, the planned ones last), then the
-azimas with the work part of them, the done ones folded, with what they spent. Finished tasks show under their azima.
+finished work part of no azima, folded under **Finished**, then the azimas with the work part of them, the done ones
+folded, with what they spent. Finished work part of an azima shows under it.
 
 Each task is displayed as a two-line row:
 - The first line displays the status badge first (**Running**, **Waits for your answer**, **Planned**, **Done**,
@@ -214,10 +215,14 @@ diffs, its worker's last word, where its work stands, its events, and folded ter
   None on Windows yet.
 - **Stop the worker** ends it.
 - **Mark done** closes a task no worker runs (planned, cut short, failed, stopped, imported) once its work is done,
-  with why, in a few words.
+  with why, in a few words. On a task **Done with problems**, it closes it as seen.
+
+A task whose worker ended done while its permissions refused some of its calls, with nobody to approve them, is
+**Done with problems**, amber, not a clean Done: it may not have done its job. It stays with what moves or waits, and
+waits for you in the attention bar, until it runs again or is marked done.
 - A task that comes from a decision links to it in the Decisions tab.
 
-The status is one colour, one icon and one word: Running, Waits for your answer, Planned, Done, Failed,
+The status is one colour, one icon and one word: Running, Waits for your answer, Planned, Done, Done with problems, Failed,
 Interrupted, Stopped, Paused, Waiting for the limit, Resuming, Resumed as another task, Watching.
 
 ### Usage and cost estimates
@@ -386,7 +391,8 @@ enlarges. A block of kind `decision` shows in the **Decisions** tab instead, the
 
 ## Grant a wish
 
-When every task is finished and no question is open, Djinn proposes to grant the wish: **My wish is granted**. Only
+When every task is finished, none done with problems, and no question is open, Djinn proposes to grant the wish:
+**My wish is granted**. Only
 you grant a wish; you may grant it earlier. From a terminal: `djinn wish grant <wish-id>`.
 
 ## Share a wish

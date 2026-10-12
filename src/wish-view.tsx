@@ -69,12 +69,14 @@ import {
   waitingTasks,
   azimasDone,
   draftAzimas,
+  finishedTasks,
   workCount,
   workDoneCount,
 } from "./data/flight";
 import {
   allowanceOf,
   deletedText,
+  doneWithProblems,
   firstLine,
   MAX_ACTIVE,
   isActive,
@@ -258,6 +260,8 @@ export function WishView({
     if (store) void store.loadKinds(wish.id, kindsForView("tilasms"));
   }, [opening, store, wish.id]);
   const moving = useMemo(() => movingTasks(detail.tasks), [detail.tasks]);
+  // The finished work part of no azima folds, apart; a link to one of them shows it.
+  const finished = useMemo(() => finishedTasks(detail.tasks), [detail.tasks]);
   // Where the merges show: under the task they serve.
   const nest = useMemo(() => mergeNest(detail.tasks), [detail.tasks]);
   // The done azimas fold, apart (src/task-tabs.tsx); a link to one, or to one of its parts, shows them.
@@ -278,6 +282,10 @@ export function WishView({
           x.parts.some((p) => p.id === (nest.host.get(focus) ?? focus)),
       ),
     [doneAzimas, focus, nest],
+  );
+  const showFinished = useMemo(
+    () => finished.some((x) => x.id === (nest.host.get(focus) ?? focus)),
+    [finished, focus, nest],
   );
   const drafts = useMemo(() => draftAzimas(detail.tasks), [detail.tasks]);
   const showDrafts = useMemo(
@@ -1122,6 +1130,8 @@ export function WishView({
             ) : (
               <TaskSections
                 moving={moving}
+                finished={finished}
+                showFinished={showFinished}
                 azimas={activeAzimas}
                 doneAzimas={doneAzimas}
                 drafts={drafts}
@@ -1189,7 +1199,12 @@ export function WishView({
                           </AnimatePresence>
                         </section>
                       )}
-                      {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
+                      {waiting.length > 0 && (
+                        <WaitingTasks
+                          waiting={waiting}
+                          onTask={handleTaskFocus}
+                        />
+                      )}
                       {wish.ready && (
                         <GrantCard wish={wish} onGrant={handleGrant} />
                       )}
@@ -1367,10 +1382,13 @@ export const WishOrigin = memo(function WishOrigin({ wish }: { wish: Wish }) {
 export function WaitingTasks({
   waiting,
   origin = false,
+  onTask,
 }: {
   waiting: { item: Task; question: string; wish: Wish }[];
   // Each line shows its wish.
   origin?: boolean;
+  // Shows a task's card in the Tasks tab: the line of a task done with problems names it so.
+  onTask?: (id: string) => void;
 }) {
   return (
     <section className="plan-waiting">
@@ -1384,13 +1402,34 @@ export function WaitingTasks({
         <p className="plan-line" key={item.id} id={`waiting-${item.id}`}>
           <StatusBadge tone={taskTone(item)} label={taskStatusText(item)} />
           {origin && wishOrigin(wish)}
-          <span>
-            {item.status === TaskStatus.FAILED
-              ? firstLine(item.error) || t("attention.worker_failed")
-              : question
-                ? t("page.action_waiting", { task: item.code, question })
-                : t("page.action_waiting_unknown", { task: item.code })}
-          </span>
+          {doneWithProblems(item) ? (
+            <span>
+              {onTask ? (
+                <button
+                  type="button"
+                  className="text-button agent-code task-link"
+                  onClick={() => onTask(item.id)}
+                >
+                  {item.code}
+                </button>
+              ) : (
+                <span className="agent-code">{item.code}</span>
+              )}{" "}
+              {item.title} ·{" "}
+              {t("page.action_problems", {
+                count: item.refused?.count ?? 0,
+                names: (item.refused?.names ?? []).join(", "),
+              })}
+            </span>
+          ) : (
+            <span>
+              {item.status === TaskStatus.FAILED
+                ? firstLine(item.error) || t("attention.worker_failed")
+                : question
+                  ? t("page.action_waiting", { task: item.code, question })
+                  : t("page.action_waiting_unknown", { task: item.code })}
+            </span>
+          )}
         </p>
       ))}
     </section>

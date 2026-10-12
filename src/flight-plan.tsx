@@ -369,6 +369,15 @@ export function FlightPlan({
     [doneAzimas, focus, nestOf],
   );
 
+  const showFinished = useMemo(
+    () =>
+      plan.finished.some(
+        ({ wish, item }) =>
+          item.id === (nestOf(wish.id).host.get(focus) ?? focus),
+      ),
+    [plan.finished, focus, nestOf],
+  );
+
   const renderAzimaItem = useCallback(
     ({ wish, item }: { wish: Wish; item: AzimaGroup }) => (
       <AzimaCard
@@ -508,6 +517,7 @@ export function FlightPlan({
             main={t("plan.title")}
             tasks={
               plan.moving.length +
+              plan.finished.length +
               plan.azimas.reduce((n, { item }) => n + item.parts.length, 0)
             }
             decisions={plan.decisions.length}
@@ -525,6 +535,8 @@ export function FlightPlan({
           {view === "tasks" && (
             <TaskSections
               moving={plan.moving}
+              finished={plan.finished}
+              showFinished={showFinished}
               azimas={activeAzimas}
               doneAzimas={doneAzimas}
               drafts={plan.drafts}
@@ -737,7 +749,11 @@ export function FlightPlan({
                         </section>
                       )}
                       {plan.waiting.length > 0 && (
-                        <WaitingTasks waiting={plan.waiting} origin />
+                        <WaitingTasks
+                          waiting={plan.waiting}
+                          origin
+                          onTask={handleTaskFocus}
+                        />
                       )}
                       {plan.proofs.length > 0 && (
                         <section className="plan-waiting">
