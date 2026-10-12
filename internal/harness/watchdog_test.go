@@ -471,3 +471,46 @@ func TestWatchdogDeadProcessEnds(t *testing.T) {
 		t.Errorf("resumes = %d, want 1", done.GetResumes())
 	}
 }
+
+// The incident of 12/10/2026: the watchdog failed the babysit's watcher, "silent for 15 min", while its command printed
+// only when its pull request changed. A watcher silent past the limit runs on; an agent worker as silent is ended.
+func TestWatchdogSilentWatcherRunsOn(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	clock := &fakeClock{at: time.Date(2026, 10, 12, 11, 13, 0, 0, time.UTC)}
+	e := up(t, t.TempDir(), WithClock(clock.now), WithSilenceLimit(100*time.Millisecond))
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	watcher, err := e.spawnWatch(t, wishID, watchCommand("wait"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := e.spawn(t, wishID, "text start\nwait")
+	running := func(tk *planv1.Task) bool { return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING }
+	e.until(t, watcher.GetId(), running)
+	e.until(t, worker.GetId(), running)
+
+	clock.set(clock.now().Add(15 * time.Minute))
+	e.h.Wake()
+
+	// One watchdog pass checks both: the worker's end says it ran.
+	e.ended(t, worker.GetId())
+	silenced := false
+	for _, ev := range e.watch(t.Context(), t, worker.GetId(), 0) {
+		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.Contains(ev.GetText(), "silent for 15 min") {
+			silenced = true
+		}
+	}
+	if !silenced {
+		t.Errorf("the silent agent worker was not ended by the watchdog")
+	}
+
+	e.h.mu.Lock()
+	r := e.h.runs[watcher.GetId()]
+	ended := r == nil || r.watchdogEnd
+	e.h.mu.Unlock()
+	if tk := e.get(t, watcher.GetId()); ended || tk.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		t.Fatalf("silent watcher: status = %v, error = %q, ended by the watchdog = %v; want RUNNING", tk.GetStatus(), tk.GetError(), ended)
+	}
+}
