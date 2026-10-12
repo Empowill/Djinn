@@ -23,7 +23,6 @@ import (
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
-	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/link"
 )
 
@@ -45,6 +44,9 @@ type Service struct {
 	// Restart restarts Djinn on the newer one that waits at its path, once the response to Update is sent, and
 	// returns the version it restarts on and how many terminals it will run again. Nil: Update is unavailable.
 	Restart func() (version string, terminals int, err error)
+	// AgentPath is the PATH where GetEnvironment looks for the agents, and nowhere else. Nil: Djinn's own, brought
+	// up to date by machine.ExtendPath, which the workers and the leads get too. Tests replace it.
+	AgentPath func() string
 	// Install installs a build that SetBuild proposed: its project's install command, run on its commit, telling
 	// progress each step and what it waits for. It tells whether a newer Djinn waits at the path of the running one
 	// since, to restart on. Nil: no build installs.
@@ -251,7 +253,7 @@ var providers = []struct{ id, name, program string }{
 }
 
 func (s *Service) GetEnvironment(
-	context.Context, *connect.Request[uiv1.UiServiceGetEnvironmentRequest],
+	ctx context.Context, req *connect.Request[uiv1.UiServiceGetEnvironmentRequest],
 ) (*connect.Response[uiv1.UiServiceGetEnvironmentResponse], error) {
 	platform := runtime.GOOS
 	if platform == "windows" {
@@ -263,14 +265,22 @@ func (s *Service) GetEnvironment(
 	if s.Shortcuts != nil {
 		res.Shortcut = s.Shortcuts.State()
 	}
-	for _, p := range providers {
-		command, err := exec.LookPath(p.program)
-		if err != nil {
-			command = p.program
+	if req.Msg.GetAgents() {
+		if s.AgentPath != nil {
+			res.Providers = checkAgents(ctx, s.AgentPath())
+		} else {
+			res.Providers = checkAgents(ctx, launchPath())
 		}
-		res.Providers = append(res.Providers, &uiv1.Provider{
-			Id: p.id, Name: p.name, Available: err == nil, Command: command,
-		})
+	} else {
+		for _, p := range providers {
+			command, err := exec.LookPath(p.program)
+			if err != nil {
+				command = p.program
+			}
+			res.Providers = append(res.Providers, &uiv1.Provider{
+				Id: p.id, Name: p.name, Available: err == nil, Command: command,
+			})
+		}
 	}
 	return connect.NewResponse(res), nil
 }
@@ -289,41 +299,6 @@ func (s *Service) SetShortcut(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&uiv1.UiServiceSetShortcutResponse{Shortcut: shortcut}), nil
-}
-
-// WriteAtomic writes a temporary file next to path, readable by the owner only, then renames it over path: a
-// reader sees the old content or the new one, never a part of it. The rename tries again a moment on Windows,
-// where an antivirus scanning the file refuses it.
-func WriteAtomic(path string, data []byte) error {
-	return writeAtomic(path, data, fsx.OS())
-}
-
-func writeAtomic(path string, data []byte, r fsx.Renamer) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name()) // Fails harmlessly once renamed.
-	if err := tmp.Chmod(0o600); err != nil && runtime.GOOS != "windows" {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return r.Rename(tmp.Name(), path)
 }
 
 func (s *Service) ChooseDirectory(

@@ -17,7 +17,6 @@ import (
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
-	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/link"
 )
 
@@ -28,6 +27,9 @@ func newService(t *testing.T) (*Service, *[]string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// No test runs the real agents: none is found.
+	empty := t.TempDir()
+	s.AgentPath = func() string { return empty }
 	var opened []string
 	s.Open = func(link string) error { opened = append(opened, link); return nil }
 	return s, &opened
@@ -310,7 +312,8 @@ func TestHandler(t *testing.T) {
 	defer server.Close()
 	client := uiv1connect.NewUiServiceClient(server.Client(), server.URL)
 
-	env, err := client.GetEnvironment(context.Background(), connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{}))
+	env, err := client.GetEnvironment(context.Background(),
+		connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{Agents: true}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,29 +506,6 @@ func TestEnvironmentProviders(t *testing.T) {
 	}
 	if p := got["claude"]; p.GetAvailable() || p.GetCommand() != "claude" {
 		t.Errorf("claude = %v, want missing from this PATH", p)
-	}
-}
-
-// TestWriteAtomicRetriesARefusedRename: a rename refused for a moment, as Windows refuses one while an antivirus
-// scans settings.json, is tried again, and the new content lands.
-func TestWriteAtomicRetriesARefusedRename(t *testing.T) {
-	path := filepath.Join(t.TempDir(), settingsFile)
-	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	tries := 0
-	refused := func(oldpath, newpath string) error {
-		if tries++; tries <= 2 {
-			return errors.New("Access is denied")
-		}
-		return os.Rename(oldpath, newpath)
-	}
-	r := fsx.Renamer{Func: refused, Wait: time.Second, Sleep: func(time.Duration) {}}
-	if err := writeAtomic(path, []byte("new"), r); err != nil || tries != 3 {
-		t.Fatalf("writeAtomic = %v after %d tries, want nil after 3", err, tries)
-	}
-	if got, _ := os.ReadFile(path); string(got) != "new" {
-		t.Errorf("file = %q, want the new content", got)
 	}
 }
 
