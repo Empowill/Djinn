@@ -381,6 +381,106 @@ func TestWishResume(t *testing.T) {
 	}
 }
 
+// TestExitedCodexLeadIsRetainedUntilExplicitResume: a codex lead that ends at once keeps its terminal, its output and
+// its exit code, which LeadService.Get gives; opening its terminal attaches to it and starts nothing. Only Lead
+// (LeadService.Resume) starts it again.
+func TestExitedCodexLeadIsRetainedUntilExplicitResume(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	bin := t.TempDir()
+	count := filepath.Join(t.TempDir(), "starts")
+	fails := filepath.Join(t.TempDir(), "fails")
+	// A fake codex that counts its starts and ends at once with code 2 while the file fails exists.
+	script := `#!/bin/sh
+echo start >> "$DJINN_TEST_COUNT"
+if [ -f "$DJINN_TEST_FAILS" ]; then
+  echo fake-codex-failed
+  exit 2
+fi
+echo fake-codex-ready
+exec cat
+`
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fails, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := environ(home, bin, "DJINN_TEST_COUNT="+count, "DJINN_TEST_FAILS="+fails)
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, addr := up(t, home, env)
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projects := planv1connect.NewProjectServiceClient(httpClient, base)
+	leads := planv1connect.NewLeadServiceClient(httpClient, base)
+	terminals := terminalv1connect.NewTerminalServiceClient(httpClient, base)
+	if _, err := projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: folder})); err != nil {
+		t.Fatal(err)
+	}
+	resume := func() {
+		t.Helper()
+		res, err := leads.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{Provider: planv1.Provider_PROVIDER_CODEX}))
+		if err != nil || res.Msg.GetAttached() {
+			t.Fatalf("resume: %v, %v; want a new lead", res, err)
+		}
+	}
+	open := func() *terminalv1.TerminalServiceOpenResponse {
+		t.Helper()
+		res, err := terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: plan.LeadTerminal}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg
+	}
+	exit := func() *planv1.LeadExit {
+		t.Helper()
+		res, err := leads.Get(ctx, connect.NewRequest(&planv1.LeadServiceGetRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetExit()
+	}
+
+	resume()
+	first := open().GetTerminal().GetId()
+	read(t, terminals, first, "") // Until it ends.
+	ended := open()
+	if ended.GetTerminal().GetId() != first || !ended.GetAttached() || !ended.GetTerminal().GetExited() ||
+		ended.GetTerminal().GetExitCode() != 2 {
+		t.Fatalf("open the ended lead: %v, want the same terminal, ended with code 2", ended)
+	}
+	read(t, terminals, first, "fake-codex-failed")
+	if got := exit(); got == nil || got.GetCode() != 2 {
+		t.Fatalf("lead exit %v, want code 2", got)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if got := starts(t, count); got != 1 {
+		t.Fatalf("codex started %d times before the retry, want once", got)
+	}
+
+	// Lead again: a new program, which runs; the exit goes with the terminal it replaced.
+	if err := os.Remove(fails); err != nil {
+		t.Fatal(err)
+	}
+	resume()
+	retry := open().GetTerminal()
+	if retry.GetId() == first {
+		t.Fatal("the retry kept the ended terminal")
+	}
+	read(t, terminals, retry.GetId(), "fake-codex-ready")
+	if got := exit(); got != nil {
+		t.Fatalf("lead exit %v after the retry, want none", got)
+	}
+	if got := starts(t, count); got != 2 {
+		t.Fatalf("codex started %d times after the retry, want twice", got)
+	}
+}
+
 // read follows the output of a terminal until it holds want, or with an empty want until the program ends.
 func read(t *testing.T, c terminalv1connect.TerminalServiceClient, id, want string) {
 	t.Helper()

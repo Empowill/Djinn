@@ -727,6 +727,8 @@
   "wish.kept_worktree": "{code} garde son worktree, sur {branch} : {why}.",
   "wish.lead_agents": "Choisir l’agent",
   "wish.lead_agents_detail": "Démarrer un lead d’un autre agent présent sur cette machine",
+  "wish.lead_ended": "Le lead s’est arrêté (code {code}) : son onglet garde sa dernière sortie. Lead le relance",
+  "wish.lead_failed": "Le lead n’a pas pu démarrer : {error}. Lead réessaie",
   "wish.lead_missing": "{command} n’est pas installé sur cette machine",
   "wish.lead_new": "Démarre un nouveau lead depuis le brief",
   "wish.lead_recorded": "Le lead : le reprend, centré sur ce vœu",

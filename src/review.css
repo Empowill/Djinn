@@ -1253,6 +1253,16 @@ html[data-theme="light"] .review .question-meta .wish-origin {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
 }
+/* The lead could not start, or ended: a dot on Lead until Lead starts it again. */
+.lead-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.lead-dot.failed {
+  background: var(--st-failed);
+}
 .lead-menu {
   position: absolute;
   top: calc(100% + 6px);

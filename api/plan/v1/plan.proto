@@ -2939,6 +2939,19 @@ message LeadServiceGetResponse {
   // The choice the lead's agent shows in its terminal now, waiting for the developer; unset when it shows none, or
   // the lead does not run. Read from its screen, never stored.
   LeadPrompt prompt = 2;
+  // How the lead's last program in its terminal ended: kept, with its output, until Lead (LeadService.Resume) starts
+  // the lead again, so a lead that ended at once stays visible. Unset while it runs, or when none ran since Djinn
+  // started. Never stored.
+  LeadExit exit = 3;
+  // Why the last LeadService.Resume could not start the lead, as it answered: kept until one starts or attaches to
+  // it. Never stored.
+  string start_error = 4;
+}
+
+// LeadExit is how the program of the lead's terminal ended.
+message LeadExit {
+  // Its exit code: 0 for a program that ended without an error.
+  int32 code = 1;
 }
 
 message LeadServiceWatchRequest {

@@ -575,14 +575,21 @@ func TestServiceNeverOpensAShellForALead(t *testing.T) {
 		t.Fatalf("opened %v, want attached to %s at 90 columns, with the end of what it wrote", open.Msg, lead.ID)
 	}
 
-	// The lead ended: still no shell under its name.
+	// The lead ended: still no shell under its name, the window attaches to the ended lead
+	// (TestServiceAttachesToExitedLeadTerminal).
 	lead.Hangup()
 	select {
 	case <-lead.Done():
 	case <-time.After(10 * time.Second):
 		t.Fatal("the lead did not end")
 	}
-	refused("whose lead ended")
+	ended, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead", Cols: 80, Rows: 24}))
+	if err != nil || ended.Msg.GetTerminal().GetId() != lead.ID || !ended.Msg.GetTerminal().GetExited() {
+		t.Fatalf("open the lead's terminal whose lead ended: %v, %v, want the ended lead", ended.Msg, err)
+	}
+	if m.Lookup("lead") != nil {
+		t.Fatal("a shell started under the lead's name whose lead ended")
+	}
 
 	// A command the window names runs there; another terminal gets the shell.
 	again, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
@@ -594,5 +601,61 @@ func TestServiceNeverOpensAShellForALead(t *testing.T) {
 	shell, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "main", Cols: 80, Rows: 24}))
 	if err != nil || shell.Msg.GetAttached() {
 		t.Fatalf("open the window's shell: %v, %v", shell.Msg, err)
+	}
+}
+
+// TestServiceAttachesToExitedLeadTerminal keeps the lead's last terminal for the window after a fast exit: its
+// output can still be read, and opening it starts nothing in its place.
+func TestServiceAttachesToExitedLeadTerminal(t *testing.T) {
+	m := NewManager(Config{Command: []string{"/bin/sh"}, Dir: t.TempDir()})
+	t.Cleanup(m.Close)
+	srv := httptest.NewServer(func() *http.ServeMux {
+		mux := http.NewServeMux()
+		mux.Handle(Handler(m))
+		return mux
+	}())
+	t.Cleanup(srv.Close)
+	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
+	ctx := t.Context()
+	lead, attached, err := m.Open("lead", []string{"/bin/sh", "-c", "printf 'retained\\n'; exit 7"}, t.TempDir(), 80, 24)
+	if err != nil || attached {
+		t.Fatalf("start lead: attached %v, %v", attached, err)
+	}
+	if code := end(t, lead); code != 7 {
+		t.Fatalf("lead exit code %d, want 7", code)
+	}
+	if m.Latest("lead") != lead {
+		t.Fatal("Latest lost the ended lead")
+	}
+
+	open, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
+		Name: "lead", Cols: 90, Rows: 20,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := open.Msg.GetTerminal()
+	if got.GetId() != lead.ID || !open.Msg.GetAttached() || !got.GetExited() || got.GetExitCode() != 7 {
+		t.Fatalf("opened %v, want attached to exited terminal %s", open.Msg, lead.ID)
+	}
+	if m.Lookup("lead") != nil {
+		t.Fatal("opening an exited lead restarted it")
+	}
+
+	stream, err := c.Read(ctx, connect.NewRequest(&terminalv1.TerminalServiceReadRequest{Id: got.GetId()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	var code int32
+	var exited bool
+	for stream.Receive() {
+		out.Write(stream.Msg().GetData())
+		if stream.Msg().GetExited() {
+			exited, code = true, stream.Msg().GetExitCode()
+		}
+	}
+	if stream.Err() != nil || !strings.Contains(out.String(), "retained") || !exited || code != 7 {
+		t.Fatalf("read output %q, exited %v, code %d: %v", out.String(), exited, code, stream.Err())
 	}
 }

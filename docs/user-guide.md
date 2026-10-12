@@ -70,7 +70,7 @@ asks you to create one. `djinn up --terminal-dir <folder>` picks another folder,
 It holds tabs. The window's own terminal is always there; while the lead runs, its tab, **Lead**, is there too. The + of the tab bar, or Ctrl+Shift+T anywhere in the window, opens a new shell
 (**Shell 1**, **Shell 2**…); the terminal icon next to a project in the side panel opens one at its root. Each tab you
 opened closes with its ×, and comes back after a reload. The terminal folds away; **Restart** starts one again once
-its program ended. Ctrl+Shift+C and Ctrl+Shift+V copy and paste.
+its program ended, and on the lead's tab it starts the lead again as **Lead** does. Ctrl+Shift+C and Ctrl+Shift+V copy and paste.
 
 ## A project
 
@@ -142,6 +142,10 @@ When the lead's agent asks for your approval in its terminal (a command to run, 
 waits for you shows it first, in the flight plan and in every wish, with its options as buttons, and a notification
 says so. A button answers in the terminal as its keys would, only while the terminal still shows that very choice: a
 different command needs a new click.
+
+When the lead could not start, or its program ended (it failed at once, or you quit it), a small dot on **Lead**
+says so, in every wish: its tooltip gives the error or the exit code. The lead's tab keeps its last output, and
+reopening it starts nothing. Only **Lead**, or `djinn lead resume`, starts it again; the dot goes once it runs.
 
 Djinn takes the lead back at every start, in the lead's terminal. The first start after an update from a Djinn that had
 one lead per wish keeps the lead of the first active wish as the one lead.

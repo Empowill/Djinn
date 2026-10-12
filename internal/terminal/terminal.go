@@ -235,6 +235,14 @@ func (m *Manager) Lookup(name string) *Terminal {
 	return nil
 }
 
+// Latest returns the last terminal called name, whether its program runs or ended: an ended one keeps its output
+// until a terminal of that name starts again. Nil when none was opened.
+func (m *Manager) Latest(name string) *Terminal {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.byName[name]
+}
+
 // Running returns the terminals whose program still runs, by name.
 func (m *Manager) Running() []*Terminal {
 	m.mu.Lock()

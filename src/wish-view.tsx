@@ -131,6 +131,7 @@ import {
   PushStrategySelector,
   WishDescription,
   WishTitle,
+  leadTrouble,
   recordedAgent,
 } from "./wish-head";
 import { PageHeader, PageHeaderAction } from "./page-header";
@@ -174,6 +175,8 @@ export function WishView({
   const allWishes = useData((s) => s.wishes);
   const leadRecord = useData((s) => s.lead);
   const leadPrompt = useData((s) => s.leadPrompt);
+  const leadExit = useData((s) => s.leadExit);
+  const leadStartError = useData((s) => s.leadStartError);
   const pausable = usePausable();
   const initialKinds = useMemo(
     () => kindsForView(opening ? "tilasms" : "main"),
@@ -702,6 +705,7 @@ export function WishView({
             )}
             <LeadButton
               recorded={recordedAgent(leadRecord)}
+              trouble={leadTrouble(leadExit, leadStartError)}
               loadAgents={async () =>
                 (await clients.ui.getEnvironment({})).providers
               }

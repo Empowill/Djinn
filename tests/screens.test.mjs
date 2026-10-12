@@ -73,6 +73,7 @@ export {
   PushStrategySelector,
   WishDescription,
   WishTitle,
+  leadTrouble,
   recordedAgent,
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView } from "@/src/update-banner.tsx";
@@ -3534,6 +3535,31 @@ test("Lead is split: the button resumes the one lead, focused on the wish, the a
     open,
     /<button role="menuitem" class="lead-agent"><span class="lead-agent-name">Antigravity<\/span><span class="lead-agent-detail">Starts a new lead from the brief<\/span>/,
   );
+  // The lead could not start, or ended: a dot on Lead, its tooltip saying why, until Lead starts it again.
+  assert.doesNotMatch(closed, /lead-dot/);
+  assert.equal(s.leadTrouble(undefined, ""), undefined);
+  const failed = s.leadTrouble(undefined, "no project yet");
+  assert.deepEqual(failed, {
+    text: "The lead could not start: no project yet. Lead tries again",
+    failed: true,
+  });
+  assert.equal(
+    s.leadTrouble({ code: 2 }, "").text,
+    "The lead ended (code 2): its tab keeps its last output. Lead starts it again",
+  );
+  assert.equal(s.leadTrouble({ code: 0 }, "").failed, false);
+  const dotted = s.renderToStaticMarkup(
+    h(s.LeadButton, { ...props, trouble: failed }),
+  );
+  assert.match(
+    dotted,
+    /<button class="button secondary small" title="The lead could not start: no project yet. Lead tries again">[^]*?<span>Lead<\/span><span class="lead-dot failed" aria-hidden="true"><\/span><\/button>/,
+  );
+  const quit = s.renderToStaticMarkup(
+    h(s.LeadButton, { ...props, trouble: s.leadTrouble({ code: 0 }, "") }),
+  );
+  assert.match(quit, /<span class="lead-dot" aria-hidden="true">/);
+
   // The agents not yet known: the menu says it loads.
   const loading = s.renderToStaticMarkup(
     h(s.LeadMenu, { recorded, onPick() {} }),

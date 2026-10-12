@@ -532,7 +532,8 @@ type Wishes struct {
 	// Clock gives the wishes their time; nil uses time.Now.
 	Clock func() time.Time
 
-	watch watchers // the open Watch streams
+	watch       watchers    // the open Watch streams
+	leadFailure leadFailure // why the lead's last start failed, for LeadService.Get
 }
 
 func (w *Wishes) now() time.Time {
