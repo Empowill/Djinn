@@ -194,7 +194,7 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
         path: path.join(shots, `theme-terminal-${theme}.png`),
       });
 
-      // The dialogs: the settings, and a new wish.
+      // The settings' dialog, and the creation page of a new wish.
       await page.getByTitle("Connections & preferences").click();
       const settings = page.locator(".modal");
       await expect(settings).toBeVisible();
@@ -206,11 +206,13 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
       await page.keyboard.press("Escape");
       await expect(settings).toHaveCount(0);
       await page.getByRole("button", { name: "New wish" }).first().click();
-      await expect(page.locator(".modal")).toBeVisible();
+      const creation = page.locator(".wish-creation");
+      await expect(creation).toBeVisible();
       await page.screenshot({
         path: path.join(shots, `theme-new-wish-${theme}.png`),
       });
       await page.keyboard.press("Escape");
+      await expect(creation).toHaveCount(0);
     }
     await choose(page, "");
     const close = page.locator(".lead-terminal-tab-close");
