@@ -746,6 +746,26 @@ func TestBriefSilentTerminalRule(t *testing.T) {
 	}
 }
 
+// TestBriefMovesRule: the lead keeps the developer's moves, each a call to action with the links where they act;
+// a pull or merge request a task opens is a review move at once.
+func TestBriefMovesRule(t *testing.T) {
+	rules := briefRules(nil, "")
+	for _, want := range []string{
+		"**You keep the developer's moves.**",
+		"Each such move is one `--move` question whose title is a call to action, its verb first",
+		"clickable links to where they act: the PR or MR, the CI run, the ticket, the file and line",
+		"every command to run in a code block, to copy as it is",
+		"When a task opens a pull or merge request, ask \"Review it and take it out of draft\" with its link at once",
+		"marking it ready is the developer's",
+		"No move is left implied in a note, a block or your terminal",
+		"withdraw a move the moment it is done or superseded",
+	} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("briefRules lacks %q:\n%s", want, rules)
+		}
+	}
+}
+
 // TestBriefUnderstandAnswerRule: a lead starts no work from an answer it does not fully understand; it asks again.
 func TestBriefUnderstandAnswerRule(t *testing.T) {
 	rules := briefRules(nil, "")

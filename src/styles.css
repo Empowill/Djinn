@@ -810,6 +810,28 @@ html[data-theme="light"] .wordmark-period {
   color: var(--n-9c);
   max-width: 700px;
 }
+/* A link in a question's title or option: underlined in the text's own colour, cut anywhere when long. */
+.text-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--n-6f);
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+.text-link:hover {
+  text-decoration-color: currentColor;
+}
+/* A move's main link, where the developer acts: a button above what is at stake. */
+.question-move-link {
+  margin: 0 0 12px;
+}
+.move-link {
+  text-decoration: none;
+}
+.move-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .recommendation {
   display: flex;
   gap: 10px;

@@ -1,7 +1,8 @@
 // A question of a wish, on Clément's question card, read top-down: its title, then what happened and what is at stake
 // (its context, in a first view that unfolds in place, so that the options stay in sight), the report it names, the
 // recommendation boxed, then the options and the two gestures, then the note. The explanation always comes before the
-// call to act. A command in an option or in the context is selectable, with a copy button that never answers.
+// call to act. A command in its title, an option, the context or the recommendation is selectable, with a copy button
+// that never answers; a link in them opens where it points, and an open move shows its first link as a button.
 // Two gestures, one note field for both: "Enlighten me",
 // on the left, asks the lead to find out more first (QuestionService.Enlighten), the note saying what to look into;
 // "Rub the lamp", in the lamp's yellow, answers with the option selected, the recommended one until you pick another,
@@ -42,8 +43,10 @@ import {
   recommendedChoice,
   when,
 } from "./data/format";
+import { mainLink } from "./data/links";
 import { t } from "./i18n";
 import { CommandText } from "./copy-command";
+import { MoveLink } from "./link";
 import { MarkButtons } from "./marks";
 import { FoldedMarkdown, MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
@@ -270,12 +273,21 @@ export const WishQuestion = memo(function WishQuestion({
             </span>
           )}
         </span>
-        <h3>{q.text}</h3>
+        {/* Inside the heading's button when it folds, its links and commands are text. */}
+        <h3>
+          {answered || withdrawn || digging ? (
+            q.text
+          ) : (
+            <CommandText text={q.text} />
+          )}
+        </h3>
         {answered && <p className="answer-value">{answerText(q)}</p>}
       </div>
     </>
   );
   const body = answered || withdrawn ? expanded : !folded;
+  // An open move shows where to act first, as a button.
+  const link = q.move && !answered && !withdrawn ? mainLink(q) : undefined;
   return (
     <motion.article
       id={`question-${q.id}`}
@@ -347,6 +359,11 @@ export const WishQuestion = memo(function WishQuestion({
               </span>
             </p>
           )}
+          {link && (
+            <p className="question-move-link">
+              <MoveLink href={link} />
+            </p>
+          )}
           {q.context && (
             <section className="question-context">
               <h4>{t("page.context")}</h4>
@@ -367,7 +384,7 @@ export const WishQuestion = memo(function WishQuestion({
                   recommended !== Choice.YES &&
                   ` · ${letter(recommended - Choice.A)}`}
               </span>
-              <MarkdownBody text={q.recommendation} />
+              <MarkdownBody text={q.recommendation} copy />
             </section>
           )}
           {answered ? (
