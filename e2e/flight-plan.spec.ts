@@ -281,6 +281,19 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await expect(
     pageHeader.getByRole("group", { name: "Operating load" }),
   ).toBeVisible();
+  // The icon actions name themselves in a tooltip, on hover and on focus; they have no shortcut.
+  const shareAction = pageHeader.getByRole("button", {
+    name: "Share",
+    exact: true,
+  });
+  await shareAction.hover();
+  await expect(page.locator('[role="tooltip"]')).toHaveText("Share");
+  await expect(page.locator('[role="tooltip"] kbd')).toHaveCount(0);
+  await page.mouse.move(10, 300);
+  await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
+  await pageHeader.locator(".page-header-action.danger").focus();
+  await expect(page.locator('[role="tooltip"]')).toHaveText("Delete this wish");
+  await pageHeader.locator(".page-header-action.danger").blur();
   await assertHeaderChrome(248);
   await page.setViewportSize({ width: 760, height: 1000 });
   await assertHeaderChrome(100, 32, false);

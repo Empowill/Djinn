@@ -77,6 +77,8 @@ export {
   recordedAgent,
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView } from "@/src/update-banner.tsx";
+export { platformShortcut } from "@/src/tooltip.tsx";
+export { PageHeaderAction } from "@/src/page-header.tsx";
 export { InstallStep } from "@/gen/ts/ui/v1/ui_pb.ts";
 export {
   memory,
@@ -822,6 +824,36 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   } finally {
     delete globalThis.__DJINN_MAC__;
   }
+});
+
+// A shortcut reads ⌘ on a Mac and Ctrl elsewhere, in the tooltip and in aria-keyshortcuts; an icon action of a page
+// header names itself by its label and keeps its explanation for the tooltip, not a native title.
+test("shortcuts follow the platform, and header actions carry tooltips, not titles", () => {
+  globalThis.__DJINN_MAC__ = true;
+  try {
+    assert.deepEqual(s.platformShortcut("N"), {
+      label: "⌘ N",
+      aria: "Meta+N",
+    });
+  } finally {
+    delete globalThis.__DJINN_MAC__;
+  }
+  globalThis.__DJINN_MAC__ = false;
+  try {
+    assert.deepEqual(s.platformShortcut("\\"), {
+      label: "Ctrl \\",
+      aria: "Control+\\",
+    });
+  } finally {
+    delete globalThis.__DJINN_MAC__;
+  }
+  const action = s.renderToStaticMarkup(
+    h(s.PageHeaderAction, { label: "Share", title: "Export the wish" }),
+  );
+  assert.match(action, /aria-label="Share"/);
+  assert.doesNotMatch(action, /title=/);
+  // Closed, the tooltip is not in the page.
+  assert.doesNotMatch(action, /role="tooltip"/);
 });
 
 test("a question of a wish without a lead session says no lead is told: open, then answered", () => {

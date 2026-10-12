@@ -41,28 +41,7 @@ import { t } from "./i18n";
 import { MarkButtons } from "./marks";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
-
-// isMac reports whether the interface runs on macOS, to show Mac modifier symbols.
-export function isMac(): boolean {
-  const g = globalThis as unknown as { __DJINN_MAC__?: boolean };
-  if (typeof g.__DJINN_MAC__ === "boolean") {
-    return g.__DJINN_MAC__;
-  }
-  if (typeof navigator !== "undefined") {
-    const nav = navigator as unknown as {
-      userAgentData?: { platform?: string };
-      platform?: string;
-      userAgent?: string;
-    };
-    const p =
-      nav.userAgentData?.platform || nav.platform || nav.userAgent || "";
-    return /Mac/i.test(p);
-  }
-  if (typeof process !== "undefined" && process.platform === "darwin") {
-    return true;
-  }
-  return false;
-}
+import { isMac } from "./tooltip";
 
 export const WishQuestion = memo(function WishQuestion({
   question: q,
