@@ -156,6 +156,8 @@ const (
 	LeadServiceGetProcedure = "/plan.v1.LeadService/Get"
 	// LeadServiceBriefProcedure is the fully-qualified name of the LeadService's Brief RPC.
 	LeadServiceBriefProcedure = "/plan.v1.LeadService/Brief"
+	// LeadServiceNotesProcedure is the fully-qualified name of the LeadService's Notes RPC.
+	LeadServiceNotesProcedure = "/plan.v1.LeadService/Notes"
 	// LeadServiceWatchProcedure is the fully-qualified name of the LeadService's Watch RPC.
 	LeadServiceWatchProcedure = "/plan.v1.LeadService/Watch"
 	// LeadServiceTellProcedure is the fully-qualified name of the LeadService's Tell RPC.
@@ -1814,6 +1816,11 @@ type LeadServiceClient interface {
 	Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error)
 	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
 	Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error)
+	// The lead's notes: how to lead, learnt from past wishes, one note per file of lead/notes in Djinn's repository,
+	// built into djinn and read only. Without a name, the index: a line per note, its name and what it is about (the
+	// brief holds the same); with one, that note whole. A lead reads a note before it acts in its area; to add or fix
+	// one, a lead that may change Djinn spawns a task that edits lead/notes.
+	Notes(context.Context, *connect.Request[v1.LeadServiceNotesRequest]) (*connect.Response[v1.LeadServiceNotesResponse], error)
 	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
 	// few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
 	// an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
@@ -1872,6 +1879,13 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		notes: connect.NewClient[v1.LeadServiceNotesRequest, v1.LeadServiceNotesResponse](
+			httpClient,
+			baseURL+LeadServiceNotesProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Notes")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		watch: connect.NewClient[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse](
 			httpClient,
 			baseURL+LeadServiceWatchProcedure,
@@ -1899,6 +1913,7 @@ type leadServiceClient struct {
 	resume *connect.Client[v1.LeadServiceResumeRequest, v1.LeadServiceResumeResponse]
 	get    *connect.Client[v1.LeadServiceGetRequest, v1.LeadServiceGetResponse]
 	brief  *connect.Client[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse]
+	notes  *connect.Client[v1.LeadServiceNotesRequest, v1.LeadServiceNotesResponse]
 	watch  *connect.Client[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse]
 	tell   *connect.Client[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse]
 	choose *connect.Client[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse]
@@ -1922,6 +1937,11 @@ func (c *leadServiceClient) Get(ctx context.Context, req *connect.Request[v1.Lea
 // Brief calls plan.v1.LeadService.Brief.
 func (c *leadServiceClient) Brief(ctx context.Context, req *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error) {
 	return c.brief.CallUnary(ctx, req)
+}
+
+// Notes calls plan.v1.LeadService.Notes.
+func (c *leadServiceClient) Notes(ctx context.Context, req *connect.Request[v1.LeadServiceNotesRequest]) (*connect.Response[v1.LeadServiceNotesResponse], error) {
+	return c.notes.CallUnary(ctx, req)
 }
 
 // Watch calls plan.v1.LeadService.Watch.
@@ -1956,6 +1976,11 @@ type LeadServiceHandler interface {
 	Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error)
 	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
 	Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error)
+	// The lead's notes: how to lead, learnt from past wishes, one note per file of lead/notes in Djinn's repository,
+	// built into djinn and read only. Without a name, the index: a line per note, its name and what it is about (the
+	// brief holds the same); with one, that note whole. A lead reads a note before it acts in its area; to add or fix
+	// one, a lead that may change Djinn spawns a task that edits lead/notes.
+	Notes(context.Context, *connect.Request[v1.LeadServiceNotesRequest]) (*connect.Response[v1.LeadServiceNotesResponse], error)
 	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
 	// few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
 	// an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
@@ -2010,6 +2035,13 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceNotesHandler := connect.NewUnaryHandler(
+		LeadServiceNotesProcedure,
+		svc.Notes,
+		connect.WithSchema(leadServiceMethods.ByName("Notes")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	leadServiceWatchHandler := connect.NewUnaryHandler(
 		LeadServiceWatchProcedure,
 		svc.Watch,
@@ -2038,6 +2070,8 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceGetHandler.ServeHTTP(w, r)
 		case LeadServiceBriefProcedure:
 			leadServiceBriefHandler.ServeHTTP(w, r)
+		case LeadServiceNotesProcedure:
+			leadServiceNotesHandler.ServeHTTP(w, r)
 		case LeadServiceWatchProcedure:
 			leadServiceWatchHandler.ServeHTTP(w, r)
 		case LeadServiceTellProcedure:
@@ -2067,6 +2101,10 @@ func (UnimplementedLeadServiceHandler) Get(context.Context, *connect.Request[v1.
 
 func (UnimplementedLeadServiceHandler) Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Brief is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Notes(context.Context, *connect.Request[v1.LeadServiceNotesRequest]) (*connect.Response[v1.LeadServiceNotesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Notes is not implemented"))
 }
 
 func (UnimplementedLeadServiceHandler) Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error) {

@@ -18,6 +18,7 @@ import (
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/lead/notes"
 	"github.com/empowill/djinn/locales"
 )
 
@@ -215,7 +216,13 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"`metadata.djinn.babysit`, Djinn starts its watcher once the task ends and tells you (`W5 opened MR !12: W7 " +
 		"babysits it`): follow that skill each time the watcher speaks. By hand: `djinn task spawn <wish> --title " +
 		"\"Babysit W5's MR\" --babysit --after W5`.\n" +
-		"- **To try a command by hand, start a Djinn of your own with its own data folder; never create a wish, a question or a task in the person's Djinn to test.**\n\n" +
+		"- **To try a command by hand, start a Djinn of your own with its own data folder; never create a wish, a question or a task in the person's Djinn to test.**\n" +
+		"- **Read the lead's notes before you act in their area.** How to lead, learnt from past wishes, for any " +
+		"agent: the index below gives a line per note, its name and what it is about. Before you act in a note's area " +
+		"(a question, a spawn, a push, a fix), open it: `djinn lead notes <name>`. They are built into Djinn, read " +
+		"only. What you learn about leading goes there, not in your agent's own memory: to add or fix a note, a lead " +
+		"that may change Djinn (its repository is one of your projects) spawns a task there that edits `lead/notes/`, " +
+		"one note per file; nothing writes them at run time.\n\n" +
 		"## Commands\n\n" +
 		"`<wish>` is a wish's identifier.\n\n" +
 		"- `djinn brief`: the brief of all active wishes.\n" +
@@ -259,7 +266,19 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"- `djinn wish sync <wish>`: the wish's page, which Djinn keeps up to date in the file it prints. After the wish " +
 		"changes, republish that file as it is, in one call, to the same address: do not read it, rewrite it, or write " +
 		"HTML by hand. The first publish needs the developer's go. `djinn wish render <wish>` writes the page once.\n" +
-		"- `djinn wish grant <wish>` is the developer's word, never yours.\n"
+		"- `djinn wish grant <wish>` is the developer's word, never yours.\n" +
+		"- `djinn lead notes`: the index of the lead's notes; `djinn lead notes <name>` prints one.\n" +
+		notesBrief()
+}
+
+// notesBrief is the index of the lead's notes, a line per note, its name and description: never a note's text, which
+// a lead opens with djinn lead notes <name> when it needs it.
+func notesBrief() string {
+	index, err := notes.Index()
+	if err != nil || index == "" {
+		return ""
+	}
+	return "\n## The lead's notes\n\n" + index
 }
 
 // leadWatchHow is how each agent keeps djinn lead watch running and is woken up when it ends, as recorded in
