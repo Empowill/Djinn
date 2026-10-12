@@ -116,6 +116,11 @@ func cursorOf(t *testing.T, digest string) string {
 // TestLeadWatchBatches: events that come close together come in one digest, a line each, with the cursor.
 func TestLeadWatchBatches(t *testing.T) {
 	w, s, _ := leadWatchFixture(t, planv1.Provider_PROVIDER_CLAUDE)
+	// The events come 30 ms apart; the watch waits for 500 ms without one. With quick's 50 ms, a slow runner (Windows
+	// CI) let the quiet pass between two of them: two events in the digest. A quiet of 1 ms reproduces it.
+	timing := quick
+	timing.quiet, timing.settleMax = 500*time.Millisecond, 10*time.Second
+	w.leadWatch().timing = timing
 	go func() {
 		time.Sleep(30 * time.Millisecond)
 		notify(t, w, planv1.LeadEventKind_LEAD_EVENT_KIND_MERGED, "W1", "Djinn: W1 merged into main as 0123abcd")
@@ -137,7 +142,7 @@ func TestLeadWatchBatches(t *testing.T) {
 			t.Errorf("digest lacks %q:\n%s", want, got)
 		}
 	}
-	if took := time.Since(start); took < 90*time.Millisecond+quick.quiet {
+	if took := time.Since(start); took < 90*time.Millisecond+timing.quiet {
 		t.Errorf("the watch returned after %s, before the events settled", took)
 	}
 }
