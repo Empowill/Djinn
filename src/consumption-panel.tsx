@@ -46,6 +46,7 @@ import {
   ResourceChart,
   formatValue,
 } from "./resource-chart";
+import { onStillness, still } from "./stillness";
 import { TooltipButton } from "./tooltip";
 import { TaskTurns, TaskUsage } from "./usage";
 import "./consumption-panel.css";
@@ -750,11 +751,17 @@ export function ConsumptionPanel({
           : res;
       setData(current);
     };
+    // A window at rest (stillness.ts) draws no new graph: it reads them again as it wakes.
+    const poll = () => {
+      if (!still()) void read();
+    };
     void read();
-    const timer = setInterval(read, SERIES_EVERY);
+    const timer = setInterval(poll, SERIES_EVERY);
+    const stop = onStillness(poll);
     return () => {
       active = false;
       clearInterval(timer);
+      stop();
     };
   }, [djinn, folded, minutes]);
 
@@ -765,11 +772,16 @@ export function ConsumptionPanel({
       const res = await djinn.clients.commands.list({}).catch(() => null);
       if (active && res) setCommands(res.costs);
     };
+    const poll = () => {
+      if (!still()) void read();
+    };
     void read();
-    const timer = setInterval(read, COMMANDS_EVERY);
+    const timer = setInterval(poll, COMMANDS_EVERY);
+    const stop = onStillness(poll);
     return () => {
       active = false;
       clearInterval(timer);
+      stop();
     };
   }, [djinn, folded]);
 

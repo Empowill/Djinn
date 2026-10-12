@@ -1503,8 +1503,20 @@ html[data-theme="light"] .wordmark-period {
   animation: wave-flow 4s ease-in-out infinite;
 }
 .wave.paused .wave-line,
-.machine:not(.active) * {
+.machine:not(.moving) * {
   animation-play-state: paused;
+}
+/* A window at rest (hidden, or not focused: stillness.ts) pauses what loops: nobody sees it move. */
+html[data-still] .live-dot::after,
+html[data-still] .machine *,
+html[data-still] .wave-line,
+html[data-still] .sync-spinner,
+html[data-still] .wish-creation-spinner,
+html[data-still] .wish-composer-caret {
+  animation-play-state: paused !important;
+}
+html[data-still] .operating-load * {
+  --thumb-animation: none !important;
 }
 
 @media (min-width: 1750px) {

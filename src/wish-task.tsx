@@ -913,7 +913,8 @@ function SendBox({ onSend }: { onSend: (text: string) => Promise<unknown> }) {
   );
 }
 
-function EventLine({
+// An event never changes once kept: each push of new events draws only the new rows.
+const EventLine = memo(function EventLine({
   event,
   model,
   provider,
@@ -945,4 +946,4 @@ function EventLine({
       </td>
     </tr>
   );
-}
+});

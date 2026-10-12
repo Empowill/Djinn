@@ -30,6 +30,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { type TextKey, language, t } from "../i18n";
+import { onStillness, still } from "../stillness";
 
 // A djinn grants three wishes at a time, never more. The lamp refuses a fourth; the page only says so beforehand.
 export const MAX_ACTIVE = 3;
@@ -289,14 +290,25 @@ export function azimaTime(
   };
 }
 
-// useNow is the time now, read again every period while on: a duration shown stays current.
+// useNow is the time now, read again every period while on: a duration shown stays current. A window at rest
+// (stillness.ts) stops the clock, and reads the time again as it wakes.
 export function useNow(on: boolean, period = 1_000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!on) return;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), period);
-    return () => clearInterval(id);
+    let id: ReturnType<typeof setInterval> | undefined;
+    const tick = () => {
+      clearInterval(id);
+      id = undefined;
+      setNow(Date.now());
+      if (!still()) id = setInterval(() => setNow(Date.now()), period);
+    };
+    tick();
+    const stop = onStillness(tick);
+    return () => {
+      stop();
+      clearInterval(id);
+    };
   }, [on, period]);
   return now;
 }

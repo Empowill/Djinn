@@ -22,6 +22,7 @@ import {
 import { type DjinnTerminal, createTerminal } from "./terminal";
 import { type DjinnLoad, createUi } from "./ui";
 import { type DjinnUpdate } from "./update";
+import { onStillness, still } from "../stillness";
 
 export interface Djinn {
   store: Store;
@@ -152,9 +153,17 @@ export function useTaskEvents(taskId: string, status: number, follow = true) {
 export function useMachine(every = 5000) {
   const { store } = useRequiredDjinn();
   useEffect(() => {
+    // A window at rest (stillness.ts) reads nothing: it reads the machine again as it wakes.
+    const read = () => {
+      if (!still()) void store.readMachine();
+    };
     void store.readMachine();
-    const timer = setInterval(() => void store.readMachine(), every);
-    return () => clearInterval(timer);
+    const timer = setInterval(read, every);
+    const stop = onStillness(read);
+    return () => {
+      clearInterval(timer);
+      stop();
+    };
   }, [store, every]);
   return useData((state) => state.machine);
 }

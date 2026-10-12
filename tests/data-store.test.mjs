@@ -243,7 +243,7 @@ test("a broken watch reconnects and reads everything again", async () => {
 test("a task's events come in order, and a second follow reads only what is new", async () => {
   const data = sample();
   const { clients, reads } = server(data);
-  const store = createStore(clients, 10);
+  const store = createStore(clients, 10, 10, 1000);
   const release = store.follow(taskId);
   let state = await until(store, (s) => s.events[taskId]?.length === 2);
   assert.deepEqual(
@@ -262,7 +262,7 @@ test("a task's events come in order, and a second follow reads only what is new"
 test("a task followed again as its status changes keeps each event once", async () => {
   const data = { ...sample(), running: true };
   const { clients, reads } = server(data);
-  const store = createStore(clients, 10);
+  const store = createStore(clients, 10, 10, 1000);
   const release = store.follow(taskId);
   // Less than the 50 ms the events wait for the screen.
   await new Promise((r) => setTimeout(r, 10));
@@ -274,6 +274,28 @@ test("a task followed again as its status changes keeps each event once", async 
     store.getState().events[taskId].map((e) => e.seq),
     [1n, 2n],
   );
+  assert.equal(reads.events, 2);
+  again();
+});
+
+// W503 saw the window's memory climb to 1.1 GB: the events of every task card ever opened stayed in the store.
+test("a task card closed frees its events, and opened again reads them again", async () => {
+  const data = sample();
+  const { clients, reads } = server(data);
+  const store = createStore(clients, 10, 10, 30);
+  const first = store.follow(taskId);
+  // Two screens show the task: the events stay while one of them does.
+  const second = store.follow(taskId);
+  await until(store, (s) => s.events[taskId]?.length === 2);
+  first();
+  first();
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(store.getState().events[taskId]?.length, 2);
+  second();
+  const freed = await until(store, (s) => !(taskId in s.events));
+  assert.equal(Object.keys(freed.events).length, 0);
+  const again = store.follow(taskId);
+  await until(store, (s) => s.events[taskId]?.length === 2);
   assert.equal(reads.events, 2);
   again();
 });
