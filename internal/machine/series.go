@@ -100,7 +100,7 @@ func (r *SeriesRecorder) Sample() {
 	// 2. Djinn process CPU % and memory.
 	var djinnCPU float64
 	var djinnMem uint64
-	if r.readWorker != nil && NotMeasured == "" {
+	if r.readWorker != nil {
 		if g, err := r.readWorker(os.Getpid(), ""); err == nil {
 			djinnMem = g.Memory
 			if !r.lastDjinnAt.IsZero() {

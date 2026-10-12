@@ -182,7 +182,8 @@ func IsRealHome(path string) bool {
 		return false
 	}
 	clean := filepath.Clean(path)
-	if strings.HasPrefix(clean, "~/") && realHomeDir != "" {
+	// Clean turns ~/ into ~\ on Windows: test the separator the system uses.
+	if len(clean) > 2 && clean[0] == '~' && os.IsPathSeparator(clean[1]) && realHomeDir != "" {
 		clean = filepath.Clean(filepath.Join(realHomeDir, clean[2:]))
 	}
 	cleanEval, errEval := filepath.EvalSymlinks(clean)

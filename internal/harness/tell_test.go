@@ -68,20 +68,22 @@ func TestWorkerFailsTellsLead(t *testing.T) {
 	}
 }
 
-// TestTwoWorkersFailingAtOnceBatchParagraph verifies that lines arriving within a few seconds are batched into
+// TestTwoWorkersFailingAtOnceBatchParagraph verifies that lines arriving within the batch window are batched into
 // a single newline-separated paragraph to avoid spamming the lead.
 func TestTwoWorkersFailingAtOnceBatchParagraph(t *testing.T) {
 	t.Parallel()
-	e := up(t, t.TempDir(), WithTellDelay(500*time.Millisecond))
+	// The window never closes on its own here: FlushTell closes it, once both workers have failed. With a window of
+	// 500 ms, a slow runner (Windows CI) let it close between the two failures: two paragraphs.
+	e := up(t, t.TempDir(), WithTellDelay(time.Hour))
 	lead := &leadListener{}
 	e.h.TellLeads(lead.tell)
 	repo := gitRepo(t)
 	wishID, _ := e.wish(t, repo)
 
+	// W2 starts once W1 has failed: however far apart they fail, both lines come in one paragraph.
 	t1 := e.spawn(t, wishID, "fail error one\nline 2")
-	t2 := e.spawn(t, wishID, "fail error two\nline 2")
-
 	e.watch(t.Context(), t, t1.GetId(), 0)
+	t2 := e.spawn(t, wishID, "fail error two\nline 2")
 	e.watch(t.Context(), t, t2.GetId(), 0)
 
 	e.h.FlushTell(t.Context())

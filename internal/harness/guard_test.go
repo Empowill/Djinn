@@ -104,8 +104,10 @@ func TestGitGuardKeepsWorkersFromPushing(t *testing.T) {
 		return out
 	}
 	before := refs()
+	// Paths reach sh as arguments, with slashes: pasted into the script, a Windows path loses its backslashes.
 	if out, err := runIn(g.worker, guard, "sh", "-c",
-		"echo w1 > w1.txt && git add w1.txt && git commit --quiet -m w1 && git remote add mine "+g.remote); err != nil {
+		`echo w1 > w1.txt && git add w1.txt && git commit --quiet -m w1 && git remote add mine "$1"`, "sh",
+		filepath.ToSlash(g.remote)); err != nil {
 		t.Fatalf("worker's commit: %v\n%s", err, out)
 	}
 	for _, args := range [][]string{
@@ -146,11 +148,14 @@ func TestGitGuardKeepsWorkersFromPushing(t *testing.T) {
 	}
 
 	// Another repository pushes as before, the guard on: a test's, run by a worker.
-	other, bare := filepath.Join(t.TempDir(), "other"), filepath.Join(t.TempDir(), "other.git")
-	if out, err := runIn(t.TempDir(), guard, "sh", "-c", "git init --quiet --bare "+bare+" && git init --quiet "+other+
-		" && cd "+other+" && git -c user.name=T -c user.email=t@example.com commit --quiet --allow-empty -m x"+
-		" && git push --quiet "+bare+" HEAD:refs/heads/main"); err != nil {
+	// A backslash in each path, as on Windows: the push must reach the repository at that very path.
+	other, bare := filepath.Join(t.TempDir(), `other\repo`), filepath.Join(t.TempDir(), `other\repo.git`)
+	if out, err := runIn(t.TempDir(), guard, "sh", "-c", `git init --quiet --bare "$1" && git init --quiet "$2"`+
+		` && cd "$2" && git -c user.name=T -c user.email=t@example.com commit --quiet --allow-empty -m x`+
+		` && git push --quiet "$1" HEAD:refs/heads/main`, "sh", filepath.ToSlash(bare), filepath.ToSlash(other)); err != nil {
 		t.Errorf("push from another repository: %v\n%s", err, out)
+	} else if out, err := runIn(bare, nil, "git", "rev-parse", "--verify", "--quiet", "main"); err != nil {
+		t.Errorf("push from another repository: no main in %s: %v\n%s", bare, err, out)
 	}
 
 	// The orchestrator pushes the integration branch with its own environment.
