@@ -19,6 +19,7 @@ repeat them.
   lint before Djinn commits your work (`djinn gate run lint -- go tool task lint`), the tests before it pushes.
 - **A story that touches the window** (interface under the UI folder, the stream it reads, the server calls it makes)
   runs this spec before it ends (`go tool task e2e -- e2e/wish-render.spec.ts`); other stories do not.
+- **Read [`docs/pitfalls.md`](docs/pitfalls.md) before you chase a failure**: the code's known traps, how to spot them.
 - **Never call a paid model in a test.** Record a stream instead (`docs/providers.md`).
 - **A license check comes before any reuse** of third-party code: see the license section of
   `CONTRIBUTING.md`, and name every new dependency in your change description.

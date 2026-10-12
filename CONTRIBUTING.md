@@ -109,7 +109,8 @@ gets switched off.
 
 ## Getting set up
 
-To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`docs/handoff-mac-codex.md`](docs/handoff-mac-codex.md). To work on it:
+To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`docs/handoff-mac-codex.md`](docs/handoff-mac-codex.md). The traps the code
+has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). To work on it:
 
 **Prerequisites**
 - [Go](https://go.dev/dl/) 1.25+, with CGO for the native window.
