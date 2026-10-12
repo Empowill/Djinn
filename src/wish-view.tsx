@@ -524,18 +524,24 @@ export function WishView({
     [projects],
   );
 
+  // A push says how it went on its sync line, never in a toast: the line reads its answer, or its error.
   const handlePushAzima = useCallback(
     (azima: Task) =>
-      act(
-        () =>
-          clients.projects.push({
-            project: azima.projectId || projects[0]?.id || "",
-            wish: wish.id,
-            branch: azimaSyncs.get(azima.id)?.branch ?? azima.azima?.branch,
-          }),
-        [Change.WISH, Change.TASK, Change.PROJECT],
-      ),
-    [act, azimaSyncs, clients.projects, projects, wish.id],
+      clients.projects
+        .push({
+          project: azima.projectId || projects[0]?.id || "",
+          wish: wish.id,
+          branch: azimaSyncs.get(azima.id)?.branch ?? azima.azima?.branch,
+        })
+        .finally(
+          () =>
+            void store?.changed(wish.id, [
+              Change.WISH,
+              Change.TASK,
+              Change.PROJECT,
+            ]),
+        ),
+    [azimaSyncs, clients.projects, projects, store, wish.id],
   );
 
   const handleOpenPr = useCallback(

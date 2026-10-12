@@ -101,6 +101,24 @@ func TestWatchSaysWhatChanged(t *testing.T) {
 	}
 }
 
+// TestWatchSaysAPushChanged: the harness notes a push's change with a ProjectSync (store.Tx.Change): the window reads
+// its projects again, where each branch stands against its remote and its push (W489).
+func TestWatchSaysAPushChanged(t *testing.T) {
+	c := serve(t)
+	s := watch(t, c.wishes, "")
+	if err := c.store.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "test/push", &planv1.ProjectSync{}); err != nil {
+			return err
+		}
+		return tx.Change(&planv1.ProjectSync{WishId: "w1"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if msg := next(t, s); msg.GetWishId() != "" || !slices.Equal(msg.GetChanges(), []planv1.Change{planv1.Change_CHANGE_PROJECT}) {
+		t.Fatalf("after a push: %v, want the projects", msg)
+	}
+}
+
 // TestWatchSaysPlugged: plugging a source in, or unplugging it, changes the inbox's sources.
 func TestWatchSaysPlugged(t *testing.T) {
 	c := serve(t)

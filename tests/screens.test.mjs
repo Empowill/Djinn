@@ -5164,6 +5164,145 @@ test("more than three branches out of sync fold behind the first two; while one 
   );
 });
 
+// W489: a push shows on its sync line until it ends, as the server records it (ProjectSync.push), whoever started it.
+const pushRun = (stage, extra = {}) => ({
+  branch: "feat/x",
+  stage,
+  check: "",
+  note: "",
+  startTime: { seconds: 1760000000n, nanos: 0 },
+  ...extra,
+});
+
+test("a push shows on its sync line: a spinner while its checks and git push run, a check mark once pushed, a cross with why when held", () => {
+  const now = 1760000100000;
+  const line = (sync, extra = {}) =>
+    s.renderToStaticMarkup(h(s.SyncLine, { sync, now, onPush() {}, ...extra }));
+  // Its checks run: a spinner in the button, disabled, the check on hover.
+  const checking = line(
+    projectSync("feat/x", 3, 0, {
+      push: pushRun(s.PushStage.CHECKING, { check: "test" }),
+    }),
+  );
+  assert.match(
+    checking,
+    /<button type="button" class="icon-button sync-push" disabled="" title="Push checks running: test" aria-label="Push checks running: test"><svg[^>]*sync-spinner/,
+  );
+  assert.match(checking, /↑3/);
+  // git push runs.
+  assert.match(
+    line(projectSync("feat/x", 3, 0, { push: pushRun(s.PushStage.PUSHING) })),
+    /disabled="" title="Pushing feat\/x to origin…"/,
+  );
+  // Pushed a moment ago: a check mark, the branch in sync, no button to push nothing.
+  const pushedSync = projectSync("feat/x", 0, 0, {
+    push: pushRun(s.PushStage.PUSHED, {
+      endTime: { seconds: 1760000098n, nanos: 0 },
+    }),
+  });
+  const pushed = line(pushedSync);
+  assert.match(
+    pushed,
+    /<span class="sync-status pushed" role="img" title="Pushed to origin\/feat\/x" aria-label="Pushed to origin\/feat\/x">/,
+  );
+  assert.doesNotMatch(pushed, /sync-push|sync-spinner/);
+  // The list shows it a few seconds, then lets it go.
+  assert.match(
+    s.renderToStaticMarkup(h(s.SyncLines, { syncs: [pushedSync], now })),
+    /sync-status pushed/,
+  );
+  assert.equal(
+    s.renderToStaticMarkup(
+      h(s.SyncLines, { syncs: [pushedSync], now: now + 10000 }),
+    ),
+    "",
+  );
+  // Held: a cross, the check that failed and its first lines, the correction Djinn started; the button pushes again.
+  const held = line(
+    projectSync("feat/x", 3, 0, {
+      push: pushRun(s.PushStage.HELD, {
+        endTime: { seconds: 1760000090n, nanos: 0 },
+        note: "test: test exited 1\n--- FAIL: TestLogin",
+      }),
+      correction: "W12",
+    }),
+  );
+  assert.match(
+    held,
+    /<span class="sync-status held" role="img" title="Push held: its push checks are red\n?test: test exited 1\n?--- FAIL: TestLogin\n?Djinn started W12 to correct them"/,
+  );
+  assert.match(
+    held,
+    /<button type="button" class="icon-button sync-push" title="Push feat\/x"/,
+  );
+  // Refused: a cross with git's words.
+  assert.match(
+    line(
+      projectSync("feat/x", 3, 0, {
+        push: pushRun(s.PushStage.FAILED, {
+          endTime: { seconds: 1760000090n, nanos: 0 },
+          note: "origin refused the push: its branch has commits that this one does not",
+        }),
+      }),
+    ),
+    /class="sync-status failed" role="img" title="The push failed\n?origin refused the push: its branch has commits that this one does not"/,
+  );
+  // Behind only: nothing to push, no button.
+  assert.doesNotMatch(line(projectSync("feat/x", 0, 2)), /sync-push/);
+});
+
+test("a push running in Djinn makes every button of the list wait, as a reload shows it", () => {
+  const lines = live(s.SyncLines, {
+    syncs: [
+      projectSync("feat/a", 2, 0),
+      projectSync("feat/x", 3, 0, {
+        push: pushRun(s.PushStage.CHECKING, { check: "test" }),
+      }),
+    ],
+    onPush() {},
+  });
+  assert.deepEqual(
+    lines.all(s.SyncLine).map((x) => x.props.busy),
+    ["A push is running: wait for it to end", ""],
+  );
+});
+
+test("regression W489: a stale ↑3 pushed again says 'up to date' quietly on its line, and an error stays on its line", async () => {
+  const pushes = [];
+  let answer = { upToDate: true };
+  const lines = live(s.SyncLines, {
+    syncs: [projectSync("feat/wails-go", 3, 0)],
+    onPush: (sync) => {
+      pushes.push(sync.branch);
+      return answer instanceof Error
+        ? Promise.reject(answer)
+        : Promise.resolve(answer);
+    },
+  });
+  lines.one(s.SyncLine).onPush();
+  assert.equal(lines.one(s.SyncLine).pushing, true);
+  await lines.settle();
+  const quiet = lines.one(s.SyncLine);
+  assert.equal(quiet.pushing, false);
+  assert.equal(quiet.outcome.upToDate, true);
+  const html = s.renderToStaticMarkup(h(s.SyncLine, quiet));
+  assert.match(
+    html,
+    /<span class="sync-note" title="Nothing to push: origin\/feat\/wails-go holds this branch already">up to date<\/span>/,
+  );
+  assert.doesNotMatch(html, /sync-status/);
+
+  // A failure the server does not explain: a cross on the line, the error on hover; no throw for a toast.
+  answer = new Error("repository /tmp/app has no remote");
+  lines.one(s.SyncLine).onPush();
+  await lines.settle();
+  assert.deepEqual(pushes, ["feat/wails-go", "feat/wails-go"]);
+  assert.match(
+    s.renderToStaticMarkup(h(s.SyncLine, lines.one(s.SyncLine))),
+    /class="sync-status failed" role="img" title="The push failed\n?repository \/tmp\/app has no remote"/,
+  );
+});
+
 test("the project panel displays the push cadence setting, out-of-sync status, and push button", () => {
   const p1 = {
     id: "p1",

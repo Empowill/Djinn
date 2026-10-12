@@ -345,10 +345,15 @@ type testPusher struct {
 	pushedWish, pushedProject, pushedBranch string
 	// The wish of the azima branch Syncs gives.
 	azimaWish string
+	// What Push fails with; nil: it pushes.
+	err error
 }
 
 func (p *testPusher) Push(ctx context.Context, wishID, projectID, branch string) (*planv1.IntegrationPush, error) {
 	p.pushedWish, p.pushedProject, p.pushedBranch = wishID, projectID, branch
+	if p.err != nil {
+		return nil, p.err
+	}
 	return &planv1.IntegrationPush{WishId: wishID, ProjectId: projectID, Count: 2}, nil
 }
 
@@ -460,6 +465,23 @@ func TestProjectPushAndSetPush(t *testing.T) {
 	if err != nil || pusher.pushedWish != pusher.azimaWish || pusher.pushedBranch != "djinn/T1-azima" {
 		t.Errorf("Push of an azima branch: wish=%s branch=%s, %v; want %s, djinn/T1-azima",
 			pusher.pushedWish, pusher.pushedBranch, err, pusher.azimaWish)
+	}
+
+	// W489: the remote holds the branch already. Nothing to push is no failure: the window says it quietly on the
+	// branch's line, the command line exits 0.
+	pusher.err = ErrUpToDate
+	pushRes, err = c.projects.Push(ctx, connect.NewRequest(&planv1.ProjectServicePushRequest{
+		Project: projectName, Wish: proto.String(wishID), Branch: proto.String("feat/x"),
+	}))
+	if err != nil || !pushRes.Msg.GetUpToDate() || pushRes.Msg.GetPush() != nil {
+		t.Errorf("Push of a branch the remote holds: %v, %v; want up to date, no error", pushRes, err)
+	}
+	// Any other failure stays one.
+	pusher.err = errors.New("the push is held: its checks are red (test: exit 1)")
+	if _, err = c.projects.Push(ctx, connect.NewRequest(&planv1.ProjectServicePushRequest{
+		Project: projectName, Wish: proto.String(wishID), Branch: proto.String("feat/x"),
+	})); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("Push held: %v; want failed_precondition", err)
 	}
 }
 

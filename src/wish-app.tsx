@@ -215,14 +215,12 @@ export function WishApp() {
     }
   };
 
+  // A push says how it went on its sync line, never in a toast: the line reads its answer, or its error.
   const pushProject = useCallback(
     (id: string, sync: ProjectSync) =>
       clients.projects
         .push({ project: id, wish: sync.wishId, branch: sync.branch })
-        .then(() => {
-          void data.changed("", [Change.PROJECT]);
-        })
-        .catch((err) => setToast(message(err))),
+        .finally(() => void data.changed("", [Change.PROJECT])),
     [clients, data],
   );
 

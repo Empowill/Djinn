@@ -624,21 +624,16 @@ export function ProjectPanel({
     shown?.project?.push ?? project.push ?? ProjectPush.STANDARD;
   const syncs = shown?.project?.syncs ?? project.syncs;
 
-  const handlePush = async (sync: ProjectSync) => {
-    try {
-      await clients.projects.push({
-        project: project.id,
-        wish: sync.wishId,
-        branch: sync.branch,
-      });
-      const res = await clients.projects.show({ project: project.id });
-      setShown(res);
-    } catch (err) {
-      const msg = message(err);
-      setError(msg);
-      onToast?.(msg);
-    }
-  };
+  // A push says how it went on its sync line, never in a toast: the line reads its answer, or its error.
+  const handlePush = (sync: ProjectSync) =>
+    clients.projects
+      .push({ project: project.id, wish: sync.wishId, branch: sync.branch })
+      .finally(() =>
+        clients.projects
+          .show({ project: project.id })
+          .then(setShown)
+          .catch(() => undefined),
+      );
 
   const handleSetPush = async (nextPush: ProjectPush) => {
     try {

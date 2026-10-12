@@ -155,11 +155,11 @@ func setupKey(ctx context.Context, dir, setup string) (string, error) {
 
 // pushChecks runs the project's push checks on sha, the tip of the wish's integration branch, in its integration
 // worktree; a check that passed on that very commit already, as a commit check, is not run again. committed are the
-// tasks the push brings: their events say each check. It returns the failed check's command, why the push is held,
-// "" when it may go; stopped when djinn up stopped during them.
+// tasks the push brings: their events say each check, and running is told the name of each as it starts. It returns
+// the failed check's command, why the push is held, "" when it may go; stopped when djinn up stopped during them.
 func (h *Harness) pushChecks(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, branch, sha string,
-	committed []*planv1.Task,
+	committed []*planv1.Task, running func(check string),
 ) (cmd, why, out string, stopped bool) {
 	checks := settings.ChecksAt(planv1.CheckWhen_CHECK_WHEN_PUSH)
 	if len(checks) == 0 {
@@ -178,6 +178,7 @@ func (h *Harness) pushChecks(
 	if len(checks) == 0 {
 		return "", "", "", false
 	}
+	running(checks[0].GetName())
 	h.integrateMu.Lock() // The push checks use the integration worktree.
 	defer h.integrateMu.Unlock()
 	wt := integrationDir(h.home, project.GetId(), wish.GetId())
@@ -188,7 +189,10 @@ func (h *Harness) pushChecks(
 	if why, out, stopped = h.setUp(ctx, project, settings, wish.GetId(), "", wt, dir); why != "" || stopped {
 		return cmp.Or(settings.Setup, setupName), setupName + ": " + why, out, stopped
 	}
-	for _, c := range checks {
+	for i, c := range checks {
+		if i > 0 {
+			running(c.GetName())
+		}
 		h.pushSteps(ctx, committed, fmt.Sprintf("integration: checking %s at %s before the push: %s (%s)",
 			branch, short8(sha), c.GetName(), c.GetCommand()))
 		run := &planv1.CheckRun{

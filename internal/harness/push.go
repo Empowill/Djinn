@@ -290,6 +290,8 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 	ctx = context.WithoutCancel(ctx)
 	h.pushMu.Lock()
 	defer h.pushMu.Unlock()
+	run := h.startPushRun(wish.GetId(), project.GetId(), branch)
+	defer run.stop()
 	repo := project.GetDirectory()
 	remote, target := pushTarget(ctx, repo, branch)
 	if branch == "" || remote == "" {
@@ -310,7 +312,7 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 	// Djinn records it as pushed, and the hold lifts.
 	if ahead == 0 && (state.GetHeld() == "" || unchecked) {
 		h.clearApproved(ctx, wish.GetId(), project.GetId(), approved)
-		return nil, errors.New("nothing to push: the remote is up to date")
+		return nil, plan.ErrUpToDate
 	}
 	sha, err := git(ctx, repo, "rev-parse", "refs/heads/"+branch)
 	if err != nil {
@@ -323,13 +325,16 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		if settings, err := plan.LoadSettings(h.home, project); err != nil {
 			held = err.Error()
 		} else {
-			cmd, held, out, stopped = h.pushChecks(pushing, wish, project, settings, branch, sha, committed)
+			cmd, held, out, stopped = h.pushChecks(pushing, wish, project, settings, branch, sha, committed,
+				func(check string) { run.set(ctx, planv1.PushStage_PUSH_STAGE_CHECKING, check, "") })
 		}
 		switch {
 		case stopped || pushing.Err() != nil:
+			run.clear(ctx)
 			return nil, pushing.Err()
 		case held != "":
 			h.holdPush(ctx, wish, project, committed, branch, sha, cmd, held, out)
+			run.set(ctx, planv1.PushStage_PUSH_STAGE_HELD, "", heldNote(held, out))
 			return nil, fmt.Errorf("the push is held: its checks are red (%s)", held)
 		case state.GetHeld() != "" || state.GetHeldRuns() > 0:
 			err := h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -343,9 +348,14 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		}
 	}
 	if ahead == 0 {
-		return h.pushedByHand(ctx, wish, project, branch, remote, sha, committed)
+		record, err := h.pushedByHand(ctx, wish, project, branch, remote, sha, committed)
+		if err == nil {
+			run.set(ctx, planv1.PushStage_PUSH_STAGE_PUSHED, "", "")
+		}
+		return record, err
 	}
 	if wish.GetPushMode() == planv1.PushMode_PUSH_MODE_ASK && !approved {
+		run.clear(ctx)
 		q := h.pushQuestion(wish, fmt.Sprintf("Push %s to %s? (%s)", branch, remote, commitsText(count, titles)),
 			fmt.Sprintf("**Why now.** %s.\n\n**What it pushes.** %s\n\nDjinn never forces a push; agents never push.", capital(why),
 				bulleted(titles, count)), []string{pushOption, notNowOption})
@@ -356,12 +366,15 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		}
 		return nil, nil
 	}
+	run.set(ctx, planv1.PushStage_PUSH_STAGE_PUSHING, "", "")
 	old, out, err := gitPush(pushing, repo, remote, branch, target)
 	if pushing.Err() != nil {
+		run.clear(ctx)
 		return nil, pushing.Err()
 	}
 	if err != nil {
 		reason := refusal(out, err)
+		run.set(ctx, planv1.PushStage_PUSH_STAGE_FAILED, "", fmt.Sprintf("%s refused the push: %s", remote, headline(reason)))
 		q := h.pushQuestion(wish, fmt.Sprintf("%s refused the push of %s: %s. Djinn never forces a push: what should it do?",
 			remote, branch, headline(reason)), fmt.Sprintf("**What git said.**\n\n```\n%s\n```\n\n**What it would push.** %s",
 			strings.TrimSpace(out), bulleted(titles, count)), []string{fmt.Sprintf(pushAgainOption, branch), leavePushOption})
@@ -386,6 +399,7 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 			p.Last, p.QuestionId, p.Refused, p.Approved = record, "", "", false
 			p.Held, p.HeldRuns, p.Unchecked = "", 0, false
 			p.CorrectedBy, p.Attempts, p.FailedSha, p.Failure = "", 0, "", nil
+			p.Run = run.ended(planv1.PushStage_PUSH_STAGE_PUSHED, "")
 		})
 	})
 	if err != nil {
@@ -447,8 +461,13 @@ func (h *Harness) pushedByHand(
 
 // Push pushes the integration branch of wishID in projectID, or under the per-azima strategy its azimas' branches too;
 // only branch when it is not empty: the wish's integration branch or one of its azimas' own. It runs push checks under
-// gates, never with --force.
+// gates, never with --force. It runs to its end whatever the caller does meanwhile (a window reloaded, a command line
+// stopped): its sync line shows it; only djinn up stopping stops it.
 func (h *Harness) Push(ctx context.Context, wishID, projectID, branch string) (*planv1.IntegrationPush, error) {
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancel()
+	stop := context.AfterFunc(h.ctx, cancel)
+	defer stop()
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, wishID)
 	if err != nil {
 		return nil, err
@@ -769,6 +788,7 @@ func (h *Harness) Syncs(ctx context.Context, project *planv1.Project) ([]*planv1
 		if azima != nil {
 			sync.AzimaId, sync.AzimaCode, sync.AzimaTitle = azima.GetId(), azima.GetCode(), azima.GetTitle()
 		}
+		h.syncPush(ctx, sync, wish, project.GetId())
 		syncs = append(syncs, sync)
 	}
 	for _, wish := range wishes {
@@ -914,7 +934,12 @@ func editPush(ctx context.Context, tx *store.Tx, wishID, projectID string, edit 
 	if err := tx.Journal(actorHarness, methodIntegrate, wish); err != nil {
 		return err
 	}
-	return tx.Put(wish)
+	if err := tx.Put(wish); err != nil {
+		return err
+	}
+	// The project's sync lines show where its pushes stand, and the remote's branch moves with a push: the window
+	// reads its projects again (Change.PROJECT).
+	return tx.Change(&planv1.ProjectSync{WishId: wishID})
 }
 
 // answerPush takes the person's answer to a question Djinn asked about a push: A pushes at the integration's next

@@ -44,7 +44,7 @@ import {
 import { ModalFrame } from "./frame";
 import { t, type TextKey } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
-import { isOutOfSync, SyncLine } from "./project-sync";
+import { isSyncShown, SyncLine, usePushes } from "./project-sync";
 import { StatusBadge } from "./status";
 import { Fold } from "./task-tabs";
 
@@ -190,7 +190,6 @@ export const AzimaCard = memo(function AzimaCard({
   // Where the merges of its wish show: a part whose merge still runs moves with it.
   nest?: MergeNest;
 }) {
-  const [pushing, setPushing] = useState(false);
   const state = azimaState(azima, parts);
   // The part in sight, or the one a merge in sight sits under.
   const inSight = nest.host.get(focus) ?? focus;
@@ -285,7 +284,7 @@ export const AzimaCard = memo(function AzimaCard({
       ].filter((x): x is string => Boolean(x))
     : [];
   const sync = ownSync ?? azima.azima?.sync;
-  const outOfSync = isOutOfSync(sync);
+  const outOfSync = isSyncShown(sync);
   const isPushed = Boolean(
     sync &&
     sync.ahead === 0 &&
@@ -293,6 +292,9 @@ export const AzimaCard = memo(function AzimaCard({
     (sync.target || sync.remote || sync.branch),
   );
   const canPush = outOfSync && Boolean(onPush);
+  const { pushing, outcomes, push } = usePushes(
+    onPush && (() => onPush(azima)),
+  );
 
   const pr = azima.azima?.pr;
   const prUrl = pr?.url;
@@ -303,18 +305,6 @@ export const AzimaCard = memo(function AzimaCard({
         ? t("azima.pr_merged")
         : t("azima.pr_open")
     : null;
-
-  const handlePush = async () => {
-    if (!onPush || pushing) return;
-    setPushing(true);
-    try {
-      await onPush(azima);
-    } catch {
-      // Toast surfaced by caller
-    } finally {
-      setPushing(false);
-    }
-  };
 
   const hasActions = outOfSync || isPushed || Boolean(prText);
   // The heading reads at a glance: its state, code, title, what it waits for, its bar. The rest is on hover: what comes
@@ -394,7 +384,9 @@ export const AzimaCard = memo(function AzimaCard({
                     ? t("project.pushing_branch", { branch: sync.branch })
                     : ""
                 }
-                onPush={canPush ? () => void handlePush() : undefined}
+                pushing={Boolean(pushing)}
+                outcome={outcomes[sync.branch]}
+                onPush={canPush ? () => void push(sync) : undefined}
               />
             )}
             {isPushed && !outOfSync && (
