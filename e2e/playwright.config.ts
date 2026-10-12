@@ -18,11 +18,15 @@ const args = process.argv.slice(2);
 const runRenderSpec = args.some(
   (arg) => arg.includes("wish-render") || arg.includes("@render"),
 );
+// The cases that run the creation page's smoke solver (tag @solver) wait about a minute for its first glyphs on a
+// software WebGL2: they run on demand too, `go tool task e2e -- e2e/wish-composer.spec.ts --grep @solver`.
+const runSolver = args.some((arg) => arg.includes("@solver"));
 
 export default defineConfig({
   testDir: ".",
   testMatch: /.*\.spec\.ts/,
   testIgnore: runRenderSpec ? undefined : [/.*wish-render\.spec\.ts/],
+  grepInvert: runSolver ? undefined : /@solver/,
   outputDir: "../test-results/e2e",
   globalSetup: "./global-setup.ts",
   timeout: 30_000,
