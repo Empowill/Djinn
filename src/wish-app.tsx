@@ -384,6 +384,7 @@ export function WishApp() {
               wishes={active}
               onOpen={setSelected}
               onToast={setToast}
+              onSetupAgents={() => setModal("agents")}
             />
           ) : wish ? (
             <WishView

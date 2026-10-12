@@ -81,7 +81,7 @@ test("the lead's approval shows in the attention bar, checks the command and sen
     url.pathname = "/";
     await page.goto(url.toString());
     const item = page.locator("#lead-prompt");
-    await expect(item).toContainText("Lead approval");
+    await expect(item).toContainText("Approval for the Djinn");
     await expect(item).toContainText(title);
     await expect(item).toContainText("$ djinn wish brief");
     await expect(

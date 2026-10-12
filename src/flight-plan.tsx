@@ -5,6 +5,8 @@
 // questions you asked to investigate. The tasks of every wish
 // have a tab of their own (task-tabs.tsx), and so have their decisions (decision-log.tsx). Every line shows the wish
 // it comes from, and an answer, a stop or a grant goes back to it. Each wish keeps its own view; an empty section is hidden.
+// The Djinn, the one lead, is at hand as on a wish: Talk to the Djinn in the header opens its terminal, the pill at the
+// bottom writes to it.
 import {
   type CSSProperties,
   type ReactNode,
@@ -19,6 +21,7 @@ import {
   type Choice,
   Closer,
   type MarkKind,
+  type Provider,
   type Question,
   type Task,
   TaskStatus,
@@ -46,6 +49,7 @@ import {
 import { DecisionLog } from "./decision-log";
 import { t } from "./i18n";
 import { Inbox } from "./inbox";
+import { LeadMessage } from "./lead-message";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
 import { CountPill, StatusBadge } from "./status";
@@ -66,6 +70,7 @@ import { WishQuestion } from "./wish-question";
 import { WishTask } from "./wish-task";
 import { ConsumptionPanel } from "./consumption-panel";
 import { PageHeader } from "./page-header";
+import { LeadButton, leadTrouble, recordedAgent } from "./wish-head";
 import {
   GrantCard,
   InvestigatingSection,
@@ -79,14 +84,18 @@ export function FlightPlan({
   wishes,
   onOpen,
   onToast,
+  onSetupAgents,
 }: {
   // The active wishes, by rank.
   wishes: Wish[];
   onOpen: (wishId: string) => void;
   onToast: (text: string) => void;
+  onSetupAgents?: () => void;
 }) {
   const projects = useData((s) => s.projects);
   const lead = useData((s) => s.lead);
+  const leadExit = useData((s) => s.leadExit);
+  const leadStartError = useData((s) => s.leadStartError);
   const leadPrompt = useData((s) => s.leadPrompt);
   const allWishes = useData((s) => s.wishes);
   const projectById = useMemo(
@@ -496,6 +505,19 @@ export function FlightPlan({
     [],
   );
   const checkDecisionNoLead = useCallback(() => noLead(lead), [lead]);
+  // resumeLead resumes the Djinn, or starts one of another agent, on no wish; what Djinn says of it shows as a toast.
+  const resumeLead = (provider?: Provider) => {
+    let note = "";
+    return act(
+      "",
+      async () => {
+        ({ note } = await clients.lead.resume({ provider }));
+      },
+      [Change.WISH],
+      () => note,
+    );
+  };
+  const trouble = leadTrouble(leadExit, leadStartError);
   const handleTaskFocus = useCallback(
     (id: string) => show("tasks", id),
     [show],
@@ -503,7 +525,22 @@ export function FlightPlan({
 
   return (
     <div className="wish-view flight-plan review">
-      <PageHeader middle={<OperatingLoad />}>
+      <PageHeader
+        middle={<OperatingLoad />}
+        actions={
+          <LeadButton
+            focused={false}
+            recorded={recordedAgent(lead)}
+            trouble={trouble}
+            loadAgents={async () =>
+              (await clients.ui.getEnvironment({})).providers
+            }
+            onLead={() => quiet(resumeLead())}
+            onPick={(provider) => quiet(resumeLead(provider))}
+            onSetup={onSetupAgents}
+          />
+        }
+      >
         <strong>{t("plan.title")}</strong>
       </PageHeader>
       <div className="mission-scroll" ref={keepPlace}>
@@ -898,6 +935,7 @@ export function FlightPlan({
           onWithdraw={withdraw}
         />
       )}
+      <LeadMessage stopped={!lead || !!trouble} onResume={() => resumeLead()} />
     </div>
   );
 }

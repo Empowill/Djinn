@@ -1,8 +1,8 @@
 // The buttons at the top of a wish, against the real djinn up --browser (see global-setup.ts): Share writes the wish's
-// export (binary protobuf), a file the command line imports again; Lead resumes the one lead in its terminal, focused
-// on the wish. The lead is a fake claude on djinn's PATH that repeats what it reads. The chip beside the push strategy
-// says where the wish's work lands, in a real Git repository, and changes its branch. The trash has its own spec
-// (wish-lifecycle.spec.ts).
+// export (binary protobuf), a file the command line imports again; Talk to the Djinn resumes the one lead, the Djinn,
+// in its terminal, focused on the wish, and on no wish from the flying carpet's header. The lead is a fake claude on
+// djinn's PATH that repeats what it reads. The chip beside the push strategy says where the wish's work lands, in a
+// real Git repository, and changes its branch. The trash has its own spec (wish-lifecycle.spec.ts).
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -89,10 +89,10 @@ test.describe("Lead", () => {
 
     const lead = page
       .locator(".topbar-actions")
-      .getByRole("button", { name: "Lead" });
+      .getByRole("button", { name: "Talk to the Djinn" });
     await expect(lead).toHaveAttribute(
       "title",
-      "Focus the lead on this wish, in the terminal",
+      "Opens the Djinn's terminal, focused on this wish",
     );
     await lead.click();
     const terminal = page.getByRole("region", { name: "Terminal" });
@@ -106,6 +106,45 @@ test.describe("Lead", () => {
     await expect(
       leadRows(page, `Focus on the wish ${title} (${wishId})`),
     ).toHaveCount(2);
+    djinn("wish", "delete", wishId);
+  });
+
+  test("Talk to the Djinn on the flying carpet opens the Djinn's terminal, on no wish", async ({
+    page,
+  }) => {
+    // One wish active, so that the window opens on the flying carpet: the earlier specs' wishes make way.
+    for (const w of JSON.parse(djinn("wish", "list", "--json")).wishes ?? [])
+      if (w.state === "WISH_STATE_ACTIVE") djinn("wish", "pause", w.id);
+    const folder = leadFolder();
+    const title = `The Djinn from the carpet ${randomUUID().slice(0, 8)}`;
+    const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
+      .id as string;
+    setLead(session, folder);
+    await page.goto(process.env.DJINN_URL!);
+    await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
+
+    // Seen at once: in the header, beside the pill that writes to the Djinn.
+    const talk = page
+      .locator(".page-header .topbar-actions")
+      .getByRole("button", { name: "Talk to the Djinn", exact: true });
+    await expect(talk).toBeVisible();
+    await expect(talk).toHaveAttribute("title", "Opens the Djinn's terminal");
+    await expect(
+      page.getByRole("button", { name: "Write to the Djinn" }),
+    ).toBeVisible();
+    await talk.click();
+    const terminal = page.getByRole("region", { name: "Terminal" });
+    await expect(
+      terminal.getByRole("tab", { name: "The Djinn", exact: true }),
+    ).toHaveAttribute("aria-selected", "true");
+    await expect(
+      terminal.locator(".lead-terminal-command").first(),
+    ).toContainText(`claude --resume ${session}`);
+    await expect(
+      leadRows(page, `fake-claude --resume ${session} in ${folder}`),
+    ).toHaveCount(1);
+    // On no wish: nothing is typed to focus it.
+    await expect(leadRows(page, "Focus on the wish")).toHaveCount(0);
     djinn("wish", "delete", wishId);
   });
 });

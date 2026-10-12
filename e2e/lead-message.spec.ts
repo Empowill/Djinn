@@ -47,16 +47,16 @@ test("a word written in the pill reaches the lead's terminal", async ({
     await page.locator(".wish-nav").filter({ hasText: title }).click();
 
     // The shortcut opens the pill into its box, as wide as the pill.
-    const toggle = page.getByRole("button", { name: "Write to the lead" });
+    const toggle = page.getByRole("button", { name: "Write to the Djinn" });
     await expect(toggle).toBeVisible();
     await page.screenshot({ path: "test-results/e2e/lead-message-pill.png" });
     await toggle.focus();
     await page.keyboard.press(
       process.platform === "darwin" ? "Meta+I" : "Control+I",
     );
-    const panel = page.getByRole("dialog", { name: "To the lead" });
+    const panel = page.getByRole("dialog", { name: "To the Djinn" });
     const box = panel.getByLabel(
-      "A word for the lead about this wish, as if typed in its terminal",
+      "A word for the Djinn about this wish, as if typed in its terminal",
     );
     await expect(box).toBeFocused();
     const action = page.locator(".workspace-action-lead");
@@ -83,7 +83,7 @@ test("a word written in the pill reaches the lead's terminal", async ({
     await box.press("Enter");
     await expect(panel.getByRole("alert")).toContainText("djinn lead resume");
     await expect(box).toHaveValue("Too early");
-    const start = panel.getByRole("button", { name: "Start the lead" });
+    const start = panel.getByRole("button", { name: "Start the Djinn" });
     await start.click();
     await expect(
       rows(page, `fake-claude --resume ${session} in ${folder}`),

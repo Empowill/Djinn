@@ -26,7 +26,7 @@ Workers and leads run the agents you already have, as you installed and signed i
 version, and whether it is signed in (`claude auth status`, `codex login status`; Antigravity has no such command, so
 its sign-in shows as unknown), with a button to install it or sign it in. The button runs the agent's own command in a
 terminal of the panel, where you answer if it asks; once it ends, Djinn checks again. The same panel opens from the
-arrow beside **Lead** (**Set up the agents**), and by itself when the window opens with no agent ready. Djinn looks
+arrow beside **Talk to the Djinn** (**Set up the agents**), and by itself when the window opens with no agent ready. Djinn looks
 where its workers and leads look: its PATH, your login shell's, and the installers' folders. Djinn asks for no API key,
 and stores none: the account each agent signs in with pays for it.
 
@@ -77,10 +77,10 @@ never in your home folder: an agent started there would ask you to trust all of 
 asks you to create one. `djinn up --terminal-dir <folder>` picks another folder, and
 `djinn up --terminal "…" --terminal-dir <folder>` runs that command instead of your shell.
 
-It holds tabs. The window's own terminal is always there; while the lead runs, its tab, **Lead**, is there too. The + of the tab bar, or Ctrl+Shift+T anywhere in the window, opens a new shell
+It holds tabs. The window's own terminal is always there; while the lead runs, its tab, **The Djinn**, is there too. The + of the tab bar, or Ctrl+Shift+T anywhere in the window, opens a new shell
 (**Shell 1**, **Shell 2**…); the terminal icon next to a project in the side panel opens one at its root. Each tab you
 opened closes with its ×, and comes back after a reload. The terminal folds away; **Restart** starts one again once
-its program ended, and on the lead's tab it starts the lead again as **Lead** does. Ctrl+Shift+C and Ctrl+Shift+V copy and paste.
+its program ended, and on the lead's tab it starts the lead again as **Talk to the Djinn** does. Ctrl+Shift+C and Ctrl+Shift+V copy and paste.
 
 ## A project
 
@@ -127,14 +127,15 @@ From a terminal: `djinn wish pause <wish-id>`, `djinn wish activate <wish-id>`, 
 Djinn has a single lead for all active wishes: an agent session that talks with you, splits wishes into tasks, asks
 the questions and keeps the plans true. It drives Djinn with the `djinn` command.
 
-**Lead**, at the top of a wish, opens the lead in the terminal of the window and focuses on that wish:
+The window calls the lead the Djinn. **Talk to the Djinn**, at the top of a wish, opens the lead in the terminal of
+the window and focuses on that wish; at the top of the flying carpet, it opens it on no wish:
 
 - the lead has a session: Djinn resumes it (`claude --resume …` or `codex resume …`) in the folder it was recorded
   in, or shows it if it runs, and types a short line focusing on the wish;
 - it has none: a new Claude lead starts in your first project, never in your home folder. With no project at all,
   nothing starts: create one first.
 
-The arrow beside **Lead**, **Choose the agent**, starts a lead of another agent found on this machine: Claude Code,
+The arrow beside **Talk to the Djinn**, **Choose the agent**, starts a lead of another agent found on this machine: Claude Code,
 Codex or Antigravity. An agent that is not installed shows greyed, saying so; the recorded one is checked, and picking
 it resumes the lead, focused on this wish. Starting a lead of another provider replaces it.
 
@@ -148,21 +149,21 @@ withdraws one as soon as a task or Djinn does what it asked. When it does not fu
 again before starting any work. It writes nothing for you in its terminal; a line you type there is answered in the
 window.
 
-From a terminal, `djinn lead resume` does what **Lead** does, and starts Djinn if it does not run;
+From a terminal, `djinn lead resume` does what **Talk to the Djinn** does, and starts Djinn if it does not run;
 `djinn lead resume --provider codex` picks the agent. `djinn lead set <session-id> --directory <folder>`
 records a session you started yourself. `djinn lead tell "…"` writes to the running lead as if you typed it in its
 terminal, line breaks kept (`--wish-id <wish-id>` says which wish it is about); it waits while you type there or a
-choice is on screen. In a wish, the pill **Write to the lead** at the bottom does the same about that wish
-(Cmd/Ctrl+I opens it; Enter sends, Shift+Enter breaks the line, Escape folds it and keeps the draft).
+choice is on screen. In a wish, the pill **Write to the Djinn** at the bottom does the same about that wish, and
+on the flying carpet about no wish (Cmd/Ctrl+I opens it; Enter sends, Shift+Enter breaks the line, Escape folds it and keeps the draft).
 
 When the lead's agent asks for your approval in its terminal (a command to run, a folder to trust), the bar of what
 waits for you shows it first, in the flying carpet and in every wish, with its options as buttons, and a notification
 says so. A button answers in the terminal as its keys would, only while the terminal still shows that very choice: a
 different command needs a new click.
 
-When the lead could not start, from **Lead** or as Djinn starts, or its program ended (it failed at once, or you quit
-it), a small dot on **Lead** says so, in every wish: its tooltip gives the error or the exit code. The lead's tab keeps its last output, and
-reopening it starts nothing. Only **Lead**, or `djinn lead resume`, starts it again; the dot goes once it runs.
+When the lead could not start, from **Talk to the Djinn** or as Djinn starts, or its program ended (it failed at once, or you quit
+it), a small dot on **Talk to the Djinn** says so, in every wish and on the flying carpet: its tooltip gives the error or the exit code. The lead's tab keeps its last output, and
+reopening it starts nothing. Only **Talk to the Djinn**, or `djinn lead resume`, starts it again; the dot goes once it runs.
 
 Djinn takes the lead back at every start, in the lead's terminal. The first start after an update from a Djinn that had
 one lead per wish keeps the lead of the first active wish as the one lead.

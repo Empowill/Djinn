@@ -273,7 +273,7 @@ function LeadTerminal({
   closeTabRef.current = closeTab;
   const label = (tab: string) => {
     if (tab === NAME) return t("terminal.title");
-    if (tab === LEAD) return t("wish.resume");
+    if (tab === LEAD) return t("terminal.lead_tab");
     const project = projects.find((p) => tab.startsWith(`project-${p.id}-`));
     if (project) return project.name;
     return t("terminal.shell_tab", {

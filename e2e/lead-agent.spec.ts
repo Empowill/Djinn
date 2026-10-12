@@ -99,7 +99,7 @@ test.describe("Lead of another agent", () => {
     const claude = menu.getByRole("menuitem", { name: /Claude/ });
     await expect(claude).toHaveAttribute("aria-current", "true");
     await expect(claude).toContainText(
-      "The lead: resumes it, focused on this wish",
+      "The Djinn's agent: resumes it, focused on this wish",
     );
     const agy = menu.getByRole("menuitem", { name: /Antigravity/ });
     await expect(agy).toBeEnabled();

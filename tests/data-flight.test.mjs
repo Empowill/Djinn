@@ -536,7 +536,7 @@ test("a cancelled task has its own muted tone, never done's, and a compact note 
   assert.equal(f.taskTone(task), "cancelled");
   assert.notEqual(f.taskTone(task), f.taskTone({ status: S.DONE }));
   assert.equal(f.taskStatusText(task), "Cancelled");
-  assert.equal(f.cancelledText(task), "By the lead: superseded by W7");
+  assert.equal(f.cancelledText(task), "By the Djinn: superseded by W7");
   assert.equal(f.cancelledText(cancelled(f.Closer.DEVELOPER, "")), "By you");
   assert.equal(f.cancelledText({ status: S.DONE }), undefined);
   // It is history: finished, dealt with, never the person's move.

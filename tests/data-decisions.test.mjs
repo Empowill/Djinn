@@ -141,7 +141,7 @@ test("the Decisions tab lists them without a button: the human label and colour,
     /decision-row tone-human[^>]*id="decision-q1".*status-badge tone-human.*<svg[^>]*>.*<span>Decided by you<\/span>/,
   );
   assert.match(html, /id="decision-b3".*<span>Approved by you<\/span>/);
-  assert.match(html, /decision-row agent[^>]*id="decision-b2".*By the lead/);
+  assert.match(html, /decision-row agent[^>]*id="decision-b2".*By the Djinn/);
   assert.match(html, /id="decision-b1".*By W1/);
   // One emoji at the start of each row, the choice in words, the note.
   assert.match(
@@ -170,14 +170,14 @@ test("an answer in a wish without a lead session says no lead was told; a decisi
   const told = d.renderToStaticMarkup(
     h(d.DecisionLog, { items, noLead: () => false, onTask() {} }),
   );
-  assert.doesNotMatch(told, /No lead to tell/);
+  assert.doesNotMatch(told, /The Djinn is not there to tell/);
   const html = d.renderToStaticMarkup(
     h(d.DecisionLog, { items, noLead: () => true, onTask() {} }),
   );
   // Q01 and Q02, the two answered questions; no block.
   assert.equal(
     html.match(
-      /<p class="no-lead">No lead to tell: the answer waits in the wish&#x27;s brief\.<\/p>/g,
+      /<p class="no-lead">The Djinn is not there to tell: the answer waits in the wish&#x27;s brief\.<\/p>/g,
     )?.length,
     2,
   );
