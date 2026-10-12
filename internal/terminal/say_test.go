@@ -279,33 +279,64 @@ func TestSayTypesNothingIntoAnApproval(t *testing.T) {
 	}
 }
 
+// TestChoose: the window picks an option of the choice on screen as the keys would, the arrows from the option marked
+// then Enter, and only while the screen shows that very choice. The terminal says when a choice comes and goes.
+func TestChoose(t *testing.T) {
+	oldGap := keyGap
+	keyGap = 10 * time.Millisecond
+	t.Cleanup(func() { keyGap = oldGap })
+	prompted := make(chan string, 16)
+	_, term := fakeLead(t, Config{Prompted: func(t *Terminal) { prompted <- promptKey(t.Prompt()) }})
+	if term.Prompt() != nil {
+		t.Fatal("a prompt at rest")
+	}
+	from := term.End()
+	if err := term.Write([]byte("claude-approval\r")); err != nil {
+		t.Fatal(err)
+	}
+	output(t, term, from, contains("Tab to amend"))
+	p := term.Prompt()
+	if p == nil || p.Title != "Do you want to proceed?" || len(p.Options) != 3 || p.Selected != 0 {
+		t.Fatalf("Prompt = %#v", p)
+	}
+	select {
+	case key := <-prompted:
+		if key != promptKey(p) {
+			t.Errorf("prompted with %q", key)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no word of the choice")
+	}
+	from = term.End()
+	if err := term.Choose("Do you want to continue?", p.Lines, p.Options, 1); !errors.Is(err, ErrNoPrompt) {
+		t.Fatalf("Choose on another choice = %v, want ErrNoPrompt", err)
+	}
+	if err := term.Choose(p.Title, p.Lines, p.Options, 3); !errors.Is(err, ErrNoPrompt) {
+		t.Fatalf("Choose past the options = %v, want ErrNoPrompt", err)
+	}
+	none(t, term, from, "nothing was chosen")
+	if err := term.Choose(p.Title, p.Lines, p.Options, 1); err != nil {
+		t.Fatal(err)
+	}
+	output(t, term, from, contains(`chose "\x1b[B\r"`))
+	if err := term.Choose(p.Title, p.Lines, p.Options, 1); !errors.Is(err, ErrNoPrompt) {
+		t.Fatalf("Choose once answered = %v, want ErrNoPrompt", err)
+	}
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case key := <-prompted:
+			if key == "" {
+				return // The choice went.
+			}
+		case <-deadline:
+			t.Fatal("no word of the choice going")
+		}
+	}
+}
+
 // recordedEnv gives the fake lead the folder of the agents' screens as recorded: testdata.
 const recordedEnv = "DJINN_TERMINAL_RECORDED"
-
-// The approvals below are written by hand from the words in the binaries (claude 2.1.295, codex-cli 0.162.0-alpha.2)
-// and the layout of their screens; Claude Code's folder trust is recorded (testdata/claude-trust.out).
-const (
-	claudeApproval = "\x1b[38;5;220m" + "────────────────────────────────────────" + "\x1b[39m\r\n" +
-		" Bash command\r\n\r\n" +
-		"   djinn task list --wish-id 01a11f56\r\n" +
-		"   List the tasks of the wish\r\n\r\n" +
-		" Do you want to proceed?\r\n" +
-		" \x1b[38;5;153m❯\x1b[39m 1. Yes\r\n" +
-		"   2. Yes, and don't ask again for djinn task list commands in\r\n" +
-		"      /Users/me/CODE/dolmen\r\n" +
-		"   3. No, and tell Claude what to do differently (esc)\r\n\r\n" +
-		" \x1b[2mEsc to cancel · Tab to amend\x1b[22m\r\n"
-	codexApproval = "› Run the tests\r\n\r\n" +
-		"• I use the djinn skill. I check:\r\n" +
-		"  1. the tasks\r\n  2. the questions\r\n\r\n" +
-		"  Would you like to run the following command?\r\n\r\n" +
-		"  Reason: Allow Djinn to read the wish?\r\n\r\n" +
-		"  $ djinn wish brief 01a11f56\r\n\r\n" +
-		"\x1b[1m› 1. Yes, proceed (y)\x1b[0m\r\n" +
-		"  2. Yes, and don't ask again for commands that start with `djinn` (p)\r\n" +
-		"  3. No, and tell Codex what to do differently (esc)\r\n\r\n" +
-		"  Press enter to confirm or esc to cancel\r\n"
-)
 
 // screens are what the fake lead shows for a line, and whether it is a choice that the next key answers.
 var screens = map[string]struct {
