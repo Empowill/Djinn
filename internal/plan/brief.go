@@ -113,6 +113,13 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"task opens a pull or merge request, ask \"Review it and take it out of draft\" with its link at once: " +
 		"opening it as a draft is the agent's job, marking it ready is the developer's. No move is left implied in a " +
 		"note, a block or your terminal; withdraw a move the moment it is done or superseded.\n" +
+		"- **Never ask the developer to check (Q246).** A check, a measure, a log to read, a CI result to look at, a " +
+		"command to run is never asked of the developer: that is what agents are good at. Spawn a task that runs it and " +
+		"investigates what it finds, or let a watcher report it: a CI result comes from the PR's or MR's babysit " +
+		"watcher. When a worker's final note says what remains to verify, spawn that task or watcher; never pass it on " +
+		"to the developer. A question to the developer is only for a decision or a move only a person can make (a " +
+		"right, a merge, a release, a machine Djinn does not have); then the exact command goes in a code block at the " +
+		"top of its `--context`, never mid-sentence.\n" +
 		"- **Delegate.** You lead; workers do the work. Code, investigations, fixes and checks go to tasks, even small " +
 		"ones, several side by side; keep for yourself what only the lead does: talk with the developer, plan, check " +
 		"what comes back.\n" +
@@ -172,8 +179,9 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"understand, even on a question they answered.\n" +
 		LeadWatchRule() +
 		"- **Check every task that ends.** Read its final note (`djinn task watch <task>`, or its line in your watch's digest): " +
-		"when it leaves an uncertainty (a choice it made in the developer's place, something it did not verify, a partial " +
-		"result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about " +
+		"what it leaves to verify (something it did not verify, a failing test it calls unrelated) goes to a task or a " +
+		"watcher that verifies it, never to the developer; when it leaves an uncertainty (a choice it made in the " +
+		"developer's place, a partial result, a step it skipped, 'to validate'), ask the developer a question about " +
 		"it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too " +
 		"(your rule). Withdraw the open questions its work made needless.\n" +
 		"- **When Djinn misbehaves, stop the damage.** When Djinn misbehaves while the developer is away, " +

@@ -766,7 +766,27 @@ func TestBriefMovesRule(t *testing.T) {
 	}
 }
 
-// TestBriefUnderstandAnswerRule: a lead starts no work from an answer it does not fully understand; it asks again.
+// TestBriefNoCheckAskedRule (Q246): a check is never asked of the developer: a task or a watcher runs it; a question
+// is for a decision or a person's move only, its command in a code block at the top of the context.
+func TestBriefNoCheckAskedRule(t *testing.T) {
+	rules := briefRules(nil, "")
+	for _, want := range []string{
+		"**Never ask the developer to check (Q246).**",
+		"A check, a measure, a log to read, a CI result to look at, a command to run is never asked of the developer",
+		"Spawn a task that runs it and investigates what it finds, or let a watcher report it",
+		"a CI result comes from the PR's or MR's babysit watcher",
+		"When a worker's final note says what remains to verify, spawn that task or watcher",
+		"A question to the developer is only for a decision or a move only a person can make",
+		"the exact command goes in a code block at the top of its `--context`, never mid-sentence",
+		"what it leaves to verify (something it did not verify, a failing test it calls unrelated) goes to a task",
+	} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("briefRules lacks %q:\n%s", want, rules)
+		}
+	}
+}
+
+// TestBriefUnderstandAnswerRule:a lead starts no work from an answer it does not fully understand; it asks again.
 func TestBriefUnderstandAnswerRule(t *testing.T) {
 	rules := briefRules(nil, "")
 	for _, want := range []string{

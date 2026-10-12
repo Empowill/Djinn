@@ -337,7 +337,8 @@ when a task waits for the answer, orange under the words the lead gave ("before 
 The cards, the bar of what waits for you and the brief list them in that order.
 
 When work leaves a move only the developer can make (push a tag, open or merge a PR, start a release, check on a Mac or
-Windows, install when needed), Djinn or the agent asks it as a question with the exact command.
+Windows, install when needed), Djinn or the agent asks it as a question, the exact command in a code block at the top
+of its context. A check, a measure, a log or a CI result is never asked of you: an agent runs it and reports.
 
 - **Rub the lamp** answers with the option selected and your note: the recommended one is selected first, so one
   click takes it; pick another and the lamp sends that one. With no option recommended, pick one first. The lead
