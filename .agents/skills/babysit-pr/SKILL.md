@@ -59,8 +59,8 @@ request their review, one paragraph each with its link. It runs only once the de
    files into one task.
 3. Review each worker's diff, then commit and push once for the round, as the project's rules say.
 4. Answer review comments only with what was done, in the developer's name only if they asked you to.
-5. Nothing to do (a comment that needs the developer, `all checks pass` while a review is awaited): wait for the
-   next line. Never poll the checks yourself: the watcher speaks when they fail or all pass.
+5. Nothing to do (`all checks pass` while a review is awaited): wait for the next line. A comment that needs the
+   developer is a question in the wish (`djinn question ask`); say nothing in your terminal. Never poll the checks yourself: the watcher speaks when they fail or all pass.
 
 ## Never
 

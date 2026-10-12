@@ -29,8 +29,15 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   what to think, the analysis behind it in its `--context`. One written in the lead's terminal reaches neither the
   window, nor the decision log, nor the question workers. A decision taken in the terminal goes in a block of kind
   decision; the work goes to tasks. A resolved question is resolved: the lead does not bring it back to the
-  developer, and asks again, a new question, only on a real doubt. Djinn's rules in the brief say it, and so does
+  developer, and asks again, a new question, only on a real doubt; an answer it does not fully understand (the
+  choice, its note, how they fit) is one, and no task starts from it. Djinn's rules in the brief say it, and so does
   every lead's first message.
+- **The lead says nothing in its terminal.** The developer reads only the window: the lead's turns end with no text,
+  or one line naming the question codes at most. Every report, finding, status or "done as you asked" is a question in
+  the wish concerned, often a yes/no acknowledgement with "OK, nothing to do" as an option; a real wait on the
+  developer is a `--move` question that says so. Never two questions for one gesture: the lead withdraws a question
+  the moment a task or Djinn does what it asked. A line typed in the lead's terminal is a request like any other,
+  answered in the window (`briefRules` in `internal/plan/brief.go`).
 - **Every lead starts the same way, whatever its agent.** Its first message is one line, the same for claude, codex
   and antigravity: run `djinn brief`, then continue from what it says (`StartLine` in
   `internal/plan/newlead.go`). Nothing in it is about one agent or a wish's state: a lead of another agent than the

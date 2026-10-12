@@ -27,8 +27,9 @@ const maxFirstArg = 64 << 10
 // StartLine is how every new lead starts, whatever its agent: from the brief, which Djinn computes from the plan.
 func StartLine() string {
 	return "You lead the active wishes of this Djinn. Run `djinn brief`: where the wishes stand and how to " +
-		"lead them, computed by Djinn from its plan. Then continue the wishes from what it says. Every question for the " +
-		"developer goes through `djinn question ask`, never in this terminal, and the work goes to tasks."
+		"lead them, computed by Djinn from its plan. Then continue the wishes from what it says. Everything for the " +
+		"developer, reports included, is a question through `djinn question ask`; write nothing in this terminal. The " +
+		"work goes to tasks."
 }
 
 // newLead prepares a new lead: the command line that starts provider's agent in dir (FirstProjectFolder: a

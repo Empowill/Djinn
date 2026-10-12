@@ -722,6 +722,44 @@ func TestBriefOperationalDecisionsRule(t *testing.T) {
 	}
 }
 
+// TestBriefSilentTerminalRule: a lead writes nothing for the developer in its terminal; every word, statements
+// included, is a question in the window, withdrawn once a task or Djinn does what it asked. Its first message says so.
+func TestBriefSilentTerminalRule(t *testing.T) {
+	rules := briefRules(nil, "")
+	for _, want := range []string{
+		"**Say nothing in your terminal.**",
+		"End your turns with no text, or at most one line naming the questions you asked (Q12)",
+		"statements included",
+		"\"OK, nothing to do\" as an option",
+		"A real wait on the developer is a `--move` question that says so plainly",
+		"Never two questions for one gesture",
+		"withdraw a question (`djinn question withdraw`) the moment a task or Djinn does what it asked",
+		"A line the developer types in your terminal is a request like any other: answer it in the window",
+		"Withdraw the open questions its work made needless",
+	} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("briefRules lacks %q:\n%s", want, rules)
+		}
+	}
+	if want := "write nothing in this terminal"; !strings.Contains(StartLine(), want) {
+		t.Errorf("StartLine lacks %q: %s", want, StartLine())
+	}
+}
+
+// TestBriefUnderstandAnswerRule: a lead starts no work from an answer it does not fully understand; it asks again.
+func TestBriefUnderstandAnswerRule(t *testing.T) {
+	rules := briefRules(nil, "")
+	for _, want := range []string{
+		"**Understand an answer before you act on it.**",
+		"never start work or spawn a task from an answer while any part of it (the choice, its note, how they fit together) is unclear to you",
+		"Ask again, a new question that quotes what you did not understand, even on a question they answered",
+	} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("briefRules lacks %q:\n%s", want, rules)
+		}
+	}
+}
+
 // TestBriefCancelRule: the lead cancels a task no longer useful with djinn task cancel, never marks it done.
 func TestBriefCancelRule(t *testing.T) {
 	rules := briefRules(nil, "")
