@@ -292,9 +292,7 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await page.mouse.move(10, 300);
   await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
   await pageHeader.locator(".page-header-action.danger").focus();
-  await expect(page.locator('[role="tooltip"]')).toHaveText(
-    "Delete this wish",
-  );
+  await expect(page.locator('[role="tooltip"]')).toHaveText("Delete this wish");
   await pageHeader.locator(".page-header-action.danger").blur();
   await assertHeaderChrome(248);
   await page.setViewportSize({ width: 760, height: 1000 });

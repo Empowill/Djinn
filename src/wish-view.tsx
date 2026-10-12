@@ -135,6 +135,7 @@ import {
   recordedAgent,
 } from "./wish-head";
 import { PageHeader, PageHeaderAction } from "./page-header";
+import { TooltipButton } from "./tooltip";
 
 // Opening is a tilasm to show in a wish's Tilasms tab, as a djinn:// link asks: a new object at each request.
 export interface Opening {
@@ -684,9 +685,10 @@ export function WishView({
                 <span>{t("wish.reopen")}</span>
               </button>
             ) : isActive(wish) ? (
-              <button
+              <TooltipButton
                 className="button secondary small"
-                title={t("wish.pause_detail")}
+                label={t("wish.pause")}
+                tooltip={t("wish.pause_detail")}
                 onClick={() =>
                   quiet(
                     act(
@@ -698,11 +700,12 @@ export function WishView({
               >
                 <Pause size={14} />
                 <span>{t("wish.pause")}</span>
-              </button>
+              </TooltipButton>
             ) : (
-              <button
+              <TooltipButton
                 className="button accent small"
-                title={t("wish.activate_detail", { max: MAX_ACTIVE })}
+                label={t("wish.activate")}
+                tooltip={t("wish.activate_detail", { max: MAX_ACTIVE })}
                 onClick={() =>
                   quiet(
                     act(
@@ -714,7 +717,7 @@ export function WishView({
               >
                 <Play size={14} />
                 <span>{t("wish.activate")}</span>
-              </button>
+              </TooltipButton>
             )}
             <LeadButton
               recorded={recordedAgent(leadRecord)}

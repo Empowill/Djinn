@@ -17,16 +17,35 @@ export type PlatformShortcut = {
   aria: string;
 };
 
-function isMacPlatform(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return /Mac/i.test(`${navigator.platform} ${navigator.userAgent}`);
+// isMac reports whether the interface runs on macOS, to show Mac modifier symbols (__DJINN_MAC__ sets it in tests).
+export function isMac(): boolean {
+  const g = globalThis as unknown as { __DJINN_MAC__?: boolean };
+  if (typeof g.__DJINN_MAC__ === "boolean") {
+    return g.__DJINN_MAC__;
+  }
+  if (typeof navigator !== "undefined") {
+    const nav = navigator as unknown as {
+      userAgentData?: { platform?: string };
+      platform?: string;
+      userAgent?: string;
+    };
+    const p =
+      nav.userAgentData?.platform || nav.platform || nav.userAgent || "";
+    return /Mac/i.test(p);
+  }
+  if (typeof process !== "undefined" && process.platform === "darwin") {
+    return true;
+  }
+  return false;
 }
 
+// platformShortcut names a shortcut as the platform writes it: ⌘ on a Mac, Ctrl elsewhere; aria is for
+// aria-keyshortcuts.
 export function platformShortcut(
   key: string,
   displayKey = key,
 ): PlatformShortcut {
-  return isMacPlatform()
+  return isMac()
     ? { label: `⌘ ${displayKey}`, aria: `Meta+${key}` }
     : { label: `Ctrl ${displayKey}`, aria: `Control+${key}` };
 }
@@ -152,7 +171,7 @@ export function TooltipButton({
             style={position ?? { visibility: "hidden" }}
           >
             <span>{tooltip}</span>
-            {shortcut && <kbd>{shortcut}</kbd>}
+            {shortcut && <kbd className="key-hint">{shortcut}</kbd>}
           </div>,
           document.body,
         )}

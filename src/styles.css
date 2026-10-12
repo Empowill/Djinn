@@ -2166,7 +2166,8 @@ html:not(.native-mac) .sidebar {
   }
 }
 
-/* Tooltips live in document.body so clipped sidebar/content surfaces cannot hide them. */
+/* Tooltips live in document.body so clipped sidebar/content surfaces cannot hide them. Their key reads like the
+   question card's (.key-hint), in the tooltip's own colour. */
 .app-tooltip {
   position: fixed;
   z-index: 1000;
@@ -2176,23 +2177,17 @@ html:not(.native-mac) .sidebar {
   box-sizing: border-box;
   max-width: min(320px, calc(100vw - 16px));
   padding: 7px 9px;
-  border: 1px solid #414141;
+  border: 1px solid var(--n-42);
   border-radius: 6px;
-  background: #202020;
-  color: #ededed;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 48%);
+  background: var(--n-20);
+  color: var(--n-eb);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow) 48%, transparent);
   font-size: var(--font-size-body, 12px);
   line-height: 1.35;
   pointer-events: none;
   white-space: normal;
 }
-.app-tooltip kbd {
+.app-tooltip .key-hint {
   flex: 0 0 auto;
-  padding: 1px 4px;
-  border: 1px solid #515151;
-  border-radius: 3px;
-  color: #bdbdbd;
-  font: var(--font-size-body, 12px) var(--mono);
-  line-height: 1.2;
   white-space: nowrap;
 }
