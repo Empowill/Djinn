@@ -26,6 +26,7 @@ import { Docs } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
 import { type Opening, type Reaching, WishView } from "./wish-view";
 import { OperatingLoad } from "./operating-load";
+import { PageHeader } from "./page-header";
 import "./wish.css";
 import "./review.css";
 
@@ -354,11 +355,7 @@ function Welcome({
 }) {
   return (
     <div className="wish-view">
-      <header className="topbar">
-        <div className="breadcrumbs" />
-        <OperatingLoad />
-        <div className="topbar-actions" />
-      </header>
+      <PageHeader middle={<OperatingLoad />} />
       <div className="mission-scroll wish-welcome">
         <div className="hero">
           <div className="hero-copy">
