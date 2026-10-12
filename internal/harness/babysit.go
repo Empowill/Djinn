@@ -4,7 +4,8 @@ package harness
 // done, Djinn looks for the request it opened: the address its gh pr create or glab mr create printed, else the one
 // open for its branch, else the one open for the wish's branch. It starts the watcher a skill of the project declares
 // (plan.Babysit), part of the task's azima, and tells the lead once. djinn task spawn --babysit does the same by hand,
-// the request found as the watcher starts.
+// the request found as the watcher starts. A watcher spawned by hand on the project's command for the request is its
+// babysit already: Djinn records it on that one, and starts none.
 
 import (
 	"cmp"
@@ -182,29 +183,64 @@ func (h *Harness) babysitState(id, skill string, number int) string {
 	return filepath.Join(dir, fmt.Sprintf("%s-%d", skill, number))
 }
 
+// methodBabysit journals a watcher Djinn found babysitting a request already, the request recorded on it; the request
+// is the task.
+const methodBabysit = "harness/babysit"
+
 // babysat is the code of a task that babysits the request url already, or of the watcher of a wish made from a
-// template that runs command in the project and is not granted; empty when none does.
-func babysat(ctx context.Context, r store.Reader, projectID, url, command string) (string, error) {
+// template that runs decl's command on it in the project and is not granted; empty when none does. A watcher of any
+// wish that runs or resumes in the project on decl's command for the request, spawned by hand, babysits it too: it is
+// given as well, for its babysit to be recorded.
+func babysat(ctx context.Context, r store.Reader, projectID, url string, decl *plan.Babysit, number int) (string, *planv1.Task, error) {
 	tasks, err := store.List[*planv1.Task](ctx, r, nil)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	for _, t := range tasks {
 		if url != "" && strings.EqualFold(t.GetBabysit().GetUrl(), url) {
-			return t.GetCode(), nil
+			return t.GetCode(), nil, nil
+		}
+	}
+	for _, t := range tasks {
+		if s := t.GetStatus(); !watching(t) || t.GetProjectId() != projectID || t.GetBabysit().GetUrl() != "" ||
+			(s != planv1.TaskStatus_TASK_STATUS_RUNNING && s != planv1.TaskStatus_TASK_STATUS_RESUMING) {
+			continue
+		}
+		if command, err := lastPrompt(ctx, r, t.GetId()); err == nil && decl.Watches(command, number) {
+			return t.GetCode(), t, nil
 		}
 	}
 	wishes, err := store.List[*planv1.Wish](ctx, r, nil)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	for _, w := range wishes {
-		if t := w.GetTemplate(); t.GetProjectId() == projectID && t.GetWatch() == command &&
+		if t := w.GetTemplate(); t.GetProjectId() == projectID && decl.Watches(t.GetWatch(), number) &&
 			w.GetState() != planv1.WishState_WISH_STATE_GRANTED {
-			return w.GetTitle(), nil
+			return w.GetTitle(), nil, nil
 		}
 	}
-	return "", nil
+	return "", nil, nil
+}
+
+// adoptBabysit records babysit on the watcher id, which watches its request already: its run takes it at its next
+// write (carry), its done line with it.
+func (h *Harness) adoptBabysit(ctx context.Context, id string, babysit *planv1.TaskBabysit) error {
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		task, err := store.Get[*planv1.Task](ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		task.Babysit = babysit
+		if err := tx.Journal(actorHarness, methodBabysit, task); err != nil {
+			return err
+		}
+		return tx.Put(task)
+	})
+	if err == nil {
+		h.notify()
+	}
+	return err
 }
 
 // babysitOpened looks, once the work task t ended done, for the request it opened, and starts the project's babysit
@@ -256,29 +292,38 @@ func (h *Harness) babysit(ctx context.Context, t *planv1.Task) error {
 	// One look at a time from here: two tasks that end together never start two watchers on one request.
 	h.babysitMu.Lock()
 	defer h.babysitMu.Unlock()
-	if code, err := babysat(ctx, h.store, project.GetId(), req.URL, decl.Fill(req.Number, "")); err != nil || code != "" {
+	code, hand, err := babysat(ctx, h.store, project.GetId(), req.URL, decl, req.Number)
+	if err != nil || (code != "" && hand == nil) {
 		return err
 	}
-	id := store.NewID()
 	name := requestName(forge, req.Number)
-	made := &planv1.Task{Id: id, Babysit: &planv1.TaskBabysit{
+	babysit := &planv1.TaskBabysit{
 		Url: req.URL, Number: int32(req.Number), Skill: decl.Skill, DoneWhen: decl.DoneWhen, OpenedBy: by,
-	}}
-	watcher, err := h.spawn(ctx, planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
-		WishId: wish.GetId(), ProjectId: project.GetId(), Title: "Babysit " + name,
-		Prompt: decl.Fill(req.Number, h.babysitState(id, decl.Skill, req.Number)), Provider: planv1.Provider_PROVIDER_WATCH,
-		Restart: decl.Restart, PartOf: t.GetPartOf(),
-	}, made)
-	if err != nil {
-		return err
+	}
+	babysits := code + " already babysits it"
+	if hand != nil {
+		// Spawned by hand on the request: it is its babysit, no second watcher polls the forge.
+		if err := h.adoptBabysit(ctx, hand.GetId(), babysit); err != nil {
+			return err
+		}
+	} else {
+		id := store.NewID()
+		watcher, err := h.spawn(ctx, planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
+			WishId: wish.GetId(), ProjectId: project.GetId(), Title: "Babysit " + name,
+			Prompt: decl.Fill(req.Number, h.babysitState(id, decl.Skill, req.Number)), Provider: planv1.Provider_PROVIDER_WATCH,
+			Restart: decl.Restart, PartOf: t.GetPartOf(),
+		}, &planv1.Task{Id: id, Babysit: babysit})
+		if err != nil {
+			return err
+		}
+		code, babysits = watcher.GetCode(), watcher.GetCode()+" babysits it"
 	}
 	opened := t.GetCode() + " opened " + name
 	if by == "" {
 		opened = name + " is open for " + plan.IntegrationBranchOf(wish, project.GetId())
 	}
-	line := fmt.Sprintf("Djinn: %s: %s babysits it; follow the skill %s each time it speaks. %s", opened,
-		watcher.GetCode(), decl.Skill, req.URL)
-	if err := h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_WATCH, wish.GetId(), watcher.GetCode(), line); err != nil &&
+	line := fmt.Sprintf("Djinn: %s: %s; follow the skill %s each time it speaks. %s", opened, babysits, decl.Skill, req.URL)
+	if err := h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_WATCH, wish.GetId(), code, line); err != nil &&
 		!errors.Is(err, plan.ErrNoLead) {
 		return fmt.Errorf("tell the lead: %w", err)
 	}

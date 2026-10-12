@@ -318,3 +318,78 @@ func TestBabysitByHand(t *testing.T) {
 		t.Errorf("--babysit without a declaration: %v", err)
 	}
 }
+
+// TestBabysitAWatcherSpawnedByHand replays W526 and W528 of djinn (12/10/2026): the lead opens PR #3 with gh and spawns
+// a watcher on it by hand, on the project's babysit command; a task then ends with PR #3 open for its branch. Djinn
+// starts no second watcher: it records the babysit on the lead's, tells the lead once that it babysits PR #3, and the
+// done line ends it. A hand watcher on another PR is left alone, and a later task on PR #3 is told nothing.
+func TestBabysitAWatcherSpawnedByHand(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	const url = "https://github.com/acme/lamp/pull/3"
+	forge := &fakeForge{lists: map[string]string{"": `[{"number":3,"url":"` + url + `"}]`}}
+	repo := babysitRepo(t, "https://github.com/acme/lamp.git",
+		"      watch: \"sh .agents/skills/babysit-it/watch.sh {pr}\"\n      done_when: MERGED\n", "")
+	// It speaks once, then waits for the PR to be merged.
+	watch := "printf 'request %s\\n' \"$1\"\nwhile [ ! -f \"merged-$1\" ]; do sleep 0.05; done\necho 'MERGED: it is merged.'\nsleep 30\n"
+	if err := os.WriteFile(filepath.Join(repo, ".agents", "skills", "babysit-it", "watch.sh"), []byte(watch), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e, queue, wishID, projectID := babysitWish(t, forge, repo)
+	byHand := func(command string) *planv1.Task {
+		t.Helper()
+		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wishID, ProjectId: projectID, Title: "Watch it", Prompt: command,
+			Provider: planv1.Provider_PROVIDER_WATCH, Restart: true,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := res.Msg.GetTask().GetId()
+		waitFor(t, "the hand watcher to run", func() bool { return e.get(t, id).GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING })
+		return res.Msg.GetTask()
+	}
+	other := byHand("sh .agents/skills/babysit-it/watch.sh 4")
+	lead := byHand(" sh .agents/skills/babysit-it/watch.sh 3 ")
+
+	opener := endTask(t, e, wishID, projectID, "text Pushed.")
+	if got := watchers(t, e, wishID); len(got) != 2 {
+		t.Fatalf("watchers %v, want the two spawned by hand", got)
+	}
+	b := e.get(t, lead.GetId()).GetBabysit()
+	if b.GetUrl() != url || b.GetNumber() != 3 || b.GetSkill() != "babysit-it" || b.GetDoneWhen() != "MERGED" ||
+		b.GetOpenedBy() != opener.GetCode() {
+		t.Errorf("babysit of %s %v, want PR #3 opened by %s", lead.GetCode(), b, opener.GetCode())
+	}
+	if b := e.get(t, other.GetId()).GetBabysit(); b != nil {
+		t.Errorf("babysit of the watcher of PR #4 %v, want none", b)
+	}
+	line := "Djinn: " + opener.GetCode() + " opened PR #3: " + lead.GetCode() +
+		" already babysits it; follow the skill babysit-it each time it speaks. " + url
+	if lines := leadWatchLines(queue); !slices.Contains(lines, line) {
+		t.Errorf("the lead heard %q, want %q", lines, line)
+	}
+
+	endTask(t, e, wishID, projectID, "text Fixed the lint.")
+	if got := watchers(t, e, wishID); len(got) != 2 {
+		t.Errorf("watchers %v after a second task on PR #3, want still two", got)
+	}
+	var told int
+	for _, l := range leadWatchLines(queue) {
+		if strings.Contains(l, "babysits it") {
+			told++
+		}
+	}
+	if told != 1 {
+		t.Errorf("the lead was told %d times of PR #3's watcher, want once: %q", told, leadWatchLines(queue))
+	}
+	if err := os.WriteFile(filepath.Join(repo, "merged-3"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the lead's watcher to end on MERGED", func() bool {
+		return e.get(t, lead.GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE
+	})
+	if b := e.get(t, lead.GetId()).GetBabysit(); b.GetUrl() != url {
+		t.Errorf("babysit of %s after its end %v, want kept", lead.GetCode(), b)
+	}
+}

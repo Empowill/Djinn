@@ -435,7 +435,8 @@ When a task opens a pull or merge request (`gh pr create`, `glab mr create`), Dj
 wish: once the task ends, a watcher task starts on it, part of the task's azima, and the lead hears `W5 opened MR
 !123: W7 babysits it`. Each change the watcher prints (a failed pipeline, a comment, a conflict) wakes the lead, which
 follows the project's babysit skill; the watcher ends when the request is merged. A request already babysat is not
-watched twice. The project names its watcher in one of its skills (`metadata.djinn.babysit`); without one, nothing
+watched twice, even by a watcher the lead spawned by hand on the project's babysit command: Djinn tells the lead
+`W2 already babysits it`. The project names its watcher in one of its skills (`metadata.djinn.babysit`); without one, nothing
 starts. `babysit: false` in the project's settings turns it off. The lead can start one by hand: `djinn task spawn
 <wish> --title "Babysit W5's MR" --babysit --after W5`. How to declare it: [babysitting what a task
 opens](wish-templates.md#babysitting-what-a-task-opens).
