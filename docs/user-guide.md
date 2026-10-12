@@ -181,6 +181,15 @@ one lead per wish keeps the lead of the first active wish as the one lead.
 
 Each line names its wish; an answer, a stop or a grant goes back to it. Like a wish, the flying carpet has a **Tasks**
 tab and a **Decisions** tab, with the tasks and decisions of every active wish. An empty section is hidden.
+Under them, one line says the machine's load, with a link to the [Hourglass](#the-hourglass).
+
+## The Hourglass
+
+**Hourglass**, below the flying carpet in the side panel, is where the live metrics are, as time goes by. First the
+machine: its CPU and memory over the time you pick (10 minutes to 7 days), with Djinn's share, the load limit and the
+gates held; each running worker, its facts and its own graphs (its eye opens the task in its wish); then where the
+time of the commands goes, by project and gate. The page reads them only while it shows: leave it, and its reads stop.
+A running task's card links to its worker's row (**Live in the Hourglass**).
 
 ## A wish's view
 

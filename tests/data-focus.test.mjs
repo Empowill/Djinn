@@ -27,6 +27,7 @@ test("a request to show a wish, its lead and a question reaches every subscriber
   const first = await new Promise((resolve) => focus.subscribe(resolve));
   assert.deepEqual(first, {
     wishId,
+    page: "",
     terminal: `lead-${wishId}`,
     tilasmId: "",
     target: "question-q1",
@@ -54,6 +55,7 @@ test("a broken stream is watched again", async () => {
   );
   assert.deepEqual(got, {
     wishId: "",
+    page: "",
     terminal: "main",
     tilasmId: "",
     target: "",
@@ -80,9 +82,10 @@ test("a tilasm a link names, a link Djinn does not know, and a link clicked in t
   );
   await two;
   assert.deepEqual(got, [
-    { wishId, terminal: "", tilasmId, target: "", unknownLink: "" },
+    { wishId, page: "", terminal: "", tilasmId, target: "", unknownLink: "" },
     {
       wishId: "",
+      page: "",
       terminal: "",
       tilasmId: "",
       target: "",
@@ -93,6 +96,7 @@ test("a tilasm a link names, a link Djinn does not know, and a link clicked in t
   focus.show({ wishId, tilasmId });
   assert.deepEqual(got[2], {
     wishId,
+    page: "",
     terminal: "",
     tilasmId,
     target: "",
@@ -102,6 +106,7 @@ test("a tilasm a link names, a link Djinn does not know, and a link clicked in t
   focus.show({ wishId, target: "question-q1" });
   assert.deepEqual(got[3], {
     wishId,
+    page: "",
     terminal: "",
     tilasmId: "",
     target: "question-q1",

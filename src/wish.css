@@ -498,9 +498,11 @@
   color: var(--muted-dim);
 }
 
-/* The flying carpet of the active wishes: each line shows its wish. */
+/* The flying carpet of the active wishes: each line shows its wish. The Hourglass, below it, is selected alike. */
 .plan-nav.selected,
-.plan-nav.selected:hover {
+.plan-nav.selected:hover,
+.hourglass-nav.selected,
+.hourglass-nav.selected:hover {
   background: var(--n-28);
   color: var(--n-e7);
 }

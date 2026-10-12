@@ -1,15 +1,16 @@
 // The side panel's lists, read from the services: the flying carpet's entry with what waits for you there (questions,
-// new inbox items), the wishes, the active ones by rank (drag one up or down, or Alt+Arrow) and how many of the three
-// places they take, then the paused ones and the granted ones; and the projects, each with its branches out of sync
-// with their remote (project-sync.tsx). The wishes' list shows three rows and scrolls under the pointer. A paused wish
-// dragged onto an active one, or sent first with its button, becomes active there: the wish pushed past the third
-// place is paused.
+// new inbox items), the Hourglass's entry below it (the live metrics, hourglass.tsx), the wishes, the active ones by
+// rank (drag one up or down, or Alt+Arrow) and how many of the three places they take, then the paused ones and the
+// granted ones; and the projects, each with its branches out of sync with their remote (project-sync.tsx). The wishes'
+// list shows three rows and scrolls under the pointer. A paused wish dragged onto an active one, or sent first with its
+// button, becomes active there: the wish pushed past the third place is paused.
 import {
   ArrowUpToLine,
   ChevronDown,
   ChevronRight,
   FolderOpen,
   GripVertical,
+  Hourglass,
   Inbox,
   Plane,
   Plus,
@@ -40,6 +41,8 @@ export function WishSidebar({
   inbox = 0,
   planSelected = false,
   onSelectPlan,
+  hourglassSelected = false,
+  onSelectHourglass,
   selectedWishId,
   selectedProjectId,
   collapsed,
@@ -58,6 +61,9 @@ export function WishSidebar({
   // The flying carpet of the active wishes shows.
   planSelected?: boolean;
   onSelectPlan?: () => void;
+  // The Hourglass, the live metrics, shows.
+  hourglassSelected?: boolean;
+  onSelectHourglass?: () => void;
   selectedWishId: string;
   selectedProjectId: string;
   collapsed: boolean;
@@ -198,6 +204,16 @@ export function WishSidebar({
               label={t("sidebar.inbox_new", { count: inbox })}
             />
           )}
+        </button>
+      )}
+      {onSelectHourglass && (
+        <button
+          className={`nav-item hourglass-nav ${hourglassSelected ? "selected" : ""}`}
+          onClick={onSelectHourglass}
+          title={t("hourglass.title")}
+        >
+          <Hourglass size={15} />
+          {!collapsed && <span>{t("hourglass.title")}</span>}
         </button>
       )}
       <div className="sidebar-section-label">
