@@ -75,3 +75,26 @@ func TestRenameWhileOpen(t *testing.T) {
 		t.Errorf("file = %q, want the new content", got)
 	}
 }
+
+// TestWriteAtomicRetriesARefusedRename: a rename refused for a moment, as Windows refuses one while an antivirus
+// scans settings.json, is tried again, and the new content lands.
+func TestWriteAtomicRetriesARefusedRename(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tries := 0
+	refused := func(oldpath, newpath string) error {
+		if tries++; tries <= 2 {
+			return errors.New("Access is denied")
+		}
+		return os.Rename(oldpath, newpath)
+	}
+	r := Renamer{Func: refused, Wait: time.Second, Sleep: func(time.Duration) {}}
+	if err := r.WriteAtomic(path, []byte("new")); err != nil || tries != 3 {
+		t.Fatalf("WriteAtomic = %v after %d tries, want nil after 3", err, tries)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "new" {
+		t.Errorf("file = %q, want the new content", got)
+	}
+}

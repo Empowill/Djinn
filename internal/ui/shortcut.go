@@ -16,6 +16,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -122,7 +123,7 @@ func (s *Shortcuts) Set(chord string) (*uiv1.Shortcut, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := WriteAtomic(filepath.Join(s.Home, settingsFile), data); err != nil {
+	if err := fsx.WriteAtomic(filepath.Join(s.Home, settingsFile), data); err != nil {
 		return nil, fmt.Errorf("save the settings: %w", err)
 	}
 	s.release()

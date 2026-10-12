@@ -134,8 +134,12 @@ import {
   WhereWorkLands,
   WishDescription,
   WishTitle,
+  leadTrouble,
   recordedAgent,
 } from "./wish-head";
+import { LeadMessage } from "./lead-message";
+import { PageHeader, PageHeaderAction } from "./page-header";
+import { TooltipButton } from "./tooltip";
 
 // Opening is a tilasm to show in a wish's Tilasms tab, as a djinn:// link asks: a new object at each request.
 export interface Opening {
@@ -155,6 +159,7 @@ export function WishView({
   opening,
   reaching,
   onToast,
+  onSetupAgents,
 }: {
   wish: Wish;
   // A tilasm of the wish to show now, in its Tilasms tab.
@@ -162,6 +167,8 @@ export function WishView({
   // An element of the wish to bring into sight now, in its tab.
   reaching?: Reaching;
   onToast: (text: string) => void;
+  // Opens the setup of the agents, from the lead's menu.
+  onSetupAgents?: () => void;
 }) {
   const djinn = useDjinn();
   const store = djinn?.store;
@@ -172,6 +179,9 @@ export function WishView({
   );
   const allWishes = useData((s) => s.wishes);
   const leadRecord = useData((s) => s.lead);
+  const leadPrompt = useData((s) => s.leadPrompt);
+  const leadExit = useData((s) => s.leadExit);
+  const leadStartError = useData((s) => s.leadStartError);
   const pausable = usePausable();
   const initialKinds = useMemo(
     () => kindsForView(opening ? "tilasms" : "main"),
@@ -337,6 +347,17 @@ export function WishView({
     [quiet, write, clients.tasks],
   );
 
+  const handleStart = useCallback(
+    (task: Task) => {
+      quiet(
+        write(task.wishId, () => clients.tasks.start({ taskId: task.id }), [
+          Change.TASK,
+        ]),
+      );
+    },
+    [quiet, write, clients.tasks],
+  );
+
   const handleSend = useCallback(
     (text: string, task: Task) =>
       write(
@@ -421,6 +442,7 @@ export function WishView({
           onDecision={handleDecision}
           project={projectById.get(task.projectId)}
           onStop={handleStop}
+          onStart={handleStart}
           onSend={handleSend}
           onHold={pausable ? handleHold : undefined}
           onDone={handleDone}
@@ -441,6 +463,7 @@ export function WishView({
       handleDecision,
       projectById,
       handleStop,
+      handleStart,
       handleSend,
       pausable,
       handleHold,
@@ -653,25 +676,26 @@ export function WishView({
 
   // lead resumes the lead, focusing on this wish, or starts one of another agent; what Djinn says of it shows as a toast: a terminal
   // that runs a program already, a session Djinn does not know.
-  const lead = (provider?: Provider) => {
+  const resumeLead = (provider?: Provider) => {
     let note = "";
-    quiet(
-      act(
-        async () => {
-          ({ note } = await clients.lead.resume({
-            wishId: wish.id,
-            provider,
-          }));
-        },
-        [Change.WISH],
-        () => note,
-      ),
+    return act(
+      async () => {
+        ({ note } = await clients.lead.resume({
+          wishId: wish.id,
+          provider,
+        }));
+      },
+      [Change.WISH],
+      () => note,
     );
   };
+  const lead = (provider?: Provider) => quiet(resumeLead(provider));
   const attention = attentionOf(
     [...open, ...waitingLead],
     waiting,
     wish.ready ? [wish] : [],
+    undefined,
+    leadPrompt,
   );
   // What the wish's tabs show of the bar's lines: the open questions, the waiting workers and the grant in the
   // first tab, the answered questions in the decisions.
@@ -690,102 +714,107 @@ export function WishView({
 
   return (
     <div className="wish-view review">
-      <header className="topbar">
-        <div className="breadcrumbs">
-          {projects.map((project) => (
-            <span
-              className="header-project"
-              key={project.id}
-              title={project.directory || t("project.no_folder")}
-            >
-              {project.name}
-              <ChevronRight size={12} aria-hidden="true" />
-            </span>
-          ))}
-          <strong>{wish.title}</strong>
-        </div>
-        <OperatingLoad />
-        <div className="topbar-actions">
-          {granted ? (
-            <button
-              className="button secondary small"
+      <PageHeader
+        middle={<OperatingLoad />}
+        actions={
+          <>
+            {granted ? (
+              <button
+                className="button secondary small"
+                onClick={() =>
+                  quiet(
+                    act(
+                      () => clients.wishes.activate({ wishId: wish.id }),
+                      [Change.WISH],
+                    ),
+                  )
+                }
+              >
+                <Play size={14} />
+                <span>{t("wish.reopen")}</span>
+              </button>
+            ) : isActive(wish) ? (
+              <TooltipButton
+                className="button secondary small"
+                label={t("wish.pause")}
+                tooltip={t("wish.pause_detail")}
+                onClick={() =>
+                  quiet(
+                    act(
+                      () => clients.wishes.pause({ wishId: wish.id }),
+                      [Change.WISH],
+                    ),
+                  )
+                }
+              >
+                <Pause size={14} />
+                <span>{t("wish.pause")}</span>
+              </TooltipButton>
+            ) : (
+              <TooltipButton
+                className="button accent small"
+                label={t("wish.activate")}
+                tooltip={t("wish.activate_detail", { max: MAX_ACTIVE })}
+                onClick={() =>
+                  quiet(
+                    act(
+                      () => clients.wishes.activate({ wishId: wish.id }),
+                      [Change.WISH],
+                    ),
+                  )
+                }
+              >
+                <Play size={14} />
+                <span>{t("wish.activate")}</span>
+              </TooltipButton>
+            )}
+            <LeadButton
+              recorded={recordedAgent(leadRecord)}
+              trouble={leadTrouble(leadExit, leadStartError)}
+              loadAgents={async () =>
+                (await clients.ui.getEnvironment({})).providers
+              }
+              onLead={() => lead()}
+              onPick={(provider) => lead(provider)}
+              onSetup={onSetupAgents}
+            />
+            <PageHeaderAction
+              label={t("app.share")}
               onClick={() =>
                 quiet(
-                  act(
-                    () => clients.wishes.activate({ wishId: wish.id }),
-                    [Change.WISH],
-                  ),
+                  (async () => {
+                    const res = await clients.wishes.export({
+                      wishId: wish.id,
+                    });
+                    onToast(t("wish.exported", { file: res.file }));
+                  })().catch((error) => onToast(message(error))),
                 )
               }
             >
-              <Play size={14} />
-              <span>{t("wish.reopen")}</span>
-            </button>
-          ) : isActive(wish) ? (
-            <button
-              className="button secondary small"
-              title={t("wish.pause_detail")}
-              onClick={() =>
-                quiet(
-                  act(
-                    () => clients.wishes.pause({ wishId: wish.id }),
-                    [Change.WISH],
-                  ),
-                )
-              }
+              <Download size={16} aria-hidden="true" />
+            </PageHeaderAction>
+            <PageHeaderAction
+              className="danger"
+              label={t("wish.delete")}
+              onClick={() => setDeleting(true)}
             >
-              <Pause size={14} />
-              <span>{t("wish.pause")}</span>
-            </button>
-          ) : (
-            <button
-              className="button accent small"
-              title={t("wish.activate_detail", { max: MAX_ACTIVE })}
-              onClick={() =>
-                quiet(
-                  act(
-                    () => clients.wishes.activate({ wishId: wish.id }),
-                    [Change.WISH],
-                  ),
-                )
-              }
-            >
-              <Play size={14} />
-              <span>{t("wish.activate")}</span>
-            </button>
-          )}
-          <LeadButton
-            recorded={recordedAgent(leadRecord)}
-            loadAgents={async () =>
-              (await clients.ui.getEnvironment({})).providers
-            }
-            onLead={() => lead()}
-            onPick={(provider) => lead(provider)}
-          />
-          <button
-            className="button secondary small"
-            onClick={() =>
-              quiet(
-                (async () => {
-                  const res = await clients.wishes.export({ wishId: wish.id });
-                  onToast(t("wish.exported", { file: res.file }));
-                })().catch((error) => onToast(message(error))),
-              )
-            }
+              <Trash2 size={16} aria-hidden="true" />
+            </PageHeaderAction>
+          </>
+        }
+      >
+        {projects.map((project) => (
+          <span
+            className="header-project"
+            key={project.id}
+            title={project.directory || t("project.no_folder")}
           >
-            <Download size={14} />
-            <span>{t("app.share")}</span>
-          </button>
-          <button
-            className="icon-button danger"
-            title={t("wish.delete")}
-            aria-label={t("wish.delete")}
-            onClick={() => setDeleting(true)}
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
-      </header>
+            {project.name}
+            <ChevronRight size={12} aria-hidden="true" />
+          </span>
+        ))}
+        <strong>{wish.title}</strong>
+      </PageHeader>
       {deleting && (
         <DeleteWish
           wish={wish}
@@ -1201,6 +1230,11 @@ export function WishView({
           )}
         </div>
       </div>
+      <LeadMessage
+        wish={wish}
+        stopped={!leadRecord || !!leadTrouble(leadExit, leadStartError)}
+        onResume={() => resumeLead()}
+      />
     </div>
   );
 }

@@ -17,6 +17,7 @@ import {
   Lock,
   MessageSquare,
   MessageSquarePlus,
+  Play,
   ScrollText,
   Send,
   Terminal,
@@ -206,6 +207,7 @@ export const WishTask = memo(function WishTask({
   decision,
   focused = false,
   onStop,
+  onStart,
   onSend,
   onHold,
   onDecision,
@@ -229,6 +231,8 @@ export const WishTask = memo(function WishTask({
   // Brought into sight and opened, from its decision.
   focused?: boolean;
   onStop: (task: Task) => void;
+  // Starts a task that waits for the machine alone, anyway (TaskService.Start).
+  onStart?: (task: Task) => void;
   onSend: (text: string, task: Task) => Promise<unknown>;
   // Pauses the task's worker (true) or lets it go on (false); none where djinn cannot pause one (Windows).
   onHold?: (pause: boolean, task: Task) => void;
@@ -279,6 +283,7 @@ export const WishTask = memo(function WishTask({
   const work = taskWork(task, codes);
   const hasActions =
     holdable || stoppable || (!!onDone && closable(task.status));
+  const machineWait = task.status === TaskStatus.PENDING && task.machineWait;
   return (
     <article
       className={`wish-task tone-${tone} ${open ? "open" : ""} ${focused ? "focused" : ""}`}
@@ -417,30 +422,47 @@ export const WishTask = memo(function WishTask({
           {work.text}
         </p>
       )}
-      {(task.waitReason ||
-        task.error ||
-        after.length > 0 ||
-        (watcher && task.lastLine)) && (
-        <p className={`wish-task-note ${tone === "failed" ? "error" : ""}`}>
-          {task.error ? (
-            task.error
-          ) : isMemoryWait(task.waitReason) ? (
-            <span title={task.waitReason}>{t("task.waits_for_memory")}</span>
-          ) : isGreenWait(task.waitReason) ? (
-            <span title={task.waitReason}>
-              {compactGreenWait(task.waitReason)}
-            </span>
-          ) : task.waitReason ? (
-            <WaitReason reason={task.waitReason} codes={codes} />
-          ) : (
-            watcher && task.lastLine
+      {machineWait ? (
+        <div className="wish-task-note machine-wait">
+          <strong>{t("task.machine_wait")}</strong>
+          <span>{task.waitReason}</span>
+          {onStart && (
+            <button
+              className="button secondary small"
+              onClick={() => onStart(task)}
+              title={t("task.start_anyway_detail")}
+            >
+              <Play size={13} />
+              <span>{t("task.start_anyway")}</span>
+            </button>
           )}
-          {after.length > 0 && (
-            <span className="wish-task-after">
-              {t("page.after", { tasks: after.join(", ") })}
-            </span>
-          )}
-        </p>
+        </div>
+      ) : (
+        (task.waitReason ||
+          task.error ||
+          after.length > 0 ||
+          (watcher && task.lastLine)) && (
+          <p className={`wish-task-note ${tone === "failed" ? "error" : ""}`}>
+            {task.error ? (
+              task.error
+            ) : isMemoryWait(task.waitReason) ? (
+              <span title={task.waitReason}>{t("task.waits_for_memory")}</span>
+            ) : isGreenWait(task.waitReason) ? (
+              <span title={task.waitReason}>
+                {compactGreenWait(task.waitReason)}
+              </span>
+            ) : task.waitReason ? (
+              <WaitReason reason={task.waitReason} codes={codes} />
+            ) : (
+              watcher && task.lastLine
+            )}
+            {after.length > 0 && (
+              <span className="wish-task-after">
+                {t("page.after", { tasks: after.join(", ") })}
+              </span>
+            )}
+          </p>
+        )
       )}
       {alsoMerged?.map(({ merge, host }) => (
         <p className="wish-task-note wish-task-merged-in" key={merge.id}>

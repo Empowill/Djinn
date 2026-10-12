@@ -1,6 +1,7 @@
 package machine
 
 import (
+	"cmp"
 	"sync"
 	"time"
 
@@ -28,8 +29,9 @@ func SystemActivitySignal(m *Monitor) ActivitySignal {
 		if s.LoadKnown && s.Cores > 0 && s.Load1/float64(s.Cores) > 1.0 {
 			return true
 		}
-		// macOS memory pressure: warning (2) or critical (4).
-		if s.MemoryLevel >= 2 {
+		// macOS memory pressure at the level that holds workers at the notch in effect: warning at Minimal, which
+		// keeps Auto there; critical from Medium up, which brings it down.
+		if s.MemoryLevel >= cmp.Or(m.Policy().MemoryLevel, MemoryCritical) {
 			return true
 		}
 		return false

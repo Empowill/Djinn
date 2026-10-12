@@ -151,6 +151,10 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
     to open the wish, switch tabs, show a change arriving) against millisecond budgets. A story that touches the window
     (interface under the UI folder, the stream it reads, the server calls it makes) runs this spec before it ends;
     other stories do not. Kept out of the default `go tool task e2e` run.
+  - **The creation page's smoke:** the cases tagged `@solver` run its WebGL2 solver, which takes about a minute to
+    show glyphs on the software WebGL2 of a headless browser; `go tool task e2e -- e2e/wish-composer.spec.ts --grep
+    @solver` (or `e2e/theme.spec.ts`) runs them, the default run leaves them out. A story that changes the smoke runs
+    them, and `go tool task e2e-native -- -run TestNativeSmokeGeometry` on the native window.
 - `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it. `go tool task format` fixes what
   can be.
   - Go: [golangci-lint](.golangci.yml), pinned in its own module (`tools/golangci/go.mod`): nothing to install. It
@@ -194,6 +198,10 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
 - `djinn task pause <task-id>` holds a worker where it is and frees its slot; `djinn task resume <task-id>` lets it go
   on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. The buttons on
   its card in the window do the same. Not on Windows yet.
+- A planned task that waits for the machine alone (no slot free, or the machine under pressure) says so in the window,
+  with "Start anyway"; `djinn task start <task-id>` does the same. It never jumps a usage limit, a push hold or a
+  task that goes first. On macOS, the system's memory pressure holds workers back at warning on the Minimal notch,
+  at critical only from Medium up.
 - In a project whose settings name its checks ([`docs/team-settings.md`](docs/team-settings.md#checks)), Djinn
   integrates finished work by itself: as each task ends, alone, it merges the task's branch in a worktree of its own
   (made ready by the `setup` command, again when a lock file changes), makes the generated files again on a conflict
@@ -227,7 +235,8 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
 - `djinn task done <task-id> [--drop] --note "…"` closes a task no worker runs (planned, cut short, failed, stopped,
   imported) once its work is done, with who closed it and why (unmerged commits queue for merging unless `--drop`); "Mark done" on its card does it in the window.
   `djinn task delete` stays for a task made by mistake; an azima goes once no task is part of it (regroup them first,
-  `djinn task group`), and a deleted task's code (W12, T27) is never given again in its wish.
+  `djinn task group`), a task once no task waits for it (rewire them first, `djinn task depend … --also`), and a
+  deleted task's code (W12, T27) is never given again in its wish.
 - `djinn task continue <task-id> --prompt "…"` gives a task no worker runs (done, failed, stopped, cut short) a new
   turn of its own session, in its own worktree and branch: the same task, back through the scheduler, its usage
   summed. Refused while it runs, once its worktree is gone, or for an agent that cannot resume a session (Antigravity,
@@ -277,7 +286,9 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
 - One lead leads every wish, in the window's terminal "lead". `djinn lead set <session-id> [--provider <agent>]
   [--directory <folder>]` records its session; `djinn lead get` shows it; `djinn lead resume` resumes it, starting
   Djinn if needed, and `--wish-id <wish-id>` shows the wish and focuses the lead on it (the wish's Lead button does the
-  same). A second `djinn up` brings the window to the front.
+  same). A second `djinn up` brings the window to the front. `djinn lead tell "…" [--wish-id <wish-id>]` writes to the
+  lead in its terminal as if you typed it there, line breaks kept: it waits while you type there or a choice is on
+  screen; about a wish, it starts with "About wish <title> (<id>):". It never starts the lead, nor types into a shell.
 - `djinn wish route "<request>" --wish-id <wish-id> --ask`: a request that is not about the wish becomes a card, without a
   model: open a new wish, which the window opens and the lead is told of, file it in an existing wish, or keep it here
   ([T26](plan/e1210c5e-request-routing.md)). A request that matches a skill's wish template (`metadata.djinn.wish` in its
@@ -305,8 +316,11 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
 - An open question is blocking when a task waits for its answer, red; `djinn question ask … --before "before the merge"`
   makes it orange under those words; without them it can wait, grey. `djinn question revise … --before …` changes them,
   `--before ""` lets it wait. Everywhere, blocking comes first, then before X, then can wait.
-- With the window, a question asked in an active wish shows as a system notification: a click shows the wish, a
-  button answers it. A new inbox item shows as one too, and the side panel counts the new ones on the flight plan. On macOS it needs the `.app` bundle (T19); a headless build and `--browser` show none.
+- With the window, what waits for you in an active wish shows as a system notification: a question (a button
+  answers it), a task that waits or failed, a wish ready to review; a click shows the wish there. None for the wish
+  the window shows while it is in front. A new inbox item shows as one too, and the side panel counts the new ones on
+  the flight plan. On macOS it needs the `.app` bundle (T19) and your permission: Djinn asks at its first start, and
+  the settings show the state. A headless build and `--browser` show none.
 - `go tool task check-window`: open a window a few seconds and check that a stream reaches it
   value by value. PASS or FAIL.
 - `go tool task e2e-native`: drive the real window end to end through the Wails MCP server (a test build, window

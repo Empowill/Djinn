@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -64,9 +65,17 @@ type options struct {
 	enlight         []func(context.Context, *planv1.Question, string)
 	load            func() djinnv1.LoadNotch
 	loadBroadcaster *func(djinnv1.LoadNotch)
+	leadBroadcaster *func()
+	leadFailed      error
 	pusher          Pusher
 	fillModels      func(context.Context, []*planv1.Task)
 	clock           func() time.Time
+}
+
+// WithLeadFailed gives LeadService.Get why the lead could not start before the services ran, as djinn up resumes it:
+// the window shows it beside Lead until Lead starts it.
+func WithLeadFailed(err error) Option {
+	return func(o *options) { o.leadFailed = err }
 }
 
 // WithPusher gives ProjectService the pusher for pushing and computing sync status.
@@ -117,6 +126,12 @@ func WithLoadBroadcaster(b *func(djinnv1.LoadNotch)) Option {
 	return func(o *options) { o.loadBroadcaster = b }
 }
 
+// WithLeadBroadcaster gives the caller what tells the open Watch streams that the choice the lead shows in its
+// terminal came, changed or went (Wishes.ChangeLead).
+func WithLeadBroadcaster(b *func()) Option {
+	return func(o *options) { o.leadBroadcaster = b }
+}
+
 // WithFillModels sets the function that fills forecast models on tasks for Watch.
 func WithFillModels(f func(context.Context, []*planv1.Task)) Option {
 	return func(o *options) { o.fillModels = f }
@@ -142,6 +157,10 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	if o.loadBroadcaster != nil {
 		*o.loadBroadcaster = wishes.ChangeLoad
 	}
+	if o.leadBroadcaster != nil {
+		*o.leadBroadcaster = wishes.ChangeLead
+	}
+	wishes.leadFailure.set(o.leadFailed)
 	var told Told
 	if o.leads != nil {
 		told = wishes.Answered // The lead learns each answer, after the harness, and what it did.
@@ -156,7 +175,11 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
 	out[p] = h
-	p, h = planv1connect.NewMarkServiceHandler(&Marks{Store: s, Answered: o.answered, Told: told, Settle: wishes.settle}, opt)
+	marks := &Marks{Store: s, Answered: o.answered, Told: told, Settle: wishes.settle}
+	if o.leads != nil {
+		marks.Approved = wishes.Approved // The lead learns that the developer approved its decision, or a worker's.
+	}
+	p, h = planv1connect.NewMarkServiceHandler(marks, opt)
 	out[p] = h
 	p, h = planv1connect.NewSkillServiceHandler(&Skills{Store: s}, opt)
 	out[p] = h
@@ -599,7 +622,8 @@ type Wishes struct {
 	// Clock gives the wishes their time; nil uses time.Now.
 	Clock func() time.Time
 
-	watch watchers // the open Watch streams
+	watch       watchers    // the open Watch streams
+	leadFailure leadFailure // why the lead's last start failed, for LeadService.Get
 }
 
 func (w *Wishes) now() time.Time {
@@ -615,21 +639,61 @@ func (w *Wishes) Make(
 	var wish *planv1.Wish
 	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
-		wish, err = makeWish(ctx, tx, req.Msg)
+		wish, err = makeWish(ctx, tx, req.Msg, w.Language)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
+	if req.Msg.GetPrompt() != "" {
+		// The one lead names a wish made from a request, and plans it.
+		e := &planv1.LeadEvent{
+			Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_REQUEST, WishId: wish.GetId(),
+			Text: MadeLine(wish, req.Msg.GetTitle() == ""),
+		}
+		if err := w.Notify(ctx, e); err != nil {
+			log.Printf("djinn: wish %s: tell the lead about a wish made from a request: %v", wish.GetId(), err)
+		}
+	}
 	return connect.NewResponse(&planv1.WishServiceMakeResponse{Wish: wish}), nil
 }
 
-// makeWish stores the wish req asks for in tx: last by rank among the active ones, or paused. The caller journals
-// the command.
-func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest) (*planv1.Wish, error) {
+// MadeLine is the line that tells the lead a wish was made from a request: it names it when its title is
+// provisional, and plans it from its brief, which holds the request whole. Short enough for a digest's line.
+func MadeLine(wish *planv1.Wish, provisional bool) string {
+	if provisional {
+		return fmt.Sprintf("Djinn: a wish was made from a request: name it, djinn wish rename %s \"<title>\", then plan "+
+			"it from its brief, which holds the request.", wish.GetId())
+	}
+	return fmt.Sprintf("Djinn: a wish was made from a request: plan it from djinn wish brief %s, which holds the "+
+		"request whole.", wish.GetId())
+}
+
+// makeWish stores the wish req asks for in tx: last by rank among the active ones, or paused, with its request in a
+// creation block. Its texts are in language. The caller journals the command, whose identifier the wish takes.
+func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest, language string) (*planv1.Wish, error) {
+	title := req.GetTitle()
+	if title == "" {
+		title = locales.T(language, "wish.provisional_title", nil)
+	}
 	wish := &planv1.Wish{
-		Id: store.NewID(), Title: req.GetTitle(), CreateTime: timestamppb.Now(),
+		// Reuse the creation command's UUID to identify it exactly after a rename or export, with no extra field.
+		Id: tx.JournalID(), Title: title, CreateTime: timestamppb.Now(),
 		PushStrategy: req.GetPushStrategy(),
+	}
+	put := func() error {
+		if err := tx.Put(wish); err != nil {
+			return err
+		}
+		if prompt := req.GetPrompt(); prompt != "" {
+			return tx.Put(&planv1.Block{
+				Id: store.NewID(), WishId: wish.GetId(), Kind: creationKind,
+				Title: locales.T(language, "wish.original_request", nil), Content: prompt,
+				MediaType: "text/markdown", Position: gap,
+				CreateTime: wish.GetCreateTime(), UpdateTime: wish.GetCreateTime(),
+			})
+		}
+		return nil
 	}
 	for _, id := range req.GetProjectIds() {
 		project, err := store.Get[*planv1.Project](ctx, tx, id)
@@ -645,7 +709,7 @@ func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequ
 	}
 	if req.GetPaused() {
 		wish.State = planv1.WishState_WISH_STATE_PAUSED
-		return wish, tx.Put(wish)
+		return wish, put()
 	}
 	actives, err := ActiveWishes(ctx, tx)
 	if err != nil {
@@ -654,13 +718,13 @@ func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequ
 	if len(actives) >= MaxActive {
 		// Three wishes are active: the new one waits, paused, until you make it active.
 		wish.State = planv1.WishState_WISH_STATE_PAUSED
-		return wish, tx.Put(wish)
+		return wish, put()
 	}
 	if err := renumber(tx, actives); err != nil {
 		return nil, err
 	}
 	wish.State, wish.Rank = planv1.WishState_WISH_STATE_ACTIVE, int32(len(actives)+1)
-	return wish, tx.Put(wish)
+	return wish, put()
 }
 
 func (w *Wishes) List(

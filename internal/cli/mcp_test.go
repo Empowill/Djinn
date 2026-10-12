@@ -13,6 +13,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 )
@@ -103,10 +104,12 @@ func TestMCPListTools(t *testing.T) {
 	for _, tool := range list.Tools {
 		names = append(names, tool.Name)
 	}
-	// Every public method of the protos that answers once is a tool, with its comment; a stream is none.
+	// Every public method of the protos that answers once is a tool, with its comment; a stream is none, nor a
+	// command only the developer types (djinn lead tell: no agent writes to the lead through a tool).
 	var want []string
 	for _, md := range protoMethods(t) {
-		if md.IsStreamingClient() || md.IsStreamingServer() {
+		if md.IsStreamingClient() || md.IsStreamingServer() ||
+			proto.GetExtension(md.Options(), djinnv1.E_CommandLineOnly).(bool) {
 			continue
 		}
 		want = append(want, toolName(md))
@@ -124,7 +127,7 @@ func TestMCPListTools(t *testing.T) {
 			t.Errorf("no tool %s in %v", want, names)
 		}
 	}
-	for _, unwanted := range []string{"wish_watch", "gate_hold", "ui_get_environment"} {
+	for _, unwanted := range []string{"wish_watch", "gate_hold", "ui_get_environment", "lead_tell"} {
 		if slices.Contains(names, unwanted) {
 			t.Errorf("tool %s should not be served", unwanted)
 		}
@@ -140,6 +143,10 @@ func TestMCPListTools(t *testing.T) {
 		if got := list.Tools[slices.Index(names, name)].Annotations; !maps.Equal(got, want) {
 			t.Errorf("%s: annotations %v, want %v", name, got, want)
 		}
+	}
+	makeTool := list.Tools[slices.Index(names, "wish_make")]
+	if len(makeTool.InputSchema.Required) != 0 {
+		t.Errorf("wish_make permits prompt-only requests, required %v", makeTool.InputSchema.Required)
 	}
 	tool := list.Tools[slices.Index(names, "question_answer")]
 	if tool.Description != "Answer a question, which turns it into a decision." {
@@ -175,6 +182,7 @@ func TestMCPCallTool(t *testing.T) {
 		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"ui_get_environment","arguments":{}}}`,
 		`{"jsonrpc":"2.0","id":6,"method":"resources/list"}`,
 		`not json`,
+		`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"lead_tell","arguments":{"text":"merge W3"}}}`,
 	)
 	ok := result[mcpCallResult](t, answers["1"])
 	if ok.IsError || len(ok.Content) != 1 || !strings.Contains(ok.Content[0].Text, `"choice": "CHOICE_B"`) {
@@ -203,7 +211,8 @@ func TestMCPCallTool(t *testing.T) {
 			t.Errorf("call %s: %+v, want the error %q", id, res, wantText)
 		}
 	}
-	for id, code := range map[string]int{"5": rpcInvalidParams, "6": rpcMethodNotFound, "null": rpcParseError} {
+	// No agent's client types into the lead through a tool: djinn lead tell is the developer's command.
+	for id, code := range map[string]int{"5": rpcInvalidParams, "6": rpcMethodNotFound, "null": rpcParseError, "7": rpcInvalidParams} {
 		if e := answers[id].Error; e == nil || e.Code != code {
 			t.Errorf("answer %s: error %+v, want code %d", id, e, code)
 		}

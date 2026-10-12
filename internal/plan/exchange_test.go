@@ -331,6 +331,42 @@ func TestExportImport(t *testing.T) {
 	}
 }
 
+// A folder written through a symbolic link is still a project's folder or the home folder: the scrubber replaces
+// both of its paths (on macOS, /var for /private/var is the same case).
+func TestScrubberFollowsLinks(t *testing.T) {
+	base := resolvedTempDir(t)
+	api, home := filepath.Join(base, "api"), filepath.Join(base, "users", "me")
+	for _, dir := range []string{api, home} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	apiLink, homeLink := filepath.Join(base, "api-link"), filepath.Join(base, "me")
+	if err := os.Symlink(api, apiLink); err != nil {
+		t.Skipf("no symbolic link here: %v", err)
+	}
+	if err := os.Symlink(home, homeLink); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", homeLink)
+	t.Setenv("USERPROFILE", homeLink)
+	gone := filepath.Join(base, "gone")
+
+	s := newScrubber([]*planv1.Project{{Name: "Api", Directory: apiLink}, {Name: "Gone", Directory: gone}})
+	for in, want := range map[string]string{
+		filepath.Join(apiLink, "store.go"):  filepath.Join("Api", "store.go"),
+		filepath.Join(api, "store.go"):      filepath.Join("Api", "store.go"),
+		filepath.Join(homeLink, "notes.md"): filepath.Join("~", "notes.md"),
+		filepath.Join(home, "notes.md"):     filepath.Join("~", "notes.md"),
+		filepath.Join(gone, "old.go"):       filepath.Join("Gone", "old.go"),
+		filepath.Join(base, "other"):        filepath.Join(base, "other"),
+	} {
+		if got := s.r.Replace("see " + in); got != "see "+want {
+			t.Errorf("scrub(%q) = %q, want %q", "see "+in, got, "see "+want)
+		}
+	}
+}
+
 func TestImportFindsProjects(t *testing.T) {
 	ctx := t.Context()
 	src, wish, _ := source(t)

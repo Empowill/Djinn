@@ -180,7 +180,6 @@ html[data-theme="light"] {
   min-width: 0;
   padding: 5px 10px;
   border-radius: 6px;
-  border-left: 3px solid var(--tone);
   background: color-mix(in srgb, var(--tone) 8%, var(--bg));
   text-align: left;
 }
@@ -224,6 +223,36 @@ button.attention-item:hover {
 }
 .attention-item > svg {
   color: var(--muted);
+}
+/* The lead's choice: its question, what it is about, then its options as buttons, under one another. */
+.attention-prompt {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.attention-prompt-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.attention-prompt-lines {
+  margin: 0;
+  max-height: 4.8em;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 12px/1.6 var(--mono);
+  color: var(--text);
+}
+.attention-prompt-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.attention-prompt-error {
+  margin: 0;
+  color: var(--st-failed);
 }
 .flash {
   animation: flash 1.4s ease-out;
@@ -459,7 +488,6 @@ button.attention-item:hover {
 .review .question-card {
   --tone: var(--st-waiting);
   border: 1px solid var(--line);
-  border-left: 4px solid var(--tone);
   border-radius: 10px;
   background: var(--surface);
   margin: 0 0 16px;
@@ -607,7 +635,6 @@ button.attention-item:hover {
   margin: 0;
   padding: 12px 16px 14px;
   border: 1px solid color-mix(in srgb, var(--lamp) 45%, var(--line));
-  border-left: 4px solid var(--lamp);
   border-radius: 8px;
   background: color-mix(in srgb, var(--lamp) 9%, var(--surface));
 }
@@ -833,10 +860,8 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
 
 /* Tasks: one row each, its state first. */
 .review .wish-task {
-  border-left: 3px solid var(--tone, var(--line));
   background: var(--surface);
   border-color: var(--line);
-  border-left-color: var(--tone, var(--line));
 }
 .review .wish-task-heading {
   padding: 10px 14px;
@@ -974,7 +999,6 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
 
 /* The flight plan: each wish at a glance. */
 .review .plan-wish {
-  border-top: 3px solid var(--tone, var(--line));
   background: var(--surface);
   gap: 10px;
 }
@@ -1228,6 +1252,16 @@ html[data-theme="light"] .review .question-meta .wish-origin {
   margin-left: -1px;
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
+}
+/* The lead could not start, or ended: a dot on Lead until Lead starts it again. */
+.lead-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.lead-dot.failed {
+  background: var(--st-failed);
 }
 .lead-menu {
   position: absolute;

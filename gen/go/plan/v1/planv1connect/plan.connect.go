@@ -158,6 +158,10 @@ const (
 	LeadServiceBriefProcedure = "/plan.v1.LeadService/Brief"
 	// LeadServiceWatchProcedure is the fully-qualified name of the LeadService's Watch RPC.
 	LeadServiceWatchProcedure = "/plan.v1.LeadService/Watch"
+	// LeadServiceTellProcedure is the fully-qualified name of the LeadService's Tell RPC.
+	LeadServiceTellProcedure = "/plan.v1.LeadService/Tell"
+	// LeadServiceChooseProcedure is the fully-qualified name of the LeadService's Choose RPC.
+	LeadServiceChooseProcedure = "/plan.v1.LeadService/Choose"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
 	BlockServicePutProcedure = "/plan.v1.BlockService/Put"
 	// BlockServiceListProcedure is the fully-qualified name of the BlockService's List RPC.
@@ -182,6 +186,8 @@ const (
 	TaskServicePauseProcedure = "/plan.v1.TaskService/Pause"
 	// TaskServiceResumeProcedure is the fully-qualified name of the TaskService's Resume RPC.
 	TaskServiceResumeProcedure = "/plan.v1.TaskService/Resume"
+	// TaskServiceStartProcedure is the fully-qualified name of the TaskService's Start RPC.
+	TaskServiceStartProcedure = "/plan.v1.TaskService/Start"
 	// TaskServiceWatchProcedure is the fully-qualified name of the TaskService's Watch RPC.
 	TaskServiceWatchProcedure = "/plan.v1.TaskService/Watch"
 	// TaskServiceCleanProcedure is the fully-qualified name of the TaskService's Clean RPC.
@@ -1818,6 +1824,15 @@ type LeadServiceClient interface {
 	// without one, it types one short line, "Djinn: N events waiting, run djinn lead watch". The lead runs it as a
 	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent).
 	Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error)
+	// Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
+	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
+	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
+	// djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
+	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
+	// Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
+	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
+	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
+	Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error)
 }
 
 // NewLeadServiceClient constructs a client for the plan.v1.LeadService service. By default, it uses
@@ -1863,6 +1878,18 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(leadServiceMethods.ByName("Watch")),
 			connect.WithClientOptions(opts...),
 		),
+		tell: connect.NewClient[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse](
+			httpClient,
+			baseURL+LeadServiceTellProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Tell")),
+			connect.WithClientOptions(opts...),
+		),
+		choose: connect.NewClient[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse](
+			httpClient,
+			baseURL+LeadServiceChooseProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Choose")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1873,6 +1900,8 @@ type leadServiceClient struct {
 	get    *connect.Client[v1.LeadServiceGetRequest, v1.LeadServiceGetResponse]
 	brief  *connect.Client[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse]
 	watch  *connect.Client[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse]
+	tell   *connect.Client[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse]
+	choose *connect.Client[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse]
 }
 
 // Set calls plan.v1.LeadService.Set.
@@ -1898,6 +1927,16 @@ func (c *leadServiceClient) Brief(ctx context.Context, req *connect.Request[v1.L
 // Watch calls plan.v1.LeadService.Watch.
 func (c *leadServiceClient) Watch(ctx context.Context, req *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error) {
 	return c.watch.CallUnary(ctx, req)
+}
+
+// Tell calls plan.v1.LeadService.Tell.
+func (c *leadServiceClient) Tell(ctx context.Context, req *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error) {
+	return c.tell.CallUnary(ctx, req)
+}
+
+// Choose calls plan.v1.LeadService.Choose.
+func (c *leadServiceClient) Choose(ctx context.Context, req *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error) {
+	return c.choose.CallUnary(ctx, req)
 }
 
 // LeadServiceHandler is an implementation of the plan.v1.LeadService service.
@@ -1927,6 +1966,15 @@ type LeadServiceHandler interface {
 	// without one, it types one short line, "Djinn: N events waiting, run djinn lead watch". The lead runs it as a
 	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent).
 	Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error)
+	// Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
+	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
+	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
+	// djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
+	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
+	// Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
+	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
+	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
+	Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error)
 }
 
 // NewLeadServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -1968,6 +2016,18 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(leadServiceMethods.ByName("Watch")),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceTellHandler := connect.NewUnaryHandler(
+		LeadServiceTellProcedure,
+		svc.Tell,
+		connect.WithSchema(leadServiceMethods.ByName("Tell")),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceChooseHandler := connect.NewUnaryHandler(
+		LeadServiceChooseProcedure,
+		svc.Choose,
+		connect.WithSchema(leadServiceMethods.ByName("Choose")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.LeadService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case LeadServiceSetProcedure:
@@ -1980,6 +2040,10 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceBriefHandler.ServeHTTP(w, r)
 		case LeadServiceWatchProcedure:
 			leadServiceWatchHandler.ServeHTTP(w, r)
+		case LeadServiceTellProcedure:
+			leadServiceTellHandler.ServeHTTP(w, r)
+		case LeadServiceChooseProcedure:
+			leadServiceChooseHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -2007,6 +2071,14 @@ func (UnimplementedLeadServiceHandler) Brief(context.Context, *connect.Request[v
 
 func (UnimplementedLeadServiceHandler) Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Watch is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Tell is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Choose is not implemented"))
 }
 
 // BlockServiceClient is a client for the plan.v1.BlockService service.
@@ -2268,6 +2340,9 @@ type TaskServiceClient interface {
 	Pause(context.Context, *connect.Request[v1.TaskServicePauseRequest]) (*connect.Response[v1.TaskServicePauseResponse], error)
 	// Let a paused worker go on where it was.
 	Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error)
+	// Start a planned task that waits for the machine (no slot free, or the machine under pressure) now, anyway. A
+	// task that waits for anything else (its wish, a dependency, a write scope) keeps waiting.
+	Start(context.Context, *connect.Request[v1.TaskServiceStartRequest]) (*connect.Response[v1.TaskServiceStartResponse], error)
 	// Follow a task's events as they come, from the first one or after a position; ends with the task.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest]) (*connect.ServerStreamForClient[v1.TaskServiceWatchResponse], error)
 	// Remove the worktree of a finished task. Its branch stays.
@@ -2379,6 +2454,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Resume")),
 			connect.WithClientOptions(opts...),
 		),
+		start: connect.NewClient[v1.TaskServiceStartRequest, v1.TaskServiceStartResponse](
+			httpClient,
+			baseURL+TaskServiceStartProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Start")),
+			connect.WithClientOptions(opts...),
+		),
 		watch: connect.NewClient[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse](
 			httpClient,
 			baseURL+TaskServiceWatchProcedure,
@@ -2481,6 +2562,7 @@ type taskServiceClient struct {
 	stop         *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
 	pause        *connect.Client[v1.TaskServicePauseRequest, v1.TaskServicePauseResponse]
 	resume       *connect.Client[v1.TaskServiceResumeRequest, v1.TaskServiceResumeResponse]
+	start        *connect.Client[v1.TaskServiceStartRequest, v1.TaskServiceStartResponse]
 	watch        *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
 	clean        *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
 	depend       *connect.Client[v1.TaskServiceDependRequest, v1.TaskServiceDependResponse]
@@ -2531,6 +2613,11 @@ func (c *taskServiceClient) Pause(ctx context.Context, req *connect.Request[v1.T
 // Resume calls plan.v1.TaskService.Resume.
 func (c *taskServiceClient) Resume(ctx context.Context, req *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error) {
 	return c.resume.CallUnary(ctx, req)
+}
+
+// Start calls plan.v1.TaskService.Start.
+func (c *taskServiceClient) Start(ctx context.Context, req *connect.Request[v1.TaskServiceStartRequest]) (*connect.Response[v1.TaskServiceStartResponse], error) {
+	return c.start.CallUnary(ctx, req)
 }
 
 // Watch calls plan.v1.TaskService.Watch.
@@ -2631,6 +2718,9 @@ type TaskServiceHandler interface {
 	Pause(context.Context, *connect.Request[v1.TaskServicePauseRequest]) (*connect.Response[v1.TaskServicePauseResponse], error)
 	// Let a paused worker go on where it was.
 	Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error)
+	// Start a planned task that waits for the machine (no slot free, or the machine under pressure) now, anyway. A
+	// task that waits for anything else (its wish, a dependency, a write scope) keeps waiting.
+	Start(context.Context, *connect.Request[v1.TaskServiceStartRequest]) (*connect.Response[v1.TaskServiceStartResponse], error)
 	// Follow a task's events as they come, from the first one or after a position; ends with the task.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error
 	// Remove the worktree of a finished task. Its branch stays.
@@ -2736,6 +2826,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		TaskServiceResumeProcedure,
 		svc.Resume,
 		connect.WithSchema(taskServiceMethods.ByName("Resume")),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceStartHandler := connect.NewUnaryHandler(
+		TaskServiceStartProcedure,
+		svc.Start,
+		connect.WithSchema(taskServiceMethods.ByName("Start")),
 		connect.WithHandlerOptions(opts...),
 	)
 	taskServiceWatchHandler := connect.NewServerStreamHandler(
@@ -2844,6 +2940,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServicePauseHandler.ServeHTTP(w, r)
 		case TaskServiceResumeProcedure:
 			taskServiceResumeHandler.ServeHTTP(w, r)
+		case TaskServiceStartProcedure:
+			taskServiceStartHandler.ServeHTTP(w, r)
 		case TaskServiceWatchProcedure:
 			taskServiceWatchHandler.ServeHTTP(w, r)
 		case TaskServiceCleanProcedure:
@@ -2909,6 +3007,10 @@ func (UnimplementedTaskServiceHandler) Pause(context.Context, *connect.Request[v
 
 func (UnimplementedTaskServiceHandler) Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Resume is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Start(context.Context, *connect.Request[v1.TaskServiceStartRequest]) (*connect.Response[v1.TaskServiceStartResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Start is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error {

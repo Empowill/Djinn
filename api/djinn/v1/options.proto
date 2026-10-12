@@ -44,6 +44,9 @@ extend google.protobuf.MethodOptions {
   // Another name of the method's command: djinn task set-agent answers as djinn task update. Typed in full, or by a
   // prefix no method's own name takes.
   repeated string method_alias = 51007;
+  // The method is a command, never a tool of djinn mcp: what only the developer types, such as writing to the lead
+  // in its terminal, which no agent's client may do through a tool.
+  bool command_line_only = 51008;
 }
 
 extend google.protobuf.ServiceOptions {
@@ -61,4 +64,6 @@ extend google.protobuf.FieldOptions {
   // The command line and djinn mcp fill the field from this environment variable when the caller leaves it empty:
   // a worker's commands name its task by $DJINN_TASK_ID, which Djinn sets for every worker.
   string env = 51006;
+  // Keep a singular field positional when it becomes optional, preserving an existing command's arguments.
+  bool positional = 51009;
 }

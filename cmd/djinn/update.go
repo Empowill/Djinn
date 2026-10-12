@@ -314,9 +314,7 @@ func (u *updater) restart() (string, int, error) {
 	}
 	note := restartNote{Version: version}
 	note.ShowWish, note.ShowTerminal = u.ui.LastShow()
-	for _, t := range u.terms.Running() {
-		note.Terminals = append(note.Terminals, restartTerminal{Name: t.Name, Command: resumable(t.Command), Directory: t.Dir})
-	}
+	note.Terminals = restartTerminals(u.terms.Running())
 	if err := u.leads.restart(note); err != nil {
 		return "", 0, fmt.Errorf("note the terminals: %w", err)
 	}
@@ -337,6 +335,19 @@ func (u *updater) offered() bool {
 
 // sessionID finds the session a lead was started with from a brief: claude --session-id <id> ….
 var sessionID = regexp.MustCompile(`(?:^|\s)claude\s.*--session-id[ =]([A-Za-z0-9][A-Za-z0-9._-]*)`)
+
+// restartTerminals are the terminals a restart opens again: those that run, but an agent's install or sign-in, which
+// the window started (setup-…), never run again by itself.
+func restartTerminals(running []*terminal.Terminal) []restartTerminal {
+	var out []restartTerminal
+	for _, t := range running {
+		if strings.HasPrefix(t.Name, "setup-") {
+			continue
+		}
+		out = append(out, restartTerminal{Name: t.Name, Command: resumable(t.Command), Directory: t.Dir})
+	}
+	return out
+}
 
 // resumable is the command that takes a terminal back after a restart. A lead started from a brief named its new
 // session with --session-id, which claude refuses a second time: it resumes that session instead.

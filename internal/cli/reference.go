@@ -96,11 +96,15 @@ func methodCommand(md protoreflect.MethodDescriptor) Command {
 	}
 	c.Usage = "djinn " + c.Name
 	for _, fd := range positionals(in) {
-		c.Usage += " " + label(fd)
+		argument := label(fd)
+		if !required(fd) {
+			argument = "[" + argument + "]"
+		}
+		c.Usage += " " + argument
 		c.Args = append(c.Args, param(fd))
 	}
 	for _, fd := range byNumber(in) {
-		if !required(fd) {
+		if !positional(fd) {
 			c.Flags = append(c.Flags, param(fd))
 		}
 	}

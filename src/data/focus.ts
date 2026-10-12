@@ -51,7 +51,7 @@ export function createFocus(transport: Transport, retry = 1000): DjinnFocus {
             wishId: res.wishId,
             terminal: res.terminal,
             tilasmId: res.tilasmId,
-            target: "",
+            target: res.target,
             unknownLink: res.unknownLink,
           };
           last = { focus, at: Date.now() };

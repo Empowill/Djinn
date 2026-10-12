@@ -230,6 +230,12 @@ func (w *Wishes) ChangeLoad(notch djinnv1.LoadNotch) {
 	w.watch.changeLoad(notch)
 }
 
+// ChangeLead tells the open Watch streams that the lead changed outside the store: the choice its agent shows in its
+// terminal came, changed or went. The window reads the lead again (LeadService.Get), as for a lead stored.
+func (w *Wishes) ChangeLead() {
+	w.watch.changed([]proto.Message{&planv1.Lead{}})
+}
+
 func mark(ids map[string]bool, id string) map[string]bool {
 	if ids == nil {
 		ids = map[string]bool{}

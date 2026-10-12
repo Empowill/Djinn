@@ -1,0 +1,232 @@
+.lead-message-panel textarea {
+  box-sizing: border-box;
+  width: 100%;
+}
+.instruction-error {
+  margin: 0;
+  color: var(--st-failed);
+  font-size: var(--font-size-body);
+}
+/* The creation submit and the pill that writes to the lead share one quiet surface. The parent owns the workspace
+   anchor; the action itself only owns its pill geometry so Motion can carry the surface between the two screens. */
+.workspace-action {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  max-width: min(720px, calc(100% - 32px));
+  min-height: 42px;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: 999px;
+  color: var(--workspace-action-ink, var(--text));
+  box-shadow: 0 5px 16px var(--workspace-action-shadow);
+}
+.workspace-action-surface {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  border-radius: inherit;
+  background: var(--surface-raised);
+  overflow: hidden;
+  pointer-events: none;
+  transition: background-color 0.26s ease;
+}
+.workspace-action-surface-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  pointer-events: none;
+  will-change: transform;
+}
+.workspace-action-primary {
+  --workspace-action-ink: var(--n-25);
+}
+.workspace-action-secondary {
+  --workspace-action-ink: var(--text);
+}
+.workspace-action-content {
+  position: relative;
+  /* Stay in the isolated pill context so the closed control can blend against the moving fill and its raised
+     backdrop. A child stacking context here would make `difference` see transparency instead of the surface. */
+  z-index: auto;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+}
+.workspace-action-content:has(> .workspace-action-control) {
+  /* Blend the whole closed foreground group against the sibling surface/fill in the pill's isolated context. The
+     editor has a panel child instead, so its textarea, controls, and feedback keep their normal ink. */
+  mix-blend-mode: difference;
+}
+.workspace-action-control,
+.workspace-action-leading,
+.workspace-action-send,
+.workspace-action-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+.workspace-action .workspace-action-control {
+  min-height: 42px;
+  padding: 10px 17px;
+  gap: 12px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--workspace-action-ink);
+  box-shadow: none;
+  font-weight: 550;
+  white-space: nowrap;
+}
+.workspace-action .workspace-action-control.button.accent {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.workspace-action .workspace-action-control:hover {
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  color: var(--workspace-action-ink);
+}
+/* During the primary-to-secondary handoff the accent fill crosses the closed control. Difference against a literal
+   light ink keeps this label and icon readable on both the accent fill and the raised surface; the expanded editor
+   stays on the normal secondary ink so feedback and textarea text are never inverted. */
+.workspace-action-primary .workspace-action-control,
+.workspace-action-primary .workspace-action-control:hover,
+.workspace-action-primary .workspace-action-control:focus-visible,
+.workspace-action-secondary:not(.is-expanded) .workspace-action-control,
+.workspace-action-secondary:not(.is-expanded) .workspace-action-control:hover,
+.workspace-action-secondary:not(.is-expanded)
+  .workspace-action-control:focus-visible {
+  color: var(--workspace-action-blend-ink);
+}
+.workspace-action:has(:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.workspace-action .workspace-action-control:focus-visible,
+.workspace-action .workspace-action-leading:focus-visible,
+.workspace-action .workspace-action-send:focus-visible,
+.workspace-action .workspace-action-close:focus-visible {
+  outline: none;
+}
+.workspace-action .workspace-action-editor-shell {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: none;
+}
+.workspace-action-editor {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  gap: 2px;
+  padding: 5px 7px 5px 9px;
+}
+.workspace-action-editor.is-running {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+.workspace-action .workspace-action-editor textarea {
+  grid-column: 2;
+  grid-row: 1;
+}
+.workspace-action .workspace-action-editor.is-running textarea {
+  grid-column: 1;
+}
+.workspace-action-leading {
+  grid-column: 1;
+  grid-row: 1;
+}
+.workspace-action-send {
+  grid-column: 3;
+  grid-row: 1;
+}
+.workspace-action-editor.is-running .workspace-action-send {
+  grid-column: 2;
+}
+.workspace-action-close {
+  grid-column: 4;
+  grid-row: 1;
+}
+.workspace-action-editor.is-running .workspace-action-close {
+  grid-column: 3;
+}
+.workspace-action .workspace-action-editor textarea {
+  min-width: 0;
+  min-height: 30px;
+  max-height: 32vh;
+  padding: 5px 7px;
+  resize: none;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.65;
+  box-shadow: none;
+}
+.workspace-action .workspace-action-editor textarea:focus {
+  border: 0;
+  box-shadow: none;
+}
+.workspace-action .workspace-action-editor textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.workspace-action-leading,
+.workspace-action-send,
+.workspace-action-close {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+}
+.workspace-action-leading:hover,
+.workspace-action-send:hover:not(:disabled),
+.workspace-action-close:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  color: var(--text);
+}
+.workspace-action-send:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.workspace-action-feedback {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
+  padding: 2px 7px 4px;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-body);
+}
+.workspace-action-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-action-surface {
+    transition: none;
+  }
+}

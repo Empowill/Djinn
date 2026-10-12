@@ -36,11 +36,26 @@ func (s *syncLeads) Running(name string) bool {
 	defer s.mu.Unlock()
 	return s.f.Running(name)
 }
+func (s *syncLeads) Command(name string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.f.Command(name))
+}
 func (s *syncLeads) Close(name string) {}
 func (s *syncLeads) Say(name, line string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.f.Say(name, line)
+}
+func (s *syncLeads) SayText(name, text string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.f.SayText(name, text)
+}
+func (s *syncLeads) Prompt(name string) *planv1.LeadPrompt { return nil }
+func (s *syncLeads) Exit(name string) *planv1.LeadExit     { return nil }
+func (s *syncLeads) Choose(name, title string, lines, options []string, index int) error {
+	return ErrNoChoice
 }
 func (s *syncLeads) said() []string {
 	s.mu.Lock()
@@ -351,5 +366,97 @@ func TestDigestCapsLines(t *testing.T) {
 	next := leadWatchOnce(t, s, &planv1.LeadServiceWatchRequest{After: cursorOf(t, got), Timeout: durationpb.New(0)})
 	if strings.Count(next, "\n- ") != 5 {
 		t.Errorf("next digest:\n%s", next)
+	}
+}
+
+// TestApprovalComesBackInLeadWatch: the developer's approval of a decision the lead or a worker took comes back in
+// djinn lead watch, once. Approving an open question is its answer, and approving the developer's own decision tells
+// nothing (decision Q173).
+func TestApprovalComesBackInLeadWatch(t *testing.T) {
+	ctx := t.Context()
+	leads := &fakeLeads{}
+	c := serve(t, WithLeads(leads))
+	project, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Approvals", ProjectIds: []string{project.Msg.GetProject().GetId()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wish := made.Msg.GetWish().GetId()
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
+		t.Fatal(err)
+	}
+	leads.running = map[string][]string{LeadTerminal: {"/bin/sh", "-c", "claude --resume " + session}}
+	task := store.NewID()
+	c.put(t, &planv1.Task{Id: task, WishId: wish, Code: "W01", Status: planv1.TaskStatus_TASK_STATUS_RUNNING})
+	answer := func(q *planv1.Question, req *planv1.QuestionServiceAnswerRequest) {
+		t.Helper()
+		req.Question, req.Choice = &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}}, planv1.Choice_CHOICE_B
+		if _, err := c.questions.Answer(ctx, connect.NewRequest(req)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	approve := func(q *planv1.Question) {
+		t.Helper()
+		if _, err := c.marks.Put(ctx, connect.NewRequest(&planv1.MarkServicePutRequest{
+			Target: &planv1.MarkTarget{Ref: &planv1.MarkTarget_Id{Id: q.GetId()}}, Kind: planv1.MarkKind_MARK_KIND_APPROVED,
+			WishId: wish,
+		})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	byLead := c.ask(t, wish, "Olive", "Paraffin")
+	answer(byLead, &planv1.QuestionServiceAnswerRequest{Lead: wish})
+	byWorker := c.ask(t, wish, "Olive", "Paraffin")
+	answer(byWorker, &planv1.QuestionServiceAnswerRequest{TaskId: task})
+	byYou := c.ask(t, wish, "Olive", "Paraffin")
+	answer(byYou, &planv1.QuestionServiceAnswerRequest{By: planv1.Closer_CLOSER_DEVELOPER})
+	take(t, c.store)
+
+	// The developer approves in the window each decision, the lead's and the worker's twice.
+	for _, q := range []*planv1.Question{byLead, byLead, byWorker, byWorker, byYou} {
+		approve(q)
+	}
+	want := []string{
+		LeadTerminal + `: Djinn: Q01 approved by the developer, as you answered it: B — "Paraffin". The decision is theirs now.`,
+		LeadTerminal + `: Djinn: Q02 approved by the developer, as W01 answered it: B — "Paraffin". The decision is theirs now.`,
+	}
+	if got := told(t, c.store); !slices.Equal(got, want) {
+		t.Fatalf("queued %q, want %q", got, want)
+	}
+	res, err := c.lead.Watch(ctx, connect.NewRequest(&planv1.LeadServiceWatchRequest{Timeout: durationpb.New(0)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := res.Msg.GetText()
+	for _, line := range []string{
+		`- Q01 approved: approved by the developer, as you answered it: B — "Paraffin". The decision is theirs now.`,
+		`- Q02 approved: approved by the developer, as W01 answered it: B — "Paraffin". The decision is theirs now.`,
+	} {
+		if !strings.Contains(digest, line+"\n") {
+			t.Errorf("the digest lacks %q:\n%s", line, digest)
+		}
+	}
+	if _, err := c.lead.Watch(ctx, connect.NewRequest(&planv1.LeadServiceWatchRequest{
+		After: cursorOf(t, digest), Timeout: durationpb.New(0),
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	// An open question approved is answered: the lead hears the answer, not an approval.
+	open, err := c.questions.Ask(ctx, connect.NewRequest(&planv1.QuestionServiceAskRequest{
+		Text: "Which oil?", Options: []string{"Olive", "Paraffin"}, WishId: wish, Recommendation: "B: brighter.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	approve(open.Msg.GetQuestion())
+	events, err := waitingEvents(ctx, c.store)
+	if err != nil || len(events) != 1 || events[0].GetKind() != planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER {
+		t.Errorf("approving an open question queued %v, %v; want its answer only", events, err)
 	}
 }

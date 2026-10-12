@@ -64,6 +64,7 @@ import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
 import { WishTask } from "./wish-task";
 import { ConsumptionPanel } from "./consumption-panel";
+import { PageHeader } from "./page-header";
 import {
   GrantCard,
   InvestigatingSection,
@@ -85,6 +86,7 @@ export function FlightPlan({
 }) {
   const projects = useData((s) => s.projects);
   const lead = useData((s) => s.lead);
+  const leadPrompt = useData((s) => s.leadPrompt);
   const allWishes = useData((s) => s.wishes);
   const projectById = useMemo(
     () => new Map(projects.map((p) => [p.id, p])),
@@ -121,6 +123,7 @@ export function FlightPlan({
         plan.waiting,
         plan.ready,
         renderAttentionOrigin,
+        leadPrompt,
       ),
     [
       plan.questions,
@@ -128,6 +131,7 @@ export function FlightPlan({
       plan.waiting,
       plan.ready,
       renderAttentionOrigin,
+      leadPrompt,
     ],
   );
   const [view, setView] = useState<View>("main");
@@ -209,6 +213,17 @@ export function FlightPlan({
     [quiet, act, clients.tasks],
   );
 
+  const handleStart = useCallback(
+    (task: Task) => {
+      quiet(
+        act(task.wishId, () => clients.tasks.start({ taskId: task.id }), [
+          Change.TASK,
+        ]),
+      );
+    },
+    [quiet, act, clients.tasks],
+  );
+
   const handleSend = useCallback(
     (text: string, task: Task) =>
       act(task.wishId, () => clients.tasks.send({ taskId: task.id, text }), []),
@@ -283,6 +298,7 @@ export function FlightPlan({
           onDecision={handleDecision}
           project={projectById.get(item.projectId)}
           onStop={handleStop}
+          onStart={handleStart}
           onSend={handleSend}
           onHold={pausable ? handleHold : undefined}
           onDone={handleDone}
@@ -302,6 +318,7 @@ export function FlightPlan({
       handleDecision,
       projectById,
       handleStop,
+      handleStart,
       handleSend,
       pausable,
       handleHold,
@@ -463,12 +480,9 @@ export function FlightPlan({
 
   return (
     <div className="wish-view flight-plan review">
-      <header className="topbar">
-        <div className="breadcrumbs">
-          <strong>{t("plan.title")}</strong>
-        </div>
-        <OperatingLoad />
-      </header>
+      <PageHeader middle={<OperatingLoad />}>
+        <strong>{t("plan.title")}</strong>
+      </PageHeader>
       <div className="mission-scroll" ref={keepPlace}>
         <AttentionBar items={attention} reach={reach} />
         <div className="hero mission-header review-head">

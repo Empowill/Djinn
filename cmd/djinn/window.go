@@ -31,9 +31,10 @@ const hasWindow = true
 // Dock shows it again. Quitting is explicit: "Quit Djinn" in the tray menu, Ctrl+Q (Cmd+Q on macOS) in the window,
 // or stopping djinn up. Each value received on raise brings the window back to the front.
 //
-// While the window runs, notices show the questions as system notifications, and shortcuts takes the global shortcut
-// that brings the window forward. A djinn:// link the system gives the app goes to links: macOS sends it to Djinn.app,
-// and starts the app for it when it does not run; Linux and Windows run djinn open instead.
+// While the window runs, notices show what waits for the developer as system notifications, except for the wish the
+// window shows while it is in front, and shortcuts takes the global shortcut that brings the window forward. A
+// djinn:// link the system gives the app goes to links: macOS sends it to Djinn.app, and starts the app for it when it
+// does not run; Linux and Windows run djinn open instead.
 func openWindow(
 	ctx context.Context, url string, assets http.Handler, raise <-chan struct{}, notices *ui.Notices, shortcuts *ui.Shortcuts,
 	links func(string),
@@ -68,6 +69,14 @@ func openWindow(
 		Width:  1440,
 		Height: 1000,
 		URL:    url,
+		Mac: application.MacWindow{
+			// Extend the webview beneath a transparent titlebar while keeping the native
+			// traffic lights. Keep only a 6px native drag strip: the frontend extends
+			// the official wails:drag protocol through a transparent zone below it,
+			// while the persistent toolbar starts at y=6 and remains clickable.
+			TitleBar:                application.MacTitleBarHidden,
+			InvisibleTitleBarHeight: 6,
+		},
 		KeyBindings: map[string]func(application.Window){
 			"CmdOrCtrl+q": func(application.Window) { quit() },
 		},
@@ -76,6 +85,11 @@ func openWindow(
 		window.UnMinimise()
 		window.Show()
 		window.Focus()
+	}
+	// No notification for the wish the window shows while it is in front: the developer sees it already.
+	window.OnWindowEvent(events.Common.WindowFocus, func(*application.WindowEvent) { notices.Focus(true) })
+	for _, e := range []events.WindowEventType{events.Common.WindowLostFocus, events.Common.WindowHide, events.Common.WindowMinimise} {
+		window.OnWindowEvent(e, func(*application.WindowEvent) { notices.Focus(false) })
 	}
 	// The close button, and anything that closes the window: out of sight, never gone.
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
@@ -170,7 +184,8 @@ func appIcon() []byte {
 
 // noticeService starts the notification service of Wails with the app, then shows the notices through it. A system
 // that cannot show notifications (no session bus on Linux, an app without a bundle on macOS) leaves them off, and
-// the window opens all the same. It has no exported method of its own: the page cannot call it.
+// the window opens all the same. On macOS nothing shows until the user allows it: the service asks at start, which
+// shows the system's dialog the first time only. It has no exported method of its own: the page cannot call it.
 type noticeService struct {
 	svc     *notifications.NotificationService
 	notices *ui.Notices
@@ -194,14 +209,22 @@ func (n *noticeService) ServiceStartup(ctx context.Context, opts application.Ser
 			log.Printf("djinn: a notification's response: %v", res.Error)
 			return
 		}
-		r := ui.Response{QuestionID: res.Response.ID}
+		r := ui.Response{}
 		r.WishID, _ = res.Response.UserInfo["wish_id"].(string)
+		r.QuestionID, _ = res.Response.UserInfo["question_id"].(string)
+		r.Target, _ = res.Response.UserInfo["target"].(string)
 		if action := res.Response.ActionIdentifier; action != notifications.DefaultActionIdentifier {
 			r.Action = action
 		}
 		go n.notices.Respond(n.ctx, r)
 	})
 	n.notices.Use(wailsNotifier{n})
+	go func() {
+		// Without the user's permission, macOS refuses every notification (UNErrorDomain error 1).
+		if allowed, err := n.svc.RequestNotificationAuthorization(); err != nil || !allowed {
+			log.Printf("djinn: system notifications are not allowed (%v): see Djinn's settings", err)
+		}
+	}()
 	return nil
 }
 
@@ -220,10 +243,14 @@ func (n *noticeService) ServiceShutdown() error {
 // buttons, registered once.
 type wailsNotifier struct{ n *noticeService }
 
+func (w wailsNotifier) Allowed() (bool, error) { return w.n.svc.CheckNotificationAuthorization() }
+
+func (w wailsNotifier) Allow() (bool, error) { return w.n.svc.RequestNotificationAuthorization() }
+
 func (w wailsNotifier) Notify(note ui.Notification) error {
 	opts := notifications.NotificationOptions{
 		ID: note.ID, Title: note.Title, Body: note.Body,
-		Data: map[string]any{"wish_id": note.WishID},
+		Data: map[string]any{"wish_id": note.WishID, "question_id": note.QuestionID, "target": note.Target},
 	}
 	if len(note.Actions) == 0 {
 		return w.n.svc.SendNotification(opts)

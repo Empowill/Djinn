@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -35,21 +36,26 @@ func carryLead(ctx context.Context, db *store.Store, say io.Writer) *planv1.Lead
 
 // resumeLead resumes the lead, as djinn lead resume does, unless the lead's terminal runs
 // already: without a session, a new lead starts from the brief, its first message in home. What it could not do,
-// it says on say.
-func resumeLead(ctx context.Context, db *store.Store, home string, terms *terminal.Manager, svc *ui.Service, say io.Writer) {
+// it says on say, and returns for the window to show beside Lead (plan.WithLeadFailed); not the lack of a project,
+// which the window asks for already.
+func resumeLead(ctx context.Context, db *store.Store, home string, terms *terminal.Manager, svc *ui.Service, say io.Writer) error {
 	for _, t := range terms.Running() {
 		if t.Name == plan.LeadTerminal {
-			return
+			return nil
 		}
 	}
 	leadSvc := &plan.LeadService{Wishes: &plan.Wishes{Store: db, Leads: leads{terms, svc}, Home: home}}
 	res, err := leadSvc.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{}))
 	if err != nil {
 		fmt.Fprintf(say, "djinn: the lead is not resumed: %v\n", err)
-		return
+		if errors.Is(err, plan.ErrNoProject) {
+			return nil
+		}
+		return err
 	}
 	fmt.Fprintf(say, "djinn: the lead resumed in %s\n", res.Msg.GetDirectory())
 	if note := res.Msg.GetNote(); note != "" {
 		fmt.Fprintln(say, "djinn:", note)
 	}
+	return nil
 }

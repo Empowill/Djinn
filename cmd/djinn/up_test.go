@@ -61,7 +61,7 @@ func TestMain(m *testing.M) {
 			}
 		}
 		updatePoll, restartDelay = updatePollForTests, restartDelayForTests
-		launcherPath = false
+		extendPath = false
 		readMachine = calmMachine
 		// No test reaches the network: only a fake release, served by the test, is looked for.
 		checkReleases = os.Getenv("DJINN_TEST_RELEASE_API") != ""
@@ -378,6 +378,155 @@ func TestWishResume(t *testing.T) {
 	code, out, errs = runDjinn(t, env, "lead", "resume", "--wish-id", wish.GetId())
 	if code != 1 || !strings.Contains(errs, "already running in another terminal") || !strings.Contains(errs, `"main"`) {
 		t.Fatalf("resume while main runs the session: exit %d\n%s%s", code, out, errs)
+	}
+}
+
+// TestExitedCodexLeadIsRetainedUntilExplicitResume: a codex lead that ends at once keeps its terminal, its output and
+// its exit code, which LeadService.Get gives; opening its terminal attaches to it and starts nothing. Only Lead
+// (LeadService.Resume) starts it again.
+func TestExitedCodexLeadIsRetainedUntilExplicitResume(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	bin := t.TempDir()
+	count := filepath.Join(t.TempDir(), "starts")
+	fails := filepath.Join(t.TempDir(), "fails")
+	// A fake codex that counts its starts and ends at once with code 2 while the file fails exists.
+	script := `#!/bin/sh
+echo start >> "$DJINN_TEST_COUNT"
+if [ -f "$DJINN_TEST_FAILS" ]; then
+  echo fake-codex-failed
+  exit 2
+fi
+echo fake-codex-ready
+exec cat
+`
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fails, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := environ(home, bin, "DJINN_TEST_COUNT="+count, "DJINN_TEST_FAILS="+fails)
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, addr := up(t, home, env)
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projects := planv1connect.NewProjectServiceClient(httpClient, base)
+	leads := planv1connect.NewLeadServiceClient(httpClient, base)
+	terminals := terminalv1connect.NewTerminalServiceClient(httpClient, base)
+	if _, err := projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: folder})); err != nil {
+		t.Fatal(err)
+	}
+	resume := func() {
+		t.Helper()
+		res, err := leads.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{Provider: planv1.Provider_PROVIDER_CODEX}))
+		if err != nil || res.Msg.GetAttached() {
+			t.Fatalf("resume: %v, %v; want a new lead", res, err)
+		}
+	}
+	open := func() *terminalv1.TerminalServiceOpenResponse {
+		t.Helper()
+		res, err := terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: plan.LeadTerminal}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg
+	}
+	exit := func() *planv1.LeadExit {
+		t.Helper()
+		res, err := leads.Get(ctx, connect.NewRequest(&planv1.LeadServiceGetRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetExit()
+	}
+
+	resume()
+	first := open().GetTerminal().GetId()
+	read(t, terminals, first, "") // Until it ends.
+	ended := open()
+	if ended.GetTerminal().GetId() != first || !ended.GetAttached() || !ended.GetTerminal().GetExited() ||
+		ended.GetTerminal().GetExitCode() != 2 {
+		t.Fatalf("open the ended lead: %v, want the same terminal, ended with code 2", ended)
+	}
+	read(t, terminals, first, "fake-codex-failed")
+	if got := exit(); got == nil || got.GetCode() != 2 {
+		t.Fatalf("lead exit %v, want code 2", got)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if got := starts(t, count); got != 1 {
+		t.Fatalf("codex started %d times before the retry, want once", got)
+	}
+
+	// Lead again: a new program, which runs; the exit goes with the terminal it replaced.
+	if err := os.Remove(fails); err != nil {
+		t.Fatal(err)
+	}
+	resume()
+	retry := open().GetTerminal()
+	if retry.GetId() == first {
+		t.Fatal("the retry kept the ended terminal")
+	}
+	read(t, terminals, retry.GetId(), "fake-codex-ready")
+	if got := exit(); got != nil {
+		t.Fatalf("lead exit %v after the retry, want none", got)
+	}
+	if got := starts(t, count); got != 2 {
+		t.Fatalf("codex started %d times after the retry, want twice", got)
+	}
+
+	// Closed on request, its tab's × or djinn lead resume of another agent: no news to show.
+	if _, err := terminals.Close(ctx, connect.NewRequest(&terminalv1.TerminalServiceCloseRequest{Id: retry.GetId()})); err != nil {
+		t.Fatal(err)
+	}
+	read(t, terminals, retry.GetId(), "") // Until it ends.
+	if got := exit(); got != nil {
+		t.Fatalf("lead exit %v after a close, want none", got)
+	}
+}
+
+// TestLeadStartFailureAtStartShows: the lead djinn up could not resume at its start shows beside Lead, as a
+// failed Lead would, where a Djinn started from a menu has no terminal to print it in.
+func TestLeadStartFailureAtStartShows(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	bin, count := fakeClaude(t)
+	env := environ(home, bin, "DJINN_TEST_COUNT="+count)
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone := filepath.Join(folder, "gone")
+	db, err := store.Open(ctx, filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.Tx(ctx, func(tx *store.Tx) error {
+		return errors.Join(
+			tx.Journal("test", planv1connect.LeadServiceSetProcedure, &planv1.LeadServiceSetRequest{SessionId: "s"}),
+			tx.Put(&planv1.Project{Id: store.NewID(), Name: "lamp", Directory: folder, CreateTime: timestamppb.Now()}),
+			tx.Put(&planv1.Lead{Id: "lead", Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69", Directory: gone}))
+	})
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, addr := up(t, home, env)
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := planv1connect.NewLeadServiceClient(httpClient, base).Get(ctx, connect.NewRequest(&planv1.LeadServiceGetRequest{}))
+	if err != nil || !strings.Contains(got.Msg.GetStartError(), "is not on this machine") {
+		t.Fatalf("lead at start: %v, %v; want why it did not start", got, err)
+	}
+	if starts(t, count) != 0 {
+		t.Fatal("claude started")
 	}
 }
 

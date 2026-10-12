@@ -85,7 +85,12 @@ func (p *winProc) spawn(path string, command []string, dir string, env []string)
 	if err != nil {
 		return err
 	}
-	line, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(command))
+	// A ShellCommand reaches cmd.exe as typed (cmdLine); any other program gets the C runtime's quoting.
+	cmd, ok := cmdLine(command)
+	if !ok {
+		cmd = windows.ComposeCommandLine(command)
+	}
+	line, err := windows.UTF16PtrFromString(cmd)
 	if err != nil {
 		return err
 	}
@@ -323,11 +328,13 @@ func Shell() []string {
 }
 
 // ShellCommand returns the command line that runs line through the command interpreter; nil for an empty line.
+// start gives cmd.exe the line as it is (cmdLine): a PowerShell installer runs as
+// powershell -NoProfile -Command "irm … | iex", its quotes and its pipe left to cmd.exe.
 func ShellCommand(line string) []string {
 	if line == "" {
 		return nil
 	}
-	return []string{comspec(), "/c", line}
+	return []string{comspec(), "/s", "/c", line}
 }
 
 func comspec() string {
