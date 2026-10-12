@@ -125,6 +125,59 @@ Each check below comes as its port lands on `feat/clement-port`, then on `feat/w
 - **Notifications**: macOS asks for the permission, and a click on a notification lands on its card.
 - **The window**: the titlebar, the sidebar toggle, and dragging the window.
 
+The developer has no Mac: the checks below go to you. Each runs on `feat/clement-port`, where your ports are merged
+(`git checkout feat/clement-port && git pull && npm ci`); its `grep` prints a line once the port is there. Report each
+one as **pass** or **fail** with its number (Q05, Q06, Q07) and what you saw, as in [section 7](#7-how-to-report).
+
+### Q05: a question asked from the command line shows live (P1, your `70ca727`)
+
+**Proves** that `server.WholeWrites` hands each stream message to the `wails://` handler in one write: macOS WebKit
+sometimes held a payload back after its 5-byte prefix, and the window stayed frozen until a reload. On your branch the
+native e2e failed 5 runs in 6 without it, 0 in 13 with it; Linux passed before the fix too, so only a Mac tells.
+
+```sh
+grep -n 'server.WholeWrites(h)' cmd/djinn/up.go
+for i in 1 2 3 4 5 6; do go tool task e2e-native -- -count=1 -v -run 'TestNativeWindow/a_question_asked_by_the_command_line'; done
+```
+
+**Look at**: each of the 6 runs ends `--- PASS: TestNativeWindow/a_question_asked_by_the_command_line_shows_in_the_window`.
+Optional, to see the bug: replace `server.WholeWrites(h)` with `h` in that line, run the loop again (some runs should fail
+with "no question … in the window"), then `git checkout cmd/djinn/up.go`.
+
+### Q06: the macOS titlebar (P16)
+
+**Proves** the Wails options of `cmd/djinn/window.go` (`MacTitleBarHidden`, `InvisibleTitleBarHeight: 16`); Linux proves
+only the CSS.
+
+```sh
+grep -n 'InvisibleTitleBarHeight' cmd/djinn/window.go
+go tool task build && DJINN_HOME=$(mktemp -d) ./bin/djinn
+```
+
+**Look at**: 1) the three traffic lights sit over the top of the sidebar, above the logo (28 px padding), with no grey
+titlebar; 2) dragging the top 16 px moves the window, over the main view too; 3) the logo button, **New wish** and the
+topbar buttons all answer a click (none lost under the strip); 4) the sidebar spans the whole height, the terminal sits
+under the main view only.
+
+### Q07: Djinn.app from the Finder finds the agents (P3, one agent resolver)
+
+**Proves** the real launch: launchd gives an app no `~/.local/bin` and no Codex.app on its PATH. Linux proves the logic
+only, with fake folders.
+
+```sh
+grep -n 'TestExtendPathAfterAnInstall' internal/machine/path_test.go
+go tool task build
+go run ./tools/macapp bundle --binary bin/djinn --version v0.0.1 bin/app
+open -R bin/app/Djinn.app # shows it in the Finder: open it from there, not from a terminal
+```
+
+**Look at**: 1) a task with the Claude agent starts (`claude` in `~/.local/bin`); 2) with Codex.app installed and no
+other `codex` on the PATH, a task with the Codex agent starts; 3) with `~/.local/bin/claude` moved aside before Djinn
+starts, install it while Djinn runs (`curl -fsSL https://claude.ai/install.sh | bash` in a Terminal) and start a task:
+it is found without restarting Djinn. If one fails, the Finder shows no stderr: quit Djinn, run
+`env -i HOME=$HOME bin/app/Djinn.app/Contents/MacOS/djinn up </dev/null` in a Terminal (an environment as bare as
+launchd's), and send the line that starts "djinn: the PATH of the login shell: …".
+
 ## 6. New since PR #1 worth trying in passing
 
 - **Operating load cursor with five notches and Overclock**: A slider in the status bar (`minimal`, `light`, `medium`, `high`, `max`, and `overclock` / auto) dynamically controlling worker slots, pressure stall thresholds, gate margins, and committable memory (`djinn load get/set`).
