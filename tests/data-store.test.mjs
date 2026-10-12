@@ -1203,3 +1203,119 @@ test("a wish shown again reads again what changed while it was not shown", async
   assert.equal(azimaGroups(state.details[wishId].tasks)[0].parts[0].code, "W1");
   stop();
 });
+
+// The questions of incident Q253's wish: fifty answered on the first page, then one open past it.
+function pagedQuestions(data) {
+  const answered = Array.from({ length: 50 }, (_, i) => ({
+    id: `01a11800-0000-0000-0000-${String(i).padStart(12, "0")}`,
+    wishId,
+    code: `Q${String(i + 1).padStart(2, "0")}`,
+    text: `Answered question ${i + 1}`,
+    answer: { choice: 1, note: "ok" },
+  }));
+  const open = {
+    id: "01a11800-0000-0000-0000-000000000253",
+    wishId,
+    code: "Q253",
+    text: "Which name for the page?",
+  };
+  data.listQuestions = (req) => {
+    const all = [...answered, open];
+    if (req.open) {
+      const list = all.filter((q) => !q.answer);
+      return { questions: list, total: list.length, nextPageToken: "" };
+    }
+    if (!req.pageToken)
+      return { questions: answered, total: 51, nextPageToken: "token-p2" };
+    return { questions: [open], total: 51, nextPageToken: "" };
+  };
+  return {
+    answer(note) {
+      open.answer = { choice: 3, note };
+      return { ...open };
+    },
+  };
+}
+
+test("an answered question past the first page stays, answered, when the questions are read again", async () => {
+  const data = sample();
+  const q253 = pagedQuestions(data);
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId, [Change.QUESTION]);
+  await until(store, (s) =>
+    s.details[wishId]?.questions.some((q) => q.code === "Q253"),
+  );
+
+  // The window answers it, then reads the questions again before the watch brings it.
+  q253.answer("The hourglass.");
+  await store.changed(wishId, [Change.QUESTION]);
+  const shown = store
+    .getState()
+    .details[wishId].questions.find((q) => q.code === "Q253");
+  stop();
+  assert.ok(shown, "the answered question left the screens");
+  assert.equal(shown.answer?.note, "The hourglass.");
+});
+
+test("a read that never answers fails after its timeout: the store reads again, the answer shows", async () => {
+  const data = sample();
+  const q253 = pagedQuestions(data);
+  let hang = false;
+  const list = data.listQuestions;
+  data.listQuestions = (req) => (hang ? new Promise(() => {}) : list(req));
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10, 10, 100);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId, [Change.QUESTION]);
+  await until(store, (s) =>
+    s.details[wishId]?.questions.some((q) => q.code === "Q253"),
+  );
+
+  // A read hangs: the next ones must not wait for it for ever.
+  hang = true;
+  void store.changed(wishId, [Change.QUESTION]);
+  await new Promise((r) => setTimeout(r, 20));
+  hang = false;
+  q253.answer("The hourglass.");
+  const wishes = reads.wishes;
+  void store.changed(wishId, [Change.QUESTION, Change.WISH]);
+  const state = await until(
+    store,
+    (s) =>
+      !!s.details[wishId]?.questions.find((q) => q.code === "Q253")?.answer,
+  );
+  stop();
+  assert.ok(reads.wishes > wishes, "the wishes were never read again");
+  assert.equal(
+    state.details[wishId].questions.find((q) => q.code === "Q253").answer.note,
+    "The hourglass.",
+  );
+});
+
+test("a question an answer returned shows answered at once, without a read", async () => {
+  const data = sample();
+  const q253 = pagedQuestions(data);
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId, [Change.QUESTION]);
+  await until(store, (s) =>
+    s.details[wishId]?.questions.some((q) => q.code === "Q253"),
+  );
+  const before = reads.questions;
+  store.putQuestion(q253.answer("The hourglass."));
+  const shown = store
+    .getState()
+    .details[wishId].questions.find((q) => q.code === "Q253");
+  stop();
+  assert.equal(shown.answer?.note, "The hourglass.");
+  assert.equal(reads.questions, before);
+});

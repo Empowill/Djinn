@@ -140,6 +140,38 @@ func (w *Wishes) Notify(ctx context.Context, e *planv1.LeadEvent) error {
 	return nil
 }
 
+// notifyInPlace queues e for the lead as Notify does, in place of the waiting events replaces picks among those that
+// wait, oldest first: they are dropped in the transaction that queues e. replaces may fill e from them.
+func (w *Wishes) notifyInPlace(
+	ctx context.Context, e *planv1.LeadEvent, replaces func(waiting []*planv1.LeadEvent) []*planv1.LeadEvent,
+) error {
+	err := w.Store.Tx(ctx, func(tx *store.Tx) error {
+		waiting, err := waitingEvents(ctx, tx)
+		if err != nil {
+			return err
+		}
+		gone := replaces(waiting)
+		e.Id, e.CreateTime = store.NewID(), timestamppb.New(w.now())
+		e.AckSessionId, e.AckTime = "", nil
+		if err := tx.Journal(actor, methodLeadEvent, e); err != nil {
+			return err
+		}
+		for _, o := range gone {
+			if err := tx.Delete(o); err != nil {
+				return err
+			}
+		}
+		return tx.Put(e)
+	})
+	if err != nil {
+		return err
+	}
+	l := w.leadWatch()
+	l.signal()
+	w.remindLead(l.timing.remind)
+	return nil
+}
+
 // RemindLead types the line that says events wait, after a grace for the lead's watch to come back, when events
 // wait and no watch does: djinn up calls it once it runs, so that a lead whose watch died with the last djinn up
 // hears of what happened meanwhile, the restart first.

@@ -67,12 +67,17 @@ func (w *Wishes) Tell(ctx context.Context, wishID, line string) error {
 // Answered tells the lead that the developer answered q, in one line, with what Djinn did with the
 // answer (did) when it settled it: an event in the lead's queue, which its watch hands out (decision Q191), never
 // lost. Handlers calls it once the answer is stored, when it serves the leads; the answer stays in the brief whatever
-// happens here. While no lead runs, the question is marked waiting for a lead, until the lead acknowledges it.
-func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, did string) {
+// happens here. While no lead runs, the question is marked waiting for a lead, until the lead acknowledges it. was is
+// the answer it replaced, when the developer changed their choice: the line says so. One answer is one event: the
+// answer events of q that still wait for the lead give way to this one.
+func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, was *planv1.Answer, did string) {
 	if q.GetAnswer() == nil || q.GetAnswer().GetActor() == planv1.Closer_CLOSER_LEAD {
 		return
 	}
 	line := AnswerLine(q, did)
+	if was != nil && was.GetChoice() != q.GetAnswer().GetChoice() {
+		line = ChangedLine(q, was, did)
+	}
 	if routeOption(q) != nil {
 		line = RoutedLine(q)
 	}
@@ -92,7 +97,56 @@ func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, did string) {
 		}
 		q.WaitingLead = true
 	}
-	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, line)
+	w.replaceAnswer(ctx, q, func(*planv1.LeadEvent) string { return line })
+}
+
+// NoteEdited tells the lead that the developer changed the note of their answer to q, which had the note was: the
+// answer event of q that still waits for the lead takes the new note in its place; or else one event says it, which
+// the next edits change in turn while it waits. However many times the note is saved, the lead reads it once.
+func (w *Wishes) NoteEdited(ctx context.Context, q *planv1.Question, was string) {
+	if q.GetAnswer() == nil || q.GetAnswer().GetActor() == planv1.Closer_CLOSER_LEAD {
+		return
+	}
+	w.replaceAnswer(ctx, q, func(waiting *planv1.LeadEvent) string {
+		if waiting == nil {
+			return NoteEditedLine(q)
+		}
+		text, old, note := waiting.GetText(), noteText(was), noteText(q.GetAnswer().GetNote())
+		if old != "" && strings.Contains(text, old) {
+			return strings.Replace(text, old, note, 1)
+		}
+		if note == "" {
+			note = " The note is removed."
+		}
+		return text + note
+	})
+}
+
+// replaceAnswer queues an answer event about q, its text line(the newest answer event of q that waits for the lead,
+// or nil), in place of the answer events of q that wait: the lead has not acknowledged them, and reads the one.
+// It is a new event, after the watch's cursor: a lead whose digest held the one it replaces reads this one too.
+func (w *Wishes) replaceAnswer(ctx context.Context, q *planv1.Question, line func(waiting *planv1.LeadEvent) string) {
+	if w.Store == nil {
+		return
+	}
+	e := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, WishId: q.GetWishId(), Code: q.GetCode()}
+	err := w.notifyInPlace(ctx, e, func(waiting []*planv1.LeadEvent) []*planv1.LeadEvent {
+		var mine []*planv1.LeadEvent
+		for _, o := range waiting {
+			if o.GetKind() == e.GetKind() && o.GetWishId() == e.GetWishId() && o.GetCode() == e.GetCode() && e.GetCode() != "" {
+				mine = append(mine, o)
+			}
+		}
+		var newest *planv1.LeadEvent
+		if len(mine) > 0 {
+			newest = mine[len(mine)-1]
+		}
+		e.Text = line(newest)
+		return mine
+	})
+	if err != nil {
+		logx.L().Error("tell the lead about a question", "wish", q.GetWishId(), "question", q.GetCode(), "err", err)
+	}
 }
 
 // queueWaitingAnswers queues an answer event for each answer waiting for a lead that none is queued for: an answer
@@ -205,15 +259,56 @@ func (w *Wishes) notify(ctx context.Context, q *planv1.Question, kind planv1.Lea
 // AnswerLine is the line that tells a lead the answer to q: the choice, the option and the note, on one line; then
 // what Djinn did with it, when did says it settled it; or else that the lead turns it into tasks itself.
 func AnswerLine(q *planv1.Question, did string) string {
+	choice := quotedChoice(q)
+	return answerLine(q, fmt.Sprintf("Djinn: %s answered %s.", q.GetCode(), choice), did)
+}
+
+// ChangedLine is AnswerLine for an answer that replaces was, another choice: the line says the developer changed it.
+func ChangedLine(q *planv1.Question, was *planv1.Answer, did string) string {
+	return answerLine(q, fmt.Sprintf("Djinn: %s answer changed from %s to %s.", q.GetCode(),
+		choiceLetter(was.GetChoice()), quotedChoice(q)), did)
+}
+
+// NoteEditedLine is the line that tells a lead the developer changed the note of their answer to q, and only it.
+func NoteEditedLine(q *planv1.Question) string {
+	head := fmt.Sprintf("Djinn: %s note edited, the answer stays %s.", q.GetCode(), quotedChoice(q))
+	if q.GetAnswer().GetNote() == "" {
+		return head + " The note is removed."
+	}
+	return head + noteText(q.GetAnswer().GetNote())
+}
+
+// quotedChoice is the choice that answers q, its letter then its option quoted: B — "Olive".
+func quotedChoice(q *planv1.Question) string {
 	choice := choiceText(q)
 	if letter, option, ok := strings.Cut(choice, ": "); ok {
 		choice = fmt.Sprintf("%s — %q", letter, option)
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "Djinn: %s answered %s.", q.GetCode(), choice)
-	if note := q.GetAnswer().GetNote(); note != "" {
-		fmt.Fprintf(&b, " Note: %q.", clipLine(note))
+	return choice
+}
+
+// choiceLetter is a choice in a word: its letter, or yes or no.
+func choiceLetter(c planv1.Choice) string {
+	if c >= planv1.Choice_CHOICE_A && c <= planv1.Choice_CHOICE_D {
+		return string(rune('A' + int(c-planv1.Choice_CHOICE_A)))
 	}
+	return strings.ToLower(strings.TrimPrefix(c.String(), "CHOICE_"))
+}
+
+// noteText is the part of an answer line that gives its note; "" without one.
+func noteText(note string) string {
+	if note == "" {
+		return ""
+	}
+	return fmt.Sprintf(" Note: %q.", clipLine(note))
+}
+
+// answerLine is head, then the note of q's answer, then what Djinn did with it, or else that the lead turns it into
+// tasks itself.
+func answerLine(q *planv1.Question, head, did string) string {
+	var b strings.Builder
+	b.WriteString(head)
+	b.WriteString(noteText(q.GetAnswer().GetNote()))
 	if did != "" {
 		fmt.Fprintf(&b, " %s.", strings.TrimSuffix(did, "."))
 		return b.String()

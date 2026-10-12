@@ -3,6 +3,7 @@
 // keeping the others as they were, and reads the rest again, a few reads at a time, and tells the screens. Nothing
 // here is computed from the data: what the lamp computes (a wish's rank, whether it is ready) comes from the lamp.
 import {
+  create,
   type DescMessage,
   equals,
   type MessageShape,
@@ -32,6 +33,7 @@ import {
   type Wish,
   WishSchema,
   type WishChanges,
+  WishChangesSchema,
 } from "../../gen/ts/plan/v1/plan_pb";
 import { type Tilasm, TilasmSchema } from "../../gen/ts/plan/v1/tilasm_pb";
 import { type Clients, message, notFound, unimplemented } from "./client";
@@ -105,9 +107,15 @@ export interface Store {
   readPrompt(taskId: string): Promise<string>;
   // Reads again what changed, as a write the page made says it: the watch says it too, a moment later.
   changed(wishId: string, changes: Change[]): Promise<void>;
+  // Puts a question a write returned in place of the one shown, at once: the screens show what djinn stored without
+  // waiting for a read, which a slow call may hold.
+  putQuestion(question: Question): void;
   // Reads the machine and its gates.
   readMachine(): Promise<void>;
 }
+
+// How long a read of the store waits for djinn's answer before it fails, and is made again.
+const READ_TIMEOUT = 30_000;
 
 // The most events kept for a task: the oldest go first.
 const MAX_EVENTS = 2000;
@@ -308,7 +316,11 @@ export function createStore(
   clients: Clients,
   retry = 1000,
   throttle = Math.min(retry, 200),
+  timeout = READ_TIMEOUT,
 ): Store {
+  // A read that gets no answer fails after timeout, and is made again: one call that never ends would hold every
+  // read after it, and the screens would show what they had, an answered question still open (incident Q253).
+  const call = { timeoutMs: timeout };
   let state: State = {
     live: false,
     loaded: false,
@@ -547,10 +559,13 @@ export function createStore(
     if (wishes)
       attempt(
         async () => {
-          const list = (await clients.wishes.list({})).wishes;
+          const list = (await clients.wishes.list({}, call)).wishes;
           const reconciled = reconcile(WishSchema, state.wishes, list);
           if (reconciled !== state.wishes) patch.wishes = reconciled;
-          const { lead, prompt, exit, startError } = await clients.lead.get({});
+          const { lead, prompt, exit, startError } = await clients.lead.get(
+            {},
+            call,
+          );
           const sameLead =
             (!state.lead && !lead) ||
             (state.lead && lead ? equals(LeadSchema, state.lead, lead) : false);
@@ -571,19 +586,19 @@ export function createStore(
       );
     if (projects)
       attempt(async () => {
-        const list = (await clients.projects.list({})).projects;
+        const list = (await clients.projects.list({}, call)).projects;
         const reconciled = reconcile(ProjectSchema, state.projects, list);
         if (reconciled !== state.projects) patch.projects = reconciled;
       });
     if (inbox)
       attempt(async () => {
-        const list = (await clients.inbox.list({})).items;
+        const list = (await clients.inbox.list({}, call)).items;
         const reconciled = reconcile(InboxItemSchema, state.inbox, list);
         if (reconciled !== state.inbox) patch.inbox = reconciled;
       });
     if (inbox)
       attempt(async () => {
-        const list = (await clients.inbox.sources({})).sources;
+        const list = (await clients.inbox.sources({}, call)).sources;
         const reconciled = reconcile(InboxSourceSchema, state.sources, list);
         if (reconciled !== state.sources) patch.sources = reconciled;
       });
@@ -593,31 +608,46 @@ export function createStore(
       const into: Partial<WishDetail> = (read[wishId] = {});
       if (kinds.has(Change.TASK))
         attemptKind(wishId, Change.TASK, async () => {
-          const res = await clients.tasks.list({ wishId });
+          const res = await clients.tasks.list({ wishId }, call);
           into.tasks = reconcile(TaskSchema, prevDetail.tasks, res.tasks);
           into.tasksTotal = res.total;
           into.tasksNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.QUESTION))
         attemptKind(wishId, Change.QUESTION, async () => {
-          const res = await clients.questions.list({ wishId });
+          const res = await clients.questions.list({ wishId }, call);
+          // The read goes as far as the questions shown went: one answered past the first page stays, answered,
+          // instead of leaving the screens with the open ones (incident Q253).
+          const furthest = prevDetail.questions.at(-1)?.id ?? "";
           let allQuestions = res.questions;
-          if (res.nextPageToken) {
+          let next = res.nextPageToken;
+          while (next && (allQuestions.at(-1)?.id ?? "") < furthest) {
+            const page = await clients.questions.list(
+              { wishId, pageSize: 200, pageToken: next },
+              call,
+            );
+            allQuestions = allQuestions.concat(page.questions);
+            next = page.nextPageToken;
+          }
+          if (next) {
             let openList: Question[] = [];
             let token: string | undefined;
             do {
-              const page = await clients.questions.list({
-                wishId,
-                open: true,
-                pageSize: 200,
-                pageToken: token,
-              });
+              const page = await clients.questions.list(
+                {
+                  wishId,
+                  open: true,
+                  pageSize: 200,
+                  pageToken: token,
+                },
+                call,
+              );
               openList = openList.concat(page.questions);
               token = page.nextPageToken;
             } while (token);
             allQuestions = merge(
               QuestionSchema,
-              res.questions,
+              allQuestions,
               openList,
               new Set(),
               byID,
@@ -629,18 +659,19 @@ export function createStore(
             allQuestions,
           );
           into.questionsTotal = res.total;
-          into.questionsNextToken = res.nextPageToken;
+          into.questionsNextToken = next;
         });
       if (kinds.has(Change.BLOCK))
         attemptKind(wishId, Change.BLOCK, async () => {
-          const res = await clients.blocks.list({ wishId });
+          const res = await clients.blocks.list({ wishId }, call);
           into.blocks = reconcile(BlockSchema, prevDetail.blocks, res.blocks);
           into.blocksTotal = res.total;
           into.blocksNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.TILASM))
         attemptKind(wishId, Change.TILASM, async () => {
-          const list = (await clients.tilasms.list({ wish: wishId })).tilasms;
+          const list = (await clients.tilasms.list({ wish: wishId }, call))
+            .tilasms;
           into.tilasms = reconcile(TilasmSchema, prevDetail.tilasms, list);
         });
     }
@@ -970,10 +1001,10 @@ export function createStore(
       loadingMore.add(key);
       try {
         if (kind === Change.QUESTION && detail.questionsNextToken) {
-          const res = await clients.questions.list({
-            wishId,
-            pageToken: detail.questionsNextToken,
-          });
+          const res = await clients.questions.list(
+            { wishId, pageToken: detail.questionsNextToken },
+            call,
+          );
           const cur = state.details[wishId];
           if (!cur) return;
           const questions = merge(
@@ -995,11 +1026,10 @@ export function createStore(
             },
           });
         } else if (kind === Change.TASK && detail.tasksNextToken) {
-          const res = await clients.tasks.list({
-            wishId,
-            pageToken: detail.tasksNextToken,
-            pageSize,
-          });
+          const res = await clients.tasks.list(
+            { wishId, pageToken: detail.tasksNextToken, pageSize },
+            call,
+          );
           const cur = state.details[wishId];
           if (!cur) return;
           const tasks = merge(
@@ -1021,10 +1051,10 @@ export function createStore(
             },
           });
         } else if (kind === Change.BLOCK && detail.blocksNextToken) {
-          const res = await clients.blocks.list({
-            wishId,
-            pageToken: detail.blocksNextToken,
-          });
+          const res = await clients.blocks.list(
+            { wishId, pageToken: detail.blocksNextToken },
+            call,
+          );
           const cur = state.details[wishId];
           if (!cur) return;
           const blocks = merge(
@@ -1088,6 +1118,14 @@ export function createStore(
       })();
       pendingPrompts.set(taskId, read);
       return read;
+    },
+    putQuestion(question) {
+      const detail = state.details[question.wishId];
+      if (!detail?.loadedKinds.has(Change.QUESTION)) return;
+      const changes = create(WishChangesSchema, { questions: [question] });
+      const next = apply(detail, changes, {});
+      if (next !== detail)
+        set({ details: { ...state.details, [question.wishId]: next } });
     },
     changed(wishId, changes) {
       for (const change of changes) {
