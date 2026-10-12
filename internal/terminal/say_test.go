@@ -170,8 +170,8 @@ func TestSaySeveralLinesSubmittedMidOutput(t *testing.T) {
 }
 
 // fakeLead runs, in a terminal called lead, a program that behaves as an agent's prompt does (TestLeadProcess),
-// with the delays of Say shortened.
-func fakeLead(t *testing.T) (*Manager, *Terminal) {
+// with the delays of Say shortened; cfg, when given, is the manager's.
+func fakeLead(t *testing.T, cfg ...Config) (*Manager, *Terminal) {
 	t.Helper()
 	fastVoice(t, 100*time.Millisecond, 50*time.Millisecond, 2*time.Second)
 	oldHold, oldIdle := hold, typingIdle
@@ -183,7 +183,7 @@ func fakeLead(t *testing.T) (*Manager, *Terminal) {
 		t.Fatal(err)
 	}
 	t.Setenv(recordedEnv, recorded)
-	m := NewManager(Config{})
+	m := NewManager(append(cfg, Config{})[0])
 	t.Cleanup(m.Close)
 	term, _, err := m.Open("lead", []string{os.Args[0], "-test.run=^TestLeadProcess$"}, t.TempDir(), 80, 24)
 	if err != nil {
