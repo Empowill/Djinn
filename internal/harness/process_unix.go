@@ -18,9 +18,11 @@ var (
 	workerPIDsFn      = machine.WorkerPIDs
 )
 
-// ownGroup makes the process lead a group of its own: a signal to the group reaches what it started.
+// ownGroup makes the process lead a group of its own: a signal to the group reaches what it started. On Linux, it
+// dies with Djinn (dieWithParent).
 func ownGroup(cmd *exec.Cmd, _ bool) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	dieWithParent(cmd.SysProcAttr)
 }
 
 // lowNice is the nice level of a worker at low CPU priority, below the developer's applications (nice 0).

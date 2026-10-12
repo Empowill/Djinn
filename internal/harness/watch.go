@@ -225,7 +225,7 @@ func (w *watchWorker) loop() {
 			return again
 		}
 		w.errs = nil
-		p, err := startCommand(w.spec.Dir, w.args[0], w.args[1:], w.spec.Env, w.spec.Scope, w.c.Grace, w.c.Items, w.spec.LowPriority)
+		p, err := startCommand(w.spec.Dir, w.args[0], w.args[1:], w.spec.Env, w.spec.Scope, w.c.Grace, w.c.Items, w.spec.LowPriority, w.spec.Track)
 		if err != nil {
 			res = Result{ExitCode: -1, Err: err}
 			next(res)

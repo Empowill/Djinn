@@ -555,6 +555,14 @@ A stop that takes more than 10 seconds dumps its goroutines by itself and logs t
 workers, the terminals, the database, the window and the server); after 30 seconds Djinn logs them again and exits
 with code 3 instead of hanging. A restart that hangs starts the newer Djinn before it exits.
 
+Killing Djinn leaves nothing running behind it: its workers, watchers and checks, and the commands a worker runs
+under a gate, die with it. On Linux the kernel kills each worker at once; a small shell of Djinn's, the sentinel,
+asks what they started to stop, and kills it 5 seconds later (on macOS, the workers too); on Windows a job object
+kills them all. Djinn records each of them in `run/` of its data folder while it runs. Should one survive all the
+same, the next start stops it before it resumes any task (its start time tells it from a later process with the
+same number: Djinn never touches a process it did not start), and the restart line tells the lead: "2 orphans
+stopped: W488's watcher ×2".
+
 To report it, send `logs/djinn.log` and the latest `goroutines-*.txt` (and `console.log` if Djinn crashed). They
 name your projects' folders and branches and your tasks' codes; nothing else of yours.
 

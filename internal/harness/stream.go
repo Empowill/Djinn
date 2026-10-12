@@ -63,7 +63,7 @@ type toolTracker interface {
 // startStream starts command with args, writes the prompt as the first message, and reads what the agent says.
 // The input stays open for more messages, and is closed once every message has its result: the agent then exits.
 func startStream(ctx context.Context, spec Spec, command string, args []string, grace time.Duration, a streamAgent) (Worker, error) {
-	p, err := startProcess(spec.Dir, command, args, spec.Env, spec.Scope, grace, spec.LowPriority)
+	p, err := startProcess(spec.Dir, command, args, spec.Env, spec.Scope, grace, spec.LowPriority, spec.Track)
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}

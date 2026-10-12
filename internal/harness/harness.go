@@ -77,6 +77,8 @@ type Harness struct {
 	enlightenWorkers *bool      // enlighten workers start (WithEnlightenWorkers); nil: follows project settings
 
 	scopes *machine.Scopes // the systemd scopes the workers run in, one each (WithScopes); nil: none
+	// children records the processes Djinn starts, so that none outlives it (orphans.go); nil without a data folder.
+	children *children
 
 	beforeStart func() // runs before a worker's process starts (WithBeforeStart); nil: nothing
 
@@ -157,6 +159,7 @@ type run struct {
 
 	// Guarded by Harness.mu.
 	worker             Worker
+	code               string // the task's code, once its worker starts (TrackGate)
 	pid                int    // process ID of the running worker (0 if none)
 	cgroup             string // cgroup of the running worker
 	token              string // secret per-run token passed in DJINN_WORKER_TOKEN
@@ -247,6 +250,9 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 		o(h)
 	}
 	h.batcher = newTellBatcher(h)
+	if home != "" && h.children == nil {
+		h.children = newChildren(filepath.Join(home, runDir), Grace)
+	}
 	return h
 }
 
@@ -288,6 +294,7 @@ func (h *Harness) Close() {
 	}
 	h.wg.Wait()
 	h.babysitting.Wait()
+	h.children.close() // What the workers left running stops with them.
 }
 
 // Recover marks as interrupted the tasks a previous djinn up left running: their workers died with it. They keep
@@ -295,8 +302,10 @@ func (h *Harness) Close() {
 // scheduler to resume it (queueInterrupted). The lead's restart event names the workers the last djinn up left
 // running, and those it stopped as it ended, interrupted since it started (lastStart). First, the azimas stored as
 // work before tasks had kinds become azimas (migrateAzimas), and a task part of an azima that is gone becomes part of
-// none (ungroupOrphans).
+// none (ungroupOrphans). Before all, the processes the last djinn up started and left running are stopped
+// (children.sweep), so that no task resumes beside its old worker: the restart event names them.
 func (h *Harness) Recover(ctx context.Context) error {
+	orphans := h.children.sweep()
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
@@ -378,7 +387,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 	}
 	// The lead hears of the restart from its queue, whether its watch died with the last djinn up or not.
 	restart := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART,
-		Text: restartLine(h.version, interrupted, resumed, watchers)}
+		Text: restartLine(h.version, interrupted, resumed, watchers, orphans)}
 	if err := plan.QueueLeadEvent(ctx, h.store, restart, h.now()); err != nil {
 		return fmt.Errorf("tell the lead of the restart: %w", err)
 	}
@@ -402,9 +411,10 @@ func (h *Harness) lastStart(ctx context.Context) (time.Time, error) {
 }
 
 // restartLine is what the lead's restart event says: the version Djinn started on, the workers the last djinn up
-// left running and Djinn interrupted (or that it stopped, and Djinn resumes), those of them it resumes by itself, and
-// apart the watchers it resumes: a watcher is no worker.
-func restartLine(version string, interrupted, resumed, watchers []string) string {
+// left running and Djinn interrupted (or that it stopped, and Djinn resumes), those of them it resumes by itself,
+// apart the watchers it resumes: a watcher is no worker, and the processes the last djinn up left running that Djinn
+// stopped, by their labels (orphansPart).
+func restartLine(version string, interrupted, resumed, watchers, orphans []string) string {
 	if version == "" {
 		version = "unknown"
 	}
@@ -435,6 +445,9 @@ func restartLine(version string, interrupted, resumed, watchers []string) string
 	if len(watchers) > 0 {
 		parts = append(parts, fmt.Sprintf("%d %s resumed: %s", len(watchers), plural(len(watchers), "watcher"),
 			strings.Join(watchers, ", ")))
+	}
+	if part := orphansPart(orphans); part != "" {
+		parts = append(parts, part)
 	}
 	if len(parts) == 0 {
 		return line + ": no worker was running."
@@ -1193,6 +1206,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	h.mu.Lock()
 	r.startTime = now
 	r.lastActivity = now
+	r.code = t.GetCode()
 	h.mu.Unlock()
 	r.turnsBefore = int(t.GetTurns().GetTotal())
 	h.setTurns(r, func(int) int { return 1 })
@@ -1242,6 +1256,11 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		spec.LastLine = t.GetLastLine()
 	}
 	spec.Scope = h.scopeFor(t)
+	kind := "worker"
+	if r.watcher {
+		kind = "watcher"
+	}
+	spec.Track = h.children.tracker(t.GetCode(), kind)
 	spec.LowPriority = h.lowPriority()
 	spec.StartHead = r.startHead
 	spec.Branch = t.GetBranch()

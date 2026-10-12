@@ -21,7 +21,7 @@ The data folder, nothing else:
 - `settings.json`: the window's settings (the global shortcut).
 
 Leave out the worktrees (`projects/*/worktrees`): Git holds them. Push the branches you care about.
-Leave out `djinn.sock`, `server.addr` and the logs: they belong to a running Djinn.
+Leave out `djinn.sock`, `server.addr`, `run/` and the logs: they belong to a running Djinn.
 
 Djinn stores no secret, so a backup holds none. It still holds your plans and decisions: encrypt it
 before it leaves the machine.
@@ -35,7 +35,7 @@ djinn backup --file ~/djinn-backup.tar.gz   # Or .zip.
 
 It works while Djinn runs. The running Djinn copies its own database (`VACUUM INTO`): the copy is
 consistent, even mid-write. Without a running Djinn, the command copies it itself. The archive leaves
-out the worktrees, the socket, the logs and any environment file (`.env`, `.envrc`, `*.env`).
+out the worktrees, the socket, `run/`, the logs and any environment file (`.env`, `.envrc`, `*.env`).
 
 Never copy `djinn.db` alone while Djinn runs: recent writes sit in `djinn.db-wal`.
 

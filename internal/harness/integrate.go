@@ -1425,11 +1425,10 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 			waits("") // Taken: it runs.
 		}
 	}
-	run := h.commands
-	if run == nil {
-		run = runCommand
+	if h.commands != nil {
+		return h.commands(ctx, dir, args)
 	}
-	return run(ctx, dir, args)
+	return runTracked(ctx, dir, args, h.children.tracker("", name+" check"))
 }
 
 // gateWaitKey is the context key of a function told why a command waits for its gate ("gate install: held by …"), and
@@ -1438,6 +1437,12 @@ type gateWaitKey struct{}
 
 // runCommand runs args in dir, and returns the end of what it wrote and its exit code.
 func runCommand(ctx context.Context, dir string, args []string) (string, int, error) {
+	return runTracked(ctx, dir, args, nil)
+}
+
+// runTracked is runCommand; track, when set, is told of the command as it starts, and what it returns is called once
+// it ended.
+func runTracked(ctx context.Context, dir string, args []string, track func(pid int, cgroup string) func()) (string, int, error) {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
 	// At ctx's end (Djinn stops), what the command started dies with it: a check's test runner, left alone, would
@@ -1451,7 +1456,13 @@ func runCommand(ctx context.Context, dir string, args []string) (string, int, er
 	out := &tailBuffer{max: 16 << 10}
 	cmd.Stdout, cmd.Stderr = out, out
 	start := time.Now()
-	err := cmd.Run()
+	err := cmd.Start()
+	if err == nil {
+		if track != nil {
+			defer track(cmd.Process.Pid, "")()
+		}
+		err = cmd.Wait()
+	}
 	logx.Ran(ctx, cmd, start, err)
 	var exit *exec.ExitError
 	switch {
