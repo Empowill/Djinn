@@ -15,11 +15,10 @@ import {
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import {
-  type Provider,
-  ProviderState,
   type Shortcut,
   type UiServiceGetEnvironmentResponse,
 } from "../gen/ts/ui/v1/ui_pb";
+import { AgentSetupPanel, useAgents } from "./agent-setup";
 import { message } from "./data/client";
 import { useClients } from "./data/djinn";
 import { MAX_ACTIVE, span, syncDescription, when } from "./data/format";
@@ -30,7 +29,6 @@ import {
   languages,
   setLanguage,
   systemLanguage,
-  type TextKey,
   t,
 } from "./i18n";
 import { type Theme, chosenTheme, setTheme as applyTheme } from "./theme";
@@ -608,59 +606,6 @@ export function ShortcutField({
   );
 }
 
-// agentStates names where an agent stands, and the dot that shows it.
-const agentStates: Record<ProviderState, { label: TextKey; dot: string }> = {
-  [ProviderState.UNSPECIFIED]: {
-    label: "settings.agent_unknown",
-    dot: "neutral",
-  },
-  [ProviderState.MISSING]: { label: "settings.agent_missing", dot: "neutral" },
-  [ProviderState.SIGNED_OUT]: {
-    label: "settings.agent_signed_out",
-    dot: "blocked",
-  },
-  [ProviderState.READY]: { label: "settings.agent_ready", dot: "green" },
-  [ProviderState.UNKNOWN]: { label: "settings.agent_unknown", dot: "blocked" },
-};
-
-// AgentSetting is one agent on one line: its name and version, where it stands, and the command that takes it further
-// (install it, sign it in), which says what it does on hover.
-function AgentSetting({ agent }: { agent: Provider }) {
-  const state = agentStates[agent.state] ?? agentStates[ProviderState.UNKNOWN];
-  const next =
-    agent.state === ProviderState.MISSING
-      ? { label: t("settings.agent_install"), command: agent.installCommand }
-      : agent.state === ProviderState.SIGNED_OUT
-        ? { label: t("settings.agent_login"), command: agent.loginCommand }
-        : agent.state === ProviderState.UNKNOWN && agent.loginCommand
-          ? {
-              label: t("settings.agent_login_unknown"),
-              command: agent.loginCommand,
-            }
-          : undefined;
-  return (
-    <div
-      className="provider-setting"
-      title={agent.available ? agent.command : undefined}
-    >
-      <span className="provider-glyph">
-        {agent.id === "codex" ? "⬡" : agent.id === "antigravity" ? "◆" : "✳"}
-      </span>
-      <div>
-        <h3>{agent.name}</h3>
-        {agent.version && <span className="muted-text">{agent.version}</span>}
-      </div>
-      {next?.command && (
-        <code title={`${next.label} ${next.command}`}>{next.command}</code>
-      )}
-      <span className="status-text">
-        <span className={`status-dot ${state.dot}`} />
-        {t(state.label)}
-      </span>
-    </div>
-  );
-}
-
 // Settings: the agents djinn finds on this machine, the language and the theme of the page, the global shortcut, and
 // the way to the documentation.
 export function Settings({
@@ -672,7 +617,7 @@ export function Settings({
 }) {
   const clients = useClients();
   const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
-  const [agents, setAgents] = useState<Provider[]>();
+  const agents = useAgents();
   const [theme, setTheme] = useState<Theme>(chosenTheme);
   useEffect(() => {
     let live = true;
@@ -680,11 +625,6 @@ export function Settings({
       .getEnvironment({})
       .then((res) => live && setEnv(res))
       .catch(() => undefined);
-    // Checking the agents runs each one's status command: it takes up to a few seconds, so the rest does not wait.
-    clients.ui
-      .getEnvironment({ agents: true })
-      .then((res) => live && setAgents(res.providers))
-      .catch(() => live && setAgents([]));
     return () => {
       live = false;
     };
@@ -696,16 +636,7 @@ export function Settings({
       onClose={onClose}
       wide
     >
-      <div className="provider-settings">
-        {agents === undefined && (
-          <div className="provider-setting">
-            <span className="muted-text">{t("settings.agent_checking")}</span>
-          </div>
-        )}
-        {agents?.map((p) => (
-          <AgentSetting agent={p} key={p.id} />
-        ))}
-      </div>
+      <AgentSetupPanel agents={agents} />
       <div className="settings-divider" />
       <div className="setting-row">
         <div>

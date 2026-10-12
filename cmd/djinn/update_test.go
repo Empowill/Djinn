@@ -29,6 +29,7 @@ import (
 	"github.com/empowill/djinn/internal/cli"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/terminal"
 )
 
 // install puts a copy of this test binary at path, as task install does: built apart, then renamed over the
@@ -253,6 +254,19 @@ func TestUpdateNeedsAPerson(t *testing.T) {
 }
 
 // TestResumable: a lead started from a brief resumes its session after a restart; other commands stay as they were.
+// TestRestartSkipsTheAgentsSetup: an update restart opens the shells and the leads again, never an agent's install or
+// sign-in that the window started.
+func TestRestartSkipsTheAgentsSetup(t *testing.T) {
+	got := restartTerminals([]*terminal.Terminal{
+		{Name: "main", Command: []string{"/bin/sh"}, Dir: "/p"},
+		{Name: "setup-claude-k1", Command: []string{"/bin/sh", "-c", "curl … | bash"}},
+		{Name: "lead", Command: []string{"claude"}, Dir: "/p"},
+	})
+	if len(got) != 2 || got[0].Name != "main" || got[0].Directory != "/p" || got[1].Name != "lead" {
+		t.Fatalf("restart terminals %+v, want main and lead", got)
+	}
+}
+
 func TestResumable(t *testing.T) {
 	for _, c := range []struct{ in, want []string }{
 		{[]string{"/bin/zsh", "-lc", "claude --session-id 0a56-c9be --append-system-prompt-file rules.md 'go'"},

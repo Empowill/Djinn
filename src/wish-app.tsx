@@ -17,6 +17,7 @@ import {
 } from "./data/djinn";
 import { importWish } from "./data/exchange";
 import { isActive, runningOf, waitsForYou } from "./data/format";
+import { AgentSetup, needsSetup } from "./agent-setup";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
 import { t } from "./i18n";
@@ -28,7 +29,7 @@ import { OperatingLoad } from "./operating-load";
 import "./wish.css";
 import "./review.css";
 
-type Modal = "make" | "project" | "settings" | "docs" | null;
+type Modal = "make" | "project" | "settings" | "docs" | "agents" | null;
 
 // What the window shows instead of a wish: the flight plan of the active wishes. A wish's id is a UUID: never this.
 export const PLAN = "plan";
@@ -101,6 +102,21 @@ export function WishApp() {
     setOpening((o) => (o && o.wishId !== selected ? undefined : o));
     setReaching((r) => (r && r.wishId !== selected ? undefined : r));
   }, [selected]);
+  // The window opens with no agent ready (none installed and signed in, or of unknown sign-in): the setup of the agents
+  // opens by itself. Otherwise it waits in the settings and the lead's menu.
+  useEffect(() => {
+    let live = true;
+    clients.ui
+      .getEnvironment({ agents: true })
+      .then((res) => {
+        if (live && res.providers.length > 0 && res.providers.every(needsSetup))
+          setModal((m) => m ?? "agents");
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [clients]);
   // Ctrl+N (Cmd+N) makes a wish.
   useEffect(() => {
     const keys = (event: KeyboardEvent) => {
@@ -259,6 +275,7 @@ export function WishApp() {
             opening={opening?.wishId === wish.id ? opening : undefined}
             reaching={reaching?.wishId === wish.id ? reaching : undefined}
             onToast={setToast}
+            onSetupAgents={() => setModal("agents")}
           />
         ) : (
           <Welcome
@@ -299,6 +316,7 @@ export function WishApp() {
           />
         )}
         {modal === "docs" && <Docs onClose={closeDocs} />}
+        {modal === "agents" && <AgentSetup onClose={() => setModal(null)} />}
         {project && (
           <ProjectPanel
             project={project}

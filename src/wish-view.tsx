@@ -152,6 +152,7 @@ export function WishView({
   opening,
   reaching,
   onToast,
+  onSetupAgents,
 }: {
   wish: Wish;
   // A tilasm of the wish to show now, in its Tilasms tab.
@@ -159,6 +160,8 @@ export function WishView({
   // An element of the wish to bring into sight now, in its tab.
   reaching?: Reaching;
   onToast: (text: string) => void;
+  // Opens the setup of the agents, from the lead's menu.
+  onSetupAgents?: () => void;
 }) {
   const djinn = useDjinn();
   const store = djinn?.store;
@@ -712,6 +715,7 @@ export function WishView({
             }
             onLead={() => lead()}
             onPick={(provider) => lead(provider)}
+            onSetup={onSetupAgents}
           />
           <button
             className="button secondary small"

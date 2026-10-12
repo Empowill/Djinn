@@ -3539,6 +3539,15 @@ test("Lead is split: the button resumes the one lead, focused on the wish, the a
     h(s.LeadMenu, { recorded, onPick() {} }),
   );
   assert.match(loading, /Loading…/);
+  // Last, the way to set the agents up, when the window offers it.
+  assert.doesNotMatch(open, /Set up the agents/);
+  const setup = s.renderToStaticMarkup(
+    h(s.LeadButton, { ...props, open: true, onSetup() {} }),
+  );
+  assert.match(
+    setup,
+    /Antigravity<\/span>[^]*<button role="menuitem" class="lead-agent"><span class="lead-agent-name"><svg[^]*?<\/svg>Set up the agents<\/span><\/button><\/div>/,
+  );
 });
 
 test("the wish's description shows under its title, the title until one is written, and edits in place", () => {
