@@ -3707,8 +3707,8 @@ type WishTemplate struct {
 	// A line of the watcher that means the work is done ("MERGED"): a line that is it, or starts with it before a
 	// space or a sign. Empty: no line offers to grant the wish.
 	DoneWhen string `protobuf:"bytes,4,opt,name=done_when,json=doneWhen,proto3" json:"done_when,omitempty"`
-	// The watcher's command starts again after each exit, for a command that exits on each change; its done line
-	// ends it.
+	// The watcher's command starts again after an exit 0 too, for a command that exits on each change; its done line
+	// ends it. Without it, the watcher still starts again a command that dies.
 	Restart       bool `protobuf:"varint,5,opt,name=restart,proto3" json:"restart,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4182,7 +4182,8 @@ type Task struct {
 	ResumeAfter *timestamppb.Timestamp `protobuf:"bytes,27,opt,name=resume_after,json=resumeAfter,proto3" json:"resume_after,omitempty"`
 	// How many times Djinn resumed the task by itself. At 3, a task cut short again fails instead.
 	Resumes int32 `protobuf:"varint,28,opt,name=resumes,proto3" json:"resumes,omitempty"`
-	// A watcher's command starts again after each exit, until the task is stopped (djinn task spawn --restart).
+	// A watcher's command starts again after an exit 0 too, until the task is stopped (djinn task spawn --restart);
+	// one that dies starts again anyway.
 	Restart bool `protobuf:"varint,29,opt,name=restart,proto3" json:"restart,omitempty"`
 	// The first line of the last paragraph a watcher's command printed, as its wish's lead was told. Empty for an
 	// agent.
@@ -14439,7 +14440,8 @@ type TaskServiceSpawnRequest struct {
 	Fork string `protobuf:"bytes,11,opt,name=fork,proto3" json:"fork,omitempty"`
 	// Start the worker from a copy of the lead's conversation, as --fork does from a task.
 	FromLead bool `protobuf:"varint,12,opt,name=from_lead,json=fromLead,proto3" json:"from_lead,omitempty"`
-	// For a watcher (--provider watch): start its command again after each exit, until the task is stopped.
+	// For a watcher (--provider watch): start its command again after an exit 0 too, until the task is stopped; one
+	// that dies starts again anyway.
 	Restart bool `protobuf:"varint,13,opt,name=restart,proto3" json:"restart,omitempty"`
 	// The decision the task comes from: an answered question's code (Q43), or the id of a block of kind decision. The
 	// decision log links to the task, and the task to its decision.

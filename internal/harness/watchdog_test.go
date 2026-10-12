@@ -2,8 +2,10 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +15,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
+	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
 
@@ -472,17 +475,20 @@ func TestWatchdogDeadProcessEnds(t *testing.T) {
 	}
 }
 
-// The incident of 12/10/2026: the watchdog failed the babysit's watcher, "silent for 15 min", while its command printed
-// only when its pull request changed. A watcher silent past the limit runs on; an agent worker as silent is ended.
-func TestWatchdogSilentWatcherRunsOn(t *testing.T) {
+// TestWatchdogWatcherOutlivesBudgets replays Babysit PR #2 (12/10/2026): W1 and W6, the template's watcher, were
+// failed as silent for 15 min, and W9 would have been stopped as a runaway past the 2 h budget. A watcher past the
+// silence limit, the wall-time budget and the turn budget still runs; the agent worker checked in the same pass
+// does not.
+func TestWatchdogWatcherOutlivesBudgets(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
 	clock := &fakeClock{at: time.Date(2026, 10, 12, 11, 13, 0, 0, time.UTC)}
-	e := up(t, t.TempDir(), WithClock(clock.now), WithSilenceLimit(100*time.Millisecond))
+	e := up(t, t.TempDir(), WithClock(clock.now), WithSilenceLimit(100*time.Millisecond),
+		WithTaskMaxWallTime(time.Hour), WithTaskMaxTurns(1))
 	wishID, _ := e.wish(t, gitRepo(t))
 
-	watcher, err := e.spawnWatch(t, wishID, watchCommand("wait"), true)
+	watcher, err := e.spawnWatch(t, wishID, watchCommand("wait"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,27 +496,177 @@ func TestWatchdogSilentWatcherRunsOn(t *testing.T) {
 	running := func(tk *planv1.Task) bool { return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING }
 	e.until(t, watcher.GetId(), running)
 	e.until(t, worker.GetId(), running)
+	e.h.mu.Lock()
+	e.h.runs[watcher.GetId()].turns = 2 // Past the turn budget, were it counted.
+	e.h.mu.Unlock()
 
-	clock.set(clock.now().Add(15 * time.Minute))
+	clock.set(clock.now().Add(3 * time.Hour))
 	e.h.Wake()
 
 	// One watchdog pass checks both: the worker's end says it ran.
-	e.ended(t, worker.GetId())
-	silenced := false
-	for _, ev := range e.watch(t.Context(), t, worker.GetId(), 0) {
-		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.Contains(ev.GetText(), "silent for 15 min") {
-			silenced = true
-		}
-	}
-	if !silenced {
-		t.Errorf("the silent agent worker was not ended by the watchdog")
+	if got := e.ended(t, worker.GetId()); !strings.Contains(got.GetError(), "budget exceeded") {
+		t.Errorf("the agent worker past its budgets: %v", got)
 	}
 
 	e.h.mu.Lock()
 	r := e.h.runs[watcher.GetId()]
-	ended := r == nil || r.watchdogEnd
+	ended := r == nil || r.watchdogEnd || r.stopping
 	e.h.mu.Unlock()
 	if tk := e.get(t, watcher.GetId()); ended || tk.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
-		t.Fatalf("silent watcher: status = %v, error = %q, ended by the watchdog = %v; want RUNNING", tk.GetStatus(), tk.GetError(), ended)
+		t.Fatalf("silent watcher past its budgets: status = %v, error = %q, ended by the watchdog = %v; want RUNNING",
+			tk.GetStatus(), tk.GetError(), ended)
+	}
+}
+
+// TestWatcherStartsAgainWhenItDies: a watcher whose command dies is started again by the watchdog, in the same task,
+// its state folder as it left it: the lead spawned W6 then W9 by hand, each time losing what the watch had said.
+func TestWatcherStartsAgainWhenItDies(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	e := up(t, home, WithTick(time.Hour))
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	task, err := e.spawnWatch(t, wishID, watchCommand("keep:runs", "die-before:3", "say:watching", "wait"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "watching" })
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		t.Errorf("watcher = %v", got)
+	}
+	if b, err := os.ReadFile(filepath.Join(home, "watchers", task.GetId(), "runs")); err != nil || string(b) != "3" {
+		t.Errorf("its state folder counts %q runs (%v), want 3: one folder over its runs", b, err)
+	}
+	var failed []string
+	for _, ev := range e.storedEvents(t, task.GetId()) {
+		if strings.HasPrefix(ev.GetText(), "the command failed") {
+			failed = append(failed, ev.GetText())
+		}
+	}
+	if len(failed) != 2 || !strings.HasPrefix(failed[0], "the command failed (exit code 1, 1 of 5 in a row); it starts again in ") {
+		t.Errorf("events %q, want two deaths", failed)
+	}
+	if tasks, err := store.List[*planv1.Task](t.Context(), e.db, store.Where{"wish_id": wishID}); err != nil || len(tasks) != 1 {
+		t.Errorf("tasks = %v, %v: the same task watches on", tasks, err)
+	}
+	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED {
+		t.Errorf("stopped watcher = %v", got)
+	}
+}
+
+// TestWatcherGivesUp: a watcher whose command dies at each start fails at the fifth, and its lead is told why once,
+// with the command's last error lines.
+func TestWatcherGivesUp(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	e := up(t, home, WithTick(time.Hour))
+	lead := &told{}
+	e.h.TellLeads(lead.tell)
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	task, err := e.spawnWatch(t, wishID, watchCommand("keep:runs", "err:gh: not logged in", "exit:4"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := e.ended(t, task.GetId())
+	want := "its command died 5 times in a row; the last time: exit code 4; its error output: gh: not logged in"
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED || got.GetError() != want {
+		t.Errorf("watcher = %v, want failed: %s", got, want)
+	}
+	if b, err := os.ReadFile(filepath.Join(home, "watchers", task.GetId(), "runs")); err != nil || string(b) != "5" {
+		t.Errorf("%q runs (%v), want 5", b, err)
+	}
+	var failures []string
+	for _, l := range lead.all() {
+		if strings.Contains(l, "failed") || strings.Contains(l, "has ended") {
+			failures = append(failures, l)
+		}
+	}
+	if line := wishID + ": Djinn: W1's watcher failed: " + want; len(failures) != 1 || failures[0] != line {
+		t.Errorf("the lead was told %q, want once %q", failures, line)
+	}
+}
+
+// TestWatchdogLostWatcherStartsAgain: a watcher whose task runs without a run (a lost process) starts again, in the
+// same task, instead of failing: plan.CanResume is false for a watcher, which has no session to resume.
+func TestWatchdogLostWatcherStartsAgain(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	e := up(t, home, WithTick(time.Hour))
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	task, err := e.spawnWatch(t, wishID, watchCommand("keep:runs", "say:watching", "wait"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "watching" })
+	// Its process is lost: stopped, then the store says it runs, and no run holds it.
+	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
+		t.Fatal(err)
+	}
+	lost := e.get(t, task.GetId())
+	lost.Status, lost.Error, lost.EndTime = planv1.TaskStatus_TASK_STATUS_RUNNING, "", nil
+	putTaskInDB(t, e.db, lost)
+	e.h.Wake()
+
+	runs := filepath.Join(home, "watchers", task.GetId(), "runs")
+	waitFor(t, "the lost watcher's second run", func() bool {
+		b, _ := os.ReadFile(runs)
+		return string(b) == "2"
+	})
+	got := e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING })
+	if got.GetError() != "" {
+		t.Errorf("lost watcher = %v", got)
+	}
+	e.untilText(t, task.GetId(), "resumed after its process was lost: started watch in ")
+	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestWatcherLife: a command that dies starts again after a backoff of a second, doubling up to five minutes; a run
+// that lived a minute starts the backoff and the count over; the fifth death in a row ends the watcher, but for an
+// inbox source. Exit 0 starts it again only when its task restarts it.
+func TestWatcherLife(t *testing.T) {
+	t.Parallel()
+	dead := Result{ExitCode: 1}
+	l := newWatcherLife(watchBackoff, false)
+	for i, want := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second} {
+		if wait, again := l.ended(dead, true, 0); !again || wait != want {
+			t.Fatalf("death %d: wait %s, again %v; want %s", i+1, wait, again, want)
+		}
+	}
+	if wait, again := l.ended(dead, true, watchLived); !again || wait != time.Second {
+		t.Errorf("after a run that lived: wait %s, again %v; want a second", wait, again)
+	}
+	for i := 2; i <= watchTries; i++ {
+		_, again := l.ended(Result{Err: errors.New("sh not found in PATH")}, true, 0)
+		if again != (i < watchTries) {
+			t.Fatalf("death %d in a row: again %v", i, again)
+		}
+	}
+
+	l = newWatcherLife(watchBackoff, true)
+	var wait time.Duration
+	for range 20 {
+		wait, _ = l.ended(dead, true, 0)
+	}
+	if wait != watchMaxBackoff {
+		t.Errorf("an inbox source after 20 deaths waits %s, want %s", wait, watchMaxBackoff)
+	}
+	if wait, again := l.ended(Result{}, true, 0); !again || wait != 0 {
+		t.Errorf("exit 0, restarting: wait %s, again %v", wait, again)
+	}
+	if _, again := l.ended(Result{}, false, 0); again {
+		t.Errorf("exit 0 without restart starts again")
+	}
+	if wait, _ := l.ended(dead, true, 0); wait != time.Second {
+		t.Errorf("after an exit 0, a death waits %s, want a second", wait)
 	}
 }

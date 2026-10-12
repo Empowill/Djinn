@@ -319,7 +319,9 @@ func (h *Harness) Recover(ctx context.Context) error {
 		if t.GetStartTime() == nil {
 			continue
 		}
-		interrupted = append(interrupted, t.GetCode())
+		if !watching(t) { // A watcher is no worker: the restart line counts it apart.
+			interrupted = append(interrupted, t.GetCode())
+		}
 		nowPb := timestamppb.New(h.now())
 		t.Status, t.Error, t.EndTime = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "djinn up ended while the worker ran", nowPb
 		if len(t.Runs) > 0 {
@@ -346,12 +348,13 @@ func (h *Harness) Recover(ctx context.Context) error {
 			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
 		}
 	}
-	resumed, err := h.queueInterrupted(ctx, tasks)
+	resumed, watchers, err := h.queueInterrupted(ctx, tasks)
 	if err != nil {
 		return err
 	}
 	// The lead hears of the restart from its queue, whether its watch died with the last djinn up or not.
-	restart := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART, Text: restartLine(h.version, interrupted, resumed)}
+	restart := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART,
+		Text: restartLine(h.version, interrupted, resumed, watchers)}
 	if err := plan.QueueLeadEvent(ctx, h.store, restart, h.now()); err != nil {
 		return fmt.Errorf("tell the lead of the restart: %w", err)
 	}
@@ -359,32 +362,52 @@ func (h *Harness) Recover(ctx context.Context) error {
 }
 
 // restartLine is what the lead's restart event says: the version Djinn started on, the workers the last djinn up
-// left running and Djinn interrupted, and those of them it resumes by itself.
-func restartLine(version string, interrupted, resumed []string) string {
+// left running and Djinn interrupted (or that it stopped, and Djinn resumes), those of them it resumes by itself, and
+// apart the watchers it resumes: a watcher is no worker.
+func restartLine(version string, interrupted, resumed, watchers []string) string {
 	if version == "" {
 		version = "unknown"
 	}
 	line := "Djinn: restarted on version " + version
-	if len(interrupted) == 0 {
-		return line + ": no worker was running."
-	}
-	line += fmt.Sprintf(": %d workers interrupted (%s)", len(interrupted), strings.Join(interrupted, ", "))
-	if len(interrupted) == 1 {
-		line = strings.Replace(line, "1 workers", "1 worker", 1)
-	}
-	var left []string
-	for _, c := range interrupted {
-		if !slices.Contains(resumed, c) {
-			left = append(left, c)
+	for _, c := range resumed {
+		if !slices.Contains(interrupted, c) {
+			interrupted = append(interrupted, c) // Stopped with the last djinn up: interrupted all the same.
 		}
 	}
-	if len(resumed) > 0 {
-		line += fmt.Sprintf(", resumed by Djinn: %s", strings.Join(resumed, ", "))
+	var parts []string
+	if len(interrupted) > 0 {
+		part := fmt.Sprintf("%d %s interrupted (%s)", len(interrupted), plural(len(interrupted), "worker"),
+			strings.Join(interrupted, ", "))
+		var left []string
+		for _, c := range interrupted {
+			if !slices.Contains(resumed, c) {
+				left = append(left, c)
+			}
+		}
+		if len(resumed) > 0 {
+			part += fmt.Sprintf(", resumed by Djinn: %s", strings.Join(resumed, ", "))
+		}
+		if len(left) > 0 {
+			part += fmt.Sprintf("; not resumed, the move is yours: %s", strings.Join(left, ", "))
+		}
+		parts = append(parts, part)
 	}
-	if len(left) > 0 {
-		line += fmt.Sprintf("; not resumed, the move is yours: %s", strings.Join(left, ", "))
+	if len(watchers) > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s resumed: %s", len(watchers), plural(len(watchers), "watcher"),
+			strings.Join(watchers, ", ")))
 	}
-	return line + "."
+	if len(parts) == 0 {
+		return line + ": no worker was running."
+	}
+	return line + ": " + strings.Join(parts, "; ") + "."
+}
+
+// plural is word, with an s but for one.
+func plural(n int, word string) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
 }
 
 // rebuildTaskRunsFromJournal reconstructs FirstStartTime and Runs on tasks that ran before runs were recorded,
@@ -1159,6 +1182,10 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		"DJINN_WISH_ID=" + t.GetWishId(),
 		"DJINN_WORKER_TOKEN=" + r.token,
 	}, guard...)
+	if r.watcher {
+		// Its state folder, DJINN_HOME/watchers/<task>, outlives each run of its command (watcherLife).
+		spec.Env = append(spec.Env, "DJINN_HOME="+h.home)
+	}
 	spec.Scope = h.scopeFor(t)
 	spec.LowPriority = h.lowPriority()
 	spec.StartHead = r.startHead
@@ -1702,7 +1729,10 @@ func (h *Harness) end(r *run, res Result) {
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 		h.kickIntegrate()
 	}
-	if !r.light && !watching(t) {
+	switch {
+	case watching(t) && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED:
+		h.tellWatcherFailed(t)
+	case !r.light && !watching(t):
 		h.workerEnded(t)
 	}
 	if t.GetCorrection() != nil || t.GetReview() != nil {

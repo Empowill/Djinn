@@ -47,7 +47,11 @@ const (
 	byContinue   = "continued" // djinn task continue: its worker takes the new prompt on its session
 	byEnvReplay  = "replaying environment failure"
 	byPreempt    = "after making room"
+	byLost       = "after its process was lost" // a watcher's (restartLostWatcher)
 )
+
+// whyLost is why a task waits whose process was lost: the watchdog found it running without a run.
+const whyLost = "lost process"
 
 // whyStoppedFirst is why a planned task waits that djinn up stopped before its worker started (its worktree being
 // made): it starts at the next start, as planned.
@@ -64,16 +68,16 @@ func (h *Harness) now() time.Time {
 }
 
 // queueInterrupted gives back to the scheduler the tasks djinn up cut short: each one resumes, unless it cannot (see
-// resumable). Recover calls it; it returns the codes of the interrupted tasks Djinn resumes, for the lead.
-func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) ([]string, error) {
-	var resumed []string
+// resumable). Recover calls it; it returns the codes of the interrupted tasks Djinn resumes, for the lead: the
+// workers, and apart the watchers.
+func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) (resumed, watchers []string, err error) {
 	wishes, err := store.List[*planv1.Wish](ctx, h.store, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	projects, err := store.List[*planv1.Project](ctx, h.store, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	wish := map[string]*planv1.Wish{}
 	for _, w := range wishes {
@@ -127,9 +131,13 @@ func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) ([
 		t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", whyRestarted, nil
 		ev.Text = "resuming: " + whyRestarted + "; Djinn starts it again by itself"
 		h.writeAlone(ctx, actorHarness, methodResume, t, t.GetId(), t, ev)
-		resumed = append(resumed, t.GetCode())
+		if watching(t) {
+			watchers = append(watchers, t.GetCode())
+		} else {
+			resumed = append(resumed, t.GetCode())
+		}
 	}
-	return resumed, nil
+	return resumed, watchers, nil
 }
 
 // isGone tells whether the folder no longer exists.
@@ -227,6 +235,8 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		by = byEnvReplay
 	case strings.HasPrefix(t.GetWaitReason(), "made room for "):
 		by = byPreempt
+	case strings.HasPrefix(t.GetWaitReason(), whyLost):
+		by = byLost
 	}
 	// Running from now on, as its worker starts: never waiting again without a reason.
 	t.Status, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RUNNING, "", nil
@@ -235,7 +245,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		t.Continuing = false // Cut short again, it resumes as any task does.
 	case byLimit:
 		t.Resumes++
-	case byWish, byAnswer, byEnvReplay, byRestart, byPreempt:
+	case byWish, byAnswer, byEnvReplay, byRestart, byPreempt, byLost:
 		// No resume spent.
 	}
 	provider, ok := h.providers[t.GetProvider()]
@@ -334,7 +344,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		readOnly, perms := accessSpec(t.GetAccess(), prep.declared)
 		spec := Spec{TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Restart: t.GetRestart()}
 		r.base = t.GetUsage()
-		text := fmt.Sprintf("resumed %s: started watch in %s%s", byRestart, dir, watchText(t))
+		text := fmt.Sprintf("resumed %s: started watch in %s%s", by, dir, watchText(t))
 		return h.start(r, provider, spec, text)
 	case t.GetWorktree() != "":
 		prefix, err := git(h.ctx, project.GetDirectory(), "rev-parse", "--show-prefix")

@@ -3,8 +3,11 @@ package harness
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"math"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -12,6 +15,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/store"
 )
 
 // SilenceLimit is how long a worker may produce no event before the watchdog checks its process tree and CPU:
@@ -63,9 +67,9 @@ func (h *Harness) setTurns(r *run, f func(turns int) int) {
 func WithTaskMaxTurns(n int) Option { return func(h *Harness) { h.maxTurns = n } }
 
 // watchdog checks running workers: if a worker produces no events for longer than the silence limit,
-// its process tree and CPU usage are inspected; a watcher's silence is never checked. Dead or idle workers are ended (continued per W296/W320
+// its process tree and CPU usage are inspected. Dead or idle workers are ended (continued per W296/W320
 // if resumable, else failed). A task whose status is RUNNING but has no active worker run (a lost process)
-// is also found and ended the same way.
+// is also found and ended the same way. A watcher is supervised apart, before any budget (watcherLife).
 func (h *Harness) watchdog(ctx context.Context, tasks []*planv1.Task) (anyLost bool) {
 	now := h.now()
 	limit := cmp.Or(h.silenceLimit, SilenceLimit)
@@ -79,12 +83,23 @@ func (h *Harness) watchdog(ctx context.Context, tasks []*planv1.Task) (anyLost b
 		r := h.runs[id]
 		if r == nil {
 			h.mu.Unlock()
-			h.endLostProcess(ctx, t)
+			if watching(t) {
+				h.restartLostWatcher(ctx, t)
+			} else {
+				h.endLostProcess(ctx, t)
+			}
 			anyLost = true
 			continue
 		}
 
 		if r.stopping || r.final || r.paused || r.watchdogEnd {
+			h.mu.Unlock()
+			continue
+		}
+
+		// A watcher is no worker: no silence rule, no wall-time budget, no turn budget. Its run lasts as long as the
+		// loop that starts its command again (watcherLife); a lost one is started again above.
+		if r.watcher {
 			h.mu.Unlock()
 			continue
 		}
@@ -118,13 +133,6 @@ func (h *Harness) watchdog(ctx context.Context, tasks []*planv1.Task) (anyLost b
 
 		// agy's background tasks may be silent while a gated command runs: check the gate it holds or waits for.
 		if (h.held != nil && len(h.held(id)) > 0) || (h.waiting != nil && len(h.waiting(id)) > 0) {
-			h.mu.Unlock()
-			continue
-		}
-
-		// A watcher's command prints only when what it watches changes: its silence is its normal state. A command
-		// that ends is the watcher's own to handle: it fails the task, or starts again (--restart).
-		if r.watcher {
 			h.mu.Unlock()
 			continue
 		}
@@ -196,7 +204,7 @@ func (h *Harness) endLostProcess(ctx context.Context, t *planv1.Task) {
 	t.EndTime = nowPb
 	if canResume {
 		t.Status = planv1.TaskStatus_TASK_STATUS_RESUMING
-		t.WaitReason = "lost process"
+		t.WaitReason = whyLost
 		t.Continuing = true
 		t.Resumes++
 		t.Error = ""
@@ -234,4 +242,108 @@ func taskWallTime(t *planv1.Task, now time.Time) time.Duration {
 		total = now.Sub(t.GetStartTime().AsTime())
 	}
 	return total
+}
+
+// A watcher runs a command, not an agent: the watchdog supervises it as a process of its own. Its silence is its
+// normal state, and it watches as long as its wish needs it: no silence rule, no wall-time budget, no turn budget.
+// What counts is that its command lives while its task runs. A command that dies (an error, an exit code other than
+// 0) starts again after a backoff, in the same task: its folder and its state folder (DJINN_HOME/watchers/<task>)
+// are as it left them, so it does not say again what it said. A run that lived watchLived resets the backoff and the
+// count; after watchTries deaths in a row, the task fails, and its lead is told why with the command's last error
+// lines. A command that exits 0 ends its task done, or starts again when the task restarts it (--restart). A watcher
+// whose process is lost (its task running, no run) starts again (restartLostWatcher).
+const (
+	// watchBackoff is the first wait before a command that died starts again; it doubles up to watchMaxBackoff.
+	watchBackoff    = time.Second
+	watchMaxBackoff = 5 * time.Minute
+	// watchLived is how long a run lives for its death not to count: the backoff and the count start over.
+	watchLived = time.Minute
+	// watchTries is how many deaths in a row fail a watcher's task.
+	watchTries = 5
+	// watchErrLines is how many of the last lines of the command's error output its failure keeps.
+	watchErrLines = 3
+)
+
+// watcherLife is what the watchdog keeps of a watcher's command from one run to the next: the next backoff, and its
+// deaths in a row. The watcher's loop asks it what follows each run.
+type watcherLife struct {
+	first, backoff time.Duration
+	deaths         int
+	endless        bool // an inbox source never gives up
+}
+
+func newWatcherLife(backoff time.Duration, endless bool) *watcherLife {
+	return &watcherLife{first: backoff, backoff: backoff, endless: endless}
+}
+
+// died tells whether a run of the command died rather than ended: an error, or an exit code other than 0.
+func died(res Result) bool { return res.Err != nil || res.ExitCode != 0 }
+
+// ended says what follows a run of the command that lasted ran and ended with res, in a task that restarts its
+// command after exit 0 or not: how long to wait before the next start, and whether there is one. A command that
+// exits 0 ends a task that does not restart it, done; one that died watchTries times in a row ends it, failed.
+func (l *watcherLife) ended(res Result, restart bool, ran time.Duration) (wait time.Duration, again bool) {
+	if !died(res) {
+		l.deaths, l.backoff = 0, l.first
+		return 0, restart
+	}
+	if ran >= watchLived {
+		l.deaths, l.backoff = 0, l.first
+	}
+	l.deaths++
+	if !l.endless && l.deaths >= watchTries {
+		return 0, false
+	}
+	wait = l.backoff
+	l.backoff = min(2*l.backoff, max(watchMaxBackoff, l.first))
+	return wait, true
+}
+
+// gaveUp is the error of a watcher whose command died watchTries times in a row: the last death, and the last lines
+// of its error output.
+func gaveUp(res Result, errLines []string) error {
+	why := fmt.Sprintf("exit code %d", res.ExitCode)
+	if res.Err != nil {
+		why = res.Err.Error()
+	}
+	text := fmt.Sprintf("its command died %d times in a row; the last time: %s", watchTries, why)
+	if len(errLines) > 0 {
+		text += "; its error output: " + strings.Join(errLines, " / ")
+	}
+	return errors.New(text)
+}
+
+// restartLostWatcher starts again the command of a watcher whose process is lost: its task waits to resume, and the
+// scheduler starts it at once, in the same task, as it does after a restart of Djinn. A watcher never fails for it.
+// Read again first: a watcher that ended or was stopped since the pass listed it stays as it is.
+func (h *Harness) restartLostWatcher(ctx context.Context, t *planv1.Task) {
+	t, err := store.Get[*planv1.Task](ctx, h.store, t.GetId())
+	if err != nil || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		return
+	}
+	h.mu.Lock()
+	_, runs := h.runs[t.GetId()]
+	h.mu.Unlock()
+	if runs {
+		return
+	}
+	t.EndTime = timestamppb.New(h.now())
+	t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", whyLost, nil
+	h.writeAlone(ctx, actorHarness, methodEnd, nil, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+		Text: "resuming: " + whyLost + "; Djinn starts its command again"})
+	h.wake()
+}
+
+// tellWatcherFailed tells the lead of the watcher t's wish, once, why its watcher failed.
+func (h *Harness) tellWatcherFailed(t *planv1.Task) {
+	if t.GetWishId() == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	line := fmt.Sprintf("Djinn: %s's watcher failed: %s", t.GetCode(), clipRunes(t.GetError(), watchLineMax))
+	if err := h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_FAILED, t.GetWishId(), t.GetCode(), line); err != nil &&
+		!errors.Is(err, plan.ErrNoLead) {
+		log.Printf("djinn: wish %s: tell the lead: %v", t.GetWishId(), err)
+	}
 }

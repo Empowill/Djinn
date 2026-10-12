@@ -94,18 +94,23 @@ func TestRestartQueuedForTheLead(t *testing.T) {
 
 func TestRestartLine(t *testing.T) {
 	for _, c := range []struct {
-		version              string
-		interrupted, resumed []string
-		want                 string
+		version                        string
+		interrupted, resumed, watchers []string
+		want                           string
 	}{
-		{"v1.2.0", nil, nil, "Djinn: restarted on version v1.2.0: no worker was running."},
-		{"", []string{"W1"}, []string{"W1"}, "Djinn: restarted on version unknown: 1 worker interrupted (W1), resumed by Djinn: W1."},
-		{"v1.2.0", []string{"W1", "W2", "W3"}, []string{"W1", "W3"},
+		{"v1.2.0", nil, nil, nil, "Djinn: restarted on version v1.2.0: no worker was running."},
+		{"", []string{"W1"}, []string{"W1"}, nil, "Djinn: restarted on version unknown: 1 worker interrupted (W1), resumed by Djinn: W1."},
+		{"v1.2.0", []string{"W1", "W2", "W3"}, []string{"W1", "W3"}, nil,
 			"Djinn: restarted on version v1.2.0: 3 workers interrupted (W1, W2, W3), resumed by Djinn: W1, W3; " +
 				"not resumed, the move is yours: W2."},
+		// Babysit PR #2, 12/10/2026: W9, a watcher, came back, and the line said no worker was running.
+		{"v1.2.0", nil, nil, []string{"W9"}, "Djinn: restarted on version v1.2.0: 1 watcher resumed: W9."},
+		// Stopped with the last djinn up, a worker Djinn resumes was interrupted all the same.
+		{"v1.2.0", nil, []string{"W4"}, []string{"W9", "W12"},
+			"Djinn: restarted on version v1.2.0: 1 worker interrupted (W4), resumed by Djinn: W4; 2 watchers resumed: W9, W12."},
 	} {
-		if got := restartLine(c.version, c.interrupted, c.resumed); got != c.want {
-			t.Errorf("restartLine(%q, %v, %v)\n got %s\nwant %s", c.version, c.interrupted, c.resumed, got, c.want)
+		if got := restartLine(c.version, c.interrupted, c.resumed, c.watchers); got != c.want {
+			t.Errorf("restartLine(%q, %v, %v, %v)\n got %s\nwant %s", c.version, c.interrupted, c.resumed, c.watchers, got, c.want)
 		}
 	}
 }
