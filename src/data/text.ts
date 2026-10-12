@@ -112,6 +112,8 @@ export interface TextPart {
   text: string;
   // A command, to copy as it is.
   code?: boolean;
+  // A link, to open: the text is its URL.
+  href?: boolean;
 }
 
 // The commands of djinn's own command line: "djinn wish allow …" in a sentence is one to copy.
@@ -122,12 +124,87 @@ const DJINN_LINE = new RegExp(
   "g",
 );
 
-// commandParts splits a line of text, an option of a question, into its words and its commands: what is between
-// backticks, and a djinn command named in plain text up to a comma, a semicolon or the end of the line.
+// A link written in plain text: a web address, or one of Djinn's own (src/data/links.ts).
+const LINK = /\b(?:https?|djinn):\/\/[^\s<>"'`]+/gi;
+
+// linkEnd trims what a sentence puts after a link: its final punctuation, and a closing bracket it did not open.
+function linkEnd(url: string): string {
+  for (;;) {
+    const last = url.at(-1) ?? "";
+    const pair = { ")": "(", "]": "[", "}": "{" }[last];
+    const count = (c: string) => url.split(c).length - 1;
+    if (/[.,;:!?'"*_]/.test(last)) url = url.slice(0, -1);
+    else if (pair && count(pair) < count(last)) url = url.slice(0, -1);
+    else return url;
+  }
+}
+
+// linksOf lists the links a text names, in order, as written in plain text or Markdown.
+export function linksOf(text: string): string[] {
+  return [...text.matchAll(LINK)]
+    .map((m) => linkEnd(m[0]))
+    .filter((url) => !/^[a-z]+:\/\/$/i.test(url));
+}
+
+// linkParts splits plain text into its words and its links.
+function linkParts(text: string): TextPart[] {
+  const parts: TextPart[] = [];
+  let at = 0;
+  for (const m of text.matchAll(LINK)) {
+    const url = linkEnd(m[0]);
+    if (/^[a-z]+:\/\/$/i.test(url)) continue;
+    if (m.index > at) parts.push({ text: text.slice(at, m.index) });
+    parts.push({ text: url, href: true });
+    at = m.index + url.length;
+  }
+  if (at < text.length) parts.push({ text: text.slice(at) });
+  return parts;
+}
+
+// djinnAutolinks makes the bare djinn:// links of a Markdown text links, as GFM does for web addresses: <djinn://…>.
+// Code, in a block or between backticks, and a link already written as one stay as they are.
+export function djinnAutolinks(markdown: string): string {
+  if (!/djinn:\/\//i.test(markdown)) return markdown;
+  let fence = "";
+  return markdown
+    .split("\n")
+    .map((line) => {
+      const marker = FENCE.exec(line.trim())?.[1];
+      if (fence) {
+        if (line.trim().startsWith(fence) && marker === line.trim()) fence = "";
+        return line;
+      }
+      if (marker) {
+        fence = marker;
+        return line;
+      }
+      return line
+        .split(/(`+[^`]*`+)/)
+        .map((piece, i) =>
+          i % 2
+            ? piece
+            : piece.replace(
+                /(^|[^([<\w/])(djinn:\/\/[^\s<>"'`]+)/gi,
+                (_, before: string, url: string) => {
+                  const link = linkEnd(url);
+                  return `${before}<${link}>${url.slice(link.length)}`;
+                },
+              ),
+        )
+        .join("");
+    })
+    .join("\n");
+}
+
+// commandParts splits a line of text, an option of a question, into its words, its commands and its links: what is
+// between backticks, and a djinn command named in plain text up to a comma, a semicolon or the end of the line, are
+// commands; a web address or a djinn:// link outside them is a link.
 export function commandParts(text: string): TextPart[] {
   const parts: TextPart[] = [];
   const push = (part: TextPart) => {
-    if (part.text) parts.push(part);
+    if (!part.text) return;
+    if (part.code) parts.push(part);
+    else parts.push(...linkParts(part.text));
   };
   text.split(/(`[^`\n]+`)/).forEach((piece, i) => {
     if (i % 2) {

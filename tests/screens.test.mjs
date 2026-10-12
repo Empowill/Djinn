@@ -98,6 +98,7 @@ export { TilasmList } from "@/src/tilasms.tsx";
 export { AgentBlocks } from "@/src/agent-blocks.tsx";
 export { MarkdownBody } from "@/src/markdown-body.tsx";
 export { CopyButton } from "@/src/copy-command.tsx";
+export { Link, MoveLink } from "@/src/link.tsx";
 export * as dew from "@/e2e/report-question.ts";
 export { SafeSvg, sanitizeSvg } from "@/src/safe-svg.tsx";
 export { openDjinnLink, parseDjinnLink } from "@/src/data/links.ts";
@@ -953,6 +954,111 @@ test("a question reads top-down: its title, what is at stake folded, its report,
     ),
   );
   assert.doesNotMatch(html, /<button class="option/);
+});
+
+test("a move's links are clickable in its title, context, recommendation and options; its main link is a button", () => {
+  const mr = "https://gitlab.com/empowill/app/-/merge_requests/123";
+  const ci = "https://gitlab.com/empowill/app/-/pipelines/9";
+  const tilasm = "djinn://tilasm/01a130b1-398a-7072-be60-ce928cb7241e";
+  const question = {
+    id: "q7",
+    code: "Q07",
+    text: `Review MR !123 and take it out of draft: ${mr}`,
+    context: `W12 opened it as a draft; its CI: ${ci}. The diagram: ${tilasm}\n\n\`\`\`sh\nglab mr update 123 --ready\n\`\`\``,
+    recommendation: "A: read the diff, then run `glab mr update 123 --ready`",
+    options: [`Done: it is ready, ${mr}`, "Not yet"],
+    move: true,
+    rounds: [],
+  };
+  const html = s.renderToStaticMarkup(
+    h(s.WishQuestion, { question, onAnswer: async () => {} }),
+  );
+  const a = (href, cls) =>
+    cls === "djinn-link"
+      ? `<a href="${href}" class="djinn-link">`
+      : `<a href="${href}"${cls ? ` class="${cls}"` : ""} target="_blank" rel="noopener noreferrer">`;
+  // The title: its link, in the text.
+  assert.match(
+    html,
+    new RegExp(
+      `<h3>Review MR !123 and take it out of draft: ${a(mr, "text-link")}${mr}</a></h3>`.replace(
+        /[?]/g,
+        "\\?",
+      ),
+    ),
+  );
+  // The move's main link, the first of the card, a button before what is at stake.
+  assert.ok(
+    html.includes(
+      `<p class="question-move-link">${a(mr, "button secondary small move-link")}<svg`,
+    ),
+  );
+  assert.match(html, /<span>Open MR !123<\/span><\/a><\/p>/);
+  assert.ok(
+    html.indexOf("question-move-link") < html.indexOf("question-context"),
+  );
+  // The context: a web address and a bare djinn:// link are links; its command block has a copy button.
+  assert.ok(html.includes(`${a(ci)}${ci}</a>`));
+  assert.ok(html.includes(`${a(tilasm, "djinn-link")}${tilasm}</a>`));
+  assert.match(
+    html,
+    /<button type="button" aria-label="Copy the code" class="ac-copy">Copy<\/button><\/div><pre><code class="language-sh">glab mr update 123 --ready\n<\/code><\/pre>/,
+  );
+  // The recommendation's command is copyable.
+  assert.match(
+    html,
+    /Recommendation · A<\/span><div class="ac-markdown"><p>A: read the diff, then run <span class="command"><code>glab mr update 123 --ready<\/code><button type="button" class="copy-command"/,
+  );
+  // An option's link.
+  assert.ok(
+    html.includes(`<p>Done: it is ready, ${a(mr, "text-link")}${mr}</a></p>`),
+  );
+
+  // A question that is no move has no button; an answered move neither, and its title, in the heading's button, is
+  // text.
+  const plain = s.renderToStaticMarkup(
+    h(s.WishQuestion, {
+      question: { ...question, move: false },
+      onAnswer: async () => {},
+    }),
+  );
+  assert.doesNotMatch(plain, /move-link/);
+  const answered = s.renderToStaticMarkup(
+    h(s.WishQuestion, {
+      question: {
+        ...question,
+        answer: { choice: s.Choice.A, note: "" },
+      },
+      expanded: true,
+      onAnswer: async () => {},
+    }),
+  );
+  assert.doesNotMatch(answered, /move-link/);
+  assert.ok(
+    answered.includes(
+      `<h3>Review MR !123 and take it out of draft: ${mr}</h3>`,
+    ),
+  );
+});
+
+test("a link's click opens it and stops there: the option around it is not picked", () => {
+  for (const href of [
+    "https://gitlab.com/empowill/app/-/merge_requests/123",
+    "djinn://tilasm/01a130b1-398a-7072-be60-ce928cb7241e",
+  ]) {
+    const link = live(s.Link, { href, className: "text-link", children: href });
+    let stopped = 0;
+    link.one("a").onClick({
+      stopPropagation: () => stopped++,
+      preventDefault: () => {},
+    });
+    assert.equal(stopped, 1, href);
+  }
+  // A link of another scheme is text.
+  assert.equal(
+    s.renderToStaticMarkup(h(s.Link, { href: "file:///etc/passwd" }, "x")),
+    "<span>x</span>",
+  );
 });
 
 test("a copy button copies the exact command and says so, and never answers the question around it", async () => {
@@ -4491,10 +4597,62 @@ test("the attention bar says how much each question holds up: blocking, your mov
   );
   const markup = s.renderToStaticMarkup(h(s.AttentionBar, { items }));
   assert.match(markup, /<button class="attention-item level-move"/);
+  // A move with no link has no button beside its line.
+  assert.doesNotMatch(markup, /move-link/);
   assert.match(
     markup,
     /<span class="attention-level"><svg[^>]*class="lucide lucide-circle-user-round[^>]*>.*<\/svg>Your move<\/span>/,
   );
+});
+
+test("a move's line in the attention bar has its main link beside it, a button", () => {
+  const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const pr = "https://github.com/empowill/djinn/pull/2";
+  const items = s.attentionOf(
+    [
+      {
+        wish: w,
+        item: {
+          id: "q1",
+          code: "Q1",
+          text: "Review PR #2 and take it out of draft",
+          context: `The task opened it as a draft: ${pr}`,
+          before: "before the release",
+          move: true,
+          options: [],
+        },
+        blocking: [],
+      },
+      {
+        wish: w,
+        item: {
+          id: "q2",
+          code: "Q2",
+          text: `Which colour? ${pr}`,
+          before: "before the demo",
+          options: [],
+        },
+        blocking: [],
+      },
+    ],
+    [],
+    [],
+  );
+  assert.deepEqual(
+    items.map((i) => [i.key, i.level, i.link]),
+    [
+      ["q1", "move", pr],
+      ["q2", "question", undefined],
+    ],
+  );
+  const markup = s.renderToStaticMarkup(h(s.AttentionBar, { items }));
+  assert.match(
+    markup,
+    new RegExp(
+      `<li class="attention-with-link"><button class="attention-item level-move">.*?</button><a href="${pr}" class="button secondary small move-link" target="_blank" rel="noopener noreferrer"><svg[^>]*>.*?</svg><span>Open PR #2</span></a></li>`,
+    ),
+  );
+  assert.equal(markup.match(/move-link/g).length, 1);
 });
 
 test("the choice the lead's agent shows is the first, blocking line of the attention bar, its options as buttons", () => {

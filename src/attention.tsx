@@ -1,6 +1,7 @@
 // The bar that stays at the top of the flight plan and of a wish while something waits for you: one line each, the
 // most blocking first, in the colour of how much it holds up. A click takes you there, in whatever tab, wish or fold
-// it is; a line the page cannot show any more is not a button. A question is blocking (red), needed before something
+// it is; a line the page cannot show any more is not a button. A move's line has its main link beside it, a button
+// that opens where the developer acts (a pull request, a CI run). A question is blocking (red), needed before something
 // (orange, under its before words) or can wait (grey), as on its card. A choice the lead's agent shows in its
 // terminal (an approval, a folder to trust) is blocking too: its options are buttons that answer it there.
 import {
@@ -20,7 +21,9 @@ import { message } from "./data/client";
 import { useClients, useDjinn } from "./data/djinn";
 import type { OpenQuestion, Waiting } from "./data/flight";
 import { firstLine } from "./data/format";
+import { mainLink } from "./data/links";
 import { t } from "./i18n";
+import { MoveLink } from "./link";
 
 // How much a line holds up: a question workers wait on, a move only the developer can make, a question needed
 // before something, a worker that asks to edit, a question that can wait, a wish ready to grant.
@@ -41,6 +44,8 @@ export interface Attention {
   origin?: ReactNode;
   // The choice the lead's agent shows, for its line: its options answer it.
   prompt?: LeadPrompt;
+  // A move's main link, where the developer acts: a button beside its line.
+  link?: string;
 }
 
 const order: Record<Level, number> = {
@@ -99,6 +104,7 @@ export function attentionOf(
         ? `${item.text} · ${t("page.blocking", { tasks: blocking.join(", ") })}`
         : item.text,
       origin: origin?.(wish),
+      link: item.move ? mainLink(item) : undefined,
     });
   }
   for (const { wish, item, question, host } of waiting) {
@@ -265,7 +271,10 @@ export function AttentionBar({
             </>
           );
           return (
-            <li key={item.key}>
+            <li
+              key={item.key}
+              className={item.link ? "attention-with-link" : undefined}
+            >
               {click ? (
                 <button
                   className={`attention-item level-${item.level}`}
@@ -279,6 +288,7 @@ export function AttentionBar({
                   {line}
                 </span>
               )}
+              {item.link && <MoveLink href={item.link} />}
             </li>
           );
         })}
