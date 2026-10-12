@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"errors"
 	"os"
 	"sync"
 	"testing"
@@ -38,18 +39,24 @@ func TestMeasurePeaks(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	var mu sync.Mutex
+	// The first reading is the meter's CPU baseline. The worker is stopped at once after the last, so that the series
+	// holds these readings only, however fast the machine reads: on CI (PR #2) the stop came before any reading more,
+	// and a series of 300 and 200 MiB had its median at 250.
 	readings := []machine.Group{
 		{Processes: 1, CPU: 0, Memory: 100 << 20},
 		{Processes: 3, CPU: time.Second, Memory: 300 << 20, Peak: 400 << 20}, // a cgroup's peak, between two readings
+		{Processes: 3, CPU: time.Second, Memory: 200 << 20},
+		{Processes: 3, CPU: time.Second, Memory: 200 << 20},
 		{Processes: 2, CPU: time.Second, Memory: 200 << 20},
 	}
 	read := func(pid int, _ string) (machine.Group, error) {
 		mu.Lock()
 		defer mu.Unlock()
-		g := readings[0]
-		if len(readings) > 1 {
-			readings = readings[1:]
+		if len(readings) == 0 {
+			return machine.Group{}, errors.New("no reading more") // The measure skips it.
 		}
+		g := readings[0]
+		readings = readings[1:]
 		return g, nil
 	}
 	e, task := measuredClaude(t, read)
