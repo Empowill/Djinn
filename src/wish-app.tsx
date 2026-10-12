@@ -3,7 +3,13 @@
 // this page is how it shows: what is shown and the side panel folded.
 import { ArrowLeft, PanelLeft, Plus, Settings2, Upload } from "lucide-react";
 import { AnimatePresence, LayoutGroup } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Change, type Wish } from "../gen/ts/plan/v1/plan_pb";
 import { ProviderState } from "../gen/ts/ui/v1/ui_pb";
@@ -31,8 +37,15 @@ import { WishSidebar } from "./wish-sidebar";
 import { type Opening, WishView } from "./wish-view";
 import "./wish.css";
 import "./review.css";
+import "./wish-transition.css";
 
 type Modal = "make" | "project" | "settings" | "agents" | "docs" | null;
+type WishCreationTransition = {
+  wish: Wish;
+  phase: "departing" | "opening" | "dissipating";
+};
+
+const WISH_REVEAL_RESET_MS = 900;
 
 // What the window shows instead of a wish: the flight plan of the active wishes. A wish's id is a UUID: never this.
 export const PLAN = "plan";
@@ -63,13 +76,26 @@ export function WishApp() {
   const live = useData((s) => s.live);
   const error = useData((s) => s.error);
   const [selected, setSelected] = useState(() => stored("djinn.wish"));
-  // Keep a just-created wish renderable for the same commit as MakeWish leaves, so the shared action surface can
-  // animate into the wish view while the next store list is still in flight.
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  // Keep a just-created wish renderable while the creation smoke expands and the next store list is in flight.
   const [justMade, setJustMade] = useState<Wish>();
+  const [creationTransition, setCreationTransition] =
+    useState<WishCreationTransition>();
+  const [revealingWishId, setRevealingWishId] = useState("");
+  const creationRun = useRef(0);
+  const creationTransitionRef = useRef<WishCreationTransition | undefined>(
+    undefined,
+  );
+  const pendingMadeWishId = useRef("");
+  const focusFrame = useRef<number | undefined>(undefined);
+  const focusWishId = useRef("");
   const [collapsed, setCollapsed] = useState(
     () => stored("djinn.sidebar.collapsed") === "1",
   );
   const [modal, setModal] = useState<Modal>(null);
+  const modalRef = useRef<Modal>(modal);
+  modalRef.current = modal;
   const [making, setMaking] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [toast, setToast] = useState("");
@@ -77,23 +103,94 @@ export function WishApp() {
   const makeBackAction = useRef<(() => void) | null>(null);
   const [makeBackInSetup, setMakeBackInSetup] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
+  const creationBusy = making || creationTransition !== undefined;
   const closeToast = useCallback(() => setToast(""), []);
-  const closeMake = useCallback(() => setModal(null), []);
+  const closeMake = useCallback(() => {
+    creationRun.current += 1;
+    if (focusFrame.current !== undefined) {
+      cancelAnimationFrame(focusFrame.current);
+      focusFrame.current = undefined;
+    }
+    creationTransitionRef.current = undefined;
+    pendingMadeWishId.current = "";
+    focusWishId.current = "";
+    setCreationTransition(undefined);
+    setMaking(false);
+    setModal(null);
+  }, []);
+  const openMake = useCallback(() => {
+    if (creationBusy) return;
+    closeMake();
+    setModal("make");
+  }, [closeMake, creationBusy]);
   const toggleSidebar = useCallback(() => setCollapsed((value) => !value), []);
+  useEffect(
+    () => () => {
+      if (focusFrame.current !== undefined)
+        cancelAnimationFrame(focusFrame.current);
+      creationRun.current += 1;
+      creationTransitionRef.current = undefined;
+    },
+    [],
+  );
 
   useEffect(() => store("djinn.wish", selected), [selected]);
   useEffect(() => {
     if (justMade && wishes.some((item) => item.id === justMade.id))
       setJustMade(undefined);
   }, [justMade, wishes]);
+  useEffect(() => {
+    if (!revealingWishId) return;
+    const timer = window.setTimeout(
+      () =>
+        setRevealingWishId((wishId) =>
+          wishId === revealingWishId ? "" : wishId,
+        ),
+      WISH_REVEAL_RESET_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [revealingWishId]);
   useEffect(
     () => store("djinn.sidebar.collapsed", collapsed ? "1" : ""),
     [collapsed],
   );
+  useLayoutEffect(() => {
+    const wishId = focusWishId.current;
+    if (!wishId || creationTransition) return;
+    const run = creationRun.current;
+    focusWishId.current = "";
+    if (focusFrame.current !== undefined)
+      cancelAnimationFrame(focusFrame.current);
+    focusFrame.current = requestAnimationFrame(() => {
+      focusFrame.current = undefined;
+      if (creationRun.current !== run || creationTransitionRef.current) return;
+      const entry = document.querySelector<HTMLElement>(
+        `[data-wish-entry="wish"][data-wish-id="${wishId}"]`,
+      );
+      entry?.focus({ preventScroll: true });
+    });
+  }, [creationTransition]);
   // djinn wish resume, or a click on a notification, asks the window to show a wish, there.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const off = djinn.focus.subscribe((focus) => {
+      if (focus.replay && modalRef.current === "make") {
+        // A reconnect can replay an older wish while creation is opening; keep the new wish underlay selected.
+        return;
+      }
+      const ownWishId =
+        creationTransitionRef.current?.wish.id || pendingMadeWishId.current;
+      if (
+        focus.wishId &&
+        !focus.replay &&
+        (modalRef.current === "make" || pendingMadeWishId.current) &&
+        focus.wishId !== ownWishId &&
+        focus.wishId !== selectedRef.current
+      ) {
+        // A focus notification is external navigation. Invalidate a response or lead launch that is still in
+        // flight so it cannot reopen the creation flow for a wish the user has left behind.
+        closeMake();
+      }
       if (focus.wishId) setSelected(focus.wishId);
       if (focus.tilasmId)
         setOpening({ wishId: focus.wishId, tilasmId: focus.tilasmId });
@@ -113,7 +210,7 @@ export function WishApp() {
       off();
       clearTimeout(timer);
     };
-  }, [djinn]);
+  }, [closeMake, djinn]);
   useEffect(
     () => setOpening((o) => (o && o.wishId !== selected ? undefined : o)),
     [selected],
@@ -142,12 +239,12 @@ export function WishApp() {
       if (event.defaultPrevented || event.repeat || event.isComposing) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
         event.preventDefault();
-        setModal("make");
+        openMake();
       }
     };
     window.addEventListener("keydown", keys);
     return () => window.removeEventListener("keydown", keys);
-  }, []);
+  }, [openMake]);
   // Ctrl+\ (Cmd+\) folds the navigation without taking shortcuts from the terminal.
   useEffect(() => {
     const keys = (event: KeyboardEvent) => {
@@ -156,7 +253,7 @@ export function WishApp() {
         event.repeat ||
         event.isComposing ||
         (modal !== null && modal !== "make") ||
-        making ||
+        creationBusy ||
         !(event.metaKey || event.ctrlKey) ||
         (event.key !== "\\" && event.code !== "Backslash")
       )
@@ -168,7 +265,7 @@ export function WishApp() {
     };
     window.addEventListener("keydown", keys);
     return () => window.removeEventListener("keydown", keys);
-  }, [making, modal, toggleSidebar]);
+  }, [creationBusy, modal, toggleSidebar]);
 
   // The active wishes are always read: the flight plan and the side panel count what waits in each.
   const active = wishes.filter(isActive);
@@ -219,20 +316,79 @@ export function WishApp() {
 
   // Making an active wish only records it. Start its lead once, here, so the UI owns the decision to launch and a
   // failed start remains visible on the wish through WishService's transient leadError field.
-  const launchMadeLead = async (made: Wish) => {
-    if (!isActive(made)) return;
-    try {
-      const res = await clients.wishes.resume({
-        wishId: made.id,
-        provider: made.provider,
-      });
-      await data.changed(made.id, [Change.WISH]);
-      await clients.ui.show({ wishId: made.id, terminal: res.terminal });
-    } catch (err) {
-      setToast(message(err));
-      await data.changed(made.id, [Change.WISH]).catch(() => undefined);
-    }
-  };
+  const launchMadeLead = useCallback(
+    async (made: Wish, run: number) => {
+      if (!isActive(made)) {
+        if (pendingMadeWishId.current === made.id)
+          pendingMadeWishId.current = "";
+        return;
+      }
+      try {
+        const res = await clients.wishes.resume({
+          wishId: made.id,
+          provider: made.provider,
+        });
+        if (creationRun.current !== run) return;
+        await data.changed(made.id, [Change.WISH]);
+        if (creationRun.current !== run) return;
+        await clients.ui.show({ wishId: made.id, terminal: res.terminal });
+        if (
+          creationRun.current === run &&
+          pendingMadeWishId.current === made.id
+        )
+          pendingMadeWishId.current = "";
+      } catch (err) {
+        if (creationRun.current !== run) return;
+        setToast(message(err));
+        await data.changed(made.id, [Change.WISH]).catch(() => undefined);
+        if (pendingMadeWishId.current === made.id)
+          pendingMadeWishId.current = "";
+      }
+    },
+    [clients, data],
+  );
+  const completeCreation = useCallback(() => {
+    const transition = creationTransitionRef.current;
+    if (!transition || transition.phase !== "dissipating") return;
+    const wishId = transition.wish.id;
+    creationTransitionRef.current = undefined;
+    focusWishId.current = wishId;
+    setRevealingWishId(wishId);
+    setCreationTransition(undefined);
+    setMaking(false);
+    setModal(null);
+  }, []);
+  const finishCreation = useCallback(() => {
+    const transition = creationTransitionRef.current;
+    if (!transition || transition.phase !== "opening") return;
+    const dissipating = { ...transition, phase: "dissipating" as const };
+    creationTransitionRef.current = dissipating;
+    setCreationTransition(dissipating);
+  }, []);
+  const finishDeparture = useCallback(() => {
+    const transition = creationTransitionRef.current;
+    if (!transition || transition.phase !== "departing") return;
+    const opening = { ...transition, phase: "opening" as const };
+    creationTransitionRef.current = opening;
+    setCreationTransition(opening);
+  }, []);
+  const madeWish = useCallback(
+    async (made: Wish) => {
+      const run = creationRun.current;
+      setSelected(made.id);
+      setJustMade(made);
+      pendingMadeWishId.current = isActive(made) ? made.id : "";
+      // The response carries a complete wish, so the pending copy is renderable immediately. Refresh in the
+      // background; a slow or failed list refresh must not strand the smoke overlay.
+      if (run !== creationRun.current) return;
+      const transition = { wish: made, phase: "departing" as const };
+      creationTransitionRef.current = transition;
+      setCreationTransition(transition);
+      void data.changed(made.id, [Change.WISH]).catch(() => undefined);
+      void launchMadeLead(made, run);
+    },
+    [data, launchMadeLead],
+  );
 
   return (
     <div className={`app wish-app ${collapsed ? "sidebar-collapsed" : ""}`}>
@@ -243,7 +399,7 @@ export function WishApp() {
             event.key !== "Escape" ||
             event.defaultPrevented ||
             modal !== "make" ||
-            making
+            creationBusy
           )
             return;
           event.preventDefault();
@@ -256,10 +412,14 @@ export function WishApp() {
           label={makeBackInSetup ? t("agents.back") : t("make.back")}
           tooltip={makeBackInSetup ? t("agents.back") : t("make.back")}
           shortcut={
-            modal === "make" && !making ? t("app.shortcut_escape") : undefined
+            modal === "make" && !creationBusy
+              ? t("app.shortcut_escape")
+              : undefined
           }
-          aria-keyshortcuts={modal === "make" && !making ? "Escape" : undefined}
-          disabled={modal !== "make" || making}
+          aria-keyshortcuts={
+            modal === "make" && !creationBusy ? "Escape" : undefined
+          }
+          disabled={modal !== "make" || creationBusy}
           onClick={() => makeBackAction.current?.()}
           data-setup-back={makeBackInSetup || undefined}
         >
@@ -269,7 +429,7 @@ export function WishApp() {
           type="button"
           className="sidebar-toggle app-toolbar-toggle"
           onClick={toggleSidebar}
-          disabled={making}
+          disabled={creationBusy}
           label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
           tooltip={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
           shortcut={sidebarShortcut.label}
@@ -283,7 +443,7 @@ export function WishApp() {
       <aside
         id="djinn-sidebar"
         className="sidebar"
-        inert={modal === "make" && making}
+        inert={modal === "make" && creationBusy}
       >
         <div className="sidebar-brand">
           <div className="sidebar-brand-main">
@@ -298,7 +458,7 @@ export function WishApp() {
         >
           <TooltipButton
             className="new-mission"
-            onClick={() => setModal("make")}
+            onClick={openMake}
             label={t("app.new_wish")}
             tooltip={t("app.new_wish")}
             shortcut={newWishShortcut.label}
@@ -314,6 +474,7 @@ export function WishApp() {
             counts={counts}
             planSelected={plan}
             onSelectPlan={() => {
+              closeMake();
               setSelected(PLAN);
               setModal(null);
             }}
@@ -321,16 +482,26 @@ export function WishApp() {
             selectedProjectId={projectId}
             collapsed={false}
             onSelectWish={(id) => {
+              closeMake();
               setSelected(id);
               setModal(null);
             }}
-            onSelectProject={setProjectId}
+            onSelectProject={(id) => {
+              closeMake();
+              setProjectId(id);
+            }}
             onMove={move}
-            onNewProject={() => setModal("project")}
+            onNewProject={() => {
+              closeMake();
+              setModal("project");
+            }}
           />
           <button
             className="nav-item import-nav"
-            onClick={() => importRef.current?.click()}
+            onClick={() => {
+              closeMake();
+              importRef.current?.click();
+            }}
             title={t("app.import_wish")}
             disabled={!loaded}
           >
@@ -340,7 +511,10 @@ export function WishApp() {
           <div className="sidebar-bottom">
             <button
               className="profile"
-              onClick={() => setModal("settings")}
+              onClick={() => {
+                closeMake();
+                setModal("settings");
+              }}
               title={t("app.connections_preferences")}
             >
               <span className="profile-avatar">C</span>
@@ -363,13 +537,12 @@ export function WishApp() {
               backActionRef={makeBackAction}
               onBackSetupChange={setMakeBackInSetup}
               onClose={closeMake}
-              onMade={(made) => {
-                setModal(null);
-                setSelected(made.id);
-                setJustMade(made);
-                void data.changed(made.id, [Change.WISH]);
-                void launchMadeLead(made);
-              }}
+              transitioning={creationTransition !== undefined}
+              transitionPhase={creationTransition?.phase}
+              onDepartureComplete={finishDeparture}
+              onTransitionComplete={finishCreation}
+              onDissipationComplete={completeCreation}
+              onMade={madeWish}
             />
           ) : plan ? (
             <FlightPlan
@@ -377,16 +550,33 @@ export function WishApp() {
               onOpen={setSelected}
               onToast={setToast}
             />
-          ) : wish ? (
-            <WishView
-              key={wish.id}
-              wish={wish}
-              opening={opening?.wishId === wish.id ? opening : undefined}
-              onToast={setToast}
-            />
-          ) : (
+          ) : !wish ? (
             <HomePlaceholder />
-          )}
+          ) : null}
+          {wish &&
+          (modal !== "make" || creationTransition?.wish.id === wish.id) ? (
+            <div
+              key={wish.id}
+              className="wish-entry"
+              data-wish-entry="wish"
+              data-wish-id={wish.id}
+              tabIndex={-1}
+              data-wish-transition={
+                revealingWishId === wish.id
+                  ? "revealing"
+                  : modal === "make"
+                    ? "preparing"
+                    : "ready"
+              }
+              inert={modal === "make" && creationTransition !== undefined}
+            >
+              <WishView
+                wish={wish}
+                opening={opening?.wishId === wish.id ? opening : undefined}
+                onToast={setToast}
+              />
+            </div>
+          ) : null}
           <StatusBar live={live} error={error} />
         </LayoutGroup>
       </main>

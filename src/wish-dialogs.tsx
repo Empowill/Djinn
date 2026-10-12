@@ -10,6 +10,7 @@ import {
   LoaderCircle,
   Search,
 } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import {
   type FormEvent,
   useEffect,
@@ -67,6 +68,9 @@ import { MAX_PROMPT_CHARACTERS, promptTooLong } from "./wish-composer-markdown";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { WorkspaceAction } from "./workspace-action";
 
+const WISH_DEPARTURE_MS = 360;
+const WISH_OPENING_FALLBACK_MS = 820;
+
 // MakeWish sends the complete request. Naming the wish belongs to the server and its lead. With three wishes active,
 // it is made paused, as the lamp would refuse a fourth.
 export function MakeWish({
@@ -77,14 +81,24 @@ export function MakeWish({
   onBusyChange,
   backActionRef,
   onBackSetupChange,
+  transitioning = false,
+  transitionPhase = "opening",
+  onDepartureComplete,
+  onTransitionComplete,
+  onDissipationComplete,
 }: {
   projects: Project[];
   active: number;
-  onMade: (wish: Wish) => void;
+  onMade: (wish: Wish) => void | Promise<void>;
   onClose: () => void;
   onBusyChange?: (busy: boolean) => void;
   backActionRef?: { current: (() => void) | null };
   onBackSetupChange?: (setup: boolean) => void;
+  transitioning?: boolean;
+  transitionPhase?: "departing" | "opening" | "dissipating";
+  onDepartureComplete?: () => void;
+  onTransitionComplete?: () => void;
+  onDissipationComplete?: () => void;
 }) {
   const clients = useClients();
   const full = active >= MAX_ACTIVE;
@@ -97,6 +111,8 @@ export function MakeWish({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
+  const mounted = useRef(true);
+  const transitionComplete = useRef(false);
   const submissionFocus = useRef<HTMLElement | null>(null);
   const [search, setSearch] = useState("");
   const form = useRef<HTMLFormElement>(null);
@@ -111,10 +127,58 @@ export function MakeWish({
   const previousFocus = useRef<HTMLElement | null>(
     document.activeElement as HTMLElement | null,
   );
+  const restorePreviousFocus = useRef(true);
+  const reducedMotion =
+    useReducedMotion() ||
+    (typeof document !== "undefined" &&
+      document.documentElement.dataset.motion === "reduced");
+  const openingTransition = reducedMotion
+    ? { duration: 0 }
+    : { duration: 0.72, ease: [0.22, 1, 0.36, 1] as const };
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    transitionComplete.current = false;
+    if (
+      !transitioning ||
+      (transitionPhase !== "departing" && transitionPhase !== "opening")
+    )
+      return;
+    const finish = () => {
+      if (!mounted.current || transitionComplete.current) return;
+      transitionComplete.current = true;
+      if (transitionPhase === "departing") onDepartureComplete?.();
+      else if (transitionPhase === "opening") onTransitionComplete?.();
+    };
+    if (reducedMotion) {
+      const frame = window.requestAnimationFrame(finish);
+      return () => window.cancelAnimationFrame(frame);
+    }
+    // The first timer lets the outgoing controls disappear before the smoke grows. The second keeps the expansion
+    // deterministic when a browser declines to animate a position change (for example after a tab was backgrounded).
+    const timer = window.setTimeout(
+      finish,
+      transitionPhase === "departing"
+        ? WISH_DEPARTURE_MS
+        : WISH_OPENING_FALLBACK_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [
+    onDepartureComplete,
+    onTransitionComplete,
+    reducedMotion,
+    transitionPhase,
+    transitioning,
+  ]);
   useEffect(() => {
     const focus = previousFocus.current;
     return () => {
-      if (focus?.isConnected) focus.focus({ preventScroll: true });
+      if (restorePreviousFocus.current && focus?.isConnected)
+        focus.focus({ preventScroll: true });
     };
   }, []);
   useLayoutEffect(() => {
@@ -162,12 +226,22 @@ export function MakeWish({
       : t("make.submit");
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (submitting.current || !hasText || !prompt.trim() || overLimit) return;
+    if (
+      submitting.current ||
+      busy ||
+      transitioning ||
+      !hasText ||
+      !prompt.trim() ||
+      overLimit
+    )
+      return;
     submitting.current = true;
     submissionFocus.current = document.activeElement as HTMLElement | null;
     setBusy(true);
     onBusyChange?.(true);
     setError("");
+    let handedOff = false;
+    let handoffStarted = false;
     try {
       const res = await clients.wishes.make(
         {
@@ -179,22 +253,47 @@ export function MakeWish({
         },
         { headers: { "Accept-Language": language } },
       );
-      if (res.wish) onMade(res.wish);
+      if (res.wish && mounted.current) {
+        // Keep the form busy until the smoke handoff finishes. This closes the duplicate-submit window between the
+        // Make response and the full-window transition while preserving the draft if the request fails.
+        handoffStarted = true;
+        restorePreviousFocus.current = false;
+        await onMade(res.wish);
+        handedOff = true;
+      }
     } catch (err) {
-      setError(message(err));
+      if (handoffStarted && mounted.current)
+        restorePreviousFocus.current = true;
+      if (!handedOff && mounted.current) setError(message(err));
     } finally {
-      submitting.current = false;
-      setBusy(false);
-      onBusyChange?.(false);
+      if (!handedOff || !mounted.current) {
+        submitting.current = false;
+        if (mounted.current) {
+          setBusy(false);
+          onBusyChange?.(false);
+        }
+      }
     }
   };
   return (
-    <section
+    <motion.section
       ref={page}
       className="wish-creation"
+      data-wish-entry="creation"
+      data-wish-transition={
+        transitioning && transitionPhase === "departing"
+          ? "departing"
+          : transitioning
+            ? "opening"
+            : "entering"
+      }
+      data-wish-opening-phase={transitioning ? transitionPhase : undefined}
       aria-labelledby={`${promptId}-heading`}
-      aria-busy={busy}
+      aria-busy={busy || transitioning}
       tabIndex={-1}
+      layout
+      initial={false}
+      transition={{ layout: openingTransition }}
       onKeyDown={(event) => {
         // The agent setup terminal owns Escape and its other shell shortcuts.
         if (
@@ -226,7 +325,7 @@ export function MakeWish({
       <div className="wish-creation-scroll">
         <div className="wish-creation-content">
           <div className="wish-creation-intro">
-            <h1 id={`${promptId}-heading`}>
+            <h1 id={`${promptId}-heading`} data-wish-section="title">
               {setup ? t("agents.title") : t("make.title")}
             </h1>
             {setup && <p>{t("make.draft_kept")}</p>}
@@ -240,7 +339,18 @@ export function MakeWish({
             onSubmit={(event) => void submit(event)}
             aria-busy={busy}
           >
-            <WishSmoke />
+            <WishSmoke
+              transitionState={
+                transitioning
+                  ? transitionPhase === "dissipating"
+                    ? "dissipating"
+                    : transitionPhase === "opening"
+                      ? "expanded"
+                      : "surface"
+                  : "surface"
+              }
+              onDissipationComplete={onDissipationComplete}
+            />
             <div className="wish-creation-workspace">
               <div className="wish-creation-request">
                 <label
@@ -252,6 +362,7 @@ export function MakeWish({
                 </label>
                 <div
                   className="wish-creation-controls"
+                  data-wish-section="options"
                   aria-label={t("make.options")}
                 >
                   <WishDropdown
@@ -424,27 +535,32 @@ export function MakeWish({
                     </span>
                   )}
                 </div>
-                <WishComposer
-                  id={promptId}
-                  describedBy={overLimit ? `${promptId}-limit` : undefined}
-                  disabled={busy}
-                  invalid={overLimit}
-                  onChange={(markdown, hasText) => {
-                    setPrompt(markdown);
-                    setHasText(hasText);
-                  }}
-                />
-                {overLimit && (
-                  <p
-                    id={`${promptId}-limit`}
-                    className="wish-creation-error"
-                    role="alert"
-                  >
-                    {t("make.prompt_too_long", {
-                      max: MAX_PROMPT_CHARACTERS.toLocaleString(language),
-                    })}
-                  </p>
-                )}
+                <div
+                  className="wish-creation-editor"
+                  data-wish-section="editor"
+                >
+                  <WishComposer
+                    id={promptId}
+                    describedBy={overLimit ? `${promptId}-limit` : undefined}
+                    disabled={busy}
+                    invalid={overLimit}
+                    onChange={(markdown, hasText) => {
+                      setPrompt(markdown);
+                      setHasText(hasText);
+                    }}
+                  />
+                  {overLimit && (
+                    <p
+                      id={`${promptId}-limit`}
+                      className="wish-creation-error"
+                      role="alert"
+                    >
+                      {t("make.prompt_too_long", {
+                        max: MAX_PROMPT_CHARACTERS.toLocaleString(language),
+                      })}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
             {error && (
@@ -455,7 +571,8 @@ export function MakeWish({
             <div className="wish-creation-footer">
               <WorkspaceAction
                 tone="primary"
-                className="workspace-action-create"
+                className="workspace-action-create wish-entry-action"
+                dataWishSection="action"
               >
                 <TooltipButton
                   type="submit"
@@ -478,7 +595,7 @@ export function MakeWish({
           </form>
         </div>
       </div>
-    </section>
+    </motion.section>
   );
 }
 
