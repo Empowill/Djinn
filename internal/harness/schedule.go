@@ -461,16 +461,12 @@ func (h *Harness) failPlanned(ctx context.Context, t *planv1.Task, why string) {
 	h.wake() // Its own dependents fail in turn.
 }
 
-// writeAlone records an event of the task id, which no worker runs for, journaled with req (the event when nil),
+// writeAlone records an event of the task id, outside its run when a worker runs for it, journaled with req (the event when nil),
 // and the task when not nil. Its watchers read it from the store.
 func (h *Harness) writeAlone(ctx context.Context, actor, method string, req proto.Message, id string, task *planv1.Task, ev Event) {
 	ctx = context.WithoutCancel(ctx)
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
-		seq, err := lastSeq(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		te := h.newEvent(id, seq+1, ev)
+		te := h.newEvent(id, ev)
 		if req == nil {
 			req = te
 		}
@@ -487,7 +483,7 @@ func (h *Harness) writeAlone(ctx context.Context, actor, method string, req prot
 				}
 			}
 		}
-		return tx.Put(te)
+		return putEvents(ctx, tx, te)
 	})
 	if err != nil {
 		logx.L().Error("record an event", "task", id, "err", err)
@@ -535,10 +531,6 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 			return nil
 		}
 	}
-	seq, err := lastSeq(ctx, h.store, t.GetId())
-	if err != nil {
-		return err
-	}
 	// A babysit spawned by hand watches what the tasks it comes after opened: its command, filled, is its prompt
 	// from now on.
 	var prompted *planv1.TaskEvent
@@ -551,17 +543,15 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 			return nil
 		}
 		prompt = filled
-		seq++
-		prompted = h.newEvent(t.GetId(), seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
+		prompted = h.newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	}
-	r, err := h.newRun(t, seq)
+	r, err := h.newRun(t)
 	if err != nil {
 		return err
 	}
 	var preEv *planv1.TaskEvent
 	if preemptedCode != "" {
-		r.seq++
-		preEv = h.newEvent(t.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
+		preEv = h.newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
 	}
 	var wish *planv1.Wish
 	var prep prepared
@@ -580,14 +570,12 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 			return err
 		}
 		if prompted != nil {
-			if err := tx.Put(prompted); err != nil {
+			if err := putEvents(ctx, tx, prompted); err != nil {
 				return err
 			}
 		}
 		if preEv != nil {
-			if err := tx.Put(preEv); err != nil {
-				return err
-			}
+			return putEvents(ctx, tx, preEv)
 		}
 		return nil
 	})

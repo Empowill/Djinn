@@ -1,8 +1,12 @@
 package harness
 
 import (
+	"cmp"
 	"context"
+	"fmt"
 	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -82,8 +86,20 @@ func TestSendUnacknowledged(t *testing.T) {
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())
 	task := e.spawn(t, wishID, "text working\nsleep 1h")
-	watched := make(chan []*planv1.TaskEvent)
-	go func() { watched <- e.watch(context.Background(), t, task.GetId(), 0) }()
+	s, err := e.tasks.Watch(t.Context(), connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: task.GetId()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	// The message goes once the worker has said all it says: sent before "working", that text acknowledged it on a
+	// slow runner (macOS CI, W534).
+	var events []*planv1.TaskEvent
+	for s.Receive() {
+		events = append(events, s.Msg().GetEvent())
+		if s.Msg().GetEvent().GetText() == "working" {
+			break
+		}
+	}
 	if _, err := e.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{
 		TaskId: task.GetId(), Text: "stop soon",
 	})); err != nil {
@@ -92,12 +108,74 @@ func TestSendUnacknowledged(t *testing.T) {
 	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
 		t.Fatal(err)
 	}
-	events := <-watched
+	for s.Receive() {
+		events = append(events, s.Msg().GetEvent())
+	}
 	kinds := eventKinds(events)
 	if !slices.Contains(kinds, "MESSAGE") || slices.Contains(kinds, "RECEIVED") {
 		t.Errorf("events = %v: want a message, never received", kinds)
 	}
 	checkSeqs(t, events, 1)
+}
+
+// TestEventsBesideTheRun: events written outside a worker's run while it streams, as Note writes them when the pump is
+// behind and an integration step does, and a message sent meanwhile, are all stored, each at its own position. The run
+// counted its events apart: two events took one position, the second was lost (macOS CI, W534).
+func TestEventsBesideTheRun(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	e := up(t, t.TempDir())
+	wishID, _ := e.wish(t, t.TempDir())
+	const lines, beside = 150, 60
+	var script strings.Builder
+	for i := range lines {
+		fmt.Fprintf(&script, "text a%d\n", i)
+	}
+	script.WriteString("wait\n")
+	for i := range lines {
+		fmt.Fprintf(&script, "text b%d\n", i)
+	}
+	task := e.spawn(t, wishID, script.String())
+	watched := make(chan []*planv1.TaskEvent)
+	go func() { watched <- e.watch(context.Background(), t, task.GetId(), 0) }()
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for i := range beside {
+			e.h.writeAlone(context.Background(), actorHarness, methodEvent, nil, task.GetId(), nil,
+				Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: fmt.Sprintf("beside %d", i)})
+		}
+	})
+	if _, err := e.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{
+		TaskId: task.GetId(), Text: "go on",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	wg.Wait()
+	<-watched
+
+	stored, err := store.List[*planv1.TaskEvent](t.Context(), e.db, store.Where{"task_id": task.GetId()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.SortFunc(stored, func(a, b *planv1.TaskEvent) int { return cmp.Compare(a.GetSeq(), b.GetSeq()) })
+	checkSeqs(t, stored, 1)
+	texts := map[string]int{}
+	for _, ev := range stored {
+		texts[ev.GetKind().String()+" "+ev.GetText()]++
+	}
+	var want []string
+	for i := range lines {
+		want = append(want, fmt.Sprintf("TASK_EVENT_KIND_TEXT a%d", i), fmt.Sprintf("TASK_EVENT_KIND_TEXT b%d", i))
+	}
+	for i := range beside {
+		want = append(want, fmt.Sprintf("TASK_EVENT_KIND_STATUS beside %d", i))
+	}
+	want = append(want, "TASK_EVENT_KIND_MESSAGE go on", "TASK_EVENT_KIND_RECEIVED go on")
+	for _, w := range want {
+		if texts[w] != 1 {
+			t.Errorf("%q stored %d times, want once", w, texts[w])
+		}
+	}
 }
 
 func TestSendRefused(t *testing.T) {

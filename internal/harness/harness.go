@@ -185,7 +185,6 @@ type run struct {
 
 	// Owned by whoever writes the task: Spawn, then the pump.
 	task           *planv1.Task
-	seq            int64         // last event written
 	base           *planv1.Usage // what the task had spent before this worker
 	turnsBefore    int           // the task's model turns before this worker
 	restart        bool          // the worker stops to start again, allowed to edit
@@ -208,11 +207,11 @@ type run struct {
 	requestedModel string        // model as requested before stream events
 }
 
-// newRun is the run of task, its next event after seq, registered so that a watcher never misses its first events.
+// newRun is the run of task, registered so that a watcher never misses its first events.
 // It fails when Djinn is stopping, or when the task already runs.
-func (h *Harness) newRun(task *planv1.Task, seq int64) (*run, error) {
+func (h *Harness) newRun(task *planv1.Task) (*run, error) {
 	r := &run{
-		id: task.GetId(), wish: task.GetWishId(), task: task, seq: seq, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
+		id: task.GetId(), wish: task.GetWishId(), task: task, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
 		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}),
 		subs: map[chan *planv1.TaskEvent]struct{}{}, watcher: watching(task),
 		light: questionWorker(task), requestedModel: task.GetModel(),
@@ -367,14 +366,10 @@ func (h *Harness) Recover(ctx context.Context) error {
 			if err := tx.Journal(actorHarness, methodRecover, t); err != nil {
 				return err
 			}
-			seq, err := lastSeq(ctx, tx, t.GetId())
-			if err != nil {
-				return err
-			}
 			if err := tx.Put(t); err != nil {
 				return err
 			}
-			return tx.Put(h.newEvent(t.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "interrupted: " + t.GetError()}))
+			return putEvents(ctx, tx, h.newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "interrupted: " + t.GetError()}))
 		})
 		if err != nil {
 			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
@@ -887,7 +882,7 @@ func (h *Harness) spawn(
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("--babysit: %w", err))
 		}
 	}
-	r, err := h.newRun(task, 1)
+	r, err := h.newRun(task)
 	if err != nil {
 		return nil, err
 	}
@@ -900,11 +895,10 @@ func (h *Harness) spawn(
 		}
 	}
 	var prep prepared
-	prompted := h.newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
+	prompted := h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	var preEv *planv1.TaskEvent
 	if preemptedCode != "" {
-		r.seq++
-		preEv = h.newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
+		preEv = h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
 	}
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal(actor, procedure, req); err != nil {
@@ -932,13 +926,11 @@ func (h *Harness) spawn(
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		if err := tx.Put(prompted); err != nil {
+		if err := putEvents(ctx, tx, prompted); err != nil {
 			return err
 		}
 		if preEv != nil {
-			if err := tx.Put(preEv); err != nil {
-				return err
-			}
+			return putEvents(ctx, tx, preEv)
 		}
 		return nil
 	})
@@ -1000,10 +992,10 @@ func (h *Harness) plan(
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		if err := tx.Put(h.newEvent(task.GetId(), 1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})); err != nil {
+		if err := putEvents(ctx, tx, h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})); err != nil {
 			return err
 		}
-		return tx.Put(h.newEvent(task.GetId(), 2, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why}))
+		return putEvents(ctx, tx, h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why}))
 	})
 	if err != nil {
 		return nil, plan.Status(err)
@@ -1917,7 +1909,7 @@ func (h *Harness) write(r *run, actor, method string, task proto.Message, ev Eve
 
 // writeAs is write, journaling req; nil journals the event.
 func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message, ev Event) (*planv1.TaskEvent, error) {
-	te := h.newEvent(r.id, r.seq+1, ev)
+	te := h.newEvent(r.id, ev)
 	if req == nil {
 		req = te
 	}
@@ -1946,12 +1938,11 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 				}
 			}
 		}
-		return tx.Put(te)
+		return putEvents(context.Background(), tx, te)
 	})
 	if err != nil {
 		return nil, err
 	}
-	r.seq++
 	h.mu.Lock()
 	r.lastActivity = h.now()
 	if r.task != nil {
@@ -1975,20 +1966,38 @@ func carry(tx *store.Tx, t *planv1.Task) {
 	}
 }
 
-// newEvent builds a stored event, its text and raw line cut to maxText.
-func (h *Harness) newEvent(taskID string, seq int64, ev Event) *planv1.TaskEvent {
-	return newEventAt(taskID, seq, ev, h.now())
+// newEvent builds an event to store, its text and raw line cut to maxText; putEvents gives it its position.
+func (h *Harness) newEvent(taskID string, ev Event) *planv1.TaskEvent {
+	return newEventAt(taskID, ev, h.now())
 }
 
-func newEventAt(taskID string, seq int64, ev Event, at time.Time) *planv1.TaskEvent {
+func newEventAt(taskID string, ev Event, at time.Time) *planv1.TaskEvent {
 	return &planv1.TaskEvent{
-		Id: store.NewID(), TaskId: taskID, Seq: seq, Kind: ev.Kind, Text: clip(ev.Text), Usage: ev.Usage,
+		Id: store.NewID(), TaskId: taskID, Kind: ev.Kind, Text: clip(ev.Text), Usage: ev.Usage,
 		Raw: clip(ev.Raw), CreateTime: timestamppb.New(at),
 	}
 }
 
-func newEvent(taskID string, seq int64, ev Event) *planv1.TaskEvent {
-	return newEventAt(taskID, seq, ev, time.Now())
+func newEvent(taskID string, ev Event) *planv1.TaskEvent {
+	return newEventAt(taskID, ev, time.Now())
+}
+
+// putEvents writes the events in tx, each at the position after its task's last event. It is the one place that
+// numbers a task's events: the store has one connection, so a transaction reads the last position no other writer
+// can take before it commits. A run that counted its events apart gave one position to two events when a gate's note
+// or an integration step was written beside it, and the second was lost (W534).
+func putEvents(ctx context.Context, tx *store.Tx, events ...*planv1.TaskEvent) error {
+	for _, e := range events {
+		seq, err := lastSeq(ctx, tx, e.GetTaskId())
+		if err != nil {
+			return err
+		}
+		e.Seq = seq + 1
+		if err := tx.Put(e); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func clip(s string) string {
@@ -2422,14 +2431,10 @@ func (h *Harness) Clean(ctx context.Context, procedure string, req *planv1.TaskS
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err
 		}
-		seq, err := lastSeq(ctx, tx, id)
-		if err != nil {
-			return err
-		}
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		return tx.Put(h.newEvent(id, seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
+		return putEvents(ctx, tx, h.newEvent(id, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
 	})
 	if err != nil {
 		return nil, plan.Status(err)

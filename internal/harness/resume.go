@@ -266,18 +266,13 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		h.failPlanned(ctx, t, err.Error())
 		return nil
 	}
-	seq, err := lastSeq(ctx, h.store, t.GetId())
-	if err != nil {
-		return err
-	}
-	r, err := h.newRun(t, seq)
+	r, err := h.newRun(t)
 	if err != nil {
 		return err
 	}
 	var preEv *planv1.TaskEvent
 	if len(preemptedCode) > 0 && preemptedCode[0] != "" {
-		r.seq++
-		preEv = newEvent(t.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode[0] + " to make room"})
+		preEv = newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode[0] + " to make room"})
 	}
 	var prep prepared
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -314,7 +309,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 			return err
 		}
 		if preEv != nil {
-			if err := tx.Put(preEv); err != nil {
+			if err := putEvents(ctx, tx, preEv); err != nil {
 				return err
 			}
 		}

@@ -309,7 +309,7 @@ func TestABuildIsProposed(t *testing.T) {
 		if err := tx.Journal("test", "said", w1); err != nil {
 			return err
 		}
-		return tx.Put(newEvent(w1.GetId(), 2, Event{
+		return putEvents(t.Context(), tx, newEvent(w1.GetId(), Event{
 			Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: "Done: a.txt holds a.\n\nTo check: the  window\nshows a.",
 		}))
 	}); err != nil {

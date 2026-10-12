@@ -467,7 +467,7 @@ func putTask(t *testing.T, db *store.Store, task *planv1.Task, prompt string) {
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		return tx.Put(newEvent(task.GetId(), 1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt}))
+		return putEvents(t.Context(), tx, newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt}))
 	}); err != nil {
 		t.Fatal(err)
 	}

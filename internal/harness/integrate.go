@@ -511,11 +511,7 @@ func (h *Harness) dropWorktree(ctx context.Context, project *planv1.Project, t *
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		seq, err := lastSeq(ctx, tx, task.GetId())
-		if err != nil {
-			return err
-		}
-		return tx.Put(newEvent(task.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
+		return putEvents(ctx, tx, newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
 	})
 	if err != nil {
 		logx.L().Error("record the worktree", "loop", "integrate", "task", t.GetCode(), "err", err)
@@ -1247,11 +1243,7 @@ func (h *Harness) settleIntegration(
 			if err := tx.Put(t); err != nil {
 				return err
 			}
-			seq, err := lastSeq(ctx, tx, t.GetId())
-			if err != nil {
-				return err
-			}
-			if err := tx.Put(newEvent(t.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})); err != nil {
+			if err := putEvents(ctx, tx, newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})); err != nil {
 				return err
 			}
 		}
