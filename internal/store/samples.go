@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -20,6 +21,9 @@ type Sample struct {
 	Memory      uint64
 	DjinnCPU    float64
 	DjinnMemory uint64
+	// Djinn's own process alone, without what it started.
+	SelfCPU    float64
+	SelfMemory uint64
 }
 
 func (s *Store) migrateSamples(ctx context.Context, tx *sql.Tx) error {
@@ -30,9 +34,25 @@ func (s *Store) migrateSamples(ctx context.Context, tx *sql.Tx) error {
 		cpu REAL NOT NULL,
 		memory INTEGER NOT NULL,
 		djinn_cpu REAL NOT NULL,
-		djinn_memory INTEGER NOT NULL
+		djinn_memory INTEGER NOT NULL,
+		self_cpu REAL NOT NULL DEFAULT 0,
+		self_memory INTEGER NOT NULL DEFAULT 0
 	)`); err != nil {
 		return fmt.Errorf("create the samples: %w", err)
+	}
+	// A table made before Djinn's own process was read apart gains its columns.
+	for _, col := range []string{"self_cpu REAL", "self_memory INTEGER"} {
+		var n int
+		name := strings.Fields(col)[0]
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('sample') WHERE name = ?`,
+			name).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			if _, err := tx.ExecContext(ctx, `ALTER TABLE sample ADD COLUMN `+col+` NOT NULL DEFAULT 0`); err != nil {
+				return fmt.Errorf("add %s to the samples: %w", name, err)
+			}
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS sample_series_at ON sample (series, at)`); err != nil {
 		return fmt.Errorf("index the samples: %w", err)
@@ -50,14 +70,15 @@ func (s *Store) AddSamples(ctx context.Context, samples []Sample) error {
 	}
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		stmt, err := tx.PrepareContext(ctx,
-			`INSERT INTO sample (series, at, seconds, cpu, memory, djinn_cpu, djinn_memory) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+			`INSERT INTO sample (series, at, seconds, cpu, memory, djinn_cpu, djinn_memory, self_cpu, self_memory)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 		if err != nil {
 			return err
 		}
 		defer stmt.Close()
 		for _, x := range samples {
 			if _, err := stmt.ExecContext(ctx, x.Series, x.At.UnixMilli(), x.Seconds, x.CPU, int64(x.Memory), x.DjinnCPU,
-				int64(x.DjinnMemory)); err != nil {
+				int64(x.DjinnMemory), x.SelfCPU, int64(x.SelfMemory)); err != nil {
 				return err
 			}
 		}
@@ -68,7 +89,8 @@ func (s *Store) AddSamples(ctx context.Context, samples []Sample) error {
 // Samples reads the samples of series measured after from, the oldest first.
 func (s *Store) Samples(ctx context.Context, series string, from time.Time) ([]Sample, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT at, seconds, cpu, memory, djinn_cpu, djinn_memory FROM sample WHERE series = ? AND at > ? ORDER BY at`,
+		`SELECT at, seconds, cpu, memory, djinn_cpu, djinn_memory, self_cpu, self_memory FROM sample
+		WHERE series = ? AND at > ? ORDER BY at`,
 		series, from.UnixMilli())
 	if err != nil {
 		return nil, err
@@ -76,12 +98,12 @@ func (s *Store) Samples(ctx context.Context, series string, from time.Time) ([]S
 	defer rows.Close()
 	var out []Sample
 	for rows.Next() {
-		var at, memory, djinnMemory int64
+		var at, memory, djinnMemory, selfMemory int64
 		x := Sample{Series: series}
-		if err := rows.Scan(&at, &x.Seconds, &x.CPU, &memory, &x.DjinnCPU, &djinnMemory); err != nil {
+		if err := rows.Scan(&at, &x.Seconds, &x.CPU, &memory, &x.DjinnCPU, &djinnMemory, &x.SelfCPU, &selfMemory); err != nil {
 			return nil, err
 		}
-		x.At, x.Memory, x.DjinnMemory = time.UnixMilli(at), uint64(memory), uint64(djinnMemory)
+		x.At, x.Memory, x.DjinnMemory, x.SelfMemory = time.UnixMilli(at), uint64(memory), uint64(djinnMemory), uint64(selfMemory)
 		out = append(out, x)
 	}
 	return out, rows.Err()
@@ -103,8 +125,10 @@ func (s *Store) PruneSamples(ctx context.Context, now time.Time, r Retention) er
 	// A whole minute: a minute is never split between a reading kept and its roll-up.
 	fine := now.Add(-r.Fine).Truncate(time.Minute).UnixMilli()
 	return s.tx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sample (series, at, seconds, cpu, memory, djinn_cpu, djinn_memory)
-			SELECT series, (at / 60000) * 60000, 60, MAX(cpu), MAX(memory), MAX(djinn_cpu), MAX(djinn_memory)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO sample
+			(series, at, seconds, cpu, memory, djinn_cpu, djinn_memory, self_cpu, self_memory)
+			SELECT series, (at / 60000) * 60000, 60, MAX(cpu), MAX(memory), MAX(djinn_cpu), MAX(djinn_memory),
+				MAX(self_cpu), MAX(self_memory)
 			FROM sample WHERE seconds < 60 AND at < ? GROUP BY series, at / 60000`, fine); err != nil {
 			return fmt.Errorf("roll up the samples: %w", err)
 		}

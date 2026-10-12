@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +33,9 @@ type SeriesRecorder struct {
 	lastIdleTicks  uint64
 	lastDjinnCPU   time.Duration
 	lastDjinnAt    time.Time
+	readSelf       func() (Group, error) // Djinn's own process alone; nil: not read
+	lastSelfCPU    time.Duration
+	lastSelfAt     time.Time
 	history        *History // nil: the samples are kept in memory only
 }
 
@@ -117,6 +121,28 @@ func (r *SeriesRecorder) Sample() {
 		}
 	}
 
+	// 2b. Djinn's own process alone, without what it started.
+	var selfCPU float64
+	var selfMem uint64
+	if r.readSelf != nil {
+		if g, err := r.readSelf(); err == nil {
+			selfMem = g.Memory
+			if !r.lastSelfAt.IsZero() {
+				if d := now.Sub(r.lastSelfAt); d > 0 && g.CPU >= r.lastSelfCPU {
+					selfCPU = math.Round(float64(g.CPU-r.lastSelfCPU)/float64(d)*1000) / 10
+				}
+			}
+			r.lastSelfCPU, r.lastSelfAt = g.CPU, now
+		}
+	}
+	// Djinn's CPU is read in percent of one core: as a share of the machine, like the machine's own.
+	cores := snap.Cores
+	if cores <= 0 {
+		cores = runtime.NumCPU()
+	}
+	djinnCPU = math.Round(djinnCPU/float64(cores)*10) / 10
+	selfCPU = math.Round(selfCPU/float64(cores)*10) / 10
+
 	// 3. Machine memory used.
 	var memUsed uint64
 	if snap.MemoryTotal >= snap.MemoryAvailable {
@@ -129,6 +155,8 @@ func (r *SeriesRecorder) Sample() {
 		DjinnCpuPercent:  djinnCPU,
 		MemoryBytes:      memUsed,
 		DjinnMemoryBytes: djinnMem,
+		SelfCpuPercent:   selfCPU,
+		SelfMemoryBytes:  selfMem,
 	}
 
 	r.buf[r.head] = point
@@ -140,6 +168,13 @@ func (r *SeriesRecorder) Sample() {
 	if r.history != nil && !first {
 		r.history.Machine(point)
 	}
+}
+
+// ReadSelf reads Djinn's own process alone with read: ReadSelf in djinn up.
+func (r *SeriesRecorder) ReadSelf(read func() (Group, error)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.readSelf = read
 }
 
 // Keep keeps each sample in h too, the store's series that outlive a restart.

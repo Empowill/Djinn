@@ -162,11 +162,12 @@ export function jump(id: string): boolean {
 }
 
 // The tab of a page (a wish or the flight plan) that shows a line's target: the decisions show the answered
-// questions, the first tab all the rest.
-export type Tab = "main" | "decisions";
+// questions, the tasks a task asked for itself (task-<id>, as the resources panel asks), the first tab all the rest.
+export type Tab = "main" | "decisions" | "tasks";
 
 export function tabOf(target: string): Tab {
-  return target.startsWith("decision-") ? "decisions" : "main";
+  if (target.startsWith("decision-")) return "decisions";
+  return target.startsWith("task-") ? "tasks" : "main";
 }
 
 // Way is where a click on a line takes you: a tab of this page, or the wish that holds it.

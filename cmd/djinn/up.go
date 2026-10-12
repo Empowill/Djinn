@@ -206,6 +206,7 @@ func runUp(args []string) (restart bool, err error) {
 	})
 	seriesRec := machine.NewSeriesRecorder(monitor, machine.ReadWorker)
 	seriesRec.Keep(history)
+	seriesRec.ReadSelf(machine.ReadSelf)
 	seriesRec.Sample()
 	go func() {
 		t := time.NewTicker(5 * time.Second)

@@ -925,12 +925,17 @@ type MachinePoint struct {
 	CpuPercent float64 `protobuf:"fixed64,2,opt,name=cpu_percent,json=cpuPercent,proto3" json:"cpu_percent,omitempty"`
 	// Machine memory used, in bytes.
 	MemoryBytes uint64 `protobuf:"varint,3,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
-	// Djinn process CPU percent (0-100%).
+	// CPU of Djinn and every process it started (its window, leads, workers, gate holders), as a share of the machine:
+	// 100% is all its cores.
 	DjinnCpuPercent float64 `protobuf:"fixed64,4,opt,name=djinn_cpu_percent,json=djinnCpuPercent,proto3" json:"djinn_cpu_percent,omitempty"`
-	// Djinn process memory used, in bytes.
+	// Resident memory of Djinn and every process it started, in bytes.
 	DjinnMemoryBytes uint64 `protobuf:"varint,5,opt,name=djinn_memory_bytes,json=djinnMemoryBytes,proto3" json:"djinn_memory_bytes,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// CPU of Djinn's own process alone (djinn up), as a share of the machine: 100% is all its cores.
+	SelfCpuPercent float64 `protobuf:"fixed64,6,opt,name=self_cpu_percent,json=selfCpuPercent,proto3" json:"self_cpu_percent,omitempty"`
+	// Resident memory of Djinn's own process alone, in bytes.
+	SelfMemoryBytes uint64 `protobuf:"varint,7,opt,name=self_memory_bytes,json=selfMemoryBytes,proto3" json:"self_memory_bytes,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *MachinePoint) Reset() {
@@ -994,6 +999,20 @@ func (x *MachinePoint) GetDjinnCpuPercent() float64 {
 func (x *MachinePoint) GetDjinnMemoryBytes() uint64 {
 	if x != nil {
 		return x.DjinnMemoryBytes
+	}
+	return 0
+}
+
+func (x *MachinePoint) GetSelfCpuPercent() float64 {
+	if x != nil {
+		return x.SelfCpuPercent
+	}
+	return 0
+}
+
+func (x *MachinePoint) GetSelfMemoryBytes() uint64 {
+	if x != nil {
+		return x.SelfMemoryBytes
 	}
 	return 0
 }
@@ -2331,14 +2350,16 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x12memory_total_bytes\x18\x02 \x01(\x04R\x10memoryTotalBytes\x12(\n" +
 	"\x10load_limit_share\x18\x03 \x01(\x01R\x0eloadLimitShare\x125\n" +
 	"\x17load_limit_memory_bytes\x18\x04 \x01(\x04R\x14loadLimitMemoryBytes\x120\n" +
-	"\x06points\x18\x05 \x03(\v2\x18.machine.v1.MachinePointR\x06points\"\xdc\x01\n" +
+	"\x06points\x18\x05 \x03(\v2\x18.machine.v1.MachinePointR\x06points\"\xb2\x02\n" +
 	"\fMachinePoint\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +
 	"cpuPercent\x12!\n" +
 	"\fmemory_bytes\x18\x03 \x01(\x04R\vmemoryBytes\x12*\n" +
 	"\x11djinn_cpu_percent\x18\x04 \x01(\x01R\x0fdjinnCpuPercent\x12,\n" +
-	"\x12djinn_memory_bytes\x18\x05 \x01(\x04R\x10djinnMemoryBytes\"\xa8\x03\n" +
+	"\x12djinn_memory_bytes\x18\x05 \x01(\x04R\x10djinnMemoryBytes\x12(\n" +
+	"\x10self_cpu_percent\x18\x06 \x01(\x01R\x0eselfCpuPercent\x12*\n" +
+	"\x11self_memory_bytes\x18\a \x01(\x04R\x0fselfMemoryBytes\"\xa8\x03\n" +
 	"\fWorkerSeries\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x12\n" +

@@ -44,7 +44,8 @@ func NewHistory(db *store.Store) *History { return &History{db: db} }
 func (h *History) Machine(p *machinev1.MachinePoint) {
 	h.add(store.Sample{
 		Series: machineSeries, At: p.GetTime().AsTime(), Seconds: 5, CPU: p.GetCpuPercent(), Memory: p.GetMemoryBytes(),
-		DjinnCPU: p.GetDjinnCpuPercent(), DjinnMemory: p.GetDjinnMemoryBytes(),
+		DjinnCPU: p.GetDjinnCpuPercent(), DjinnMemory: p.GetDjinnMemoryBytes(), SelfCPU: p.GetSelfCpuPercent(),
+		SelfMemory: p.GetSelfMemoryBytes(),
 	})
 }
 
@@ -133,6 +134,7 @@ func thin(samples []store.Sample, from, to time.Time) []store.Sample {
 		b.At = x.At
 		b.CPU, b.Memory = max(b.CPU, x.CPU), max(b.Memory, x.Memory)
 		b.DjinnCPU, b.DjinnMemory = max(b.DjinnCPU, x.DjinnCPU), max(b.DjinnMemory, x.DjinnMemory)
+		b.SelfCPU, b.SelfMemory = max(b.SelfCPU, x.SelfCPU), max(b.SelfMemory, x.SelfMemory)
 	}
 	return out
 }
@@ -144,7 +146,7 @@ func (h *History) MachinePoints(ctx context.Context, from, to time.Time) []*mach
 	for i, x := range samples {
 		out[i] = &machinev1.MachinePoint{
 			Time: timestamppb.New(x.At), CpuPercent: x.CPU, MemoryBytes: x.Memory, DjinnCpuPercent: x.DjinnCPU,
-			DjinnMemoryBytes: x.DjinnMemory,
+			DjinnMemoryBytes: x.DjinnMemory, SelfCpuPercent: x.SelfCPU, SelfMemoryBytes: x.SelfMemory,
 		}
 	}
 	return out

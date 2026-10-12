@@ -175,10 +175,15 @@ message MachinePoint {
   double cpu_percent = 2;
   // Machine memory used, in bytes.
   uint64 memory_bytes = 3;
-  // Djinn process CPU percent (0-100%).
+  // CPU of Djinn and every process it started (its window, leads, workers, gate holders), as a share of the machine:
+  // 100% is all its cores.
   double djinn_cpu_percent = 4;
-  // Djinn process memory used, in bytes.
+  // Resident memory of Djinn and every process it started, in bytes.
   uint64 djinn_memory_bytes = 5;
+  // CPU of Djinn's own process alone (djinn up), as a share of the machine: 100% is all its cores.
+  double self_cpu_percent = 6;
+  // Resident memory of Djinn's own process alone, in bytes.
+  uint64 self_memory_bytes = 7;
 }
 
 message WorkerSeries {

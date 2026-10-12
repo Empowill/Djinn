@@ -101,6 +101,19 @@ export function FlightPlan({
     [wishes, details],
   );
   const flightPlanSpent = useMemo(() => spent(allTasks), [allTasks]);
+  // The resources panel: the tasks of the active wishes, and their projects, whose commands alone it shows.
+  const taskById = useMemo(
+    () => new Map(allTasks.map((task) => [task.id, task])),
+    [allTasks],
+  );
+  const activeProjectIds = useMemo(
+    () =>
+      new Set([
+        ...wishes.flatMap((w) => w.projectIds),
+        ...allTasks.map((task) => task.projectId).filter(Boolean),
+      ]),
+    [wishes, allTasks],
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
   useStickyRoom(scrollRef, false);
@@ -813,7 +826,11 @@ export function FlightPlan({
                 waits + plan.running.length + plan.investigating.length ===
                   0 && <p className="muted-text">{t("plan.calm")}</p>}
 
-              <ConsumptionPanel />
+              <ConsumptionPanel
+                tasks={taskById}
+                projects={projects}
+                projectIds={activeProjectIds}
+              />
             </>
           )}
         </div>
