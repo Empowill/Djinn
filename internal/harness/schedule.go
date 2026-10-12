@@ -125,6 +125,17 @@ func (h *Harness) scopeFor(t *planv1.Task) func() machine.Scope {
 	return func() machine.Scope { return h.scopes.NewWithMemory(t.GetCode(), ceiling) }
 }
 
+// WithBeforeStart runs f before each worker's process starts: djinn up brings its PATH up to date there
+// (machine.ExtendPath), so that a worker finds the agent the window's panel found.
+func WithBeforeStart(f func()) Option { return func(h *Harness) { h.beforeStart = f } }
+
+// prepare runs WithBeforeStart's function, if any.
+func (h *Harness) prepare() {
+	if h.beforeStart != nil {
+		h.beforeStart()
+	}
+}
+
 // WithTick sets how often the scheduler looks at the planned tasks again without being woken: the pressure of the
 // machine falls without telling anyone.
 func WithTick(d time.Duration) Option { return func(h *Harness) { h.tick = d } }

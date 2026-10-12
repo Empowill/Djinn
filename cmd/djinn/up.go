@@ -156,6 +156,9 @@ func runUp(args []string) (restart bool, err error) {
 		harness.WithCapacity(monitor.Capacity),
 		harness.WithMemory(monitor.Available, policy),
 		harness.WithTotal(monitor.Total),
+		// Started from the Finder or a desktop menu, Djinn has a bare PATH (fromLauncher): before each start, its PATH
+		// gains the folders of the agents installed meanwhile.
+		harness.WithBeforeStart(beforeStart()),
 	}
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
@@ -221,7 +224,7 @@ func runUp(args []string) (restart bool, err error) {
 	leadNotes := newLeadNote(home, os.Stderr)
 	// The window's terminal opens in the first project, never in the home folder, where djinn starts from a menu.
 	terminals := terminal.NewManager(terminal.Config{
-		Command: terminal.ShellCommand(term), Dir: termDir, Changed: leadNotes.update,
+		Command: terminal.ShellCommand(term), Dir: termDir, BeforeStart: beforeStart(), Changed: leadNotes.update,
 		Folder: func() (string, error) { return plan.FirstProjectFolder(ctx, db) },
 	})
 	leadNotes.terms = terminals

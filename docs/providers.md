@@ -373,6 +373,24 @@ for later turns) as the number still waiting; at 0 it closes the input. A result
 versions, and agy) counts one message. If messages still wait after such a result and the agent writes nothing
 for `harness.Quiet` (10 minutes), Djinn takes them as answered, says so in a `STATUS`, and closes the input.
 
+**Finding claude.** An app started from the Finder or a desktop menu gets a bare PATH: the shell's startup files
+that add `~/.local/bin` (where Claude Code's installer puts `claude`) are never read, not even by the login shell
+that runs a lead (`zsh -l -c` reads `.zprofile`, not `.zshrc`). One resolver, `machine.ExtendPath`, appends to
+Djinn's own PATH, after the inherited folders, which keep their place: the PATH of the user's interactive login
+shell, the folders that exist among `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.npm-global/bin`,
+`~/.volta/bin` and `~/.bun/bin` (on Windows `%LOCALAPPDATA%\agy\bin`, `%APPDATA%\npm` and `~/.local/bin`, which an
+installer adds to the user's PATH after Djinn started), and the folder of a `codex` only the ChatGPT or Codex
+application ships. The login shell is asked once, as `djinn up` starts from a launcher (`machine.AskLoginShell`; a
+`djinn up` started from a terminal has its PATH already); the folders are looked at again before each worker and
+each lead starts, so an agent installed in a folder created meanwhile is found without a restart
+(`TestExtendPathAfterAnInstall`). Gates inherit it from the worker that runs them.
+
+**The lead.** A lead runs `claude` interactive in the window's terminal, not `-p`. Claude Code skips its workspace
+trust dialog only with `-p` (`claude --help`), so a lead started in a folder Claude Code has not trusted yet (the
+lead starts in the first project's folder) first asks to trust it, there, in the window.
+Djinn never answers it: trusting a folder is the user's decision. A first run of interactive Claude Code on a
+machine also shows its onboarding (theme, sign-in) once.
+
 **Stream.** One JSON message per line: `system/init` (session, model), `assistant` and `user` messages made of
 blocks (`text`, `tool_use`, `tool_result`, `thinking`), and one `result` per turn with the cost.
 
