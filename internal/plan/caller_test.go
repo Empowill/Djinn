@@ -293,3 +293,20 @@ func TestWorkerGuardRefusesTellingTheLead(t *testing.T) {
 		t.Errorf("a worker tells the lead: %v (reached %v), want a refusal", err, reached)
 	}
 }
+
+// TestWorkerGuardRefusesAnsweringTheLead: no worker answers the lead's approvals; LeadService.Choose is the window's.
+func TestWorkerGuardRefusesAnsweringTheLead(t *testing.T) {
+	reached := false
+	client := testClient(
+		planv1connect.LeadServiceChooseProcedure,
+		func(_ context.Context, req *connect.Request[planv1.LeadServiceChooseRequest]) (*connect.Response[planv1.LeadServiceChooseResponse], error) {
+			reached = true
+			return connect.NewResponse(&planv1.LeadServiceChooseResponse{}), nil
+		},
+		&plan.WorkerCaller{TaskID: "task-1", WishID: "wish-1"},
+	)
+	_, err := client.CallUnary(context.Background(), connect.NewRequest(&planv1.LeadServiceChooseRequest{Option: 1}))
+	if err == nil || !strings.Contains(err.Error(), "a worker cannot call") || reached {
+		t.Errorf("a worker answers the lead's approval: %v (reached %v), want a refusal", err, reached)
+	}
+}

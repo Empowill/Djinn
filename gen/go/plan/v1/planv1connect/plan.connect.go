@@ -158,6 +158,8 @@ const (
 	LeadServiceWatchProcedure = "/plan.v1.LeadService/Watch"
 	// LeadServiceTellProcedure is the fully-qualified name of the LeadService's Tell RPC.
 	LeadServiceTellProcedure = "/plan.v1.LeadService/Tell"
+	// LeadServiceChooseProcedure is the fully-qualified name of the LeadService's Choose RPC.
+	LeadServiceChooseProcedure = "/plan.v1.LeadService/Choose"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
 	BlockServicePutProcedure = "/plan.v1.BlockService/Put"
 	// BlockServiceListProcedure is the fully-qualified name of the BlockService's List RPC.
@@ -1789,6 +1791,10 @@ type LeadServiceClient interface {
 	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
 	// djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
+	// Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
+	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
+	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
+	Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error)
 }
 
 // NewLeadServiceClient constructs a client for the plan.v1.LeadService service. By default, it uses
@@ -1840,6 +1846,12 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(leadServiceMethods.ByName("Tell")),
 			connect.WithClientOptions(opts...),
 		),
+		choose: connect.NewClient[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse](
+			httpClient,
+			baseURL+LeadServiceChooseProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Choose")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1851,6 +1863,7 @@ type leadServiceClient struct {
 	brief  *connect.Client[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse]
 	watch  *connect.Client[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse]
 	tell   *connect.Client[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse]
+	choose *connect.Client[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse]
 }
 
 // Set calls plan.v1.LeadService.Set.
@@ -1881,6 +1894,11 @@ func (c *leadServiceClient) Watch(ctx context.Context, req *connect.Request[v1.L
 // Tell calls plan.v1.LeadService.Tell.
 func (c *leadServiceClient) Tell(ctx context.Context, req *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error) {
 	return c.tell.CallUnary(ctx, req)
+}
+
+// Choose calls plan.v1.LeadService.Choose.
+func (c *leadServiceClient) Choose(ctx context.Context, req *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error) {
+	return c.choose.CallUnary(ctx, req)
 }
 
 // LeadServiceHandler is an implementation of the plan.v1.LeadService service.
@@ -1915,6 +1933,10 @@ type LeadServiceHandler interface {
 	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
 	// djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
+	// Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
+	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
+	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
+	Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error)
 }
 
 // NewLeadServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -1962,6 +1984,12 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(leadServiceMethods.ByName("Tell")),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceChooseHandler := connect.NewUnaryHandler(
+		LeadServiceChooseProcedure,
+		svc.Choose,
+		connect.WithSchema(leadServiceMethods.ByName("Choose")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.LeadService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case LeadServiceSetProcedure:
@@ -1976,6 +2004,8 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceWatchHandler.ServeHTTP(w, r)
 		case LeadServiceTellProcedure:
 			leadServiceTellHandler.ServeHTTP(w, r)
+		case LeadServiceChooseProcedure:
+			leadServiceChooseHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -2007,6 +2037,10 @@ func (UnimplementedLeadServiceHandler) Watch(context.Context, *connect.Request[v
 
 func (UnimplementedLeadServiceHandler) Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Tell is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Choose is not implemented"))
 }
 
 // BlockServiceClient is a client for the plan.v1.BlockService service.

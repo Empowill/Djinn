@@ -224,6 +224,36 @@ button.attention-item:hover {
 .attention-item > svg {
   color: var(--muted);
 }
+/* The lead's choice: its question, what it is about, then its options as buttons, under one another. */
+.attention-prompt {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.attention-prompt-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.attention-prompt-lines {
+  margin: 0;
+  max-height: 4.8em;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 12px/1.6 var(--mono);
+  color: var(--text);
+}
+.attention-prompt-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.attention-prompt-error {
+  margin: 0;
+  color: var(--st-failed);
+}
 .flash {
   animation: flash 1.4s ease-out;
 }

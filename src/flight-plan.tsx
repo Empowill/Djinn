@@ -86,6 +86,7 @@ export function FlightPlan({
 }) {
   const projects = useData((s) => s.projects);
   const lead = useData((s) => s.lead);
+  const leadPrompt = useData((s) => s.leadPrompt);
   const allWishes = useData((s) => s.wishes);
   const projectById = useMemo(
     () => new Map(projects.map((p) => [p.id, p])),
@@ -122,6 +123,7 @@ export function FlightPlan({
         plan.waiting,
         plan.ready,
         renderAttentionOrigin,
+        leadPrompt,
       ),
     [
       plan.questions,
@@ -129,6 +131,7 @@ export function FlightPlan({
       plan.waiting,
       plan.ready,
       renderAttentionOrigin,
+      leadPrompt,
     ],
   );
   const [view, setView] = useState<View>("main");

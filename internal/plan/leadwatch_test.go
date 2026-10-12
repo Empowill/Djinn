@@ -52,6 +52,10 @@ func (s *syncLeads) SayText(name, text string) (bool, error) {
 	defer s.mu.Unlock()
 	return s.f.SayText(name, text)
 }
+func (s *syncLeads) Prompt(name string) *planv1.LeadPrompt { return nil }
+func (s *syncLeads) Choose(name, title string, lines, options []string, index int) error {
+	return ErrNoChoice
+}
 func (s *syncLeads) said() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()

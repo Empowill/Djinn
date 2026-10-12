@@ -80,14 +80,23 @@ type Notices struct {
 	mu       sync.Mutex
 	notifier Notifier
 	seen     map[string]bool    // questions and items notified
-	asked    chan proto.Message // questions and inbox items to notify
+	asked    chan proto.Message // questions, inbox items and the lead's choices to notify
+	prompt   *planv1.LeadPrompt // the choice the lead shows, as last seen; nil for none
+	prompted string             // the choice of the lead last notified (leadPromptKey)
 }
 
-// Use shows the notifications with notifier from now on; nil shows none.
+// Use shows the notifications with notifier from now on; nil shows none. A choice the lead showed before, and still
+// shows, is notified then: the lead may ask to trust its folder before the window can notify.
 func (n *Notices) Use(notifier Notifier) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.notifier = notifier
+	if notifier != nil && n.prompt != nil && n.asked != nil {
+		select {
+		case n.asked <- n.prompt:
+		default:
+		}
+	}
 }
 
 // Run follows the questions and the inbox items stored, and notifies the new ones, until ctx ends.
@@ -110,6 +119,10 @@ func (n *Notices) Run(ctx context.Context) {
 			case *planv1.InboxItem:
 				if err := n.notifyItem(m); err != nil {
 					log.Printf("djinn: notify inbox item %s: %v", m.GetId(), err)
+				}
+			case *planv1.LeadPrompt:
+				if err := n.notifyLeadPrompt(m); err != nil {
+					log.Printf("djinn: notify the lead's choice: %v", err)
 				}
 			}
 		}
@@ -205,6 +218,68 @@ func (n *Notices) notifyItem(item *planv1.InboxItem) error {
 		ID:    item.GetId(),
 		Title: locales.T(n.Language, "notify.inbox_title", map[string]string{"source": item.GetSource()}),
 		Body:  clipText(item.GetText(), maxBody),
+	})
+}
+
+// LeadPrompt notifies the choice p the lead's agent shows in its terminal (an approval, a folder to trust): once per
+// choice, again when another comes; nil says it went. A click brings the window forward, where the attention bar
+// answers it. It never waits: it runs in the terminal's reader.
+func (n *Notices) LeadPrompt(p *planv1.LeadPrompt) {
+	if p == nil {
+		p = &planv1.LeadPrompt{}
+	}
+	n.mu.Lock()
+	asked := n.asked
+	n.mu.Unlock()
+	if asked == nil {
+		return
+	}
+	select {
+	case asked <- proto.Clone(p):
+	default: // Far behind: the window shows it anyway.
+	}
+}
+
+// leadPromptKey names a choice of the lead, to tell one from another: its question, what it is about and its options.
+// Empty for none.
+func leadPromptKey(p *planv1.LeadPrompt) string {
+	if len(p.GetOptions()) == 0 {
+		return ""
+	}
+	return p.GetTitle() + "\x00" + strings.Join(p.GetLines(), "\x00") + "\x00" + strings.Join(p.GetOptions(), "\x00")
+}
+
+// notifyLeadPrompt shows a notification of the lead's choice p, unless it is the one shown last: its question as
+// title, what it is about and its options as body, no button (the window answers it).
+func (n *Notices) notifyLeadPrompt(p *planv1.LeadPrompt) error {
+	key := leadPromptKey(p)
+	n.mu.Lock()
+	n.prompt = nil
+	if key != "" {
+		n.prompt = p
+	}
+	notifier := n.notifier
+	same := key == n.prompted
+	if notifier != nil || key == "" {
+		n.prompted = key
+	}
+	n.mu.Unlock()
+	if same || key == "" || notifier == nil {
+		return nil
+	}
+	var body []string
+	for _, line := range append([]string{p.GetTitle()}, p.GetLines()...) {
+		if line != "" {
+			body = append(body, clipText(line, maxBody/2))
+		}
+	}
+	for i, option := range p.GetOptions() {
+		body = append(body, fmt.Sprintf("%d. %s", i+1, clipText(option, maxBody/4)))
+	}
+	return notifier.Notify(Notification{
+		ID:    "lead-prompt",
+		Title: locales.T(n.Language, "notify.lead_prompt_title", nil),
+		Body:  clipText(strings.Join(body, "\n"), 2*maxBody),
 	})
 }
 

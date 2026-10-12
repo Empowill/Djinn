@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -223,9 +224,17 @@ func runUp(args []string) (restart bool, err error) {
 	// them until djinn up stops, and is left as it is before they hang up: a crash, or an error, keeps it.
 	leadNotes := newLeadNote(home, os.Stderr)
 	// The window's terminal opens in the first project, never in the home folder, where djinn starts from a menu.
+	var leadPrompted atomic.Pointer[func()] // what follows the choice the lead shows, once the window's services run
 	terminals := terminal.NewManager(terminal.Config{
 		Command: terminal.ShellCommand(term), Dir: termDir, BeforeStart: beforeStart(), Changed: leadNotes.update,
 		Folder: func() (string, error) { return plan.FirstProjectFolder(ctx, db) },
+		// A choice the lead's agent shows (an approval, a folder to trust) shows in the window's attention bar, and
+		// as a notification.
+		Prompted: func(t *terminal.Terminal) {
+			if f := leadPrompted.Load(); f != nil && t.Name == plan.LeadTerminal {
+				(*f)()
+			}
+		},
 	})
 	leadNotes.terms = terminals
 	defer terminals.Close()
@@ -323,10 +332,11 @@ func runUp(args []string) (restart bool, err error) {
 		return uiSvc.Window
 	}
 	var broadcastLoad func(djinnv1.LoadNotch)
+	var changeLead func()
 	svc := services(db, home, workers, terminals, uiSvc, pages,
 		plan.WithShowTilasm(showTilasm), plan.WithTilasmURL(tilasmURL),
 		plan.WithLoad(func() djinnv1.LoadNotch { return monitor.Policy().Notch }),
-		plan.WithLoadBroadcaster(&broadcastLoad),
+		plan.WithLoadBroadcaster(&broadcastLoad), plan.WithLeadBroadcaster(&changeLead),
 	)
 	loadPrefix, loadHandler := machine.LoadHandler(home, monitor, workers.SetPolicy, func(n djinnv1.LoadNotch) {
 		if broadcastLoad != nil {
@@ -398,6 +408,11 @@ func runUp(args []string) (restart bool, err error) {
 		Answer: func(ctx context.Context, id string, choice planv1.Choice) error { return answer(ctx, addr, id, choice) },
 	}
 	go notices.Run(ctx)
+	prompted := func() {
+		changeLead()
+		notices.LeadPrompt(leads{terminals, uiSvc}.Prompt(plan.LeadTerminal))
+	}
+	leadPrompted.Store(&prompted)
 
 	// A link macOS gives the app, clicked anywhere: the window shows it, or says it does not know it.
 	openLinks := func(raw string) {
@@ -490,6 +505,30 @@ func (l leads) Command(name string) []string {
 }
 
 func (l leads) Close(name string) { l.terminals.Hangup(name) }
+
+func (l leads) Prompt(name string) *planv1.LeadPrompt {
+	t := l.terminals.Lookup(name)
+	if t == nil {
+		return nil
+	}
+	p := t.Prompt()
+	if p == nil {
+		return nil
+	}
+	return &planv1.LeadPrompt{Title: p.Title, Lines: p.Lines, Options: p.Options}
+}
+
+func (l leads) Choose(name, title string, lines, options []string, index int) error {
+	t := l.terminals.Lookup(name)
+	if t == nil {
+		return plan.ErrNoChoice
+	}
+	err := t.Choose(title, lines, options, index)
+	if errors.Is(err, terminal.ErrNoPrompt) || errors.Is(err, terminal.ErrExited) {
+		return plan.ErrNoChoice
+	}
+	return err
+}
 
 func (l leads) Show(wishID, name string) {
 	if l.ui.Raise != nil {

@@ -281,3 +281,55 @@ func TestNoticesShowAQuestionAskedThroughTheServer(t *testing.T) {
 		t.Errorf("notification = %+v", got)
 	}
 }
+
+// TestNoticesShowTheLeadsChoiceOnce: the choice the lead's agent shows is notified once, again when its command
+// changes or once it went and came back.
+func TestNoticesShowTheLeadsChoiceOnce(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	p := &planv1.LeadPrompt{Title: "Run this command?", Lines: []string{"go tool task test"}, Options: []string{"Yes", "No"}}
+	n.LeadPrompt(p)
+	note := notes.next(t)
+	if note.ID != "lead-prompt" || note.Title != "The lead needs your approval" ||
+		note.Body != "Run this command?\ngo tool task test\n1. Yes\n2. No" || len(note.Actions) != 0 {
+		t.Fatalf("notification: %+v", note)
+	}
+	n.LeadPrompt(p)
+	quiet := func(what string) {
+		t.Helper()
+		select {
+		case extra := <-notes:
+			t.Fatalf("%s: %+v", what, extra)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	quiet("the same choice again")
+	p.Lines = []string{"go tool task build"}
+	n.LeadPrompt(p)
+	if note := notes.next(t); !strings.Contains(note.Body, "go tool task build") {
+		t.Fatalf("changed command: %+v", note)
+	}
+	n.LeadPrompt(nil)
+	n.LeadPrompt(p)
+	notes.next(t)
+	n.LeadPrompt(&planv1.LeadPrompt{})
+	quiet("no choice")
+}
+
+// TestNoticesShowTheLeadsChoiceOnceTheyCan: a choice the lead shows before the window can notify (its folder's
+// trust at start) is notified once it can, and only once.
+func TestNoticesShowTheLeadsChoiceOnceTheyCan(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	n.Use(nil)
+	n.LeadPrompt(&planv1.LeadPrompt{Title: "Trust this folder?", Lines: []string{"/project"}, Options: []string{"No", "Yes"}})
+	time.Sleep(50 * time.Millisecond)
+	n.Use(notes)
+	if got := notes.next(t); got.ID != "lead-prompt" || !strings.Contains(got.Body, "/project") {
+		t.Fatalf("notification at start: %+v", got)
+	}
+	n.Use(notes)
+	select {
+	case note := <-notes:
+		t.Fatalf("twice: %+v", note)
+	case <-time.After(50 * time.Millisecond):
+	}
+}

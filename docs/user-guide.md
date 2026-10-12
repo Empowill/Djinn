@@ -138,6 +138,11 @@ records a session you started yourself. `djinn lead tell "…"` writes to the ru
 terminal, line breaks kept (`--wish-id <wish-id>` says which wish it is about); it waits while you type there or a
 choice is on screen.
 
+When the lead's agent asks for your approval in its terminal (a command to run, a folder to trust), the bar of what
+waits for you shows it first, in the flight plan and in every wish, with its options as buttons, and a notification
+says so. A button answers in the terminal as its keys would, only while the terminal still shows that very choice: a
+different command needs a new click.
+
 Djinn takes the lead back at every start, in the lead's terminal. The first start after an update from a Djinn that had
 one lead per wish keeps the lead of the first active wish as the one lead.
 

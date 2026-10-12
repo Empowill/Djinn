@@ -2867,6 +2867,25 @@ service LeadService {
     option (djinn.v1.writes) = WRITES_CHANGE;
     option (djinn.v1.command_line_only) = true;
   }
+  // Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
+  // would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
+  // none; the same choice is answered once. The window's only: an agent never answers its own approval.
+  rpc Choose(LeadServiceChooseRequest) returns (LeadServiceChooseResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+}
+
+// LeadPrompt is a choice the lead's agent shows in its terminal, waiting for the developer, as read from its screen:
+// an approval (a command, an edit, the network), a folder to trust. The window shows it, and LeadService.Choose picks
+// an option there, as the keys would.
+message LeadPrompt {
+  // The question, as the agent asks it: "Do you want to proceed?". Empty when the screen shows none.
+  string title = 1;
+  // What it is about, a line each, as on screen: the command, the file, the reason.
+  repeated string lines = 2;
+  // The options, in order, without their number.
+  repeated string options = 3;
 }
 
 message LeadServiceSetRequest {
@@ -2917,6 +2936,9 @@ message LeadServiceGetRequest {}
 message LeadServiceGetResponse {
   // The lead, or unset if none is recorded.
   Lead lead = 1;
+  // The choice the lead's agent shows in its terminal now, waiting for the developer; unset when it shows none, or
+  // the lead does not run. Read from its screen, never stored.
+  LeadPrompt prompt = 2;
 }
 
 message LeadServiceWatchRequest {
@@ -2962,6 +2984,21 @@ message LeadServiceTellResponse {
   // they are done.
   bool waiting = 1;
 }
+
+message LeadServiceChooseRequest {
+  // The option picked, from 1.
+  int32 option = 1 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 20
+  }];
+  // The choice as the window showed it, title, lines and options: the screen must still show that one.
+  string title = 2 [(buf.validate.field).string.max_len = 2000];
+  // The command, file or reason shown: identical options alone do not identify an approval.
+  repeated string lines = 3 [(buf.validate.field).repeated.max_items = 200];
+  repeated string options = 4 [(buf.validate.field).repeated.max_items = 20];
+}
+
+message LeadServiceChooseResponse {}
 
 message LeadServiceBriefRequest {}
 
