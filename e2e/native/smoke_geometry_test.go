@@ -88,6 +88,24 @@ func TestNativeSmokeGeometry(t *testing.T) {
 		return nil
 	})
 
+	// The smoke runs in a worker on an OffscreenCanvas where the engine gives WebGL2 there, on the page's thread
+	// otherwise (WebKitGTK 2.50 has no WebGL on an OffscreenCanvas): say which, for the record.
+	var path struct {
+		Worker      bool   `json:"worker"`
+		WorkerError string `json:"workerError"`
+	}
+	if err := d.eval(`return {
+		worker: !!document.querySelector(".wish-smoke-worker-canvas"),
+		workerError: document.querySelector(".wish-smoke-canvas")?.dataset.workerError ?? "",
+	};`, &path); err != nil {
+		t.Fatal(err)
+	}
+	if path.Worker {
+		t.Logf("native smoke renders in a worker")
+	} else {
+		t.Logf("native smoke renders on the page's thread: %s", path.WorkerError)
+	}
+
 	for _, size := range []struct {
 		width  int
 		height int
