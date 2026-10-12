@@ -109,8 +109,107 @@ test("sidebar geometry stays stable while the new-wish dialog opens", async ({
   expectSameGeometry(existing, await snapshot());
 });
 
-// In the macOS window the traffic lights sit over the top of the sidebar, and the top 16 px of the window are the
-// native drag strip (window.go): no control of the main view may start inside it, a wish's actions included.
+// Folded, the sidebar keeps a rail of icons with each wish's tone, which says what waits in it (Q03); the toggle stays
+// in the toolbar, focused, and the fold is remembered.
+test("sidebar collapse glides, keeps focus, and persists", async ({ page }) => {
+  const title = `Rail ${randomUUID().slice(0, 8)}`;
+  const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
+    .id as string;
+  try {
+    await page.goto(djinnURL());
+    const app = page.locator(".wish-app");
+    const sidebar = page.locator(".sidebar");
+    const sidebarContent = page.locator(".sidebar-content");
+    const toggle = page.locator(".sidebar-toggle");
+    const row = sidebar.locator(`.wish-nav[title*="${title}"]`);
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(row).toBeVisible();
+    const expandedBrand = await page.locator(".sidebar-brand").boundingBox();
+    const expandedContent = await sidebarContent.boundingBox();
+    expect(expandedBrand).not.toBeNull();
+    expect(expandedContent).not.toBeNull();
+    expect(expandedContent!.y).toBeCloseTo(
+      expandedBrand!.y + expandedBrand!.height,
+      0,
+    );
+    const toggleBox = await toggle.boundingBox();
+    await page.screenshot({
+      path: "test-results/e2e/sidebar-rail-expanded.png",
+    });
+
+    await toggle.click();
+    await expect(app).toHaveClass(/sidebar-collapsed/);
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(toggle).toBeFocused();
+    await expect
+      .poll(async () => (await sidebar.boundingBox())?.width ?? -1)
+      .toBe(67);
+    await expect
+      .poll(async () => (await page.locator(".main-shell").boundingBox())?.x)
+      .toBe(67);
+    expect(await toggle.boundingBox()).toEqual(toggleBox);
+    expect(toggleBox!.x + toggleBox!.width).toBeLessThanOrEqual(67);
+    await expect(sidebarContent).toHaveCSS("opacity", "1");
+    expect(await sidebarContent.locator(".new-mission > span").count()).toBe(0);
+    await expect(row).toBeVisible();
+    await expect(row.locator(".wish-tone")).toBeVisible();
+    await page.screenshot({
+      path: "test-results/e2e/sidebar-rail-collapsed.png",
+    });
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => localStorage.getItem("djinn.sidebar.collapsed")),
+      )
+      .toBe("1");
+    await page.reload();
+    await expect(app).toHaveClass(/sidebar-collapsed/);
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect((await sidebar.boundingBox())?.width).toBe(67);
+
+    await toggle.click();
+    await expect(app).not.toHaveClass(/sidebar-collapsed/);
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(toggle).toBeFocused();
+    await expect(sidebarContent).toHaveCSS("opacity", "1");
+    await expect(page.locator(".sidebar .new-mission")).toBeVisible();
+    await expect(row).toBeVisible();
+  } finally {
+    djinn("wish", "delete", wishId);
+  }
+});
+
+test("sidebar collapse honors reduced motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(djinnURL());
+  const sidebar = page.locator(".sidebar");
+  const content = page.locator(".sidebar-content");
+  const seconds = (durations: string) =>
+    Math.max(
+      ...durations.split(",").map((value) => {
+        const duration = value.trim();
+        const number = Number.parseFloat(duration);
+        return duration.endsWith("ms") ? number / 1000 : number;
+      }),
+    );
+  const maxMotionSeconds = async () =>
+    Math.max(
+      seconds(
+        await sidebar.evaluate((el) => getComputedStyle(el).transitionDuration),
+      ),
+      seconds(
+        await content.evaluate((el) => getComputedStyle(el).animationDuration),
+      ),
+    );
+  await expect.poll(maxMotionSeconds).toBeLessThanOrEqual(0.00001);
+  await page.locator(".sidebar-toggle").click();
+  await expect.poll(maxMotionSeconds).toBeLessThanOrEqual(0.00001);
+  await expect(sidebar).toHaveCSS("width", "67px");
+});
+
+// In the macOS window the traffic lights sit over the top of the sidebar, and the top 6 px of the window are the
+// native drag strip (window.go): the toolbar's toggle starts below it, beside the lights, in the same place folded or
+// not, and the topbar's controls keep their row under the toolbar's, a wish's actions included.
 test("native mac titlebar reserves only its chrome space", async ({ page }) => {
   const title = `Mind the strip ${randomUUID().slice(0, 8)}`;
   const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
@@ -131,9 +230,21 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
 
   await expect(page.locator("html")).toHaveClass(/native-mac/);
   await expect(page.locator(".sidebar")).toHaveCSS("padding-top", "28px");
-  expect(await page.locator(".sidebar").boundingBox()).toMatchObject({
-    width: 67,
+  const sidebarBox = await page.locator(".sidebar").boundingBox();
+  expect(sidebarBox).toMatchObject({ width: 67 });
+  const toggle = page.locator(".app-toolbar-toggle");
+  const toolbar = page.locator(".app-toolbar");
+  const toggleBox = await toggle.boundingBox();
+  expect(toggleBox).toMatchObject({ width: 20, height: 20, x: 92, y: 6 });
+  expect(await toolbar.boundingBox()).toMatchObject({
+    x: 92,
+    y: 6,
+    height: 20,
   });
+  const iconBefore = await toggle
+    .locator("svg")
+    .evaluate((svg) => svg.outerHTML);
+  expect(await page.locator(".app-toolbar > button").count()).toBe(1);
   await expect(page.locator(".sidebar-brand")).toHaveCSS(
     "--wails-draggable",
     "drag",
@@ -142,6 +253,17 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
     "--wails-draggable",
     "no-drag",
   );
+  const planNav = page.locator(".sidebar .plan-nav");
+  if (await planNav.count()) await planNav.click();
+  const topbar = page.locator(".main-shell .topbar");
+  if (await topbar.count()) {
+    const breadcrumbs = page.locator(".main-shell .topbar .breadcrumbs");
+    const breadcrumbsBox = await breadcrumbs.boundingBox();
+    expect(breadcrumbsBox).not.toBeNull();
+    expect(breadcrumbsBox!.x).toBeGreaterThanOrEqual(
+      toggleBox!.x + toggleBox!.width,
+    );
+  }
 
   try {
     await page.locator(".sidebar").getByRole("button", { name: title }).click();
@@ -158,9 +280,20 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
       ]),
     ))
       expect(top, `${name}`).toBeGreaterThanOrEqual(16);
+    // The sidebar is a rail here: the topbar starts after the toggle.
+    const first = await page
+      .locator(".main-shell .topbar > :first-child")
+      .boundingBox();
+    expect(first!.x).toBeGreaterThanOrEqual(toggleBox!.x + toggleBox!.width);
   } finally {
     djinn("wish", "delete", wishId);
   }
+  await toggle.click();
+  await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
+  expect(await toggle.boundingBox()).toEqual(toggleBox);
+  expect(await toggle.locator("svg").evaluate((svg) => svg.outerHTML)).toBe(
+    iconBefore,
+  );
 });
 
 // The browser has no folder dialog: the path is typed, and the button of the native window is not there.
