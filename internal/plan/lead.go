@@ -29,12 +29,24 @@ type Leads interface {
 	Say(name, line string) error
 	// Running tells whether the terminal called name runs.
 	Running(name string) bool
+	// Command is the command line of the running terminal called name; nil when none runs.
+	Command(name string) []string
 	// Close hangs up the running terminal called name, as closing it in the window does; none runs, nothing.
 	Close(name string)
 }
 
 // LeadTerminal is the name of the terminal of the lead.
 const LeadTerminal = "lead"
+
+// runsLead tells whether command, the command line of the lead's terminal, runs lead and not something else, a
+// shell perhaps, where a line typed to the lead would run as a command.
+func runsLead(command []string, lead *planv1.Lead) bool {
+	running := strings.Join(command, " ")
+	if id := lead.GetSessionId(); id != "" {
+		return strings.Contains(running, id)
+	}
+	return strings.Contains(running, "agy") // An antigravity lead without a session: agy --continue, or agy -i.
+}
 
 // leadProvider is the agent of a recorded lead: claude when the record names none.
 func leadProvider(lead *planv1.Lead) planv1.Provider {

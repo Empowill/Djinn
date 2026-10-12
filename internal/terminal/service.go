@@ -34,9 +34,20 @@ func (s *Service) Open(
 		}
 		command = ShellCommand(msg.GetLine())
 	}
-	t, attached, err := s.m.Open(msg.GetName(), command, msg.GetDirectory(), int(msg.GetCols()), int(msg.GetRows()))
-	if err != nil {
-		return nil, status(err, connect.CodeInvalidArgument)
+	var t *Terminal
+	attached := true
+	if len(command) == 0 && msg.GetName() == plan.LeadTerminal {
+		// The lead's terminal runs the lead (the Lead button, djinn lead resume), never the default shell with
+		// DJINN_LEAD=1: a line Djinn types to the lead would run there as a command.
+		if t = s.m.Lookup(msg.GetName()); t == nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the lead does not run: Lead resumes it"))
+		}
+	} else {
+		var err error
+		if t, attached, err = s.m.Open(msg.GetName(), command, msg.GetDirectory(), int(msg.GetCols()),
+			int(msg.GetRows())); err != nil {
+			return nil, status(err, connect.CodeInvalidArgument)
+		}
 	}
 	if attached && msg.GetCols() > 0 && msg.GetRows() > 0 {
 		_ = t.Resize(int(msg.GetCols()), int(msg.GetRows())) // Ended meanwhile: the window reads it.

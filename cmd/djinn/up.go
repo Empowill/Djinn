@@ -480,6 +480,13 @@ func (l leads) Say(name, line string) error { return l.terminals.Say(name, line)
 
 func (l leads) Running(name string) bool { return l.terminals.IsRunning(name) }
 
+func (l leads) Command(name string) []string {
+	if t := l.terminals.Lookup(name); t != nil {
+		return t.Command
+	}
+	return nil
+}
+
 func (l leads) Close(name string) { l.terminals.Hangup(name) }
 
 func (l leads) Show(wishID, name string) {
