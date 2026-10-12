@@ -41,7 +41,7 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
 - **Every lead starts the same way, whatever its agent.** Its first message is one line, the same for claude, codex
   and antigravity: run `djinn brief`, then continue from what it says (`StartLine` in
   `internal/plan/newlead.go`). Nothing in it is about one agent or a wish's state: a lead of another agent than the
-  last one takes over from the brief, without the old session. In the window, the arrow beside **Lead** lists
+  last one takes over from the brief, without the old session. In the window, the arrow beside **Talk to the Djinn** lists
   the agents found on this machine (`UiService.GetEnvironment`: `claude`, `codex`, `agy`), those missing shown
   disabled; picking the recorded lead's agent resumes it (claude by session id, antigravity with `agy --continue` in the
   lead's folder as the folder's most recent conversation), another starts a new lead of that agent in the

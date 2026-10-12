@@ -1,6 +1,7 @@
-// Writing to the lead from a wish: the pill at the bottom centre of the wish unfolds into a box whose text goes to the
-// one lead's terminal (LeadService.Tell), about this wish, as if the developer typed it there. Enter sends, Shift+Enter
-// breaks the line, Escape folds the pill and returns focus to it, Cmd/Ctrl+I opens it. The draft stays with the wish.
+// Writing to the lead, the Djinn in the window: the pill at the bottom centre of a wish, or of the flying carpet,
+// unfolds into a box whose text goes to the one lead's terminal (LeadService.Tell), about the wish if there is one, as
+// if the developer typed it there. Enter sends, Shift+Enter breaks the line, Escape folds the pill and returns focus
+// to it, Cmd/Ctrl+I opens it. The draft stays with the wish, the flying carpet's with it.
 import { Check, Clock, MessageSquare, Send, Terminal, X } from "lucide-react";
 import {
   type KeyboardEvent,
@@ -11,7 +12,6 @@ import {
   useState,
 } from "react";
 
-import { type Wish } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import { useClients, useStore } from "./data/djinn";
 import { t } from "./i18n";
@@ -21,18 +21,19 @@ import { WorkspaceAction } from "./workspace-action";
 import "./instruction.css";
 
 export function LeadMessage({
-  wish,
+  wishId = "",
   stopped,
   onResume,
 }: {
-  wish: Wish;
+  // The wish the text is about; none on the flying carpet.
+  wishId?: string;
   // No lead, or it ended or could not start: the pill offers to start it, as Lead does, before its text can reach it.
   stopped: boolean;
   onResume: () => Promise<unknown>;
 }) {
   const clients = useClients();
   const store = useStore();
-  const { draft, state } = useInstructionDraft(store, wish.id);
+  const { draft, state } = useInstructionDraft(store, wishId);
   const [open, setOpen] = useState(false);
   const [resuming, setResuming] = useState(false);
   // The last text was refused, the lead not running in its terminal: the pill offers to start it too.
@@ -43,6 +44,9 @@ export function LeadMessage({
   const id = useId();
   const mounted = useRef(true);
   const shortcut = platformShortcut("I");
+  const placeholder = wishId
+    ? t("lead_message.placeholder")
+    : t("plan.write_placeholder");
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -60,7 +64,7 @@ export function LeadMessage({
       document.getElementById(`${id}-toggle`)?.focus({ preventScroll: true }),
     );
     return () => window.cancelAnimationFrame(frame);
-  }, [open, wish.id, id]);
+  }, [open, wishId, id]);
   useLayoutEffect(() => {
     if (!open) return;
     const textarea = box.current;
@@ -130,7 +134,7 @@ export function LeadMessage({
     const text = draft.begin();
     if (!text) return;
     try {
-      const { waiting } = await clients.lead.tell({ text, wishId: wish.id });
+      const { waiting } = await clients.lead.tell({ text, wishId });
       draft.set({ text: "", notice: waiting ? "waiting" : "sent" });
       setRefused(false);
     } catch (error) {
@@ -213,7 +217,7 @@ export function LeadMessage({
                 htmlFor={`${id}-input`}
                 className="workspace-action-sr-only"
               >
-                {t("lead_message.placeholder")}
+                {placeholder}
               </label>
               <textarea
                 id={`${id}-input`}
@@ -228,7 +232,7 @@ export function LeadMessage({
                   })
                 }
                 onKeyDown={keys}
-                placeholder={t("lead_message.placeholder")}
+                placeholder={placeholder}
                 aria-invalid={!!state.error}
                 aria-describedby={
                   state.error

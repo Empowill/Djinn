@@ -585,7 +585,7 @@ test("Enlighten me sends the answer's note in one click: no second field", async
   );
   assert.match(
     open,
-    /<button class="button secondary lamp-enlighten" title="Find out more before deciding: the lead looks into what your note asks, then revises the question \(⌃⇧↵\)">/,
+    /<button class="button secondary lamp-enlighten" title="Find out more before deciding: the Djinn looks into what your note asks, then revises the question \(⌃⇧↵\)">/,
   );
   assert.doesNotMatch(open, /aria-expanded|Ask the lead to investigate/);
 
@@ -852,7 +852,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
     );
     assert.match(
       macMarkup,
-      /title="Find out more before deciding: the lead looks into what your note asks, then revises the question \(⌘⇧↵\)"/,
+      /title="Find out more before deciding: the Djinn looks into what your note asks, then revises the question \(⌘⇧↵\)"/,
     );
   } finally {
     delete globalThis.__DJINN_MAC__;
@@ -935,7 +935,7 @@ test("a question reads top-down: its title, what is at stake folded, its report,
     "Enlighten me",
     "Rub the lamp",
     "<textarea",
-    "Your answer goes to the lead",
+    "Your answer goes to the Djinn",
   ].map(at);
   assert.deepEqual(
     order,
@@ -1263,19 +1263,19 @@ test("a question of a wish without a lead session says no lead is told: open, th
       }),
     );
   const told = props(false, {});
-  assert.match(told, /Your answer goes to the lead and the workers\./);
-  assert.doesNotMatch(told, /No lead to tell/);
+  assert.match(told, /Your answer goes to the Djinn and the workers\./);
+  assert.doesNotMatch(told, /The Djinn is not there to tell/);
   const open = props(true, {});
   assert.match(
     open,
-    /No lead to tell: your answer goes to the workers and waits in the wish&#x27;s brief\./,
+    /The Djinn is not there to tell: your answer goes to the workers and waits in the wish&#x27;s brief\./,
   );
-  assert.doesNotMatch(open, /goes to the lead/);
+  assert.doesNotMatch(open, /goes to the Djinn/);
   const answer = { answer: { choice: s.Choice.A, note: "" } };
-  assert.doesNotMatch(props(false, answer), /No lead to tell/);
+  assert.doesNotMatch(props(false, answer), /The Djinn is not there to tell/);
   assert.match(
     props(true, answer),
-    /<p class="no-lead">No lead to tell: the answer waits in the wish&#x27;s brief\.<\/p>/,
+    /<p class="no-lead">The Djinn is not there to tell: the answer waits in the wish&#x27;s brief\.<\/p>/,
   );
   const waitingLead = {
     answer: { choice: s.Choice.A, note: "" },
@@ -1284,11 +1284,11 @@ test("a question of a wish without a lead session says no lead is told: open, th
   const waitingHtml = props(false, waitingLead);
   assert.match(
     waitingHtml,
-    /<p class="no-lead">No lead runs to receive your answer: it waits for the next lead that starts\.<\/p>/,
+    /<p class="no-lead">The Djinn is not running to receive your answer: it gets it once it starts\.<\/p>/,
   );
   assert.match(
     waitingHtml,
-    /<span class="status-badge tone-waiting">.*Waiting for a lead<\/span>/,
+    /<span class="status-badge tone-waiting">.*Waiting for the Djinn<\/span>/,
   );
 });
 
@@ -1468,7 +1468,7 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
     html,
     /<h2>Being investigated<span class="count">1<\/span><\/h2>/,
   );
-  assert.match(html, /1 question being investigated by the lead/);
+  assert.match(html, /1 question being investigated by the Djinn/);
   // Folded to one line, what you asked with it.
   assert.match(html, /question-card investigating {2}folded/);
   assert.match(html, /You asked: Burn time\?/);
@@ -2410,7 +2410,7 @@ test("a task no worker runs can be marked done; a task closed by hand says who c
       note: "",
     },
   });
-  assert.match(byLead, /wish-task-closed">Closed by the lead, [^<]+<\/p>/);
+  assert.match(byLead, /wish-task-closed">Closed by the Djinn, [^<]+<\/p>/);
 });
 
 test("a task a fork continues links to its fork; a code no card holds stays text", () => {
@@ -2436,7 +2436,7 @@ test("a task a fork continues links to its fork; a code no card holds stays text
     );
   assert.match(
     card(new Map([["t2", "W2"]])),
-    /Closed by the lead, [^<]+: continued in <button type="button" class="text-button agent-code task-link">W2<\/button><\/p>/,
+    /Closed by the Djinn, [^<]+: continued in <button type="button" class="text-button agent-code task-link">W2<\/button><\/p>/,
   );
   assert.match(
     card(new Map()),
@@ -2923,6 +2923,17 @@ test("the flying carpet merges the active wishes: their questions, the blocking 
     ),
   );
   assert.match(html, /<h1>Flying carpet<\/h1>/);
+  // W538: the Djinn is at hand as on a wish: Talk to the Djinn in the header opens its terminal, on no wish, and the
+  // pill at the bottom writes to it, Cmd/Ctrl+I.
+  assert.match(
+    html,
+    /<div class="topbar-actions"><div class="split-button"><button class="button secondary small" title="Opens the Djinn&#x27;s terminal"><svg[^]*?<span>Talk to the Djinn<\/span><\/button>/,
+  );
+  assert.doesNotMatch(html, /focused on this wish/);
+  assert.match(
+    html,
+    /<div class="lead-message">[^]*?aria-keyshortcuts="[^"]*I"[^]*?<span>Write to the Djinn<\/span><\/button>/,
+  );
   // The blocking question of the second wish comes before the free one of the first, each marked with its wish.
   const blocking = html.indexOf("May W2 pour?");
   const free = html.indexOf("Brass or glass?");
@@ -4474,7 +4485,7 @@ test("Lead is split: the button resumes the one lead, focused on the wish, the a
 
   // Closed: Lead, then the arrow, which says it opens a menu.
   const closed = s.renderToStaticMarkup(h(s.LeadButton, props));
-  assert.match(closed, /<span>Lead<\/span><\/button>/);
+  assert.match(closed, /<span>Talk to the Djinn<\/span><\/button>/);
   assert.match(
     closed,
     /aria-label="Choose the agent"[^>]*aria-haspopup="menu" aria-expanded="false"/,
@@ -4499,7 +4510,7 @@ test("Lead is split: the button resumes the one lead, focused on the wish, the a
   );
   assert.match(
     open,
-    /<button role="menuitem" class="lead-agent current" aria-current="true"><span class="lead-agent-name">Claude<svg[^]*?The lead: resumes it, focused on this wish/,
+    /<button role="menuitem" class="lead-agent current" aria-current="true"><span class="lead-agent-name">Claude<svg[^]*?The Djinn&#x27;s agent: resumes it, focused on this wish/,
   );
   assert.match(
     open,
@@ -4507,19 +4518,32 @@ test("Lead is split: the button resumes the one lead, focused on the wish, the a
   );
   assert.match(
     open,
-    /<button role="menuitem" class="lead-agent"><span class="lead-agent-name">Antigravity<\/span><span class="lead-agent-detail">Starts a new lead from the brief<\/span>/,
+    /<button role="menuitem" class="lead-agent"><span class="lead-agent-name">Antigravity<\/span><span class="lead-agent-detail">Starts the Djinn anew on this agent, from the brief<\/span>/,
   );
+  // On the flying carpet, on no wish: neither the button nor the menu speaks of a wish.
+  const carpet = s.renderToStaticMarkup(
+    h(s.LeadButton, { ...props, focused: false, open: true }),
+  );
+  assert.match(
+    carpet,
+    /<button class="button secondary small" title="Opens the Djinn&#x27;s terminal">/,
+  );
+  assert.match(
+    carpet,
+    /<span class="lead-agent-name">Claude<svg[^]*?<span class="lead-agent-detail">The Djinn&#x27;s agent: resumes it<\/span>/,
+  );
+  assert.doesNotMatch(carpet, /this wish/);
   // The lead could not start, or ended: a dot on Lead, its tooltip saying why, until Lead starts it again.
   assert.doesNotMatch(closed, /lead-dot/);
   assert.equal(s.leadTrouble(undefined, ""), undefined);
   const failed = s.leadTrouble(undefined, "no project yet");
   assert.deepEqual(failed, {
-    text: "The lead could not start: no project yet. Lead tries again",
+    text: "The Djinn could not start: no project yet. Talk to the Djinn tries again",
     failed: true,
   });
   assert.equal(
     s.leadTrouble({ code: 2 }, "").text,
-    "The lead ended (code 2): its tab keeps its last output. Lead starts it again",
+    "The Djinn ended (code 2): its tab keeps its last output. Talk to the Djinn starts it again",
   );
   assert.equal(s.leadTrouble({ code: 0 }, "").failed, false);
   const dotted = s.renderToStaticMarkup(
@@ -4527,7 +4551,7 @@ test("Lead is split: the button resumes the one lead, focused on the wish, the a
   );
   assert.match(
     dotted,
-    /<button class="button secondary small" title="The lead could not start: no project yet. Lead tries again">[^]*?<span>Lead<\/span><span class="lead-dot failed" aria-hidden="true"><\/span><\/button>/,
+    /<button class="button secondary small" title="The Djinn could not start: no project yet. Talk to the Djinn tries again">[^]*?<span>Talk to the Djinn<\/span><span class="lead-dot failed" aria-hidden="true"><\/span><\/button>/,
   );
   const quit = s.renderToStaticMarkup(
     h(s.LeadButton, { ...props, trouble: s.leadTrouble({ code: 0 }, "") }),
@@ -4641,7 +4665,7 @@ test("the attention bar says how much each question holds up: blocking, your mov
       ["q1", "blocking", undefined],
       ["q4", "move", undefined],
       ["q2", "question", "before the demo"],
-      ["q5", "question", "Waiting for a lead"],
+      ["q5", "question", "Waiting for the Djinn"],
       ["t9", "action", undefined],
       ["q3", "later", undefined],
       ["q6", "later", undefined],
@@ -4725,7 +4749,7 @@ test("the choice the lead's agent shows is the first, blocking line of the atten
   assert.deepEqual(
     items.map((i) => [i.key, i.level, i.label]),
     [
-      ["lead-prompt", "blocking", "Lead approval"],
+      ["lead-prompt", "blocking", "Approval for the Djinn"],
       ["q1", "blocking", undefined],
     ],
   );
@@ -4739,7 +4763,7 @@ test("the choice the lead's agent shows is the first, blocking line of the atten
   assert.match(markup, /2 things wait for you/);
   assert.match(
     markup,
-    /<li><div id="lead-prompt" class="attention-item attention-prompt level-blocking"><div class="attention-prompt-head"><span class="attention-level"><svg[^>]*>.*?<\/svg>Lead approval<\/span><span class="attention-text">Would you like to run the following command\?<\/span><\/div><pre class="attention-prompt-lines">Reason: read the wish\n\$ djinn wish brief<\/pre>/,
+    /<li><div id="lead-prompt" class="attention-item attention-prompt level-blocking"><div class="attention-prompt-head"><span class="attention-level"><svg[^>]*>.*?<\/svg>Approval for the Djinn<\/span><span class="attention-text">Would you like to run the following command\?<\/span><\/div><pre class="attention-prompt-lines">Reason: read the wish\n\$ djinn wish brief<\/pre>/,
   );
   assert.match(
     markup,
@@ -7211,7 +7235,7 @@ test("the resources panel: the machine's charts, each worker's title line in ful
   // Djinn apart: with everything it started, dashed, and its own process alone, dotted, both named.
   assert.match(
     html,
-    /Dashed: Djinn with everything it started \(window, leads, workers, gates\)/,
+    /Dashed: Djinn with everything it started \(window, the Djinn&#x27;s agent, workers, gates\)/,
   );
   assert.match(html, /Dotted: Djinn&#x27;s own process alone \(djinn up\)/);
   assert.match(html, /<path class="resource-chart-extra dash" d="M/);

@@ -1253,7 +1253,7 @@ export function WishView({
         </div>
       </div>
       <LeadMessage
-        wish={wish}
+        wishId={wish.id}
         stopped={!leadRecord || !!leadTrouble(leadExit, leadStartError)}
         onResume={() => resumeLead()}
       />

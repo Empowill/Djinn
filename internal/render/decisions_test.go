@@ -56,7 +56,7 @@ func TestDecisionTable(t *testing.T) {
 		`<tr class="human">`, `<span class="ico">🔒</span><span class="code">Q02</span>Keep the old page?`,
 		`<span class="st human"><i aria-hidden="true">✋︎</i>By you</span>`,
 		`<span class="st human"><i aria-hidden="true">✋︎</i>Approved by you</span>`,
-		`<span class="by">By W1</span>`, `<span class="by">By the lead</span>`,
+		`<span class="by">By W1</span>`, `<span class="by">By the Djinn</span>`,
 		`<b class="chosen"><span class="ico">🧱</span>Goldmark, no raw HTML</b>`,
 		`<b class="chosen"><span class="ico">📌</span>Split the CSS</b>`,
 		`Led to <a class="code" href="#t-W1">W1</a>`, `Led to <a class="code" href="#t-W4">W4</a>`,

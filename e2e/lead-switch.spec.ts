@@ -25,11 +25,11 @@ function wish(title: string) {
   return JSON.parse(djinn("wish", "make", title, "--json")).wish.id as string;
 }
 
-// lead clicks Lead at the top of the wish shown.
+// lead clicks Talk to the Djinn at the top of the wish shown.
 async function lead(page: Page) {
   await page
     .locator(".topbar-actions")
-    .getByRole("button", { name: "Lead", exact: true })
+    .getByRole("button", { name: "Talk to the Djinn", exact: true })
     .click();
 }
 

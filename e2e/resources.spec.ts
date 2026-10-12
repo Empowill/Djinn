@@ -313,7 +313,7 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   // Djinn apart from what it started, both named.
   await expect(panel.locator(".resource-legend li")).toHaveText([
     "Solid: the whole machine",
-    "Dashed: Djinn with everything it started (window, leads, workers, gates)",
+    "Dashed: Djinn with everything it started (window, the Djinn's agent, workers, gates)",
     "Dotted: Djinn's own process alone (djinn up)",
   ]);
 

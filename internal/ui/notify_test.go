@@ -482,7 +482,7 @@ func TestNoticesShowTheLeadsChoiceOnce(t *testing.T) {
 	p := &planv1.LeadPrompt{Title: "Run this command?", Lines: []string{"go tool task test"}, Options: []string{"Yes", "No"}}
 	n.LeadPrompt(p)
 	note := notes.next(t)
-	if note.ID != "lead-prompt" || note.Title != "The lead needs your approval" ||
+	if note.ID != "lead-prompt" || note.Title != "The Djinn needs your approval" ||
 		note.Body != "Run this command?\ngo tool task test\n1. Yes\n2. No" || len(note.Actions) != 0 {
 		t.Fatalf("notification: %+v", note)
 	}

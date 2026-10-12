@@ -182,16 +182,17 @@ test("the flying carpet merges two wishes, and a question is answered from it", 
     const actions = pageHeader.locator(".topbar-actions");
     if (await actions.count()) {
       const actionsBox = await actions.boundingBox();
-      const iconActionBox = await actions
-        .locator(".page-header-action")
-        .first()
-        .boundingBox();
       expect(actionsBox).not.toBeNull();
-      expect(iconActionBox).toMatchObject({ width: size, height: size });
-      expect(
-        Math.abs(rowCenter - (iconActionBox!.y + iconActionBox!.height / 2)),
-      ).toBeLessThan(1);
-      // The labelled actions too: Pause, Lead and its arrow.
+      // The icon actions of a wish (the flying carpet has only Talk to the Djinn and its arrow).
+      const iconAction = actions.locator(".page-header-action").first();
+      if (await iconAction.count()) {
+        const iconActionBox = await iconAction.boundingBox();
+        expect(iconActionBox).toMatchObject({ width: size, height: size });
+        expect(
+          Math.abs(rowCenter - (iconActionBox!.y + iconActionBox!.height / 2)),
+        ).toBeLessThan(1);
+      }
+      // The labelled actions too: Pause, Talk to the Djinn and its arrow.
       for (const box of await actions
         .locator("button:visible")
         .evaluateAll((els) => els.map((el) => el.getBoundingClientRect())))
@@ -304,7 +305,7 @@ test("the flying carpet merges two wishes, and a question is answered from it", 
   // its journal.
   await page.locator(".plan-wish").filter({ hasText: lampTitle }).click();
   await expect(page.locator(".hero h1")).toHaveText(lampTitle);
-  // Share and Delete are icons; Pause and Lead keep their words. The operating-load gauge sits between.
+  // Share and Delete are icons; Pause and Talk to the Djinn keep their words. The operating-load gauge sits between.
   await expect(pageHeader.locator(".page-header-action")).toHaveCount(2);
   await expect(
     pageHeader.getByRole("button", { name: "Pause", exact: true }),

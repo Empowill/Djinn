@@ -76,7 +76,7 @@ test("an ended lead retains output and retries explicitly", async ({
   try {
     const lead = page
       .locator(".split-button")
-      .getByRole("button", { name: "Lead", exact: true });
+      .getByRole("button", { name: "Talk to the Djinn", exact: true });
     const dot = lead.locator(".lead-dot");
     await expect(dot).toHaveCount(0);
 
@@ -85,11 +85,11 @@ test("an ended lead retains output and retries explicitly", async ({
     await expect(dot).toHaveClass(/failed/);
     await expect(lead).toHaveAttribute(
       "title",
-      "The lead ended (code 2): its tab keeps its last output. Lead starts it again",
+      "The Djinn ended (code 2): its tab keeps its last output. Talk to the Djinn starts it again",
     );
     await expect(rows(page, "FAKE-CODEX-LEAD-FAILURE")).toHaveCount(1);
     await expect(
-      page.getByRole("tab", { name: "Lead", exact: true }),
+      page.getByRole("tab", { name: "The Djinn", exact: true }),
     ).toBeVisible();
     await expect(page.locator(".lead-terminal-state")).toHaveText("exited (2)");
 
@@ -100,7 +100,7 @@ test("an ended lead retains output and retries explicitly", async ({
       .filter({ hasText: "Show a lead that ended" })
       .click();
     await expect(dot).toHaveClass(/failed/);
-    await page.getByRole("tab", { name: "Lead", exact: true }).click();
+    await page.getByRole("tab", { name: "The Djinn", exact: true }).click();
     await expect(rows(page, "FAKE-CODEX-LEAD-FAILURE")).toHaveCount(1);
 
     // Lead, explicitly: a new program, which runs; the dot goes.
@@ -124,12 +124,12 @@ test("a lead that could not start shows why on Lead until it starts", async ({
   try {
     const lead = page
       .locator(".split-button")
-      .getByRole("button", { name: "Lead", exact: true });
+      .getByRole("button", { name: "Talk to the Djinn", exact: true });
     await lead.click();
     await expect(lead.locator(".lead-dot")).toHaveClass(/failed/);
     await expect(lead).toHaveAttribute(
       "title",
-      /^The lead could not start: the lead's folder .* is not on this machine/,
+      /^The Djinn could not start: the lead's folder .* is not on this machine/,
     );
 
     // The folder is back: Lead starts it, and the dot goes.

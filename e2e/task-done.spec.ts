@@ -201,7 +201,7 @@ test("a cancelled task says who cancelled it and why, on hover", async ({
     const badge = card.locator(".status-badge");
     await expect(badge).toHaveText("Cancelled");
     await expect(badge).toHaveClass(/tone-cancelled/);
-    await expect(badge).toHaveAttribute("title", "By the lead: superseded");
+    await expect(badge).toHaveAttribute("title", "By the Djinn: superseded");
     await expect(card.locator(".wish-task-closed")).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
