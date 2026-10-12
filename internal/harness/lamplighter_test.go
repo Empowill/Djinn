@@ -46,9 +46,7 @@ func TestLamplighterSilentWorkerResumes(t *testing.T) {
 	task := e.spawn(t, wishID, "text start\nwait")
 	id := task.GetId()
 
-	e.until(t, id, func(tk *planv1.Task) bool {
-		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
-	})
+	e.follow(t, id)("its worker said start", said("start"))
 
 	// Advance time by 15 minutes so silence limit is exceeded.
 	clock.set(clock.now().Add(15 * time.Minute))
@@ -132,9 +130,7 @@ func TestLamplighterBusyWorkerNotStopped(t *testing.T) {
 	}
 	id := res.Msg.GetTask().GetId()
 
-	e.until(t, id, func(tk *planv1.Task) bool {
-		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
-	})
+	e.follow(t, id)("its worker said its usage", saidUsage)
 
 	// Advance time past silence limit.
 	clock.set(clock.now().Add(15 * time.Minute))
@@ -164,9 +160,7 @@ func TestLamplighterGatedWorkerNotStopped(t *testing.T) {
 	task := e.spawn(t, wishID, "text start\nwait")
 	id := task.GetId()
 
-	e.until(t, id, func(tk *planv1.Task) bool {
-		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
-	})
+	e.follow(t, id)("its worker said start", said("start"))
 
 	// Worker holds a gate.
 	e.h.HeldGates(func(taskID string) []string {
@@ -210,9 +204,7 @@ func TestLamplighterLostProcessResumesAndStopSucceeds(t *testing.T) {
 	wishID, _ := e.wish(t, gitRepo(t))
 
 	task1 := e.spawn(t, wishID, "wait")
-	e.until(t, task1.GetId(), func(tk *planv1.Task) bool {
-		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
-	})
+	e.follow(t, task1.GetId())("its worker said its session", saidSession(task1.GetId()))
 	// Simulate lost process by deleting from active runs map.
 	e.h.mu.Lock()
 	delete(e.h.runs, task1.GetId())
@@ -228,9 +220,7 @@ func TestLamplighterLostProcessResumesAndStopSucceeds(t *testing.T) {
 	}
 
 	task2 := e.spawn(t, wishID, "wait")
-	e.until(t, task2.GetId(), func(tk *planv1.Task) bool {
-		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
-	})
+	e.follow(t, task2.GetId())("its worker said its session", saidSession(task2.GetId()))
 	// Simulate lost process by deleting from active runs map.
 	e.h.mu.Lock()
 	delete(e.h.runs, task2.GetId())
@@ -462,9 +452,7 @@ func TestLamplighterDeadProcessEnds(t *testing.T) {
 	}
 	id := res.Msg.GetTask().GetId()
 
-	e.until(t, id, func(tk *planv1.Task) bool {
-		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && tk.GetSessionId() != ""
-	})
+	e.follow(t, id)("its worker said its usage", saidUsage)
 
 	// Before resumption, set the next run to finish successfully.
 	sw.play(successEnv)
@@ -699,9 +687,7 @@ func TestLamplighterWakesAfterUsageLimitResumes(t *testing.T) {
 	wishID, _ := e.wish(t, gitRepo(t))
 	task := e.spawn(t, wishID, "wait")
 	id := task.GetId()
-	running := e.follow(t, id)("its worker said its session", func(ev *planv1.TaskEvent) bool {
-		return strings.HasPrefix(ev.GetText(), "fake session "+id)
-	})
+	running := e.follow(t, id)("its worker said its session", saidSession(id))
 	if running.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || running.GetSessionId() == "" {
 		t.Fatalf("its worker said its session, stored %v", running)
 	}
@@ -751,6 +737,23 @@ func (e *env) follow(t *testing.T, id string) func(what string, ok func(*planv1.
 	}
 }
 
+// saidSession is the event where the fake worker of the task says its session.
+func saidSession(id string) func(*planv1.TaskEvent) bool {
+	return func(ev *planv1.TaskEvent) bool { return strings.HasPrefix(ev.GetText(), "fake session "+id) }
+}
+
+// said is the text event where a fake worker says text.
+func said(text string) func(*planv1.TaskEvent) bool {
+	return func(ev *planv1.TaskEvent) bool {
+		return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_TEXT && ev.GetText() == text
+	}
+}
+
+// saidUsage is the usage event of a claude turn: the last line of its fixture.
+func saidUsage(ev *planv1.TaskEvent) bool {
+	return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_USAGE
+}
+
 // TestLamplighterGivesUpAfterWakes: a worker silent run after run is woken maxWakes times in a row; silent once more,
 // its task fails saying so, and its lead is told once that it failed.
 func TestLamplighterGivesUpAfterWakes(t *testing.T) {
@@ -788,9 +791,7 @@ func TestLamplighterGivesUpAfterWakes(t *testing.T) {
 	next := e.follow(t, id)
 	for run := 1; run <= maxWakes+1; run++ {
 		// Each run plays the whole fixture, its usage last, then waits: silent from then on.
-		tk := next("its run said its usage", func(ev *planv1.TaskEvent) bool {
-			return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_USAGE
-		})
+		tk := next("its run said its usage", saidUsage)
 		if tk.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || len(tk.GetRuns()) != run || tk.GetSessionId() == "" {
 			t.Fatalf("run %d said its usage, stored %v", run, tk)
 		}
