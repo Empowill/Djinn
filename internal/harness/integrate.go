@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -114,6 +113,7 @@ func (h *Harness) Integrate() {
 	h.integrating.Do(func() {
 		h.integrateDone = make(chan struct{})
 		go func() {
+			defer logx.Crash("integrate")
 			defer close(h.integrateDone)
 			tick := time.NewTicker(cmp.Or(h.integrateTick, time.Minute))
 			defer tick.Stop()
@@ -238,7 +238,7 @@ func (h *Harness) integratePass(ctx context.Context) {
 	defer func() { logx.Took(slog.LevelDebug, "integration pass ended", start) }()
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
-		log.Printf("djinn: integrate: %v", err)
+		logx.L().Error("read the tasks", "loop", "integrate", "err", err)
 		return
 	}
 	h.correctionsEnded(ctx, tasks)
@@ -263,7 +263,8 @@ func (h *Harness) integratePass(ctx context.Context) {
 		wish, err1 := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId())
 		project, err2 := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
 		if err := errors.Join(err1, err2); err != nil {
-			log.Printf("djinn: integrate: %v", err)
+			logx.L().Error("read the wish and the project", "loop", "integrate", "task", t.GetCode(), "wish", t.GetWishId(),
+				"project", t.GetProjectId(), "err", err)
 			continue
 		}
 		committed, mb := h.integrateBatch(ctx, wish, project, []*planv1.Task{t})
@@ -517,7 +518,7 @@ func (h *Harness) dropWorktree(ctx context.Context, project *planv1.Project, t *
 		return tx.Put(newEvent(task.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
 	})
 	if err != nil {
-		log.Printf("djinn: integrate %s: %v", t.GetCode(), err)
+		logx.L().Error("record the worktree", "loop", "integrate", "task", t.GetCode(), "err", err)
 	}
 	h.notify()
 }
@@ -659,8 +660,10 @@ func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string, pr
 	h.mu.Lock()
 	h.installed[projectID] = sha
 	h.mu.Unlock()
-	_ = os.MkdirAll(filepath.Dir(installedFile(h.home, projectID)), 0o755)
-	_ = os.WriteFile(installedFile(h.home, projectID), []byte(sha+"\n"), 0o600)
+	_ = os.MkdirAll(filepath.Dir(installedFile(h.home, projectID)), 0o755) // The write below fails too.
+	if err := os.WriteFile(installedFile(h.home, projectID), []byte(sha+"\n"), 0o600); err != nil {
+		logx.L().Warn("record the installed build", "project", projectID, "sha", short8(sha), "err", err)
+	}
 	h.closeInstallQuestions(ctx, projectID, sha)
 	return out, nil
 }
@@ -918,7 +921,7 @@ func (h *Harness) closeMove(ctx context.Context, q *planv1.Question, choice plan
 		return tx.Put(cur)
 	})
 	if err != nil {
-		log.Printf("djinn: move: close: %v", err)
+		logx.L().Error("close the move question", "loop", "move", "question", q.GetCode(), "wish", q.GetWishId(), "err", err)
 		return err
 	}
 	q.Answer = &planv1.Answer{
@@ -1041,7 +1044,7 @@ func moveBranch(ctx context.Context, repo, branch, old, sha, message string) (ho
 		// the way is not tracked.
 		if _, err := git(ctx, holder, "read-tree", "-m", "-u", old, sha); err != nil {
 			if _, back := git(ctx, repo, "update-ref", "refs/heads/"+branch, old, sha); back != nil {
-				log.Printf("djinn: integrate: put %s back at %s: %v", branch, old, back)
+				logx.L().Error("put the branch back", "loop", "integrate", "branch", branch, "at", short8(old), "err", back)
 			}
 			return "", fmt.Sprintf("tested green as %s; %s stays at %s: your checkout of it, %s, cannot follow: %v",
 				short8(sha), branch, short8(old), holder, err), false
@@ -1255,12 +1258,14 @@ func (h *Harness) settleIntegration(
 		return nil
 	})
 	if err != nil {
-		log.Printf("djinn: integrate %s: %v", codes(batch), err)
+		logx.L().Error("record the integration", "loop", "integrate", "task", codes(batch), "err", err)
 	}
 	h.notify()
 	for _, b := range batch {
 		if len(b.GetComments()) > 0 {
-			_, _ = h.checkCommentsResolution(ctx, b)
+			if _, err := h.checkCommentsResolution(ctx, b); err != nil {
+				logx.L().Warn("check the comments resolved", "loop", "integrate", "task", b.GetCode(), "err", err)
+			}
 		}
 	}
 }
@@ -1509,7 +1514,7 @@ func (h *Harness) tellLead(ctx context.Context, kind planv1.LeadEventKind, wishI
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := h.toLead(ctx, kind, wishID, code, line); err != nil && !errors.Is(err, plan.ErrNoLead) {
-		log.Printf("djinn: tell lead %s: %v", wishID, err)
+		logx.L().Error("tell the lead", "wish", wishID, "task", code, "kind", kind.String(), "err", err)
 	}
 }
 
@@ -1526,7 +1531,7 @@ func (h *Harness) askMove(ctx context.Context, q *planv1.Question) error {
 		return plan.Ask(ctx, tx, q)
 	})
 	if err != nil {
-		log.Printf("djinn: move: ask: %v", err)
+		logx.L().Error("ask a move", "loop", "move", "wish", q.GetWishId(), "err", err)
 		return err
 	}
 	h.notify()
@@ -2136,7 +2141,7 @@ func (h *Harness) workerStartBranch(ctx context.Context, wish *planv1.Wish, proj
 	}
 	branch, err := h.azimaBranch(ctx, project, settings, azima)
 	if err != nil {
-		log.Printf("djinn: task %s: %v", t.GetCode(), err)
+		logx.L().Warn("cut the azima branch", "task", t.GetCode(), "azima", azima.GetCode(), "project", project.GetId(), "err", err)
 		return plan.IntegrationBranchOf(wish, project.GetId())
 	}
 	return branch
@@ -2476,11 +2481,14 @@ func (h *Harness) azimaPRPass(
 		case "MERGED":
 			h.recordAzimaPR(ctx, azima, &planv1.AzimaPr{Url: pr.URL, State: planv1.AzimaPrState_AZIMA_PR_STATE_MERGED})
 			if azima.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-				_, _ = h.Done(ctx, "/plan.v1.TaskService/Done", &planv1.TaskServiceDoneRequest{
+				_, err := h.Done(ctx, "/plan.v1.TaskService/Done", &planv1.TaskServiceDoneRequest{
 					TaskId: azima.GetId(),
 					By:     planv1.Closer_CLOSER_LEAD,
 					Note:   fmt.Sprintf("merged in pull request #%d", pr.Number),
 				})
+				if err != nil {
+					logx.L().Warn("close the merged azima", "azima", azima.GetCode(), "wish", azima.GetWishId(), "pr", pr.URL, "err", err)
+				}
 				azima.Status = planv1.TaskStatus_TASK_STATUS_DONE
 			}
 		}

@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io/fs"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -18,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // TilasmPrefix is where the tilasms' files are served, each tilasm's under /tilasm/<id>/ (plan.Tilasms.Files).
@@ -28,16 +31,16 @@ const TilasmPrefix = "/tilasm/"
 //
 // The services never compress a response: every client of this server is on the same machine, where gzip only
 // costs time on both ends (see docs/transport.md). A service that writes nothing still answers 200, as on net/http.
-// Each call to a service is logged (logx).
+// Each call to a service is logged (logx); a panic of a handler is logged with its stack and answered 500.
 func Handler(ui, docs fs.FS, services map[string]http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	for prefix, h := range services {
 		mux.Handle(prefix, logged(answered(uncompressed(h))))
 	}
 	if docs != nil {
-		mux.Handle(DocsPath, http.StripPrefix(strings.TrimSuffix(DocsPath, "/"), assets(docs)))
+		mux.Handle(DocsPath, recovered(http.StripPrefix(strings.TrimSuffix(DocsPath, "/"), assets(docs))))
 	}
-	mux.Handle("/", assets(ui))
+	mux.Handle("/", recovered(assets(ui)))
 	return mux
 }
 
@@ -86,6 +89,8 @@ func (w *answerWriter) Write(b []byte) (int, error) {
 	w.wrote = true
 	return w.ResponseWriter.Write(b)
 }
+
+func (w *answerWriter) written() bool { return w.wrote }
 
 // Flush keeps the streams of the services working: connect-go needs an http.Flusher for a server stream.
 func (w *answerWriter) Flush() {
@@ -305,7 +310,9 @@ func newServer(ctx context.Context, ln net.Listener, h http.Handler) *http.Serve
 	srv := &http.Server{
 		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
-		BaseContext:       func(net.Listener) context.Context { return ctx },
+		// What net/http tells of a connection that fails goes to the log, at warn.
+		ErrorLog:    slog.NewLogLogger(logx.L().Handler(), slog.LevelWarn),
+		BaseContext: func(net.Listener) context.Context { return ctx },
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
 			if pid := peerPID(c); pid > 0 {
 				return WithPeerPID(ctx, pid)

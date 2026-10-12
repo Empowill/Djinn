@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +14,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 )
 
@@ -102,7 +102,7 @@ func (h *Harness) reviewUncommitted(
 			attempts = r.GetAttempt()
 			before, err := tasksByID(ctx, h.store, r.GetTaskIds())
 			if err != nil {
-				log.Printf("djinn: integrate %s: %v", t.GetCode(), err)
+				logx.L().Error("read the reviewed tasks", "loop", "review", "task", t.GetCode(), "err", err)
 			}
 			group = append(before, t)
 		}
@@ -277,7 +277,7 @@ func (h *Harness) settleReviewed(ctx context.Context, batch []*planv1.Task, in *
 		}
 		group, err := tasksByID(ctx, h.store, r.GetReview().GetTaskIds())
 		if err != nil {
-			log.Printf("djinn: integrate %s: %v", r.GetCode(), err)
+			logx.L().Error("read the reviewed tasks", "loop", "review", "task", r.GetCode(), "err", err)
 			continue
 		}
 		h.settleIntegration(ctx, group, &planv1.TaskIntegration{

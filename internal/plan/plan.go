@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,6 +23,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
@@ -659,7 +659,7 @@ func (w *Wishes) Make(
 			Text: MadeLine(wish, req.Msg.GetTitle() == ""),
 		}
 		if err := w.Notify(ctx, e); err != nil {
-			log.Printf("djinn: wish %s: tell the lead about a wish made from a request: %v", wish.GetId(), err)
+			logx.L().Error("tell the lead about a wish made from a request", "wish", wish.GetId(), "err", err)
 		}
 	}
 	return connect.NewResponse(&planv1.WishServiceMakeResponse{Wish: wish}), nil

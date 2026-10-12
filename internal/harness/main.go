@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"regexp"
 	"slices"
 	"strconv"
@@ -61,7 +60,7 @@ func (h *Harness) mainPass(ctx context.Context) {
 	now := h.mainNow.Swap(false)
 	wishes, err := store.List[*planv1.Wish](ctx, h.store, nil)
 	if err != nil {
-		log.Printf("djinn: main: %v", err)
+		logx.L().Error("read the wishes", "loop", "main", "err", err)
 		return
 	}
 	for _, wish := range wishes {
@@ -432,7 +431,8 @@ func (h *Harness) settleMain(ctx context.Context, wish *planv1.Wish, project *pl
 		repo := project.GetDirectory()
 		old, err := git(ctx, repo, "rev-parse", in.GetSha()+"^1")
 		if err != nil {
-			log.Printf("djinn: main: %v", err)
+			logx.L().Error("record main merged by a correction", "loop", "main", "wish", wish.GetId(), "branch", l.branch,
+				"task", c.GetCode(), "err", err)
 			continue
 		}
 		settings, _ := plan.LoadSettings(h.home, project)
@@ -478,16 +478,16 @@ func (h *Harness) mainMerged(
 		return editMain(ctx, tx, wish.GetId(), project.GetId(), merged)
 	})
 	if err != nil {
-		log.Printf("djinn: main: %v", err)
+		logx.L().Error("record main merged", "loop", "main", "wish", wish.GetId(), "branch", branch, "err", err)
 	}
-	text := fmt.Sprintf("main: merged %s into %s as %s, %s", shown, branch, short8(sha), commitsText(int(record.GetCount()), nil))
+	kv := []any{"loop", "main", "wish", wish.GetId(), "main", shown, "branch", branch, "sha", short8(sha), "commits", record.GetCount()}
 	if release != "" {
-		text += ", " + release
+		kv = append(kv, "release", release)
 	}
 	if holder != "" {
-		text += "; your checkout of it, " + holder + ", follows"
+		kv = append(kv, "checkout", holder) // The person's checkout of the branch follows.
 	}
-	log.Printf("djinn: %s", text)
+	logx.L().Info("main merged", kv...)
 	h.notify()
 	h.wake() // The tasks that start next start from main's commits.
 	if release != "" && settings.Install != "" && h.built != nil && l.azima == nil {
@@ -513,7 +513,7 @@ func (h *Harness) holdMain(ctx context.Context, l mainLine, why string) {
 func (h *Harness) editMain(ctx context.Context, wishID, projectID string, edit func(*planv1.WishMain)) {
 	ctx = context.WithoutCancel(ctx)
 	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return editMain(ctx, tx, wishID, projectID, edit) }); err != nil {
-		log.Printf("djinn: main: %v", err)
+		logx.L().Error("record where a wish stands against main", "loop", "main", "wish", wishID, "project", projectID, "err", err)
 	}
 	h.notify()
 }
@@ -630,7 +630,7 @@ func (h *Harness) fetchMain(ctx context.Context, wishID, repo, ref string) error
 			}
 			seen[tag] = true
 			if err := h.reportTagClash(ctx, wishID, remote, tag); err != nil {
-				log.Printf("djinn: report tag clash: %v", err)
+				logx.L().Error("report a tag clash", "loop", "main", "wish", wishID, "tag", tag, "remote", remote, "err", err)
 			}
 		}
 	}
@@ -785,7 +785,7 @@ func (h *Harness) Release(ctx context.Context, build string, dirty bool, tag str
 	released := commitOf(ctx, repo, "refs/tags/"+tag)
 	if released == "" { // A release the repository does not know yet: main and the tags are fetched.
 		if err := h.fetchMain(ctx, "", repo, ref); err != nil {
-			log.Printf("djinn: release %s: %v", tag, err)
+			logx.L().Warn("fetch main to judge a release", "release", tag, "err", err)
 		}
 		if released = commitOf(ctx, repo, "refs/tags/"+tag); released == "" {
 			return ReleaseOffer, nil // Still unknown: the person judges.

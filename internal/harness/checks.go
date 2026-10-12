@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -127,7 +126,7 @@ func (h *Harness) recordCheck(ctx context.Context, projectID string, run *planv1
 		return tx.Put(project)
 	})
 	if err != nil {
-		log.Printf("djinn: check %s: %v", run.GetName(), err)
+		logx.L().Error("record a check run", "project", projectID, "check", run.GetName(), "wish", run.GetWishId(), "err", err)
 	}
 }
 
@@ -160,7 +159,7 @@ func (h *Harness) setUp(
 		return why, out, stopped
 	}
 	if err := os.WriteFile(stamp, []byte(key), 0o600); err != nil {
-		log.Printf("djinn: setup %s: %v", project.GetName(), err)
+		logx.L().Warn("record the setup", "project", project.GetName(), "wish", wishID, "file", stamp, "err", err)
 	}
 	return "", out, false
 }
@@ -355,14 +354,14 @@ func (h *Harness) holdPush(
 		})
 	})
 	if err != nil {
-		log.Printf("djinn: push %s: %v", branch, err)
+		logx.L().Error("hold the push", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
 		return
 	}
 	h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push of %s is held: its push checks are red %s", branch, held))
 	h.notify()
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
 	if err != nil {
-		log.Printf("djinn: push %s: %v", branch, err)
+		logx.L().Error("read the tasks", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
 		return
 	}
 	if runs < 2 && workLeft(tasks, project.GetId()) {
@@ -370,7 +369,7 @@ func (h *Harness) holdPush(
 	}
 	settings, err := plan.LoadSettings(h.home, project)
 	if err != nil {
-		log.Printf("djinn: push %s: %v", branch, err)
+		logx.L().Warn("read the project settings", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
 		return
 	}
 	attempts := cur.GetAttempts()
@@ -390,7 +389,7 @@ func (h *Harness) holdPush(
 			}
 		}
 		unstarted = err
-		log.Printf("djinn: push %s: correction: %v", branch, err)
+		logx.L().Error("start a push correction", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
 	}
 	h.askPushHeld(ctx, wish, project, branch, f, attempts, unstarted, committed)
 }
@@ -420,7 +419,7 @@ func (h *Harness) withdrawPushQuestion(ctx context.Context, wishID, projectID, i
 		})
 	})
 	if err != nil {
-		log.Printf("djinn: push: withdraw %s: %v", id, err)
+		logx.L().Error("withdraw the push question", "loop", "push", "wish", wishID, "project", projectID, "question", id, "err", err)
 	}
 }
 
@@ -441,7 +440,7 @@ func (h *Harness) askPushHeld(
 		})
 	})
 	if err != nil {
-		log.Printf("djinn: push %s: %v", branch, err)
+		logx.L().Error("leave the push checks to the lead", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
 		return
 	}
 	line := fmt.Sprintf("Djinn: the push checks of %s stay red: %s. The move is yours: retry a correction, drop the work (djinn task done --drop / djinn task cancel), or leave it waiting.",

@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"strings"
 	"time"
@@ -375,8 +374,15 @@ func gaveUp(res Result, errLines []string) error {
 // scheduler starts it at once, in the same task, as it does after a restart of Djinn. A watcher never fails for it.
 // Read again first: a watcher that ended or was stopped since the pass listed it stays as it is.
 func (h *Harness) restartLostWatcher(ctx context.Context, t *planv1.Task) {
+	code := t.GetCode()
 	t, err := store.Get[*planv1.Task](ctx, h.store, t.GetId())
-	if err != nil || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+	if err != nil {
+		if ctx.Err() == nil {
+			logx.L().Error("restart a lost watcher", "loop", "lamplighter", "task", code, "err", err)
+		}
+		return
+	}
+	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 		return
 	}
 	h.mu.Lock()
@@ -402,6 +408,6 @@ func (h *Harness) tellWatcherFailed(t *planv1.Task) {
 	line := fmt.Sprintf("Djinn: %s's watcher failed: %s", t.GetCode(), clipRunes(t.GetError(), watchLineMax))
 	if err := h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_FAILED, t.GetWishId(), t.GetCode(), line); err != nil &&
 		!errors.Is(err, plan.ErrNoLead) {
-		log.Printf("djinn: wish %s: tell the lead: %v", t.GetWishId(), err)
+		logx.L().Warn("tell the lead", "loop", "lamplighter", "wish", t.GetWishId(), "task", t.GetCode(), "err", err)
 	}
 }

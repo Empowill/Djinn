@@ -2,7 +2,6 @@ package plan
 
 import (
 	"fmt"
-	"log"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -11,6 +10,8 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+
+	"github.com/empowill/djinn/internal/logx"
 )
 
 var warnedUnknownFields sync.Map // key: filepath.Clean(path) + ":" + field
@@ -20,7 +21,7 @@ func WarnUnknownField(path, field string) string {
 	warning := fmt.Sprintf("unknown field %s: a newer Djinn knows it", field)
 	key := filepath.Clean(path) + ":" + field
 	if _, loaded := warnedUnknownFields.LoadOrStore(key, true); !loaded {
-		log.Printf("djinn: %s: %s", path, warning)
+		logx.L().Warn("unknown field: a newer djinn knows it", "path", path, "field", field)
 	}
 	return warning
 }

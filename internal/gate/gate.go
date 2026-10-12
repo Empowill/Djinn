@@ -21,6 +21,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/harness"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 )
 
@@ -286,6 +287,7 @@ func (g *Gates) give(w *waiter, why string) {
 // keep follows a holder while it holds its gate: it reads what its process uses, and takes the gate back once that
 // process ends or the timeout passes, so a forgotten hold never blocks the others.
 func (g *Gates) keep(w *waiter) {
+	defer logx.Crash("gate keep", "gate", w.name, "task", w.taskID)
 	tick := time.NewTicker(g.tick)
 	defer tick.Stop()
 	limit := time.NewTimer(time.Until(w.until))

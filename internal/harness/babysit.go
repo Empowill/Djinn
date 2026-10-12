@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -26,6 +25,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -177,7 +177,7 @@ func (h *Harness) findRequest(
 func (h *Harness) babysitState(id, skill string, number int) string {
 	dir := filepath.Join(h.home, "watchers", id)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		log.Printf("djinn: task %s: make its watcher's folder: %v", id, err)
+		logx.L().Warn("make a watcher's folder", "loop", "babysit", "task", id, "err", err)
 	}
 	return filepath.Join(dir, fmt.Sprintf("%s-%d", skill, number))
 }
@@ -221,9 +221,10 @@ func (h *Harness) babysitOpened(t *planv1.Task) {
 	h.babysitting.Add(1)
 	h.mu.Unlock()
 	go func() {
+		defer logx.Crash("babysit", "task", t.GetCode())
 		defer h.babysitting.Done()
 		if err := h.babysit(h.ctx, t); err != nil && h.ctx.Err() == nil {
-			log.Printf("djinn: task %s: babysit what it opened: %v", t.GetCode(), err)
+			logx.L().Warn("babysit what a task opened", "loop", "babysit", "task", t.GetCode(), "err", err)
 		}
 	}()
 }

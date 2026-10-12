@@ -15,6 +15,7 @@ import (
 	"time"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // Fake is an agent that plays a script, to try Djinn and test it without a paid model. Each line of the prompt is
@@ -41,7 +42,10 @@ type Fake struct{}
 func (Fake) Start(ctx context.Context, spec Spec) (Worker, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	w := &fakeWorker{events: make(chan Event), cancel: cancel, done: make(chan struct{}), sent: make(chan struct{}, 1), lowPriority: spec.LowPriority}
-	go w.play(ctx, spec)
+	go func() {
+		defer logx.Crash("fake worker", "dir", spec.Dir)
+		w.play(ctx, spec)
+	}()
 	return w, nil
 }
 

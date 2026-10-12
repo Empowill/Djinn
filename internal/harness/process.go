@@ -111,9 +111,16 @@ func startCommand(
 	p := &process{cmd: cmd, cgroup: sc.Cgroup, stdin: stdin, grace: grace, lines: make(chan line, 64), done: make(chan struct{}), blanks: blanks}
 	var read sync.WaitGroup
 	read.Add(2)
-	go p.scan(&read, outR, false)
-	go p.scan(&read, errR, true)
 	go func() {
+		defer logx.Crash("process output", "program", program, "pid", cmd.Process.Pid)
+		p.scan(&read, outR, false)
+	}()
+	go func() {
+		defer logx.Crash("process output", "program", program, "pid", cmd.Process.Pid)
+		p.scan(&read, errR, true)
+	}()
+	go func() {
+		defer logx.Crash("process wait", "program", program, "pid", cmd.Process.Pid)
 		err := cmd.Wait()
 		outW.Close()
 		errW.Close()
@@ -151,6 +158,7 @@ func (p *process) Stop() {
 	p.stop.Do(func() {
 		terminate(p)
 		go func() {
+			defer logx.Crash("process stop", "pid", p.cmd.Process.Pid)
 			select {
 			case <-p.done:
 			case <-time.After(p.grace):

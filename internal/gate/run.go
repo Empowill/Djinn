@@ -13,6 +13,7 @@ import (
 
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	"github.com/empowill/djinn/gen/go/machine/v1/machinev1connect"
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // Command is a command to run under a gate, with its standard streams.
@@ -72,6 +73,7 @@ func Run(ctx context.Context, client machinev1connect.GateServiceClient, name, t
 	}
 	// The gate is held as long as the stream is open; say so if Djinn takes it back, or djinn up goes away meanwhile.
 	go func() {
+		defer logx.Crash("gate hold", "gate", name)
 		for stream.Receive() {
 			if msg := stream.Msg(); msg.GetState() == machinev1.GateState_GATE_STATE_TAKEN_BACK {
 				fmt.Fprintf(c.Notice, "djinn: %s\n", msg.GetReason())

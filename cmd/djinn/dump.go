@@ -20,6 +20,7 @@ var dumpPoll = time.Second
 // signal, W504) or logx.DumpRequest appears there (any system, W511), until ctx ends, and says where on say: a frozen
 // djinn tells where each goroutine waits without being stopped.
 func dumpGoroutines(ctx context.Context, home string, dump <-chan os.Signal, say io.Writer) {
+	defer logx.Crash("dump")
 	dir := logx.Folder(home)
 	request := filepath.Join(dir, logx.DumpRequest)
 	tick := time.NewTicker(dumpPoll)
@@ -39,6 +40,7 @@ func dumpGoroutines(ctx context.Context, home string, dump <-chan os.Signal, say
 		path, err := logx.Dump(dir, why)
 		if err != nil {
 			fmt.Fprintln(say, "djinn: dump the goroutines:", err)
+			logx.L().Warn("dump the goroutines", "why", why, "err", err)
 			continue
 		}
 		fmt.Fprintf(say, "%s djinn: goroutines written to %s\n", time.Now().Format(time.RFC3339), path)

@@ -15,6 +15,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // winProc is a program attached to a Windows pseudo-console (ConPTY, Windows 10 1809 and later), in a Job Object
@@ -210,7 +212,10 @@ func (p *winProc) active() int {
 // and the delay before kill starts now. A program that ends then may leave a child that holds on: close ends it.
 func (p *winProc) hangup() {
 	p.hung.Store(true)
-	go p.closeConsole()
+	go func() {
+		defer logx.Crash("terminal close console")
+		p.closeConsole()
+	}()
 }
 
 // kill ends the program and every process it started, which the job holds.

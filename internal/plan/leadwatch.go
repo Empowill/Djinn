@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -170,7 +170,10 @@ func (w *Wishes) remindLead(after time.Duration) {
 		l.timer.Stop()
 	}
 	l.due = at
-	l.timer = time.AfterFunc(time.Until(at), w.checkLead)
+	l.timer = time.AfterFunc(time.Until(at), func() {
+		defer logx.Crash("leadwatch")
+		w.checkLead()
+	})
 }
 
 // checkLead types the line that says events wait, unless a watch waits for them, one returned within the grace,
@@ -180,7 +183,7 @@ func (w *Wishes) checkLead() {
 	defer cancel()
 	lead, err := store.Get[*planv1.Lead](ctx, w.Store, "lead")
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		log.Printf("djinn: remind the lead: %v", err)
+		logx.L().Error("remind the lead", "loop", "leadwatch", "err", err)
 		return
 	}
 	l := w.leadWatch()
@@ -201,7 +204,7 @@ func (w *Wishes) checkLead() {
 	}
 	events, err := waitingEvents(ctx, w.Store)
 	if err != nil {
-		log.Printf("djinn: remind the lead: %v", err)
+		logx.L().Error("remind the lead", "loop", "leadwatch", "err", err)
 		return
 	}
 	if len(events) == 0 {
@@ -209,7 +212,7 @@ func (w *Wishes) checkLead() {
 	}
 	if err := w.Tell(ctx, "", WaitingLine(len(events))); err != nil {
 		if !errors.Is(err, ErrNoLead) {
-			log.Printf("djinn: remind the lead: %v", err)
+			logx.L().Warn("remind the lead", "loop", "leadwatch", "err", err)
 		}
 		return
 	}

@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 
@@ -50,12 +49,12 @@ func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"edit_question_id": q.GetId()})
 	if err != nil {
-		log.Printf("djinn: question %s: find its task: %v", q.GetCode(), err)
+		logx.L().Error("find a question's task", "question", q.GetCode(), "err", err)
 		return strings.Join(did, "; ")
 	}
 	for _, t := range tasks {
 		if err := h.answer(t.GetId(), q); err != nil {
-			log.Printf("djinn: task %s: answer %s: %v", t.GetCode(), q.GetCode(), err)
+			logx.L().Error("give a task its answer", "task", t.GetCode(), "question", q.GetCode(), "err", err)
 			did = append(did, fmt.Sprintf("Djinn could not give the answer to %s: %v", t.GetCode(), err))
 			continue
 		}

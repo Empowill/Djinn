@@ -25,6 +25,7 @@ import (
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/link"
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // Service implements uiv1connect.UiServiceHandler.
@@ -734,6 +735,7 @@ func (s *Service) Watch(
 		loadCtx, cancelLoad := context.WithCancel(ctx)
 		defer cancelLoad()
 		go func() {
+			defer logx.Crash("ui watch load")
 			_ = s.WatchLoad(loadCtx, func(resp *djinnv1.LoadServiceWatchResponse) error {
 				select {
 				case <-loadCtx.Done():

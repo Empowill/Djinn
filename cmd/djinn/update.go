@@ -124,6 +124,7 @@ func newUpdater(version string, svc *ui.Service, terms *terminal.Manager, leads 
 // run looks for a newer binary at once, then every updatePoll, and for a newer release at once, then every
 // releaseCheck, until ctx is done.
 func (u *updater) run(ctx context.Context) {
+	defer logx.Crash("updates")
 	if u.releases != nil {
 		go u.watchReleases(ctx)
 	}
@@ -159,6 +160,7 @@ func (u *updater) check(ctx context.Context) string {
 	if !os.SameFile(info, u.started) || !info.ModTime().Equal(u.started.ModTime()) {
 		if v, err := binaryVersion(ctx, u.exe); err != nil {
 			fmt.Fprintln(os.Stderr, "djinn: the binary at", u.exe, "does not run:", err)
+			logx.L().Warn("the newer binary does not run", "loop", "updates", "path", u.exe, "err", err)
 		} else if v != u.version {
 			u.local = v
 		}
@@ -178,6 +180,7 @@ func (u *updater) publish() {
 		u.named = ready
 		if ready != "" && u.describe != nil {
 			go func() {
+				defer logx.Crash("updates: describe a build", "version", ready)
 				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 				defer cancel()
 				u.ui.SetReadyBuild(ready, u.describe(ctx, ready))
@@ -189,6 +192,7 @@ func (u *updater) publish() {
 // watchReleases asks the source for a newer release at once, then every releaseCheck, until ctx is done. It only
 // reads a version: nothing downloads before the click.
 func (u *updater) watchReleases(ctx context.Context) {
+	defer logx.Crash("releases")
 	tick := time.NewTicker(releaseCheck)
 	defer tick.Stop()
 	for {
@@ -197,6 +201,7 @@ func (u *updater) watchReleases(ctx context.Context) {
 		cancel()
 		if err != nil && ctx.Err() == nil {
 			fmt.Fprintln(os.Stderr, "djinn: looking for a newer release:", err)
+			logx.L().Warn("look for a newer release", "loop", "releases", "err", err)
 		}
 		if err == nil {
 			u.consider(ctx, r)
@@ -220,6 +225,7 @@ func (u *updater) consider(ctx context.Context, r *release) {
 		switch {
 		case err != nil:
 			fmt.Fprintln(os.Stderr, "djinn: where the checkout stands against", r.Version+":", err)
+			logx.L().Warn("compare the checkout with a release", "loop", "releases", "release", r.Version, "err", err)
 		case fit == harness.ReleaseHeld:
 			r = nil
 		case fit == harness.ReleaseMerge:
@@ -242,6 +248,7 @@ func (u *updater) consider(ctx context.Context, r *release) {
 	}
 	if err := u.install(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "djinn: installing", r.Version+":", err)
+		logx.L().Error("install a release", "loop", "releases", "release", r.Version, "err", err)
 		return
 	}
 	u.check(ctx) // The window offers to restart on it.
@@ -322,6 +329,7 @@ func (u *updater) restart() (string, int, error) {
 	u.restarting = true
 	logx.L().Info("restart asked", "from", u.version, "to", version, "terminals", len(note.Terminals))
 	go func() {
+		defer logx.Crash("restart")
 		time.Sleep(restartDelay)
 		u.stop()
 	}()
@@ -397,10 +405,12 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, sess
 	}
 	if err != nil {
 		fmt.Fprintln(say, "djinn: cannot read", path+":", err)
+		logx.L().Error("read the restart note", "path", path, "err", err)
 		return []string{fmt.Sprintf("%s: %v", path, err)}
 	}
 	if err := os.Remove(path); err != nil {
 		fmt.Fprintln(say, "djinn:", err)
+		logx.L().Warn("remove the restart note", "err", err)
 	}
 	var failed []string
 	shown, dropped := "", 0
@@ -428,6 +438,7 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, sess
 		if err != nil {
 			line := fmt.Sprintf("%s: %s in %s: %v", t.Name, strings.Join(t.Command, " "), t.Directory, err)
 			fmt.Fprintln(say, "djinn: not resumed:", line)
+			logx.L().Warn("terminal not resumed", "terminal", t.Name, "dir", t.Directory, "err", err)
 			failed = append(failed, line)
 			continue
 		}

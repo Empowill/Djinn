@@ -18,6 +18,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 )
 
@@ -88,7 +89,10 @@ func (c Watch) Start(ctx context.Context, spec Spec) (Worker, error) {
 		c: c.defaults(), spec: spec, command: command, args: args, events: make(chan Event), ctx: ctx, cancel: cancel,
 		done: make(chan struct{}),
 	}
-	go w.loop()
+	go func() {
+		defer logx.Crash("watch", "command", command)
+		w.loop()
+	}()
 	return w, nil
 }
 
@@ -297,7 +301,9 @@ func (w *watchWorker) running(p *process) {
 	defer w.mu.Unlock()
 	w.proc = p
 	if p != nil && w.held != nil {
-		_ = p.Pause()
+		if err := p.Pause(); err != nil {
+			logx.L().Warn("hold a watcher's command", "loop", "watch", "command", w.command, "err", err)
+		}
 	}
 }
 

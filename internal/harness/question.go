@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +15,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -55,7 +55,7 @@ func (h *Harness) askWorker(ctx context.Context, q *planv1.Question, role planv1
 	h.questioning.Lock()
 	defer h.questioning.Unlock()
 	if _, err := h.startQuestionWorker(ctx, q, role, note, nil); err != nil {
-		log.Printf("djinn: question %s: start its worker: %v", q.GetCode(), err)
+		logx.L().Error("start a question worker", "loop", "question", "question", q.GetCode(), "err", err)
 	}
 }
 
@@ -248,6 +248,7 @@ func (h *Harness) questionEnded(t *planv1.Task) {
 	t = proto.CloneOf(t)
 	h.wg.Add(1)
 	go func() {
+		defer logx.Crash("question", "task", t.GetCode())
 		defer h.wg.Done()
 		h.tellEnd(t, h.retryRefused(t))
 	}()
@@ -301,7 +302,7 @@ func (h *Harness) questionDid(t *planv1.Task) bool {
 	defer cancel()
 	tasks, questions, err := h.wishWork(ctx, t.GetWishId())
 	if err != nil {
-		log.Printf("djinn: task %s: read what it did: %v", t.GetCode(), err)
+		logx.L().Error("read what a question worker did", "loop", "question", "task", t.GetCode(), "err", err)
 		return true
 	}
 	spawned, asked, revised := questionOutcome(t, tasks, questions)
@@ -316,7 +317,7 @@ func (h *Harness) retryRefused(t *planv1.Task) string {
 	defer cancel()
 	tasks, questions, err := h.wishWork(ctx, t.GetWishId())
 	if err != nil {
-		log.Printf("djinn: task %s: start it again: %v", t.GetCode(), err)
+		logx.L().Error("start a question worker again", "loop", "question", "task", t.GetCode(), "err", err)
 		return ""
 	}
 	if slices.ContainsFunc(tasks, func(o *planv1.Task) bool {
@@ -340,7 +341,7 @@ func (h *Harness) retryRefused(t *planv1.Task) string {
 	defer h.questioning.Unlock()
 	again, err := h.startQuestionWorker(ctx, q, t.GetRole(), note, t)
 	if err != nil {
-		log.Printf("djinn: task %s: start it again: %v", t.GetCode(), err)
+		logx.L().Error("start a question worker again", "loop", "question", "task", t.GetCode(), "err", err)
 	}
 	return again.GetCode()
 }

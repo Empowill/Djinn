@@ -11,6 +11,7 @@ import (
 	"time"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // streamParser reads the output of an agent that writes one JSON line per event and ends each turn with a result
@@ -68,10 +69,14 @@ func startStream(ctx context.Context, spec Spec, command string, args []string, 
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}
 	w := &streamWorker{ctx: ctx, a: a, p: p, events: make(chan Event, 64), done: make(chan struct{}), wake: make(chan struct{}, 1)}
-	go w.read()
+	go func() {
+		defer logx.Crash("stream read", "agent", command)
+		w.read()
+	}()
 	if err := w.Send(spec.Prompt); err != nil {
 		p.Stop()
 		go func() {
+			defer logx.Crash("stream drain", "agent", command)
 			for range w.events { // Drained so that the worker ends.
 			}
 		}()
@@ -79,6 +84,7 @@ func startStream(ctx context.Context, spec Spec, command string, args []string, 
 		return nil, err
 	}
 	go func() {
+		defer logx.Crash("stream stop", "agent", command)
 		select {
 		case <-ctx.Done():
 			w.Stop()

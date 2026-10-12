@@ -18,6 +18,7 @@ import (
 	djinnv1connect "github.com/empowill/djinn/gen/go/djinn/v1/djinnv1connect"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/fsx"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 )
 
@@ -245,6 +246,7 @@ type loadService struct {
 }
 
 func (s *loadService) runAutoLoop() {
+	defer logx.Crash("load auto")
 	ticker := time.NewTicker(s.tickInterval)
 	defer ticker.Stop()
 	for {
