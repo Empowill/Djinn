@@ -27,7 +27,8 @@ func TestBranchName(t *testing.T) {
 	}
 }
 
-// gitRepo creates a Git repository with one commit, and returns its folder, symbolic links resolved.
+// gitRepo creates a Git repository with one commit, and returns its folder, symbolic links resolved. The repository
+// sets its own identity, which its worktrees share: the test process has none (testx.HideGitIdentity).
 func gitRepo(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -45,8 +46,10 @@ func gitRepo(t *testing.T) string {
 	}
 	for _, args := range [][]string{
 		{"init", "--quiet"},
+		{"config", "user.name", "Test"},
+		{"config", "user.email", "test@example.com"},
 		{"add", "."},
-		{"-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--quiet", "-m", "First"},
+		{"commit", "--quiet", "-m", "First"},
 	} {
 		if _, err := git(t.Context(), dir, args...); err != nil {
 			t.Fatal(err)

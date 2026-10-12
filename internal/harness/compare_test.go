@@ -75,7 +75,7 @@ func TestCompareWithTheRunningDjinn(t *testing.T) {
 		t.Errorf("the running branch's build: %+v", b)
 	}
 
-	b, ok := in.h.DescribeVersion(ctx, "local-g"+side[:8])
+	b, ok := in.h.DescribeVersion(ctx, "local-v0.1.0-5-g"+side[:8])
 	if !ok || b.Sha != side || b.Branch != "feat/clement-port" || b.WishID != clementID || b.WishTitle != "Clément's branches" ||
 		b.Running || !slices.Equal(b.Tasks, []string{"W2"}) || !slices.Equal(b.Changes, []string{"Work of W2"}) ||
 		!slices.Equal(b.Lacks, []string{"Work of W1"}) || b.LacksCount != 1 {
@@ -85,9 +85,18 @@ func TestCompareWithTheRunningDjinn(t *testing.T) {
 	if b, ok := in.h.DescribeVersion(ctx, "local-"+work[:7]); !ok || b.Branch != "feat/clement-port" {
 		t.Errorf("a task's commit: %+v, %v", b, ok)
 	}
-	// A version no project holds, or a development build: not named, nothing compared.
-	if _, ok := in.h.DescribeVersion(ctx, "v9.9.9"); ok {
-		t.Error("a release no checkout knows is named")
+	// A release: its tag's commit.
+	in.git(t, in.repo, "tag", "-a", "-m", "v0.2.0", "v0.2.0", side)
+	if b, ok := in.h.DescribeVersion(ctx, "v0.2.0"); !ok || b.Sha != side || b.Branch != "feat/clement-port" {
+		t.Errorf("a release: %+v, %v", b, ok)
+	}
+	// A version no project holds, or a development build: not named, nothing compared. CI of PR #2: local-g<commit>,
+	// which go tool task install never stamps, was read as the tag refs/tags/local-g<commit>, which git 2.47 took for a
+	// git describe name, the commit, and git 2.55 did not: it is no tag, whatever the git.
+	for _, v := range []string{"v9.9.9", "local-g" + side[:8]} {
+		if b, ok := in.h.DescribeVersion(ctx, v); ok {
+			t.Errorf("%s, which names no tag and no commit of a checkout, is named: %+v", v, b)
+		}
 	}
 	in.h.version = "dev"
 	b = Built{Branch: "feat/wails-go", Sha: ahead, Tasks: []string{"W3"}}

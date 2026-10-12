@@ -32,16 +32,32 @@ func (p envProvider) Start(ctx context.Context, spec Spec) (Worker, error) {
 // hookProvider starts its provider with extra environment and an optional hook in spec.Dir before starting.
 type hookProvider struct {
 	Provider
-	env    []string
-	before func(dir string)
+	env []string
+	// before runs on the harness's goroutine, not the test's: it returns its error, which fails the start, rather than
+	// call t.Fatal, which there would end that goroutine and leave Harness.Close waiting for it.
+	before func(dir string) error
 }
 
 func (p hookProvider) Start(ctx context.Context, spec Spec) (Worker, error) {
 	if p.before != nil {
-		p.before(spec.Dir)
+		if err := p.before(spec.Dir); err != nil {
+			return nil, err
+		}
 	}
 	spec.Env = append(spec.Env, p.env...)
 	return p.Provider.Start(ctx, spec)
+}
+
+// commitWork commits a file in a worker's folder, as a worker that did its work.
+func commitWork(dir string) error {
+	if err := os.WriteFile(filepath.Join(dir, "committed.txt"), []byte("done\n"), 0o644); err != nil {
+		return err
+	}
+	if _, err := git(context.Background(), dir, "add", "committed.txt"); err != nil {
+		return err
+	}
+	_, err := git(context.Background(), dir, "commit", "-m", "worker committed work")
+	return err
 }
 
 // TestAgyDenialFailsTask replays a real agy run that stopped at a denied command (agy 1.3.0, 2026-10-08): its
@@ -132,17 +148,7 @@ func TestAgyDoneAfterLateModelErrorWithCommittedWork(t *testing.T) {
 	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = hookProvider{
 		Provider: Antigravity{Command: os.Args[0]},
 		env:      env,
-		before: func(dir string) {
-			if err := os.WriteFile(filepath.Join(dir, "committed.txt"), []byte("done\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := git(t.Context(), dir, "add", "committed.txt"); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := git(t.Context(), dir, "commit", "-m", "worker committed work"); err != nil {
-				t.Fatal(err)
-			}
-		},
+		before:   commitWork,
 	}
 	e := upWith(t, t.TempDir(), providers)
 	wishID, _ := e.wish(t, gitRepo(t))
@@ -180,17 +186,7 @@ func TestAgyStreamErrorDoneWithCommittedWork(t *testing.T) {
 	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = hookProvider{
 		Provider: Antigravity{Command: os.Args[0]},
 		env:      env,
-		before: func(dir string) {
-			if err := os.WriteFile(filepath.Join(dir, "committed.txt"), []byte("done\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := git(t.Context(), dir, "add", "committed.txt"); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := git(t.Context(), dir, "commit", "-m", "worker committed work"); err != nil {
-				t.Fatal(err)
-			}
-		},
+		before:   commitWork,
 	}
 	e := upWith(t, t.TempDir(), providers)
 	wishID, _ := e.wish(t, gitRepo(t))
@@ -237,10 +233,8 @@ func TestAgyStreamErrorRetriedThenFailedWithUncommittedChanges(t *testing.T) {
 	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = hookProvider{
 		Provider: Antigravity{Command: os.Args[0]},
 		env:      env,
-		before: func(dir string) {
-			if err := os.WriteFile(filepath.Join(dir, "uncommitted.txt"), []byte("dirty\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
+		before: func(dir string) error {
+			return os.WriteFile(filepath.Join(dir, "uncommitted.txt"), []byte("dirty\n"), 0o644)
 		},
 	}
 	e := upWith(t, t.TempDir(), providers)
