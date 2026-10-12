@@ -23,7 +23,6 @@ import (
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
-	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/link"
 )
 
@@ -301,41 +300,6 @@ func (s *Service) SetShortcut(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&uiv1.UiServiceSetShortcutResponse{Shortcut: shortcut}), nil
-}
-
-// WriteAtomic writes a temporary file next to path, readable by the owner only, then renames it over path: a
-// reader sees the old content or the new one, never a part of it. The rename tries again a moment on Windows,
-// where an antivirus scanning the file refuses it.
-func WriteAtomic(path string, data []byte) error {
-	return writeAtomic(path, data, fsx.OS())
-}
-
-func writeAtomic(path string, data []byte, r fsx.Renamer) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name()) // Fails harmlessly once renamed.
-	if err := tmp.Chmod(0o600); err != nil && runtime.GOOS != "windows" {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return r.Rename(tmp.Name(), path)
 }
 
 func (s *Service) ChooseDirectory(
