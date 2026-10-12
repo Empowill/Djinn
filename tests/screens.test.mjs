@@ -54,6 +54,7 @@ export {
   azimaGroups,
   azimaRank,
   draftAzimas,
+  finishedTasks,
   flightPlan,
   mergeNest,
   movingTasks,
@@ -2830,11 +2831,12 @@ test("the flight plan merges the active wishes: their questions, the blocking on
     html,
     /class="wish-origin" title="Find the oil"><b>2<\/b>Find the oil/,
   );
-  // What waits; the tasks and the decisions of both wishes in their own tabs.
+  // What waits; the tasks and the decisions of both wishes in their own tabs: the done task part of no azima counts
+  // with them, as in its wish's (W507).
   assert.match(html, /W2 waits for your answer to Q01 before it may edit\./);
   assert.match(
     html,
-    /id="view-tab-tasks"[^>]*>Tasks<span class="count">2<\/span>/,
+    /id="view-tab-tasks"[^>]*>Tasks<span class="count">3<\/span>/,
   );
   assert.doesNotMatch(html, /Taste the oils/);
   assert.match(
@@ -4628,6 +4630,156 @@ test("a line of the attention bar takes you to its target in another tab, a fold
     );
   assert.doesNotMatch(log(""), /id="decision-d35"/);
   assert.match(log("d35"), /id="decision-d35"/);
+});
+
+// W507: the lead made a wish with no project and one research task; its worker ended done while its permissions
+// refused 6 calls. The window showed no task, read the wish's rank as 3 questions, and proposed the grant.
+test("regression W507: a wish without a project shows its task done with problems, its rank as a rank, and no grant", async () => {
+  const wishId = "01a1317d-4d8c-7de3-b351-e54f2a70840f";
+  // The lamp proposes no grant while a task is done with problems (internal/plan.Ready).
+  const wispr = wish(
+    wishId,
+    "Install Wispr Flow on Linux",
+    s.WishState.ACTIVE,
+    3,
+  );
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const research = {
+    id: "01a1317d-4e22-78bc-9bfa-daef6104ed3a",
+    wishId,
+    code: "W1",
+    title: "Find a safe, real way to run Wispr Flow on this Linux machine",
+    status: s.TaskStatus.DONE,
+    createTime: at(1),
+    endTime: at(30),
+    refused: { count: 6, names: ["Read", "Glob"] },
+  };
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, {
+      list: () => ({ wishes: [wispr] }),
+      watch: () => new ReadableStream(),
+    });
+    service(s.ProjectService, { list: () => ({ projects: [] }) });
+    service(s.TaskService, {
+      list: () => ({ tasks: [research], total: 1 }),
+    });
+    service(s.QuestionService, {
+      list: () => ({ questions: [], total: 0 }),
+    });
+    service(s.BlockService, { list: () => ({ blocks: [], total: 0 }) });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const close = djinn.store.open(wishId);
+  await djinn.store.changed(wishId, [s.Change.WISH, s.Change.TASK]);
+  close();
+  const html = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: wispr, onToast() {} })),
+  );
+  assert.match(html, /<span class="eyebrow">No project<\/span>/);
+  // (b) The rank reads as a rank, and nothing counts questions: there are none.
+  assert.match(html, /<span>Active · rank 3<\/span>/);
+  assert.doesNotMatch(html, /questions? wait|to decide/);
+  // (c) No grant, and the task done with problems is what waits for you, named, in the bar and in the action center.
+  assert.doesNotMatch(html, /My wish is granted|id="grant-/);
+  assert.match(html, /1 thing waits for you/);
+  assert.match(
+    html,
+    /<b class="attention-code">W1<\/b>.*done with problems: its permissions refused 6 calls/,
+  );
+  assert.match(
+    html,
+    /id="waiting-01a1317d-4e22[^"]*"><span class="status-badge tone-interrupted"[^>]*>.*?<span>Done with problems<\/span><\/span><span><button type="button" class="text-button agent-code task-link">W1<\/button> Find a safe, real way to run Wispr Flow on this Linux machine · done with problems: its permissions refused 6 calls \(Read, Glob\), so it may not have done its job\./,
+  );
+  // (a) The Tasks tab counts it.
+  assert.match(
+    html,
+    /id="view-tab-tasks" aria-selected="false" class="">Tasks<span class="count">1<\/span>/,
+  );
+
+  // (a) In the Tasks tab, a task part of no azima shows: done with problems, it waits in sight, amber, with Mark
+  // done; a clean done one folds under Finished.
+  const clean = {
+    ...research,
+    id: "t2",
+    code: "W2",
+    title: "Read the vendor's notes",
+    refused: undefined,
+  };
+  const tasks = [research, clean];
+  const card = (task) =>
+    h(s.WishTask, {
+      key: task.id,
+      task,
+      onStop() {},
+      async onSend() {},
+      async onDone() {},
+    });
+  const tab = s.renderToStaticMarkup(
+    h(s.TaskSections, {
+      moving: s.movingTasks(tasks),
+      finished: s.finishedTasks(tasks),
+      render: card,
+    }),
+  );
+  assert.match(tab, /Moving or waiting<span class="count">1<\/span>/);
+  assert.match(
+    tab,
+    /class="wish-task tone-interrupted[^"]*".*<span>Done with problems<\/span>.*<span class="agent-code">W1</,
+  );
+  assert.match(tab, /aria-label="Mark done"/);
+  assert.ok(tab.indexOf("Done with problems") < tab.indexOf("tasks-finished"));
+  assert.match(
+    tab,
+    /<section class="wish-section tasks-finished" aria-label="Finished"><div class="section-title"><h2>Finished<span class="count">1<\/span><\/h2><\/div><button type="button" class="fold-line" aria-expanded="false">.*Show 1 finished<\/button><\/section>/,
+  );
+  // A link brings it into sight: unfolded, a clean Done.
+  const shown = s.renderToStaticMarkup(
+    h(s.TaskSections, {
+      moving: s.movingTasks(tasks),
+      finished: s.finishedTasks(tasks),
+      showFinished: true,
+      render: card,
+    }),
+  );
+  assert.match(
+    shown,
+    /tasks-finished.*class="wish-task tone-done[^"]*".*<span>Done<\/span>.*<span class="agent-code">W2</,
+  );
+  // Marked done since, it is seen: a clean done, settled with the finished, and nothing waits.
+  const seen = {
+    ...research,
+    closed: { actor: s.Closer.DEVELOPER, createTime: at(40), note: "" },
+  };
+  assert.deepEqual(s.movingTasks([seen]), []);
+  assert.deepEqual(
+    s.finishedTasks([seen]).map((x) => x.code),
+    ["W1"],
+  );
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(card(seen)),
+    /Done with problems|aria-label="Mark done"/,
+  );
+
+  // (b) The side panel shows the rank as #3, beside no pill.
+  const side = s.renderToStaticMarkup(
+    h(s.WishSidebar, {
+      wishes: [wispr],
+      projects: [],
+      counts: { [wishId]: { questions: 0, running: 0, watching: 0 } },
+      selectedWishId: wishId,
+      selectedProjectId: "",
+      collapsed: false,
+      onSelectWish() {},
+      onSelectProject() {},
+      onMove() {},
+      onNewProject() {},
+    }),
+  );
+  assert.match(
+    side,
+    /<small class="wish-rank"><svg[^>]*>.*?<\/svg>#3<\/small>/,
+  );
+  assert.doesNotMatch(side, /count-pill/);
 });
 
 test("an open question that can wait stays visible in WishView action center and attention bar, never folded", async () => {

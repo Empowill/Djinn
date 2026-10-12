@@ -230,11 +230,14 @@ export function Fold({
   );
 }
 
-// TaskSections lays out the Tasks tab: the tasks that move or wait, then the azimas in a single column with the work
-// part of them, drafts, and the done ones folded at the end. Without azimas or drafts, their sections are hidden.
+// TaskSections lays out the Tasks tab: the tasks that move or wait, the finished work part of no azima folded, then
+// the azimas in a single column with the work part of them, drafts, and the done ones folded at the end. Without
+// finished work, azimas or drafts, their sections are hidden.
 export function TaskSections<T, A = never, D = never>({
   moving,
   render,
+  finished = [],
+  showFinished = false,
   azimas = [],
   doneAzimas = [],
   renderAzima,
@@ -247,6 +250,11 @@ export function TaskSections<T, A = never, D = never>({
 }: {
   moving: readonly T[];
   render: (item: T) => ReactNode;
+  // The work part of no azima that is finished, the latest ended first, behind its Fold: a task the lead made alone
+  // (W507) shows here once done.
+  finished?: readonly T[];
+  // The finished work shows: a link brings one of them into sight.
+  showFinished?: boolean;
   // The azimas not done yet, then the done ones, behind their Fold.
   azimas?: readonly A[];
   doneAzimas?: readonly A[];
@@ -283,6 +291,26 @@ export function TaskSections<T, A = never, D = never>({
           <div className="card-grid task-grid">{moving.map(render)}</div>
         )}
       </section>
+      {finished.length > 0 && (
+        <section
+          className="wish-section tasks-finished"
+          aria-label={t("tasks.finished")}
+        >
+          <div className="section-title">
+            <h2>
+              {t("tasks.finished")}
+              <span className="count">{finished.length}</span>
+            </h2>
+          </div>
+          <Fold
+            id={`finished:${fold}`}
+            count={finished.length}
+            open={showFinished}
+          >
+            <div className="card-grid task-grid">{finished.map(render)}</div>
+          </Fold>
+        </section>
+      )}
       {azimas.length + doneAzimas.length > 0 && renderAzima && (
         <section
           className="wish-section tasks-azimas"

@@ -47,6 +47,7 @@ import { useOptionalData, useTaskEvents, useTaskPrompt } from "./data/djinn";
 import { isMerge } from "./data/flight";
 import {
   cancelledText,
+  doneWithProblems,
   gitReason,
   taskActivity,
   taskFinished,
@@ -283,8 +284,7 @@ export const WishTask = memo(function WishTask({
   const time = taskTime(task, now);
   const activity = taskActivity(task, now);
   const work = taskWork(task, codes);
-  const hasActions =
-    holdable || stoppable || (!!onDone && closable(task.status));
+  const hasActions = holdable || stoppable || (!!onDone && closable(task));
   const machineWait = task.status === TaskStatus.PENDING && task.machineWait;
   return (
     <article
@@ -376,7 +376,7 @@ export const WishTask = memo(function WishTask({
                 <CircleStop size={14} />
               </button>
             )}
-            {onDone && closable(task.status) && (
+            {onDone && closable(task) && (
               <button
                 className="icon-button"
                 onClick={() => setClosing(!closing)}
@@ -395,7 +395,7 @@ export const WishTask = memo(function WishTask({
           <DecisionLink decision={decision} onOpen={() => onDecision(task)} />
         </p>
       )}
-      {closing && onDone && closable(task.status) && (
+      {closing && onDone && closable(task) && (
         <DoneBox
           onDone={(note) => onDone(note, task)}
           onCancel={() => setClosing(false)}
@@ -644,13 +644,16 @@ function TaskLink({
   );
 }
 
-// closable tells a task a person may mark done by hand: one no worker runs now, not done or cancelled already.
-export function closable(status: TaskStatus): boolean {
+// closable tells a task a person may mark done by hand: one no worker runs now, not done or cancelled already; or
+// one done with problems, which marked done is closed as seen.
+export function closable(task: Task): boolean {
+  const status = task.status;
   return (
-    status !== TaskStatus.RUNNING &&
-    status !== TaskStatus.PAUSED &&
-    status !== TaskStatus.DONE &&
-    status !== TaskStatus.CANCELLED
+    doneWithProblems(task) ||
+    (status !== TaskStatus.RUNNING &&
+      status !== TaskStatus.PAUSED &&
+      status !== TaskStatus.DONE &&
+      status !== TaskStatus.CANCELLED)
   );
 }
 

@@ -210,3 +210,110 @@ test("a cancelled task says who cancelled it and why, on hover", async ({
     } catch {}
   }
 });
+
+// W507: the lead made a wish with no project and one research task; its worker ended done while its permissions
+// refused 6 calls. The window showed no task, read the wish's rank as 3 questions, and proposed the grant.
+test("a task done with problems, in a wish with no project, waits in sight until marked done; then the grant", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const wishId = randomUUID();
+  const title = `Install Wispr Flow ${wishId.slice(0, 8)}`;
+  const file = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), "djinn-e2e-problems-")),
+    "wish.json",
+  );
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      version: 1,
+      create_time: "2026-10-12T19:02:00Z",
+      wish: { id: wishId, title, create_time: "2026-10-12T19:00:57Z" },
+      tasks: [
+        {
+          id: randomUUID(),
+          wish_id: wishId,
+          code: "W1",
+          title: "Find a safe way to run Wispr Flow on Linux",
+          status: "TASK_STATUS_DONE",
+          create_time: "2026-10-12T19:00:58Z",
+          end_time: "2026-10-12T19:01:29Z",
+          refused: { count: 6, names: ["Read", "Glob"] },
+        },
+      ],
+    }),
+  );
+  djinn("wish", "import", file);
+  try {
+    await page.goto(process.env.DJINN_URL!);
+    await page.locator(".wish-nav").filter({ hasText: title }).click();
+    await expect(page.locator(".review-head .eyebrow")).toHaveText(
+      "No project",
+    );
+    // No question, so no count of them; no grant: the task is what waits for you, named.
+    await expect(page.locator(".review-pills")).not.toContainText("to decide");
+    await expect(
+      page.getByRole("button", { name: "My wish is granted" }),
+    ).toHaveCount(0);
+    await expect(page.locator(".attention-bar")).toContainText(
+      "W1done with problems: its permissions refused 6 calls",
+    );
+    const line = page.locator(".action-center .plan-line");
+    await expect(line).toContainText(
+      "Find a safe way to run Wispr Flow on Linux · done with problems: its permissions refused 6 calls (Read, Glob)",
+    );
+    await expect(line.locator(".status-badge")).toHaveText(
+      "Done with problems",
+    );
+
+    // Its code opens its card in the Tasks tab: in sight with what moves or waits, amber.
+    await line.getByRole("button", { name: "W1" }).click();
+    const tasksTab = page.getByRole("tab", { name: /^Tasks/ });
+    await expect(tasksTab).toHaveAttribute("aria-selected", "true");
+    await expect(tasksTab).toHaveText("Tasks1");
+    const moving = page.locator(".tasks-moving");
+    await expect(moving.locator("h2")).toHaveText("Moving or waiting1");
+    const card = moving.locator(".wish-task");
+    await expect(card).toHaveClass(/tone-interrupted/);
+    await expect(card.locator(".status-badge").first()).toHaveText(
+      "Done with problems",
+    );
+
+    // Marked done, it is seen: a clean done, with the finished work part of no azima, unfolded since the link
+    // brought it into sight.
+    await card.getByRole("button", { name: "Mark done" }).click();
+    await card
+      .getByLabel("Why, in a few words (optional)")
+      .fill("read it: no install needed");
+    await card.getByRole("button", { name: "Mark done" }).last().click();
+    await expect(moving.locator("h2")).toHaveText("Moving or waiting0");
+    const finished = page.locator(".tasks-finished");
+    await expect(finished.locator("h2")).toHaveText("Finished1");
+    await expect(finished.locator(".fold-line")).toHaveText(
+      "Hide the finished ones",
+    );
+    await expect(
+      finished.locator(".wish-task .status-badge").first(),
+    ).toHaveText("Done");
+    await expect(finished.locator(".wish-task-closed")).toContainText(
+      /Closed by you, .+: read it: no install needed/,
+    );
+    const listed = JSON.parse(
+      djinn("task", "list", "--wish-id", wishId, "--json"),
+    ).tasks as { code: string; status: string; closed?: { actor: string } }[];
+    expect(listed[0]?.status).toBe("TASK_STATUS_DONE");
+    expect(listed[0]?.closed?.actor).toBe("CLOSER_DEVELOPER");
+
+    // Nothing is left to look at: Djinn proposes the grant.
+    await page.getByRole("tab", { name: /^Wish/ }).click();
+    await expect(
+      page.getByRole("button", { name: "My wish is granted" }),
+    ).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    try {
+      djinn("wish", "pause", wishId);
+    } catch {}
+  }
+});

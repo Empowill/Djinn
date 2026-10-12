@@ -108,7 +108,8 @@ func PrincipalWish(ctx context.Context, r store.Reader) (*planv1.Wish, error) {
 }
 
 // Ready tells whether Djinn proposes to grant a wish that has these tasks and questions: it has tasks, every one
-// finished (done, stopped by the user, or cut short for good), and no question is open. A draft azima is not
+// finished (done, stopped by the user, or cut short for good), none done with problems nobody looked at
+// (DoneWithProblems), and no question is open. A draft azima is not
 // counted in the wish's progress: it waits to be opened. Djinn only proposes: the user grants.
 func Ready(tasks []*planv1.Task, questions []*planv1.Question) bool {
 	hasNonDraft := false
@@ -118,7 +119,7 @@ func Ready(tasks []*planv1.Task, questions []*planv1.Question) bool {
 		}
 		hasNonDraft = true
 		// Cut short for good counts as finished: see Finished.
-		if !Finished(t) {
+		if !Finished(t) || DoneWithProblems(t) {
 			return false
 		}
 	}
