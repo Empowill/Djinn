@@ -192,6 +192,69 @@ func TestShow(t *testing.T) {
 	}
 }
 
+// W501: a spec opened a wish, then deleted it; a reload within the minute got that show again, and the window left the
+// wish it showed for the flight plan. A show whose wish is gone is not replayed; one of a wish still here is.
+func TestReplayForgetsADeletedWish(t *testing.T) {
+	s, _ := newService(t)
+	deleted := map[string]bool{"gone": true}
+	s.Known = func(_ context.Context, id string) bool { return !deleted[id] }
+	mux := http.NewServeMux()
+	mux.Handle(uiv1connect.NewUiServiceHandler(s))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := uiv1connect.NewUiServiceClient(srv.Client(), srv.URL)
+	ctx := t.Context()
+
+	// replayed is the show a window that starts watching now gets first, from Watch and from WatchShow.
+	replayed := func() (fromWatch, fromWatchShow string) {
+		t.Helper()
+		watch, err := client.Watch(ctx, connect.NewRequest(&uiv1.UiServiceWatchRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer watch.Close()
+		if !watch.Receive() {
+			t.Fatalf("Watch ended: %v", watch.Err())
+		}
+		fromWatch = watch.Msg().GetShow().GetWishId()
+		show, err := client.WatchShow(ctx, connect.NewRequest(&uiv1.UiServiceWatchShowRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer show.Close()
+		got := make(chan string, 1)
+		go func() {
+			if show.Receive() {
+				got <- show.Msg().GetWishId()
+			}
+		}()
+		select {
+		case fromWatchShow = <-got:
+		case <-time.After(200 * time.Millisecond):
+		}
+		return fromWatch, fromWatchShow
+	}
+
+	s.Present("gone", "")
+	if w, ws := replayed(); w != "" || ws != "" {
+		t.Fatalf("a deleted wish's show was replayed: Watch %q, WatchShow %q", w, ws)
+	}
+	s.Present("here", "lead")
+	if w, ws := replayed(); w != "here" || ws != "here" {
+		t.Fatalf("replayed Watch %q, WatchShow %q, want the wish still here", w, ws)
+	}
+	// A show of no wish (a terminal alone) is replayed whatever Known says.
+	s.Present("", "lead")
+	watch, err := client.Watch(ctx, connect.NewRequest(&uiv1.UiServiceWatchRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer watch.Close()
+	if !watch.Receive() || watch.Msg().GetShow().GetTerminal() != "lead" {
+		t.Fatalf("a terminal's show was not replayed: %v, %v", watch.Msg(), watch.Err())
+	}
+}
+
 func TestOpenExternal(t *testing.T) {
 	ctx := context.Background()
 	s, opened := newService(t)
