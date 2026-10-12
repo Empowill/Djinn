@@ -36,7 +36,7 @@ import {
   type Shortcut,
   type UiServiceGetEnvironmentResponse,
 } from "../gen/ts/ui/v1/ui_pb";
-import { AgentSetupPanel, useAgents } from "./agent-setup";
+import { AgentSetupPanel, needsSetup, useAgents } from "./agent-setup";
 import { message } from "./data/client";
 import { useClients } from "./data/djinn";
 import { MAX_ACTIVE, span, syncDescription, when } from "./data/format";
@@ -57,7 +57,8 @@ import { MAX_PROMPT_CHARACTERS, promptTooLong } from "./wish-composer-markdown";
 import { platformShortcut, TooltipButton } from "./tooltip";
 
 // MakeWish sends the complete request. Naming the wish belongs to the server and its lead. With three wishes active,
-// it is made paused, as the lamp would refuse a fourth.
+// it is made paused, as the lamp would refuse a fourth. The rights chosen are given once it is made (WishService.Allow,
+// per project); one that fails leaves the wish made, and says so.
 export function MakeWish({
   projects,
   active,
@@ -69,7 +70,7 @@ export function MakeWish({
 }: {
   projects: Project[];
   active: number;
-  onMade: (wish: Wish) => void;
+  onMade: (wish: Wish, warning?: string) => void;
   onClose: () => void;
   onBusyChange?: (busy: boolean) => void;
   backActionRef?: { current: (() => void) | null };
@@ -91,10 +92,12 @@ export function MakeWish({
   const page = useRef<HTMLElement>(null);
   const promptId = useId();
   const searchId = useId();
-  // Whether the chosen agent can run the wish; the setup of the agents shows in place of the form, which keeps what
-  // was typed.
+  // Whether an agent can run the wish: with none ready, the setup of the agents shows in place of the form, which
+  // keeps what was typed.
   const agents = useAgents();
   const [setup, setSetup] = useState(false);
+  const noAgent =
+    !!agents.env?.providers.length && agents.env.providers.every(needsSetup);
   const previousFocus = useRef<HTMLElement | null>(
     document.activeElement as HTMLElement | null,
   );
@@ -156,15 +159,26 @@ export function MakeWish({
     onBusyChange?.(true);
     setError("");
     try {
-      const res = await clients.wishes.make(
-        {
-          prompt: prompt.trim(),
-          projectIds: selected,
-          paused: full,
-        },
-        { headers: { "Accept-Language": language } },
-      );
-      if (res.wish) onMade(res.wish);
+      const res = await clients.wishes.make({
+        prompt: prompt.trim(),
+        projectIds: selected,
+        paused: full,
+      });
+      const made = res.wish;
+      if (!made) return;
+      let warning: string | undefined;
+      if (allowance !== Allowance.NONE)
+        for (const projectId of selected)
+          try {
+            await clients.wishes.allow({
+              wishId: made.id,
+              projectId,
+              mode: allowance,
+            });
+          } catch (err) {
+            warning = message(err);
+          }
+      onMade(made, warning);
     } catch (err) {
       setError(message(err));
     } finally {
@@ -349,6 +363,19 @@ export function MakeWish({
                         ))}
                       </div>
                     </WishDropdown>
+                  )}
+                  {noAgent && (
+                    <div className="agent-warning" role="status">
+                      <span>{t("make.no_agent")}</span>
+                      <button
+                        type="button"
+                        className="button secondary small"
+                        disabled={busy}
+                        onClick={() => setSetup(true)}
+                      >
+                        {t("agents.set_up")}
+                      </button>
+                    </div>
                   )}
                   {agents.error && (
                     <span className="wish-creation-inline-status" role="alert">

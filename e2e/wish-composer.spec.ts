@@ -1,12 +1,16 @@
 // Creation UI owns this spec. Requests are intercepted so these checks never launch a model, write a wish,
-// or depend on automatic title generation. The page itself is served by the isolated Djinn test server.
+// or depend on automatic title generation. The page itself is served by the isolated Djinn test server. The smoke
+// behind the page (X3) is not mounted yet: its cases come with it.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   Allowance,
   ProjectServiceListResponseSchema,
+  WishServiceAllowRequestSchema,
+  WishServiceAllowResponseSchema,
   WishServiceListResponseSchema,
   WishServiceMakeRequestSchema,
+  WishServiceMakeResponseSchema,
   WishState,
 } from "../gen/ts/plan/v1/plan_pb";
 import {
@@ -38,14 +42,13 @@ async function openComposer(
   active = 0,
   projects = true,
   locale = "en",
+  agentReady = true,
 ) {
   if (locale === "fr") {
     await page.emulateMedia({ reducedMotion: "reduce" });
   }
   await page.addInitScript((locale) => {
-    localStorage.setItem("djinn.agents.offered", "1");
     localStorage.setItem("djinn.language", locale);
-    localStorage.removeItem("djinn.provider");
   }, locale);
   await page.route("**/ui.v1.UiService/GetEnvironment", (route) =>
     route.fulfill({
@@ -55,8 +58,14 @@ async function openComposer(
           UiServiceGetEnvironmentResponseSchema,
           create(UiServiceGetEnvironmentResponseSchema, {
             providers: [
-              { id: "claude", name: "Claude Code", state: ProviderState.READY },
-              { id: "codex", name: "Codex", state: ProviderState.SIGNED_OUT },
+              {
+                id: "claude",
+                name: "Claude Code",
+                state: agentReady
+                  ? ProviderState.READY
+                  : ProviderState.SIGNED_OUT,
+              },
+              { id: "codex", name: "Codex", state: ProviderState.MISSING },
             ],
           }),
         ),
@@ -104,6 +113,10 @@ async function openComposer(
   await expect(
     page.locator(".app-statusbar").getByText(liveLabel),
   ).toBeVisible();
+  // With no agent ready the window opens the setup of the agents by itself (P6): closed, the creation page offers it.
+  if (!agentReady) {
+    await page.getByRole("button", { name: "Close", exact: true }).click();
+  }
   await page.locator(".sidebar .new-mission").click();
   const region = page.getByRole("region", {
     name: titles[locale as keyof typeof titles],
@@ -117,7 +130,7 @@ async function openComposer(
   return { region, editor };
 }
 
-test("focus, animated prompt, smoke and minimal tags preserve the request payload", async ({
+test("focus, animated prompt and minimal tags preserve the request payload", async ({
   page,
 }) => {
   const { region, editor } = await openComposer(page);
@@ -125,10 +138,7 @@ test("focus, animated prompt, smoke and minimal tags preserve the request payloa
     /.+/,
   );
   await expect(region.locator(".wish-composer-tools")).toHaveCount(0);
-  await expect(region.locator(".wish-smoke-canvas")).toHaveAttribute(
-    "data-zoom",
-    "10",
-  );
+  await expect(region.locator(".agent-warning")).toHaveCount(0);
 
   const requests: ReturnType<
     typeof fromBinary<typeof WishServiceMakeRequestSchema>
@@ -154,7 +164,7 @@ test("focus, animated prompt, smoke and minimal tags preserve the request payloa
   ).toHaveAccessibleDescription("/workspace/lamp");
   await chooseDropdown(
     region,
-    "Permissions in the selected projects",
+    "Rights in the chosen projects",
     "Edit the files",
   );
   await region
@@ -167,13 +177,69 @@ test("focus, animated prompt, smoke and minimal tags preserve the request payloa
     "Build a thoughtful export.\nKeep every detail.",
   );
   expect(requests[0].projectIds).toEqual([alpha]);
-  expect(requests[0].allowance).toBe(Allowance.EDIT);
   await expect(editor).toHaveValue(
     "Build a thoughtful export.\nKeep every detail.",
   );
 });
 
-test("French empty creation keeps the title, caret and smoke visible", async ({
+test("the rights chosen are given to each chosen project once the wish is made", async ({
+  page,
+}) => {
+  const { region, editor } = await openComposer(page);
+  const made = "44444444-4444-4444-8444-444444444444";
+  const allowed: ReturnType<
+    typeof fromBinary<typeof WishServiceAllowRequestSchema>
+  >[] = [];
+  await page.route("**/plan.v1.WishService/Make", (route) =>
+    route.fulfill({
+      contentType: "application/proto",
+      body: Buffer.from(
+        toBinary(
+          WishServiceMakeResponseSchema,
+          create(WishServiceMakeResponseSchema, {
+            wish: { id: made, title: "New wish", state: WishState.ACTIVE },
+          }),
+        ),
+      ),
+    }),
+  );
+  await page.route("**/plan.v1.WishService/Allow", async (route) => {
+    allowed.push(
+      fromBinary(
+        WishServiceAllowRequestSchema,
+        route.request().postDataBuffer()!,
+      ),
+    );
+    await route.fulfill({
+      contentType: "application/proto",
+      body: Buffer.from(
+        toBinary(
+          WishServiceAllowResponseSchema,
+          create(WishServiceAllowResponseSchema, {}),
+        ),
+      ),
+    });
+  });
+  await editor.fill("Ship the export with its rights.");
+  await openProjects(region);
+  await region.getByRole("checkbox", { name: "Lamp", exact: true }).check();
+  await region.getByRole("checkbox", { name: "Smoke", exact: true }).check();
+  await chooseDropdown(
+    region,
+    "Rights in the chosen projects",
+    "Edit the files",
+  );
+  await editor.press("ControlOrMeta+Enter");
+  await expect(region).toHaveCount(0);
+  expect(allowed.map((a) => [a.wishId, a.projectId, a.mode]).sort()).toEqual(
+    [
+      [made, alpha, Allowance.EDIT],
+      [made, beta, Allowance.EDIT],
+    ].sort(),
+  );
+});
+
+test("French empty creation keeps the title and caret visible", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -222,26 +288,6 @@ test("French empty creation keeps the title, caret and smoke visible", async ({
   expect(requestBox!.width / regionBox!.width).toBeGreaterThan(0.38);
   expect(requestBox!.width / regionBox!.width).toBeLessThan(0.42);
   expect(submitBox!.x).toBeLessThan(footerBox!.x + footerBox!.width / 3);
-  const smoke = region.locator(".wish-smoke-canvas");
-  await expect(smoke).toHaveAttribute("data-zoom", "10");
-  await expect(smoke).toHaveAttribute("data-ready", "true", {
-    timeout: 60_000,
-  });
-  await expect(smoke).toHaveAttribute("data-visible", "true", {
-    timeout: 30_000,
-  });
-  const asciiLayers = region.locator(".wish-smoke-ascii pre");
-  await expect(asciiLayers).toHaveCount(8);
-  const hasAscii = async () =>
-    (await asciiLayers.allTextContents()).some((text) => /\S/.test(text));
-  await expect.poll(hasAscii).toBe(true);
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.waitForTimeout(250);
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(asciiLayers).toHaveCount(8);
-  await expect.poll(hasAscii, { timeout: 10_000 }).toBe(true);
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await expect.poll(hasAscii, { timeout: 10_000 }).toBe(true);
   await page.screenshot({ path: "test-results/e2e/wish-creation-fr.png" });
 });
 
@@ -257,17 +303,19 @@ test("native textarea keeps pasted markup literal", async ({ page }) => {
 test("agent setup keeps the plain draft, project and allowance choices and restores focus", async ({
   page,
 }) => {
-  const { region, editor } = await openComposer(page);
+  const { region, editor } = await openComposer(page, 0, true, "en", false);
   await editor.fill("Keep this draft through setup\nwith its second line.");
   await openProjects(region);
   await region.getByRole("checkbox", { name: "Lamp", exact: true }).check();
   await chooseDropdown(
     region,
-    "Permissions in the selected projects",
+    "Rights in the chosen projects",
     "Edit, in auto mode",
   );
-  await chooseDropdown(region, "Agent", "Codex");
-  await region.getByRole("button", { name: "Set it up" }).click();
+  await expect(region.locator(".agent-warning")).toContainText(
+    "No agent is ready to work on this wish yet.",
+  );
+  await region.getByRole("button", { name: "Set one up" }).click();
   await expect(
     page.getByRole("heading", { name: "Set up the agents" }),
   ).toBeVisible();
@@ -284,11 +332,8 @@ test("agent setup keeps the plain draft, project and allowance choices and resto
     region.getByRole("checkbox", { name: "Lamp", exact: true }),
   ).toBeChecked();
   await expect(
-    region.getByRole("button", { name: "Agent", exact: true }),
-  ).toContainText("Codex");
-  await expect(
     region.getByRole("button", {
-      name: "Permissions in the selected projects",
+      name: "Rights in the chosen projects",
       exact: true,
     }),
   ).toContainText("Edit, in auto mode");
@@ -348,7 +393,6 @@ test("three active wishes submit paused, without project permissions, and busy p
       route.request().postDataBuffer()!,
     );
     expect(request.paused).toBe(true);
-    expect(request.allowance).toBe(Allowance.NONE);
     expect(request.projectIds).toEqual([]);
     await waiting;
     await route.fulfill({

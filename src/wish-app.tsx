@@ -237,21 +237,6 @@ export function WishApp() {
       >
         <TooltipButton
           type="button"
-          className="wish-creation-back app-toolbar-back"
-          label={makeBackInSetup ? t("agents.back") : t("make.back")}
-          tooltip={makeBackInSetup ? t("agents.back") : t("make.back")}
-          shortcut={
-            modal === "make" && !making ? t("app.shortcut_escape") : undefined
-          }
-          aria-keyshortcuts={modal === "make" && !making ? "Escape" : undefined}
-          disabled={modal !== "make" || making}
-          onClick={() => makeBackAction.current?.()}
-          data-setup-back={makeBackInSetup || undefined}
-        >
-          <ArrowLeft size={16} aria-hidden="true" />
-        </TooltipButton>
-        <TooltipButton
-          type="button"
           className="sidebar-toggle app-toolbar-toggle"
           onClick={toggleSidebar}
           disabled={making}
@@ -264,6 +249,22 @@ export function WishApp() {
         >
           <PanelLeft size={16} aria-hidden="true" />
         </TooltipButton>
+        {/* Back shows on the page that needs it, after the toggle, which never moves. */}
+        {modal === "make" && (
+          <TooltipButton
+            type="button"
+            className="wish-creation-back app-toolbar-back"
+            label={makeBackInSetup ? t("agents.back") : t("make.back")}
+            tooltip={makeBackInSetup ? t("agents.back") : t("make.back")}
+            shortcut={making ? undefined : t("app.shortcut_escape")}
+            aria-keyshortcuts={making ? undefined : "Escape"}
+            disabled={making}
+            onClick={() => makeBackAction.current?.()}
+            data-setup-back={makeBackInSetup || undefined}
+          >
+            <ArrowLeft size={16} aria-hidden="true" />
+          </TooltipButton>
+        )}
       </div>
       <aside
         id="djinn-sidebar"
@@ -354,10 +355,11 @@ export function WishApp() {
             backActionRef={makeBackAction}
             onBackSetupChange={setMakeBackInSetup}
             onClose={closeMake}
-            onMade={(made) => {
+            onMade={(made, warning) => {
               setModal(null);
               setSelected(made.id);
               void data.changed(made.id, [Change.WISH]);
+              if (warning) setToast(warning);
             }}
           />
         ) : plan ? (

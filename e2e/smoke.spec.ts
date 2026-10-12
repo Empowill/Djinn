@@ -86,9 +86,9 @@ test("tooltips expose labels and real keyboard hints", async ({ page }) => {
   await expect(page.locator(".wish-app")).not.toHaveClass(/sidebar-collapsed/);
 });
 
-// The sidebar spans the whole height of the window, the lead's terminal sits under the main view only, and opening
-// the new-wish dialog moves nothing of the sidebar.
-test("sidebar geometry stays stable while the new-wish dialog opens", async ({
+// The sidebar spans the whole height of the window, the lead's terminal sits under the main view only, and the creation
+// page, which takes the terminal's place until Back, moves nothing of the sidebar.
+test("sidebar geometry stays stable while creation hides the terminal", async ({
   page,
 }) => {
   await page.goto(djinnURL());
@@ -139,12 +139,14 @@ test("sidebar geometry stays stable while the new-wish dialog opens", async ({
 
   const existing = await snapshot();
   await page.locator(".sidebar .new-mission").click();
-  const dialog = page.getByRole("dialog", { name: "Make a wish" });
-  await expect(dialog).toBeVisible();
+  const creation = page.locator(".wish-creation");
+  await expect(creation).toBeVisible();
+  await expect(terminal).toBeHidden();
   expectSameGeometry(existing, await snapshot());
 
-  await dialog.getByRole("button", { name: "Close the window" }).click();
-  await expect(dialog).toHaveCount(0);
+  await page.locator(".app-toolbar-back").click();
+  await expect(creation).toHaveCount(0);
+  await expect(terminal).toBeVisible();
   expectSameGeometry(existing, await snapshot());
 });
 
@@ -284,6 +286,21 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
     .locator("svg")
     .evaluate((svg) => svg.outerHTML);
   expect(await page.locator(".app-toolbar > button").count()).toBe(1);
+  // The creation page adds Back after the toggle, which stays where it is.
+  await page.locator(".sidebar .new-mission").click();
+  const back = page.locator(".app-toolbar-back");
+  await expect(back).toBeEnabled();
+  expect(await toggle.boundingBox()).toEqual(toggleBox);
+  expect(await back.boundingBox()).toMatchObject({
+    width: 20,
+    height: 20,
+    y: 6,
+  });
+  expect((await back.boundingBox())!.x).toBeGreaterThan(
+    toggleBox!.x + toggleBox!.width,
+  );
+  await back.click();
+  await expect(back).toHaveCount(0);
   await expect(page.locator(".sidebar-brand")).toHaveCSS(
     "--wails-draggable",
     "drag",

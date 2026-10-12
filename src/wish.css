@@ -430,18 +430,6 @@
 }
 
 /* Dialogs. */
-.wish-projects {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.wish-projects legend {
-  margin-bottom: var(--space-2);
-  color: var(--muted);
-}
 .wish-project-choice {
   display: flex;
   align-items: center;
