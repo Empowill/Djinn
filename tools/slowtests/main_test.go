@@ -73,6 +73,58 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+// TestCheckCutPackage (W530): a goroutine of a test that had ended failed it, a panic that ended the package's test
+// binary in the middle of the next test, to which the panic's output went; go test then printed one FAIL line for the
+// package, and nothing on why. The tests left running are named, and the package's raw output printed. A package that
+// failed to build is not: its build errors are printed already.
+func TestCheckCutPackage(t *testing.T) {
+	in := strings.Join([]string{
+		`{"Action":"run","Package":"p","Test":"TestTicks"}`,
+		`{"Action":"output","Package":"p","Test":"TestTicks","Output":"=== RUN   TestTicks\n"}`,
+		`{"Action":"output","Package":"p","Test":"TestTicks","Output":"--- PASS: TestTicks (0.40s)\n"}`,
+		`{"Action":"pass","Package":"p","Test":"TestTicks","Elapsed":0.4}`,
+		`{"Action":"run","Package":"p","Test":"TestNext"}`,
+		`{"Action":"output","Package":"p","Test":"TestNext","Output":"=== RUN   TestNext\n"}`,
+		`{"Action":"output","Package":"p","Test":"TestNext","Output":"panic: Log in goroutine after TestTicks has completed\n"}`,
+		`{"Action":"output","Package":"p","Output":"FAIL\tp\t9.245s\n"}`,
+		`{"Action":"fail","Package":"p","Elapsed":9.245}`,
+		`{"Action":"output","Package":"q","Output":"ok  \tq\t1s\n"}`,
+		`{"Action":"pass","Package":"q","Elapsed":1}`,
+	}, "\n")
+	var out strings.Builder
+	res, err := check(strings.NewReader(in), &out, 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	for _, want := range []string{
+		"FAIL\tp\t9.245s\nslowtests: p failed, yet none of its tests did",
+		"Tests that never ended: TestNext.\n",
+		"Its raw output:\n=== RUN   TestTicks\n--- PASS: TestTicks (0.40s)\n=== RUN   TestNext\npanic: Log in goroutine after TestTicks",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output lacks %q:\n%s", want, got)
+		}
+	}
+	if !res.failed || !strings.HasSuffix(got, "ok  \tq\t1s\n") {
+		t.Errorf("failed = %v, out:\n%s", res.failed, got)
+	}
+
+	in = strings.Join([]string{
+		`{"Action":"build-output","ImportPath":"p [p.test]","Output":"p_test.go:1: syntax error\n"}`,
+		`{"Action":"build-fail","ImportPath":"p [p.test]"}`,
+		`{"Action":"output","Package":"p","Output":"FAIL\tp [build failed]\n"}`,
+		`{"Action":"fail","Package":"p","Elapsed":0,"FailedBuild":"p [p.test]"}`,
+	}, "\n")
+	out.Reset()
+	if res, err = check(strings.NewReader(in), &out, 2*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if want := "p_test.go:1: syntax error\nFAIL\tp [build failed]\n"; !res.failed || out.String() != want {
+		t.Errorf("failed = %v, out = %q, want %q", res.failed, out.String(), want)
+	}
+}
+
 // TestAllowedSayWhy: a test may stay slow only with a reason.
 func TestAllowedSayWhy(t *testing.T) {
 	for name, why := range allowed {

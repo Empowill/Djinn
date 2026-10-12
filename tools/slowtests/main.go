@@ -1,6 +1,8 @@
 // Command slowtests reads `go test -json` on its input, prints what go test prints without -json (the output of the
 // tests that fail, the build errors, a line per package), and fails when a test fails or when a top-level test took
-// longer than -max: tests stay fast, and a slow one is caught the day it slows down.
+// longer than -max: tests stay fast, and a slow one is caught the day it slows down. A package that fails while none
+// of its tests did (its test binary ended in the middle: a panic in a goroutine after its test ended, an os.Exit, a
+// kill) gets its raw output printed, and the tests it was running named.
 //
 // Linux is the reference: there -max fails. Elsewhere a process costs ten times more (a test spawning git takes
 // 0.7 s on Linux and 7 s on the Windows runner, the same test), so a test over -max is reported and fails only
@@ -279,6 +281,8 @@ func checkClock(in io.Reader, out io.Writer, limit time.Duration, now func() tim
 	var res result
 	start := now()
 	held := map[string][]string{} // the output of each running test, printed only if it fails
+	raw := map[string][]string{}  // the output of each running package, printed if it fails without a failing test
+	testFailed := map[string]bool{}
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	for sc.Scan() {
@@ -293,6 +297,9 @@ func checkClock(in io.Reader, out io.Writer, limit time.Duration, now func() tim
 			continue
 		}
 		key := e.Package + " " + e.Test
+		if e.Action == "output" {
+			raw[e.Package] = append(raw[e.Package], e.Output)
+		}
 		switch {
 		case e.Action == "build-output":
 			fmt.Fprint(out, e.Output)
@@ -304,12 +311,25 @@ func checkClock(in io.Reader, out io.Writer, limit time.Duration, now func() tim
 			}
 			if e.Action == "fail" {
 				res.failed = true
+				if !testFailed[e.Package] && e.FailedBuild == "" {
+					printCut(out, e.Package, raw[e.Package], held)
+				}
+			}
+			if e.Action == "pass" || e.Action == "fail" || e.Action == "skip" {
+				for k := range held {
+					if strings.HasPrefix(k, e.Package+" ") {
+						delete(held, k)
+					}
+				}
+				delete(raw, e.Package)
+				delete(testFailed, e.Package)
 			}
 		case e.Action == "output":
 			held[key] = append(held[key], e.Output)
 		case e.Action == "pass" || e.Action == "fail" || e.Action == "skip":
 			if e.Action == "fail" {
 				res.failed = true
+				testFailed[e.Package] = true
 				fmt.Fprint(out, strings.Join(held[key], ""))
 			}
 			delete(held, key)
@@ -328,4 +348,23 @@ func checkClock(in io.Reader, out io.Writer, limit time.Duration, now func() tim
 	res.wallClock = now().Sub(start)
 	slices.SortFunc(res.slow, func(a, b slow) int { return int(b.elapsed - a.elapsed) })
 	return res, sc.Err()
+}
+
+// printCut writes what go test hides of a package that failed without a failing test: its test binary ended in the
+// middle of a test, whose output, the panic included, never comes with its end. It names the tests that never ended,
+// those held, and writes the package's raw output (W530: a Windows run said only "FAIL …/internal/plan").
+func printCut(out io.Writer, pkg string, raw []string, held map[string][]string) {
+	var running []string
+	for k := range held {
+		if name, ok := strings.CutPrefix(k, pkg+" "); ok {
+			running = append(running, name)
+		}
+	}
+	slices.Sort(running)
+	fmt.Fprintf(out, "slowtests: %s failed, yet none of its tests did: its test binary ended in the middle (a panic in a "+
+		"goroutine after its test ended, an os.Exit, a kill).\n", pkg)
+	if len(running) > 0 {
+		fmt.Fprintf(out, "Tests that never ended: %s.\n", strings.Join(running, ", "))
+	}
+	fmt.Fprintf(out, "Its raw output:\n%s", strings.Join(raw, ""))
 }
