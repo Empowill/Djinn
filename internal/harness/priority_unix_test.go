@@ -232,7 +232,7 @@ func TestWorkerChildPriorityInheritanceUnix(t *testing.T) {
 	}
 
 	// The worker prints its child's PID, then waits for it.
-	p, err := startProcess(t.TempDir(), "sh", []string{"-c", "sleep 10 & echo $!; wait"}, nil, nil, time.Second, true)
+	p, err := startProcess(t.TempDir(), "sh", []string{"-c", "sleep 10 & echo $!; wait"}, nil, nil, time.Second, true, nil)
 	if err != nil {
 		t.Fatalf("start the worker: %v", err)
 	}

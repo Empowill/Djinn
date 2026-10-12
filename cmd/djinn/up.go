@@ -213,6 +213,7 @@ func runUp(args []string) (restart bool, err error) {
 	workers.HeldGates(gates.Held, gates.Waiting)
 	workers.GatesOutside(gates.Outside)
 	gates.Freed(workers.Wake)
+	gates.Track(workers.TrackGate)
 	gates.ProjectResolver(func(taskID, dir string) string {
 		_, name, _ := machine.Project(ctx, db, taskID, dir)
 		return name

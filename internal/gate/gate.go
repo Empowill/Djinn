@@ -54,13 +54,14 @@ const DefaultTimeout = time.Hour
 
 // Gates grants the gates. Its zero value is not usable: New makes one.
 type Gates struct {
-	machine Machine       // nil: never under pressure, its memory unknown
-	costs   Costs         // nil: no command measured
-	tasks   Tasks         // nil: holders outside any task only
-	tick    time.Duration // how often a waiter looks at the machine again, and a holder's process is looked at
-	every   time.Duration // how often a holder's process is read (Measure)
-	read    Read          // nil: holders not measured
-	freed   func()        // called when a gate is given or taken back (Freed)
+	machine Machine                             // nil: never under pressure, its memory unknown
+	costs   Costs                               // nil: no command measured
+	tasks   Tasks                               // nil: holders outside any task only
+	tick    time.Duration                       // how often a waiter looks at the machine again, and a holder's process is looked at
+	every   time.Duration                       // how often a holder's process is read (Measure)
+	read    Read                                // nil: holders not measured
+	freed   func()                              // called when a gate is given or taken back (Freed)
+	track   func(pid int, taskID string) func() // told of a worker's command holding a gate (Track); nil: none
 
 	projectResolver func(taskID, dir string) string
 
@@ -103,6 +104,18 @@ func (g *Gates) Measure(every time.Duration, read Read) { g.every, g.read = ever
 
 // Freed calls f each time a gate is given or taken back: a slot may have freed. djinn up wakes the scheduler.
 func (g *Gates) Freed(f func()) { g.freed = f }
+
+// Track calls f with the process of each worker's command that holds a gate, djinn gate run, and its task, as it
+// takes it; what f returns is called once the gate is given back. djinn up records them: none outlives it (W514).
+func (g *Gates) Track(f func(pid int, taskID string) func()) { g.track = f }
+
+// tracked tells the tracker of the holder pid of the task taskID; what it returns is called once the gate is given back.
+func (g *Gates) tracked(pid int, taskID string) func() {
+	if g.track == nil || pid <= 0 || taskID == "" {
+		return func() {}
+	}
+	return g.track(pid, taskID)
+}
 
 // ProjectResolver sets the function that resolves a task and directory to a project name.
 func (g *Gates) ProjectResolver(fn func(taskID, dir string) string) {

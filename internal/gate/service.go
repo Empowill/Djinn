@@ -57,6 +57,10 @@ func (s *service) Hold(
 		return plan.Status(err)
 	}
 	defer hold.Give()
+	if plan.CallerFromContext(ctx) != nil {
+		// A worker's command: it runs as long as the gate is held, and must not outlive djinn up.
+		defer s.g.tracked(int(req.Msg.GetPid()), req.Msg.GetTaskId())()
+	}
 	if err := stream.Send(&machinev1.GateServiceHoldResponse{State: machinev1.GateState_GATE_STATE_HELD, Reason: "gate " + name + " held"}); err != nil {
 		return err
 	}

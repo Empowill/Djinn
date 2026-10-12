@@ -25,6 +25,7 @@ import (
 	"github.com/empowill/djinn/gen/go/machine/v1/machinev1connect"
 	"github.com/empowill/djinn/internal/harness"
 	"github.com/empowill/djinn/internal/machine"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/testx"
 )
 
@@ -676,4 +677,72 @@ func gitT(t *testing.T, dir string, args ...string) string {
 
 func connectRequest(name string) *connect.Request[machinev1.GateServiceHoldRequest] {
 	return connect.NewRequest(&machinev1.GateServiceHoldRequest{Name: name, What: "by hand"})
+}
+
+// TestTrackWorkersCommand (W514): a worker's djinn gate run is told to djinn up's tracker while it holds the gate,
+// and forgotten once it gives it back, so that its command never outlives djinn up; a command run by hand is not.
+func TestTrackWorkersCommand(t *testing.T) {
+	g := New(calm(), nil, &tasks{rank: map[string]int{"t1": 0}})
+	var mu sync.Mutex
+	var tracked []string
+	g.Track(func(pid int, taskID string) func() {
+		mu.Lock()
+		defer mu.Unlock()
+		tracked = append(tracked, fmt.Sprintf("+%d %s", pid, taskID))
+		return func() {
+			mu.Lock()
+			defer mu.Unlock()
+			tracked = append(tracked, fmt.Sprintf("-%d", pid))
+		}
+	})
+	seen := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(tracked)
+	}
+	var worker atomic.Bool
+	mux := http.NewServeMux()
+	mux.Handle(Handler(g))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if worker.Load() {
+			r = r.WithContext(plan.WithCaller(r.Context(), &plan.WorkerCaller{TaskID: "t1"}))
+		}
+		mux.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	client := machinev1connect.NewGateServiceClient(srv.Client(), srv.URL)
+	pid := os.Getpid()
+	for _, c := range []struct {
+		worker bool
+		want   []string
+	}{
+		{true, []string{fmt.Sprintf("+%d t1", pid), fmt.Sprintf("-%d", pid)}},
+		// The developer's own djinn gate run: its command is theirs.
+		{false, nil},
+	} {
+		worker.Store(c.worker)
+		mu.Lock()
+		tracked = nil
+		mu.Unlock()
+		ctx, cancel := context.WithCancel(t.Context())
+		stream, err := client.Hold(ctx, connect.NewRequest(&machinev1.GateServiceHoldRequest{Name: "test", What: "go test", Pid: int32(pid)}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for stream.Receive() && stream.Msg().GetState() != machinev1.GateState_GATE_STATE_HELD {
+		}
+		if got := seen(); c.worker && len(got) != 1 || !c.worker && len(got) != 0 {
+			t.Errorf("worker %v: tracked %v while held", c.worker, got)
+		}
+		cancel()
+		stream.Close()
+		waitFree(t, g)
+		deadline := time.Now().Add(5 * time.Second)
+		for len(seen()) != len(c.want) && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if got := seen(); !slices.Equal(got, c.want) {
+			t.Errorf("worker %v: tracked %v, want %v", c.worker, got, c.want)
+		}
+	}
 }
