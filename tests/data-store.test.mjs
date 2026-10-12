@@ -973,35 +973,48 @@ test("worker measurements over a minute update tasks in place without task-list 
   stop();
 });
 
-test("window throttles task re-reads during rapid changes and never enters a tight loop", async () => {
-  const data = sample();
-  const { clients, reads, watch } = server(data);
-  const throttleMs = 50;
-  const store = createStore(clients, 10, throttleMs);
-  const stop = store.start();
-  watch.push({ wishId: "", changes: everything });
-  await until(store, (s) => s.loaded);
-  store.open(wishId);
-  await until(store, (s) => s.details[wishId]?.loaded);
-  assert.equal(reads.tasks, 1);
+// The throttle's rule, not a count over wall time: a slower runner (Windows' timers tick every ~16 ms) pushes the same
+// burst over a longer time, and more reads are right then. Each read of a wish's tasks comes at least throttleMs after
+// the one before it, so n reads need (n - 1) * throttleMs: the bound is measured on the clock, at any speed.
+for (const paceMs of [2, 16]) {
+  test(`window throttles task re-reads during rapid changes and never enters a tight loop (a change every ${paceMs} ms)`, async () => {
+    const data = sample();
+    const { clients, reads, watch } = server(data);
+    const throttleMs = 50;
+    const store = createStore(clients, 10, throttleMs);
+    const stop = store.start();
+    watch.push({ wishId: "", changes: everything });
+    await until(store, (s) => s.loaded);
+    const start = Date.now();
+    store.open(wishId);
+    await until(store, (s) => s.details[wishId]?.loaded);
+    assert.equal(reads.tasks, 1);
 
-  // 25 uncarried task changes pushed over 50ms (every 2ms)
-  for (let i = 0; i < 25; i++) {
-    watch.push({ wishId, changes: [Change.TASK] });
-    await new Promise((r) => setTimeout(r, 2));
-  }
+    const pushes = 25;
+    for (let i = 0; i < pushes; i++) {
+      watch.push({ wishId, changes: [Change.TASK] });
+      await new Promise((r) => setTimeout(r, paceMs));
+    }
 
-  // Wait for scheduled throttled flush to settle
-  await new Promise((r) => setTimeout(r, 120));
+    // No tight loop: the reads stop once the burst is read, however slow the machine is.
+    let seen = -1;
+    for (let window = 0; reads.tasks !== seen; window++) {
+      assert.ok(window < 40, `task reads never stop: ${reads.tasks}`);
+      seen = reads.tasks;
+      await new Promise((r) => setTimeout(r, 3 * throttleMs));
+    }
+    const elapsed = Date.now() - start;
 
-  // In ~170ms with throttle=50ms, at most 3-4 reads can occur, bound <= 4 (not 25)
-  assert.ok(
-    reads.tasks <= 4,
-    `expected throttled task reads <= 4, got ${reads.tasks}`,
-  );
+    const bound = 1 + Math.floor(elapsed / throttleMs);
+    assert.ok(
+      reads.tasks <= bound,
+      `expected at most ${bound} task reads in ${elapsed} ms (one per ${throttleMs} ms), got ${reads.tasks}`,
+    );
+    assert.ok(reads.tasks >= 2, "the burst is read after the first read");
 
-  stop();
-});
+    stop();
+  });
+}
 
 test("a wish with more tasks than one page has right azima counters before any azima is opened", async () => {
   const data = sample();
