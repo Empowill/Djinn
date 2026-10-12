@@ -412,16 +412,16 @@ func newScrubber(projects []*planv1.Project, extra ...string) *scrubber {
 // folder gives (/var, /tmp and /etc are links into /private there).
 func aliases(dir string) []string {
 	all := []string{dir}
-	real, err := filepath.EvalSymlinks(dir)
+	resolved, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return all
 	}
-	if real != dir {
-		all = append(all, real)
+	if resolved != dir {
+		all = append(all, resolved)
 	}
-	if short, ok := strings.CutPrefix(real, "/private/"); ok {
+	if short, ok := strings.CutPrefix(resolved, "/private/"); ok {
 		short = "/" + short
-		if r, err := filepath.EvalSymlinks(short); err == nil && r == real && short != dir {
+		if r, err := filepath.EvalSymlinks(short); err == nil && r == resolved && short != dir {
 			all = append(all, short)
 		}
 	}
