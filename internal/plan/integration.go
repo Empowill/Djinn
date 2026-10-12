@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -13,9 +14,15 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
+// readGitTimeout bounds a git that reads a ref, run while a store transaction holds the database: every other call of
+// Djinn waits for it (W504).
+const readGitTimeout = 5 * time.Second
+
 // CheckedOutBranch is the branch the checkout in dir is on: "" when it is on none (a detached HEAD), or dir is not in
-// Git.
+// Git, or git did not answer within readGitTimeout.
 func CheckedOutBranch(ctx context.Context, dir string) string {
+	ctx, cancel := context.WithTimeout(ctx, readGitTimeout)
+	defer cancel()
 	out, err := gitOut(ctx, dir, "symbolic-ref", "--quiet", "--short", "HEAD")
 	if err != nil {
 		return ""
@@ -148,9 +155,57 @@ func createIntegrationBranch(ctx context.Context, tx store.Reader, wish *planv1.
 	return nil
 }
 
+// integrationChange is the project of wish whose integration branch req names, and whether the branch changes; an
+// error when req names no project of the wish, or a merge into the branch runs.
+func integrationChange(
+	ctx context.Context, r store.Reader, wish *planv1.Wish, req *planv1.WishServiceSetIntegrationRequest,
+) (projectID string, change bool, err error) {
+	id := req.GetProjectId()
+	ids := wish.GetProjectIds()
+	switch {
+	case id == "" && len(ids) != 1:
+		return "", false, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"the wish has %d projects: name one with --project-id", len(ids)))
+	case id == "":
+		id = ids[0]
+	}
+	i := slices.IndexFunc(ids, func(p string) bool { return strings.EqualFold(p, id) })
+	if i < 0 {
+		return "", false, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("project %s is not one of the wish's projects", id))
+	}
+	if strings.EqualFold(req.GetBranch(), IntegrationBranchOf(wish, ids[i])) {
+		return ids[i], false, nil
+	}
+	tasks, err := store.List[*planv1.Task](ctx, r, store.Where{"wish_id": wish.GetId()})
+	if err != nil {
+		return "", false, err
+	}
+	if merge := MergeRunning(wish, tasks, ids[i]); merge != "" {
+		return "", false, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"cannot change the integration branch now: %s; change it once that merge has ended", merge))
+	}
+	return ids[i], true, nil
+}
+
 func (w *Wishes) SetIntegration(
 	ctx context.Context, req *connect.Request[planv1.WishServiceSetIntegrationRequest],
 ) (*connect.Response[planv1.WishServiceSetIntegrationResponse], error) {
+	// The branch is made before the transaction: a git run in it would hold every other call of Djinn (W504).
+	if branch := req.Msg.GetBranch(); branch != "" && req.Msg.GetCreateBranch() {
+		wish, err := store.Get[*planv1.Wish](ctx, w.Store, req.Msg.GetWishId())
+		if err != nil {
+			return nil, Status(err)
+		}
+		projectID, change, err := integrationChange(ctx, w.Store, wish, req.Msg)
+		if err != nil {
+			return nil, Status(err)
+		}
+		if change {
+			if err := createIntegrationBranch(ctx, w.Store, wish, projectID, branch); err != nil {
+				return nil, Status(err)
+			}
+		}
+	}
 	var wish *planv1.Wish
 	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
@@ -158,35 +213,11 @@ func (w *Wishes) SetIntegration(
 			return err
 		}
 		if branch := req.Msg.GetBranch(); branch != "" {
-			id := req.Msg.GetProjectId()
-			ids := wish.GetProjectIds()
-			switch {
-			case id == "" && len(ids) != 1:
-				return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
-					"the wish has %d projects: name one with --project-id", len(ids)))
-			case id == "":
-				id = ids[0]
+			projectID, _, err := integrationChange(ctx, tx, wish, req.Msg)
+			if err != nil {
+				return err
 			}
-			i := slices.IndexFunc(ids, func(p string) bool { return strings.EqualFold(p, id) })
-			if i < 0 {
-				return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("project %s is not one of the wish's projects", id))
-			}
-			if !strings.EqualFold(branch, IntegrationBranchOf(wish, ids[i])) {
-				tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": wish.GetId()})
-				if err != nil {
-					return err
-				}
-				if merge := MergeRunning(wish, tasks, ids[i]); merge != "" {
-					return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-						"cannot change the integration branch now: %s; change it once that merge has ended", merge))
-				}
-				if req.Msg.GetCreateBranch() {
-					if err := createIntegrationBranch(ctx, tx, wish, ids[i], branch); err != nil {
-						return err
-					}
-				}
-			}
-			SetIntegrationBranch(wish, ids[i], branch)
+			SetIntegrationBranch(wish, projectID, branch)
 		}
 		if n := req.Msg.GetPushAfterMinutes(); n > 0 {
 			wish.PushAfterMinutes = n

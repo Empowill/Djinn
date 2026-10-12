@@ -138,6 +138,10 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// kill -USR2 <pid> writes where each goroutine waits to goroutines.txt, without stopping djinn (W504).
+	dump := make(chan os.Signal, 1)
+	defer notifyDump(dump)()
+	go dumpGoroutines(ctx, home, dump, os.Stderr)
 	db, err := store.Open(ctx, filepath.Join(home, store.File), plan.Entities()...)
 	if err != nil {
 		return false, fmt.Errorf("open the database: %w", err)

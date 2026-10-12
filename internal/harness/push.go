@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -18,6 +16,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -1105,8 +1104,8 @@ func gitPush(ctx context.Context, repo, remote, branch, target string) (old, out
 	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
 	ref := "refs/heads/" + branch + ":refs/heads/" + target
-	cmd := exec.CommandContext(ctx, "git", "-C", repo, "push", "--porcelain", remote, ref)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd, cancelPush := gitx.Command(ctx, repo, "push", "--porcelain", remote, ref)
+	defer cancelPush()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err = cmd.Run()

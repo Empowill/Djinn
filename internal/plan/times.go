@@ -4,8 +4,10 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -151,41 +153,7 @@ func fillLeafTimes(ctx context.Context, s *store.Store, t *planv1.Task, now time
 
 	var gateWait time.Duration
 	if s != nil && t.GetId() != "" {
-		events, err := store.List[*planv1.TaskEvent](ctx, s, store.Where{"task_id": t.GetId()})
-		if err == nil {
-			asked := make(map[string]time.Time)
-			for _, ev := range events {
-				if ev.GetKind() != planv1.TaskEventKind_TASK_EVENT_KIND_GATE {
-					continue
-				}
-				text := ev.GetText()
-				if strings.HasPrefix(text, "gate ") {
-					parts := strings.SplitN(text[5:], ": ", 2)
-					if len(parts) == 2 {
-						name, action := parts[0], parts[1]
-						evTime := ev.GetCreateTime().AsTime()
-						switch action {
-						case "asked":
-							asked[name] = evTime
-						case "taken":
-							if askedTime, ok := asked[name]; ok {
-								if evTime.After(askedTime) {
-									gateWait += evTime.Sub(askedTime)
-								}
-								delete(asked, name)
-							}
-						}
-					}
-				}
-			}
-			if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
-				for _, askedTime := range asked {
-					if now.After(askedTime) {
-						gateWait += now.Sub(askedTime)
-					}
-				}
-			}
-		}
+		gateWait = waitedGates(ctx, s, t, now)
 	}
 
 	if gateWait > totalRunDuration {
@@ -272,6 +240,90 @@ func fillWishAzimaTimes(tasks []*planv1.Task) {
 		t.WaitingBeforeStart = durationpb.New(wb)
 		if !fs.IsZero() && t.FirstStartTime == nil {
 			t.FirstStartTime = timestamppb.New(fs)
+		}
+	}
+}
+
+// gateTallies keeps, by store and task, what the task's gate events add up to: its events only grow, so a fill reads
+// the ones past the last it read, never all of them again (W504: a task list read every event of every task, half a
+// gigabyte, while the command line waited for the store).
+var gateTallies sync.Map // gateKey -> *gateTally
+
+// gateKey is a task of a store: the store held keeps its address from being reused by another.
+type gateKey struct {
+	s    *store.Store
+	task string
+}
+
+// gateTally is the gate events of a task read so far.
+type gateTally struct {
+	mu     sync.Mutex
+	seq    int64                // the last event read past
+	asked  map[string]time.Time // by gate, asked and not taken yet
+	waited time.Duration        // between each gate asked and taken
+}
+
+// gateKind is the encoded kind of a gate event: the store skips, without decoding them, the events that lack it.
+var gateKind = func() []byte {
+	b, _ := proto.Marshal(&planv1.TaskEvent{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_GATE})
+	return b
+}()
+
+// waitedGates is how long task t waited for its gates: between each gate asked and taken, and since a gate asked
+// still not taken while it runs. It reads the gate events past those it read before; the error of a read leaves the
+// last tally.
+func waitedGates(ctx context.Context, s *store.Store, t *planv1.Task, now time.Time) time.Duration {
+	v, _ := gateTallies.LoadOrStore(gateKey{s, t.GetId()}, &gateTally{asked: map[string]time.Time{}})
+	tally := v.(*gateTally)
+	tally.mu.Lock()
+	defer tally.mu.Unlock()
+	var last int64
+	err := store.Latest(ctx, s, store.Where{"task_id": t.GetId()}, func(ev *planv1.TaskEvent) bool {
+		last = ev.GetSeq()
+		return false
+	})
+	if err == nil && last > tally.seq {
+		events, err := store.ListAfter[*planv1.TaskEvent](ctx, s, store.Where{"task_id": t.GetId()},
+			store.After{Field: "seq", From: tally.seq, Contains: [][]byte{gateKind, []byte("gate ")}})
+		if err == nil {
+			for _, ev := range events {
+				if ev.GetSeq() <= last { // Those past it are read with the events around them, next time.
+					tally.add(ev)
+				}
+			}
+			tally.seq = last
+		}
+	}
+	wait := tally.waited
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
+		for _, askedTime := range tally.asked {
+			if now.After(askedTime) {
+				wait += now.Sub(askedTime)
+			}
+		}
+	}
+	return wait
+}
+
+// add counts ev, if it is a gate asked or taken.
+func (g *gateTally) add(ev *planv1.TaskEvent) {
+	if ev.GetKind() != planv1.TaskEventKind_TASK_EVENT_KIND_GATE {
+		return
+	}
+	name, action, ok := strings.Cut(strings.TrimPrefix(ev.GetText(), "gate "), ": ")
+	if !ok || !strings.HasPrefix(ev.GetText(), "gate ") {
+		return
+	}
+	at := ev.GetCreateTime().AsTime()
+	switch action {
+	case "asked":
+		g.asked[name] = at
+	case "taken":
+		if askedTime, ok := g.asked[name]; ok {
+			if at.After(askedTime) {
+				g.waited += at.Sub(askedTime)
+			}
+			delete(g.asked, name)
 		}
 	}
 }
