@@ -34,6 +34,7 @@ import (
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/cli"
 	"github.com/empowill/djinn/internal/harness"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/swapexe"
@@ -319,6 +320,7 @@ func (u *updater) restart() (string, int, error) {
 		return "", 0, fmt.Errorf("note the terminals: %w", err)
 	}
 	u.restarting = true
+	logx.L().Info("restart asked", "from", u.version, "to", version, "terminals", len(note.Terminals))
 	go func() {
 		time.Sleep(restartDelay)
 		u.stop()

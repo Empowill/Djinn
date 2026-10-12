@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -93,8 +94,10 @@ func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLos
 		if r == nil {
 			h.mu.Unlock()
 			if watching(t) {
+				logx.L().Info("lamplighter restarts a lost watcher", "task", t.GetCode())
 				h.restartLostWatcher(ctx, t)
 			} else {
+				logx.L().Info("lamplighter ends a lost task", "task", t.GetCode())
 				h.endLostProcess(ctx, t)
 			}
 			anyLost = true
@@ -123,6 +126,7 @@ func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLos
 			r.stoppingReason = fmt.Sprintf("budget exceeded: wall time %s (limit %s)", wallTime.Round(time.Second), maxWall.Round(time.Second))
 			worker := r.worker
 			h.mu.Unlock()
+			logx.L().Info("lamplighter stops a task", "task", t.GetCode(), "why", "wall time", "took", wallTime.Round(time.Second))
 			if worker != nil {
 				worker.Stop()
 			}
@@ -133,7 +137,9 @@ func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLos
 			r.stopping = true
 			r.stoppingReason = fmt.Sprintf("budget exceeded: %d turns (limit %d)", r.turns, maxTurns)
 			worker := r.worker
+			turns := r.turns
 			h.mu.Unlock()
+			logx.L().Info("lamplighter stops a task", "task", t.GetCode(), "why", "turns", "turns", turns)
 			if worker != nil {
 				worker.Stop()
 			}
@@ -196,6 +202,8 @@ func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLos
 		r.lamplighterReason = fmt.Sprintf("silent for %d min", mins)
 		worker := r.worker
 		h.mu.Unlock()
+		logx.L().Info("lamplighter ends a silent task", "task", t.GetCode(), "silent", silentDuration.Round(time.Second),
+			"alive", alive)
 
 		if worker != nil {
 			worker.Stop()

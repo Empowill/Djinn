@@ -19,8 +19,8 @@ arguments and their validation.
 - `djinn version` prints the version.
 - A method marked `option (djinn.v1.autostart) = true` starts `djinn up` in the background when no djinn
   answers (no address file, or an address nothing answers any more), waits for it, then calls it: `djinn lead
-  resume` and `djinn lead set`. The background djinn is detached from the terminal, writes to `djinn.log` in
-  the data directory, and the command prints its PID. `--addr` or `$DJINN_ADDR` turns this off. The other
+  resume` and `djinn lead set`. The background djinn is detached from the terminal, writes its output to
+  `logs/console.log` in the data directory, and the command prints its PID. `--addr` or `$DJINN_ADDR` turns this off. The other
   methods fail with a hint to run `djinn up`.
 
 ## Reads and writes

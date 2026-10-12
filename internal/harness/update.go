@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -24,7 +25,7 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	id := req.GetTaskId()
 	h.answering.Lock()
 	defer h.answering.Unlock()
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 
 	task, err := store.Get[*planv1.Task](ctx, h.store, id)

@@ -28,10 +28,11 @@ const TilasmPrefix = "/tilasm/"
 //
 // The services never compress a response: every client of this server is on the same machine, where gzip only
 // costs time on both ends (see docs/transport.md). A service that writes nothing still answers 200, as on net/http.
+// Each call to a service is logged (logx).
 func Handler(ui, docs fs.FS, services map[string]http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	for prefix, h := range services {
-		mux.Handle(prefix, answered(uncompressed(h)))
+		mux.Handle(prefix, logged(answered(uncompressed(h))))
 	}
 	if docs != nil {
 		mux.Handle(DocsPath, http.StripPrefix(strings.TrimSuffix(DocsPath, "/"), assets(docs)))

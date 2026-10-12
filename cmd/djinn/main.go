@@ -50,6 +50,8 @@ var handwritten = map[string]func(args []string) int{
 	"backup":           func(args []string) int { return runBackup(args, os.Stdout, os.Stderr) },
 	"backup restore":   func(args []string) int { return runBackup(append([]string{"restore"}, args...), os.Stdout, os.Stderr) },
 	"machine commands": runMachineCommands,
+	// `djinn debug dump` asks a stuck djinn up where its goroutines wait.
+	"debug dump": runDebugDump,
 }
 
 // runUpCommand is djinn up: it opens the app, and restarts on a newer binary when asked.

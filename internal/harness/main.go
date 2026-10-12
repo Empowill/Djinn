@@ -20,6 +20,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/gitx"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -279,7 +280,7 @@ func isCancelled(c *planv1.Task) bool {
 func (h *Harness) mergeMain(
 	ctx context.Context, l mainLine, settings plan.Settings, shown, mainSha, old, release string, attempts int32,
 ) {
-	h.integrateMu.Lock() // The tasks' merges and the push checks use the integration worktree too.
+	logx.Lock(&h.integrateMu, "integration") // The tasks' merges and the push checks use the integration worktree too.
 	defer h.integrateMu.Unlock()
 	key := l.key()
 	repo := l.project.GetDirectory()

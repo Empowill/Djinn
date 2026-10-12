@@ -1,8 +1,11 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/pprof"
+
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // ProfilePath is where Profiles serves.
@@ -20,4 +23,25 @@ func Profiles() http.Handler {
 	mux.HandleFunc(ProfilePath+"symbol", pprof.Symbol)
 	mux.HandleFunc(ProfilePath+"trace", pprof.Trace)
 	return mux
+}
+
+// DumpPath is where Dump answers.
+const DumpPath = "/debug/dump"
+
+// Dump answers a POST by writing the stacks of every goroutine to a new file of dir (logx.Dump) and its path as the
+// body, for djinn debug dump: always mounted, it is reached only as the services are. A djinn whose calls hang still
+// answers it, on a goroutine of its own.
+func Dump(dir string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST to dump the goroutines", http.StatusMethodNotAllowed)
+			return
+		}
+		path, err := logx.Dump(dir, "asked by djinn debug dump")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		fmt.Fprintln(w, path)
+	})
 }
