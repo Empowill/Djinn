@@ -1,6 +1,5 @@
 // The screen of one wish, read from the services: what waits for you first (its open questions, the blocking ones
-// first, its workers that wait, and "My wish is granted" once Djinn proposes it), then its reports (wish-reports.tsx),
-// its journal and the rights its
+// first, its workers that wait, and "My wish is granted" once Djinn proposes it), its journal and the rights its
 // workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent, its decisions another
 // (decision-log.tsx), its tilasms another (tilasms.tsx), and the blocks its agents wrote for one another the last
 // (agent-blocks.tsx): what is for you is a question.
@@ -95,8 +94,6 @@ import {
 import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
 import { AgentBlocks, agentBlocks } from "./agent-blocks";
-import { reportsOf } from "./data/reports";
-import { WishReports } from "./wish-reports";
 import { AttentionBar, attentionOf, useReach } from "./attention";
 import { ModalFrame } from "./frame";
 import { useWrites } from "./marks";
@@ -204,7 +201,6 @@ export function WishView({
   const codes = codeMapOf(detail.tasks);
   // Read again only when the wish's questions, blocks or tasks change, not at every render of the screen.
   const forAgents = useMemo(() => agentBlocks(detail.blocks), [detail.blocks]);
-  const reports = reportsOf(detail.blocks);
   const decisions = useMemo(
     () => decisionsOf(detail.questions, detail.blocks, detail.tasks),
     [detail.questions, detail.blocks, detail.tasks],
@@ -1154,8 +1150,7 @@ export function WishView({
               {(open.length > 0 ||
                 waiting.length > 0 ||
                 wish.ready ||
-                digging.length > 0 ||
-                reports.length > 0) && (
+                digging.length > 0) && (
                 <div className="main-moves">
                   {(open.length > 0 || waiting.length > 0 || wish.ready) && (
                     <section
@@ -1219,10 +1214,6 @@ export function WishView({
                       onMove={setMovingQuestion}
                       onWithdraw={setWithdrawingQuestion}
                     />
-                  )}
-
-                  {reports.length > 0 && (
-                    <WishReports reports={reports} codes={codes} />
                   )}
                 </div>
               )}

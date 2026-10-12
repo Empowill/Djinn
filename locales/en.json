@@ -2,7 +2,7 @@
   "agents.check": "Check again",
   "agents.check_detail": "Runs each agent's status command again",
   "agents.checking": "Checking…",
-  "agents.detail": "What the lead and the workers wrote down for one another: hand-offs, references. Nothing here waits for you: what does is a question.",
+  "agents.detail": "What the lead and the workers wrote down for one another: hand-offs, references, reports. Nothing here waits for you: what does is a question.",
   "agents.install": "Install",
   "agents.intro_none": "No agent is ready: install one and sign in here.",
   "agents.login": "Sign in",
@@ -910,11 +910,5 @@
   "work.pending_why": "Waiting to be committed: {reason}",
   "work.red": "Red tests, not committed: {reason}",
   "work.reviewed_by": "reviewed by {task}",
-  "work.uncommitted": "Changes not committed, not merged",
-  "reports.title": "Reports",
-  "reports.detail": "What the workers found out, to read before you decide.",
-  "reports.by_task": "By {task}",
-  "reports.by_lead": "By the lead",
-  "reports.open": "Open the report",
-  "reports.close": "Fold the report"
+  "work.uncommitted": "Changes not committed, not merged"
 }

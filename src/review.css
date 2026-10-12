@@ -836,36 +836,6 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
 .copy-command.failed {
   color: var(--st-failed);
 }
-
-/* The reports of a wish: what the workers found out, after what waits for you. */
-.report-card {
-  margin-bottom: 12px;
-  padding: 16px 20px;
-  border: 1px solid color-mix(in srgb, var(--st-running) 35%, var(--line));
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--st-running) 4%, var(--surface));
-}
-.report-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-.report-icon {
-  flex: none;
-  margin-top: 2px;
-  color: var(--st-running);
-}
-.report-head h3 {
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--text);
-}
-.report-body {
-  max-width: var(--measure);
-  padding-left: 26px;
-}
 .question-context h4 {
   font-size: 13px;
   font-weight: 600;

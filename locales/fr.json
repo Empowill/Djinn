@@ -2,7 +2,7 @@
   "agents.check": "Vérifier à nouveau",
   "agents.check_detail": "Relance la commande d’état de chaque agent",
   "agents.checking": "Vérification…",
-  "agents.detail": "Ce que le lead et les workers ont consigné les uns pour les autres : passations, références. Rien ici ne vous attend : ce qui vous attend est une question.",
+  "agents.detail": "Ce que le lead et les workers ont consigné les uns pour les autres : passations, références, rapports. Rien ici ne vous attend : ce qui vous attend est une question.",
   "agents.install": "Installer",
   "agents.intro_none": "Aucun agent n’est prêt : installez-en un et connectez-vous ici.",
   "agents.login": "Se connecter",
@@ -910,11 +910,5 @@
   "work.pending_why": "Attend d’être commitée : {reason}",
   "work.red": "Tests rouges, non commitée : {reason}",
   "work.reviewed_by": "revue par {task}",
-  "work.uncommitted": "Modifications non commitées, non fusionnée",
-  "reports.title": "Rapports",
-  "reports.detail": "Ce que les workers ont découvert, à lire avant de décider.",
-  "reports.by_task": "Par {task}",
-  "reports.by_lead": "Par le lead",
-  "reports.open": "Ouvrir le rapport",
-  "reports.close": "Replier le rapport"
+  "work.uncommitted": "Modifications non commitées, non fusionnée"
 }
