@@ -151,8 +151,8 @@ tab and a **Decisions** tab, with the tasks and decisions of every active wish. 
 ## A wish's view
 
 The **Wish** tab: what waits for you (**Your move**), the questions being investigated, the journal (**Show the
-commands**), and the **Rights** of its workers in each project. Beside it, the **Tasks**, **Decisions** and
-**Tilasms** tabs, and last, discreet, **For agents**.
+commands**), and the **Rights** of its workers in each project. Beside it, the **Tasks**, **Review**, **Decisions**
+and **Tilasms** tabs, and last, discreet, **For agents**.
 
 **Rights** says what the wish's workers may do in a project, for every task to come: **The project decides** (its
 own configuration), **Edit the files**, or **Edit, in auto mode**. A worker in a folder outside Git with no rule
@@ -248,6 +248,13 @@ Once every task part of an azima is finished, it is **To validate**: nothing is 
 validating it takes, box by box of its plan file (a person, a machine, a release or a real model gives each proof), and
 its **Validate** button marks it done. An azima whose plan file says done stays **In progress** while work part of it
 still runs or waits. The flight plan lists the proofs a person can give among the **Proofs you can give**.
+
+### The Review tab
+
+The wish's merged work, a line per task, the merges Djinn started under the task they serve; the tab counts what is
+left to review. A click on a line opens its diff, with the comments on its lines; its box marks it reviewed, kept with
+who checked it and when, and the lead reads it in its brief and with `djinn mark list`. What is reviewed folds at the
+end. **See the diff** stays on each task's card in the Tasks tab.
 
 ### The Decisions tab
 

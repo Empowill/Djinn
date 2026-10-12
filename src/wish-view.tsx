@@ -118,6 +118,8 @@ import {
   ViewTabs,
 } from "./task-tabs";
 import { TaskTree } from "./task-tree";
+import { reviewLeft, reviewRows } from "./data/review";
+import { ReviewTab } from "./review-tab";
 import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
@@ -272,10 +274,13 @@ export function WishView({
   // page holds.
   const [layout] = useTaskLayout();
   const tree = view === "tasks" && layout === "tree";
+  // The Review tab reads every task too: what is left to review is counted on all of them.
+  const reviewing = view === "review";
   useEffect(() => {
-    if (tree && store && detail.tasksNextToken)
+    if ((tree || reviewing) && store && detail.tasksNextToken)
       void store.loadMore(wish.id, Change.TASK, 200);
-  }, [tree, store, wish.id, detail.tasksNextToken]);
+  }, [tree, reviewing, store, wish.id, detail.tasksNextToken]);
+  const review = useMemo(() => reviewRows(detail.tasks), [detail.tasks]);
   const byId = taskMapOf(detail.tasks);
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -307,6 +312,7 @@ export function WishView({
     answer,
     enlighten,
     mark,
+    review: markReviewed,
     move,
     withdraw,
   } = useWrites(onToast);
@@ -385,6 +391,11 @@ export function WishView({
         t("task.turn_comments_done", { task: task.code }),
       ),
     [write, clients.tasks],
+  );
+
+  const handleReview = useCallback(
+    (task: Task, remove: boolean) => markReviewed(task.wishId, task.id, remove),
+    [markReviewed],
   );
 
   const handleDecision = useCallback(
@@ -963,6 +974,7 @@ export function WishView({
             view={view}
             main={t("tabs.wish")}
             tasks={workCount(detail.tasks)}
+            review={reviewLeft(review)}
             decisions={decisionsTotal ?? decisions.length}
             tilasms={detail.tilasms.length}
             agents={forAgents.length}
@@ -980,6 +992,14 @@ export function WishView({
           )}
           {view === "agents" && (
             <AgentBlocks blocks={forAgents} codes={codes} />
+          )}
+          {view === "review" && (
+            <ReviewTab
+              rows={review}
+              fold={wish.id}
+              codes={codes}
+              onReview={handleReview}
+            />
           )}
           {view === "decisions" && (
             <DecisionLog

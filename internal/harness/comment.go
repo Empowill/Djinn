@@ -32,11 +32,6 @@ func (h *Harness) Comment(ctx context.Context, procedure string, req *planv1.Tas
 	if text == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("comment text is required"))
 	}
-	file := req.GetFile()
-	if file != "" {
-		file = filepath.ToSlash(filepath.Clean(file))
-		file = strings.TrimPrefix(file, "/")
-	}
 	line := req.GetLine()
 	if line < 1 {
 		line = 1
@@ -67,6 +62,7 @@ func (h *Harness) Comment(ctx context.Context, procedure string, req *planv1.Tas
 		}
 	}
 
+	file := commentFile(req.GetFile(), task.GetWorktree(), projectDir)
 	excerpt := req.GetExcerpt()
 	if excerpt == "" && projectDir != "" && commit != "" && file != "" {
 		excerpt = fileExcerpt(ctx, projectDir, commit, file, int(line), int(endLine))
@@ -113,6 +109,27 @@ func (h *Harness) Comment(ctx context.Context, procedure string, req *planv1.Tas
 		Comment: comment,
 		Task:    savedTask,
 	}, nil
+}
+
+// commentFile is the file a comment is on, relative to the repository's root. The command line makes a relative path
+// absolute, from the folder it runs in: a path inside the task's worktree or its project's folder comes back relative
+// to it.
+func commentFile(file string, roots ...string) string {
+	if file == "" {
+		return ""
+	}
+	if filepath.IsAbs(file) {
+		for _, root := range roots {
+			if root == "" {
+				continue
+			}
+			if rel, err := filepath.Rel(root, file); err == nil && rel != "." && filepath.IsLocal(rel) {
+				file = rel
+				break
+			}
+		}
+	}
+	return strings.TrimPrefix(filepath.ToSlash(filepath.Clean(file)), "/")
 }
 
 // formatCommentInstruction formats a diff comment as an instruction for a running worker.

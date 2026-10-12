@@ -665,3 +665,26 @@ func Sub(a, b int) int {
 		t.Errorf("ResolvedCommit = %q, want %q", tComments[0].GetResolvedCommit(), c4)
 	}
 }
+
+// TestCommentFile: the command line makes a comment's file absolute from the folder it runs in; a path inside the
+// task's worktree or its project's folder comes back relative to it, as the diff names it. Others stay as they were.
+func TestCommentFile(t *testing.T) {
+	worktree := filepath.Join(t.TempDir(), "w1")
+	project := filepath.Join(t.TempDir(), "lamp")
+	for _, c := range []struct{ file, want string }{
+		{"", ""},
+		{"src/lamp.go", "src/lamp.go"},
+		{"./src/../lamp.txt", "lamp.txt"},
+		{filepath.Join(worktree, "src", "lamp.go"), "src/lamp.go"},
+		{filepath.Join(project, "lamp.txt"), "lamp.txt"},
+	} {
+		if got := commentFile(c.file, worktree, project); got != c.want {
+			t.Errorf("commentFile(%q) = %q, want %q", c.file, got, c.want)
+		}
+	}
+	// Outside both, nothing to make relative: the path stays whole, without its root.
+	outside := filepath.Join(t.TempDir(), "notes.md")
+	if got := commentFile(outside, worktree, project); got == "notes.md" || !strings.HasSuffix(got, "/notes.md") {
+		t.Errorf("commentFile(%q) = %q, want the whole path", outside, got)
+	}
+}

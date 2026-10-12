@@ -559,7 +559,7 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		}
 	}
 
-	if marks := marksOf(exp.GetQuestions()); len(marks) > 0 {
+	if marks := marksOf(exp.GetQuestions(), exp.GetTasks()...); len(marks) > 0 {
 		slices.Reverse(marks)
 		b.WriteString("\n## Marked by the developer\n\n")
 		for _, m := range marks[:min(len(marks), briefMarks)] {

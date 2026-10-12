@@ -1808,10 +1808,12 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 			return err
 		}
 		if task != nil {
-			// The run's copy of its task is older than the comments on its diff, which come while it runs.
+			// The run's copy of its task is older than the comments on its diff, and the developer's marks, which
+			// come while it runs.
 			if pt, ok := task.(*planv1.Task); ok {
 				if stored, err := store.Get[*planv1.Task](context.Background(), tx, pt.GetId()); err == nil {
 					pt.Comments = stored.GetComments()
+					pt.Marks = stored.GetMarks()
 				}
 			}
 			if err := tx.Put(task); err != nil {
