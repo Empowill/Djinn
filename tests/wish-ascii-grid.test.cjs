@@ -50,7 +50,7 @@ function originalAscii(pixels, width, height, trail, now) {
       );
       let fade = Math.max(0, Math.min(1, (level - 0.003) / 0.027));
       fade = fade * fade * (3 - 2 * fade);
-      const brightness = (0.24 + Math.pow(level, 0.55) * 0.72) * fade;
+      const brightness = (0.22 + Math.pow(level, 0.5) * 0.78) * fade;
       let lower = 0;
       while (
         lower < ASCII_TONES.length - 1 &&
