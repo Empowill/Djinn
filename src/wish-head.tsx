@@ -26,7 +26,7 @@ import {
   type WishPush,
 } from "../gen/ts/plan/v1/plan_pb";
 import type { Provider as Agent } from "../gen/ts/ui/v1/ui_pb";
-import { effectivePushStrategy, when } from "./data/format";
+import { effectivePushStrategy, gitReason, when } from "./data/format";
 import { t } from "./i18n";
 
 // The agents a lead runs, in the order the menu lists them, by their identifier in UiService.GetEnvironment.
@@ -400,8 +400,10 @@ export function MainMerges({
               </span>
             )}
             {main.held && (
-              <span className="wish-push-refused" title={main.held}>
-                {t("wish.main_held", { reason: shortReason(main.held) })}
+              <span className="wish-push-refused" title={gitReason(main.held)}>
+                {t("wish.main_held", {
+                  reason: shortReason(gitReason(main.held)),
+                })}
               </span>
             )}
           </span>

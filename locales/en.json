@@ -809,6 +809,7 @@
   "work.conflict": "Conflict, not committed: {reason}",
   "work.corrected_by": "corrected by {task}",
   "work.integrating": "Being committed into {branch}",
+  "work.no_identity": "git has no identity to sign Djinn's merges and commits: run git config --global user.name \"Your Name\" and git config --global user.email you@example.com (or the same without --global, in the project's repository)",
   "work.pending": "Waiting to be committed",
   "work.pending_why": "Waiting to be committed: {reason}",
   "work.red": "Red tests, not committed: {reason}",

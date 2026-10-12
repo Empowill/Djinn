@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -453,6 +454,63 @@ func TestIntegrateCodeConflict(t *testing.T) {
 	in.pass(t, time.Hour)
 	if got := in.states(t, w2); got != "W2 CONFLICT" || len(in.runs) != 2 {
 		t.Errorf("tried again: %s, runs %v", got, in.runs)
+	}
+}
+
+// TestIntegrateWithoutAGitIdentity replays W5 of PR #2's CI: on a machine with no git user.name nor user.email, the
+// merge of a task's work failed and the window said a conflict with no file. It is no conflict: the work waits, its
+// reason names the git config to run, and once the person sets an identity the next pass commits it. Djinn signs with
+// no identity of its own.
+func TestIntegrateWithoutAGitIdentity(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	old := in.tip(t)
+	// testx.Guard hides the machine's identity; the repository's goes too, and git may not guess one (macOS does).
+	in.git(t, in.repo, "config", "--unset", "user.name")
+	in.git(t, in.repo, "config", "--unset", "user.email")
+	in.git(t, in.repo, "config", "user.useConfigOnly", "true")
+
+	in.pass(t, 0)
+	got, texts := in.integration(t, w1)
+	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING || got.GetReason() != noIdentity {
+		t.Fatalf("W1's integration %v; want PENDING, %q", got, noIdentity)
+	}
+	for _, want := range []string{`git config --global user.name "Your Name"`, "git config --global user.email you@example.com"} {
+		if !strings.Contains(got.GetReason(), want) {
+			t.Errorf("the reason %q does not name %s", got.GetReason(), want)
+		}
+	}
+	if in.tip(t) != old || len(in.runs) != 0 || len(in.commits(t)) != 0 {
+		t.Errorf("the branch moved to %s from %s; runs %v", in.tip(t), old, in.runs)
+	}
+	// A pass while the identity is missing says nothing new.
+	in.pass(t, time.Minute)
+	if _, again := in.integration(t, w1); len(again) != len(texts) {
+		t.Errorf("events %q after %q", again, texts)
+	}
+
+	// The merge itself, refused by git for want of an identity, waits the same: no conflict.
+	wish, err1 := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
+	project, err2 := store.Get[*planv1.Project](t.Context(), in.db, in.projectID)
+	settings, err3 := plan.LoadSettings(in.home, project)
+	if err := errors.Join(err1, err2, err3); err != nil {
+		t.Fatal(err)
+	}
+	_, merged, _ := in.h.mergeAndTest(t.Context(), wish, project, settings, in.branch, old, []*planv1.Task{w1})
+	if merged.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING || merged.GetReason() != noIdentity {
+		t.Errorf("the merge without identity: %v", merged)
+	}
+	// A commit says it too: the one message wherever Djinn commits.
+	if _, err := git(t.Context(), in.repo, "commit", "--allow-empty", "--quiet", "-m", "x"); !errors.Is(err, errNoIdentity) {
+		t.Errorf("a commit without identity: %v", err)
+	}
+
+	in.git(t, in.repo, "config", "user.name", "Test")
+	in.git(t, in.repo, "config", "user.email", "test@example.com")
+	in.pass(t, time.Minute)
+	if got := in.states(t, w1); got != "W1 COMMITTED" {
+		t.Errorf("once git has an identity: %s", got)
 	}
 }
 

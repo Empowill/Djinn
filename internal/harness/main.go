@@ -342,6 +342,9 @@ func (h *Harness) mergeAndCheckMain(
 			}, ""
 		}
 		switch {
+		case errors.Is(err, errNoIdentity):
+			_, _ = git(ctx, wt, "merge", "--abort")
+			return "", nil, noIdentity
 		case len(conflicts) == 0:
 			_, _ = git(ctx, wt, "merge", "--abort")
 			return "", nil, fmt.Sprintf("merge %s: %v", shown, err)

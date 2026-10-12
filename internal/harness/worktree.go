@@ -94,9 +94,37 @@ func gitRaw(ctx context.Context, dir string, args ...string) (string, error) {
 		if msg == "" {
 			msg = err.Error()
 		}
+		if missingIdentity(msg) {
+			return "", fmt.Errorf("git %s: %w", args[0], errNoIdentity)
+		}
 		return "", fmt.Errorf("git %s: %s", args[0], msg)
 	}
 	return out.String(), nil
+}
+
+// noIdentity is what Djinn says when git refuses a merge or a commit for want of a name and an email: Djinn signs
+// with the person's identity and never invents one, so the person sets it. The window knows it by its start, "git has
+// no identity", and says it in its language (gitReason, src/data/format.ts).
+const noIdentity = `git has no identity to sign Djinn's merges and commits: run git config --global user.name "Your Name" ` +
+	`and git config --global user.email you@example.com (or the same without --global, in the project's repository)`
+
+// errNoIdentity is a git command refused for want of an identity; its text is noIdentity.
+var errNoIdentity = errors.New(noIdentity)
+
+// missingIdentity tells whether msg, what git wrote on failing, is its refusal to sign without a name and an email.
+func missingIdentity(msg string) bool {
+	for _, s := range []string{"identity unknown", "Please tell me who you are", "empty ident name", "unable to auto-detect email address"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkIdentity tells whether git can sign a commit in the repository holding dir: errNoIdentity when it cannot.
+func checkIdentity(ctx context.Context, dir string) error {
+	_, err := git(ctx, dir, "var", "GIT_COMMITTER_IDENT")
+	return err
 }
 
 // addWorktree creates the worktree path of the repository holding dir, on a new branch from its HEAD. It returns

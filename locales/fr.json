@@ -809,6 +809,7 @@
   "work.conflict": "Conflit, non commitée : {reason}",
   "work.corrected_by": "corrigée par {task}",
   "work.integrating": "En cours de commit dans {branch}",
+  "work.no_identity": "git n’a pas d’identité pour signer les fusions et les commits de Djinn : lancez git config --global user.name \"Votre Nom\" et git config --global user.email vous@exemple.com (ou les mêmes sans --global, dans le dépôt du projet)",
   "work.pending": "Attend d’être commitée",
   "work.pending_why": "Attend d’être commitée : {reason}",
   "work.red": "Tests rouges, non commitée : {reason}",
