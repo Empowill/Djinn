@@ -80,6 +80,12 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   page.on("pageerror", (err) => errors.push(err.message));
   for (const w of wishes().filter((w) => w.state === "WISH_STATE_ACTIVE"))
     djinn("wish", "pause", w.id);
+  // W501: a wish shown by a link, then deleted, as operating-load.spec.ts leaves it: the show of the last minute that
+  // each reload below gets must not take the window from this spec's wish to the flight plan.
+  const shown = JSON.parse(djinn("wish", "make", "Shown then gone", "--json"))
+    .wish.id as string;
+  djinn("open", `djinn://wish/${shown}`);
+  djinn("wish", "delete", shown);
 
   const tag = randomUUID().slice(0, 8);
   const wishId = randomUUID();
@@ -128,12 +134,14 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await page.setViewportSize({ width: 1440, height: 2200 });
   await page.goto(process.env.DJINN_URL!);
   await expect(page.locator(".hero h1")).toHaveText("Flight plan");
-  // The bar of what waits: one line per question, a click goes there; the one needed before the first light under
-  // those words, the other that can wait. W3, cut short and not resumed by Djinn, asks nothing: it is history.
+  // The bar of what waits: one line per question and one for the worker that failed, a click goes there; the one
+  // needed before the first light under those words, the worker needing an action, the other that can wait. W3,
+  // cut short and not resumed by Djinn, asks nothing: it is history.
   const bar = page.locator(".attention-bar");
-  await expect(bar).toContainText("2 things wait for you");
+  await expect(bar).toContainText("3 things wait for you");
   await expect(bar.locator(".attention-level")).toHaveText([
     "before the first light",
+    "Worker",
     "Can wait",
   ]);
   await expect(bar).not.toContainText("W3");
@@ -167,7 +175,16 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     .locator(".wish-task-heading")
     .click();
   await shoot(page, "review-wish-light");
-  await page.getByRole("tab", { name: /^Wish/ }).click();
+  // From another tab, a line of the bar brings its question back into sight, in the wish's first tab.
+  await bar
+    .locator(".attention-item")
+    .filter({ hasText: "Which oil for the wick?" })
+    .click();
+  await expect(page.getByRole("tab", { name: /^Wish/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(card).toBeFocused();
   await theme(page, "");
 
   // Enlighten me: one click sends what the answer's note says to the lead, no second field; the question waits for
@@ -187,7 +204,7 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     "You asked: How long does each burn?",
   );
   await expect(digging.locator("textarea, .option")).toHaveCount(0);
-  await expect(bar.locator(".attention-item")).toHaveCount(1);
+  await expect(bar.locator(".attention-item")).toHaveCount(2);
   await digging.screenshot({
     path: path.join(shots, "review-question-folded.png"),
   });

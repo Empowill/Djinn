@@ -56,7 +56,11 @@ test("the status colours keep their contrast in the dark and the light theme", (
   };
   for (const [name, theme] of Object.entries(themes)) {
     const states = Object.keys(theme).filter((k) => k.startsWith("st-"));
-    assert.equal(states.length, 12, `${name}: the twelve states have a colour`);
+    assert.equal(
+      states.length,
+      13,
+      `${name}: the thirteen states have a colour`,
+    );
     for (const state of states)
       for (const ground of theme.grounds) {
         const tone = rgb(theme[state]);
@@ -214,6 +218,61 @@ test("the update banner's buttons keep their contrast in the dark and the light 
   }
 });
 
+// The task row's model identifier uses Djinn's violet (--st-investigating), keeping WCAG AA contrast (4.5:1)
+// in both light and dark themes on the task card's surface.
+test("the task model uses Djinn's violet token and keeps contrast in both themes", () => {
+  const css = fs.readFileSync(path.join(root, "wish.css"), "utf8");
+  assert.match(
+    css,
+    /\.task-model\s*\{[^}]*color:\s*var\(--st-investigating\);/,
+    "task-model uses var(--st-investigating)",
+  );
+  const read = (file, selector) => {
+    const content = fs.readFileSync(path.join(root, file), "utf8");
+    const start = content.indexOf(selector + " {");
+    return Object.fromEntries(
+      [
+        ...content
+          .slice(start, content.indexOf("}", start))
+          .matchAll(/--([\w-]+):\s*(#[0-9a-f]{6});/g),
+      ].map((m) => [m[1], m[2]]),
+    );
+  };
+  const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const lum = (c) => {
+    const [r, g, b] = c.map((v) => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (a, b) => {
+    const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+    return (x + 0.05) / (y + 0.05);
+  };
+  const darkReview = read("review.css", ":root");
+  const lightReview = read("review.css", 'html[data-theme="light"]');
+  const themes = {
+    dark: {
+      violet: darkReview["st-investigating"],
+      grounds: ["#111111", "#191919"],
+    },
+    light: {
+      violet: lightReview["st-investigating"],
+      grounds: ["#f6f6f4", "#ffffff"],
+    },
+  };
+  for (const [name, { violet, grounds }] of Object.entries(themes)) {
+    for (const ground of grounds) {
+      const r = ratio(rgb(violet), rgb(ground));
+      assert.ok(
+        r >= 4.5,
+        `${name}: task-model violet (${violet}) on ${ground} reads at ${r.toFixed(2)}:1`,
+      );
+    }
+  }
+});
+
 test("the stylesheets take their greys from the tokens", () => {
   const defined = new Set(
     [
@@ -261,6 +320,10 @@ test("every class of the stylesheets is used by a component", () => {
     .join("\n");
   const unused = [];
   for (const entry of fs.readdirSync(root).filter((e) => e.endsWith(".css"))) {
+    // svg-diagrams.css styles SVG diagram blocks rendered by SafeSvg (drawn by tools/svgdiagrams);
+    // its classes are used inside the stored SVG markup rather than by a React component.
+    if (entry === "svg-diagrams.css") continue;
+
     // The selectors only: comments, strings and declarations hold dots that are no class.
     const selectors = fs
       .readFileSync(path.join(root, entry), "utf8")
@@ -280,4 +343,46 @@ test("every class of the stylesheets is used by a component", () => {
     }
   }
   assert.deepEqual(unused, [], "classes no component uses: remove their rules");
+});
+
+// A wish's price is the figure that matters on its Spent line: it takes a grey of the theme, which reads at 4.5:1 on
+// the page and on a card in the dark and the light theme, and marks its hover (the split) with a dotted underline.
+test("the price of what a wish spent reads in the dark and the light theme", () => {
+  const wish = fs.readFileSync(path.join(root, "wish.css"), "utf8");
+  const start = wish.indexOf(".wish-spent .spent-price {");
+  assert.ok(start >= 0, "the price has its rule");
+  const rule = wish.slice(start, wish.indexOf("}", start));
+  assert.match(rule, /cursor: help/);
+  assert.match(rule, /text-decoration: underline dotted/);
+  const colour = rule.match(/color: var\(--([\w-]+)\)/)?.[1];
+  assert.ok(colour, "the price's colour is a token");
+  const theme = fs.readFileSync(path.join(root, "theme.css"), "utf8");
+  const tokens = (selector) => {
+    const from = theme.indexOf(selector + " {");
+    return Object.fromEntries(
+      [
+        ...theme
+          .slice(from, theme.indexOf("\n}", from))
+          .matchAll(/--([\w-]+):\s*(#[0-9a-f]{6});/g),
+      ].map((m) => [m[1], m[2]]),
+    );
+  };
+  const lum = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((i) => {
+      const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  for (const [name, values] of [
+    ["dark", tokens(":root")],
+    ["light", tokens('html[data-theme="light"]')],
+  ])
+    for (const ground of ["n-11", "n-19"]) {
+      const [x, y] = [lum(values[colour]), lum(values[ground])].sort(
+        (p, q) => q - p,
+      );
+      const r = (x + 0.05) / (y + 0.05);
+      assert.ok(r >= 4.5, `${name}: ${colour} on ${ground} reads at ${r}:1`);
+    }
 });

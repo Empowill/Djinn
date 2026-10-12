@@ -17,7 +17,7 @@ limits, and they are the project's first rule:
   you like.
 
 **Workers never commit.** They edit their worktree; Djinn commits each one's work as it ends, tested, and pushes on
-a cadence: at an azima's end, or after three tasks and an hour. One CI run per push instead of one per worker: the Git
+a cadence: at an azima's end, or after three tasks and an hour, or on demand. One CI run per push instead of one per worker: the Git
 runners breathe.
 
 > **ALPHA — NOT USABLE AS IS.** Djinn is an experimental project under development. It is not ready to be used, neither for real work nor in production. The features described below show the project's goal and its state of development; they are no guarantee that it works.
@@ -68,10 +68,11 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 
 - [ ] [T07 · The orchestrator: Djinn decides, starts, resumes, integrates and pushes the work by itself](plan/8e8d3d76-orchestrator.md) (in progress)
 - [ ] [T13 · Work across projects: a wish spanning several projects, a project's skills in another](plan/58ae4a59-cross-project-sessions.md) (in progress)
-- [ ] [T14 · Fast, economical workers: the right context and model, sized to the machine](plan/8ce817da-cost.md) (in progress)
-- [ ] [T18 · Antigravity as a worker provider](plan/a72eb1f8-antigravity-provider.md) (in progress)
+- [x] [T14 · Fast, economical workers: the right context and model, sized to the machine](plan/8ce817da-cost.md)
+- [x] [T18 · Antigravity as a worker provider](plan/a72eb1f8-antigravity-provider.md)
 - [ ] [T25 · Understand and decide at a glance: what waits for you first, clear questions, tilasms](plan/4a699d0f-review-at-a-glance.md) (in progress)
 - [ ] [T26 · Every request finds its wish: routing, wish templates, an inbox](plan/e1210c5e-request-routing.md) (in progress)
+- [ ] [T27 · Djinn stays fast, whatever the size of a wish: the window, djinn up and its start](plan/9ac1c08b-djinn-stays-fast.md) (in progress)
 
 **Phase 3 · Comfort**
 
@@ -81,12 +82,17 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 ## From brief to result
 
 - **One wish, one lead.** Say what you wish. Its lead, Claude Code or Codex, splits it into tasks, each one a worker in
-  its own worktree. Three wishes are active at most; the flight plan shows them together.
-- **A visible team.** Each task shows its worker, its status, its live events and what it cost. Send it an instruction
-  while it works, or stop it. Talk to the lead in a terminal inside the window.
-- **You decide.** A question comes with its options and the lead's recommendation: **Rub the lamp** takes it, and a
-  small worker turns your decision into tasks; **Enlighten me** sends one to dig first, then revise the question. The
-  lead hears what each did. A system notification answers it from anywhere.
+  its own worktree. One lead is principal across active wishes to field shared decisions. Tasks can wait as drafts and
+  move between wishes as priorities shift. Three wishes are active at most; the flight plan shows them together.
+- **A visible team.** Two-line task rows show each worker's status first, prompt, live events, diffs, terminal logs and
+  what it cost. An operating load cursor (from Minimal to Overclock, or Auto) meters concurrency to the machine,
+  giving investigators top priority. Send instructions while workers run, or talk to the lead in its terminal.
+- **You decide.** A question comes with its options, keyboard shortcuts and the lead's recommendation: **Rub the lamp**
+  takes it, and a small worker turns your decision into tasks; **Enlighten me** sends one to dig first with your note,
+  then revise the question. Answers route directly to the principal lead's terminal.
+- **Ship with confidence.** A push strategy per wish integrates work into a single wish branch or dedicated azima
+  branches with automated pull requests. Push on a standard cadence after tests pass or on demand with the **Push**
+  button.
 - **What needs you is a question; the rest stays in the wish.** What the lead and the workers write down for one
   another, Markdown and Mermaid diagrams, waits in a tab of its own. One HTML page shares the wish; `djinn wish
   export` hands it over whole, in one file.

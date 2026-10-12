@@ -67,6 +67,18 @@ func TestScopePrefix(t *testing.T) {
 	if !slices.Equal(c.Prefix, want) {
 		t.Errorf("capped prefix = %q, want %q", c.Prefix, want)
 	}
+	d := s.NewWithMemory("W12", 1<<30)
+	want = []string{"systemd-run", "--user", "--scope", "--quiet", "--collect", "--unit=" + d.Unit,
+		"-p", "CPUQuota=150%", "-p", "MemoryMax=1073741824", "--"}
+	if !slices.Equal(d.Prefix, want) {
+		t.Errorf("NewWithMemory prefix = %q, want %q", d.Prefix, want)
+	}
+	e := s.NewWithMemory("W12", 0)
+	want = []string{"systemd-run", "--user", "--scope", "--quiet", "--collect", "--unit=" + e.Unit,
+		"-p", "CPUQuota=150%", "--"}
+	if !slices.Equal(e.Prefix, want) {
+		t.Errorf("NewWithMemory 0 prefix = %q, want %q", e.Prefix, want)
+	}
 	if u := scopeUnit("a b/\u00e9", "0a1b2c3d"); u != "djinn-a_b__-0a1b2c3d.scope" {
 		t.Errorf("scopeUnit = %q", u)
 	}

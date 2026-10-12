@@ -16,6 +16,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/server"
+	"github.com/empowill/djinn/internal/ui"
 )
 
 // handler serves the fake services the way djinn up does, through server.Handler.
@@ -107,22 +108,22 @@ func TestDialAddress(t *testing.T) {
 	}
 }
 
-// resumes answers WishService.Resume, which is marked autostart.
+// resumes answers LeadService.Resume, which is marked autostart.
 type resumes struct {
-	planv1connect.UnimplementedWishServiceHandler
+	planv1connect.UnimplementedLeadServiceHandler
 }
 
 func (resumes) Resume(
-	_ context.Context, req *connect.Request[planv1.WishServiceResumeRequest],
-) (*connect.Response[planv1.WishServiceResumeResponse], error) {
-	return connect.NewResponse(&planv1.WishServiceResumeResponse{Terminal: "lead-" + req.Msg.GetWishId()}), nil
+	_ context.Context, req *connect.Request[planv1.LeadServiceResumeRequest],
+) (*connect.Response[planv1.LeadServiceResumeResponse], error) {
+	return connect.NewResponse(&planv1.LeadServiceResumeResponse{Terminal: "lead"}), nil
 }
 
 func TestAutostart(t *testing.T) {
-	wp, wh := planv1connect.NewWishServiceHandler(resumes{})
+	lp, lh := planv1connect.NewLeadServiceHandler(resumes{})
 	f := &fake{}
 	qp, qh := planv1connect.NewQuestionServiceHandler(questions{fake: f})
-	srv := httptest.NewServer(server.Handler(fstest.MapFS{"index.html": {}}, nil, map[string]http.Handler{wp: wh, qp: qh}))
+	srv := httptest.NewServer(server.Handler(fstest.MapFS{"index.html": {}}, nil, map[string]http.Handler{lp: lh, qp: qh}))
 	defer srv.Close()
 	home := t.TempDir()
 	started := 0
@@ -146,14 +147,39 @@ func TestAutostart(t *testing.T) {
 	if _, err := server.WriteAddr(home, "http://127.0.0.1:1/?token=old"); err != nil {
 		t.Fatal(err)
 	}
-	if code, out, errs := run("wish", "resume", wishID); code != 0 || started != 1 || !strings.Contains(out, "lead-"+wishID) {
+	if code, out, errs := run("lead", "resume"); code != 0 || started != 1 || !strings.Contains(out, "lead") {
 		t.Fatalf("resume without djinn: code %d, started %d\n%s%s", code, started, out, errs)
 	}
 	// Once one answers, nothing is started.
-	if code, _, errs := run("wish", "resume", wishID); code != 0 || started != 1 {
+	if code, _, errs := run("lead", "resume"); code != 0 || started != 1 {
 		t.Fatalf("resume with djinn: code %d, started %d, stderr %q", code, started, errs)
 	}
 	if !Alive(srv.URL) || Alive("http://127.0.0.1:1") || Alive("unix://"+filepath.Join(home, "none.sock")) {
 		t.Error("Alive is wrong about a server")
+	}
+}
+
+// TestRefusesRealHomeSocket: Alive, Dial, and Run refuse to touch the real data directory or socket under test.
+func TestRefusesRealHomeSocket(t *testing.T) {
+	realHome := ui.RealHome()
+	if realHome == "" {
+		t.Skip("no real home directory found on this system")
+	}
+
+	realSock := "unix://" + filepath.Join(realHome, "djinn.sock")
+	if Alive(realSock) {
+		t.Fatal("Alive must return false for real home socket under test")
+	}
+	if _, _, err := Dial(realSock); err == nil || !strings.Contains(err.Error(), "refusing to dial real data directory") {
+		t.Fatalf("expected dial refusal for real home socket under test, got err: %v", err)
+	}
+
+	var out, errs bytes.Buffer
+	code := Run(t.Context(), []string{"wish", "list"}, Config{Home: realHome, Stdout: &out, Stderr: &errs})
+	if code == 0 {
+		t.Fatalf("Run unexpectedly succeeded on real home under test: %s", out.String())
+	}
+	if !strings.Contains(errs.String(), "refusing to use real data directory") {
+		t.Fatalf("expected Run refusal message, got: %s", errs.String())
 	}
 }

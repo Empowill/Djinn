@@ -31,6 +31,9 @@ import (
 //	count:<file>   it counts its runs in file, and prints "run N"
 //	input:<file>   it reads its input to the end, and adds a line to file: how many bytes it read
 //	exit:2         it exits with this code
+//	keep:<name>    it counts its runs in its state folder, DJINN_HOME/watchers/$DJINN_TASK_ID/<name>, silently
+//	die-before:3   while the last keep counted fewer runs, it says so on its error output and exits with code 1
+//	from:2         while the last keep counted fewer runs, it waits until it is stopped
 //	wait           it waits until it is stopped
 //
 // wait sleeps, it does not block on an empty select: in a test binary without cgo, as on macOS and Windows, the
@@ -39,9 +42,26 @@ import (
 const fakeWatchArg = "djinn-fake-watch"
 
 func fakeWatch(steps []string) int {
+	kept := 0
 	for _, step := range steps {
 		verb, arg, _ := strings.Cut(step, ":")
 		switch verb {
+		case "keep":
+			dir := filepath.Join(os.Getenv("DJINN_HOME"), "watchers", os.Getenv("DJINN_TASK_ID"))
+			_ = os.MkdirAll(dir, 0o700)
+			b, _ := os.ReadFile(filepath.Join(dir, arg))
+			kept, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+			kept++
+			_ = os.WriteFile(filepath.Join(dir, arg), []byte(strconv.Itoa(kept)), 0o600)
+		case "die-before":
+			if n, _ := strconv.Atoi(arg); kept < n {
+				fmt.Fprintf(os.Stderr, "died at run %d\n", kept)
+				return 1
+			}
+		case "from":
+			if n, _ := strconv.Atoi(arg); kept < n {
+				time.Sleep(time.Hour)
+			}
 		case "say":
 			fmt.Println(arg)
 		case "err":
@@ -330,8 +350,8 @@ func TestWatcher(t *testing.T) {
 	e.ended(t, agent.GetId())
 }
 
-// TestWatcherEnds: without --restart, the watcher ends with its command, and the lead learns it has ended; a failing
-// command fails the task. --restart is for a watcher only, and a watcher needs a project.
+// TestWatcherEnds: without --restart, the watcher ends with its command, done, and the lead learns it has ended; a
+// command that dies at each start fails the task. --restart is for a watcher only, and a watcher needs a project.
 func TestWatcherEnds(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(time.Hour))
@@ -352,11 +372,13 @@ func TestWatcherEnds(t *testing.T) {
 		t.Errorf("the lead was told %q", lines)
 	}
 
+	// A command that dies starts again: dead at each start, it fails the task (TestWatcherGivesUp).
 	task, err = e.spawnWatch(t, wishID, watchCommand("err:no token", "exit:3"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := e.ended(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED || got.GetError() != "exit code 3" {
+	if got := e.ended(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED ||
+		got.GetError() != "its command died 5 times in a row; the last time: exit code 3; its error output: no token" {
 		t.Errorf("failing watcher = %v", got)
 	}
 
@@ -394,6 +416,60 @@ func TestWatcherResumes(t *testing.T) {
 		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || got.GetWorktree() != "" {
 			t.Fatalf("after restart %d: %v", i-1, got)
 		}
+	}
+	// Babysit PR #2, 12/10/2026: the restart line said no worker was running while W9, a watcher, came back. It counts
+	// the watchers apart.
+	events, err := store.List[*planv1.LeadEvent](t.Context(), e.db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restarts []string
+	for _, ev := range events {
+		if ev.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART {
+			restarts = append(restarts, ev.GetText())
+		}
+	}
+	if want := "Djinn: restarted on version unknown: 1 watcher resumed: W1."; len(restarts) < 2 || restarts[len(restarts)-1] != want {
+		t.Errorf("restart events %q, want the last %q", restarts, want)
+	}
+	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestWatcherResumedSaysItOnce: PR #2, 12/10/2026. A watcher Djinn starts again tells its lead nothing when its first
+// paragraph says again what its task said last: the babysit-pr watcher says its checks again on its first look, as
+// what it printed while a Djinn hung reached no lead. What follows wakes the lead as before.
+func TestWatcherResumedSaysItOnce(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	e := up(t, home, WithTick(20*time.Millisecond))
+	lead := &told{}
+	e.h.TellLeads(lead.tell)
+	wishID, _ := e.wish(t, gitRepo(t))
+	// Each run waits a little before it speaks: the test gives the lead to the Djinn started again before that.
+	cmd := watchCommand("keep:runs", "sleep:100ms", "say:CI red", "sleep:100ms", "from:2", "say:CI green", "wait")
+	task, err := e.spawnWatch(t, wishID, cmd, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "CI red" })
+	e.down()
+	e = up(t, home, WithTick(20*time.Millisecond))
+	again := &told{}
+	e.h.TellLeads(again.tell)
+	e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "CI green" })
+	// The lead is told a paragraph after its task records it, and the paragraphs of a watcher in order.
+	deadline := time.Now().Add(5 * time.Second)
+	for len(again.all()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := lead.all(); len(got) != 1 || !strings.Contains(got[0], "says: CI red.") {
+		t.Errorf("before the restart, the lead was told %q", got)
+	}
+	if got := again.all(); len(got) != 1 || !strings.Contains(got[0], "says: CI green.") {
+		t.Errorf("after the restart, the lead was told %q", got)
 	}
 	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
 		t.Fatal(err)

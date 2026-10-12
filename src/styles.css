@@ -129,7 +129,26 @@ button {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+/* The window: the update banner's row when it shows (update-banner.css), then the app in the rest of the height. */
+.window {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg);
+}
+.window-app {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.window-app > .lead-frame,
+.window-app > .app {
+  flex: 1 1 0;
+  height: auto;
+}
 .app {
+  --sidebar-width: 222px;
   display: flex;
   width: 100vw;
   height: 100vh;
@@ -137,14 +156,13 @@ button {
   overflow: hidden;
 }
 .sidebar {
-  width: 222px;
+  width: var(--sidebar-width);
   flex-shrink: 0;
   background: var(--n-14);
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   padding: 0 14px;
-  transition: width 0.25s;
 }
 .sidebar-brand {
   height: 79px;
@@ -155,6 +173,26 @@ button {
 }
 .sidebar-brand > button {
   padding: 0;
+}
+.sidebar-brand-main {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+}
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  border-radius: var(--radius-control, 7px);
+  color: var(--muted);
+}
+.sidebar-toggle:hover {
+  color: var(--text);
+  background: var(--surface-raised);
 }
 .brand {
   font-size: 29px;
@@ -352,8 +390,10 @@ html[data-theme="light"] .wordmark-period {
 .profile > svg {
   color: var(--n-79);
 }
+.app.sidebar-collapsed {
+  --sidebar-width: 67px;
+}
 .sidebar-collapsed .sidebar {
-  width: 67px;
   padding: 0 10px;
 }
 .sidebar-collapsed .sidebar-brand {
@@ -387,6 +427,7 @@ html[data-theme="light"] .wordmark-period {
   background: var(--bg);
 }
 .topbar {
+  position: relative;
   height: 57px;
   flex-shrink: 0;
   display: flex;
@@ -420,8 +461,69 @@ html[data-theme="light"] .wordmark-period {
   display: flex;
   align-items: center;
   gap: 17px;
+  flex-shrink: 0;
 }
 
+/* The page header spans the window under the sidebar's top, its controls centred on the toolbar's (P19). Above the
+   attention bar that sticks under it, so that the lead's menu opens over the bar. */
+.page-header {
+  position: relative;
+  z-index: 7;
+  height: 64px;
+  gap: 12px;
+  margin-left: calc(-1 * var(--sidebar-width));
+  width: calc(100% + var(--sidebar-width));
+  padding-left: 100px;
+  border-bottom: 0;
+}
+.page-header > .breadcrumbs {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.page-header > .breadcrumbs > strong {
+  min-width: 0;
+  max-width: none;
+  font-size: 14px;
+  font-weight: 500;
+}
+.page-header > .topbar-actions {
+  flex: 0 0 auto;
+  gap: 12px;
+}
+.page-header-action {
+  flex: 0 0 32px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  gap: 6px;
+}
+.app .page-header-action.button.secondary {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  border-radius: var(--radius-control, 7px);
+}
+.app .page-header-action.button.secondary:hover {
+  border-color: transparent;
+  background: var(--surface-raised);
+  color: var(--accent);
+}
+.app .page-header-action.button.secondary.danger:hover {
+  color: var(--danger);
+}
+.page-header-action svg {
+  width: 16px;
+  height: 16px;
+}
+/* The labelled actions (Pause, Activate, Lead) keep their words, at the height of the icon actions. */
+.page-header .topbar-actions .button.small {
+  height: 32px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
 .button {
   display: inline-flex;
   align-items: center;
@@ -467,7 +569,8 @@ html[data-theme="light"] .wordmark-period {
   border-radius: 5px;
   color: var(--n-8f);
 }
-.icon-button:hover {
+.icon-button:hover,
+.icon-button.active {
   background: var(--n-2a);
   color: var(--accent);
 }
@@ -586,6 +689,9 @@ html[data-theme="light"] .wordmark-period {
 .hero-meta .wish-push-refused {
   color: var(--st-waiting);
 }
+.hero-meta .wish-push-on-demand {
+  color: var(--n-8f);
+}
 .hero-meta .badge {
   font-size: var(--font-size-body, 12px);
   padding: 3px 5px;
@@ -703,6 +809,28 @@ html[data-theme="light"] .wordmark-period {
   line-height: 1.7;
   color: var(--n-9c);
   max-width: 700px;
+}
+/* A link in a question's title or option: underlined in the text's own colour, cut anywhere when long. */
+.text-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--n-6f);
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+.text-link:hover {
+  text-decoration-color: currentColor;
+}
+/* A move's main link, where the developer acts: a button above what is at stake. */
+.question-move-link {
+  margin: 0 0 12px;
+}
+.move-link {
+  text-decoration: none;
+}
+.move-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .recommendation {
   display: flex;
@@ -1071,58 +1199,99 @@ html[data-theme="light"] .wordmark-period {
 .provider-setting {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 18px;
+  gap: 12px;
+  padding: 11px 16px;
   background: var(--n-25);
   border-bottom: 1px solid var(--n-4c);
 }
 .provider-setting:last-child {
   border: 0;
 }
+.provider-setting .provider-glyph {
+  font-size: 18px;
+  width: 20px;
+  text-align: center;
+}
 .provider-setting > div {
   flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
 }
 .provider-setting h3 {
   font-size: 13px;
-  margin-bottom: 5px;
+  white-space: nowrap;
 }
 .provider-setting .muted-text {
-  font-size: var(--font-size-body, 12px);
-  color: var(--n-9c);
-}
-.provider-setting small {
-  display: block;
   font: var(--font-size-body, 12px) var(--mono);
-  color: var(--n-6f);
-  margin-top: 4px;
-}
-.cli-help {
-  display: flex;
-  gap: 12px;
-  margin-top: 20px;
-  border: 1px dashed var(--n-4c);
-  padding: 14px;
-  border-radius: var(--radius-control, 7px);
-  color: var(--n-b6);
-}
-.cli-help strong {
-  font-size: var(--font-size-body, 12px);
-  font-weight: 500;
-}
-.cli-help p {
-  font-size: var(--font-size-body, 12px);
-  line-height: 2;
   color: var(--n-9c);
-  margin-top: 6px;
 }
-.cli-help span {
-  font-size: var(--font-size-body, 12px);
-  color: var(--n-79);
-  line-height: 1.8;
-}
-.cli-help code {
+.provider-setting code {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font: var(--font-size-body, 12px) var(--mono);
   color: var(--n-c4);
+  user-select: all;
+}
+.provider-setting .status-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: var(--font-size-body, 12px);
+  color: var(--n-b6);
+}
+
+.agent-setup-intro {
+  font-size: var(--font-size-body, 12px);
+  color: var(--n-a9);
+  line-height: 1.6;
+}
+.agent-setup .provider-settings {
+  margin-top: 14px;
+}
+.agent-check {
+  margin-top: 10px;
+}
+.agent-step {
+  padding: 12px 16px 14px;
+  background: var(--n-1c);
+  border-bottom: 1px solid var(--n-4c);
+}
+.agent-step:last-child {
+  border: 0;
+}
+.agent-step header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: var(--font-size-body, 12px);
+}
+.agent-step header code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--font-size-body, 12px) var(--mono);
+  color: var(--n-8f);
+}
+.agent-step-screen {
+  height: 240px;
+  padding: 6px;
+  background: var(--term-bg);
+  border-radius: 6px;
+}
+.agent-step-state {
+  font-size: var(--font-size-body, 12px);
+  color: var(--n-a9);
+  margin-top: 8px;
 }
 
 .settings-divider {
@@ -1148,6 +1317,11 @@ html[data-theme="light"] .wordmark-period {
   margin-top: 6px;
   line-height: 1.6;
 }
+.notification-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
 .setting-row select,
 .setting-row input {
   font-size: var(--font-size-body, 12px);
@@ -1160,6 +1334,43 @@ html[data-theme="light"] .wordmark-period {
 }
 .setting-row input:disabled {
   opacity: 0.5;
+}
+.project-push-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.segmented-switch {
+  display: inline-flex;
+  align-items: center;
+  background: var(--n-25);
+  border: 1px solid var(--n-47);
+  border-radius: var(--radius-control, 7px);
+  padding: 2px;
+  gap: 2px;
+}
+.segmented-switch button {
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: var(--font-size-body, 12px);
+  font-weight: 450;
+  color: var(--n-79);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.segmented-switch button:hover {
+  color: var(--n-d1);
+}
+.segmented-switch button.active {
+  background: var(--n-38);
+  color: var(--n-ff);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 .toggle {
   width: 34px;
@@ -1297,8 +1508,8 @@ html[data-theme="light"] .wordmark-period {
 }
 
 @media (min-width: 1750px) {
-  .sidebar {
-    width: 240px;
+  .app {
+    --sidebar-width: 240px;
   }
 
   .overview-content {
@@ -1330,8 +1541,10 @@ html[data-theme="light"] .wordmark-period {
   }
 }
 @media (max-width: 1300px) {
+  .app {
+    --sidebar-width: 197px;
+  }
   .sidebar {
-    width: 197px;
     padding: 0 11px;
   }
   .version-tag {
@@ -1412,8 +1625,8 @@ html[data-theme="light"] .wordmark-period {
   }
 }
 @media (max-width: 1080px) {
-  .sidebar {
-    width: 190px;
+  .app {
+    --sidebar-width: 190px;
   }
   .overview-content {
     padding: 0 30px 25px;
@@ -1450,14 +1663,16 @@ html[data-theme="light"] .wordmark-period {
   }
 }
 @media (max-width: 820px) {
+  .app {
+    --sidebar-width: 67px;
+  }
   .sidebar {
-    width: 67px;
     padding: 0 10px;
   }
-  .sidebar-brand > button .brand {
+  .sidebar-brand-main .brand {
     font-size: 0;
   }
-  .sidebar-brand > button .wordmark,
+  .sidebar-brand-main .wordmark,
   .version-tag,
   .sidebar .new-mission > span,
   .sidebar .new-mission kbd,
@@ -1470,7 +1685,10 @@ html[data-theme="light"] .wordmark-period {
     display: none;
   }
   .sidebar-brand {
-    padding: 0 10px;
+    padding: 0 4px;
+  }
+  .sidebar-brand-main {
+    gap: 0;
   }
   .sidebar .new-mission,
   .sidebar .nav-item,
@@ -1738,7 +1956,7 @@ html[data-motion="reduced"] *::after {
   justify-content: space-between;
 }
 .project-section-label button,
-.project-nav > button {
+.project-nav-main > button {
   background: transparent;
   color: var(--muted);
   border: 0;
@@ -1747,7 +1965,7 @@ html[data-motion="reduced"] *::after {
   cursor: pointer;
 }
 .project-section-label button:hover,
-.project-nav > button:hover {
+.project-nav-main > button:hover {
   background: var(--surface);
   color: var(--accent);
 }
@@ -1756,12 +1974,111 @@ html[data-motion="reduced"] *::after {
 }
 .project-nav {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   border-radius: var(--radius-control, 7px);
   min-width: 0;
 }
 .project-nav.selected {
   background: color-mix(in srgb, var(--n-ff) 3.5%, transparent);
+}
+.project-nav-main {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+}
+.project-nav .sync-lines {
+  padding: 0 5px 6px 26px;
+}
+.sync-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.sync-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 20px;
+  font-size: var(--font-size-body, 12px);
+  color: var(--n-79);
+}
+.sync-branch {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+.sync-counts {
+  display: inline-flex;
+  gap: 5px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--n-b6);
+}
+.sync-behind {
+  color: var(--n-8f);
+}
+.icon-button.sync-push {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--n-79);
+}
+.icon-button.sync-push:disabled {
+  opacity: 0.45;
+  background: transparent;
+  color: var(--n-79);
+  cursor: default;
+}
+/* A push that runs keeps its button, disabled but not faded: its spinner says it works. */
+.icon-button.sync-push:disabled:has(.sync-spinner) {
+  opacity: 1;
+}
+.sync-spinner {
+  animation: sync-spin 1s linear infinite;
+}
+@keyframes sync-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sync-spinner {
+    animation: none;
+  }
+}
+.sync-status {
+  display: inline-flex;
+  flex: none;
+  cursor: default;
+}
+.sync-status.pushed {
+  color: var(--st-done);
+}
+.sync-status.held,
+.sync-status.failed {
+  color: var(--st-failed);
+}
+.sync-note {
+  color: var(--n-8f);
+  font-style: italic;
+}
+.sync-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 2px 0;
+  font-size: var(--font-size-body, 12px);
+  color: var(--n-79);
+}
+.sync-fold:hover {
+  color: var(--accent);
 }
 .project-select {
   display: flex;
@@ -1798,6 +2115,9 @@ html[data-motion="reduced"] *::after {
 .sidebar-collapsed .project-nav {
   justify-content: center;
 }
+.sidebar-collapsed .project-nav-main {
+  justify-content: center;
+}
 .sidebar-collapsed .project-select {
   justify-content: center;
 }
@@ -1829,4 +2149,165 @@ html[data-motion="reduced"] *::after {
   right: 14px;
   z-index: 1;
   background: color-mix(in srgb, var(--n-19) 80%, transparent);
+}
+
+/* Wails macOS windows keep their native traffic lights while the webview fills
+   the old titlebar area. The native 6px strip handles dragging in the desktop
+   build; these inherited values keep the same intent for Wails' CSS drag bridge. */
+html.native-mac .sidebar {
+  padding-top: 28px;
+}
+html.native-mac .sidebar-brand,
+html.native-mac .topbar {
+  --wails-draggable: drag;
+}
+html.native-mac button,
+html.native-mac a,
+html.native-mac input,
+html.native-mac textarea,
+html.native-mac select,
+html.native-mac [role="button"] {
+  --wails-draggable: no-drag;
+}
+
+/* The sidebar's toggle stays in a fixed toolbar, in the same place folded or not: over the top of the sidebar, beside
+   the traffic lights in the macOS window. */
+.app {
+  position: relative;
+}
+.app-toolbar {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  height: 32px;
+  pointer-events: none;
+}
+.app-toolbar > button {
+  pointer-events: auto;
+}
+.app-toolbar-back,
+.app-toolbar-toggle {
+  flex: 0 0 32px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 6px;
+}
+html.native-mac .app-toolbar {
+  top: 6px;
+  left: 92px;
+  height: 20px;
+  --wails-draggable: no-drag;
+}
+.app-toolbar-back:disabled {
+  cursor: default;
+}
+html.native-mac .app-toolbar-back,
+html.native-mac .app-toolbar-toggle {
+  flex: 0 0 20px;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 2px;
+}
+/* In the macOS window the header's row is the toolbar's, beside the traffic lights, from the 6 px drag strip down; the
+   header keeps the height of the operating-load gauge, which hangs from that row. */
+html.native-mac .page-header {
+  align-items: flex-start;
+  padding-top: 6px;
+  padding-left: 166px;
+}
+html.native-mac .page-header > .breadcrumbs,
+html.native-mac .page-header > .topbar-actions {
+  height: 20px;
+}
+html.native-mac .page-header-action {
+  flex-basis: 20px;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 2px;
+}
+html.native-mac .page-header .topbar-actions .button.small {
+  height: 20px;
+  padding: 0 6px;
+}
+.app .page-header {
+  padding-left: max(calc(var(--sidebar-width) + 26px), 100px);
+}
+html.native-mac .app .page-header {
+  padding-left: max(calc(var(--sidebar-width) + 26px), 166px);
+}
+/* Room for the toolbar above the sidebar's brand. */
+html:not(.native-mac) .sidebar {
+  padding-top: 28px;
+}
+.sidebar {
+  width: var(--sidebar-width);
+  transition:
+    width 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sidebar-brand {
+  flex: 0 0 79px;
+}
+.sidebar-content {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* Folded, the sidebar narrows to its rail of icons and counts; unfolded, back to its labels. Its content glides in
+   from the left as the width changes, the next state drawn at once rather than labels squeezed in a narrow column.
+   The two names alternate so that each fold plays the glide again. */
+.sidebar-glide .sidebar-content {
+  animation: sidebar-glide-open 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sidebar-glide.sidebar-collapsed .sidebar-content {
+  animation-name: sidebar-glide-fold;
+}
+@keyframes sidebar-glide-open {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+}
+@keyframes sidebar-glide-fold {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+}
+
+/* Tooltips live in document.body so clipped sidebar/content surfaces cannot hide them. Their key reads like the
+   question card's (.key-hint), in the tooltip's own colour. */
+.app-tooltip {
+  position: fixed;
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 7px 9px;
+  border: 1px solid var(--n-42);
+  border-radius: 6px;
+  background: var(--n-20);
+  color: var(--n-eb);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow) 48%, transparent);
+  font-size: var(--font-size-body, 12px);
+  line-height: 1.35;
+  pointer-events: none;
+  white-space: normal;
+}
+.app-tooltip .key-hint {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }

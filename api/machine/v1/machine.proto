@@ -5,6 +5,7 @@ syntax = "proto3";
 package machine.v1;
 
 import "buf/validate/validate.proto";
+import "djinn/v1/load.proto";
 import "djinn/v1/options.proto";
 import "google/protobuf/timestamp.proto";
 import "plan/v1/plan.proto";
@@ -14,6 +15,11 @@ service MachineService {
   // Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at
   // once, what each running worker uses, and whether it can run a local model.
   rpc Show(MachineServiceShowRequest) returns (MachineServiceShowResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Series returns the CPU and memory measurement series of running workers, the machine total and djinn itself over the last N minutes.
+  rpc Series(MachineServiceSeriesRequest) returns (MachineServiceSeriesResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
@@ -72,6 +78,13 @@ message Machine {
   repeated WorkerUse worker_uses = 18;
   // Why the workers' CPU and memory are not measured on this machine; empty where they are (Linux, macOS).
   string worker_measure = 19;
+  // Operating load notch in effect on this machine.
+  djinn.v1.LoadNotch load = 20;
+  // The percentile of its memory series a worker is engaged at under this notch: 95 at Minimal down to 50 at
+  // Overclock.
+  int32 worker_percentile = 21;
+  // The same in words, like "engaged at p50 (overclock)".
+  string worker_engaged_at = 22;
 }
 
 // WorkerUse is what the worker of a running task uses of the machine.
@@ -86,6 +99,8 @@ message WorkerUse {
   string title = 4;
   // What its worker uses, at the last reading.
   plan.v1.Resources resources = 5;
+  // Whether the worker is paused.
+  bool paused = 6;
 }
 
 // Disk is the space of the file system that holds a folder.
@@ -119,6 +134,133 @@ message MachineServiceShowRequest {}
 message MachineServiceShowResponse {
   // The machine.
   Machine machine = 1;
+}
+
+message MachineServiceSeriesRequest {
+  // Number of minutes of history to return (10, 30, 120, 1440, 10080; defaults to 30).
+  int32 minutes = 1;
+  // When set, only the points measured after it: the window reads the whole series once, then what came since, as
+  // the samples arrive. The workers running and the gate intervals come whole each time.
+  google.protobuf.Timestamp since = 2;
+}
+
+message MachineServiceSeriesResponse {
+  // Machine CPU and memory series.
+  MachineSeries machine = 1;
+  // Series for each running worker.
+  repeated WorkerSeries workers = 2;
+  // All gate intervals in the time window (both finished and currently held).
+  repeated GateInterval gates = 3;
+  // Where workers are not measured on this machine, the reason or OS (e.g. "windows").
+  string worker_measure = 4;
+}
+
+message MachineSeries {
+  // Logical cores on the machine.
+  int32 cores = 1;
+  // Total memory in bytes.
+  uint64 memory_total_bytes = 2;
+  // Operating load limit share if set (e.g. 0.8, 1.0, 1.5). 0 if unset.
+  double load_limit_share = 3;
+  // Operating load limit memory in bytes, if set.
+  uint64 load_limit_memory_bytes = 4;
+  // Measurement points over time.
+  repeated MachinePoint points = 5;
+}
+
+message MachinePoint {
+  // Timestamp of the measurement.
+  google.protobuf.Timestamp time = 1;
+  // Machine total CPU percent (0-100%).
+  double cpu_percent = 2;
+  // Machine memory used, in bytes.
+  uint64 memory_bytes = 3;
+  // CPU of Djinn and every process it started (its window, leads, workers, gate holders), as a share of the machine:
+  // 100% is all its cores.
+  double djinn_cpu_percent = 4;
+  // Resident memory of Djinn and every process it started, in bytes.
+  uint64 djinn_memory_bytes = 5;
+  // CPU of Djinn's own process alone (djinn up), as a share of the machine: 100% is all its cores.
+  double self_cpu_percent = 6;
+  // Resident memory of Djinn's own process alone, in bytes.
+  uint64 self_memory_bytes = 7;
+}
+
+message WorkerSeries {
+  // Task identifier.
+  string task_id = 1;
+  // Wish identifier.
+  string wish_id = 2;
+  // Short code of the task (e.g. T1, W1).
+  string code = 3;
+  // Title of the task.
+  string title = 4;
+  // Provider running the worker.
+  plan.v1.Provider provider = 5;
+  // Model name.
+  string model = 6;
+  // Peak CPU percent seen for this worker.
+  double peak_cpu_percent = 7;
+  // Peak resident memory in bytes seen for this worker.
+  uint64 peak_memory_bytes = 8;
+  // Worker measurement points over time.
+  repeated WorkerPoint points = 9;
+  // Gate intervals held by this worker.
+  repeated GateInterval gates = 10;
+  // Whether the worker is paused.
+  bool paused = 11;
+  // 95th percentile of resident memory in bytes seen for this worker.
+  uint64 p95_memory_bytes = 12;
+}
+
+message WorkerPoint {
+  // Timestamp of the measurement.
+  google.protobuf.Timestamp time = 1;
+  // Worker CPU percent (0-100% of 1 core or share).
+  double cpu_percent = 2;
+  // Worker resident memory in bytes.
+  uint64 memory_bytes = 3;
+}
+
+message GateInterval {
+  // Name of the gate (codegen, lint, test, etc.).
+  string gate = 1;
+  // Command that ran or is running under the gate.
+  string command = 2;
+  // Task identifier of the worker that held the gate, if any.
+  string task_id = 3;
+  // Project name or identifier.
+  string project = 4;
+  // When the gate was asked for.
+  google.protobuf.Timestamp asked_time = 5;
+  // When the gate was granted (acquire time).
+  google.protobuf.Timestamp grant_time = 6;
+  // When the gate was released; absent if still held.
+  google.protobuf.Timestamp release_time = 7;
+}
+
+message CommandRun {
+  // When the run ended.
+  google.protobuf.Timestamp time = 1;
+  // Command duration in seconds.
+  double seconds = 2;
+  // CPU time in seconds.
+  double cpu_seconds = 3;
+  // Peak memory in bytes.
+  uint64 peak_memory_bytes = 4;
+  // Exit code.
+  int32 exit_code = 5;
+  // Queue wait time before the gate was granted, in seconds.
+  double wait_seconds = 6;
+  // Duration the gate was held, in seconds.
+  double held_seconds = 7;
+  // Gate name.
+  string gate = 8;
+  // Task that ran it; empty when none did.
+  string task_id = 9;
+  // Git tree the command ran on, its worktree's changes and files not tracked included: the same before and after it
+  // ran. Empty when its folder is not in a git worktree, or the worktree changed while it ran.
+  string tree = 10;
 }
 
 // GateService grants the gates: shared resources, such as code generation (codegen), the local stack (stack), an
@@ -262,6 +404,29 @@ message CommandCost {
   int32 last_exit_code = 11;
   // When the last run ended.
   google.protobuf.Timestamp last_time = 12;
+  // 50th percentile of held duration, in seconds.
+  double p50_held_seconds = 13;
+  // 95th percentile of held duration, in seconds.
+  double p95_held_seconds = 14;
+  // Held duration of the last run, in seconds.
+  double last_held_seconds = 15;
+  // 50th percentile of wait duration before grant, in seconds.
+  double p50_wait_seconds = 16;
+  // 95th percentile of wait duration before grant, in seconds.
+  double p95_wait_seconds = 17;
+  // Wait duration of the last run before grant, in seconds.
+  double last_wait_seconds = 18;
+  // Held seconds of recent runs (for sparkline).
+  repeated double recent_held_seconds = 19;
+  // Recent runs (up to 200).
+  repeated CommandRun recent_runs = 20;
+  // Gate name (e.g. lint, test, e2e, gen).
+  string gate = 21;
+  // Project short name for display.
+  string project_name = 22;
+  // How many runs were asked: djinn gate run asked its gate for the command, whether the command then ran to its end
+  // (runs) or not (interrupted, killed, given up while waiting). Never below runs.
+  int32 asked = 23;
 }
 
 message CommandServiceListRequest {
@@ -295,6 +460,16 @@ message CommandServiceRecordRequest {
   uint64 peak_memory_bytes = 6;
   // Exit code of the command.
   int32 exit_code = 7;
+  // Queue wait time before the gate was granted, in seconds.
+  double wait_seconds = 8;
+  // Duration the gate was held, in seconds.
+  double held_seconds = 9;
+  // Gate that was held.
+  string gate = 10;
+  // Git tree the command ran on, its worktree's changes and files not tracked included: the same before and after it
+  // ran. Empty when its folder is not in a git worktree, or the worktree changed while it ran. Djinn skips a commit
+  // check its task's worker passed on the tree it is about to commit.
+  string tree = 11 [(buf.validate.field).string.max_len = 64];
 }
 
 message CommandServiceRecordResponse {

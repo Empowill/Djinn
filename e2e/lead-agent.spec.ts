@@ -1,12 +1,13 @@
 // The wish's head against the real djinn up --browser (see global-setup.ts): the arrow beside Lead lists the agents
-// found on djinn's PATH, and picking Antigravity starts a lead of it in the wish's lead terminal, from the same first
-// message as every lead, while the claude lead stays the wish's. The description under the title edits in place.
+// found on djinn's PATH, and picking Antigravity starts a lead of it in the lead's terminal, from the same first
+// message as every lead, and it becomes the one lead. The description under the title edits in place.
 // The agents are fake: claude and agy scripts on djinn's PATH.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { dropLead, leadFolder, leadRows, setLead } from "./lead";
 import { portable } from "./portable";
 
 const binary = path.resolve(
@@ -26,23 +27,8 @@ function wishOf(id: string) {
   const listed = JSON.parse(djinn("wish", "list", "--json")).wishes as {
     id: string;
     description?: string;
-    lead?: { provider?: string; session_id?: string };
   }[];
   return listed.find((w) => w.id === id)!;
-}
-
-// show asks djinn for a terminal, as the command line asks for the lead's.
-async function show(terminal: string) {
-  const url = new URL(process.env.DJINN_URL!);
-  const res = await fetch(new URL("/ui.v1.UiService/Show", url), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${url.searchParams.get("token")}`,
-    },
-    body: JSON.stringify({ terminal }),
-  });
-  expect(res.ok).toBe(true);
 }
 
 // open makes a wish set aside, in projects when given, and shows it in the window.
@@ -87,28 +73,34 @@ test("the description under the title edits in place, as djinn wish describe", a
 
 test.describe("Lead of another agent", () => {
   test.skip(process.platform === "win32", "the fake agents are shell scripts");
-  // The next specs find the window's own terminal again.
-  test.afterAll(() => show("main"));
+  test.afterEach(dropLead);
 
-  test("the arrow beside Lead starts an Antigravity lead, the claude lead kept", async ({
+  test("the arrow beside Lead starts an Antigravity lead, which becomes the lead", async ({
     page,
   }) => {
-    const folder = fs.realpathSync(
-      fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "lead-")),
-    );
-    // A new lead starts in the wish's project, never in the home folder.
+    const folder = leadFolder();
     const project = JSON.parse(djinn("project", "add", folder, "--json"))
       .project.id as string;
+    // A new lead starts in the first of Djinn's projects that has a folder here, never in the home folder.
+    const first = (
+      JSON.parse(djinn("project", "list", "--json")).projects as {
+        directory?: string;
+      }[]
+    )
+      .map((p) => p.directory ?? "")
+      .find((d) => d !== "" && fs.existsSync(d));
     const title = `Lead with agy ${randomUUID().slice(0, 8)}`;
     const wishId = await open(page, title, project);
-    djinn("wish", "set-lead", wishId, session, "--directory", folder);
+    setLead(session, folder);
 
     const actions = page.locator(".topbar-actions");
     await actions.getByRole("button", { name: "Choose the agent" }).click();
     const menu = page.getByRole("menu", { name: "Choose the agent" });
     const claude = menu.getByRole("menuitem", { name: /Claude/ });
     await expect(claude).toHaveAttribute("aria-current", "true");
-    await expect(claude).toContainText("The wish's lead: resumes its session");
+    await expect(claude).toContainText(
+      "The lead: resumes it, focused on this wish",
+    );
     const agy = menu.getByRole("menuitem", { name: /Antigravity/ });
     await expect(agy).toBeEnabled();
     await agy.click();
@@ -117,18 +109,16 @@ test.describe("Lead of another agent", () => {
     const terminal = page.getByRole("region", { name: "Terminal" });
     await expect(
       terminal.locator(".lead-terminal-command").first(),
-    ).toContainText(`agy -i 'You lead the Djinn wish ${wishId}.`);
+    ).toContainText("agy -i 'You lead the active wishes of this Djinn.");
     await expect(
-      page
-        .locator(".lead-terminal .xterm-rows > div")
-        .filter({ hasText: "fake-agy -i You lead the Djinn wish" }),
+      leadRows(page, "fake-agy -i You lead the active wishes of this Djinn."),
     ).toHaveCount(1);
     await expect(page.locator(".toast")).toContainText(
-      "the wish's lead stays the claude session",
+      "The folder's most recent conversation is the lead now",
     );
-    expect(wishOf(wishId).lead).toMatchObject({
-      provider: "PROVIDER_CLAUDE",
-      session_id: session,
+    expect(JSON.parse(djinn("lead", "get", "--json")).lead).toMatchObject({
+      provider: "PROVIDER_ANTIGRAVITY",
+      directory: first,
     });
     djinn("wish", "delete", wishId);
   });

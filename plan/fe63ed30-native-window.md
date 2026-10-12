@@ -219,8 +219,7 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   What the terminal owes it is proved: a Space held in the native window on Linux reaches a program
   in raw mode as the system's key repeat (2 s held, 500 ms delay, 33 a second: 50 spaces, exactly
   the count expected), and `TestHeldSpaceArrivesAsRepeats` shows each space arriving on its own,
-  30 ms apart. Left: speak to Claude Code itself, on Linux and macOS. (needs: a person with a microphone, on Linux
-  and on a Mac)
+  30 ms apart.
 - [x] Closing and reopening the window finds the terminal and its session where they were, while
   `djinn up` runs (e2e: a reopened page reads the same shell's output again). Closing the native
   window stops `djinn up`, so it hangs the terminal up.
@@ -239,7 +238,7 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   `TestSayWaitsWhileThePersonTypes`, `TestSayWaitsForAProgramJustStarted`, `TestAnswerReachesTheLead`, e2e
   `lead-tell.spec.ts`).
 - [x] A wish without a lead session says so where you answer: the open question says "no lead to tell: your answer
-  goes to the workers and waits in the wish's brief" (a converter still takes it, T07), the answered one and its row in
+  goes to the workers and waits in the wish's brief", the answered one and its row in
   the Decisions tab say the answer waits in the brief (W52's question, A; `wish.lead.sessionId` empty, as
   `plan.ErrNoLead`). (`a question of a wish without a lead session…` in `tests/screens.test.mjs`, `an answer in a wish
   without a lead session…` in `tests/data-decisions.test.mjs`)

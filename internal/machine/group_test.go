@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -48,6 +49,28 @@ func TestReadGroup(t *testing.T) {
 	fsys["proc/104/stat"] = &fstest.MapFile{Data: []byte("104 (broken")}
 	if _, err := ReadGroup(fsys, 100); err == nil {
 		t.Error("a stat line without its fields read")
+	}
+}
+
+// TestGroupPIDs finds all process IDs belonging to a process group and its children.
+func TestGroupPIDs(t *testing.T) {
+	fsys := fstest.MapFS{
+		"proc/50/stat":  stat(50, "djinn", 1, 50, [4]int{900, 100, 0, 0}, 10000),
+		"proc/100/stat": stat(100, "claude", 50, 100, [4]int{150, 50, 100, 0}, 1000),
+		"proc/101/stat": stat(101, "node", 100, 100, [4]int{20, 10, 0, 0}, 300),
+		"proc/102/stat": stat(102, "bash", 101, 102, [4]int{1, 1, 0, 0}, 100),
+		"proc/103/stat": stat(103, "go", 102, 102, [4]int{300, 98, 0, 0}, 2000),
+		"proc/200/stat": stat(200, "other", 1, 200, [4]int{5000, 0, 0, 0}, 9000),
+	}
+	procs, err := readProcs(fsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pids := GroupPIDs(procs, 100)
+	slices.Sort(pids)
+	want := []int{100, 101, 102, 103}
+	if !slices.Equal(pids, want) {
+		t.Errorf("GroupPIDs(100) = %v, want %v", pids, want)
 	}
 }
 

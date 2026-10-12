@@ -47,6 +47,9 @@
       {{- if .RecomLine}}<span class="qreco">{{.RecomLine}}</span>{{end}}
     </summary>
     <div class="qbody">
+    {{- if .Context}}
+    <div class="context"><div class="label">{{index $.T "page.context"}}</div><div class="md">{{.Context}}</div></div>
+    {{- end}}
     {{- if .Recom}}
     <div class="recom"><div class="label">{{index $.T "page.recommendation"}}</div><div class="md">{{.Recom}}</div></div>
     {{- end}}
@@ -57,9 +60,6 @@
     </ol>
     {{- else}}
     <p class="hint">{{index $.T "page.yes_only"}}</p>
-    {{- end}}
-    {{- if .Context}}
-    <div class="context"><div class="label">{{index $.T "page.context"}}</div><div class="md">{{.Context}}</div></div>
     {{- end}}
     {{- if .Rounds}}
     <details class="fold rounds"><summary>{{index $.T "page.rounds"}} <span class="n">{{len .Rounds}}</span></summary>
@@ -253,7 +253,7 @@
 {{- end}}
 {{- define "run-item"}}<li><details><summary class="block-head">{{template "block-head" (index . 0)}}</summary>{{template "block-body" .}}</details></li>{{end}}
 {{- define "block-body"}}{{$b := index . 0}}{{$T := index . 1}}
-    {{- if $b.Markdown}}<div class="md prose">{{$b.HTML}}</div>{{else if $b.Text}}<pre>{{$b.Text}}</pre>{{end}}
+    {{- if $b.Markdown}}<div class="md prose">{{$b.HTML}}</div>{{else if $b.SVG}}<div class="dia-frame">{{$b.HTML}}</div>{{else if $b.Text}}<pre>{{$b.Text}}</pre>{{end}}
     {{- if $b.Diagram}}<p class="hint">{{index $T "page.diagram"}}</p>{{end}}
 {{- end}}
 {{- define "journal"}}{{$es := index . 0}}{{$T := index . 1}}

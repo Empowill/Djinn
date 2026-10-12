@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -23,7 +24,9 @@ import (
 //	tool Bash ls -la      it calls a tool
 //	result total 8        the tool returns
 //	usage 1200 300 0.02   it has spent so far 1200 tokens in, 300 out, $0.02
+//	turns 37              it has taken 37 model turns so far in this run
 //	write notes.md Hi     it writes Hi in notes.md, in its folder, when it may edit (else: permission denied)
+//	refuse Bash gcloud x  its permissions refuse the call, as claude says it: Bash {"command":"gcloud x"}
 //	sleep 5s              it works for a while
 //	wait                  it works until a message comes (Send), which it says back at the end as the others
 //	fail no tests         it fails with this reason
@@ -37,7 +40,7 @@ type Fake struct{}
 
 func (Fake) Start(ctx context.Context, spec Spec) (Worker, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	w := &fakeWorker{events: make(chan Event), cancel: cancel, done: make(chan struct{}), sent: make(chan struct{}, 1)}
+	w := &fakeWorker{events: make(chan Event), cancel: cancel, done: make(chan struct{}), sent: make(chan struct{}, 1), lowPriority: spec.LowPriority}
 	go w.play(ctx, spec)
 	return w, nil
 }
@@ -50,9 +53,10 @@ type fakeWorker struct {
 
 	sent chan struct{} // a message came (wait)
 
-	mu    sync.Mutex
-	inbox []string
-	held  chan struct{} // while paused; closed when resumed
+	mu          sync.Mutex
+	inbox       []string
+	held        chan struct{} // while paused; closed when resumed
+	lowPriority bool
 }
 
 func (w *fakeWorker) Events() <-chan Event { return w.events }
@@ -95,6 +99,19 @@ func (w *fakeWorker) Resume() error {
 		w.held = nil
 	}
 	return nil
+}
+
+func (w *fakeWorker) SetPriority(low bool) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.lowPriority = low
+	return nil
+}
+
+func (w *fakeWorker) IsLowPriority() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.lowPriority
 }
 
 // hold waits while the worker is paused. It says false when the worker is stopped meanwhile.
@@ -152,6 +169,8 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 		rest = strings.TrimSpace(rest)
 		ev := Event{Raw: raw}
 		switch verb {
+		case "model":
+			ev.Kind, ev.Model, ev.Text = planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, rest, "model "+rest
 		case "text":
 			ev.Kind, ev.Text = planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, rest
 		case "tool":
@@ -166,9 +185,18 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 			}
 			ev.Kind, ev.Usage = planv1.TaskEventKind_TASK_EVENT_KIND_USAGE, u
 			ev.Text = fmt.Sprintf("%d tokens in, %d out, $%.4f", u.GetInputTokens(), u.GetOutputTokens(), u.GetCostUsd())
+		case "turns":
+			n, err := strconv.Atoi(rest)
+			if err != nil || n < 1 {
+				ev.Kind, ev.Text = planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, "turns: want a count, got "+rest
+				break
+			}
+			ev.Kind, ev.Text, ev.Turns = planv1.TaskEventKind_TASK_EVENT_KIND_OTHER, raw, n
 		case "write":
 			ev = fakeWrite(spec, rest)
 			ev.Raw = raw
+		case "refuse":
+			ev.Kind, ev.Text = planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, permissionDenied+fakeCall(rest)
 		case "sleep":
 			d, err := time.ParseDuration(rest)
 			if err != nil {
@@ -233,6 +261,16 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 			return
 		}
 	}
+}
+
+// fakeCall is the call "tool input" as claude names it: a shell command's input in JSON.
+func fakeCall(call string) string {
+	tool, input, _ := strings.Cut(call, " ")
+	if tool != "Bash" && tool != "PowerShell" {
+		return call
+	}
+	b, _ := json.Marshal(map[string]string{"command": input}) // A map of strings: it cannot fail.
+	return tool + " " + string(b)
 }
 
 // fakeWrite writes "file text" in the worker's folder, as an agent that respects its rights: refused to a

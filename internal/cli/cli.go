@@ -26,7 +26,21 @@ import (
 	"github.com/empowill/djinn/gen"
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	"github.com/empowill/djinn/internal/server"
+	"github.com/empowill/djinn/internal/ui"
 )
+
+func resolveHome(cfg *Config) error {
+	if cfg.Home == "" {
+		home, err := ui.Home()
+		if err != nil {
+			return err
+		}
+		cfg.Home = home
+	} else if ui.InTest() && ui.IsRealHome(cfg.Home) {
+		return fmt.Errorf("refusing to use real data directory (%s) under test: without an address and a data folder given by the test harness, start a Djinn of your own (a DJINN_HOME of its own, djinn up on its own socket)", cfg.Home)
+	}
+	return nil
+}
 
 // Config is what Run needs from its caller.
 type Config struct {
@@ -111,6 +125,10 @@ func run(ctx context.Context, args []string, cfg Config) error {
 		}
 		return serveMCP(ctx, cfg)
 	}
+	// djinn brief is an alias for djinn lead brief.
+	if rest[0] == "brief" {
+		rest = append([]string{"lead", "brief"}, rest[1:]...)
+	}
 
 	services := commands()
 	names := []string{"help", "version"}
@@ -140,7 +158,10 @@ func run(ctx context.Context, args []string, cfg Config) error {
 	}
 	name, err = pick(rest[1], names, command(sd)+" method")
 	if err != nil {
-		return err
+		var ok bool
+		if name, ok = aliasedMethod(rest[1], names, methods); !ok {
+			return err
+		}
 	}
 	md := methods[slices.Index(names, name)]
 	if help {
@@ -209,6 +230,9 @@ func autostart(ctx context.Context, cfg Config, md protoreflect.MethodDescriptor
 
 // running returns the address of the djinn that answers, after starting one when none does.
 func running(ctx context.Context, cfg Config) (string, error) {
+	if err := resolveHome(&cfg); err != nil {
+		return "", err
+	}
 	if addr, err := server.ReadAddr(cfg.Home); err == nil && Alive(addr) {
 		return addr, nil
 	}
@@ -216,6 +240,7 @@ func running(ctx context.Context, cfg Config) (string, error) {
 }
 
 // call sends one unary request over Connect, in binary protobuf.
+// When md is paginated and the caller did not specify a page token, it loops to fetch all pages.
 func call(ctx context.Context, cfg Config, md protoreflect.MethodDescriptor, req *dynamicpb.Message) (*dynamicpb.Message, error) {
 	if md.IsStreamingClient() || md.IsStreamingServer() {
 		return nil, usageError{errors.New("streaming methods are not available on the command line")}
@@ -228,6 +253,36 @@ func call(ctx context.Context, cfg Config, md protoreflect.MethodDescriptor, req
 	if err != nil {
 		return nil, err
 	}
+
+	pageTokField := md.Input().Fields().ByName("page_token")
+	nextTokField := md.Output().Fields().ByName("next_page_token")
+	if pageTokField != nil && nextTokField != nil && !req.Has(pageTokField) {
+		reqCopy := proto.Clone(req).(*dynamicpb.Message)
+		for {
+			nextToken := res.Msg.Get(nextTokField).String()
+			if nextToken == "" {
+				break
+			}
+			reqCopy.Set(pageTokField, protoreflect.ValueOfString(nextToken))
+			nextRes, err := client.CallUnary(ctx, connect.NewRequest(reqCopy))
+			if err != nil {
+				return nil, err
+			}
+			for i := range md.Output().Fields().Len() {
+				fd := md.Output().Fields().Get(i)
+				if fd.IsList() {
+					dst := res.Msg.Mutable(fd).List()
+					src := nextRes.Msg.Get(fd).List()
+					for j := range src.Len() {
+						dst.Append(src.Get(j))
+					}
+				}
+			}
+			res.Msg.Set(nextTokField, nextRes.Msg.Get(nextTokField))
+		}
+		res.Msg.Clear(nextTokField)
+	}
+
 	return res.Msg, nil
 }
 
@@ -261,6 +316,9 @@ func stream(
 func newClient(cfg Config, md protoreflect.MethodDescriptor) (*connect.Client[dynamicpb.Message, dynamicpb.Message], error) {
 	addr := cfg.Addr
 	if addr == "" {
+		if err := resolveHome(&cfg); err != nil {
+			return nil, err
+		}
 		var err error
 		if addr, err = server.ReadAddr(cfg.Home); err != nil {
 			return nil, err
@@ -326,6 +384,33 @@ func aliased(word string, names []string, services []protoreflect.ServiceDescrip
 // aliases are the other names of a service's command.
 func aliases(sd protoreflect.ServiceDescriptor) []string {
 	out, _ := proto.GetExtension(sd.Options(), djinnv1.E_Alias).([]string)
+	return out
+}
+
+// aliasedMethod resolves a word no method's own name takes to the name of a method it is an alias of, in full or by
+// a unique prefix: djinn task set-agent is djinn task update.
+func aliasedMethod(word string, names []string, methods []protoreflect.MethodDescriptor) (string, bool) {
+	if slices.ContainsFunc(names, func(n string) bool { return strings.HasPrefix(n, word) }) {
+		return "", false
+	}
+	var found []string
+	for _, md := range methods {
+		mName := kebab(string(md.Name()))
+		for _, alias := range methodAliases(md) {
+			if (alias == word || strings.HasPrefix(alias, word)) && !slices.Contains(found, mName) {
+				found = append(found, mName)
+			}
+		}
+	}
+	if len(found) != 1 {
+		return "", false
+	}
+	return found[0], true
+}
+
+// methodAliases are the other names of a method's command.
+func methodAliases(md protoreflect.MethodDescriptor) []string {
+	out, _ := proto.GetExtension(md.Options(), djinnv1.E_MethodAlias).([]string)
 	return out
 }
 
@@ -446,7 +531,11 @@ func writeServiceHelp(w io.Writer, sd protoreflect.ServiceDescriptor) {
 	fmt.Fprintf(w, "%s\n\nUsage: djinn %s <method> [arguments] [flags]\n\nMethods:\n", comment(sd), command(sd))
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	for _, md := range public(sd) {
-		fmt.Fprintf(tw, "  %s\t%s\n", kebab(string(md.Name())), comment(md))
+		name := kebab(string(md.Name()))
+		if a := methodAliases(md); len(a) > 0 {
+			name += ", " + strings.Join(a, ", ")
+		}
+		fmt.Fprintf(tw, "  %s\t%s\n", name, comment(md))
 	}
 	for _, b := range Builtins {
 		if group(b) == command(sd) {
@@ -459,17 +548,37 @@ func writeServiceHelp(w io.Writer, sd protoreflect.ServiceDescriptor) {
 // writeText prints a response for a human: one "name: value" line per field set, nested messages indented, and
 // the content of the response directly when it holds a single field.
 func writeText(w io.Writer, m protoreflect.Message) {
-	if fields := m.Descriptor().Fields(); fields.Len() == 1 && fields.Get(0).Kind() == protoreflect.MessageKind {
-		fd := fields.Get(0)
+	if fd := singleContentField(m.Descriptor().Fields()); fd != nil && fd.Kind() == protoreflect.MessageKind {
 		switch {
 		case fd.IsList():
 			writeList(w, fd, m.Get(fd).List(), "")
 			return
-		case !fd.IsMap() && fd.Message().FullName() != timestampName:
+		case !fd.IsMap() && fd.Message().FullName() != timestampName && fd.Message().FullName() != durationName:
 			m = m.Get(fd).Message()
 		}
 	}
 	writeFields(w, m, "")
+}
+
+// singleContentField returns the single content field of fields, ignoring pagination metadata
+// (next_page_token and total) if present.
+func singleContentField(fields protoreflect.FieldDescriptors) protoreflect.FieldDescriptor {
+	if fields.Len() == 1 {
+		return fields.Get(0)
+	}
+	var nonPagination []protoreflect.FieldDescriptor
+	for i := range fields.Len() {
+		fd := fields.Get(i)
+		name := string(fd.Name())
+		if name == "next_page_token" || name == "total" {
+			continue
+		}
+		nonPagination = append(nonPagination, fd)
+	}
+	if len(nonPagination) == 1 {
+		return nonPagination[0]
+	}
+	return nil
 }
 
 func writeFields(w io.Writer, m protoreflect.Message, indent string) {
@@ -482,7 +591,7 @@ func writeFields(w io.Writer, m protoreflect.Message, indent string) {
 		case fd.IsList():
 			fmt.Fprintf(w, "%s%s:\n", indent, fd.Name())
 			writeList(w, fd, v.List(), indent+"  ")
-		case fd.Kind() == protoreflect.MessageKind && fd.Message().FullName() != timestampName:
+		case fd.Kind() == protoreflect.MessageKind && fd.Message().FullName() != timestampName && fd.Message().FullName() != durationName:
 			fmt.Fprintf(w, "%s%s:\n", indent, fd.Name())
 			writeFields(w, v.Message(), indent+"  ")
 		default:
@@ -493,7 +602,7 @@ func writeFields(w io.Writer, m protoreflect.Message, indent string) {
 
 func writeList(w io.Writer, fd protoreflect.FieldDescriptor, list protoreflect.List, indent string) {
 	for i := range list.Len() {
-		if fd.Kind() != protoreflect.MessageKind || fd.Message().FullName() == timestampName {
+		if fd.Kind() != protoreflect.MessageKind || fd.Message().FullName() == timestampName || fd.Message().FullName() == durationName {
 			fmt.Fprintf(w, "%s- %s\n", indent, text(fd, list.Get(i)))
 			continue
 		}

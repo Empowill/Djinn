@@ -156,6 +156,7 @@ func source(t *testing.T) (clients, *planv1.Wish, string) {
 	c.ask(t, wish.GetId())
 	_, err = c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
 		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: asked.Msg.GetQuestion().GetCode()}}, Choice: planv1.Choice_CHOICE_A,
+		By: planv1.Closer_CLOSER_DEVELOPER,
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -327,6 +328,90 @@ func TestExportImport(t *testing.T) {
 	}
 	if len(again.GetCommands()) != len(exp.GetCommands()) {
 		t.Errorf("commands exported again = %d, want the %d of the first machine", len(again.GetCommands()), len(exp.GetCommands()))
+	}
+}
+
+// A folder written through a symbolic link is still a project's folder or the home folder: the scrubber replaces
+// both of its paths (on macOS, /var for /private/var is the same case).
+func TestScrubberFollowsLinks(t *testing.T) {
+	base := resolvedTempDir(t)
+	api, home := filepath.Join(base, "api"), filepath.Join(base, "users", "me")
+	for _, dir := range []string{api, home} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	apiLink, homeLink := filepath.Join(base, "api-link"), filepath.Join(base, "me")
+	if err := os.Symlink(api, apiLink); err != nil {
+		t.Skipf("no symbolic link here: %v", err)
+	}
+	if err := os.Symlink(home, homeLink); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", homeLink)
+	t.Setenv("USERPROFILE", homeLink)
+	gone := filepath.Join(base, "gone")
+
+	s := newScrubber([]*planv1.Project{{Name: "Api", Directory: apiLink}, {Name: "Gone", Directory: gone}})
+	for in, want := range map[string]string{
+		filepath.Join(apiLink, "store.go"):  filepath.Join("Api", "store.go"),
+		filepath.Join(api, "store.go"):      filepath.Join("Api", "store.go"),
+		filepath.Join(homeLink, "notes.md"): filepath.Join("~", "notes.md"),
+		filepath.Join(home, "notes.md"):     filepath.Join("~", "notes.md"),
+		filepath.Join(gone, "old.go"):       filepath.Join("Gone", "old.go"),
+		filepath.Join(base, "other"):        filepath.Join(base, "other"),
+	} {
+		if got := s.r.Replace("see " + in); got != "see "+want {
+			t.Errorf("scrub(%q) = %q, want %q", "see "+in, got, "see "+want)
+		}
+	}
+}
+
+// On Windows, %TEMP% gives a folder with a short name (C:\Users\RUNNER~1) while a project's folder is stored with long
+// names: the scrubber replaces both forms, and a path that mixes them, as a prompt written under %TEMP% holds (CI of
+// PR #2, where the brief kept such a path). The home is a fake one, not the machine's: on the CI runner, RUNNER~1 is
+// the short name of the real home, which the scrubber rightly replaces by ~.
+func TestScrubberShortNames(t *testing.T) {
+	const (
+		home      = `C:\Users\djinnuser`
+		homeShort = `C:\Users\DJINNU~1`
+		long      = home + `\AppData\Local\Temp\TestBrief1`
+		mix       = homeShort + `\AppData\Local\Temp\TestBrief1`
+		all       = homeShort + `\AppData\Local\Temp\TESTBR~1`
+	)
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	short := map[string]string{home: homeShort, long: all}
+	saved := shortName
+	t.Cleanup(func() { shortName = saved })
+	shortName = func(path string) (string, bool) {
+		if strings.HasSuffix(path, ":") {
+			t.Errorf("short name asked for %q, the current folder of a drive", path)
+		}
+		got, from := path, ""
+		for l, s := range short { // The longest folder named: the system shortens every folder of the path.
+			if rest, ok := strings.CutPrefix(path, l); ok && len(l) > len(from) {
+				got, from = s+rest, l
+			}
+		}
+		return got, true
+	}
+
+	s := newScrubber([]*planv1.Project{{Name: "api", Directory: long + `\001`}}, long+`\002`, "djinn-data")
+	for in, want := range map[string]string{
+		mix + `\001/internal`:          "api/internal",
+		mix + `\001\cmd\main.go`:       `api\cmd\main.go`,
+		all + `\001\go.mod`:            `api\go.mod`,
+		long + `\001\go.mod`:           `api\go.mod`,
+		mix + `\002/state`:             "djinn-data/state",
+		homeShort + `\Documents`:       `~\Documents`,
+		home + `\Documents`:            `~\Documents`,
+		`C:\Users\OTHERU~1\Documents`:  `C:\Users\OTHERU~1\Documents`,
+		`C:\Users\otheruser\Documents`: `C:\Users\otheruser\Documents`,
+	} {
+		if got := s.r.Replace("In " + in + "."); got != "In "+want+"." {
+			t.Errorf("scrub(%q) = %q, want %q", in, got, "In "+want+".")
+		}
 	}
 }
 

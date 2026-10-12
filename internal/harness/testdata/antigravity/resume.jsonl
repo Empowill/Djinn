@@ -1,8 +1,8 @@
 # SUPPOSED: hand-written, never captured from agy. Shapes follow the official headless documentation
 # (antigravity.google/docs/cli/headless, read 2026-10-08) and the field names found in the agy 1.3.0 binary;
 # the order of steps, ACTIVE tool steps and stderr wording are guesses. Replace with a real capture. See docs/providers.md.
-# Case: the worker resumes conversation 055a398f-db14-4c5f-abbb-1bf03f8120a7 (--conversation).
-{"event":"init","conversation_id":"055a398f-db14-4c5f-abbb-1bf03f8120a7","init":{"cwd":"/work/project","tools":["ask_permission","run_command","view_file","write_to_file"],"permission_mode":"accept-edits","model":"gemini-3.8-flash-medium"}}
-{"event":"step_update","step_update":{"conversation_id":"055a398f-db14-4c5f-abbb-1bf03f8120a7","step_index":6,"state":"DONE","step_type":"user_input"}}
-{"event":"step_update","step_update":{"conversation_id":"055a398f-db14-4c5f-abbb-1bf03f8120a7","step_index":7,"state":"DONE","step_type":"agent_response","text_delta":"Picking up where we left off.\n"}}
-{"event":"result","result":{"conversation_id":"055a398f-db14-4c5f-abbb-1bf03f8120a7","status":"SUCCESS","response":"Picking up where we left off.\n","duration_seconds":1.427806958,"num_turns":1,"usage":{"input_tokens":30384,"output_tokens":9,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":30393}}}
+# Case: the worker resumes conversation 9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f (--conversation).
+{"event":"init","conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","init":{"cwd":"/work/project","tools":["ask_permission","run_command","view_file","write_to_file"],"permission_mode":"accept-edits","model":"gemini-3.8-flash-medium"}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":6,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":7,"state":"DONE","step_type":"agent_response","text_delta":"Picking up where we left off.\n"}}
+{"event":"result","result":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","status":"SUCCESS","response":"Picking up where we left off.\n","duration_seconds":1.427806958,"num_turns":1,"usage":{"input_tokens":30384,"output_tokens":9,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":30393}}}

@@ -75,3 +75,58 @@ func TestReadmeInstallLines(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseNotes(t *testing.T) {
+	notes := read(t, "docs/releases/v0.1.1.md")
+	if !strings.HasPrefix(notes, "# Djinn v0.1.1\n") {
+		t.Errorf("v0.1.1.md does not start with # Djinn v0.1.1")
+	}
+	workflow := read(t, ".github/workflows/release.yml")
+	if !strings.Contains(workflow, `docs/releases/$GITHUB_REF_NAME.md`) || !strings.Contains(workflow, `--notes-file`) {
+		t.Errorf(".github/workflows/release.yml does not use --notes-file with docs/releases/$GITHUB_REF_NAME.md")
+	}
+	for _, azima := range []string{
+		"Djinn is a native window, the same interface as in the browser",
+		"What waits for you comes first, every question reads clearly",
+		"Every request finds its wish",
+		"Djinn decides, starts, resumes, integrates and pushes the workers' work by itself",
+		"Workers start fast, with the right context and the right model",
+		"Djinn can hand a task to Google's Antigravity CLI",
+		"One wish spans several projects, and a project's skills serve in another",
+		"Everything starts from the protos",
+		"Djinn runs on Windows as well as on macOS and Linux",
+		"Your wishes follow you",
+		"Djinn installs in a few minutes, and updates from inside the app",
+		"Every release ships ready-made binaries for each target",
+	} {
+		if !strings.Contains(notes, azima) {
+			t.Errorf("v0.1.1.md missing azima goal: %s", azima)
+		}
+	}
+	for _, section := range []string{
+		"## Install",
+		"## Under the hood",
+		"## License",
+	} {
+		if !strings.Contains(notes, section) {
+			t.Errorf("v0.1.1.md missing section: %s", section)
+		}
+	}
+}
+
+func TestReleaseWorkflow(t *testing.T) {
+	workflow := read(t, ".github/workflows/release.yml")
+	for _, want := range []string{
+		"types: [published]",
+		"tags: [\"v*\"]",
+		"workflow_dispatch:",
+		"hashFiles('dist/index.html') == ''",
+		"npm ci && go tool task ui",
+		"gh release upload \"$GITHUB_REF_NAME\" --clobber",
+		"gh release edit \"$GITHUB_REF_NAME\" --notes-file",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Errorf(".github/workflows/release.yml does not contain %q", want)
+		}
+	}
+}

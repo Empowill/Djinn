@@ -28,10 +28,11 @@ const TilasmPrefix = "/tilasm/"
 //
 // The services never compress a response: every client of this server is on the same machine, where gzip only
 // costs time on both ends (see docs/transport.md). A service that writes nothing still answers 200, as on net/http.
+// Each call to a service is logged (logx).
 func Handler(ui, docs fs.FS, services map[string]http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	for prefix, h := range services {
-		mux.Handle(prefix, answered(uncompressed(h)))
+		mux.Handle(prefix, logged(answered(uncompressed(h))))
 	}
 	if docs != nil {
 		mux.Handle(DocsPath, http.StripPrefix(strings.TrimSuffix(DocsPath, "/"), assets(docs)))
@@ -277,12 +278,26 @@ func Serve(ctx context.Context, ln net.Listener, h http.Handler) error {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		done <- srv.Shutdown(shutdown)
+		done <- shutdownServer(shutdown, srv)
 	}()
 	if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return <-done
+}
+
+func shutdownServer(ctx context.Context, srv *http.Server) error {
+	if err := srv.Shutdown(ctx); err != nil {
+		if !errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		// A streaming handler may keep its connection open after the request context is canceled. The graceful
+		// deadline has elapsed, so force-close those connections to let an orderly requested restart continue.
+		if closeErr := srv.Close(); closeErr != nil {
+			return errors.Join(err, closeErr)
+		}
+	}
+	return nil
 }
 
 // newServer returns the HTTP server of Serve, apart for the benchmarks.
@@ -291,6 +306,12 @@ func newServer(ctx context.Context, ln net.Listener, h http.Handler) *http.Serve
 		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
 		BaseContext:       func(net.Listener) context.Context { return ctx },
+		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+			if pid := peerPID(c); pid > 0 {
+				return WithPeerPID(ctx, pid)
+			}
+			return ctx
+		},
 	}
 	if ln.Addr().Network() == "unix" {
 		srv.Protocols = new(http.Protocols)

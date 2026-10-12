@@ -10,33 +10,47 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
 - **Every command comes from a proto.** Each public method of `api/` is a command: `QuestionService.Answer` is
   `djinn question answer`. Arguments, help and validation follow the [convention](cli-convention.md). Exit codes:
   `0` success, `1` the call failed, `2` the command line is wrong.
-- **The brief says where the wish stands, and how to lead it.** `djinn wish brief <wish>` is a status on its own,
-  computed by Djinn from its store (`internal/plan/brief.go`), without a model: the wish's description first, then its
-  azimas and their states, the tasks running and waiting, the open questions, the latest decisions and blocks, and
-  the last lead (its agent, its session, when a lead last acted through Djinn); then Djinn's rules and the projects'
-  rules. Reconstructing the state is not the lead's job.
+- **The brief says where the wishes stand, and how to lead them.** `djinn brief` gives the lead every active
+  wish at once (each wish's title, description, open questions, what runs and waits, its azimas), then Djinn's rules
+  once; paused and granted wishes in one line each. `djinn wish brief <wish>` gives one wish's detail (latest decisions,
+  blocks, and the last lead). Reconstructing the state is not the lead's job.
 - **A wish describes itself.** Its description is a few lines: what it is for, its scope, where it goes.
   `djinn wish describe <wish> --text "…"` sets it; the developer edits it in the wish's head, under its title (a
   click, saved when the field is left). Until someone writes one, the title stands for it.
+- **A wish made from its request keeps it whole.** `djinn wish make "<title>"` still makes a wish from a title.
+  `djinn wish make --prompt "<Markdown>"` makes it from the developer's whole request, under a provisional title
+  ("New wish", in the developer's language) unless a title comes with it. The request is a `creation` block, written
+  in the transaction that makes the wish and journals the command, whose identifier the wish takes: its export carries
+  exactly that creation. The brief shows it once, whole, under "Original request", outside the latest blocks and their
+  limits, scrubbed like the rest. Djinn queues a `request` event for the lead: it names a provisional wish with
+  `djinn wish rename <wish> "<title>"`, in the developer's language, then plans it. Once renamed, the brief stops asking.
 - **The lead asks through Djinn, and delegates.** Everything for the developer is a question, the lead's own
   included: `djinn question ask`, with options and a recommendation, or with none when the lead really does not know
   what to think, the analysis behind it in its `--context`. One written in the lead's terminal reaches neither the
   window, nor the decision log, nor the question workers. A decision taken in the terminal goes in a block of kind
   decision; the work goes to tasks. A resolved question is resolved: the lead does not bring it back to the
-  developer, and asks again, a new question, only on a real doubt. Djinn's rules in the brief say it, and so does
+  developer, and asks again, a new question, only on a real doubt; an answer it does not fully understand (the
+  choice, its note, how they fit) is one, and no task starts from it. Djinn's rules in the brief say it, and so does
   every lead's first message.
+- **The lead says nothing in its terminal.** The developer reads only the window: the lead's turns end with no text,
+  or one line naming the question codes at most. Every report, finding, status or "done as you asked" is a question in
+  the wish concerned, often a yes/no acknowledgement with "OK, nothing to do" as an option; a real wait on the
+  developer is a `--move` question that says so. Never two questions for one gesture: the lead withdraws a question
+  the moment a task or Djinn does what it asked. A line typed in the lead's terminal is a request like any other,
+  answered in the window (`briefRules` in `internal/plan/brief.go`).
 - **Every lead starts the same way, whatever its agent.** Its first message is one line, the same for claude, codex
-  and antigravity: run `djinn wish brief <wish>`, then continue the wish from what it says (`StartLine` in
-  `internal/plan/newlead.go`). Nothing in it is about one agent or the wish's state: a lead of another agent than the
-  last one takes the wish over from the brief, without the old session. In the window, the arrow beside **Lead** lists
+  and antigravity: run `djinn brief`, then continue from what it says (`StartLine` in
+  `internal/plan/newlead.go`). Nothing in it is about one agent or a wish's state: a lead of another agent than the
+  last one takes over from the brief, without the old session. In the window, the arrow beside **Lead** lists
   the agents found on this machine (`UiService.GetEnvironment`: `claude`, `codex`, `agy`), those missing shown
-  disabled; picking the recorded lead's agent resumes its session, another starts a new lead of that agent in the
-  lead's terminal (`djinn wish resume <wish> --provider antigravity`). A new claude lead becomes the wish's lead; a
-  codex one once `djinn wish set-lead … --provider codex` gives its session; an antigravity one leaves the record as
-  it is. While the lead's terminal runs a program, nothing starts, and Djinn says to exit it there.
-- **A lead runs in a project, never in the home folder.** `djinn wish resume` resumes the lead's session in the
-  folder it was recorded in (`djinn wish set-lead --directory`): claude finds a session only from the folder it was
-  made in. A new lead starts in the wish's first project, else the first of Djinn's projects as the window lists them.
+  disabled; picking the recorded lead's agent resumes it (claude by session id, antigravity with `agy --continue` in the
+  lead's folder as the folder's most recent conversation), another starts a new lead of that agent in the
+  lead's terminal (`djinn lead resume --provider antigravity`). Resuming the lead resumes that session; starting a lead
+  of another provider replaces it. A new claude or antigravity lead becomes the lead; a codex one once
+  `djinn lead set … --provider codex` gives its session. While the lead's terminal runs a program, nothing starts, and Djinn says to exit it there.
+- **A lead runs in a project, never in the home folder.** `djinn lead resume` resumes the lead's session in the
+  folder it was recorded in (`djinn lead set --directory`): claude finds a session only from the folder it was
+  made in. A new lead starts in the first of Djinn's projects as the window lists them.
   A session recorded in the home folder, or a folder above it, is not resumed: a new lead starts from the brief, in a
   project. With no project, no lead starts, and the error says to create one (`internal/plan/lead.go`).
 - **Questions.** `djinn question ask` offers up to four options, answered by letter, or none for a yes. An answered
@@ -44,6 +58,28 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   its option's letter (`B: …`): the developer applies it in one click, "Rub the lamp". `--before "before the merge"`
   says what the answer is needed before; without it the question can wait. A question a waiting task needs is
   blocking whatever it says: the window, the page and the brief list blocking, then before X, then can wait.
+  `djinn question move <question> --wish <wish> [--follow]` moves an open question to another wish (retiring its code
+  in this wish, taking the next code in the other; `--follow` moves tasks naming this question as their decision along
+  with it). `djinn question withdraw <question> [--note "…"]` withdraws an open question without an answer.
+- **Moves only the developer can make.** Granting a right, pushing a tag, opening or merging a PR, starting a
+  release, checking on a Mac or Windows, installing and restarting: the lead asks them through `djinn question ask`,
+  with the exact command in the question. In a project with `install_questions: never` (such as Djinn itself), Djinn
+  never asks a question to install or restart (the window proposes each new build, to install or skip); with
+  `install_questions: when_needed`, ask the developer to install or restart only when necessary, and say why in the
+  question; never as routine.
+- **Operational decisions are the lead's (Decision Q196).** Djinn's operational questions (a merge still failing after its
+  corrections, a held push, a conflict, a main merge that fails, uncommitted review failures) go to the lead as an event,
+  never as a question to the developer. Obvious cases (work already in the integration branch, a task dropped or cancelled,
+  or a correction stopped by the lead) are settled silently without raising questions. The lead decides: retry a
+  correction, drop the work (`djinn task done --drop` or `djinn task cancel`), re-sequence the graph (`djinn task depend`),
+  or leave it waiting. Questions to the developer are reserved for moves only a person can make (a tag, a PR, a release,
+  a right) or a real choice. Djinn acts on a yes only to the move questions it asked itself, as each records its move
+  (`djinn_move`: install the build it named, push the tag it named, mark an azima whose proof it asked for done), never
+  by the words of a question; an answer to a worker's or the lead's move question is only noted (`Djinn noted move`).
+- **When Djinn misbehaves.** When Djinn misbehaves while the developer is away, the lead may stop the damage without
+  touching code: redirect the wish's integration to another branch, stop workers, withdraw useless questions. The lead
+  may also revert a faulty merge on the integration branch, telling the developer at once; every other commit on the
+  integration branch waits for the developer's agreement, asked first (`djinn question ask`).
 - **Investigations.** "Enlighten me" in the window (`djinn question enlighten <question> --note …`) asks to find out
   more before deciding: the question waits for a revision, and the brief lists it under "To investigate". Its
   question worker (below), or else the lead, answers with `djinn question revise <question> --context …
@@ -51,49 +87,130 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   A decision may take several rounds.
 - **Marks.** The open questions the developer marked read, from the window: `djinn mark list <wish>`, and the
   brief's "Marked by the developer". Approving an open question (`djinn mark put Q03 approved`) answers it with
-  its recommendation. A block takes no mark: Djinn refuses one.
-- **Question workers act on the developer's word; the lead stays informed.** When the developer answers a question
-  ("Rub the lamp", or an answer) that Djinn does not settle itself (an edit question, a question on work that failed
-  to integrate, a routed request, a grant), Djinn starts a small task in the wish, `Q43 → tasks`, a *converter*: its
-  prompt holds the question, its options, the answer, the developer's note and where the wish stands, and one job, to
-  turn the decision into tasks (`djinn task spawn … --decision Q43`, with `--part-of`, `--after`, a clear title and a
-  self-contained prompt each), or to ask what the answer leaves open (`djinn question ask`: an answered question is a
-  decision, it is not revised). "Enlighten me" starts `Q43: enlighten`, an *investigator*: it reads the code and the
-  brief, then revises the question. A question worker writes no code and runs no gate: Djinn gives it
-  `TASK_ACCESS_DJINN`, reading plus a short list of `djinn` and read-only `git` commands
-  (`internal/harness/permissions.go`), in its project's folder, without a worktree. It takes no slot of the machine,
-  like a watcher, but waits while the machine is under pressure or its memory would not hold it, like any agent. One
-  works on a question at a time: a second answer while the converter works is sent to it (`djinn task send`), not
-  given to a second one. Its model and budget are project settings, `question_model` (default `sonnet` for claude, the
-  provider's own default otherwise) and `question_budget_usd` (default $2); `question_workers: false` in a project's
-  settings, or `djinn up --question-workers=false` (`DJINN_QUESTION_WORKERS=off`), turns them off
-  (`docs/team-settings.md`).
-- **An answer reaches the lead.** When the developer answers a question, Djinn types one line in the terminal of
-  the wish's lead, then Enter: `Djinn: Q43 answered B — "<option>". Note: "<note>". W12 turns it into tasks; you
-  will hear when it ends.` When the converter ends, a second line says what it did: `Djinn: W12 (Q43 → tasks) ended:
-  spawned W13, W14 from Q43; asked Q44.`, or what is left to the lead when it did nothing or failed. A question
-  worker that ends without spawning, asking or revising anything after its access refused a call has failed, the
-  refusal named, and Djinn starts it again once, told what was refused: `Djinn: W12 (Q43 → tasks) failed: its command
-  was refused: djinn task list … | grep …. Djinn starts it again: W13, …`. The lead acts only if the retry gives up
-  too. Without question
-  workers the first line ends `Act on it: djinn wish brief <wish> has the context.` The agent reads each line as a
-  message, queued while it works. The line waits until the
-  developer has not typed in that terminal for three seconds, and lines go out in order. A lead that does not run is
-  reopened on its session first, as `djinn wish resume` does, without taking the window; only an active wish's.
-  A wish without a lead session keeps the answer in its brief's decisions (`internal/plan/tell.go`).
+  its recommendation. A task the developer reviewed, from the window's Review tab, is marked reviewed (`djinn mark put
+  W3 reviewed`); a task takes no other mark. A block takes no mark: Djinn refuses one.
+- **Investigators clarify questions; the lead turns answers into tasks.** Djinn does not turn answers into tasks
+  with workers: the DAG is the lead's responsibility (keeping it free of conflicts so workers do not collide along an
+  iterative and de-risked path), and the lead turns each answer into tasks itself, in one pass,
+  placing them in the graph (`azimas`, `--after`, `--blocks`), and checks what an investigator revised.
+  "Enlighten me" starts `Q43: enlighten` by default, an *investigator*: it reads the code and the brief, then revises
+  the question, keeping the lead's context clean. The investigator starts quietly without typing to the lead's terminal
+  (recorded in the journal and the window); the lead is told when it ends.
+  An investigator writes no code and runs no gate: Djinn gives it `TASK_ACCESS_DJINN`, reading plus a short list of
+  `djinn` and read-only `git` commands (`internal/harness/permissions.go`), in its project's folder, without a worktree.
+  It takes no slot of the machine, like a watcher, but waits while the machine is under pressure or its memory would not
+  hold it, like any agent. Its model and budget are project settings, `question_model` (default `sonnet` for claude,
+  the provider's own default otherwise) and `question_budget_usd` (default $2). In settings, `enlighten_workers`
+  (default `true`) controls them (`docs/team-settings.md`).
+- **What reaches the lead (Decision Q173).** Djinn tells the lead only what changes something:
+  - a real merge where the branch moved (a no-op batch, its work already in the branch, tells no merge line;
+    repeated merges of a pass go out as one coalesced event: `W12, W14, W15 merged into feat/foo as 1a2b3c4d`);
+  - moves only when a question was actually asked on that merge (`: push tag v1.0.0`, `: start a release`);
+  - an actionable failure (a work worker failed or was cut short; an integration failed; push checks stay red; a main merge failed);
+  - an answer or question for the lead to act on (developer answers, an "Enlighten me" when enlighten workers are
+    disabled, a filed request or inbox item, a wish made from a request, an azima opened to plan its tasks);
+  - the developer's approval of a decision the lead or a worker took (a question they answered); approving an open
+    question is its answer, and approving one of the developer's own decisions, or one approved already, tells nothing;
+  - a task ending without failure (the lead's cue to check its final note, revised questions, or spawned tasks),
+    once: a work worker's end is its merge line; with nothing to merge, or in a project that integrates nothing, an
+    `ended` event says it, with the first line of its final note (`W1 done: …`, incident W1 of wish Dew,
+    12/10/2026);
+  - the calls a worker's permissions refused in its run (its `permission denied: …` events, counted on the task's
+    `refused`), in its `ended` or `failed` event, with the command that grants them, whole in the digest:
+    `W1 done, 6 commands refused (permission): djinn, ls, git, …; djinn wish allow <wish> --mode auto lets the agent
+    judge them.` Only auto mode lets the agent judge a command (an edit allowance adds none), and granting stays the
+    developer's move. A claude worker started with its own settings (`TASK_ACCESS_NATIVE`) that allow no djinn
+    command cannot report: its spawn answers a `note` saying so;
+  - a watcher waking the lead;
+  - Djinn restarted: `Djinn: restarted on version v1.4.0: 2 workers interrupted (W12, W14), resumed by Djinn: W12; not
+    resumed, the move is yours: W14.`
+  Everything else goes to the journal and the window.
+- **The lead's events wait in a queue; the lead watches it (Decision Q191).** Each of these is a `LeadEvent` in the
+  store, with an id (a UUIDv7), a time, a kind (`ended`, `failed`, `merged`, `answer`, `enlighten`, `move`, `restart`,
+  `watch`, `request`, `approved`), the wish and the code it is about, and its line; one queue for the one lead, whatever the wish
+  (`internal/plan/leadwatch.go`). `djinn lead watch [--after <cursor>] [--timeout 1h]` blocks until an event waits,
+  lets the events settle (2 seconds of quiet, 10 at most: the lines of one integration pass, or a failure and the
+  correction Djinn starts for it, come within a second or two, and one digest is one turn of the lead instead of
+  several), then prints a digest and exits:
+
+  ```
+  2 events for the lead:
+  - W12 failed: (Build parser) failed (claude): exit 1. A correction worker started.
+  - Q43 answer: answered B — "Paraffin". Turn it into tasks: you hold the plan's graph (djinn wish brief <wish>).
+  Details: djinn task watch <task>, djinn wish brief <wish>.
+  Cursor 01a1…. Next: djinn lead watch --after 01a1… (acknowledges these, waits for the next).
+  ```
+
+  A line per event (its code, its kind, its line cut to 160 characters, and its wish's title when the events span
+  several), 30 at most (the rest come with the next watch, at once). Called again with `--after` the cursor, the watch
+  acknowledges every event up to it for the session that watches, then waits: an event never acknowledged (the lead
+  crashed, its session was lost) comes back on the next watch, at least once, never lost. With nothing in an hour (or
+  `--timeout`, at most 6 hours) it prints "No event…" and the command to run again; `--timeout 0s` returns at once.
+  The watch knows its session from the variable its agent sets for its commands (`CLAUDE_CODE_SESSION_ID`,
+  `CODEX_THREAD_ID`, `ANTIGRAVITY_CONVERSATION_ID`), else the recorded lead's: a session other than the recorded
+  lead's is refused (`djinn lead set` records it), and so is a worker. Acknowledged events are kept 7 days.
+- **Djinn types one line only when no watch waits.** While a watch of the lead's session waits, or within a minute of
+  one returning (the lead runs the next one first thing), Djinn types nothing in the lead's terminal. Otherwise, two
+  seconds after the events settle, it types one short line, `Djinn: 3 events waiting, run djinn lead watch`, at most
+  once until the lead watches again (or ten minutes passed); a lead that does not run is reopened on its session first,
+  as `djinn lead resume` does, without taking the window. djinn up does the same a minute after it starts, so that a
+  lead whose watch died with the last djinn up hears of the restart. The line waits until the developer has not typed
+  in that terminal for three seconds, and goes only to the lead's prompt (`Terminal.Say`, `internal/terminal/say.go`),
+  read on the screen as it shows now (a small model of the terminal, `screen.go`), not on what it once drew:
+  - **Never into a choice.** A hint that ends a line, or a part of it between `·`, with a key, `to` and what it does
+    (`Esc to cancel`, `Enter to confirm`, `Esc to exit`, `Press enter to confirm or esc to cancel`) is a choice: a
+    permission prompt or an approval of Claude Code or Codex, the folder trust, a first run's onboarding. The line
+    waits until the developer answers it: a digit in it would pick an option, its Enter confirm one, usually "Yes".
+    A choice covered since holds nothing, nor a sentence about one that ends with a period.
+  - **Never joined to a line under way.** Where the agent shows its prompt (Claude Code's `❯`, Codex's `›`), text
+    there that is not its faint placeholder holds the line until the developer sends or clears it, however long
+    they think. Elsewhere Djinn follows the keys: what is typed holds the line until it is sent or cleared (Enter,
+    Ctrl+C, Ctrl+U, Esc twice, a word erased by Ctrl+W or Alt+Backspace), or for 30 seconds after the last key. What
+    the window's terminal sends on its own (answers to the agent's queries, the mouse, the focus) is no key.
+  - **As a paste** when the agent turned bracketed paste on, so that it takes the line whole, then Enter on its own.
+- **Each agent is woken up by its finished watch** (recorded in `internal/plan/testdata/wake`):
+  - **Claude Code** runs it with the Bash tool and `run_in_background: true`; when it exits, Claude Code adds a
+    `<task-notification>` and the agent takes a turn, even idle (Claude Code 2.1.296; an interactive session sets no
+    time limit on background commands).
+  - **Antigravity** runs it with `run_command` and `WaitMsBeforeAsync: 500`: it goes to the background as a task, and
+    agy adds a system message, `Task id "…" finished with result`, which starts a turn (agy 1.3.3).
+  - **Codex** is not woken up by a finished command (openai/codex rust-v0.162.1: a process still running after
+    `yield_time_ms` must be polled with `write_stdin`, and its exit only shows in the interface). A codex lead keeps
+    no watch running; Djinn types its line even while a codex watch waits, and the lead runs
+    `djinn lead watch --after <cursor> --timeout 0s` in the foreground, then ends its turn.
+- **An answer reaches the lead.** When the developer answers a question, Djinn queues it for the lead:
+  `Djinn: Q43 answered B — "<option>". Note: "<note>". Turn it into tasks: you hold the plan's graph (djinn wish brief <wish>).`
+  Answers Djinn settles itself (an edit question, a question on work that failed to integrate, a routed request, a
+  grant) say what Djinn did. Answers given by the lead itself are not echoed back. An answer is never typed in the
+  lead's terminal, so it never lands in the developer's prompt box, and never lost: it waits in the queue. If the lead
+  does not run, the question is marked as waiting for a lead (`waiting_lead: true`) until the lead's watch
+  acknowledges it. The lead's global brief lists open answers without a lead under `## Open answers without a lead`
+  (`internal/plan/tell.go`).
 - **Tasks.** `djinn task spawn` starts a worker. A task that cannot start yet waits, and says why.
   `djinn task watch <task>` follows its events; `djinn task stop <task>` stops it.
+  A task no longer useful is cancelled, never marked done: `djinn task cancel <task> --note "…"` stops its worker,
+  removes its worktree (its branch stays) and drops its work from integration; the window shows it Cancelled.
+  `djinn task update <task-id>` (or `djinn task set-agent`) updates a task: only the given fields change.
+  Before starting (planned, waiting), any field may change; while running or paused, only its title;
+  once finished (done, failed, stopped, cut short), title, provider, model, prompt (for its next continue),
+  azima, and integration (`--integration none` clears it, refused while merging; `--integration pending` puts a done
+  task's work without one back in line); never its dependencies once it ran.
+  An azima changes only its own branch: `djinn task update <azima> --branch <name>` names it, adopting a branch that
+  exists as it is, or cutting one from main under that name (refused on a work task and while a merge runs into it).
+  When writing a worker's prompt, ask for the commit checks and the targeted tests, never "run the whole test suite"; the push checks are Djinn's.
 - **The plan is a graph of azimas.** An azima (Arabic ʿazīma, the incantation that binds and commands a djinn) is a
   part of the plan, coded `T07`: a task of kind `AZIMA` that no worker runs, the scheduler never starts, and that never
   waits for the developer. `djinn plan sync <wish>` reads them from the projects' `plan/*.md` and writes each one's
-  `after:` line back from the store; `djinn task spawn <wish> --kind azima --title "…"` makes one. The lead plans work
-  as a graph, never as a line:
+  `after:` line back from the store; `djinn task spawn <wish> --kind azima --title "…"` makes one. An azima can also
+  be created as a draft (`DRAFT`), or opened into active work (`djinn task open <azima>`) which marks it open, ready
+  for parts to be spawned, and notifies the lead. An azima (a draft, or an azima no worker runs with parts
+  that have not started) can be moved to another wish with `djinn task move <azima> --wish <wish>`.
+  The lead plans work as a graph, never as a line:
   - give each azima one clear goal, one sentence a user reads as a feature, a will of its own; when a task extends
     it, rephrase its goal (its plan file's **Goal** and its title, then `djinn plan sync`) rather than let it drift;
   - before adding tasks or azimas, an answer turned into tasks included, look for the azima they belong to: group
     what goes together, merge duplicates, open a new azima only for a will no existing one carries, never mix what
-    does not belong together. A question worker, which edits no file, says in its last line when a goal needs
-    rephrasing;
+    does not belong together;
   - spawn each task `--part-of <azima>`: the azima it belongs to, a grouping and never a wait;
   - give it what comes before it at its spawn, `--after W1,W2`, only the tasks whose result it needs: two tasks
     that do not need each other run side by side;
@@ -111,25 +228,38 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   - re-sequence as the plan learns: `djinn task depend <task> --after … --also W6=W5,W3` replaces what several
     tasks wait for at once, all or none, `djinn task group <task> --part-of T07` its azima. Djinn refuses a cycle,
     through dependencies and azimas together, naming it, and then changes nothing. An azima absorbed into another is
-    deleted (`djinn task delete`) only once its parts are regrouped: Djinn names them; its code is never given again. `--depends-on` is the former
+    deleted (`djinn task delete`) only once its parts are regrouped, and a task only once no task waits for it (rewire
+    them first, in one `--also`): Djinn names them; its code is never given again. `--depends-on` is the former
     name of `--after`, still read.
+- **Keep the graph free of conflicts.** The lead keeps the graph of tasks and azimas so that workers do not collide,
+  along an iterative and de-risked path. Tasks that touch the same files, protos, generated files or the same tests go
+  one after the other (`--after`, or `--write-scopes` when the project uses them), never side by side. Large work is cut
+  into small steps, each merged and green before the next starts. A task starts from the integrated branch: never spawn
+  while the wish's integration points at another branch (a quarantine), since a task started there carries that branch
+  into the next merge (W399 brought the replay sink's node_modules link into feat/wails-go on 11/10). A conflict or a
+  red merge is a signal to re-sequence, not only to correct.
 - **Watchers.** To wait on something outside, the lead spawns a watcher instead of polling:
   `djinn task spawn <wish> --title … --provider watch --prompt "<command>"` runs the command, with no agent, no model
   and no slot, and each new paragraph it prints wakes the lead. `--restart` starts again a command that exits on each
   change ([watch](providers.md#watch-a-command-no-agent)).
+- **Babysitting.** A pull or merge request a task opens is watched in the same wish, with the watcher a skill of
+  the project declares (`metadata.djinn.babysit`); the lead hears `W5 opened MR !12: W7 babysits it` and follows that
+  skill. `djinn task spawn <wish> --title … --babysit --after W5` does it by hand
+  ([wish templates](wish-templates.md#babysitting-what-a-task-opens)).
 - **Every request finds its wish.** A request that is not about the wish goes through
-  `djinn wish route "<request>" --wish-id <wish> --ask`: a card asks the developer to open a new wish, whose lead
-  starts on it, to file it in an existing wish, or to keep it in this one; then the lead does its work. The new lead
-  reads the request on its first line, before the line that sends it to the brief. A skill's [wish template](wish-templates.md) (`metadata.djinn.wish`)
-  makes the new wish follow the skill, its watcher started; the brief tells the lead to propose one for a request
-  that comes back.
+  `djinn wish route "<request>" --wish-id <wish> --ask`: a card asks the developer to open a new wish, to file it in
+  an existing wish, or to keep it in this one. Answering NEW makes the wish and tells the lead without starting a second lead.
+  A skill's [wish template](wish-templates.md) (`metadata.djinn.wish`) makes the new wish follow the skill, its watcher started;
+  the brief tells the lead to propose one for a request that comes back.
 - **Blocks are for agents.** A hand-off, a reference, a decision taken outside a question (kind `decision`, which
   the decision log shows) is a block: `djinn block put`. The developer does not read the others: the window keeps them
   in a discreet last tab, **For agents**, folded, with no mark. What the developer must see is a question.
 - **Who did it.** `djinn block put`, `djinn question ask` and `djinn question revise` take `--task-id`, by default
   `$DJINN_TASK_ID`, which Djinn sets for every worker (`(djinn.v1.env)` in the protos): a worker's decision block
-  reads "By W12" in the decision log, its revision "Revised by W12" on the page; the lead's, run without the
-  variable, stay the lead's.
+  reads "By W12" in the decision log, its revision "Revised by W12" on the page. Djinn marks the lead's terminal
+  with `$DJINN_LEAD=1`: `djinn question answer` and `djinn question withdraw` take `--lead` from it,
+  attributing them to the lead and not echoing them back; a plain shell has neither variable, attributing answers
+  to the developer so they reach the lead as a message.
 - **The page.** `djinn wish sync <wish>` renders the wish's page in Go and prints its file, kept up to date. The lead
   republishes that file as it is; it never writes the HTML.
 - **The developer's word.** `djinn wish grant <wish>` says a wish is done. Only the developer says it.
@@ -157,3 +287,8 @@ Djinn reads each worker's stream into the same task events, stored with the task
 
 The kinds are typed in `api/plan/v1/plan.proto` (`TaskEventKind`); their content stays free text. Tests never call
 a model: every provider case is a recorded stream, replayed through the real process path.
+
+The scheduler starts planned and resuming tasks in a strict 5-tier dispatch order (investigators and converters first,
+then corrections and reviews, resumed work tasks, work tasks unblocking others on the critical path, and other work tasks).
+When slots are full or memory is short, investigators preempt the lowest-priority work task: pausing it or interrupting
+it to resume later without spending a resume attempt. Details: [scheduler order and preemption](providers.md#the-schedulers-order-and-preemption).

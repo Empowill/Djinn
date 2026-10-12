@@ -9,13 +9,30 @@ import { djinnTransport } from "./data/client";
 import { DjinnProvider, createDjinn } from "./data/djinn";
 import { language } from "./i18n";
 import { LeadTerminalFrame } from "./lead-terminal";
+import { installNativeWindowDrag } from "./native-window";
 import "./theme.css";
 import "./styles.css";
 import { applyTheme, followSystem } from "./theme";
 import { UpdateBanner } from "./update-banner";
 import { WishApp } from "./wish-app";
 
+const userAgent = navigator.userAgent;
+const nativeMac =
+  /Macintosh|Mac OS X|MacIntel|MacPPC/i.test(
+    `${navigator.platform} ${userAgent}`,
+  ) &&
+  (/wails\.io/i.test(userAgent) || window.location.protocol === "wails:");
+document.documentElement.classList.toggle("native-mac", nativeMac);
 document.documentElement.lang = language;
+const nativeWindowDragCleanup = nativeMac
+  ? installNativeWindowDrag()
+  : undefined;
+const hotModule = (
+  import.meta as ImportMeta & {
+    hot?: { dispose: (callback: () => void) => void };
+  }
+).hot;
+hotModule?.dispose(() => nativeWindowDragCleanup?.());
 applyTheme();
 followSystem();
 // djinn serves the page and its API on the same origin, over http:// in a browser or wails:// in the window; fetch
@@ -24,10 +41,14 @@ const djinn = createDjinn(djinnTransport(window.location.origin));
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <DjinnProvider djinn={djinn}>
-      <UpdateBanner />
-      <LeadTerminalFrame>
-        <WishApp />
-      </LeadTerminalFrame>
+      <div className="window">
+        <UpdateBanner />
+        <div className="window-app">
+          <LeadTerminalFrame>
+            <WishApp />
+          </LeadTerminalFrame>
+        </div>
+      </div>
     </DjinnProvider>
   </React.StrictMode>,
 );

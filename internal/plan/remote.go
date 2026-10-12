@@ -5,13 +5,15 @@ import (
 	"context"
 	"net/url"
 	"os"
-	"os/exec"
+
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/empowill/djinn/internal/gitx"
 )
 
 // remoteOf returns the URL of the Git remote of dir, origin or else the first one, without credentials; empty
@@ -19,7 +21,9 @@ import (
 func remoteOf(dir string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", dir, "remote").Output()
+	cmd, cancelRemote := gitx.Command(ctx, dir, "remote")
+	defer cancelRemote()
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
@@ -33,7 +37,9 @@ func remoteOf(dir string) string {
 			name = n
 		}
 	}
-	out, err = exec.CommandContext(ctx, "git", "-C", dir, "remote", "get-url", name).Output()
+	cmd, cancelURL := gitx.Command(ctx, dir, "remote", "get-url", name)
+	defer cancelURL()
+	out, err = cmd.Output()
 	if err != nil {
 		return ""
 	}

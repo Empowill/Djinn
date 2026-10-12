@@ -12,7 +12,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"connectrpc.com/connect"
+
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -46,13 +49,42 @@ func (in *integration) correction(t *testing.T, task *planv1.Task) *planv1.Task 
 	return in.ended(t, got.GetCorrectedBy())
 }
 
-// question is the question Djinn asked about task's work.
-func (in *integration) question(t *testing.T, task *planv1.Task) *planv1.Question {
+// attachQuestion attaches a question to task's integration record to test answering it.
+func (in *integration) attachQuestion(t *testing.T, tasks ...*planv1.Task) *planv1.Question {
 	t.Helper()
-	got, texts := in.integration(t, task)
-	q, err := store.Get[*planv1.Question](t.Context(), in.db, got.GetQuestionId())
-	if err != nil {
-		t.Fatalf("%s's work asks no question: %v; events %q", task.GetCode(), got, texts)
+	if len(tasks) == 0 {
+		t.Fatal("attachQuestion: no tasks")
+	}
+	q := &planv1.Question{
+		Id:         store.NewID(),
+		WishId:     in.wishID,
+		Code:       "Q01",
+		Text:       "The work of " + tasks[0].GetCode() + " does not go into " + in.branch,
+		CreateTime: timestamppb.Now(),
+	}
+	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal(actorLocal, "test/question", q); err != nil {
+			return err
+		}
+		if err := plan.Ask(t.Context(), tx, q); err != nil {
+			return err
+		}
+		for _, task := range tasks {
+			got, err := store.Get[*planv1.Task](t.Context(), tx, task.GetId())
+			if err != nil {
+				return err
+			}
+			if got.Integration == nil {
+				got.Integration = &planv1.TaskIntegration{}
+			}
+			got.Integration.QuestionId = q.GetId()
+			if err := tx.Put(got); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 	return q
 }
@@ -209,7 +241,7 @@ func TestCorrectRedTests(t *testing.T) {
 			t.Errorf("W2's prompt lacks %q:\n%s", s, prompt)
 		}
 	}
-	if !merged || w2.GetTitle() != "Make the tests pass with the work of W1" {
+	if !merged || w2.GetTitle() != "Merge: Work of W1 (W1) — tests" {
 		t.Errorf("W2 %q started without the merged work: %v", w2.GetTitle(), merged)
 	}
 	in.pass(t, time.Second)
@@ -218,8 +250,8 @@ func TestCorrectRedTests(t *testing.T) {
 	}
 }
 
-// TestCorrectionAttemptsThenAQuestion: two corrections whose work fails in turn spend the attempts; Djinn then asks
-// the person, and starts nothing more by itself.
+// TestCorrectionAttemptsThenAQuestion: two corrections whose work fails in turn spend the attempts; Djinn then
+// leaves it to the lead, and starts nothing more by itself.
 func TestCorrectionAttemptsThenAQuestion(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
@@ -239,16 +271,14 @@ func TestCorrectionAttemptsThenAQuestion(t *testing.T) {
 	if got := in.states(t, w1, w2, w3); got != "W1 RED, W2 RED, W3 RED" {
 		t.Fatalf("two attempts failed: %s", got)
 	}
-	q := in.question(t, w1)
 	got, texts := in.integration(t, w3)
-	if got.GetQuestionId() != q.GetId() || got.GetAttempts() != 2 || got.GetCorrectedBy() != "" ||
-		!strings.HasSuffix(texts[len(texts)-1], "; Djinn asks you "+q.GetCode()) {
+	if got.GetQuestionId() != "" || got.GetAttempts() != 2 || got.GetCorrectedBy() != "" ||
+		!strings.HasSuffix(texts[len(texts)-1], "; left to the lead") {
 		t.Errorf("W3's integration %v; events %q", got, texts)
 	}
-	if !strings.HasPrefix(q.GetText(), "The work of W1 does not go into "+in.branch+": test exited 1. Djinn started 2 correction workers") ||
-		!slices.Equal(q.GetOptions(), []string{retryOption, "Leave it: the work stays out of " + in.branch, takeOption}) ||
-		!strings.Contains(q.GetContext(), "**The attempts.** W2, W3") {
-		t.Errorf("the question %q, %q:\n%s", q.GetText(), q.GetOptions(), q.GetContext())
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	if err != nil || len(questions) != 0 {
+		t.Fatalf("%d questions in store, want 0: %v", len(questions), err)
 	}
 	// Nothing more starts by itself, and the rest of the wish goes on.
 	in.pass(t, time.Hour)
@@ -262,8 +292,8 @@ func TestCorrectionAttemptsThenAQuestion(t *testing.T) {
 // the work out, saying so.
 func TestAnswerAFailedIntegration(t *testing.T) {
 	testx.Portable(t)
-	// Question workers on, of the fake agent: Djinn settles the question itself, no converter starts on it.
-	in := integrating(t, WithQuestionWorkers())
+	// Djinn settles the question itself.
+	in := integrating(t)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
 		"provider: PROVIDER_FAKE\ntest: \"test\"\ncorrection_attempts: 1\n")
 	in.testCode = 1
@@ -272,10 +302,10 @@ func TestAnswerAFailedIntegration(t *testing.T) {
 	in.pass(t, time.Hour)
 	w2 := in.correction(t, w1)
 	in.pass(t, time.Second)
-	q := in.question(t, w1)
+	q := in.attachQuestion(t, w1)
 
 	// Try again: a new correction, its attempts counted from one; the lead hears what Djinn did, not to act.
-	if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn started W3: Make the tests pass with the work of W1" {
+	if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn started W3: Merge: Work of W1 (W1) — tests" {
 		t.Errorf("what Djinn did: %q", did)
 	}
 	got, texts := in.integration(t, w1)
@@ -288,7 +318,7 @@ func TestAnswerAFailedIntegration(t *testing.T) {
 		t.Errorf("W3 corrects %v", w3.GetCorrection().GetFailure().GetTaskIds())
 	}
 	in.pass(t, time.Second)
-	q = in.question(t, w1)
+	q = in.attachQuestion(t, w1)
 
 	// I take it: the work stays out, and says so.
 	if did := in.answer(t, q, planv1.Choice_CHOICE_C); did != "Djinn leaves the work of W1 to the developer: it stays out of "+
@@ -299,9 +329,6 @@ func TestAnswerAFailedIntegration(t *testing.T) {
 	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_RED || !strings.HasPrefix(got.GetReason(), "you take it ("+q.GetCode()+"): ") ||
 		texts[len(texts)-1] != "you take it ("+q.GetCode()+"); it stays out of "+in.branch+" until you bring it in" {
 		t.Errorf("taken: %v; events %q", got, texts)
-	}
-	if converters := in.roles(t, in.wishID, planv1.TaskRole_TASK_ROLE_CONVERTER); len(converters) != 0 {
-		t.Errorf("an answer on work that failed to integrate started %d converters", len(converters))
 	}
 }
 
@@ -322,17 +349,20 @@ func TestACorrectionWorkerThatFails(t *testing.T) {
 	if w4.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
 		t.Fatalf("W4 %v", w4)
 	}
+	lead := &leadListener{}
+	in.h.TellLeads(lead.tell)
 	in.pass(t, time.Second)
-	q := in.question(t, w2)
 	got, texts := in.integration(t, w2)
 	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_CONFLICT || got.GetAttempts() != 1 ||
-		texts[len(texts)-1] != "W4, its correction worker, failed: I cannot settle it; Djinn asks you "+q.GetCode() {
+		got.GetQuestionId() != "" ||
+		texts[len(texts)-1] != "W4, its correction worker, failed: I cannot settle it; left to the lead" {
 		t.Errorf("W2's integration %v; events %q", got, texts)
 	}
-	if !strings.Contains(q.GetText(), "Djinn started a correction worker: it did not get it in.") {
-		t.Errorf("the question %q", q.GetText())
+	if paras := lead.all(); len(paras) == 0 || !strings.Contains(paras[len(paras)-1], "The move is yours: retry a correction, drop the work") {
+		t.Errorf("expected lead notification, got %v", paras)
 	}
 	// Leave it: the work stays out, and nothing starts.
+	q := in.attachQuestion(t, w2)
 	if did := in.answer(t, q, planv1.Choice_CHOICE_B); did != "Djinn leaves the work of W2 out of "+in.branch {
 		t.Errorf("what Djinn did: %q", did)
 	}
@@ -364,29 +394,246 @@ func TestCorrectWorkWhoseAzimaIsGone(t *testing.T) {
 	}
 }
 
-// TestACorrectionThatCannotStart: when the correction worker cannot start, the question says why, not that the
-// settings start none.
+// TestACorrectionThatCannotStart: when the correction worker cannot start, the lead is told why and
+// it is left to the lead.
 func TestACorrectionThatCannotStart(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
 	in.testCode = 1
+	lead := &leadListener{}
+	in.h.TellLeads(lead.tell)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 	delete(in.h.providers, planv1.Provider_PROVIDER_FAKE) // W1's provider: its correction worker cannot start.
 
 	in.pass(t, 0)
-	q := in.question(t, w1)
 	got, texts := in.integration(t, w1)
 	if got.GetAttempts() != 0 || got.GetCorrectedBy() != "" ||
-		!strings.Contains(texts[len(texts)-1], "; the correction worker could not start: invalid_argument: provider") {
+		!strings.Contains(texts[len(texts)-1], "; the correction worker could not start: invalid_argument: provider") ||
+		!strings.HasSuffix(texts[len(texts)-1], "; left to the lead") {
 		t.Errorf("W1's integration %v; events %q", got, texts)
 	}
-	if !strings.Contains(q.GetText(), "Djinn could not start a correction worker: invalid_argument: provider PROVIDER_FAKE is not available.") ||
-		strings.Contains(q.GetText(), "correction_attempts") {
-		t.Errorf("the question %q", q.GetText())
+	if got.GetQuestionId() != "" {
+		t.Errorf("W1 question_id = %q; want empty", got.GetQuestionId())
 	}
-	// Tried again, it still cannot start: Djinn says so to the lead, and asks again.
-	if did := in.answer(t, q, planv1.Choice_CHOICE_A); !strings.HasPrefix(did, "Djinn could not start a correction worker (invalid_argument: provider") ||
-		!strings.Contains(did, "; Djinn asks Q") {
+	if paras := lead.all(); len(paras) == 0 || !strings.Contains(paras[len(paras)-1], "The move is yours: retry a correction, drop the work") {
+		t.Errorf("expected lead notification, got %v", paras)
+	}
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(questions) != 0 {
+		t.Errorf("got %d questions; want 0", len(questions))
+	}
+	// If a question was attached and answered CHOICE_A: Djinn tries to start a correction worker again.
+	// Since provider is still missing, it tells the lead and leaves it to the lead.
+	q := in.attachQuestion(t, w1)
+	if did := in.answer(t, q, planv1.Choice_CHOICE_A); !strings.Contains(did, "The move is yours: retry a correction, drop the work") {
 		t.Errorf("what Djinn did: %q", did)
+	}
+}
+
+// TestIntegrationFailureCorrectionCleared: a task whose integration failed and is corrected by a worker
+// clears that link when the correction's integration record is cleared.
+func TestIntegrationFailureCorrectionCleared(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.testCode = 1
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+
+	in.pass(t, 0)
+	w2 := in.correction(t, w1)
+	got, _ := in.integration(t, w1)
+	if got.GetCorrectedBy() != w2.GetId() {
+		t.Fatalf("W1 corrected by %q; want %q", got.GetCorrectedBy(), w2.GetId())
+	}
+
+	none := "none"
+	if _, err := in.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+		TaskId:      w2.GetId(),
+		Integration: &none,
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ = in.integration(t, w1)
+	if got.GetCorrectedBy() != "" {
+		t.Errorf("after clearing record, W1 corrected by %q; want empty", got.GetCorrectedBy())
+	}
+}
+
+// TestIntegrationFailureCorrectionCancelled: a task whose integration failed and is corrected by a worker
+// clears that link when the correction worker is cancelled.
+func TestIntegrationFailureCorrectionCancelled(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.testCode = 1
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+
+	in.pass(t, 0)
+	w2 := in.correction(t, w1)
+	got, _ := in.integration(t, w1)
+	if got.GetCorrectedBy() != w2.GetId() {
+		t.Fatalf("W1 corrected by %q; want %q", got.GetCorrectedBy(), w2.GetId())
+	}
+
+	// Cancel W2 (status 10).
+	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		c, err := store.Get[*planv1.Task](t.Context(), tx, w2.GetId())
+		if err != nil {
+			return err
+		}
+		c.Status = 10
+		if err := tx.Journal("test", "put", c); err != nil {
+			return err
+		}
+		return tx.Put(c)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	in.pass(t, time.Second)
+
+	got, texts := in.integration(t, w1)
+	if got.GetCorrectedBy() != "" {
+		t.Errorf("after correction cancelled, W1 corrected by %q; want empty", got.GetCorrectedBy())
+	}
+	if got.GetQuestionId() != "" {
+		t.Errorf("W1 question_id %q; want empty", got.GetQuestionId())
+	}
+	wantSuffix := w2.GetCode() + ", its correction worker, was cancelled"
+	if len(texts) == 0 || !strings.HasSuffix(texts[len(texts)-1], wantSuffix) {
+		t.Errorf("W1 events %q; want suffix %q", texts, wantSuffix)
+	}
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(questions) != 0 {
+		t.Errorf("got %d questions; want 0", len(questions))
+	}
+}
+
+// TestIntegrationFailureCorrectionStopped: a task whose integration failed and is corrected by a worker
+// that was stopped by the lead keeps that link while the stop is recent (it may be continued), then clears it and
+// records the stop without asking a question.
+func TestIntegrationFailureCorrectionStopped(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.testCode = 1
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+
+	in.pass(t, 0)
+	w2 := in.correction(t, w1)
+	got, _ := in.integration(t, w1)
+	if got.GetCorrectedBy() != w2.GetId() {
+		t.Fatalf("W1 corrected by %q; want %q", got.GetCorrectedBy(), w2.GetId())
+	}
+
+	// Stop W2 (lead stops it).
+	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		c, err := store.Get[*planv1.Task](t.Context(), tx, w2.GetId())
+		if err != nil {
+			return err
+		}
+		c.Status = planv1.TaskStatus_TASK_STATUS_STOPPED
+		if err := tx.Journal("test", "put", c); err != nil {
+			return err
+		}
+		return tx.Put(c)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	in.pass(t, time.Second)
+	if got, _ := in.integration(t, w1); got.GetCorrectedBy() != w2.GetId() {
+		t.Errorf("just after the stop, W1 corrected by %q; want %q", got.GetCorrectedBy(), w2.GetId())
+	}
+
+	in.pass(t, stopGrace)
+
+	got, texts := in.integration(t, w1)
+	if got.GetCorrectedBy() != "" {
+		t.Errorf("after correction stopped, W1 corrected by %q; want empty", got.GetCorrectedBy())
+	}
+	if got.GetQuestionId() != "" {
+		t.Errorf("W1 question_id %q; want empty", got.GetQuestionId())
+	}
+	wantSuffix := w2.GetCode() + ", its correction worker, was stopped"
+	if len(texts) == 0 || !strings.HasSuffix(texts[len(texts)-1], wantSuffix) {
+		t.Errorf("W1 events %q; want suffix %q", texts, wantSuffix)
+	}
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(questions) != 0 {
+		t.Errorf("got %d questions; want 0", len(questions))
+	}
+}
+
+// TestIntegrationWorkAlreadyInBranchSettlesSilently: a task whose branch commits are already in
+// the integration branch settles immediately as COMMITTED without running tests or asking questions.
+func TestIntegrationWorkAlreadyInBranchSettlesSilently(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	// Even if testCode is 1 (tests fail), the task shouldn't run tests because it's already in the branch!
+	in.testCode = 1
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+
+	// Merge W1's branch directly into the integration branch (master) before integration runs.
+	if _, err := git(t.Context(), in.repo, "merge", "--no-ff", "-m", "merge into master", w1.GetBranch()); err != nil {
+		t.Fatal(err)
+	}
+
+	in.pass(t, time.Second)
+
+	got, texts := in.integration(t, w1)
+	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+		t.Errorf("W1 state %v; want COMMITTED", got.GetState())
+	}
+	if len(texts) == 0 || !strings.Contains(texts[len(texts)-1], "holds the work already") {
+		t.Errorf("W1 events %q; want 'holds the work already'", texts)
+	}
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(questions) != 0 {
+		t.Errorf("got %d questions; want 0", len(questions))
+	}
+}
+
+// TestIntegrationDroppedTaskRaisesNoQuestion: a task whose integration was dropped
+// (--drop, task.Integration == nil) triggers no question or correction.
+func TestIntegrationDroppedTaskRaisesNoQuestion(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.testCode = 1
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+
+	// Drop W1's integration.
+	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		c, err := store.Get[*planv1.Task](t.Context(), tx, w1.GetId())
+		if err != nil {
+			return err
+		}
+		c.Integration = nil
+		if err := tx.Journal("test", "put", c); err != nil {
+			return err
+		}
+		return tx.Put(c)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	in.pass(t, time.Second)
+
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(questions) != 0 {
+		t.Errorf("got %d questions; want 0", len(questions))
 	}
 }

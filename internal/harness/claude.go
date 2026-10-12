@@ -22,6 +22,8 @@ type Claude struct {
 	Command string
 	// Grace is how long a worker asked to stop has before it is killed; Grace by default.
 	Grace time.Duration
+	// IdleTimeout is how long a model call that returns nothing may wait before being cut and continued; StreamIdleTimeout by default.
+	IdleTimeout time.Duration
 	// Extra are arguments passed after Djinn's own: the workers' bench tries --bare and a system prompt file.
 	Extra []string
 }
@@ -81,7 +83,7 @@ func (c Claude) args(spec Spec) []string {
 		// session so (claude takes --session-id with --resume only when it forks).
 		args = append(args, "--session-id", spec.TaskID)
 	}
-	if spec.Model != "" {
+	if spec.Model != "" && !foreignModel(planv1.Provider_PROVIDER_CLAUDE, spec.Model) {
 		args = append(args, "--model", spec.Model)
 	}
 	if spec.MaxBudgetUSD > 0 {
@@ -151,19 +153,7 @@ func (c Claude) Start(ctx context.Context, spec Spec) (Worker, error) {
 	if grace == 0 {
 		grace = Grace
 	}
-	return startStream(ctx, spec, command, c.args(spec), grace, streamAgent{name: "claude", parser: claudeParser{}, encode: claudeMessageLine})
-}
-
-// Warm starts claude without a message: it loads, then waits on its input. The first Send is its first message.
-func (c Claude) Warm(ctx context.Context, spec Spec) (Worker, error) {
-	command, grace := c.Command, c.Grace
-	if command == "" {
-		command = "claude"
-	}
-	if grace == 0 {
-		grace = Grace
-	}
-	return startStreamIdle(ctx, spec, command, c.args(spec), grace, streamAgent{name: "claude", parser: claudeParser{}, encode: claudeMessageLine})
+	return startStream(ctx, spec, command, c.args(spec), grace, streamAgent{name: "claude", parser: &claudeParser{}, idle: c.IdleTimeout, encode: claudeMessageLine})
 }
 
 // claudeMessageLine is a user message as claude reads it in stream-json.
@@ -174,26 +164,61 @@ func claudeMessageLine(text string) ([]byte, error) {
 	})
 }
 
-// claudeParser reads claude's stream-json; it holds nothing between lines.
-type claudeParser struct{}
+// claudeParser reads claude's stream-json; it tracks tool execution to gate idle timeouts, and counts the model's
+// turns as they come: one per assistant message, whose lines share its id.
+type claudeParser struct {
+	toolDepth int
+	message   string // the id of the last assistant message
+	turns     int    // assistant messages so far
+	counted   bool   // a turn is counted that no event has said yet
+}
 
-func (claudeParser) stdout(raw string) ([]Event, *turnEnd) { return parseClaude(raw) }
+func (p *claudeParser) toolRunning() bool {
+	return p != nil && p.toolDepth > 0
+}
 
-func (claudeParser) stderr(raw string) []Event {
+func (p *claudeParser) stdout(raw string) ([]Event, *turnEnd) {
+	events, end, message := readClaude(raw)
+	if p != nil {
+		if message != "" && message != p.message {
+			p.message, p.turns, p.counted = message, p.turns+1, true
+		}
+		// A line of withheld thinking says nothing: the next event says the turn.
+		if p.counted && len(events) > 0 {
+			events[0].Turns, p.counted = p.turns, false
+		}
+		for _, ev := range events {
+			switch ev.Kind {
+			case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL:
+				p.toolDepth++
+			case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT:
+				if p.toolDepth > 0 {
+					p.toolDepth--
+				}
+			}
+		}
+		if end != nil {
+			p.toolDepth = 0
+		}
+	}
+	return events, end
+}
+
+func (*claudeParser) stderr(raw string) []Event {
 	return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: raw, Raw: raw}}
 }
 
-func (claudeParser) flush() []Event { return nil }
+func (*claudeParser) flush() []Event { return nil }
 
 // claudeMessage is a line of claude's stream-json output; only the fields Djinn reads.
 type claudeMessage struct {
-	Type      string `json:"type"`
-	Subtype   string `json:"subtype"`
-	SessionID string `json:"session_id"`
-	Model     string `json:"model"`
-	Message   *struct {
-		Content json.RawMessage `json:"content"`
-	} `json:"message"`
+	Type      string      `json:"type"`
+	Subtype   string      `json:"subtype"`
+	SessionID string      `json:"session_id"`
+	Model     string      `json:"model"`
+	Message   *claudeBody `json:"message"`
+	// The tool call of a subagent's line; null on the worker's own.
+	ParentToolUseID *string `json:"parent_tool_use_id"`
 	// On a result.
 	Result            *string  `json:"result"`
 	IsError           bool     `json:"is_error"`
@@ -240,12 +265,29 @@ type claudeBlock struct {
 	ToolUseID string          `json:"tool_use_id"`
 }
 
+// claudeBody is the message of an assistant or user line: an assistant message's lines share its id.
+type claudeBody struct {
+	ID      string          `json:"id"`
+	Content json.RawMessage `json:"content"`
+}
+
 // parseClaude turns one line of claude's output into events, and says what the turn's result was when the line
 // is one. Nothing is lost: a line Djinn does not understand becomes an OTHER event that keeps it raw.
 func parseClaude(raw string) ([]Event, *turnEnd) {
+	events, end, _ := readClaude(raw)
+	return events, end
+}
+
+// readClaude is parseClaude, and says the id of the assistant message the line is part of, when it is one of the
+// worker's own: a model turn.
+func readClaude(raw string) ([]Event, *turnEnd, string) {
 	var m claudeMessage
 	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_OTHER, Text: raw, Raw: raw}}, nil
+		return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_OTHER, Text: raw, Raw: raw}}, nil, ""
+	}
+	var message string
+	if m.Type == "assistant" && m.Message != nil && m.ParentToolUseID == nil {
+		message = m.Message.ID
 	}
 	var events lineEvents
 	add := events.add
@@ -257,15 +299,17 @@ func parseClaude(raw string) ([]Event, *turnEnd) {
 			if m.Model != "" {
 				text += ", model " + m.Model
 			}
-			add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text).SessionID = m.SessionID
+			ev := add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
+			ev.SessionID = m.SessionID
+			ev.Model = m.Model
 		}
 		if m.Subtype == "thinking_tokens" {
-			return nil, nil // An estimate of the thinking under way; the result counts it.
+			return nil, nil, message // An estimate of the thinking under way; the result counts it.
 		}
 	case "rate_limit_event":
 		info := m.RateLimitInfo
 		if info == nil || info.Status == "allowed" {
-			return nil, nil // Said on every turn while under the limit.
+			return nil, nil, message // Said on every turn while under the limit.
 		}
 		text := "rate limit " + info.Status
 		if info.RateLimitType != "" {
@@ -287,7 +331,7 @@ func parseClaude(raw string) ([]Event, *turnEnd) {
 		if len(bs) > 0 && !slices.ContainsFunc(bs, func(b claudeBlock) bool {
 			return b.Type != "thinking" && b.Type != "redacted_thinking" || strings.TrimSpace(b.Thinking) != ""
 		}) {
-			return nil, nil // Thinking whose text is withheld: nothing to read.
+			return nil, nil, message // Thinking whose text is withheld: nothing to read.
 		}
 		for _, b := range bs {
 			switch b.Type {
@@ -346,13 +390,11 @@ func parseClaude(raw string) ([]Event, *turnEnd) {
 	if m.Subtype != "" {
 		what += " " + m.Subtype
 	}
-	return events.done(raw, what), res
+	return events.done(raw, what), res, message
 }
 
 // blocks are the content blocks of a message; a plain string is one text block.
-func blocks(msg *struct {
-	Content json.RawMessage `json:"content"`
-}) []claudeBlock {
+func blocks(msg *claudeBody) []claudeBlock {
 	if msg == nil || len(msg.Content) == 0 {
 		return nil
 	}

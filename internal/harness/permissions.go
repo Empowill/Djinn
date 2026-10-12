@@ -15,6 +15,7 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 )
 
 // PermissionsFile is where a project declares, for every agent, what an agent may do in it: a djinn.v1.Permissions
@@ -24,7 +25,8 @@ var PermissionsFile = filepath.Join(".agents", "permissions.txtpb")
 // LoadPermissions reads the permissions a project declares in dir. It returns nil, and no error, when the project
 // declares none.
 func LoadPermissions(dir string) (*djinnv1.Permissions, error) {
-	b, err := os.ReadFile(filepath.Join(dir, PermissionsFile))
+	path := filepath.Join(dir, PermissionsFile)
+	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -32,7 +34,12 @@ func LoadPermissions(dir string) (*djinnv1.Permissions, error) {
 		return nil, err
 	}
 	p := &djinnv1.Permissions{}
-	if err := prototext.Unmarshal(b, p); err != nil {
+	unknowns := plan.FindUnknownFields(b, p)
+	for _, u := range unknowns {
+		plan.WarnUnknownField(path, u)
+	}
+	opts := prototext.UnmarshalOptions{DiscardUnknown: true}
+	if err := opts.Unmarshal(b, p); err != nil {
 		return nil, fmt.Errorf("%s: %w", PermissionsFile, err)
 	}
 	if err := protovalidate.Validate(p); err != nil {

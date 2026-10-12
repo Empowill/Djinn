@@ -1,5 +1,5 @@
-// What djinn asks the window to show (UiService.WatchShow), such as the wish and the lead's terminal that `djinn wish
-// resume` takes back, or the tilasm a djinn:// link names. One stream for the page; each part of the interface subscribes to it, and one that subscribes
+// What djinn asks the window to show (UiService.WatchShow), such as the wish and the lead's terminal that `djinn lead
+// resume --wish-id` focuses, or the tilasm a djinn:// link names. One stream for the page; each part of the interface subscribes to it, and one that subscribes
 // late still gets a request of the last minute.
 import { type Transport, createClient } from "@connectrpc/connect";
 
@@ -12,6 +12,8 @@ export interface Focus {
   terminal: string;
   // The tilasm to show, in the wish's Tilasms tab; empty for none.
   tilasmId: string;
+  // An element of the wish to bring into sight, as a line of the attention bar asks: its id; empty for none.
+  target: string;
   // A link the window was asked to open and does not know, or whose tilasm or wish is not on this machine; empty for
   // none.
   unknownLink: string;
@@ -24,7 +26,13 @@ export interface DjinnFocus {
   show(focus: Partial<Focus>): void;
 }
 
-const none: Focus = { wishId: "", terminal: "", tilasmId: "", unknownLink: "" };
+export const none: Focus = {
+  wishId: "",
+  terminal: "",
+  tilasmId: "",
+  target: "",
+  unknownLink: "",
+};
 
 const RECENT = 60_000;
 
@@ -43,6 +51,7 @@ export function createFocus(transport: Transport, retry = 1000): DjinnFocus {
             wishId: res.wishId,
             terminal: res.terminal,
             tilasmId: res.tilasmId,
+            target: res.target,
             unknownLink: res.unknownLink,
           };
           last = { focus, at: Date.now() };

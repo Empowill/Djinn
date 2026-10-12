@@ -5,13 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 )
 
@@ -41,32 +44,43 @@ type line struct {
 // startProcess starts name in dir with args, in a scope of its own when scope is set. The process gets Djinn's
 // environment plus env, which Djinn passes on without reading. On Unix it leads a process group of its own, so that
 // stopping it stops what it started; in a scope, its cgroup holds even what left the group.
-func startProcess(dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration) (*process, error) {
-	return startCommand(dir, name, args, env, scope, grace, false)
+// When lowPriority is true, the process starts at low CPU priority (under nice 10 on Unix, BELOW_NORMAL_PRIORITY_CLASS
+// on Windows); else at Djinn's own priority.
+func startProcess(dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, lowPriority bool) (*process, error) {
+	return startCommand(dir, name, args, env, scope, grace, false, lowPriority)
 }
 
 // startCommand is startProcess; with blanks, the empty lines of the output are lines too.
 func startCommand(
-	dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, blanks bool,
+	dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, blanks bool, lowPriority bool,
 ) (*process, error) {
 	var sc machine.Scope
 	if scope != nil {
 		sc = scope()
 	}
-	if prefix := sc.Prefix; len(prefix) > 0 {
-		// The prefix runs the program found here, and a missing one fails here, as without a prefix.
+	program := filepath.Base(name) // Logged without its arguments, which may hold a prompt.
+	atLevel := false
+	if lowPriority || len(sc.Prefix) > 0 {
+		// The prefix, and nice at low priority, run the program found here, and a missing one fails here, as without
+		// them.
 		path, err := exec.LookPath(name)
 		if err != nil {
 			return nil, fmt.Errorf("%s not found in PATH", name)
 		}
-		name, args = prefix[0], append(append(slices.Clone(prefix[1:]), path), args...)
+		name = path
+		if lowPriority {
+			name, args, atLevel = lowCommand(name, args)
+		}
+		if prefix := sc.Prefix; len(prefix) > 0 {
+			name, args = prefix[0], append(append(slices.Clone(prefix[1:]), name), args...)
+		}
 	}
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
-	ownGroup(cmd)
+	ownGroup(cmd, lowPriority)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -82,6 +96,9 @@ func startCommand(
 		}
 		return nil, err
 	}
+	applyPriority(cmd, lowPriority && !atLevel)
+	started := time.Now()
+	logx.L().Info("process started", "program", program, "pid", cmd.Process.Pid, "dir", dir)
 	p := &process{cmd: cmd, cgroup: sc.Cgroup, stdin: stdin, grace: grace, lines: make(chan line, 64), done: make(chan struct{}), blanks: blanks}
 	var read sync.WaitGroup
 	read.Add(2)
@@ -94,6 +111,8 @@ func startCommand(
 		read.Wait()
 		close(p.lines)
 		p.res = exitResult(cmd, err)
+		logx.Took(slog.LevelInfo, "process ended", started, "program", program, "pid", cmd.Process.Pid,
+			"exit", cmd.ProcessState.ExitCode())
 		close(p.done)
 	}()
 	return p, nil
@@ -136,6 +155,9 @@ func (p *process) Pause() error { return pause(p) }
 
 // Resume lets them go on.
 func (p *process) Resume() error { return resume(p) }
+
+// SetPriority sets the process and its process tree priority.
+func (p *process) SetPriority(low bool) error { return setPriority(p, low) }
 
 func exitResult(cmd *exec.Cmd, err error) Result {
 	if errors.Is(err, exec.ErrWaitDelay) {

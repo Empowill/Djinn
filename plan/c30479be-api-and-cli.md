@@ -258,6 +258,22 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     bus, macOS without a bundle) leaves them off and the window opens. `UiService.NotifyQuestion`, never called,
     is gone. (`window_none.go`; `noticeService.ServiceStartup` returns no error)
   - [ ] Seen on GNOME, with a click and a button (by hand). (needs: a person on Linux)
+  - [x] On macOS nothing showed: the system refused each notification (`UNErrorDomain error 1`, not allowed), as
+    Djinn never asked for the permission; the error was only logged. The window now asks at start (macOS shows its
+    dialog the first time only), and the settings show the state, with "Allow" and "Open the macOS settings"
+    (`UiService.GetNotifications`, `RequestNotifications`, `OpenNotificationSettings`). (`TestNoticesAccess`,
+    `TestNotificationsService`)
+  - [x] More than questions: the edit question of a task says which task asks to change which project, with Yes
+    and No; a task that waits for that answer or fails; a wish that becomes ready to review. Each event shows once,
+    none for the wish the window shows while it is in front (`UiService.View`, the window's focus); a click shows
+    the wish at the question, the task or the grant (`UiServiceWatchShowResponse.target`, through the attention
+    bar's way to an element). (`TestNoticesAskPermission`, `TestNoticesShowAFailedTaskOnce`,
+    `TestNoticesShowAWishReadyToReview`, `TestNoticesQuietOnTheWishInView`)
+  - [x] Followed on a change of state only: a task written again in the same status (its events, its resources)
+    is not, so readiness is checked when a task's status or a question's answer changes, not at every commit.
+    (`TestNoticesFollowStatusChangesOnly`)
+  - [ ] Seen on macOS from the app: the dialog at first start, a question, a click and a button (by hand).
+    (needs: a person on a Mac)
   - [ ] macOS: needs the `.app` bundle and its identifier. T19 builds `Djinn.app`, identifier
     `io.github.empowill.djinn`; Wails asks for a signed app too, and the bundle is unsigned. (needs: a Mac, to see
     whether the ad hoc signature suffices)
@@ -310,7 +326,7 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   (`TestEveryMethodSaysWhatItChanges`, `TestMCPListTools`; `TestReadOnlyMethodsAnswerAGet` on a real
   `djinn up`: GET `ProjectService/List` 200, GET `ProjectService/Add` 405;
   [the convention](../docs/cli-convention.md#reads-and-writes))
-- [ ] Analytics with DuckDB: who uses what, for how long. (needs: an agent, after a decision on what to collect)
+- Analytics with DuckDB: moved to T31, a draft.
 - [x] Remove Electron and the code it no longer needs. (`electron/` is gone, be8f52c; 845461b: the CI no longer
   sets `ELECTRON_SKIP_BINARY_DOWNLOAD`, `docs/agent-protocol.md` describes the command line and the task events,
   the user guide launches `djinn up`; `git grep -i electron` finds only `plan/` history, the license's
@@ -337,10 +353,9 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   `TestResolveSettings`, `TestProjectShow` in `internal/plan`, `TestSpawnTakesTheProjectSettings` in
   `internal/harness`; tried on a `djinn up --browser` in a temporary DJINN_HOME: `djinn project show app` gave
   `model: sonnet, source: developer` over the team's `opus`, and listed a developer file with `api_key` under
-  `problems`)
-  - [x] Warm workers start with the settings: a warm worker's model and budget are the ones Spawn fills from the
-    project's files, so a task of a project with settings takes it; when the files change, it is replaced, and a
-    project whose tasks go to another agent warms no claude. (`TestWarmTakesTheProjectSettings` in `internal/harness`)
+  - [x] Warm workers removed: decided on 11/10/2026 (decision block "Warm workers removed", Q112) by the developer:
+    workers are meant to run for a long time, so a few seconds of cold start are acceptable; warm workers are not useful
+    and would be hard to support.
 - [x] macOS specifics: no cgroups, pause by signal. Pause by signal is built for Linux and macOS alike in T07
   (`internal/harness/process_unix.go`); macOS runs workers in their process group, no scope (W108). Proved on macOS by
   the CI's macos-15 job, green on 10/10/2026 (run 37997257519): `TestPauseProcess` and `TestPauseResume` run there,
@@ -352,15 +367,9 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   They replace `tools/gofmtcheck`, the two `go vet` lines and `gofmt -w` in `format`; every other tool and task is
   still called. W94 began it; W127 finished it. (`go tool task lint`: 0 issues, about 25 s warm; their findings fixed,
   among them a redirect that `//host` sent off the site, `TestGuardToken`)
-- [ ] Later, after v1: trusted machines and distributed work, see T15. (needs: T15)
+- Trusted machines and distributed work: moved to T28, a draft.
 
 ### Ideas, not decided
 
-From the Wails v3 study (08/10/2026), what Wails offers that Djinn has not taken up; each needs a decision before any
-work.
-- A tray icon that shows the count of running workers and open questions (today the tray has Show and Quit only;
-  GNOME needs an extension for a tray).
-- Several windows: a wish or a worker detached into its own window, on a second screen.
-- Djinn started when the session opens.
-- Add a project by dropping its folder on the window (T13 has the folder picker); whether a dropped folder gives its
-  path is not checked on any system.
+moved to T32, a draft
+

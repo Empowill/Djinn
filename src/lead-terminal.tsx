@@ -2,7 +2,8 @@
 // in a tab. It shows only when djinn serves the page (a DjinnProvider); elsewhere the app renders alone. None opens by
 // itself: the lead of the wish shown comes as a tab while it runs, first; you open a terminal with + or Ctrl+Shift+T,
 // or one at a project's root (its button in the side panel). Every tab closes with its ×, or when its program ends
-// (Ctrl+D, exit); a lead's comes back from the Lead button. One shows at a time.
+// (Ctrl+D, exit), except the lead's: an ended lead keeps its last output there until Lead, or its Restart, starts it
+// again. One shows at a time.
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { type ITheme, Terminal } from "@xterm/xterm";
@@ -26,6 +27,7 @@ import {
 } from "react";
 
 import { Change } from "../gen/ts/plan/v1/plan_pb";
+import { message } from "./data/client";
 import { type Djinn, useData, useDjinn, useStore } from "./data/djinn";
 import type { TerminalInfo } from "./data/terminal";
 import "./lead-terminal.css";
@@ -36,8 +38,8 @@ import { AddProject } from "./wish-dialogs";
 // The terminal of the window: opening it again attaches to it while djinn up runs. The wish shown, or djinn wish
 // resume, switches it to the terminal of a wish's lead.
 const NAME = "main";
-// The terminal of a wish's lead, as djinn up names it.
-const lead = (wishId: string) => `lead-${wishId}`;
+// The terminal of the lead, as djinn up names it.
+const LEAD = "lead";
 const MIN_HEIGHT = 120;
 // The Connect code of a terminal that has no folder to open in: djinn up opens the window's terminal in the first
 // project's folder, never in the home folder, and refuses with failed_precondition while no project has one.
@@ -91,12 +93,6 @@ function store(key: string, value: string) {
   }
 }
 
-// The app tells the terminal which wish it shows: empty for none, such as the flight plan.
-const ShowWishContext = createContext<(wishId: string) => void>(
-  () => undefined,
-);
-export const useShowWish = () => use(ShowWishContext);
-
 // A terminal you opened, in a tab of its own: a shell in the first project's folder (shell-…), or in a project's
 // root (project-<id>-…). The names say which, so that the tabs come back from djinn up after a reload.
 interface Tab {
@@ -112,7 +108,6 @@ export const useOpenTerminal = () => use(OpenTerminalContext);
 // LeadTerminalFrame lays the app out above the terminal, when there is one.
 export function LeadTerminalFrame({ children }: { children: ReactNode }) {
   const djinn = useDjinn();
-  const [wishId, setWishId] = useState<string>();
   const [request, setRequest] = useState<Tab>();
   if (!djinn) return <>{children}</>;
   const open = (project?: { id: string; directory: string }) =>
@@ -124,22 +119,15 @@ export function LeadTerminalFrame({ children }: { children: ReactNode }) {
     });
   return (
     <div className="lead-frame">
-      <ShowWishContext value={setWishId}>
-        <OpenTerminalContext value={open}>
-          <div className="lead-frame-app">{children}</div>
-        </OpenTerminalContext>
-      </ShowWishContext>
-      <LeadTerminal
-        djinn={djinn}
-        wishId={wishId}
-        request={request}
-        onNew={() => open()}
-      />
+      <OpenTerminalContext value={open}>
+        <div className="lead-frame-app">{children}</div>
+      </OpenTerminalContext>
+      <LeadTerminal djinn={djinn} request={request} onNew={() => open()} />
     </div>
   );
 }
 
-type Status =
+export type TerminalStatus =
   | { kind: "connecting" }
   | { kind: "running"; info: TerminalInfo }
   | { kind: "exited"; info: TerminalInfo; code: number }
@@ -147,12 +135,10 @@ type Status =
 
 function LeadTerminal({
   djinn,
-  wishId,
   request,
   onNew,
 }: {
   djinn: Djinn;
-  wishId: string | undefined;
   // A tab the app asked for, opened at once.
   request: Tab | undefined;
   onNew: () => void;
@@ -164,15 +150,17 @@ function LeadTerminal({
   const [height, setHeight] = useState(() =>
     Math.max(MIN_HEIGHT, Number(stored("djinn.terminal.height")) || 300),
   );
-  const [status, setStatus] = useState<Status>({ kind: "connecting" });
+  const [status, setStatus] = useState<TerminalStatus>({ kind: "connecting" });
   const [generation, setGeneration] = useState(0); // A restart opens a new program.
   // The terminal shown, "" while none is open.
   const [name, setName] = useState("");
+  // The lead's tab shows a lead that ended: a lead started again comes in its place.
+  const endedLead = useRef(false);
+  endedLead.current = name === LEAD && status.kind === "exited";
   const [adding, setAdding] = useState(false);
   // Every terminal the panel holds, each in a tab: the leads first, then the others in the order they came.
   const [tabs, setTabs] = useState<Tab[]>([]);
   const projects = useData((s) => s.projects);
-  const wishes = useData((s) => s.wishes);
   const data = useStore();
   // Whether a project has a folder here: the terminal opens in the first one.
   const hasFolder = useData((s) => s.projects.some((p) => p.directory !== ""));
@@ -208,37 +196,27 @@ function LeadTerminal({
       have.some((x) => x.name === tab.name) ? have : [...have, tab],
     );
   const ordered = [
-    ...tabs.filter((x) => x.name.startsWith("lead-")),
-    ...tabs.filter((x) => !x.name.startsWith("lead-")),
+    ...tabs.filter((x) => x.name === LEAD),
+    ...tabs.filter((x) => x.name !== LEAD),
   ].map((x) => x.name);
-  // Show the terminal djinn asks for, such as a wish's lead.
+  // Show the terminal djinn asks for, such as the lead: never start a lead from here.
   useEffect(
     () =>
       djinn.focus.subscribe((focus) => {
         if (!focus.terminal) return;
-        ended.current = undefined;
-        add({ name: focus.terminal });
-        setName(focus.terminal);
-        setCollapsed(false);
+        void api.running().then((names) => {
+          if (!names.includes(focus.terminal)) return;
+          // The lead started again (Lead, djinn lead resume): its tab, showing the one that ended, shows the new one.
+          if (focus.terminal === LEAD && endedLead.current)
+            setGeneration((g) => g + 1);
+          ended.current = undefined;
+          add({ name: focus.terminal });
+          setName(focus.terminal);
+          setCollapsed(false);
+        });
       }),
-    [djinn],
+    [api, djinn],
   );
-  // Show the lead of the wish shown while it runs: never start a lead from here.
-  useEffect(() => {
-    if (!wishId) return;
-    let current = true;
-    api.running().then(
-      (names) => {
-        if (!current || !names.includes(lead(wishId))) return;
-        add({ name: lead(wishId) });
-        setName(lead(wishId));
-      },
-      () => undefined, // djinn up restarts: the terminal shown stays, and says so.
-    );
-    return () => {
-      current = false;
-    };
-  }, [api, wishId]);
 
   // The terminals that run come back as tabs after a reload: djinn up keeps them while it runs. None opens by itself.
   useEffect(() => {
@@ -252,7 +230,9 @@ function LeadTerminal({
             .filter((n) => !have.some((x) => x.name === n))
             .map((n) => ({ name: n })),
         ]);
-        const first = names.find((n) => n.startsWith("lead-")) ?? names[0];
+        const leadTab = names.find((n) => n === LEAD);
+        const nonLead = names.find((n) => n !== LEAD);
+        const first = leadTab ?? nonLead;
         setName((shown) => shown || first || "");
       },
       () => undefined,
@@ -261,6 +241,13 @@ function LeadTerminal({
       current = false;
     };
   }, [api]);
+  // A lead that ended keeps its tab, after a reload too, once LeadService.Get says so; closed, it stays closed.
+  const leadEnded = useData((s) => !!s.leadExit);
+  useEffect(() => {
+    if (!leadEnded) return;
+    add({ name: LEAD });
+    setName((shown) => shown || LEAD);
+  }, [leadEnded]);
   useEffect(() => {
     if (!request) return;
     ended.current = undefined;
@@ -286,10 +273,7 @@ function LeadTerminal({
   closeTabRef.current = closeTab;
   const label = (tab: string) => {
     if (tab === NAME) return t("terminal.title");
-    if (tab.startsWith("lead-")) {
-      const wish = wishes.find((w) => lead(w.id) === tab);
-      return t("terminal.lead_tab", { wish: wish?.title ?? "" });
-    }
+    if (tab === LEAD) return t("wish.resume");
     const project = projects.find((p) => tab.startsWith(`project-${p.id}-`));
     if (project) return project.name;
     return t("terminal.shell_tab", {
@@ -300,156 +284,42 @@ function LeadTerminal({
   // The emulator, the program, and the links between them.
   useEffect(() => {
     const element = host.current;
-    if (!element || !name) return;
-    const term = new Terminal({
-      fontFamily: '"IBM Plex Mono", monospace',
-      fontSize: 13,
-      cursorBlink: true,
-      scrollback: 5000,
-      allowProposedApi: false,
-      theme: terminalTheme(),
-    });
-    const stopTheme = onTheme(() => (term.options.theme = terminalTheme()));
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    term.loadAddon(
-      new WebLinksAddon((_event, uri) => {
-        void djinn.clients.ui
-          .openExternal({ url: uri })
-          .catch(() => window.open(uri, "_blank", "noopener"));
-      }),
+    if (!element || !name || collapsed) return;
+    // A restart runs again the program that ended here, not one of another terminal.
+    const again = ended.current?.name === name ? ended.current : undefined;
+    const folder = tabsRef.current.find((x) => x.name === name)?.directory;
+    const mounted = mountTerminal(
+      element,
+      djinn,
+      {
+        name,
+        ...(again
+          ? { command: again.command, directory: again.directory }
+          : folder
+            ? { directory: folder }
+            : {}),
+      },
+      (next) => {
+        if (next.kind !== "exited") return setStatus(next);
+        // A terminal ends with its program, Ctrl+D or exit: its tab goes. The lead's stays, its output read, unless
+        // a lead runs there again already: then it shows that one.
+        if (name !== LEAD) return closeTabRef.current(name);
+        setStatus(next);
+        void api.running().then(
+          (names) => names.includes(LEAD) && setGeneration((g) => g + 1),
+          () => undefined,
+        );
+      },
+      () => onNewRef.current(),
     );
-    term.open(element);
-    termRef.current = term;
-    fitRef.current = fit;
-    fitSafely(fit);
-
-    // Copy and paste as in a terminal: Ctrl+Shift+C and Ctrl+Shift+V (Cmd+C and Cmd+V on macOS work as they are).
-    term.attachCustomKeyEventHandler((event) => {
-      if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey)
-        return true;
-      if (event.code === "KeyT") {
-        onNewRef.current();
-        event.preventDefault();
-        return false;
-      }
-      if (event.code === "KeyC") {
-        const text = term.getSelection();
-        if (text)
-          void navigator.clipboard
-            ?.writeText(text)
-            .catch(() => document.execCommand("copy"));
-        event.preventDefault();
-        return false;
-      }
-      // Leave Ctrl+Shift+V to the browser, which pastes into the emulator.
-      return event.code !== "KeyV";
-    });
-    // The app's own shortcuts (Escape, Ctrl+K…) must not take the keys typed into the terminal.
-    const keep = (event: KeyboardEvent) => event.stopPropagation();
-    element.addEventListener("keydown", keep);
-
-    const abort = new AbortController();
-    let id = "";
-    // The output a program wrote before this emulator attached is read again, not answered: its queries (DA1, DECRQM,
-    // OSC 11 from agy…) were answered when they came, or their program no longer waits; answers now would be typed
-    // into it, or into the shell once it ended. Keys typed in those few milliseconds go too.
-    let replaying = false;
-    const inputs = [
-      term.onData(
-        (data) =>
-          id && !replaying && void api.write(id, data).catch(() => undefined),
-      ),
-      term.onBinary((data) => {
-        if (!id || replaying) return;
-        const bytes = Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff);
-        void api.write(id, bytes).catch(() => undefined);
-      }),
-      term.onResize(
-        ({ cols, rows }) =>
-          id && void api.resize(id, cols, rows).catch(() => undefined),
-      ),
-    ];
-
-    (async () => {
-      try {
-        // A restart runs again the program that ended here, not one of another terminal.
-        const again = ended.current?.name === name ? ended.current : undefined;
-        const folder = tabsRef.current.find((x) => x.name === name)?.directory;
-        const { terminal, attached, end } = await api.open({
-          name,
-          cols: term.cols,
-          rows: term.rows,
-          ...(again
-            ? { command: again.command, directory: again.directory }
-            : folder
-              ? { directory: folder }
-              : {}),
-        });
-        if (abort.signal.aborted) return;
-        id = terminal.id;
-        setStatus({ kind: "running", info: terminal });
-        // What a program this open started wrote meanwhile was never answered: none of it is replayed.
-        const replayed = attached ? end : 0n;
-        replaying = replayed > 0n;
-        // From the start of what is kept; a broken stream resumes where it stopped.
-        let offset = 0n;
-        for (;;) {
-          try {
-            const end = await api.read(
-              id,
-              offset,
-              (at, data) => {
-                offset = at + BigInt(data.length);
-                if (!replaying || offset < replayed) return term.write(data);
-                // The end of the replay: the emulator answers again once it has parsed the bytes before it.
-                const cut = Number(replayed > at ? replayed - at : 0n);
-                term.write(data.subarray(0, cut), () => (replaying = false));
-                term.write(data.subarray(cut));
-              },
-              abort.signal,
-            );
-            if (abort.signal.aborted) return;
-            if (end.exited) {
-              // A terminal ends with its program, Ctrl+D or exit: its tab goes.
-              closeTabRef.current(name);
-              return;
-            }
-            if (end.exited) {
-              term.write(
-                `\r\n\x1b[2m[exited with code ${end.exitCode}]\x1b[0m\r\n`,
-              );
-              ended.current = terminal;
-              setStatus({ kind: "exited", info: terminal, code: end.exitCode });
-              return;
-            }
-          } catch (error) {
-            if (abort.signal.aborted) return;
-            if ((error as { code?: number }).code === 5) throw error; // Not found: djinn up restarted.
-          }
-          // eslint-disable-next-line @eslint-react/web-api-no-leaked-timeout -- a pause in a loop the cleanup aborts
-          await new Promise((r) => setTimeout(r, 500));
-        }
-      } catch (error) {
-        if (!abort.signal.aborted)
-          setStatus({
-            kind: "error",
-            message: error instanceof Error ? error.message : String(error),
-            code: (error as { code?: number }).code,
-          });
-      }
-    })();
-
+    termRef.current = mounted.term;
+    fitRef.current = mounted.fit;
     return () => {
-      abort.abort();
-      stopTheme();
-      inputs.forEach((d) => d.dispose());
-      element.removeEventListener("keydown", keep);
-      term.dispose();
+      mounted.dispose();
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [api, djinn, generation, name]);
+  }, [api, collapsed, djinn, generation, name]);
 
   // A terminal with no folder to open in starts once a project has one, made here or from the command line.
   const noFolder =
@@ -573,7 +443,16 @@ function LeadTerminal({
         {(status.kind === "exited" ||
           (status.kind === "error" && !noProject)) && (
           <button
-            onClick={() => setGeneration((g) => g + 1)}
+            onClick={() =>
+              name === LEAD
+                ? // The lead starts again as Lead starts it, never on its old command line.
+                  void djinn.clients.lead.resume({}).then(
+                    () => setGeneration((g) => g + 1),
+                    (error) =>
+                      setStatus({ kind: "error", message: message(error) }),
+                  )
+                : setGeneration((g) => g + 1)
+            }
             title={t("terminal.restart")}
           >
             <RotateCcw size={13} />
@@ -618,9 +497,160 @@ function LeadTerminal({
   );
 }
 
+// mountTerminal runs an emulator in element on the terminal of djinn that request opens or attaches to, and tells
+// onStatus where its program stands, until dispose. The window's terminal and the agents' setup both use it; onNew,
+// when given, takes Ctrl+Shift+T.
+export function mountTerminal(
+  element: HTMLElement,
+  djinn: Djinn,
+  request: {
+    name: string;
+    command?: string[];
+    line?: string;
+    directory?: string;
+  },
+  onStatus: (status: TerminalStatus) => void,
+  onNew?: () => void,
+): { term: Terminal; fit: FitAddon; dispose: () => void } {
+  const api = djinn.terminal;
+  const term = new Terminal({
+    fontFamily: '"IBM Plex Mono", monospace',
+    fontSize: 13,
+    cursorBlink: true,
+    scrollback: 5000,
+    allowProposedApi: false,
+    theme: terminalTheme(),
+  });
+  const stopTheme = onTheme(() => (term.options.theme = terminalTheme()));
+  const fit = new FitAddon();
+  term.loadAddon(fit);
+  term.loadAddon(
+    new WebLinksAddon((_event, uri) => {
+      void djinn.clients.ui
+        .openExternal({ url: uri })
+        .catch(() => window.open(uri, "_blank", "noopener"));
+    }),
+  );
+  term.open(element);
+  fitSafely(fit);
+
+  // Copy and paste as in a terminal: Ctrl+Shift+C and Ctrl+Shift+V (Cmd+C and Cmd+V on macOS work as they are).
+  term.attachCustomKeyEventHandler((event) => {
+    if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey)
+      return true;
+    if (event.code === "KeyT" && onNew) {
+      onNew();
+      event.preventDefault();
+      return false;
+    }
+    if (event.code === "KeyC") {
+      const text = term.getSelection();
+      if (text)
+        void navigator.clipboard
+          ?.writeText(text)
+          .catch(() => document.execCommand("copy"));
+      event.preventDefault();
+      return false;
+    }
+    // Leave Ctrl+Shift+V to the browser, which pastes into the emulator.
+    return event.code !== "KeyV";
+  });
+  // The app's own shortcuts (Escape, Ctrl+K…) must not take the keys typed into the terminal.
+  const keep = (event: KeyboardEvent) => event.stopPropagation();
+  element.addEventListener("keydown", keep);
+
+  const abort = new AbortController();
+  let id = "";
+  // The output a program wrote before this emulator attached is read again, not answered: its queries (DA1, DECRQM,
+  // OSC 11 from agy…) were answered when they came, or their program no longer waits; answers now would be typed
+  // into it, or into the shell once it ended. Keys typed in those few milliseconds go too.
+  let replaying = false;
+  const inputs = [
+    term.onData(
+      (data) =>
+        id && !replaying && void api.write(id, data).catch(() => undefined),
+    ),
+    term.onBinary((data) => {
+      if (!id || replaying) return;
+      const bytes = Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff);
+      void api.write(id, bytes).catch(() => undefined);
+    }),
+    term.onResize(
+      ({ cols, rows }) =>
+        id && void api.resize(id, cols, rows).catch(() => undefined),
+    ),
+  ];
+
+  (async () => {
+    try {
+      const { terminal, attached, end } = await api.open({
+        ...request,
+        cols: term.cols,
+        rows: term.rows,
+      });
+      if (abort.signal.aborted) return;
+      id = terminal.id;
+      onStatus({ kind: "running", info: terminal });
+      // What a program this open started wrote meanwhile was never answered: none of it is replayed.
+      const replayed = attached ? end : 0n;
+      replaying = replayed > 0n;
+      // From the start of what is kept; a broken stream resumes where it stopped.
+      let offset = 0n;
+      for (;;) {
+        try {
+          const end = await api.read(
+            id,
+            offset,
+            (at, data) => {
+              offset = at + BigInt(data.length);
+              if (!replaying || offset < replayed) return term.write(data);
+              // The end of the replay: the emulator answers again once it has parsed the bytes before it.
+              const cut = Number(replayed > at ? replayed - at : 0n);
+              term.write(data.subarray(0, cut), () => (replaying = false));
+              term.write(data.subarray(cut));
+            },
+            abort.signal,
+          );
+          if (abort.signal.aborted) return;
+          if (end.exited) {
+            term.write(
+              `\r\n\x1b[2m[exited with code ${end.exitCode}]\x1b[0m\r\n`,
+            );
+            onStatus({ kind: "exited", info: terminal, code: end.exitCode });
+            return;
+          }
+        } catch (error) {
+          if (abort.signal.aborted) return;
+          if ((error as { code?: number }).code === 5) throw error; // Not found: djinn up restarted.
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    } catch (error) {
+      if (!abort.signal.aborted)
+        onStatus({
+          kind: "error",
+          message: error instanceof Error ? error.message : String(error),
+          code: (error as { code?: number }).code,
+        });
+    }
+  })();
+
+  return {
+    term,
+    fit,
+    dispose: () => {
+      abort.abort();
+      stopTheme();
+      inputs.forEach((d) => d.dispose());
+      element.removeEventListener("keydown", keep);
+      term.dispose();
+    },
+  };
+}
+
 // fitSafely fits the emulator to its box, unless the box is hidden (collapsed): a zero size would shrink the
 // program's terminal to nothing.
-function fitSafely(fit: FitAddon) {
+export function fitSafely(fit: FitAddon) {
   const size = fit.proposeDimensions();
   if (size && size.cols > 1 && size.rows > 1) fit.fit();
 }

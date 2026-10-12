@@ -1,5 +1,9 @@
-// A question of a wish, on Clément's question card, laid out to decide at a glance: its title, the recommendation
-// boxed first, the options as buttons, then what is at stake. Two gestures, one note field for both: "Enlighten me",
+// A question of a wish, on Clément's question card, read top-down: its title, then what happened and what is at stake
+// (its context, in a first view that unfolds in place, so that the options stay in sight), the report it names, the
+// recommendation boxed, then the options and the two gestures, then the note. The explanation always comes before the
+// call to act. A command in its title, an option, the context or the recommendation is selectable, with a copy button
+// that never answers; a link in them opens where it points, and an open move shows its first link as a button.
+// Two gestures, one note field for both: "Enlighten me",
 // on the left, asks the lead to find out more first (QuestionService.Enlighten), the note saying what to look into;
 // "Rub the lamp", in the lamp's yellow, answers with the option selected, the recommended one until you pick another,
 // and the note with it. Open, it says how much it holds up: red when a task waits for it, orange under its before
@@ -8,63 +12,97 @@
 // approve it again, and the decision log shows it. Djinn types each answer in the lead's terminal; a wish without a
 // lead session has no lead to tell, and the card says so. Its rounds, each request and each revision, fold below.
 import {
+  ArrowRightLeft,
   Check,
   ChevronDown,
+  CircleOff,
   CornerDownRight,
+  FileText,
   History,
   Lamp,
   Lightbulb,
+  MoreVertical,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, memo, useEffect, useRef, useState } from "react";
 
-import { Choice, type Question, RoundKind } from "../gen/ts/plan/v1/plan_pb";
+import {
+  type Block,
+  Choice,
+  MarkKind,
+  type Question,
+  RoundKind,
+} from "../gen/ts/plan/v1/plan_pb";
+import { EMPTY_BLOCKING } from "./data/flight";
 import {
   answerText,
   choiceOf,
   investigating,
+  isWithdrawn,
   letter,
   recommendedChoice,
   when,
 } from "./data/format";
+import { mainLink } from "./data/links";
 import { t } from "./i18n";
-import { MarkButtons, type OnMark } from "./marks";
-import { MarkdownBody } from "./markdown-body";
+import { CommandText } from "./copy-command";
+import { MoveLink } from "./link";
+import { MarkButtons } from "./marks";
+import { FoldedMarkdown, MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
+import { isMac } from "./tooltip";
 
-export function WishQuestion({
+export const WishQuestion = memo(function WishQuestion({
   question: q,
   expanded: open = false,
   origin,
-  blocking = [],
+  blocking = EMPTY_BLOCKING,
+  report,
   noLead = false,
   onAnswer,
   onMark,
   onEnlighten,
+  onMove,
+  onWithdraw,
 }: {
   question: Question;
   // Where the question comes from, in the flight plan of several wishes: its wish.
   origin?: ReactNode;
   // The codes of the tasks that wait for this answer.
   blocking?: readonly string[];
+  // The report of its wish it names (src/data/reports.ts): the card links it.
+  report?: Block;
   // A decision opened at first. An open question is always open.
   expanded?: boolean;
   // The wish has no lead session: no lead is told the answer, it waits in the wish's brief.
   noLead?: boolean;
   // Answers the question; resolves once djinn has it. A rejection keeps the card open.
-  onAnswer: (choice: Choice, note: string) => Promise<void>;
+  onAnswer: (
+    choice: Choice,
+    note: string,
+    question?: Question,
+  ) => Promise<void>;
   // Marks an open question read.
-  onMark?: OnMark;
+  onMark?: (
+    kind: MarkKind,
+    remove: boolean,
+    question?: Question,
+  ) => Promise<void>;
   // Asks the lead to investigate before deciding, the note saying what to look into.
-  onEnlighten?: (note: string) => Promise<void>;
+  onEnlighten?: (note: string, question?: Question) => Promise<void>;
+  // Moves an open question to another wish.
+  onMove?: (question: Question) => void;
+  // Withdraws an open question without an answer.
+  onWithdraw?: (question: Question) => void;
 }) {
   const answered = !!q.answer;
+  const withdrawn = isWithdrawn(q);
   // A message built by hand (a test) may leave the lists out.
   const rounds = q.rounds ?? [];
   const digging = investigating(q);
   // What you asked to look into, while it is being investigated.
   const asked = digging ? rounds.at(-1)?.note : undefined;
-  const recommended = answered ? undefined : recommendedChoice(q);
+  const recommended = answered || withdrawn ? undefined : recommendedChoice(q);
   const [expanded, setExpanded] = useState(open);
   // Being investigated, it is one line until you open it.
   const [peek, setPeek] = useState(false);
@@ -75,6 +113,7 @@ export function WishQuestion({
   const choice = picked ?? (q.options.length ? recommended : Choice.YES);
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
+  const [unpicked, setUnpicked] = useState(false);
   const busy = async (run: () => Promise<void>) => {
     setSending(true);
     try {
@@ -85,8 +124,114 @@ export function WishQuestion({
       setSending(false);
     }
   };
-  const status = answered ? (
+  const mod = isMac() ? "⌘" : "⌃";
+
+  const isComposing = (e: React.KeyboardEvent): boolean => {
+    return (
+      Boolean(e.nativeEvent?.isComposing) ||
+      Boolean((e as unknown as { isComposing?: boolean }).isComposing) ||
+      e.keyCode === 229
+    );
+  };
+
+  const triggerRub = () => {
+    if (sending) return;
+    if (choice === undefined) {
+      setUnpicked(true);
+      return;
+    }
+    void busy(() => onAnswer(choice, note.trim(), q));
+  };
+
+  const triggerEnlighten = () => {
+    if (sending || !onEnlighten || digging) return;
+    void busy(async () => {
+      await onEnlighten(note.trim(), q);
+      setNote("");
+    });
+  };
+
+  const handleTextareaKeyDown = (
+    e: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) => {
+    if (isComposing(e)) return;
+    if (e.key === "Enter") {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        triggerEnlighten();
+      } else if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        triggerRub();
+      } else if (e.shiftKey) {
+        return;
+      } else {
+        e.preventDefault();
+        triggerRub();
+      }
+    }
+  };
+
+  const handleCardKeyDown = (e: React.KeyboardEvent) => {
+    const inTextarea = (e.target as HTMLElement)?.tagName === "TEXTAREA";
+    if (inTextarea) return;
+    if (isComposing(e)) return;
+
+    if (e.key === "Enter") {
+      // Enter on a control of its own (Enlighten me, a copy button, Read more, a mark) presses it; only Enter
+      // elsewhere on the card rubs the lamp.
+      const control = !!(e.target as HTMLElement)?.closest?.(
+        "button:not(.lamp-rub), a, summary",
+      );
+      if (control && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        triggerEnlighten();
+      } else if (!e.shiftKey) {
+        e.preventDefault();
+        triggerRub();
+      }
+      return;
+    }
+
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    if (q.options.length > 0) {
+      if (e.key === "ArrowDown" || e.key === "ArrowRight") {
+        e.preventDefault();
+        const current = choice !== undefined ? choice - Choice.A : -1;
+        const next = current < 0 ? 0 : (current + 1) % q.options.length;
+        setPicked(choiceOf(next));
+        setUnpicked(false);
+        return;
+      }
+      if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        const current = choice !== undefined ? choice - Choice.A : 0;
+        const prev = (current - 1 + q.options.length) % q.options.length;
+        setPicked(choiceOf(prev));
+        setUnpicked(false);
+        return;
+      }
+      if (/^[1-9]$/.test(e.key)) {
+        const num = parseInt(e.key, 10);
+        if (num >= 1 && num <= q.options.length) {
+          e.preventDefault();
+          setPicked(choiceOf(num - 1));
+          setUnpicked(false);
+          return;
+        }
+      }
+    }
+  };
+
+  const status = q.waitingLead ? (
+    <StatusBadge tone="waiting" label={t("question.waiting_lead")} />
+  ) : answered ? (
     <StatusBadge tone="done" label={t("panels.decision_recorded")} />
+  ) : withdrawn ? (
+    <StatusBadge tone="withdrawn" label={t("question.withdrawn")} />
   ) : digging ? (
     <StatusBadge tone="investigating" label={t("question.investigating")} />
   ) : blocking.length ? (
@@ -100,7 +245,7 @@ export function WishQuestion({
     <StatusBadge tone="later" label={t("question.can_wait")} />
   );
   const level =
-    answered || digging
+    answered || withdrawn || digging
       ? ""
       : blocking.length
         ? "is-blocking"
@@ -110,7 +255,13 @@ export function WishQuestion({
   const heading = (
     <>
       <span className="question-id">
-        {answered ? <Check size={14} aria-label={q.code} /> : q.code}
+        {answered ? (
+          <Check size={14} aria-label={q.code} />
+        ) : withdrawn ? (
+          <CircleOff size={14} aria-label={q.code} />
+        ) : (
+          q.code
+        )}
       </span>
       <div className="question-title">
         <span className="question-meta">
@@ -122,16 +273,29 @@ export function WishQuestion({
             </span>
           )}
         </span>
-        <h3>{q.text}</h3>
+        {/* Inside the heading's button when it folds, its links and commands are text. */}
+        <h3>
+          {answered || withdrawn || digging ? (
+            q.text
+          ) : (
+            <CommandText text={q.text} />
+          )}
+        </h3>
         {answered && <p className="answer-value">{answerText(q)}</p>}
       </div>
     </>
   );
-  const body = answered ? expanded : !folded;
+  const body = answered || withdrawn ? expanded : !folded;
+  // An open move shows where to act first, as a button.
+  const link = q.move && !answered && !withdrawn ? mainLink(q) : undefined;
   return (
     <motion.article
       id={`question-${q.id}`}
-      className={`question-card ${answered ? "answered" : digging ? "investigating" : "open"} ${level}${folded ? " folded" : ""}`}
+      className={`question-card ${answered ? "answered" : withdrawn ? "withdrawn" : digging ? "investigating" : "open"} ${level}${folded ? " folded" : ""}`}
+      tabIndex={answered || withdrawn || folded ? undefined : 0}
+      onKeyDown={
+        answered || withdrawn || folded ? undefined : handleCardKeyDown
+      }
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: 30 }}
@@ -156,23 +320,31 @@ export function WishQuestion({
             )}
             <ChevronDown size={16} />
           </button>
-        ) : answered || digging ? (
+        ) : answered || withdrawn || digging ? (
           <button
             className="question-heading"
-            onClick={() => (answered ? setExpanded(!expanded) : setPeek(false))}
-            aria-expanded={answered ? expanded : true}
+            onClick={() =>
+              answered || withdrawn ? setExpanded(!expanded) : setPeek(false)
+            }
+            aria-expanded={answered || withdrawn ? expanded : true}
           >
             {heading}
             <ChevronDown
               size={16}
-              className={answered && !expanded ? "" : "rotated"}
+              className={(answered || withdrawn) && !expanded ? "" : "rotated"}
             />
           </button>
         ) : (
           <div className="question-heading">{heading}</div>
         )}
-        {onMark && !answered && !folded && (
+        {onMark && !answered && !withdrawn && !folded && (
           <MarkButtons item={q} onMark={onMark} />
+        )}
+        {(onMove || onWithdraw) && !answered && !withdrawn && !folded && (
+          <QuestionMenu
+            onMove={onMove ? () => onMove(q) : undefined}
+            onWithdraw={onWithdraw ? () => onWithdraw(q) : undefined}
+          />
         )}
       </div>
       {body && (
@@ -187,6 +359,23 @@ export function WishQuestion({
               </span>
             </p>
           )}
+          {link && (
+            <p className="question-move-link">
+              <MoveLink href={link} />
+            </p>
+          )}
+          {q.context && (
+            <section className="question-context">
+              <h4>{t("page.context")}</h4>
+              <FoldedMarkdown
+                text={q.context}
+                more={t("question.read_more")}
+                less={t("question.read_less")}
+                copy
+              />
+            </section>
+          )}
+          {report && <QuestionReport report={report} />}
           {q.recommendation && (
             <section className="recommendation">
               <span className="eyebrow">
@@ -195,7 +384,7 @@ export function WishQuestion({
                   recommended !== Choice.YES &&
                   ` · ${letter(recommended - Choice.A)}`}
               </span>
-              <MarkdownBody text={q.recommendation} />
+              <MarkdownBody text={q.recommendation} copy />
             </section>
           )}
           {answered ? (
@@ -204,9 +393,20 @@ export function WishQuestion({
                 {t("question.decided", { when: when(q.answer?.createTime) })}
               </span>
               {q.answer?.note && <p>{q.answer.note}</p>}
-              {noLead && (
+              {q.waitingLead ? (
+                <p className="no-lead">{t("question.waiting_lead_detail")}</p>
+              ) : noLead ? (
                 <p className="no-lead">{t("question.no_lead_answered")}</p>
-              )}
+              ) : null}
+            </div>
+          ) : withdrawn ? (
+            <div className="answered-info">
+              <span>
+                {t("question.withdrawn_at", {
+                  when: when(q.withdrawal?.createTime),
+                })}
+              </span>
+              {q.withdrawal?.note && <p>{q.withdrawal.note}</p>}
             </div>
           ) : (
             <>
@@ -218,30 +418,83 @@ export function WishQuestion({
                 >
                   {q.options.map((option, index) => {
                     const selected = choice === choiceOf(index);
+                    const pick = () => {
+                      setPicked(choiceOf(index));
+                      setUnpicked(false);
+                    };
+                    // Not a <button>: its text is selectable, and a command in it has a copy button of its own.
                     return (
-                      <button
+                      <div
                         key={index}
                         className={`option ${selected ? "selected" : ""}`}
-                        onClick={() => setPicked(choiceOf(index))}
+                        role="button"
+                        tabIndex={0}
                         aria-pressed={selected}
+                        onClick={() => {
+                          // Selecting words in it picks nothing.
+                          if (globalThis.getSelection?.()?.toString()) return;
+                          pick();
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key !== " " || e.target !== e.currentTarget)
+                            return;
+                          e.preventDefault();
+                          pick();
+                        }}
                       >
                         <strong className="option-letter">
                           {letter(index)}
                         </strong>
-                        <p>{option}</p>
+                        <p>
+                          <CommandText text={option} />
+                        </p>
                         {recommended === choiceOf(index) && (
                           <span className="option-recommended">
                             {t("question.recommended")}
                           </span>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
               )}
+              <div className="question-actions">
+                {onEnlighten && !digging && (
+                  <button
+                    className="button secondary lamp-enlighten"
+                    title={`${t("question.enlighten_detail")} (${mod}⇧↵)`}
+                    disabled={sending}
+                    onClick={triggerEnlighten}
+                  >
+                    <Lightbulb size={14} />
+                    {t("question.enlighten")}
+                    <kbd className="key-hint" aria-hidden="true">
+                      {mod}⇧↵
+                    </kbd>
+                  </button>
+                )}
+                <span className="spacer" />
+                <button
+                  className="button accent lamp-rub"
+                  title={
+                    choice === undefined
+                      ? t("question.rub_pick")
+                      : `${t("question.rub_detail")} (↵)`
+                  }
+                  disabled={sending || choice === undefined}
+                  onClick={triggerRub}
+                >
+                  <Lamp size={14} />
+                  {t("question.rub")}
+                  <kbd className="key-hint" aria-hidden="true">
+                    ↵
+                  </kbd>
+                </button>
+              </div>
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
+                onKeyDown={handleTextareaKeyDown}
                 placeholder={
                   q.options.length
                     ? t("question.note_placeholder")
@@ -251,59 +504,58 @@ export function WishQuestion({
                 maxLength={2000}
                 aria-label={t("question.note_label")}
               />
-              <div className="question-actions">
-                {onEnlighten && !digging && (
-                  <button
-                    className="button secondary lamp-enlighten"
-                    title={t("question.enlighten_detail")}
-                    disabled={sending}
-                    onClick={() =>
-                      void busy(async () => {
-                        await onEnlighten(note.trim());
-                        setNote("");
-                      })
-                    }
-                  >
-                    <Lightbulb size={14} />
-                    {t("question.enlighten")}
-                  </button>
-                )}
-                <span className="spacer" />
-                <button
-                  className="button accent lamp-rub"
-                  title={
-                    choice === undefined
-                      ? t("question.rub_pick")
-                      : t("question.rub_detail")
-                  }
-                  disabled={sending || choice === undefined}
-                  onClick={() => {
-                    if (choice !== undefined)
-                      void busy(() => onAnswer(choice, note.trim()));
-                  }}
-                >
-                  <Lamp size={14} />
-                  {t("question.rub")}
-                </button>
-              </div>
-              <p className="question-hint">
+              <p
+                className={`question-hint${unpicked ? " unpicked" : ""}`}
+                role={unpicked ? "alert" : undefined}
+              >
                 <CornerDownRight size={14} aria-hidden="true" />
-                {t(noLead ? "question.no_lead" : "question.goes_to_lead")}
+                {t(
+                  unpicked
+                    ? "question.rub_pick"
+                    : noLead
+                      ? "question.no_lead"
+                      : "question.goes_to_lead",
+                )}
               </p>
             </>
-          )}
-          {q.context && (
-            <section className="question-context">
-              <h4>{t("page.context")}</h4>
-              <div className="prose">
-                <MarkdownBody text={q.context} />
-              </div>
-            </section>
           )}
           {rounds.length > 0 && <Rounds question={q} />}
         </div>
       )}
     </motion.article>
+  );
+});
+
+// QuestionReport is the report a question names, as a line that unfolds it in place: what was found, beside the
+// question it leads to.
+function QuestionReport({ report }: { report: Block }) {
+  const [open, setOpen] = useState(false);
+  const title = report.title || t("agents.untitled");
+  return (
+    <section className="question-report">
+      <button
+        type="button"
+        className="question-report-link"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <FileText size={14} aria-hidden="true" />
+        <span>{t("question.report", { title })}</span>
+        <ChevronDown
+          size={14}
+          aria-hidden="true"
+          className={open ? "rotated" : ""}
+        />
+      </button>
+      {open && (
+        <div className="question-report-body prose">
+          {report.updateTime && (
+            <span className="eyebrow">{when(report.updateTime)}</span>
+          )}
+          <MarkdownBody text={report.content} copy />
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -340,5 +592,78 @@ function Rounds({ question }: { question: Question }) {
         </tbody>
       </table>
     </details>
+  );
+}
+
+function QuestionMenu({
+  onMove,
+  onWithdraw,
+}: {
+  onMove?: () => void;
+  onWithdraw?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("mousedown", handleDown);
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("mousedown", handleDown);
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  if (!onMove && !onWithdraw) return null;
+
+  return (
+    <div className="question-menu-wrap" ref={ref}>
+      <button
+        type="button"
+        className="question-menu-trigger"
+        aria-label={t("question.menu")}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <MoreVertical size={14} />
+      </button>
+      {open && (
+        <div className="question-dropdown">
+          {onMove && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onMove();
+              }}
+            >
+              <ArrowRightLeft size={14} />
+              {t("question.move")}
+            </button>
+          )}
+          {onWithdraw && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onWithdraw();
+              }}
+            >
+              <CircleOff size={14} />
+              {t("question.withdraw")}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

@@ -75,7 +75,7 @@ func (c Codex) threadRequest(spec Spec) (string, map[string]any) {
 			params["approvalsReviewer"] = reviewer
 		}
 	}
-	if spec.Model != "" {
+	if spec.Model != "" && !foreignModel(planv1.Provider_PROVIDER_CODEX, spec.Model) {
 		params["model"] = spec.Model
 	}
 	if text := skillsInstructions(spec.Skills); text != "" {
@@ -108,7 +108,7 @@ func (c Codex) turnParams(spec Spec, thread, text string) map[string]any {
 			params["approvalsReviewer"] = reviewer
 		}
 	}
-	if spec.Model != "" {
+	if spec.Model != "" && !foreignModel(planv1.Provider_PROVIDER_CODEX, spec.Model) {
 		params["model"] = spec.Model
 	}
 	return params
@@ -122,7 +122,7 @@ func (c Codex) Start(ctx context.Context, spec Spec) (Worker, error) {
 	if grace == 0 {
 		grace = Grace
 	}
-	p, err := startProcess(spec.Dir, command, c.args(), spec.Env, spec.Scope, grace)
+	p, err := startProcess(spec.Dir, command, c.args(), spec.Env, spec.Scope, grace, spec.LowPriority)
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}
@@ -184,8 +184,9 @@ func (w *codexWorker) PID() int { return w.p.cmd.Process.Pid }
 // Cgroup is the cgroup of the agent's scope.
 func (w *codexWorker) Cgroup() string { return w.p.cgroup }
 
-func (w *codexWorker) Pause() error  { return w.p.Pause() }
-func (w *codexWorker) Resume() error { return w.p.Resume() }
+func (w *codexWorker) Pause() error               { return w.p.Pause() }
+func (w *codexWorker) Resume() error              { return w.p.Resume() }
+func (w *codexWorker) SetPriority(low bool) error { return w.p.SetPriority(low) }
 
 func (w *codexWorker) Stop() {
 	w.stopped.Store(true)
@@ -390,7 +391,9 @@ func (w *codexWorker) answer(events *lineEvents, m *codexMessage) string {
 		if r.Model != "" {
 			text += ", model " + r.Model
 		}
-		events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text).SessionID = w.thread
+		ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
+		ev.SessionID = w.thread
+		ev.Model = r.Model
 		if len(w.queue) > 0 {
 			if err := w.startTurn(); err != nil {
 				w.fail(err.Error())
@@ -536,6 +539,7 @@ func (w *codexWorker) notification(events *lineEvents, method string, raw json.R
 				CachedInputTokens     int64 `json:"cachedInputTokens"`
 				CacheWriteInputTokens int64 `json:"cacheWriteInputTokens"`
 				OutputTokens          int64 `json:"outputTokens"`
+				ReasoningOutputTokens int64 `json:"reasoningOutputTokens"`
 			} `json:"total"`
 		} `json:"tokenUsage"`
 		Turn *struct {
@@ -563,6 +567,7 @@ func (w *codexWorker) notification(events *lineEvents, method string, raw json.R
 		usage := &planv1.Usage{
 			InputTokens: t.InputTokens - t.CachedInputTokens, OutputTokens: t.OutputTokens,
 			CacheReadTokens: t.CachedInputTokens, CacheWriteTokens: t.CacheWriteInputTokens,
+			ThinkingTokens: t.ReasoningOutputTokens,
 		}
 		ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_USAGE, fmt.Sprintf("%d tokens in, %d out, %d from the cache",
 			usage.GetInputTokens(), usage.GetOutputTokens(), usage.GetCacheReadTokens()))

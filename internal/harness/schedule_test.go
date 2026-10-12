@@ -2,9 +2,11 @@ package harness
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,9 +14,12 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -25,7 +30,10 @@ func (e *env) spawnReq(t *testing.T, wishID, title, prompt string, req *planv1.T
 	if req == nil {
 		req = &planv1.TaskServiceSpawnRequest{}
 	}
-	req.WishId, req.Title, req.Prompt, req.Provider = wishID, title, prompt, planv1.Provider_PROVIDER_FAKE
+	if req.Provider == 0 {
+		req.Provider = planv1.Provider_PROVIDER_FAKE
+	}
+	req.WishId, req.Title, req.Prompt = wishID, title, prompt
 	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(req))
 	if err != nil {
 		return nil, err
@@ -52,8 +60,8 @@ func (e *env) release(t *testing.T, id string) {
 		if err == nil {
 			return
 		}
-		// Running, its worker may not be there yet.
-		if connect.CodeOf(err) != connect.CodeFailedPrecondition || time.Now().After(deadline) {
+		// Running, its worker may not be there yet; ended, it never will be: its script has no wait.
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || time.Now().After(deadline) || e.get(t, id).GetEndTime() != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -130,22 +138,36 @@ func TestDependsOn(t *testing.T) {
 		t.Errorf("second started at %v, the first ended at %v: %v", second.GetStartTime().AsTime(), first.GetEndTime().AsTime(), second)
 	}
 
-	// A dependency that fails takes its dependents with it, down the chain.
+	// A dependency that fails holds its dependents waiting instead of failing them.
 	failing := e.mustSpawn(t, wishID, "Failing", "wait\nfail boom", nil)
 	child := e.mustSpawn(t, wishID, "Child", "text never", &planv1.TaskServiceSpawnRequest{DependsOn: []string{failing.GetCode()}})
 	grandchild := e.mustSpawn(t, wishID, "Grandchild", "text never", &planv1.TaskServiceSpawnRequest{DependsOn: []string{child.GetId()}})
 	e.release(t, failing.GetId())
-	if got := e.ended(t, grandchild.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED ||
-		got.GetError() != "its dependency "+child.GetCode()+" ended failed" || got.GetStartTime() != nil {
-		t.Errorf("grandchild = %v", got)
+	if got := e.ended(t, failing.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
+		t.Fatalf("failing = %v", got)
 	}
-	if got := e.get(t, child.GetId()); got.GetError() != "its dependency "+failing.GetCode()+" ended failed" {
+	if got := e.get(t, child.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING ||
+		got.GetWaitReason() != "waits while its dependency "+failing.GetCode()+" is failed" || got.GetStartTime() != nil {
 		t.Errorf("child = %v", got)
 	}
+	if got := e.get(t, grandchild.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING ||
+		got.GetWaitReason() != "waits for "+child.GetCode()+" (pending)" || got.GetStartTime() != nil {
+		t.Errorf("grandchild = %v", got)
+	}
 
-	// A dependency that already failed, or that is not a task of the wish, refuses the spawn.
-	if _, err := e.spawnReq(t, wishID, "Late", "x", &planv1.TaskServiceSpawnRequest{DependsOn: []string{failing.GetCode()}}); connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Errorf("on a failed dependency: %v", err)
+	// Spawning on a failed dependency is planned (it waits).
+	late := e.mustSpawn(t, wishID, "Late", "x", &planv1.TaskServiceSpawnRequest{DependsOn: []string{failing.GetCode()}})
+	if late.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || late.GetWaitReason() != "waits while its dependency "+failing.GetCode()+" is failed" {
+		t.Errorf("late = %v", late)
+	}
+
+	// A dependency that already stopped, or that is not a task of the wish, refuses the spawn.
+	st := e.mustSpawn(t, wishID, "ToStop", "wait\ntext", nil)
+	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: st.GetId()})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.spawnReq(t, wishID, "AfterStop", "x", &planv1.TaskServiceSpawnRequest{DependsOn: []string{st.GetCode()}}); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("on a stopped dependency: %v", err)
 	}
 	for _, dep := range []string{"W99", store.NewID()} {
 		if _, err := e.spawnReq(t, wishID, "Lost", "x", &planv1.TaskServiceSpawnRequest{DependsOn: []string{dep}}); connect.CodeOf(err) != connect.CodeInvalidArgument {
@@ -464,5 +486,431 @@ func TestNote(t *testing.T) {
 	texts := eventTexts(events)
 	if !slices.Contains(texts, "gate codegen: taken") || texts[len(texts)-1] != "gate codegen: given back" {
 		t.Errorf("events: %q", texts)
+	}
+}
+
+// TestScopeForWorkerMemoryGuard: scopeFor applies the memory guardrail ceiling dynamically based on provider peaks,
+// falling back to no ceiling when there are no measurements, and respecting MemoryController.
+func TestScopeForWorkerMemoryGuard(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	// 1. Without scopes, returns nil
+	h := &Harness{}
+	if h.scopeFor(&planv1.Task{Code: "W1"}) != nil {
+		t.Error("want nil without scopes")
+	}
+
+	// 2. Scopes without memory controller and no base memory returns uncapped scope
+	sNoMem := &machine.Scopes{MemoryController: false}
+	hNoMem := &Harness{scopes: sNoMem}
+	hNoMem.SetPolicy(machine.Policy{WorkerMemoryGuard: 2.0})
+	scFunc := hNoMem.scopeFor(&planv1.Task{Code: "W1"})
+	if scFunc == nil {
+		t.Fatal("want non-nil scope func")
+	}
+	sc := scFunc()
+	if slices.Contains(sc.Prefix, "-p") {
+		t.Errorf("expected uncapped scope when MemoryController is false, got prefix %v", sc.Prefix)
+	}
+
+	// 3. With store and MemoryController: true
+	db, err := store.Open(t.Context(), filepath.Join(t.TempDir(), store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	s := &machine.Scopes{MemoryController: true}
+	hStore := &Harness{scopes: s, store: db, ctx: t.Context()}
+	hStore.SetPolicy(machine.Policy{WorkerMemoryGuard: 2.5, WorkerMargin: 256 << 20})
+
+	taskReq := &planv1.Task{
+		Id:       store.NewID(),
+		Code:     "W10",
+		Provider: planv1.Provider_PROVIDER_CLAUDE,
+	}
+
+	// 3a. No measured tasks yet: ceiling is 0 ("sans mesure, pas de plafond")
+	sc0 := hStore.scopeFor(taskReq)()
+	for i, arg := range sc0.Prefix {
+		if strings.HasPrefix(arg, "MemoryMax=") {
+			t.Errorf("expected no MemoryMax without measurements, got %q", sc0.Prefix[i])
+		}
+	}
+
+	// 3b. Add finished tasks with peaks for CLAUDE
+	err = db.Tx(t.Context(), func(tx *store.Tx) error {
+		for i := 0; i < 5; i++ {
+			tDone := &planv1.Task{
+				Id:        store.NewID(),
+				Code:      fmt.Sprintf("W%d", i+1),
+				Provider:  planv1.Provider_PROVIDER_CLAUDE,
+				Status:    planv1.TaskStatus_TASK_STATUS_DONE,
+				EndTime:   timestamppb.Now(),
+				Resources: &planv1.Resources{PeakMemoryBytes: 100 << 20}, // 100 MiB
+			}
+			if err := tx.Journal("test", "put", tDone); err != nil {
+				return err
+			}
+			if err := tx.Put(tDone); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Median peak is 100 MiB.
+	// Factor 2.5 * 100 MiB = 250 MiB (262,144,000 bytes).
+	// Forecast is peak + WorkerMargin = 100 MiB + 256 MiB = 356 MiB (373,293,056 bytes).
+	// Guard ceiling = max(250 MiB, 356 MiB) = 356 MiB.
+	sc1 := hStore.scopeFor(taskReq)()
+	wantCeiling := strconv.FormatUint(356<<20, 10)
+	var foundMemMax string
+	for _, arg := range sc1.Prefix {
+		if val, ok := strings.CutPrefix(arg, "MemoryMax="); ok {
+			foundMemMax = val
+		}
+	}
+	if foundMemMax != wantCeiling {
+		t.Errorf("MemoryMax = %q, want %q", foundMemMax, wantCeiling)
+	}
+
+	// 3c. Also test with Policy.WorkerMemory hard ceiling (e.g. 300 MiB < 356 MiB)
+	hStore.SetPolicy(machine.Policy{WorkerMemory: 300 << 20, WorkerMemoryGuard: 2.5, WorkerMargin: 256 << 20})
+	sc2 := hStore.scopeFor(taskReq)()
+	wantHard := strconv.FormatUint(300<<20, 10)
+	foundMemMax = ""
+	for _, arg := range sc2.Prefix {
+		if val, ok := strings.CutPrefix(arg, "MemoryMax="); ok {
+			foundMemMax = val
+		}
+	}
+	if foundMemMax != wantHard {
+		t.Errorf("MemoryMax with hard ceiling = %q, want %q", foundMemMax, wantHard)
+	}
+}
+
+func TestSetPolicyDoesNotKillRunningWorkers(t *testing.T) {
+	t.Parallel()
+	e := up(t, t.TempDir(), WithTick(time.Hour))
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	// Start worker under MAX policy.
+	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MAX))
+	task := e.mustSpawn(t, wishID, "BusyWorker", "wait\ntext done", nil)
+	e.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+
+	// Switch policy to MINIMAL while worker is actively running.
+	minPolicy := machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
+	e.h.SetPolicy(minPolicy)
+
+	// Verify running worker is not killed and remains running.
+	curr := e.get(t, task.GetId())
+	if curr.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		t.Fatalf("worker was prematurely terminated by SetPolicy: status=%v", curr.GetStatus())
+	}
+
+	// Release worker and verify it finishes successfully.
+	e.release(t, task.GetId())
+	got := e.ended(t, task.GetId())
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("worker failed after SetPolicy: status=%v", got.GetStatus())
+	}
+}
+
+func TestSpawnUnreadableSettingsWaitsThenStarts(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	repo := gitRepo(t)
+	settingsFile := filepath.Join(repo, ".agents", "settings.txtpb")
+	if err := os.MkdirAll(filepath.Dir(settingsFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Invalid prototext syntax to make LoadSettings fail.
+	if err := os.WriteFile(settingsFile, []byte("provider: [invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	e := up(t, t.TempDir(), WithTick(20*time.Millisecond))
+	wishID, _ := e.wish(t, repo)
+
+	// Spawning when settings are unreadable should put the task in PENDING state with wait reason.
+	task := e.mustSpawn(t, wishID, "TaskWaiting", "text done", nil)
+	if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
+		t.Fatalf("status: got %v, want PENDING", task.GetStatus())
+	}
+	if !strings.HasPrefix(task.GetWaitReason(), "settings unreadable:") {
+		t.Fatalf("wait reason: got %q, want prefix 'settings unreadable:'", task.GetWaitReason())
+	}
+	if task.GetWorktree() != "" {
+		t.Fatalf("worktree: got %q, want empty", task.GetWorktree())
+	}
+
+	// Verify task does not start while settings are broken.
+	time.Sleep(100 * time.Millisecond)
+	curr := e.get(t, task.GetId())
+	if curr.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || curr.GetStartTime() != nil {
+		t.Fatalf("task started while settings unreadable: %v", curr)
+	}
+
+	// Now fix the settings file.
+	if err := os.WriteFile(settingsFile, []byte("provider: PROVIDER_FAKE\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e.h.wake()
+
+	// Task should now start and finish DONE.
+	got := e.ended(t, task.GetId())
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("task after fixing settings: %v", got)
+	}
+}
+
+// TestDependencyWorkIntegration verifies that only the merge of the previous task's work
+// releases the task that depends on it:
+// 1. Dependency closed by hand with unmerged commits: dependent waits.
+// 2. Cleared record with unmerged commits: dependent waits.
+// 3. Cleared record with merged commits: dependent starts.
+// 4. No record and no commits: dependent starts.
+// 5. Worktree check: when worker's worktree is created, unmerged dependency commits prevent starting.
+func TestDependencyWorkIntegration(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	repo := gitRepo(t)
+	mainBranch := plan.CheckedOutBranch(t.Context(), repo)
+
+	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 2}).capacity), WithTick(time.Hour))
+	wishID, projectID := e.wish(t, repo)
+
+	// Create branch b1 with unmerged commit.
+	b1 := "branch-unmerged-1"
+	if _, err := git(t.Context(), repo, "checkout", "-b", b1); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "app", "file1.txt"), []byte("work 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "add", "."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "work 1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "checkout", mainBranch); err != nil {
+		t.Fatal(err)
+	}
+
+	w1 := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W1", Title: "Task 1",
+		Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED, Branch: b1, CreateTime: timestamppb.Now(),
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		_ = tx.Journal("test", "put", w1)
+		return tx.Put(w1)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Dependency closed by hand with unmerged commits -> dependent waits.
+	dropVal := true
+	_, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
+		TaskId: w1.GetId(), Drop: &dropVal, Note: "dropped for test",
+	}))
+	if err != nil {
+		t.Fatalf("task done: %v", err)
+	}
+
+	w2 := e.mustSpawn(t, wishID, "W2", "wait\ntext 2", &planv1.TaskServiceSpawnRequest{
+		DependsOn: []string{"W1"},
+	})
+	wantWait := "waits for W1's work to reach " + mainBranch
+	if w2.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || w2.GetWaitReason() != wantWait || w2.GetStartTime() != nil {
+		t.Fatalf("w2 initially: status=%v, waitReason=%q, want %q", w2.GetStatus(), w2.GetWaitReason(), wantWait)
+	}
+
+	// 2. Cleared record with unmerged commits -> dependent waits.
+	// Give W1 a committed integration record first, then clear it with --force.
+	w1 = e.get(t, w1.GetId())
+	w1.Integration = &planv1.TaskIntegration{
+		State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+		Sha:   "deadbeef",
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		_ = tx.Journal("test", "put", w1)
+		return tx.Put(w1)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	none := "none"
+	forceVal := true
+	_, err = e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+		TaskId:      w1.GetId(),
+		Integration: &none,
+		Force:       &forceVal,
+	}))
+	if err != nil {
+		t.Fatalf("task update: %v", err)
+	}
+
+	e.h.wake()
+	time.Sleep(50 * time.Millisecond)
+	curr2 := e.get(t, w2.GetId())
+	if curr2.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || curr2.GetWaitReason() != wantWait || curr2.GetStartTime() != nil {
+		t.Fatalf("w2 after clearing integration record: status=%v, waitReason=%q, want %q", curr2.GetStatus(), curr2.GetWaitReason(), wantWait)
+	}
+
+	// 3. Cleared record with merged commits -> dependent starts.
+	if _, err := git(t.Context(), repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "merge", "--no-ff", "-m", "merge b1", b1); err != nil {
+		t.Fatal(err)
+	}
+	e.h.wake()
+	e.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	curr2 = e.get(t, w2.GetId())
+	if curr2.GetStartTime() == nil {
+		t.Errorf("w2 should have started after merge")
+	}
+	e.release(t, w2.GetId())
+	e.ended(t, w2.GetId())
+
+	// 4. No record and no commits -> dependent starts.
+	b3 := "branch-no-commits"
+	if _, err := git(t.Context(), repo, "branch", b3, mainBranch); err != nil {
+		t.Fatal(err)
+	}
+	w3 := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W3", Title: "Task 3",
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b3, CreateTime: timestamppb.Now(),
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		_ = tx.Journal("test", "put", w3)
+		return tx.Put(w3)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	w4 := e.mustSpawn(t, wishID, "W4", "wait\ntext 4", &planv1.TaskServiceSpawnRequest{
+		DependsOn: []string{"W3"},
+	})
+	e.until(t, w4.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	e.release(t, w4.GetId())
+	e.ended(t, w4.GetId())
+
+	// 5. Worktree check: when worker's worktree is created, unmerged dependency commits prevent starting.
+	// Create task W5 with unmerged commits on branch b5.
+	b5 := "branch-unmerged-5"
+	if _, err := git(t.Context(), repo, "checkout", "-b", b5); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "app", "file5.txt"), []byte("work 5\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "add", "."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "work 5"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), repo, "checkout", mainBranch); err != nil {
+		t.Fatal(err)
+	}
+
+	w5 := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W5", Title: "Task 5",
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b5, CreateTime: timestamppb.Now(),
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		_ = tx.Journal("test", "put", w5)
+		return tx.Put(w5)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// W6 depends on W5, planned for later.
+	w6 := e.mustSpawn(t, wishID, "W6", "wait\ntext 6", &planv1.TaskServiceSpawnRequest{
+		DependsOn: []string{w5.GetCode()},
+		Later:     true,
+	})
+
+	// Directly invoke launchPlanned: worktree creation check fails because W5's work is not in start sha.
+	err = e.h.launchPlanned(t.Context(), w6)
+	if err != nil {
+		t.Fatalf("launchPlanned: %v", err)
+	}
+	curr6 := e.get(t, w6.GetId())
+	wantWait6 := "waits for W5's work to reach " + mainBranch
+	if curr6.GetWaitReason() != wantWait6 {
+		t.Errorf("curr6 waitReason = %q, want %q", curr6.GetWaitReason(), wantWait6)
+	}
+	if curr6.GetWorktree() != "" {
+		t.Errorf("curr6 worktree should be empty, got %q", curr6.GetWorktree())
+	}
+	if curr6.GetStartTime() != nil {
+		t.Errorf("curr6 should not have started")
+	}
+}
+
+// TestStartAnyway: a planned task that waits for the machine alone says so, and starts at once when forced, under
+// pressure; one that waits for a dependency is refused, and keeps waiting.
+func TestStartAnyway(t *testing.T) {
+	l := &limit{slots: 1, pressure: "simulated"}
+	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
+	wishID, _ := e.wish(t, gitRepo(t))
+	held := e.mustSpawn(t, wishID, "Held", "text ok", nil)
+	if !held.GetMachineWait() || held.GetWaitReason() != "the machine is under pressure: simulated" {
+		t.Fatalf("under pressure: %v", held)
+	}
+	after := e.mustSpawn(t, wishID, "After", "text after", &planv1.TaskServiceSpawnRequest{DependsOn: []string{held.GetCode()}})
+	if after.GetMachineWait() {
+		t.Errorf("waits for a dependency, not for the machine: %v", after)
+	}
+	start := func(id string) (*planv1.Task, error) {
+		res, err := e.tasks.Start(t.Context(), connect.NewRequest(&planv1.TaskServiceStartRequest{TaskId: id}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg.GetTask(), nil
+	}
+	if _, err := start(after.GetId()); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+		!strings.Contains(err.Error(), "waits for W1") {
+		t.Errorf("forcing a task held by a dependency: %v", err)
+	}
+	// Its provider's usage limit holds it as well: forced, it is refused; Start frees the machine only.
+	limit := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W9", Title: "Limited", Provider: held.GetProvider(),
+		Status: planv1.TaskStatus_TASK_STATUS_RESUMING, Scheduled: true, CreateTime: timestamppb.Now(),
+		ResumeAfter: timestamppb.New(time.Now().Add(time.Hour)), WaitReason: "the session limit"}
+	put := func(task *planv1.Task) {
+		if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+			if err := tx.Journal("test", "put", task); err != nil {
+				return err
+			}
+			return tx.Put(task)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(limit)
+	if _, err := start(held.GetId()); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+		!strings.Contains(err.Error(), "waits for the session limit") {
+		t.Errorf("forcing a task held by its provider's usage limit: %v", err)
+	}
+	limit.Status, limit.ResumeAfter, limit.WaitReason = planv1.TaskStatus_TASK_STATUS_CANCELLED, nil, ""
+	put(limit)
+	got, err := start(held.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetStartTime() == nil || got.GetMachineWait() || got.GetWaitReason() != "" {
+		t.Errorf("forced = %v", got)
+	}
+	if got := e.ended(t, held.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("forced, ended = %v", got)
+	}
+	if _, err := start(held.GetId()); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("forcing a task that ran: %v", err)
 	}
 }

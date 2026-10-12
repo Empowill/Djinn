@@ -2,6 +2,8 @@ package harness
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -33,6 +35,7 @@ type integration struct {
 	testCode  int      // what the test command exits with
 	testOut   string
 	afterTest func()         // run once by the next test command, then forgotten
+	testWait  chan struct{}  // the test command waits until it closes, the clock free meanwhile
 	exits     map[string]int // what the other commands exit with, by their first word: setup, lint
 }
 
@@ -74,9 +77,16 @@ func (in *integration) pass(t *testing.T, d time.Duration) {
 	in.h.integratePass(t.Context())
 }
 
+// restart stops Djinn and starts it again on the same home and database.
+func (in *integration) restart(t *testing.T, opts ...Option) {
+	t.Helper()
+	in.down()
+	in.env = up(t, in.home, append([]Option{WithClock(in.clock), WithCommands(in.run), WithGates(in.gate)}, opts...)...)
+}
+
 // run is the fake of the project's commands: gen lists the files of src in gen/index.txt, test says testOut and
 // exits testCode.
-func (in *integration) run(_ context.Context, dir string, args []string) (string, int, error) {
+func (in *integration) run(ctx context.Context, dir string, args []string) (string, int, error) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	in.runs = append(in.runs, strings.Join(args, " ")+" in "+dir)
@@ -101,10 +111,25 @@ func (in *integration) run(_ context.Context, dir string, args []string) (string
 			in.afterTest = nil
 			f()
 		}
+		if wait := in.testWait; wait != nil {
+			in.mu.Unlock()
+			<-wait
+			in.mu.Lock()
+		}
 		return in.testOut, in.testCode, nil
 	case "install":
 		b, err := os.ReadFile(filepath.Join(dir, "src", "a.txt"))
 		return "installed " + string(b), 0, err
+	case "gh":
+		if os.Getenv("GH_DATA") == "" {
+			return "no gh configured in test", 127, nil
+		}
+		return runCommand(ctx, dir, args)
+	case "glab":
+		if os.Getenv("GLAB_DATA") == "" {
+			return "no glab configured in test", 127, nil
+		}
+		return runCommand(ctx, dir, args)
 	}
 	return "unknown command", 127, nil
 }
@@ -407,12 +432,15 @@ func TestIntegrateCodeConflict(t *testing.T) {
 	if want := "W2 conflicts with " + in.branch + " in app/README.md"; got.GetReason() != want {
 		t.Errorf("W2's reason %q; want %q", got.GetReason(), want)
 	}
-	q := in.question(t, w2)
-	if last := texts[len(texts)-1]; last != "conflict: "+got.GetReason()+"; "+in.branch+" stays as it was; Djinn asks you "+q.GetCode() {
+	if got.GetQuestionId() != "" {
+		t.Errorf("W2 question ID %q; want empty", got.GetQuestionId())
+	}
+	if last := texts[len(texts)-1]; last != "conflict: "+got.GetReason()+"; "+in.branch+" stays as it was; left to the lead" {
 		t.Errorf("W2's last event %q", last)
 	}
-	if !strings.Contains(q.GetText(), "The project's settings start no correction worker") {
-		t.Errorf("the question %q", q.GetText())
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	if err != nil || len(questions) != 0 {
+		t.Errorf("questions in store: %d, want 0", len(questions))
 	}
 	if commits := in.commits(t); len(commits) != 2 || len(in.runs) != 2 {
 		t.Errorf("commits %v; runs %v", commits, in.runs)
@@ -432,6 +460,63 @@ func TestIntegrateCodeConflict(t *testing.T) {
 	in.pass(t, time.Hour)
 	if got := in.states(t, w2); got != "W2 CONFLICT" || len(in.runs) != 2 {
 		t.Errorf("tried again: %s, runs %v", got, in.runs)
+	}
+}
+
+// TestIntegrateWithoutAGitIdentity replays W5 of PR #2's CI: on a machine with no git user.name nor user.email, the
+// merge of a task's work failed and the window said a conflict with no file. It is no conflict: the work waits, its
+// reason names the git config to run, and once the person sets an identity the next pass commits it. Djinn signs with
+// no identity of its own.
+func TestIntegrateWithoutAGitIdentity(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	old := in.tip(t)
+	// testx.Guard hides the machine's identity; the repository's goes too, and git may not guess one (macOS does).
+	in.git(t, in.repo, "config", "--unset", "user.name")
+	in.git(t, in.repo, "config", "--unset", "user.email")
+	in.git(t, in.repo, "config", "user.useConfigOnly", "true")
+
+	in.pass(t, 0)
+	got, texts := in.integration(t, w1)
+	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING || got.GetReason() != noIdentity {
+		t.Fatalf("W1's integration %v; want PENDING, %q", got, noIdentity)
+	}
+	for _, want := range []string{`git config --global user.name "Your Name"`, "git config --global user.email you@example.com"} {
+		if !strings.Contains(got.GetReason(), want) {
+			t.Errorf("the reason %q does not name %s", got.GetReason(), want)
+		}
+	}
+	if in.tip(t) != old || len(in.runs) != 0 || len(in.commits(t)) != 0 {
+		t.Errorf("the branch moved to %s from %s; runs %v", in.tip(t), old, in.runs)
+	}
+	// A pass while the identity is missing says nothing new.
+	in.pass(t, time.Minute)
+	if _, again := in.integration(t, w1); len(again) != len(texts) {
+		t.Errorf("events %q after %q", again, texts)
+	}
+
+	// The merge itself, refused by git for want of an identity, waits the same: no conflict.
+	wish, err1 := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
+	project, err2 := store.Get[*planv1.Project](t.Context(), in.db, in.projectID)
+	settings, err3 := plan.LoadSettings(in.home, project)
+	if err := errors.Join(err1, err2, err3); err != nil {
+		t.Fatal(err)
+	}
+	_, merged, _ := in.h.mergeAndTest(t.Context(), wish, project, settings, in.branch, old, []*planv1.Task{w1})
+	if merged.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING || merged.GetReason() != noIdentity {
+		t.Errorf("the merge without identity: %v", merged)
+	}
+	// A commit says it too: the one message wherever Djinn commits.
+	if _, err := git(t.Context(), in.repo, "commit", "--allow-empty", "--quiet", "-m", "x"); !errors.Is(err, errNoIdentity) {
+		t.Errorf("a commit without identity: %v", err)
+	}
+
+	in.git(t, in.repo, "config", "user.name", "Test")
+	in.git(t, in.repo, "config", "user.email", "test@example.com")
+	in.pass(t, time.Minute)
+	if got := in.states(t, w1); got != "W1 COMMITTED" {
+		t.Errorf("once git has an identity: %s", got)
 	}
 }
 
@@ -641,5 +726,174 @@ func TestADependentStartsFromTheCommit(t *testing.T) {
 	if !slices.Contains(texts, "waiting: waits for W1 to be committed") ||
 		!slices.ContainsFunc(texts, func(s string) bool { return strings.HasPrefix(s, "started fake") && strings.Contains(s, from) }) {
 		t.Errorf("W2's events, without %q: %q", from, texts)
+	}
+}
+
+func TestTaskEndsWithUnreadableSettingsGetsMergedOnceFixed(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	// Corrupt settings file
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"), "provider: [broken\n")
+
+	// Task W1 finished while settings were unreadable:
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) {
+		in.h.pendIntegration(task)
+	})
+
+	// Also verify pendIntegration directly on a done task when settings are unreadable
+	task2 := proto.CloneOf(w1)
+	task2.Id = store.NewID()
+	task2.Integration = nil
+	if integrate, _ := in.h.pendIntegration(task2); !integrate {
+		t.Fatal("pendIntegration should return true even when settings are unreadable")
+	}
+	if task2.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING {
+		t.Fatalf("task2 integration state: got %v, want PENDING", task2.GetIntegration().GetState())
+	}
+	if !strings.HasPrefix(task2.GetIntegration().GetReason(), "settings unreadable:") {
+		t.Fatalf("task2 integration reason: got %q, want 'settings unreadable:'", task2.GetIntegration().GetReason())
+	}
+
+	// Make an integrate pass while settings are broken
+	in.pass(t, 0)
+	gotW1, err := store.Get[*planv1.Task](t.Context(), in.db, w1.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// W1 should now be queued as pending with wait reason
+	if gotW1.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING {
+		t.Fatalf("W1 integration state: got %v, want PENDING", gotW1.GetIntegration().GetState())
+	}
+	if !strings.HasPrefix(gotW1.GetIntegration().GetReason(), "settings unreadable:") {
+		t.Fatalf("W1 integration reason: got %q, want 'settings unreadable:'", gotW1.GetIntegration().GetReason())
+	}
+
+	// Now fix the settings file
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\n")
+
+	// Next integration pass should merge W1
+	in.pass(t, 0)
+	if got := in.states(t, w1); got != "W1 COMMITTED" {
+		t.Fatalf("after fixing settings, W1 state: got %q, want 'W1 COMMITTED'", got)
+	}
+}
+
+// TestOldTaskWithoutIntegrationRecordIsNotQueued: a task with no integration record is never
+// queued afterwards: nil means Djinn did not integrate it, by design.
+func TestOldTaskWithoutIntegrationRecordIsNotQueued(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) {
+		task.Integration = nil
+	})
+
+	in.pass(t, 0)
+
+	gotW1, err := store.Get[*planv1.Task](t.Context(), in.db, w1.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotW1.GetIntegration() != nil {
+		t.Fatalf("old task should not have an integration record after pass, got %v", gotW1.GetIntegration())
+	}
+}
+
+// TestNoOpBatchTellsTheEndOnly verifies that a batch that does not move the branch
+// (its work was already in) tells no merge line (Decision Q173), but its task's end once:
+// no other line would (incident W1 of wish Dew, 12/10/2026).
+func TestNoOpBatchTellsTheEndOnly(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	var told []string
+	in.h.TellLeads(func(ctx context.Context, wishID, line string) error {
+		told = append(told, line)
+		return nil
+	})
+
+	// W1 finishes and is committed
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	in.pass(t, 0)
+	if got := in.states(t, w1); got != "W1 COMMITTED" {
+		t.Fatalf("W1 state: %s", got)
+	}
+
+	told = nil
+	// W2 finishes with no new files (worktree already matches branch HEAD)
+	w2 := in.finished(t, "W2", nil)
+	in.pass(t, 0)
+	if got := in.states(t, w2); got != "W2 COMMITTED" {
+		t.Fatalf("W2 state: %s", got)
+	}
+
+	want := []string{"Djinn: W2 done, nothing to merge into " + in.branch + ". It left no final note."}
+	if !slices.Equal(told, want) {
+		t.Errorf("told lines %q; want only %q for a no-op batch", told, want)
+	}
+}
+
+// TestRealMergeTellsOneLine verifies that a real merge that moves the branch
+// tells the lead exactly one line (Decision Q173).
+func TestRealMergeTellsOneLine(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	var told []string
+	in.h.TellLeads(func(ctx context.Context, wishID, line string) error {
+		told = append(told, line)
+		return nil
+	})
+
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	in.pass(t, 0)
+	if got := in.states(t, w1); got != "W1 COMMITTED" {
+		t.Fatalf("W1 state: %s", got)
+	}
+
+	if len(told) != 1 {
+		t.Fatalf("expected exactly 1 told line, got %d: %v", len(told), told)
+	}
+	wantPrefix := fmt.Sprintf("Djinn: W1 merged into %s as ", in.branch)
+	if !strings.HasPrefix(told[0], wantPrefix) {
+		t.Errorf("told line %q; want prefix %q", told[0], wantPrefix)
+	}
+}
+
+// TestThreeMergesInPassTellOneLine verifies that three tasks merged in one pass
+// coalesce into a single line for the lead (Decision Q173).
+func TestThreeMergesInPassTellOneLine(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	var told []string
+	in.h.TellLeads(func(ctx context.Context, wishID, line string) error {
+		told = append(told, line)
+		return nil
+	})
+
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
+	w3 := in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
+
+	in.pass(t, 0)
+
+	if got := in.states(t, w1); got != "W1 COMMITTED" {
+		t.Fatalf("W1 state: %s", got)
+	}
+	if got := in.states(t, w2); got != "W2 COMMITTED" {
+		t.Fatalf("W2 state: %s", got)
+	}
+	if got := in.states(t, w3); got != "W3 COMMITTED" {
+		t.Fatalf("W3 state: %s", got)
+	}
+
+	if len(told) != 1 {
+		t.Fatalf("expected exactly 1 told line for 3 merges in a pass, got %d: %v", len(told), told)
+	}
+	wantPrefix := fmt.Sprintf("Djinn: W1, W2, W3 merged into %s as ", in.branch)
+	if !strings.HasPrefix(told[0], wantPrefix) {
+		t.Errorf("told line %q; want prefix %q", told[0], wantPrefix)
 	}
 }

@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -27,9 +30,10 @@ const (
 // Answered takes the answer to a question: when it is a task's edit question, a yes starts the task's worker again,
 // allowed to edit the project's files and to run no command, through the scheduler when no worker runs it; a no
 // leaves it reading only. When Djinn asked it about work that failed to integrate, it settles that work
-// (answerIntegration); about a push, it pushes or waits (answerPush). Any other answer is a decision: a converter
-// turns it into tasks (question.go). Only the first answer counts. The plan services call it once the answer is
-// stored. It says what Djinn did with the answer, for the lead; "" when the answer is the lead's to act on.
+// (answerIntegration); about a push, it pushes or waits (answerPush). Any other answer is a decision for the wish's
+// lead to turn into tasks, or for the principal lead when the wish has no lead. Only the first answer counts. The plan
+// services call it once the answer is stored. It says what Djinn did with the answer, for the lead; "" when the
+// answer is the lead's to act on.
 func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 	if q.GetAnswer() == nil {
 		return ""
@@ -39,6 +43,9 @@ func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 		did = append(did, d)
 	}
 	if d, ok := h.answerPush(ctx, q); ok {
+		did = append(did, d)
+	}
+	if d, ok := h.answerMove(ctx, q); ok {
 		did = append(did, d)
 	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"edit_question_id": q.GetId()})
@@ -61,12 +68,85 @@ func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 			did = append(did, "Djinn keeps "+t.GetCode()+" reading only")
 		}
 	}
-	// A decision for the lead to act on: a converter turns it into tasks. An edit question, a question on work that
-	// failed to integrate, one about a push, a routed request and a grant are settled by Djinn itself.
-	if len(tasks) == 0 && len(did) == 0 && q.GetRoute() == nil && !q.GetGrant() {
-		h.askWorker(ctx, q, planv1.TaskRole_TASK_ROLE_CONVERTER, "")
-	}
 	return strings.Join(slices.DeleteFunc(did, func(d string) bool { return d == "" }), "; ")
+}
+
+// answerMove takes the person's answer to a move question. Djinn acts on a yes only for the moves it asked itself,
+// as its question records them (DjinnMove), never by the words of the question: it installs the build it named,
+// pushes the tag it named, or marks the azima whose proof it asked for done. A move question a worker or the lead
+// asked is only noted, whatever its words: an installer in its context installs nothing.
+func (h *Harness) answerMove(ctx context.Context, q *planv1.Question) (string, bool) {
+	if !q.GetMove() {
+		return "", false
+	}
+	choice := q.GetAnswer().GetChoice()
+	if choice != planv1.Choice_CHOICE_A && choice != planv1.Choice_CHOICE_YES {
+		return "left for later", true
+	}
+	move := q.GetDjinnMove()
+	switch move.GetKind() {
+	case planv1.MoveKind_MOVE_KIND_INSTALL:
+		project, err := h.moveProject(ctx, q)
+		if err != nil || move.GetRef() == "" {
+			return "install noted", true
+		}
+		if _, err := h.Install(ctx, q.GetWishId(), project.GetId(), move.GetRef(), nil); err != nil {
+			return fmt.Sprintf("Djinn install failed: %v", err), true
+		}
+		return "Djinn installed build " + short8(move.GetRef()), true
+	case planv1.MoveKind_MOVE_KIND_TAG:
+		tag := move.GetRef()
+		project, err := h.moveProject(ctx, q)
+		if err != nil || tag == "" {
+			return "Djinn noted: push tag " + tag, true
+		}
+		repo := project.GetDirectory()
+		remote := move.GetRemote()
+		if remote == "" {
+			remote, _ = pushTarget(ctx, repo, "HEAD")
+		}
+		remote = cmp.Or(remote, "origin")
+		if _, err := git(ctx, repo, "push", remote, "refs/tags/"+tag); err != nil {
+			return fmt.Sprintf("Djinn could not push tag %s: %v", tag, err), true
+		}
+		return "Djinn pushed tag " + tag, true
+	case planv1.MoveKind_MOVE_KIND_AZIMA_PROOF:
+		task, err := store.Get[*planv1.Task](ctx, h.store, q.GetTaskId())
+		if err != nil || !plan.IsAzima(task) {
+			return "Djinn noted move", true
+		}
+		if _, err := h.Done(ctx, "", &planv1.TaskServiceDoneRequest{
+			TaskId: q.GetTaskId(),
+			Note:   "proof verified",
+			By:     planv1.Closer_CLOSER_DEVELOPER,
+		}); err != nil {
+			return "Djinn could not mark azima done: " + err.Error(), true
+		}
+		return fmt.Sprintf("Djinn marked %s done", task.GetCode()), true
+	case planv1.MoveKind_MOVE_KIND_READY_TO_MERGE:
+		return "Djinn noted: ready to merge", true
+	case planv1.MoveKind_MOVE_KIND_PULL_REQUEST:
+		return "Djinn noted: open pull request", true
+	case planv1.MoveKind_MOVE_KIND_RELEASE:
+		return "Djinn noted: start release dry run", true
+	}
+	return "Djinn noted move", true
+}
+
+// moveProject is the project of Djinn's move question q: the one it names, or its wish's first.
+func (h *Harness) moveProject(ctx context.Context, q *planv1.Question) (*planv1.Project, error) {
+	id := q.GetDjinnMove().GetProjectId()
+	if id == "" {
+		wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
+		if err != nil {
+			return nil, err
+		}
+		if len(wish.GetProjectIds()) == 0 {
+			return nil, errors.New("the wish has no project")
+		}
+		id = wish.GetProjectIds()[0]
+	}
+	return store.Get[*planv1.Project](ctx, h.store, id)
 }
 
 // answer gives the answer q to the task id: to its run, which applies it, or to the task itself when no worker runs
@@ -101,7 +181,7 @@ func (h *Harness) answer(id string, q *planv1.Question) error {
 	if err != nil {
 		return err
 	}
-	if !yes(q) || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED || task.GetClosed() != nil || !task.GetScheduled() {
+	if !yes(q) || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_CANCELLED || task.GetClosed() != nil || task.GetCancelled() != nil || !task.GetScheduled() {
 		// Nothing starts: the answer is recorded with the task, a task waiting for it is done. A task imported from
 		// another Djinn is not this one's to start.
 		r := &run{id: id, task: task, seq: seq}
@@ -116,7 +196,7 @@ func (h *Harness) answer(id string, q *planv1.Question) error {
 // machine has a slot and no pressure. It starts in this call when the scheduler would start it; otherwise it waits,
 // with the reason. The caller holds h.answering.
 func (h *Harness) grant(ctx context.Context, id string, q *planv1.Question) error {
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	task, err := store.Get[*planv1.Task](ctx, h.store, id)
 	if err != nil {
@@ -209,6 +289,9 @@ func (h *Harness) applyAnswer(r *run, q *planv1.Question) bool {
 	case yes(q) && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED:
 		t.Access = planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED
 		text = "edit granted (" + q.GetCode() + "): the task was stopped on request, and stays stopped"
+	case yes(q) && (t.GetStatus() == planv1.TaskStatus_TASK_STATUS_CANCELLED || t.GetCancelled() != nil):
+		t.Access = planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED
+		text = "edit granted (" + q.GetCode() + "): the task was cancelled, and stays cancelled"
 	case yes(q) && t.GetClosed() != nil:
 		t.Access = planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED
 		text = "edit granted (" + q.GetCode() + "): the task was marked done by hand, and stays done"
@@ -253,8 +336,13 @@ func (h *Harness) again(r *run) error {
 	}
 	readOnly, perms := accessSpec(t.GetAccess(), nil)
 	r.base = t.GetUsage()
+	model := t.GetModel()
+	if foreignModel(t.GetProvider(), model) && !r.watcher {
+		model = DefaultModel(t.GetProvider())
+		t.Model = model
+	}
 	spec := Spec{
-		TaskID: t.GetId(), Dir: project.GetDirectory(), ReadOnly: readOnly, Permissions: perms, Model: t.GetModel(),
+		TaskID: t.GetId(), Dir: project.GetDirectory(), ReadOnly: readOnly, Permissions: perms, Model: model,
 		MaxBudgetUSD: budget, Resume: t.GetSessionId(), Prompt: editLine + prompt,
 	}
 	spec.Skills, spec.SkillsDir = h.summon(context.Background(), r, project)

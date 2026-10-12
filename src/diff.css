@@ -1,0 +1,526 @@
+/* Diff inspection views: file list, unified and side-by-side diff viewers. */
+
+.wish-task-diff-fold {
+  display: inline-block;
+  vertical-align: top;
+  margin-right: var(--space-2);
+}
+
+.wish-task-diff-fold[open] {
+  display: block;
+  width: 100%;
+}
+
+.wish-task-diff-fold > summary.wish-task-diff-button {
+  list-style: none;
+  cursor: pointer;
+}
+
+.wish-task-diff-fold > summary.wish-task-diff-button::-webkit-details-marker {
+  display: none;
+}
+
+.wish-task-diff-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.task-diff-view {
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-3);
+  background: var(--n-14);
+  border: 1px solid var(--n-25);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  font-size: var(--font-size-body);
+}
+
+.diff-loading,
+.diff-empty,
+.diff-error {
+  padding: var(--space-3);
+  color: var(--n-88);
+  font-size: var(--font-size-body);
+}
+
+.diff-error {
+  color: var(--danger);
+}
+
+/* File list tabs */
+.diff-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--n-25);
+}
+
+.diff-file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  background: var(--n-1c);
+  color: var(--n-de);
+  border: 1px solid var(--n-2a);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: var(--font-size-body);
+  cursor: pointer;
+  transition:
+    background 0.1s ease,
+    border-color 0.1s ease;
+}
+
+.diff-file-btn:hover {
+  background: var(--n-25);
+  border-color: var(--n-38);
+}
+
+.diff-file-btn.active {
+  background: var(--n-28);
+  border-color: var(--accent);
+  color: var(--n-ff);
+}
+
+.diff-file-path {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-file-counts {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.diff-count-add {
+  color: var(--term-green);
+}
+
+.diff-count-del {
+  color: var(--term-red);
+}
+
+.diff-file-flags {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.diff-flag {
+  font-size: var(--font-size-body);
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--n-2a);
+  color: var(--n-88);
+}
+
+/* Single file diff section */
+.single-file-diff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.diff-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--n-22);
+}
+
+.diff-toolbar-title {
+  font-family: var(--mono);
+  font-size: var(--font-size-body);
+  color: var(--n-ff);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-mode-toggle {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.diff-mode-btn {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-body);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--n-2a);
+  background: var(--n-1c);
+  color: var(--n-c4);
+}
+
+.diff-mode-btn.active {
+  background: var(--n-30);
+  border-color: var(--accent);
+  color: var(--n-ff);
+}
+
+/* A long diff comes by chunks: the next one loads when this row nears the view */
+.diff-next-chunk {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  color: var(--n-88);
+  font-size: var(--font-size-body);
+}
+
+.diff-next-chunk-btn {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-body);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--n-2a);
+  background: var(--n-1c);
+  color: var(--n-c4);
+}
+
+.diff-binary-msg {
+  padding: var(--space-3);
+  color: var(--n-88);
+  font-style: italic;
+}
+
+/* Diff hunks and lines */
+.diff-container {
+  overflow-x: auto;
+  border: 1px solid var(--n-22);
+  border-radius: var(--radius-sm);
+  background: var(--term-bg);
+  font-family: var(--mono);
+  font-size: var(--font-size-body);
+  line-height: 1.5;
+}
+
+.diff-hunk {
+  border-bottom: 1px solid var(--n-22);
+}
+
+.diff-hunk:last-child {
+  border-bottom: none;
+}
+
+.diff-hunk-header {
+  padding: var(--space-1) var(--space-2);
+  background: var(--n-19);
+  color: var(--term-blue);
+  font-size: var(--font-size-body);
+  user-select: none;
+  border-bottom: 1px solid var(--n-22);
+}
+
+/* Unified view */
+.diff-lines-unified {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.diff-line-row {
+  display: table-row;
+  cursor: pointer;
+}
+
+.diff-line-row:hover {
+  background-color: var(--n-22);
+}
+
+.diff-line-row.line-selected {
+  background-color: rgba(64, 150, 255, 0.22) !important;
+}
+
+.diff-line-row.line-added {
+  background-color: rgba(78, 154, 6, 0.16);
+}
+
+.diff-line-row.line-deleted {
+  background-color: rgba(204, 0, 0, 0.16);
+}
+
+.diff-line-row.line-context {
+  background-color: transparent;
+}
+
+.diff-cell-num {
+  display: table-cell;
+  width: 44px;
+  min-width: 44px;
+  padding: 0 var(--space-1);
+  text-align: right;
+  color: var(--n-65);
+  user-select: none;
+  vertical-align: top;
+  border-right: 1px solid var(--n-22);
+}
+
+.diff-cell-marker {
+  display: table-cell;
+  width: 20px;
+  min-width: 20px;
+  text-align: center;
+  user-select: none;
+  vertical-align: top;
+  font-weight: 600;
+}
+
+.line-added .diff-cell-marker {
+  color: var(--term-green);
+}
+
+.line-deleted .diff-cell-marker {
+  color: var(--term-red);
+}
+
+.line-context .diff-cell-marker {
+  color: transparent;
+}
+
+.diff-cell-code {
+  display: table-cell;
+  padding: 0 var(--space-2);
+  white-space: pre;
+  color: var(--term-fg);
+  word-break: normal;
+  position: relative;
+}
+
+/* Shown on the line under the pointer, and to the keyboard: a hidden button could not take the focus. */
+.diff-add-comment-btn {
+  display: inline-block;
+  opacity: 0;
+  position: absolute;
+  left: -18px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  line-height: 14px;
+  padding: 0;
+  border-radius: var(--radius-xs, 3px);
+  background: var(--accent);
+  color: var(--n-ff);
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: bold;
+  text-align: center;
+  z-index: 2;
+}
+
+.diff-line-row:hover .diff-add-comment-btn,
+.diff-add-comment-btn:focus-visible {
+  opacity: 1;
+}
+
+/* Side by side / Split view */
+.diff-split-table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.diff-split-row {
+  display: table-row;
+}
+
+.diff-split-side {
+  display: table-cell;
+  width: 50%;
+  vertical-align: top;
+  overflow-x: auto;
+}
+
+.diff-split-side.left {
+  border-right: 1px solid var(--n-28);
+}
+
+.diff-split-side.line-added {
+  background-color: rgba(78, 154, 6, 0.16);
+}
+
+.diff-split-side.line-deleted {
+  background-color: rgba(204, 0, 0, 0.16);
+}
+
+.diff-split-side.line-empty {
+  background-color: var(--n-14);
+}
+
+.diff-split-inner {
+  display: table;
+  width: 100%;
+}
+
+.diff-split-inner .diff-cell-code {
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* Syntax colouring tokens from Chroma categories */
+.tok-keyword {
+  color: var(--term-magenta);
+  font-weight: 600;
+}
+
+.tok-string {
+  color: var(--term-green);
+}
+
+.tok-number {
+  color: var(--term-cyan);
+}
+
+.tok-comment {
+  color: var(--term-bright-black);
+  font-style: italic;
+}
+
+.tok-function {
+  color: var(--term-blue);
+}
+
+.tok-type {
+  color: var(--term-yellow);
+}
+
+.tok-operator {
+  color: var(--term-bright-white);
+}
+
+.tok-variable {
+  color: var(--term-fg);
+}
+
+/* Comments in unified diff */
+.diff-comment-row {
+  display: table-row;
+  background: var(--n-17);
+}
+
+.diff-comment-cell {
+  display: table-cell;
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--n-28);
+  border-bottom: 1px solid var(--n-28);
+}
+
+.diff-comment-box {
+  background: var(--n-14);
+  border: 1px solid var(--n-2a);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  margin: var(--space-1) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.diff-comment-box-title {
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  color: var(--n-ff);
+  font-family: var(--sans);
+}
+
+.diff-comment-textarea {
+  width: 100%;
+  min-height: 70px;
+  background: var(--n-1c);
+  border: 1px solid var(--n-2a);
+  border-radius: var(--radius-sm);
+  color: var(--n-ff);
+  padding: var(--space-2);
+  font-family: var(--sans);
+  font-size: var(--font-size-body);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.diff-comment-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.diff-comment-box-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.diff-comment-btn-cancel {
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  border: 1px solid var(--n-2a);
+  border-radius: var(--radius-sm);
+  color: var(--n-c4);
+  cursor: pointer;
+  font-size: var(--font-size-body);
+}
+
+.diff-comment-btn-cancel:hover {
+  background: var(--n-25);
+}
+
+.diff-comment-btn-submit {
+  padding: var(--space-1) var(--space-3);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--n-ff);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: var(--font-size-body);
+}
+
+.diff-comment-btn-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.diff-comment-item {
+  background: var(--n-17);
+  border: 1px solid var(--n-28);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-1) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.diff-comment-item.resolved {
+  border-left-color: var(--n-47);
+  opacity: 0.85;
+}
+
+.diff-comment-resolved-badge {
+  align-self: flex-start;
+  background: rgba(78, 154, 6, 0.2);
+  color: var(--term-green);
+  border: 1px solid rgba(78, 154, 6, 0.4);
+  padding: 1px 6px;
+  border-radius: var(--radius-xs, 3px);
+  font-weight: 600;
+  font-size: var(--font-size-body);
+}
+
+.diff-comment-text {
+  font-family: var(--sans);
+  font-size: var(--font-size-body);
+  color: var(--n-de);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

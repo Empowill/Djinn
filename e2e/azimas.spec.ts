@@ -1,6 +1,8 @@
 // The azimas of a wish in the window, against the real djinn up --browser (see global-setup.ts): in the Tasks tab, the
 // work part of an azima is grouped under it, each azima says what it waits for and its progress, and none is ever
-// said to wait for you. What is finished folds, the done azimas and the finished parts, until a click shows it. Every run makes fresh identifiers, so --repeat-each works on the same djinn.
+// said to wait for you. What is finished folds, the done azimas and the finished parts, until a click shows it. Opened,
+// an azima's Markdown description is on the left, its parts on the right; a narrow window stacks them. Every run makes
+// fresh identifiers, so --repeat-each works on the same djinn.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -68,6 +70,8 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
         task("T2", "The orchestrator", "PENDING", {
           ...azima,
           depends_on: [ids.T1],
+          description:
+            "Split the **orchestrator** in two:\n\n- the scheduler\n- the runner",
         }),
         task("T3", "Spread the work", "PENDING", {
           ...azima,
@@ -78,6 +82,11 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
           end_time: "2026-10-07T21:05:00Z",
         }),
         task("W2", "Pause a worker", "PENDING", { part_of: ids.T2 }),
+        // Cancelled: no work left, out of the counts, listed among the finished parts.
+        task("W4", "Drop the old runner", "CANCELLED", {
+          part_of: ids.T2,
+          end_time: "2026-10-07T21:06:00Z",
+        }),
         task("W3", "Polish the window", "PENDING"),
       ],
     }),
@@ -89,7 +98,7 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
     // Nothing waits for you: no azima is your move.
     await expect(page.locator("#action-center")).toHaveCount(0);
     const tasksTab = page.getByRole("tab", { name: /^Tasks/ });
-    // The work only: an azima is the plan.
+    // The work only: an azima is the plan, a cancelled task no work left.
     await expect(tasksTab).toHaveText("Tasks3");
     await tasksTab.click();
 
@@ -108,13 +117,74 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
     ]);
     const t2 = azimas.locator(".azima-card").first();
     await expect(t2.locator(".azima-heading")).toContainText("In progress");
+    // Its heading reads at a glance: what comes before it, its parts by state, on hover only; W4, cancelled, is
+    // not one of them.
     await expect(t2.locator(".azima-progress")).toHaveText("1/2");
-    await expect(t2.locator(".azima-after")).toHaveText("after T1");
+    await expect(t2.locator(".azima-progress")).toHaveAttribute(
+      "title",
+      "1 of 2 parts done\n1 done, 0 running, 1 waiting",
+    );
+    await expect(t2.locator(".azima-heading strong")).toHaveAttribute(
+      "title",
+      "The orchestrator\nafter T1",
+    );
+    await expect(t2.locator(".azima-heading")).not.toContainText("after T1");
+    await expect(t2.locator(".azima-heading")).not.toContainText("1 done");
+    // Opened: its description, Markdown rendered, on the left, at most 40% of the card; its parts on the right.
+    await expect(t2.locator(".azima-description strong")).toHaveText(
+      "orchestrator",
+    );
+    await expect(t2.locator(".azima-description li")).toHaveText([
+      "the scheduler",
+      "the runner",
+    ]);
+    // Measured at once: the page may scroll between two calls.
+    const columns = () =>
+      t2.locator(".azima-body").evaluate((body) => {
+        const rect = (selector: string) =>
+          body.querySelector(selector)!.getBoundingClientRect();
+        const [side, work] = [rect(".azima-side"), rect(".azima-parts")];
+        return {
+          width: body.getBoundingClientRect().width,
+          sticky: getComputedStyle(body.querySelector(".azima-side")!).position,
+          side: {
+            x: side.x,
+            y: side.y,
+            width: side.width,
+            bottom: side.bottom,
+          },
+          work: { x: work.x, y: work.y },
+        };
+      });
+    const wide = await columns();
+    expect(wide.side.x + wide.side.width).toBeLessThanOrEqual(wide.work.x);
+    expect(wide.side.width).toBeLessThanOrEqual(wide.width * 0.4 + 1);
+    expect(Math.abs(wide.side.y - wide.work.y)).toBeLessThan(2);
+    // In sight while the parts scroll.
+    expect(wide.sticky).toBe("sticky");
+    // A narrow window stacks them: the description, then the parts.
+    await page.setViewportSize({ width: 700, height: 1000 });
+    await expect
+      .poll(async () => {
+        const narrow = await columns();
+        return (
+          narrow.work.y >= narrow.side.bottom - 1 && narrow.sticky === "static"
+        );
+      })
+      .toBe(true);
+    await page.setViewportSize({ width: 1440, height: 1000 });
     // Opened on its work: what waits, what is done folded under it; a click shows it.
     await expect(t2.locator(".wish-task .agent-code")).toHaveText(["W2"]);
     await t2.locator(".fold-line").click();
-    await expect(t2.locator(".wish-task .agent-code")).toHaveText(["W2", "W1"]);
+    await expect(t2.locator(".wish-task .agent-code")).toHaveText([
+      "W2",
+      "W4",
+      "W1",
+    ]);
     await expect(t2.locator(".fold-line")).toHaveText("Hide the finished ones");
+    await expect(
+      t2.locator(".wish-task").filter({ hasText: "Drop the old runner" }),
+    ).toContainText("Cancelled");
     const doneFold = azimas.locator(":scope > .fold-line");
     await expect(doneFold).toHaveText("Show 1 finished");
     await doneFold.click();
@@ -131,7 +201,11 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
       "T3",
       "T1",
     ]);
-    await expect(t2.locator(".wish-task .agent-code")).toHaveText(["W2", "W1"]);
+    await expect(t2.locator(".wish-task .agent-code")).toHaveText([
+      "W2",
+      "W4",
+      "W1",
+    ]);
     const t3 = azimas.locator(".azima-card").nth(1);
     await expect(t3.locator(".azima-waits")).toHaveText("Waits for T2");
     await expect(t3.locator(".azima-heading")).toContainText("Open");
@@ -139,7 +213,12 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
     await expect(t3.locator(".azima-parts")).toContainText(
       "No work is part of it yet.",
     );
-    await expect(page.locator(".tasks-finished h2")).toHaveText("Finished0");
+    // No description: its parts take the whole width.
+    await expect(t3.locator(".azima-side")).toHaveCount(0);
+    const t3Body = (await t3.locator(".azima-body").boundingBox())!;
+    const t3Parts = (await t3.locator(".azima-parts").boundingBox())!;
+    expect(t3Parts.width).toBeGreaterThan(t3Body.width * 0.9);
+    await expect(page.locator(".tasks-finished")).toHaveCount(0);
     await expect(page.locator(".tone-waiting")).toHaveCount(0);
 
     const listed = JSON.parse(
@@ -148,13 +227,31 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
       code: string;
       azima?: { state: string; ready?: boolean };
     }[];
+    // Its branch is named, never stacked on the branch of the azima it waits for.
     expect(listed.find((t) => t.code === "T2")?.azima).toEqual({
+      branch: "djinn/T2-the-orchestrator",
       state: "AZIMA_STATE_IN_PROGRESS",
       ready: true,
       parts: 2,
       parts_done: 1,
     });
     expect(listed.find((t) => t.code === "T3")?.azima?.ready).toBeFalsy();
+
+    // Its azimas wait for each other: switching it to per azima is refused in a line naming them, and the switch
+    // shows per wish at once, never per azima.
+    const strategy = page.getByRole("group", { name: "Push strategy" });
+    const perWish = strategy.getByRole("button", { name: "Per wish" });
+    const perAzima = strategy.getByRole("button", { name: "Per azima" });
+    await expect(perWish).toHaveClass(/active/);
+    await perAzima.click();
+    await expect(page.locator(".toast")).toContainText(
+      "per azima refused: azimas depend on each other (T2 after T1; T3 after T1, T2)",
+    );
+    await expect(perWish).toHaveClass(/active/);
+    await expect(perAzima).not.toHaveClass(/active/);
+    expect(djinn("wish", "push-strategy", wishId, "--json")).toContain(
+      "PUSH_STRATEGY_WISH",
+    );
     expect(errors).toEqual([]);
   } finally {
     // It may have been imported paused, when three wishes were active.

@@ -1,0 +1,10 @@
+# Case: agy encounters a transient stream error mid-work (before final text); retried and then succeeds.
+{"event":"init","conversation_id":"b2c3d4e5-0002-4000-8000-000000000002","init":{"cwd":"/work/project","tools":["ask_permission","run_command","view_file","write_to_file"],"permission_mode":"accept-edits","model":"gemini-3.8-flash-medium"}}
+{"event":"step_update","step_update":{"conversation_id":"b2c3d4e5-0002-4000-8000-000000000002","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"b2c3d4e5-0002-4000-8000-000000000002","step_index":1,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"git status"}}}}
+{"event":"step_update","step_update":{"conversation_id":"b2c3d4e5-0002-4000-8000-000000000002","step_index":1,"state":"DONE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"git status"},"output":"On branch main\nnothing to commit, working tree clean\n"}}}
+{"event":"error","error":"The stream was interrupted"}
+{"event":"result","result":{"conversation_id":"b2c3d4e5-0002-4000-8000-000000000002","status":"ERROR","error":"The stream was interrupted","duration_seconds":1.0,"num_turns":1,"usage":{"input_tokens":1000,"output_tokens":10,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":1010}}}
+{"event":"step_update","step_update":{"conversation_id":"b2c3d4e5-0002-4000-8000-000000000002","step_index":2,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"b2c3d4e5-0002-4000-8000-000000000002","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"Completed all requested steps.\n"}}
+{"event":"result","result":{"conversation_id":"b2c3d4e5-0002-4000-8000-000000000002","status":"SUCCESS","response":"Completed all requested steps.\n","duration_seconds":1.5,"num_turns":2,"usage":{"input_tokens":2000,"output_tokens":20,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":2020}}}

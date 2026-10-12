@@ -33,6 +33,31 @@ reason in the task's error, whatever the provider. Two places decide:
 A refused permission is not an error in itself: Claude and Codex tell the agent, which goes on and ends its turn
 (`permission denied: …` is a `STATUS`). Antigravity's denial ends its turn: the task fails (below).
 
+## A task's seal
+
+A task's seal is the set of constraints Djinn gives the worker of a task: what it may spend, what it may touch, how
+it shares the machine. Each part comes from a default of Djinn, the project's settings (`.agents/settings.txtpb`,
+the developer's file over the repository's), the wish (its allowance), the task's spawn request, or Djinn's own
+flags; none of it is the worker's to change.
+
+| Part | What it bounds | Where it comes from |
+| ---- | -------------- | ------------------- |
+| Silence limit | 15 minutes without an event, no process busy, no gate held or awaited: the Lamplighter ends the worker, then [wakes it](#when-djinn-resumes-a-worker) | Djinn's default (`SilenceLimit`) |
+| Wall time | 2 hours of work over all its runs, gate waits included; past it the task is stopped, "budget exceeded", and stays stopped | Djinn's default (`TaskMaxWallTime`) |
+| Model turns | 500 turns in one run (`Task.turns`, shown `37/500`); past it the run is stopped; `djinn task continue` gives 500 again | Djinn's default (`TaskMaxTurns`) |
+| Wakes and resumes | 3 wakes in a row, 3 resumes on usage limits, 2 replays after an environment failure | Djinn's defaults |
+| Spending cap | US dollars over its runs; Claude alone enforces it (`--max-budget-usd`), Codex and Antigravity have none | the spawn request (`max_budget_usd`), else the project's `max_budget_usd`; a question worker's, `question_budget_usd` (2 by default) |
+| Access | editing, the auto mode, its commands and the network ([what a worker may do](#what-a-worker-may-do)), applied by each agent's own sandbox | the wish's allowance (`djinn wish allow`), else `.agents/permissions.txtpb`, else the agent's own configuration, else the developer's answer |
+| No push | every `git push` of the worker goes nowhere ([no worker pushes](#no-worker-pushes)) | always |
+| Its calls to Djinn | what it may call with its token (`DJINN_WORKER_TOKEN`): its own wish's questions, blocks and tilasms, its own task, reads; never a new wish | always (`plan.WorkerGuard`) |
+| Write scopes | outside Git, two tasks whose scopes overlap never run together | the spawn request (`write_scopes`) |
+| CPU priority | `nice 10` at the Minimal to Medium load notches ([operating load](#operating-load-runtime-adjustments)) | the machine's load notch |
+| Memory and slots | a memory ceiling in its own scope, a slot among the workers, room to start | `djinn up --workers`, `--worker-memory`, `--worker-memory-guard`, `--worker-cpu`, and the load notch |
+| Gates | one holder per gate, held an hour at most unless its holder states another timeout | Djinn's defaults ([gates](user-guide.md#gates)) |
+
+The task carries only some of it: its turns and their limit (`turns`), its spending cap, its access, its write
+scopes. The other parts are Djinn's, and the same for every task.
+
 ## What a worker may do
 
 **Cross-agent first: a project says once, in `.agents/permissions.txtpb`, what any agent may do in it, and Djinn
@@ -67,7 +92,7 @@ Djinn decides when it spawns a task, and records the outcome in the task's `acce
    mode. Only the first answer counts; a task stopped on request stays stopped. An agent that cannot run
    read-only (Antigravity) does not start before the answer.
 
-**A question worker** (`Task.role`, the converter or the investigator Djinn starts on a question, see the [agent
+**A question worker** (`Task.role`, the investigator Djinn starts on a question, see the [agent
 protocol](agent-protocol.md)) skips these rules: its access is `DJINN`, the same everywhere. It reads, in its
 project's folder without a worktree (or an empty folder of its own outside any project), and runs only djinn's
 commands to read the wish and plan from the question (`wish brief`, `task list`, `task get`, `question list`, `block
@@ -104,6 +129,22 @@ for skills. Djinn's own: [`.agents/permissions.txtpb`](../.agents/permissions.tx
 Reading is always allowed. A word holds no wildcard nor shell operator (the file is refused otherwise), so a
 prefix never widens into a pattern.
 
+#### No worker pushes
+
+Pushing is the orchestrator's. A denied `git push` is only a first line: a prefix, it lets `sh -c "git push"` or
+`git -C . push` through, under Claude's rules as under agy's deny grants. So Djinn makes the push impossible by
+environment, for every worker whatever its provider (Claude, Codex, Antigravity, the fake; question workers
+alike): their environment gives Git a command-line configuration (`GIT_CONFIG_COUNT`, after the user's own)
+that includes, in the project's repository only (`includeIf.gitdir` on its `.git` and its worktrees), Djinn's
+`git/no-push.gitconfig`. It holds one empty `pushInsteadOf`, a prefix of every URL: any push from the worker, to a
+remote, to one it added, to a path or URL on the command line, `--no-verify` or not, goes to the
+`djinn-workers-do-not-push://` transport, which Git does not have, and fails. Fetching, committing, merging,
+rebasing, stashing and worktrees work as before, and the project's own hooks still run. Other repositories (the
+ones a project's tests make) push as before. The orchestrator's push from the integration worktree runs in Djinn's
+own environment, which never holds the guard. What the guard does not stop: a command that clears Git's environment
+first, or a remote given an explicit `pushurl` (which `pushInsteadOf` leaves alone).
+`TestGitGuardKeepsWorkersFromPushing` (`internal/harness/guard_test.go`) proves each case.
+
 Next to it, `.agents/settings.txtpb` gives the project's workers their default agent, model, budget and branch
 name, shared by the team, your own file winning: [team settings](team-settings.md).
 
@@ -112,10 +153,10 @@ name, shared by the team, your own file winning: [team settings](team-settings.m
 | Field             | Claude (`--settings` inline, `--permission-mode`)                    | Codex (`thread/start`, `turn/start`, approvals)                                                   | Antigravity (command line, Djinn's agy project)     |
 | ----------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `edit`            | allow, or deny, `Edit`, `Write`, `NotebookEdit`                      | `sandbox: workspace-write` and turn `sandboxPolicy: workspaceWrite`, else `read-only`; file-change approvals accepted only with `edit`, inside the workspace | `--mode accept-edits`, and `write_file` grants of the worker's folder and Git's folders; without `edit`, refused |
-| `commands`        | allow `Bash(<p> *)` and `PowerShell(<p> *)`                          | LISTED: `approvalPolicy: untrusted`, and Djinn accepts a command approval when the command is listed | LISTED: `command(<p>)` grants; AUTO: `command(*)`, every command, in the sandbox still |
+| `commands`        | allow `Bash(<p> *)` and `PowerShell(<p> *)`                          | LISTED: `approvalPolicy: untrusted`, and Djinn accepts a command approval when the command is listed | LISTED: `command(<p>)` grants; AUTO: `command(*)`, every command |
 | `denied_commands` | deny `Bash(<p> *)` and `PowerShell(<p> *)`                           | LISTED: Djinn declines them. AUTO: **lost**, codex's reviewer decides                              | deny `command(<p>)` grants; AUTO adds `git push`   |
-| `network`         | allow, or deny, `WebFetch` and `WebSearch`                           | `networkAccess` of the sandbox policy; a command approval asking for the network is declined without it | off: `--sandbox`, which only restricts more      |
-| `mode`            | LISTED: `--permission-mode dontAsk`; AUTO: `--permission-mode auto`  | AUTO: `approvalPolicy: on-request`, `approvalsReviewer: auto_review`                              | AUTO: runs as `accept-edits`, with `command(*)` above |
+| `network`         | allow, or deny, `WebFetch` and `WebSearch`                           | `networkAccess` of the sandbox policy; a command approval asking for the network is declined without it | not cut: no `--sandbox`, which would cut Djinn's own socket (`djinn gate`); the developer's choice, Q66 (agy 1.3.3, 2026-10-10) |
+| `mode`            | LISTED: `--permission-mode dontAsk`; AUTO: `--permission-mode auto`  | AUTO: `approvalPolicy: on-request`, `approvalsReviewer: auto_review`                              | AUTO: runs as `accept-edits`, with `command(*)` above and `read_url(*)` (Q143) |
 
 What is verified and what is supposed:
 
@@ -152,9 +193,11 @@ What is verified and what is supposed:
   permission at launch, but `--project <id>` runs it in one of its projects, a JSON file in
   `~/.gemini/config/projects/`, whose `permissionGrants` it applies headless on top of the user's settings, untouched
   (see [Antigravity](#antigravity)). So Djinn writes one project of its own per worktree. In AUTO it grants
-  `command(*)`: any command runs, in the sandbox, but the denied ones (real runs, agy 1.3.3, 2026-10-10). **Lost:**
+  `command(*)` (any command runs, in the sandbox, but the denied ones) and `read_url(*)` (any URL fetched with
+  `read_url`, Decision Q143; real runs, agy 1.3.3, 2026-10-10). **Lost:**
   a review of what runs (agy has no auto mode: `command(*)` approves every command, where Claude's classifier reviews
-  them); a deny grant is a prefix, so `sh -c "git push"` or `git -C . push` gets past it (as past Claude's rules);
+  them); a deny grant is a prefix, so `sh -c "git push"` or `git -C . push` gets past it (as past Claude's rules), and
+  only Djinn's environment then keeps the push from happening ([no worker pushes](#no-worker-pushes));
   in LISTED, a command neither listed nor granted by the user's settings is denied, and the denial ends the turn;
   in both, a command that asks to leave the sandbox (`unsandboxed`) is denied, and the denial ends the turn.
 
@@ -235,7 +278,7 @@ command, are to check on a real run.
 
 ## When Djinn resumes a worker
 
-Djinn resumes a worker by itself, in the same task (status `resuming`), in two cases:
+Djinn resumes a worker by itself, in the same task (status `resuming`), in four cases:
 
 - **djinn up stopped or crashed while it ran.** At the next start the task is interrupted, then resumed, unless a
   person stopped it, it was imported, its worktree is gone, its wish is granted, or another task was forked from it
@@ -243,20 +286,87 @@ Djinn resumes a worker by itself, in the same task (status `resuming`), in two c
 - **Its provider's usage limit stopped it.** The task waits for the reset (status "waiting for the limit", with
   "the account's session limit, resets at 07:20"), then resumes. Without a reset time, it waits 15 minutes, then 30,
   doubling up to 2 hours. While a limit holds, no new worker of that provider starts.
+- **Preemption for an investigator worker.** When memory is short and an investigator worker ("Qxx: enlighten")
+  cannot start, Djinn makes room: it interrupts the running work task of lowest priority so that it resumes later in
+  its session or conversation (Claude, Antigravity), RESUMING with the wait reason "made room for Qxx: enlighten",
+  without consuming a resume attempt.
+- **The Lamplighter wakes it.** The Lamplighter is Djinn's watchdog (`internal/harness/lamplighter.go`; the
+  lamplighter woke the street's lamps one by one, and lit again the ones the wind blew out). It wakes before it
+  fails: a worker silent past the silence limit with no process busy and no gate held or awaited, a worker whose
+  stream went idle, or a task running without a process (a lost process) is ended, then continued on its session
+  ("continue where you stopped…"), its run ending `wake` (`TaskRun.reason`). Only after 3 wakes in a row does the
+  task fail, with "silent for 15 min; the Lamplighter woke it 3 times in a row and gives up", its lead told once; a
+  run that ends otherwise (done, a limit, a restart) ends the row. Wakes are counted apart from usage-limit
+  resumes: a worker that waited for its limits is woken all the same, and a wake spends no resume. A budget of
+  the task's [seal](#a-tasks-seal) is no wake: a task stopped past its wall time or its turns stays stopped.
 
-The scheduler starts a resumed task like a planned one, first: slots, pressure and gates still apply. After 3
-resumes without finishing, the task fails, saying so. What each agent gets:
+The scheduler starts a resumed task like a planned one: slots, pressure and gates still apply. After 3
+resumes on usage limits without finishing (unspent by preemption, pauses, grants or wakes), the task fails, saying
+so. What each agent gets:
 
 | Agent  | Resumed with                                                                                                       |
 | ------ | ------------------------------------------------------------------------------------------------------------------ |
-| Claude | `--resume <session>`, and "Djinn restarted while you worked; your worktree is as you left it. Continue your task." |
+| Claude | `--resume <session>`, and "Djinn restarted while you worked; your worktree is as you left it. Continue your task." (or "Djinn interrupted your worker to make room for an investigator…") |
 | Codex  | `thread/resume` on its thread, and the same line                                                                   |
-| agy    | its first prompt again, its checks with it, then that line, in the same worktree: its resume is not verified       |
+| agy    | `--conversation <session>`, and the resume line (restarted, limit, answer, continue, preempted), like claude; from the first prompt only when no conversation id is known |
 
 The limits Djinn recognizes, in the failure a worker ends with (`internal/harness/limit.go`): Claude's
 `rate_limit_event` with status `rejected` (its `rateLimitType` and `resetsAt`) and its messages "You've hit your
 session limit · resets …" or "Claude AI usage limit reached|<time>"; Codex's `usageLimitExceeded`; agy's
 `RESOURCE_EXHAUSTED` (supposed); a rate limit or HTTP 429 from any of them.
+
+## The scheduler's order and preemption
+
+The scheduler (`internal/dispatch`) starts planned and resuming tasks in a strict 5-tier order (Q117, A):
+
+1. **Investigator workers** (`Enlighten me`), followed by answer workers (`Rub the lamp`). Question workers skip the worker slot count, but wait if the machine is under pressure or memory is short.
+2. **Correction workers**, then **review workers** (finished work waits on them to enter the branch, and its dependents wait with it).
+3. **Resumed work tasks** (`RESUMING`: limits, restarts, preemption).
+4. **Work tasks that unblock others**: the critical path, sorted descending by the transitive count of planned and waiting work tasks that depend on them.
+5. **Other work tasks**.
+
+Within each level, tasks are ordered by the wish's rank, then the oldest creation time (`create_time`). Watchers and inbox sources stay outside the slot and model queue.
+
+### Memory queue and wait reasons
+When memory is short for a task at the front of the queue, subsequent work tasks wait behind it with explicit wait reasons:
+- Behind an investigator: `"an investigator goes first: <reason>"`
+- Behind an answer worker: `"an answer worker goes first: <reason>"`
+- Behind a correction worker: `"a correction goes first: <reason>"`
+- Behind a review worker: `"a review goes first: <reason>"`
+- Behind a work task: `"<code|a work task> goes first: <reason>"`
+
+An investigator is never held behind a waiting work task. If memory is short, it goes first in the queue, and work tasks wait behind it. Under real machine pressure, an investigator waits saying `"the machine is under pressure: <pressure>"`.
+
+### Preemption for investigators
+When an investigator cannot start, Djinn makes room:
+- **No free slot**: Djinn pauses the running work task of lowest priority (the last wish by rank, then the most recently started), starts the investigator, and resumes the paused task as soon as the investigator ends.
+- **Memory short**: A pause frees the slot and CPU but not the memory held by the stopped process. When memory blocks an investigator, Djinn interrupts the running work task of lowest priority so that it resumes later in its session or conversation (`plan.CanResume`), entering status `RESUMING` with the reason `"made room for Qxx: enlighten"`, without spending a resume attempt.
+- **Exclusions**: Djinn never preempts a task holding or waiting for a gate, never a correction or review worker, never a provider that cannot resume, and never pauses on Windows where process tree suspension is refused. At most one task is preempted per investigator. Each preemption records an event on both tasks and an entry in the journal (`harness/preempt`).
+
+### Memory a worker is engaged at
+
+A worker is engaged at a percentile of its memory readings that falls as the notch rises (Minimal p95, Medium p80,
+High p70, Max p60, Overclock p50), plus the notch's margin (512 MiB up to Medium, 384 MiB at High, 256 MiB at Max and
+Overclock): a running worker past its warm-up at that percentile of its own series (or what it holds now, if more), a
+new one at the median of the latest 10 finished workers' value at it. Another worker starts when what the workers are
+engaged at, plus its forecast, stays within the notch's share of what Djinn could use with no worker running (the
+memory available plus what the workers running hold, less the 2 GiB reserve), and the memory available, less what the
+workers running may still take beyond what they hold, holds its forecast. The pressure check (PSI), the memory free,
+the worker memory guardrail and the gates stay the safety net.
+
+### Operating load runtime adjustments
+
+When the operating load notch changes, Djinn immediately adjusts running workers without waiting for subsequent scheduler decisions:
+
+- **Priority at runtime (Q120 A)**: Every running worker's process tree is updated at once in both directions. Normal priority is the one Djinn itself runs at, not the system default: a worker runs as Djinn was started (`nice djinn`, a launcher that raised it), as no unprivileged process can go below its own nice level. Low priority is `nice 10` / `BELOW_NORMAL_PRIORITY_CLASS`, below the developer's applications, or Djinn's own when Djinn already runs lower. On Linux/Unix, Djinn applies `setpriority` (`nice 10` for low priority, Djinn's own nice level for normal) to all processes in the worker's process tree, and updates `cpu.weight` (10 for low, 100 for normal) on its systemd scope / cgroup when available. Child processes spawned subsequently inherit this priority. A worker at low priority starts under `nice`, at its level before its first instruction: a `setpriority` once it started can be lost on macOS when the program execs another at once (`/bin/sh` execs bash, `env` execs node). Without the privilege to lower a nice level (`ulimit -e` is 0 by default), raising a worker back from `nice 10` fails: its `cpu.weight` alone raises it, in a scope. On Windows, `SetPriorityClass` dynamically switches process priority between `BELOW_NORMAL_PRIORITY_CLASS` (low) and Djinn's own class (normal), and a worker starts in its class.
+- **Worker count at runtime (Q121 A & Q123 A)**:
+  - When a notch change reduces capacity below the number of running workers, Djinn pauses the extra workers in the order of Q121 (Q117 reversed: last wish by rank, most recently started, descending task code). Djinn never pauses an investigator, a correction, a review, or a worker holding or waiting for a gate.
+  - When the notch is raised and capacity increases, Djinn resumes paused workers first in Q123 order (Q117's strict order: highest wish rank, earliest start time, ascending task code) before starting any newly planned tasks.
+  - *Windows limitation*: Windows cannot suspend processes (process tree pause is refused with `errNoPause`), so capacity reduction through process pausing is only supported on POSIX systems (Linux, macOS).
+- **Memory shortage for paused workers (Q122 A)**: A paused worker keeps its memory. If memory is short for a higher-priority worker that must start, Djinn interrupts the paused worker so that it can resume later in its session or conversation (`plan.CanResume`), entering `TASK_STATUS_RESUMING` with wait reason `"made room for <task>"` without spending a resume attempt. Djinn never interrupts a provider that cannot resume.
+- **Auto mode (Q124 C)**: In Auto mode, Djinn lowers priority and stops starting new workers when the machine is under pressure, but never pauses running workers (`Policy.Auto == true`).
+- **Events and journal**: Every pause, resume, or interruption triggered by the notch emits an event on the task (e.g. `"paused: operating load lowered to Minimal"`, `"resumed: operating load raised to Normal"`) and a line in the journal (`actorHarness`, procedure `harness/notch`).
+
 
 ## Watch: a command, no agent
 
@@ -269,11 +379,20 @@ wish's lead, typed in the lead's terminal as an answer is:
 Djinn: W70's watcher says: New thread on !41. mrwatch -watch 41 is still watching.
 ```
 
-- **Its loop.** With `--restart`, the command starts again after each exit, until the task is stopped: a command
-  that exits on each change (`mrwatch -watch`) becomes a lasting watcher. It starts again at once after exit 0 (a
-  second apart at least), after a failure one second later, doubling up to a minute. Without `--restart`, the task
-  ends with the command: done on exit 0, failed otherwise, and the lead reads "… has ended" (or "Djinn: W70's
-  watcher: <command> has ended.", when its last paragraph came before its exit).
+- **Supervised by the Lamplighter.** A watcher is no worker: the Lamplighter, Djinn's watchdog, supervises it
+  apart, as long as its wish needs it. No silence limit, no wall-time budget and no turn budget apply to it; what counts is that its command lives
+  while its task runs. A command that dies (an error, an exit code other than 0, a kill) starts again, in the same
+  task: one second later, doubling up to five minutes, the backoff starting over after a run that lived a minute.
+  Its state folder, `$DJINN_HOME/watchers/<task>` (Djinn sets `DJINN_HOME` for it), stays as the command left it,
+  so that it does not say again what it said. After five deaths in a row, the task fails, and the lead is told once
+  why, with the command's last error lines: "Djinn: W70's watcher failed: its command died 5 times in a row; the
+  last time: exit code 4; its error output: gh: not logged in". A watcher whose process is lost (its task running
+  in the store, no run in Djinn) starts again too. Stopped, it stays stopped.
+- **Its loop.** `--restart` keeps one meaning: the command starts again after an exit 0 too, until the task is
+  stopped or its done line comes: a command that exits on each change (`mrwatch -watch`) becomes a lasting watcher.
+  It starts again at once after exit 0 (a second apart at least). Without `--restart`, an exit 0 ends the task,
+  done, and the lead reads "… has ended" (or "Djinn: W70's watcher: <command> has ended.", when its last paragraph
+  came before its exit); a command that dies still starts again.
 - **What the lead is told.** The first line of each paragraph, without colours nor control characters, 200
   characters at most. A paragraph that says again what the last one said is recorded, and wakes no one; nor does
   the last one of a watcher stopped on request. A wish without a lead keeps the paragraphs in the task's events.
@@ -286,15 +405,18 @@ Djinn: W70's watcher says: New thread on !41. mrwatch -watch 41 is still watchin
   (`.agents/permissions.txtpb`), the command must be one of them, and not denied: a watcher has no reviewer to
   approve it. A folder outside Git without agent configuration runs no watcher.
 - **Resumed.** A watcher `djinn up` cut short starts again at the next start, on its command, in its project's
-  folder, however many times (the limit of 3 resumes is for agents). It reads no message (`djinn task send`
+  folder, however many times (the limit of 3 resumes is for agents). The lead's restart line counts the watchers
+  apart from the workers: "Djinn: restarted on version v1.2.0: 1 watcher resumed: W9." It reads no message (`djinn task send`
   refuses); `djinn task pause` holds its command still, and the next run waits.
 
-A skill's [wish template](wish-templates.md) starts a watcher with the wish it makes; its done line ends a watcher
-that restarts, done, and asks whether to grant the wish.
+A skill's [wish template](wish-templates.md) starts a watcher with the wish it makes; its done line ends the
+watcher, done, and asks whether to grant the wish.
 
 Tests: `TestWatchParagraphs`, `TestWatcher` (no slot, the restart loop, the line to the lead, pause),
-`TestWatcherEnds`, `TestWatcherResumes`, `TestWatcherPermissions` (`watch_test.go`, the test binary plays the
-command), and `TestWatcherTakesNoSlot` (`internal/dispatch`).
+`TestWatcherEnds`, `TestWatcherResumes` (and the restart line), `TestWatcherPermissions` (`watch_test.go`, the test
+binary plays the command), `TestWatcherLife`, `TestLamplighterWatcherOutlivesBudgets`,
+`TestWatcherStartsAgainWhenItDies`, `TestWatcherGivesUp`, `TestLamplighterLostWatcherStartsAgain`
+(`lamplighter_test.go`), and `TestWatcherTakesNoSlot` (`internal/dispatch`).
 
 ## Claude
 
@@ -308,11 +430,32 @@ Djinn does not count one result per message but takes the result's `queued_turn_
 for later turns) as the number still waiting; at 0 it closes the input. A result without that field (older
 versions, and agy) counts one message. If messages still wait after such a result and the agent writes nothing
 for `harness.Quiet` (10 minutes), Djinn takes them as answered, says so in a `STATUS`, and closes the input.
-A warm worker (`djinn up --warm-workers`) is the same command started before its task: it waits for
-its first message, which is the task's prompt.
+
+**Finding claude.** An app started from the Finder or a desktop menu gets a bare PATH: the shell's startup files
+that add `~/.local/bin` (where Claude Code's installer puts `claude`) are never read, not even by the login shell
+that runs a lead (`zsh -l -c` reads `.zprofile`, not `.zshrc`). One resolver, `machine.ExtendPath`, appends to
+Djinn's own PATH, after the inherited folders, which keep their place: the PATH of the user's interactive login
+shell, the folders that exist among `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.npm-global/bin`,
+`~/.volta/bin` and `~/.bun/bin` (on Windows `%LOCALAPPDATA%\agy\bin`, `%APPDATA%\npm` and `~/.local/bin`, which an
+installer adds to the user's PATH after Djinn started), and the folder of a `codex` only the ChatGPT or Codex
+application ships. The login shell is asked once, as `djinn up` starts from a launcher (`machine.AskLoginShell`; a
+`djinn up` started from a terminal has its PATH already); the folders are looked at again before each worker and
+each lead starts, so an agent installed in a folder created meanwhile is found without a restart
+(`TestExtendPathAfterAnInstall`). Gates inherit it from the worker that runs them.
+
+**The lead.** A lead runs `claude` interactive in the window's terminal, not `-p`. Claude Code skips its workspace
+trust dialog only with `-p` (`claude --help`), so a lead started in a folder Claude Code has not trusted yet (the
+lead starts in the first project's folder) first asks to trust it, there, in the window.
+Djinn never answers it: trusting a folder is the user's decision. A first run of interactive Claude Code on a
+machine also shows its onboarding (theme, sign-in) once.
 
 **Stream.** One JSON message per line: `system/init` (session, model), `assistant` and `user` messages made of
 blocks (`text`, `tool_use`, `tool_result`, `thinking`), and one `result` per turn with the cost.
+
+**Usage.** Claude is the only provider whose stream gives costs directly: its turn `result` reports
+`total_cost_usd` (or per-model cost in `modelUsage`). Djinn preserves this reported cost labelled "reported",
+alongside an estimated cost computed from the price table. Its stream reports `input_tokens`, `output_tokens`,
+`cache_read_input_tokens`, and `cache_creation_input_tokens`.
 
 **Verified** on real runs (claude 2.1.293, Opus 5.5 and Haiku 5.5): the stream above; the usage is read from
 `modelUsage` (summed over the models), the root `usage` only when `modelUsage` is absent; `--max-budget-usd` is
@@ -336,6 +479,7 @@ error subtype (`error_max_turns`, `error_during_execution`…) fails the turn ev
 | Unknown lines                                 | `claude/unknown-line.jsonl`      | by hand                                     | each kept as `OTHER`, raw                                                                                           |
 | Process dies mid-turn                         | `claude/process-dies.jsonl`      | by hand                                     | error "claude ended before the end of its turn"; task failed                                                        |
 | Max turns reached, `is_error` false           | `claude/max-turns.jsonl`         | by hand                                     | error `error_max_turns` from the subtype; task failed, though claude exits 0                                        |
+| Turns counted as they come                    | `claude/turns-mid-run.jsonl`     | by hand, from `tool-call.jsonl`             | a model turn per assistant message id, on its first event; a subagent's line (`parent_tool_use_id`) is none       |
 | Second message                                | `claude/two-turns.jsonl`         | by hand                                     | two turns in one process                                                                                            |
 | Message sent during the turn                  | `claude/mid-turn-message.jsonl`  | by hand, from W59's real result             | one result with `queued_turn_count` 0 answers both messages: the input is closed and the worker ends               |
 | Session limit reached                         | `claude/session-limit.jsonl`     | **real**, claude 2.1.293                    | `rate_limit_event` `rejected` gives the limit and its `resetsAt`; error "You've hit your session limit · resets 7:20am (Europe/Paris)"; the task waits for the reset, then resumes |
@@ -357,9 +501,10 @@ worker's permissions (`accept` what they cover, `permission granted: …`), and 
 (`{"decision":"decline"}`, `permission denied: …`); it refuses any other request (JSON-RPC error -32601). Dropped on purpose: deltas
 (their item comes whole once completed), `turn/started`, `thread/started`, and the user's message item.
 
-**Usage.** Tokens only, no cost: `thread/tokenUsage/updated` gives the thread's total. Djinn counts the cached
-input apart (`input = inputTokens − cachedInputTokens`), which supposes that `inputTokens` includes the cached
-ones, as in the OpenAI API.
+**Usage.** Tokens only, no cost: `thread/tokenUsage/updated` gives the thread's total input, output, cached input,
+and reasoning tokens (mapped to thinking tokens in Djinn). Djinn counts the cached input apart
+(`input = inputTokens − cachedInputTokens`), which supposes that `inputTokens` includes the cached ones, as in the
+OpenAI API. Djinn estimates its cost from the embedded price table.
 
 **Verified:** the message shapes, against the TypeScript schema generated in the `openai/codex` repository
 (`codex-rs/app-server-protocol/schema/typescript/v2`, main, read 2026-10-08), and the command line and handshake,
@@ -404,13 +549,22 @@ the app-server answered, so it goes through Djinn itself once this branch is mer
 cheapest model>`, then `djinn task watch <task> --raw --json > turn.jsonl`. A second run asking to run
 `go test ./...` in that folder shows a permission request.
 
+**The lead.** A Codex lead runs `codex` interactive in the window's terminal, without permission flags: its own
+configuration decides. Codex's `--approve-for-me` (its Auto) selects `workspace-write` and the automatic review of
+approvals by itself, and Codex refuses it beside `--sandbox` or `--ask-for-approval`. `codex --help` returns before it
+checks these conflicts: only a start of the installed CLI shows them, as a lead that ends at once. Djinn keeps how
+the lead's program ended, with its output, until Lead starts it again (`TestExitedCodexLeadIsRetainedUntilExplicitResume`).
+
 ## Antigravity
 
 **Command.** `agy --input-format stream-json --output-format stream-json`, then, with permissions, `--mode
-accept-edits`, `--sandbox` without the network and `--project <Djinn's agy project>`; `--conversation <id>` to resume,
-`--model`; outside a project, refused until a real capture proves a read-only mode. No `-p`: it takes the prompt as its value, and stream-json
+accept-edits` and `--project <Djinn's agy project>` (run without `--sandbox`: developer choice Decision Q66, as agy's sandbox
+blocks UNIX domain sockets needed for `djinn gate run lint`, which triggers an `unsandboxed` request that headless mode denies);
+`--conversation <id>` to resume, `--model`; outside a project, refused until a real capture proves a read-only mode. No `-p`: it takes the prompt as its value, and stream-json
 input replaces it. Each message on the input is `{"event":"user","message":{"content":"…"}}` and runs one turn;
 the input is closed once every message has its result. agy cannot fork a conversation, and has no spending cap.
+ 
+**Resume.** A worker's worktree is its own isolated workspace. When resumed (after a restart, a session limit, an answer, or `djinn task continue`), Djinn resumes an agy worker with `--conversation <id>` and its resume line, falling back to the first prompt only when no conversation id is known. An Antigravity lead starts interactively with `agy -i '<start line>'` in the wish's project directory; because interactive `agy` does not expose its conversation id on launch, Djinn records the lead by provider and folder (without a session id), and resumes it with `agy --continue` in the lead's folder, documented as "the folder's most recent conversation".
 
 **Stream.** `{"event":"init","conversation_id":…}`, then `step_update` lines (`step_type` `user_input`,
 `agent_response` with `text_delta`, `tool` with `tool_info` {name, parameters, output}, `checkpoint`), and one
@@ -420,7 +574,10 @@ the input is closed once every message has its result. agy cannot fork a convers
 model or agent failure, agy writes `AGY_ERROR: {…}` on its error output and exits with code 3. Djinn gathers the
 text deltas of a step and says them once the step is done (a response cut by the end of the process is said
 with `[cut]`), counts thinking tokens as written ones, reads `AGY_ERROR` as an error and the denial notice
-as `permission denied: …`. Tokens only, no cost. A turn with `denied_actions`, or a run whose error output gave the
+as `permission denied: …`. Tokens only, no cost.
+
+**Usage.** Tokens only, no cost: `step_update.usage` reports `input_tokens`, `output_tokens`, `thinking_tokens`,
+and `cache_read_tokens`. Djinn estimates cost from the embedded price table. A turn with `denied_actions`, or a run whose error output gave the
 denial notice, fails: "agy stopped: it cannot run commands headless (<the command>). Run this task with claude or
 codex." A tool step that ends in `ERROR` does not end the turn: refused by a deny grant (its `tool_info.error` says
 "… Matches user-configured deny rule."), it is a `permission denied: <the command>` status, as Claude's; else its
@@ -466,8 +623,26 @@ permissions: id `djinn-<16 hex digits of the folder's SHA-256>`, the same for ev
 resumes a conversation in the project it began in; rewritten at each start, removed with the worktree. Its grants:
 `write_file` of the worker's folder and of Git's folders for it (the `.git` folder, or a linked worktree's folder in
 the repository and the repository's common `.git`, read from the `.git` and `commondir` files, without running
-git), `command(<p>)` for each listed command in LISTED, `command(*)` in AUTO, and deny `command(<p>)` for each denied one,
-with `git push` always denied in AUTO, since pushing is the orchestrator's. Djinn writes nothing else of agy's,
+git), `command(<p>)` for each listed command in LISTED, `command(*)` and `read_url(*)` in AUTO (Decision Q143, A,
+11/10/2026), and deny `command(<p>)` for each denied one, with `git push` always denied in AUTO, since pushing is the
+orchestrator's (a first line: see [no worker pushes](#no-worker-pushes)).
+
+**Reads and denials (W254, W269, 2026-10-10).** By default headless agy cannot prompt for `read_file` outside the
+workspace, so reading Go's sources (`/usr/local/go/src/…`), caches, or external files failed. Djinn grants
+`read_file(<dir>)` for what a worker needs to read: the repository (its main checkout and `.git`), Go's root
+(`go env GOROOT`), Go module and build caches (`go env GOMODCACHE GOCACHE`), npm's cache (`npm config get cache`),
+`/usr` and `/etc` read-only (on non-Windows), and the user's home folder (`~`). In agy, a deny grant wins over any
+allow grant (prefix matching). Djinn adds deny `read_file(<dir>)` for secrets (`~/.ssh`, `~/.gnupg`, `~/.config/gh`,
+`~/.config/gcloud`, `~/.aws`, `~/.netrc`, `~/.git-credentials`) and Djinn's own data folder (`~/.config/djinn` or
+`$DJINN_HOME`), recursively denying sibling projects, sibling worktrees, and database files while keeping only the
+task's own worktree accessible.
+
+**Model retry prompts (W258, W281, 2026-10-10).** agy sometimes ends its turn on its own internal retry prompts to
+its model (improperly formatted function call, exceeding the output token limit, or transient model retry errors)
+instead of an agent answer or fatal error. When agy's result is one of these retry prompts, Djinn continues the
+conversation itself in the same session with a short prompt ("continue where you stopped, keep answers and edits short"),
+up to 3 times per task, recording each continuation as a `STATUS` event of the task; if it repeats 3 times in a row,
+the task fails with the error. Djinn writes nothing else of agy's,
 reads nothing of it, and leaves the user's settings alone. The run recorded in `testdata/antigravity/commit.jsonl`
 wrote a file, then ran `git status`, `git add`, `git commit`, `git diff` and `git log` in the worktree, all
 sandboxed, nothing denied, no network granted.
@@ -485,17 +660,23 @@ and denying `command(git push)`, the user's settings untouched (`wc`, `echo`, `p
 - The deny grant wins: `git push origin w1`, `echo x && git push origin w1` and `GIT_TRACE=0 git push origin w1` end
   in `ERROR`, "Permission denied for command(…). Matches user-configured deny rule.", and the turn goes on to the
   next command (recorded in `testdata/antigravity/auto.jsonl`). It is a prefix: `sh -c "git push origin w1"` and
-  `git -C . push origin w1` ran, and failed only for want of a remote.
+  `git -C . push origin w1` ran, and failed only for want of a remote; Djinn's environment now refuses them all
+  ([no worker pushes](#no-worker-pushes)).
 - The network stays off under `--sandbox`: `curl https://example.com` and `git ls-remote https://github.com/…` gave
   "Could not resolve host". `command(*)` does not let a command out of the sandbox: asked to run `touch` outside the
   worktree with `BypassSandbox: true`, agy asked for `unsandboxed`, which headless denied (ending the turn), and no
   file was made. `npm ci` ran in the sandbox from npm's cache (its package was there); a package missing from the
   cache would need the network, so a project whose workers install must allow it.
 
-**So today an agy worker in AUTO runs any command in its sandbox but the denied ones, `git push` always;** in
+**read_url in AUTO (Decision Q143, A, 11/10/2026).** In AUTO, an agy worker already reaches the internet through
+`curl` under `command(*)`, consistent with Q66. Without an explicit grant, agy 1.3.3 refused the `read_url` tool
+headless with "Do not attempt to circumvent this denial ... curl" (W371), after which the worker fetched the same
+page by curl and Python, which its rights allowed. Djinn grants `read_url(*)` in AUTO next to `command(*)`,
+keeping deny `command(git push)`.
+
+**So today an agy worker runs without `--sandbox` (Decision Q66, agy 1.3.3); in AUTO it runs any command via `command(*)` but the denied ones, `git push` always, and may read any URL (`read_url(*)`, Q143);** in
 LISTED, a command neither listed nor allowed by the user's own agy settings is still denied, and ends its turn:
-list what its tasks run, `git add` and `git commit` among them. Whether Djinn should pass
-`--dangerously-skip-permissions` is an open question (Q43).
+list what its tasks run, `git add` and `git commit` among them.
 
 **Verified:** the command line, from `agy --help` (1.3.0); the stream's shapes, from the official headless
 documentation (`antigravity.google/docs/cli/headless`, read 2026-10-08); the field names `event`, `step_update`,
@@ -550,3 +731,23 @@ use a personal or licensed account.
 | Second message          | `antigravity/two-turns.jsonl`                     | by hand, **supposed** | two turns in one process                                           |
 | Commit in a worktree    | `antigravity/commit.jsonl`                        | **real**, W208        | LISTED: a file written, Git run in the sandbox, nothing denied     |
 | AUTO, a command denied  | `antigravity/auto.jsonl`                          | **real**, W226        | compound commands run; `git push` is a `permission denied: …` status, the turn goes on, the task done |
+| Malformed call retry    | `antigravity/malformed-call.jsonl`                | by hand, from W258    | retry prompt continued; done on second turn                         |
+| Token limit retry       | `antigravity/token-limit.jsonl`                   | by hand, from W281    | partial output `[cut]`, token limit prompt continued; done on second turn |
+| Three retries failed    | `antigravity/retry-failed.jsonl`                  | by hand               | three retry prompts continued in a row; fourth fails the task       |
+
+## Tokens and cost estimates across providers
+
+Every task, wish, and the flight plan show token counts (input, output, cache read, thinking) and an estimated cost computed from an embedded price table (`internal/usage/prices.yaml`), marked "estimated, prices of <table date>".
+
+| Provider | Stream tokens | Stream cost | Estimated cost |
+| -------- | ------------- | ----------- | -------------- |
+| **Claude** | Input, output, cache read, cache write | Yes (`total_cost_usd` on turn `result`) | Computed from price table; stream cost displayed beside it labelled "reported" |
+| **Codex** | Input, output, cached input, reasoning (thinking) | No (tokens only) | Computed from price table |
+| **Antigravity** | Input, output, thinking, cache read | No (tokens only) | Computed from price table |
+
+- **Conversion at a date**: Cost estimates are calculated using the price table's current date (e.g. `2026-10-11`), never varying by the time of the run, providing a stable conversion across tasks (similar to currency conversion at a fixed date).
+- **Reported costs**: When a stream reports an actual monetary cost (Claude Code), Djinn keeps and displays this value beside the estimate, labelled "reported".
+- **Comparable in tokens**: Usage views offer a switch between currency (USD) and tokens. In token view, comparisons across different providers remain informative even when a model has no price entry in the table.
+- **Models missing from table**: A model whose price cannot be sourced from its provider's public pricing page stays out of the table; its tasks show tokens and "no price in the table". Totals per wish and provider report how many tasks are without a price.
+- **Local overrides**: The embedded table loader leaves a clear seam for local overrides from `~/.config/djinn/prices.yaml` (or `$DJINN_HOME/prices.yaml`) without requiring configuration UI or CLI flags today.
+

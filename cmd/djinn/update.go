@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,7 @@ import (
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/cli"
 	"github.com/empowill/djinn/internal/harness"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/swapexe"
@@ -80,6 +82,9 @@ type updater struct {
 	releases source    // where a newer release comes from; nil for a development build
 	// fit says what a release found means for a Djinn built from a checkout (harness.Release); nil for another one.
 	fit func(ctx context.Context, tag string) (harness.ReleaseFit, error)
+	// describe names the newer Djinn of a version as a build (harness.DescribeVersion): nil when no project holds its
+	// commit. Nil: it is not named.
+	describe func(ctx context.Context, version string) *uiv1.Build
 
 	mu         sync.Mutex
 	started    os.FileInfo // the file this djinn started from
@@ -89,6 +94,7 @@ type updater struct {
 	installed  string      // the release installed by itself, not to install again
 	installing bool
 	restarting bool
+	named      string // the version ready last named, or being named
 }
 
 // newUpdater returns the updater of a djinn of version. A development build never updates: workers rebuild it all the
@@ -168,6 +174,16 @@ func (u *updater) publish() {
 		ready, notes = u.offer.Version, u.offer.Notes
 	}
 	u.ui.SetReady(ready, notes)
+	if ready != u.named {
+		u.named = ready
+		if ready != "" && u.describe != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				defer cancel()
+				u.ui.SetReadyBuild(ready, u.describe(ctx, ready))
+			}()
+		}
+	}
 }
 
 // watchReleases asks the source for a newer release at once, then every releaseCheck, until ctx is done. It only
@@ -299,13 +315,12 @@ func (u *updater) restart() (string, int, error) {
 	}
 	note := restartNote{Version: version}
 	note.ShowWish, note.ShowTerminal = u.ui.LastShow()
-	for _, t := range u.terms.Running() {
-		note.Terminals = append(note.Terminals, restartTerminal{Name: t.Name, Command: resumable(t.Command), Directory: t.Dir})
-	}
+	note.Terminals = restartTerminals(u.terms.Running())
 	if err := u.leads.restart(note); err != nil {
 		return "", 0, fmt.Errorf("note the terminals: %w", err)
 	}
 	u.restarting = true
+	logx.L().Info("restart asked", "from", u.version, "to", version, "terminals", len(note.Terminals))
 	go func() {
 		time.Sleep(restartDelay)
 		u.stop()
@@ -322,6 +337,19 @@ func (u *updater) offered() bool {
 
 // sessionID finds the session a lead was started with from a brief: claude --session-id <id> ….
 var sessionID = regexp.MustCompile(`(?:^|\s)claude\s.*--session-id[ =]([A-Za-z0-9][A-Za-z0-9._-]*)`)
+
+// restartTerminals are the terminals a restart opens again: those that run, but an agent's install or sign-in, which
+// the window started (setup-…), never run again by itself.
+func restartTerminals(running []*terminal.Terminal) []restartTerminal {
+	var out []restartTerminal
+	for _, t := range running {
+		if strings.HasPrefix(t.Name, "setup-") {
+			continue
+		}
+		out = append(out, restartTerminal{Name: t.Name, Command: resumable(t.Command), Directory: t.Dir})
+	}
+	return out
+}
 
 // resumable is the command that takes a terminal back after a restart. A lead started from a brief named its new
 // session with --session-id, which claude refuses a second time: it resumes that session instead.
@@ -351,9 +379,13 @@ func (u *updater) Restarting() bool {
 
 // resumeTerminals runs again the terminals a restart noted in home, or the leads a crash left, shows the window what
 // it showed, and returns the terminals that did not start, one line each. The note is removed once read, before the
-// terminals start and the note of the leads follows them: a lead that did not start keeps its session in its wish,
-// for djinn wish resume.
-func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say io.Writer) []string {
+// terminals start and the note of the leads follows them: a lead that did not start keeps its session recorded,
+// for djinn lead resume.
+//
+// A note from a Djinn of one lead per wish names its leads' terminals lead-<wish id>: the first that runs session,
+// the lead's recorded session (any when none is), comes back as the lead's terminal; the others do not, and
+// resumeLead resumes the lead's session after: never a lead under another name, nor two terminals on a session.
+func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, session string, say io.Writer) []string {
 	path := filepath.Join(home, RestartFile)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -371,11 +403,24 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 		fmt.Fprintln(say, "djinn:", err)
 	}
 	var failed []string
-	shown := ""
+	shown, dropped := "", 0
+	lead := slices.ContainsFunc(note.Terminals, func(t restartTerminal) bool { return t.Name == plan.LeadTerminal })
 	for _, t := range note.Terminals {
+		if strings.HasPrefix(t.Name, "lead-") {
+			if lead || session != "" && !strings.Contains(strings.Join(t.Command, " "), session) {
+				fmt.Fprintf(say, "djinn: %s, a wish's lead, does not run again: Djinn has one lead now, in the %q terminal\n",
+					t.Name, plan.LeadTerminal)
+				dropped++
+				continue
+			}
+			if note.ShowTerminal == t.Name {
+				note.ShowTerminal = plan.LeadTerminal
+			}
+			t.Name, lead = plan.LeadTerminal, true
+		}
 		_, err := os.Stat(t.Directory)
-		if err == nil && strings.HasPrefix(t.Name, "lead-") && plan.HoldsHome(t.Directory) {
-			err = errors.New("a lead never runs in the home folder: djinn wish resume starts it in a project")
+		if err == nil && t.Name == plan.LeadTerminal && plan.HoldsHome(t.Directory) {
+			err = errors.New("a lead never runs in the home folder: djinn lead resume starts it in a project")
 		}
 		if err == nil {
 			_, _, err = terms.Open(t.Name, t.Command, t.Directory, 0, 0)
@@ -386,7 +431,7 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 			failed = append(failed, line)
 			continue
 		}
-		if t.Name == note.ShowTerminal || shown == "" && strings.HasPrefix(t.Name, "lead-") {
+		if t.Name == note.ShowTerminal || shown == "" && t.Name == plan.LeadTerminal {
 			shown = t.Name
 		}
 	}
@@ -394,15 +439,15 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 	case shown != "" && shown == note.ShowTerminal:
 		svc.Present(note.ShowWish, shown)
 	case shown != "":
-		svc.Present(strings.TrimPrefix(shown, "lead-"), shown)
+		svc.Present(note.ShowWish, shown)
 	}
 	if note.Version == "" {
 		fmt.Fprintf(say, "djinn: the last djinn up crashed, %d of %d leads reopened\n",
-			len(note.Terminals)-len(failed), len(note.Terminals))
+			len(note.Terminals)-dropped-len(failed), len(note.Terminals)-dropped)
 		return failed
 	}
 	fmt.Fprintf(say, "djinn: restarted on %s, %d of %d terminals resumed\n",
-		note.Version, len(note.Terminals)-len(failed), len(note.Terminals))
+		note.Version, len(note.Terminals)-dropped-len(failed), len(note.Terminals)-dropped)
 	return failed
 }
 
@@ -486,7 +531,7 @@ func runUpdate(args []string) error {
 		return stream.Err()
 	}
 	if lines := stream.Msg().GetNotResumed(); len(lines) > 0 {
-		fmt.Println("djinn: not resumed (each wish keeps its lead: djinn wish resume <wish-id>):")
+		fmt.Println("djinn: not resumed (the lead keeps its session: djinn lead resume):")
 		for _, line := range lines {
 			fmt.Println("  -", line)
 		}

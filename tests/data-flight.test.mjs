@@ -9,7 +9,17 @@ const f = await bundle(
   "flight",
   `export * from "@/src/data/flight.ts";
 export * from "@/src/data/journal.ts";
-export { deletedText, span, taskStatusText, taskTime, taskTone } from "@/src/data/format.ts";
+export {
+  cancelledText,
+  deletedText,
+  isTaskMerging,
+  runningOf,
+  span,
+  taskFinished,
+  taskStatusText,
+  taskTime,
+  taskTone,
+} from "@/src/data/format.ts";
 export { create } from "@bufbuild/protobuf";
 export { anyPack } from "@bufbuild/protobuf/wkt";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
@@ -202,6 +212,166 @@ test("the Tasks tab: what moves or waits by status, then the finished tasks, the
   );
 });
 
+test("a done task is settled once its work is committed, has none to merge, or its integration is cleared", () => {
+  const I = f.IntegrationState;
+  const done = (state, extra = {}) => ({
+    id: `t${state}`,
+    code: `W${state}`,
+    status: f.TaskStatus.DONE,
+    integration: state === undefined ? undefined : { state },
+    ...extra,
+  });
+  const nest = f.mergeNest([]);
+  const settled = (task) => f.settledTask(task, nest);
+  // Work committed, no work to merge (no integration: no branch, or cleared): folded with the finished.
+  assert.equal(settled(done(I.COMMITTED)), true);
+  assert.equal(settled(done(undefined)), true);
+  assert.equal(settled(done(I.UNSPECIFIED)), true);
+  // Work on its way: waiting for its batch, merging, in conflict, red, or left not committed. It stays in sight.
+  for (const state of [
+    I.PENDING,
+    I.INTEGRATING,
+    I.CONFLICT,
+    I.RED,
+    I.UNCOMMITTED,
+  ])
+    assert.equal(settled(done(state)), false, `state ${state}`);
+  // A cancelled or stopped task has no work to merge: whatever its integration says, it is settled.
+  assert.equal(
+    settled(done(I.PENDING, { status: f.TaskStatus.CANCELLED })),
+    true,
+  );
+  assert.equal(
+    settled(done(I.CONFLICT, { status: f.TaskStatus.STOPPED })),
+    true,
+  );
+  // A task whose correction is done but merging moves with it, until that correction's work is committed.
+  const conflicted = done(I.COMMITTED, { id: "w1", code: "W1" });
+  const correction = (state) => ({
+    id: "w2",
+    code: "W2",
+    status: f.TaskStatus.DONE,
+    integration: { state },
+    correction: { failure: { taskIds: ["w1"] } },
+  });
+  const merging = [conflicted, correction(I.INTEGRATING)];
+  assert.equal(f.settledTask(conflicted, f.mergeNest(merging)), false);
+  const committed = [conflicted, correction(I.COMMITTED)];
+  assert.equal(f.settledTask(conflicted, f.mergeNest(committed)), true);
+});
+
+test("work that merges stays among the moving tasks, then folds with the finished once committed", () => {
+  const I = f.IntegrationState;
+  const tasks = (state) => [
+    {
+      id: "a1",
+      code: "T1",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.IN_PROGRESS },
+    },
+    {
+      id: "w8",
+      code: "W8",
+      status: f.TaskStatus.DONE,
+      partOf: "a1",
+      endTime: at(20),
+      integration: { state },
+    },
+    {
+      id: "w1",
+      code: "W1",
+      status: f.TaskStatus.DONE,
+      partOf: "a1",
+      endTime: at(10),
+      integration: { state: I.COMMITTED },
+    },
+    {
+      id: "w5",
+      code: "W5",
+      status: f.TaskStatus.DONE,
+      endTime: at(30),
+      integration: { state },
+    },
+    {
+      id: "w9",
+      code: "W9",
+      status: f.TaskStatus.PENDING,
+      waitReason: "waits for W8 to be committed",
+    },
+  ];
+  const merging = tasks(I.PENDING);
+  assert.deepEqual(
+    f.movingTasks(merging).map((x) => x.code),
+    ["W5", "W9"],
+  );
+  assert.deepEqual(f.finishedTasks(merging), []);
+  // Within its azima, W8 comes first among the moving parts, never behind "show the N finished".
+  const [group] = f.azimaGroups(merging);
+  assert.deepEqual(
+    group.parts.map((x) => x.code),
+    ["W8", "W1"],
+  );
+  const nest = f.mergeNest(merging);
+  assert.deepEqual(
+    group.parts.filter((x) => !f.settledTask(x, nest)).map((x) => x.code),
+    ["W8"],
+  );
+  // The flight plan does the same, and counts the work that merges as running.
+  const lamp = wish("w1", "Ship the lamp", 1);
+  const plan = f.flightPlan([lamp], { w1: detail(merging, []) });
+  assert.deepEqual(
+    plan.moving.map(({ item }) => item.code),
+    ["W5", "W9"],
+  );
+  assert.deepEqual(
+    plan.running.map(({ item }) => item.code),
+    ["W8", "W5"],
+  );
+  // Committed, it folds with the finished, and runs no more.
+  const committed = tasks(I.COMMITTED);
+  assert.deepEqual(
+    f.movingTasks(committed).map((x) => x.code),
+    ["W9"],
+  );
+  assert.deepEqual(
+    f.finishedTasks(committed).map((x) => x.code),
+    ["W5"],
+  );
+  const after = f.flightPlan([lamp], { w1: detail(committed, []) });
+  assert.deepEqual(after.running, []);
+  assert.deepEqual(
+    after.finished.map(({ item }) => item.code),
+    ["W5"],
+  );
+});
+
+test("work that merges counts as running: a worker at work, not a watcher", () => {
+  const I = f.IntegrationState;
+  const S = f.TaskStatus;
+  const done = (state) => ({ status: S.DONE, integration: { state } });
+  assert.equal(f.isTaskMerging(done(I.PENDING)), true);
+  assert.equal(f.isTaskMerging(done(I.INTEGRATING)), true);
+  for (const state of [I.COMMITTED, I.CONFLICT, I.RED, I.UNCOMMITTED])
+    assert.equal(f.isTaskMerging(done(state)), false, `state ${state}`);
+  // Only a done task merges: a running one runs already.
+  assert.equal(
+    f.isTaskMerging({ status: S.RUNNING, integration: { state: I.PENDING } }),
+    false,
+  );
+  assert.deepEqual(
+    f.runningOf([
+      { status: S.RUNNING },
+      { status: S.RUNNING, provider: f.Provider.WATCH },
+      done(I.PENDING),
+      done(I.INTEGRATING),
+      done(I.COMMITTED),
+      done(I.CONFLICT),
+      { status: S.DONE },
+    ]),
+    { running: 3, watching: 1 },
+  );
+});
+
 test("what tasks spent: tokens always, the cost only where the agent gives one", () => {
   const usage = (input, output, read, write, cost) => ({
     inputTokens: BigInt(input),
@@ -356,6 +526,25 @@ test("the states Djinn handles by itself speak the window's status language", ()
   assert.equal(f.taskTone({ status: S.INTERRUPTED }), "interrupted");
 });
 
+test("a cancelled task has its own muted tone, never done's, and a compact note on hover", () => {
+  const S = f.TaskStatus;
+  const cancelled = (actor, note) => ({
+    status: S.CANCELLED,
+    cancelled: { actor, note, createTime: at(100) },
+  });
+  const task = cancelled(f.Closer.LEAD, " superseded by W7 ");
+  assert.equal(f.taskTone(task), "cancelled");
+  assert.notEqual(f.taskTone(task), f.taskTone({ status: S.DONE }));
+  assert.equal(f.taskStatusText(task), "Cancelled");
+  assert.equal(f.cancelledText(task), "By the lead: superseded by W7");
+  assert.equal(f.cancelledText(cancelled(f.Closer.DEVELOPER, "")), "By you");
+  assert.equal(f.cancelledText({ status: S.DONE }), undefined);
+  // It is history: finished, dealt with, never the person's move.
+  assert.ok(f.taskFinished(S.CANCELLED));
+  assert.ok(f.finishedTask(task));
+  assert.ok(f.taskDealtWith(task, [task]));
+});
+
 test("a watcher has its own tone while its command runs", () => {
   const S = f.TaskStatus;
   const watch = (status) => ({ status, provider: f.Provider.WATCH });
@@ -366,6 +555,55 @@ test("a watcher has its own tone while its command runs", () => {
   assert.equal(
     f.taskTone({ status: S.RUNNING, provider: f.Provider.CLAUDE }),
     "running",
+  );
+});
+
+test("a done task derives its badge text and tone from its integration state", () => {
+  const S = f.TaskStatus;
+  const I = f.IntegrationState;
+  const taskWith = (integration) => ({
+    status: S.DONE,
+    integration: integration ? { state: integration } : undefined,
+  });
+
+  // PENDING or INTEGRATING -> Merging, running tone
+  assert.equal(f.taskStatusText(taskWith(I.PENDING)), "Merging");
+  assert.equal(f.taskTone(taskWith(I.PENDING)), "running");
+  assert.equal(f.taskStatusText(taskWith(I.INTEGRATING)), "Merging");
+  assert.equal(f.taskTone(taskWith(I.INTEGRATING)), "running");
+
+  // CONFLICT or RED -> Merge failed, failed tone
+  assert.equal(f.taskStatusText(taskWith(I.CONFLICT)), "Merge failed");
+  assert.equal(f.taskTone(taskWith(I.CONFLICT)), "failed");
+  assert.equal(f.taskStatusText(taskWith(I.RED)), "Merge failed");
+  assert.equal(f.taskTone(taskWith(I.RED)), "failed");
+
+  // UNCOMMITTED -> To review, waiting tone
+  assert.equal(f.taskStatusText(taskWith(I.UNCOMMITTED)), "To review");
+  assert.equal(f.taskTone(taskWith(I.UNCOMMITTED)), "waiting");
+
+  // COMMITTED or no integration -> Done, done tone
+  assert.equal(f.taskStatusText(taskWith(I.COMMITTED)), "Done");
+  assert.equal(f.taskTone(taskWith(I.COMMITTED)), "done");
+  assert.equal(f.taskStatusText(taskWith(undefined)), "Done");
+  assert.equal(f.taskTone(taskWith(undefined)), "done");
+
+  // Non-done tasks keep their status text/tone regardless of integration
+  assert.equal(
+    f.taskStatusText({ status: S.RUNNING, integration: { state: I.PENDING } }),
+    "Running",
+  );
+  assert.equal(
+    f.taskTone({ status: S.RUNNING, integration: { state: I.PENDING } }),
+    "running",
+  );
+  assert.equal(
+    f.taskStatusText({ status: S.FAILED, integration: { state: I.CONFLICT } }),
+    "Failed",
+  );
+  assert.equal(
+    f.taskTone({ status: S.FAILED, integration: { state: I.CONFLICT } }),
+    "failed",
   );
 });
 
@@ -406,14 +644,60 @@ test("a task says how long it runs as a counter, two units at most", () => {
   assert.equal(
     f.taskTime({ status: S.RUNNING, startTime: at(1_000_000 - 3_661) }, now)
       .text,
-    "1h1m",
+    "1 run · 1h1m running",
   );
   assert.equal(
     f.taskTime({ status: S.DONE, startTime: at(100), endTime: at(161) }, now)
       .text,
-    "1m1s",
+    "1 run · 1m1s running",
   );
   assert.equal(f.taskTime({ status: S.PENDING }, now).text, "");
+
+  // Multiple runs, pause, and wait before start in tooltip and card line
+  const multiRunTask = {
+    status: S.DONE,
+    firstStartTime: at(1000),
+    startTime: at(2440),
+    endTime: at(3340),
+    runs: [
+      { startTime: at(1000), endTime: at(1720), reason: "pause" },
+      { startTime: at(1960), endTime: at(2440), reason: "pause" },
+      { startTime: at(2440), endTime: at(3340), reason: "done" },
+    ],
+    waitingBeforeStart: { seconds: 540n, nanos: 0 },
+  };
+  const multiTime = f.taskTime(multiRunTask, now);
+  assert.equal(multiTime.text, "3 runs · 35m running · 4m paused");
+  assert.equal(
+    multiTime.title,
+    "3 runs: 12m, 8m, 15m; paused 4m; waited 9m for a slot",
+  );
+
+  // Counter frozen when paused
+  const pausedTask = {
+    status: S.PAUSED,
+    firstStartTime: at(1000),
+    startTime: at(1000),
+    endTime: at(1720),
+    runs: [{ startTime: at(1000), endTime: at(1720), reason: "pause" }],
+    paused: { seconds: 240n, nanos: 0 },
+  };
+  const pausedAtT1 = f.taskTime(pausedTask, 2000 * 1000);
+  const pausedAtT2 = f.taskTime(pausedTask, 5000 * 1000);
+  assert.equal(pausedAtT1.text, "1 run · 12m running · 4m paused");
+  assert.equal(pausedAtT2.text, pausedAtT1.text);
+
+  // Waiting gate is included on card when non-zero
+  const gatedTask = {
+    status: S.DONE,
+    firstStartTime: at(1000),
+    startTime: at(1000),
+    endTime: at(2000),
+    runs: [{ startTime: at(1000), endTime: at(2000), reason: "done" }],
+    waitingGate: { seconds: 120n, nanos: 0 },
+  };
+  const gatedTime = f.taskTime(gatedTask, now);
+  assert.equal(gatedTime.text, "1 run · 14m40s running · 2m waiting gate");
 });
 
 test("the azimas' progress counts the azimas done, those awaiting their proof apart, and not the work", () => {
@@ -425,7 +709,12 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
       kind: f.TaskKind.AZIMA,
       azima: { state: f.AzimaState.IN_PROGRESS },
     },
-    { id: "c", kind: f.TaskKind.AZIMA, status: S.DONE },
+    {
+      id: "c",
+      kind: f.TaskKind.AZIMA,
+      status: S.DONE,
+      azima: { state: f.AzimaState.DONE },
+    },
     {
       id: "d",
       kind: f.TaskKind.AZIMA,
@@ -436,9 +725,136 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
   ];
   assert.deepEqual(f.azimasDone(tasks), { done: 2, proof: 1, count: 4 });
   assert.equal(f.workCount(tasks), 2);
+
+  // Status DONE never overrides computed state IN_PROGRESS.
+  const runningAzima = [
+    {
+      id: "e",
+      kind: f.TaskKind.AZIMA,
+      status: S.DONE,
+      azima: { state: f.AzimaState.IN_PROGRESS },
+    },
+  ];
+  assert.deepEqual(f.azimasDone(runningAzima), { done: 0, proof: 0, count: 1 });
+
+  // An azima whose task merges or whose merge failed is in progress (computed by the server).
+  const mergingAzimas = [
+    {
+      id: "a1",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.IN_PROGRESS },
+    },
+    {
+      id: "w3",
+      status: S.DONE,
+      partOf: "a1",
+      integration: { state: f.IntegrationState.PENDING },
+    },
+    {
+      id: "a2",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.IN_PROGRESS },
+    },
+    {
+      id: "w4",
+      status: S.DONE,
+      partOf: "a2",
+      integration: { state: f.IntegrationState.CONFLICT },
+    },
+    {
+      id: "a3",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.DONE },
+    },
+    {
+      id: "w5",
+      status: S.DONE,
+      partOf: "a3",
+      integration: { state: f.IntegrationState.COMMITTED },
+    },
+    {
+      id: "a4",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.IN_PROGRESS },
+    },
+    {
+      id: "w6",
+      status: S.DONE,
+      partOf: "a4",
+      integration: { state: f.IntegrationState.INTEGRATING },
+    },
+  ];
+  assert.deepEqual(f.azimasDone(mergingAzimas), {
+    done: 1,
+    proof: 0,
+    count: 4,
+  });
+
+  // Azima counters use server Task.azima fields, right before any azima is opened (e.g. paginated wish >50 tasks).
+  const paginatedWishTasks = [
+    {
+      id: "az1",
+      kind: f.TaskKind.AZIMA,
+      azima: {
+        state: f.AzimaState.IN_PROGRESS,
+        parts: 200,
+        partsDone: 150,
+        partsRunning: 2,
+      },
+    },
+    {
+      id: "az2",
+      kind: f.TaskKind.AZIMA,
+      azima: {
+        state: f.AzimaState.DONE,
+        parts: 100,
+        partsDone: 100,
+        partsRunning: 0,
+      },
+    },
+    {
+      id: "az3",
+      kind: f.TaskKind.AZIMA,
+      azima: {
+        state: f.AzimaState.AWAITING_PROOF,
+        parts: 130,
+        partsDone: 130,
+        partsRunning: 0,
+      },
+    },
+    // Only a small page of parts is loaded into the store (e.g. page 1 of 50 tasks)
+    { id: "p1", status: S.DONE, partOf: "az1" },
+    { id: "p2", status: S.RUNNING, partOf: "az1" },
+  ];
+  assert.deepEqual(f.azimasDone(paginatedWishTasks), {
+    done: 1,
+    proof: 1,
+    count: 3,
+  });
+  assert.equal(f.workCount(paginatedWishTasks), 430);
+  assert.equal(f.workDoneCount(paginatedWishTasks), 380);
+
+  // A cancelled task is no work left, part of an azima or not: out of the count, never done.
+  const cancelled = [
+    {
+      id: "c1",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.AWAITING_PROOF, parts: 1, partsDone: 1 },
+    },
+    { id: "x1", status: S.DONE, partOf: "c1" },
+    { id: "x2", status: S.CANCELLED, partOf: "c1" },
+    { id: "x3", status: S.DONE },
+    { id: "x4", status: S.CANCELLED },
+  ];
+  assert.equal(f.workCount(cancelled), 2);
+  assert.equal(f.workDoneCount(cancelled), 2);
+  // Without the server's counts, the same.
+  const local = cancelled.map((x) => ({ ...x, azima: undefined }));
+  assert.equal(f.workCount(local), 2);
+  assert.equal(f.workDoneCount(local), 2);
 });
 
-test("open questions come blocking, then before X, then can wait, across the wishes", () => {
+test("open questions come blocking, then your move, then before X, then can wait, across the wishes", () => {
   const lamp = wish("w1", "Ship the lamp", 1);
   const oil = wish("w2", "Find the oil", 2);
   const plan = f.flightPlan([lamp, oil], {
@@ -447,6 +863,14 @@ test("open questions come blocking, then before X, then can wait, across the wis
       [
         { id: "q1", code: "Q01", text: "Brass?" },
         { id: "q2", code: "Q02", text: "Wick?", before: "before the merge" },
+        {
+          id: "q6",
+          code: "Q03",
+          text: "Push tag?",
+          move: true,
+          before: "before the release",
+        },
+        { id: "q7", code: "Q04", text: "Install build?", move: true },
       ],
     ),
     w2: detail(
@@ -474,10 +898,12 @@ test("open questions come blocking, then before X, then can wait, across the wis
     plan.questions.map((q) => [q.item.id, f.urgency(q)]),
     [
       ["q5", 0],
-      ["q2", 1],
-      ["q4", 1],
-      ["q1", 2],
-      ["q3", 2],
+      ["q6", 1],
+      ["q2", 2],
+      ["q4", 2],
+      ["q1", 3],
+      ["q7", 3],
+      ["q3", 3],
     ],
   );
   // One wish alone sorts the same way.

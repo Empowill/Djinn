@@ -44,6 +44,8 @@
   --n-eb: #ebebeb;
   --n-f6: #f6f6f6;
   --n-ff: #ffffff;
+  --workspace-action-blend-ink: #ffffff;
+  --workspace-action-shadow: #e7e7e710;
   /* Shadows and the dim behind a dialog: black, at the strength each rule mixes. */
   --shadow: #000000;
   --backdrop: #000000;
@@ -56,6 +58,21 @@
   --sand-bg: #23231f;
   --sand-raised: #28251d;
   --danger: #e0a0a0;
+  /* The smoke study follows the selected theme, including its GPU canvas and ASCII fallback. */
+  --smoke-bg: #060707;
+  --smoke-fg: #d7dad4;
+  --smoke-tint-low: #8f999f;
+  --smoke-tint-high: #ede5d6;
+  /* The eight layers of glyphs, faintest to densest, then the pointer's strong and weak trail. The brand's colours:
+     violet smoke rising to the wordmark's puffs, the densest tone and the strong trail in the lamp's brass. */
+  --smoke-ascii-0: #7c74c4;
+  --smoke-ascii-1: #968aff;
+  --smoke-ascii-2: #a99ffe;
+  --smoke-ascii-3: #c4baff;
+  --smoke-ascii-4: #d3ccff;
+  --smoke-ascii-5: #fad18a;
+  --smoke-ascii-6: #f0be64;
+  --smoke-ascii-7: #b2acfe;
   /* The terminal: xterm's own colours in the dark theme. */
   --term-bg: #111111;
   --term-fg: #e7e7e7;
@@ -118,6 +135,8 @@ html[data-theme="light"] {
   --n-eb: #1c1c1a;
   --n-f6: #121211;
   --n-ff: #0a0a09;
+  --workspace-action-blend-ink: #ffffff;
+  --workspace-action-shadow: #1c1c1a24;
   --shadow: #3c3c3240;
   --backdrop: #1c1c1a66;
   --sand: #7d6420;
@@ -128,6 +147,18 @@ html[data-theme="light"] {
   --sand-bg: #fbf8ef;
   --sand-raised: #f8f2e2;
   --danger: #a3261b;
+  --smoke-bg: #f4f3ef;
+  --smoke-fg: #262925;
+  --smoke-tint-low: #515d62;
+  --smoke-tint-high: #1b2527;
+  --smoke-ascii-0: #614cbd;
+  --smoke-ascii-1: #5943b3;
+  --smoke-ascii-2: #5139a9;
+  --smoke-ascii-3: #49339a;
+  --smoke-ascii-4: #412c8c;
+  --smoke-ascii-5: #a56d03;
+  --smoke-ascii-6: #ba7e15;
+  --smoke-ascii-7: #513ca4;
   /* Every colour reads at 4.5:1 at least on the terminal's ground: white and bright white are dark greys. */
   --term-bg: #f6f6f4;
   --term-fg: #1c1c1a;

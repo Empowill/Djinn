@@ -187,7 +187,7 @@ func (h *Harness) startSource(c Watch, s wantedSource, receive ReceiveFunc) (*so
 	if err != nil {
 		return nil, err
 	}
-	c.Gap = s.src.Every
+	c.Gap, c.Endless = s.src.Every, true
 	w, err := c.Start(h.ctx, Spec{Dir: s.dir, Prompt: s.src.Watch, Permissions: perms, Scope: h.scope("inbox"), Restart: true})
 	if err != nil {
 		return nil, err

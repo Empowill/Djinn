@@ -1,9 +1,10 @@
-// djinn wish resume against the real djinn up --browser (see global-setup.ts): the command line asks djinn to show the
-// wish and to resume its lead in the lead's terminal, and the page follows. The lead is a fake claude on djinn's PATH.
+// djinn lead resume against the real djinn up --browser (see global-setup.ts): the command line asks djinn to resume the
+// one lead in the lead's terminal, focused on a wish, and to show that wish; the page follows. The lead is a fake claude
+// on djinn's PATH that says how it was called, then repeats what it reads.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import fs from "node:fs";
 import path from "node:path";
+import { dropLead, leadFolder, leadRows, setLead } from "./lead";
 
 const binary = path.resolve(
   __dirname,
@@ -18,36 +19,19 @@ function djinn(...args: string[]): string {
   });
 }
 
-// show asks djinn for a terminal, as the command line asks for the lead's.
-async function show(terminal: string) {
-  const url = new URL(process.env.DJINN_URL!);
-  const res = await fetch(new URL("/ui.v1.UiService/Show", url), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${url.searchParams.get("token")}`,
-    },
-    body: JSON.stringify({ terminal }),
-  });
-  expect(res.ok).toBe(true);
-}
-
 test.skip(process.platform === "win32", "the fake claude is a shell script");
 
-// The next specs find the window's own terminal again.
-test.afterAll(() => show("main"));
+test.afterEach(dropLead);
 
-test("wish resume shows the wish and runs its lead in the lead's terminal", async ({
+test("lead resume shows the wish and runs the lead in its terminal, focused on the wish", async ({
   page,
 }) => {
-  const folder = fs.realpathSync(
-    fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "lead-")),
-  );
+  const folder = leadFolder();
   const made = djinn("wish", "make", "Resume in the window", "--json");
   const wishId = JSON.parse(made).wish.id as string;
-  djinn("wish", "set-lead", wishId, session, "--directory", folder);
-  const resumed = djinn("wish", "resume", wishId);
-  expect(resumed).toContain(`terminal: lead-${wishId}`);
+  setLead(session, folder);
+  const resumed = djinn("lead", "resume", "--wish-id", wishId);
+  expect(resumed).toContain("terminal: lead");
 
   const url = new URL(process.env.DJINN_URL!);
   url.pathname = "/";
@@ -57,10 +41,13 @@ test("wish resume shows the wish and runs its lead in the lead's terminal", asyn
     terminal.locator(".lead-terminal-command").first(),
   ).toContainText(`claude --resume ${session}`);
   await expect(
-    page
-      .locator(".lead-terminal .xterm-rows > div")
-      .filter({ hasText: `fake-claude --resume ${session} in ${folder}` }),
+    leadRows(page, `fake-claude --resume ${session} in ${folder}`),
   ).toHaveCount(1);
+  // Typed in the lead, so echoed, then read after Enter: the fake lead says it again.
+  await expect(
+    leadRows(page, `Focus on the wish Resume in the window (${wishId})`),
+  ).toHaveCount(2);
   // The wish is the mission shown.
   await expect(page.getByText("Resume in the window").first()).toBeVisible();
+  djinn("wish", "delete", wishId);
 });

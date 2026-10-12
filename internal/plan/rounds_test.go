@@ -106,7 +106,7 @@ func TestWorkerAttribution(t *testing.T) {
 	ctx := t.Context()
 	c := serve(t)
 	wish, other := c.wish(t), c.wish(t)
-	task := &planv1.Task{Id: store.NewID(), WishId: wish, Code: "W1", Title: "Q01 → tasks"}
+	task := &planv1.Task{Id: store.NewID(), WishId: wish, Code: "W1", Title: "Pick oil"}
 	stranger := &planv1.Task{Id: store.NewID(), WishId: other, Code: "W1"}
 	for _, task := range []*planv1.Task{task, stranger} {
 		if err := c.store.Tx(ctx, func(tx *store.Tx) error {

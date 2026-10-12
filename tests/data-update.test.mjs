@@ -66,15 +66,30 @@ test("a build committed is proposed, and installs only on update(sha)", async ()
           current: "v1",
           ready: "",
           notResumed: [],
-          build: {
-            wishTitle: "Run Djinn on itself",
-            project: "djinn",
-            branch: "feat/x",
-            sha: "abc",
-            tasks: ["W5"],
-            changes: ["Work of W5"],
-            checks: ["W5 Work of W5: check the banner"],
-          },
+          builds: [
+            {
+              wishTitle: "Run Djinn on itself",
+              project: "djinn",
+              branch: "feat/x",
+              sha: "abc",
+              tasks: ["W5"],
+              changes: ["Work of W5"],
+              summaries: [
+                {
+                  code: "W5",
+                  title: "Work of W5",
+                  summary: "check the banner",
+                },
+              ],
+              base: "0123",
+              running: true,
+              changesCount: 1,
+              lacks: ["Work of W4"],
+              lacksCount: 1,
+            },
+            { branch: "feat/clement-port", sha: "e60" },
+          ],
+          readyBuild: { branch: "feat/clement-port", sha: "e60" },
         };
         await new Promise(() => {});
       },
@@ -86,15 +101,29 @@ test("a build committed is proposed, and installs only on update(sha)", async ()
   });
   const djinnUpdate = createUpdate(transport, 10);
   const state = await new Promise((resolve) => djinnUpdate.subscribe(resolve));
-  assert.deepEqual(state.build, {
+  // One build per branch, each compared with the running Djinn; the newer Djinn ready, named the same way.
+  assert.deepEqual(state.builds[0], {
     wishTitle: "Run Djinn on itself",
     project: "djinn",
     branch: "feat/x",
     sha: "abc",
     tasks: ["W5"],
     changes: ["Work of W5"],
-    checks: ["W5 Work of W5: check the banner"],
+    summaries: [
+      { code: "W5", title: "Work of W5", summary: "check the banner" },
+    ],
+    base: "0123",
+    running: true,
+    changesCount: 1,
+    lacks: ["Work of W4"],
+    lacksCount: 1,
   });
+  assert.deepEqual(
+    state.builds.map((b) => b.branch),
+    ["feat/x", "feat/clement-port"],
+  );
+  assert.equal(state.readyBuild.sha, "e60");
+  assert.equal(state.readyBuild.running, false);
   assert.deepEqual(asked, []);
   assert.deepEqual(await djinnUpdate.update("abc"), {
     version: "",

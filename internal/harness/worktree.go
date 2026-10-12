@@ -7,13 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/store"
 )
 
 // worktreeDir is where a task's worktree goes: in Djinn's data folder, on the project's side, named after the
@@ -85,7 +86,8 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 
 // gitRaw runs git in dir and returns its output as it is: a status's first column may be a space.
 func gitRaw(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd, cancel := gitx.Command(ctx, dir, args...)
+	defer cancel()
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	if err := cmd.Run(); err != nil {
@@ -93,9 +95,37 @@ func gitRaw(ctx context.Context, dir string, args ...string) (string, error) {
 		if msg == "" {
 			msg = err.Error()
 		}
+		if missingIdentity(msg) {
+			return "", fmt.Errorf("git %s: %w", args[0], errNoIdentity)
+		}
 		return "", fmt.Errorf("git %s: %s", args[0], msg)
 	}
 	return out.String(), nil
+}
+
+// noIdentity is what Djinn says when git refuses a merge or a commit for want of a name and an email: Djinn signs
+// with the person's identity and never invents one, so the person sets it. The window knows it by its start, "git has
+// no identity", and says it in its language (gitReason, src/data/format.ts).
+const noIdentity = `git has no identity to sign Djinn's merges and commits: run git config --global user.name "Your Name" ` +
+	`and git config --global user.email you@example.com (or the same without --global, in the project's repository)`
+
+// errNoIdentity is a git command refused for want of an identity; its text is noIdentity.
+var errNoIdentity = errors.New(noIdentity)
+
+// missingIdentity tells whether msg, what git wrote on failing, is its refusal to sign without a name and an email.
+func missingIdentity(msg string) bool {
+	for _, s := range []string{"identity unknown", "Please tell me who you are", "empty ident name", "unable to auto-detect email address"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkIdentity tells whether git can sign a commit in the repository holding dir: errNoIdentity when it cannot.
+func checkIdentity(ctx context.Context, dir string) error {
+	_, err := git(ctx, dir, "var", "GIT_COMMITTER_IDENT")
+	return err
 }
 
 // addWorktree creates the worktree path of the repository holding dir, on a new branch from its HEAD. It returns
@@ -186,4 +216,133 @@ func removeWorktree(ctx context.Context, dir, path string, force bool) error {
 		forgetAgyProject(path)
 	}
 	return err
+}
+
+// branchHoldsUnmergedCommits tells whether branch in dir has commits of its own that are not in integration.
+func branchHoldsUnmergedCommits(ctx context.Context, dir, branch, integration string) bool {
+	if branch == "" {
+		return false
+	}
+	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"^{commit}")
+	if err != nil || head == "" {
+		head, err = git(ctx, dir, "rev-parse", "--verify", "--quiet", branch+"^{commit}")
+		if err != nil || head == "" {
+			return false
+		}
+	}
+	// A branch with no commit beyond the point it started from holds no unmerged work.
+	reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+branch)
+	if err == nil && reflog != "" {
+		lines := strings.Split(strings.TrimSpace(reflog), "\n")
+		if strings.TrimSpace(lines[len(lines)-1]) == head {
+			return false
+		}
+	}
+	intTarget := "refs/heads/" + integration + "^{commit}"
+	intHead, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", intTarget)
+	if err != nil || intHead == "" {
+		intHead, _ = git(ctx, dir, "rev-parse", "--verify", "--quiet", integration+"^{commit}")
+	}
+	if intHead == "" {
+		intHead, _ = git(ctx, dir, "rev-parse", "HEAD")
+	}
+	if intHead != "" {
+		if _, err := git(ctx, dir, "merge-base", "--is-ancestor", head, intHead); err == nil {
+			return false
+		}
+	}
+	return true
+}
+
+// depWorkInSha tells whether the work of dep is reachable from sha.
+func depWorkInSha(ctx context.Context, dir string, dep *planv1.Task, sha string) bool {
+	if sha == "" {
+		return false
+	}
+	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+dep.GetBranch()+"^{commit}")
+	if err != nil || head == "" {
+		head, _ = git(ctx, dir, "rev-parse", "--verify", "--quiet", dep.GetBranch()+"^{commit}")
+	}
+	if head == "" {
+		return true // Branch does not exist; no work to check.
+	}
+	// A branch with no commit beyond the point it started from holds no unmerged work.
+	reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+dep.GetBranch())
+	if err == nil && reflog != "" {
+		lines := strings.Split(strings.TrimSpace(reflog), "\n")
+		if strings.TrimSpace(lines[len(lines)-1]) == head {
+			return true
+		}
+	}
+	if _, err := git(ctx, dir, "merge-base", "--is-ancestor", head, sha); err == nil {
+		return true
+	}
+	if intSha := dep.GetIntegration().GetSha(); intSha != "" {
+		if _, err := git(ctx, dir, "merge-base", "--is-ancestor", intSha, sha); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// taskWorkInBranch reports whether the task's work is already in the integration branch:
+// its branch head is an ancestor of the integration branch head (W425's check).
+func taskWorkInBranch(ctx context.Context, dir string, task *planv1.Task, integration string) bool {
+	if task == nil || task.GetBranch() == "" || integration == "" {
+		return false
+	}
+	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+task.GetBranch()+"^{commit}")
+	if err != nil || head == "" {
+		head, err = git(ctx, dir, "rev-parse", "--verify", "--quiet", task.GetBranch()+"^{commit}")
+		if err != nil || head == "" {
+			return false
+		}
+	}
+	intTarget := "refs/heads/" + integration + "^{commit}"
+	intHead, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", intTarget)
+	if err != nil || intHead == "" {
+		intHead, _ = git(ctx, dir, "rev-parse", "--verify", "--quiet", integration+"^{commit}")
+	}
+	if intHead == "" {
+		intHead, _ = git(ctx, dir, "rev-parse", "HEAD")
+	}
+	if intHead == "" {
+		return false
+	}
+	if _, err := git(ctx, dir, "merge-base", "--is-ancestor", head, intHead); err == nil {
+		return true
+	}
+	if intSha := task.GetIntegration().GetSha(); intSha != "" {
+		if _, err := git(ctx, dir, "merge-base", "--is-ancestor", intSha, intHead); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// dependenciesUnmergedIn checks that each dependency's work is in sha; if not, it returns why the task must wait.
+func (h *Harness) dependenciesUnmergedIn(ctx context.Context, dir string, task *planv1.Task, sha, from string) string {
+	if len(task.GetDependsOn()) == 0 {
+		return ""
+	}
+	targetBranch := from
+	if targetBranch == "" {
+		targetBranch = "the integration branch"
+	}
+	for _, depID := range task.GetDependsOn() {
+		dep, err := store.Get[*planv1.Task](ctx, h.store, depID)
+		if err != nil || dep == nil {
+			continue
+		}
+		if dep.GetProjectId() != "" && task.GetProjectId() != "" && dep.GetProjectId() != task.GetProjectId() {
+			continue
+		}
+		if dep.GetBranch() == "" {
+			continue
+		}
+		if !depWorkInSha(ctx, dir, dep, sha) {
+			return fmt.Sprintf("waits for %s's work to reach %s", dep.GetCode(), targetBranch)
+		}
+	}
+	return ""
 }

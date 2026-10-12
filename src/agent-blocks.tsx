@@ -3,7 +3,7 @@
 // it waits for the developer: whatever does is a question. Each block is folded under its title; opened, Markdown is
 // rendered, another media type shown as it is. No mark: a block is not read nor approved.
 import { ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { memo, useState } from "react";
 
 import { type Block } from "../gen/ts/plan/v1/plan_pb";
 import { isDecisionBlock } from "./data/decisions";
@@ -11,6 +11,7 @@ import { when } from "./data/format";
 import { isLog } from "./data/journal";
 import { t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
+import { SafeSvg } from "./safe-svg";
 
 // agentBlocks are the blocks of the For agents tab: neither a decision nor a log.
 export function agentBlocks(blocks: readonly Block[]): Block[] {
@@ -44,9 +45,16 @@ export function AgentBlocks({
   );
 }
 
-function AgentBlock({ block, task }: { block: Block; task: string }) {
+const AgentBlock = memo(function AgentBlock({
+  block,
+  task,
+}: {
+  block: Block;
+  task: string;
+}) {
   const [open, setOpen] = useState(false);
   const markdown = !block.mediaType || block.mediaType === "text/markdown";
+  const svg = block.mediaType === "image/svg+xml";
   return (
     <article className="wish-block agent-block" id={`block-${block.id}`}>
       <button
@@ -66,6 +74,8 @@ function AgentBlock({ block, task }: { block: Block; task: string }) {
         <div className="wish-block-body prose">
           {markdown ? (
             <MarkdownBody text={block.content} />
+          ) : svg ? (
+            <SafeSvg source={block.content} />
           ) : (
             <pre className="wish-block-raw">{block.content}</pre>
           )}
@@ -73,4 +83,4 @@ function AgentBlock({ block, task }: { block: Block; task: string }) {
       )}
     </article>
   );
-}
+});

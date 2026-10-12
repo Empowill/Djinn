@@ -238,7 +238,7 @@ func TestMainConflictStartsACorrection(t *testing.T) {
 	}
 	c := u.ended(t, state.GetCorrectedBy())
 	f := c.GetCorrection().GetFailure()
-	if c.GetTitle() != "Settle the conflict of origin/"+u.main+" with feat/x" || c.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
+	if c.GetTitle() != "Merge: origin/"+u.main+" — conflict in app/README.md" || c.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
 		f.GetMainSha() != theirs || f.GetBase() != old || !slices.Equal(f.GetFiles(), []string{"app/README.md"}) || len(f.GetTaskIds()) != 0 {
 		t.Fatalf("the correction worker %v", c)
 	}
@@ -359,5 +359,210 @@ func TestReleaseFit(t *testing.T) {
 	writeFile(t, u.home, filepath.Join("projects", u.projectID, "settings.txtpb"), "test: \"test\"\ninstall_releases: false\n")
 	if got := fit(build, false); got != ReleaseOffer {
 		t.Errorf("on main, install_releases false: %v; want ReleaseOffer", got)
+	}
+}
+
+// TestMainTagClash: when a local tag differs from origin's, fetching and merging main proceeds anyway; the clashing tag
+// is reported once on the wish as a block, and subsequent passes do not duplicate it.
+func TestMainTagClash(t *testing.T) {
+	testx.Portable(t)
+	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+	// Make a local tag v0.1.0 on u.repo (pointing to the initial commit of u.repo).
+	u.git(t, u.repo, "tag", "v0.1.0")
+
+	// Teammate commits on main and tags it with a different commit as v0.1.0, then pushes branch and tag to origin.
+	fix := u.onMain(t, "Fix the login", map[string]string{"app/src/login.txt": "fixed\n"})
+	u.git(t, u.other, "tag", "v0.1.0")
+	u.git(t, u.other, "push", "--quiet", "origin", "refs/tags/v0.1.0")
+
+	// Verify that the local tag and remote tag differ.
+	localSha := u.git(t, u.repo, "rev-parse", "refs/tags/v0.1.0")
+	remoteSha := u.git(t, u.other, "rev-parse", "refs/tags/v0.1.0")
+	if localSha == remoteSha {
+		t.Fatalf("local tag and remote tag point to the same sha: %s", localSha)
+	}
+
+	// First pass: main should be fetched and merged despite the clashing tag.
+	u.pass(t, 0)
+	if !u.holds(t, fix) || len(u.merges(t)) != 1 {
+		t.Fatalf("main was not merged: holds=%v merges=%d", u.holds(t, fix), len(u.merges(t)))
+	}
+	if state := u.mainState(t); state.GetHeld() != "" {
+		t.Errorf("main is held: %q", state.GetHeld())
+	}
+
+	// Verify the clashing tag was reported once on the wish as a block.
+	msg := "tag v0.1.0 differs from origin's: kept the local one"
+	blocks, err := store.List[*planv1.Block](t.Context(), u.db, store.Where{"wish_id": u.wishID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	for _, b := range blocks {
+		if b.GetTitle() == msg && b.GetContent() == msg && b.GetKind() == "report" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 report block for clashing tag, found %d (total blocks: %d)", count, len(blocks))
+	}
+
+	// Verify the local tag remained unchanged.
+	if got := u.git(t, u.repo, "rev-parse", "refs/tags/v0.1.0"); got != localSha {
+		t.Errorf("local tag changed to %s; want %s", got, localSha)
+	}
+
+	// Second pass: another commit on main. The clash report must not be duplicated.
+	next := u.onMain(t, "More work", map[string]string{"app/src/more.txt": "more\n"})
+	u.pass(t, 2*time.Hour)
+	if !u.holds(t, next) {
+		t.Fatalf("next commit was not merged: %s", next)
+	}
+
+	blocks, err = store.List[*planv1.Block](t.Context(), u.db, store.Where{"wish_id": u.wishID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	count = 0
+	for _, b := range blocks {
+		if b.GetTitle() == msg {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("report block duplicated on second pass: count = %d", count)
+	}
+}
+
+// TestMainFetchFails: when fetching main from its remote fails, the reason shown is git's own message, not
+// "exit status 1".
+func TestMainFetchFails(t *testing.T) {
+	testx.Portable(t)
+	u := keepingUp(t, "")
+	// Set origin remote URL to a nonexistent path.
+	u.git(t, u.repo, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "nonexistent"))
+
+	u.pass(t, 0)
+	state := u.mainState(t)
+	held := state.GetHeld()
+	if held == "" {
+		t.Fatal("main state held is empty; expected failure reason")
+	}
+	if strings.Contains(held, "exit status 1") {
+		t.Errorf("held contains 'exit status 1': %q", held)
+	}
+	if !strings.Contains(held, "fatal:") {
+		t.Errorf("held does not contain git's fatal error message: %q", held)
+	}
+	if !strings.HasPrefix(held, "fetch ") {
+		t.Errorf("held lacks 'fetch ' prefix: %q", held)
+	}
+}
+
+// TestMainMergeFails: when merging main fails without conflicts (e.g. unrelated histories), the reason shown
+// is git's own message, not "exit status 1".
+func TestMainMergeFails(t *testing.T) {
+	testx.Portable(t)
+	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+	// Make an unrelated branch on u.other and force push it as main to origin.
+	u.git(t, u.other, "checkout", "--orphan", "unrelated")
+	commitAll(t, u.other, "Unrelated initial commit")
+	u.git(t, u.other, "push", "--force", "--quiet", "origin", "unrelated:refs/heads/"+u.main)
+
+	u.pass(t, 0)
+	state := u.mainState(t)
+	held := state.GetHeld()
+	if held == "" {
+		t.Fatal("main state held is empty; expected failure reason")
+	}
+	if strings.Contains(held, "exit status 1") {
+		t.Errorf("held contains 'exit status 1': %q", held)
+	}
+	if !strings.Contains(held, "refusing to merge unrelated histories") {
+		t.Errorf("held does not contain git merge message: %q", held)
+	}
+}
+
+// TestMainCorrectionCleared: a merge of main held with a correction whose integration record was cleared
+// runs again on the next pass and merges when green.
+func TestMainCorrectionCleared(t *testing.T) {
+	testx.Portable(t)
+	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+	u.testCode, u.testOut = 1, "--- FAIL: TestLogin"
+	theirs := u.onMain(t, "Feature on main", map[string]string{"app/src/feature.txt": "feat\n"})
+
+	u.pass(t, 0)
+	state := u.mainState(t)
+	if state.GetCorrectedBy() == "" {
+		t.Fatalf("main state %v; want corrected by a worker", state)
+	}
+	cID := state.GetCorrectedBy()
+	u.ended(t, cID)
+
+	u.mu.Lock()
+	u.testCode = 0
+	u.mu.Unlock()
+
+	none := "none"
+	if _, err := u.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+		TaskId:      cID,
+		Integration: &none,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if got := u.mainState(t).GetCorrectedBy(); got != "" {
+		t.Errorf("after clearing record, corrected_by = %q; want empty", got)
+	}
+
+	u.pass(t, 0)
+	if !u.holds(t, theirs) {
+		t.Fatalf("main not merged after record cleared: %v", u.mainState(t))
+	}
+	if state := u.mainState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
+		t.Errorf("after main merge succeeded, state: %v", state)
+	}
+}
+
+// TestMainCorrectionCancelled: a merge of main held with a correction that was cancelled
+// clears its link, runs again on the next pass and merges when green.
+func TestMainCorrectionCancelled(t *testing.T) {
+	testx.Portable(t)
+	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+	u.testCode, u.testOut = 1, "--- FAIL: TestLogin"
+	theirs := u.onMain(t, "Feature on main", map[string]string{"app/src/feature.txt": "feat\n"})
+
+	u.pass(t, 0)
+	state := u.mainState(t)
+	if state.GetCorrectedBy() == "" {
+		t.Fatalf("main state %v; want corrected by a worker", state)
+	}
+	cID := state.GetCorrectedBy()
+	u.ended(t, cID)
+
+	// Cancel the correction worker (status 10).
+	if err := u.db.Tx(t.Context(), func(tx *store.Tx) error {
+		c, err := store.Get[*planv1.Task](t.Context(), tx, cID)
+		if err != nil {
+			return err
+		}
+		c.Status = 10
+		if err := tx.Journal("test", "put", c); err != nil {
+			return err
+		}
+		return tx.Put(c)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	u.mu.Lock()
+	u.testCode = 0
+	u.mu.Unlock()
+
+	u.pass(t, 0)
+	if !u.holds(t, theirs) {
+		t.Fatalf("main not merged after correction cancelled: %v", u.mainState(t))
+	}
+	if state := u.mainState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
+		t.Errorf("after main merge succeeded, state: %v", state)
 	}
 }

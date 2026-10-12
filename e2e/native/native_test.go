@@ -159,6 +159,67 @@ func TestNativeWindow(t *testing.T) {
 		})
 	})
 
+	// A lead asks with `djinn question ask`, another process: the question shows in the window that shows its wish,
+	// without a reload.
+	t.Run("a question asked by the command line shows in the window", func(t *testing.T) {
+		addr, err := server.ReadAddr(d.home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		client, base, err := cli.Dial(addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		title := "Asked " + d.token[:8]
+		made, err := planv1connect.NewWishServiceClient(client, base).
+			Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: title}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		eventually(t, 10*time.Second, func() error {
+			var page struct {
+				Shown string `json:"shown"`
+			}
+			if err := d.eval(`const item = [...document.querySelectorAll(".wish-nav")]
+				.find((b) => b.textContent.includes(`+jsString(title)+`));
+				item?.click();
+				return { shown: document.querySelector(".wish-title")?.textContent ?? "" };`, &page); err != nil {
+				return err
+			}
+			if page.Shown != title {
+				return fmt.Errorf("the window shows %q, not %q", page.Shown, title)
+			}
+			return nil
+		})
+
+		text := "Which lamp first " + d.token[:8] + "?"
+		ask := exec.Command(d.binary, "question", "ask", text, made.Msg.GetWish().GetId(),
+			"--options", "Brass", "--options", "Glass", "--recommendation", "B: lighter")
+		// testx.Main set DJINN_ADDR for the whole test, and it wins over DJINN_HOME: name this djinn's address. The
+		// lead asks, not a worker: no DJINN_TASK_ID, even when a Djinn worker runs the test.
+		ask.Env = append(os.Environ(), "DJINN_HOME="+d.home, "DJINN_ADDR="+addr, "DJINN_TASK_ID=")
+		if out, err := ask.CombinedOutput(); err != nil {
+			t.Fatalf("djinn question ask: %v\n%s", err, out)
+		}
+		eventually(t, 10*time.Second, func() error {
+			var page struct {
+				Cards []string `json:"cards"`
+			}
+			if err := d.eval(`return { cards: [...document.querySelectorAll(".question-card")].map((c) => c.textContent) };`,
+				&page); err != nil {
+				return err
+			}
+			for _, card := range page.Cards {
+				if strings.Contains(card, text) {
+					return nil
+				}
+			}
+			return fmt.Errorf("no question %q in the window: %q", text, page.Cards)
+		})
+	})
+
 	t.Run("the terminal runs a command and shows its output", func(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("whoami prints the domain too on Windows")
@@ -252,6 +313,7 @@ func TestNativeWindow(t *testing.T) {
 // djinn is the test build running for one test.
 type djinn struct {
 	cmd      *exec.Cmd
+	binary   string
 	home     string
 	token    string
 	endpoint string
@@ -298,7 +360,7 @@ func start(t *testing.T, binary string) *djinn {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	d := &djinn{cmd: cmd, home: home, token: token, done: make(chan struct{})}
+	d := &djinn{cmd: cmd, binary: binary, home: home, token: token, done: make(chan struct{})}
 	found := make(chan string, 1)
 	go func() {
 		endpoint := regexp.MustCompile(`url=(http://127\.0\.0\.1:\d+/mcp)`)
@@ -457,6 +519,12 @@ func eventually(t *testing.T, timeout time.Duration, check func() error) {
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
+}
+
+// jsString is s as a JavaScript string literal.
+func jsString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 func randomHex(t *testing.T) string {

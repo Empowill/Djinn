@@ -8,10 +8,12 @@
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../buf/validate/validate_pb";
+import type { LoadNotch } from "../../djinn/v1/load_pb";
+import { file_djinn_v1_load } from "../../djinn/v1/load_pb";
 import { file_djinn_v1_options } from "../../djinn/v1/options_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
-import type { Resources } from "../../plan/v1/plan_pb";
+import type { Provider, Resources } from "../../plan/v1/plan_pb";
 import { file_plan_v1_plan } from "../../plan/v1/plan_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -19,7 +21,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file machine/v1/machine.proto.
  */
 export const file_machine_v1_machine: GenFile = /*@__PURE__*/
-  fileDesc("ChhtYWNoaW5lL3YxL21hY2hpbmUucHJvdG8SCm1hY2hpbmUudjEiMgoIUHJlc3N1cmUSEgoKc29tZV9hdmcxMBgBIAEoARISCgpmdWxsX2F2ZzEwGAIgASgBIpwECgdNYWNoaW5lEgoKAm9zGAEgASgJEgwKBGFyY2gYAiABKAkSDQoFY29yZXMYAyABKAUSGgoSbWVtb3J5X3RvdGFsX2J5dGVzGAQgASgEEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYBSABKAQSEgoFbG9hZDEYBiABKAFIAIgBARIqCgxjcHVfcHJlc3N1cmUYByABKAsyFC5tYWNoaW5lLnYxLlByZXNzdXJlEi0KD21lbW9yeV9wcmVzc3VyZRgIIAEoCzIULm1hY2hpbmUudjEuUHJlc3N1cmUSDwoHd29ya2VycxgJIAEoBRIUCgx3b3JrZXJzX3J1bGUYCiABKAkSDwoHcnVubmluZxgLIAEoBRIQCghwcmVzc3VyZRgMIAEoCRItCglyZWFkX3RpbWUYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEh4KBGRpc2sYDiABKAsyEC5tYWNoaW5lLnYxLkRpc2sSHQoEZ3B1cxgPIAMoCzIPLm1hY2hpbmUudjEuR3B1EhsKE2Nhbl9ydW5fbG9jYWxfbW9kZWwYECABKAgSGgoSbG9jYWxfbW9kZWxfcmVhc29uGBEgASgJEioKC3dvcmtlcl91c2VzGBIgAygLMhUubWFjaGluZS52MS5Xb3JrZXJVc2USFgoOd29ya2VyX21lYXN1cmUYEyABKAlCCAoGX2xvYWQxInEKCVdvcmtlclVzZRIPCgd0YXNrX2lkGAEgASgJEg8KB3dpc2hfaWQYAiABKAkSDAoEY29kZRgDIAEoCRINCgV0aXRsZRgEIAEoCRIlCglyZXNvdXJjZXMYBSABKAsyEi5wbGFuLnYxLlJlc291cmNlcyJCCgREaXNrEgwKBHBhdGgYASABKAkSEwoLdG90YWxfYnl0ZXMYAiABKAQSFwoPYXZhaWxhYmxlX2J5dGVzGAMgASgEInkKA0dwdRIOCgZ2ZW5kb3IYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZkcml2ZXIYAyABKAkSFgoOZHJpdmVyX3ZlcnNpb24YBCABKAkSFAoMbWVtb3J5X2J5dGVzGAUgASgEEhYKDnVuaWZpZWRfbWVtb3J5GAYgASgIIhsKGU1hY2hpbmVTZXJ2aWNlU2hvd1JlcXVlc3QiQgoaTWFjaGluZVNlcnZpY2VTaG93UmVzcG9uc2USJAoHbWFjaGluZRgBIAEoCzITLm1hY2hpbmUudjEuTWFjaGluZSLkAQoER2F0ZRIMCgRuYW1lGAEgASgJEg4KBmhvbGRlchgCIAEoCRIWCg5ob2xkZXJfdGFza19pZBgDIAEoCRIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHd2FpdGluZxgFIAMoCRISCgp0YWtlc19zbG90GAYgASgIEiUKCXJlc291cmNlcxgHIAEoCzISLnBsYW4udjEuUmVzb3VyY2VzEi8KC2V4cGlyZV90aW1lGAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLcAQoWR2F0ZVNlcnZpY2VIb2xkUmVxdWVzdBI1CgRuYW1lGAEgASgJQie6SCTIAQFyHzIdXltBLVphLXpdW0EtWmEtejAtOV8tXXswLDM5fSQSHAoHdGFza19pZBgCIAEoCUILukgI2AEBcgOwAQESFgoEd2hhdBgDIAEoCUIIukgFcgMYyAESGwoJZGlyZWN0b3J5GAQgASgJQgi6SAVyAxiAIBIUCgNwaWQYBSABKAVCB7pIBBoCKAASIgoPdGltZW91dF9zZWNvbmRzGAYgASgNQgm6SAYqBBiAowUiTwoXR2F0ZVNlcnZpY2VIb2xkUmVzcG9uc2USJAoFc3RhdGUYASABKA4yFS5tYWNoaW5lLnYxLkdhdGVTdGF0ZRIOCgZyZWFzb24YAiABKAkiGAoWR2F0ZVNlcnZpY2VMaXN0UmVxdWVzdCI6ChdHYXRlU2VydmljZUxpc3RSZXNwb25zZRIfCgVnYXRlcxgBIAMoCzIQLm1hY2hpbmUudjEuR2F0ZSLJAgoLQ29tbWFuZENvc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBEhIKCnByb2plY3RfaWQYAiABKAkSDwoHY29tbWFuZBgDIAEoCRIMCgRydW5zGAQgASgFEhMKC2NwdV9zZWNvbmRzGAUgASgBEg8KB3NlY29uZHMYBiABKAESGQoRcGVha19tZW1vcnlfYnl0ZXMYByABKAQSGAoQbGFzdF9jcHVfc2Vjb25kcxgIIAEoARIUCgxsYXN0X3NlY29uZHMYCSABKAESHgoWbGFzdF9wZWFrX21lbW9yeV9ieXRlcxgKIAEoBBIWCg5sYXN0X2V4aXRfY29kZRgLIAEoBRItCglsYXN0X3RpbWUYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wOhnS8xgVCgpwcm9qZWN0X2lkCgdjb21tYW5kIjUKGUNvbW1hbmRTZXJ2aWNlTGlzdFJlcXVlc3QSGAoHcHJvamVjdBgBIAEoCUIHukgEcgIYZCJEChpDb21tYW5kU2VydmljZUxpc3RSZXNwb25zZRImCgVjb3N0cxgBIAMoCzIXLm1hY2hpbmUudjEuQ29tbWFuZENvc3Qi6gEKG0NvbW1hbmRTZXJ2aWNlUmVjb3JkUmVxdWVzdBIcCgd0YXNrX2lkGAEgASgJQgu6SAjYAQFyA7ABARIbCglkaXJlY3RvcnkYAiABKAlCCLpIBXIDGIAgEhwKB2NvbW1hbmQYAyABKAlCC7pICMgBAXIDGMgBEiMKC2NwdV9zZWNvbmRzGAQgASgBQg66SAsSCSkAAAAAAAAAABIfCgdzZWNvbmRzGAUgASgBQg66SAsSCSkAAAAAAAAAABIZChFwZWFrX21lbW9yeV9ieXRlcxgGIAEoBBIRCglleGl0X2NvZGUYByABKAUiRQocQ29tbWFuZFNlcnZpY2VSZWNvcmRSZXNwb25zZRIlCgRjb3N0GAEgASgLMhcubWFjaGluZS52MS5Db21tYW5kQ29zdCpvCglHYXRlU3RhdGUSGgoWR0FURV9TVEFURV9VTlNQRUNJRklFRBAAEhYKEkdBVEVfU1RBVEVfV0FJVElORxABEhMKD0dBVEVfU1RBVEVfSEVMRBACEhkKFUdBVEVfU1RBVEVfVEFLRU5fQkFDSxADMnAKDk1hY2hpbmVTZXJ2aWNlEl4KBFNob3cSJS5tYWNoaW5lLnYxLk1hY2hpbmVTZXJ2aWNlU2hvd1JlcXVlc3QaJi5tYWNoaW5lLnYxLk1hY2hpbmVTZXJ2aWNlU2hvd1Jlc3BvbnNlIgeQAgHI8xgBMsABCgtHYXRlU2VydmljZRJXCgRIb2xkEiIubWFjaGluZS52MS5HYXRlU2VydmljZUhvbGRSZXF1ZXN0GiMubWFjaGluZS52MS5HYXRlU2VydmljZUhvbGRSZXNwb25zZSIEyPMYATABElgKBExpc3QSIi5tYWNoaW5lLnYxLkdhdGVTZXJ2aWNlTGlzdFJlcXVlc3QaIy5tYWNoaW5lLnYxLkdhdGVTZXJ2aWNlTGlzdFJlc3BvbnNlIgeQAgHI8xgBMtMBCg5Db21tYW5kU2VydmljZRJeCgRMaXN0EiUubWFjaGluZS52MS5Db21tYW5kU2VydmljZUxpc3RSZXF1ZXN0GiYubWFjaGluZS52MS5Db21tYW5kU2VydmljZUxpc3RSZXNwb25zZSIHkAIByPMYARJhCgZSZWNvcmQSJy5tYWNoaW5lLnYxLkNvbW1hbmRTZXJ2aWNlUmVjb3JkUmVxdWVzdBooLm1hY2hpbmUudjEuQ29tbWFuZFNlcnZpY2VSZWNvcmRSZXNwb25zZSIEyPMYAkKeAQoOY29tLm1hY2hpbmUudjFCDE1hY2hpbmVQcm90b1ABWjVnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby9tYWNoaW5lL3YxO21hY2hpbmV2MaICA01YWKoCCk1hY2hpbmUuVjHKAgpNYWNoaW5lXFYx4gIWTWFjaGluZVxWMVxHUEJNZXRhZGF0YeoCC01hY2hpbmU6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_options, file_google_protobuf_timestamp, file_plan_v1_plan]);
+  fileDesc("ChhtYWNoaW5lL3YxL21hY2hpbmUucHJvdG8SCm1hY2hpbmUudjEiMgoIUHJlc3N1cmUSEgoKc29tZV9hdmcxMBgBIAEoARISCgpmdWxsX2F2ZzEwGAIgASgBIvUECgdNYWNoaW5lEgoKAm9zGAEgASgJEgwKBGFyY2gYAiABKAkSDQoFY29yZXMYAyABKAUSGgoSbWVtb3J5X3RvdGFsX2J5dGVzGAQgASgEEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYBSABKAQSEgoFbG9hZDEYBiABKAFIAIgBARIqCgxjcHVfcHJlc3N1cmUYByABKAsyFC5tYWNoaW5lLnYxLlByZXNzdXJlEi0KD21lbW9yeV9wcmVzc3VyZRgIIAEoCzIULm1hY2hpbmUudjEuUHJlc3N1cmUSDwoHd29ya2VycxgJIAEoBRIUCgx3b3JrZXJzX3J1bGUYCiABKAkSDwoHcnVubmluZxgLIAEoBRIQCghwcmVzc3VyZRgMIAEoCRItCglyZWFkX3RpbWUYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEh4KBGRpc2sYDiABKAsyEC5tYWNoaW5lLnYxLkRpc2sSHQoEZ3B1cxgPIAMoCzIPLm1hY2hpbmUudjEuR3B1EhsKE2Nhbl9ydW5fbG9jYWxfbW9kZWwYECABKAgSGgoSbG9jYWxfbW9kZWxfcmVhc29uGBEgASgJEioKC3dvcmtlcl91c2VzGBIgAygLMhUubWFjaGluZS52MS5Xb3JrZXJVc2USFgoOd29ya2VyX21lYXN1cmUYEyABKAkSIQoEbG9hZBgUIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBIZChF3b3JrZXJfcGVyY2VudGlsZRgVIAEoBRIZChF3b3JrZXJfZW5nYWdlZF9hdBgWIAEoCUIICgZfbG9hZDEigQEKCVdvcmtlclVzZRIPCgd0YXNrX2lkGAEgASgJEg8KB3dpc2hfaWQYAiABKAkSDAoEY29kZRgDIAEoCRINCgV0aXRsZRgEIAEoCRIlCglyZXNvdXJjZXMYBSABKAsyEi5wbGFuLnYxLlJlc291cmNlcxIOCgZwYXVzZWQYBiABKAgiQgoERGlzaxIMCgRwYXRoGAEgASgJEhMKC3RvdGFsX2J5dGVzGAIgASgEEhcKD2F2YWlsYWJsZV9ieXRlcxgDIAEoBCJ5CgNHcHUSDgoGdmVuZG9yGAEgASgJEgwKBG5hbWUYAiABKAkSDgoGZHJpdmVyGAMgASgJEhYKDmRyaXZlcl92ZXJzaW9uGAQgASgJEhQKDG1lbW9yeV9ieXRlcxgFIAEoBBIWCg51bmlmaWVkX21lbW9yeRgGIAEoCCIbChlNYWNoaW5lU2VydmljZVNob3dSZXF1ZXN0IkIKGk1hY2hpbmVTZXJ2aWNlU2hvd1Jlc3BvbnNlEiQKB21hY2hpbmUYASABKAsyEy5tYWNoaW5lLnYxLk1hY2hpbmUiWQobTWFjaGluZVNlcnZpY2VTZXJpZXNSZXF1ZXN0Eg8KB21pbnV0ZXMYASABKAUSKQoFc2luY2UYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIrYBChxNYWNoaW5lU2VydmljZVNlcmllc1Jlc3BvbnNlEioKB21hY2hpbmUYASABKAsyGS5tYWNoaW5lLnYxLk1hY2hpbmVTZXJpZXMSKQoHd29ya2VycxgCIAMoCzIYLm1hY2hpbmUudjEuV29ya2VyU2VyaWVzEicKBWdhdGVzGAMgAygLMhgubWFjaGluZS52MS5HYXRlSW50ZXJ2YWwSFgoOd29ya2VyX21lYXN1cmUYBCABKAkinwEKDU1hY2hpbmVTZXJpZXMSDQoFY29yZXMYASABKAUSGgoSbWVtb3J5X3RvdGFsX2J5dGVzGAIgASgEEhgKEGxvYWRfbGltaXRfc2hhcmUYAyABKAESHwoXbG9hZF9saW1pdF9tZW1vcnlfYnl0ZXMYBCABKAQSKAoGcG9pbnRzGAUgAygLMhgubWFjaGluZS52MS5NYWNoaW5lUG9pbnQizwEKDE1hY2hpbmVQb2ludBIoCgR0aW1lGAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBITCgtjcHVfcGVyY2VudBgCIAEoARIUCgxtZW1vcnlfYnl0ZXMYAyABKAQSGQoRZGppbm5fY3B1X3BlcmNlbnQYBCABKAESGgoSZGppbm5fbWVtb3J5X2J5dGVzGAUgASgEEhgKEHNlbGZfY3B1X3BlcmNlbnQYBiABKAESGQoRc2VsZl9tZW1vcnlfYnl0ZXMYByABKAQisgIKDFdvcmtlclNlcmllcxIPCgd0YXNrX2lkGAEgASgJEg8KB3dpc2hfaWQYAiABKAkSDAoEY29kZRgDIAEoCRINCgV0aXRsZRgEIAEoCRIjCghwcm92aWRlchgFIAEoDjIRLnBsYW4udjEuUHJvdmlkZXISDQoFbW9kZWwYBiABKAkSGAoQcGVha19jcHVfcGVyY2VudBgHIAEoARIZChFwZWFrX21lbW9yeV9ieXRlcxgIIAEoBBInCgZwb2ludHMYCSADKAsyFy5tYWNoaW5lLnYxLldvcmtlclBvaW50EicKBWdhdGVzGAogAygLMhgubWFjaGluZS52MS5HYXRlSW50ZXJ2YWwSDgoGcGF1c2VkGAsgASgIEhgKEHA5NV9tZW1vcnlfYnl0ZXMYDCABKAQiYgoLV29ya2VyUG9pbnQSKAoEdGltZRgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEwoLY3B1X3BlcmNlbnQYAiABKAESFAoMbWVtb3J5X2J5dGVzGAMgASgEIuEBCgxHYXRlSW50ZXJ2YWwSDAoEZ2F0ZRgBIAEoCRIPCgdjb21tYW5kGAIgASgJEg8KB3Rhc2tfaWQYAyABKAkSDwoHcHJvamVjdBgEIAEoCRIuCgphc2tlZF90aW1lGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpncmFudF90aW1lGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxyZWxlYXNlX3RpbWUYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIuMBCgpDb21tYW5kUnVuEigKBHRpbWUYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB3NlY29uZHMYAiABKAESEwoLY3B1X3NlY29uZHMYAyABKAESGQoRcGVha19tZW1vcnlfYnl0ZXMYBCABKAQSEQoJZXhpdF9jb2RlGAUgASgFEhQKDHdhaXRfc2Vjb25kcxgGIAEoARIUCgxoZWxkX3NlY29uZHMYByABKAESDAoEZ2F0ZRgIIAEoCRIPCgd0YXNrX2lkGAkgASgJEgwKBHRyZWUYCiABKAki5AEKBEdhdGUSDAoEbmFtZRgBIAEoCRIOCgZob2xkZXIYAiABKAkSFgoOaG9sZGVyX3Rhc2tfaWQYAyABKAkSKQoFc2luY2UYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB3dhaXRpbmcYBSADKAkSEgoKdGFrZXNfc2xvdBgGIAEoCBIlCglyZXNvdXJjZXMYByABKAsyEi5wbGFuLnYxLlJlc291cmNlcxIvCgtleHBpcmVfdGltZRgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi3AEKFkdhdGVTZXJ2aWNlSG9sZFJlcXVlc3QSNQoEbmFtZRgBIAEoCUInukgkyAEBch8yHV5bQS1aYS16XVtBLVphLXowLTlfLV17MCwzOX0kEhwKB3Rhc2tfaWQYAiABKAlCC7pICNgBAXIDsAEBEhYKBHdoYXQYAyABKAlCCLpIBXIDGMgBEhsKCWRpcmVjdG9yeRgEIAEoCUIIukgFcgMYgCASFAoDcGlkGAUgASgFQge6SAQaAigAEiIKD3RpbWVvdXRfc2Vjb25kcxgGIAEoDUIJukgGKgQYgKMFIk8KF0dhdGVTZXJ2aWNlSG9sZFJlc3BvbnNlEiQKBXN0YXRlGAEgASgOMhUubWFjaGluZS52MS5HYXRlU3RhdGUSDgoGcmVhc29uGAIgASgJIhgKFkdhdGVTZXJ2aWNlTGlzdFJlcXVlc3QiOgoXR2F0ZVNlcnZpY2VMaXN0UmVzcG9uc2USHwoFZ2F0ZXMYASADKAsyEC5tYWNoaW5lLnYxLkdhdGUi5AQKC0NvbW1hbmRDb3N0EhQKAmlkGAEgASgJQgi6SAVyA7ABARISCgpwcm9qZWN0X2lkGAIgASgJEg8KB2NvbW1hbmQYAyABKAkSDAoEcnVucxgEIAEoBRITCgtjcHVfc2Vjb25kcxgFIAEoARIPCgdzZWNvbmRzGAYgASgBEhkKEXBlYWtfbWVtb3J5X2J5dGVzGAcgASgEEhgKEGxhc3RfY3B1X3NlY29uZHMYCCABKAESFAoMbGFzdF9zZWNvbmRzGAkgASgBEh4KFmxhc3RfcGVha19tZW1vcnlfYnl0ZXMYCiABKAQSFgoObGFzdF9leGl0X2NvZGUYCyABKAUSLQoJbGFzdF90aW1lGAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIYChBwNTBfaGVsZF9zZWNvbmRzGA0gASgBEhgKEHA5NV9oZWxkX3NlY29uZHMYDiABKAESGQoRbGFzdF9oZWxkX3NlY29uZHMYDyABKAESGAoQcDUwX3dhaXRfc2Vjb25kcxgQIAEoARIYChBwOTVfd2FpdF9zZWNvbmRzGBEgASgBEhkKEWxhc3Rfd2FpdF9zZWNvbmRzGBIgASgBEhsKE3JlY2VudF9oZWxkX3NlY29uZHMYEyADKAESKwoLcmVjZW50X3J1bnMYFCADKAsyFi5tYWNoaW5lLnYxLkNvbW1hbmRSdW4SDAoEZ2F0ZRgVIAEoCRIUCgxwcm9qZWN0X25hbWUYFiABKAkSDQoFYXNrZWQYFyABKAU6GdLzGBUKCnByb2plY3RfaWQKB2NvbW1hbmQiNQoZQ29tbWFuZFNlcnZpY2VMaXN0UmVxdWVzdBIYCgdwcm9qZWN0GAEgASgJQge6SARyAhhkIkQKGkNvbW1hbmRTZXJ2aWNlTGlzdFJlc3BvbnNlEiYKBWNvc3RzGAEgAygLMhcubWFjaGluZS52MS5Db21tYW5kQ29zdCK7AgobQ29tbWFuZFNlcnZpY2VSZWNvcmRSZXF1ZXN0EhwKB3Rhc2tfaWQYASABKAlCC7pICNgBAXIDsAEBEhsKCWRpcmVjdG9yeRgCIAEoCUIIukgFcgMYgCASHAoHY29tbWFuZBgDIAEoCUILukgIyAEBcgMYyAESIwoLY3B1X3NlY29uZHMYBCABKAFCDrpICxIJKQAAAAAAAAAAEh8KB3NlY29uZHMYBSABKAFCDrpICxIJKQAAAAAAAAAAEhkKEXBlYWtfbWVtb3J5X2J5dGVzGAYgASgEEhEKCWV4aXRfY29kZRgHIAEoBRIUCgx3YWl0X3NlY29uZHMYCCABKAESFAoMaGVsZF9zZWNvbmRzGAkgASgBEgwKBGdhdGUYCiABKAkSFQoEdHJlZRgLIAEoCUIHukgEcgIYQCJFChxDb21tYW5kU2VydmljZVJlY29yZFJlc3BvbnNlEiUKBGNvc3QYASABKAsyFy5tYWNoaW5lLnYxLkNvbW1hbmRDb3N0Km8KCUdhdGVTdGF0ZRIaChZHQVRFX1NUQVRFX1VOU1BFQ0lGSUVEEAASFgoSR0FURV9TVEFURV9XQUlUSU5HEAESEwoPR0FURV9TVEFURV9IRUxEEAISGQoVR0FURV9TVEFURV9UQUtFTl9CQUNLEAMy1gEKDk1hY2hpbmVTZXJ2aWNlEl4KBFNob3cSJS5tYWNoaW5lLnYxLk1hY2hpbmVTZXJ2aWNlU2hvd1JlcXVlc3QaJi5tYWNoaW5lLnYxLk1hY2hpbmVTZXJ2aWNlU2hvd1Jlc3BvbnNlIgeQAgHI8xgBEmQKBlNlcmllcxInLm1hY2hpbmUudjEuTWFjaGluZVNlcnZpY2VTZXJpZXNSZXF1ZXN0GigubWFjaGluZS52MS5NYWNoaW5lU2VydmljZVNlcmllc1Jlc3BvbnNlIgeQAgHI8xgBMsABCgtHYXRlU2VydmljZRJXCgRIb2xkEiIubWFjaGluZS52MS5HYXRlU2VydmljZUhvbGRSZXF1ZXN0GiMubWFjaGluZS52MS5HYXRlU2VydmljZUhvbGRSZXNwb25zZSIEyPMYATABElgKBExpc3QSIi5tYWNoaW5lLnYxLkdhdGVTZXJ2aWNlTGlzdFJlcXVlc3QaIy5tYWNoaW5lLnYxLkdhdGVTZXJ2aWNlTGlzdFJlc3BvbnNlIgeQAgHI8xgBMtMBCg5Db21tYW5kU2VydmljZRJeCgRMaXN0EiUubWFjaGluZS52MS5Db21tYW5kU2VydmljZUxpc3RSZXF1ZXN0GiYubWFjaGluZS52MS5Db21tYW5kU2VydmljZUxpc3RSZXNwb25zZSIHkAIByPMYARJhCgZSZWNvcmQSJy5tYWNoaW5lLnYxLkNvbW1hbmRTZXJ2aWNlUmVjb3JkUmVxdWVzdBooLm1hY2hpbmUudjEuQ29tbWFuZFNlcnZpY2VSZWNvcmRSZXNwb25zZSIEyPMYAkKeAQoOY29tLm1hY2hpbmUudjFCDE1hY2hpbmVQcm90b1ABWjVnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby9tYWNoaW5lL3YxO21hY2hpbmV2MaICA01YWKoCCk1hY2hpbmUuVjHKAgpNYWNoaW5lXFYx4gIWTWFjaGluZVxWMVxHUEJNZXRhZGF0YeoCC01hY2hpbmU6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_load, file_djinn_v1_options, file_google_protobuf_timestamp, file_plan_v1_plan]);
 
 /**
  * Pressure is how much of the time tasks of the machine waited for a resource: the pressure stall information of
@@ -192,6 +194,28 @@ export type Machine = Message<"machine.v1.Machine"> & {
    * @generated from field: string worker_measure = 19;
    */
   workerMeasure: string;
+
+  /**
+   * Operating load notch in effect on this machine.
+   *
+   * @generated from field: djinn.v1.LoadNotch load = 20;
+   */
+  load: LoadNotch;
+
+  /**
+   * The percentile of its memory series a worker is engaged at under this notch: 95 at Minimal down to 50 at
+   * Overclock.
+   *
+   * @generated from field: int32 worker_percentile = 21;
+   */
+  workerPercentile: number;
+
+  /**
+   * The same in words, like "engaged at p50 (overclock)".
+   *
+   * @generated from field: string worker_engaged_at = 22;
+   */
+  workerEngagedAt: string;
 };
 
 /**
@@ -241,6 +265,13 @@ export type WorkerUse = Message<"machine.v1.WorkerUse"> & {
    * @generated from field: plan.v1.Resources resources = 5;
    */
   resources?: Resources | undefined;
+
+  /**
+   * Whether the worker is paused.
+   *
+   * @generated from field: bool paused = 6;
+   */
+  paused: boolean;
 };
 
 /**
@@ -374,6 +405,455 @@ export const MachineServiceShowResponseSchema: GenMessage<MachineServiceShowResp
   messageDesc(file_machine_v1_machine, 6);
 
 /**
+ * @generated from message machine.v1.MachineServiceSeriesRequest
+ */
+export type MachineServiceSeriesRequest = Message<"machine.v1.MachineServiceSeriesRequest"> & {
+  /**
+   * Number of minutes of history to return (10, 30, 120, 1440, 10080; defaults to 30).
+   *
+   * @generated from field: int32 minutes = 1;
+   */
+  minutes: number;
+
+  /**
+   * When set, only the points measured after it: the window reads the whole series once, then what came since, as
+   * the samples arrive. The workers running and the gate intervals come whole each time.
+   *
+   * @generated from field: google.protobuf.Timestamp since = 2;
+   */
+  since?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message machine.v1.MachineServiceSeriesRequest.
+ * Use `create(MachineServiceSeriesRequestSchema)` to create a new message.
+ */
+export const MachineServiceSeriesRequestSchema: GenMessage<MachineServiceSeriesRequest> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 7);
+
+/**
+ * @generated from message machine.v1.MachineServiceSeriesResponse
+ */
+export type MachineServiceSeriesResponse = Message<"machine.v1.MachineServiceSeriesResponse"> & {
+  /**
+   * Machine CPU and memory series.
+   *
+   * @generated from field: machine.v1.MachineSeries machine = 1;
+   */
+  machine?: MachineSeries | undefined;
+
+  /**
+   * Series for each running worker.
+   *
+   * @generated from field: repeated machine.v1.WorkerSeries workers = 2;
+   */
+  workers: WorkerSeries[];
+
+  /**
+   * All gate intervals in the time window (both finished and currently held).
+   *
+   * @generated from field: repeated machine.v1.GateInterval gates = 3;
+   */
+  gates: GateInterval[];
+
+  /**
+   * Where workers are not measured on this machine, the reason or OS (e.g. "windows").
+   *
+   * @generated from field: string worker_measure = 4;
+   */
+  workerMeasure: string;
+};
+
+/**
+ * Describes the message machine.v1.MachineServiceSeriesResponse.
+ * Use `create(MachineServiceSeriesResponseSchema)` to create a new message.
+ */
+export const MachineServiceSeriesResponseSchema: GenMessage<MachineServiceSeriesResponse> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 8);
+
+/**
+ * @generated from message machine.v1.MachineSeries
+ */
+export type MachineSeries = Message<"machine.v1.MachineSeries"> & {
+  /**
+   * Logical cores on the machine.
+   *
+   * @generated from field: int32 cores = 1;
+   */
+  cores: number;
+
+  /**
+   * Total memory in bytes.
+   *
+   * @generated from field: uint64 memory_total_bytes = 2;
+   */
+  memoryTotalBytes: bigint;
+
+  /**
+   * Operating load limit share if set (e.g. 0.8, 1.0, 1.5). 0 if unset.
+   *
+   * @generated from field: double load_limit_share = 3;
+   */
+  loadLimitShare: number;
+
+  /**
+   * Operating load limit memory in bytes, if set.
+   *
+   * @generated from field: uint64 load_limit_memory_bytes = 4;
+   */
+  loadLimitMemoryBytes: bigint;
+
+  /**
+   * Measurement points over time.
+   *
+   * @generated from field: repeated machine.v1.MachinePoint points = 5;
+   */
+  points: MachinePoint[];
+};
+
+/**
+ * Describes the message machine.v1.MachineSeries.
+ * Use `create(MachineSeriesSchema)` to create a new message.
+ */
+export const MachineSeriesSchema: GenMessage<MachineSeries> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 9);
+
+/**
+ * @generated from message machine.v1.MachinePoint
+ */
+export type MachinePoint = Message<"machine.v1.MachinePoint"> & {
+  /**
+   * Timestamp of the measurement.
+   *
+   * @generated from field: google.protobuf.Timestamp time = 1;
+   */
+  time?: Timestamp | undefined;
+
+  /**
+   * Machine total CPU percent (0-100%).
+   *
+   * @generated from field: double cpu_percent = 2;
+   */
+  cpuPercent: number;
+
+  /**
+   * Machine memory used, in bytes.
+   *
+   * @generated from field: uint64 memory_bytes = 3;
+   */
+  memoryBytes: bigint;
+
+  /**
+   * CPU of Djinn and every process it started (its window, leads, workers, gate holders), as a share of the machine:
+   * 100% is all its cores.
+   *
+   * @generated from field: double djinn_cpu_percent = 4;
+   */
+  djinnCpuPercent: number;
+
+  /**
+   * Resident memory of Djinn and every process it started, in bytes.
+   *
+   * @generated from field: uint64 djinn_memory_bytes = 5;
+   */
+  djinnMemoryBytes: bigint;
+
+  /**
+   * CPU of Djinn's own process alone (djinn up), as a share of the machine: 100% is all its cores.
+   *
+   * @generated from field: double self_cpu_percent = 6;
+   */
+  selfCpuPercent: number;
+
+  /**
+   * Resident memory of Djinn's own process alone, in bytes.
+   *
+   * @generated from field: uint64 self_memory_bytes = 7;
+   */
+  selfMemoryBytes: bigint;
+};
+
+/**
+ * Describes the message machine.v1.MachinePoint.
+ * Use `create(MachinePointSchema)` to create a new message.
+ */
+export const MachinePointSchema: GenMessage<MachinePoint> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 10);
+
+/**
+ * @generated from message machine.v1.WorkerSeries
+ */
+export type WorkerSeries = Message<"machine.v1.WorkerSeries"> & {
+  /**
+   * Task identifier.
+   *
+   * @generated from field: string task_id = 1;
+   */
+  taskId: string;
+
+  /**
+   * Wish identifier.
+   *
+   * @generated from field: string wish_id = 2;
+   */
+  wishId: string;
+
+  /**
+   * Short code of the task (e.g. T1, W1).
+   *
+   * @generated from field: string code = 3;
+   */
+  code: string;
+
+  /**
+   * Title of the task.
+   *
+   * @generated from field: string title = 4;
+   */
+  title: string;
+
+  /**
+   * Provider running the worker.
+   *
+   * @generated from field: plan.v1.Provider provider = 5;
+   */
+  provider: Provider;
+
+  /**
+   * Model name.
+   *
+   * @generated from field: string model = 6;
+   */
+  model: string;
+
+  /**
+   * Peak CPU percent seen for this worker.
+   *
+   * @generated from field: double peak_cpu_percent = 7;
+   */
+  peakCpuPercent: number;
+
+  /**
+   * Peak resident memory in bytes seen for this worker.
+   *
+   * @generated from field: uint64 peak_memory_bytes = 8;
+   */
+  peakMemoryBytes: bigint;
+
+  /**
+   * Worker measurement points over time.
+   *
+   * @generated from field: repeated machine.v1.WorkerPoint points = 9;
+   */
+  points: WorkerPoint[];
+
+  /**
+   * Gate intervals held by this worker.
+   *
+   * @generated from field: repeated machine.v1.GateInterval gates = 10;
+   */
+  gates: GateInterval[];
+
+  /**
+   * Whether the worker is paused.
+   *
+   * @generated from field: bool paused = 11;
+   */
+  paused: boolean;
+
+  /**
+   * 95th percentile of resident memory in bytes seen for this worker.
+   *
+   * @generated from field: uint64 p95_memory_bytes = 12;
+   */
+  p95MemoryBytes: bigint;
+};
+
+/**
+ * Describes the message machine.v1.WorkerSeries.
+ * Use `create(WorkerSeriesSchema)` to create a new message.
+ */
+export const WorkerSeriesSchema: GenMessage<WorkerSeries> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 11);
+
+/**
+ * @generated from message machine.v1.WorkerPoint
+ */
+export type WorkerPoint = Message<"machine.v1.WorkerPoint"> & {
+  /**
+   * Timestamp of the measurement.
+   *
+   * @generated from field: google.protobuf.Timestamp time = 1;
+   */
+  time?: Timestamp | undefined;
+
+  /**
+   * Worker CPU percent (0-100% of 1 core or share).
+   *
+   * @generated from field: double cpu_percent = 2;
+   */
+  cpuPercent: number;
+
+  /**
+   * Worker resident memory in bytes.
+   *
+   * @generated from field: uint64 memory_bytes = 3;
+   */
+  memoryBytes: bigint;
+};
+
+/**
+ * Describes the message machine.v1.WorkerPoint.
+ * Use `create(WorkerPointSchema)` to create a new message.
+ */
+export const WorkerPointSchema: GenMessage<WorkerPoint> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 12);
+
+/**
+ * @generated from message machine.v1.GateInterval
+ */
+export type GateInterval = Message<"machine.v1.GateInterval"> & {
+  /**
+   * Name of the gate (codegen, lint, test, etc.).
+   *
+   * @generated from field: string gate = 1;
+   */
+  gate: string;
+
+  /**
+   * Command that ran or is running under the gate.
+   *
+   * @generated from field: string command = 2;
+   */
+  command: string;
+
+  /**
+   * Task identifier of the worker that held the gate, if any.
+   *
+   * @generated from field: string task_id = 3;
+   */
+  taskId: string;
+
+  /**
+   * Project name or identifier.
+   *
+   * @generated from field: string project = 4;
+   */
+  project: string;
+
+  /**
+   * When the gate was asked for.
+   *
+   * @generated from field: google.protobuf.Timestamp asked_time = 5;
+   */
+  askedTime?: Timestamp | undefined;
+
+  /**
+   * When the gate was granted (acquire time).
+   *
+   * @generated from field: google.protobuf.Timestamp grant_time = 6;
+   */
+  grantTime?: Timestamp | undefined;
+
+  /**
+   * When the gate was released; absent if still held.
+   *
+   * @generated from field: google.protobuf.Timestamp release_time = 7;
+   */
+  releaseTime?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message machine.v1.GateInterval.
+ * Use `create(GateIntervalSchema)` to create a new message.
+ */
+export const GateIntervalSchema: GenMessage<GateInterval> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 13);
+
+/**
+ * @generated from message machine.v1.CommandRun
+ */
+export type CommandRun = Message<"machine.v1.CommandRun"> & {
+  /**
+   * When the run ended.
+   *
+   * @generated from field: google.protobuf.Timestamp time = 1;
+   */
+  time?: Timestamp | undefined;
+
+  /**
+   * Command duration in seconds.
+   *
+   * @generated from field: double seconds = 2;
+   */
+  seconds: number;
+
+  /**
+   * CPU time in seconds.
+   *
+   * @generated from field: double cpu_seconds = 3;
+   */
+  cpuSeconds: number;
+
+  /**
+   * Peak memory in bytes.
+   *
+   * @generated from field: uint64 peak_memory_bytes = 4;
+   */
+  peakMemoryBytes: bigint;
+
+  /**
+   * Exit code.
+   *
+   * @generated from field: int32 exit_code = 5;
+   */
+  exitCode: number;
+
+  /**
+   * Queue wait time before the gate was granted, in seconds.
+   *
+   * @generated from field: double wait_seconds = 6;
+   */
+  waitSeconds: number;
+
+  /**
+   * Duration the gate was held, in seconds.
+   *
+   * @generated from field: double held_seconds = 7;
+   */
+  heldSeconds: number;
+
+  /**
+   * Gate name.
+   *
+   * @generated from field: string gate = 8;
+   */
+  gate: string;
+
+  /**
+   * Task that ran it; empty when none did.
+   *
+   * @generated from field: string task_id = 9;
+   */
+  taskId: string;
+
+  /**
+   * Git tree the command ran on, its worktree's changes and files not tracked included: the same before and after it
+   * ran. Empty when its folder is not in a git worktree, or the worktree changed while it ran.
+   *
+   * @generated from field: string tree = 10;
+   */
+  tree: string;
+};
+
+/**
+ * Describes the message machine.v1.CommandRun.
+ * Use `create(CommandRunSchema)` to create a new message.
+ */
+export const CommandRunSchema: GenMessage<CommandRun> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 14);
+
+/**
  * Gate is a gate held or waited for.
  *
  * @generated from message machine.v1.Gate
@@ -442,7 +922,7 @@ export type Gate = Message<"machine.v1.Gate"> & {
  * Use `create(GateSchema)` to create a new message.
  */
 export const GateSchema: GenMessage<Gate> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 7);
+  messageDesc(file_machine_v1_machine, 15);
 
 /**
  * @generated from message machine.v1.GateServiceHoldRequest
@@ -500,7 +980,7 @@ export type GateServiceHoldRequest = Message<"machine.v1.GateServiceHoldRequest"
  * Use `create(GateServiceHoldRequestSchema)` to create a new message.
  */
 export const GateServiceHoldRequestSchema: GenMessage<GateServiceHoldRequest> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 8);
+  messageDesc(file_machine_v1_machine, 16);
 
 /**
  * @generated from message machine.v1.GateServiceHoldResponse
@@ -526,7 +1006,7 @@ export type GateServiceHoldResponse = Message<"machine.v1.GateServiceHoldRespons
  * Use `create(GateServiceHoldResponseSchema)` to create a new message.
  */
 export const GateServiceHoldResponseSchema: GenMessage<GateServiceHoldResponse> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 9);
+  messageDesc(file_machine_v1_machine, 17);
 
 /**
  * @generated from message machine.v1.GateServiceListRequest
@@ -539,7 +1019,7 @@ export type GateServiceListRequest = Message<"machine.v1.GateServiceListRequest"
  * Use `create(GateServiceListRequestSchema)` to create a new message.
  */
 export const GateServiceListRequestSchema: GenMessage<GateServiceListRequest> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 10);
+  messageDesc(file_machine_v1_machine, 18);
 
 /**
  * @generated from message machine.v1.GateServiceListResponse
@@ -558,7 +1038,7 @@ export type GateServiceListResponse = Message<"machine.v1.GateServiceListRespons
  * Use `create(GateServiceListResponseSchema)` to create a new message.
  */
 export const GateServiceListResponseSchema: GenMessage<GateServiceListResponse> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 11);
+  messageDesc(file_machine_v1_machine, 19);
 
 /**
  * CommandCost is what a command of a project costs, over the runs Djinn measured. The peak memory is the resident
@@ -651,6 +1131,84 @@ export type CommandCost = Message<"machine.v1.CommandCost"> & {
    * @generated from field: google.protobuf.Timestamp last_time = 12;
    */
   lastTime?: Timestamp | undefined;
+
+  /**
+   * 50th percentile of held duration, in seconds.
+   *
+   * @generated from field: double p50_held_seconds = 13;
+   */
+  p50HeldSeconds: number;
+
+  /**
+   * 95th percentile of held duration, in seconds.
+   *
+   * @generated from field: double p95_held_seconds = 14;
+   */
+  p95HeldSeconds: number;
+
+  /**
+   * Held duration of the last run, in seconds.
+   *
+   * @generated from field: double last_held_seconds = 15;
+   */
+  lastHeldSeconds: number;
+
+  /**
+   * 50th percentile of wait duration before grant, in seconds.
+   *
+   * @generated from field: double p50_wait_seconds = 16;
+   */
+  p50WaitSeconds: number;
+
+  /**
+   * 95th percentile of wait duration before grant, in seconds.
+   *
+   * @generated from field: double p95_wait_seconds = 17;
+   */
+  p95WaitSeconds: number;
+
+  /**
+   * Wait duration of the last run before grant, in seconds.
+   *
+   * @generated from field: double last_wait_seconds = 18;
+   */
+  lastWaitSeconds: number;
+
+  /**
+   * Held seconds of recent runs (for sparkline).
+   *
+   * @generated from field: repeated double recent_held_seconds = 19;
+   */
+  recentHeldSeconds: number[];
+
+  /**
+   * Recent runs (up to 200).
+   *
+   * @generated from field: repeated machine.v1.CommandRun recent_runs = 20;
+   */
+  recentRuns: CommandRun[];
+
+  /**
+   * Gate name (e.g. lint, test, e2e, gen).
+   *
+   * @generated from field: string gate = 21;
+   */
+  gate: string;
+
+  /**
+   * Project short name for display.
+   *
+   * @generated from field: string project_name = 22;
+   */
+  projectName: string;
+
+  /**
+   * How many runs were asked: djinn gate run asked its gate for the command, whether the command then ran to its end
+   * (runs) or not (interrupted, killed, given up while waiting). Never below runs.
+   *
+   * @generated from field: int32 asked = 23;
+   */
+  asked: number;
 };
 
 /**
@@ -658,7 +1216,7 @@ export type CommandCost = Message<"machine.v1.CommandCost"> & {
  * Use `create(CommandCostSchema)` to create a new message.
  */
 export const CommandCostSchema: GenMessage<CommandCost> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 12);
+  messageDesc(file_machine_v1_machine, 20);
 
 /**
  * @generated from message machine.v1.CommandServiceListRequest
@@ -677,7 +1235,7 @@ export type CommandServiceListRequest = Message<"machine.v1.CommandServiceListRe
  * Use `create(CommandServiceListRequestSchema)` to create a new message.
  */
 export const CommandServiceListRequestSchema: GenMessage<CommandServiceListRequest> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 13);
+  messageDesc(file_machine_v1_machine, 21);
 
 /**
  * @generated from message machine.v1.CommandServiceListResponse
@@ -696,7 +1254,7 @@ export type CommandServiceListResponse = Message<"machine.v1.CommandServiceListR
  * Use `create(CommandServiceListResponseSchema)` to create a new message.
  */
 export const CommandServiceListResponseSchema: GenMessage<CommandServiceListResponse> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 14);
+  messageDesc(file_machine_v1_machine, 22);
 
 /**
  * @generated from message machine.v1.CommandServiceRecordRequest
@@ -750,6 +1308,36 @@ export type CommandServiceRecordRequest = Message<"machine.v1.CommandServiceReco
    * @generated from field: int32 exit_code = 7;
    */
   exitCode: number;
+
+  /**
+   * Queue wait time before the gate was granted, in seconds.
+   *
+   * @generated from field: double wait_seconds = 8;
+   */
+  waitSeconds: number;
+
+  /**
+   * Duration the gate was held, in seconds.
+   *
+   * @generated from field: double held_seconds = 9;
+   */
+  heldSeconds: number;
+
+  /**
+   * Gate that was held.
+   *
+   * @generated from field: string gate = 10;
+   */
+  gate: string;
+
+  /**
+   * Git tree the command ran on, its worktree's changes and files not tracked included: the same before and after it
+   * ran. Empty when its folder is not in a git worktree, or the worktree changed while it ran. Djinn skips a commit
+   * check its task's worker passed on the tree it is about to commit.
+   *
+   * @generated from field: string tree = 11;
+   */
+  tree: string;
 };
 
 /**
@@ -757,7 +1345,7 @@ export type CommandServiceRecordRequest = Message<"machine.v1.CommandServiceReco
  * Use `create(CommandServiceRecordRequestSchema)` to create a new message.
  */
 export const CommandServiceRecordRequestSchema: GenMessage<CommandServiceRecordRequest> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 15);
+  messageDesc(file_machine_v1_machine, 23);
 
 /**
  * @generated from message machine.v1.CommandServiceRecordResponse
@@ -776,7 +1364,7 @@ export type CommandServiceRecordResponse = Message<"machine.v1.CommandServiceRec
  * Use `create(CommandServiceRecordResponseSchema)` to create a new message.
  */
 export const CommandServiceRecordResponseSchema: GenMessage<CommandServiceRecordResponse> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 16);
+  messageDesc(file_machine_v1_machine, 24);
 
 /**
  * GateState is where a holder stands with its gate.
@@ -836,6 +1424,16 @@ export const MachineService: GenService<{
     methodKind: "unary";
     input: typeof MachineServiceShowRequestSchema;
     output: typeof MachineServiceShowResponseSchema;
+  },
+  /**
+   * Series returns the CPU and memory measurement series of running workers, the machine total and djinn itself over the last N minutes.
+   *
+   * @generated from rpc machine.v1.MachineService.Series
+   */
+  series: {
+    methodKind: "unary";
+    input: typeof MachineServiceSeriesRequestSchema;
+    output: typeof MachineServiceSeriesResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_machine_v1_machine, 0);

@@ -101,6 +101,24 @@ func TestWatchSaysWhatChanged(t *testing.T) {
 	}
 }
 
+// TestWatchSaysAPushChanged: the harness notes a push's change with a ProjectSync (store.Tx.Change): the window reads
+// its projects again, where each branch stands against its remote and its push (W489).
+func TestWatchSaysAPushChanged(t *testing.T) {
+	c := serve(t)
+	s := watch(t, c.wishes, "")
+	if err := c.store.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "test/push", &planv1.ProjectSync{}); err != nil {
+			return err
+		}
+		return tx.Change(&planv1.ProjectSync{WishId: "w1"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if msg := next(t, s); msg.GetWishId() != "" || !slices.Equal(msg.GetChanges(), []planv1.Change{planv1.Change_CHANGE_PROJECT}) {
+		t.Fatalf("after a push: %v, want the projects", msg)
+	}
+}
+
 // TestWatchSaysPlugged: plugging a source in, or unplugging it, changes the inbox's sources.
 func TestWatchSaysPlugged(t *testing.T) {
 	c := serve(t)
@@ -319,5 +337,68 @@ func TestWatchSendsTooManyAsAReread(t *testing.T) {
 	msg := next(t, s)
 	if msg.GetChanged() != nil || !slices.Equal(msg.GetChanges(), []planv1.Change{planv1.Change_CHANGE_BLOCK}) {
 		t.Fatalf("got %v, want the blocks to read again", msg)
+	}
+}
+
+// TestWatchMovedTaskAndQuestion: moving a task or question between wishes publishes the deletion for the source wish
+// and the addition for the target wish.
+func TestWatchMovedTaskAndQuestion(t *testing.T) {
+	c := serve(t)
+	wish1, wish2 := c.wish(t), c.wish(t)
+	s1 := watch(t, c.wishes, wish1)
+	s2 := watch(t, c.wishes, wish2)
+
+	task := &planv1.Task{Id: store.NewID(), WishId: wish1, Code: "T1", Title: "Azima"}
+	question := &planv1.Question{Id: store.NewID(), WishId: wish1, Text: "Proceed?"}
+	putAll(t, c, task, question)
+	_ = next(t, s1)
+
+	// Move task and question from wish1 to wish2.
+	err := c.store.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal(actor, "test/move", task); err != nil {
+			return err
+		}
+		if err := tx.Change(task, question); err != nil {
+			return err
+		}
+		task.WishId = wish2
+		if err := tx.Put(task); err != nil {
+			return err
+		}
+		question.WishId = wish2
+		return tx.Put(question)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// wish1 should receive deleted task and question.
+	msg1 := next(t, s1)
+	if !slices.Contains(msg1.GetChanges(), planv1.Change_CHANGE_TASK) {
+		t.Fatalf("wish1 changes %v, want CHANGE_TASK", msg1.GetChanges())
+	}
+	if !slices.Contains(msg1.GetChanges(), planv1.Change_CHANGE_QUESTION) {
+		t.Fatalf("wish1 changes %v, want CHANGE_QUESTION", msg1.GetChanges())
+	}
+	if !slices.Contains(msg1.GetChanged().GetDeleted(), task.GetId()) {
+		t.Fatalf("wish1 deleted %v, want task %s", msg1.GetChanged().GetDeleted(), task.GetId())
+	}
+	if !slices.Contains(msg1.GetChanged().GetDeleted(), question.GetId()) {
+		t.Fatalf("wish1 deleted %v, want question %s", msg1.GetChanged().GetDeleted(), question.GetId())
+	}
+
+	// wish2 should receive added task and question.
+	msg2 := next(t, s2)
+	if !slices.Contains(msg2.GetChanges(), planv1.Change_CHANGE_TASK) {
+		t.Fatalf("wish2 changes %v, want CHANGE_TASK", msg2.GetChanges())
+	}
+	if !slices.Contains(msg2.GetChanges(), planv1.Change_CHANGE_QUESTION) {
+		t.Fatalf("wish2 changes %v, want CHANGE_QUESTION", msg2.GetChanges())
+	}
+	if got := ids(msg2.GetChanged().GetTasks()); !slices.Contains(got, task.GetId()) {
+		t.Fatalf("wish2 tasks %v, want task %s", got, task.GetId())
+	}
+	if got := ids(msg2.GetChanged().GetQuestions()); !slices.Contains(got, question.GetId()) {
+		t.Fatalf("wish2 questions %v, want question %s", got, question.GetId())
 	}
 }

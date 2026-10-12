@@ -271,7 +271,7 @@ func TestInbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	docs := res.Msg.GetWish()
-	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: docs.GetId(), SessionId: session}); err != nil {
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
 		t.Fatal(err)
 	}
 	srcs, err := declaredSources(ctx, c.store, []*planv1.Project{gong})
@@ -363,12 +363,8 @@ func TestInbox(t *testing.T) {
 	if want := []string{made.GetId() + " | " + gong.GetId() + " | Watch, for the skill babysit-mr | mrwatch -mr 12"}; !slices.Equal(watchers.calls, want) {
 		t.Errorf("watchers %q, want %q", watchers.calls, want)
 	}
-	if len(leads.opened) <= opened {
-		t.Errorf("no lead started")
-	}
-	first, err := os.ReadFile(filepath.Join(home, PagesDir, made.GetId(), LeadFirstFile))
-	if err != nil || !strings.HasPrefix(string(first), InboxFirstLine("babysit-mr", mr)+" This wish follows the skill babysit-mr") {
-		t.Errorf("the lead's first line:\n%s", first)
+	if len(leads.opened) != opened {
+		t.Errorf("leads opened %q, want none", leads.opened[opened:])
 	}
 	if _, err := c.inbox.Route(ctx, connect.NewRequest(&planv1.InboxServiceRouteRequest{
 		ItemId: item.GetId(), Choice: planv1.Choice_CHOICE_A,
@@ -383,8 +379,8 @@ func TestInbox(t *testing.T) {
 	if got := c.requests(t, docs.GetId()); !slices.Equal(got, []string{mention}) {
 		t.Errorf("requests filed = %q", got)
 	}
-	if want := LeadTerminal(docs.GetId()) + ": " + InboxFiledLine(docs.GetId(), "babysit-mr", mention); !slices.Contains(leads.said, want) {
-		t.Errorf("said %q, want %q", leads.said, want)
+	if want := LeadTerminal + ": " + InboxFiledLine(docs.GetId(), "babysit-mr", mention); !slices.Contains(told(t, c.store), want) {
+		t.Errorf("queued %q, want %q", told(t, c.store), want)
 	}
 
 	// Nothing waits any more; --all lists every item. A link a wish holds is not proposed.

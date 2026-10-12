@@ -3,6 +3,9 @@ package machine
 import (
 	"context"
 	"net/http"
+	"runtime"
+	"slices"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -11,28 +14,61 @@ import (
 	"github.com/empowill/djinn/gen/go/machine/v1/machinev1connect"
 )
 
+// HandlerOption configures the machine service handler.
+type HandlerOption func(*service)
+
+// WithSeriesRecorder sets the machine series recorder.
+func WithSeriesRecorder(rec *SeriesRecorder) HandlerOption {
+	return func(s *service) { s.recorder = rec }
+}
+
+// WithHistory reads the series from the store's history, which outlives a restart, rather than from memory.
+func WithHistory(h *History) HandlerOption {
+	return func(s *service) { s.history = h }
+}
+
+// WithSeriesWorkers sets the function returning series of running workers.
+func WithSeriesWorkers(fn func(cutoff time.Time, gateIntervals []*machinev1.GateInterval) []*machinev1.WorkerSeries) HandlerOption {
+	return func(s *service) { s.workers = fn }
+}
+
+// WithSeriesIntervals sets the function returning gate intervals.
+func WithSeriesIntervals(fn func(cutoff time.Time) []*machinev1.GateInterval) HandlerOption {
+	return func(s *service) { s.intervals = fn }
+}
+
 // Handler returns the Connect handler of MachineService on m, and its path prefix. running counts the workers that
 // run now, uses lists what each one uses; nil counts and lists none.
-func Handler(m *Monitor, running func() int, uses func() []*machinev1.WorkerUse) (string, http.Handler) {
-	return machinev1connect.NewMachineServiceHandler(&service{m: m, running: running, uses: uses})
+func Handler(m *Monitor, running func() int, uses func() []*machinev1.WorkerUse, opts ...HandlerOption) (string, http.Handler) {
+	s := &service{m: m, running: running, uses: uses}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return machinev1connect.NewMachineServiceHandler(s)
 }
 
 type service struct {
 	machinev1connect.UnimplementedMachineServiceHandler
-	m       *Monitor
-	running func() int
-	uses    func() []*machinev1.WorkerUse
+	m         *Monitor
+	running   func() int
+	uses      func() []*machinev1.WorkerUse
+	recorder  *SeriesRecorder
+	history   *History
+	workers   func(cutoff time.Time, gateIntervals []*machinev1.GateInterval) []*machinev1.WorkerSeries
+	intervals func(cutoff time.Time) []*machinev1.GateInterval
 }
 
 func (s *service) Show(
 	context.Context, *connect.Request[machinev1.MachineServiceShowRequest],
 ) (*connect.Response[machinev1.MachineServiceShowResponse], error) {
 	snap := s.m.Snapshot()
-	slots, rule := s.m.policy.Slots(snap)
+	p := s.m.Policy()
+	slots, rule := p.Slots(snap)
 	out := &machinev1.Machine{
 		Os: snap.OS, Arch: snap.Arch, Cores: int32(snap.Cores), MemoryTotalBytes: snap.MemoryTotal,
 		MemoryAvailableBytes: snap.MemoryAvailable, Workers: int32(slots), WorkersRule: rule,
-		Pressure: s.m.policy.Pressure(snap), ReadTime: timestamppb.New(snap.Time),
+		Pressure: p.Pressure(snap), ReadTime: timestamppb.New(snap.Time),
+		Load: p.Notch, WorkerPercentile: int32(p.MemoryPercentile()), WorkerEngagedAt: p.EngagedAt(),
 	}
 	if snap.LoadKnown {
 		out.Load1 = &snap.Load1
@@ -52,7 +88,7 @@ func (s *service) Show(
 			UnifiedMemory: g.Unified,
 		})
 	}
-	out.CanRunLocalModel, out.LocalModelReason = s.m.policy.LocalModel(snap)
+	out.CanRunLocalModel, out.LocalModelReason = p.LocalModel(snap)
 	if s.running != nil {
 		out.Running = int32(s.running())
 	}
@@ -61,4 +97,76 @@ func (s *service) Show(
 	}
 	out.WorkerMeasure = NotMeasured
 	return connect.NewResponse(&machinev1.MachineServiceShowResponse{Machine: out}), nil
+}
+
+// SeriesMinutes are the ranges a series may be asked for: 10 and 30 minutes, 2 hours, a day, a week.
+var SeriesMinutes = []int32{10, 30, 120, 24 * 60, 7 * 24 * 60}
+
+func (s *service) Series(
+	ctx context.Context, req *connect.Request[machinev1.MachineServiceSeriesRequest],
+) (*connect.Response[machinev1.MachineServiceSeriesResponse], error) {
+	minutes := req.Msg.GetMinutes()
+	if !slices.Contains(SeriesMinutes, minutes) {
+		minutes = 30
+	}
+	now := time.Now()
+	cutoff := now.Add(-time.Duration(minutes) * time.Minute)
+	// The points: those of the window, or those measured after since; the gate intervals are always the window's.
+	points := cutoff
+	if since := req.Msg.GetSince(); since != nil && since.AsTime().After(cutoff) {
+		points = since.AsTime().Add(time.Nanosecond)
+	}
+
+	var gateIntervals []*machinev1.GateInterval
+	if s.intervals != nil {
+		gateIntervals = s.intervals(cutoff)
+	}
+
+	var workerSeries []*machinev1.WorkerSeries
+	if s.workers != nil {
+		workerSeries = s.workers(points, gateIntervals)
+	}
+	if s.history != nil {
+		for _, ws := range workerSeries {
+			ws.Points = s.history.WorkerPoints(ctx, ws.GetTaskId(), points, now)
+		}
+	}
+
+	var snap Snapshot
+	var policy Policy
+	if s.m != nil {
+		snap = s.m.Snapshot()
+		policy = s.m.Policy()
+	}
+
+	var machinePoints []*machinev1.MachinePoint
+	switch {
+	case s.history != nil:
+		machinePoints = s.history.MachinePoints(ctx, points, now)
+	case s.recorder != nil:
+		machinePoints = s.recorder.Points(points)
+	}
+
+	limitShare := policy.Share
+	limitMemory := policy.CommittableLimit(policy.CommitMemory(snap))
+
+	cores := snap.Cores
+	if cores <= 0 {
+		cores = runtime.NumCPU()
+	}
+
+	machineSeries := &machinev1.MachineSeries{
+		Points:               machinePoints,
+		MemoryTotalBytes:     snap.MemoryTotal,
+		Cores:                int32(cores),
+		LoadLimitShare:       limitShare,
+		LoadLimitMemoryBytes: limitMemory,
+	}
+
+	return connect.NewResponse(&machinev1.MachineServiceSeriesResponse{
+		Machine:       machineSeries,
+		Workers:       workerSeries,
+		Gates:         gateIntervals,
+		WorkerMeasure: NotMeasured,
+	}), nil
 }

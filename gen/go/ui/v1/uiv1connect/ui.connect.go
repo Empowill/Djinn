@@ -52,8 +52,21 @@ const (
 	UiServiceWatchShowProcedure = "/ui.v1.UiService/WatchShow"
 	// UiServiceWatchUpdateProcedure is the fully-qualified name of the UiService's WatchUpdate RPC.
 	UiServiceWatchUpdateProcedure = "/ui.v1.UiService/WatchUpdate"
+	// UiServiceWatchProcedure is the fully-qualified name of the UiService's Watch RPC.
+	UiServiceWatchProcedure = "/ui.v1.UiService/Watch"
 	// UiServiceUpdateProcedure is the fully-qualified name of the UiService's Update RPC.
 	UiServiceUpdateProcedure = "/ui.v1.UiService/Update"
+	// UiServiceGetNotificationsProcedure is the fully-qualified name of the UiService's
+	// GetNotifications RPC.
+	UiServiceGetNotificationsProcedure = "/ui.v1.UiService/GetNotifications"
+	// UiServiceRequestNotificationsProcedure is the fully-qualified name of the UiService's
+	// RequestNotifications RPC.
+	UiServiceRequestNotificationsProcedure = "/ui.v1.UiService/RequestNotifications"
+	// UiServiceOpenNotificationSettingsProcedure is the fully-qualified name of the UiService's
+	// OpenNotificationSettings RPC.
+	UiServiceOpenNotificationSettingsProcedure = "/ui.v1.UiService/OpenNotificationSettings"
+	// UiServiceViewProcedure is the fully-qualified name of the UiService's View RPC.
+	UiServiceViewProcedure = "/ui.v1.UiService/View"
 )
 
 // UiServiceClient is a client for the ui.v1.UiService service.
@@ -80,13 +93,26 @@ type UiServiceClient interface {
 	// opens after it.
 	WatchShow(context.Context, *connect.Request[v1.UiServiceWatchShowRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchShowResponse], error)
 	// Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-	// change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
+	// change. With the leads that a restart could not resume, once, and the last build pushed of each integration branch
+	// that is not installed.
 	WatchUpdate(context.Context, *connect.Request[v1.UiServiceWatchUpdateRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchUpdateResponse], error)
+	// What the window is asked to show and whether a newer Djinn waits, in a single stream.
+	Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchResponse], error)
 	// Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
 	// as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
 	// sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
 	// newer Djinn, nothing restarts. Only the update button and `djinn update` call it.
 	Update(context.Context, *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error)
+	// Whether the system lets Djinn show notifications.
+	GetNotifications(context.Context, *connect.Request[v1.UiServiceGetNotificationsRequest]) (*connect.Response[v1.UiServiceGetNotificationsResponse], error)
+	// Ask the system to let Djinn show notifications: on macOS, its dialog the first time; then the answer it keeps.
+	// Returns once the user answered.
+	RequestNotifications(context.Context, *connect.Request[v1.UiServiceRequestNotificationsRequest]) (*connect.Response[v1.UiServiceRequestNotificationsResponse], error)
+	// Open the system's notification settings, on Djinn where the system can: see
+	// UiServiceGetNotificationsResponse.settings.
+	OpenNotificationSettings(context.Context, *connect.Request[v1.UiServiceOpenNotificationSettingsRequest]) (*connect.Response[v1.UiServiceOpenNotificationSettingsResponse], error)
+	// Say which wish the page shows: no notification comes for it while the window is in front.
+	View(context.Context, *connect.Request[v1.UiServiceViewRequest]) (*connect.Response[v1.UiServiceViewResponse], error)
 }
 
 // NewUiServiceClient constructs a client for the ui.v1.UiService service. By default, it uses the
@@ -148,10 +174,40 @@ func NewUiServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(uiServiceMethods.ByName("WatchUpdate")),
 			connect.WithClientOptions(opts...),
 		),
+		watch: connect.NewClient[v1.UiServiceWatchRequest, v1.UiServiceWatchResponse](
+			httpClient,
+			baseURL+UiServiceWatchProcedure,
+			connect.WithSchema(uiServiceMethods.ByName("Watch")),
+			connect.WithClientOptions(opts...),
+		),
 		update: connect.NewClient[v1.UiServiceUpdateRequest, v1.UiServiceUpdateResponse](
 			httpClient,
 			baseURL+UiServiceUpdateProcedure,
 			connect.WithSchema(uiServiceMethods.ByName("Update")),
+			connect.WithClientOptions(opts...),
+		),
+		getNotifications: connect.NewClient[v1.UiServiceGetNotificationsRequest, v1.UiServiceGetNotificationsResponse](
+			httpClient,
+			baseURL+UiServiceGetNotificationsProcedure,
+			connect.WithSchema(uiServiceMethods.ByName("GetNotifications")),
+			connect.WithClientOptions(opts...),
+		),
+		requestNotifications: connect.NewClient[v1.UiServiceRequestNotificationsRequest, v1.UiServiceRequestNotificationsResponse](
+			httpClient,
+			baseURL+UiServiceRequestNotificationsProcedure,
+			connect.WithSchema(uiServiceMethods.ByName("RequestNotifications")),
+			connect.WithClientOptions(opts...),
+		),
+		openNotificationSettings: connect.NewClient[v1.UiServiceOpenNotificationSettingsRequest, v1.UiServiceOpenNotificationSettingsResponse](
+			httpClient,
+			baseURL+UiServiceOpenNotificationSettingsProcedure,
+			connect.WithSchema(uiServiceMethods.ByName("OpenNotificationSettings")),
+			connect.WithClientOptions(opts...),
+		),
+		view: connect.NewClient[v1.UiServiceViewRequest, v1.UiServiceViewResponse](
+			httpClient,
+			baseURL+UiServiceViewProcedure,
+			connect.WithSchema(uiServiceMethods.ByName("View")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -159,15 +215,20 @@ func NewUiServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 
 // uiServiceClient implements UiServiceClient.
 type uiServiceClient struct {
-	getEnvironment  *connect.Client[v1.UiServiceGetEnvironmentRequest, v1.UiServiceGetEnvironmentResponse]
-	chooseDirectory *connect.Client[v1.UiServiceChooseDirectoryRequest, v1.UiServiceChooseDirectoryResponse]
-	openExternal    *connect.Client[v1.UiServiceOpenExternalRequest, v1.UiServiceOpenExternalResponse]
-	setShortcut     *connect.Client[v1.UiServiceSetShortcutRequest, v1.UiServiceSetShortcutResponse]
-	show            *connect.Client[v1.UiServiceShowRequest, v1.UiServiceShowResponse]
-	openLink        *connect.Client[v1.UiServiceOpenLinkRequest, v1.UiServiceOpenLinkResponse]
-	watchShow       *connect.Client[v1.UiServiceWatchShowRequest, v1.UiServiceWatchShowResponse]
-	watchUpdate     *connect.Client[v1.UiServiceWatchUpdateRequest, v1.UiServiceWatchUpdateResponse]
-	update          *connect.Client[v1.UiServiceUpdateRequest, v1.UiServiceUpdateResponse]
+	getEnvironment           *connect.Client[v1.UiServiceGetEnvironmentRequest, v1.UiServiceGetEnvironmentResponse]
+	chooseDirectory          *connect.Client[v1.UiServiceChooseDirectoryRequest, v1.UiServiceChooseDirectoryResponse]
+	openExternal             *connect.Client[v1.UiServiceOpenExternalRequest, v1.UiServiceOpenExternalResponse]
+	setShortcut              *connect.Client[v1.UiServiceSetShortcutRequest, v1.UiServiceSetShortcutResponse]
+	show                     *connect.Client[v1.UiServiceShowRequest, v1.UiServiceShowResponse]
+	openLink                 *connect.Client[v1.UiServiceOpenLinkRequest, v1.UiServiceOpenLinkResponse]
+	watchShow                *connect.Client[v1.UiServiceWatchShowRequest, v1.UiServiceWatchShowResponse]
+	watchUpdate              *connect.Client[v1.UiServiceWatchUpdateRequest, v1.UiServiceWatchUpdateResponse]
+	watch                    *connect.Client[v1.UiServiceWatchRequest, v1.UiServiceWatchResponse]
+	update                   *connect.Client[v1.UiServiceUpdateRequest, v1.UiServiceUpdateResponse]
+	getNotifications         *connect.Client[v1.UiServiceGetNotificationsRequest, v1.UiServiceGetNotificationsResponse]
+	requestNotifications     *connect.Client[v1.UiServiceRequestNotificationsRequest, v1.UiServiceRequestNotificationsResponse]
+	openNotificationSettings *connect.Client[v1.UiServiceOpenNotificationSettingsRequest, v1.UiServiceOpenNotificationSettingsResponse]
+	view                     *connect.Client[v1.UiServiceViewRequest, v1.UiServiceViewResponse]
 }
 
 // GetEnvironment calls ui.v1.UiService.GetEnvironment.
@@ -210,9 +271,34 @@ func (c *uiServiceClient) WatchUpdate(ctx context.Context, req *connect.Request[
 	return c.watchUpdate.CallServerStream(ctx, req)
 }
 
+// Watch calls ui.v1.UiService.Watch.
+func (c *uiServiceClient) Watch(ctx context.Context, req *connect.Request[v1.UiServiceWatchRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchResponse], error) {
+	return c.watch.CallServerStream(ctx, req)
+}
+
 // Update calls ui.v1.UiService.Update.
 func (c *uiServiceClient) Update(ctx context.Context, req *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error) {
 	return c.update.CallUnary(ctx, req)
+}
+
+// GetNotifications calls ui.v1.UiService.GetNotifications.
+func (c *uiServiceClient) GetNotifications(ctx context.Context, req *connect.Request[v1.UiServiceGetNotificationsRequest]) (*connect.Response[v1.UiServiceGetNotificationsResponse], error) {
+	return c.getNotifications.CallUnary(ctx, req)
+}
+
+// RequestNotifications calls ui.v1.UiService.RequestNotifications.
+func (c *uiServiceClient) RequestNotifications(ctx context.Context, req *connect.Request[v1.UiServiceRequestNotificationsRequest]) (*connect.Response[v1.UiServiceRequestNotificationsResponse], error) {
+	return c.requestNotifications.CallUnary(ctx, req)
+}
+
+// OpenNotificationSettings calls ui.v1.UiService.OpenNotificationSettings.
+func (c *uiServiceClient) OpenNotificationSettings(ctx context.Context, req *connect.Request[v1.UiServiceOpenNotificationSettingsRequest]) (*connect.Response[v1.UiServiceOpenNotificationSettingsResponse], error) {
+	return c.openNotificationSettings.CallUnary(ctx, req)
+}
+
+// View calls ui.v1.UiService.View.
+func (c *uiServiceClient) View(ctx context.Context, req *connect.Request[v1.UiServiceViewRequest]) (*connect.Response[v1.UiServiceViewResponse], error) {
+	return c.view.CallUnary(ctx, req)
 }
 
 // UiServiceHandler is an implementation of the ui.v1.UiService service.
@@ -239,13 +325,26 @@ type UiServiceHandler interface {
 	// opens after it.
 	WatchShow(context.Context, *connect.Request[v1.UiServiceWatchShowRequest], *connect.ServerStream[v1.UiServiceWatchShowResponse]) error
 	// Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-	// change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
+	// change. With the leads that a restart could not resume, once, and the last build pushed of each integration branch
+	// that is not installed.
 	WatchUpdate(context.Context, *connect.Request[v1.UiServiceWatchUpdateRequest], *connect.ServerStream[v1.UiServiceWatchUpdateResponse]) error
+	// What the window is asked to show and whether a newer Djinn waits, in a single stream.
+	Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest], *connect.ServerStream[v1.UiServiceWatchResponse]) error
 	// Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
 	// as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
 	// sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
 	// newer Djinn, nothing restarts. Only the update button and `djinn update` call it.
 	Update(context.Context, *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error)
+	// Whether the system lets Djinn show notifications.
+	GetNotifications(context.Context, *connect.Request[v1.UiServiceGetNotificationsRequest]) (*connect.Response[v1.UiServiceGetNotificationsResponse], error)
+	// Ask the system to let Djinn show notifications: on macOS, its dialog the first time; then the answer it keeps.
+	// Returns once the user answered.
+	RequestNotifications(context.Context, *connect.Request[v1.UiServiceRequestNotificationsRequest]) (*connect.Response[v1.UiServiceRequestNotificationsResponse], error)
+	// Open the system's notification settings, on Djinn where the system can: see
+	// UiServiceGetNotificationsResponse.settings.
+	OpenNotificationSettings(context.Context, *connect.Request[v1.UiServiceOpenNotificationSettingsRequest]) (*connect.Response[v1.UiServiceOpenNotificationSettingsResponse], error)
+	// Say which wish the page shows: no notification comes for it while the window is in front.
+	View(context.Context, *connect.Request[v1.UiServiceViewRequest]) (*connect.Response[v1.UiServiceViewResponse], error)
 }
 
 // NewUiServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -303,10 +402,40 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 		connect.WithSchema(uiServiceMethods.ByName("WatchUpdate")),
 		connect.WithHandlerOptions(opts...),
 	)
+	uiServiceWatchHandler := connect.NewServerStreamHandler(
+		UiServiceWatchProcedure,
+		svc.Watch,
+		connect.WithSchema(uiServiceMethods.ByName("Watch")),
+		connect.WithHandlerOptions(opts...),
+	)
 	uiServiceUpdateHandler := connect.NewUnaryHandler(
 		UiServiceUpdateProcedure,
 		svc.Update,
 		connect.WithSchema(uiServiceMethods.ByName("Update")),
+		connect.WithHandlerOptions(opts...),
+	)
+	uiServiceGetNotificationsHandler := connect.NewUnaryHandler(
+		UiServiceGetNotificationsProcedure,
+		svc.GetNotifications,
+		connect.WithSchema(uiServiceMethods.ByName("GetNotifications")),
+		connect.WithHandlerOptions(opts...),
+	)
+	uiServiceRequestNotificationsHandler := connect.NewUnaryHandler(
+		UiServiceRequestNotificationsProcedure,
+		svc.RequestNotifications,
+		connect.WithSchema(uiServiceMethods.ByName("RequestNotifications")),
+		connect.WithHandlerOptions(opts...),
+	)
+	uiServiceOpenNotificationSettingsHandler := connect.NewUnaryHandler(
+		UiServiceOpenNotificationSettingsProcedure,
+		svc.OpenNotificationSettings,
+		connect.WithSchema(uiServiceMethods.ByName("OpenNotificationSettings")),
+		connect.WithHandlerOptions(opts...),
+	)
+	uiServiceViewHandler := connect.NewUnaryHandler(
+		UiServiceViewProcedure,
+		svc.View,
+		connect.WithSchema(uiServiceMethods.ByName("View")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/ui.v1.UiService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -327,8 +456,18 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 			uiServiceWatchShowHandler.ServeHTTP(w, r)
 		case UiServiceWatchUpdateProcedure:
 			uiServiceWatchUpdateHandler.ServeHTTP(w, r)
+		case UiServiceWatchProcedure:
+			uiServiceWatchHandler.ServeHTTP(w, r)
 		case UiServiceUpdateProcedure:
 			uiServiceUpdateHandler.ServeHTTP(w, r)
+		case UiServiceGetNotificationsProcedure:
+			uiServiceGetNotificationsHandler.ServeHTTP(w, r)
+		case UiServiceRequestNotificationsProcedure:
+			uiServiceRequestNotificationsHandler.ServeHTTP(w, r)
+		case UiServiceOpenNotificationSettingsProcedure:
+			uiServiceOpenNotificationSettingsHandler.ServeHTTP(w, r)
+		case UiServiceViewProcedure:
+			uiServiceViewHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -370,6 +509,26 @@ func (UnimplementedUiServiceHandler) WatchUpdate(context.Context, *connect.Reque
 	return connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.WatchUpdate is not implemented"))
 }
 
+func (UnimplementedUiServiceHandler) Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest], *connect.ServerStream[v1.UiServiceWatchResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.Watch is not implemented"))
+}
+
 func (UnimplementedUiServiceHandler) Update(context.Context, *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.Update is not implemented"))
+}
+
+func (UnimplementedUiServiceHandler) GetNotifications(context.Context, *connect.Request[v1.UiServiceGetNotificationsRequest]) (*connect.Response[v1.UiServiceGetNotificationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.GetNotifications is not implemented"))
+}
+
+func (UnimplementedUiServiceHandler) RequestNotifications(context.Context, *connect.Request[v1.UiServiceRequestNotificationsRequest]) (*connect.Response[v1.UiServiceRequestNotificationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.RequestNotifications is not implemented"))
+}
+
+func (UnimplementedUiServiceHandler) OpenNotificationSettings(context.Context, *connect.Request[v1.UiServiceOpenNotificationSettingsRequest]) (*connect.Response[v1.UiServiceOpenNotificationSettingsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.OpenNotificationSettings is not implemented"))
+}
+
+func (UnimplementedUiServiceHandler) View(context.Context, *connect.Request[v1.UiServiceViewRequest]) (*connect.Response[v1.UiServiceViewResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.View is not implemented"))
 }

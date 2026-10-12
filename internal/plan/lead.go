@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"connectrpc.com/connect"
 
@@ -27,12 +28,41 @@ type Leads interface {
 	// Say types line into the running terminal called name, then Enter, once the person is not typing there. It
 	// returns at once; the lines go out in order.
 	Say(name, line string) error
+	// SayText is Say for a text the person wrote: its line breaks stay line breaks for a program that takes a
+	// paste. It tells whether the text waits for the person, typing there or before a choice on screen.
+	SayText(name, text string) (waiting bool, err error)
+	// Running tells whether the terminal called name runs.
+	Running(name string) bool
+	// Exit is how the program of the terminal called name ended, kept until a program starts there again; nil while
+	// it runs, or when none ran.
+	Exit(name string) *planv1.LeadExit
+	// Command is the command line of the running terminal called name; nil when none runs.
+	Command(name string) []string
 	// Close hangs up the running terminal called name, as closing it in the window does; none runs, nothing.
 	Close(name string)
+	// Prompt is the choice the program of the terminal called name shows now, as read from its screen: an approval,
+	// a folder to trust. Nil when it shows none, or runs nothing.
+	Prompt(name string) *planv1.LeadPrompt
+	// Choose picks the option index (from 0) of the choice the terminal called name shows, as its keys would. It
+	// returns ErrNoChoice, typing nothing, when the screen no longer shows the choice of title, lines and options.
+	Choose(name, title string, lines, options []string, index int) error
 }
 
-// LeadTerminal is the name of the terminal of a wish's lead.
-func LeadTerminal(wishID string) string { return "lead-" + strings.ToLower(wishID) }
+// ErrNoChoice says that the lead's terminal no longer shows the choice the window showed: answered there, or changed.
+var ErrNoChoice = errors.New("the lead no longer shows this choice")
+
+// LeadTerminal is the name of the terminal of the lead.
+const LeadTerminal = "lead"
+
+// runsLead tells whether command, the command line of the lead's terminal, runs lead and not something else, a
+// shell perhaps, where a line typed to the lead would run as a command.
+func runsLead(command []string, lead *planv1.Lead) bool {
+	running := strings.Join(command, " ")
+	if id := lead.GetSessionId(); id != "" {
+		return strings.Contains(running, id)
+	}
+	return strings.Contains(running, "agy") // An antigravity lead without a session: agy --continue, or agy -i.
+}
 
 // leadProvider is the agent of a recorded lead: claude when the record names none.
 func leadProvider(lead *planv1.Lead) planv1.Provider {
@@ -42,23 +72,47 @@ func leadProvider(lead *planv1.Lead) planv1.Provider {
 	return planv1.Provider_PROVIDER_CLAUDE
 }
 
+// hasLead reports whether lead records a resumable lead session or workspace.
+func hasLead(lead *planv1.Lead) bool {
+	if lead == nil || lead.GetDirectory() == "" {
+		return false
+	}
+	return lead.GetSessionId() != "" || lead.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY
+}
+
 // resumeLine is the command line that resumes the lead's session, as its agent's command line takes it. The session
 // identifier was checked against a pattern without spaces or quotes: the line goes through the user's shell as it is.
 func resumeLine(lead *planv1.Lead) (string, error) {
 	switch lead.GetProvider() {
 	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_UNSPECIFIED:
+		if lead.GetSessionId() == "" {
+			return "", errors.New("a claude lead needs a session id")
+		}
 		return "claude --resume " + lead.GetSessionId(), nil
 	case planv1.Provider_PROVIDER_CODEX:
+		if lead.GetSessionId() == "" {
+			return "", errors.New("a codex lead needs a session id")
+		}
 		return "codex resume " + lead.GetSessionId(), nil
+	case planv1.Provider_PROVIDER_ANTIGRAVITY:
+		if id := lead.GetSessionId(); id != "" {
+			return "agy --conversation " + id, nil
+		}
+		return "agy --continue", nil
 	}
-	return "", fmt.Errorf("a %s lead cannot be resumed in a terminal: only claude and codex",
+	return "", fmt.Errorf("a %s lead cannot be resumed in a terminal: only claude, codex and antigravity",
 		strings.ToLower(strings.TrimPrefix(lead.GetProvider().String(), "PROVIDER_")))
 }
 
-func (w *Wishes) SetLead(
-	ctx context.Context, req *connect.Request[planv1.WishServiceSetLeadRequest],
-) (*connect.Response[planv1.WishServiceSetLeadResponse], error) {
-	lead := &planv1.Lead{Provider: req.Msg.GetProvider(), SessionId: req.Msg.GetSessionId()}
+// LeadService implements planv1connect.LeadServiceHandler.
+type LeadService struct {
+	Wishes *Wishes
+}
+
+func (s *LeadService) Set(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceSetRequest],
+) (*connect.Response[planv1.LeadServiceSetResponse], error) {
+	lead := &planv1.Lead{Id: "lead", Provider: req.Msg.GetProvider(), SessionId: req.Msg.GetSessionId()}
 	if lead.Provider == planv1.Provider_PROVIDER_UNSPECIFIED {
 		lead.Provider = planv1.Provider_PROVIDER_CLAUDE
 	}
@@ -75,80 +129,117 @@ func (w *Wishes) SetLead(
 				"directory: %s holds your home folder, where Djinn never runs a lead: start the session in a project", lead.Directory))
 		}
 	}
-	var wish *planv1.Wish
-	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
-		var err error
-		if wish, err = store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId()); err != nil {
-			return err
-		}
+	err := write(ctx, s.Wishes.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		if lead.Directory == "" {
-			if lead.Directory, err = firstFolder(ctx, tx, wish); err != nil {
+			if old, err := store.Get[*planv1.Lead](ctx, tx, "lead"); err == nil && old.GetDirectory() != "" && isFolder(old.GetDirectory()) && !HoldsHome(old.GetDirectory()) {
+				lead.Directory = old.GetDirectory()
+			} else if lead.Directory, err = FirstProjectFolder(ctx, tx); err != nil && !errors.Is(err, ErrNoProject) {
 				return err
 			}
 		}
 		if lead.Directory == "" {
 			return connect.NewError(connect.CodeInvalidArgument, errors.New(
-				"none of the wish's projects has a folder here: give the folder the session runs in with --directory"))
+				"none of Djinn's projects has a folder here: give the folder the session runs in with --directory"))
 		}
-		wish.Lead = lead
-		return tx.Put(wish)
+		return tx.Put(lead)
 	})
 	if err != nil {
 		return nil, err
 	}
-	if err := fill(ctx, w.Store, wish); err != nil {
-		return nil, Status(err)
-	}
-	return connect.NewResponse(&planv1.WishServiceSetLeadResponse{Wish: wish}), nil
+	return connect.NewResponse(&planv1.LeadServiceSetResponse{Lead: lead}), nil
 }
 
-func (w *Wishes) Resume(
-	ctx context.Context, req *connect.Request[planv1.WishServiceResumeRequest],
-) (*connect.Response[planv1.WishServiceResumeResponse], error) {
-	if w.Leads == nil {
+// leadFailure is why the last LeadService.Resume could not start the lead, as it answered, until one starts or
+// attaches to it: the window shows it beside Lead, whatever page is open. Like the lead's terminal, Djinn keeps it in
+// memory only.
+type leadFailure struct {
+	mu   sync.Mutex
+	text string
+}
+
+// set records the outcome of a start, err nil for a success, and tells whether that changes what LeadService.Get says.
+func (f *leadFailure) set(err error) bool {
+	text := ""
+	if err != nil {
+		text = err.Error()
+		var ce *connect.Error
+		if errors.As(err, &ce) {
+			text = ce.Message()
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	changed := f.text != text
+	f.text = text
+	return changed
+}
+
+func (f *leadFailure) get() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.text
+}
+
+// Resume starts the lead, or attaches to it, and keeps why it could not: the window shows it until Lead is clicked
+// again.
+func (s *LeadService) Resume(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceResumeRequest],
+) (*connect.Response[planv1.LeadServiceResumeResponse], error) {
+	res, err := s.resume(ctx, req)
+	if s.Wishes.leadFailure.set(err) {
+		s.Wishes.ChangeLead()
+	}
+	return res, err
+}
+
+func (s *LeadService) resume(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceResumeRequest],
+) (*connect.Response[planv1.LeadServiceResumeResponse], error) {
+	if s.Wishes.Leads == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this server runs no terminal"))
 	}
-	wish, err := store.Get[*planv1.Wish](ctx, w.Store, req.Msg.GetWishId())
-	if err != nil {
+	lead, err := store.Get[*planv1.Lead](ctx, s.Wishes.Store, "lead")
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, Status(err)
 	}
-	if err := fill(ctx, w.Store, wish); err != nil {
-		return nil, Status(err)
-	}
-	res := &planv1.WishServiceResumeResponse{Wish: wish, Terminal: LeadTerminal(wish.GetId())}
+	res := &planv1.LeadServiceResumeResponse{Lead: lead, Terminal: LeadTerminal}
 	var line, dir, exclusive string
 	var started *planv1.Lead // the lead a brief starts, recorded once its terminal runs
 	// A session recorded in the home folder is not resumed: Djinn never runs a lead there, and claude finds a
 	// session only from the folder it was made in. A new lead starts from the brief, in a project.
-	atHome := wish.GetLead().GetSessionId() != "" && HoldsHome(wish.GetLead().GetDirectory())
+	atHome := hasLead(lead) && HoldsHome(lead.GetDirectory())
 	// A lead of another agent than the recorded one cannot open its session: it starts from the brief, which says
 	// how to take the wish over.
 	other := req.Msg.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED &&
-		req.Msg.GetProvider() != leadProvider(wish.GetLead())
-	if wish.GetLead().GetSessionId() != "" && !atHome && !other {
-		if line, dir, err = sessionLine(wish); err != nil {
+		req.Msg.GetProvider() != leadProvider(lead)
+	if hasLead(lead) && !atHome && !other {
+		if line, dir, err = sessionLine(lead); err != nil {
 			return nil, err
 		}
-		exclusive = wish.GetLead().GetSessionId()
+		exclusive = lead.GetSessionId()
 	} else {
-		if dir, err = startFolder(ctx, w.Store, wish); err != nil {
+		if dir, err = FirstProjectFolder(ctx, s.Wishes.Store); err != nil {
 			return nil, Status(err)
 		}
 		provider := req.Msg.GetProvider()
 		if atHome && provider == planv1.Provider_PROVIDER_UNSPECIFIED {
-			provider = wish.GetLead().GetProvider()
+			provider = lead.GetProvider()
 		}
 		var note string
-		if line, dir, started, note, err = w.newLead(ctx, wish, provider, dir, ""); err != nil {
+		if line, dir, started, note, err = s.Wishes.newLead(ctx, provider, dir); err != nil {
 			return nil, err
 		}
 		if atHome {
-			note = fmt.Sprintf("The lead's session %s was recorded in %s, the home folder, where Djinn never runs a "+
-				"lead. ", wish.GetLead().GetSessionId(), wish.GetLead().GetDirectory()) + note
+			leadDescr := "The lead's session " + lead.GetSessionId()
+			if lead.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY && lead.GetSessionId() == "" {
+				leadDescr = "The lead"
+			}
+			note = fmt.Sprintf("%s was recorded in %s, the home folder, where Djinn never runs a "+
+				"lead. ", leadDescr, lead.GetDirectory()) + note
 		}
 		res.Note, exclusive = note, started.GetSessionId()
 	}
-	res.Command, res.Directory, res.Attached, err = w.Leads.Open(res.GetTerminal(), line, dir, exclusive)
+	res.Command, res.Directory, res.Attached, err = s.Wishes.Leads.Open(res.GetTerminal(), line, dir, exclusive)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
@@ -156,36 +247,142 @@ func (w *Wishes) Resume(
 	switch {
 	case res.GetAttached() && started != nil:
 		res.Note = fmt.Sprintf("The lead's terminal already runs %s: exit it there, then resume again to start a lead "+
-			"from the wish's brief.", running)
-	case res.GetAttached() && line != "" && !strings.Contains(running, line) && !strings.Contains(running, exclusive):
+			"from the brief.", running)
+	case res.GetAttached() && line != "" && !strings.Contains(running, line) && (exclusive == "" || !strings.Contains(running, exclusive)):
 		res.Note = fmt.Sprintf("The lead's terminal already runs %s, not %s: exit it there, then resume again.",
 			running, line)
-	case !res.GetAttached() && started.GetSessionId() != "":
-		// The new lead runs: its session is the wish's lead from now on, for the next resume.
-		if res.Wish, err = w.recordLead(ctx, wish.GetId(), started); err != nil {
+	case !res.GetAttached() && hasLead(started):
+		// The new lead runs: its session is the lead from now on, for the next resume.
+		if err := s.Wishes.recordLead(ctx, started); err != nil {
 			return nil, err
 		}
+		res.Lead = started
 	}
-	w.Leads.Show(wish.GetId(), res.GetTerminal())
+	if wishID := req.Msg.GetWishId(); wishID != "" {
+		if wish, err := store.Get[*planv1.Wish](ctx, s.Wishes.Store, wishID); err == nil {
+			line := fmt.Sprintf("Focus on the wish %s (%s): djinn wish brief %s", wish.GetTitle(), wish.GetId(), wish.GetId())
+			_ = s.Wishes.Leads.Say(res.GetTerminal(), line)
+		}
+	}
+	s.Wishes.Leads.Show(req.Msg.GetWishId(), res.GetTerminal())
 	return connect.NewResponse(res), nil
 }
 
-// sessionLine is the command line that resumes the session of the wish's lead, and the folder it runs in.
-func sessionLine(wish *planv1.Wish) (line, dir string, err error) {
-	lead := wish.GetLead()
+// Tell types what the developer writes in the lead's terminal, as their own words: the lead must run there, never a
+// shell, where the text would run as a command. About a wish, the text starts by naming it.
+func (s *LeadService) Tell(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceTellRequest],
+) (*connect.Response[planv1.LeadServiceTellResponse], error) {
+	if s.Wishes.Leads == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this server runs no terminal"))
+	}
+	text := strings.TrimSpace(req.Msg.GetText())
+	if text == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text: nothing to say"))
+	}
+	if id := req.Msg.GetWishId(); id != "" {
+		wish, err := store.Get[*planv1.Wish](ctx, s.Wishes.Store, id)
+		if err != nil {
+			return nil, Status(err)
+		}
+		text = fmt.Sprintf("About wish %s (%s): %s", wish.GetTitle(), wish.GetId(), text)
+	}
+	lead, err := store.Get[*planv1.Lead](ctx, s.Wishes.Store, "lead")
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, Status(err)
+	}
+	command := s.Wishes.Leads.Command(LeadTerminal)
+	switch {
+	case !hasLead(lead):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
+			"no lead is recorded: djinn lead resume starts one"))
+	case command == nil:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
+			"the lead does not run: djinn lead resume starts it"))
+	case !runsLead(command, lead):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"the lead's terminal runs %s, not the lead: exit it there, then djinn lead resume", strings.Join(command, " ")))
+	}
+	waiting, err := s.Wishes.Leads.SayText(LeadTerminal, text)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the lead's terminal: %w", err))
+	}
+	return connect.NewResponse(&planv1.LeadServiceTellResponse{Waiting: waiting}), nil
+}
+
+// Choose answers the choice the lead's agent shows in its terminal, as its keys would: the window's answer to an
+// approval. The lead's terminal never runs a shell (P9), so the keys go to the agent.
+func (s *LeadService) Choose(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceChooseRequest],
+) (*connect.Response[planv1.LeadServiceChooseResponse], error) {
+	if s.Wishes.Leads == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this server runs no terminal"))
+	}
+	if s.Wishes.Leads.Command(LeadTerminal) == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
+			"the lead does not run: djinn lead resume starts it"))
+	}
+	m := req.Msg
+	err := s.Wishes.Leads.Choose(LeadTerminal, m.GetTitle(), m.GetLines(), m.GetOptions(), int(m.GetOption())-1)
+	switch {
+	case errors.Is(err, ErrNoChoice):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	case err != nil:
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("the lead's terminal: %w", err))
+	}
+	return connect.NewResponse(&planv1.LeadServiceChooseResponse{}), nil
+}
+
+func (s *LeadService) Get(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceGetRequest],
+) (*connect.Response[planv1.LeadServiceGetResponse], error) {
+	lead, err := store.Get[*planv1.Lead](ctx, s.Wishes.Store, "lead")
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, Status(err)
+	}
+	res := &planv1.LeadServiceGetResponse{Lead: lead, StartError: s.Wishes.leadFailure.get()}
+	// The choice the lead shows comes with it: the window shows it in its attention bar, whatever page is open. So
+	// does how it ended, beside Lead, until Lead starts it again.
+	if s.Wishes.Leads != nil {
+		if s.Wishes.Leads.Command(LeadTerminal) != nil {
+			res.Prompt = s.Wishes.Leads.Prompt(LeadTerminal)
+		}
+		res.Exit = s.Wishes.Leads.Exit(LeadTerminal)
+	}
+	return connect.NewResponse(res), nil
+}
+
+func (s *LeadService) Brief(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceBriefRequest],
+) (*connect.Response[planv1.LeadServiceBriefResponse], error) {
+	home := s.Wishes.home()
+	brief, err := BuildGlobalBrief(ctx, s.Wishes.Store, home)
+	if err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.LeadServiceBriefResponse{Text: brief}), nil
+}
+
+// sessionLine is the command line that resumes the session of the lead, and the folder it runs in.
+func sessionLine(lead *planv1.Lead) (line, dir string, err error) {
 	if line, err = resumeLine(lead); err != nil {
 		return "", "", connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 	dir = lead.GetDirectory()
 	if !isFolder(dir) {
+		if lead.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY && lead.GetSessionId() == "" {
+			return "", "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"the lead's folder %q is not on this machine: djinn lead set --provider antigravity --directory <folder> gives it",
+				dir))
+		}
 		return "", "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-			"the lead's folder %q is not on this machine: djinn wish set-lead %s %s --directory <folder> gives it",
-			dir, wish.GetId(), lead.GetSessionId()))
+			"the lead's folder %q is not on this machine: djinn lead set %s --directory <folder> gives it",
+			dir, lead.GetSessionId()))
 	}
 	if HoldsHome(dir) {
 		return "", "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-			"the lead's folder %s holds your home folder, where Djinn never runs a lead: djinn wish resume %s starts "+
-				"a new one in a project", dir, wish.GetId()))
+			"the lead's folder %s holds your home folder, where Djinn never runs a lead: djinn lead resume starts "+
+				"a new one in a project", dir))
 	}
 	return line, dir, nil
 }
@@ -194,16 +391,6 @@ func sessionLine(wish *planv1.Wish) (line, dir string, err error) {
 // one in the home folder.
 var ErrNoProject = errors.New("no project has a folder on this machine, and Djinn never starts a lead in your home " +
 	"folder: create a project first (djinn project add <folder>, or + beside Projects in the window)")
-
-// startFolder is the folder a new lead of wish starts in: the wish's first project that has one on this machine,
-// else the first of Djinn's projects, in the order the window lists them. ErrNoProject when no project has one.
-func startFolder(ctx context.Context, r store.Reader, wish *planv1.Wish) (string, error) {
-	dir, err := firstFolder(ctx, r, wish)
-	if dir != "" || err != nil {
-		return dir, err
-	}
-	return FirstProjectFolder(ctx, r)
-}
 
 // FirstProjectFolder is the folder of the first of Djinn's projects, in the order the window lists them, that has
 // one on this machine, outside the home folder's own. ErrNoProject when none has: where the window's terminal opens
@@ -219,24 +406,6 @@ func FirstProjectFolder(ctx context.Context, r store.Reader) (string, error) {
 		}
 	}
 	return "", ErrNoProject
-}
-
-// firstFolder is the folder of the first project of the wish that has one on this machine, outside the home
-// folder's own; empty when none has.
-func firstFolder(ctx context.Context, r store.Reader, wish *planv1.Wish) (string, error) {
-	for _, id := range wish.GetProjectIds() {
-		p, err := store.Get[*planv1.Project](ctx, r, id)
-		if errors.Is(err, store.ErrNotFound) {
-			continue
-		}
-		if err != nil {
-			return "", err
-		}
-		if dir := p.GetDirectory(); isFolder(dir) && !HoldsHome(dir) {
-			return dir, nil
-		}
-	}
-	return "", nil
 }
 
 // isFolder reports whether dir is an absolute path to a folder of this machine.
@@ -281,7 +450,7 @@ func portableFolder(dir string) string {
 
 // localFolder puts back this machine's folder in a lead's folder from an export: ~ is the home folder, and a path
 // that starts with the name of a project of the export starts from that project's folder here. A folder this
-// machine does not have yet is left empty, for djinn wish set-lead to give.
+// machine does not have yet is left empty, for djinn lead set to give.
 func localFolder(dir string, folders map[string]string) string {
 	if dir == "" || filepath.IsAbs(dir) {
 		return dir

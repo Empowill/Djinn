@@ -25,6 +25,9 @@ import (
 	wails "github.com/wailsapp/wails/v3/pkg/updater"
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 	"golang.org/x/mod/semver"
+
+	"github.com/empowill/djinn/internal/harness"
+	"github.com/empowill/djinn/internal/ui"
 )
 
 var (
@@ -44,6 +47,10 @@ var (
 	goCommand = "go"
 	// checkReleases is off in the tests that serve no fake release: they never reach the network.
 	checkReleases = true
+	// stampedTestBuild tells whether this binary was built for the e2e (ui.StampedTestBuild), which looks for no
+	// release: built from a checkout without tags, as CI's, it names itself v0.0.0-…, any release is newer, and the
+	// banner offering it covered the controls the specs click.
+	stampedTestBuild = ui.StampedTestBuild
 )
 
 // sumsFile is the checksum file of a release (tools/releasepack): no line for the archive, no update.
@@ -66,11 +73,11 @@ type source interface {
 
 // releaseSource is where a Djinn of version looks for a newer one: the releases for a release binary, the module
 // proxy for a version go install built, the releases again for a build from a checkout, any release being newer to
-// it; nothing for a development build.
+// it; nothing for a development build nor for a build of the e2e.
 func releaseSource(version string) (source, error) {
 	_, _, local := localBuild(version)
 	switch {
-	case !checkReleases:
+	case !checkReleases || stampedTestBuild():
 		return nil, nil
 	case releaseAsset != "":
 		return newGitHubSource(releaseAsset, version)
@@ -82,25 +89,8 @@ func releaseSource(version string) (source, error) {
 	return nil, nil
 }
 
-// localBuild is the commit a Djinn built from a checkout comes from, as go tool task install stamps its version
-// (local-<git describe --always --dirty>: local-1a2b3c4, local-v0.1.0-3-g1a2b3c4-dirty), and whether its tree had
-// changes not committed; ok is false for any other version.
-func localBuild(version string) (commit string, dirty, ok bool) {
-	rest, ok := strings.CutPrefix(version, "local-")
-	if !ok {
-		return "", false, false
-	}
-	rest, dirty = strings.CutSuffix(rest, "-dirty")
-	if i := strings.LastIndex(rest, "-g"); i >= 0 && isHex(rest[i+2:]) {
-		rest = rest[i+2:]
-	}
-	return rest, dirty, len(rest) >= 4 && isHex(rest)
-}
-
-// isHex tells whether s is made of lowercase hexadecimal digits only.
-func isHex(s string) bool {
-	return s != "" && strings.Trim(s, "0123456789abcdef") == ""
-}
+// localBuild is the commit a Djinn built from a checkout names in its version (harness.LocalBuild).
+var localBuild = harness.LocalBuild
 
 // localAsset names the release archive of the variant this binary would be, built from a checkout: what
 // task release-build names it for the same system, architecture and window (Taskfile.yml).

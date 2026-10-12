@@ -31,7 +31,13 @@ fastest path their webview and kernel allow; Windows gets a path that works.
 - **The `wails://` handler** (Wails v3.0.0-beta.28, `internal/assetserver/webview`): every request gets its own
   goroutine, so a long stream starves nothing; each `Write` goes straight to a pipe that WebKitGTK reads (Linux)
   or to `didReceiveData` (macOS), and `Flush` has nothing to do. connect-go writes a message in two writes (5-byte
-  prefix, then payload), but the page reads them together: 100 values took 100 reads. Nothing to buffer there.
+  prefix, then payload) and flushes after it. On Linux the page reads them together (100 values took 100 reads).
+  On macOS, WebKit sometimes handed the page the prefix of a `WishService.Watch` message and held its payload back:
+  a question asked with `djinn question ask` did not show until a reload (5 runs in 6 of the native e2e, 0 in 13
+  with the fix). A held payload is a change the window never repairs: `WishService.Watch` sends only what changed,
+  and `UiService.Watch` carries show, update and load on one stream. `server.WholeWrites` (in `djinn up`, and in
+  `tools/windowcheck`) gathers a response's writes until connect-go flushes or the handler returns, and hands them
+  on in one write: one chunk per message on `wails://`.
   It answers 501 to a request whose handler wrote neither a header nor a byte, where net/http answers 200; an empty
   message in binary Protobuf is no byte at all, and connect-go then writes nothing (`TerminalService.Write`,
   `Resize`). `server.Handler` writes the 200 itself for the services.
@@ -79,7 +85,6 @@ For wish-level benchmarks measuring store reads, full Protobuf serialization, an
 - **h2c for the command line**: slower for what it does today (above). It comes back with the first bidirectional
   method: a client that needs one sets `http.Protocols.SetUnencryptedHTTP2` on its transport.
 - **Tuning HTTP/2** (larger frames and windows): h2c is not on a hot path.
-- **Coalescing the prefix and the payload on `wails://`**: the page already reads them together.
 - **Compression above a size** (`connect.WithCompressMinBytes`): even 512 KiB is faster in the clear on one
   machine.
 - **Windows**: nothing specific beyond the above, which applies there too.
@@ -88,7 +93,9 @@ For wish-level benchmarks measuring store reads, full Protobuf serialization, an
 
 `internal/server/transport_test.go`: the Unix socket speaks HTTP/1.1 and h2c and carries a bidirectional stream
 message by message (`TestUnixSocketSpeaksH2C`); the loopback server refuses h2c (`TestLoopbackStaysHTTP1`); a
-unary call and a stream come back uncompressed though the client asks for gzip (`TestNoCompression`).
+unary call and a stream come back uncompressed though the client asks for gzip (`TestNoCompression`); through
+`server.WholeWrites`, each message of a stream is one write (`TestWholeWrites`).
 `internal/server/server_test.go`: an empty response still gets its 200 (`TestEmptyResponseIsAnswered`).
-`tools/windowcheck`: the same, in the native window. `shim/djinn.test.mjs`: the window sends binary Protobuf and
+`tools/windowcheck`: the same, in the native window. `e2e/native`: a wish made and a question asked by the command
+line show in the real window without a reload. `shim/djinn.test.mjs`: the window sends binary Protobuf and
 asks for no compression.

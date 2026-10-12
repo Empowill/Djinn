@@ -42,6 +42,7 @@ import (
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 func TestMain(m *testing.M) {
@@ -60,7 +61,7 @@ func TestMain(m *testing.M) {
 			}
 		}
 		updatePoll, restartDelay = updatePollForTests, restartDelayForTests
-		launcherPath = false
+		extendPath = false
 		readMachine = calmMachine
 		// No test reaches the network: only a fake release, served by the test, is looked for.
 		checkReleases = os.Getenv("DJINN_TEST_RELEASE_API") != ""
@@ -72,7 +73,10 @@ func TestMain(m *testing.M) {
 		main()
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	cleanup := testx.Guard()
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }
 
 // calmMachine is this machine, its cores and memory, never under pressure. A djinn up of a test starts its workers
@@ -304,13 +308,13 @@ func TestWishResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	project := &planv1.Project{Id: store.NewID(), Name: "lamp", Directory: folder, CreateTime: timestamppb.Now()}
+	leadRecord := &planv1.Lead{Id: "lead", Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: session, Directory: folder}
 	wish := &planv1.Wish{
 		Id: store.NewID(), Title: "Polish the lamp", ProjectIds: []string{project.GetId()}, CreateTime: timestamppb.Now(),
-		Lead: &planv1.Lead{Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: session, Directory: folder},
 	}
 	err = db.Tx(ctx, func(tx *store.Tx) error {
 		return errors.Join(tx.Journal("test", planv1connect.WishServiceMakeProcedure, &planv1.WishServiceMakeRequest{Title: wish.GetTitle()}),
-			tx.Put(project), tx.Put(wish))
+			tx.Put(project), tx.Put(wish), tx.Put(leadRecord))
 	})
 	db.Close()
 	if err != nil {
@@ -319,11 +323,11 @@ func TestWishResume(t *testing.T) {
 
 	// No djinn runs: resume starts one in the background, then resumes the lead in its terminal. The wish being the
 	// first active one, djinn up may have resumed its lead at its start already: resume attaches to it then.
-	code, out, errs := runDjinn(t, env, "wish", "resume", wish.GetId())
+	code, out, errs := runDjinn(t, env, "lead", "resume", "--wish-id", wish.GetId())
 	if strings.Contains(errs, "(pid ") {
 		stopStarted(t, home, errs)
 	}
-	name := "lead-" + wish.GetId()
+	name := "lead"
 	if code != 0 || !strings.Contains(errs, "started djinn up in the background") || !strings.Contains(out, "terminal: "+name) {
 		t.Fatalf("resume: exit %d\n%s%s", code, out, errs)
 	}
@@ -352,7 +356,7 @@ func TestWishResume(t *testing.T) {
 	shows.Close()
 
 	// Again: the same terminal, attached, and no second program.
-	code, out, errs = runDjinn(t, env, "wish", "resume", wish.GetId())
+	code, out, errs = runDjinn(t, env, "lead", "resume", "--wish-id", wish.GetId())
 	if code != 0 || !strings.Contains(out, "attached: true") || strings.Contains(errs, "started djinn up") {
 		t.Fatalf("second resume: exit %d\n%s%s", code, out, errs)
 	}
@@ -371,9 +375,158 @@ func TestWishResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	read(t, terminals, lead.GetId(), "") // Until it ends.
-	code, out, errs = runDjinn(t, env, "wish", "resume", wish.GetId())
+	code, out, errs = runDjinn(t, env, "lead", "resume", "--wish-id", wish.GetId())
 	if code != 1 || !strings.Contains(errs, "already running in another terminal") || !strings.Contains(errs, `"main"`) {
 		t.Fatalf("resume while main runs the session: exit %d\n%s%s", code, out, errs)
+	}
+}
+
+// TestExitedCodexLeadIsRetainedUntilExplicitResume: a codex lead that ends at once keeps its terminal, its output and
+// its exit code, which LeadService.Get gives; opening its terminal attaches to it and starts nothing. Only Lead
+// (LeadService.Resume) starts it again.
+func TestExitedCodexLeadIsRetainedUntilExplicitResume(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	bin := t.TempDir()
+	count := filepath.Join(t.TempDir(), "starts")
+	fails := filepath.Join(t.TempDir(), "fails")
+	// A fake codex that counts its starts and ends at once with code 2 while the file fails exists.
+	script := `#!/bin/sh
+echo start >> "$DJINN_TEST_COUNT"
+if [ -f "$DJINN_TEST_FAILS" ]; then
+  echo fake-codex-failed
+  exit 2
+fi
+echo fake-codex-ready
+exec cat
+`
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fails, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := environ(home, bin, "DJINN_TEST_COUNT="+count, "DJINN_TEST_FAILS="+fails)
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, addr := up(t, home, env)
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projects := planv1connect.NewProjectServiceClient(httpClient, base)
+	leads := planv1connect.NewLeadServiceClient(httpClient, base)
+	terminals := terminalv1connect.NewTerminalServiceClient(httpClient, base)
+	if _, err := projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: folder})); err != nil {
+		t.Fatal(err)
+	}
+	resume := func() {
+		t.Helper()
+		res, err := leads.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{Provider: planv1.Provider_PROVIDER_CODEX}))
+		if err != nil || res.Msg.GetAttached() {
+			t.Fatalf("resume: %v, %v; want a new lead", res, err)
+		}
+	}
+	open := func() *terminalv1.TerminalServiceOpenResponse {
+		t.Helper()
+		res, err := terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: plan.LeadTerminal}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg
+	}
+	exit := func() *planv1.LeadExit {
+		t.Helper()
+		res, err := leads.Get(ctx, connect.NewRequest(&planv1.LeadServiceGetRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetExit()
+	}
+
+	resume()
+	first := open().GetTerminal().GetId()
+	read(t, terminals, first, "") // Until it ends.
+	ended := open()
+	if ended.GetTerminal().GetId() != first || !ended.GetAttached() || !ended.GetTerminal().GetExited() ||
+		ended.GetTerminal().GetExitCode() != 2 {
+		t.Fatalf("open the ended lead: %v, want the same terminal, ended with code 2", ended)
+	}
+	read(t, terminals, first, "fake-codex-failed")
+	if got := exit(); got == nil || got.GetCode() != 2 {
+		t.Fatalf("lead exit %v, want code 2", got)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if got := starts(t, count); got != 1 {
+		t.Fatalf("codex started %d times before the retry, want once", got)
+	}
+
+	// Lead again: a new program, which runs; the exit goes with the terminal it replaced.
+	if err := os.Remove(fails); err != nil {
+		t.Fatal(err)
+	}
+	resume()
+	retry := open().GetTerminal()
+	if retry.GetId() == first {
+		t.Fatal("the retry kept the ended terminal")
+	}
+	read(t, terminals, retry.GetId(), "fake-codex-ready")
+	if got := exit(); got != nil {
+		t.Fatalf("lead exit %v after the retry, want none", got)
+	}
+	if got := starts(t, count); got != 2 {
+		t.Fatalf("codex started %d times after the retry, want twice", got)
+	}
+
+	// Closed on request, its tab's × or djinn lead resume of another agent: no news to show.
+	if _, err := terminals.Close(ctx, connect.NewRequest(&terminalv1.TerminalServiceCloseRequest{Id: retry.GetId()})); err != nil {
+		t.Fatal(err)
+	}
+	read(t, terminals, retry.GetId(), "") // Until it ends.
+	if got := exit(); got != nil {
+		t.Fatalf("lead exit %v after a close, want none", got)
+	}
+}
+
+// TestLeadStartFailureAtStartShows: the lead djinn up could not resume at its start shows beside Lead, as a
+// failed Lead would, where a Djinn started from a menu has no terminal to print it in.
+func TestLeadStartFailureAtStartShows(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	bin, count := fakeClaude(t)
+	env := environ(home, bin, "DJINN_TEST_COUNT="+count)
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone := filepath.Join(folder, "gone")
+	db, err := store.Open(ctx, filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.Tx(ctx, func(tx *store.Tx) error {
+		return errors.Join(
+			tx.Journal("test", planv1connect.LeadServiceSetProcedure, &planv1.LeadServiceSetRequest{SessionId: "s"}),
+			tx.Put(&planv1.Project{Id: store.NewID(), Name: "lamp", Directory: folder, CreateTime: timestamppb.Now()}),
+			tx.Put(&planv1.Lead{Id: "lead", Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69", Directory: gone}))
+	})
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, addr := up(t, home, env)
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := planv1connect.NewLeadServiceClient(httpClient, base).Get(ctx, connect.NewRequest(&planv1.LeadServiceGetRequest{}))
+	if err != nil || !strings.Contains(got.Msg.GetStartError(), "is not on this machine") {
+		t.Fatalf("lead at start: %v, %v; want why it did not start", got, err)
+	}
+	if starts(t, count) != 0 {
+		t.Fatal("claude started")
 	}
 }
 
@@ -495,7 +648,7 @@ func TestWindowTerminalOpensInAProject(t *testing.T) {
 func TestWorkerScopesFallback(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	var out bytes.Buffer
-	if s := workerScopes(t.Context(), &out, 150, 1<<30); s != nil {
+	if s := workerScopes(t.Context(), &out, 150, 1<<30, 0); s != nil {
 		t.Errorf("scopes %+v without systemd-run", s)
 	}
 	if got := out.String(); strings.Count(got, "\n") != 1 || !strings.Contains(got, "no systemd scope per worker") ||
@@ -503,14 +656,19 @@ func TestWorkerScopesFallback(t *testing.T) {
 		t.Errorf("djinn up said %q", got)
 	}
 	out.Reset()
-	workerScopes(t.Context(), &out, 0, 0)
+	workerScopes(t.Context(), &out, 0, 0, 0)
 	if got := out.String(); strings.Contains(got, "uncapped") || !strings.HasSuffix(got, "workers run in their process group\n") {
 		t.Errorf("without caps, djinn up said %q", got)
 	}
+	out.Reset()
+	workerScopes(t.Context(), &out, 0, 0, 2.5)
+	if got := out.String(); !strings.HasSuffix(got, "workers run in their process group, uncapped\n") {
+		t.Errorf("with guardrail without systemd-run, djinn up said %q", got)
+	}
 }
 
-// TestOnOff: $DJINN_QUESTION_WORKERS reads on or off, in any case, and what strconv.ParseBool reads; anything else is
-// an error that says what it expects.
+// TestOnOff: $DJINN_ANSWER_WORKERS, $DJINN_ENLIGHTEN_WORKERS, $DJINN_QUESTION_WORKERS read on or off, in any case,
+// and what strconv.ParseBool reads; anything else is an error that says what it expects.
 func TestOnOff(t *testing.T) {
 	for v, want := range map[string]bool{"on": true, "OFF": false, " off ": false, "true": true, "0": false} { //nolint:gocritic // " off " checks that the value is trimmed
 		if got, err := onOff(v); err != nil || got != want {
@@ -543,5 +701,16 @@ func TestProfiles(t *testing.T) {
 	body, err := io.ReadAll(res.Body)
 	if err != nil || res.StatusCode != http.StatusOK || !strings.Contains(string(body), "up") {
 		t.Errorf("GET %scmdline: %d %q, %v; want djinn's command line", server.ProfilePath, res.StatusCode, body, err)
+	}
+}
+
+// TestWorkerMemoryGuardFlag: invalid values for --worker-memory-guard or $DJINN_WORKER_MEMORY_GUARD return an error.
+func TestWorkerMemoryGuardFlag(t *testing.T) {
+	if _, err := runUp([]string{"--worker-memory-guard", "-1"}); err == nil || !strings.Contains(err.Error(), "--worker-memory-guard -1") {
+		t.Errorf("runUp with negative guard: got %v, want error", err)
+	}
+	t.Setenv("DJINN_WORKER_MEMORY_GUARD", "invalid")
+	if _, err := runUp(nil); err == nil || !strings.Contains(err.Error(), "DJINN_WORKER_MEMORY_GUARD") {
+		t.Errorf("runUp with invalid env guard: got %v, want error", err)
 	}
 }

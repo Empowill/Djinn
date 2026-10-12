@@ -28,6 +28,8 @@ type Scopes struct {
 	CPU int
 	// Memory caps each worker's memory at this many bytes (MemoryMax, Policy.WorkerMemory); 0: no ceiling.
 	Memory uint64
+	// MemoryController is true when systemd gives the memory controller to the user's scopes.
+	MemoryController bool
 	// slice is the cgroup, under /sys/fs/cgroup, that holds the scopes: the probe's parent.
 	slice string
 }
@@ -50,8 +52,13 @@ const cgroupRoot = "/sys/fs/cgroup"
 // New is the scope of a process of the worker name (a task's code): a unit of its own each time, since systemd
 // keeps the name of an ended scope a little while.
 func (s *Scopes) New(name string) Scope {
+	return s.NewWithMemory(name, s.Memory)
+}
+
+// NewWithMemory is the scope of a process of the worker name with an explicit memory ceiling in bytes (0: no ceiling).
+func (s *Scopes) NewWithMemory(name string, memory uint64) Scope {
 	unit := scopeUnit(name, uuid.NewString()[:8])
-	sc := Scope{Unit: unit, Prefix: s.prefix(unit)}
+	sc := Scope{Unit: unit, Prefix: s.prefix(unit, memory)}
 	if s.slice != "" {
 		sc.Cgroup = path.Join(cgroupRoot, s.slice, unit)
 	}
@@ -70,13 +77,13 @@ func scopeUnit(name, uuid8 string) string {
 }
 
 // prefix is the command that runs a process in the scope unit, with the caps asked.
-func (s *Scopes) prefix(unit string) []string {
+func (s *Scopes) prefix(unit string, memory uint64) []string {
 	p := []string{"systemd-run", "--user", "--scope", "--quiet", "--collect", "--unit=" + unit}
 	if s.CPU > 0 {
 		p = append(p, "-p", "CPUQuota="+strconv.Itoa(s.CPU)+"%")
 	}
-	if s.Memory > 0 {
-		p = append(p, "-p", "MemoryMax="+strconv.FormatUint(s.Memory, 10))
+	if memory > 0 {
+		p = append(p, "-p", "MemoryMax="+strconv.FormatUint(memory, 10))
 	}
 	return append(p, "--")
 }
@@ -99,6 +106,7 @@ func readProbe(out string, s *Scopes) (notes []string, err error) {
 			notes, s.CPU = append(notes, err.Error()), 0
 		}
 	}
+	s.MemoryController = strings.TrimSpace(lines[2]) != "none"
 	if s.Memory > 0 {
 		if err := checkMemoryMax(lines[2], s.Memory); err != nil {
 			notes, s.Memory = append(notes, err.Error()), 0
@@ -107,15 +115,15 @@ func readProbe(out string, s *Scopes) (notes []string, err error) {
 	return notes, nil
 }
 
-// delegate is what an administrator does, once, for systemd to give a user the controllers.
-const delegate = "an administrator adds Delegate=cpu cpuset io memory pids to user@.service, once"
+// Delegate is what an administrator does, once, for systemd to give a user the controllers.
+const Delegate = "an administrator adds Delegate=cpu cpuset io memory pids to user@.service, once"
 
 // checkQuota checks what a scope reads in its cpu.max ("<quota> <period>", in microseconds) against percent of a
 // core.
 func checkQuota(cpuMax string, percent int) error {
 	cpuMax = strings.TrimSpace(cpuMax)
 	if cpuMax == "none" {
-		return fmt.Errorf("%w: systemd does not give the cpu controller to your user (%s)", ErrNoCPULimit, delegate)
+		return fmt.Errorf("%w: systemd does not give the cpu controller to your user (%s)", ErrNoCPULimit, Delegate)
 	}
 	f := strings.Fields(cpuMax)
 	if len(f) != 2 {
@@ -138,7 +146,7 @@ func checkQuota(cpuMax string, percent int) error {
 func checkMemoryMax(memoryMax string, ceiling uint64) error {
 	memoryMax = strings.TrimSpace(memoryMax)
 	if memoryMax == "none" {
-		return fmt.Errorf("%w: systemd does not give the memory controller to your user (%s)", ErrNoMemoryLimit, delegate)
+		return fmt.Errorf("%w: systemd does not give the memory controller to your user (%s)", ErrNoMemoryLimit, Delegate)
 	}
 	got, err := strconv.ParseUint(memoryMax, 10, 64)
 	if err != nil || got > ceiling || got+1<<16 < ceiling {

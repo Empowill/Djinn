@@ -241,9 +241,7 @@ project of a wish, and the skills each one holds: it can bring one where it is m
   (cross-agent: see `CONTRIBUTING.md`).
 
 ### Done when
-- [ ] A skill of one project is summoned into another, and an agent there uses it. Djinn hands
-  it to each agent (tested with fake agents); a real agent using it is still to see. (needs: a real run of each
-  agent, paid)
+- [ ] A skill of one project is summoned into another, and an agent there uses it (0658258, harness tests in internal/harness/skills_test.go; docs/providers.md#skills-summoned-from-another-project). (needs: a real run of each agent (Claude, Antigravity) in a project that summons a skill of another project (djinn skill summon), using it)
 - [x] A change to the source skill reaches the target without a copy: a link to its folder.
 - [x] Unsummoning leaves the target project as it was: nothing was ever written there.
 

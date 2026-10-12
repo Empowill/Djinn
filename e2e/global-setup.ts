@@ -5,37 +5,48 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { fakeAgents, withAgents } from "./agents";
+
 const binary = path.resolve(
   __dirname,
   "../bin/djinn-e2e" + (process.platform === "win32" ? ".exe" : ""),
 );
 
 export default async function globalSetup() {
+  delete process.env.DJINN_ADDR;
   // A data directory of its own: the tests never touch the developer's state nor the address of their djinn.
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-e2e-"));
-  // A fake claude and a fake agy (Antigravity), first on the PATH of djinn: the lead's terminal runs them, and they
-  // only say how they were called.
+  // A fake claude and a fake agy (Antigravity), first on the PATH of djinn (agents.ts).
   const bin = path.join(home, "bin");
-  fs.mkdirSync(bin);
-  if (process.platform !== "win32")
-    for (const agent of ["claude", "agy"])
-      fs.writeFileSync(
-        path.join(bin, agent),
-        `#!/bin/sh\necho "fake-${agent} $* in $(pwd)"\nexec cat\n`,
-        { mode: 0o755 },
-      );
+  fakeAgents(bin);
   // The window's terminal opens in a folder of its own: without a project, djinn would ask for one instead.
   const shell = path.join(home, "shell");
   fs.mkdirSync(shell);
+  // djinn's git sees what a CI runner's sees, not the developer's: no identity (a spec gives its project's repository
+  // one: Djinn's merge commits take it), files kept as committed.
+  const gitconfig = path.join(home, "gitconfig");
+  fs.writeFileSync(
+    gitconfig,
+    "[core]\n\tautocrlf = false\n\tlongpaths = true\n",
+  );
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: gitconfig,
+  };
+  for (const name of [
+    "GIT_AUTHOR_NAME",
+    "GIT_AUTHOR_EMAIL",
+    "GIT_COMMITTER_NAME",
+    "GIT_COMMITTER_EMAIL",
+    "EMAIL",
+  ])
+    delete env[name];
   const djinn = spawn(binary, ["up", "--browser", "--terminal-dir", shell], {
     stdio: ["ignore", "pipe", "inherit"],
     // The terminal of the window runs a plain POSIX shell, whatever the developer's own shell is.
     env: {
-      ...process.env,
+      ...withAgents(env, bin),
       DJINN_HOME: home,
-      // No question worker: an answer here only tells the lead. question-workers.spec.ts runs a djinn with them.
-      DJINN_QUESTION_WORKERS: "off",
-      PATH: bin + path.delimiter + process.env.PATH,
       ...(process.platform === "win32" ? {} : { SHELL: "/bin/sh" }),
     },
   });
@@ -70,6 +81,24 @@ export default async function globalSetup() {
     if (Date.now() > deadline)
       throw new Error(`djinn does not answer on ${url}`);
     await new Promise((r) => setTimeout(r, 100));
+  }
+  // No agent ready, the setup of the agents would cover the window and take every spec's clicks: say it once, here.
+  const res = await fetch(new URL("/ui.v1.UiService/GetEnvironment", url), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ agents: true }),
+  });
+  const { providers = [] } = (await res.json()) as {
+    providers?: { id: string; state?: string }[];
+  };
+  if (!providers.some((p) => p.state === "PROVIDER_STATE_READY")) {
+    djinn.kill();
+    throw new Error(
+      `no agent is ready in the e2e djinn (${JSON.stringify(providers)}): its fake claude (agents.ts) is not found or its auth status fails`,
+    );
   }
   process.env.DJINN_URL = url;
   process.env.DJINN_E2E_HOME = home;

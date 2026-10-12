@@ -85,7 +85,7 @@ func TestCrashReopensTheLeads(t *testing.T) {
 	}
 	const session = "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69"
 	wish := seedWish(t, home, folder, session)
-	lead := "lead-" + wish.GetId()
+	lead := "lead"
 	notePath := filepath.Join(home, RestartFile)
 
 	// A first djinn runs the lead: the note says so, and only the lead, not the shell of the window.
@@ -94,7 +94,7 @@ func TestCrashReopensTheLeads(t *testing.T) {
 	if _, err := terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "main"})); err != nil {
 		t.Fatal(err)
 	}
-	if code, out, errs := runDjinn(t, env, "wish", "resume", wish.GetId()); code != 0 {
+	if code, out, errs := runDjinn(t, env, "lead", "resume", "--wish-id", wish.GetId()); code != 0 {
 		t.Fatalf("resume: exit %d\n%s%s", code, out, errs)
 	}
 	opened, err := terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: lead}))
@@ -160,7 +160,7 @@ func TestCrashReopensTheLeads(t *testing.T) {
 	}
 	read(t, terminals, opened.Msg.GetTerminal().GetId(), "fake-claude --resume "+session+" in "+folder)
 	if errs := third.errs.String(); strings.Contains(errs, "reopened") ||
-		!strings.Contains(errs, "the lead of \""+wish.GetTitle()+"\" resumed in "+folder) {
+		!strings.Contains(errs, "the lead resumed in "+folder) {
 		t.Fatalf("djinn up after a quit says:\n%s", errs)
 	}
 }
@@ -198,7 +198,7 @@ func TestCrashResumesTheWorkers(t *testing.T) {
 	second, addr := startUp(t, home, env)
 	tasks := taskClient(t, addr)
 	got := waitTask(t, tasks, id, func(task *planv1.Task) bool { return task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE })
-	if got.GetResumes() != 1 {
+	if got.GetResumes() != 0 {
 		t.Errorf("the task after the crash: %v\n%s", got, second.errs.String())
 	}
 	list, err := tasks.List(ctx, connect.NewRequest(&planv1.TaskServiceListRequest{WishId: wish.GetId()}))

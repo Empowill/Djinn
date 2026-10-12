@@ -3,6 +3,8 @@ package plan
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -13,6 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -92,6 +95,10 @@ func (w *workers) StopWish(_ context.Context, wishID string) error {
 	return nil
 }
 
+func (w *workers) HasRun(_ string) bool {
+	return false
+}
+
 // TestThreeWishes: there may be as many wishes as you like, and the three first are active. A fourth is made paused;
 // activating one when three are active takes the third place, and pauses the third wish. A paused wish's workers
 // stop.
@@ -165,8 +172,8 @@ func TestThreeWishes(t *testing.T) {
 	}
 }
 
-// TestDeleteWish: deleting a wish stops its workers, closes its lead's terminal, and takes its tasks, their events,
-// its questions and its blocks with it; the other wishes keep theirs and their leads, and close the gap in the ranks.
+// TestDeleteWish: deleting a wish stops its workers, and takes its tasks, their events, its questions and its
+// blocks with it; the other wishes keep theirs, and close the gap in the ranks. The one lead keeps running.
 func TestDeleteWish(t *testing.T) {
 	ctx := t.Context()
 	fake := &workers{}
@@ -191,10 +198,8 @@ func TestDeleteWish(t *testing.T) {
 	bt, be, bq, bb := of(b.GetId())
 	item := &planv1.InboxItem{Id: store.NewID(), WishId: a.GetId(), Text: "x", State: planv1.InboxState_INBOX_STATE_ROUTED}
 	c.put(t, at, ae, aq, ab, bt, be, bq, bb, item)
-	for _, w := range []*planv1.Wish{a, b} {
-		if _, _, _, err := leads.Open(LeadTerminal(w.GetId()), "claude --resume "+session, t.TempDir(), session); err != nil {
-			t.Fatal(err)
-		}
+	if _, _, _, err := leads.Open(LeadTerminal, "claude --resume "+session, t.TempDir(), session); err != nil {
+		t.Fatal(err)
 	}
 
 	res, err := c.wishes.Delete(ctx, connect.NewRequest(&planv1.WishServiceDeleteRequest{WishId: a.GetId()}))
@@ -204,7 +209,7 @@ func TestDeleteWish(t *testing.T) {
 	if !slices.Equal(fake.stopped, []string{a.GetId()}) || !slices.Equal(fake.shelved, []string{a.GetId()}) {
 		t.Errorf("stopped %v, shelved %v", fake.stopped, fake.shelved)
 	}
-	if _, runs := leads.running[LeadTerminal(b.GetId())]; !slices.Equal(leads.closed, []string{LeadTerminal(a.GetId())}) || !runs {
+	if _, runs := leads.running[LeadTerminal]; !runs || len(leads.closed) != 0 {
 		t.Errorf("closed %v, running %v", leads.closed, leads.running)
 	}
 	if res.Msg.GetWorktreesRemoved() != 0 || len(res.Msg.GetKept()) != 0 {
@@ -341,6 +346,21 @@ func TestReady(t *testing.T) {
 			{Id: "1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED},
 			{Id: "5", WishId: "w", Code: "W5", ForkOf: "W2", Status: planv1.TaskStatus_TASK_STATUS_DONE},
 		}, nil, true},
+		// W507: a research worker whose permissions refused 6 calls ended done, saying it could not do its job.
+		{"a task done with refused calls", []*planv1.Task{
+			{Id: "1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE, Refused: &planv1.TaskRefusals{Count: 6, Names: []string{"Read", "Glob"}}},
+		}, nil, false},
+		{"a task done with refused calls, marked done since", []*planv1.Task{
+			{Id: "1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE, Refused: &planv1.TaskRefusals{Count: 6},
+				Closed: &planv1.Closure{Actor: planv1.Closer_CLOSER_DEVELOPER}},
+		}, nil, true},
+		{"a draft azima does not count towards ready", []*planv1.Task{
+			{Id: "1", WishId: "w", Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING, Draft: true},
+		}, nil, false},
+		{"a draft azima does not block ready when work is done", []*planv1.Task{
+			done,
+			{Id: "1", WishId: "w", Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING, Draft: true},
+		}, nil, true},
 	} {
 		if got := Ready(tt.tasks, tt.questions); got != tt.want {
 			t.Errorf("%s: Ready = %v", tt.name, got)
@@ -464,5 +484,359 @@ func TestImportState(t *testing.T) {
 	}
 	if got := order(c.list(t)); got != "X again:ACTIVE1 A:ACTIVE2 B:ACTIVE3 Y:PAUSED" {
 		t.Errorf("list = %s", got)
+	}
+}
+
+// TestWishPushStrategy: a wish without a value inherits the project's default; an explicit strategy overrides it;
+// switching the push strategy is refused when it would strand merged work, and goes once the azima carrying that work
+// adopts the branch it lives on.
+func TestWishPushStrategy(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	c := serve(t, WithHome(home))
+	dir := t.TempDir()
+	add, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{
+		Directory: dir,
+		Name:      "testapp",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectID := add.Msg.GetProject().GetId()
+	projectName := add.Msg.GetProject().GetName()
+
+	// 1. Create a wish without strategy -> inherits built-in default "wish" from DEFAULT source.
+	makeRes, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title:      "Wish 1",
+		ProjectIds: []string{projectID},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := makeRes.Msg.GetWish().GetId()
+
+	showRes, err := c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{
+		WishId: wishID,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if showRes.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_WISH || showRes.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEFAULT {
+		t.Errorf("initial wish strategy = %v from %v; want wish from default", showRes.Msg.GetStrategy(), showRes.Msg.GetSource())
+	}
+
+	// 2. Change project push strategy to azima -> wish without override now inherits azima from DEVELOPER source.
+	_, err = c.projects.PushStrategy(ctx, connect.NewRequest(&planv1.ProjectServicePushStrategyRequest{
+		Project:  projectName,
+		Strategy: planv1.PushStrategy_PUSH_STRATEGY_AZIMA.Enum(),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	showRes2, err := c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{
+		WishId: wishID,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if showRes2.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_AZIMA || showRes2.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+		t.Errorf("wish strategy after project change = %v from %v; want azima from developer", showRes2.Msg.GetStrategy(), showRes2.Msg.GetSource())
+	}
+
+	// 3. Wish override to "wish" -> returns wish from WISH source.
+	setWishRes, err := c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{
+		WishId:   wishID,
+		Strategy: planv1.PushStrategy_PUSH_STRATEGY_WISH.Enum(),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if setWishRes.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_WISH || setWishRes.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_WISH {
+		t.Errorf("set wish strategy = %v from %v; want wish from wish", setWishRes.Msg.GetStrategy(), setWishRes.Msg.GetSource())
+	}
+
+	// 4. Work of an azima merged into the wish's integration branch.
+	t1 := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Title: "Silae"}
+	c.put(t, t1)
+	c.put(t, &planv1.Task{
+		Id:        store.NewID(),
+		WishId:    wishID,
+		Code:      "W1",
+		ProjectId: projectID,
+		PartOf:    t1.GetId(),
+		Integration: &planv1.TaskIntegration{
+			State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+			Branch: "ET-4368-silae",
+		},
+	})
+
+	// Switching strategy to azima must be refused: T1's work would be stranded, and the refusal says how to keep it.
+	_, err = c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{
+		WishId:   wishID,
+		Strategy: planv1.PushStrategy_PUSH_STRATEGY_AZIMA.Enum(),
+	}))
+	if err == nil {
+		t.Fatal("expected error switching push strategy with committed task, got nil")
+	}
+	const strands = "the work of W1 (T1) is merged into ET-4368-silae, its azima's goes to djinn/T1-silae"
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), strands) ||
+		!strings.Contains(err.Error(), "djinn task update T1 --branch ET-4368-silae") {
+		t.Errorf("switch error = %v; want FailedPrecondition saying %q and how to adopt the branch", err, strands)
+	}
+
+	// Setting the same strategy should succeed (no switch).
+	sameRes, err := c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{
+		WishId:   wishID,
+		Strategy: planv1.PushStrategy_PUSH_STRATEGY_WISH.Enum(),
+	}))
+	if err != nil {
+		t.Errorf("setting same strategy failed: %v", err)
+	}
+	if sameRes.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_WISH {
+		t.Errorf("strategy = %v, want wish", sameRes.Msg.GetStrategy())
+	}
+
+	// Switching via SetIntegration must also be refused.
+	_, err = c.wishes.SetIntegration(ctx, connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+		WishId:       wishID,
+		PushStrategy: planv1.PushStrategy_PUSH_STRATEGY_AZIMA.Enum(),
+	}))
+	if err == nil {
+		t.Fatal("expected error in SetIntegration switching push strategy with committed task, got nil")
+	}
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), strands) {
+		t.Errorf("SetIntegration switch error = %v; want FailedPrecondition saying %q", err, strands)
+	}
+
+	// Once T1 adopts the branch its work lives on, nothing is stranded: the switch goes, and back too.
+	t1.Azima = &planv1.Azima{Branch: "ET-4368-silae", BaseBranch: "main", CutFrom: strings.Repeat("a", 40), Named: true}
+	c.put(t, t1)
+	for _, s := range []planv1.PushStrategy{planv1.PushStrategy_PUSH_STRATEGY_AZIMA, planv1.PushStrategy_PUSH_STRATEGY_WISH} {
+		if _, err := c.wishes.SetIntegration(ctx, connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+			WishId: wishID, Branch: "ET-4368-silae", PushStrategy: s.Enum(),
+		})); err != nil {
+			t.Errorf("switch to %v once T1 adopted its branch: %v", s, err)
+		}
+	}
+
+	// 5. Creating a wish with an explicit push strategy.
+	strat := planv1.PushStrategy_PUSH_STRATEGY_AZIMA
+	makeWithStrat, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title:        "Wish Explicit",
+		ProjectIds:   []string{projectID},
+		PushStrategy: &strat,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	showExplicit, err := c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{
+		WishId: makeWithStrat.Msg.GetWish().GetId(),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if showExplicit.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_AZIMA || showExplicit.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_WISH {
+		t.Errorf("explicit wish strategy = %v from %v; want azima from wish", showExplicit.Msg.GetStrategy(), showExplicit.Msg.GetSource())
+	}
+}
+
+// TestSwitchToAzimaRefusedWhileAzimasWait: a wish whose azimas wait for each other is not switched to per azima, by
+// itself (PushStrategy, SetIntegration) or through its project's default, the refusal naming them in a line; work
+// waiting inside one azima is no reason, and a wish switched keeps its strategy.
+func TestSwitchToAzimaRefusedWhileAzimasWait(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	c := serve(t, WithHome(home))
+	add, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir(), Name: "app"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := add.Msg.GetProject()
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Plan", ProjectIds: []string{project.GetId()}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	task := func(code string, kind planv1.TaskKind, partOf string, deps ...string) *planv1.Task {
+		task := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: code, Kind: kind, PartOf: partOf, DependsOn: deps}
+		c.put(t, task)
+		return task
+	}
+	t1 := task("T1", planv1.TaskKind_TASK_KIND_AZIMA, "")
+	t2 := task("T2", planv1.TaskKind_TASK_KIND_AZIMA, "")
+	w1 := task("W1", planv1.TaskKind_TASK_KIND_WORK, t1.GetId())
+	task("W2", planv1.TaskKind_TASK_KIND_WORK, t1.GetId(), w1.GetId()) // inside T1
+	w3 := task("W3", planv1.TaskKind_TASK_KIND_WORK, t2.GetId(), w1.GetId())
+
+	const want = "per azima refused: azimas depend on each other (T2 after T1)"
+	azima := planv1.PushStrategy_PUSH_STRATEGY_AZIMA.Enum()
+	_, err = c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{WishId: wishID, Strategy: azima}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+		t.Errorf("PushStrategy = %v, want %q", err, want)
+	}
+	_, err = c.wishes.SetIntegration(ctx, connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{WishId: wishID, PushStrategy: azima}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+		t.Errorf("SetIntegration = %v, want %q", err, want)
+	}
+	_, err = c.projects.PushStrategy(ctx, connect.NewRequest(&planv1.ProjectServicePushStrategyRequest{Project: project.GetName(), Strategy: azima}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), `the azimas of wish "Plan" depend on each other (T2 after T1)`) {
+		t.Errorf("project PushStrategy = %v", err)
+	}
+	shown, err := c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{WishId: wishID}))
+	if err != nil || shown.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_WISH {
+		t.Fatalf("strategy after the refusals = %v, %v; want wish", shown.Msg.GetStrategy(), err)
+	}
+
+	// W3 waits for work of its own azima only: the switch goes.
+	w3.DependsOn = nil
+	c.put(t, w3)
+	set, err := c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{WishId: wishID, Strategy: azima}))
+	if err != nil || set.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
+		t.Fatalf("switch = %v, %v; want azima", set.Msg.GetStrategy(), err)
+	}
+}
+
+// TestWishRename: a wish can be renamed; the new title is validated (non-empty, max length 500),
+// journaled, and reflected in lists, brief, rendered page, and exports.
+func TestWishRename(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+
+	// 1. Make a wish with initial title.
+	wish, err := c.make(t, "Djinn sur Wails", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := wish.GetId()
+
+	// 2. Rename it to "Djinn orchestrator".
+	res, err := c.wishes.Rename(ctx, connect.NewRequest(&planv1.WishServiceRenameRequest{
+		WishId: id,
+		Title:  "Djinn orchestrator",
+	}))
+	if err != nil {
+		t.Fatalf("rename wish: %v", err)
+	}
+	if got := res.Msg.GetWish().GetTitle(); got != "Djinn orchestrator" {
+		t.Errorf("rename returned title %q; want %q", got, "Djinn orchestrator")
+	}
+
+	// Verify listed wish has the new title.
+	listed := c.list(t)
+	if len(listed) == 0 || listed[0].GetTitle() != "Djinn orchestrator" {
+		t.Errorf("listed wish title = %v; want Djinn orchestrator", listed)
+	}
+
+	// 3. Validation: empty title -> InvalidArgument.
+	_, err = c.wishes.Rename(ctx, connect.NewRequest(&planv1.WishServiceRenameRequest{
+		WishId: id,
+		Title:  "",
+	}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("rename with empty title err = %v; want InvalidArgument", err)
+	}
+
+	// 4. Validation: whitespace only title -> InvalidArgument.
+	_, err = c.wishes.Rename(ctx, connect.NewRequest(&planv1.WishServiceRenameRequest{
+		WishId: id,
+		Title:  "   \t\n  ",
+	}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("rename with whitespace-only title err = %v; want InvalidArgument", err)
+	}
+
+	// 5. Leading/trailing whitespace gets trimmed.
+	res, err = c.wishes.Rename(ctx, connect.NewRequest(&planv1.WishServiceRenameRequest{
+		WishId: id,
+		Title:  "  Renamed Trimmed  ",
+	}))
+	if err != nil {
+		t.Fatalf("rename with whitespace padding: %v", err)
+	}
+	if got := res.Msg.GetWish().GetTitle(); got != "Renamed Trimmed" {
+		t.Errorf("trimmed title = %q; want %q", got, "Renamed Trimmed")
+	}
+
+	// 6. Unknown wish ID -> NotFound.
+	_, err = c.wishes.Rename(ctx, connect.NewRequest(&planv1.WishServiceRenameRequest{
+		WishId: store.NewID(),
+		Title:  "New Title",
+	}))
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("rename unknown wish err = %v; want NotFound", err)
+	}
+
+	// 7. Brief shows the new title.
+	briefRes, err := c.wishes.Brief(ctx, connect.NewRequest(&planv1.WishServiceBriefRequest{WishId: id}))
+	if err != nil {
+		t.Fatalf("brief: %v", err)
+	}
+	if !strings.Contains(briefRes.Msg.GetText(), "# The wish: Renamed Trimmed") {
+		t.Errorf("brief does not contain new title: %s", briefRes.Msg.GetText())
+	}
+
+	// 8. Render shows the new title.
+	renderRes, err := c.wishes.Render(ctx, connect.NewRequest(&planv1.WishServiceRenderRequest{
+		WishId: id,
+		File:   filepath.Join(t.TempDir(), "render.html"),
+	}))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html, err := os.ReadFile(renderRes.Msg.GetFile())
+	if err != nil {
+		t.Fatalf("read rendered page: %v", err)
+	}
+	if !strings.Contains(string(html), "Renamed Trimmed") {
+		t.Errorf("rendered page does not contain new title")
+	}
+
+	// 9. Export shows the new title, includes make and rename commands, and an imported wish retains it.
+	expFile := filepath.Join(t.TempDir(), "export.djinn")
+	expRes, err := c.wishes.Export(ctx, connect.NewRequest(&planv1.WishServiceExportRequest{
+		WishId: id,
+		File:   expFile,
+	}))
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	data, err := os.ReadFile(expRes.Msg.GetFile())
+	if err != nil {
+		t.Fatalf("read export file: %v", err)
+	}
+	exp, err := decode(data)
+	if err != nil {
+		t.Fatalf("decode export: %v", err)
+	}
+	if exp.GetWish().GetTitle() != "Renamed Trimmed" {
+		t.Errorf("exported wish title = %q; want %q", exp.GetWish().GetTitle(), "Renamed Trimmed")
+	}
+	hasMake := false
+	hasRename := false
+	for _, cmd := range exp.GetCommands() {
+		if cmd.GetMethod() == planv1connect.WishServiceMakeProcedure {
+			hasMake = true
+		}
+		if cmd.GetMethod() == planv1connect.WishServiceRenameProcedure {
+			hasRename = true
+		}
+	}
+	if !hasMake {
+		t.Errorf("export missing make command in journal: %v", exp.GetCommands())
+	}
+	if !hasRename {
+		t.Errorf("export missing rename command in journal: %v", exp.GetCommands())
+	}
+
+	dst := serve(t)
+	_, err = dst.wishes.Import(ctx, connect.NewRequest(&planv1.WishServiceImportRequest{
+		File: expFile,
+	}))
+	if err != nil {
+		t.Fatalf("import exported wish: %v", err)
+	}
+	dstList := dst.list(t)
+	if len(dstList) == 0 || dstList[0].GetTitle() != "Renamed Trimmed" {
+		t.Errorf("imported wish title = %v; want Renamed Trimmed", dstList)
 	}
 }

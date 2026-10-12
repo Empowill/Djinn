@@ -8,6 +8,8 @@ import (
 	"math"
 	"os"
 	"slices"
+	"strconv"
+	"strings"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -22,6 +24,9 @@ import (
 // first are active, the others wait paused, their workers stopped.
 const MaxActive = 3
 
+// creationKind is the original Markdown request, kept as free content rather than a field of the wish.
+const creationKind = "creation"
+
 // WishWorkers reaches the workers of the wishes: djinn up gives the harness's. A paused wish's workers stop, and
 // wait to resume with it; a wish active again wakes the scheduler, which starts them.
 type WishWorkers interface {
@@ -29,6 +34,7 @@ type WishWorkers interface {
 	Wake()
 	// StopWish stops the wish's workers for good, and waits until they have ended.
 	StopWish(ctx context.Context, wishID string) error
+	HasRun(taskID string) bool
 }
 
 // shelve stops the workers of the wishes paused, and wakes the scheduler for the active ones; without workers,
@@ -77,21 +83,51 @@ func Ranked(all []*planv1.Wish) []*planv1.Wish {
 	return out
 }
 
-// Ready tells whether Djinn proposes to grant a wish that has these tasks and questions: it has tasks, every one
-// finished (done, stopped by the user, or cut short for good), and no question is open. A task waiting for an
-// answer, failed, resuming, planned or running keeps it from being ready. Djinn only proposes: the user grants.
-func Ready(tasks []*planv1.Task, questions []*planv1.Question) bool {
-	if len(tasks) == 0 {
-		return false
+// PrincipalWish returns the principal wish: one explicitly marked as principal by the developer
+// (preferring an active wish if marked), or the first active wish by rank.
+func PrincipalWish(ctx context.Context, r store.Reader) (*planv1.Wish, error) {
+	all, err := store.List[*planv1.Wish](ctx, r, nil)
+	if err != nil {
+		return nil, err
 	}
+	for _, w := range all {
+		if w.GetPrincipal() && Active(w) {
+			return w, nil
+		}
+	}
+	for _, w := range all {
+		if w.GetPrincipal() {
+			return w, nil
+		}
+	}
+	actives := Ranked(all)
+	if len(actives) > 0 {
+		return actives[0], nil
+	}
+	return nil, nil
+}
+
+// Ready tells whether Djinn proposes to grant a wish that has these tasks and questions: it has tasks, every one
+// finished (done, stopped by the user, or cut short for good), none done with problems nobody looked at
+// (DoneWithProblems), and no question is open. A draft azima is not
+// counted in the wish's progress: it waits to be opened. Djinn only proposes: the user grants.
+func Ready(tasks []*planv1.Task, questions []*planv1.Question) bool {
+	hasNonDraft := false
 	for _, t := range tasks {
+		if t.GetDraft() {
+			continue
+		}
+		hasNonDraft = true
 		// Cut short for good counts as finished: see Finished.
-		if !Finished(t) {
+		if !Finished(t) || DoneWithProblems(t) {
 			return false
 		}
 	}
+	if !hasNonDraft {
+		return false
+	}
 	for _, q := range questions {
-		if q.GetAnswer() == nil {
+		if q.GetAnswer() == nil && q.GetWithdrawal() == nil {
 			return false
 		}
 	}
@@ -274,8 +310,8 @@ func place(ctx context.Context, tx *store.Tx, wish *planv1.Wish, to int) ([]*pla
 
 // Delete deletes a wish and everything that belongs to it: its tasks and their events, its questions, its blocks.
 // Its workers stop first: an active wish is paused, which the journal records, so that no task of it starts again.
-// Once it is gone, its lead's terminal closes, and each task's worktree that holds no work is removed (cleanWorktree);
-// the others stay, the response says why. Every branch stays. An inbox item routed to it forgets it.
+// Once it is gone, each task's worktree that holds no work is removed (cleanWorktree); the others stay, the response
+// says why. Every branch stays. An inbox item routed to it forgets it.
 func (w *Wishes) Delete(
 	ctx context.Context, req *connect.Request[planv1.WishServiceDeleteRequest],
 ) (*connect.Response[planv1.WishServiceDeleteResponse], error) {
@@ -366,9 +402,6 @@ func (w *Wishes) Delete(
 	if err != nil {
 		return nil, err
 	}
-	if w.Leads != nil {
-		w.Leads.Close(LeadTerminal(id))
-	}
 	for _, t := range tilasms {
 		if w.Home != "" {
 			os.RemoveAll(TilasmDir(w.Home, t.GetId()))
@@ -458,4 +491,84 @@ func sorted(all []*planv1.Wish) []*planv1.Wish {
 		}
 	}
 	return out
+}
+
+// ResolveWish finds a wish by identifier, rank (e.g. W1, 1), or title.
+func ResolveWish(ctx context.Context, r store.Reader, name string) (*planv1.Wish, error) {
+	if name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("wish is required"))
+	}
+	if w, err := store.Get[*planv1.Wish](ctx, r, name); err == nil {
+		return w, nil
+	}
+	all, err := store.List[*planv1.Wish](ctx, r, nil)
+	if err != nil {
+		return nil, err
+	}
+	norm := strings.TrimPrefix(strings.ToUpper(name), "W")
+	if n, err := strconv.Atoi(norm); err == nil && n > 0 {
+		for _, w := range all {
+			if int(w.GetRank()) == n {
+				return w, nil
+			}
+		}
+	}
+	for _, w := range all {
+		if strings.EqualFold(w.GetId(), name) || strings.EqualFold(w.GetTitle(), name) {
+			return w, nil
+		}
+	}
+	return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("wish %s not found", name))
+}
+
+// Principal sets or reports whether a wish is the principal wish.
+func (w *Wishes) Principal(
+	ctx context.Context, req *connect.Request[planv1.WishServicePrincipalRequest],
+) (*connect.Response[planv1.WishServicePrincipalResponse], error) {
+	if req.Msg.Principal != nil {
+		err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+			wish, err := store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId())
+			if err != nil {
+				return err
+			}
+			if *req.Msg.Principal {
+				all, err := store.List[*planv1.Wish](ctx, tx, nil)
+				if err != nil {
+					return err
+				}
+				for _, other := range all {
+					if other.GetPrincipal() && other.GetId() != wish.GetId() {
+						other.Principal = false
+						if err := tx.Put(other); err != nil {
+							return err
+						}
+					}
+				}
+				wish.Principal = true
+			} else {
+				wish.Principal = false
+			}
+			return tx.Put(wish)
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	wish, err := store.Get[*planv1.Wish](ctx, w.Store, req.Msg.GetWishId())
+	if err != nil {
+		return nil, Status(err)
+	}
+	pw, err := PrincipalWish(ctx, w.Store)
+	if err != nil {
+		return nil, Status(err)
+	}
+	principalWishID := ""
+	if pw != nil {
+		principalWishID = pw.GetId()
+	}
+	return connect.NewResponse(&planv1.WishServicePrincipalResponse{
+		Principal:       principalWishID == wish.GetId(),
+		Explicit:        wish.GetPrincipal(),
+		PrincipalWishId: principalWishID,
+	}), nil
 }

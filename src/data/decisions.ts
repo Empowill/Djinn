@@ -52,6 +52,12 @@ export const later = (a?: Timestamp, b?: Timestamp) =>
   Number(b?.seconds ?? 0n) - Number(a?.seconds ?? 0n) ||
   (b?.nanos ?? 0) - (a?.nanos ?? 0);
 
+const questionDecisions = new WeakMap<Question, Decision>();
+const blockDecisions = new WeakMap<Block, Decision>();
+
+const sameTasks = (a: readonly Task[], b: readonly Task[]) =>
+  a.length === b.length && a.every((t, i) => t === b[i]);
+
 // decisionsOf are the decisions of a wish, the latest first.
 export function decisionsOf(
   questions: readonly Question[],
@@ -63,7 +69,13 @@ export function decisionsOf(
   const out: Decision[] = [];
   for (const q of questions) {
     if (!q.answer) continue;
-    out.push({
+    const matching = led(q.code);
+    const cached = questionDecisions.get(q);
+    if (cached && sameTasks(cached.tasks, matching)) {
+      out.push(cached);
+      continue;
+    }
+    const d: Decision = {
       id: q.id,
       ref: q.code,
       question: q,
@@ -72,25 +84,36 @@ export function decisionsOf(
       approved: approved(q.marks),
       by: "",
       icon: q.icon || QUESTION_ICON,
-      tasks: led(q.code),
-    });
+      tasks: matching,
+    };
+    questionDecisions.set(q, d);
+    out.push(d);
   }
   for (const b of blocks) {
     if (!isDecisionBlock(b)) continue;
     const human = approved(b.marks);
-    out.push({
+    const by = human
+      ? ""
+      : tasks.find((task) => task.id === b.taskId)?.code || BY_LEAD;
+    const matching = led(b.id);
+    const cached = blockDecisions.get(b);
+    if (cached && cached.by === by && sameTasks(cached.tasks, matching)) {
+      out.push(cached);
+      continue;
+    }
+    const d: Decision = {
       id: b.id,
       ref: b.id,
       block: b,
       at: b.createTime,
       human,
       approved: human,
-      by: human
-        ? ""
-        : tasks.find((task) => task.id === b.taskId)?.code || BY_LEAD,
+      by,
       icon: b.icon || BLOCK_ICON,
-      tasks: led(b.id),
-    });
+      tasks: matching,
+    };
+    blockDecisions.set(b, d);
+    out.push(d);
   }
   // Stable: two decisions of one time keep their order.
   return out.sort((a, b) => later(a.at, b.at));

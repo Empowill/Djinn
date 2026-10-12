@@ -1,11 +1,11 @@
 // The window, on the services: the side panel (the flight plan, the wishes by rank, the projects), the flight plan of
 // the active wishes or the wish shown, and the status bar (whether the page follows djinn, the machine). What stays on
 // this page is how it shows: what is shown and the side panel folded.
-import { Plus, Settings2, Upload } from "lucide-react";
-import { AnimatePresence } from "motion/react";
+import { ArrowLeft, PanelLeft, Plus, Settings2, Upload } from "lucide-react";
+import { AnimatePresence, LayoutGroup } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Change } from "../gen/ts/plan/v1/plan_pb";
+import { Change, type ProjectSync, type Wish } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import {
   useClients,
@@ -17,18 +17,22 @@ import {
 } from "./data/djinn";
 import { importWish } from "./data/exchange";
 import { isActive, runningOf, waitsForYou } from "./data/format";
+import { AgentSetup, needsSetup } from "./agent-setup";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
 import { t } from "./i18n";
-import { useShowWish } from "./lead-terminal";
+import { platformShortcut, TooltipButton } from "./tooltip";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
 import { Docs } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
-import { type Opening, WishView } from "./wish-view";
+import { startWishSmokePrewarm } from "./wish-smoke";
+import { type Opening, type Reaching, WishView } from "./wish-view";
+import { OperatingLoad } from "./operating-load";
+import { PageHeader } from "./page-header";
 import "./wish.css";
 import "./review.css";
 
-type Modal = "make" | "project" | "settings" | "docs" | null;
+type Modal = "make" | "project" | "settings" | "docs" | "agents" | null;
 
 // What the window shows instead of a wish: the flight plan of the active wishes. A wish's id is a UUID: never this.
 export const PLAN = "plan";
@@ -60,43 +64,81 @@ export function WishApp() {
   const error = useData((s) => s.error);
   const inbox = useData((s) => s.inbox.length);
   const [selected, setSelected] = useState(() => stored("djinn.wish"));
+  // Keep a just-created wish renderable for the same commit as MakeWish leaves, so the shared action surface can
+  // animate into the wish view while the next store list is still in flight.
+  const [justMade, setJustMade] = useState<Wish>();
   const [collapsed, setCollapsed] = useState(
     () => stored("djinn.sidebar.collapsed") === "1",
   );
+  // The sidebar glides only once folded or unfolded by hand, never as the page opens.
+  const [glide, setGlide] = useState(false);
   const [modal, setModal] = useState<Modal>(null);
+  const [making, setMaking] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [toast, setToast] = useState("");
+  const makeBackAction = useRef<(() => void) | null>(null);
+  const [makeBackInSetup, setMakeBackInSetup] = useState(false);
   // The tilasm a djinn:// link asks to show, in its wish; a new object at each request.
   const [opening, setOpening] = useState<Opening>();
+  // The element a line of the attention bar asks to bring into sight, in its wish; a new object at each request.
+  const [reaching, setReaching] = useState<Reaching>();
   const importRef = useRef<HTMLInputElement>(null);
   const closeToast = useCallback(() => setToast(""), []);
+  const closeMake = useCallback(() => setModal(null), []);
+  const closeDocs = useCallback(() => setModal(null), []);
+  const toggleSidebar = useCallback(() => {
+    setGlide(true);
+    setCollapsed((value) => !value);
+  }, []);
 
   useEffect(() => store("djinn.wish", selected), [selected]);
+  useEffect(() => {
+    if (justMade && wishes.some((item) => item.id === justMade.id))
+      setJustMade(undefined);
+  }, [justMade, wishes]);
   useEffect(
     () => store("djinn.sidebar.collapsed", collapsed ? "1" : ""),
     [collapsed],
   );
-  // djinn wish resume asks the window to show a wish; a djinn:// link, a wish or a tilasm in its wish, or says Djinn
-  // does not know it.
+  // djinn lead resume --wish-id asks the window to show a wish, and so does a request routed to a new wish, or a click
+  // on a notification, there; a djinn:// link, a wish or a tilasm in its wish, or says Djinn does not know it.
   useEffect(
     () =>
       djinn.focus.subscribe((focus) => {
         if (focus.wishId) setSelected(focus.wishId);
         if (focus.tilasmId)
           setOpening({ wishId: focus.wishId, tilasmId: focus.tilasmId });
+        if (focus.target)
+          setReaching({ wishId: focus.wishId, target: focus.target });
         if (focus.unknownLink)
           setToast(t("link.unknown", { link: focus.unknownLink }));
       }),
     [djinn],
   );
   // Another wish shown: a tilasm asked for earlier is not opened again on coming back.
-  useEffect(
-    () => setOpening((o) => (o && o.wishId !== selected ? undefined : o)),
-    [selected],
-  );
+  useEffect(() => {
+    setOpening((o) => (o && o.wishId !== selected ? undefined : o));
+    setReaching((r) => (r && r.wishId !== selected ? undefined : r));
+  }, [selected]);
+  // The window opens with no agent ready (none installed and signed in, or of unknown sign-in): the setup of the agents
+  // opens by itself. Otherwise it waits in the settings and the lead's menu.
+  useEffect(() => {
+    let live = true;
+    clients.ui
+      .getEnvironment({ agents: true })
+      .then((res) => {
+        if (live && res.providers.length > 0 && res.providers.every(needsSetup))
+          setModal((m) => m ?? "agents");
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [clients]);
   // Ctrl+N (Cmd+N) makes a wish.
   useEffect(() => {
     const keys = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.isComposing) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
         event.preventDefault();
         setModal("make");
@@ -105,6 +147,27 @@ export function WishApp() {
     window.addEventListener("keydown", keys);
     return () => window.removeEventListener("keydown", keys);
   }, []);
+  // Ctrl+\ (Cmd+\) folds the navigation without taking shortcuts from the terminal.
+  useEffect(() => {
+    const keys = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        (modal !== null && modal !== "make") ||
+        making ||
+        !(event.metaKey || event.ctrlKey) ||
+        (event.key !== "\\" && event.code !== "Backslash")
+      )
+        return;
+      if (event.target instanceof HTMLElement && event.target.closest(".xterm"))
+        return;
+      event.preventDefault();
+      toggleSidebar();
+    };
+    window.addEventListener("keydown", keys);
+    return () => window.removeEventListener("keydown", keys);
+  }, [making, modal, toggleSidebar]);
 
   // The active wishes are always read: the flight plan and the side panel count what waits in each.
   const active = wishes.filter(isActive);
@@ -120,13 +183,21 @@ export function WishApp() {
   );
   // What shows: the wish chosen, else the flight plan while a wish is active, else the first wish.
   const chosen = wishes.find((w) => w.id === selected);
-  const plan = !chosen && (selected === PLAN || active.length > 0);
-  const wish = plan ? undefined : (chosen ?? wishes[0]);
+  const pendingWish = justMade?.id === selected ? justMade : undefined;
+  const plan =
+    !chosen && !pendingWish && (selected === PLAN || active.length > 0);
+  const wish = plan ? undefined : (chosen ?? pendingWish ?? wishes[0]);
+  // Until the wishes are read, no page is chosen: the home page would show, then give way to the flight plan or a wish
+  // with a header of its own, and a gauge focused or measured in between would be gone. A failed read shows home.
+  const settling = !loaded && !error;
+  const shownId = wish?.id ?? "";
+  const newWishShortcut = platformShortcut("N");
+  const sidebarShortcut = platformShortcut("\\");
+  // djinn sends no notification for the wish shown while the window is in front.
+  useEffect(() => {
+    void clients.ui.view({ wishId: shownId }).catch(() => undefined);
+  }, [clients, shownId]);
   const project = projects.find((p) => p.id === projectId);
-  // The terminal below shows the lead of the wish shown while it runs.
-  const showWish = useShowWish();
-  const shown = wish?.id ?? "";
-  useEffect(() => showWish(shown), [showWish, shown]);
 
   const move = (wishId: string, to: number) =>
     void clients.wishes
@@ -147,106 +218,189 @@ export function WishApp() {
     }
   };
 
+  // A push says how it went on its sync line, never in a toast: the line reads its answer, or its error.
+  const pushProject = useCallback(
+    (id: string, sync: ProjectSync) =>
+      clients.projects
+        .push({ project: id, wish: sync.wishId, branch: sync.branch })
+        .finally(() => void data.changed("", [Change.PROJECT])),
+    [clients, data],
+  );
+
   return (
-    <div className={`app wish-app ${collapsed ? "sidebar-collapsed" : ""}`}>
-      <aside className="sidebar">
+    <div
+      className={`app wish-app ${collapsed ? "sidebar-collapsed" : ""} ${glide ? "sidebar-glide" : ""}`}
+    >
+      <div
+        className="app-toolbar"
+        onKeyDown={(event) => {
+          if (
+            event.key !== "Escape" ||
+            event.defaultPrevented ||
+            modal !== "make" ||
+            making
+          )
+            return;
+          event.preventDefault();
+          makeBackAction.current?.();
+        }}
+      >
+        <TooltipButton
+          type="button"
+          className="sidebar-toggle app-toolbar-toggle"
+          onClick={toggleSidebar}
+          disabled={making}
+          label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+          tooltip={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+          shortcut={sidebarShortcut.label}
+          aria-keyshortcuts={sidebarShortcut.aria}
+          aria-expanded={!collapsed}
+          aria-controls="djinn-sidebar"
+        >
+          <PanelLeft size={16} aria-hidden="true" />
+        </TooltipButton>
+        {/* Back shows on the page that needs it, after the toggle, which never moves. */}
+        {modal === "make" && (
+          <TooltipButton
+            type="button"
+            className="wish-creation-back app-toolbar-back"
+            label={makeBackInSetup ? t("agents.back") : t("make.back")}
+            tooltip={makeBackInSetup ? t("agents.back") : t("make.back")}
+            shortcut={making ? undefined : t("app.shortcut_escape")}
+            aria-keyshortcuts={making ? undefined : "Escape"}
+            disabled={making}
+            onClick={() => makeBackAction.current?.()}
+            data-setup-back={makeBackInSetup || undefined}
+          >
+            <ArrowLeft size={16} aria-hidden="true" />
+          </TooltipButton>
+        )}
+      </div>
+      <aside
+        id="djinn-sidebar"
+        className="sidebar"
+        inert={modal === "make" && making}
+      >
         <div className="sidebar-brand">
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            title={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
-          >
+          <div className="sidebar-brand-main">
             <Brand small={collapsed} />
-          </button>
-          {!collapsed && <span className="version-tag">EARLY ACCESS</span>}
+            {!collapsed && <span className="version-tag">EARLY ACCESS</span>}
+          </div>
         </div>
-        <button
-          className="new-mission"
-          onClick={() => setModal("make")}
-          title={t("app.new_wish")}
-        >
-          <Plus size={16} />
-          {!collapsed && (
-            <>
-              <span>{t("app.new_wish")}</span>
-              <kbd>⌘ N</kbd>
-            </>
-          )}
-        </button>
-        <WishSidebar
-          wishes={wishes}
-          projects={projects}
-          counts={counts}
-          inbox={inbox}
-          planSelected={plan}
-          onSelectPlan={() => setSelected(PLAN)}
-          selectedWishId={wish?.id ?? ""}
-          selectedProjectId={projectId}
-          collapsed={collapsed}
-          onSelectWish={setSelected}
-          onSelectProject={setProjectId}
-          onMove={move}
-          onNewProject={() => setModal("project")}
-        />
-        <button
-          className="nav-item import-nav"
-          onClick={() => importRef.current?.click()}
-          title={t("app.import_wish")}
-          disabled={!loaded}
-        >
-          <Upload size={15} />
-          {!collapsed && <span>{t("app.import_wish")}</span>}
-        </button>
-        <div className="sidebar-bottom">
-          <button
-            className="profile"
-            onClick={() => setModal("settings")}
-            title={t("app.connections_preferences")}
+        {/* Folded, the sidebar is a rail of icons that keeps each wish's counts (Q03). */}
+        <div className="sidebar-content">
+          {/* The creation page's smoke warms up when the person reaches for New wish, never at start (report §3). */}
+          <TooltipButton
+            className="new-mission"
+            onClick={() => setModal("make")}
+            onPointerEnter={startWishSmokePrewarm}
+            onFocus={startWishSmokePrewarm}
+            label={t("app.new_wish")}
+            tooltip={t("app.new_wish")}
+            shortcut={newWishShortcut.label}
+            aria-keyshortcuts={newWishShortcut.aria}
           >
-            <span className="profile-avatar">C</span>
+            <Plus size={16} />
             {!collapsed && (
               <>
-                <span>
-                  {t("app.personal_space")}
-                  <small>{t("app.local_app")}</small>
-                </span>
-                <Settings2 size={15} />
+                <span>{t("app.new_wish")}</span>
+                <kbd>{newWishShortcut.label}</kbd>
               </>
             )}
+          </TooltipButton>
+          <WishSidebar
+            wishes={wishes}
+            projects={projects}
+            counts={counts}
+            inbox={inbox}
+            planSelected={plan}
+            onSelectPlan={() => {
+              setSelected(PLAN);
+              setModal(null);
+            }}
+            selectedWishId={wish?.id ?? ""}
+            selectedProjectId={projectId}
+            collapsed={collapsed}
+            onSelectWish={(id) => {
+              setSelected(id);
+              setModal(null);
+            }}
+            onSelectProject={setProjectId}
+            onMove={move}
+            onNewProject={() => setModal("project")}
+            onPush={pushProject}
+          />
+          <button
+            className="nav-item import-nav"
+            onClick={() => importRef.current?.click()}
+            title={t("app.import_wish")}
+            disabled={!loaded}
+          >
+            <Upload size={15} />
+            {!collapsed && <span>{t("app.import_wish")}</span>}
           </button>
+          <div className="sidebar-bottom">
+            <button
+              className="profile"
+              onClick={() => setModal("settings")}
+              title={t("app.connections_preferences")}
+            >
+              <span className="profile-avatar">C</span>
+              {!collapsed && (
+                <>
+                  <span>
+                    {t("app.personal_space")}
+                    <small>{t("app.local_app")}</small>
+                  </span>
+                  <Settings2 size={15} />
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </aside>
       <main className="main-shell">
-        {plan ? (
-          <FlightPlan wishes={active} onOpen={setSelected} onToast={setToast} />
-        ) : wish ? (
-          <WishView
-            key={wish.id}
-            wish={wish}
-            opening={opening?.wishId === wish.id ? opening : undefined}
-            onToast={setToast}
-          />
-        ) : (
-          <Welcome
-            loaded={loaded}
-            onMake={() => setModal("make")}
-            onImport={() => importRef.current?.click()}
-          />
-        )}
-        <StatusBar live={live} error={error} />
+        <LayoutGroup id="workspace-action-group">
+          {modal === "make" ? (
+            <MakeWish
+              projects={projects}
+              active={active.length}
+              onBusyChange={setMaking}
+              backActionRef={makeBackAction}
+              onBackSetupChange={setMakeBackInSetup}
+              onClose={closeMake}
+              onMade={(made, warning) => {
+                setModal(null);
+                setSelected(made.id);
+                setJustMade(made);
+                void data.changed(made.id, [Change.WISH]);
+                if (warning) setToast(warning);
+              }}
+            />
+          ) : settling ? (
+            <div className="wish-view" aria-busy="true" />
+          ) : plan ? (
+            <FlightPlan
+              wishes={active}
+              onOpen={setSelected}
+              onToast={setToast}
+            />
+          ) : wish ? (
+            <WishView
+              key={wish.id}
+              wish={wish}
+              opening={opening?.wishId === wish.id ? opening : undefined}
+              reaching={reaching?.wishId === wish.id ? reaching : undefined}
+              onToast={setToast}
+              onSetupAgents={() => setModal("agents")}
+            />
+          ) : (
+            <HomePlaceholder />
+          )}
+          <StatusBar live={live} error={error} />
+        </LayoutGroup>
       </main>
       <AnimatePresence>
-        {modal === "make" && (
-          <MakeWish
-            projects={projects}
-            active={wishes.filter(isActive).length}
-            onClose={() => setModal(null)}
-            onMade={(id) => {
-              setModal(null);
-              setSelected(id);
-              void data.changed(id, [Change.WISH]);
-            }}
-          />
-        )}
         {modal === "project" && (
           <AddProject
             onClose={() => setModal(null)}
@@ -263,9 +417,14 @@ export function WishApp() {
             onDocs={() => setModal("docs")}
           />
         )}
-        {modal === "docs" && <Docs onClose={() => setModal(null)} />}
-        {project && (
-          <ProjectPanel project={project} onClose={() => setProjectId("")} />
+        {modal === "docs" && <Docs onClose={closeDocs} />}
+        {modal === "agents" && <AgentSetup onClose={() => setModal(null)} />}
+        {project && modal !== "make" && (
+          <ProjectPanel
+            project={project}
+            onClose={() => setProjectId("")}
+            onToast={setToast}
+          />
         )}
       </AnimatePresence>
       <Toast text={toast} onClose={closeToast} />
@@ -285,40 +444,12 @@ export function WishApp() {
   );
 }
 
-// Welcome is the window without a wish: make one, or import one.
-function Welcome({
-  loaded,
-  onMake,
-  onImport,
-}: {
-  loaded: boolean;
-  onMake: () => void;
-  onImport: () => void;
-}) {
+function HomePlaceholder() {
   return (
-    <div className="mission-scroll wish-welcome">
-      <div className="hero">
-        <div className="hero-copy">
-          <h1>{t("welcome.title")}</h1>
-          <p>{loaded ? t("welcome.detail") : t("common.loading")}</p>
-          <div className="hero-meta">
-            <button className="button accent" onClick={onMake}>
-              <Plus size={14} />
-              {t("app.new_wish")}
-            </button>
-            <button
-              className="button secondary"
-              onClick={onImport}
-              disabled={!loaded}
-            >
-              <Upload size={14} />
-              {t("app.import_wish")}
-            </button>
-          </div>
-          <p className="form-tip">
-            {t("welcome.cli", { command: 'djinn wish make "…"' })}
-          </p>
-        </div>
+    <div className="wish-view">
+      <PageHeader middle={<OperatingLoad />} />
+      <div className="wish-home-placeholder">
+        <h1>{t("home.title")}</h1>
       </div>
     </div>
   );

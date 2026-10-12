@@ -27,7 +27,7 @@ func TestScopeTakesTheTree(t *testing.T) {
 	// The child ticks into a file, in a session of its own; the command waits for it.
 	script := `setsid sh -c 'while :; do echo x >> "$1"; sleep 0.05; done' child "$0" & echo "$!"; wait`
 	h := &Harness{scopes: scopes}
-	p, err := startProcess(t.TempDir(), "sh", []string{"-c", script, ticks}, nil, h.scope("W1"), 2*time.Second)
+	p, err := startProcess(t.TempDir(), "sh", []string{"-c", script, ticks}, nil, h.scope("W1"), 2*time.Second, false)
 	if err != nil {
 		t.Fatal(err)
 	}

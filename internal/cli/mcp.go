@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
 
@@ -75,13 +76,15 @@ type mcpCallResult struct {
 }
 
 // tools are the public unary methods as MCP tools, in the order of the command line. A stream does not fit a tool
-// call, which answers once: the streaming methods stay on the command line. A method that only reads is a read-only
-// tool; one that deletes, a destructive one.
+// call, which answers once: the streaming methods stay on the command line, and so do the methods marked
+// command_line_only, which only the developer types. A method that only reads is a read-only tool; one that deletes,
+// a destructive one.
 func tools() []mcpTool {
 	var out []mcpTool
 	for _, sd := range commands() {
 		for _, md := range public(sd) {
-			if md.IsStreamingClient() || md.IsStreamingServer() {
+			if md.IsStreamingClient() || md.IsStreamingServer() ||
+				proto.GetExtension(md.Options(), djinnv1.E_CommandLineOnly).(bool) {
 				continue
 			}
 			out = append(out, mcpTool{
@@ -99,7 +102,7 @@ func tools() []mcpTool {
 	return out
 }
 
-// toolName is the command line of a method in snake_case: djinn wish set-lead is wish_set_lead.
+// toolName is the command line of a method in snake_case: djinn lead set is lead_set.
 func toolName(md protoreflect.MethodDescriptor) string {
 	name := command(md.Parent().(protoreflect.ServiceDescriptor)) + "_" + kebab(string(md.Name()))
 	return strings.ReplaceAll(name, "-", "_")
@@ -299,7 +302,7 @@ func (s *mcpServer) handle(ctx context.Context, msg rpcMessage) {
 			"protocolVersion": version,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "djinn", "version": s.cfg.Version},
-			"instructions": "Each tool is a command of the djinn command line: djinn wish set-lead is wish_set_lead, " +
+			"instructions": "Each tool is a command of the djinn command line: djinn lead set is lead_set, " +
 				"with the same arguments by their proto names and the same checks.",
 		}, nil)
 	case "ping":

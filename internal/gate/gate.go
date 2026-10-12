@@ -18,6 +18,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/harness"
 	"github.com/empowill/djinn/internal/machine"
@@ -40,9 +41,11 @@ type Machine interface {
 }
 
 // Costs gives the highest peak memory a command was measured at, in its project: the task's, else the one holding
-// dir; 0 when never measured. machine.Peaks is one.
+// dir; 0 when never measured. Ask counts a run of the command asked under the gate, whether it then runs to its end or not.
+// machine.Peaks is one.
 type Costs interface {
 	Peak(ctx context.Context, taskID, dir, command string) uint64
+	Ask(ctx context.Context, gate, taskID, dir, command string)
 }
 
 // Read reads what the process pid uses, with every process it started: machine.ReadWorker.
@@ -61,19 +64,24 @@ type Gates struct {
 	read    Read          // nil: holders not measured
 	freed   func()        // called when a gate is given or taken back (Freed)
 
-	mu    sync.Mutex
-	held  map[string]*waiter // by gate name
-	queue []*waiter          // in arrival order
-	seq   int
+	projectResolver func(taskID, dir string) string
+
+	mu      sync.Mutex
+	held    map[string]*waiter // by gate name
+	queue   []*waiter          // in arrival order
+	history []*machinev1.GateInterval
+	seq     int
 }
 
 // waiter is a holder of a gate, or one that waits for it.
 type waiter struct {
 	name, taskID, who, what string
+	dir, project            string
 	peak                    uint64 // the command's highest measured peak memory; 0 when never measured
 	pid                     int    // the holder's process; 0 when unknown
 	timeout                 time.Duration
 	seq                     int
+	asked                   time.Time     // when the gate was requested
 	since, until            time.Time     // when it was granted, and when it is taken back
 	granted                 chan struct{} // closed when the gate is granted
 	changed                 chan struct{} // the cause to wait changed
@@ -97,6 +105,13 @@ func (g *Gates) Measure(every time.Duration, read Read) { g.every, g.read = ever
 
 // Freed calls f each time a gate is given or taken back: a slot may have freed. djinn up wakes the scheduler.
 func (g *Gates) Freed(f func()) { g.freed = f }
+
+// ProjectResolver sets the function that resolves a task and directory to a project name.
+func (g *Gates) ProjectResolver(fn func(taskID, dir string) string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.projectResolver = fn
+}
 
 // Request is what a holder asks a gate for.
 type Request struct {
@@ -161,16 +176,23 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 		who += ": " + what
 		if g.costs != nil {
 			peak = g.costs.Peak(ctx, taskID, r.Dir, what)
+			g.costs.Ask(ctx, name, taskID, r.Dir, what)
 		}
 	}
 	g.mu.Lock()
 	g.seq++
+	var proj string
+	if g.projectResolver != nil {
+		proj = g.projectResolver(taskID, r.Dir)
+	}
 	w := &waiter{
-		name: name, taskID: taskID, who: who, what: what, peak: peak, pid: r.PID, timeout: timeout, seq: g.seq,
+		name: name, taskID: taskID, who: who, what: what, dir: r.Dir, project: proj, peak: peak, pid: r.PID, timeout: timeout, seq: g.seq,
+		asked:   time.Now(),
 		granted: make(chan struct{}), changed: make(chan struct{}, 1), done: make(chan struct{}),
 	}
 	g.queue = append(g.queue, w)
 	g.mu.Unlock()
+	g.note(w, "asked")
 
 	tick := time.NewTicker(g.tick)
 	defer tick.Stop()
@@ -218,6 +240,24 @@ func (g *Gates) give(w *waiter, why string) {
 	delete(g.held, w.name)
 	w.back = why
 	close(w.done)
+	if !w.since.IsZero() {
+		project := w.project
+		if project == "" && g.projectResolver != nil {
+			project = g.projectResolver(w.taskID, w.dir)
+		}
+		g.history = append(g.history, &machinev1.GateInterval{
+			Gate:        w.name,
+			Command:     w.what,
+			Project:     project,
+			TaskId:      w.taskID,
+			AskedTime:   timestamppb.New(w.asked),
+			GrantTime:   timestamppb.New(w.since),
+			ReleaseTime: timestamppb.New(time.Now()),
+		})
+		if len(g.history) > 2000 {
+			g.history = g.history[len(g.history)-2000:]
+		}
+	}
 	g.mu.Unlock()
 	if why != "" {
 		g.note(w, "taken back: "+why)
@@ -445,4 +485,42 @@ func (g *Gates) List() []State {
 	}
 	slices.SortFunc(out, func(a, b State) int { return strings.Compare(a.Name, b.Name) })
 	return out
+}
+
+// Intervals returns recent gate intervals (past and currently held) since cutoff.
+func (g *Gates) Intervals(cutoff time.Time) []*machinev1.GateInterval {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	var out []*machinev1.GateInterval
+	for _, iv := range g.history {
+		if iv.ReleaseTime != nil && iv.ReleaseTime.AsTime().Before(cutoff) {
+			continue
+		}
+		out = append(out, iv)
+	}
+	for _, h := range g.held {
+		if !h.since.IsZero() {
+			project := h.project
+			if project == "" && g.projectResolver != nil {
+				project = g.projectResolver(h.taskID, h.dir)
+			}
+			out = append(out, &machinev1.GateInterval{
+				Gate:        h.name,
+				Command:     h.what,
+				Project:     project,
+				TaskId:      h.taskID,
+				AskedTime:   timestamppb.New(h.asked),
+				GrantTime:   timestamppb.New(h.since),
+				ReleaseTime: nil,
+			})
+		}
+	}
+	return out
+}
+
+// AddInterval records a gate interval into history (used in tests).
+func (g *Gates) AddInterval(iv *machinev1.GateInterval) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.history = append(g.history, iv)
 }

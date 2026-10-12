@@ -29,6 +29,7 @@ import (
 	"github.com/empowill/djinn/internal/cli"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/terminal"
 )
 
 // install puts a copy of this test binary at path, as task install does: built apart, then renamed over the
@@ -61,13 +62,13 @@ func seedWish(t *testing.T, home, folder, session string) *planv1.Wish {
 	}
 	defer db.Close()
 	project := &planv1.Project{Id: store.NewID(), Name: "lamp", Directory: folder, CreateTime: timestamppb.Now()}
+	leadRecord := &planv1.Lead{Id: "lead", Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: session, Directory: folder}
 	wish := &planv1.Wish{
 		Id: store.NewID(), Title: "Polish the lamp", ProjectIds: []string{project.GetId()}, CreateTime: timestamppb.Now(),
-		Lead: &planv1.Lead{Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: session, Directory: folder},
 	}
 	err = db.Tx(ctx, func(tx *store.Tx) error {
 		return errors.Join(tx.Journal("test", planv1connect.WishServiceMakeProcedure,
-			&planv1.WishServiceMakeRequest{Title: wish.GetTitle()}), tx.Put(project), tx.Put(wish))
+			&planv1.WishServiceMakeRequest{Title: wish.GetTitle()}), tx.Put(project), tx.Put(wish), tx.Put(leadRecord))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -122,12 +123,12 @@ func TestUpdate(t *testing.T) {
 	addr := answering(t, home, oldErrs.String)
 
 	// The lead runs in its terminal; a second terminal runs in a folder that will be gone at the restart.
-	code, out, errs := runDjinn(t, env, "wish", "resume", wish.GetId())
+	code, out, errs := runDjinn(t, env, "lead", "resume", "--wish-id", wish.GetId())
 	if code != 0 {
 		t.Fatalf("resume: exit %d\n%s%s", code, out, errs)
 	}
 	ui, terminals := clients(t, addr)
-	lead := "lead-" + wish.GetId()
+	lead := "lead"
 	gone := filepath.Join(t.TempDir(), "gone")
 	if err := os.Mkdir(gone, 0o700); err != nil {
 		t.Fatal(err)
@@ -253,6 +254,19 @@ func TestUpdateNeedsAPerson(t *testing.T) {
 }
 
 // TestResumable: a lead started from a brief resumes its session after a restart; other commands stay as they were.
+// TestRestartSkipsTheAgentsSetup: an update restart opens the shells and the leads again, never an agent's install or
+// sign-in that the window started.
+func TestRestartSkipsTheAgentsSetup(t *testing.T) {
+	got := restartTerminals([]*terminal.Terminal{
+		{Name: "main", Command: []string{"/bin/sh"}, Dir: "/p"},
+		{Name: "setup-claude-k1", Command: []string{"/bin/sh", "-c", "curl … | bash"}},
+		{Name: "lead", Command: []string{"claude"}, Dir: "/p"},
+	})
+	if len(got) != 2 || got[0].Name != "main" || got[0].Directory != "/p" || got[1].Name != "lead" {
+		t.Fatalf("restart terminals %+v, want main and lead", got)
+	}
+}
+
 func TestResumable(t *testing.T) {
 	for _, c := range []struct{ in, want []string }{
 		{[]string{"/bin/zsh", "-lc", "claude --session-id 0a56-c9be --append-system-prompt-file rules.md 'go'"},

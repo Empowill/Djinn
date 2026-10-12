@@ -3,6 +3,7 @@ package plan
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -18,6 +19,7 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/store"
 )
 
 // SettingsFile is where a project's repository keeps the settings its team shares: a plan.v1.ProjectSettings in
@@ -32,32 +34,58 @@ func DeveloperSettingsFile(home, projectID string) string {
 // ReadSettings reads the settings of the file at path: nil, and no error, when there is none. A file that holds
 // something that looks like a secret is refused, comments included, without repeating it.
 func ReadSettings(path string) (*planv1.ProjectSettings, error) {
+	s, _, err := ReadSettingsWithWarnings(path)
+	return s, err
+}
+
+// ReadSettingsWithWarnings reads the settings of the file at path: nil, and no error, when there is none. A file that holds
+// something that looks like a secret is refused, comments included, without repeating it. Any unknown fields are discarded,
+// logged once as warnings, and returned in warnings.
+func ReadSettingsWithWarnings(path string) (*planv1.ProjectSettings, []string, error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if line, why := secretIn(b); line > 0 {
-		return nil, fmt.Errorf("%s: line %d %s; this file holds no secret: remove it", path, line, why)
+		return nil, nil, fmt.Errorf("%s: line %d %s; this file holds no secret: remove it", path, line, why)
+	}
+	if line, key := removedKeyIn(b); line > 0 {
+		return nil, nil, fmt.Errorf("%s: line %d names %s: this key was removed; delete the line", path, line, key)
 	}
 	s := &planv1.ProjectSettings{}
-	if err := prototext.Unmarshal(b, s); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+	normalized := normalizeInstallQuestions.ReplaceAllFunc(b, func(match []byte) []byte {
+		parts := normalizeInstallQuestions.FindSubmatch(match)
+		if len(parts) == 3 {
+			prefix := parts[1]
+			val := strings.ToUpper(string(parts[2]))
+			return append(prefix, []byte("INSTALL_QUESTIONS_"+val)...)
+		}
+		return match
+	})
+	unknowns := FindUnknownFields(normalized, s)
+	var warnings []string
+	for _, u := range unknowns {
+		warnings = append(warnings, WarnUnknownField(path, u))
+	}
+	opts := prototext.UnmarshalOptions{DiscardUnknown: true}
+	if err := opts.Unmarshal(normalized, s); err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", path, err)
 	}
 	if err := protovalidate.Validate(s); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, nil, fmt.Errorf("%s: %w", path, err)
 	}
 	seen := map[string]bool{}
 	for _, c := range s.GetChecks() {
 		name := strings.ToLower(c.GetName())
 		if seen[name] {
-			return nil, fmt.Errorf("%s: two checks are named %s: names ignore case", path, c.GetName())
+			return nil, nil, fmt.Errorf("%s: two checks are named %s: names ignore case", path, c.GetName())
 		}
 		seen[name] = true
 	}
-	return s, nil
+	return s, warnings, nil
 }
 
 var (
@@ -71,7 +99,27 @@ var (
 	// word is what a key is made of, separators included; run is a stretch without separators.
 	word = regexp.MustCompile(`[A-Za-z0-9_-]+`)
 	run  = regexp.MustCompile(`[A-Za-z0-9]{32,}`)
+
+	// normalizeInstallQuestions matches lowercase enum values for install_questions so prototext can parse them.
+	normalizeInstallQuestions = regexp.MustCompile(`(?m)^(\s*install_questions\s*:\s*)["']?(never|when_needed|always)["']?`)
+	// removedSettingsField matches setting keys that have been removed from ProjectSettings.
+	removedSettingsField = regexp.MustCompile(`(?i)^\s*(answer_workers|question_workers)\b`)
 )
+
+// removedKeyIn returns the first line of b that names a removed key, and the key; 0 when none does.
+func removedKeyIn(b []byte) (int, string) {
+	lines := bufio.NewScanner(bytes.NewReader(b))
+	for n := 1; lines.Scan(); n++ {
+		line := lines.Text()
+		if idx := strings.IndexByte(line, '#'); idx >= 0 {
+			line = line[:idx]
+		}
+		if m := removedSettingsField.FindStringSubmatch(line); m != nil {
+			return n, strings.ToLower(m[1])
+		}
+	}
+	return 0, ""
+}
 
 // secretIn returns the first line of b that looks like it holds a secret, and why; 0 when none does: a field name
 // that says so, a word that starts like a well-known key, or a long run of letters and digits.
@@ -108,8 +156,9 @@ const DefaultCorrectionAttempts = 2
 // Defaults of keeping a wish's integration branch up with the project's main branch: merged at each release, main
 // fetched at most hourly, and a release of Djinn installed by itself on main.
 const (
-	DefaultMergeMain      = planv1.MergeMain_MERGE_MAIN_RELEASE
-	DefaultMergeMainEvery = time.Hour
+	DefaultMergeMain        = planv1.MergeMain_MERGE_MAIN_RELEASE
+	DefaultMergeMainEvery   = time.Hour
+	DefaultInstallQuestions = planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS
 )
 
 // Settings are a project's settings as its workers get them, each with where it comes from.
@@ -122,33 +171,66 @@ type Settings struct {
 	// them, the one that makes a fresh worktree ready, and the one that installs its new build; empty when not set.
 	Generated                []string
 	Generate, Setup, Install string
+	TestOne                  string
 	// The checks Djinn runs before it commits a task's work and before it pushes, in the order the file names them.
 	Checks []*planv1.ProjectCheck
 	// How many correction workers Djinn starts for a batch that conflicts in code or tests red, before it asks.
 	CorrectionAttempts int
 
-	// QuestionWorkers says whether Djinn starts a question worker after an answer or a request to investigate, with
-	// QuestionModel and QuestionBudgetUSD.
-	QuestionWorkers   bool
+	// EnlightenWorkers says whether Djinn starts an investigator after a request to investigate ("Enlighten me").
+	EnlightenWorkers  bool
+	QuestionProvider  planv1.Provider
 	QuestionModel     string
 	QuestionBudgetUSD float64
 
 	// How Djinn keeps each wish's integration branch up with the project's main branch: the branch ("" for the
 	// remote's default), when it merges it, how often it fetches it at most; and whether a release of Djinn installs by
 	// itself while the person's checkout is on main.
-	MainBranch      string
-	MergeMain       planv1.MergeMain
-	MergeMainEvery  time.Duration
-	InstallReleases bool
+	MainBranch       string
+	MergeMain        planv1.MergeMain
+	MergeMainEvery   time.Duration
+	InstallReleases  bool
+	Push             planv1.ProjectPush
+	PushStrategy     planv1.PushStrategy
+	InstallQuestions planv1.InstallQuestions
+	// Babysit says whether Djinn babysits the pull or merge request a task opens, with the project's babysit skill.
+	Babysit  bool
+	Warnings []string
 
-	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom planv1.SettingSource
-	ChecksFrom, AttemptsFrom, InstallFrom                                                   planv1.SettingSource
-	QuestionWorkersFrom, QuestionModelFrom, QuestionBudgetFrom                              planv1.SettingSource
-	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom                  planv1.SettingSource
+	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom            planv1.SettingSource
+	ChecksFrom, AttemptsFrom, InstallFrom, TestOneFrom                                                 planv1.SettingSource
+	EnlightenWorkersFrom                                                                               planv1.SettingSource
+	QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                                        planv1.SettingSource
+	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom, PushStrategyFrom planv1.SettingSource
+	InstallQuestionsFrom, BabysitFrom                                                                  planv1.SettingSource
 }
 
-// Defaults of the question workers: a cheaper model is enough to turn a decision into tasks, or to read and revise a
-// question; and a cap, so that one never runs long.
+// CanReadOnly tells whether a provider can run a question worker (read-only).
+func CanReadOnly(p planv1.Provider) bool {
+	switch p {
+	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_FAKE:
+		return true
+	default:
+		return false
+	}
+}
+
+// CanResume reports whether a provider can resume an existing session.
+func CanResume(p planv1.Provider) bool {
+	switch p {
+	case planv1.Provider_PROVIDER_CLAUDE,
+		planv1.Provider_PROVIDER_CODEX,
+		planv1.Provider_PROVIDER_ANTIGRAVITY,
+		planv1.Provider_PROVIDER_FAKE,
+		planv1.Provider_PROVIDER_UNSPECIFIED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defaults of the question workers: a cheaper model is enough to read and revise a question; and a cap, so that one
+// never runs long.
 const (
 	DefaultQuestionModel     = "sonnet" // for claude; another provider's own default
 	DefaultQuestionBudgetUSD = 2.0
@@ -162,11 +244,16 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 	s := Settings{
 		Provider: planv1.Provider_PROVIDER_CLAUDE, Branch: DefaultBranch, CorrectionAttempts: DefaultCorrectionAttempts,
 		ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
-		SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def,
-		QuestionWorkers: true, QuestionBudgetUSD: DefaultQuestionBudgetUSD,
-		QuestionWorkersFrom: def, QuestionModelFrom: def, QuestionBudgetFrom: def,
+		SetupFrom: def, ChecksFrom: def, InstallFrom: def, TestOneFrom: def, AttemptsFrom: def,
+		EnlightenWorkers: true, EnlightenWorkersFrom: def,
+		QuestionProviderFrom: def, QuestionBudgetUSD: DefaultQuestionBudgetUSD,
+		QuestionModelFrom: def, QuestionBudgetFrom: def,
 		MergeMain: DefaultMergeMain, MergeMainEvery: DefaultMergeMainEvery, InstallReleases: true,
-		MainBranchFrom: def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def,
+		Push:             planv1.ProjectPush_PROJECT_PUSH_STANDARD,
+		PushStrategy:     planv1.PushStrategy_PUSH_STRATEGY_WISH,
+		InstallQuestions: DefaultInstallQuestions,
+		MainBranchFrom:   def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def, PushStrategyFrom: def,
+		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def,
 	}
 	questionModel := false // a file set it
 	for _, f := range []struct {
@@ -208,8 +295,12 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		if f.settings.Install != nil {
 			s.Install, s.InstallFrom = f.settings.GetInstall(), f.from
 		}
-		if f.settings.QuestionWorkers != nil {
-			s.QuestionWorkers, s.QuestionWorkersFrom = f.settings.GetQuestionWorkers(), f.from
+		if f.settings.EnlightenWorkers != nil {
+			s.EnlightenWorkers, s.EnlightenWorkersFrom = f.settings.GetEnlightenWorkers(), f.from
+		}
+		if f.settings.QuestionProvider != nil {
+			s.QuestionProvider, s.QuestionProviderFrom = f.settings.GetQuestionProvider(), f.from
+			s.QuestionModel, s.QuestionModelFrom, questionModel = "", def, false
 		}
 		if f.settings.QuestionModel != nil {
 			s.QuestionModel, s.QuestionModelFrom, questionModel = f.settings.GetQuestionModel(), f.from, true
@@ -229,8 +320,31 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		if f.settings.InstallReleases != nil {
 			s.InstallReleases, s.InstallReleasesFrom = f.settings.GetInstallReleases(), f.from
 		}
+		if f.settings.Push != nil {
+			s.Push, s.PushFrom = f.settings.GetPush(), f.from
+		}
+		if f.settings.PushStrategy != nil {
+			s.PushStrategy, s.PushStrategyFrom = f.settings.GetPushStrategy(), f.from
+		}
+		if f.settings.TestOne != nil {
+			s.TestOne, s.TestOneFrom = f.settings.GetTestOne(), f.from
+		}
+		if f.settings.InstallQuestions != nil {
+			s.InstallQuestions, s.InstallQuestionsFrom = f.settings.GetInstallQuestions(), f.from
+		}
+		if f.settings.Babysit != nil {
+			s.Babysit, s.BabysitFrom = f.settings.GetBabysit(), f.from
+		}
 	}
-	if !questionModel && s.Provider == planv1.Provider_PROVIDER_CLAUDE {
+	effective := s.QuestionProvider
+	if effective == planv1.Provider_PROVIDER_UNSPECIFIED {
+		if CanReadOnly(s.Provider) {
+			effective = s.Provider
+		} else {
+			effective = planv1.Provider_PROVIDER_CLAUDE
+		}
+	}
+	if !questionModel && effective == planv1.Provider_PROVIDER_CLAUDE {
 		s.QuestionModel = DefaultQuestionModel
 	}
 	return s
@@ -251,28 +365,43 @@ func settingsFiles(home string, project *planv1.Project) (repo, dev string) {
 // LoadSettings reads the settings of project (nil outside any project): its repository's, then the developer's in
 // Djinn's data folder home. A file that cannot be read is an error that names it.
 func LoadSettings(home string, project *planv1.Project) (Settings, error) {
-	repo, dev, problems := loadSettings(home, project)
-	return ResolveSettings(repo, dev), errors.Join(problems...)
+	repo, dev, warnings, problems := loadSettings(home, project)
+	s := ResolveSettings(repo, dev)
+	s.Warnings = warnings
+	return s, errors.Join(problems...)
 }
 
 // loadSettings reads both files of project, and why each one that could not be read was not.
-func loadSettings(home string, project *planv1.Project) (repo, dev *planv1.ProjectSettings, problems []error) {
+func loadSettings(home string, project *planv1.Project) (repo, dev *planv1.ProjectSettings, warnings []string, problems []error) {
 	if project == nil {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	repoFile, devFile := settingsFiles(home, project)
 	var err error
+	var w []string
 	if repoFile != "" {
-		if repo, err = ReadSettings(repoFile); err != nil {
+		if repo, w, err = ReadSettingsWithWarnings(repoFile); err != nil {
 			problems = append(problems, err)
+		} else {
+			for _, warn := range w {
+				if !slices.Contains(warnings, warn) {
+					warnings = append(warnings, warn)
+				}
+			}
 		}
 	}
 	if devFile != "" {
-		if dev, err = ReadSettings(devFile); err != nil {
+		if dev, w, err = ReadSettingsWithWarnings(devFile); err != nil {
 			problems = append(problems, err)
+		} else {
+			for _, warn := range w {
+				if !slices.Contains(warnings, warn) {
+					warnings = append(warnings, warn)
+				}
+			}
 		}
 	}
-	return repo, dev, problems
+	return repo, dev, warnings, problems
 }
 
 // Rows are the settings as djinn project show lists them.
@@ -292,16 +421,30 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "generate", Value: s.Generate, Source: s.GenerateFrom},
 		{Name: "setup", Value: s.Setup, Source: s.SetupFrom},
 		{Name: "checks", Value: ChecksText(s.Checks), Source: s.ChecksFrom},
+		{Name: "test_one", Value: s.TestOne, Source: s.TestOneFrom},
 		{Name: "correction_attempts", Value: strconv.Itoa(s.CorrectionAttempts), Source: s.AttemptsFrom},
 		{Name: "install", Value: s.Install, Source: s.InstallFrom},
-		{Name: "question_workers", Value: strconv.FormatBool(s.QuestionWorkers), Source: s.QuestionWorkersFrom},
+		{Name: "install_questions", Value: InstallQuestionsWord(s.InstallQuestions), Source: s.InstallQuestionsFrom},
+		{Name: "enlighten_workers", Value: strconv.FormatBool(s.EnlightenWorkers), Source: s.EnlightenWorkersFrom},
+		{Name: "question_provider", Value: questionProviderName(s.QuestionProvider), Source: s.QuestionProviderFrom},
 		{Name: "question_model", Value: s.QuestionModel, Source: s.QuestionModelFrom},
 		{Name: "question_budget_usd", Value: usd(s.QuestionBudgetUSD), Source: s.QuestionBudgetFrom},
 		{Name: "main_branch", Value: s.MainBranch, Source: s.MainBranchFrom},
 		{Name: "merge_main", Value: MergeMainWord(s.MergeMain), Source: s.MergeMainFrom},
 		{Name: "merge_main_minutes", Value: strconv.Itoa(int(s.MergeMainEvery / time.Minute)), Source: s.MergeMainEveryFrom},
 		{Name: "install_releases", Value: strconv.FormatBool(s.InstallReleases), Source: s.InstallReleasesFrom},
+		{Name: "push", Value: ProjectPushWord(s.Push), Source: s.PushFrom},
+		{Name: "push_strategy", Value: PushStrategyWord(s.PushStrategy), Source: s.PushStrategyFrom},
+		{Name: "babysit", Value: strconv.FormatBool(s.Babysit), Source: s.BabysitFrom},
 	}
+}
+
+// questionProviderName is the name of the question provider, as the settings write it: "" when not set.
+func questionProviderName(p planv1.Provider) string {
+	if p == planv1.Provider_PROVIDER_UNSPECIFIED {
+		return ""
+	}
+	return strings.ToLower(strings.TrimPrefix(p.String(), "PROVIDER_"))
 }
 
 // fileChecks are the checks a file sets: its checks, and its former test command as the check test at commit, unless
@@ -336,6 +479,143 @@ func MergeMainWord(m planv1.MergeMain) string {
 	return strings.ToLower(strings.TrimPrefix(m.String(), "MERGE_MAIN_"))
 }
 
+// ProjectPushWord is when Djinn pushes, as the settings say it: standard, on_demand.
+func ProjectPushWord(p planv1.ProjectPush) string {
+	switch p {
+	case planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND:
+		return "on_demand"
+	default:
+		return "standard"
+	}
+}
+
+// InstallQuestionsWord is when Djinn asks to install builds, as the settings say it: always, when_needed, never.
+func InstallQuestionsWord(q planv1.InstallQuestions) string {
+	switch q {
+	case planv1.InstallQuestions_INSTALL_QUESTIONS_NEVER:
+		return "never"
+	case planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED:
+		return "when_needed"
+	default:
+		return "always"
+	}
+}
+
+// SaveDeveloperInstallQuestions writes the developer's install questions setting into their settings file in home.
+func SaveDeveloperInstallQuestions(home, projectID string, questions planv1.InstallQuestions) error {
+	if home == "" || projectID == "" {
+		return errors.New("cannot save developer settings: home or project ID is missing")
+	}
+	path := DeveloperSettingsFile(home, projectID)
+	s, err := ReadSettings(path)
+	if err != nil {
+		return err
+	}
+	if s == nil {
+		s = &planv1.ProjectSettings{}
+	}
+	s.InstallQuestions = questions.Enum()
+	if err := protovalidate.Validate(s); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	b, err := prototext.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(s)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o600)
+}
+
+// SaveDeveloperPush writes the developer's push setting into their settings file in home.
+func SaveDeveloperPush(home, projectID string, push planv1.ProjectPush) error {
+	if home == "" || projectID == "" {
+		return errors.New("cannot save developer settings: home or project ID is missing")
+	}
+	path := DeveloperSettingsFile(home, projectID)
+	s, err := ReadSettings(path)
+	if err != nil {
+		return err
+	}
+	if s == nil {
+		s = &planv1.ProjectSettings{}
+	}
+	s.Push = push.Enum()
+	if err := protovalidate.Validate(s); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	b, err := prototext.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(s)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o600)
+}
+
+// PushStrategyWord is how a wish integrates its work, as the settings say it: wish, azima.
+func PushStrategyWord(p planv1.PushStrategy) string {
+	switch p {
+	case planv1.PushStrategy_PUSH_STRATEGY_AZIMA:
+		return "azima"
+	default:
+		return "wish"
+	}
+}
+
+// SaveDeveloperPushStrategy writes the developer's push strategy setting into their settings file in home.
+func SaveDeveloperPushStrategy(home, projectID string, strategy planv1.PushStrategy) error {
+	if home == "" || projectID == "" {
+		return errors.New("cannot save developer settings: home or project ID is missing")
+	}
+	path := DeveloperSettingsFile(home, projectID)
+	s, err := ReadSettings(path)
+	if err != nil {
+		return err
+	}
+	if s == nil {
+		s = &planv1.ProjectSettings{}
+	}
+	s.PushStrategy = strategy.Enum()
+	if err := protovalidate.Validate(s); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	b, err := prototext.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(s)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o600)
+}
+
+// ResolveWishPushStrategy resolves the push strategy and its source for a wish, falling back to the project settings.
+func ResolveWishPushStrategy(wish *planv1.Wish, settings Settings) (planv1.PushStrategy, planv1.SettingSource) {
+	if wish != nil && wish.GetPushStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {
+		return wish.GetPushStrategy(), planv1.SettingSource_SETTING_SOURCE_WISH
+	}
+	return settings.PushStrategy, settings.PushStrategyFrom
+}
+
+// EffectiveWishPushStrategy resolves the effective push strategy for wish in store r with home folder home.
+func EffectiveWishPushStrategy(ctx context.Context, r store.Reader, home string, wish *planv1.Wish) (planv1.PushStrategy, planv1.SettingSource, error) {
+	if wish != nil && wish.GetPushStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {
+		return wish.GetPushStrategy(), planv1.SettingSource_SETTING_SOURCE_WISH, nil
+	}
+	if wish == nil || len(wish.GetProjectIds()) == 0 {
+		return planv1.PushStrategy_PUSH_STRATEGY_WISH, planv1.SettingSource_SETTING_SOURCE_DEFAULT, nil
+	}
+	project, err := store.Get[*planv1.Project](ctx, r, wish.GetProjectIds()[0])
+	if err != nil {
+		return planv1.PushStrategy_PUSH_STRATEGY_WISH, planv1.SettingSource_SETTING_SOURCE_DEFAULT, err
+	}
+	settings, _ := LoadSettings(home, project)
+	return settings.PushStrategy, settings.PushStrategyFrom, nil
+}
+
 // WhenWord is when a check runs, as the settings and the brief say it: commit, push.
 func WhenWord(w planv1.CheckWhen) string {
 	return strings.ToLower(strings.TrimPrefix(w.String(), "CHECK_WHEN_"))
@@ -368,8 +648,9 @@ func GateCommand(c *planv1.ProjectCheck) string {
 	return "djinn gate run " + c.GetName() + " -- " + c.GetCommand()
 }
 
-// ChecksBrief says, in a sentence or two, which checks Djinn runs on the project's work and when, and what a fresh
-// worktree needs first; "" for a project that sets none. The lead's brief and each worker's first prompt carry it.
+// ChecksBrief says, in a sentence or two, which checks Djinn runs on the project's work and when, how a worker
+// runs the commit checks and targeted tests (never push checks), and what a fresh worktree needs first; "" for a
+// project that sets none. The lead's brief and each worker's first prompt carry it.
 func (s Settings) ChecksBrief() string {
 	if !s.Integrates() {
 		return ""
@@ -394,8 +675,30 @@ func (s Settings) ChecksBrief() string {
 		b.WriteString(" before it pushes, with " + push)
 	}
 	b.WriteString(".")
+	commitHasTest := slices.ContainsFunc(s.ChecksAt(planv1.CheckWhen_CHECK_WHEN_COMMIT), func(c *planv1.ProjectCheck) bool {
+		return strings.EqualFold(c.GetName(), "test")
+	})
 	if commit != "" {
-		b.WriteString(" A worker runs the commit checks before it ends, and fixes what they find.")
+		b.WriteString(" A worker runs the commit checks before it ends, and fixes what they find")
+		if commitHasTest {
+			b.WriteString(" (the commit check is the whole suite)")
+		} else {
+			b.WriteString(", then only the tests that cover what it changed")
+			if s.TestOne != "" {
+				b.WriteString(" (`" + s.TestOne + "`)")
+			}
+		}
+		if push != "" {
+			b.WriteString("; do not run the push checks (" + push + "): Djinn runs them before pushing.")
+		} else {
+			b.WriteString(".")
+		}
+	} else if push != "" {
+		b.WriteString(" A worker runs only the tests that cover what it changed")
+		if s.TestOne != "" {
+			b.WriteString(" (`" + s.TestOne + "`)")
+		}
+		b.WriteString("; do not run the push checks (" + push + "): Djinn runs them before pushing.")
 	}
 	if s.Setup != "" {
 		b.WriteString(" A fresh worktree needs `" + s.Setup + "` first.")

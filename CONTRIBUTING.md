@@ -88,7 +88,14 @@ changes only when you click "update". Three separations make it so:
    with a version. Workers rebuild `bin/djinn`, never your copy.
 2. **A development build has its own data.** `bin/djinn` (version `dev`) uses a `djinn-dev`
    folder, so it never finds your Djinn, its socket or its window. Every test uses a temporary
-   folder.
+   folder. Test builds (`bin/djinn-e2e`, `bin/djinn-e2e-native`, test binaries) refuse to run or dial
+   without an explicit address and temporary data folder given by the test harness: without them,
+   they refuse loudly with instructions to start a Djinn of their own (`DJINN_HOME` of its own, `djinn up`
+   on its own socket). (W341 concluded that stray wishes were made by "a person with the window open"
+   because no test reached the real Djinn. In fact, W328 ran `./bin/djinn-e2e` by hand outside tests
+   and cleared `DJINN_TASK_ID`, which dialed the real Djinn. Test builds now refuse without harness
+   settings, workers are identified by kernel peer PID and secret token even if they clear their task ID,
+   and mutating wish commands refuse workers unless their own task's wish is concerned.)
 3. **Tests touch only what they started.** Stop a process by its PID, never by name. No native
    window unless asked (`check-window` opens one, on demand).
 
@@ -102,7 +109,7 @@ gets switched off.
 
 ## Getting set up
 
-To use Djinn, see the [README](README.md). To work on it:
+To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`docs/handoff-mac-codex.md`](docs/handoff-mac-codex.md). To work on it:
 
 **Prerequisites**
 - [Go](https://go.dev/dl/) 1.25+, with CGO for the native window.
@@ -118,9 +125,13 @@ To use Djinn, see the [README](README.md). To work on it:
 
 **Everyday commands** (`go tool task --list` for all)
 - `go tool task test`: every test (Go, interface, end-to-end). Parts: `test-go`, `test-ui`, `e2e`;
-  `test-pkg -- -run TestX ./cmd/djinn` for some packages. `test-go` fails on any Go test over 2 s on Linux,
-  the reference, and over 15 s elsewhere, where a process costs ten times more and a test over 2 s is only reported
+  `test-pkg -- -run TestX ./cmd/djinn` for some packages. `test-go` fails on any Go test over 10 s on Linux,
+  the reference, and over 15 s elsewhere, where a process costs ten times more and a test over 10 s is only reported
   (`tools/slowtests`): a fake clock, a short tick, a wait on an event, never a sleep that waits for luck.
+  `slowtests` watches the suite's total time (sum and wall clock) against a repository baseline
+  (`tools/slowtests/baseline.json`), warning without failing if the total grows past the baseline by over 25%
+  (update with `go run ./tools/slowtests -update-baseline`). The `e2e` suite watches its wall clock against
+  `e2e/baseline.json` similarly (update with `UPDATE_BASELINE=1`).
   - **Windows runs what targets the system.** Linux and macOS run every test; the Windows job sets
     `DJINN_TEST_SYSTEM_ONLY=1`, which skips the tests marked portable: `testx.Portable(t)` first in a Go test
     (`internal/testx`), `portable()` in an end-to-end spec (`e2e/portable.ts`). Mark a test portable when it pays
@@ -136,6 +147,14 @@ To use Djinn, see the [README](README.md). To work on it:
   at the size of the developer's wish (`real`) or ten times over (`x10`). A Go test or benchmark imports it into a
   store with `WishService.ImportData`; `go run ./tools/bigwish -size real -o <file>` writes it for `djinn wish
   import`, and a spec imports it into the e2e's djinn with `importBigWish` (`e2e/bigwish.ts`).
+  - **Window render performance:** `go tool task e2e -- e2e/wish-render.spec.ts` measures the real-size wish (time
+    to open the wish, switch tabs, show a change arriving) against millisecond budgets. A story that touches the window
+    (interface under the UI folder, the stream it reads, the server calls it makes) runs this spec before it ends;
+    other stories do not. Kept out of the default `go tool task e2e` run.
+  - **The creation page's smoke:** the cases tagged `@solver` run its WebGL2 solver, which takes about a minute to
+    show glyphs on the software WebGL2 of a headless browser; `go tool task e2e -- e2e/wish-composer.spec.ts --grep
+    @solver` (or `e2e/theme.spec.ts`) runs them, the default run leaves them out. A story that changes the smoke runs
+    them, and `go tool task e2e-native -- -run TestNativeSmokeGeometry` on the native window.
 - `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it. `go tool task format` fixes what
   can be.
   - Go: [golangci-lint](.golangci.yml), pinned in its own module (`tools/golangci/go.mod`): nothing to install. It
@@ -179,13 +198,17 @@ To use Djinn, see the [README](README.md). To work on it:
 - `djinn task pause <task-id>` holds a worker where it is and frees its slot; `djinn task resume <task-id>` lets it go
   on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. The buttons on
   its card in the window do the same. Not on Windows yet.
+- A planned task that waits for the machine alone (no slot free, or the machine under pressure) says so in the window,
+  with "Start anyway"; `djinn task start <task-id>` does the same. It never jumps a usage limit, a push hold or a
+  task that goes first. On macOS, the system's memory pressure holds workers back at warning on the Minimal notch,
+  at critical only from Medium up.
 - In a project whose settings name its checks ([`docs/team-settings.md`](docs/team-settings.md#checks)), Djinn
   integrates finished work by itself: as each task ends, alone, it merges the task's branch in a worktree of its own
   (made ready by the `setup` command, again when a lock file changes), makes the generated files again on a conflict
   only in them, runs the `commit` checks each through a gate of its name, moves the wish's branch when they pass, and
   removes the task's worktree when clean ([T07](plan/8e8d3d76-orchestrator.md)). It pushes the branch, never forcing,
   at an azima's end or once three tasks are committed and an hour has passed since the last push, once the `push`
-  checks pass (red, the push is held, and asked about if they stay red); `--push-mode ask` asks first.
+  checks pass (red, the push is held, a correction worker started, and asked about if they stay red); `--push-mode ask` asks first.
   Djinn's own checks are in [`.agents/settings.txtpb`](.agents/settings.txtpb): the lint at commit, the tests at push.
   `djinn project show <project>` and the window's project view list them with their last runs.
   `djinn wish set-integration <wish-id> --branch feat/x` names the branch. A conflict in code, or a red check, start a
@@ -209,10 +232,11 @@ To use Djinn, see the [README](README.md). To work on it:
   each one's `after:` back from the store ([T07](plan/8e8d3d76-orchestrator.md)). The Tasks tab groups work under its
   azima. One whose work is finished and whose file's unchecked "Done when" boxes all say `(needs: …)` awaits its
   proof ("Proof awaited"): a person, a machine, a release or a real model gives it, never a worker.
-- `djinn task done <task-id> --note "…"` closes a task no worker runs (planned, cut short, failed, stopped,
-  imported) once its work is done, with who closed it and why; "Mark done" on its card does it in the window.
+- `djinn task done <task-id> [--drop] --note "…"` closes a task no worker runs (planned, cut short, failed, stopped,
+  imported) once its work is done, with who closed it and why (unmerged commits queue for merging unless `--drop`); "Mark done" on its card does it in the window.
   `djinn task delete` stays for a task made by mistake; an azima goes once no task is part of it (regroup them first,
-  `djinn task group`), and a deleted task's code (W12, T27) is never given again in its wish.
+  `djinn task group`), a task once no task waits for it (rewire them first, `djinn task depend … --also`), and a
+  deleted task's code (W12, T27) is never given again in its wish.
 - `djinn task continue <task-id> --prompt "…"` gives a task no worker runs (done, failed, stopped, cut short) a new
   turn of its own session, in its own worktree and branch: the same task, back through the scheduler, its usage
   summed. Refused while it runs, once its worktree is gone, or for an agent that cannot resume a session (Antigravity,
@@ -238,8 +262,8 @@ To use Djinn, see the [README](README.md). To work on it:
   The scheme is registered without sudo: on Linux `go tool task install` adds it to the menu entry
   (`MimeType=x-scheme-handler/djinn`, `xdg-mime default`); on macOS `Djinn.app` declares it (`CFBundleURLTypes`);
   on Windows the install, or else `djinn up`, writes it in the user's registry (`HKCU\Software\Classes\djinn`).
-- `djinn mcp` serves the commands as MCP tools on stdio, for an agent that speaks MCP (`wish_set_lead` is
-  `djinn wish set-lead`; [convention](docs/cli-convention.md#mcp)).
+- `djinn mcp` serves the commands as MCP tools on stdio, for an agent that speaks MCP (`lead_set` is
+  `djinn lead set`; [convention](docs/cli-convention.md#mcp)).
 - `djinn gate run <name> -- <command>` runs a command under a gate and records what it cost in its project (CPU
   time, peak memory, duration); `djinn command list [--project <name>]` shows the costs. Held outside a running
   worker (a person's terminal, a lead, `djinn gate hold <name> --pid <pid>`), a gate takes a worker's slot, is
@@ -259,38 +283,44 @@ To use Djinn, see the [README](README.md). To work on it:
   ([T07](plan/8e8d3d76-orchestrator.md)).
 - `djinn backup [--file <archive>]` copies the data folder, even while Djinn runs; `djinn backup restore <archive>`
   puts it back, Djinn stopped ([`docs/backup.md`](docs/backup.md)).
-- `djinn wish set-lead <wish-id> <session-id> --directory <folder>` records a wish's lead session;
-  `djinn wish resume <wish-id>` shows the wish and resumes its lead in the window's terminal,
-  starting Djinn if needed. A second `djinn up` brings the window to the front.
+- One lead leads every wish, in the window's terminal "lead". `djinn lead set <session-id> [--provider <agent>]
+  [--directory <folder>]` records its session; `djinn lead get` shows it; `djinn lead resume` resumes it, starting
+  Djinn if needed, and `--wish-id <wish-id>` shows the wish and focuses the lead on it (the wish's Lead button does the
+  same). A second `djinn up` brings the window to the front. `djinn lead tell "…" [--wish-id <wish-id>]` writes to the
+  lead in its terminal as if you typed it there, line breaks kept: it waits while you type there or a choice is on
+  screen; about a wish, it starts with "About wish <title> (<id>):". It never starts the lead, nor types into a shell.
 - `djinn wish route "<request>" --wish-id <wish-id> --ask`: a request that is not about the wish becomes a card, without a
-  model: open a new one whose lead starts on it in its own terminal, file it in an existing wish, or keep it here
+  model: open a new wish, which the window opens and the lead is told of, file it in an existing wish, or keep it here
   ([T26](plan/e1210c5e-request-routing.md)). A request that matches a skill's wish template (`metadata.djinn.wish` in its
-  `SKILL.md`) makes that skill's wish, its watcher started and its lead on the skill: `.agents/skills/babysit-pr` for a
-  GitHub pull request, `.agents/skills/babysit-mr` for a GitLab merge request
+  `SKILL.md`) makes that skill's wish, its watcher started and its brief telling the lead to follow the skill:
+  `.agents/skills/babysit-pr` for a GitHub pull request, `.agents/skills/babysit-mr` for a GitLab merge request
   ([`docs/wish-templates.md`](docs/wish-templates.md)).
-- `djinn wish brief <wish-id>`: where the wish stands and how to lead it, computed from the store; every new lead, of
-  any agent, starts by running it. `djinn wish describe <wish-id> --text "…"` gives the wish the few lines it opens with
-  (also edited under the wish's title). `djinn wish resume <wish-id> --provider antigravity` (or the arrow beside Lead)
-  starts a lead of another agent than the recorded one's.
-  `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `djinn up
-  --warm-workers` keeps a claude loaded per project; `go tool task bench-workers` (paid, refuses without consent)
-  compares them ([T14](plan/8ce817da-cost.md)).
+- `djinn lead brief` (or `djinn brief`): every active wish at once and how to lead them, computed from the store; every
+  new lead, of any agent, starts by running it. `djinn wish brief <wish-id>`: where one wish stands, which the lead
+  reads when focused on it. `djinn wish describe <wish-id> --text "…"` gives the wish the few lines it opens with
+  (also edited under the wish's title). `djinn lead resume --provider antigravity` (or the arrow beside Lead) starts a
+  lead of another agent than the recorded one's.
+  `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `go tool task
+  bench-workers` (paid, refuses without consent) compares the ways Djinn starts a worker ([T14](plan/8ce817da-cost.md)).
 - `djinn task send <task-id> "…"` gives a running worker an instruction (or the box under its events, in the window):
   an event of the task, then "received" once the worker says something after it.
 - A decision is an answered question or a block of kind decision. `djinn question ask … --icon 🔒` and `djinn block put
   … --icon 🧱` give it its subject's emoji (one emoji); `djinn task spawn … --decision Q43` (a question's code, or a
   decision block's id) says which decision a task comes from. The window lists them in a "Decisions" tab, read only:
   who took each one (you, the lead, a worker) and the tasks it led to; the page and the brief follow.
-- An answer starts a question worker, "Q43 → tasks", that turns the decision into tasks (`--decision Q43`); "Enlighten
-  me" starts "Q43: enlighten", which revises the question. They read, take no slot (only memory), and tell the lead what they did.
-  `question_workers: false` in a project's settings ([`docs/team-settings.md`](docs/team-settings.md)) or `djinn up
-  --question-workers=false` turns them off. A worker's `djinn block put`, `question ask` and `revise` name its task from
+- An answer goes to the wish's lead (or to the principal lead), which turns the decision into tasks itself (`--decision Q43`),
+  placing them in the graph; "Enlighten me" starts an investigator, "Q43: enlighten", which revises the question. Investigators read,
+  take no slot (only memory), and tell the lead what they did. `enlighten_workers: false` in a project's settings ([`docs/team-settings.md`](docs/team-settings.md))
+  or `djinn up --enlighten-workers=false` turns them off. A worker's `djinn block put`, `question ask` and `revise` name its task from
   `$DJINN_TASK_ID`: the decision log says "By W12".
 - An open question is blocking when a task waits for its answer, red; `djinn question ask … --before "before the merge"`
   makes it orange under those words; without them it can wait, grey. `djinn question revise … --before …` changes them,
   `--before ""` lets it wait. Everywhere, blocking comes first, then before X, then can wait.
-- With the window, a question asked in an active wish shows as a system notification: a click shows the wish, a
-  button answers it. A new inbox item shows as one too, and the side panel counts the new ones on the flight plan. On macOS it needs the `.app` bundle (T19); a headless build and `--browser` show none.
+- With the window, what waits for you in an active wish shows as a system notification: a question (a button
+  answers it), a task that waits or failed, a wish ready to review; a click shows the wish there. None for the wish
+  the window shows while it is in front. A new inbox item shows as one too, and the side panel counts the new ones on
+  the flight plan. On macOS it needs the `.app` bundle (T19) and your permission: Djinn asks at its first start, and
+  the settings show the state. A headless build and `--browser` show none.
 - `go tool task check-window`: open a window a few seconds and check that a stream reaches it
   value by value. PASS or FAIL.
 - `go tool task e2e-native`: drive the real window end to end through the Wails MCP server (a test build, window
@@ -302,6 +332,18 @@ To use Djinn, see the [README](README.md). To work on it:
 - **Tasks live in [`plan/`](plan/README.md)**, one file each. The README checklist is the only
   tracker.
 - **Every change is reviewed** by a maintainer.
+- **How to release**: create the release on GitHub's page, from main (or push a tag `vX.Y.Z`).
+  Before tagging or publishing, run the dry run from your branch:
+  `gh workflow run release.yml --ref <branch> -f version=v0.0.0-dryrun`
+  It builds every target (each Linux variant, Windows amd64 and arm64, macOS universal and `Djinn.app`), verifies
+  the macOS bundle and Launch Services, archive integrity, checksums (`SHA256SUMS`), and tests `install.sh` against
+  the built release folder, keeping all assets as the run's artifacts (`gh run download`) without creating a tag,
+  a release nor publishing assets.
+- **Updating the model price table**: Model prices are maintained in `internal/usage/prices.yaml`, embedded into the binary. When a model's price changes or a new model is introduced:
+  1. Edit `internal/usage/prices.yaml` and update the table `date` (`YYYY-MM-DD`).
+  2. Each entry must specify `name` (as reported by provider streams, e.g. `claude-sonnet-5-5`, `gemini-3.8-flash-high`, `gpt-5.1-codex`), prices per million tokens (`input_cost_per_million`, `output_cost_per_million`, and where applicable `cache_read_cost_per_million`, `cache_write_cost_per_million`, `thinking_cost_per_million`), `source` (public URL), and `source_date` (`YYYY-MM-DD`).
+  3. Never invent a price: a model whose price cannot be sourced from its provider's public pricing page stays out of the table (its tasks show tokens and "no price in the table"). Model aliases and versions map to the canonical table entry.
+  4. Run `go tool task test-pkg -- ./internal/usage/...` to verify YAML syntax, required sources, dates, and calculations.
 
 ## Dependencies, and thanks
 
@@ -319,6 +361,7 @@ their contributors.
   [x/sys](https://github.com/golang/sys) (also the terminal's pseudo-console on Windows), [x/term](https://github.com/golang/term) (tests),
   [x/mod](https://github.com/golang/mod) (release versions), [x/net](https://github.com/golang/net) (the text of a
   tilasm's page, by its HTML tokenizer),
+  [purego](https://github.com/ebitengine/purego) (CoreGraphics calls without CGO on macOS),
   [go-yaml](https://github.com/yaml/go-yaml) (the front matter of a skill's wish template); as module tools,
   [Task](https://github.com/go-task/task), [buf](https://github.com/bufbuild/buf) and
   [golangci-lint](https://github.com/golangci/golangci-lint) (GPL-3.0: run on the code, in a module of its own, never

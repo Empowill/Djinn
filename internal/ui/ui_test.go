@@ -8,15 +8,16 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
-	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/link"
 )
 
@@ -27,6 +28,9 @@ func newService(t *testing.T) (*Service, *[]string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// No test runs the real agents: none is found.
+	empty := t.TempDir()
+	s.AgentPath = func() string { return empty }
 	var opened []string
 	s.Open = func(link string) error { opened = append(opened, link); return nil }
 	return s, &opened
@@ -90,6 +94,36 @@ func TestHomeOfADevelopmentBuild(t *testing.T) {
 	}
 }
 
+func TestHomeRefusesRealDataDirectoryUnderTest(t *testing.T) {
+	if !InTest() {
+		t.Fatal("InTest() should be true when running go test")
+	}
+	realHome := RealHome()
+	if realHome == "" {
+		t.Skip("no real config directory on this system")
+	}
+
+	for _, cand := range []string{realHome, "~/.config/djinn", "~/.config/djinn-dev"} {
+		t.Setenv("DJINN_HOME", cand)
+		home, err := Home()
+		if err == nil {
+			t.Errorf("DJINN_HOME=%q: Home() = %q, want refusal error", cand, home)
+		} else if !strings.Contains(err.Error(), "refusing to use real data directory") {
+			t.Errorf("DJINN_HOME=%q: error = %v, want refusal error", cand, err)
+		}
+	}
+
+	tmp := t.TempDir()
+	t.Setenv("DJINN_HOME", tmp)
+	got, err := Home()
+	if err != nil {
+		t.Fatalf("DJINN_HOME=%q: unexpected error: %v", tmp, err)
+	}
+	if got != tmp {
+		t.Fatalf("DJINN_HOME=%q: got %q", tmp, got)
+	}
+}
+
 func TestShow(t *testing.T) {
 	s, _ := newService(t)
 	raised := 0
@@ -131,6 +165,11 @@ func TestShow(t *testing.T) {
 	if got := next(); got.GetWishId() != "w2" || got.GetTerminal() != "lead-w2" {
 		t.Fatalf("next message = %v", got)
 	}
+	// A click on a notification: the wish, there.
+	s.PresentAt("w3", "", "question-q1")
+	if got := next(); got.GetWishId() != "w3" || got.GetTarget() != "question-q1" {
+		t.Fatalf("message with a target = %v", got)
+	}
 	// An old request is not replayed.
 	s.shows.Lock()
 	s.lastAt = s.lastAt.Add(-2 * replay)
@@ -150,6 +189,69 @@ func TestShow(t *testing.T) {
 	case id := <-got:
 		t.Fatalf("an old request was replayed: %s", id)
 	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// W501: a spec opened a wish, then deleted it; a reload within the minute got that show again, and the window left the
+// wish it showed for the flight plan. A show whose wish is gone is not replayed; one of a wish still here is.
+func TestReplayForgetsADeletedWish(t *testing.T) {
+	s, _ := newService(t)
+	deleted := map[string]bool{"gone": true}
+	s.Known = func(_ context.Context, id string) bool { return !deleted[id] }
+	mux := http.NewServeMux()
+	mux.Handle(uiv1connect.NewUiServiceHandler(s))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := uiv1connect.NewUiServiceClient(srv.Client(), srv.URL)
+	ctx := t.Context()
+
+	// replayed is the show a window that starts watching now gets first, from Watch and from WatchShow.
+	replayed := func() (fromWatch, fromWatchShow string) {
+		t.Helper()
+		watch, err := client.Watch(ctx, connect.NewRequest(&uiv1.UiServiceWatchRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer watch.Close()
+		if !watch.Receive() {
+			t.Fatalf("Watch ended: %v", watch.Err())
+		}
+		fromWatch = watch.Msg().GetShow().GetWishId()
+		show, err := client.WatchShow(ctx, connect.NewRequest(&uiv1.UiServiceWatchShowRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer show.Close()
+		got := make(chan string, 1)
+		go func() {
+			if show.Receive() {
+				got <- show.Msg().GetWishId()
+			}
+		}()
+		select {
+		case fromWatchShow = <-got:
+		case <-time.After(200 * time.Millisecond):
+		}
+		return fromWatch, fromWatchShow
+	}
+
+	s.Present("gone", "")
+	if w, ws := replayed(); w != "" || ws != "" {
+		t.Fatalf("a deleted wish's show was replayed: Watch %q, WatchShow %q", w, ws)
+	}
+	s.Present("here", "lead")
+	if w, ws := replayed(); w != "here" || ws != "here" {
+		t.Fatalf("replayed Watch %q, WatchShow %q, want the wish still here", w, ws)
+	}
+	// A show of no wish (a terminal alone) is replayed whatever Known says.
+	s.Present("", "lead")
+	watch, err := client.Watch(ctx, connect.NewRequest(&uiv1.UiServiceWatchRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer watch.Close()
+	if !watch.Receive() || watch.Msg().GetShow().GetTerminal() != "lead" {
+		t.Fatalf("a terminal's show was not replayed: %v, %v", watch.Msg(), watch.Err())
 	}
 }
 
@@ -279,7 +381,8 @@ func TestHandler(t *testing.T) {
 	defer server.Close()
 	client := uiv1connect.NewUiServiceClient(server.Client(), server.URL)
 
-	env, err := client.GetEnvironment(context.Background(), connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{}))
+	env, err := client.GetEnvironment(context.Background(),
+		connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{Agents: true}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +497,8 @@ func TestUpdateInstallsABuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !watch.Receive() || watch.Msg().GetBuild().GetSha() != "abc" || watch.Msg().GetBuild().GetChanges()[0] != "Work of W1" {
+	if !watch.Receive() || len(watch.Msg().GetBuilds()) != 1 || watch.Msg().GetBuilds()[0].GetSha() != "abc" ||
+		watch.Msg().GetBuilds()[0].GetChanges()[0] != "Work of W1" {
 		t.Fatalf("the window is not proposed the build: %v, %v", watch.Msg(), watch.Err())
 	}
 
@@ -425,7 +529,7 @@ func TestUpdateInstallsABuild(t *testing.T) {
 		t.Errorf("a build that installed no newer Djinn: %v, %v, %d restarts", r.res, r.err, restarts)
 	}
 	// The window sees it build, maybe, then the install over: nothing proposed, nothing installing.
-	for watch.Receive() && (watch.Msg().GetBuild() != nil || watch.Msg().GetInstalling() != nil) {
+	for watch.Receive() && (len(watch.Msg().GetBuilds()) > 0 || watch.Msg().GetInstalling() != nil) {
 		if step := watch.Msg().GetInstalling().GetStep(); step != uiv1.InstallStep_INSTALL_STEP_BUILDING {
 			t.Errorf("installing: %v", watch.Msg())
 		}
@@ -434,7 +538,7 @@ func TestUpdateInstallsABuild(t *testing.T) {
 		t.Errorf("still proposed or installing once installed: %v", watch.Err())
 	}
 	newer = true
-	s.SetBuild(&uiv1.Build{Sha: "def"})
+	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/x", Sha: "def"})
 	if res, err := update("def"); err != nil || res.GetInstalled() != "def" || res.GetVersion() != "v2" || restarts != 1 {
 		t.Errorf("a build that installed a newer Djinn: %v, %v, %d restarts", res, err, restarts)
 	}
@@ -444,6 +548,61 @@ func TestUpdateInstallsABuild(t *testing.T) {
 	}
 	if !restarting {
 		t.Errorf("the window is not told Djinn restarts: %v", watch.Err())
+	}
+}
+
+// TestBuildsByBranch: each integration branch keeps its own proposal, a newer push of a branch replaces only that
+// branch's; the branch the running Djinn was built from comes first; installing one leaves the others. The newer Djinn
+// ready is named once described, and forgotten when another version waits.
+func TestBuildsByBranch(t *testing.T) {
+	s, _ := newService(t)
+	s.Install = func(context.Context, *uiv1.Build, func(uiv1.InstallStep, string)) (bool, error) { return false, nil }
+	shas := func() []string {
+		s.updates.Lock()
+		defer s.updates.Unlock()
+		var out []string
+		for _, b := range s.updateState().GetBuilds() {
+			out = append(out, b.GetBranch()+"@"+b.GetSha())
+		}
+		return out
+	}
+	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/clement-port", WishTitle: "Clément's branches", Sha: "e60f8fc"})
+	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/wails-go", Sha: "aaa", Running: true})
+	s.SetBuild(&uiv1.Build{ProjectId: "q", Branch: "feat/wails-go", Sha: "ccc"})
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/clement-port@e60f8fc", "feat/wails-go@ccc"}) {
+		t.Errorf("builds = %v, want the running branch first, one per branch and project", got)
+	}
+	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/clement-port", Sha: "e70"})
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/clement-port@e70", "feat/wails-go@ccc"}) {
+		t.Errorf("builds = %v, want the newer push of feat/clement-port in place of its last", got)
+	}
+	if _, err := s.Update(t.Context(), connect.NewRequest(&uiv1.UiServiceUpdateRequest{Build: "e70"})); err != nil {
+		t.Fatal(err)
+	}
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/wails-go@ccc"}) {
+		t.Errorf("builds = %v, want the others kept once one is installed", got)
+	}
+	if _, err := s.Update(t.Context(), connect.NewRequest(&uiv1.UiServiceUpdateRequest{Build: "e60f8fc"})); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("a build replaced since installs: %v", err)
+	}
+
+	s.SetReady("local-g1", "")
+	s.SetReadyBuild("local-g0", &uiv1.Build{Sha: "0"})
+	ready := func() *uiv1.Build {
+		s.updates.Lock()
+		defer s.updates.Unlock()
+		return s.updateState().GetReadyBuild()
+	}
+	if ready() != nil {
+		t.Error("a version no longer waiting is named")
+	}
+	s.SetReadyBuild("local-g1", &uiv1.Build{Sha: "1", Branch: "feat/clement-port"})
+	if ready().GetBranch() != "feat/clement-port" {
+		t.Errorf("ready build = %v", ready())
+	}
+	s.SetReady("local-g2", "")
+	if ready() != nil {
+		t.Error("the name of the version before stays")
 	}
 }
 
@@ -475,25 +634,139 @@ func TestEnvironmentProviders(t *testing.T) {
 	}
 }
 
-// TestWriteAtomicRetriesARefusedRename: a rename refused for a moment, as Windows refuses one while an antivirus
-// scans settings.json, is tried again, and the new content lands.
-func TestWriteAtomicRetriesARefusedRename(t *testing.T) {
-	path := filepath.Join(t.TempDir(), settingsFile)
-	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+func TestWatchUnified(t *testing.T) {
+	s, _ := newService(t)
+	mux := http.NewServeMux()
+	mux.Handle(uiv1connect.NewUiServiceHandler(s))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := uiv1connect.NewUiServiceClient(srv.Client(), srv.URL)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	stream, err := client.Watch(ctx, connect.NewRequest(&uiv1.UiServiceWatchRequest{}))
+	if err != nil {
 		t.Fatal(err)
 	}
-	tries := 0
-	refused := func(oldpath, newpath string) error {
-		if tries++; tries <= 2 {
-			return errors.New("Access is denied")
+	t.Cleanup(func() { stream.Close() })
+
+	// First message contains initial update.
+	if !stream.Receive() {
+		t.Fatalf("first message failed: %v", stream.Err())
+	}
+	initMsg := stream.Msg()
+	if initMsg.GetUpdate() == nil || initMsg.GetUpdate().GetCurrent() != "test" {
+		t.Fatalf("initial message update = %v, want current 'test'", initMsg.GetUpdate())
+	}
+
+	// Trigger Present
+	s.Present("w-1", "t-1")
+	if !stream.Receive() {
+		t.Fatalf("show message failed: %v", stream.Err())
+	}
+	showMsg := stream.Msg()
+	if showMsg.GetShow() == nil || showMsg.GetShow().GetWishId() != "w-1" || showMsg.GetShow().GetTerminal() != "t-1" {
+		t.Fatalf("show msg = %v, want wish w-1 and terminal t-1", showMsg)
+	}
+
+	// Trigger SetReady
+	s.SetReady("2.0.0", "https://notes")
+	if !stream.Receive() {
+		t.Fatalf("update message failed: %v", stream.Err())
+	}
+	updateMsg := stream.Msg()
+	if updateMsg.GetUpdate() == nil || updateMsg.GetUpdate().GetReady() != "2.0.0" {
+		t.Fatalf("update msg = %v, want ready 2.0.0", updateMsg)
+	}
+}
+
+func TestWatchUnifiedWithLoad(t *testing.T) {
+	s, _ := newService(t)
+	s.WatchLoad = func(ctx context.Context, send func(*djinnv1.LoadServiceWatchResponse) error) error {
+		_ = send(&djinnv1.LoadServiceWatchResponse{Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH})
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	mux := http.NewServeMux()
+	mux.Handle(uiv1connect.NewUiServiceHandler(s))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := uiv1connect.NewUiServiceClient(srv.Client(), srv.URL)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	stream, err := client.Watch(ctx, connect.NewRequest(&uiv1.UiServiceWatchRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stream.Close() })
+
+	// First message contains initial update.
+	if !stream.Receive() {
+		t.Fatalf("first message failed: %v", stream.Err())
+	}
+	// Second message contains the load message from WatchLoad.
+	if !stream.Receive() {
+		t.Fatalf("load message failed: %v", stream.Err())
+	}
+	loadMsg := stream.Msg()
+	if loadMsg.GetLoad() == nil || loadMsg.GetLoad().GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
+		t.Fatalf("load msg = %v, want notch HIGH", loadMsg)
+	}
+}
+
+// TestNotificationsService: the page reads whether the system shows notifications, asks for them, opens the
+// system's settings on macOS, and says which wish it shows.
+func TestNotificationsService(t *testing.T) {
+	ctx := context.Background()
+	s, opened := newService(t)
+	get := func() *uiv1.UiServiceGetNotificationsResponse {
+		t.Helper()
+		res, err := s.GetNotifications(ctx, connect.NewRequest(&uiv1.UiServiceGetNotificationsRequest{}))
+		if err != nil {
+			t.Fatal(err)
 		}
-		return os.Rename(oldpath, newpath)
+		return res.Msg
 	}
-	r := fsx.Renamer{Func: refused, Wait: time.Second, Sleep: func(time.Duration) {}}
-	if err := writeAtomic(path, []byte("new"), r); err != nil || tries != 3 {
-		t.Fatalf("writeAtomic = %v after %d tries, want nil after 3", err, tries)
+	// No window: none, and no settings to open.
+	if got := get(); got.GetAccess() != uiv1.NotificationAccess_NOTIFICATION_ACCESS_UNAVAILABLE || got.GetSettings() {
+		t.Errorf("without notices: %v", got)
 	}
-	if got, _ := os.ReadFile(path); string(got) != "new" {
-		t.Errorf("file = %q, want the new content", got)
+	if _, err := s.OpenNotificationSettings(ctx, connect.NewRequest(&uiv1.UiServiceOpenNotificationSettingsRequest{})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("open the settings without notices: %v", err)
+	}
+
+	p := &permitted{}
+	s.Notices = &Notices{}
+	s.Notices.Use(p)
+	if got := get().GetAccess(); got != uiv1.NotificationAccess_NOTIFICATION_ACCESS_DENIED {
+		t.Errorf("not allowed yet: %v", got)
+	}
+	res, err := s.RequestNotifications(ctx, connect.NewRequest(&uiv1.UiServiceRequestNotificationsRequest{}))
+	if err != nil || res.Msg.GetAccess() != uiv1.NotificationAccess_NOTIFICATION_ACCESS_ALLOWED || !p.asked {
+		t.Errorf("request: %v, %v", res, err)
+	}
+	mac := runtime.GOOS == "darwin"
+	if got := get().GetSettings(); got != mac {
+		t.Errorf("settings = %v on %s", got, runtime.GOOS)
+	}
+	_, err = s.OpenNotificationSettings(ctx, connect.NewRequest(&uiv1.UiServiceOpenNotificationSettingsRequest{}))
+	if mac && (err != nil || len(*opened) != 1 || (*opened)[0] != notificationSettings) {
+		t.Errorf("open the settings: %v, opened %v", err, *opened)
+	}
+	if !mac && connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("open the settings on %s: %v", runtime.GOOS, err)
+	}
+
+	if _, err := s.View(ctx, connect.NewRequest(&uiv1.UiServiceViewRequest{WishId: "w1"})); err != nil {
+		t.Fatal(err)
+	}
+	s.Notices.mu.Lock()
+	viewing := s.Notices.viewing
+	s.Notices.mu.Unlock()
+	if viewing != "w1" {
+		t.Errorf("viewing = %q, want w1", viewing)
 	}
 }

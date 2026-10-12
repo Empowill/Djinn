@@ -10,7 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
+
+	"github.com/empowill/djinn/internal/testx"
 )
 
 func env(vars map[string]string) func(string) string { return func(k string) string { return vars[k] } }
@@ -44,7 +45,7 @@ func TestRefusesWithoutConsent(t *testing.T) {
 			}
 		})
 	}
-	for _, bad := range []map[string]string{{"BENCH_MAX_USD": "-1"}, {"BENCH_MAX_USD": "lots"}, {"BENCH_RUNS": "0"}, {"BENCH_WARM_WAIT": "soon"}} {
+	for _, bad := range []map[string]string{{"BENCH_MAX_USD": "-1"}, {"BENCH_MAX_USD": "lots"}, {"BENCH_RUNS": "0"}} {
 		if _, err := readConfig(env(bad)); err == nil {
 			t.Errorf("%v accepted", bad)
 		}
@@ -52,12 +53,12 @@ func TestRefusesWithoutConsent(t *testing.T) {
 }
 
 func TestQuote(t *testing.T) {
-	// Haiku, 3 rounds: 3 x 5.5 runs + the parent = 17.5 runs of $0.006.
+	// Haiku, 3 rounds: 3 x 4.5 runs + the parent = 14.5 runs of $0.006.
 	mid, low, high, basis := quote(config{model: "haiku", runs: 3})
-	if mid < 0.104 || mid > 0.106 || low != mid/2 || high != mid*2 || !strings.Contains(basis, "Haiku") {
+	if mid < 0.086 || mid > 0.088 || low != mid/2 || high != mid*2 || !strings.Contains(basis, "Haiku") {
 		t.Errorf("quote = %.4f (%.4f to %.4f), %s", mid, low, high, basis)
 	}
-	if mid, _, _, _ := quote(config{model: "claude-opus-5-5", runs: 3}); mid < 3.14 || mid > 3.16 {
+	if mid, _, _, _ := quote(config{model: "claude-opus-5-5", runs: 3}); mid < 2.60 || mid > 2.62 {
 		t.Errorf("opus quote = %.4f", mid)
 	}
 }
@@ -69,7 +70,10 @@ func TestMain(m *testing.M) {
 		fakeClaude()
 		return
 	}
-	os.Exit(m.Run())
+	cleanup := testx.Guard()
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }
 
 func fakeClaude() {
@@ -99,7 +103,7 @@ func TestBenchRuns(t *testing.T) {
 	t.Setenv("BENCH_FAKE_CLAUDE", "1")
 	out := filepath.Join(t.TempDir(), "bench.md")
 	var buf bytes.Buffer
-	err := run(t.Context(), config{paid: true, maxUSD: 1, model: "haiku", runs: 2, warmWait: 10 * time.Millisecond, out: out}, &buf)
+	err := run(t.Context(), config{paid: true, maxUSD: 1, model: "haiku", runs: 2, out: out}, &buf)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, buf.String())
 	}
@@ -112,7 +116,7 @@ func TestBenchRuns(t *testing.T) {
 			t.Errorf("%s did not run twice:\n%s\n%s", v, buf.String(), table)
 		}
 	}
-	if !strings.Contains(string(table), "$0.0110 spent") || !strings.Contains(string(table), "| 900 ms | 20000 | 500 |") {
+	if !strings.Contains(string(table), "$0.0090 spent") || !strings.Contains(string(table), "| 900 ms | 20000 | 500 |") {
 		t.Errorf("table:\n%s", table)
 	}
 }

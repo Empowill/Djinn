@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -8,8 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
@@ -26,8 +29,47 @@ type clients struct {
 	skills    planv1connect.SkillServiceClient
 	inbox     planv1connect.InboxServiceClient
 	tilasms   planv1connect.TilasmServiceClient
+	lead      planv1connect.LeadServiceClient
 	store     *store.Store
 	url       string // the server's, for its routes other than the services
+}
+
+// told is what the lead's queue holds that no watch acknowledged yet, as the lines once typed in its terminal
+// ("lead: <text>"), oldest first.
+func told(t *testing.T, s *store.Store) []string {
+	t.Helper()
+	events, err := waitingEvents(t.Context(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	for _, e := range events {
+		lines = append(lines, LeadTerminal+": "+e.GetText())
+	}
+	return lines
+}
+
+// take acknowledges every event waiting for the lead, as its watch does.
+func take(t *testing.T, s *store.Store) {
+	t.Helper()
+	events, err := waitingEvents(t.Context(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal(actor, "test/take", &planv1.LeadServiceWatchRequest{}); err != nil {
+			return err
+		}
+		for _, e := range events {
+			e.AckSessionId = "test"
+			if err := tx.Put(e); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // serve runs the plan services on a store in memory, behind a real Connect server.
@@ -37,7 +79,11 @@ func serve(t *testing.T, opts ...Option) clients {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { s.Close() })
+	// The line that says the lead's events wait is typed by a timer: these tests read the queue instead (told).
+	l := &leadWatch{timing: defaultWatchTiming}
+	l.timing.remind, l.timing.grace = time.Hour, time.Hour
+	leadWatches.Store(s, l)
+	t.Cleanup(func() { l.stop(); leadWatches.Delete(s); s.Close() })
 	mux := http.NewServeMux()
 	for prefix, h := range Handlers(s, opts...) {
 		mux.Handle(prefix, h)
@@ -53,6 +99,7 @@ func serve(t *testing.T, opts ...Option) clients {
 		skills:    planv1connect.NewSkillServiceClient(srv.Client(), srv.URL),
 		inbox:     planv1connect.NewInboxServiceClient(srv.Client(), srv.URL),
 		tilasms:   planv1connect.NewTilasmServiceClient(srv.Client(), srv.URL),
+		lead:      planv1connect.NewLeadServiceClient(srv.Client(), srv.URL),
 		store:     s,
 		url:       srv.URL,
 	}
@@ -291,5 +338,198 @@ func TestWishMake(t *testing.T) {
 	list, err := c.wishes.List(ctx, connect.NewRequest(&planv1.WishServiceListRequest{}))
 	if err != nil || len(list.Msg.GetWishes()) != 1 {
 		t.Errorf("List = %v, %v; want the one wish made", list, err)
+	}
+}
+
+type testPusher struct {
+	pushedWish, pushedProject, pushedBranch string
+	// The wish of the azima branch Syncs gives.
+	azimaWish string
+	// What Push fails with; nil: it pushes.
+	err error
+}
+
+func (p *testPusher) Push(ctx context.Context, wishID, projectID, branch string) (*planv1.IntegrationPush, error) {
+	p.pushedWish, p.pushedProject, p.pushedBranch = wishID, projectID, branch
+	if p.err != nil {
+		return nil, p.err
+	}
+	return &planv1.IntegrationPush{WishId: wishID, ProjectId: projectID, Count: 2}, nil
+}
+
+// Syncs gives each wish of the project its integration branch, and the last one an azima branch too.
+func (p *testPusher) Syncs(ctx context.Context, project *planv1.Project) ([]*planv1.ProjectSync, error) {
+	return []*planv1.ProjectSync{
+		{WishId: "w1", Branch: "feat/x", Remote: "origin", Target: "feat/x", Ahead: 3, Behind: 1},
+		{WishId: p.azimaWish, Branch: "djinn/T1-azima", Remote: "origin", Target: "djinn/T1-azima", Ahead: 1, AzimaId: "a1"},
+	}, nil
+}
+
+func TestProjectPushAndSetPush(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	pusher := &testPusher{}
+	c := serve(t, WithHome(home), WithPusher(pusher))
+
+	dir := t.TempDir()
+	p, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectID := p.Msg.GetProject().GetId()
+	projectName := p.Msg.GetProject().GetName()
+
+	// Initial push setting is STANDARD
+	if p.Msg.GetProject().GetPush() != planv1.ProjectPush_PROJECT_PUSH_STANDARD {
+		t.Errorf("initial push setting: %v, want STANDARD", p.Msg.GetProject().GetPush())
+	}
+
+	// Make an active wish for this project
+	res, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Test wish", ProjectIds: []string{projectID},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := res.Msg.GetWish().GetId()
+
+	// List should now have project with sync populated
+	list, err := c.projects.List(ctx, connect.NewRequest(&planv1.ProjectServiceListRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Msg.GetProjects()) != 1 {
+		t.Fatalf("List = %d projects, want 1", len(list.Msg.GetProjects()))
+	}
+	gotP := list.Msg.GetProjects()[0]
+	if syncs := gotP.GetSyncs(); len(syncs) != 2 || syncs[0].GetAhead() != 3 || syncs[0].GetBehind() != 1 ||
+		syncs[1].GetAzimaId() != "a1" {
+		t.Errorf("project syncs = %v, want feat/x ahead 3 behind 1, then the azima's branch", syncs)
+	}
+
+	// Change push setting to ON_DEMAND
+	setRes, err := c.projects.SetPush(ctx, connect.NewRequest(&planv1.ProjectServiceSetPushRequest{
+		Project: projectName,
+		Push:    planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND,
+	}))
+	if err != nil {
+		t.Fatalf("SetPush: %v", err)
+	}
+	if setRes.Msg.GetProject().GetPush() != planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND {
+		t.Errorf("SetPush response push: %v, want ON_DEMAND", setRes.Msg.GetProject().GetPush())
+	}
+
+	// Show reflects ON_DEMAND
+	showRes, err := c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{
+		Project: projectName,
+	}))
+	if err != nil {
+		t.Fatalf("Show: %v", err)
+	}
+	if showRes.Msg.GetProject().GetPush() != planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND {
+		t.Errorf("Show project push: %v, want ON_DEMAND", showRes.Msg.GetProject().GetPush())
+	}
+
+	// Project Push triggers pusher
+	pushRes, err := c.projects.Push(ctx, connect.NewRequest(&planv1.ProjectServicePushRequest{
+		Project: projectName,
+	}))
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	if pushRes.Msg.GetPush().GetWishId() != wishID || pushRes.Msg.GetPush().GetProjectId() != projectID {
+		t.Errorf("Push response: %v", pushRes.Msg.GetPush())
+	}
+	if pusher.pushedWish != wishID || pusher.pushedProject != projectID || pusher.pushedBranch != "" {
+		t.Errorf("pusher received wish=%s project=%s branch=%s", pusher.pushedWish, pusher.pushedProject, pusher.pushedBranch)
+	}
+
+	// One branch, of the wish named.
+	_, err = c.projects.Push(ctx, connect.NewRequest(&planv1.ProjectServicePushRequest{
+		Project: projectName, Wish: proto.String(wishID), Branch: proto.String("feat/x"),
+	}))
+	if err != nil || pusher.pushedWish != wishID || pusher.pushedBranch != "feat/x" {
+		t.Errorf("Push of feat/x: wish=%s branch=%s, %v; want %s, feat/x", pusher.pushedWish, pusher.pushedBranch, err, wishID)
+	}
+	// One branch, no wish named: the branch's own wish, which the syncs tell.
+	other, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Other wish", ProjectIds: []string{projectID},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pusher.azimaWish = other.Msg.GetWish().GetId()
+	_, err = c.projects.Push(ctx, connect.NewRequest(&planv1.ProjectServicePushRequest{
+		Project: projectName, Branch: proto.String("djinn/T1-azima"),
+	}))
+	if err != nil || pusher.pushedWish != pusher.azimaWish || pusher.pushedBranch != "djinn/T1-azima" {
+		t.Errorf("Push of an azima branch: wish=%s branch=%s, %v; want %s, djinn/T1-azima",
+			pusher.pushedWish, pusher.pushedBranch, err, pusher.azimaWish)
+	}
+
+	// W489: the remote holds the branch already. Nothing to push is no failure: the window says it quietly on the
+	// branch's line, the command line exits 0.
+	pusher.err = ErrUpToDate
+	pushRes, err = c.projects.Push(ctx, connect.NewRequest(&planv1.ProjectServicePushRequest{
+		Project: projectName, Wish: proto.String(wishID), Branch: proto.String("feat/x"),
+	}))
+	if err != nil || !pushRes.Msg.GetUpToDate() || pushRes.Msg.GetPush() != nil {
+		t.Errorf("Push of a branch the remote holds: %v, %v; want up to date, no error", pushRes, err)
+	}
+	// Any other failure stays one.
+	pusher.err = errors.New("the push is held: its checks are red (test: exit 1)")
+	if _, err = c.projects.Push(ctx, connect.NewRequest(&planv1.ProjectServicePushRequest{
+		Project: projectName, Wish: proto.String(wishID), Branch: proto.String("feat/x"),
+	})); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("Push held: %v; want failed_precondition", err)
+	}
+}
+
+func TestProjectPushStrategy(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	c := serve(t, WithHome(home))
+	dir := t.TempDir()
+	add, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{
+		Directory: dir,
+		Name:      "testapp",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectName := add.Msg.GetProject().GetName()
+
+	// Default push strategy is wish from default.
+	show, err := c.projects.PushStrategy(ctx, connect.NewRequest(&planv1.ProjectServicePushStrategyRequest{
+		Project: projectName,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if show.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_WISH || show.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEFAULT {
+		t.Errorf("initial strategy = %v from %v; want wish from default", show.Msg.GetStrategy(), show.Msg.GetSource())
+	}
+
+	// Change push strategy to azima.
+	setRes, err := c.projects.PushStrategy(ctx, connect.NewRequest(&planv1.ProjectServicePushStrategyRequest{
+		Project:  projectName,
+		Strategy: planv1.PushStrategy_PUSH_STRATEGY_AZIMA.Enum(),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if setRes.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_AZIMA || setRes.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+		t.Errorf("set strategy = %v from %v; want azima from developer", setRes.Msg.GetStrategy(), setRes.Msg.GetSource())
+	}
+
+	// Show reflects the changed push strategy.
+	show2, err := c.projects.PushStrategy(ctx, connect.NewRequest(&planv1.ProjectServicePushStrategyRequest{
+		Project: projectName,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if show2.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_AZIMA || show2.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+		t.Errorf("after set strategy = %v from %v; want azima from developer", show2.Msg.GetStrategy(), show2.Msg.GetSource())
 	}
 }

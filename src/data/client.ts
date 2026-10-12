@@ -8,13 +8,16 @@ import {
 } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 
+import { LoadService } from "../../gen/ts/djinn/v1/load_pb";
 import {
+  CommandService,
   GateService,
   MachineService,
 } from "../../gen/ts/machine/v1/machine_pb";
 import {
   BlockService,
   InboxService,
+  LeadService,
   MarkService,
   ProjectService,
   QuestionService,
@@ -37,6 +40,7 @@ export function djinnTransport(
 export function createClients(transport: Transport) {
   return {
     wishes: createClient(WishService, transport),
+    lead: createClient(LeadService, transport),
     tasks: createClient(TaskService, transport),
     questions: createClient(QuestionService, transport),
     projects: createClient(ProjectService, transport),
@@ -47,6 +51,8 @@ export function createClients(transport: Transport) {
     tilasms: createClient(TilasmService, transport),
     machine: createClient(MachineService, transport),
     gates: createClient(GateService, transport),
+    commands: createClient(CommandService, transport),
+    load: createClient(LoadService, transport),
     ui: createClient(UiService, transport),
   };
 }
@@ -58,6 +64,11 @@ export function message(error: unknown): string {
   if (error instanceof ConnectError) return error.rawMessage;
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+// unimplemented tells an error that says the service has no such call: an older djinn. Asking again changes nothing.
+export function unimplemented(error: unknown): boolean {
+  return error instanceof ConnectError && error.code === Code.Unimplemented;
 }
 
 // notFound tells an error that says the thing is gone, such as a task's events after djinn up restarted.

@@ -38,15 +38,11 @@ async function call(method: string, body: object) {
   expect(res.ok).toBe(true);
   return res.json();
 }
-const show = (terminal: string) => call("/ui.v1.UiService/Show", { terminal });
 
 test.skip(
   process.platform === "win32",
   "the terminal runs PowerShell on Windows; this test drives a POSIX shell",
 );
-// The next specs find the window's own terminal again.
-test.afterAll(() => show("main"));
-
 test("a terminal opens at a project's root, another with Ctrl+Shift+T, and a tab closes", async ({
   page,
 }) => {

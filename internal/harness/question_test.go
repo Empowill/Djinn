@@ -99,65 +99,25 @@ func (e *env) prompt(t *testing.T, id string) string {
 	return events[0].GetText()
 }
 
-// TestConverter: an answer starts exactly one converter, with the decision in its prompt; it reads and runs djinn's
-// commands, in the project's folder, takes no slot of the machine even when they are all taken, and the lead hears
-// when it ends.
-func TestConverter(t *testing.T) {
+// TestAnswerStartsNoWorker: an answer never starts a worker: the lead turns answers into tasks itself.
+func TestAnswerStartsNoWorker(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	lim := &limit{slots: 1}
-	e := up(t, t.TempDir(), WithQuestionWorkers(), WithCapacity(lim.capacity))
-	lead := &told{}
-	e.h.TellLeads(lead.tell)
+	e := up(t, t.TempDir(), WithCapacity(lim.capacity))
 	dir := fakeProject(t, "question_model: \"cheap\"\nquestion_budget_usd: 0.5\n")
 	wishID, _ := e.wish(t, dir)
 	busy := e.spawn(t, wishID, "wait") // It takes the one slot.
 	q := e.asker(wishID)
-	asked := q.ask(t, "usage 9000 400 0.031")
+	asked := q.ask(t, "Which store?")
 	q.answer(t, asked.GetCode(), planv1.Choice_CHOICE_B, "Postgres, we need several writers")
 
-	converters := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)
-	if len(converters) != 1 {
-		t.Fatalf("%d converters, want 1", len(converters))
+	if tasks := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR); len(tasks) != 0 {
+		t.Fatalf("%d investigators, want none", len(tasks))
 	}
-	c := converters[0]
-	if c.GetQuestion() != "Q01" || c.GetTitle() != "Q01 → tasks" || c.GetAccess() != planv1.TaskAccess_TASK_ACCESS_DJINN ||
-		c.GetWorktree() != "" || c.GetModel() != "cheap" || c.GetMaxBudgetUsd() != 0.5 || c.GetProvider() != planv1.Provider_PROVIDER_FAKE {
-		t.Errorf("converter: %v", c)
-	}
-	if c.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING && c.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-		t.Errorf("converter %s, %s: it should not wait for the slot the busy task holds", c.GetStatus(), c.GetWaitReason())
-	}
-	prompt := e.prompt(t, c.GetId())
-	for _, want := range []string{
-		"Q01: Which store?", "- B: Postgres", "## The answer\n\nB: Postgres", "Postgres, we need several writers",
-		"--decision Q01", "djinn task spawn " + wishID, "djinn question ask", "## Where the wish stands", "Run Djinn on itself",
-		"First look for the azima each task belongs to", "only for a will no existing one carries",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Errorf("the prompt misses %q:\n%s", want, prompt)
-		}
-	}
-	t.Logf("a converter's prompt: %d bytes, about %d tokens", len(prompt), len(prompt)/4)
-
-	done := e.ended(t, c.GetId())
-	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || done.GetUsage().GetCostUsd() != 0.031 {
-		t.Errorf("converter ended %s, cost $%v", done.GetStatus(), done.GetUsage().GetCostUsd())
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
-	defer cancel()
-	events := e.watch(ctx, t, c.GetId(), 0)
-	if i := slices.IndexFunc(events, func(ev *planv1.TaskEvent) bool { return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL }); i >= 0 {
-		t.Errorf("the fake ran a line of Djinn's own prompt: %s", events[i].GetText())
-	}
-	if !slices.ContainsFunc(events, func(ev *planv1.TaskEvent) bool {
-		return strings.Contains(ev.GetText(), "turns the decision Q01 into tasks; reading, and running only djinn's commands")
-	}) {
-		t.Errorf("no start event says what it is: %v", events)
-	}
-	if got, want := lead.all(), []string{wishID + ": Djinn: " + c.GetCode() + " (Q01 → tasks) ended. Nothing came of Q01: act on it, " +
-		"djinn wish brief " + wishID + " has the context."}; !slices.Equal(got, want) {
-		t.Errorf("the lead was told\n%q\nwant\n%q", got, want)
+	all := e.list(t, wishID)
+	if len(all) != 1 || all[0].GetId() != busy.GetId() {
+		t.Errorf("wish tasks: %v, want only busy task", all)
 	}
 	if e.get(t, busy.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 		t.Error("the busy task should still run")
@@ -169,7 +129,7 @@ func TestConverter(t *testing.T) {
 func TestInvestigator(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	e := up(t, t.TempDir(), WithQuestionWorkers())
+	e := up(t, t.TempDir(), WithEnlightenWorkers())
 	lead := &told{}
 	e.h.TellLeads(lead.tell)
 	wishID, _ := e.wish(t, fakeProject(t, ""))
@@ -179,8 +139,8 @@ func TestInvestigator(t *testing.T) {
 	note := "what does each cost to run?\nAnd the \"smoke\" of the wick — and why?"
 	q.enlighten(t, asked.GetCode(), note)
 	investigators := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
-	if len(investigators) != 1 || len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)) != 0 {
-		t.Fatalf("%d investigators, want 1 and no converter", len(investigators))
+	if len(investigators) != 1 {
+		t.Fatalf("%d investigators, want 1", len(investigators))
 	}
 	inv := investigators[0]
 	if inv.GetTitle() != "Q01: enlighten" || inv.GetQuestion() != "Q01" {
@@ -201,21 +161,83 @@ func TestInvestigator(t *testing.T) {
 			t.Errorf("the prompt misses %q:\n%s", want, prompt)
 		}
 	}
-	if got, want := lead.all(), []string{wishID + ": Djinn: " + inv.GetCode() + " (Q01: enlighten) ended: revised Q01: it waits for " +
+	if got, want := lead.all(), []string{wishID + ": Djinn: W1 (Q01: enlighten) ended: revised Q01: it waits for " +
 		"the developer again."}; !slices.Equal(got, want) {
 		t.Errorf("the lead was told\n%q\nwant\n%q", got, want)
 	}
 }
 
-// TestQuestionWorkersOff: a project's settings, or a harness without question workers, start none: the lead acts.
+// TestQuestionWorkersDefaultsAndOverrides verifies:
+// - Defaults: an answer starts no worker; Enlighten me starts an investigator.
+// - Settings overrides: enlighten_workers: false turns investigator off.
+// - Harness overrides: WithEnlightenWorkers(false) stops investigator.
+func TestQuestionWorkersDefaultsAndOverrides(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	t.Run("defaults", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir())
+		wishID, _ := e.wish(t, fakeProject(t, ""))
+		q := e.asker(wishID)
+
+		// Defaults: answer starts no worker.
+		q1 := q.ask(t, "")
+		q.answer(t, q1.GetCode(), planv1.Choice_CHOICE_A, "")
+		if tasks := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR); len(tasks) != 0 {
+			t.Fatalf("defaults: %d investigators, want none", len(tasks))
+		}
+		if all := e.list(t, wishID); len(all) != 0 {
+			t.Fatalf("defaults: %d tasks, want none", len(all))
+		}
+
+		// Defaults: enlighten starts an investigator.
+		q2 := q.ask(t, "")
+		q.enlighten(t, q2.GetCode(), "tell me more")
+		invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+		if len(invs) != 1 {
+			t.Fatalf("defaults: %d investigators, want 1", len(invs))
+		}
+		if invs[0].GetQuestion() != "Q02" || invs[0].GetTitle() != "Q02: enlighten" {
+			t.Errorf("defaults: investigator: %v", invs[0])
+		}
+		e.ended(t, invs[0].GetId())
+	})
+
+	t.Run("override_enlighten_workers_settings", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir())
+		wishID, _ := e.wish(t, fakeProject(t, "enlighten_workers: false\n"))
+		q := e.asker(wishID)
+		q1 := q.ask(t, "")
+		q.enlighten(t, q1.GetCode(), "tell me more")
+		if invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR); len(invs) != 0 {
+			t.Fatalf("%d investigators, want none", len(invs))
+		}
+	})
+
+	t.Run("override_enlighten_workers_harness", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir(), WithEnlightenWorkers(false))
+		wishID, _ := e.wish(t, fakeProject(t, ""))
+		q := e.asker(wishID)
+		q1 := q.ask(t, "")
+		q.enlighten(t, q1.GetCode(), "tell me more")
+		if invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR); len(invs) != 0 {
+			t.Fatalf("%d investigators, want none", len(invs))
+		}
+	})
+}
+
+// TestQuestionWorkersOff: a project's settings or a harness with enlighten workers off start none: the lead acts.
 func TestQuestionWorkersOff(t *testing.T) {
 	t.Parallel()
 	for name, c := range map[string]struct {
 		opts     []Option
 		settings string
 	}{
-		"settings": {opts: []Option{WithQuestionWorkers()}, settings: "question_workers: false\n"},
-		"harness":  {},
+		"settings": {opts: []Option{WithEnlightenWorkers()}, settings: "enlighten_workers: false\n"},
+		"harness":  {opts: []Option{WithEnlightenWorkers(false)}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -236,82 +258,33 @@ func TestQuestionWorkersOff(t *testing.T) {
 	}
 }
 
-// TestOneConverterAtATime: a second answer to a question whose converter still works starts no other: the converter
-// is told the new answer.
-func TestOneConverterAtATime(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir(), WithQuestionWorkers())
-	wishID, _ := e.wish(t, fakeProject(t, ""))
-	q := e.asker(wishID)
-	asked := q.ask(t, "wait") // The converter works until a message comes: the second answer.
-	q.answer(t, asked.GetCode(), planv1.Choice_CHOICE_A, "")
-	q.answer(t, asked.GetCode(), planv1.Choice_CHOICE_B, "on second thought")
-	converters := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)
-	if len(converters) != 1 {
-		t.Fatalf("%d converters, want 1", len(converters))
-	}
-	e.ended(t, converters[0].GetId())
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
-	defer cancel()
-	events := e.watch(ctx, t, converters[0].GetId(), 0)
-	if !slices.ContainsFunc(events, func(ev *planv1.TaskEvent) bool {
-		return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_MESSAGE &&
-			strings.Contains(ev.GetText(), "The developer answered Q01 again: B: Postgres. Their note: on second thought")
-	}) {
-		t.Errorf("the converter was not told the new answer: %v", eventKinds(events))
-	}
-	// Once it ended, a new answer starts a new converter.
-	q.answer(t, asked.GetCode(), planv1.Choice_CHOICE_A, "")
-	if n := len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)); n != 2 {
-		t.Errorf("%d converters after it ended, want 2", n)
-	}
-}
-
-// TestQuestionEndLine: what the lead hears when a question worker ends: what it spawned from its question, asked or
-// revised, and what is left to the lead.
+// TestQuestionEndLine: what the lead hears when an investigator ends: revised or still waiting for a revision.
 func TestQuestionEndLine(t *testing.T) {
 	t.Parallel()
 	at := timestamppb.New(time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC))
-	later := timestamppb.New(at.AsTime().Add(time.Minute))
-	before := timestamppb.New(at.AsTime().Add(-time.Minute))
-	conv := &planv1.Task{Id: "c", Code: "W5", WishId: "w", Title: "Q02 → tasks", Question: "Q02",
-		Role: planv1.TaskRole_TASK_ROLE_CONVERTER, Status: planv1.TaskStatus_TASK_STATUS_DONE, CreateTime: at}
-	tasks := []*planv1.Task{
-		{Code: "W1", Decision: "Q02", CreateTime: before}, // spawned by the lead, before
-		{Code: "W6", Decision: "Q02", CreateTime: later},
-		{Code: "W7", Decision: "q02", CreateTime: later},
-		{Code: "W8", Decision: "Q03", CreateTime: later},
-	}
-	questions := []*planv1.Question{{Code: "Q04", TaskId: "c"}, {Code: "Q02"}}
-	if got, want := questionEndLine(conv, tasks, questions, ""), "Djinn: W5 (Q02 → tasks) ended: spawned W6, W7 from Q02; asked Q04."; got != want {
-		t.Errorf("got  %s\nwant %s", got, want)
-	}
-	conv.Status, conv.Error = planv1.TaskStatus_TASK_STATUS_FAILED, "exit code 1"
-	if got, want := questionEndLine(conv, tasks[:1], nil, ""), "Djinn: W5 (Q02 → tasks) failed (exit code 1). Nothing came of "+
-		"Q02: act on it, djinn wish brief w has the context."; got != want {
-		t.Errorf("got  %s\nwant %s", got, want)
-	}
-	if got, want := questionEndLine(conv, tasks, nil, ""), "Djinn: W5 (Q02 → tasks) failed (exit code 1): spawned W6, W7 from "+
-		"Q02. Check what is left of Q02: djinn wish brief w has the context."; got != want {
-		t.Errorf("got  %s\nwant %s", got, want)
-	}
 	inv := &planv1.Task{Id: "i", Code: "W9", WishId: "w", Title: "Q02: enlighten", Question: "Q02",
 		Role: planv1.TaskRole_TASK_ROLE_INVESTIGATOR, Status: planv1.TaskStatus_TASK_STATUS_DONE, CreateTime: at}
-	if got, want := questionEndLine(inv, nil, questions, ""), "Djinn: W9 (Q02: enlighten) ended. Q02 still waits for a "+
+	questions := []*planv1.Question{{Code: "Q04", TaskId: "i"}, {Code: "Q02"}}
+	if got, want := questionEndLine(inv, nil, questions, ""), "Djinn: W9 (Q02: enlighten) ended: asked Q04. Q02 still waits for a "+
 		"revision: djinn task get i has what it found."; got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
-	refused := &planv1.Task{Id: "r", Code: "W10", WishId: "w", Title: "Q02 → tasks", Question: "Q02",
-		Role: planv1.TaskRole_TASK_ROLE_CONVERTER, Status: planv1.TaskStatus_TASK_STATUS_FAILED, CreateTime: at,
+	questionsRevised := []*planv1.Question{
+		{Code: "Q02", Rounds: []*planv1.Round{{Kind: planv1.RoundKind_ROUND_KIND_REVISE, TaskId: "i"}}},
+	}
+	if got, want := questionEndLine(inv, nil, questionsRevised, ""), "Djinn: W9 (Q02: enlighten) ended: revised Q02: it waits for the developer again."; got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+	refused := &planv1.Task{Id: "r", Code: "W10", WishId: "w", Title: "Q02: enlighten", Question: "Q02",
+		Role: planv1.TaskRole_TASK_ROLE_INVESTIGATOR, Status: planv1.TaskStatus_TASK_STATUS_FAILED, CreateTime: at,
 		Error: refusedError(`Bash {"command":"djinn task list | grep Q02;\n sed -n 1p x.go"}`)}
-	if got, want := questionEndLine(refused, nil, nil, "W11"), "Djinn: W10 (Q02 → tasks) failed: its command was refused: "+
+	if got, want := questionEndLine(refused, nil, nil, "W11"), "Djinn: W10 (Q02: enlighten) failed: its command was refused: "+
 		"djinn task list | grep Q02; sed -n 1p x.go. Djinn starts it again: W11, told to run each djinn command alone; you "+
 		"will hear when it ends."; got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
-	if got, want := questionEndLine(refused, nil, nil, ""), "Djinn: W10 (Q02 → tasks) failed: its command was refused: "+
-		"djinn task list | grep Q02; sed -n 1p x.go. Nothing came of Q02: act on it, djinn wish brief w has the context."; got != want {
+	if got, want := questionEndLine(refused, nil, nil, ""), "Djinn: W10 (Q02: enlighten) failed: its command was refused: "+
+		"djinn task list | grep Q02; sed -n 1p x.go. Q02 still waits for a revision: djinn task get r has what it found."; got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
 	if got := refusedError("Write notes.md"); got != "its command was refused: Write notes.md" {
@@ -319,114 +292,71 @@ func TestQuestionEndLine(t *testing.T) {
 	}
 }
 
-// claudeQuestions is djinn up with question workers, played by the test binary replaying a Claude fixture, in a
-// project whose settings give them to Claude; the lead's lines are told.
-func claudeQuestions(t *testing.T, fixture string) (e *env, lead *told, wishID string) {
-	t.Helper()
-	fakeEnv, _, _ := fake{provider: "claude", fixture: fixture, end: "eof"}.env(t)
+// TestQuestionWorkerProvider: when the project's provider cannot run read-only (antigravity), question workers
+// fall back to claude with sonnet, and the start event says why ("antigravity cannot run read-only: claude");
+// an explicit question_provider names the provider they run on instead.
+func TestQuestionWorkerProvider(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	providers := testProviders()
-	providers[planv1.Provider_PROVIDER_CLAUDE] = envClaude{Claude: Claude{Command: os.Args[0], Grace: time.Second}, env: fakeEnv, dir: t.TempDir()}
-	e = upWith(t, t.TempDir(), providers, WithQuestionWorkers())
-	lead = &told{}
-	e.h.TellLeads(lead.tell)
+	providers[planv1.Provider_PROVIDER_CLAUDE] = Fake{}
+	e := upWith(t, t.TempDir(), providers, WithEnlightenWorkers())
+
+	// Fallback to Claude when the project's provider is Antigravity.
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, plan.SettingsFile), []byte("provider: PROVIDER_CLAUDE\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, plan.SettingsFile), []byte("provider: PROVIDER_ANTIGRAVITY\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	wishID, _ = e.wish(t, dir)
-	return e, lead, wishID
-}
-
-// refusedCompound is the command the question workers of the Claude fixtures join grep and sed to.
-const refusedCompound = "djinn task list --wish-id 01a11833-a440-7479-a067-52615c91da70 | grep Q01; sed -n 1,40p internal/store/store.go"
-
-// TestConverterRefusedThenSpawns: a converter whose compound command is refused runs the djinn command alone, and the
-// task it spawns counts: it ends done, and the lead hears what it spawned. Its prompt says how to work within its
-// access.
-func TestConverterRefusedThenSpawns(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e, lead, wishID := claudeQuestions(t, "question-refused-then-spawned")
+	wishID, _ := e.wish(t, dir)
 	q := e.asker(wishID)
 	asked := q.ask(t, "")
-	q.answer(t, asked.GetCode(), planv1.Choice_CHOICE_B, "")
-	converters := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)
-	if len(converters) != 1 {
-		t.Fatalf("%d converters, want 1", len(converters))
+	q.enlighten(t, asked.GetCode(), "tell me more")
+
+	investigators := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+	if len(investigators) != 1 {
+		t.Fatalf("%d investigators, want 1", len(investigators))
 	}
-	c := converters[0]
-	// As its plain djinn command does, once the compound one was refused; the fake waits for it.
-	if _, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, Title: "Move the store to Postgres", Prompt: "done", Provider: planv1.Provider_PROVIDER_FAKE, Decision: "Q01",
-	})); err != nil {
-		t.Fatal(err)
+	c := investigators[0]
+	if c.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || c.GetModel() != plan.DefaultQuestionModel {
+		t.Errorf("investigator provider = %s, model = %q; want claude, %s", c.GetProvider(), c.GetModel(), plan.DefaultQuestionModel)
 	}
-	e.release(t, c.GetId())
-	if done := e.ended(t, c.GetId()); done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-		t.Errorf("converter ended %s (%s), want done", done.GetStatus(), done.GetError())
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
-	defer cancel()
-	events := e.watch(ctx, t, c.GetId(), 0)
+	e.ended(t, c.GetId())
+	events := e.watch(t.Context(), t, c.GetId(), 0)
 	if !slices.ContainsFunc(events, func(ev *planv1.TaskEvent) bool {
-		return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.Contains(ev.GetText(), "permission denied: Bash") &&
-			strings.Contains(ev.GetText(), "| grep Q01")
+		return strings.Contains(ev.GetText(), "started claude (antigravity cannot run read-only: claude)")
 	}) {
-		t.Errorf("no refusal recorded: %v", eventKinds(events))
+		t.Errorf("no start event with fallback text: %v", events)
 	}
-	prompt := events[0].GetText()
-	for _, want := range []string{"## How to work within your access", "in a Bash call of its own: no pipe", "Read, Grep and Glob tools",
-		"not that Bash is"} {
-		if !strings.Contains(prompt, want) {
-			t.Errorf("the prompt misses %q", want)
-		}
-	}
-	if got, want := lead.all(), []string{wishID + ": Djinn: W1 (Q01 → tasks) ended: spawned W2 from Q01."}; !slices.Equal(got, want) {
-		t.Errorf("the lead was told\n%q\nwant\n%q", got, want)
-	}
-	if n := len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)); n != 1 {
-		t.Errorf("%d converters, want 1: nothing to start again", n)
-	}
-}
 
-// TestQuestionWorkerGivesUp: a converter that ends without doing anything after a refusal fails, the refusal named;
-// Djinn starts it again once, told what was refused, and the lead hears both; the second one giving up the same way
-// is not started again.
-func TestQuestionWorkerGivesUp(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e, lead, wishID := claudeQuestions(t, "question-gives-up")
-	q := e.asker(wishID)
-	asked := q.ask(t, "")
-	q.answer(t, asked.GetCode(), planv1.Choice_CHOICE_B, "")
-	waitFor(t, "the lead to hear of both converters", func() bool { return len(lead.all()) == 2 })
-	converters := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)
-	if len(converters) != 2 {
-		t.Fatalf("%d converters, want 2: one, then its retry", len(converters))
+	// question_provider explicitly set: runs on that provider without fallback.
+	dirExplicit := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dirExplicit, ".agents"), 0o700); err != nil {
+		t.Fatal(err)
 	}
-	for _, c := range converters {
-		c = e.ended(t, c.GetId())
-		if c.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED || c.GetError() != refusedPrefix+refusedCompound {
-			t.Errorf("%s ended %s (%s), want failed, the refusal named", c.GetCode(), c.GetStatus(), c.GetError())
-		}
+	if err := os.WriteFile(filepath.Join(dirExplicit, plan.SettingsFile), []byte("provider: PROVIDER_ANTIGRAVITY\nquestion_provider: PROVIDER_FAKE\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if prompt := e.prompt(t, converters[1].GetId()); !strings.Contains(prompt, "## Before you\n\nW1 had this job before you, "+
-		"and ended without doing anything after this call was refused: "+refusedCompound+". Only that form was refused") {
-		t.Errorf("the retry is not told what was refused:\n%s", prompt)
+	wishIDExplicit, _ := e.wish(t, dirExplicit)
+	qExplicit := e.asker(wishIDExplicit)
+	askedExplicit := qExplicit.ask(t, "")
+	qExplicit.enlighten(t, askedExplicit.GetCode(), "tell me more")
+
+	investigatorsExplicit := e.roles(t, wishIDExplicit, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+	if len(investigatorsExplicit) != 1 {
+		t.Fatalf("%d investigators, want 1", len(investigatorsExplicit))
 	}
-	refused := "failed: " + refusedPrefix + refusedCompound + "."
-	want := []string{
-		wishID + ": Djinn: W1 (Q01 → tasks) " + refused + " Djinn starts it again: W2, told to run each djinn command alone; " +
-			"you will hear when it ends.",
-		wishID + ": Djinn: W2 (Q01 → tasks) " + refused + " Nothing came of Q01: act on it, djinn wish brief " + wishID +
-			" has the context.",
+	ce := investigatorsExplicit[0]
+	if ce.GetProvider() != planv1.Provider_PROVIDER_FAKE {
+		t.Errorf("investigator provider = %s; want fake", ce.GetProvider())
 	}
-	got := lead.all()
-	slices.Sort(got)
-	if !slices.Equal(got, want) {
-		t.Errorf("the lead was told\n%q\nwant\n%q", got, want)
+	e.ended(t, ce.GetId())
+	eventsExplicit := e.watch(t.Context(), t, ce.GetId(), 0)
+	if !slices.ContainsFunc(eventsExplicit, func(ev *planv1.TaskEvent) bool {
+		return strings.Contains(ev.GetText(), "started fake") && !strings.Contains(ev.GetText(), "cannot run read-only")
+	}) {
+		t.Errorf("start event for explicit provider: %v", eventsExplicit)
 	}
 }

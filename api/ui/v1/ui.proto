@@ -4,6 +4,7 @@ syntax = "proto3";
 package ui.v1;
 
 import "buf/validate/validate.proto";
+import "djinn/v1/load.proto";
 import "djinn/v1/options.proto";
 
 // What the window needs to show and follow the plan.
@@ -44,8 +45,13 @@ service UiService {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
   // Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-  // change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
+  // change. With the leads that a restart could not resume, once, and the last build pushed of each integration branch
+  // that is not installed.
   rpc WatchUpdate(UiServiceWatchUpdateRequest) returns (stream UiServiceWatchUpdateResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // What the window is asked to show and whether a newer Djinn waits, in a single stream.
+  rpc Watch(UiServiceWatchRequest) returns (stream UiServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
   // Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
@@ -55,16 +61,38 @@ service UiService {
   rpc Update(UiServiceUpdateRequest) returns (UiServiceUpdateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
+  // Whether the system lets Djinn show notifications.
+  rpc GetNotifications(UiServiceGetNotificationsRequest) returns (UiServiceGetNotificationsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Ask the system to let Djinn show notifications: on macOS, its dialog the first time; then the answer it keeps.
+  // Returns once the user answered.
+  rpc RequestNotifications(UiServiceRequestNotificationsRequest) returns (UiServiceRequestNotificationsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Open the system's notification settings, on Djinn where the system can: see
+  // UiServiceGetNotificationsResponse.settings.
+  rpc OpenNotificationSettings(UiServiceOpenNotificationSettingsRequest) returns (UiServiceOpenNotificationSettingsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Say which wish the page shows: no notification comes for it while the window is in front.
+  rpc View(UiServiceViewRequest) returns (UiServiceViewResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
 }
 
-message UiServiceGetEnvironmentRequest {}
+message UiServiceGetEnvironmentRequest {
+  // Check the agent command lines too: whether each is installed, its version, and whether it is signed in. Takes up
+  // to a few seconds; without it, providers is empty.
+  bool agents = 1;
+}
 
 message UiServiceGetEnvironmentResponse {
   // Version of djinn.
   string version = 1;
   // Operating system, with the names Node.js uses: linux, darwin, win32.
   string platform = 2;
-  // The agent command lines Djinn knows, and whether they are installed.
+  // The agent command lines Djinn knows, and where each stands; empty unless the request asks for the agents.
   repeated Provider providers = 3;
   // The window can open the system's folder dialog: ChooseDirectory works. False in the browser.
   bool folder_dialog = 4;
@@ -91,18 +119,43 @@ message Shortcut {
 message Settings {
   // The global shortcut's chord. Unset: the default one. Empty: off.
   optional string shortcut = 1;
+  // The operating load notch in effect on this machine. Unset: default (medium).
+  optional djinn.v1.LoadNotch load = 2;
 }
 
-// An agent command line.
+// An agent command line. Djinn looks for it on its PATH, the PATH of the user's login shell, and the folders its
+// installers use, so that a window started from the Finder finds it too.
 message Provider {
-  // Identifier: codex, claude or antigravity.
+  // Identifier: claude, codex or antigravity.
   string id = 1;
   // Name shown in the window.
   string name = 2;
   // The command is found on this machine.
   bool available = 3;
-  // The command, as resolved on the PATH when available: claude, codex, agy.
+  // The command, as resolved when available: claude, codex, agy.
   string command = 4;
+  // Where the agent stands.
+  ProviderState state = 5;
+  // The version the command reports; empty when it is not installed, or when Djinn does not know how to ask.
+  string version = 6;
+  // The command line that installs the agent, from its official documentation, for this platform.
+  string install_command = 7;
+  // The command line that signs the agent in, from its official documentation.
+  string login_command = 8;
+}
+
+// ProviderState is whether an agent command line is installed and signed in.
+enum ProviderState {
+  // Not set.
+  PROVIDER_STATE_UNSPECIFIED = 0;
+  // The command is not found.
+  PROVIDER_STATE_MISSING = 1;
+  // Installed, not signed in: its status command says so.
+  PROVIDER_STATE_SIGNED_OUT = 2;
+  // Installed and signed in: its status command says so.
+  PROVIDER_STATE_READY = 3;
+  // Installed; whether it is signed in is unknown: the agent has no status command, or it failed or took too long.
+  PROVIDER_STATE_UNKNOWN = 4;
 }
 
 message UiServiceChooseDirectoryRequest {
@@ -175,6 +228,9 @@ message UiServiceWatchShowResponse {
   // A link the window was asked to open and Djinn does not know, or whose tilasm or wish is not on this machine: the
   // window says so. Empty for none.
   string unknown_link = 4;
+  // The element of the wish to bring into view, by its id in the page: question-<id>, task-<id>, grant-<wish id>;
+  // empty for the top of the wish.
+  string target = 5;
 }
 
 message UiServiceWatchUpdateRequest {}
@@ -189,12 +245,29 @@ message UiServiceWatchUpdateResponse {
   // Where the release notes of the newer Djinn are, an http(s) link; empty when none waits, or when it comes from a
   // local install, which has none.
   string notes_url = 4;
-  // The last push of a wish's integration branch, in a project whose settings name an install command, and not
-  // installed since: the window proposes to install it and restart on it. Unset for none.
-  Build build = 5;
+  reserved 5;
+  reserved "build";
+  // The last push of each integration branch, in a project whose settings name an install command, and not installed
+  // since: one per branch, the branch the running Djinn was built from first. The window proposes to install each and
+  // restart on it, the other branches' folded.
+  repeated Build builds = 7;
   // The install of a build that runs now (Update), and where it stands; unset for none. The window says it in place
   // of the build's buttons: what it waits for, then that it builds, then that Djinn restarts.
   Installing installing = 6;
+  // The newer Djinn of version ready, named as a build is: its commit, the branch and wish it comes from, and how it
+  // compares with the running Djinn. Unset when no project holds its commit (a release no checkout knows yet).
+  Build ready_build = 8;
+}
+
+message UiServiceWatchRequest {}
+
+message UiServiceWatchResponse {
+  // A request to show something in the window, if any.
+  UiServiceWatchShowResponse show = 1;
+  // A change in the update state, if any.
+  UiServiceWatchUpdateResponse update = 2;
+  // A change in the operating load, if any.
+  djinn.v1.LoadServiceWatchResponse load = 3;
 }
 
 // Installing is an install of a build that runs now, and where it stands.
@@ -220,6 +293,16 @@ enum InstallStep {
   INSTALL_STEP_RESTARTING = 4;
 }
 
+// TaskSummary is what a task of the build brought, and its worker's final words.
+message TaskSummary {
+  // The task's code: W5.
+  string code = 1;
+  // The task's title.
+  string title = 2;
+  // The worker's summary: the last words of its run.
+  string summary = 3;
+}
+
 // Build is a wish's integration branch as Djinn pushed it (T07), to install.
 message Build {
   // The wish, and its title.
@@ -233,17 +316,28 @@ message Build {
   string sha = 6;
   // The tasks whose work the push brought, by code: W5.
   repeated string tasks = 7;
-  // What changed: the titles of the commits the push brought, the latest first.
+  // The titles of the commits the push brought, the latest first.
   repeated string changes = 8;
-  // What to check, one line per task: its code and title, then what its worker said last.
-  repeated string checks = 9;
+  // What changed, one per task: its code and title, and its worker's summary.
+  repeated TaskSummary summaries = 9;
   // The command that installs it: go tool task install.
   string install = 10;
+  // The commit of the running Djinn it is compared with, when a project holds it: tasks, summaries and changes are
+  // then what the build adds to it, and lacks what it lacks. Empty: they are what the push brought.
+  string base = 11;
+  // The running Djinn was built from this branch: its build comes first.
+  bool running = 12;
+  // How many commits, merges aside, the build adds to the running Djinn; changes holds the latest of them.
+  int32 changes_count = 13;
+  // The titles of the commits the running Djinn holds and the build does not, the latest first, and how many there
+  // are: the build is older than the running Djinn on them.
+  repeated string lacks = 14;
+  int32 lacks_count = 15;
 }
 
 message UiServiceUpdateRequest {
   // The commit of the build to install first, as WatchUpdate proposed it; empty to restart on the newer Djinn
-  // already installed. Refused when it is not the build proposed.
+  // already installed. Refused when it is none of the builds proposed.
   string build = 1 [(buf.validate.field).string.max_len = 64];
 }
 
@@ -255,3 +349,43 @@ message UiServiceUpdateResponse {
   // The commit of the build installed, when one was.
   string installed = 3;
 }
+
+// Whether the system lets Djinn show notifications.
+enum NotificationAccess {
+  // Not known yet: the window is starting.
+  NOTIFICATION_ACCESS_UNSPECIFIED = 0;
+  // This Djinn cannot show any: the browser, a build without a window, a system without notifications, or on macOS
+  // a Djinn that does not run from its app.
+  NOTIFICATION_ACCESS_UNAVAILABLE = 1;
+  // The system shows them.
+  NOTIFICATION_ACCESS_ALLOWED = 2;
+  // The system does not show them: not allowed yet, or turned off in its settings.
+  NOTIFICATION_ACCESS_DENIED = 3;
+}
+
+message UiServiceGetNotificationsRequest {}
+
+message UiServiceGetNotificationsResponse {
+  NotificationAccess access = 1;
+  // OpenNotificationSettings opens the system's settings (macOS).
+  bool settings = 2;
+}
+
+message UiServiceRequestNotificationsRequest {}
+
+message UiServiceRequestNotificationsResponse {
+  NotificationAccess access = 1;
+  // OpenNotificationSettings opens the system's settings (macOS).
+  bool settings = 2;
+}
+
+message UiServiceOpenNotificationSettingsRequest {}
+
+message UiServiceOpenNotificationSettingsResponse {}
+
+message UiServiceViewRequest {
+  // The wish the page shows; empty for none (the flight plan, a dialog of its own).
+  string wish_id = 1 [(buf.validate.field).string.max_len = 64];
+}
+
+message UiServiceViewResponse {}

@@ -32,7 +32,7 @@ func (b *Blocks) Put(
 	var block *planv1.Block
 	err := write(ctx, b.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
-		block, err = putBlock(ctx, tx, req.Msg)
+		block, err = PutBlock(ctx, tx, req.Msg)
 		return err
 	})
 	if err != nil {
@@ -41,8 +41,8 @@ func (b *Blocks) Put(
 	return connect.NewResponse(&planv1.BlockServicePutResponse{Block: block}), nil
 }
 
-// putBlock adds or changes the block m names, in tx. The caller journals the command.
-func putBlock(ctx context.Context, tx *store.Tx, m *planv1.BlockServicePutRequest) (*planv1.Block, error) {
+// PutBlock adds or changes the block m names, in tx. The caller journals the command.
+func PutBlock(ctx context.Context, tx *store.Tx, m *planv1.BlockServicePutRequest) (*planv1.Block, error) {
 	var block *planv1.Block
 	if err := checkIcon(m.GetIcon()); err != nil {
 		return nil, err
@@ -128,14 +128,22 @@ func (b *Blocks) List(
 	if err != nil {
 		return nil, Status(err)
 	}
-	res := &planv1.BlockServiceListResponse{}
+	var matching []*planv1.Block
 	for _, block := range all {
 		if kind := req.Msg.GetKind(); kind == "" || strings.EqualFold(kind, block.GetKind()) {
-			res.Blocks = append(res.Blocks, block)
+			matching = append(matching, block)
 		}
 	}
-	sortBlocks(res.Blocks)
-	return connect.NewResponse(res), nil
+	sortBlocks(matching)
+	page, nextToken, total, err := Paginate(matching, req.Msg.GetPageSize(), req.Msg.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.BlockServiceListResponse{
+		Blocks:        page,
+		NextPageToken: nextToken,
+		Total:         total,
+	}), nil
 }
 
 // sortBlocks puts blocks in their order: by position, then oldest first.

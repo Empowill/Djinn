@@ -33,10 +33,10 @@ func forkSource(ctx context.Context, r store.Reader, wish *planv1.Wish, req *pla
 	case req.GetFork() != "" && req.GetFromLead():
 		return src, connect.NewError(connect.CodeInvalidArgument, errors.New("--fork and --from-lead exclude each other"))
 	case req.GetFromLead():
-		lead := wish.GetLead()
-		if lead.GetSessionId() == "" {
+		lead, err := store.Get[*planv1.Lead](ctx, r, "lead")
+		if err != nil || lead.GetSessionId() == "" {
 			return src, connect.NewError(connect.CodeFailedPrecondition, errors.New(
-				"the wish has no lead session to fork: djinn wish set-lead records it"))
+				"djinn has no lead session to fork: djinn lead set records it"))
 		}
 		src = fork{session: lead.GetSessionId(), of: forkLead, provider: lead.GetProvider()}
 	case req.GetFork() != "":

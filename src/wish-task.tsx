@@ -8,6 +8,7 @@ import {
   CheckCheck,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   CirclePause,
   CirclePlay,
   CircleStop,
@@ -16,6 +17,7 @@ import {
   Lock,
   MessageSquare,
   MessageSquarePlus,
+  Play,
   ScrollText,
   Send,
   Terminal,
@@ -23,6 +25,7 @@ import {
 import {
   type FormEvent,
   type ReactNode,
+  memo,
   useEffect,
   useRef,
   useState,
@@ -40,9 +43,15 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { jump } from "./attention";
 import { type Decision } from "./data/decisions";
-import { useData, useTaskEvents } from "./data/djinn";
+import { useOptionalData, useTaskEvents, useTaskPrompt } from "./data/djinn";
+import { isMerge } from "./data/flight";
 import {
+  cancelledText,
+  doneWithProblems,
+  gitReason,
+  taskActivity,
   taskFinished,
+  taskModelDisplay,
   taskStatusText,
   taskTime,
   taskTone,
@@ -54,7 +63,16 @@ import { DecisionLink } from "./decision-log";
 import { language, t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
-import { resourcesDetail, resourcesNow, TaskUsage, usageDetail } from "./usage";
+import { TaskDiffView } from "./diff";
+import {
+  costTitle,
+  resourcesDetail,
+  resourcesNow,
+  TaskRefused,
+  TaskTurns,
+  TaskUsage,
+  usageDetail,
+} from "./usage";
 
 const eventIcons: Partial<Record<TaskEventKind, typeof FileText>> = {
   [TaskEventKind.PROMPT]: MessageSquare,
@@ -86,7 +104,104 @@ export function agentOf(task: Task): string {
   return task.model ? `${name} · ${task.model}` : name;
 }
 
-export function WishTask({
+// promptPreview returns the first few lines of a prompt, trimmed and truncated with an ellipsis if long.
+export function promptPreview(
+  prompt: string,
+  maxLines = 3,
+  maxChars = 240,
+): string {
+  if (!prompt) return "";
+  const trimmed = prompt.trim();
+  if (!trimmed) return "";
+  const lines = trimmed
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (!lines.length) return "";
+  const hasMoreLines = lines.length > maxLines;
+  const taken = lines.slice(0, maxLines);
+  let text = taken.join("\n");
+  const hasMoreChars = text.length > maxChars;
+  if (hasMoreChars) {
+    text = text.slice(0, maxChars).trimEnd();
+  }
+  if (hasMoreLines || hasMoreChars) {
+    if (!text.endsWith("…") && !text.endsWith("...")) {
+      text += "…";
+    }
+  }
+  return text;
+}
+
+// TaskPromptFold shows a task's prompt in Markdown, folded after a few lines with a button to show all.
+function TaskPromptFold({ prompt }: { prompt: string }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!prompt.trim()) return null;
+  const lines = prompt.split(/\r?\n/).filter(Boolean);
+  const isLong = lines.length > 3 || prompt.length > 180;
+  return (
+    <div className="wish-task-prompt-section">
+      <span className="eyebrow">{t("task.prompt")}</span>
+      <div
+        className={`wish-task-prompt-body ${!expanded && isLong ? "folded" : "expanded"}`}
+      >
+        <MarkdownBody text={prompt} />
+      </div>
+      {isLong && (
+        <button
+          type="button"
+          className="text-button wish-task-prompt-toggle"
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? t("task.show_less") : t("task.show_all")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function isMemoryWait(reason?: string): boolean {
+  if (!reason) return false;
+  if (reason.startsWith("the machine is under pressure")) return false;
+  return (
+    reason.includes("commits up to") ||
+    reason.includes("peaks at") ||
+    reason.includes("waits for memory") ||
+    reason.includes("memory")
+  );
+}
+
+export function isGreenWait(reason?: string): boolean {
+  return Boolean(reason && reason.includes("to be green again"));
+}
+
+export function compactGreenWait(reason?: string): string {
+  if (!reason) return "";
+  const idx = reason.indexOf(" (push checks red at ");
+  return idx > 0 ? reason.slice(0, idx) : reason;
+}
+
+// WaitReason is why a task waits, as Djinn says it; the task it waits for ("waits for W8 to be committed") is a link
+// to its card, which stays in sight until its work is committed (settledTask).
+function WaitReason({
+  reason,
+  codes,
+}: {
+  reason: string;
+  codes?: ReadonlyMap<string, string>;
+}) {
+  const m = /^(.*?waits for )([A-Za-z]+\d+)\b(.*)$/s.exec(reason);
+  if (!m) return <>{reason}</>;
+  return (
+    <>
+      {m[1]}
+      <TaskLink code={m[2]} codes={codes} />
+      {m[3]}
+    </>
+  );
+}
+
+export const WishTask = memo(function WishTask({
   task,
   project,
   codes,
@@ -95,10 +210,16 @@ export function WishTask({
   decision,
   focused = false,
   onStop,
+  onStart,
   onSend,
   onHold,
   onDecision,
   onDone,
+  merges,
+  nested,
+  mergeOpen = false,
+  alsoMerged,
+  onTurnComments,
 }: {
   task: Task;
   project?: Project;
@@ -112,16 +233,29 @@ export function WishTask({
   decision?: Decision;
   // Brought into sight and opened, from its decision.
   focused?: boolean;
-  onStop: () => void;
-  onSend: (text: string) => Promise<unknown>;
+  onStop: (task: Task) => void;
+  // Starts a task that waits for the machine alone, anyway (TaskService.Start).
+  onStart?: (task: Task) => void;
+  onSend: (text: string, task: Task) => Promise<unknown>;
   // Pauses the task's worker (true) or lets it go on (false); none where djinn cannot pause one (Windows).
-  onHold?: (pause: boolean) => void;
-  onDecision?: () => void;
+  onHold?: (pause: boolean, task: Task) => void;
+  onDecision?: (task: Task) => void;
   // Marks the task done by hand, with a note; none where the task cannot be closed from here.
-  onDone?: (note: string) => Promise<unknown>;
+  onDone?: (note: string, task: Task) => Promise<unknown>;
+  // The merges that bring this task's work in (src/data/flight.ts mergeNest), and their rows: folded under it.
+  merges?: readonly Task[];
+  nested?: ReactNode;
+  // Unfolds them: one of them is brought into sight.
+  mergeOpen?: boolean;
+  // The merges that bring this work in too but show under another task: a link to that task each.
+  alsoMerged?: readonly { merge: Task; host: Task }[];
+  // Turns the comments on its diff that went to no worker into work; none where it cannot be done from here.
+  onTurnComments?: (task: Task) => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(focused);
   const [closing, setClosing] = useState(false);
+  const prompt = useTaskPrompt(task);
+  const preview = promptPreview(prompt);
   useEffect(() => {
     if (!focused) return;
     setOpen(true);
@@ -145,86 +279,127 @@ export function WishTask({
         .map((id) => codes?.get(id))
         .filter((code): code is string => !!code);
   const tone = taskTone(task, forkedAs);
-  // How long it runs comes first: ticking while it runs, how long it ran once ended.
-  const now = useNow(!taskFinished(task.status) && !!task.startTime);
+  // The main counter ticks while it runs, and freezes while paused or done.
+  const now = useNow(task.status === TaskStatus.RUNNING && !!task.startTime);
   const time = taskTime(task, now);
+  const activity = taskActivity(task, now);
   const work = taskWork(task, codes);
+  const hasActions = holdable || stoppable || (!!onDone && closable(task));
+  const machineWait = task.status === TaskStatus.PENDING && task.machineWait;
   return (
     <article
       className={`wish-task tone-${tone} ${open ? "open" : ""} ${focused ? "focused" : ""}`}
       id={`task-${task.id}`}
     >
-      <div className="wish-task-row">
+      <div className={`wish-task-row ${hasActions ? "has-actions" : ""}`}>
         <button
           className="wish-task-heading"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
         >
-          <StatusBadge tone={tone} label={taskStatusText(task, forkedAs)} />
-          <span className="agent-code">{task.code}</span>
-          {project?.name && (
-            <span className="task-project">{project.name}</span>
-          )}
-          {/* Cut to the room left: the whole title shows on hover. */}
-          <strong title={task.title}>{task.title}</strong>
-          <span className="wish-task-meta">
-            {origin}
-            {time.text && (
-              <span className="task-time" title={time.title}>
-                {time.text}
+          <span className="wish-task-first-line">
+            <StatusBadge
+              tone={tone}
+              label={taskStatusText(task, forkedAs)}
+              title={cancelledText(task) ?? activity ?? undefined}
+            />
+            {isMerge(task) && <MergeLabel task={task} codes={codes} />}
+            <span className="agent-code">{task.code}</span>
+            {/* Cut to the room left: the whole title shows on hover. */}
+            <span className="task-title-wrap">
+              <strong className="task-title">{task.title}</strong>
+              <span className="task-tooltip" role="tooltip">
+                <span className="task-tooltip-title">{task.title}</span>
+                {activity ? (
+                  <span className="task-tooltip-activity">{activity}</span>
+                ) : null}
+                {preview ? (
+                  <span className="task-tooltip-prompt">{preview}</span>
+                ) : null}
               </span>
-            )}
-            <TaskUsage usage={task.usage} />
-            {task.status === TaskStatus.RUNNING && task.resources?.readTime && (
-              <span
-                className="task-usage"
-                title={resourcesDetail(task.resources, true)}
+            </span>
+            <ChevronDown size={14} className={open ? "rotated" : ""} />
+          </span>
+          <span className="wish-task-second-line">
+            <span className="wish-task-meta">
+              {project?.name && (
+                <span className="task-project">{project.name}</span>
+              )}
+              {(() => {
+                const display = taskModelDisplay(task, project);
+                return display ? (
+                  <span className="task-model" title={display.title}>
+                    {display.label}
+                  </span>
+                ) : null;
+              })()}
+              {time.text && (
+                <span className="task-time" title={time.title}>
+                  {time.text}
+                </span>
+              )}
+              <TaskTurns task={task} />
+              <TaskRefused task={task} />
+              {origin}
+              <TaskUsage task={task} />
+              {task.status === TaskStatus.RUNNING &&
+                task.resources?.readTime && (
+                  <span
+                    className="task-usage"
+                    title={resourcesDetail(task.resources, true)}
+                  >
+                    {resourcesNow(task.resources)}
+                  </span>
+                )}
+            </span>
+          </span>
+        </button>
+        {hasActions && (
+          <span className="wish-task-actions">
+            {holdable && (
+              <button
+                className="icon-button"
+                onClick={() => onHold?.(!paused, task)}
+                title={t(paused ? "task.resume_detail" : "task.pause_detail")}
+                aria-label={t(paused ? "task.resume" : "task.pause")}
               >
-                {resourcesNow(task.resources)}
-              </span>
+                {paused ? <CirclePlay size={14} /> : <CirclePause size={14} />}
+              </button>
+            )}
+            {stoppable && (
+              <button
+                className="icon-button"
+                onClick={() => onStop(task)}
+                title={t("task.stop")}
+                aria-label={t("task.stop")}
+              >
+                <CircleStop size={14} />
+              </button>
+            )}
+            {onDone && closable(task) && (
+              <button
+                className="icon-button"
+                onClick={() => setClosing(!closing)}
+                title={t("task.mark_done_detail")}
+                aria-label={t("task.mark_done")}
+                aria-expanded={closing}
+              >
+                <CheckCircle2 size={14} />
+              </button>
             )}
           </span>
-          <ChevronDown size={14} className={open ? "rotated" : ""} />
-        </button>
-        {holdable && (
-          <button
-            className="icon-button"
-            onClick={() => onHold?.(!paused)}
-            title={t(paused ? "task.resume_detail" : "task.pause_detail")}
-            aria-label={t(paused ? "task.resume" : "task.pause")}
-          >
-            {paused ? <CirclePlay size={14} /> : <CirclePause size={14} />}
-          </button>
-        )}
-        {stoppable && (
-          <button
-            className="icon-button"
-            onClick={onStop}
-            title={t("task.stop")}
-            aria-label={t("task.stop")}
-          >
-            <CircleStop size={14} />
-          </button>
-        )}
-        {onDone && closable(task.status) && (
-          <button
-            className="icon-button"
-            onClick={() => setClosing(!closing)}
-            title={t("task.mark_done_detail")}
-            aria-label={t("task.mark_done")}
-            aria-expanded={closing}
-          >
-            <CheckCircle2 size={14} />
-          </button>
         )}
       </div>
       {decision && onDecision && (
         <p className="wish-task-note wish-task-decision">
-          <DecisionLink decision={decision} onOpen={onDecision} />
+          <DecisionLink decision={decision} onOpen={() => onDecision(task)} />
         </p>
       )}
-      {closing && onDone && closable(task.status) && (
-        <DoneBox onDone={onDone} onCancel={() => setClosing(false)} />
+      {closing && onDone && closable(task) && (
+        <DoneBox
+          onDone={(note) => onDone(note, task)}
+          onCancel={() => setClosing(false)}
+        />
       )}
       {task.closed && (
         <p className="wish-task-note wish-task-closed">
@@ -250,26 +425,147 @@ export function WishTask({
           {work.text}
         </p>
       )}
-      {(task.waitReason ||
-        task.error ||
-        after.length > 0 ||
-        (watcher && task.lastLine)) && (
-        <p className={`wish-task-note ${tone === "failed" ? "error" : ""}`}>
-          {task.error || task.waitReason || (watcher && task.lastLine)}
-          {after.length > 0 && (
-            <span className="wish-task-after">
-              {t("page.after", { tasks: after.join(", ") })}
-            </span>
+      {machineWait ? (
+        <div className="wish-task-note machine-wait">
+          <strong>{t("task.machine_wait")}</strong>
+          <span>{task.waitReason}</span>
+          {onStart && (
+            <button
+              className="button secondary small"
+              onClick={() => onStart(task)}
+              title={t("task.start_anyway_detail")}
+            >
+              <Play size={13} />
+              <span>{t("task.start_anyway")}</span>
+            </button>
           )}
+        </div>
+      ) : (
+        (task.waitReason ||
+          task.error ||
+          after.length > 0 ||
+          (watcher && task.lastLine)) && (
+          <p className={`wish-task-note ${tone === "failed" ? "error" : ""}`}>
+            {task.error ? (
+              task.error
+            ) : isMemoryWait(task.waitReason) ? (
+              <span title={task.waitReason}>{t("task.waits_for_memory")}</span>
+            ) : isGreenWait(task.waitReason) ? (
+              <span title={task.waitReason}>
+                {compactGreenWait(task.waitReason)}
+              </span>
+            ) : task.waitReason ? (
+              <WaitReason reason={task.waitReason} codes={codes} />
+            ) : (
+              watcher && task.lastLine
+            )}
+            {after.length > 0 && (
+              <span className="wish-task-after">
+                {t("page.after", { tasks: after.join(", ") })}
+              </span>
+            )}
+          </p>
+        )
+      )}
+      {alsoMerged?.map(({ merge, host }) => (
+        <p className="wish-task-note wish-task-merged-in" key={merge.id}>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => jump(`task-${host.id}`)}
+            title={t("task.merge_also", { task: merge.code, host: host.code })}
+          >
+            <span className="merge-label">{t("task.merge")}</span>
+            <span className="agent-code">{merge.code}</span>
+          </button>
         </p>
+      ))}
+      {merges && merges.length > 0 && (
+        <MergeFold merges={merges} opened={mergeOpen}>
+          {nested}
+        </MergeFold>
       )}
       {open && (
-        <TaskBody task={task} forkOf={codes?.get(task.forkOf ?? "") ?? ""} />
+        <TaskBody
+          task={task}
+          forkOf={codes?.get(task.forkOf ?? "") ?? ""}
+          prompt={prompt}
+          onTurnComments={onTurnComments}
+        />
       )}
       {open && task.status === TaskStatus.RUNNING && !watcher && (
-        <SendBox onSend={onSend} />
+        <SendBox onSend={(text) => onSend(text, task)} />
       )}
     </article>
+  );
+});
+
+// MergeLabel marks a merge, compact; what it brings in on hover.
+export function MergeLabel({
+  task,
+  codes,
+}: {
+  task: Task;
+  codes?: ReadonlyMap<string, string>;
+}) {
+  const served = (
+    task.correction?.failure?.taskIds ??
+    task.review?.taskIds ??
+    []
+  )
+    .map((id) => codes?.get(id))
+    .filter((code): code is string => !!code);
+  return (
+    <span
+      className="merge-label"
+      title={
+        served.length
+          ? t("task.merge_detail", { tasks: served.join(", ") })
+          : undefined
+      }
+    >
+      {t("task.merge")}
+    </span>
+  );
+}
+
+// MergeFold folds the merges of a task under it, the label, their codes and the latest one's state on its line; the
+// rows open on a click, or when one of them is brought into sight.
+function MergeFold({
+  merges,
+  opened,
+  children,
+}: {
+  merges: readonly Task[];
+  opened: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(opened);
+  useEffect(() => {
+    if (opened) setOpen(true);
+  }, [opened]);
+  const latest = merges[merges.length - 1];
+  return (
+    <div className={`wish-task-merges ${open ? "open" : ""}`}>
+      <button
+        type="button"
+        className="wish-task-merges-toggle"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        title={merges.map((m) => `${m.code} ${m.title}`).join("\n")}
+      >
+        <ChevronRight size={12} className={open ? "rotated-90" : ""} />
+        <span className="merge-label">{t("task.merge")}</span>
+        <span className="agent-code">
+          {merges.map((m) => m.code).join(", ")}
+        </span>
+        <StatusBadge
+          tone={taskTone(latest, "")}
+          label={taskStatusText(latest, "")}
+        />
+      </button>
+      {open && <div className="wish-task-merge-list">{children}</div>}
+    </div>
   );
 }
 
@@ -288,7 +584,7 @@ export function taskWork(
     case IntegrationState.PENDING:
       out = {
         text: work.reason
-          ? t("work.pending_why", { reason: work.reason })
+          ? t("work.pending_why", { reason: gitReason(work.reason) })
           : t("work.pending"),
         tone: "waiting",
       };
@@ -348,12 +644,16 @@ function TaskLink({
   );
 }
 
-// closable tells a task a person may mark done by hand: one no worker runs now, not done already.
-export function closable(status: TaskStatus): boolean {
+// closable tells a task a person may mark done by hand: one no worker runs now, not done or cancelled already; or
+// one done with problems, which marked done is closed as seen.
+export function closable(task: Task): boolean {
+  const status = task.status;
   return (
-    status !== TaskStatus.RUNNING &&
-    status !== TaskStatus.PAUSED &&
-    status !== TaskStatus.DONE
+    doneWithProblems(task) ||
+    (status !== TaskStatus.RUNNING &&
+      status !== TaskStatus.PAUSED &&
+      status !== TaskStatus.DONE &&
+      status !== TaskStatus.CANCELLED)
   );
 }
 
@@ -403,22 +703,35 @@ function DoneBox({
   );
 }
 
-function TaskBody({ task, forkOf }: { task: Task; forkOf: string }) {
-  const events = useTaskEvents(task.id, task.status);
+function TaskBody({
+  task,
+  forkOf,
+  prompt,
+  onTurnComments,
+}: {
+  task: Task;
+  forkOf: string;
+  prompt: string;
+  onTurnComments?: (task: Task) => Promise<unknown>;
+}) {
+  const [showLogs, setShowLogs] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
+  const events = useTaskEvents(task.id, task.status, showLogs);
   const box = useRef<HTMLDivElement>(null);
   // Keep the newest event in sight while the worker runs, inside the box: the page stays where it is.
   useEffect(() => {
     const element = box.current;
-    if (element && !taskFinished(task.status))
+    if (element && showLogs && !taskFinished(task.status))
       element.scrollTop = element.scrollHeight;
-  }, [events.length, task.status]);
+  }, [events.length, task.status, showLogs]);
   // A finished worker's last text is its report: it shows first, as Markdown.
   const lastWord = taskFinished(task.status) ? lastText(events) : "";
-  const spent = usageDetail(task.usage);
+  const spent = usageDetail(task.usage, task.model, task.provider);
   const running = task.status === TaskStatus.RUNNING;
   const used = task.resources ? resourcesDetail(task.resources, running) : "";
   // Where Djinn does not measure workers (Windows), a running worker says so.
-  const unmeasured = useData((s) => !!s.machine?.workerMeasure) && running;
+  const unmeasured =
+    useOptionalData((s) => !!s.machine?.workerMeasure, false) && running;
   const scopes = task.writeScopes ?? [];
   return (
     <div className="wish-task-body">
@@ -438,36 +751,104 @@ function TaskBody({ task, forkOf }: { task: Task; forkOf: string }) {
         {task.maxBudgetUsd > 0 && (
           <span>{t("task.budget", { cost: usd(task.maxBudgetUsd) })}</span>
         )}
-        {spent && <span>{spent}</span>}
+        {spent && (
+          <span title={costTitle(task.usage, task.model, task.provider)}>
+            {spent}
+          </span>
+        )}
         {used && <span>{used}</span>}
         {!used && unmeasured && <span>{t("resources.not_measured")}</span>}
       </div>
+      <TaskPromptFold prompt={prompt} />
       {lastWord && (
         <div className="wish-task-last-word">
           <span className="eyebrow">{t("page.last_word")}</span>
           <MarkdownBody text={lastWord} />
         </div>
       )}
-      <details
-        className="wish-task-events-fold"
-        open={!taskFinished(task.status)}
-      >
-        <summary>{t("task.events", { count: events.length })}</summary>
-        <div className="wish-task-events" ref={box} aria-live="polite">
-          {events.length === 0 ? (
-            <p className="muted-text">{t("task.no_events")}</p>
-          ) : (
-            <table className="compact-table event-table">
-              <tbody>
-                {events.map((event) => (
-                  <EventLine key={event.id} event={event} />
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+      <details className="wish-task-events-fold" open={showLogs}>
+        <summary
+          className="button secondary small wish-task-logs-button"
+          role="button"
+          onClick={(e) => {
+            e.preventDefault();
+            setShowLogs(!showLogs);
+          }}
+        >
+          {showLogs ? t("task.hide_logs") : t("task.see_logs")}
+        </summary>
+        {showLogs && (
+          <div className="wish-task-events" ref={box} aria-live="polite">
+            {events.length === 0 ? (
+              <p className="muted-text">{t("task.no_events")}</p>
+            ) : (
+              <table className="compact-table event-table">
+                <tbody>
+                  {events.map((event) => (
+                    <EventLine
+                      key={event.id}
+                      event={event}
+                      model={task.model}
+                      provider={task.provider}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </details>
+      {onTurnComments && commentsWaiting(task) && (
+        <TurnCommentsButton task={task} onTurn={onTurnComments} />
+      )}
+      <details className="wish-task-diff-fold" open={showDiff}>
+        <summary
+          className="button secondary small wish-task-diff-button"
+          role="button"
+          onClick={(e) => {
+            e.preventDefault();
+            setShowDiff(!showDiff);
+          }}
+        >
+          {showDiff ? t("task.hide_diff") : t("task.see_diff")}
+        </summary>
+        {showDiff && <TaskDiffView task={task} />}
       </details>
     </div>
+  );
+}
+
+// commentsWaiting tells whether an ended task has comments on its diff that went to no worker and are not resolved:
+// TaskService.TurnComments takes them. A cancelled task's work is dropped, comments with it.
+function commentsWaiting(task: Task): boolean {
+  const ended =
+    task.status === TaskStatus.DONE ||
+    task.status === TaskStatus.FAILED ||
+    task.status === TaskStatus.STOPPED ||
+    task.status === TaskStatus.INTERRUPTED;
+  return ended && (task.comments ?? []).some((c) => !c.resolved && !c.sentTo);
+}
+
+export function TurnCommentsButton({
+  task,
+  onTurn,
+}: {
+  task: Task;
+  onTurn: (task: Task) => Promise<unknown>;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      className="button secondary small wish-task-turn-comments-button"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        onTurn(task).finally(() => setBusy(false));
+      }}
+    >
+      {t("task.turn_comments")}
+    </button>
   );
 }
 
@@ -532,14 +913,22 @@ function SendBox({ onSend }: { onSend: (text: string) => Promise<unknown> }) {
   );
 }
 
-function EventLine({ event }: { event: TaskEvent }) {
+function EventLine({
+  event,
+  model,
+  provider,
+}: {
+  event: TaskEvent;
+  model?: string;
+  provider?: Provider;
+}) {
   const Icon = eventIcons[event.kind] ?? FileText;
-  const text =
-    event.kind === TaskEventKind.USAGE && event.usage
-      ? usageDetail(event.usage)
-      : event.kind === TaskEventKind.RECEIVED
-        ? t("task.received", { text: event.text })
-        : event.text;
+  const usage = event.kind === TaskEventKind.USAGE ? event.usage : undefined;
+  const text = usage
+    ? usageDetail(usage, model, provider)
+    : event.kind === TaskEventKind.RECEIVED
+      ? t("task.received", { text: event.text })
+      : event.text;
   return (
     <tr className={`wish-event kind-${event.kind}`}>
       <td>
@@ -548,7 +937,12 @@ function EventLine({ event }: { event: TaskEvent }) {
       <td title={TaskEventKind[event.kind]?.toLowerCase()}>
         <Icon size={13} aria-hidden="true" />
       </td>
-      <td className="wish-event-text">{text}</td>
+      <td
+        className="wish-event-text"
+        title={usage ? costTitle(usage, model, provider) : undefined}
+      >
+        {text}
+      </td>
     </tr>
   );
 }

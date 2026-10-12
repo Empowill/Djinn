@@ -6,20 +6,28 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
 
 	"github.com/empowill/djinn/internal/cli"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/server"
 )
 
+// LogFile receives what a djinn up started in the background writes on its output, in the data directory: the
+// window's toolkit, a panic. What djinn up does is logged beside it, in logx.File.
+var LogFile = filepath.Join(logx.Dir, logx.Console)
+
 const (
-	// LogFile receives what a djinn up started in the background writes, in the data directory.
-	LogFile = "djinn.log"
 	// startTimeout is how long a djinn up started in the background has to answer.
 	startTimeout = 30 * time.Second
+	// oldLogFile is where LogFile was before W511, moved at the next start.
+	oldLogFile = "djinn.log"
+	// consoleKept is how many older LogFile a start keeps when it rolls it over past logx.MaxSize.
+	consoleKept = 2
 )
 
 // startDetached starts djinn with args (up and its flags) in the background, apart from this process and its
@@ -33,7 +41,10 @@ func startDetached(ctx context.Context, home string, say io.Writer, args ...stri
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return "", err
 	}
-	logPath := filepath.Join(home, LogFile)
+	logPath, err := openConsole(home)
+	if err != nil {
+		return "", err
+	}
 	log, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		return "", err
@@ -73,6 +84,24 @@ func startDetached(ctx context.Context, home string, say io.Writer, args ...stri
 		case <-tick.C:
 		}
 	}
+}
+
+// openConsole makes the folder of LogFile in home and returns its path, after moving the log of before W511 there
+// and rolling it over when it grew past logx.MaxSize: a background djinn up holds it open, so it rolls over at a start.
+func openConsole(home string) (string, error) {
+	path := filepath.Join(home, LogFile)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		os.Rename(filepath.Join(home, oldLogFile), path) //nolint:errcheck // None to move: a new data folder.
+	}
+	if info, err := os.Stat(path); err == nil && info.Size() > logx.MaxSize {
+		if err := logx.Shift(path, consoleKept); err != nil {
+			return "", err
+		}
+	}
+	return path, nil
 }
 
 // tail is what the log received from offset from on, its last lines.

@@ -8,7 +8,7 @@ after: T02 T07 T13 T14 T18
 
 # T20 · Your wishes follow you
 
-**Goal.** Your wishes follow you: backed up on your server, shared online, and later spread over your other machines.
+**Goal.** Your wishes follow you: backed up on your server and shared online.
 
 Djinn keeps everything on the machine, and closing it loses nothing. Losing the
 machine loses everything, unless you chose to back it up. Anyone who wants their backups on a
@@ -72,8 +72,7 @@ central server finds the procedure written down, and later a command that does i
 
 ## From T24 · A wish online: sync now, collaborate later
 
-**Goal.** A wish has a page anyone can open, kept up to date as the wish moves. Today, for
-hand-offs: one person works, the other reads. Later, several people work on the same wish.
+**Goal.** A wish has a page anyone can open, kept up to date as the wish moves: one person works, the other reads.
 
 ### Decided
 - **The word is `sync`.** `djinn wish sync <wish>`. One way today (Djinn to the page), both ways
@@ -87,9 +86,7 @@ hand-offs: one person works, the other reads. Later, several people work on the 
   the same page. No secret, no local path on the page.
 
 ### Later: collaborate on a wish
-- Several people on one wish, even on one branch: answers and comments from the page come back
-  into the wish, through the lead, never by editing the page.
-- Not today: we hand off, we do not work at the same time.
+moved to T29, a draft
 
 ### Decided along the way
 - **One file, in the data folder.** `djinn wish sync` writes `<data>/wishes/<id>/page.html` and prints its path. A
@@ -141,60 +138,6 @@ hand-offs: one person works, the other reads. Later, several people work on the 
   changed between approval and publish" (08/10/2026). The lead then published a snapshot, `djinn wish render <wish>
   --file <snapshot>`, while the brief's rule still says to republish the sync file as it is. Make the rule the
   snapshot, or have sync hold the file still while a publish reads it?
-- How a comment on the page becomes an answer in the wish, safely.
-
 ## From T15 · Work spread over trusted machines
 
-**Goal.** Later, after v1: a mission hands tasks to other machines its owner trusts, and shares
-its flight plan with them, semi-automatically, project by project.
-
-### Principles already set
-- **A machine can take a task for a project only if it can contribute to that project**: it can
-  clone it and push a branch to it. Being trusted by Djinn is not enough.
-- **A project that is not a Git repository is not distributable.** Its tasks always run on the
-  machine that holds the folder.
-- Trusted machines are listed per project; every event carries its machine id; shared events are
-  signed by the machine that made them, and replayed from a sequence number.
-- The services that serve the window today serve a peer tomorrow, over TCP with mutual TLS.
-- Never a secret in what travels between machines.
-
-
-### Building blocks found
-- Group membership and failure detection: `hashicorp/memberlist` (MPL-2.0, used as an unmodified
-  dependency), with our own mutual-TLS transport.
-
-### Agreeing on who runs what: what we know so far
-- **A consensus algorithm (Raft, Paxos) does not choose which task to run**: the scheduler does.
-  It makes several machines agree on the same log of decisions while some of them fail, so that no
-  task runs twice.
-- **On one machine there is nothing to agree on**: one process writes, SQLite orders every
-  decision.
-- **On a few trusted machines, a coordinator with leases may be enough**: the machine that holds
-  the wish assigns each task with a lease and a fencing number; a worker that loses its lease
-  stops, and a stale write is refused. The coordinator is a single point of failure, but the wish
-  lives on its machine anyway.
-- **Raft needs a majority**: three machines to survive one failure; with two, it survives none.
-  Candidate: `hashicorp/raft` (MPL-2.0, used as an unmodified dependency).
-
-### Open questions, to answer later
-- **Rights to redefine.** On one machine, a worker's rights come from where it runs (the
-  project's agent config, the wish's allowance, read-only outside a project). Sent to another
-  machine, who allows what? The wish's allowance (edit, auto mode) was given by a person for their
-  machine: does it travel, and does the other machine's owner have a say?
-- A coordinator with leases, or Raft from the start? Does a wish need to survive the loss of its
-  home machine without a human?
-- How long is a lease, who renews it, and what does a worker do with half-finished work when it
-  loses it?
-- What travels between machines: the command journal, the entities, or both? Signed by whom, and
-  replayed from which sequence number?
-- How does a machine prove it can contribute to a project before it is offered a task (clone and
-  push rights, the right toolchain, enough resources from T17)?
-- What happens to a machine that goes offline in the middle of a task, and to its worktree?
-- Clocks: leases and logs across machines need more than wall-clock time; do we use fencing
-  numbers only, or a hybrid logical clock?
-- Whose account pays when a task runs on another person's machine (see T18 for provider terms)?
-
-### Done when
-- [ ] A task of a Git project runs on a second trusted machine, which pushes its branch; the
-      mission on the first machine follows it live. (needs: after v1; two trusted machines)
-- [ ] A task of a non-Git project is never offered to another machine. (needs: after v1; nothing built)
+moved to T28, a draft

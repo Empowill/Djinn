@@ -71,11 +71,11 @@ come first." The window (`src/`) keeps Clément's components and CSS approach, w
   paused or done task is refused. A yes to the edit question of a task closed while waiting starts nothing.
   (`TestDone`, `TestDoneStartsDependent`, `TestDoneWaitingThenYes`, `TestDoneCommand`, `TestExportKeepsClosure`)
 - [x] The tasks have their own tab, in a wish and in the flight plan: what moves or waits first, by status (running,
-  interrupted, failed, then waiting, paused, then planned), then every finished task, the latest ended first, with
-  who closed it and why; "Mark done", with an optional note, on any card no worker runs. The page and the brief follow
-  the same order. (screens "the Tasks tab lists what moves or waits by status…", "a task no worker runs can be marked
-  done…"; data "the Tasks tab: what moves or waits by status…"; `TestFinishedNewestFirst`, `TestMovingByStatus`,
-  `TestBriefFinished`; e2e `task-done.spec.ts`)
+  interrupted, failed, then waiting, paused, then planned), then the azimas with the work part of them, the done
+  ones folded, with who closed them and why; "Mark done", with an optional note, on any card no worker runs. The page
+  and the brief follow the same order. (screens "the Tasks tab lists what moves or waits by status…", "a task no
+  worker runs can be marked done…"; data "the Tasks tab: what moves or waits by status…"; `TestFinishedNewestFirst`,
+  `TestMovingByStatus`, `TestBriefFinished`; e2e `task-done.spec.ts`)
 - [x] A "Decisions" tab in a wish and in the flight plan: the answered questions and the decision blocks, the latest
   first, without a button; who decided, the developer's in the human tone with an icon and a word; one emoji per
   decision; links to the tasks it led to, and from a task to its decision. The page's decision table and the brief
@@ -140,13 +140,13 @@ be referenced by simple links that open it natively in the app from anywhere."
 ### Done when
 
 - [x] `djinn tilasm put|list|get|open|history|restore|export|import` (`TilasmService`), journaled; a put replaces,
-  keeping the earlier version. (needs: the tests) — 09/10: `open` came with the links (`TestTilasmOpenAndLinks`: by
+  keeping the earlier version (09/10: `open` came with the links (`TestTilasmOpenAndLinks`: by
   code or identifier, in its wish's Tilasms tab, refused without a window; `get` gives the `djinn://` link and the
   local http address). `TestTilasmPutReplaceHistoryRestore` (put, a put by code is a new version, get with the text, history, restore, the
   journal), `TestTilasmExportImport` (a `.zip` with `tilasm.json`, imported into its wish, another wish, another
-  machine), `TestTilasmCeiling` (50 MiB, a field, refused beyond, saying so), `TestTilasmSearch`.
+  machine), `TestTilasmCeiling` (50 MiB, a field, refused beyond, saying so), `TestTilasmSearch`).
 - [x] The *Tilasms* tab of a wish: list, open in an isolated frame (scripts run, the network is refused), search,
-  history, export, import by drop. (needs: a screens test and an e2e) — 09/10: `/tilasm/<id>/` serves the latest
+  history, export, import by drop (09/10: `/tilasm/<id>/` serves the latest
   version with `TilasmPolicy` (`TestTilasmFilesServeTheLatestVersionWithTheirPolicy`: `connect-src 'none'`,
   `default-src 'none'`, `sandbox allow-scripts`, a new version at the same address); in the browser the frame's
   files load from an address with a key of their own, the frame's opaque origin carrying no cookie
@@ -158,7 +158,7 @@ be referenced by simple links that open it natively in the app from anywhere."
   checked yet (`go tool task e2e-native`).
 - [ ] `djinn://tilasm/<id>` opens the app on the tilasm from outside, Djinn running or not, on Linux (a desktop entry
   for `x-scheme-handler/djinn`), macOS (`CFBundleURLTypes` in Djinn.app) and Windows (the registry, by the
-  installer). (needs: Linux by test; a Mac and a Windows machine by hand) — 09/10, Linux done: the system runs
+  installer). (needs: a Mac, and a Windows machine) — 09/10, Linux done: the system runs
   `djinn open <link>`, which hands the link to the running Djinn (one per data folder), starting it when none runs
   (`TestOpenHandsTheLinkToTheRunningDjinn`: started then shown, handed over without a second Djinn, an unknown link
   or tilasm said on the command line and in the window, an https link refused); `UiService.OpenLink`

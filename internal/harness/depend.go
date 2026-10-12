@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -23,7 +24,7 @@ import (
 // had: tasks of their wish, by code or identifier. All or none: a dependency on itself, a task whose worker runs, or a
 // graph that would close a cycle refuses them all, naming the cycle. The scheduler then looks again.
 func (h *Harness) Depend(ctx context.Context, procedure string, req *planv1.TaskServiceDependRequest) ([]*planv1.Task, error) {
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	var set []*planv1.Task
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -50,7 +51,7 @@ func (h *Harness) Depend(ctx context.Context, procedure string, req *planv1.Task
 			if slices.ContainsFunc(set, func(t *planv1.Task) bool { return t.GetId() == task.GetId() }) {
 				return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("task %s is set twice", task.GetCode()))
 			}
-			if h.hasRun(task.GetId()) {
+			if h.HasRun(task.GetId()) {
 				// Its worker writes the task as it goes: what it waits for is set before it starts, or once it ended.
 				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 					"task %s runs: set what it waits for once it ended", task.GetCode()))
@@ -65,9 +66,16 @@ func (h *Harness) Depend(ctx context.Context, procedure string, req *planv1.Task
 		}
 		// A cycle of the new graph goes through a task just set: looking from each one finds it.
 		for _, task := range set {
-			if cycle := closesCycle(task, task.GetDependsOn(), task.GetPartOf(), graph); cycle != "" {
+			if cycle := plan.ClosesCycle(task, task.GetDependsOn(), task.GetPartOf(), graph); cycle != "" {
 				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the tasks of a wish form no cycle: %s", cycle))
 			}
+		}
+		wish, err := store.Get[*planv1.Wish](ctx, tx, first.GetWishId())
+		if err != nil {
+			return err
+		}
+		if err := h.refuseAzimaDependencies(ctx, tx, wish, set...); err != nil {
+			return err
 		}
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err
@@ -110,7 +118,7 @@ func (h *Harness) insertBefore(ctx context.Context, r store.Reader, task *planv1
 	for _, id := range ids {
 		i := slices.IndexFunc(graph, func(t *planv1.Task) bool { return t.GetId() == id })
 		t := proto.CloneOf(graph[i])
-		if where := started(t, h.hasRun(id)); where != "" {
+		if where := started(t, h.HasRun(id)); where != "" {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 				"task %s has started (%s): --blocks puts a new task before a planned one only", t.GetCode(), where))
 		}
@@ -118,15 +126,15 @@ func (h *Harness) insertBefore(ctx context.Context, r store.Reader, task *planv1
 		graph[i], blocked = t, append(blocked, t)
 	}
 	for _, t := range blocked {
-		if cycle := closesCycle(t, t.GetDependsOn(), t.GetPartOf(), graph); cycle != "" {
+		if cycle := plan.ClosesCycle(t, t.GetDependsOn(), t.GetPartOf(), graph); cycle != "" {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the tasks of a wish form no cycle: %s", cycle))
 		}
 	}
 	return blocked, nil
 }
 
-// hasRun tells whether a worker of the task runs, paused or not.
-func (h *Harness) hasRun(taskID string) bool {
+// HasRun tells whether a worker of the task runs, paused or not.
+func (h *Harness) HasRun(taskID string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.runs[taskID] != nil
@@ -164,7 +172,7 @@ func (h *Harness) block(ctx context.Context, tx *store.Tx, task *planv1.Task, na
 // identifier, or none. One that would close a cycle with what the tasks depend on is refused, naming it. A grouping,
 // never a wait: the scheduler looks at what the task depends on only.
 func (h *Harness) Group(ctx context.Context, procedure string, req *planv1.TaskServiceGroupRequest) (*planv1.Task, error) {
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	h.mu.Lock()
 	running := h.runs[req.GetTaskId()] != nil
@@ -191,11 +199,25 @@ func (h *Harness) Group(ctx context.Context, procedure string, req *planv1.TaskS
 		if err != nil {
 			return err
 		}
-		if cycle := closesCycle(task, task.GetDependsOn(), azima, tasks); cycle != "" {
+		if cycle := plan.ClosesCycle(task, task.GetDependsOn(), azima, tasks); cycle != "" {
 			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the tasks of a wish form no cycle: %s", cycle))
+		}
+		wish, err := store.Get[*planv1.Wish](ctx, tx, task.GetWishId())
+		if err != nil {
+			return err
+		}
+		grouped := proto.CloneOf(task)
+		grouped.PartOf = azima
+		if err := h.refuseAzimaDependencies(ctx, tx, wish, grouped); err != nil {
+			return err
 		}
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err
+		}
+		if azima != "" && task.GetPartOf() != azima {
+			if err := reopenAzima(ctx, tx, azima, task.GetCode()+" grouped"); err != nil {
+				return err
+			}
 		}
 		task.PartOf = azima
 		return tx.Put(task)
@@ -224,61 +246,9 @@ func resolveAzima(ctx context.Context, r store.Reader, wishID, name string) (str
 	case !plan.IsAzima(tasks[i]):
 		return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
 			"%s is work, not an azima: a task is part of an azima", tasks[i].GetCode()))
+	case tasks[i].GetDraft():
+		return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"azima %s is a draft: open it first with djinn task open %s", tasks[i].GetCode(), tasks[i].GetCode()))
 	}
 	return tasks[i].GetId(), nil
-}
-
-// closesCycle tells whether task, waiting for deps and part of azima, would reach itself through tasks, following what
-// each task depends on and the azima it is part of, and then says the cycle in codes ("W1 → W3 → W1"); "" when it
-// would not.
-func closesCycle(task *planv1.Task, deps []string, azima string, tasks []*planv1.Task) string {
-	byID := map[string]*planv1.Task{}
-	for _, t := range tasks {
-		byID[t.GetId()] = t
-	}
-	edges := func(id string) []string {
-		if id == task.GetId() {
-			if azima != "" {
-				return append(slices.Clip(deps), azima)
-			}
-			return deps
-		}
-		t := byID[id]
-		if p := t.GetPartOf(); p != "" {
-			return append(slices.Clip(t.GetDependsOn()), p)
-		}
-		return t.GetDependsOn()
-	}
-	// A path from one of the task's edges back to task closes a cycle.
-	seen := map[string]bool{}
-	var path []string
-	var walk func(id string) bool
-	walk = func(id string) bool {
-		if id == task.GetId() {
-			return true
-		}
-		if seen[id] {
-			return false
-		}
-		seen[id] = true
-		path = append(path, id)
-		for _, next := range edges(id) {
-			if walk(next) {
-				return true
-			}
-		}
-		path = path[:len(path)-1]
-		return false
-	}
-	for _, d := range edges(task.GetId()) {
-		path = path[:0]
-		if walk(d) {
-			codes := []string{task.GetCode()}
-			for _, id := range path {
-				codes = append(codes, byID[id].GetCode())
-			}
-			return strings.Join(append(codes, task.GetCode()), " → ")
-		}
-	}
-	return ""
 }

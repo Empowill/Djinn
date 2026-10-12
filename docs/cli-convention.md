@@ -1,8 +1,9 @@
 # The command line convention
 
-Every command of `djinn` comes from a proto in `api/`. No CLI option lives in the proto: the command line is
-read from the request messages by convention, at runtime, through `protoreflect`. Adding a public method to a
-service adds a command, with its help, its arguments and their validation.
+Every command of `djinn` comes from a proto in `api/`. The command line reads request messages
+by convention, at runtime, through `protoreflect`; an optional positional annotation preserves arguments
+when a field becomes optional. Adding a public method to a service adds a command, with its help, its
+arguments and their validation.
 
 ## Commands
 
@@ -17,9 +18,9 @@ service adds a command, with its help, its arguments and their validation.
   candidates (`djinn question a` matches `ask` and `answer`).
 - `djinn version` prints the version.
 - A method marked `option (djinn.v1.autostart) = true` starts `djinn up` in the background when no djinn
-  answers (no address file, or an address nothing answers any more), waits for it, then calls it: `djinn wish
-  resume` and `djinn wish set-lead`. The background djinn is detached from the terminal, writes to `djinn.log` in
-  the data directory, and the command prints its PID. `--addr` or `$DJINN_ADDR` turns this off. The other
+  answers (no address file, or an address nothing answers any more), waits for it, then calls it: `djinn lead
+  resume` and `djinn lead set`. The background djinn is detached from the terminal, writes its output to
+  `logs/console.log` in the data directory, and the command prints its PID. `--addr` or `$DJINN_ADDR` turns this off. The other
   methods fail with a hint to run `djinn up`.
 
 ## Reads and writes
@@ -45,6 +46,7 @@ The arguments are the fields of the request.
 | Field                                       | On the command line                                      |
 | ------------------------------------------- | -------------------------------------------------------- |
 | `(buf.validate.field).required = true`      | Positional, in field-number order: `<question> <choice>` |
+| `(djinn.v1.positional) = true`               | Optional positional: `[<title>]`                         |
 | any other field                             | `--kebab-case value` or `--kebab-case=value`             |
 | `bool`                                      | `--open`, without a value (`--open=false` also works)    |
 | `repeated`                                  | A repeatable flag: `--options a --options b`             |
@@ -59,10 +61,16 @@ The arguments are the fields of the request.
 A pair is how `djinn task depend --also` sets several tasks in one call: `TaskAfter` has `task` (required) then
 `after`, so `W6=W5,W3` fills both. In MCP it is a string read the same way.
 
-A field marked `(djinn.v1.env) = "DJINN_TASK_ID"` takes that environment variable when the command line, or a tool
-call of `djinn mcp`, leaves it empty: Djinn sets `$DJINN_TASK_ID` for every worker, so `djinn block put`, `djinn
-question ask` and `djinn question revise` name the worker's task by themselves. A value given wins. The help says it,
-from the field's comment.
+A field marked `(djinn.v1.env) = "DJINN_TASK_ID"` or `"DJINN_LEAD"` takes that environment variable when the command line,
+or a tool call of `djinn mcp`, leaves it empty: Djinn sets `$DJINN_TASK_ID` for every worker and `$DJINN_LEAD` for the
+lead's terminal, so commands name the caller by themselves. A value given wins. The help says it, from the field's comment.
+The option may name several variables, separated by spaces: the first one set wins. `djinn lead watch` names its session
+by `"CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID ANTIGRAVITY_CONVERSATION_ID"`, the variable each agent sets for its commands.
+
+A field marked `(djinn.v1.positional) = true` keeps its positional spelling even when validation allows
+it to be omitted; the help displays it in brackets. For example, `djinn wish make "Short title"` keeps its
+existing spelling, while `djinn wish make --prompt "The complete request"` creates a wish whose lead will write the title. MCP and
+OpenAPI mark only fields whose validation requires a value as required; positional spelling alone does not.
 
 The `oneof` rule is how a question is named by its code or its identifier: `QuestionRef` has `code` (pattern
 `^Q[0-9]{2,3}$`) then `id` (a UUID), so `Q03` lands in `code` and a UUID in `id`. An input no member accepts
@@ -109,9 +117,11 @@ Protocol](https://modelcontextprotocol.io), on stdin and stdout (its stdio trans
 per line). Add it to an agent as a stdio server whose command is `djinn mcp`; `--addr` and `$DJINN_ADDR` work
 as above.
 
-- **One tool per public method that answers once**, named like its command in snake_case: `djinn wish set-lead`
-  is `wish_set_lead`. The streaming methods (`gate hold`, `wish watch`, `task watch`) stay on the command line: a
-  tool call answers once.
+- **One tool per public method that answers once**, named like its command in snake_case: `djinn lead set`
+  is `lead_set`. The streaming methods (`gate hold`, `wish watch`, `task watch`) stay on the command line: a
+  tool call answers once. So does a method marked `option (djinn.v1.command_line_only) = true`, which only the
+  developer types: `djinn lead tell` writes to the lead in its terminal, and no agent's client may do that through a
+  tool (the server refuses it to a worker too).
 - **The input schema is the request**, field by field, by proto name: what is positional on the command line is
   `required`; an enum lists its short values; a `oneof` reference and a time are strings; a repeated field is an
   array. The description is the proto comment, with what the field expects.
@@ -121,7 +131,7 @@ as above.
   ^Q[0-9]{2,3}$ or a UUID`.
 - **The answer is the response in protobuf JSON**, with the proto field names, as `--json` prints it. A call that
   fails is a tool error with the server's message (`not_found: no question Q99`).
-- **Autostart** works as on the command line: `wish_resume` starts `djinn up` when none answers.
+- **Autostart** works as on the command line: `lead_resume` starts `djinn up` when none answers.
 - **Each tool says what it changes**, in its `annotations`: a [read](#reads-and-writes) has `readOnlyHint: true`,
   so a client may run it without asking; a write has `readOnlyHint: false`, and `destructiveHint: true` only when
   it deletes. Both are always set: MCP takes a tool that says nothing for one that may delete.

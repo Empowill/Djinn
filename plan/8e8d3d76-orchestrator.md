@@ -93,17 +93,14 @@ Decide who does what, run each worker safely, and protect the machine.
 - [x] An azima whose work is done and whose plan file only waits for proofs no worker can give says so, apart from
   in progress and done, in the brief and the window. (`TestReadDoneWhen`, `TestProvers`, `TestAwaitingProof`,
   `TestBriefAzimas`, `TestSyncPlan`; `screens.test.mjs`: "an azima whose work is done awaits its proof")
-- [x] The orchestrator reads the developer's answers: an answer ("Rub the lamp") starts one converter, "Q52 → tasks",
-  that turns the decision into tasks linked to it, unless Djinn settles the question itself (an edit question, work
-  that failed to integrate, a routed request, a grant); "Enlighten me" starts one investigator that revises the
-  question; they take no slot but wait for the machine's pressure and memory, one per question at a time; a project
-  setting or `djinn up --question-workers=false` turns them off; the lead is told when each starts and what it did when
-  it ends; a worker's block, question and revision name its task. (`TestConverter`, `TestInvestigator`,
-  `TestQuestionWorkersOff`, `TestOneConverterAtATime`, `TestQuestionEndLine`, `TestAnswerAFailedIntegration` in
-  `internal/harness`; `TestQuestionWorkerTakesNoSlot` in `internal/dispatch`; `TestAnswerLine`,
-  `TestWorkerAttribution`, `TestQuestionSettings`, `TestProjectShow` in `internal/plan`; `TestFromEnv` in
-  `internal/cli`; `TestOnOff` in `cmd/djinn`; `e2e/question-workers.spec.ts`: "Rub the lamp" in the window, the
-  converter ends with W2 spawned with `--decision Q01`)
+- [x] The orchestrator reads the developer's answers: an answer ("Rub the lamp") goes to the lead to turn into tasks
+  itself, placing them in the graph, unless Djinn settles the question itself (an edit question, work that failed to integrate,
+  a routed request, a grant); "Enlighten me" starts one investigator that revises the question; it takes no slot but waits
+  for the machine's pressure and memory; a project setting (`enlighten_workers: false`) or `djinn up --enlighten-workers=false`
+  turns it off; the lead is told when it starts and what it did when it ends; a worker's block, question and revision name its task.
+  (`TestAnswerStartsNoWorker`, `TestInvestigator`, `TestEnlightenWorkersOff`, `TestQuestionEndLine`, `TestAnswerAFailedIntegration`
+  in `internal/harness`; `TestQuestionWorkerTakesNoSlot` in `internal/dispatch`; `TestAnswerLine`, `TestWorkerAttribution`,
+  `TestQuestionSettings`, `TestProjectShow` in `internal/plan`; `TestFromEnv` in `internal/cli`; `TestOnOff` in `cmd/djinn`)
 - [x] The window pauses and resumes a worker from its card in the Tasks tab, any worker, not only a watcher: running, a
   pause button; paused, a resume button; none in a task no worker runs, and none on Windows, where the pause is refused.
   (`a running worker pauses from its card…` in `tests/screens.test.mjs`; `e2e/task-pause.spec.ts`: a fake worker
@@ -116,6 +113,15 @@ Decide who does what, run each worker safely, and protect the machine.
   (`TestMergeMainAtARelease`, `TestLookAtMainAtOnce`, `TestMergeMainEachCommit`, `TestMainConflictStartsACorrection`,
   `TestMainAttemptsSpent`, `TestReleaseFit` in `internal/harness`; `TestMainSettings` in `internal/plan`;
   `TestALocalBuildFollowsItsCheckout`, `TestLocalBuild`, `TestReleaseSource` in `cmd/djinn`)
+- [x] The scheduler follows a strict 5-tier order (Q117, A, W332): investigator workers first, followed by answer
+  workers; then correction workers, then review workers; then resumed work tasks; then work tasks on the critical
+  path that unblock others (ordered by transitive dependent count); then other work tasks. Within each level, wish
+  rank, then oldest. When memory is short, an investigator goes first and work tasks wait behind it with explicit wait
+  reasons ("an investigator goes first: …"). Preemption: when an investigator cannot start, Djinn pauses the lowest
+  running work task to free a slot (resumed once the investigator ends), or interrupts it to RESUMING with no spent
+  resumes when memory is short; gate holders, correction/review workers, and Windows pausing are excluded.
+  (`TestStrict5TierOrder`, `TestInvestigatorPriorityAndMemory` in `internal/dispatch`; `TestPreemptForSlot`,
+  `TestPreemptForMemory`, `TestPreemptExclusions`, `TestPreemptWindowsNeverPauses` in `internal/harness`)
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -124,8 +130,8 @@ Decide who does what, run each worker safely, and protect the machine.
   `watch` (a server stream; the command line now prints a stream message by message, `--json` as JSON lines) and
   `clean`. `djinn up` serves them and stops every worker before closing the database.
 - **`Provider` is a small Go interface**: `Start(ctx, Spec) Worker`; a `Worker` gives its `Events`, takes
-  another message with `Send`, `Stop`s and `Wait`s. `Spec` already holds `Resume` and `Fork` (warm workers,
-  Q28), unused. Four providers: `claude`, `codex`, `antigravity` and `fake`; how each is driven, what is verified
+  another message with `Send`, `Stop`s and `Wait`s. `Spec` already holds `Resume` and `Fork` (Q28), unused. Four
+  providers: `claude`, `codex`, `antigravity` and `fake`; how each is driven, what is verified
   and what is supposed, and the catalog of cases each fixture replays: [`docs/providers.md`](../docs/providers.md).
   Every real case met with a model becomes a fixture and a row there.
 - **Claude**: `claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompts
@@ -169,7 +175,7 @@ Decide who does what, run each worker safely, and protect the machine.
   proposed for granting (`plan.Ready`): its fork does.
 - **A task cut short never asks the person to start it again.** Djinn resumes every task it can by itself, so one
   left cut short (resumed as a fork, imported from another machine, its worktree gone) is history: among the finished
-  tasks in the window, the page and the brief, never in what waits for the person, and it keeps no wish from being
+  parts of its azima in the window, the page and the brief, never in what waits for the person, and it keeps no wish from being
   proposed for granting. What waits for the person is a question, an approval or a command to run, never a worker to
   restart. (`TestReady`, `TestBar`, `TestBriefFinished`, `tests/data-flight.test.mjs`, `e2e/review.spec.ts`)
 - **The journal** gets the user's commands as received (`spawn`, `stop`, `clean`), and the harness's own changes
@@ -324,23 +330,22 @@ Decide who does what, run each worker safely, and protect the machine.
   it, measuring reads its files: a tool that left the worker's process group goes with it. Without a user systemd, or
   on macOS and Windows, `djinn up` says so once and the process group serves, as before.
 - **Question workers** (Q52, A; `internal/harness/question.go`, W86 on 09/10, ported onto azimas, integration and
-  the memory rule by W133 on 10/10): the lead is no longer the bottleneck of an answer. An answer
-  (`QuestionService.Answer`, or an approval) starts a converter (`Task.role` CONVERTER, `Task.question` Q52, title
-  "Q52 → tasks"), unless it settles itself (an edit question, work that failed to integrate, a routed request, a grant);
+  the memory rule by W133 on 10/10): answers are turned into tasks by the lead only; answer workers are removed
+  (the DAG is the lead's responsibility; an answer worker would have to read every task again to set dependencies).
+  An answer (`QuestionService.Answer`, or an approval) goes directly to the lead (or principal lead, W329), unless it
+  settles itself (an edit question, work that failed to integrate, a routed request, a grant);
   "Enlighten me" starts an investigator (INVESTIGATOR, "Q52: enlighten"). The prompt holds the question, its options,
-  context and recommendation, the answer and note (or what to dig into), the moving part of the brief, and one job.
-  Access `TASK_ACCESS_DJINN`: reading, plus `djinn` commands to read the wish and to spawn, ask or revise, and Git's
+  context and recommendation, what to dig into, the moving part of the brief, and one job.
+  Access `TASK_ACCESS_DJINN`: reading, plus `djinn` commands to read the wish and to ask or revise, and Git's
   reading ones, `tilasm get` included; no edit, no gate, no worktree (the project's folder), never integrated. It takes
   no slot (like a watcher: it waits on the network, builds nothing), but it is an agent: it waits under pressure and
   until the memory holds its provider's typical peak, which then counts for the tasks after it
   (`dispatch.QuestionWorker`). Djinn spawns it as it spawns a correction worker (`harness.spawn`, journaled as the
-  harness's). Its prompt plans with `--part-of` and `--after`. One per question and role while it works: a
-  second answer is sent to it. An answered question is a decision and is not revised: a converter asks a new question
-  for what the answer leaves open. The lead's line says "W12 turns it into tasks"; at its end, `questionEndLine` says
-  what it spawned (tasks with `decision` Q52 created since), asked (`Question.task_id`) or revised (`Round.task_id`),
-  and what is left. Settings `question_workers`, `question_model` (default `sonnet` for claude), `question_budget_usd`
-  (default $2) in `.agents/settings.txtpb`; `djinn up --question-workers=false` or `DJINN_QUESTION_WORKERS=off`. The
-  harness starts none unless `djinn up` asks (`WithQuestionWorkers`): tests never reach a model by an answer.
+  harness's). One per question while it works: a second request is sent to it.
+  At its end, `questionEndLine` says what it revised (`Round.task_id`) or asked (`Question.task_id`).
+  Settings `enlighten_workers`, `question_model` (default `sonnet` for claude), `question_budget_usd`
+  (default $2) in `.agents/settings.txtpb`; `djinn up --enlighten-workers=false` or `DJINN_ENLIGHTEN_WORKERS=off`. The
+  harness starts none unless `djinn up` asks (`WithEnlightenWorkers`): tests never reach a model by a question.
 - **Attribution by the environment** (W59's question, B): a request field marked `(djinn.v1.env) = "DJINN_TASK_ID"`
   takes the variable when the command line or `djinn mcp` leaves it empty: `djinn block put`, `djinn question ask` and
   `revise`. The decision log says "By W12", the page "Revised by W12". The e2e specs drop the variable: their djinn is
@@ -354,6 +359,13 @@ Decide who does what, run each worker safely, and protect the machine.
   Releases are tags `v*` whose commit, or its parent (the release commit holding `dist/`, off main), is in main; the
   release commit itself never comes in. A build from a checkout (`local-<commit>`) follows the GitHub releases of the
   variant it would have been; `harness.Release` says what one means from where the checkout stands.
+- **Strict 5-tier dispatch order and investigator preemption** (Q117, A; W332 on 11/10): investigator workers (Enlighten me)
+  preempt and take precedence over work tasks so decisions are reached faster. Order: (1) investigator workers, then answer
+  workers; (2) correction workers, then review workers; (3) resumed work tasks; (4) work tasks unblocking others (critical path,
+  ordered by transitive dependent count); (5) other work tasks. Within each level, wish rank, then oldest. When memory holds
+  tasks back, subsequent tasks wait behind them with specific wait reasons ("an investigator goes first: …", "a correction goes first: …",
+  etc.). When an investigator cannot start: if slots are full, it pauses the lowest running work task; if memory is short, it
+  interrupts it to RESUMING ("made room for Qxx: enlighten", spending no resume count, only for providers supporting resume).
 
 ## Open questions
 - Branch names for workers: where does the team convention live? *Decided: in the project settings, default `<task-code>-<slug>-<uuid8>`; built (`branch`, `TestBranchFromSettings`).*
@@ -412,7 +424,7 @@ lead spends its tokens on mechanical work.
 - **A task waits for its dependencies to be integrated**, not only done, and its worktree starts from the integration
   branch, so it builds on their work.
 - **The person decides what is theirs**: to install and restart on the new build (Djinn proposes it, with what
-  changed and what to check), and the choices no worker can make.
+  changed), and the choices no worker can make.
 
 ### Done when
 
@@ -482,32 +494,9 @@ a temporary folder, with a fake test command.
 
 ## From T16 · Dispatch: plain Go code or a local model?
 
-**Goal.** Decide, on numbers, whether dispatching needs a model at all. Dispatch only: which ready
-task starts now, on which worker, once its dependencies, write scopes and gates allow it. Deciding
-*what* the tasks are, or recommending sub-agents, stays with the large model that plans the wish.
+The local model research moved to T30, a draft. What is done stays: the Go dispatcher benchmark.
 
-### Depends on
-- **T17, knowing the machine.** Whether a local model can run at all comes from the discovery
-  (a usable GPU and its drivers, the memory), and a dispatcher must respect the machine's budget
-  whatever it is made of. (The verdict exists: `can_run_local_model` and its reason, in `djinn machine show`)
-
-### The contenders
-- **Plain Go code**: the scheduler of the orchestrator (T07). Deterministic, free, instant.
-  Preferred: if it covers the cases, no model is needed.
-- **A local open-weight model**: Gemma 4 (Apache-2.0, native tool calling), run by Ollama on the
-  machine, given the same inputs and asked for the same decision.
-
-- **Consensus across machines** (Raft and the like) is a different question: see T15.
-
-### The benchmark
-- A fixed set of dispatch situations, as data: task graphs, overlapping write scopes, busy gates,
-  machine pressure, a worker that failed, a question that blocks.
-- For each, the expected decision, written by hand.
-- Measured for each contender: decisions right, decisions wrong, time per decision, CPU and memory
-  used on a laptop without a GPU and on an Apple Silicon Mac.
-- The model gets a case only where the Go code has no rule; if there is none, the model has no role.
-
-#### The Go side (done)
+### The Go side benchmark (done)
 - The scheduler's rules are a pure function, `internal/dispatch`: a `Situation` (tasks, wishes, projects in Git,
   the machine's slots, running workers and pressure) and a `Decision` per planned task (start, wait with its reason,
   fail). The harness acts on it; nothing else changed in what it decides.
@@ -526,8 +515,5 @@ task starts now, on which worker, once its dependencies, write scopes and gates 
   when it runs the command, so a busy gate holds no task. A question blocks only through its task's state (waiting).
 
 ### Done when
-- [ ] The benchmark runs with one task command and prints a table. (Go side done: `go tool task bench-dispatch`,
-  `TestGo` in `internal/dispatch/bench`; needs: Ollama with Gemma 4 on the machine, and a decision to download it,
-  for the model side)
-- [ ] A decision is written down: Go only, or Go plus a model for named cases, with the numbers. (needs: the
-  bench, then a person to decide)
+- [x] The benchmark runs with one task command and prints a table for the Go side. (Go side done: `go tool task bench-dispatch`,
+  `TestGo` in `internal/dispatch/bench`)

@@ -53,7 +53,7 @@ test("a wish is paused, resumed, sent first and deleted from the window", async 
   await row
     .getByRole("button", { name: "Make it the first active wish" })
     .click();
-  await expect(badge).toContainText("Active · 1");
+  await expect(badge).toContainText("Active · rank 1");
   const listed = JSON.parse(djinn("wish", "list", "--json")).wishes as {
     id: string;
     rank?: number;
@@ -92,7 +92,7 @@ test("a wish is paused, resumed, sent first and deleted from the window", async 
   await expect(dialog).toContainText("1 task");
   await dialog.getByRole("button", { name: "Delete" }).click();
   await expect(item).toHaveCount(0);
-  const after = JSON.parse(djinn("wish", "list", "--json")).wishes as {
+  const after = (JSON.parse(djinn("wish", "list", "--json")).wishes ?? []) as {
     id: string;
   }[];
   expect(after.some((w) => w.id === wishId)).toBe(false);

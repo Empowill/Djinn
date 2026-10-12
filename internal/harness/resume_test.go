@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,6 +61,14 @@ func claudePlaying(env []string) (map[planv1.Provider]Provider, switchProvider) 
 	sw := switchProvider{Provider: Claude{Command: os.Args[0]}, mu: &sync.Mutex{}, env: &env}
 	providers := testProviders()
 	providers[planv1.Provider_PROVIDER_CLAUDE] = sw
+	return providers, sw
+}
+
+// antigravityPlaying makes antigravity workers play env, then what play gives.
+func antigravityPlaying(env []string) (map[planv1.Provider]Provider, switchProvider) {
+	sw := switchProvider{Provider: Antigravity{Command: os.Args[0]}, mu: &sync.Mutex{}, env: &env}
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = sw
 	return providers, sw
 }
 
@@ -211,7 +220,7 @@ func TestSessionLimitBounded(t *testing.T) {
 }
 
 // TestResumeRules: at the start, a task cut short resumes; one stopped by a person, one already resumed as another
-// task (a fork of it), one imported, never do; one resumed 3 times already fails.
+// task (a fork of it), one imported, never do; one cut short with resumes already accumulated resumes too.
 func TestResumeRules(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -242,10 +251,10 @@ func TestResumeRules(t *testing.T) {
 
 	e = up(t, home)
 	got := e.until(t, cut.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
-	if got.GetResumes() != 1 {
+	if got.GetResumes() != 0 {
 		t.Errorf("W1: %v", got)
 	}
-	if all := strings.Join(eventTexts(e.watch(t.Context(), t, cut.GetId(), 0)), "\n"); !strings.Contains(all, "resumed after djinn restarted (1 of 3): started fake in "+worktree+
+	if all := strings.Join(eventTexts(e.watch(t.Context(), t, cut.GetId(), 0)), "\n"); !strings.Contains(all, "resumed after djinn restarted: started fake in "+worktree+
 		", resuming its session") || !strings.Contains(all, restartedLine) {
 		t.Errorf("W1's events:\n%s", all)
 	}
@@ -254,9 +263,9 @@ func TestResumeRules(t *testing.T) {
 			t.Errorf("%s: %v, want it left %s", tk.GetCode(), got, tk.GetStatus())
 		}
 	}
-	if got := e.get(t, worn.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED ||
-		got.GetError() != "resumed 3 times without finishing; the last time: djinn up ended while the worker ran" {
-		t.Errorf("W6: %v", got)
+	gotWorn := e.until(t, worn.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+	if gotWorn.GetResumes() != maxResumes {
+		t.Errorf("W6: %v, want Resumes == %d", gotWorn, maxResumes)
 	}
 }
 
@@ -280,7 +289,7 @@ func (p promptsProvider) spec(id string) Spec {
 	return p.specs[id]
 }
 
-// TestResumeFromTheFirstPromptKeepsTheChecks: a worker resumed from its first prompt, agy's or one whose session was
+// TestResumeFromTheFirstPromptKeepsTheChecks: a worker resumed from its first prompt, one whose session was
 // never known, is told the project's checks as at launch (briefed); one resumed on its session has them there already.
 func TestResumeFromTheFirstPromptKeepsTheChecks(t *testing.T) {
 	testx.Portable(t)
@@ -303,23 +312,185 @@ func TestResumeFromTheFirstPromptKeepsTheChecks(t *testing.T) {
 		return tk
 	}
 	unknown := task("W1", planv1.Provider_PROVIDER_FAKE, "")
-	agy := task("W2", planv1.Provider_PROVIDER_ANTIGRAVITY, "s-W2")
-	session := task("W3", planv1.Provider_PROVIDER_FAKE, "s-W3")
+	agyUnknown := task("W2", planv1.Provider_PROVIDER_ANTIGRAVITY, "")
+	agySession := task("W3", planv1.Provider_PROVIDER_ANTIGRAVITY, "s-W3")
+	session := task("W4", planv1.Provider_PROVIDER_FAKE, "s-W4")
 	e.down()
 
 	e = upWith(t, home, providers)
 	checks := "Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- lint`."
-	for _, tk := range []*planv1.Task{unknown, agy, session} {
+	for _, tk := range []*planv1.Task{unknown, agyUnknown, agySession, session} {
 		e.until(t, tk.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
 	}
-	for _, tk := range []*planv1.Task{unknown, agy} {
+	for _, tk := range []*planv1.Task{unknown, agyUnknown} {
 		spec := rec.spec(tk.GetId())
 		if !strings.HasPrefix(spec.Prompt, "text first prompt\n\n"+checks) || !strings.HasSuffix(spec.Prompt, "\n\n"+restartedLine) ||
 			spec.Resume != "" {
 			t.Errorf("%s resumed on %q with:\n%s", tk.GetCode(), spec.Resume, spec.Prompt)
 		}
 	}
-	if spec := rec.spec(session.GetId()); spec.Prompt != restartedLine || spec.Resume != "s-W3" {
-		t.Errorf("W3 resumed on %q with:\n%s", spec.Resume, spec.Prompt)
+	for _, tk := range []*planv1.Task{agySession, session} {
+		spec := rec.spec(tk.GetId())
+		if spec.Prompt != restartedLine || spec.Resume != tk.GetSessionId() {
+			t.Errorf("%s resumed on %q with:\n%s", tk.GetCode(), spec.Resume, spec.Prompt)
+		}
+	}
+}
+
+// scriptStepProvider gives a scripted Fake worker a new prompt on each run.
+type scriptStepProvider struct {
+	mu    sync.Mutex
+	steps []string
+	step  int
+}
+
+func (p *scriptStepProvider) Start(ctx context.Context, spec Spec) (Worker, error) {
+	p.mu.Lock()
+	script := "fail exhausted"
+	if p.step < len(p.steps) {
+		script = p.steps[p.step]
+		p.step++
+	}
+	p.mu.Unlock()
+	spec.Prompt = script
+	return Fake{}.Start(ctx, spec)
+}
+
+// untilText waits until the task has recorded an event containing text.
+func (e *env) untilText(t *testing.T, id, text string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		for _, ev := range e.storedEvents(t, id) {
+			if strings.Contains(ev.GetText(), text) {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("task %s never said %q", id, text)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestThreeRestartsThenFinishes: a task interrupted three times by djinn up stopping or restarting resumes each
+// time without counting against maxResumes, and finishes.
+func TestThreeRestartsThenFinishes(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	p := &scriptStepProvider{steps: []string{
+		"text r0\nsleep 1h",
+		"text r1\nsleep 1h",
+		"text r2\nsleep 1h",
+		"text done",
+	}}
+	providers := map[planv1.Provider]Provider{planv1.Provider_PROVIDER_FAKE: p}
+	e := upWith(t, home, providers)
+	wishID, _ := e.wish(t, gitRepo(t))
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Three restarts", Prompt: "start", Provider: planv1.Provider_PROVIDER_FAKE,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+
+	for i := range 3 {
+		e.untilText(t, id, fmt.Sprintf("r%d", i))
+		e.down()
+		e = upWith(t, home, providers)
+	}
+
+	got := e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+	if got.GetResumes() != 0 {
+		t.Errorf("task finished with %d resumes, want 0", got.GetResumes())
+	}
+	all := strings.Join(eventTexts(e.watch(t.Context(), t, id, 0)), "\n")
+	if n := strings.Count(all, whyRestarted); n != 3 {
+		t.Errorf("got %d %q in events, want 3:\n%s", n, whyRestarted, all)
+	}
+	if n := strings.Count(all, "resumed after djinn restarted"); n != 3 {
+		t.Errorf("got %d 'resumed after djinn restarted' in events, want 3:\n%s", n, all)
+	}
+	if strings.Contains(all, "(1 of 3)") {
+		t.Errorf("events contain '(1 of 3)' for restart resume:\n%s", all)
+	}
+}
+
+// TestResumeMixCountsOnlyLimits: a mix of restarts and usage limits counts only the usage limits against maxResumes.
+func TestResumeMixCountsOnlyLimits(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	p := &scriptStepProvider{steps: []string{
+		"text mix0\nsleep 1h",      // Run 0: interrupted by Restart 1
+		"fail rate limit exceeded", // Run 1: hits limit 1 (resumes with Resumes == 1)
+		"text mix1\nsleep 1h",      // Run 2: interrupted by Restart 2
+		"fail rate limit exceeded", // Run 3: hits limit 2 (resumes with Resumes == 2)
+		"text mix2\nsleep 1h",      // Run 4: interrupted by Restart 3
+		"fail rate limit exceeded", // Run 5: hits limit 3 (resumes with Resumes == 3)
+		"fail rate limit exceeded", // Run 6: hits limit 4 -> exhausted!
+	}}
+	providers := map[planv1.Provider]Provider{planv1.Provider_PROVIDER_FAKE: p}
+	clock := &fakeClock{at: time.Date(2026, 10, 8, 4, 28, 30, 0, time.UTC)}
+	e := upWith(t, home, providers, WithClock(clock.now))
+	wishID, _ := e.wish(t, gitRepo(t))
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Mix restarts and limits", Prompt: "start", Provider: planv1.Provider_PROVIDER_FAKE,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+
+	for i := range int32(maxResumes) {
+		// Worker runs and sleeps.
+		e.untilText(t, id, fmt.Sprintf("mix%d", i))
+		if got := e.get(t, id); got.GetResumes() != i {
+			t.Fatalf("cycle %d running: resumes = %d, want %d", i+1, got.GetResumes(), i)
+		}
+
+		// Interrupted by Djinn restart: should NOT increment resumes.
+		e.down()
+		e = upWith(t, home, providers, WithClock(clock.now))
+
+		// Worker fails on rate limit: limited sets RESUMING with ResumeAfter.
+		got := e.until(t, id, func(tk *planv1.Task) bool {
+			return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && tk.GetResumeAfter() != nil
+		})
+		if got.GetResumes() != i {
+			t.Fatalf("cycle %d limit wait: resumes = %d, want %d", i+1, got.GetResumes(), i)
+		}
+
+		// Advance clock past the limit reset and wake the harness.
+		clock.set(got.GetResumeAfter().AsTime().Add(time.Second))
+		e.h.wake()
+	}
+
+	// 4th usage limit fails the task because maxResumes (3) has been reached.
+	got := e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_FAILED))
+	if got.GetResumes() != maxResumes {
+		t.Errorf("failed task resumes = %d, want %d", got.GetResumes(), maxResumes)
+	}
+	if !strings.HasPrefix(got.GetError(), "resumed 3 times without finishing") {
+		t.Errorf("failed task error = %q, want 'resumed 3 times without finishing...'", got.GetError())
+	}
+
+	all := strings.Join(eventTexts(e.watch(t.Context(), t, id, 0)), "\n")
+	if n := strings.Count(all, "resumed after djinn restarted"); n != 3 {
+		t.Errorf("got %d restarts in events, want 3:\n%s", n, all)
+	}
+	if n := strings.Count(all, "resumed after its usage limit reset"); n != 3 {
+		t.Errorf("got %d usage limit resumes in events, want 3:\n%s", n, all)
+	}
+	for i := 1; i <= int(maxResumes); i++ {
+		wantLimit := fmt.Sprintf("resumed after its usage limit reset (%d of 3)", i)
+		if !strings.Contains(all, wantLimit) {
+			t.Errorf("events missing %q:\n%s", wantLimit, all)
+		}
+	}
+	if strings.Contains(all, "resumed after djinn restarted (") {
+		t.Errorf("restart events should not contain counter:\n%s", all)
 	}
 }

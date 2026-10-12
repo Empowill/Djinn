@@ -21,7 +21,7 @@ import (
 )
 
 // TestOpenHandsTheLinkToTheRunningDjinn: djinn open, what the system runs for a djinn:// link, starts djinn when none
-// runs, then hands the link to the one that runs: one djinn per data folder, as djinn up and djinn wish resume.
+// runs, then hands the link to the one that runs: one djinn per data folder, as djinn up and djinn lead resume.
 func TestOpenHandsTheLinkToTheRunningDjinn(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()

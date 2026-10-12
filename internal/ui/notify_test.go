@@ -3,15 +3,20 @@ package ui
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
@@ -59,7 +64,7 @@ func newNotices(t *testing.T, language string) (*Notices, fakeNotifier) {
 func (n *Notices) listening() bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return n.asked != nil
+	return n.changes != nil
 }
 
 func makeWish(t *testing.T, db *store.Store, title string, state planv1.WishState) *planv1.Wish {
@@ -199,7 +204,7 @@ func TestNoticesRespond(t *testing.T) {
 	var answers []answer
 	fail := false
 	n := &Notices{
-		Show: func(wishID string) { shown = append(shown, wishID) },
+		Show: func(wishID, target string) { shown = append(shown, wishID+"#"+target) },
 		Answer: func(_ context.Context, id string, c planv1.Choice) error {
 			answers = append(answers, answer{id, c})
 			if fail {
@@ -208,18 +213,210 @@ func TestNoticesRespond(t *testing.T) {
 			return nil
 		},
 	}
-	n.Respond(t.Context(), Response{WishID: "w1", QuestionID: "q1"})
+	n.Respond(t.Context(), Response{WishID: "w1", QuestionID: "q1", Target: "question-q1"})
 	n.Respond(t.Context(), Response{WishID: "w1", QuestionID: "q1", Action: "b"})
 	n.Respond(t.Context(), Response{WishID: "w2", QuestionID: "q2", Action: "yes"})
 	fail = true
 	n.Respond(t.Context(), Response{WishID: "w3", QuestionID: "q3", Action: "a"})
 	n.Respond(t.Context(), Response{WishID: "w4", QuestionID: "q4", Action: "unknown"})
-	if !slices.Equal(shown, []string{"w1", "w3", "w4"}) {
+	if !slices.Equal(shown, []string{"w1#question-q1", "w3#", "w4#"}) {
 		t.Errorf("shown = %v: want a click, a failed answer and an unknown button", shown)
 	}
 	want := []answer{{"q1", planv1.Choice_CHOICE_B}, {"q2", planv1.Choice_CHOICE_YES}, {"q3", planv1.Choice_CHOICE_A}}
 	if !slices.Equal(answers, want) {
 		t.Errorf("answers = %v, want %v", answers, want)
+	}
+}
+
+// none checks that no notification comes.
+func (f fakeNotifier) none(t *testing.T) {
+	t.Helper()
+	select {
+	case extra := <-f:
+		t.Errorf("unexpected notification %+v", extra)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func put(t *testing.T, db *store.Store, m proto.Message) {
+	t.Helper()
+	if err := db.Tx(t.Context(), func(tx *store.Tx) error { return putJournaled(tx, m) }); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestNoticesAskPermission: the edit question of a task (ASKING) says which task asks to change which project, with
+// yes and no as buttons; when its worker ends read-only and waits, the notification of the question is replaced.
+func TestNoticesAskPermission(t *testing.T) {
+	n, notes := newNotices(t, "fr")
+	db := n.Store
+	w := makeWish(t, db, "Livrer", planv1.WishState_WISH_STATE_ACTIVE)
+	project := &planv1.Project{Id: store.NewID(), Name: "site"}
+	put(t, db, project)
+	q := &planv1.Question{
+		Id: store.NewID(), WishId: w.GetId(), CreateTime: timestamppb.Now(),
+		Text: "May the worker of task W1 change the files of site?", Options: []string{"Yes: …", "No: …"},
+	}
+	task := &planv1.Task{
+		Id: store.NewID(), WishId: w.GetId(), ProjectId: project.GetId(), Code: "W1", Title: "Fix the footer",
+		Status: planv1.TaskStatus_TASK_STATUS_RUNNING, Access: planv1.TaskAccess_TASK_ACCESS_ASKING,
+		EditQuestionId: q.GetId(),
+	}
+	// One transaction, as the harness writes them (prepare).
+	if err := db.Tx(t.Context(), func(tx *store.Tx) error {
+		return errors.Join(tx.Journal("test", "spawn", task), plan.Ask(t.Context(), tx, q), tx.Put(task))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := notes.next(t)
+	if got.Title != "Autorisation attendue · W1 · Livrer" || !strings.Contains(got.Body, "W1") ||
+		!strings.Contains(got.Body, "site") || got.ID != q.GetId() || got.QuestionID != q.GetId() ||
+		got.Target != "question-"+q.GetId() || got.WishID != w.GetId() {
+		t.Errorf("permission = %+v", got)
+	}
+	if !slices.Equal(got.Actions, []Action{{"a", "Oui"}, {"b", "Non"}}) {
+		t.Errorf("actions = %v", got.Actions)
+	}
+
+	task.Status, task.EndTime = planv1.TaskStatus_TASK_STATUS_WAITING, timestamppb.Now()
+	put(t, db, task)
+	got = notes.next(t)
+	waiting := locales.T("fr", "notify.task_waiting_title", map[string]string{"code": "W1", "wish": "Livrer"})
+	if got.Title != waiting || got.ID != q.GetId() || got.QuestionID != q.GetId() {
+		t.Errorf("waiting = %+v", got)
+	}
+	// The same task written again, waiting still: the same event, not shown again.
+	put(t, db, task)
+	notes.none(t)
+}
+
+func TestNoticesShowAFailedTaskOnce(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	db := n.Store
+	w := makeWish(t, db, "Ship it", planv1.WishState_WISH_STATE_ACTIVE)
+	// Failed long ago, written again: not news.
+	old := &planv1.Task{
+		Id: store.NewID(), WishId: w.GetId(), Code: "W1", Title: "Old", Status: planv1.TaskStatus_TASK_STATUS_FAILED,
+		EndTime: timestamppb.New(time.Now().Add(-time.Hour)),
+	}
+	put(t, db, old)
+	task := &planv1.Task{
+		Id: store.NewID(), WishId: w.GetId(), Code: "W2", Title: "Build", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+	}
+	put(t, db, task)
+	notes.none(t)
+	task.Status, task.Error, task.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, "exit code 2", timestamppb.Now()
+	put(t, db, task)
+	got := notes.next(t)
+	if got.Title != "W2 failed · Ship it" || got.Body != "Build\nexit code 2" || got.Target != "task-"+task.GetId() ||
+		got.QuestionID != "" || len(got.Actions) != 0 {
+		t.Errorf("failed = %+v", got)
+	}
+	put(t, db, task)
+	notes.none(t)
+}
+
+func TestNoticesShowAWishReadyToReview(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	db := n.Store
+	// Ready before the window starts: not news.
+	n.Use(nil)
+	before := makeWish(t, db, "Before", planv1.WishState_WISH_STATE_ACTIVE)
+	put(t, db, &planv1.Task{Id: store.NewID(), WishId: before.GetId(), Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE})
+	n.Use(notes) // As the window does once it starts: it notes what is ready now.
+
+	w := makeWish(t, db, "Ship it", planv1.WishState_WISH_STATE_ACTIVE)
+	task := &planv1.Task{Id: store.NewID(), WishId: w.GetId(), Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING}
+	put(t, db, task)
+	put(t, db, &planv1.Task{Id: store.NewID(), WishId: before.GetId(), Code: "W2", Status: planv1.TaskStatus_TASK_STATUS_DONE})
+	notes.none(t)
+	task.Status = planv1.TaskStatus_TASK_STATUS_DONE
+	put(t, db, task)
+	got := notes.next(t)
+	if got.Title != "Ready to review · Ship it" || got.WishID != w.GetId() || got.Target != "grant-"+w.GetId() {
+		t.Errorf("ready = %+v", got)
+	}
+	put(t, db, task)
+	notes.none(t)
+}
+
+// TestNoticesQuietOnTheWishInView: nothing for the wish the window shows while it is in front; the same event is
+// not shown later either.
+func TestNoticesQuietOnTheWishInView(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	db := n.Store
+	w := makeWish(t, db, "Ship it", planv1.WishState_WISH_STATE_ACTIVE)
+	other := makeWish(t, db, "Other", planv1.WishState_WISH_STATE_ACTIVE)
+	n.View(w.GetId())
+	n.Focus(true)
+	ask(t, db, &planv1.Question{WishId: w.GetId(), Text: "Seen?"})
+	ask(t, db, &planv1.Question{WishId: other.GetId(), Text: "Elsewhere?"})
+	if got := notes.next(t); got.Body != "Elsewhere?" {
+		t.Errorf("notification = %+v, want the other wish's", got)
+	}
+	n.Focus(false)
+	ask(t, db, &planv1.Question{WishId: w.GetId(), Text: "Away?"})
+	if got := notes.next(t); got.Body != "Away?" {
+		t.Errorf("notification = %+v, want the one asked while the window is behind", got)
+	}
+	notes.none(t)
+}
+
+// TestNoticesFollowStatusChangesOnly: a task written again in the same status (its events, its resources) is not
+// followed: what waits for the developer, and whether a wish is ready, change only with a task's status or a
+// question's answer.
+func TestNoticesFollowStatusChangesOnly(t *testing.T) {
+	n := &Notices{changes: make(chan proto.Message, 16)}
+	n.Use(make(fakeNotifier))
+	task := &planv1.Task{Id: "t1", WishId: "w1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING}
+	q := &planv1.Question{Id: "q1", WishId: "w1", CreateTime: timestamppb.Now()}
+	n.committed([]proto.Message{task, q})
+	task = proto.CloneOf(task)
+	task.Resources = &planv1.Resources{Processes: 2}
+	n.committed([]proto.Message{task, q})
+	if got := len(n.changes); got != 2 {
+		t.Fatalf("followed %d changes, want the task and the question once", got)
+	}
+	task = proto.CloneOf(task)
+	task.Status = planv1.TaskStatus_TASK_STATUS_DONE
+	q = proto.CloneOf(q)
+	q.Answer = &planv1.Answer{Choice: planv1.Choice_CHOICE_YES}
+	n.committed([]proto.Message{task, q})
+	n.committed([]proto.Message{task, q})
+	if got := len(n.changes); got != 4 {
+		t.Fatalf("followed %d changes, want the task done and the question answered once more", got)
+	}
+}
+
+// permitted is a notifier that needs the system's permission.
+type permitted struct {
+	fakeNotifier
+	allowed, asked bool
+}
+
+func (p *permitted) Allowed() (bool, error) { return p.allowed, nil }
+func (p *permitted) Allow() (bool, error)   { p.asked = true; p.allowed = true; return true, nil }
+
+func TestNoticesAccess(t *testing.T) {
+	var n *Notices
+	if got := n.Access(); got != uiv1.NotificationAccess_NOTIFICATION_ACCESS_UNAVAILABLE {
+		t.Errorf("no notices: %v", got)
+	}
+	n = &Notices{}
+	if got := n.Access(); got != uiv1.NotificationAccess_NOTIFICATION_ACCESS_UNAVAILABLE {
+		t.Errorf("no notifier: %v", got)
+	}
+	n.Use(make(fakeNotifier))
+	if got := n.Access(); got != uiv1.NotificationAccess_NOTIFICATION_ACCESS_ALLOWED {
+		t.Errorf("a notifier without permission: %v", got)
+	}
+	p := &permitted{}
+	n.Use(p)
+	if got := n.Access(); got != uiv1.NotificationAccess_NOTIFICATION_ACCESS_DENIED || p.asked {
+		t.Errorf("not allowed yet: %v (asked %v)", got, p.asked)
+	}
+	if got := n.Request(); got != uiv1.NotificationAccess_NOTIFICATION_ACCESS_ALLOWED || !p.asked {
+		t.Errorf("request: %v (asked %v)", got, p.asked)
 	}
 }
 
@@ -229,4 +426,103 @@ func putJournaled(tx *store.Tx, m proto.Message) error {
 		return err
 	}
 	return tx.Put(m)
+}
+
+// TestNoticesShowAQuestionAskedThroughTheServer: a lead asks with `djinn question ask`, a call to the server. The
+// question reaches the Watch stream the window follows, and a system notification.
+func TestNoticesShowAQuestionAskedThroughTheServer(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	mux := http.NewServeMux()
+	for prefix, h := range plan.Handlers(n.Store) {
+		mux.Handle(prefix, h)
+	}
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	wishes := planv1connect.NewWishServiceClient(srv.Client(), srv.URL)
+	made, err := wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Light the way"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	watch, err := wishes.Watch(ctx, connect.NewRequest(&planv1.WishServiceWatchRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer watch.Close()
+	if !watch.Receive() { // The first message names everything.
+		t.Fatal(watch.Err())
+	}
+
+	questions := planv1connect.NewQuestionServiceClient(srv.Client(), srv.URL)
+	if _, err := questions.Ask(t.Context(), connect.NewRequest(&planv1.QuestionServiceAskRequest{
+		WishId: wishID, Text: "Which lamp first?", Options: []string{"Brass", "Glass"},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	for watch.Receive() {
+		if strings.EqualFold(watch.Msg().GetWishId(), wishID) &&
+			slices.Contains(watch.Msg().GetChanges(), planv1.Change_CHANGE_QUESTION) {
+			break
+		}
+	}
+	if err := watch.Err(); err != nil {
+		t.Fatalf("the watch never said the question: %v", err)
+	}
+	if got := notes.next(t); got.Title != "Question Q01 · Light the way" || got.WishID != wishID {
+		t.Errorf("notification = %+v", got)
+	}
+}
+
+// TestNoticesShowTheLeadsChoiceOnce: the choice the lead's agent shows is notified once, again when its command
+// changes or once it went and came back.
+func TestNoticesShowTheLeadsChoiceOnce(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	p := &planv1.LeadPrompt{Title: "Run this command?", Lines: []string{"go tool task test"}, Options: []string{"Yes", "No"}}
+	n.LeadPrompt(p)
+	note := notes.next(t)
+	if note.ID != "lead-prompt" || note.Title != "The lead needs your approval" ||
+		note.Body != "Run this command?\ngo tool task test\n1. Yes\n2. No" || len(note.Actions) != 0 {
+		t.Fatalf("notification: %+v", note)
+	}
+	n.LeadPrompt(p)
+	quiet := func(what string) {
+		t.Helper()
+		select {
+		case extra := <-notes:
+			t.Fatalf("%s: %+v", what, extra)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	quiet("the same choice again")
+	p.Lines = []string{"go tool task build"}
+	n.LeadPrompt(p)
+	if note := notes.next(t); !strings.Contains(note.Body, "go tool task build") {
+		t.Fatalf("changed command: %+v", note)
+	}
+	n.LeadPrompt(nil)
+	n.LeadPrompt(p)
+	notes.next(t)
+	n.LeadPrompt(&planv1.LeadPrompt{})
+	quiet("no choice")
+}
+
+// TestNoticesShowTheLeadsChoiceOnceTheyCan: a choice the lead shows before the window can notify (its folder's
+// trust at start) is notified once it can, and only once.
+func TestNoticesShowTheLeadsChoiceOnceTheyCan(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	n.Use(nil)
+	n.LeadPrompt(&planv1.LeadPrompt{Title: "Trust this folder?", Lines: []string{"/project"}, Options: []string{"No", "Yes"}})
+	time.Sleep(50 * time.Millisecond)
+	n.Use(notes)
+	if got := notes.next(t); got.ID != "lead-prompt" || !strings.Contains(got.Body, "/project") {
+		t.Fatalf("notification at start: %+v", got)
+	}
+	n.Use(notes)
+	select {
+	case note := <-notes:
+		t.Fatalf("twice: %+v", note)
+	case <-time.After(50 * time.Millisecond):
+	}
 }

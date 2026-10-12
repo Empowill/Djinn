@@ -1,8 +1,6 @@
 package plan
 
 import (
-	"os"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -223,10 +221,8 @@ func TestRouteAnswered(t *testing.T) {
 	}
 	here := makeWish("Lamp: the sidebar", lamp)
 	babysit := makeWish("Babysit !37 · shop", shop)
-	for id, s := range map[string]string{here.GetId(): session, babysit.GetId(): "7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"} {
-		if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: id, SessionId: s}); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
+		t.Fatal(err)
 	}
 
 	// --ask needs the wish the request came to; without --ask, nothing is asked.
@@ -240,8 +236,8 @@ func TestRouteAnswered(t *testing.T) {
 	}
 
 	// A request about another merge request: the card recommends a new wish in its project, offers the other wish and
-	// to keep it here; rubbing the lamp makes the new wish, files the request there, and starts its lead on it in its
-	// own terminal.
+	// to keep it here; rubbing the lamp makes the new wish, files the request there, and tells the lead without
+	// starting a new lead.
 	request := "babysit https://gitlab.com/acme/shop/-/merge_requests/41"
 	q := c.route(t, here.GetId(), request)
 	if q.GetCode() != "Q01" || !slices.Equal(q.GetOptions(), []string{"New wish “Babysit shop!41”, in shop",
@@ -252,7 +248,7 @@ func TestRouteAnswered(t *testing.T) {
 	if choice, ok := Recommended(q); !ok || choice != planv1.Choice_CHOICE_A {
 		t.Errorf("recommended %v, %v", choice, ok)
 	}
-	opened := len(leads.opened)
+	opened, shown := len(leads.opened), len(leads.shown)
 	if _, err := c.marks.Put(ctx, connect.NewRequest(&planv1.MarkServicePutRequest{
 		WishId: here.GetId(), Target: &planv1.MarkTarget{Ref: &planv1.MarkTarget_Code{Code: "Q01"}},
 		Kind: planv1.MarkKind_MARK_KIND_APPROVED,
@@ -260,33 +256,27 @@ func TestRouteAnswered(t *testing.T) {
 		t.Fatal(err)
 	}
 	made := wishTitled(t, c, "Babysit shop!41")
-	if made == nil || !Active(made) || !slices.Equal(made.GetProjectIds(), []string{shop.GetId()}) ||
-		made.GetLead().GetSessionId() == "" || made.GetLead().GetDirectory() != shop.GetDirectory() {
+	if made == nil || !Active(made) || !slices.Equal(made.GetProjectIds(), []string{shop.GetId()}) {
 		t.Fatalf("new wish = %v", made)
 	}
 	if got := c.requests(t, made.GetId()); !slices.Equal(got, []string{request}) {
 		t.Errorf("requests filed = %q", got)
 	}
-	first, err := os.ReadFile(filepath.Join(home, PagesDir, made.GetId(), LeadFirstFile))
-	if err != nil || string(first) != FirstLine(here.GetTitle(), request)+"\n\n"+StartLine(made.GetId()) {
-		t.Errorf("the new lead's first message: %q, %v", first, err)
-	}
-	// The new lead first; then the lead of the wish the request came to, reopened to be told.
-	if len(leads.opened) != opened+2 || !strings.HasPrefix(leads.opened[opened], "claude --session-id "+made.GetLead().GetSessionId()) ||
-		!strings.HasSuffix(leads.opened[opened], " in "+shop.GetDirectory()) ||
-		!strings.HasPrefix(leads.opened[opened+1], "claude --resume "+session) {
+	// The lead is told by its queue: no lead is started, the one lead hears it with its watch. The window opens the new
+	// wish.
+	if len(leads.opened) != opened {
 		t.Errorf("opened %q", leads.opened[opened:])
 	}
-	if !slices.Contains(leads.shown, made.GetId()+"/"+LeadTerminal(made.GetId())) {
-		t.Errorf("shown %q", leads.shown)
+	if !slices.Equal(leads.shown[shown:], []string{made.GetId() + "/"}) {
+		t.Errorf("shown %q, want the new wish", leads.shown[shown:])
 	}
 	answered := c.questionOf(t, q.GetId())
 	if answered.GetRoute().GetOptions()[0].GetWishId() != made.GetId() {
 		t.Errorf("the decision does not say where the request went: %v", answered.GetRoute())
 	}
-	told := LeadTerminal(here.GetId()) + ": " + RoutedLine(answered)
-	if !slices.Contains(leads.said, told) || !strings.Contains(told, `the new wish "Babysit shop!41"`) {
-		t.Errorf("said %q, want %q", leads.said, told)
+	want := LeadTerminal + ": " + RoutedLine(answered)
+	if !slices.Contains(told(t, c.store), want) || !strings.Contains(want, `the new wish "Babysit shop!41"`) {
+		t.Errorf("queued %q, want %q", told(t, c.store), want)
 	}
 	// Routed once: answering again would make a second wish.
 	if _, err := c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
@@ -305,8 +295,8 @@ func TestRouteAnswered(t *testing.T) {
 	if got := c.requests(t, babysit.GetId()); !slices.Equal(got, []string{request}) {
 		t.Errorf("requests filed = %q", got)
 	}
-	if want := LeadTerminal(babysit.GetId()) + ": " + FiledLine(babysit.GetId(), here.GetTitle(), request); !slices.Contains(leads.said, want) {
-		t.Errorf("said %q, want %q", leads.said, want)
+	if want := LeadTerminal + ": " + FiledLine(babysit.GetId(), here.GetTitle(), request); !slices.Contains(told(t, c.store), want) {
+		t.Errorf("queued %q, want %q", told(t, c.store), want)
 	}
 
 	// Three wishes are active: the card offers to wait paused, or to pause the last one, then a wish to file it in and
@@ -316,10 +306,10 @@ func TestRouteAnswered(t *testing.T) {
 		!strings.HasPrefix(q.GetOptions()[2], "File it in ") || q.GetOptions()[3] != "Keep it in “Lamp: the sidebar”" {
 		t.Fatalf("options %q", q.GetOptions())
 	}
-	opened = len(leads.opened)
+	opened, shown = len(leads.opened), len(leads.shown)
 	c.answer(t, q, planv1.Choice_CHOICE_A, "")
 	queued := wishTitled(t, c, "Order more coffee beans")
-	if queued.GetState() != planv1.WishState_WISH_STATE_PAUSED || len(leads.opened) != opened ||
+	if queued.GetState() != planv1.WishState_WISH_STATE_PAUSED || len(leads.opened) != opened || len(leads.shown) != shown ||
 		!slices.Equal(c.requests(t, queued.GetId()), []string{"order more coffee beans"}) {
 		t.Errorf("queued = %v, opened %q", queued, leads.opened[opened:])
 	}
@@ -328,8 +318,9 @@ func TestRouteAnswered(t *testing.T) {
 	if w := wishTitled(t, c, "Babysit shop!41"); w.GetState() != planv1.WishState_WISH_STATE_PAUSED {
 		t.Errorf("not paused: %v", w)
 	}
-	if w := wishTitled(t, c, "Polish the brass of the lamp"); !Active(w) || len(leads.opened) != opened+1 {
-		t.Errorf("swapped in = %v, opened %q", w, leads.opened[opened:])
+	if w := wishTitled(t, c, "Polish the brass of the lamp"); !Active(w) || len(leads.opened) != opened ||
+		!slices.Equal(leads.shown[shown:], []string{w.GetId() + "/"}) {
+		t.Errorf("swapped in = %v, opened %q, shown %q", w, leads.opened[opened:], leads.shown[shown:])
 	}
 	if actives := Ranked(c.list(t)); len(actives) != MaxActive {
 		t.Errorf("%d active", len(actives))
@@ -342,7 +333,8 @@ func TestRouteAnswered(t *testing.T) {
 	if q.GetOptions()[keep] != "Keep it in “Lamp: the sidebar”" {
 		t.Fatalf("options %q", q.GetOptions())
 	}
-	wishes, said := len(c.list(t)), len(leads.said)
+	take(t, c.store)
+	wishes := len(c.list(t))
 	c.answer(t, q, planv1.Choice_CHOICE_A+planv1.Choice(keep), "")
 	if got := c.requests(t, here.GetId()); !slices.Equal(got, []string{request}) {
 		t.Errorf("requests kept = %q", got)
@@ -350,12 +342,9 @@ func TestRouteAnswered(t *testing.T) {
 	if len(c.list(t)) != wishes {
 		t.Errorf("a wish was made: %d, was %d", len(c.list(t)), wishes)
 	}
-	if filed := LeadTerminal(here.GetId()) + ": " + FiledLine(here.GetId(), here.GetTitle(), request); slices.Contains(leads.said, filed) {
-		t.Errorf("said the request was filed: %q", leads.said[said:])
-	}
-	told = LeadTerminal(here.GetId()) + ": " + RoutedLine(c.questionOf(t, q.GetId()))
-	if !slices.Equal(leads.said[said:], []string{told}) || !strings.Contains(told, "keeps the request in this wish") {
-		t.Errorf("said %q, want %q", leads.said[said:], told)
+	want = LeadTerminal + ": " + RoutedLine(c.questionOf(t, q.GetId()))
+	if got := told(t, c.store); !slices.Equal(got, []string{want}) || !strings.Contains(want, "keeps the request in this wish") {
+		t.Errorf("queued %q, want %q alone, not the request filed", got, want)
 	}
 }
 

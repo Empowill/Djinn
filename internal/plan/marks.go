@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -19,8 +20,9 @@ import (
 )
 
 // Marks implements MarkService. A mark lives on the question it marks, in its own list, one mark of each kind, so that
-// it travels with it in an export. A block takes none: blocks are for agents, and what the developer must see is a
-// question. Marks a block took before stay on it, and are listed no more.
+// it travels with it in an export. A task takes one mark, reviewed, kept the same way on the task. A block takes none:
+// blocks are for agents, and what the developer must see is a question. Marks a block took before stay on it, and are
+// listed no more.
 type Marks struct {
 	planv1connect.UnimplementedMarkServiceHandler
 	Store *store.Store
@@ -30,6 +32,9 @@ type Marks struct {
 	Told Told
 	// Settle, when set, acts on the answer an approval gives, as Questions.Settle.
 	Settle Settle
+	// Approved, when set, is called with a question once the developer approved the answer the lead or a worker
+	// gave it: the only approval that tells the lead something (decision Q173).
+	Approved func(context.Context, *planv1.Question)
 }
 
 func (m *Marks) Put(
@@ -37,26 +42,48 @@ func (m *Marks) Put(
 ) (*connect.Response[planv1.MarkServicePutResponse], error) {
 	msg := req.Msg
 	var marked *planv1.Marked
-	var answered *planv1.Question
+	var answered, endorsed *planv1.Question
 	var then func(context.Context)
 	err := write(ctx, m.Store, req.Spec(), msg, func(tx *store.Tx) error {
-		question, block, err := target(ctx, tx, msg.GetTarget(), msg.GetWishId())
+		mark := &planv1.Mark{Kind: msg.GetKind(), Actor: CallerActor(ctx), CreateTime: timestamppb.Now()}
+		question, block, task, err := target(ctx, tx, msg.GetTarget(), msg.GetWishId())
 		if err != nil {
 			return err
 		}
-		mark := &planv1.Mark{Kind: msg.GetKind(), Actor: actor, CreateTime: timestamppb.Now()}
+		if task != nil {
+			if err := reviewable(task, msg.GetKind()); err != nil {
+				return err
+			}
+			task.Marks = setMark(task.GetMarks(), mark, msg.GetRemove())
+			marked = taskMarked(task, mark)
+			return tx.Put(task)
+		}
+		if msg.GetKind() == planv1.MarkKind_MARK_KIND_REVIEWED {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("only a task is marked reviewed"))
+		}
 		if question != nil {
-			// Approving an open question answers it with the option its recommendation names.
-			if msg.GetKind() == planv1.MarkKind_MARK_KIND_APPROVED && !msg.GetRemove() && question.GetAnswer() == nil {
-				choice, ok := Recommended(question)
-				if !ok {
-					return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-						"the recommendation of %s names no option: answer it with djinn question answer", question.GetCode()))
+			if msg.GetKind() == planv1.MarkKind_MARK_KIND_APPROVED && !msg.GetRemove() {
+				if agentAnswered(question) && !hasMark(question, planv1.MarkKind_MARK_KIND_APPROVED) {
+					endorsed = question
 				}
-				question.Answer = &planv1.Answer{Choice: choice, CreateTime: mark.GetCreateTime()}
-				answered = question
-				if then, err = settled(ctx, m.Settle, tx, question); err != nil {
-					return err
+				if question.GetWithdrawal() != nil {
+					return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s was withdrawn", question.GetCode()))
+				}
+				if question.GetAnswer() == nil {
+					choice, ok := Recommended(question)
+					if !ok {
+						return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+							"the recommendation of %s names no option: answer it with djinn question answer", question.GetCode()))
+					}
+					question.Answer = &planv1.Answer{
+						Choice:     choice,
+						CreateTime: mark.GetCreateTime(),
+						Actor:      planv1.Closer_CLOSER_DEVELOPER,
+					}
+					answered = question
+					if then, err = settled(ctx, m.Settle, tx, question); err != nil {
+						return err
+					}
 				}
 			}
 			question.Marks = setMark(question.GetMarks(), mark, msg.GetRemove())
@@ -75,26 +102,82 @@ func (m *Marks) Put(
 	if answered != nil {
 		afterAnswer(ctx, m.Answered, m.Told, answered)
 	}
+	if endorsed != nil && m.Approved != nil {
+		m.Approved(ctx, proto.CloneOf(endorsed))
+	}
 	return connect.NewResponse(&planv1.MarkServicePutResponse{Marked: marked}), nil
 }
 
-// target finds what a mark goes on: a question by its code, or a question or a block by its identifier.
+// agentAnswered tells a question the lead or a worker answered: a decision of theirs, until the developer approves it.
+func agentAnswered(q *planv1.Question) bool {
+	a := q.GetAnswer()
+	return a != nil && (a.GetActor() == planv1.Closer_CLOSER_LEAD || a.GetTaskId() != "")
+}
+
+// hasMark tells whether q bears a mark of kind.
+func hasMark(q *planv1.Question, kind planv1.MarkKind) bool {
+	return slices.ContainsFunc(q.GetMarks(), func(m *planv1.Mark) bool { return m.GetKind() == kind })
+}
+
+// target finds what a mark goes on: a question or a task by its code, or a question, a block or a task by its
+// identifier.
 func target(
 	ctx context.Context, tx *store.Tx, ref *planv1.MarkTarget, wishID string,
-) (*planv1.Question, *planv1.Block, error) {
+) (*planv1.Question, *planv1.Block, *planv1.Task, error) {
 	if ref.GetCode() != "" {
 		q, err := find(ctx, tx, &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: ref.GetCode()}}, wishID)
-		return q, nil, err
+		return q, nil, nil, err
+	}
+	if ref.GetTask() != "" {
+		task, err := taskByCode(ctx, tx, ref.GetTask(), wishID)
+		return nil, nil, task, err
 	}
 	q, err := store.Get[*planv1.Question](ctx, tx, ref.GetId())
 	if err == nil || !errors.Is(err, store.ErrNotFound) {
-		return q, nil, err
+		return q, nil, nil, err
+	}
+	task, err := store.Get[*planv1.Task](ctx, tx, ref.GetId())
+	if err == nil || !errors.Is(err, store.ErrNotFound) {
+		return nil, nil, task, err
 	}
 	b, err := store.Get[*planv1.Block](ctx, tx, ref.GetId())
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no question nor block %s", ref.GetId()))
+		return nil, nil, nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no question, task nor block %s", ref.GetId()))
 	}
-	return nil, b, err
+	return nil, b, nil, err
+}
+
+// reviewable checks that a task takes the mark: work, whose diff takes the mark reviewed, and no other.
+func reviewable(task *planv1.Task, kind planv1.MarkKind) error {
+	if kind != planv1.MarkKind_MARK_KIND_REVIEWED {
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"a task takes the mark reviewed only, not %s", markWord(kind)))
+	}
+	if task.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"%s is an azima: it has no diff to review; mark its parts", task.GetCode()))
+	}
+	return nil
+}
+
+// taskByCode finds a task by its code within wishID, or within every wish when it is unique.
+func taskByCode(ctx context.Context, tx *store.Tx, code, wishID string) (*planv1.Task, error) {
+	where := store.Where{"code": strings.ToUpper(code)}
+	if wishID != "" {
+		where["wish_id"] = wishID
+	}
+	found, err := store.List[*planv1.Task](ctx, tx, where)
+	if err != nil {
+		return nil, err
+	}
+	switch len(found) {
+	case 0:
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no task %s", code))
+	case 1:
+		return found[0], nil
+	}
+	return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+		"%d wishes have a task %s: give its identifier, or the wish with --wish-id", len(found), code))
 }
 
 // setMark puts mark in marks, in place of one of its kind, or takes that one off.
@@ -112,6 +195,12 @@ func questionMarked(q *planv1.Question, mark *planv1.Mark) *planv1.Marked {
 	}
 }
 
+func taskMarked(task *planv1.Task, mark *planv1.Mark) *planv1.Marked {
+	return &planv1.Marked{
+		WishId: task.GetWishId(), TaskId: task.GetId(), Label: task.GetCode(), Title: clipLine(task.GetTitle()), Mark: mark,
+	}
+}
+
 func (m *Marks) List(
 	ctx context.Context, req *connect.Request[planv1.MarkServiceListRequest],
 ) (*connect.Response[planv1.MarkServiceListResponse], error) {
@@ -120,20 +209,29 @@ func (m *Marks) List(
 	if err != nil {
 		return nil, Status(err)
 	}
-	return connect.NewResponse(&planv1.MarkServiceListResponse{Marks: marksOf(questions)}), nil
+	tasks, err := store.List[*planv1.Task](ctx, m.Store, where)
+	if err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.MarkServiceListResponse{Marks: marksOf(questions, tasks...)}), nil
 }
 
-// marksOf are the marks on questions, the oldest first.
-func marksOf(questions []*planv1.Question) []*planv1.Marked {
+// marksOf are the marks on questions, and on tasks, the oldest first.
+func marksOf(questions []*planv1.Question, tasks ...*planv1.Task) []*planv1.Marked {
 	var out []*planv1.Marked
 	for _, q := range questions {
 		for _, mark := range q.GetMarks() {
 			out = append(out, questionMarked(q, mark))
 		}
 	}
+	for _, task := range tasks {
+		for _, mark := range task.GetMarks() {
+			out = append(out, taskMarked(task, mark))
+		}
+	}
 	slices.SortStableFunc(out, func(x, y *planv1.Marked) int {
 		return cmp.Or(x.GetMark().GetCreateTime().AsTime().Compare(y.GetMark().GetCreateTime().AsTime()),
-			strings.Compare(x.GetQuestionId(), y.GetQuestionId()))
+			strings.Compare(x.GetQuestionId()+x.GetTaskId(), y.GetQuestionId()+y.GetTaskId()))
 	})
 	return out
 }

@@ -47,8 +47,11 @@ var handwritten = map[string]func(args []string) int{
 	// `djinn gate run` runs a command here, under a gate the server grants.
 	"gate run": runGate,
 	// `djinn backup` and `djinn backup restore` work with or without a running djinn.
-	"backup":         func(args []string) int { return runBackup(args, os.Stdout, os.Stderr) },
-	"backup restore": func(args []string) int { return runBackup(append([]string{"restore"}, args...), os.Stdout, os.Stderr) },
+	"backup":           func(args []string) int { return runBackup(args, os.Stdout, os.Stderr) },
+	"backup restore":   func(args []string) int { return runBackup(append([]string{"restore"}, args...), os.Stdout, os.Stderr) },
+	"machine commands": runMachineCommands,
+	// `djinn debug dump` asks a stuck djinn up where its goroutines wait.
+	"debug dump": runDebugDump,
 }
 
 // runUpCommand is djinn up: it opens the app, and restarts on a newer binary when asked.
@@ -63,7 +66,11 @@ func runUpCommand(args []string) int {
 	}
 	if restart {
 		// Everything is closed: the newer djinn at this path takes over, with the same flags.
-		home, _ := ui.Home()
+		home, err := ui.Home()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "djinn up:", err)
+			return 1
+		}
 		if _, err := startDetached(context.Background(), home, os.Stderr, append([]string{"up"}, args...)...); err != nil {
 			fmt.Fprintf(os.Stderr, "djinn up: the update did not start: %v\n"+
 				"djinn up starts it again, and reopens the terminals noted in %s\n", err, RestartFile)
@@ -87,7 +94,11 @@ func main() {
 	if b, rest, ok := cli.Builtin(args); ok && handwritten[b.Name] != nil {
 		os.Exit(handwritten[b.Name](rest))
 	}
-	home, _ := ui.Home() // Only fails without a home directory; the command line then says it finds no server.
+	home, err := ui.Home()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "djinn:", err)
+		os.Exit(1)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	code := cli.Run(ctx, args, cli.Config{
 		Version: version,

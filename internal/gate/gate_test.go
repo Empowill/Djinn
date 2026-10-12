@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"slices"
@@ -24,6 +25,7 @@ import (
 	"github.com/empowill/djinn/gen/go/machine/v1/machinev1connect"
 	"github.com/empowill/djinn/internal/harness"
 	"github.com/empowill/djinn/internal/machine"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // tasks is a fake harness: tasks by id with their wish's rank, those whose worker runs, and the events noted.
@@ -122,6 +124,8 @@ type peaks map[string]uint64
 
 func (p peaks) Peak(_ context.Context, _, _, command string) uint64 { return p[command] }
 
+func (p peaks) Ask(context.Context, string, string, string, string) {}
+
 // take takes the gate in the background; the channel gets the give function once granted.
 func take(t *testing.T, g *Gates, name, taskID string) (<-chan func(), <-chan string) {
 	t.Helper()
@@ -189,7 +193,8 @@ func TestOneAtATime(t *testing.T) {
 	}
 	await(t, second, "second grant")()
 	want := []string{
-		"W1 gate codegen: taken", "W2 gate codegen: waiting: held by W1, for Ns", "W1 gate codegen: given back after Ns",
+		"W1 gate codegen: asked", "W1 gate codegen: taken",
+		"W2 gate codegen: asked", "W2 gate codegen: waiting: held by W1, for Ns", "W1 gate codegen: given back after Ns",
 		"W2 gate codegen: taken", "W2 gate codegen: given back after Ns",
 	}
 	var got []string
@@ -458,7 +463,10 @@ const helperEnv = "DJINN_GATE_HELPER"
 func TestMain(m *testing.M) {
 	switch os.Getenv(helperEnv) {
 	case "":
-		os.Exit(m.Run())
+		cleanup := testx.Guard()
+		code := m.Run()
+		cleanup()
+		os.Exit(code)
 	case "exit3":
 		os.Stdout.WriteString("working\n")
 		os.Exit(3)
@@ -466,6 +474,11 @@ func TestMain(m *testing.M) {
 		time.Sleep(time.Minute)
 	case "nap":
 		time.Sleep(400 * time.Millisecond)
+	case "write":
+		// A command that changes its worktree: a formatter, or a worker editing while it runs.
+		if err := os.WriteFile("written.txt", []byte("written\n"), 0o600); err != nil {
+			os.Exit(1)
+		}
 	case "burn":
 		// The cost of a child counts once the command waited for it.
 		child := exec.Command(os.Args[0])
@@ -600,6 +613,67 @@ func TestRunCost(t *testing.T) {
 	if len(rec.got) != 1 {
 		t.Errorf("an interrupted command recorded: %v", rec.got[1:])
 	}
+}
+
+// TestRunTree: djinn gate run records the git tree its command ran on, the worktree's changes and files not tracked
+// included, its index left as it was; none when the command changed the worktree, or ran outside any.
+func TestRunTree(t *testing.T) {
+	client := server(t, New(nil, nil, nil))
+	repo := t.TempDir()
+	gitT(t, repo, "init", "--quiet")
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("ignored.txt\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "ignored.txt"), []byte("i\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(helper, dir string) string {
+		t.Helper()
+		t.Setenv(helperEnv, helper)
+		rec := &costs{}
+		var notice bytes.Buffer
+		code, err := Run(t.Context(), client, "lint", "", Command{Args: []string{os.Args[0]}, Dir: dir, Notice: &notice, Costs: rec})
+		if err != nil || len(rec.got) != 1 {
+			t.Fatalf("run %s = %d, %v, recorded %v, notice %q", helper, code, err, rec.got, notice.String())
+		}
+		return rec.got[0].GetTree()
+	}
+
+	tree := run("exit3", repo) // Its exit code changes nothing to the tree it ran on.
+	if tree == "" {
+		t.Fatal("no tree recorded for a command run in a worktree")
+	}
+	if files := gitT(t, repo, "ls-tree", "--name-only", tree); files != ".gitignore\na.txt" {
+		t.Errorf("the tree holds %q; want the files not tracked, the ignored one left out", files)
+	}
+	if status := gitT(t, repo, "status", "--porcelain"); status != "?? .gitignore\n?? a.txt" {
+		t.Errorf("the worktree's index changed: %q", status)
+	}
+	// Committed as it stands, the worktree's tree is the one recorded.
+	gitT(t, repo, "add", "--all")
+	if got := gitT(t, repo, "write-tree"); got != tree {
+		t.Errorf("tree %s; the worktree committed holds %s", tree, got)
+	}
+
+	if tree := run("write", repo); tree != "" {
+		t.Errorf("a command that changed the worktree recorded the tree %s", tree)
+	}
+	if tree := run("exit3", t.TempDir()); tree != "" {
+		t.Errorf("a command outside any worktree recorded the tree %s", tree)
+	}
+}
+
+// gitT runs git with args in dir, and returns what it wrote.
+func gitT(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	out, err := gitIn(t.Context(), dir, nil, args...)
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return out
 }
 
 func connectRequest(name string) *connect.Request[machinev1.GateServiceHoldRequest] {

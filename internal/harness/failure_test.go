@@ -3,14 +3,20 @@ package harness
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/testx"
 )
+
+func init() {
+	agyTransientBackoff = time.Millisecond
+}
 
 // envProvider starts its provider with more environment: what makes the test binary play a fixture.
 type envProvider struct {
@@ -21,6 +27,37 @@ type envProvider struct {
 func (p envProvider) Start(ctx context.Context, spec Spec) (Worker, error) {
 	spec.Env = append(spec.Env, p.env...)
 	return p.Provider.Start(ctx, spec)
+}
+
+// hookProvider starts its provider with extra environment and an optional hook in spec.Dir before starting.
+type hookProvider struct {
+	Provider
+	env []string
+	// before runs on the harness's goroutine, not the test's: it returns its error, which fails the start, rather than
+	// call t.Fatal, which there would end that goroutine and leave Harness.Close waiting for it.
+	before func(dir string) error
+}
+
+func (p hookProvider) Start(ctx context.Context, spec Spec) (Worker, error) {
+	if p.before != nil {
+		if err := p.before(spec.Dir); err != nil {
+			return nil, err
+		}
+	}
+	spec.Env = append(spec.Env, p.env...)
+	return p.Provider.Start(ctx, spec)
+}
+
+// commitWork commits a file in a worker's folder, as a worker that did its work.
+func commitWork(dir string) error {
+	if err := os.WriteFile(filepath.Join(dir, "committed.txt"), []byte("done\n"), 0o644); err != nil {
+		return err
+	}
+	if _, err := git(context.Background(), dir, "add", "committed.txt"); err != nil {
+		return err
+	}
+	_, err := git(context.Background(), dir, "commit", "-m", "worker committed work")
+	return err
 }
 
 // TestAgyDenialFailsTask replays a real agy run that stopped at a denied command (agy 1.3.0, 2026-10-08): its
@@ -64,5 +101,235 @@ func TestErrorNeverDone(t *testing.T) {
 	got := e.get(t, task.GetId())
 	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED || !strings.HasPrefix(got.GetError(), "usage: ") || got.GetExitCode() != 0 {
 		t.Errorf("task = %v, want failed on the usage line", got)
+	}
+}
+
+// TestAgyContinuedFromErrorEvent verifies that when agy sends a retry prompt as an error event,
+// Djinn continues the conversation up to 3 times, allowing the worker to finish successfully.
+func TestAgyContinuedFromErrorEvent(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	env, _, _ := fake{provider: "antigravity", fixture: "error-event"}.env(t)
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = envProvider{Antigravity{Command: os.Args[0]}, env}
+	e := upWith(t, t.TempDir(), providers)
+	wishID, _ := e.wish(t, gitRepo(t))
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Agy error event continuation", Prompt: "x", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+	events := e.watch(t.Context(), t, id, 0)
+	got := e.get(t, id)
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetError() != "" || got.GetExitCode() != 0 {
+		t.Fatalf("task = %v, want done with no error", got)
+	}
+	hasContinue := false
+	for _, ev := range events {
+		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.Contains(ev.GetText(), "continued: "+agyContinuePrompt) {
+			hasContinue = true
+			break
+		}
+	}
+	if !hasContinue {
+		t.Errorf("events lack continuation event: %v", events)
+	}
+}
+
+// TestAgyDoneAfterLateModelErrorWithCommittedWork reproduces W316: an agent that answered and committed
+// its work before agy ended on a model retry prompt ends DONE with a note rather than FAILED.
+func TestAgyDoneAfterLateModelErrorWithCommittedWork(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	env, _, _ := fake{provider: "antigravity", fixture: "w316-end"}.env(t)
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = hookProvider{
+		Provider: Antigravity{Command: os.Args[0]},
+		env:      env,
+		before:   commitWork,
+	}
+	e := upWith(t, t.TempDir(), providers)
+	wishID, _ := e.wish(t, gitRepo(t))
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Agy committed work then retry prompt", Prompt: "x", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+	events := e.watch(t.Context(), t, id, 0)
+	got := e.get(t, id)
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetError() != "" || got.GetExitCode() != 0 {
+		t.Fatalf("task = %v, want done with no error", got)
+	}
+	hasNote := false
+	for _, ev := range events {
+		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.HasPrefix(ev.GetText(), "closing call failed: ") {
+			hasNote = true
+			break
+		}
+	}
+	if !hasNote {
+		t.Errorf("events lack closing call failed note: %v", events)
+	}
+}
+
+// TestAgyStreamErrorDoneWithCommittedWork verifies that when a stream error occurs after the worker's
+// final message with committed work and a clean tree, the task ends DONE with a closing call failed event.
+func TestAgyStreamErrorDoneWithCommittedWork(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	env, _, _ := fake{provider: "antigravity", fixture: "stream-error"}.env(t)
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = hookProvider{
+		Provider: Antigravity{Command: os.Args[0]},
+		env:      env,
+		before:   commitWork,
+	}
+	e := upWith(t, t.TempDir(), providers)
+	wishID, _ := e.wish(t, gitRepo(t))
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Agy stream error with committed work", Prompt: "x", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+	events := e.watch(t.Context(), t, id, 0)
+	got := e.get(t, id)
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetError() != "" || got.GetExitCode() != 0 {
+		t.Fatalf("task = %v, want done with no error", got)
+	}
+	const wantNote = "closing call failed: The stream was interrupted"
+	hasNote := false
+	continuations := 0
+	for _, ev := range events {
+		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS {
+			if ev.GetText() == wantNote {
+				hasNote = true
+			}
+			if strings.HasPrefix(ev.GetText(), "continued: ") {
+				continuations++
+			}
+		}
+	}
+	if !hasNote {
+		t.Errorf("events lack note %q: %v", wantNote, events)
+	}
+	if continuations != 0 {
+		t.Errorf("continuations = %d, want 0", continuations)
+	}
+}
+
+// TestAgyStreamErrorRetriedThenFailedWithUncommittedChanges verifies that when a stream error occurs
+// with uncommitted changes, Djinn retries up to 4 times with backoff, then fails.
+func TestAgyStreamErrorRetriedThenFailedWithUncommittedChanges(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	env, _, _ := fake{provider: "antigravity", fixture: "stream-error"}.env(t)
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = hookProvider{
+		Provider: Antigravity{Command: os.Args[0]},
+		env:      env,
+		before: func(dir string) error {
+			return os.WriteFile(filepath.Join(dir, "uncommitted.txt"), []byte("dirty\n"), 0o644)
+		},
+	}
+	e := upWith(t, t.TempDir(), providers)
+	wishID, _ := e.wish(t, gitRepo(t))
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Agy stream error with dirty worktree", Prompt: "x", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+	events := e.watch(t.Context(), t, id, 0)
+	got := e.get(t, id)
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
+		t.Fatalf("task = %v, want failed", got)
+	}
+	if !strings.Contains(got.GetError(), "The stream was interrupted") {
+		t.Errorf("task error = %q, want The stream was interrupted", got.GetError())
+	}
+	continuations := 0
+	for _, ev := range events {
+		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.Contains(ev.GetText(), "continued: "+agyContinuePrompt) {
+			continuations++
+		}
+	}
+	if continuations != 4 {
+		t.Errorf("continuations = %d, want 4", continuations)
+	}
+}
+
+// TestAgyMidWorkErrorRetried verifies that a transient stream error occurring mid-work (before final text)
+// is retried and the worker completes successfully.
+func TestAgyMidWorkErrorRetried(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	env, _, _ := fake{provider: "antigravity", fixture: "mid-work-error"}.env(t)
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = envProvider{Antigravity{Command: os.Args[0]}, env}
+	e := upWith(t, t.TempDir(), providers)
+	wishID, _ := e.wish(t, gitRepo(t))
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Agy mid-work error retried", Prompt: "x", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+	events := e.watch(t.Context(), t, id, 0)
+	got := e.get(t, id)
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetError() != "" || got.GetExitCode() != 0 {
+		t.Fatalf("task = %v, want done with no error", got)
+	}
+	continuations := 0
+	for _, ev := range events {
+		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.Contains(ev.GetText(), "continued: "+agyContinuePrompt) {
+			continuations++
+		}
+	}
+	if continuations != 1 {
+		t.Errorf("continuations = %d, want 1", continuations)
+	}
+}
+
+// TestAgyFailedAfterThreeContinuations verifies that when agy keeps returning retry prompts without
+// work being committed, Djinn retries up to 3 times and then ends the task FAILED.
+func TestAgyFailedAfterThreeContinuations(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	env, _, _ := fake{provider: "antigravity", fixture: "w316-end"}.env(t)
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = envProvider{Antigravity{Command: os.Args[0]}, env}
+	e := upWith(t, t.TempDir(), providers)
+	wishID, _ := e.wish(t, gitRepo(t))
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Agy retries exhausted", Prompt: "x", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+	events := e.watch(t.Context(), t, id, 0)
+	got := e.get(t, id)
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
+		t.Fatalf("task = %v, want failed", got)
+	}
+	if !strings.Contains(got.GetError(), "improperly formatted function call") {
+		t.Errorf("task error = %q, want improperly formatted function call", got.GetError())
+	}
+	continuations := 0
+	for _, ev := range events {
+		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.Contains(ev.GetText(), "continued: "+agyContinuePrompt) {
+			continuations++
+		}
+	}
+	if continuations != 3 {
+		t.Errorf("continuations = %d, want 3", continuations)
 	}
 }

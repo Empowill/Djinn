@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,6 +30,10 @@ type turnEnd struct {
 	// queued is how many messages the agent still holds for later turns, when it says so; nil when it does not.
 	// A message sent during a turn may be folded into that turn, and then gets no result of its own.
 	queued *int
+	// retry is a message Djinn sends on the agent's input to continue the conversation, when not empty (after backoff, when set).
+	retry string
+	// backoff is how long to wait before sending retry, when not 0.
+	backoff time.Duration
 }
 
 // Quiet is how long a worker that has messages without a result, after a result that did not say how many it
@@ -35,46 +41,34 @@ type turnEnd struct {
 // that ended: the input is closed, and the agent exits once done.
 const Quiet = 10 * time.Minute
 
+// StreamIdleTimeout is how long a model call that returns nothing may wait before being cut and continued.
+// Standard LLM streams produce chunks within seconds; 5 minutes without any stream event indicates a dead connection.
+const StreamIdleTimeout = 5 * time.Minute
+
 // streamAgent is what a stream worker needs from its provider.
 type streamAgent struct {
 	name   string // the program, for errors
 	parser streamParser
 	quiet  time.Duration // Quiet when 0
+	idle   time.Duration // StreamIdleTimeout when 0; negative disables
 	// encode writes a user message as the agent reads it on its input, without the newline.
 	encode func(text string) ([]byte, error)
+}
+
+// toolTracker reports whether a local tool is currently running.
+type toolTracker interface {
+	toolRunning() bool
 }
 
 // startStream starts command with args, writes the prompt as the first message, and reads what the agent says.
 // The input stays open for more messages, and is closed once every message has its result: the agent then exits.
 func startStream(ctx context.Context, spec Spec, command string, args []string, grace time.Duration, a streamAgent) (Worker, error) {
-	return startStreamWith(ctx, spec, command, args, grace, a, true)
-}
-
-// startStreamIdle starts command with args and lets the agent load, without a message: the first Send is its first
-// message. A warm worker.
-func startStreamIdle(ctx context.Context, spec Spec, command string, args []string, grace time.Duration, a streamAgent) (Worker, error) {
-	return startStreamWith(ctx, spec, command, args, grace, a, false)
-}
-
-func startStreamWith(
-	ctx context.Context, spec Spec, command string, args []string, grace time.Duration, a streamAgent, prompt bool,
-) (Worker, error) {
-	p, err := startProcess(spec.Dir, command, args, spec.Env, spec.Scope, grace)
+	p, err := startProcess(spec.Dir, command, args, spec.Env, spec.Scope, grace, spec.LowPriority)
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}
-	w := &streamWorker{a: a, p: p, events: make(chan Event, 64), done: make(chan struct{})}
+	w := &streamWorker{ctx: ctx, a: a, p: p, events: make(chan Event, 64), done: make(chan struct{}), wake: make(chan struct{}, 1)}
 	go w.read()
-	if !prompt {
-		go func() {
-			select {
-			case <-ctx.Done():
-				w.Stop()
-			case <-w.done:
-			}
-		}()
-		return w, nil
-	}
 	if err := w.Send(spec.Prompt); err != nil {
 		p.Stop()
 		go func() {
@@ -95,10 +89,12 @@ func startStreamWith(
 }
 
 type streamWorker struct {
+	ctx    context.Context
 	a      streamAgent
 	p      *process
 	events chan Event
 	done   chan struct{}
+	wake   chan struct{}
 
 	mu      sync.Mutex
 	pending int  // messages sent without a result yet
@@ -118,8 +114,9 @@ func (w *streamWorker) PID() int { return w.p.cmd.Process.Pid }
 // Cgroup is the cgroup of the agent's scope.
 func (w *streamWorker) Cgroup() string { return w.p.cgroup }
 
-func (w *streamWorker) Pause() error  { return w.p.Pause() }
-func (w *streamWorker) Resume() error { return w.p.Resume() }
+func (w *streamWorker) Pause() error               { return w.p.Pause() }
+func (w *streamWorker) Resume() error              { return w.p.Resume() }
+func (w *streamWorker) SetPriority(low bool) error { return w.p.SetPriority(low) }
 
 func (w *streamWorker) Stop() {
 	w.stopped.Store(true)
@@ -131,7 +128,7 @@ func (w *streamWorker) Wait() Result {
 	res := w.p.res
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if res.Err == nil && w.failure != "" {
+	if w.failure != "" && (res.Err == nil || isStreamIdleString(w.failure)) {
 		res.Err = errors.New(w.failure)
 	}
 	return res
@@ -152,6 +149,10 @@ func (w *streamWorker) Send(text string) error {
 		return fmt.Errorf("write to %s: %w", w.a.name, err)
 	}
 	w.pending++
+	select {
+	case w.wake <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
@@ -180,6 +181,37 @@ func (w *streamWorker) read() {
 	silence.Stop()
 	waiting := false
 	defer silence.Stop()
+
+	idleTimeout := w.a.idle
+	if idleTimeout == 0 {
+		idleTimeout = StreamIdleTimeout
+	}
+	var idleTimer *time.Timer
+	var idleCh <-chan time.Time
+	if idleTimeout > 0 {
+		idleTimer = time.NewTimer(idleTimeout)
+		idleTimer.Stop()
+		defer idleTimer.Stop()
+		idleCh = idleTimer.C
+	}
+	resetIdle := func() {
+		if idleTimer == nil {
+			return
+		}
+		w.mu.Lock()
+		pending := w.pending
+		closed := w.closed
+		w.mu.Unlock()
+		var toolRunning bool
+		if tt, ok := w.a.parser.(toolTracker); ok {
+			toolRunning = tt.toolRunning()
+		}
+		if pending > 0 && !closed && !toolRunning {
+			idleTimer.Reset(idleTimeout)
+		} else {
+			idleTimer.Stop()
+		}
+	}
 lines:
 	for {
 		var l line
@@ -189,6 +221,19 @@ lines:
 				break lines
 			}
 			l = next
+		case <-w.wake:
+			resetIdle()
+			continue
+		case <-idleCh:
+			w.mu.Lock()
+			w.failure = formatStreamIdle(idleTimeout)
+			w.closed = true
+			w.p.stdin.Close()
+			failure := w.failure
+			w.mu.Unlock()
+			send([]Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: failure}})
+			w.p.Stop()
+			break lines
 		case <-silence.C:
 			waiting = false
 			w.mu.Lock()
@@ -206,11 +251,13 @@ lines:
 		}
 		if l.stderr {
 			send(w.a.parser.stderr(l.text))
+			resetIdle()
 			continue
 		}
 		events, end := w.a.parser.stdout(l.text)
 		send(events)
 		if end == nil {
+			resetIdle()
 			continue
 		}
 		w.mu.Lock()
@@ -221,6 +268,25 @@ lines:
 			w.pending = *end.queued
 		} else {
 			w.pending--
+		}
+		if end.retry != "" && !w.closed {
+			if end.backoff > 0 {
+				w.mu.Unlock()
+				select {
+				case <-time.After(end.backoff):
+				case <-w.p.done:
+				case <-w.ctx.Done():
+				}
+				w.mu.Lock()
+			}
+			if !w.closed {
+				if b, err := w.a.encode(end.retry); err == nil {
+					if _, err := w.p.stdin.Write(append(b, '\n')); err == nil {
+						w.pending++
+						lastError = ""
+					}
+				}
+			}
 		}
 		if w.pending <= 0 && !w.closed {
 			w.closed = true
@@ -233,6 +299,7 @@ lines:
 		} else {
 			silence.Stop()
 		}
+		resetIdle()
 	}
 	send(w.a.parser.flush())
 	<-w.p.done
@@ -268,4 +335,23 @@ func (l lineEvents) done(raw, what string) []Event {
 	}
 	l[0].Raw = raw
 	return l
+}
+
+// formatStreamIdle formats the idle duration as "stream idle for N min".
+func formatStreamIdle(d time.Duration) string {
+	mins := int(math.Ceil(d.Minutes()))
+	if mins < 1 {
+		mins = 1
+	}
+	return fmt.Sprintf("stream idle for %d min", mins)
+}
+
+// isStreamIdle reports whether err is a stream idle timeout error.
+func isStreamIdle(err error) bool {
+	return err != nil && isStreamIdleString(err.Error())
+}
+
+// isStreamIdleString reports whether s is a stream idle timeout error string.
+func isStreamIdleString(s string) bool {
+	return strings.HasPrefix(s, "stream idle for ")
 }

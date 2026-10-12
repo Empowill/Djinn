@@ -15,7 +15,15 @@ import {
   Trash2,
 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   Allowance,
@@ -27,34 +35,51 @@ import {
   type MarkKind,
   type Project,
   type Provider,
+  type Question,
   type Task,
   TaskStatus,
   type Wish,
   type WishExport,
   WishState,
+  PushStrategy,
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
-import { decisionOf, decisionsOf } from "./data/decisions";
-import { useClients, useData, usePausable, useWishDetail } from "./data/djinn";
+import { decisionOf, decisionsOf, isDecisionBlock } from "./data/decisions";
+import {
+  useClients,
+  useData,
+  useDjinn,
+  usePausable,
+  useWishDetail,
+} from "./data/djinn";
 import {
   type OpenQuestion,
   azimaGroups,
+  codeMapOf,
   forkedAs,
-  finishedTasks,
   investigatingQuestions,
   isAzima,
+  mergeNest,
   movingTasks,
   openQuestions,
   spent,
+  taskMapOf,
+  waitingLeadQuestions,
   waitingTasks,
   azimasDone,
+  draftAzimas,
+  finishedTasks,
   workCount,
+  workDoneCount,
 } from "./data/flight";
 import {
   allowanceOf,
   deletedText,
+  doneWithProblems,
+  firstLine,
   MAX_ACTIVE,
   isActive,
+  isPrincipal,
   noLead,
   projectsOf,
   taskStatusText,
@@ -63,20 +88,40 @@ import {
   wishStateText,
   runningOf,
   wishTone,
+  effectivePushStrategy,
+  isWithdrawn,
 } from "./data/format";
 import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
 import { AgentBlocks, agentBlocks } from "./agent-blocks";
-import { AttentionBar, attentionOf } from "./attention";
+import { AttentionBar, attentionOf, useReach } from "./attention";
 import { ModalFrame } from "./frame";
 import { useWrites } from "./marks";
 import { MarkdownBody } from "./markdown-body";
 import { OlderLine, useRecent } from "./older";
 import { useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
+import { OperatingLoad } from "./operating-load";
 import { CountPill, StatusBadge } from "./status";
-import { AzimaCard, azimaFinished } from "./azima";
-import { TaskSections, type View, ViewTabs } from "./task-tabs";
+import {
+  AzimaCard,
+  azimaFinished,
+  DraftAzimaCard,
+  MoveAzimaDialog,
+  useStickyRoom,
+} from "./azima";
+import { MoveQuestionDialog, WithdrawQuestionDialog } from "./wish-dialogs";
+import {
+  kindsForView,
+  LayoutToggle,
+  TaskSections,
+  useTaskLayout,
+  type View,
+  ViewTabs,
+} from "./task-tabs";
+import { TaskTree } from "./task-tree";
+import { reviewLeft, reviewRows } from "./data/review";
+import { ReviewTab } from "./review-tab";
 import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
@@ -86,9 +131,17 @@ import {
   LastPushes,
   LeadButton,
   MainMerges,
+  PrincipalSelector,
+  PushStrategySelector,
+  WhereWorkLands,
   WishDescription,
+  WishTitle,
+  leadTrouble,
   recordedAgent,
 } from "./wish-head";
+import { LeadMessage } from "./lead-message";
+import { PageHeader, PageHeaderAction } from "./page-header";
+import { TooltipButton } from "./tooltip";
 
 // Opening is a tilasm to show in a wish's Tilasms tab, as a djinn:// link asks: a new object at each request.
 export interface Opening {
@@ -96,24 +149,56 @@ export interface Opening {
   tilasmId: string;
 }
 
+// Reaching is an element of a wish to bring into sight, as a line of the attention bar of another page asks: a new
+// object at each request.
+export interface Reaching {
+  wishId: string;
+  target: string;
+}
+
 export function WishView({
   wish,
   opening,
+  reaching,
   onToast,
+  onSetupAgents,
 }: {
   wish: Wish;
   // A tilasm of the wish to show now, in its Tilasms tab.
   opening?: Opening;
+  // An element of the wish to bring into sight now, in its tab.
+  reaching?: Reaching;
   onToast: (text: string) => void;
+  // Opens the setup of the agents, from the lead's menu.
+  onSetupAgents?: () => void;
 }) {
+  const djinn = useDjinn();
+  const store = djinn?.store;
   const allProjects = useData((s) => s.projects);
+  const projectById = useMemo(
+    () => new Map(allProjects.map((p) => [p.id, p])),
+    [allProjects],
+  );
+  const allWishes = useData((s) => s.wishes);
+  const leadRecord = useData((s) => s.lead);
+  const leadPrompt = useData((s) => s.leadPrompt);
+  const leadExit = useData((s) => s.leadExit);
+  const leadStartError = useData((s) => s.leadStartError);
   const pausable = usePausable();
-  const detail = useWishDetail(wish.id);
-  const projects = projectsOf(wish, allProjects);
+  const initialKinds = useMemo(
+    () => kindsForView(opening ? "tilasms" : "main"),
+    [opening],
+  );
+  const detail = useWishDetail(wish.id, initialKinds);
+  const projects = useMemo(
+    () => projectsOf(wish, allProjects),
+    [wish, allProjects],
+  );
   const open = openQuestions(wish, detail);
+  const waitingLead = waitingLeadQuestions(wish, detail);
   const digging = investigatingQuestions(wish, detail);
   const waiting = waitingTasks(wish, detail);
-  const codes = new Map(detail.tasks.map((task) => [task.id, task.code]));
+  const codes = codeMapOf(detail.tasks);
   // Read again only when the wish's questions, blocks or tasks change, not at every render of the screen.
   const forAgents = useMemo(() => agentBlocks(detail.blocks), [detail.blocks]);
   const decisions = useMemo(
@@ -124,38 +209,121 @@ export function WishView({
     () => decisions.map((item) => ({ item })),
     [decisions],
   );
+  const decisionsTotal = useMemo(() => {
+    if (detail.questionsTotal === undefined) return undefined;
+    const withdrawnCount = detail.questions.filter(isWithdrawn).length;
+    const answeredCount = Math.max(
+      0,
+      detail.questionsTotal - open.length - withdrawnCount,
+    );
+    const decisionBlocksCount = detail.blocks.filter(isDecisionBlock).length;
+    return Math.max(decisionItems.length, answeredCount + decisionBlocksCount);
+  }, [
+    detail.questionsTotal,
+    open.length,
+    detail.questions,
+    detail.blocks,
+    decisionItems.length,
+  ]);
   const { running, watching } = runningOf(detail.tasks);
-  const done = detail.tasks.filter(
-    (task) => task.status === TaskStatus.DONE && !isAzima(task),
-  ).length;
+  const done = workDoneCount(detail.tasks);
   // The azimas' progress, then the work's: the azimas are not counted as tasks.
   const azimaProgress = azimasDone(detail.tasks);
   const work = workCount(detail.tasks);
   const granted = wish.state === WishState.GRANTED;
   const [view, setView] = useState<View>(opening ? "tilasms" : "main");
   const [deleting, setDeleting] = useState(false);
+  const [movingAzima, setMovingAzima] = useState<Task | null>(null);
+  const [movingQuestion, setMovingQuestion] = useState<Question | null>(null);
+  const [withdrawingQuestion, setWithdrawingQuestion] =
+    useState<Question | null>(null);
   // What a link between a decision and a task brings into sight in the other tab: its id.
   const [focus, setFocus] = useState("");
-  const show = (to: View, id = "") => (setView(to), setFocus(id));
+  const show = useCallback(
+    (to: View, id = "") => {
+      setView(to);
+      setFocus(id);
+      if (store) void store.loadKinds(wish.id, kindsForView(to));
+    },
+    [store, wish.id],
+  );
   // The tilasm a link opened: the Tilasms tab shows it, again at each new request.
   const [opened, setOpened] = useState(opening);
   useEffect(() => {
     if (!opening) return;
     setView("tilasms");
     setOpened(opening);
-  }, [opening]);
-  const moving = movingTasks(detail.tasks);
-  const finished = finishedTasks(detail.tasks);
+    if (store) void store.loadKinds(wish.id, kindsForView("tilasms"));
+  }, [opening, store, wish.id]);
+  const moving = useMemo(() => movingTasks(detail.tasks), [detail.tasks]);
+  // The finished work part of no azima folds, apart; a link to one of them shows it.
+  const finished = useMemo(() => finishedTasks(detail.tasks), [detail.tasks]);
+  // Where the merges show: under the task they serve.
+  const nest = useMemo(() => mergeNest(detail.tasks), [detail.tasks]);
   // The done azimas fold, apart (src/task-tabs.tsx); a link to one, or to one of its parts, shows them.
-  const azimas = azimaGroups(detail.tasks);
-  const doneAzimas = azimas.filter((x) => azimaFinished(x.azima));
-  const showDone = doneAzimas.some(
-    (x) => x.azima.id === focus || x.parts.some((p) => p.id === focus),
+  const azimas = useMemo(() => azimaGroups(detail.tasks), [detail.tasks]);
+  const activeAzimas = useMemo(
+    () => azimas.filter((x) => !azimaFinished(x.azima)),
+    [azimas],
   );
-  const byId = new Map(detail.tasks.map((task) => [task.id, task]));
+  const doneAzimas = useMemo(
+    () => azimas.filter((x) => azimaFinished(x.azima)),
+    [azimas],
+  );
+  const showDone = useMemo(
+    () =>
+      doneAzimas.some(
+        (x) =>
+          x.azima.id === focus ||
+          x.parts.some((p) => p.id === (nest.host.get(focus) ?? focus)),
+      ),
+    [doneAzimas, focus, nest],
+  );
+  const showFinished = useMemo(
+    () => finished.some((x) => x.id === (nest.host.get(focus) ?? focus)),
+    [finished, focus, nest],
+  );
+  const drafts = useMemo(() => draftAzimas(detail.tasks), [detail.tasks]);
+  const showDrafts = useMemo(
+    () => drafts.some((x) => x.id === focus),
+    [drafts, focus],
+  );
+  const spentDetail = useMemo(() => spent(detail.tasks), [detail.tasks]);
+  // The Tasks tab as a list or as the tree of every task; the tree reads them all, page after page, of the most tasks a
+  // page holds.
+  const [layout] = useTaskLayout();
+  const tree = view === "tasks" && layout === "tree";
+  // The Review tab reads every task too: what is left to review is counted on all of them.
+  const reviewing = view === "review";
+  useEffect(() => {
+    if ((tree || reviewing) && store && detail.tasksNextToken)
+      void store.loadMore(wish.id, Change.TASK, 200);
+  }, [tree, reviewing, store, wish.id, detail.tasksNextToken]);
+  const review = useMemo(() => reviewRows(detail.tasks), [detail.tasks]);
+  const byId = taskMapOf(detail.tasks);
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !store) return;
+    const onScroll = () => {
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 300) {
+        if (view === "tasks") {
+          void store.loadMore(wish.id, Change.TASK);
+        } else if (view === "decisions") {
+          void store.loadMore(wish.id, Change.QUESTION);
+          void store.loadMore(wish.id, Change.BLOCK);
+        } else if (view === "agents") {
+          void store.loadMore(wish.id, Change.BLOCK);
+        } else if (view === "main") {
+          void store.loadMore(wish.id, Change.BLOCK);
+        }
+      }
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [store, wish.id, view]);
   const {
     clients,
     act: write,
@@ -163,173 +331,504 @@ export function WishView({
     answer,
     enlighten,
     mark,
+    review: markReviewed,
+    move,
+    withdraw,
   } = useWrites(onToast);
-  const act = (
-    run: () => Promise<unknown>,
-    changes: Change[],
-    done?: string | (() => string),
-  ) => write(wish.id, run, changes, done);
-  const renderTask = (task: Task) => (
-    <WishTask
-      key={task.id}
-      task={task}
-      codes={codes}
-      forkedAs={forkedAs(task, detail.tasks)}
-      decision={decisionOf(task, decisions)}
-      focused={focus === task.id}
-      onDecision={() => show("decisions", decisionOf(task, decisions)?.id)}
-      project={allProjects.find((p) => p.id === task.projectId)}
-      onStop={() =>
-        quiet(act(() => clients.tasks.stop({ taskId: task.id }), [Change.TASK]))
-      }
-      onSend={(text) =>
-        act(() => clients.tasks.send({ taskId: task.id, text }), [])
-      }
-      onHold={
-        pausable
-          ? (pause) =>
-              quiet(
-                act(
-                  () =>
-                    pause
-                      ? clients.tasks.pause({ taskId: task.id })
-                      : clients.tasks.resume({ taskId: task.id }),
-                  [Change.TASK],
-                ),
-              )
-          : undefined
-      }
-      onDone={(note) =>
+  const act = useCallback(
+    (
+      run: () => Promise<unknown>,
+      changes: Change[],
+      done?: string | (() => string),
+    ) => write(wish.id, run, changes, done),
+    [write, wish.id],
+  );
+
+  const handleStop = useCallback(
+    (task: Task) => {
+      quiet(
+        write(task.wishId, () => clients.tasks.stop({ taskId: task.id }), [
+          Change.TASK,
+        ]),
+      );
+    },
+    [quiet, write, clients.tasks],
+  );
+
+  const handleStart = useCallback(
+    (task: Task) => {
+      quiet(
+        write(task.wishId, () => clients.tasks.start({ taskId: task.id }), [
+          Change.TASK,
+        ]),
+      );
+    },
+    [quiet, write, clients.tasks],
+  );
+
+  const handleSend = useCallback(
+    (text: string, task: Task) =>
+      write(
+        task.wishId,
+        () => clients.tasks.send({ taskId: task.id, text }),
+        [],
+      ),
+    [write, clients.tasks],
+  );
+
+  const handleHold = useCallback(
+    (pause: boolean, task: Task) => {
+      quiet(
+        write(
+          task.wishId,
+          () =>
+            pause
+              ? clients.tasks.pause({ taskId: task.id })
+              : clients.tasks.resume({ taskId: task.id }),
+          [Change.TASK],
+        ),
+      );
+    },
+    [quiet, write, clients.tasks],
+  );
+
+  const handleDone = useCallback(
+    (note: string, task: Task) =>
+      write(
+        task.wishId,
+        () =>
+          clients.tasks.done({
+            taskId: task.id,
+            note,
+            by: Closer.DEVELOPER,
+          }),
+        [Change.TASK],
+        t("task.marked_done", { task: task.code }),
+      ),
+    [write, clients.tasks],
+  );
+
+  const handleTurnComments = useCallback(
+    (task: Task) =>
+      write(
+        task.wishId,
+        () =>
+          clients.tasks.turnComments({
+            taskId: task.id,
+            by: Closer.DEVELOPER,
+          }),
+        [Change.TASK],
+        t("task.turn_comments_done", { task: task.code }),
+      ),
+    [write, clients.tasks],
+  );
+
+  const handleReview = useCallback(
+    (task: Task, remove: boolean) => markReviewed(task.wishId, task.id, remove),
+    [markReviewed],
+  );
+
+  const handleDecision = useCallback(
+    (task: Task) => {
+      const d = decisionOf(task, decisions);
+      show("decisions", d?.id);
+    },
+    [decisions, show],
+  );
+
+  const renderTask = useCallback(
+    function row(task: Task): ReactNode {
+      const merges = nest.under.get(task.id);
+      return (
+        <WishTask
+          key={task.id}
+          task={task}
+          codes={codes}
+          forkedAs={forkedAs(task, detail.tasks)}
+          decision={decisionOf(task, decisions)}
+          focused={focus === task.id}
+          onDecision={handleDecision}
+          project={projectById.get(task.projectId)}
+          onStop={handleStop}
+          onStart={handleStart}
+          onSend={handleSend}
+          onHold={pausable ? handleHold : undefined}
+          onDone={handleDone}
+          onTurnComments={handleTurnComments}
+          merges={merges}
+          nested={merges?.map(row)}
+          mergeOpen={nest.host.get(focus) === task.id}
+          alsoMerged={nest.links.get(task.id)}
+        />
+      );
+    },
+    [
+      nest,
+      codes,
+      detail.tasks,
+      decisions,
+      focus,
+      handleDecision,
+      projectById,
+      handleStop,
+      handleStart,
+      handleSend,
+      pausable,
+      handleHold,
+      handleDone,
+      handleTurnComments,
+    ],
+  );
+
+  const effectiveStrategy = useMemo(
+    () => effectivePushStrategy(wish, projects),
+    [wish, projects],
+  );
+  const isPerAzima = effectiveStrategy === PushStrategy.AZIMA;
+
+  const handlePushStrategy = useCallback(
+    (strategy: PushStrategy) => {
+      quiet(
         act(
+          () => clients.wishes.pushStrategy({ wishId: wish.id, strategy }),
+          [Change.WISH, Change.TASK],
+        ),
+      );
+    },
+    [quiet, act, clients.wishes, wish.id],
+  );
+
+  const loadBranches = useCallback(
+    (projectId: string) => clients.projects.branches({ project: projectId }),
+    [clients.projects],
+  );
+
+  const handleLands = useCallback(
+    (projectId: string, branch: string, create: boolean) =>
+      act(
+        () =>
+          clients.wishes.setIntegration({
+            wishId: wish.id,
+            projectId,
+            branch,
+            createBranch: create,
+          }),
+        [Change.WISH],
+        t("wish.lands_changed", { branch }),
+      ),
+    [act, clients.wishes, wish.id],
+  );
+
+  // The own branch of each azima, by azima id, as its project's syncs say it stands against its remote.
+  const azimaSyncs = useMemo(
+    () =>
+      new Map(
+        projects.flatMap((p) =>
+          (p.syncs ?? [])
+            .filter((x) => x.azimaId)
+            .map((x) => [x.azimaId, x] as const),
+        ),
+      ),
+    [projects],
+  );
+
+  // A push says how it went on its sync line, never in a toast: the line reads its answer, or its error.
+  const handlePushAzima = useCallback(
+    (azima: Task) =>
+      clients.projects
+        .push({
+          project: azima.projectId || projects[0]?.id || "",
+          wish: wish.id,
+          branch: azimaSyncs.get(azima.id)?.branch ?? azima.azima?.branch,
+        })
+        .finally(
+          () =>
+            void store?.changed(wish.id, [
+              Change.WISH,
+              Change.TASK,
+              Change.PROJECT,
+            ]),
+        ),
+    [azimaSyncs, clients.projects, projects, store, wish.id],
+  );
+
+  const handleOpenPr = useCallback(
+    (url: string) => {
+      void clients.ui
+        .openExternal({ url })
+        .catch(() => window.open(url, "_blank", "noopener"));
+    },
+    [clients.ui],
+  );
+
+  const handleValidateAzima = useCallback(
+    (azima: Task) => {
+      quiet(
+        write(
+          azima.wishId,
           () =>
             clients.tasks.done({
-              taskId: task.id,
-              note,
+              taskId: azima.id,
+              note: t("azima.validated_note"),
               by: Closer.DEVELOPER,
             }),
           [Change.TASK],
-          t("task.marked_done", { task: task.code }),
-        )
-      }
-    />
+          t("azima.validated", { code: azima.code }),
+        ),
+      );
+    },
+    [quiet, write, clients.tasks],
   );
-  // lead resumes the wish's lead, or starts one of another agent; what Djinn says of it shows as a toast: a terminal
-  // that runs a program already, a session Djinn does not know.
-  const lead = (provider?: Provider) => {
-    let note = "";
-    quiet(
-      act(
-        async () => {
-          ({ note } = await clients.wishes.resume({
-            wishId: wish.id,
-            provider,
-          }));
-        },
-        [Change.WISH],
-        () => note,
+
+  const renderAzima = useCallback(
+    ({ azima, parts }: { azima: Task; parts: readonly Task[] }) => (
+      <AzimaCard
+        key={azima.id}
+        azima={azima}
+        parts={parts}
+        tasks={byId}
+        render={renderTask}
+        focus={focus}
+        nest={nest}
+        onValidate={handleValidateAzima}
+        isPerAzima={isPerAzima}
+        sync={azimaSyncs.get(azima.id)}
+        onPush={handlePushAzima}
+        onOpenPr={handleOpenPr}
+      />
+    ),
+    [
+      byId,
+      nest,
+      renderTask,
+      focus,
+      handleValidateAzima,
+      isPerAzima,
+      azimaSyncs,
+      handlePushAzima,
+      handleOpenPr,
+    ],
+  );
+
+  const handleOpenDraft = useCallback(
+    (draft: Task) => {
+      quiet(
+        act(
+          () => clients.tasks.open({ azima: draft.id }),
+          [Change.TASK],
+          t("azima.opened_toast", { code: draft.code }),
+        ),
+      );
+    },
+    [quiet, act, clients.tasks],
+  );
+
+  const handleMoveDraft = useCallback((draft: Task) => {
+    setMovingAzima(draft);
+  }, []);
+
+  const renderDraft = useCallback(
+    (draft: Task) => (
+      <DraftAzimaCard
+        key={draft.id}
+        azima={draft}
+        tasks={byId}
+        focus={focus}
+        onOpen={() => handleOpenDraft(draft)}
+        onMove={() => handleMoveDraft(draft)}
+      />
+    ),
+    [byId, focus, handleOpenDraft, handleMoveDraft],
+  );
+
+  const handleQuestionAnswer = useCallback(
+    (choice: Choice, note: string, q?: Question) => {
+      if (q) return answer(q.wishId, q.id, choice, note);
+      return Promise.resolve();
+    },
+    [answer],
+  );
+
+  const handleQuestionMark = useCallback(
+    (kind: MarkKind, remove: boolean, q?: Question) => {
+      if (q) return mark(q.wishId, q.id, kind, remove);
+      return Promise.resolve();
+    },
+    [mark],
+  );
+
+  const handleQuestionEnlighten = useCallback(
+    (note: string, q?: Question) => {
+      if (q) return enlighten(q.wishId, q.id, note);
+      return Promise.resolve();
+    },
+    [enlighten],
+  );
+
+  const handleTaskFocus = useCallback(
+    (id: string) => show("tasks", id),
+    [show],
+  );
+  const checkNoLead = useCallback(() => noLead(leadRecord), [leadRecord]);
+  const handleDecisionsMore = useCallback(() => {
+    if (store) {
+      void store.loadMore(wish.id, Change.QUESTION);
+      void store.loadMore(wish.id, Change.BLOCK);
+    }
+  }, [store, wish.id]);
+  const handleGrant = useCallback(
+    () =>
+      quiet(
+        act(
+          () => clients.wishes.grant({ wishId: wish.id }),
+          [Change.WISH],
+          t("wish.granted_toast"),
+        ),
       ),
+    [quiet, act, clients.wishes, wish.id],
+  );
+
+  // lead resumes the lead, focusing on this wish, or starts one of another agent; what Djinn says of it shows as a toast: a terminal
+  // that runs a program already, a session Djinn does not know.
+  const resumeLead = (provider?: Provider) => {
+    let note = "";
+    return act(
+      async () => {
+        ({ note } = await clients.lead.resume({
+          wishId: wish.id,
+          provider,
+        }));
+      },
+      [Change.WISH],
+      () => note,
     );
   };
-  const attention = attentionOf(open, waiting, wish.ready ? [wish] : []);
+  const lead = (provider?: Provider) => quiet(resumeLead(provider));
+  const attention = attentionOf(
+    [...open, ...waitingLead],
+    waiting,
+    wish.ready ? [wish] : [],
+    undefined,
+    leadPrompt,
+  );
+  // What the wish's tabs show of the bar's lines: the open questions, the waiting workers and the grant in the
+  // first tab, the answered questions in the decisions.
+  const shown = new Set([
+    ...open.map(({ item }) => `question-${item.id}`),
+    ...decisions.map((d) => `decision-${d.id}`),
+    ...waiting.map(({ item }) => `waiting-${item.id}`),
+    ...(wish.ready ? [`grant-${wish.id}`] : []),
+  ]);
+  const { reach, to } = useReach(show, shown, wish.id);
+  useEffect(() => {
+    if (reaching) to(reaching.target);
+  }, [reaching, to]);
+  useStickyRoom(scrollRef, attention.length > 0);
   const tone = wishTone(wish, open.length, running, watching);
 
   return (
     <div className="wish-view review">
-      <header className="topbar">
-        <div className="breadcrumbs">
-          {projects.map((project) => (
-            <span
-              className="header-project"
-              key={project.id}
-              title={project.directory || t("project.no_folder")}
-            >
-              {project.name}
-              <ChevronRight size={12} aria-hidden="true" />
-            </span>
-          ))}
-          <strong>{wish.title}</strong>
-        </div>
-        <div className="topbar-actions">
-          {granted ? (
-            <button
-              className="button secondary small"
+      <PageHeader
+        middle={<OperatingLoad />}
+        actions={
+          <>
+            {granted ? (
+              <button
+                className="button secondary small"
+                onClick={() =>
+                  quiet(
+                    act(
+                      () => clients.wishes.activate({ wishId: wish.id }),
+                      [Change.WISH],
+                    ),
+                  )
+                }
+              >
+                <Play size={14} />
+                <span>{t("wish.reopen")}</span>
+              </button>
+            ) : isActive(wish) ? (
+              <TooltipButton
+                className="button secondary small"
+                label={t("wish.pause")}
+                tooltip={t("wish.pause_detail")}
+                onClick={() =>
+                  quiet(
+                    act(
+                      () => clients.wishes.pause({ wishId: wish.id }),
+                      [Change.WISH],
+                    ),
+                  )
+                }
+              >
+                <Pause size={14} />
+                <span>{t("wish.pause")}</span>
+              </TooltipButton>
+            ) : (
+              <TooltipButton
+                className="button accent small"
+                label={t("wish.activate")}
+                tooltip={t("wish.activate_detail", { max: MAX_ACTIVE })}
+                onClick={() =>
+                  quiet(
+                    act(
+                      () => clients.wishes.activate({ wishId: wish.id }),
+                      [Change.WISH],
+                    ),
+                  )
+                }
+              >
+                <Play size={14} />
+                <span>{t("wish.activate")}</span>
+              </TooltipButton>
+            )}
+            <LeadButton
+              recorded={recordedAgent(leadRecord)}
+              trouble={leadTrouble(leadExit, leadStartError)}
+              loadAgents={async () =>
+                (await clients.ui.getEnvironment({})).providers
+              }
+              onLead={() => lead()}
+              onPick={(provider) => lead(provider)}
+              onSetup={onSetupAgents}
+            />
+            <PageHeaderAction
+              label={t("app.share")}
               onClick={() =>
                 quiet(
-                  act(
-                    () => clients.wishes.activate({ wishId: wish.id }),
-                    [Change.WISH],
-                  ),
+                  (async () => {
+                    const res = await clients.wishes.export({
+                      wishId: wish.id,
+                    });
+                    onToast(t("wish.exported", { file: res.file }));
+                  })().catch((error) => onToast(message(error))),
                 )
               }
             >
-              <Play size={14} />
-              <span>{t("wish.reopen")}</span>
-            </button>
-          ) : isActive(wish) ? (
-            <button
-              className="button secondary small"
-              title={t("wish.pause_detail")}
-              onClick={() =>
-                quiet(
-                  act(
-                    () => clients.wishes.pause({ wishId: wish.id }),
-                    [Change.WISH],
-                  ),
-                )
-              }
+              <Download size={16} aria-hidden="true" />
+            </PageHeaderAction>
+            <PageHeaderAction
+              className="danger"
+              label={t("wish.delete")}
+              onClick={() => setDeleting(true)}
             >
-              <Pause size={14} />
-              <span>{t("wish.pause")}</span>
-            </button>
-          ) : (
-            <button
-              className="button accent small"
-              title={t("wish.activate_detail", { max: MAX_ACTIVE })}
-              onClick={() =>
-                quiet(
-                  act(
-                    () => clients.wishes.activate({ wishId: wish.id }),
-                    [Change.WISH],
-                  ),
-                )
-              }
-            >
-              <Play size={14} />
-              <span>{t("wish.activate")}</span>
-            </button>
-          )}
-          <LeadButton
-            recorded={recordedAgent(wish.lead)}
-            loadAgents={async () =>
-              (await clients.ui.getEnvironment({})).providers
-            }
-            onLead={() => lead()}
-            onPick={(provider) => lead(provider)}
-          />
-          <button
-            className="button secondary small"
-            onClick={() =>
-              quiet(
-                (async () => {
-                  const res = await clients.wishes.export({ wishId: wish.id });
-                  onToast(t("wish.exported", { file: res.file }));
-                })().catch((error) => onToast(message(error))),
-              )
-            }
+              <Trash2 size={16} aria-hidden="true" />
+            </PageHeaderAction>
+          </>
+        }
+      >
+        {projects.map((project) => (
+          <span
+            className="header-project"
+            key={project.id}
+            title={project.directory || t("project.no_folder")}
           >
-            <Download size={14} />
-            <span>{t("app.share")}</span>
-          </button>
-          <button
-            className="icon-button danger"
-            title={t("wish.delete")}
-            aria-label={t("wish.delete")}
-            onClick={() => setDeleting(true)}
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
-      </header>
+            {project.name}
+            <ChevronRight size={12} aria-hidden="true" />
+          </span>
+        ))}
+        <strong>{wish.title}</strong>
+      </PageHeader>
       {deleting && (
         <DeleteWish
           wish={wish}
@@ -351,14 +850,65 @@ export function WishView({
           }}
         />
       )}
+      {movingAzima && (
+        <MoveAzimaDialog
+          azima={movingAzima}
+          wishes={allWishes}
+          currentWishId={wish.id}
+          onClose={() => setMovingAzima(null)}
+          onMove={(targetWishId) => {
+            const target = movingAzima;
+            setMovingAzima(null);
+            quiet(
+              act(
+                () =>
+                  clients.tasks.move({
+                    azima: target.id,
+                    wish: targetWishId,
+                  }),
+                [Change.TASK, Change.WISH],
+                t("azima.moved_toast", { code: target.code }),
+              ),
+            );
+          }}
+        />
+      )}
+      {movingQuestion && (
+        <MoveQuestionDialog
+          question={movingQuestion}
+          wishes={allWishes}
+          currentWishId={wish.id}
+          onClose={() => setMovingQuestion(null)}
+          onMove={move}
+        />
+      )}
+      {withdrawingQuestion && (
+        <WithdrawQuestionDialog
+          question={withdrawingQuestion}
+          currentWishId={wish.id}
+          onClose={() => setWithdrawingQuestion(null)}
+          onWithdraw={withdraw}
+        />
+      )}
       <div className="mission-scroll" ref={keepPlace}>
-        <AttentionBar items={attention} />
+        <AttentionBar items={attention} reach={reach} />
         <div className="hero mission-header review-head">
           <div className="hero-copy">
             <span className="eyebrow">
               {projects.map((p) => p.name).join(" · ") || t("wish.no_project")}
             </span>
-            <h1>{wish.title}</h1>
+            <WishTitle
+              key={wish.id + wish.title}
+              title={wish.title}
+              onSave={(title) =>
+                quiet(
+                  act(
+                    () => clients.wishes.rename({ wishId: wish.id, title }),
+                    [Change.WISH],
+                  ),
+                )
+              }
+            />
             <WishDescription
               key={wish.id + wish.description}
               title={wish.title}
@@ -375,6 +925,13 @@ export function WishView({
             <div className="review-facts">
               <div className="review-pills">
                 <StatusBadge tone={tone} label={wishStateText(wish)} />
+                {isPrincipal(wish, allWishes) && (
+                  <StatusBadge
+                    tone="accent"
+                    label={t("wish.principal")}
+                    title={t("wish.principal_detail")}
+                  />
+                )}
                 {open.length > 0 && (
                   <CountPill
                     tone="waiting"
@@ -457,7 +1014,40 @@ export function WishView({
                   <Clock3 size={13} />
                   {when(wish.createTime)}
                 </span>
-                <LastPushes pushes={wish.pushes} projects={projects} />
+                {isActive(wish) && (
+                  <PrincipalSelector
+                    wish={wish}
+                    onChange={(principal) =>
+                      quiet(
+                        act(
+                          () =>
+                            clients.wishes.principal({
+                              wishId: wish.id,
+                              principal,
+                            }),
+                          [Change.WISH],
+                        ),
+                      )
+                    }
+                  />
+                )}
+                <PushStrategySelector
+                  wish={wish}
+                  projects={projects}
+                  onChange={handlePushStrategy}
+                />
+                <WhereWorkLands
+                  branches={wish.integrationBranches}
+                  projects={projects}
+                  perAzima={isPerAzima}
+                  loadBranches={loadBranches}
+                  onChange={handleLands}
+                />
+                <LastPushes
+                  pushes={wish.pushes}
+                  projects={projects}
+                  codes={codes}
+                />
                 <MainMerges mains={wish.mains} projects={projects} />
               </div>
             </div>
@@ -472,7 +1062,8 @@ export function WishView({
             view={view}
             main={t("tabs.wish")}
             tasks={workCount(detail.tasks)}
-            decisions={decisions.length}
+            review={reviewLeft(review)}
+            decisions={decisionsTotal ?? decisions.length}
             tilasms={detail.tilasms.length}
             agents={forAgents.length}
             onView={(to) => show(to)}
@@ -490,12 +1081,22 @@ export function WishView({
           {view === "agents" && (
             <AgentBlocks blocks={forAgents} codes={codes} />
           )}
+          {view === "review" && (
+            <ReviewTab
+              rows={review}
+              fold={wish.id}
+              codes={codes}
+              onReview={handleReview}
+            />
+          )}
           {view === "decisions" && (
             <DecisionLog
               items={decisionItems}
-              noLead={() => noLead(wish)}
+              total={decisionsTotal}
+              noLead={checkNoLead}
               focus={focus}
-              onTask={(id) => show("tasks", id)}
+              onTask={handleTaskFocus}
+              onMore={handleDecisionsMore}
             />
           )}
           {view === "tasks" &&
@@ -503,39 +1104,44 @@ export function WishView({
               <p className="muted-text" role="tabpanel">
                 {detail.loaded ? t("wish.no_tasks") : t("common.loading")}
               </p>
+            ) : tree ? (
+              <TaskTree
+                tasks={detail.tasks}
+                projects={projectById}
+                codes={codes}
+                focus={focus}
+                card={(() => {
+                  const shown = byId.get(nest.host.get(focus) ?? focus);
+                  return shown && !isAzima(shown) ? renderTask(shown) : null;
+                })()}
+                onOpen={handleTaskFocus}
+                onClose={() => show("tasks")}
+                aside={
+                  <>
+                    <LayoutToggle />
+                    <SpentLine spent={spentDetail} />
+                  </>
+                }
+              />
             ) : (
               <TaskSections
                 moving={moving}
                 finished={finished}
-                azimas={azimas.filter((x) => !azimaFinished(x.azima))}
+                showFinished={showFinished}
+                azimas={activeAzimas}
                 doneAzimas={doneAzimas}
+                drafts={drafts}
                 fold={wish.id}
                 showDone={showDone}
-                renderAzima={({ azima, parts }) => (
-                  <AzimaCard
-                    key={azima.id}
-                    azima={azima}
-                    parts={parts}
-                    tasks={byId}
-                    render={renderTask}
-                    focus={focus}
-                    onValidate={() =>
-                      quiet(
-                        act(
-                          () =>
-                            clients.tasks.done({
-                              taskId: azima.id,
-                              note: t("azima.validated_note"),
-                              by: Closer.DEVELOPER,
-                            }),
-                          [Change.TASK],
-                          t("azima.validated", { code: azima.code }),
-                        ),
-                      )
-                    }
-                  />
-                )}
-                aside={<SpentLine spent={spent(detail.tasks)} />}
+                showDrafts={showDrafts}
+                renderAzima={renderAzima}
+                renderDraft={renderDraft}
+                aside={
+                  <>
+                    <LayoutToggle />
+                    <SpentLine spent={spentDetail} />
+                  </>
+                }
                 render={renderTask}
               />
             ))}
@@ -571,40 +1177,31 @@ export function WishView({
                             </h3>
                           </div>
                           <AnimatePresence mode="popLayout">
-                            {open.map(({ item: q, blocking }) => (
+                            {open.map(({ item: q, blocking, report }) => (
                               <WishQuestion
                                 key={q.id}
                                 question={q}
                                 blocking={blocking}
-                                noLead={noLead(wish)}
-                                onAnswer={(choice, note) =>
-                                  answer(wish.id, q.id, choice, note)
-                                }
-                                onMark={(kind, remove) =>
-                                  mark(wish.id, q.id, kind, remove)
-                                }
-                                onEnlighten={(note) =>
-                                  enlighten(wish.id, q.id, note)
-                                }
+                                report={report}
+                                noLead={noLead(leadRecord)}
+                                onAnswer={handleQuestionAnswer}
+                                onMark={handleQuestionMark}
+                                onEnlighten={handleQuestionEnlighten}
+                                onMove={setMovingQuestion}
+                                onWithdraw={setWithdrawingQuestion}
                               />
                             ))}
                           </AnimatePresence>
                         </section>
                       )}
-                      {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
-                      {wish.ready && (
-                        <GrantCard
-                          wish={wish}
-                          onGrant={() =>
-                            quiet(
-                              act(
-                                () => clients.wishes.grant({ wishId: wish.id }),
-                                [Change.WISH],
-                                t("wish.granted_toast"),
-                              ),
-                            )
-                          }
+                      {waiting.length > 0 && (
+                        <WaitingTasks
+                          waiting={waiting}
+                          onTask={handleTaskFocus}
                         />
+                      )}
+                      {wish.ready && (
+                        <GrantCard wish={wish} onGrant={handleGrant} />
                       )}
                     </section>
                   )}
@@ -612,19 +1209,24 @@ export function WishView({
                   {digging.length > 0 && (
                     <InvestigatingSection
                       questions={digging}
-                      onAnswer={(q, choice, note) =>
-                        answer(wish.id, q, choice, note)
-                      }
-                      onMark={(q, kind, remove) =>
-                        mark(wish.id, q, kind, remove)
-                      }
+                      onAnswer={handleQuestionAnswer}
+                      onMark={handleQuestionMark}
+                      onMove={setMovingQuestion}
+                      onWithdraw={setWithdrawingQuestion}
                     />
                   )}
                 </div>
               )}
 
               <div className="main-side">
-                <Journal wish={wish} blocks={detail.blocks} />
+                <Journal
+                  wish={wish}
+                  blocks={detail.blocks}
+                  total={detail.blocksTotal}
+                  onMore={() => {
+                    if (store) void store.loadMore(wish.id, Change.BLOCK);
+                  }}
+                />
 
                 {projects.length > 0 && (
                   <Rights
@@ -650,19 +1252,24 @@ export function WishView({
           )}
         </div>
       </div>
+      <LeadMessage
+        wish={wish}
+        stopped={!leadRecord || !!leadTrouble(leadExit, leadStartError)}
+        onResume={() => resumeLead()}
+      />
     </div>
   );
 }
 
 // GrantCard proposes to grant a wish: Djinn proposes, only you grant.
-export function GrantCard({
+export const GrantCard = memo(function GrantCard({
   wish,
   origin,
   onGrant,
 }: {
   wish: Wish;
   origin?: ReactNode;
-  onGrant: () => void;
+  onGrant: (wish?: Wish) => void;
 }) {
   return (
     <article className="step-result-action wish-grant" id={`grant-${wish.id}`}>
@@ -673,27 +1280,44 @@ export function GrantCard({
         </span>
         <h3>{t("wish.ready_title")}</h3>
       </div>
-      <button type="button" className="button accent" onClick={onGrant}>
+      <button
+        type="button"
+        className="button accent"
+        onClick={() => onGrant(wish)}
+      >
         <Sparkles size={14} />
         {t("wish.grant")}
       </button>
     </article>
   );
-}
+});
 
 // InvestigatingSection holds the questions you asked to investigate: they wait for the lead's revision, and can still
 // be answered.
-export function InvestigatingSection({
+export const InvestigatingSection = memo(function InvestigatingSection({
   questions,
   origin = false,
   onAnswer,
   onMark,
+  onMove,
+  onWithdraw,
 }: {
   questions: OpenQuestion[];
   origin?: boolean;
-  onAnswer: (id: string, choice: Choice, note: string) => Promise<void>;
-  onMark: (id: string, kind: MarkKind, remove: boolean) => Promise<void>;
+  onAnswer: (
+    choice: Choice,
+    note: string,
+    question?: Question,
+  ) => Promise<void>;
+  onMark: (
+    kind: MarkKind,
+    remove: boolean,
+    question?: Question,
+  ) => Promise<void>;
+  onMove?: (question: Question) => void;
+  onWithdraw?: (question: Question) => void;
 }) {
+  const lead = useData((s) => s.lead);
   return (
     <section
       className="wish-section investigating-section"
@@ -706,39 +1330,56 @@ export function InvestigatingSection({
         </h2>
         <p>{t("question.investigating_section")}</p>
       </div>
-      {questions.map(({ wish, item, blocking }) => (
+      {questions.map(({ wish, item, blocking, report }) => (
         <WishQuestion
           key={item.id}
           question={item}
           blocking={blocking}
-          noLead={noLead(wish)}
-          origin={origin ? <WishOrigin wish={wish} /> : undefined}
-          onAnswer={(choice, note) => onAnswer(item.id, choice, note)}
-          onMark={(kind, remove) => onMark(item.id, kind, remove)}
+          report={report}
+          noLead={noLead(lead)}
+          origin={origin ? wishOrigin(wish) : undefined}
+          onAnswer={onAnswer}
+          onMark={onMark}
+          onMove={onMove}
+          onWithdraw={onWithdraw}
         />
       ))}
     </section>
   );
+});
+
+const originCache = new WeakMap<Wish, ReactNode>();
+
+export function wishOrigin(wish: Wish): ReactNode {
+  let node = originCache.get(wish);
+  if (!node) {
+    node = <WishOrigin wish={wish} />;
+    originCache.set(wish, node);
+  }
+  return node;
 }
 
 // WishOrigin marks a line with its wish, in the flight plan of several wishes: its rank and its title.
-export function WishOrigin({ wish }: { wish: Wish }) {
+export const WishOrigin = memo(function WishOrigin({ wish }: { wish: Wish }) {
   return (
     <span className="wish-origin" title={wish.title}>
       {wish.rank > 0 && <b>{wish.rank}</b>}
       {wish.title}
     </span>
   );
-}
+});
 
 // WaitingTasks are the workers that wait for the user: for an answer before they edit.
 export function WaitingTasks({
   waiting,
   origin = false,
+  onTask,
 }: {
   waiting: { item: Task; question: string; wish: Wish }[];
   // Each line shows its wish.
   origin?: boolean;
+  // Shows a task's card in the Tasks tab: the line of a task done with problems names it so.
+  onTask?: (id: string) => void;
 }) {
   return (
     <section className="plan-waiting">
@@ -751,12 +1392,35 @@ export function WaitingTasks({
       {waiting.map(({ item, question, wish }) => (
         <p className="plan-line" key={item.id} id={`waiting-${item.id}`}>
           <StatusBadge tone={taskTone(item)} label={taskStatusText(item)} />
-          {origin && <WishOrigin wish={wish} />}
-          <span>
-            {question
-              ? t("page.action_waiting", { task: item.code, question })
-              : t("page.action_waiting_unknown", { task: item.code })}
-          </span>
+          {origin && wishOrigin(wish)}
+          {doneWithProblems(item) ? (
+            <span>
+              {onTask ? (
+                <button
+                  type="button"
+                  className="text-button agent-code task-link"
+                  onClick={() => onTask(item.id)}
+                >
+                  {item.code}
+                </button>
+              ) : (
+                <span className="agent-code">{item.code}</span>
+              )}{" "}
+              {item.title} ·{" "}
+              {t("page.action_problems", {
+                count: item.refused?.count ?? 0,
+                names: (item.refused?.names ?? []).join(", "),
+              })}
+            </span>
+          ) : (
+            <span>
+              {item.status === TaskStatus.FAILED
+                ? firstLine(item.error) || t("attention.worker_failed")
+                : question
+                  ? t("page.action_waiting", { task: item.code, question })
+                  : t("page.action_waiting_unknown", { task: item.code })}
+            </span>
+          )}
         </p>
       ))}
     </section>
@@ -766,7 +1430,17 @@ export function WaitingTasks({
 // Journal is the story of the wish: its log blocks at once, and the commands that changed it once asked for. The
 // latest entries show, the older ones fold behind a line (older.tsx).
 // WishService.Snapshot reads the whole wish, events included: it is read on a click, then again as the wish changes.
-function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
+function Journal({
+  wish,
+  blocks,
+  total,
+  onMore,
+}: {
+  wish: Wish;
+  blocks: Block[];
+  total?: number;
+  onMore?: () => void;
+}) {
   const clients = useClients();
   const [shown, setShown] = useState(false);
   const [commands, setCommands] = useState(false);
@@ -795,7 +1469,8 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
     () => journal(commands ? exp : undefined, blocks),
     [commands, exp, blocks],
   );
-  const { shown: recent, more } = useRecent(entries.length);
+  const totalCount = commands ? entries.length : (total ?? entries.length);
+  const { shown: recent, more } = useRecent(totalCount);
   return (
     <section
       className="wish-section wish-journal"
@@ -810,9 +1485,7 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
           <ChevronRight size={14} className={shown ? "rotated-90" : ""} />
           <h3>
             {t("page.journal")}
-            {entries.length > 0 && (
-              <span className="count">{entries.length}</span>
-            )}
+            {totalCount > 0 && <span className="count">{totalCount}</span>}
           </h3>
         </button>
         {shown && (
@@ -838,20 +1511,27 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
       )}
       {shown && (
         <OlderLine
-          hidden={entries.length - recent}
+          hidden={totalCount - recent}
           label={(count, hidden) =>
             count < hidden
               ? t("wish.journal_older_some", { count, hidden })
               : t("wish.journal_older", { count })
           }
-          onShow={more}
+          onShow={() => {
+            more();
+            onMore?.();
+          }}
         />
       )}
     </section>
   );
 }
 
-function JournalEntry({ entry }: { entry: Entry }) {
+export const JournalEntry = memo(function JournalEntry({
+  entry,
+}: {
+  entry: Entry;
+}) {
   return (
     <tr className={entry.command ? "command" : "log"}>
       <td>
@@ -864,7 +1544,7 @@ function JournalEntry({ entry }: { entry: Entry }) {
       </td>
     </tr>
   );
-}
+});
 
 const modes = [Allowance.NONE, Allowance.EDIT, Allowance.AUTO] as const;
 const modeKeys = {
@@ -916,8 +1596,8 @@ function Rights({
 }
 
 // DeleteWish asks before a wish goes for good, with its tasks, their events, its questions and its blocks
-// (WishService.Delete). Its workers stop first and its lead's terminal closes; a worktree with no work of its own
-// goes, the others and every branch stay, as the toast says after the delete.
+// (WishService.Delete). Its workers stop first; a worktree with no work of its own goes, the others and every branch
+// stay, as the toast says after the delete.
 function DeleteWish({
   wish,
   tasks,

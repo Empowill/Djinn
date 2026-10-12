@@ -18,6 +18,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -91,7 +92,14 @@ func upWith(t *testing.T, home string, providers map[planv1.Provider]Provider, o
 	}
 	mux.Handle(Handler(h))
 	mux.Handle(PlanHandler(h))
-	srv := httptest.NewServer(mux)
+	var srvHandler http.Handler = mux
+	srvHandler = server.WorkerContext(srvHandler, func(ctx context.Context, peerPID int, token string) context.Context {
+		if caller := h.Caller(peerPID, token); caller != nil {
+			return plan.WithCaller(ctx, caller)
+		}
+		return ctx
+	})
+	srv := httptest.NewServer(srvHandler)
 	e.srv = srv
 	e.tasks = planv1connect.NewTaskServiceClient(srv.Client(), srv.URL)
 	e.project = planv1connect.NewProjectServiceClient(srv.Client(), srv.URL)
@@ -381,7 +389,7 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	events := e.watch(t.Context(), t, task.GetId(), 0)
 	got := e.get(t, task.GetId())
 	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetWorktree() != worktree || got.GetSessionId() != task.GetId() ||
-		got.GetUsage().GetCostUsd() != 0.01 || got.GetResumes() != 1 {
+		got.GetUsage().GetCostUsd() != 0.01 || got.GetResumes() != 0 {
 		t.Errorf("after the restart: %v", got)
 	}
 	if _, err := os.Stat(got.GetWorktree()); err != nil {
@@ -393,7 +401,7 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	}
 	checkSeqs(t, events, 1)
 	for i, prefix := range map[int]string{
-		5: "interrupted", 6: "resuming: djinn restarted while the worker ran", 7: "resumed after djinn restarted (1 of 3)",
+		5: "interrupted", 6: "resuming: djinn restarted while the worker ran", 7: "resumed after djinn restarted",
 		9: restartedLine, 10: "done",
 	} {
 		if !strings.HasPrefix(events[i].GetText(), prefix) {
@@ -408,17 +416,30 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	crashed := proto.CloneOf(got)
 	crashed.Id, crashed.Code, crashed.Status = store.NewID(), "W9", planv1.TaskStatus_TASK_STATUS_RUNNING
 	crashed.EndTime, crashed.Error, crashed.Resumes = nil, "", 0
-	putTask(t, e.db, crashed, "x")
 	e.down()
+	putStored(t, home, crashed, "x")
 	e = up(t, home)
 	events = e.watch(t.Context(), t, crashed.GetId(), 0)
 	after := e.get(t, crashed.GetId())
-	if after.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || after.GetWorktree() != crashed.GetWorktree() || after.GetResumes() != 1 {
+	if after.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || after.GetWorktree() != crashed.GetWorktree() || after.GetResumes() != 0 {
 		t.Errorf("crashed task after the restart: %v", after)
 	}
 	if got := eventKinds(events); !slices.Equal(got, []string{"PROMPT", "STATUS", "STATUS", "STATUS", "STATUS", "TEXT", "STATUS"}) {
 		t.Errorf("crashed task events: %v", got)
 	}
+}
+
+// putStored puts task and its prompt in the store of a djinn up that is down, as a crash left it. Put in the store of
+// a djinn up that runs, a task left running without a worker is the Lamplighter's: a lost process it ends at its next
+// pass, before or after the next restart (CI run 38281321513, macOS).
+func putStored(t *testing.T, home string, task *planv1.Task, prompt string) {
+	t.Helper()
+	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	putTask(t, db, task, prompt)
 }
 
 // storedTask reads a task from the store of a djinn up that is down.
@@ -493,5 +514,53 @@ func TestRecoverLeavesPlannedTasks(t *testing.T) {
 	}
 	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
 		t.Errorf("planned task after a restart: %s, want pending", got.GetStatus())
+	}
+}
+
+// waitFor polls cond until it holds, or fails after a few seconds.
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("waited in vain for %s", what)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestWarmLeftovers: a djinn up that died leaves the worktree of a warm worker no task took; the next one removes
+// it, and only it.
+func TestWarmLeftovers(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	repo := gitRepo(t)
+	home := t.TempDir()
+	e := up(t, home)
+	_, projectID := e.wish(t, repo)
+	left := worktreeDir(home, projectID, store.NewID())
+	taken := worktreeDir(home, projectID, store.NewID())
+	if _, err := addWorktree(t.Context(), repo, left, "djinn-warm-deadbeef"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := addWorktree(t.Context(), repo, taken, "w1-a-task-12345678"); err != nil {
+		t.Fatal(err)
+	}
+	e.down()
+
+	again := up(t, home)
+	defer again.down()
+	if _, err := os.Stat(left); !os.IsNotExist(err) {
+		t.Errorf("the leftover stayed: %v", err)
+	}
+	out, err := git(t.Context(), repo, "branch", "--list", "djinn-warm-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "" {
+		t.Errorf("its branch stayed: %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(taken, "app")); err != nil {
+		t.Errorf("a task's worktree was removed: %v", err)
 	}
 }

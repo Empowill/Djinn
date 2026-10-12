@@ -10,24 +10,29 @@ metadata:
       match: '(?i)\bbabysit\w*\b.*?(?:/pull/|#|\bpr\s*#?)(?P<pr>\d+)'
       watch: "sh .agents/skills/babysit-pr/watch.sh {pr}"
       done_when: MERGED
+    babysit:
+      forge: github
+      watch: "sh .agents/skills/babysit-pr/watch.sh {pr}"
+      done_when: MERGED
     source:
       watch: "sh .agents/skills/babysit-pr/inbox.sh"
 ---
 
 # Babysit a pull request
 
-You lead a wish made for one pull request: bring it to a merge, and nothing else.
+You lead a wish made for one pull request, or a wish one of whose tasks opened it: bring it to a merge.
 
 ## How Djinn helps
 
 - The wish's watcher runs `sh .agents/skills/babysit-pr/watch.sh <pr>`. It spends no token: it looks at the pull
   request every minute, and each paragraph it prints wakes you. Its first line reaches your terminal:
-  `Djinn: W1's watcher says: PR #12 · checks failed: lint`.
+  `Djinn: W1's watcher says: PR #12 · checks failed at 3f2a9c1: lint`.
 - It wakes you only for what needs you, each once:
-  - `checks failed: lint, test`: a check that newly fails. The same failure seen again says nothing; failing again
-    after a new push, or after a re-run, it is new.
-  - `all checks pass (5)`: once per push, and again after a failure. Wait for it before you say the pull request is
-    ready.
+  - `checks failed at <commit>: lint, test`: a check that newly fails at the pull request's head commit, then one
+    line per check with its job's link. The same failure seen again says nothing; failing again after a new push, or
+    after a re-run, it is new. Check the commit: a failure of a commit you already pushed past is no news.
+  - `all checks pass at <commit> (5)`: once per push, and again after a failure. Wait for it before you say the pull
+    request is ready.
   - `new comment by <login>`, then `latest comment, by <login>: <its first line>`: a new comment, or a review with a
     body.
   - `changes requested`: the review decision turned to `CHANGES_REQUESTED`.
@@ -37,7 +42,9 @@ You lead a wish made for one pull request: bring it to a merge, and nothing else
   Pending checks and partial passes say nothing: no news is no failure yet. Its first look says what is already
   there (failures, all passing, the latest comment, changes requested, a conflict).
 - It keeps what it said in `$DJINN_HOME/watchers/<task>/babysit-pr-<pr>`, never in the repository: after a restart of
-  Djinn it does not say it again.
+  Djinn, or of its command when it dies, it does not say it again; but for the checks, which its first look says
+  again (what it printed as a Djinn hung reached no one). Djinn does not wake you when that is the last line it told
+  you.
 - It is a POSIX shell script, for Linux and macOS. Windows is not supported: only the `sh` of Git for Windows could
   run it, and no test does.
 - When the pull request is merged, the watcher prints `MERGED` and stops. Djinn then asks the developer whether to
@@ -50,6 +57,11 @@ You lead a wish made for one pull request: bring it to a merge, and nothing else
 request their review, one paragraph each with its link. It runs only once the developer plugs it in on their machine
 (`djinn inbox plug babysit-pr`, or "Plug in" in the inbox); a clone polls nothing by itself. It only reads.
 
+A task of a wish that opens a pull request (`gh pr create`) gets its watcher too, in the same wish: Djinn starts it
+once the task ends, from this skill's `metadata.djinn.babysit`, and tells you `W5 opened PR #12: W7 babysits it`.
+`djinn task spawn <wish> "Babysit W5's PR" --babysit --after W5` does it by hand. There, `MERGED` ends the watcher;
+the wish goes on with its other work.
+
 ## Each time the watcher speaks
 
 1. Read what changed: `gh pr view <pr> --comments`, `gh pr checks <pr>`, and for a failed check
@@ -59,8 +71,8 @@ request their review, one paragraph each with its link. It runs only once the de
    files into one task.
 3. Review each worker's diff, then commit and push once for the round, as the project's rules say.
 4. Answer review comments only with what was done, in the developer's name only if they asked you to.
-5. Nothing to do (a comment that needs the developer, `all checks pass` while a review is awaited): wait for the
-   next line. Never poll the checks yourself: the watcher speaks when they fail or all pass.
+5. Nothing to do (`all checks pass` while a review is awaited): wait for the next line. A comment that needs the
+   developer is a question in the wish (`djinn question ask`); say nothing in your terminal. Never poll the checks yourself: the watcher speaks when they fail or all pass.
 
 ## Never
 

@@ -1,6 +1,6 @@
 // The flight plan of the active wishes, against the real djinn up --browser (see global-setup.ts): two wishes, a
 // question each, merged in one view; a question answered there reads as answered by the command line. A wish's
-// tasks show what they spent: tokens, and the cost where the agent gives one.
+// tasks show what they spent: tokens, and one price.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -32,14 +32,25 @@ const wishes = (): Wish[] =>
 const at = "2026-10-08T09:10:00Z";
 const lampOf = (wishId: string, title: string) => {
   const w1 = randomUUID();
+  const azimaId = randomUUID();
   return {
     version: 1,
     create_time: at,
     wish: { id: wishId, title, create_time: at },
     tasks: [
       {
+        id: azimaId,
+        wish_id: wishId,
+        code: "T1",
+        title: "The lamp",
+        kind: "TASK_KIND_AZIMA",
+        status: "TASK_STATUS_PENDING",
+        create_time: at,
+      },
+      {
         id: w1,
         wish_id: wishId,
+        part_of: azimaId,
         code: "W1",
         title: "Trim the wick",
         status: "TASK_STATUS_DONE",
@@ -57,10 +68,12 @@ const lampOf = (wishId: string, title: string) => {
       {
         id: randomUUID(),
         wish_id: wishId,
+        part_of: azimaId,
         code: "W2",
         title: "Read the map",
         status: "TASK_STATUS_DONE",
         provider: "PROVIDER_CODEX",
+        model: "fixture-unpriced",
         usage: {
           input_tokens: "1200",
           output_tokens: "300",
@@ -137,6 +150,71 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await page.goto(process.env.DJINN_URL!);
   // With wishes active, the window opens on their flight plan.
   await expect(page.locator(".hero h1")).toHaveText("Flight plan");
+
+  // The page header's row is the window's toolbar's, its breadcrumbs where the page's content starts, past the
+  // sidebar or its rail, past the traffic lights in the macOS window, where the row is the lights' and the gauge
+  // hangs from it. The toolbar holds only the sidebar's toggle until the creation page brings Back (P23).
+  const pageHeader = page.locator(".page-header");
+  const appToolbar = page.locator(".app-toolbar");
+  // fits is false where the header is narrower than its content: the operating-load gauge does not narrow (as on
+  // feat/wails-go's topbar), and pushes the actions past the window's edge.
+  const assertHeaderChrome = async (left: number, size = 32, fits = true) => {
+    // The sidebar's width glides for 180 ms when it folds: the breadcrumbs reach their place at its end.
+    const breadcrumbs = pageHeader.locator(".breadcrumbs");
+    await expect
+      .poll(async () => (await breadcrumbs.boundingBox())?.x)
+      .toBeCloseTo(left, 0);
+    const headerBox = await pageHeader.boundingBox();
+    const breadcrumbsBox = await breadcrumbs.boundingBox();
+    const toggleBox = await appToolbar
+      .locator(".app-toolbar-toggle")
+      .boundingBox();
+    expect(headerBox).not.toBeNull();
+    expect(breadcrumbsBox).not.toBeNull();
+    expect(toggleBox).not.toBeNull();
+    expect(breadcrumbsBox!.x).toBeCloseTo(left, 0);
+    await expect(pageHeader).toHaveCSS("height", "64px");
+    expect(toggleBox).toMatchObject({ width: size, height: size });
+    const rowCenter = toggleBox!.y + toggleBox!.height / 2;
+    expect(
+      Math.abs(rowCenter - (breadcrumbsBox!.y + breadcrumbsBox!.height / 2)),
+    ).toBeLessThan(1);
+    const actions = pageHeader.locator(".topbar-actions");
+    if (await actions.count()) {
+      const actionsBox = await actions.boundingBox();
+      const iconActionBox = await actions
+        .locator(".page-header-action")
+        .first()
+        .boundingBox();
+      expect(actionsBox).not.toBeNull();
+      expect(iconActionBox).toMatchObject({ width: size, height: size });
+      expect(
+        Math.abs(rowCenter - (iconActionBox!.y + iconActionBox!.height / 2)),
+      ).toBeLessThan(1);
+      // The labelled actions too: Pause, Lead and its arrow.
+      for (const box of await actions
+        .locator("button:visible")
+        .evaluateAll((els) => els.map((el) => el.getBoundingClientRect())))
+        expect(Math.abs(rowCenter - (box.y + box.height / 2))).toBeLessThan(1);
+      const rightInset = await pageHeader.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).paddingRight),
+      );
+      if (fits)
+        expect(actionsBox!.x + actionsBox!.width).toBeCloseTo(
+          headerBox!.x + headerBox!.width - rightInset,
+          0,
+        );
+    }
+  };
+
+  await assertHeaderChrome(248);
+  await page.locator(".sidebar-toggle").click();
+  await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
+  await assertHeaderChrome(100);
+  await page.locator(".sidebar-toggle").click();
+  await expect(page.locator(".wish-app")).not.toHaveClass(/sidebar-collapsed/);
+  await assertHeaderChrome(248);
+
   await expect(
     page.locator(".plan-nav").filter({ hasText: "Flight plan" }),
   ).toHaveClass(/selected/);
@@ -150,15 +228,44 @@ test("the flight plan merges two wishes, and a question is answered from it", as
     .filter({ hasText: "Which oil for the wick?" });
   await expect(oilCard.locator(".wish-origin")).toHaveText(`2${oilTitle}`);
   await expect(lampCard.locator(".wish-origin")).toHaveText(`1${lampTitle}`);
-  // Each wish's card says what it spent: tokens, the cost where it exists, and what has none.
+  // Each wish's card says what it spent: one price, then its tokens; the price's hover tells what was reported and
+  // what has no price.
   const lampSpent = page
     .locator(".plan-wish")
     .filter({ hasText: lampTitle })
     .locator(".wish-spent");
   await expect(lampSpent).toContainText("cache read");
-  await expect(lampSpent).toContainText("0.42");
-  await expect(lampSpent).toContainText(
-    "1 task without a cost: its agent gives tokens only",
+  const lampPrice = lampSpent.locator(".spent-price");
+  await expect(lampPrice).toHaveText("$0.42");
+  await expect(lampPrice).toHaveAttribute(
+    "title",
+    "$0.42 reported\n1 task without a price in the table\nclaude: $0.42",
+  );
+  await expect(lampSpent).not.toContainText("reported");
+  await expect(lampSpent).not.toContainText("without a price");
+  // The price reads in both themes, in a grey of each; the page then shows its own again.
+  const shown = await page.evaluate(
+    () => document.documentElement.dataset.theme,
+  );
+  const colours: string[] = [];
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (t) => document.documentElement.setAttribute("data-theme", t),
+      theme,
+    );
+    await expect(lampPrice).toBeVisible();
+    colours.push(await lampPrice.evaluate((e) => getComputedStyle(e).color));
+    await lampSpent.screenshot({
+      path: path.join(
+        __dirname,
+        `../test-results/e2e/flight-plan-spent-${theme}.png`,
+      ),
+    });
+  }
+  expect(colours[0]).not.toBe(colours[1]);
+  await page.evaluate(
+    (t) => document.documentElement.setAttribute("data-theme", t ?? "dark"),
+    shown,
   );
   await page.screenshot({
     path: path.join(__dirname, "../test-results/e2e/flight-plan.png"),
@@ -197,16 +304,58 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   // its journal.
   await page.locator(".plan-wish").filter({ hasText: lampTitle }).click();
   await expect(page.locator(".hero h1")).toHaveText(lampTitle);
+  // Share and Delete are icons; Pause and Lead keep their words. The operating-load gauge sits between.
+  await expect(pageHeader.locator(".page-header-action")).toHaveCount(2);
+  await expect(
+    pageHeader.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
+  await expect(
+    pageHeader.getByRole("group", { name: "Operating load" }),
+  ).toBeVisible();
+  // The icon actions name themselves in a tooltip, on hover and on focus; they have no shortcut.
+  const shareAction = pageHeader.getByRole("button", {
+    name: "Share",
+    exact: true,
+  });
+  await shareAction.hover();
+  await expect(page.locator('[role="tooltip"]')).toHaveText("Share");
+  await expect(page.locator('[role="tooltip"] kbd')).toHaveCount(0);
+  await page.mouse.move(10, 300);
+  await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
+  await pageHeader.locator(".page-header-action.danger").focus();
+  await expect(page.locator('[role="tooltip"]')).toHaveText("Delete this wish");
+  await pageHeader.locator(".page-header-action.danger").blur();
+  await assertHeaderChrome(248);
+  await page.setViewportSize({ width: 760, height: 1000 });
+  await assertHeaderChrome(100, 32, false);
+  await page.evaluate(() =>
+    document.documentElement.classList.add("native-mac"),
+  );
+  await assertHeaderChrome(166, 20, false);
+  await page.locator(".sidebar-toggle").click();
+  await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
+  await assertHeaderChrome(166, 20, false);
+  await page.locator(".sidebar-toggle").click();
+  await expect(page.locator(".wish-app")).not.toHaveClass(/sidebar-collapsed/);
+  await page.evaluate(() =>
+    document.documentElement.classList.remove("native-mac"),
+  );
+  await page.setViewportSize({ width: 1440, height: 1900 });
   await page.getByRole("tab", { name: /^Tasks/ }).click();
+  const azimaCard = page.locator(".azima-card");
+  await azimaCard.locator(".azima-heading").click();
   const w2 = page.locator(".wish-task").filter({ hasText: "Read the map" });
-  await expect(w2.locator(".task-usage")).toHaveText(/^6\.5\s?K tokens$/);
+  await expect(w2.locator(".task-usage")).toContainText("6.5K tokens");
+  // W1's report is a note for agents: it waits in their tab with the other blocks, no section of its own.
   await page.getByRole("tab", { name: /^For agents/ }).click();
   await expect(page.locator(".wish-block")).toContainText("About W1");
   await page.getByRole("tab", { name: /^Wish/ }).click();
+  await expect(page.locator("#reports")).toHaveCount(0);
   // The journal is folded: a click opens it.
   await page.getByRole("button", { name: /^Journal/ }).click();
   await expect(page.locator(".journal-list")).toContainText("Kick-off");
   await page.getByRole("tab", { name: /^Tasks/ }).click();
+  await azimaCard.locator(".azima-heading").click();
   await page
     .locator(".wish-task")
     .filter({ hasText: "Trim the wick" })

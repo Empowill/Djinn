@@ -1,9 +1,11 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -18,6 +20,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -43,7 +46,40 @@ func WithCapacity(c Capacity) Option { return func(h *Harness) { h.capacity = c 
 // its provider, as p weighs it (machine.Policy.WorkerRoom). djinn up gives the machine's; without it, the memory
 // holds no worker back. It needs WithCapacity.
 func WithMemory(available func() uint64, p machine.Policy) Option {
-	return func(h *Harness) { h.available, h.policy = available, p }
+	return func(h *Harness) {
+		h.available = available
+		h.policy.Store(&p)
+	}
+}
+
+// WithPolicy sets the policy Djinn runs with (operating load notch, limits).
+func WithPolicy(p machine.Policy) Option {
+	return func(h *Harness) { h.policy.Store(&p) }
+}
+
+// WithTotal gives the machine's total RAM in bytes (0 when unknown) for peak forecast committable limits.
+func WithTotal(total func() uint64) Option {
+	return func(h *Harness) { h.total = total }
+}
+
+// SetPolicy updates the scheduling policy and wakes the scheduler for the next pass.
+func (h *Harness) SetPolicy(p machine.Policy) {
+	h.updatePriorities(p.LowPriority())
+	logx.Lock(&h.sched, "scheduler")
+	h.policy.Store(&p)
+	if !p.Auto && h.capacity != nil {
+		h.enforceNotchCapacity(h.ctx, p)
+	}
+	h.sched.Unlock()
+	h.wake()
+}
+
+// Policy returns the current scheduling policy.
+func (h *Harness) Policy() machine.Policy {
+	if p := h.policy.Load(); p != nil {
+		return *p
+	}
+	return machine.Policy{}
 }
 
 // WithScopes runs each worker in a systemd scope of its own, which stopping, pausing and measuring it take whole, its
@@ -56,6 +92,51 @@ func (h *Harness) scope(name string) func() machine.Scope {
 		return nil
 	}
 	return func() machine.Scope { return h.scopes.New(name) }
+}
+
+// scopeFor gives each process of task t a scope of its own with its memory ceiling (Policy.WorkerMemory and/or
+// Policy.WorkerMemoryGuard); nil without scopes.
+func (h *Harness) scopeFor(t *planv1.Task) func() machine.Scope {
+	if h.scopes == nil {
+		return nil
+	}
+	if t == nil {
+		return h.scope("")
+	}
+	p := h.Policy()
+
+	if !h.scopes.MemoryController && h.scopes.Memory == 0 {
+		return func() machine.Scope { return h.scopes.New(t.GetCode()) }
+	}
+
+	var peak uint64
+	var measured int
+	if p.WorkerMemoryGuard > 0 && h.store != nil {
+		ctx := h.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		if tasks, err := store.List[*planv1.Task](ctx, h.store, nil); err == nil {
+			peaks := dispatch.ProviderPeaks(tasks)
+			peak, measured = p.Typical(peaks[dispatch.Provider(t)])
+		}
+	}
+	ceiling := p.WorkerMemoryCeiling(peak, measured)
+	if ceiling == 0 && p.WorkerMemoryGuard <= 0 && h.scopes.Memory > 0 {
+		ceiling = h.scopes.Memory
+	}
+	return func() machine.Scope { return h.scopes.NewWithMemory(t.GetCode(), ceiling) }
+}
+
+// WithBeforeStart runs f before each worker's process starts: djinn up brings its PATH up to date there
+// (machine.ExtendPath), so that a worker finds the agent the window's panel found.
+func WithBeforeStart(f func()) Option { return func(h *Harness) { h.beforeStart = f } }
+
+// prepare runs WithBeforeStart's function, if any.
+func (h *Harness) prepare() {
+	if h.beforeStart != nil {
+		h.beforeStart()
+	}
 }
 
 // WithTick sets how often the scheduler looks at the planned tasks again without being woken: the pressure of the
@@ -143,15 +224,31 @@ func planned(t *planv1.Task) bool { return dispatch.Planned(t) }
 // schedule makes one pass over the planned tasks, the first wish first: each one starts, waits with its reason,
 // or fails when a dependency failed. The rules are internal/dispatch's.
 func (h *Harness) schedule(ctx context.Context) {
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
-	defer h.refreshWarm(ctx) // Once the planned tasks have taken their slots.
+	if ctx.Err() != nil {
+		return
+	}
+	start := time.Now()
+	logx.L().Debug("scheduler pass begins")
+	defer func() { logx.Took(slog.LevelDebug, "scheduler pass ended", start) }()
+	p := h.Policy()
+	if !p.Auto && h.capacity != nil {
+		h.enforceNotchCapacity(ctx, p)
+	}
+	h.resumeNotchPaused(ctx)
+
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
 		if ctx.Err() == nil {
 			log.Printf("djinn: schedule: %v", err)
 		}
 		return
+	}
+	if h.lamplighter(ctx, tasks) {
+		if reloaded, err := store.List[*planv1.Task](ctx, h.store, nil); err == nil {
+			tasks = reloaded
+		}
 	}
 	if !slices.ContainsFunc(tasks, planned) {
 		return
@@ -174,9 +271,31 @@ func (h *Harness) schedule(ctx context.Context) {
 		case d.Failed != "":
 			h.failPlanned(ctx, t, d.Failed)
 		case d.Why != "":
-			h.setWaiting(ctx, t, d.Why)
+			if isMemoryShort(d.Why) {
+				if code, err := h.interruptPausedForMemory(ctx, t); err == nil && code != "" {
+					if err := h.launchPlannedWithPreemption(ctx, t, code); err != nil {
+						log.Printf("djinn: task %s: %v", t.GetCode(), err)
+					}
+					continue
+				}
+			}
+			if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && isMemoryShort(d.Why) {
+				if code, err := h.preemptForMemory(ctx, t); err == nil && code != "" {
+					if err := h.launchPlannedWithPreemption(ctx, t, code); err != nil {
+						log.Printf("djinn: task %s: %v", t.GetCode(), err)
+					}
+					continue
+				}
+			}
+			h.setWaiting(ctx, t, d.Why, d.Machine)
 		default:
-			if err := h.launchPlanned(ctx, t); err != nil {
+			var preemptedCode string
+			if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && h.slotsFull() {
+				if code, err := h.preemptForSlot(ctx, t); err == nil && code != "" {
+					preemptedCode = code
+				}
+			}
+			if err := h.launchPlannedWithPreemption(ctx, t, preemptedCode); err != nil {
 				log.Printf("djinn: task %s: %v", t.GetCode(), err)
 			}
 		}
@@ -194,9 +313,11 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 	if err != nil {
 		return nil, err
 	}
-	git := make(map[string]bool, len(projects))
+	projectGit := make(map[string]bool, len(projects))
+	projectDirs := make(map[string]string, len(projects))
 	for _, p := range projects {
-		git[p.GetId()] = p.GetGit()
+		projectGit[p.GetId()] = p.GetGit()
+		projectDirs[p.GetId()] = p.GetDirectory()
 	}
 	var m *dispatch.Machine
 	if h.capacity != nil {
@@ -209,10 +330,69 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 			m.Gates = outside()
 		}
 		if h.available != nil {
-			m.Available, m.Policy = h.available(), h.policy
+			m.Available, m.Policy = h.available(), h.Policy()
+		}
+		if h.total != nil {
+			m.Total = h.total()
 		}
 	}
-	return dispatch.New(tasks, wishes, git, m).At(h.now()), nil
+	type branchState struct {
+		head      string
+		noCommits bool
+	}
+	branchCache := make(map[[2]string]branchState)
+	branchHead := func(projectID, branch string) (string, bool) {
+		if branch == "" {
+			return "", false
+		}
+		key := [2]string{projectID, branch}
+		if st, ok := branchCache[key]; ok {
+			return st.head, st.noCommits
+		}
+		dir := projectDirs[projectID]
+		if dir == "" || !projectGit[projectID] {
+			return "", false
+		}
+		head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"^{commit}")
+		if err != nil || head == "" {
+			if h, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", branch+"^{commit}"); err == nil && h != "" {
+				head = h
+			} else if branch == plan.CheckedOutBranch(ctx, dir) || branch == "HEAD" {
+				head, _ = git(ctx, dir, "rev-parse", "HEAD")
+			}
+		}
+		noCommits := false
+		if head != "" {
+			reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+branch)
+			if err == nil && reflog != "" {
+				lines := strings.Split(strings.TrimSpace(reflog), "\n")
+				if strings.TrimSpace(lines[len(lines)-1]) == head {
+					noCommits = true
+				}
+			}
+		}
+		branchCache[key] = branchState{head: head, noCommits: noCommits}
+		return head, noCommits
+	}
+	isAncestor := func(projectID, a, b string) bool {
+		if a == "" || b == "" {
+			return false
+		}
+		dir := projectDirs[projectID]
+		if dir == "" || !projectGit[projectID] {
+			return false
+		}
+		_, err := git(ctx, dir, "merge-base", "--is-ancestor", a, b)
+		return err == nil
+	}
+	sit := dispatch.New(tasks, wishes, projectGit, m).At(h.now())
+	sit.WithAncestry(branchHead, isAncestor)
+	sit.WithRunning(func(taskID string) bool {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return h.runs[taskID] != nil
+	})
+	return sit, nil
 }
 
 // Ranks gives the position of each task's wish among the active wishes, the first served first; the task of a wish
@@ -261,21 +441,22 @@ func (h *Harness) GatesOutside(n func() int) {
 	h.outside = n
 }
 
-// setWaiting records why a planned task waits, when the reason changed, with an event.
-func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string) {
-	why = grantedWhy(t, shelvedWhy(t, why))
-	if t.GetWaitReason() == why {
+// setWaiting records why a planned task waits, and whether for the machine alone, when the reason changed, with an
+// event.
+func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, machine bool) {
+	why = grantedWhy(t, shelvedWhy(t, preemptedWaitReason(t, why)))
+	if t.GetWaitReason() == why && t.GetMachineWait() == machine {
 		return
 	}
 	t = proto.CloneOf(t)
-	t.WaitReason = why
+	t.WaitReason, t.MachineWait = why, machine
 	h.writeAlone(ctx, actorHarness, methodWait, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why})
 }
 
 // failPlanned ends a planned task that never will start.
 func (h *Harness) failPlanned(ctx context.Context, t *planv1.Task, why string) {
 	t = proto.CloneOf(t)
-	t.Status, t.Error, t.WaitReason, t.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, why, "", timestamppb.Now()
+	t.Status, t.Error, t.WaitReason, t.MachineWait, t.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, why, "", false, timestamppb.Now()
 	h.writeAlone(ctx, actorHarness, methodEnd, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "failed: " + why})
 	h.wake() // Its own dependents fail in turn.
 }
@@ -289,7 +470,7 @@ func (h *Harness) writeAlone(ctx context.Context, actor, method string, req prot
 		if err != nil {
 			return err
 		}
-		te := newEvent(id, seq+1, ev)
+		te := h.newEvent(id, seq+1, ev)
 		if req == nil {
 			req = te
 		}
@@ -299,6 +480,11 @@ func (h *Harness) writeAlone(ctx context.Context, actor, method string, req prot
 		if task != nil {
 			if err := tx.Put(task); err != nil {
 				return err
+			}
+			if method == methodResume && task.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && task.GetPartOf() != "" {
+				if err := reopenAzima(ctx, tx, task.GetPartOf(), task.GetCode()+" started"); err != nil {
+					return err
+				}
 			}
 		}
 		return tx.Put(te)
@@ -312,30 +498,71 @@ func (h *Harness) writeAlone(ctx context.Context, actor, method string, req prot
 // launchPlanned starts the worker of a planned task that is ready: its access is decided now, with the wish's
 // grants and the project's configuration as they are, and it may ask its edit question.
 func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
+	return h.launchPlannedWithPreemption(ctx, t, "")
+}
+
+// launchPlannedWithPreemption starts the worker of a planned task, recording an event if a task was preempted to make room.
+func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Task, preemptedCode string) error {
 	if dispatch.Resuming(t) {
-		return h.relaunch(ctx, t)
+		return h.relaunch(ctx, t, preemptedCode)
 	}
 	t = proto.CloneOf(t)
-	t.WaitReason = ""
+	t.WaitReason, t.MachineWait = "", false
 	provider, ok := h.providers[t.GetProvider()]
 	if !ok {
 		h.failPlanned(ctx, t, fmt.Sprintf("provider %s is not available", t.GetProvider()))
 		return nil
 	}
-	prompt, err := firstPrompt(h.store, t.GetId())
+	prompt, err := lastPrompt(ctx, h.store, t.GetId())
 	if err != nil {
 		h.failPlanned(ctx, t, err.Error())
 		return nil
+	}
+	var project *planv1.Project
+	if t.GetProjectId() != "" {
+		p, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
+		if err != nil {
+			h.failPlanned(ctx, t, err.Error())
+			return nil
+		}
+		project = p
+	}
+	var settings plan.Settings
+	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
+		var err error
+		if settings, err = plan.LoadSettings(h.home, project); err != nil {
+			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false)
+			return nil
+		}
 	}
 	seq, err := lastSeq(ctx, h.store, t.GetId())
 	if err != nil {
 		return err
 	}
+	// A babysit spawned by hand watches what the tasks it comes after opened: its command, filled, is its prompt
+	// from now on.
+	var prompted *planv1.TaskEvent
+	if t.GetBabysit() != nil && t.GetBabysit().GetNumber() == 0 && project != nil {
+		filled, why := h.babysitPrompt(ctx, project, t, prompt)
+		if why != "" {
+			h.failPlanned(ctx, t, why)
+			t.Error = why
+			h.tellWatcherFailed(t)
+			return nil
+		}
+		prompt = filled
+		seq++
+		prompted = h.newEvent(t.GetId(), seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
+	}
 	r, err := h.newRun(t, seq)
 	if err != nil {
 		return err
 	}
-	var project *planv1.Project
+	var preEv *planv1.TaskEvent
+	if preemptedCode != "" {
+		r.seq++
+		preEv = h.newEvent(t.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
+	}
 	var wish *planv1.Wish
 	var prep prepared
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -343,34 +570,84 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 		if wish, err = store.Get[*planv1.Wish](ctx, tx, t.GetWishId()); err != nil {
 			return err
 		}
-		if t.GetProjectId() != "" {
-			if project, err = store.Get[*planv1.Project](ctx, tx, t.GetProjectId()); err != nil {
-				return err
-			}
-		}
 		if prep, err = prepare(ctx, tx, t, wish, project); err != nil {
 			return err
 		}
 		if err := tx.Journal(actorHarness, methodSchedule, t); err != nil {
 			return err
 		}
-		return tx.Put(t)
+		if err := tx.Put(t); err != nil {
+			return err
+		}
+		if prompted != nil {
+			if err := tx.Put(prompted); err != nil {
+				return err
+			}
+		}
+		if preEv != nil {
+			if err := tx.Put(preEv); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		h.finish(r, Result{ExitCode: -1, Err: err})
 		return err
 	}
-	if project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
+	if prompted != nil {
+		h.publish(r, prompted)
+	}
+	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		// Its branch follows the project's settings as they are now, like its access.
-		settings, err := plan.LoadSettings(h.home, project)
-		if err != nil {
-			h.finish(r, Result{ExitCode: -1, Err: fmt.Errorf("project %s: %w", project.GetName(), err)})
-			return nil
+		r.branch, r.from = settings.Branch, h.workerStartBranch(h.ctx, wish, project, settings, t)
+		r.setChecks(settings)
+		if questionWorker(t) {
+			p, _, fb := questionProvider(settings)
+			if t.GetProvider() == p {
+				r.fallback = fb
+			}
 		}
-		r.branch, r.from, r.checks = settings.Branch, plan.IntegrationBranchOf(wish, project.GetId()), settings.ChecksBrief()
 	}
 	_, err = h.launch(h.ctx, r, provider, project, prep, prompt)
 	return err
+}
+
+// Start starts a planned task that waits for the machine alone, now: the developer asked for it, whatever the slots,
+// the pressure and the memory. A task held by anything else (its wish, a dependency, a push hold, its provider's usage
+// limit, a write scope) is refused, with why, and so is one that waits for a task going first: Start frees the
+// machine, never the priority order. The scheduler's pass decides, as it would now.
+func (h *Harness) Start(ctx context.Context, procedure string, req *planv1.TaskServiceStartRequest) (*planv1.Task, error) {
+	logx.Lock(&h.sched, "scheduler")
+	defer h.sched.Unlock()
+	task, err := store.Get[*planv1.Task](ctx, h.store, req.GetTaskId())
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if !planned(task) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is not planned: %s", task.GetCode(), short(task.GetStatus())))
+	}
+	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	s, err := h.situation(ctx, tasks)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	for _, d := range s.Pass() {
+		if d.Task.GetId() == task.GetId() && (d.Failed != "" || d.Why != "" && !d.Machine) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s waits for more than the machine: %s", task.GetCode(), cmp.Or(d.Failed, d.Why)))
+		}
+	}
+	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Journal(actorLocal, procedure, req) }); err != nil {
+		return nil, plan.Status(err)
+	}
+	if err := h.launchPlanned(ctx, task); err != nil {
+		return nil, plan.Status(err)
+	}
+	task, err = store.Get[*planv1.Task](ctx, h.store, task.GetId())
+	return task, plan.Status(err)
 }
 
 // resolveDeps turns what a spawn names as dependencies, codes (W1, any case) or identifiers of tasks of the same

@@ -3,26 +3,55 @@ package harness
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"buf.build/go/protovalidate"
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 )
 
 // Handler returns the Connect handler of TaskService on h, and its path prefix.
 func Handler(h *Harness) (string, http.Handler) {
-	return planv1connect.NewTaskServiceHandler(&Tasks{h: h}, connect.WithInterceptors(plan.Validate))
+	return planv1connect.NewTaskServiceHandler(&Tasks{h: h}, connect.WithInterceptors(plan.WorkerGuard, plan.Validate))
 }
 
 // Tasks implements TaskService.
 type Tasks struct {
 	planv1connect.UnimplementedTaskServiceHandler
 	h *Harness
+}
+
+func (s *Tasks) fillTask(ctx context.Context, task *planv1.Task) (*planv1.Task, error) {
+	if task == nil {
+		return nil, nil
+	}
+	filled, err := s.fillTasks(ctx, []*planv1.Task{task})
+	if err != nil {
+		return nil, err
+	}
+	return filled[0], nil
+}
+
+func (s *Tasks) fillTasks(ctx context.Context, tasks []*planv1.Task) ([]*planv1.Task, error) {
+	filled, err := s.h.withAzimas(ctx, tasks)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if err := plan.FillTilasms(ctx, s.h.store, filled); err != nil {
+		return nil, plan.Status(err)
+	}
+	if err := plan.FillTimes(ctx, s.h.store, filled, s.h.now()); err != nil {
+		return nil, plan.Status(err)
+	}
+	s.h.FillModels(ctx, filled)
+	return filled, nil
 }
 
 func (s *Tasks) Spawn(
@@ -32,7 +61,11 @@ func (s *Tasks) Spawn(
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&planv1.TaskServiceSpawnResponse{Task: task}), nil
+	task, err = s.fillTask(ctx, task)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceSpawnResponse{Task: task, Note: s.h.spawnNote(ctx, task)}), nil
 }
 
 func (s *Tasks) List(
@@ -49,13 +82,30 @@ func (s *Tasks) List(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	if tasks, err = s.h.withAzimas(ctx, tasks); err != nil {
-		return nil, plan.Status(err)
+	if req.Msg.GetFailed() {
+		var filtered []*planv1.Task
+		for _, t := range tasks {
+			if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED &&
+				!render.TaskDealtWith(t, tasks) &&
+				!(t.GetEnvCause() != "" && t.GetEnvReplays() < 2) {
+				filtered = append(filtered, t)
+			}
+		}
+		tasks = filtered
 	}
-	if err := plan.FillTilasms(ctx, s.h.store, tasks); err != nil {
-		return nil, plan.Status(err)
+	page, nextToken, total, err := plan.Paginate(tasks, req.Msg.GetPageSize(), req.Msg.GetPageToken())
+	if err != nil {
+		return nil, err
 	}
-	return connect.NewResponse(&planv1.TaskServiceListResponse{Tasks: tasks}), nil
+	page, err = s.fillTasks(ctx, page)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceListResponse{
+		Tasks:         page,
+		NextPageToken: nextToken,
+		Total:         total,
+	}), nil
 }
 
 func (s *Tasks) Get(
@@ -65,12 +115,13 @@ func (s *Tasks) Get(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	filled, err := s.h.withAzimas(ctx, []*planv1.Task{task})
+	_, _ = s.h.checkCommentsResolution(ctx, task)
+	filled, err := s.fillTasks(ctx, []*planv1.Task{task})
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
 	}
-	if err := plan.FillTilasms(ctx, s.h.store, filled); err != nil {
-		return nil, plan.Status(err)
+	if p, err := lastPrompt(ctx, s.h.store, task.GetId()); err == nil {
+		filled[0].Prompt = p
 	}
 	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: filled[0]}), nil
 }
@@ -79,6 +130,10 @@ func (s *Tasks) Stop(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceStopRequest],
 ) (*connect.Response[planv1.TaskServiceStopResponse], error) {
 	task, err := s.h.Stop(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	task, err = s.fillTask(ctx, task)
 	if err != nil {
 		return nil, err
 	}
@@ -92,6 +147,10 @@ func (s *Tasks) Pause(
 	if err != nil {
 		return nil, err
 	}
+	task, err = s.fillTask(ctx, task)
+	if err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&planv1.TaskServicePauseResponse{Task: task}), nil
 }
 
@@ -102,7 +161,21 @@ func (s *Tasks) Resume(
 	if err != nil {
 		return nil, err
 	}
+	task, err = s.fillTask(ctx, task)
+	if err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&planv1.TaskServiceResumeResponse{Task: task}), nil
+}
+
+func (s *Tasks) Start(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceStartRequest],
+) (*connect.Response[planv1.TaskServiceStartResponse], error) {
+	task, err := s.h.Start(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceStartResponse{Task: task}), nil
 }
 
 func (s *Tasks) Watch(
@@ -172,6 +245,16 @@ func (s *Tasks) Done(
 	return connect.NewResponse(&planv1.TaskServiceDoneResponse{Task: task}), nil
 }
 
+func (s *Tasks) Cancel(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceCancelRequest],
+) (*connect.Response[planv1.TaskServiceCancelResponse], error) {
+	task, err := s.h.Cancel(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceCancelResponse{Task: task}), nil
+}
+
 func (s *Tasks) Continue(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceContinueRequest],
 ) (*connect.Response[planv1.TaskServiceContinueResponse], error) {
@@ -190,4 +273,144 @@ func (s *Tasks) Send(
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.TaskServiceSendResponse{Event: ev}), nil
+}
+
+func (s *Tasks) Update(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceUpdateRequest],
+) (*connect.Response[planv1.TaskServiceUpdateResponse], error) {
+	task, err := s.h.Update(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceUpdateResponse{Task: task}), nil
+}
+
+func (s *Tasks) Describe(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceDescribeRequest],
+) (*connect.Response[planv1.TaskServiceDescribeResponse], error) {
+	task, err := s.h.DescribeTask(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceDescribeResponse{Task: task}), nil
+}
+
+func (s *Tasks) Open(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceOpenRequest],
+) (*connect.Response[planv1.TaskServiceOpenResponse], error) {
+	task, err := s.h.Open(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceOpenResponse{Task: task}), nil
+}
+
+func (s *Tasks) Move(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceMoveRequest],
+) (*connect.Response[planv1.TaskServiceMoveResponse], error) {
+	task, err := s.h.Move(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceMoveResponse{Task: task}), nil
+}
+func (s *Tasks) Diff(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceDiffRequest],
+) (*connect.Response[planv1.TaskServiceDiffResponse], error) {
+	resp, err := s.h.Diff(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// Now returns the harness's current time.
+func (h *Harness) Now() time.Time {
+	return h.now()
+}
+
+func (s *Tasks) Comment(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceCommentRequest],
+) (*connect.Response[planv1.TaskServiceCommentResponse], error) {
+	resp, err := s.h.Comment(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (s *Tasks) TurnComments(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceTurnCommentsRequest],
+) (*connect.Response[planv1.TaskServiceTurnCommentsResponse], error) {
+	resp, err := s.h.TurnComments(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// FillModels fills the forecast model on planned or waiting tasks whose model is empty,
+// and ensures watchers and azimas have no model.
+func (h *Harness) FillModels(ctx context.Context, tasks []*planv1.Task) {
+	h.mu.Lock()
+	for _, t := range tasks {
+		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
+			if r := h.runs[t.GetId()]; r != nil && !r.lastActivity.IsZero() {
+				t.LastActivityTime = timestamppb.New(r.lastActivity)
+			} else if t.LastActivityTime == nil {
+				t.LastActivityTime = t.StartTime
+			}
+		}
+	}
+	h.mu.Unlock()
+	for _, t := range tasks {
+		if watching(t) || t.GetProvider() == planv1.Provider_PROVIDER_WATCH || t.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA || t.GetAzima() != nil {
+			t.Model = ""
+			t.Models = nil
+			continue
+		}
+		status := t.GetStatus()
+		if status != planv1.TaskStatus_TASK_STATUS_PENDING &&
+			status != planv1.TaskStatus_TASK_STATUS_WAITING &&
+			status != planv1.TaskStatus_TASK_STATUS_UNSPECIFIED {
+			continue
+		}
+		if t.GetModel() == "" {
+			var model string
+			if t.GetProjectId() != "" {
+				if project, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId()); err == nil {
+					if settings, err := plan.LoadSettings(h.home, project); err == nil {
+						if settings.Model != "" && (settings.Provider == t.GetProvider() || settings.Provider == planv1.Provider_PROVIDER_UNSPECIFIED || t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED) {
+							model = settings.Model
+						}
+					}
+				}
+			} else if t.GetWishId() != "" {
+				if wish, err := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId()); err == nil && len(wish.GetProjectIds()) > 0 {
+					if project, err := store.Get[*planv1.Project](ctx, h.store, wish.GetProjectIds()[0]); err == nil {
+						if settings, err := plan.LoadSettings(h.home, project); err == nil {
+							if settings.Model != "" && (settings.Provider == t.GetProvider() || settings.Provider == planv1.Provider_PROVIDER_UNSPECIFIED || t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED) {
+								model = settings.Model
+							}
+						}
+					}
+				}
+			}
+			if model == "" {
+				model = DefaultModel(t.GetProvider())
+			}
+			t.Model = model
+		}
+	}
+	h.mu.Lock()
+	for _, t := range tasks {
+		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
+			if r := h.runs[t.GetId()]; r != nil && !r.lastActivity.IsZero() {
+				t.LastActivityTime = timestamppb.New(r.lastActivity)
+			} else if t.LastActivityTime == nil {
+				t.LastActivityTime = t.StartTime
+			}
+		}
+	}
+	h.mu.Unlock()
 }

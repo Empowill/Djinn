@@ -13,8 +13,8 @@ lines: nothing to code per template.
    comes from the template, and the card says which skill: "New wish “Babysit PR #12”, in lamp, from the skill
    babysit-pr". A wish on the same piece of work (its title names the same `#12` or `!12`) still takes the request.
 3. You rub the lamp. The wish is made with `Wish.template`, its watcher starts at once in the skill's project
-   (a [watcher](providers.md#watch-a-command-no-agent): a command, no model, no token), and its lead starts on the
-   request, told to follow the skill. The wish's brief says it too, for a lead resumed later.
+   (a [watcher](providers.md#watch-a-command-no-agent): a command, no model, no token), and the window opens it.
+   The lead is told where the request went, and the wish's brief tells it to follow the skill.
 4. Each change the watcher prints wakes the lead. When it prints the `done_when` line, Djinn asks "W1's watcher says
    “MERGED: PR #12 is merged.”: grant “Babysit PR #12”?". A grants the wish, B keeps it open. Djinn never grants a
    wish itself.
@@ -45,8 +45,10 @@ metadata:
   shell. A placeholder's value is always one word of it, quoted when needed: a request never adds an argument.
 - `done_when`: a line of the watcher that means the work is done: a line that is it, or starts with it before a
   space or a sign (`MERGED`, `MERGED: PR #12 is merged.`; not `MERGEDX`).
-- `restart`: `true` for a command that exits on each change: Djinn starts it again after each exit, and stops it
-  on its done line.
+- `restart`: `true` for a command that exits on each change: Djinn starts it again after each exit 0 too, and
+  stops it on its done line. Without it, the watcher still restarts by default: a command that dies (an error, an
+  exit code other than 0) starts again in the same task, keeping its state folder; an exit 0 ends it, done
+  ([supervised by the Lamplighter](providers.md#watch-a-command-no-agent)).
 
 `djinn skill list` shows each skill's template, or why it cannot be used: no title or match, a match that does not
 compile, a placeholder that is no group of the match, a `done_when` or a `restart` without `watch`.
@@ -65,15 +67,18 @@ review, a review decision that turns to `CHANGES_REQUESTED`, the pull request no
 partial passes say nothing:
 
 ```
-PR #12 · checks failed: lint
-PR #12 · all checks pass (5)
+PR #12 · checks failed at 3f2a9c1: lint
+lint: https://github.com/o/r/actions/runs/123/job/456
+PR #12 · all checks pass at 3f2a9c1 (5)
 PR #12 · changes requested · new comment by a-reviewer
 latest comment, by a-reviewer: Could this name say what it holds?
 ```
 
 It prints `MERGED: PR #12 is merged.` and exits on the merge, `CLOSED: …` on a close without one. What it said is
 kept under `$DJINN_HOME/watchers/<task>/`, never in the repository: a watcher Djinn starts again does not say it
-again. It is a POSIX shell script, for Linux and macOS; on Windows only the `sh` of Git for Windows could run it, and
+again, but for the checks, which its first look says again; Djinn does not wake the lead when that is the task's last
+line. Each paragraph names its head commit and the failed jobs: Djinn tells the lead a paragraph only when it differs
+from the last one, and the same failure on a new push must not read as the old one. It is a POSIX shell script, for Linux and macOS; on Windows only the `sh` of Git for Windows could run it, and
 no test does. Copy the folder into your project to use it there, with the line in your `.agents/permissions.txtpb`.
 
 ## Djinn's own: babysit-mr, for GitLab
@@ -125,6 +130,49 @@ commands: "mrwatch -mr"
 whether to grant the wish. Another project summons the skill (`djinn skill summon app/babysit-mr --into infra`) to
 use the same template: the watcher runs in infra's folder, so its command must be on the `PATH` there, not a path
 inside the skill's project.
+
+## Babysitting what a task opens
+
+A pull or merge request a task of a wish opens is watched at once, in that same wish: no new wish. A project says how
+in one of its own skills, under `metadata.djinn.babysit`, next to `wish` and `source`:
+
+```yaml
+metadata:
+  djinn:
+    babysit:
+      forge: gitlab
+      watch: "go run ./.agents/skills/babysit-mr-empowill/mrwatch -mr {mr} -watch -state {state}"
+      restart: true
+      done_when: MERGED
+```
+
+- `watch` (required): the watcher's command line, run without a shell in the project's folder. `{pr}` and `{mr}` are
+  the request's number (a pull request's number, a merge request's iid); `{state}` is a file of the watcher's own,
+  `$DJINN_HOME/watchers/<task>/<skill>-<number>`, its folder made: what the command said survives a restart. One of
+  `{pr}` or `{mr}` is required.
+- `forge`: `github` or `gitlab`, for a project that declares one of each (Djinn's own repository does: babysit-pr
+  and babysit-mr). Djinn reads the project's forge from its remote: a remote that names `gitlab` is GitLab, any other
+  GitHub. The skill for its forge wins; one without `forge` serves any.
+- `restart`, `done_when`: as a template's. The `done_when` line ends the watcher, done; it asks no question, since
+  the wish has other work.
+
+Only the project's own skills count: a summoned skill's watcher would run in the folder of the project that holds it.
+`djinn skill list` shows each skill's babysit command, or why it cannot be used.
+
+**When.** Once a work task ends done, in a Git project whose skills declare a babysit, Djinn looks for the request it
+opened, still open: the address its `gh pr create` or `glab mr create` printed, if the forge says it is of the
+project's repository; else the one open for the task's branch; else the one open for the wish's integration branch
+(`gh pr list --head`, `glab mr list --source-branch`). It spawns the watcher in the task's wish, part of the task's
+azima (`Task.babysit` holds the request), and tells the lead once: `Djinn: W5 opened MR !123: W7 babysits it; follow
+the skill babysit-mr-empowill each time it speaks.` A request that a task already babysits, or that the watcher of an
+open wish made from a template runs on, is not watched twice. A look that fails (no `gh`, no network) starts nothing.
+
+**By hand.** `djinn task spawn <wish> --title "Babysit W5's MR" --babysit --after W5` spawns the project's watcher
+(its command, unless `--prompt` gives one, its restart and its done line); the request is found as it starts, the one
+W5 opened, else the one open for the wish's branch. None open: the task fails, and says so.
+
+**Off.** `babysit: false` in the project's settings ([team settings](team-settings.md)), the repository's or your own,
+turns the automatic watcher off; `--babysit` still works.
 
 ## The inbox: what comes from outside
 
@@ -189,6 +237,10 @@ From the command line: `djinn inbox list` (`--all` for the routed and dismissed 
 Djinn's own `babysit-pr` declares one, `sh .agents/skills/babysit-pr/inbox.sh`: the open pull requests of the
 repository assigned to you (`Babysit PR #12: …`, which proposes the skill's wish) or that request your review, each
 with its link, read with `gh pr list`. Unplugged until you plug it in: `djinn inbox plug babysit-pr`.
+
+Babysitting: `TestReadBabysit`, `TestProjectBabysit`, `TestFillBabysit`, `TestBabysitSettings`
+(`internal/plan`), `TestBabysitWhatATaskOpens`, `TestBabysitTheTaskBranch`, `TestBabysitOffOrUndeclared`,
+`TestBabysitByHand` (`internal/harness/babysit_test.go`: a fake `gh` and `glab`, no network).
 
 Tests: `TestReadTemplate`, `TestFillQuotes`, `TestDoneLine`, `TestRouteTemplate`, `TestTemplateWish`,
 `TestTemplateWithoutWatchers`, `TestSkillListTemplate` (`internal/plan/templates_test.go`), `TestWatcherDoneLine`,

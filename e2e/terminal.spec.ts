@@ -23,11 +23,39 @@ async function typeLine(page: Page, text: string) {
   await page.keyboard.press("Enter");
 }
 
+async function call(method: string, body: object) {
+  const url = new URL(process.env.DJINN_URL!);
+  const res = await fetch(
+    new URL(`/terminal.v1.TerminalService/${method}`, url),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${url.searchParams.get("token")}`,
+      },
+      body: JSON.stringify(body),
+    },
+  );
+  expect(res.ok).toBe(true);
+  return res.json();
+}
+
 test.describe.configure({ mode: "serial" });
 test.skip(
   process.platform === "win32",
   "the terminal runs PowerShell on Windows; these tests drive a POSIX shell",
 );
+
+test.beforeAll(async () => {
+  await call("Open", { name: "main" });
+});
+
+test.afterAll(async () => {
+  const { terminals = [] } = await call("List", {});
+  for (const t of terminals) {
+    await call("Close", { id: t.id });
+  }
+});
 
 test("the terminal shows at the bottom and runs a command", async ({
   page,
@@ -38,8 +66,9 @@ test("the terminal shows at the bottom and runs a command", async ({
   // Pinned at the bottom of the window.
   const box = (await terminal.boundingBox())!;
   expect(box.y + box.height).toBeCloseTo(1000, -1);
+  // $SHELL, which global-setup.ts sets; a login shell on macOS, as Terminal starts it (terminal.Shell).
   await expect(terminal.locator(".lead-terminal-command").first()).toHaveText(
-    "/bin/sh",
+    process.platform === "darwin" ? "/bin/sh -l" : "/bin/sh",
   );
   // The quotes keep the echoed command line from matching.
   await typeLine(page, "echo hel''lo");
@@ -94,10 +123,14 @@ test("a reopened window finds the terminal and its output", async ({
   await expect(line(page, "still-here")).toHaveCount(1);
   await page.close({ runBeforeUnload: false });
   const again = await page.context().newPage();
-  await again.goto(djinnURL());
-  // The same shell, its output read again from the part djinn keeps.
-  await expect(line(again, "still-here")).toHaveCount(1);
-  await expect(line(again, "hello")).toHaveCount(1);
+  try {
+    await again.goto(djinnURL());
+    // The same shell, its output read again from the part djinn keeps.
+    await expect(line(again, "still-here")).toHaveCount(1);
+    await expect(line(again, "hello")).toHaveCount(1);
+  } finally {
+    await again.close();
+  }
 });
 
 test("a key reaches the terminal in well under a key repeat", async ({

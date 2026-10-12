@@ -155,3 +155,97 @@ func TestMarks(t *testing.T) {
 		t.Errorf("the brief's marks are not the latest first:\n%s", text)
 	}
 }
+
+// TestTaskReviewed: a task is marked reviewed by its code or its identifier, by the developer, and the mark is kept on
+// the task in the store; it comes off again. A task takes no other mark, a question not this one, and an azima, which
+// has no diff, none. The list and the brief name it.
+func TestTaskReviewed(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	wish := c.wish(t)
+	work := &planv1.Task{
+		Id: "01a12cf4-0000-7000-8000-000000000001", WishId: wish, Code: "W3", Title: "Light the lamp",
+		Status: planv1.TaskStatus_TASK_STATUS_DONE,
+	}
+	azima := &planv1.Task{
+		Id: "01a12cf4-0000-7000-8000-000000000002", WishId: wish, Code: "W4", Title: "The lamp",
+		Kind: planv1.TaskKind_TASK_KIND_AZIMA,
+	}
+	c.put(t, work, azima)
+	q := c.ask(t, wish)
+	byCode := func(code string) *planv1.MarkTarget {
+		return &planv1.MarkTarget{Ref: &planv1.MarkTarget_Task{Task: code}}
+	}
+	byID := func(id string) *planv1.MarkTarget { return &planv1.MarkTarget{Ref: &planv1.MarkTarget_Id{Id: id}} }
+	put := func(target *planv1.MarkTarget, kind planv1.MarkKind, remove bool) (*planv1.Marked, error) {
+		res, err := c.marks.Put(ctx, connect.NewRequest(&planv1.MarkServicePutRequest{
+			Target: target, Kind: kind, Remove: remove, WishId: wish,
+		}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg.GetMarked(), nil
+	}
+	stored := func() []*planv1.Mark {
+		got, err := store.Get[*planv1.Task](ctx, c.store, work.GetId())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got.GetMarks()
+	}
+
+	got, err := put(byCode("w3"), planv1.MarkKind_MARK_KIND_REVIEWED, false)
+	if err != nil || got.GetTaskId() != work.GetId() || got.GetLabel() != "W3" || got.GetTitle() != "Light the lamp" ||
+		got.GetMark().GetActor() != actor || got.GetMark().GetCreateTime() == nil {
+		t.Fatalf("review W3 = %v, %v", got, err)
+	}
+	if marks := stored(); len(marks) != 1 || marks[0].GetKind() != planv1.MarkKind_MARK_KIND_REVIEWED {
+		t.Errorf("W3's marks in the store = %v, want reviewed", marks)
+	}
+	// Twice is one mark.
+	if _, err := put(byID(work.GetId()), planv1.MarkKind_MARK_KIND_REVIEWED, false); err != nil {
+		t.Fatal(err)
+	}
+	if marks := stored(); len(marks) != 1 {
+		t.Errorf("W3 reviewed twice holds %d marks, want 1", len(marks))
+	}
+
+	for _, kind := range []planv1.MarkKind{planv1.MarkKind_MARK_KIND_READ, planv1.MarkKind_MARK_KIND_APPROVED} {
+		if _, err := put(byCode("W3"), kind, false); code(err) != connect.CodeInvalidArgument {
+			t.Errorf("mark a task %s: %v, want invalid_argument", markWord(kind), err)
+		}
+	}
+	question := &planv1.MarkTarget{Ref: &planv1.MarkTarget_Code{Code: q.GetCode()}}
+	if _, err := put(question, planv1.MarkKind_MARK_KIND_REVIEWED, false); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("mark a question reviewed: %v, want invalid_argument", err)
+	}
+	if _, err := put(byCode("W4"), planv1.MarkKind_MARK_KIND_REVIEWED, false); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("mark an azima reviewed: %v, want failed_precondition", err)
+	}
+	if _, err := put(byCode("W9"), planv1.MarkKind_MARK_KIND_REVIEWED, false); code(err) != connect.CodeNotFound {
+		t.Errorf("mark a task that is not: %v, want not_found", err)
+	}
+
+	list, err := c.marks.List(ctx, connect.NewRequest(&planv1.MarkServiceListRequest{WishId: wish}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := list.Msg.GetMarks(); len(m) != 1 || m[0].GetTaskId() != work.GetId() ||
+		m[0].GetMark().GetKind() != planv1.MarkKind_MARK_KIND_REVIEWED {
+		t.Errorf("marks = %v, want W3 reviewed", m)
+	}
+	brief, err := BuildBrief(ctx, c.store, "", wish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := brief.Text(); !strings.Contains(text, "- **reviewed** W3 Light the lamp") {
+		t.Errorf("brief lacks W3 reviewed:\n%s", text)
+	}
+
+	if _, err := put(byCode("W3"), planv1.MarkKind_MARK_KIND_REVIEWED, true); err != nil {
+		t.Fatal(err)
+	}
+	if marks := stored(); len(marks) != 0 {
+		t.Errorf("W3's marks after taking it off = %v, want none", marks)
+	}
+}

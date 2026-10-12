@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -36,6 +37,7 @@ const maxChanged = 200
 var everything = []planv1.Change{
 	planv1.Change_CHANGE_WISH, planv1.Change_CHANGE_TASK, planv1.Change_CHANGE_QUESTION,
 	planv1.Change_CHANGE_BLOCK, planv1.Change_CHANGE_PROJECT, planv1.Change_CHANGE_INBOX, planv1.Change_CHANGE_TILASM,
+	planv1.Change_CHANGE_LOAD,
 }
 
 // watchers fans the committed changes of the store out to the open Watch streams. Its zero value is ready: it
@@ -48,6 +50,7 @@ type watchers struct {
 
 // watcher is one stream: the changes not sent yet, by wish ("" for the projects).
 type watcher struct {
+	wishes  *Wishes
 	wishID  string // empty for every wish
 	mu      sync.Mutex
 	pending map[string]*unsent
@@ -62,6 +65,7 @@ type watcher struct {
 type unsent struct {
 	kinds                    map[planv1.Change]bool
 	tasks, questions, blocks map[string]bool
+	load                     *djinnv1.LoadNotch
 }
 
 // Watch follows the changes of the wishes: a first message that names everything, then the changes, coalesced, with
@@ -76,7 +80,12 @@ func (w *Wishes) Watch(
 	}
 	sub := w.watch.add(w, req.Msg.GetWishId())
 	defer w.watch.remove(sub)
-	if err := stream.Send(&planv1.WishServiceWatchResponse{Changes: everything}); err != nil {
+	initial := &planv1.WishServiceWatchResponse{Changes: everything}
+	if w.Load != nil {
+		n := w.Load()
+		initial.Load = &n
+	}
+	if err := stream.Send(initial); err != nil {
 		return err
 	}
 	for {
@@ -101,8 +110,11 @@ func (w *Wishes) Watch(
 func (ws *watchers) add(w *Wishes, wishID string) *watcher {
 	ws.once.Do(func() { w.Store.OnCommit(ws.changed) })
 	sub := &watcher{
-		wishID: wishID, pending: map[string]*unsent{}, kick: make(chan struct{}, 1),
-		shapes: map[string]map[string]*planv1.Task{},
+		wishes:  w,
+		wishID:  wishID,
+		pending: map[string]*unsent{},
+		kick:    make(chan struct{}, 1),
+		shapes:  map[string]map[string]*planv1.Task{},
 	}
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
@@ -132,6 +144,8 @@ func (ws *watchers) changed(ms []proto.Message) {
 		switch m := m.(type) {
 		case *planv1.Wish:
 			changes = append(changes, change{m.GetId(), planv1.Change_CHANGE_WISH, ""})
+		case *planv1.Lead:
+			changes = append(changes, change{"", planv1.Change_CHANGE_WISH, ""})
 		case *planv1.Task:
 			// Whether Djinn proposes to grant the wish follows its tasks: take says whether this one changes it.
 			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TASK, m.GetId()})
@@ -146,6 +160,9 @@ func (ws *watchers) changed(ms []proto.Message) {
 		case *planv1.Project:
 			// The inbox's sources come from the projects' skills.
 			changes = append(changes, change{"", planv1.Change_CHANGE_PROJECT, ""}, change{"", planv1.Change_CHANGE_INBOX, ""})
+		case *planv1.ProjectSync:
+			// Where a branch stands against its remote, or its push: the harness notes it (store.Tx.Change).
+			changes = append(changes, change{"", planv1.Change_CHANGE_PROJECT, ""})
 		case *planv1.InboxItem, *planv1.PluggedSource:
 			changes = append(changes, change{"", planv1.Change_CHANGE_INBOX, ""})
 		}
@@ -189,6 +206,39 @@ func (ws *watchers) changed(ms []proto.Message) {
 	}
 }
 
+// changeLoad notes that Djinn's load notch changed, for every open stream.
+func (ws *watchers) changeLoad(notch djinnv1.LoadNotch) {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	for sub := range ws.subs {
+		sub.mu.Lock()
+		p := sub.pending[""]
+		if p == nil {
+			p = &unsent{kinds: map[planv1.Change]bool{}}
+			sub.pending[""] = p
+		}
+		p.kinds[planv1.Change_CHANGE_LOAD] = true
+		n := notch
+		p.load = &n
+		sub.mu.Unlock()
+		select {
+		case sub.kick <- struct{}{}:
+		default: // Already kicked.
+		}
+	}
+}
+
+// ChangeLoad tells the open Watch streams that Djinn's load notch changed.
+func (w *Wishes) ChangeLoad(notch djinnv1.LoadNotch) {
+	w.watch.changeLoad(notch)
+}
+
+// ChangeLead tells the open Watch streams that the lead changed outside the store: the choice its agent shows in its
+// terminal came, changed or went. The window reads the lead again (LeadService.Get), as for a lead stored.
+func (w *Wishes) ChangeLead() {
+	w.watch.changed([]proto.Message{&planv1.Lead{}})
+}
+
 func mark(ids map[string]bool, id string) map[string]bool {
 	if ids == nil {
 		ids = map[string]bool{}
@@ -220,6 +270,9 @@ func (sub *watcher) take(ctx context.Context, s *store.Store) []*planv1.WishServ
 			p.kinds[planv1.Change_CHANGE_WISH] = true
 		}
 		msg.Changes = slices.Sorted(maps.Keys(p.kinds))
+		if p.load != nil {
+			msg.Load = p.load
+		}
 		out = append(out, msg)
 	}
 	return out
@@ -244,22 +297,27 @@ func (sub *watcher) read(ctx context.Context, s *store.Store, wishID string, p *
 		}
 		changed.Deleted = append(changed.Deleted, deleted...)
 	}
-	if changed.Questions, err = readAll[*planv1.Question](ctx, s, p.questions, &changed.Deleted); err != nil {
+	if changed.Questions, err = readAll[*planv1.Question](ctx, s, wishID, p.questions, &changed.Deleted); err != nil {
 		return nil, false, err
 	}
-	if changed.Blocks, err = readAll[*planv1.Block](ctx, s, p.blocks, &changed.Deleted); err != nil {
+	if changed.Blocks, err = readAll[*planv1.Block](ctx, s, wishID, p.blocks, &changed.Deleted); err != nil {
 		return nil, false, err
 	}
 	return changed, reshaped, nil
 }
 
+type wishEntity interface {
+	proto.Message
+	GetWishId() string
+}
+
 // readAll reads the entities of ids, in their order; those no longer there go to deleted.
-func readAll[T proto.Message](ctx context.Context, s *store.Store, ids map[string]bool, deleted *[]string) ([]T, error) {
+func readAll[T wishEntity](ctx context.Context, s *store.Store, wishID string, ids map[string]bool, deleted *[]string) ([]T, error) {
 	var out []T
 	for _, id := range slices.Sorted(maps.Keys(ids)) {
 		m, err := store.Get[T](ctx, s, id)
 		switch {
-		case errors.Is(err, store.ErrNotFound):
+		case errors.Is(err, store.ErrNotFound) || (wishID != "" && !strings.EqualFold(m.GetWishId(), wishID)):
 			*deleted = append(*deleted, id)
 		case err != nil:
 			return nil, err
@@ -306,12 +364,12 @@ func (sub *watcher) readTasks(ctx context.Context, s *store.Store, wishID string
 	for _, id := range slices.Sorted(maps.Keys(ids)) {
 		t, err := store.Get[*planv1.Task](ctx, s, id)
 		switch {
-		case errors.Is(err, store.ErrNotFound):
+		case errors.Is(err, store.ErrNotFound) || (wishID != "" && !strings.EqualFold(t.GetWishId(), wishID)):
 			deleted = append(deleted, id)
 			if shapes[id] != nil {
 				delete(shapes, id)
-				reshaped = true
 			}
+			reshaped = true
 			continue
 		case err != nil:
 			return nil, nil, false, err
@@ -346,6 +404,16 @@ func (sub *watcher) readTasks(ctx context.Context, s *store.Store, wishID string
 	if err := FillTilasms(ctx, s, tasks); err != nil {
 		return nil, nil, false, err
 	}
+	now := time.Now()
+	if sub.wishes != nil {
+		now = sub.wishes.now()
+	}
+	if err := FillTimes(ctx, s, tasks, now); err != nil {
+		return nil, nil, false, err
+	}
+	if sub.wishes != nil && sub.wishes.FillModels != nil {
+		sub.wishes.FillModels(ctx, tasks)
+	}
 	return tasks, deleted, reshaped, nil
 }
 
@@ -353,11 +421,14 @@ func (sub *watcher) readTasks(ctx context.Context, s *store.Store, wishID string
 func shape(t *planv1.Task) *planv1.Task {
 	return &planv1.Task{
 		Id: t.GetId(), Status: t.GetStatus(), Kind: t.GetKind(), PartOf: t.GetPartOf(), DependsOn: t.GetDependsOn(),
+		Code: t.GetCode(), Title: t.GetTitle(), Draft: t.GetDraft(), Description: t.GetDescription(),
 	}
 }
 
 // sameShape tells whether the task t has the shape old.
 func sameShape(old, t *planv1.Task) bool {
 	return old.GetStatus() == t.GetStatus() && old.GetKind() == t.GetKind() && old.GetPartOf() == t.GetPartOf() &&
-		slices.Equal(old.GetDependsOn(), t.GetDependsOn())
+		slices.Equal(old.GetDependsOn(), t.GetDependsOn()) &&
+		old.GetCode() == t.GetCode() && old.GetTitle() == t.GetTitle() && old.GetDraft() == t.GetDraft() &&
+		old.GetDescription() == t.GetDescription()
 }

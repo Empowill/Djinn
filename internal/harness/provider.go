@@ -55,8 +55,23 @@ type Spec struct {
 	// Scope, when set, gives each process the worker starts a systemd scope of its own (Harness.WithScopes): the
 	// process runs under its prefix, and stopping, pausing and measuring take its cgroup. Nil: it runs as is.
 	Scope func() machine.Scope
-	// Restart starts a watcher's command again after each exit, until it is stopped. Agents ignore it.
+	// Restart starts a watcher's command again after an exit 0 too, until it is stopped: one that dies starts again
+	// anyway (watcherLife). Agents ignore it.
 	Restart bool
+	// LastLine is the first line of the last paragraph a watcher's task said before this start (Task.last_line): its
+	// command's first paragraph wakes no one when it says it again. Agents ignore it.
+	LastLine string
+	// LowPriority runs the worker process with low CPU priority (nice 10 on Unix,
+	// BELOW_NORMAL_PRIORITY_CLASS on Windows) when running at minimal or medium operating load;
+	// else it runs at Djinn's own priority.
+	LowPriority bool
+	// StartHead is the git commit hash at task start, used to verify progress.
+	StartHead string
+	// Branch is the task's git branch name.
+	Branch string
+	// IsWorkDone reports whether the worker has committed clean work since start.
+	// When nil, callers compute it from git status in Dir.
+	IsWorkDone func() bool
 }
 
 // Skill is a skill summoned from another project: its folder stays in its source, and the worker reads it there.
@@ -93,6 +108,14 @@ type Pauser interface {
 	Resume() error
 }
 
+// Prioritizer is a worker that can change its CPU priority while running.
+type Prioritizer interface {
+	// SetPriority sets the worker and its process tree to low CPU priority (nice 10 / cpu.weight 10)
+	// when low is true, or standard priority (Djinn's own nice level or priority class / cpu.weight 100)
+	// when low is false.
+	SetPriority(low bool) error
+}
+
 // Process is a worker that runs a process of its own, which leads its process group: Djinn measures what it uses.
 // A worker that is not one (the fake agent, which runs in Djinn's process) is not measured.
 type Process interface {
@@ -125,6 +148,11 @@ type Event struct {
 	Limit *Limit
 	// Watched is set on a paragraph a watcher's command printed: the wish's lead is told its first line.
 	Watched *Watched
+	// Model is the model the worker actually runs, when the event tells it.
+	Model string
+	// Turns is how many model turns the worker took so far, on the first event of a new one: the Lamplighter's count
+	// grows as they come, not only at a result (num_turns).
+	Turns int
 }
 
 // Result is how a worker ended.

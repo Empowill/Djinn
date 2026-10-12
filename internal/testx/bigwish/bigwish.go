@@ -142,7 +142,6 @@ func (g *gen) wish() {
 			CreateTime:          timestamppb.New(start),
 			State:               planv1.WishState_WISH_STATE_ACTIVE,
 			Description:         g.text(40),
-			Lead:                &planv1.Lead{Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: g.id(), Directory: "bigwish"},
 			IntegrationBranches: []*planv1.IntegrationBranch{{ProjectId: g.project, Branch: "feat/bigwish"}},
 		},
 		Projects: []*planv1.ProjectRef{{Id: g.project, Name: "bigwish", Git: true}},
@@ -197,7 +196,7 @@ func (g *gen) tasks() {
 			t.Status = planv1.TaskStatus_TASK_STATUS_DONE
 		}
 		if i%25 == 7 && g.size.Questions > 0 {
-			t.Role = planv1.TaskRole_TASK_ROLE_CONVERTER
+			t.Role = planv1.TaskRole_TASK_ROLE_INVESTIGATOR
 			t.Question = fmt.Sprintf("Q%02d", g.rand.IntN(g.size.Questions))
 			t.Decision = t.GetQuestion()
 		}

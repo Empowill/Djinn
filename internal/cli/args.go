@@ -19,7 +19,10 @@ import (
 	"github.com/empowill/djinn/locales"
 )
 
-const timestampName = "google.protobuf.Timestamp"
+const (
+	timestampName = "google.protobuf.Timestamp"
+	durationName  = "google.protobuf.Duration"
+)
 
 // parse builds the request md from the arguments of a command line: the required fields are positional, in
 // field-number order, and the other fields are --kebab-case flags.
@@ -75,7 +78,7 @@ func format(msg protoreflect.Message) []string {
 		}
 	}
 	for _, fd := range byNumber(md) {
-		if required(fd) || !msg.Has(fd) {
+		if positional(fd) || !msg.Has(fd) {
 			continue
 		}
 		name := "--" + kebab(string(fd.Name()))
@@ -118,11 +121,11 @@ func check(msg proto.Message, name func(protoreflect.FieldDescriptor) string) er
 	return errors.New(strings.Join(lines, "\n"))
 }
 
-// positionals are the required singular fields, in field-number order.
+// positionals are required singular fields and fields marked positional, in field-number order.
 func positionals(md protoreflect.MessageDescriptor) []protoreflect.FieldDescriptor {
 	var out []protoreflect.FieldDescriptor
 	for _, fd := range byNumber(md) {
-		if required(fd) {
+		if positional(fd) {
 			out = append(out, fd)
 		}
 	}
@@ -142,6 +145,11 @@ func required(fd protoreflect.FieldDescriptor) bool {
 	return !fd.IsList() && !fd.IsMap() && rules(fd).GetRequired()
 }
 
+// positional preserves an argument's spelling without requiring its value in the API.
+func positional(fd protoreflect.FieldDescriptor) bool {
+	return required(fd) || (!fd.IsList() && !fd.IsMap() && proto.GetExtension(fd.Options(), djinnv1.E_Positional) == true)
+}
+
 func rules(fd protoreflect.FieldDescriptor) *validate.FieldRules {
 	r, _ := proto.GetExtension(fd.Options(), validate.E_Field).(*validate.FieldRules)
 	return r
@@ -149,7 +157,7 @@ func rules(fd protoreflect.FieldDescriptor) *validate.FieldRules {
 
 func flag(md protoreflect.MessageDescriptor, name string) protoreflect.FieldDescriptor {
 	for _, fd := range byNumber(md) {
-		if !required(fd) && kebab(string(fd.Name())) == name {
+		if !positional(fd) && kebab(string(fd.Name())) == name {
 			return fd
 		}
 	}
@@ -158,7 +166,7 @@ func flag(md protoreflect.MessageDescriptor, name string) protoreflect.FieldDesc
 
 // label is how the command line names a field: <name> when positional, --name otherwise.
 func label(fd protoreflect.FieldDescriptor) string {
-	if required(fd) {
+	if positional(fd) {
 		return "<" + kebab(string(fd.Name())) + ">"
 	}
 	return "--" + kebab(string(fd.Name()))
@@ -171,8 +179,8 @@ func supported(fd protoreflect.FieldDescriptor) error {
 		return errors.New("maps are not supported")
 	case fd.Kind() == protoreflect.BytesKind || fd.Kind() == protoreflect.GroupKind:
 		return fmt.Errorf("%s fields are not supported", fd.Kind())
-	case fd.Kind() == protoreflect.MessageKind && fd.Message().FullName() != timestampName && ref(fd) == nil && !isPair(fd):
-		return errors.New("only a Timestamp, a message holding a single oneof of scalars, or a string and a list of strings is supported")
+	case fd.Kind() == protoreflect.MessageKind && fd.Message().FullName() != timestampName && fd.Message().FullName() != durationName && ref(fd) == nil && !isPair(fd):
+		return errors.New("only a Timestamp, a Duration, a message holding a single oneof of scalars, or a string and a list of strings is supported")
 	}
 	return nil
 }
@@ -262,6 +270,17 @@ func set(msg protoreflect.Message, fd protoreflect.FieldDescriptor, s string) er
 		return nil
 	}
 	if fd.Kind() == protoreflect.MessageKind {
+		if fd.Message().FullName() == durationName {
+			d, err := time.ParseDuration(s)
+			if err != nil {
+				return fmt.Errorf("%q is not a duration, like 10m or 1h30m", s)
+			}
+			dur := msg.NewField(fd).Message()
+			dur.Set(dur.Descriptor().Fields().ByName("seconds"), protoreflect.ValueOfInt64(int64(d/time.Second)))
+			dur.Set(dur.Descriptor().Fields().ByName("nanos"), protoreflect.ValueOfInt32(int32((d%time.Second)/time.Nanosecond)))
+			msg.Set(fd, protoreflect.ValueOfMessage(dur))
+			return nil
+		}
 		t, err := time.Parse(time.RFC3339Nano, s)
 		if err != nil {
 			return fmt.Errorf("%q is not an RFC 3339 time, like 2026-10-07T09:00:00Z", s)
@@ -390,6 +409,12 @@ func text(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
 		}
 		return sub.Get(key).String() + "=" + strings.Join(values, ",")
 	case fd.Kind() == protoreflect.MessageKind:
+		if fd.Message().FullName() == durationName {
+			dur := v.Message()
+			fields := dur.Descriptor().Fields()
+			sec, nanos := dur.Get(fields.ByName("seconds")).Int(), dur.Get(fields.ByName("nanos")).Int()
+			return (time.Duration(sec)*time.Second + time.Duration(nanos)*time.Nanosecond).String()
+		}
 		ts := v.Message()
 		fields := ts.Descriptor().Fields()
 		sec, nanos := ts.Get(fields.ByName("seconds")).Int(), ts.Get(fields.ByName("nanos")).Int()
@@ -423,6 +448,9 @@ func expect(fd protoreflect.FieldDescriptor) string {
 		}
 		return "one of " + strings.Join(names, ", ")
 	case protoreflect.MessageKind:
+		if fd.Message().FullName() == durationName {
+			return "a duration, like 10m or 1h30m"
+		}
 		return "an RFC 3339 time, like 2026-10-07T09:00:00Z"
 	case protoreflect.StringKind:
 		r := rules(fd).GetString()
@@ -476,7 +504,8 @@ func split(name, sep string) string {
 	return b.String()
 }
 
-// envName is the environment variable the field defaults to ((djinn.v1.env)); "" when it has none.
+// envName is the environment variable the field defaults to ((djinn.v1.env)); "" when it has none. It may name
+// several, separated by spaces: the first one set wins.
 func envName(fd protoreflect.FieldDescriptor) string {
 	name, _ := proto.GetExtension(fd.Options(), djinnv1.E_Env).(string)
 	return name
@@ -486,12 +515,15 @@ func envName(fd protoreflect.FieldDescriptor) string {
 // worker's djinn block put names its task by $DJINN_TASK_ID.
 func fromEnv(msg *dynamicpb.Message, getenv func(string) string) {
 	for _, fd := range byNumber(msg.Descriptor()) {
-		name := envName(fd)
-		if name == "" || fd.IsList() || fd.Kind() != protoreflect.StringKind || msg.Has(fd) {
+		names := strings.Fields(envName(fd))
+		if len(names) == 0 || fd.IsList() || fd.Kind() != protoreflect.StringKind || msg.Has(fd) {
 			continue
 		}
-		if v := getenv(name); v != "" {
-			msg.Set(fd, protoreflect.ValueOfString(v))
+		for _, name := range names {
+			if v := getenv(name); v != "" {
+				msg.Set(fd, protoreflect.ValueOfString(v))
+				break
+			}
 		}
 	}
 }

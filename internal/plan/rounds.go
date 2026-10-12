@@ -18,7 +18,7 @@ import (
 // revision, not for the developer.
 func Investigating(q *planv1.Question) bool {
 	rounds := q.GetRounds()
-	return q.GetAnswer() == nil && len(rounds) > 0 &&
+	return q.GetAnswer() == nil && q.GetWithdrawal() == nil && len(rounds) > 0 &&
 		rounds[len(rounds)-1].GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN
 }
 
@@ -84,6 +84,10 @@ func (q *Questions) round(
 		if question.GetAnswer() != nil {
 			return connect.NewError(connect.CodeFailedPrecondition,
 				fmt.Errorf("question %s is decided: ask a new one", question.GetCode()))
+		}
+		if question.GetWithdrawal() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition,
+				fmt.Errorf("question %s was withdrawn", question.GetCode()))
 		}
 		round := &planv1.Round{Actor: actor, CreateTime: timestamppb.Now()}
 		fn(question, round)

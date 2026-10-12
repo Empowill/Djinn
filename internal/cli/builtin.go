@@ -42,12 +42,6 @@ address in the data folder, for the other commands.`,
 				"default $DJINN_WORKERS.",
 		},
 		{
-			Name: "--warm-workers", Type: "bool",
-			Help: "Keep a claude loaded and waiting for the next task of each project of the active wishes, in the slots " +
-				"the running workers leave: it starts at once, and costs memory while it waits (about 300 MB each, " +
-				"supposed), no token.",
-		},
-		{
 			Name: "--worker-cpu", Type: "int", Env: "DJINN_WORKER_CPU",
 			Help: "Cap each worker's CPU at this percent of one core (150 is a core and a half), in a systemd user scope of " +
 				"its own; Linux with systemd only, and only where systemd gives your user the cpu controller, else workers " +
@@ -60,10 +54,16 @@ address in the data folder, for the other commands.`,
 				"controller; 0 caps nothing; default $DJINN_WORKER_MEMORY.",
 		},
 		{
-			Name: "--question-workers", Type: "bool", Default: "true", Env: "DJINN_QUESTION_WORKERS",
-			Help: `Start a small worker on each answer (it turns the decision into tasks) and each "Enlighten me" (it ` +
-				"investigates, then revises the question); a project's settings turn them off too (question_workers: " +
-				"false); default $DJINN_QUESTION_WORKERS (on or off), else on.",
+			Name: "--worker-memory-guard", Type: "float", Env: "DJINN_WORKER_MEMORY_GUARD",
+			Help: "Cap each worker's memory dynamically at this multiple of its provider's observed peak (median of latest " +
+				"10 finished workers) and at least the forecast; typical values are 2 to 3; 0 turns the guardrail off; " +
+				"Linux with systemd only, and only where systemd gives your user the memory controller; without measurements, " +
+				"no ceiling applies; default $DJINN_WORKER_MEMORY_GUARD.",
+		},
+		{
+			Name: "--enlighten-workers", Type: "bool", Default: "true", Env: "DJINN_ENLIGHTEN_WORKERS",
+			Help: `Start a worker to investigate and revise a question after "Enlighten me"; default ` +
+				"$DJINN_ENLIGHTEN_WORKERS (on or off), else on.",
 		},
 		{
 			Name: "--pprof", Type: "bool", Env: "DJINN_PPROF",
@@ -138,7 +138,7 @@ var MCP = Command{
 	Usage:   "djinn mcp [--addr URL]",
 	Summary: "Serve these commands as MCP tools on stdin and stdout, for an agent that speaks MCP.",
 	Help: `Serve the commands of djinn as MCP tools, on stdin and stdout (the stdio transport of the Model Context
-Protocol). Each public method that answers once is a tool: djinn wish set-lead is wish_set_lead. Its arguments
+Protocol). Each public method that answers once is a tool: djinn lead set is lead_set. Its arguments
 are the fields of the request, by their proto names, read and checked as the command line does. A relative path
 starts from the folder djinn mcp runs in. The streaming methods (watch, gate hold) stay on the command line.
 
@@ -165,8 +165,36 @@ Djinn takes it back after an hour, the command going on.`,
 	},
 }
 
+// MachineCommands is djinn machine commands.
+var MachineCommands = Command{
+	Name:    "machine commands",
+	Usage:   "djinn machine commands [flags]",
+	Summary: "Print what the commands run under the gates cost in each project.",
+	Help: `Print what the commands run under the gates cost in each project: their runs, p50, p95 and last of their
+held time and wait, mean CPU time, peak memory, last exit code, and a sparkline of held time over recent runs,
+the slowest first.`,
+	Flags: []Param{
+		{Name: "--project", Type: "string", Help: "Show only commands of this project (name or ID)."},
+		{Name: "--addr", Type: "string", Env: "DJINN_ADDR", Help: "Address of the djinn server (default $DJINN_ADDR, then the one djinn up writes)."},
+	},
+}
+
+// DebugDump is djinn debug dump.
+var DebugDump = Command{
+	Name:    "debug dump",
+	Usage:   "djinn debug dump [flags]",
+	Summary: "Make a running djinn up write where each of its goroutines waits, without stopping it.",
+	Help: `Make a running djinn up write the stacks of all its goroutines to a file of its log folder (logs/ in the
+data folder), and print the file's path: what a frozen djinn up, or one that does not quit, is waiting for. It asks
+the server first; when the server does not answer, it leaves a request file the djinn up looks for every second.
+Send the dump with logs/djinn.log when you report a freeze. On Linux and macOS, kill -USR2 <pid> does the same.`,
+	Flags: []Param{
+		{Name: "--addr", Type: "string", Env: "DJINN_ADDR", Help: "Address of the djinn server (default $DJINN_ADDR, then the one djinn up writes)."},
+	},
+}
+
 // Builtins are the commands written by hand, in the order the help lists them.
-var Builtins = []Command{Up, Open, Update, Backup, Restore, Version, MCP, GateRun}
+var Builtins = []Command{Up, Open, Update, Backup, Restore, Version, MCP, GateRun, MachineCommands, DebugDump}
 
 // Builtin returns the command written by hand whose words args start with, the longest, and the arguments after them.
 func Builtin(args []string) (Command, []string, bool) {
@@ -206,6 +234,12 @@ func (c Command) FlagSet(vars map[string]any) *goflag.FlagSet {
 				panic(err)
 			}
 			fs.IntVar(v, name, def, p.Help)
+		case *float64:
+			def, err := strconv.ParseFloat(cmp.Or(p.Default, "0"), 64)
+			if err != nil {
+				panic(err)
+			}
+			fs.Float64Var(v, name, def, p.Help)
 		case *string:
 			fs.StringVar(v, name, p.Default, p.Help)
 		default:

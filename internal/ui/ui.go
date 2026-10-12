@@ -8,18 +8,21 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
-	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/link"
 )
 
@@ -27,7 +30,7 @@ import (
 type Service struct {
 	uiv1connect.UnimplementedUiServiceHandler
 
-	// Home is the data directory: $DJINN_HOME, by default ~/.config/djinn.
+	// Home is the data directory: $DJINN_HOME, by default djinn in the user's configuration folder.
 	Home string
 	// Version of djinn, as GetEnvironment reports it.
 	Version string
@@ -41,6 +44,9 @@ type Service struct {
 	// Restart restarts Djinn on the newer one that waits at its path, once the response to Update is sent, and
 	// returns the version it restarts on and how many terminals it will run again. Nil: Update is unavailable.
 	Restart func() (version string, terminals int, err error)
+	// AgentPath is the PATH where GetEnvironment looks for the agents, and nowhere else. Nil: Djinn's own, brought
+	// up to date by machine.ExtendPath, which the workers and the leads get too. Tests replace it.
+	AgentPath func() string
 	// Install installs a build that SetBuild proposed: its project's install command, run on its commit, telling
 	// progress each step and what it waits for. It tells whether a newer Djinn waits at the path of the running one
 	// since, to restart on. Nil: no build installs.
@@ -53,6 +59,16 @@ type Service struct {
 	// Linked is the wish a link shows: the tilasm's, or the wish itself; an error of code NotFound when it is not on
 	// this machine. Nil: OpenLink is unavailable.
 	Linked func(ctx context.Context, l link.Link) (wishID string, err error)
+	// WatchLoad streams operating load and memory stats. Nil: no load stats streamed in Watch.
+	WatchLoad func(ctx context.Context, send func(*djinnv1.LoadServiceWatchResponse) error) error
+
+	// Shown is called when the window is asked to show a wish or a terminal.
+	Shown func(wishID, terminal string)
+	// Known tells whether a wish is still on this machine: a show of the last minute whose wish was deleted since is
+	// not replayed to a window that opens, which would leave the wish it shows for the flight plan. Nil: every wish is.
+	Known func(ctx context.Context, wishID string) bool
+	// Notices shows the system notifications, and knows whether the system lets it. Nil: none (a test).
+	Notices *Notices
 
 	dialogs sync.Mutex // One folder dialog at a time.
 
@@ -65,12 +81,13 @@ type Service struct {
 	ready      string           // version of the newer Djinn waiting; empty for none
 	notesURL   string           // where its release notes are; empty for none
 	notResumed []string         // terminals the last restart could not run again
-	build      *uiv1.Build      // the last build committed and not installed; nil for none
+	builds     []*uiv1.Build    // the last build pushed of each integration branch, not installed; the running one's first
+	readyBuild *uiv1.Build      // the newer Djinn waiting, named as a build; nil when not known
 	installing *uiv1.Installing // the install that runs now; nil for none
 	updated    chan struct{}    // closed and replaced at each change
 }
 
-// replay is how long a request to show something waits for a window that opens after it: djinn wish resume may
+// replay is how long a request to show something waits for a window that opens after it: djinn lead resume may
 // start djinn, whose page loads after the request.
 const replay = time.Minute
 
@@ -85,27 +102,163 @@ func New(version string) (*Service, error) {
 	return &Service{Home: home, Version: version, Open: openBrowser}, nil
 }
 
-// Develop is set by a development build of djinn, one built from a checkout rather than installed at a version: its
-// data directory is then djinn-dev, so that the djinn being built never reaches the user's own djinn, its window,
-// its socket or its wishes. DJINN_HOME still decides when it is set.
-var Develop bool
-
-// Home is the data directory: $DJINN_HOME, by default ~/.config/djinn (djinn-dev for a development build).
-func Home() (string, error) {
-	if home := os.Getenv("DJINN_HOME"); home != "" {
-		return home, nil
+func isTemp(p string) bool {
+	if p == "" {
+		return false
 	}
-	// The system's place for user configuration: ~/.config on Linux, ~/Library/Application Support on macOS,
-	// %AppData% on Windows.
-	config, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("data directory: %w", err)
+	clean := filepath.Clean(p)
+	tmp := filepath.Clean(os.TempDir())
+	if strings.HasPrefix(clean, tmp+string(filepath.Separator)) || strings.HasPrefix(clean, "/tmp/") || strings.HasPrefix(clean, "/var/tmp/") {
+		return true
+	}
+	if eval, err := filepath.EvalSymlinks(clean); err == nil {
+		if strings.HasPrefix(eval, tmp+string(filepath.Separator)) || strings.HasPrefix(eval, "/tmp/") || strings.HasPrefix(eval, "/var/tmp/") {
+			return true
+		}
+	}
+	return false
+}
+
+var (
+	realConfigDir string
+	realHomeDir   string
+)
+
+func init() {
+	if u, err := user.Current(); err == nil && u.HomeDir != "" && !isTemp(u.HomeDir) {
+		realHomeDir = u.HomeDir
+	} else if h, err := os.UserHomeDir(); err == nil && !isTemp(h) {
+		realHomeDir = h
+	}
+	if c, err := os.UserConfigDir(); err == nil && !isTemp(c) {
+		realConfigDir = c
+	} else if realHomeDir != "" {
+		realConfigDir = filepath.Join(realHomeDir, ".config")
+	}
+}
+
+// isTestBuild is set to "true" via ldflags when building test binaries (e.g. bin/djinn-e2e, bin/djinn-e2e-native).
+// W341 assumed that stray wishes were made by "a person with the window open" because go test was guarded,
+// but the stray wishes were created when W328 executed bin/djinn-e2e by hand outside tests and cleared DJINN_TASK_ID.
+// Marking test builds ensures that running test binaries by hand without harness environment refuses the real home.
+var isTestBuild string
+
+// IsTestBuild reports whether the current binary was built for testing or is an e2e binary.
+func IsTestBuild() bool {
+	if isTestBuild == "true" {
+		return true
+	}
+	if exe, err := os.Executable(); err == nil {
+		base := strings.ToLower(filepath.Base(exe))
+		base = strings.TrimSuffix(base, ".exe")
+		if strings.HasPrefix(base, "djinn-e2e") || strings.Contains(base, "-e2e") || strings.HasSuffix(base, ".test") {
+			return true
+		}
+	}
+	return false
+}
+
+// StampedTestBuild reports whether the binary was stamped a test build when linked, as task e2e and e2e-native stamp
+// theirs: unlike IsTestBuild, a go test binary is not.
+func StampedTestBuild() bool {
+	return isTestBuild == "true"
+}
+
+// InTest reports whether the current process is running under `go test`, with DJINN_TEST=1, or is a test build.
+func InTest() bool {
+	return testing.Testing() || os.Getenv("DJINN_TEST") == "1" || IsTestBuild()
+}
+
+// RealHome returns the default data directory of the user: ~/.config/djinn (or djinn-dev for a development build).
+func RealHome() string {
+	config := realConfigDir
+	if config == "" {
+		if c, err := os.UserConfigDir(); err == nil && !isTemp(c) {
+			config = c
+		} else if realHomeDir != "" {
+			config = filepath.Join(realHomeDir, ".config")
+		}
+	}
+	if config == "" {
+		return ""
 	}
 	name := "djinn"
 	if Develop {
 		name = "djinn-dev"
 	}
-	return filepath.Join(config, name), nil
+	return filepath.Join(config, name)
+}
+
+// IsRealHome reports whether path points to the user's real Djinn data directory.
+func IsRealHome(path string) bool {
+	if path == "" || isTemp(path) {
+		return false
+	}
+	clean := filepath.Clean(path)
+	// Clean turns ~/ into ~\ on Windows: test the separator the system uses.
+	if len(clean) > 2 && clean[0] == '~' && os.IsPathSeparator(clean[1]) && realHomeDir != "" {
+		clean = filepath.Clean(filepath.Join(realHomeDir, clean[2:]))
+	}
+	cleanEval, errEval := filepath.EvalSymlinks(clean)
+
+	var candidates []string
+	add := func(base string) {
+		if base == "" || isTemp(base) {
+			return
+		}
+		candidates = append(candidates, filepath.Join(base, "djinn"), filepath.Join(base, "djinn-dev"))
+	}
+	add(realConfigDir)
+	if realHomeDir != "" {
+		add(filepath.Join(realHomeDir, ".config"))
+		if runtime.GOOS == "darwin" {
+			add(filepath.Join(realHomeDir, "Library", "Application Support"))
+		}
+		if runtime.GOOS == "windows" {
+			add(filepath.Join(realHomeDir, "AppData", "Roaming"))
+		}
+	}
+
+	for _, cand := range candidates {
+		candClean := filepath.Clean(cand)
+		if clean == candClean {
+			return true
+		}
+		if errEval == nil {
+			if candEval, err := filepath.EvalSymlinks(candClean); err == nil && cleanEval == candEval {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Develop is set by a development build of djinn, one built from a checkout rather than installed at a version: its
+// data directory is then djinn-dev, so that the djinn being built never reaches the user's own djinn, its window,
+// its socket or its wishes. DJINN_HOME still decides when it is set.
+var Develop bool
+
+// Home is the data directory: $DJINN_HOME, by default djinn in the user's configuration folder (djinn-dev for a
+// development build).
+func Home() (string, error) {
+	home := os.Getenv("DJINN_HOME")
+	if home == "" {
+		// The system's place for user configuration: ~/.config on Linux, ~/Library/Application Support on macOS,
+		// %AppData% on Windows.
+		config, err := os.UserConfigDir()
+		if err != nil {
+			return "", fmt.Errorf("data directory: %w", err)
+		}
+		name := "djinn"
+		if Develop {
+			name = "djinn-dev"
+		}
+		home = filepath.Join(config, name)
+	}
+	if InTest() && IsRealHome(home) {
+		return "", fmt.Errorf("refusing to use real data directory (%s) under test: without an address and a data folder given by the test harness, start a Djinn of your own (a DJINN_HOME of its own, djinn up on its own socket)", home)
+	}
+	return home, nil
 }
 
 // providers are the agent command lines Djinn knows: the agent, its name, and the program that runs it.
@@ -114,7 +267,7 @@ var providers = []struct{ id, name, program string }{
 }
 
 func (s *Service) GetEnvironment(
-	context.Context, *connect.Request[uiv1.UiServiceGetEnvironmentRequest],
+	ctx context.Context, req *connect.Request[uiv1.UiServiceGetEnvironmentRequest],
 ) (*connect.Response[uiv1.UiServiceGetEnvironmentResponse], error) {
 	platform := runtime.GOOS
 	if platform == "windows" {
@@ -126,14 +279,22 @@ func (s *Service) GetEnvironment(
 	if s.Shortcuts != nil {
 		res.Shortcut = s.Shortcuts.State()
 	}
-	for _, p := range providers {
-		command, err := exec.LookPath(p.program)
-		if err != nil {
-			command = p.program
+	if req.Msg.GetAgents() {
+		if s.AgentPath != nil {
+			res.Providers = checkAgents(ctx, s.AgentPath())
+		} else {
+			res.Providers = checkAgents(ctx, launchPath())
 		}
-		res.Providers = append(res.Providers, &uiv1.Provider{
-			Id: p.id, Name: p.name, Available: err == nil, Command: command,
-		})
+	} else {
+		for _, p := range providers {
+			command, err := exec.LookPath(p.program)
+			if err != nil {
+				command = p.program
+			}
+			res.Providers = append(res.Providers, &uiv1.Provider{
+				Id: p.id, Name: p.name, Available: err == nil, Command: command,
+			})
+		}
 	}
 	return connect.NewResponse(res), nil
 }
@@ -152,41 +313,6 @@ func (s *Service) SetShortcut(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&uiv1.UiServiceSetShortcutResponse{Shortcut: shortcut}), nil
-}
-
-// WriteAtomic writes a temporary file next to path, readable by the owner only, then renames it over path: a
-// reader sees the old content or the new one, never a part of it. The rename tries again a moment on Windows,
-// where an antivirus scanning the file refuses it.
-func WriteAtomic(path string, data []byte) error {
-	return writeAtomic(path, data, fsx.OS())
-}
-
-func writeAtomic(path string, data []byte, r fsx.Renamer) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name()) // Fails harmlessly once renamed.
-	if err := tmp.Chmod(0o600); err != nil && runtime.GOOS != "windows" {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return r.Rename(tmp.Name(), path)
 }
 
 func (s *Service) ChooseDirectory(
@@ -310,19 +436,26 @@ func (s *Service) PresentTilasm(wishID, tilasmID string) {
 
 // Present asks the windows to show a wish and a terminal: the ones watching now, and one that starts watching
 // within a minute.
-func (s *Service) Present(wishID, terminal string) {
-	s.present(&uiv1.UiServiceWatchShowResponse{WishId: wishID, Terminal: terminal})
+func (s *Service) Present(wishID, terminal string) { s.PresentAt(wishID, terminal, "") }
+
+// PresentAt is Present with an element of the wish in view (UiServiceWatchShowResponse.target).
+func (s *Service) PresentAt(wishID, terminal, target string) {
+	s.present(&uiv1.UiServiceWatchShowResponse{WishId: wishID, Terminal: terminal, Target: target})
 }
 
 func (s *Service) present(msg *uiv1.UiServiceWatchShowResponse) {
 	s.shows.Lock()
-	defer s.shows.Unlock()
 	s.lastShow, s.lastAt = msg, time.Now()
 	for ch := range s.watchers {
 		select {
 		case ch <- msg:
 		default: // A window that does not read keeps what it has: the next request matters more than this one.
 		}
+	}
+	shown := s.Shown
+	s.shows.Unlock()
+	if shown != nil {
+		shown(msg.GetWishId(), msg.GetTerminal())
 	}
 }
 
@@ -334,17 +467,66 @@ func (s *Service) SetReady(version, notesURL string) {
 	if s.ready == version && s.notesURL == notesURL {
 		return
 	}
+	if s.ready != version {
+		s.readyBuild = nil
+	}
 	s.ready, s.notesURL = version, notesURL
 	s.notifyUpdate()
 }
 
-// SetBuild proposes to install build, a batch committed into a wish's integration branch, in place of the one
-// proposed before; nil proposes none.
-func (s *Service) SetBuild(build *uiv1.Build) {
+// SetReadyBuild names the newer Djinn of version that waits, as a build: its commit, the branch and wish it comes
+// from, how it compares with the running one. Nothing when another version waits now.
+func (s *Service) SetReadyBuild(version string, build *uiv1.Build) {
 	s.updates.Lock()
 	defer s.updates.Unlock()
-	s.build = build
+	if s.ready != version || proto.Equal(s.readyBuild, build) {
+		return
+	}
+	s.readyBuild = build
 	s.notifyUpdate()
+}
+
+// SetBuild proposes to install build, the last push of an integration branch, in place of the one proposed before
+// for the same branch of the same project: each branch keeps its own, the branch the running Djinn was built from
+// first.
+func (s *Service) SetBuild(build *uiv1.Build) {
+	if build == nil {
+		return
+	}
+	s.updates.Lock()
+	defer s.updates.Unlock()
+	if i := slices.IndexFunc(s.builds, func(b *uiv1.Build) bool { return sameBranch(b, build) }); i >= 0 {
+		s.builds[i] = build
+	} else {
+		s.builds = append(s.builds, build)
+	}
+	slices.SortStableFunc(s.builds, func(a, b *uiv1.Build) int {
+		switch {
+		case a.GetRunning() == b.GetRunning():
+			return 0
+		case a.GetRunning():
+			return -1
+		}
+		return 1
+	})
+	s.notifyUpdate()
+}
+
+// sameBranch tells whether a and b are builds of the same integration branch of the same project.
+func sameBranch(a, b *uiv1.Build) bool {
+	return strings.EqualFold(a.GetProjectId(), b.GetProjectId()) && a.GetBranch() == b.GetBranch()
+}
+
+// updateState is what the window is told of the update now; s.updates is held.
+func (s *Service) updateState() *uiv1.UiServiceWatchUpdateResponse {
+	builds := make([]*uiv1.Build, len(s.builds))
+	for i, b := range s.builds {
+		builds[i] = proto.CloneOf(b)
+	}
+	return &uiv1.UiServiceWatchUpdateResponse{
+		Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed), NotesUrl: s.notesURL,
+		Builds: builds, Installing: proto.CloneOf(s.installing), ReadyBuild: proto.CloneOf(s.readyBuild),
+	}
 }
 
 // setInstalling says where the install that runs now stands; nil when none runs.
@@ -398,10 +580,7 @@ func (s *Service) WatchUpdate(
 			s.updated = make(chan struct{})
 		}
 		changed := s.updated
-		msg := &uiv1.UiServiceWatchUpdateResponse{
-			Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed), NotesUrl: s.notesURL,
-			Build: proto.CloneOf(s.build), Installing: proto.CloneOf(s.installing),
-		}
+		msg := s.updateState()
 		s.updates.Unlock()
 		if err := stream.Send(msg); err != nil {
 			return err
@@ -420,11 +599,14 @@ func (s *Service) Update(
 	installed := ""
 	if sha := req.Msg.GetBuild(); sha != "" {
 		s.updates.Lock()
-		build := s.build
+		var build *uiv1.Build
+		if i := slices.IndexFunc(s.builds, func(b *uiv1.Build) bool { return b.GetSha() == sha }); i >= 0 {
+			build = s.builds[i]
+		}
 		s.updates.Unlock()
 		switch {
-		case build.GetSha() != sha:
-			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the build %s is not the one proposed", sha))
+		case build == nil:
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the build %s is not one proposed", sha))
 		case s.Install == nil:
 			return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this djinn installs no build"))
 		}
@@ -437,8 +619,8 @@ func (s *Service) Update(
 		}
 		installed = sha
 		s.updates.Lock()
-		if s.build == build { // Proposed no more, unless a newer one came meanwhile.
-			s.build = nil
+		if i := slices.Index(s.builds, build); i >= 0 { // Proposed no more, unless a newer one came meanwhile.
+			s.builds = slices.Delete(s.builds, i, i+1)
 			s.notifyUpdate()
 		}
 		s.updates.Unlock()
@@ -460,28 +642,53 @@ func (s *Service) Update(
 	return connect.NewResponse(&uiv1.UiServiceUpdateResponse{Version: version, Terminals: int32(terminals), Installed: installed}), nil
 }
 
-func (s *Service) WatchShow(
-	ctx context.Context, _ *connect.Request[uiv1.UiServiceWatchShowRequest],
-	stream *connect.ServerStream[uiv1.UiServiceWatchShowResponse],
-) error {
-	ch := make(chan *uiv1.UiServiceWatchShowResponse, 8)
+// watchShows registers a window that starts watching: ch gets each request to show something from now on, show is
+// the one of the last minute to replay first (nil for none, or when its wish is gone), stop ends the watch.
+func (s *Service) watchShows(ctx context.Context) (
+	ch chan *uiv1.UiServiceWatchShowResponse, show *uiv1.UiServiceWatchShowResponse, stop func(),
+) {
+	recent := func() *uiv1.UiServiceWatchShowResponse {
+		if s.lastShow != nil && time.Since(s.lastAt) < replay {
+			return s.lastShow
+		}
+		return nil
+	}
+	// The store is read out of the lock; a request made meanwhile is newer, and replayed whatever it names.
 	s.shows.Lock()
+	last := recent()
+	s.shows.Unlock()
+	gone := last != nil && last.GetWishId() != "" && s.Known != nil && !s.Known(ctx, last.GetWishId())
+	ch = make(chan *uiv1.UiServiceWatchShowResponse, 8)
+	s.shows.Lock()
+	defer s.shows.Unlock()
 	if s.watchers == nil {
 		s.watchers = map[chan *uiv1.UiServiceWatchShowResponse]struct{}{}
 	}
 	s.watchers[ch] = struct{}{}
-	if s.lastShow != nil && time.Since(s.lastAt) < replay {
-		ch <- s.lastShow
+	if show = recent(); gone && show == last {
+		show = nil
 	}
-	s.shows.Unlock()
-	defer func() {
+	return ch, show, func() {
 		s.shows.Lock()
 		delete(s.watchers, ch)
 		s.shows.Unlock()
-	}()
+	}
+}
+
+func (s *Service) WatchShow(
+	ctx context.Context, _ *connect.Request[uiv1.UiServiceWatchShowRequest],
+	stream *connect.ServerStream[uiv1.UiServiceWatchShowResponse],
+) error {
+	ch, show, stop := s.watchShows(ctx)
+	defer stop()
 	// The headers go out at once: the window knows it is watching before anything is asked.
 	if err := stream.Send(nil); err != nil {
 		return err
+	}
+	if show != nil {
+		if err := stream.Send(show); err != nil {
+			return err
+		}
 	}
 	for {
 		select {
@@ -493,4 +700,113 @@ func (s *Service) WatchShow(
 			}
 		}
 	}
+}
+
+func (s *Service) Watch(
+	ctx context.Context, _ *connect.Request[uiv1.UiServiceWatchRequest],
+	stream *connect.ServerStream[uiv1.UiServiceWatchResponse],
+) error {
+	ch, replayShow, stop := s.watchShows(ctx)
+	defer stop()
+
+	s.updates.Lock()
+	if s.updated == nil {
+		s.updated = make(chan struct{})
+	}
+	updateChanged := s.updated
+	initialUpdate := s.updateState()
+	s.updates.Unlock()
+
+	initMsg := &uiv1.UiServiceWatchResponse{
+		Show:   replayShow,
+		Update: initialUpdate,
+	}
+	if err := stream.Send(initMsg); err != nil {
+		return err
+	}
+
+	loadCh := make(chan *djinnv1.LoadServiceWatchResponse, 8)
+	if s.WatchLoad != nil {
+		loadCtx, cancelLoad := context.WithCancel(ctx)
+		defer cancelLoad()
+		go func() {
+			_ = s.WatchLoad(loadCtx, func(resp *djinnv1.LoadServiceWatchResponse) error {
+				select {
+				case <-loadCtx.Done():
+					return loadCtx.Err()
+				case loadCh <- resp:
+					return nil
+				}
+			})
+		}()
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case showMsg := <-ch:
+			if err := stream.Send(&uiv1.UiServiceWatchResponse{Show: showMsg}); err != nil {
+				return err
+			}
+		case <-updateChanged:
+			s.updates.Lock()
+			if s.updated == nil {
+				s.updated = make(chan struct{})
+			}
+			updateChanged = s.updated
+			updateMsg := s.updateState()
+			s.updates.Unlock()
+			if err := stream.Send(&uiv1.UiServiceWatchResponse{Update: updateMsg}); err != nil {
+				return err
+			}
+		case loadMsg := <-loadCh:
+			if err := stream.Send(&uiv1.UiServiceWatchResponse{Load: loadMsg}); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// notificationSettings is the pane of the system's settings for notifications, on macOS.
+const notificationSettings = "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+
+func (s *Service) GetNotifications(
+	context.Context, *connect.Request[uiv1.UiServiceGetNotificationsRequest],
+) (*connect.Response[uiv1.UiServiceGetNotificationsResponse], error) {
+	access := s.Notices.Access()
+	return connect.NewResponse(&uiv1.UiServiceGetNotificationsResponse{Access: access, Settings: s.hasSettings(access)}), nil
+}
+
+func (s *Service) RequestNotifications(
+	context.Context, *connect.Request[uiv1.UiServiceRequestNotificationsRequest],
+) (*connect.Response[uiv1.UiServiceRequestNotificationsResponse], error) {
+	access := s.Notices.Request()
+	return connect.NewResponse(&uiv1.UiServiceRequestNotificationsResponse{Access: access, Settings: s.hasSettings(access)}), nil
+}
+
+// hasSettings tells that OpenNotificationSettings opens the system's settings: on macOS, where it decides.
+func (s *Service) hasSettings(access uiv1.NotificationAccess) bool {
+	return runtime.GOOS == "darwin" && access != uiv1.NotificationAccess_NOTIFICATION_ACCESS_UNAVAILABLE
+}
+
+func (s *Service) OpenNotificationSettings(
+	context.Context, *connect.Request[uiv1.UiServiceOpenNotificationSettingsRequest],
+) (*connect.Response[uiv1.UiServiceOpenNotificationSettingsResponse], error) {
+	if !s.hasSettings(s.Notices.Access()) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("no notification settings to open here"))
+	}
+	if err := s.Open(notificationSettings); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("open the notification settings: %w", err))
+	}
+	return connect.NewResponse(&uiv1.UiServiceOpenNotificationSettingsResponse{}), nil
+}
+
+func (s *Service) View(
+	_ context.Context, req *connect.Request[uiv1.UiServiceViewRequest],
+) (*connect.Response[uiv1.UiServiceViewResponse], error) {
+	if s.Notices != nil {
+		s.Notices.View(req.Msg.GetWishId())
+	}
+	return connect.NewResponse(&uiv1.UiServiceViewResponse{}), nil
 }

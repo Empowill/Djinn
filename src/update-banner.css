@@ -1,19 +1,19 @@
 /* Djinn's update, read over the rest: a raised surface warmed by the lamp, a brass edge and glow, the djinn's mark at
    its head. The primary action is brass as the lamp (review.css's lamp-rub), Dismiss is smoke violet, the release
-   notes a quiet link. Both themes take the tokens of review.css; their contrast is checked in tests/styles.test.cjs.
-   Centred by its two sides, it shrinks to its text up to the whole width the window gives it. */
+   notes, Details and × quiet. Both themes take the tokens of review.css; their contrast is checked in tests/styles.test.cjs.
+   It takes its own row above the app (styles.css's .window), which gives it the room it needs: laid over the app, it
+   covered the toolbar's controls, the load slider first. Centred, it shrinks to its text up to the whole width the
+   window gives it, and to half its height, the rest scrolling. */
 .update-banner {
-  position: fixed;
-  top: var(--space-2);
-  left: 0;
-  right: 0;
-  z-index: 110;
+  flex: none;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   width: fit-content;
   max-width: min(680px, calc(100vw - 32px));
-  margin: 0 auto;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: var(--space-2) auto;
   padding: var(--space-3) var(--space-4);
   border: 1px solid color-mix(in srgb, var(--lamp) 60%, var(--line-strong));
   border-radius: var(--radius-panel);
@@ -35,10 +35,10 @@
   padding-top: var(--space-3);
   border-top: 1px solid color-mix(in srgb, var(--lamp) 30%, var(--line));
 }
-/* The title and its actions: when the title does not fit beside them, the actions wrap below it, never squeezing it. */
+/* The title and its actions on one line: the title gives way, the actions keep their size. */
 .update-banner-head {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-2) var(--space-3);
 }
@@ -49,6 +49,7 @@
   width: 22px;
   height: 22px;
 }
+/* One line: the title is cut short when it does not fit, the hover tells it whole. */
 .update-banner-title {
   display: flex;
   align-items: center;
@@ -56,11 +57,24 @@
   flex: 1 1 auto;
   min-width: 0;
   font-weight: 600;
-  overflow-wrap: anywhere;
+}
+.update-banner-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.update-banner-text code {
+  font-family: var(--mono);
+}
+.update-banner-quiet {
+  color: var(--n-9c);
+  font-weight: 400;
 }
 .update-banner-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex: none;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-2) var(--space-3);
 }
@@ -100,7 +114,37 @@
 .update-banner .update-banner-dismiss:hover {
   background: color-mix(in srgb, var(--st-investigating) 18%, transparent);
 }
-/* What changed and what to check, at the banner's full width under the title. */
+/* Details and ×: quiet, in the banner's text, until hovered. */
+.update-banner .update-banner-more,
+.update-banner .update-banner-close {
+  border-color: transparent;
+  background: transparent;
+  color: var(--n-9c);
+  font-weight: 400;
+}
+.update-banner .update-banner-more {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.update-banner .update-banner-close {
+  padding: 0 var(--space-1);
+  font-size: 1.2em;
+  line-height: 1;
+}
+.update-banner .update-banner-more:hover,
+.update-banner .update-banner-close:hover {
+  color: var(--text);
+}
+/* The builds of the other branches, unfolded: each on its line, with its own actions. */
+.update-banner-others {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.update-banner-others .update-banner-part + .update-banner-part {
+  padding-top: var(--space-2);
+}
+/* What changed, at the banner's full width under the title. */
 .update-banner-body strong {
   display: block;
   margin-top: var(--space-2);
@@ -115,6 +159,47 @@
   overflow-y: auto;
   color: var(--n-9c);
   overflow-wrap: anywhere;
+}
+.update-banner .update-banner-tasks {
+  max-height: 14em;
+  padding-left: 0;
+  list-style: none;
+}
+.update-banner-tasks > li {
+  margin-top: var(--space-1);
+}
+.update-banner-tasks > li:first-child {
+  margin-top: 0;
+}
+.update-banner-task summary {
+  cursor: pointer;
+  color: var(--text);
+}
+.update-banner-task summary code,
+.update-banner-task-line code {
+  color: var(--n-9c);
+  font-family: var(--mono);
+}
+.update-banner-task-line {
+  padding-left: 1.1em;
+  color: var(--text);
+}
+.update-banner-summary {
+  margin: var(--space-1) 0 var(--space-1) 1.1em;
+  color: var(--n-9c);
+  font-size: 0.9em;
+  line-height: var(--line-height-body);
+  overflow-wrap: anywhere;
+}
+.update-banner-commits {
+  margin-top: var(--space-2);
+}
+.update-banner-commits summary {
+  cursor: pointer;
+  color: var(--n-9c);
+}
+.update-banner-commits summary:hover {
+  color: var(--text);
 }
 /* The terminals that did not start again: their commands, in the mono type. */
 .update-banner .update-banner-terminals {

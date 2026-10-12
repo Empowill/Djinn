@@ -16,9 +16,11 @@ import (
 	"cmp"
 	_ "embed"
 	"fmt"
+	"html"
 	"html/template"
 	"maps"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -233,6 +235,7 @@ type task struct {
 type block struct {
 	Kind, Title, Task, Updated string
 	Markdown                   bool
+	SVG                        bool
 	HTML                       template.HTML
 	Text                       string
 	// Long blocks are folded under their title.
@@ -317,7 +320,7 @@ func build(in Input) (*view, error) {
 	// Open questions, the blocking ones first, then those needed before something, then those that can wait; each in
 	// the order they were asked. Decisions, the latest first.
 	for _, q := range exp.GetQuestions() {
-		if q.GetAnswer() != nil {
+		if q.GetAnswer() != nil || q.GetWithdrawal() != nil {
 			continue
 		}
 		cq := question{
@@ -331,6 +334,11 @@ func build(in Input) (*view, error) {
 		case Blocking:
 			cq.Blocking = tr("page.blocking", "tasks", strings.Join(blocking[q.GetId()], ", "))
 			cq.Class, cq.Level, cq.Open = "bad", cq.Blocking, true
+		case Move:
+			cq.Class, cq.Level = "move", q.GetBefore()
+			if cq.Level == "" {
+				cq.Level = tr("page.level_move")
+			}
 		case Before:
 			cq.Class, cq.Level = "wait", q.GetBefore()
 		default:
@@ -392,7 +400,7 @@ func build(in Input) (*view, error) {
 
 	// The bar: each blocking question a line; the other questions too while they are few, else one line for those
 	// needed before something and one for those that can wait.
-	waiting, blocked, later := tr("page.status_waiting"), tr("page.level_blocking"), tr("page.level_later")
+	moveLevel, waiting, blocked, later := tr("page.level_move"), tr("page.status_waiting"), tr("page.level_blocking"), tr("page.level_later")
 	var others []question
 	for _, q := range v.Questions {
 		switch {
@@ -416,7 +424,7 @@ func build(in Input) (*view, error) {
 		for _, level := range []struct {
 			urgency            Urgency
 			class, level, text string
-		}{{Before, "wait", waiting, "page.bar_questions"}, {Later, "later", later, "page.bar_later"}} {
+		}{{Move, "move", moveLevel, "page.bar_moves"}, {Before, "wait", waiting, "page.bar_questions"}, {Later, "later", later, "page.bar_later"}} {
 			var group []question
 			var codes []string
 			for _, q := range others {
@@ -448,7 +456,7 @@ func build(in Input) (*view, error) {
 		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
 			continue
 		}
-		if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil {
+		if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil && q.GetWithdrawal() == nil {
 			addAction("bad", blocked, tr("page.action_waiting", "task", t.GetCode(), "question", q.GetCode()), "")
 		} else {
 			addAction("bad", blocked, tr("page.action_waiting_unknown", "task", t.GetCode()),
@@ -515,6 +523,16 @@ func build(in Input) (*view, error) {
 				ct.Closed += ": " + n
 			}
 		}
+		if c := t.GetCancelled(); c != nil {
+			key := "page.cancelled_by_lead"
+			if c.GetActor() == planv1.Closer_CLOSER_DEVELOPER {
+				key = "page.cancelled_by_you"
+			}
+			ct.Closed = tr(key)
+			if n := strings.TrimSpace(c.GetNote()); n != "" {
+				ct.Closed += ": " + n
+			}
+		}
 		ct.Status, ct.StatusClass = status(t.GetStatus(), tr)
 		forked := ""
 		switch t.GetStatus() {
@@ -525,6 +543,15 @@ func build(in Input) (*view, error) {
 		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
 			if forked = ForkedAs(t, exp.GetTasks()); forked != "" {
 				ct.Status, ct.StatusClass, ct.Error = tr("page.status_forked", "task", forked), "stop", ""
+			}
+		case planv1.TaskStatus_TASK_STATUS_DONE:
+			switch t.GetIntegration().GetState() {
+			case planv1.IntegrationState_INTEGRATION_STATE_PENDING, planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING:
+				ct.Status, ct.StatusClass = tr("page.status_merging"), "run"
+			case planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, planv1.IntegrationState_INTEGRATION_STATE_RED:
+				ct.Status, ct.StatusClass = tr("page.status_merge_failed"), "fail"
+			case planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
+				ct.Status, ct.StatusClass = tr("page.status_to_review"), "wait"
 			}
 		}
 		var after []string
@@ -566,7 +593,7 @@ func build(in Input) (*view, error) {
 		case planv1.TaskStatus_TASK_STATUS_PENDING:
 			v.Planned = append(v.Planned, ct)
 		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED,
-			planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			planv1.TaskStatus_TASK_STATUS_INTERRUPTED, planv1.TaskStatus_TASK_STATUS_CANCELLED:
 			// Cut short and not resumed: Djinn resumes every task it can by itself, so this one is history.
 			v.Finished = append(v.Finished, ct)
 		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_RESUMING:
@@ -590,14 +617,15 @@ func build(in Input) (*view, error) {
 		planv1.TaskStatus_TASK_STATUS_WAITING, planv1.TaskStatus_TASK_STATUS_FAILED,
 		planv1.TaskStatus_TASK_STATUS_INTERRUPTED, planv1.TaskStatus_TASK_STATUS_RUNNING,
 		planv1.TaskStatus_TASK_STATUS_RESUMING, planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_DONE,
-		planv1.TaskStatus_TASK_STATUS_STOPPED,
+		planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_CANCELLED,
 	} {
 		if n := byStatus[s]; n > 0 {
 			delete(byStatus, s)
 			label, class := status(s, tr)
 			href := "#tasks"
 			if s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_DONE ||
-				s == planv1.TaskStatus_TASK_STATUS_STOPPED || s == planv1.TaskStatus_TASK_STATUS_RESUMING {
+				s == planv1.TaskStatus_TASK_STATUS_STOPPED || s == planv1.TaskStatus_TASK_STATUS_RESUMING ||
+				s == planv1.TaskStatus_TASK_STATUS_CANCELLED {
 				href = "#running"
 			}
 			v.Counts = append(v.Counts, count{Class: class, Label: label, Href: href, Count: n})
@@ -635,10 +663,13 @@ func build(in Input) (*view, error) {
 		if t := tasks[b.GetTaskId()]; t != nil {
 			cb.Task = tr("page.about_task", "task", t.GetCode())
 		}
-		if isMarkdown(b.GetMediaType()) {
+		switch {
+		case isMarkdown(b.GetMediaType()):
 			cb.Markdown, cb.HTML = true, md(b.GetContent())
 			cb.Diagram = strings.Contains(string(cb.HTML), `<code class="language-mermaid">`)
-		} else {
+		case isSVG(b.GetMediaType()):
+			cb.SVG, cb.HTML = true, template.HTML(SanitizeSVG(b.GetContent())) //nolint:gosec // Sanitized SVG.
+		default:
 			cb.Text = b.GetContent()
 		}
 		if cb.Title == "" && cb.HTML == "" && cb.Text == "" {
@@ -735,6 +766,108 @@ func firstLine(source string, n int) string {
 	return ""
 }
 
+var (
+	reSvgCodeBlock = regexp.MustCompile(`(?is)<pre><code class="language-svg">(.*?)</code></pre>`)
+	reSvgComment   = regexp.MustCompile(`(?s)<!--.*?-->`)
+	reSvgOnEvent   = regexp.MustCompile(`(?i)\s+on[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)`)
+	reSvgHref      = regexp.MustCompile(`(?i)\s+(?:xlink:)?href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))`)
+	reSvgSrc       = regexp.MustCompile(`(?i)\s+src\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)`)
+	reSvgImport    = regexp.MustCompile(`(?i)@import\b[^;]*;?`)
+	reSvgExpr      = regexp.MustCompile(`(?i)expression\s*\([^)]*\)`)
+	reSvgURL       = regexp.MustCompile(`(?i)url\s*\(\s*(['"]?)([^)'"]*)(['"]?)\s*\)`)
+	reSvgStyleTag  = regexp.MustCompile(`(?is)<style\b[^>]*>(.*?)</style\s*>`)
+	reSvgStyleAttr = regexp.MustCompile(`(?i)\s+style\s*=\s*("([^"]*)"|'([^']*)')`)
+
+	dangerousSvgPatterns = func() []*regexp.Regexp {
+		tags := []string{
+			"script", "foreignobject", "iframe", "object", "embed", "applet",
+			"audio", "video", "form", "input", "button", "link", "meta",
+		}
+		var pats []*regexp.Regexp
+		for _, tag := range tags {
+			pats = append(pats,
+				regexp.MustCompile(`(?is)<`+tag+`\b.*?</`+tag+`\s*>`),
+				regexp.MustCompile(`(?is)<`+tag+`\b[^>]*>`),
+				regexp.MustCompile(`(?is)</`+tag+`\s*>`),
+			)
+		}
+		return pats
+	}()
+)
+
+// cleanSvgStyle strips non-local url(), @import, and expression() from CSS in style tags/attributes.
+func cleanSvgStyle(css string) string {
+	css = reSvgImport.ReplaceAllString(css, "")
+	css = reSvgExpr.ReplaceAllString(css, "none")
+	return reSvgURL.ReplaceAllStringFunc(css, func(m string) string {
+		sub := reSvgURL.FindStringSubmatch(m)
+		if len(sub) >= 3 && strings.HasPrefix(strings.TrimSpace(sub[2]), "#") {
+			return m
+		}
+		return "none"
+	})
+}
+
+// SanitizeSVG strips dangerous elements, scripts, event handlers, and external URLs from SVG markup.
+func SanitizeSVG(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	lower := strings.ToLower(raw)
+	start := strings.Index(lower, "<svg")
+	end := strings.LastIndex(lower, "</svg>")
+	if start == -1 || end == -1 || end < start {
+		return ""
+	}
+	s := raw[start : end+len("</svg>")]
+
+	s = reSvgComment.ReplaceAllString(s, "")
+
+	for _, re := range dangerousSvgPatterns {
+		s = re.ReplaceAllString(s, "")
+	}
+
+	s = reSvgOnEvent.ReplaceAllString(s, "")
+
+	s = reSvgHref.ReplaceAllStringFunc(s, func(m string) string {
+		sub := reSvgHref.FindStringSubmatch(m)
+		val := ""
+		for i := 1; i < len(sub); i++ {
+			if sub[i] != "" {
+				val = sub[i]
+				break
+			}
+		}
+		if strings.HasPrefix(strings.TrimSpace(val), "#") {
+			return m
+		}
+		return ""
+	})
+
+	s = reSvgSrc.ReplaceAllString(s, "")
+
+	s = reSvgStyleTag.ReplaceAllStringFunc(s, func(m string) string {
+		sub := reSvgStyleTag.FindStringSubmatch(m)
+		if len(sub) < 2 {
+			return m
+		}
+		return "<style>" + cleanSvgStyle(sub[1]) + "</style>"
+	})
+
+	s = reSvgStyleAttr.ReplaceAllStringFunc(s, func(m string) string {
+		sub := reSvgStyleAttr.FindStringSubmatch(m)
+		val := sub[2]
+		quote := `"`
+		if val == "" {
+			val = sub[3]
+			quote = `'`
+		}
+		return " style=" + quote + cleanSvgStyle(val) + quote
+	})
+
+	return strings.TrimSpace(s)
+}
+
 // md renders Markdown, without raw HTML.
 func md(source string) template.HTML {
 	if strings.TrimSpace(source) == "" {
@@ -744,13 +877,32 @@ func md(source string) template.HTML {
 	if err := markdown.Convert([]byte(source), &b); err != nil {
 		return template.HTML("<pre>" + template.HTMLEscapeString(source) + "</pre>") //nolint:gosec // The source is escaped.
 	}
-	return template.HTML(b.String()) //nolint:gosec // goldmark leaves raw HTML and dangerous links out.
+	rendered := b.String()
+	rendered = reSvgCodeBlock.ReplaceAllStringFunc(rendered, func(m string) string {
+		sub := reSvgCodeBlock.FindStringSubmatch(m)
+		if len(sub) < 2 {
+			return m
+		}
+		raw := html.UnescapeString(sub[1])
+		safe := SanitizeSVG(raw)
+		if safe == "" {
+			return m
+		}
+		return `<div class="dia-frame">` + safe + `</div>`
+	})
+	return template.HTML(rendered) //nolint:gosec // goldmark leaves raw HTML and dangerous links out, and SVGs are sanitized.
 }
 
 func isMarkdown(mediaType string) bool {
 	base, _, _ := strings.Cut(mediaType, ";")
 	base = strings.ToLower(strings.TrimSpace(base))
 	return base == "" || base == "text/markdown"
+}
+
+func isSVG(mediaType string) bool {
+	base, _, _ := strings.Cut(mediaType, ";")
+	base = strings.ToLower(strings.TrimSpace(base))
+	return base == "image/svg+xml"
 }
 
 func choice(q *planv1.Question, tr func(string, ...string) string) string {
@@ -791,6 +943,31 @@ func ForkedAs(t *planv1.Task, tasks []*planv1.Task) string {
 		}
 	}
 	return ""
+}
+
+// TaskDealtWith tells whether a failed worker has been addressed: marked done, continued (or forked),
+// or a new task names it in its title, decision, forkOf, or as a correction/review target.
+func TaskDealtWith(t *planv1.Task, tasks []*planv1.Task) bool {
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE || t.GetContinuing() || t.GetClosed().GetContinuedIn() != "" || ForkedAs(t, tasks) != "" {
+		return true
+	}
+	code := t.GetCode()
+	if code == "" {
+		return false
+	}
+	word := regexp.MustCompile(`\b` + regexp.QuoteMeta(code) + `\b`)
+	for _, o := range tasks {
+		if o.GetId() == t.GetId() {
+			continue
+		}
+		if o.GetForkOf() == code || o.GetDecision() == code || word.MatchString(o.GetTitle()) {
+			return true
+		}
+		if slices.Contains(o.GetCorrection().GetFailure().GetTaskIds(), t.GetId()) || slices.Contains(o.GetReview().GetTaskIds(), t.GetId()) {
+			return true
+		}
+	}
+	return false
 }
 
 // NewestEnded orders finished tasks the latest ended first, then the latest created: the window, the page and the
@@ -893,6 +1070,7 @@ func status(s planv1.TaskStatus, tr func(string, ...string) string) (string, str
 		planv1.TaskStatus_TASK_STATUS_WAITING:     {"page.status_waiting", "wait"},
 		planv1.TaskStatus_TASK_STATUS_PAUSED:      {"page.status_paused", "pause"},
 		planv1.TaskStatus_TASK_STATUS_RESUMING:    {"page.status_resuming", "run"},
+		planv1.TaskStatus_TASK_STATUS_CANCELLED:   {"page.status_cancelled", "stop"},
 	}
 	if k, ok := keys[s]; ok {
 		return tr(k[0]), k[1]
@@ -940,6 +1118,10 @@ func summary(
 	switch m := req.(type) {
 	case *planv1.WishServiceMakeRequest:
 		return m.GetTitle()
+	case *planv1.WishServiceRenameRequest:
+		return m.GetTitle()
+	case *planv1.WishServiceDescribeRequest:
+		return m.GetText()
 	case *planv1.QuestionServiceAskRequest:
 		return m.GetText()
 	case *planv1.QuestionServiceAnswerRequest:
@@ -949,6 +1131,18 @@ func summary(
 		}
 		return strings.TrimSpace(code + " " + strings.ToLower(strings.TrimPrefix(m.GetChoice().String(), "CHOICE_")) +
 			" " + m.GetNote())
+	case *planv1.QuestionServiceMoveRequest:
+		code := m.GetQuestion().GetCode()
+		if q := questions[m.GetQuestion().GetId()]; q != nil {
+			code = q.GetCode()
+		}
+		return strings.TrimSpace(code + " -> " + m.GetWish())
+	case *planv1.QuestionServiceWithdrawRequest:
+		code := m.GetQuestion().GetCode()
+		if q := questions[m.GetQuestion().GetId()]; q != nil {
+			code = q.GetCode()
+		}
+		return strings.TrimSpace(code + " " + m.GetNote())
 	case *planv1.BlockServicePutRequest:
 		return strings.TrimSpace(m.GetKind() + " " + m.GetTitle())
 	case *planv1.TaskServiceSpawnRequest:

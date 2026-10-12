@@ -60,8 +60,11 @@ function summary(command: Command, exp: WishExport): string {
   const r = req as unknown as Record<string, unknown>;
   switch (req.$typeName) {
     case "plan.v1.WishServiceMakeRequest":
+    case "plan.v1.WishServiceRenameRequest":
     case "plan.v1.TaskServiceSpawnRequest":
       return String(r.title ?? "");
+    case "plan.v1.WishServiceDescribeRequest":
+      return String(r.text ?? "");
     case "plan.v1.QuestionServiceAskRequest":
       return String(r.text ?? "");
     case "plan.v1.QuestionServiceAnswerRequest": {
@@ -73,6 +76,26 @@ function summary(command: Command, exp: WishExport): string {
           : (ref?.value ?? "");
       const choices = ["", "yes", "a", "b", "c", "d"];
       return `${code} ${choices[Number(r.choice)] ?? ""} ${String(r.note ?? "")}`.trim();
+    }
+    case "plan.v1.QuestionServiceMoveRequest": {
+      const ref = (r.question as { ref?: { case?: string; value?: string } })
+        ?.ref;
+      const code =
+        ref?.case === "id"
+          ? (exp.questions.find((q) => q.id === ref.value)?.code ?? "")
+          : (ref?.value ?? "");
+      const wish = String(r.wish ?? "");
+      return wish ? `${code} -> ${wish}`.trim() : code;
+    }
+    case "plan.v1.QuestionServiceWithdrawRequest": {
+      const ref = (r.question as { ref?: { case?: string; value?: string } })
+        ?.ref;
+      const code =
+        ref?.case === "id"
+          ? (exp.questions.find((q) => q.id === ref.value)?.code ?? "")
+          : (ref?.value ?? "");
+      const note = String(r.note ?? "");
+      return `${code} ${note}`.trim();
     }
     case "plan.v1.BlockServicePutRequest":
       return `${String(r.kind ?? "")} ${String(r.title ?? "")}`.trim();
@@ -92,26 +115,42 @@ function summary(command: Command, exp: WishExport): string {
 const ms = (ts?: Timestamp) =>
   ts ? Number(ts.seconds) * 1000 + ts.nanos / 1e6 : 0;
 
+const blockEntries = new WeakMap<Block, Entry>();
+const commandEntries = new WeakMap<Command, Entry>();
+
 // journal is the wish's journal: its commands and its log blocks, the latest first, at most MAX_JOURNAL.
 export function journal(
   exp: WishExport | undefined,
   blocks: readonly Block[],
 ): Entry[] {
-  const entries: Entry[] = blocks.filter(isLog).map((b) => ({
-    id: b.id,
-    at: b.createTime,
-    command: "",
-    summary: b.title,
-    note: b.content.trim(),
-  }));
-  for (const c of exp?.commands ?? [])
-    entries.push({
-      id: c.id,
-      at: c.at,
-      command: commandName(c.method),
-      summary: summary(c, exp!),
-      note: "",
-    });
+  const entries: Entry[] = blocks.filter(isLog).map((b) => {
+    let entry = blockEntries.get(b);
+    if (!entry) {
+      entry = {
+        id: b.id,
+        at: b.createTime,
+        command: "",
+        summary: b.title,
+        note: b.content.trim(),
+      };
+      blockEntries.set(b, entry);
+    }
+    return entry;
+  });
+  for (const c of exp?.commands ?? []) {
+    let entry = commandEntries.get(c);
+    if (!entry) {
+      entry = {
+        id: c.id,
+        at: c.at,
+        command: commandName(c.method),
+        summary: summary(c, exp!),
+        note: "",
+      };
+      commandEntries.set(c, entry);
+    }
+    entries.push(entry);
+  }
   entries.sort((a, b) => ms(b.at) - ms(a.at));
   return entries.slice(0, MAX_JOURNAL);
 }

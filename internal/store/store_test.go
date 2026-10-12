@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -65,7 +66,7 @@ func strs(t *testing.T, s *Store, q string, args ...any) []string {
 func TestSchema(t *testing.T) {
 	s := open(t)
 	tables := strs(t, s, `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
-	if want := []string{"command", "project", "question"}; !slices.Equal(tables, want) {
+	if want := []string{"command", "project", "question", "sample"}; !slices.Equal(tables, want) {
 		t.Errorf("tables = %v, want %v", tables, want)
 	}
 	if cols, want := strs(t, s, `SELECT name FROM pragma_table_info('question')`), []string{"id", "payload", "wish_id", "task_id", "code"}; !slices.Equal(cols, want) {
@@ -77,6 +78,7 @@ func TestSchema(t *testing.T) {
 	indexes := strs(t, s, `SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL ORDER BY name`)
 	want := []string{
 		"command_method", "project_unique_directory", "project_unique_name", "question_task_id", "question_unique_wish_id_code", "question_wish_id",
+		"sample_at", "sample_series_at",
 	}
 	if !slices.Equal(indexes, want) {
 		t.Errorf("indexes = %v, want %v", indexes, want)
@@ -240,6 +242,50 @@ func TestLatest(t *testing.T) {
 	err = Latest(ctx, s, Where{"name": "A"}, func(p *planv1.Project) bool { seen = append(seen, p.GetName()); return true })
 	if err != nil || !slices.Equal(seen, []string{"a"}) {
 		t.Errorf("Latest by name = %v, %v", seen, err)
+	}
+}
+
+func TestListAfter(t *testing.T) {
+	ctx := t.Context()
+	s, err := Open(ctx, "", &planv1.TaskEvent{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	// Written out of order: ListAfter reads them by seq.
+	for _, seq := range []int64{3, 1, 4, 2} {
+		ev := &planv1.TaskEvent{Id: NewID(), TaskId: "t", Seq: seq, Text: fmt.Sprintf("event %d", seq)}
+		if seq%2 == 0 {
+			ev.Kind = planv1.TaskEventKind_TASK_EVENT_KIND_GATE
+		}
+		if err := put(ctx, s, ev, &planv1.TaskEvent{Id: NewID(), TaskId: "other", Seq: seq}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seqs := func(after After) []int64 {
+		t.Helper()
+		events, err := ListAfter[*planv1.TaskEvent](ctx, s, Where{"task_id": "t"}, after)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []int64
+		for _, ev := range events {
+			out = append(out, ev.GetSeq())
+		}
+		return out
+	}
+	if got := seqs(After{Field: "seq", From: 1}); !slices.Equal(got, []int64{2, 3, 4}) {
+		t.Errorf("after 1 = %v, want 2 3 4", got)
+	}
+	gate, err := proto.Marshal(&planv1.TaskEvent{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_GATE})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := seqs(After{Field: "seq", Contains: [][]byte{gate, []byte("event")}}); !slices.Equal(got, []int64{2, 4}) {
+		t.Errorf("gate events = %v, want 2 4", got)
+	}
+	if _, err := ListAfter[*planv1.TaskEvent](ctx, s, nil, After{Field: "task_id"}); err == nil {
+		t.Error("ListAfter on a text field: no error")
 	}
 }
 

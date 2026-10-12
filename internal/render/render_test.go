@@ -353,10 +353,10 @@ func TestBusyPage(t *testing.T) {
 			t.Errorf("the page lacks %q", s)
 		}
 	}
-	// In an open card, the recommendation comes first, then the options, then the context.
+	// An open card reads top-down: what is at stake, then the recommendation, then the options.
 	card := between(html, `id="q-Q90"`, "</details>")
-	if i, j, k := strings.Index(card, `class="recom"`), strings.Index(card, `class="options"`), strings.Index(card, `class="context"`); i < 0 || i > j || j > k {
-		t.Errorf("a card shows the recommendation, the options, then the context:\n%s", card)
+	if i, j, k := strings.Index(card, `class="context"`), strings.Index(card, `class="recom"`), strings.Index(card, `class="options"`); i < 0 || i > j || j > k {
+		t.Errorf("a card shows the context, the recommendation, then the options:\n%s", card)
 	}
 
 	// Who runs now: the running worker as a card, the finished work folded below.
@@ -850,7 +850,7 @@ func TestWorkStands(t *testing.T) {
 	}}
 	html := page(t, Input{Export: exp, Language: "en"})
 	for code, want := range map[string]string{
-		"W2": `<p class="work pause">Done, waiting to be committed</p>`,
+		"W2": `<p class="work pause">Waiting to be committed</p>`,
 		"W3": `<p class="work ok">Committed into feat/x as 1a2b3c4d</p>`,
 		"W4": `<p class="work fail">Conflict, not committed: W4 conflicts with feat/x in a.go, corrected by W9</p>`,
 		"W5": `<p class="work fail">Red tests, not committed: test exited 1</p>`,
@@ -861,11 +861,75 @@ func TestWorkStands(t *testing.T) {
 			t.Errorf("%s's row lacks %s:\n%s", code, want, row)
 		}
 	}
+	for code, wantStatus := range map[string]string{
+		"W1": `<span class="st ok"><i aria-hidden="true">✓</i>Done</span>`,
+		"W2": `<span class="st run"><i aria-hidden="true"></i>Merging</span>`,
+		"W3": `<span class="st ok"><i aria-hidden="true">✓</i>Done</span>`,
+		"W4": `<span class="st fail"><i aria-hidden="true">✕</i>Merge failed</span>`,
+		"W5": `<span class="st fail"><i aria-hidden="true">✕</i>Merge failed</span>`,
+		"W6": `<span class="st run"><i aria-hidden="true"></i>Merging</span>`,
+		"W7": `<span class="st wait"><i aria-hidden="true">?</i>To review</span>`,
+	} {
+		if row := between(html, `<tr id="t-`+code+`">`, "</tr>"); !strings.Contains(row, wantStatus) {
+			t.Errorf("%s's row lacks status %s:\n%s", code, wantStatus, row)
+		}
+	}
 	if row := between(html, `<tr id="t-W1">`, "</tr>"); strings.Contains(row, `class="work`) {
 		t.Errorf("a task whose work Djinn does not integrate says where it stands:\n%s", row)
 	}
 	if fr := page(t, Input{Export: exp, Language: "fr"}); !strings.Contains(fr,
 		french(t, "work.committed", map[string]string{"branch": "feat/x", "sha": "1a2b3c4d"})) {
 		t.Error("the French page does not say where the work stands")
+	}
+}
+
+// TestSVG ensures SVG blocks and fenced SVG markdown render inside dia-frame and strip unsafe elements.
+func TestSVG(t *testing.T) {
+	exp := &planv1.WishExport{
+		Wish: &planv1.Wish{Id: "w", Title: "SVG Wish"},
+		Blocks: []*planv1.Block{
+			{
+				Id:        "b-standalone",
+				Kind:      "diagram",
+				Title:     "Standalone SVG",
+				MediaType: "image/svg+xml",
+				Content: `<svg viewBox="0 0 100 100" onload="alert('fail')">
+					<script>alert('evil')</script>
+					<foreignObject><iframe src="https://evil.com"></iframe></foreignObject>
+					<a href="https://evil.com" xlink:href="https://evil.com"><text>Click</text></a>
+					<a href="#safe-ref"><rect width="10" height="10" /></a>
+				</svg>`,
+			},
+			{
+				Id:    "b-fenced",
+				Kind:  "notes",
+				Title: "Fenced SVG",
+				Content: "Here is an SVG diagram:\n\n```svg\n<svg viewBox=\"0 0 200 200\" onclick=\"bad()\">\n" +
+					"<script>bad()</script>\n<circle cx=\"50\" cy=\"50\" r=\"20\" />\n</svg>\n```\n\nAnd concluding text.",
+			},
+		},
+	}
+	html := page(t, Input{Export: exp, Language: "en"})
+
+	if strings.Contains(strings.ToLower(html), "<script") {
+		t.Errorf("rendered page must not contain script tags: %s", html)
+	}
+	if strings.Contains(html, "alert(") || strings.Contains(html, "bad()") {
+		t.Errorf("rendered page must not contain event handlers or script contents: %s", html)
+	}
+	if strings.Contains(html, "foreignObject") || strings.Contains(html, "foreignobject") {
+		t.Errorf("rendered page must not contain foreignObject: %s", html)
+	}
+	if strings.Contains(html, "https://evil.com") {
+		t.Errorf("rendered page must not contain external URLs: %s", html)
+	}
+	if !strings.Contains(html, `href="#safe-ref"`) {
+		t.Errorf("rendered page should preserve local fragment links: %s", html)
+	}
+	if !strings.Contains(html, `<circle cx="50" cy="50" r="20" />`) && !strings.Contains(html, `<circle cx="50" cy="50" r="20"></circle>`) {
+		t.Errorf("rendered page should contain circle element: %s", html)
+	}
+	if n := strings.Count(html, `class="dia-frame"`); n < 2 {
+		t.Errorf("expected at least 2 dia-frame occurrences, got %d", n)
 	}
 }

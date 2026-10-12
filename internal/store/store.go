@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -23,6 +24,8 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
+
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // File is the database of the machine, in the data directory.
@@ -103,7 +106,10 @@ func (s *Store) migrate(ctx context.Context, entities []proto.Message) error {
 		if _, err := tx.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS command_method ON command (method)`); err != nil {
 			return fmt.Errorf("index the journal: %w", err)
 		}
-		names := map[string]bool{"command": true}
+		if err := s.migrateSamples(ctx, tx); err != nil {
+			return err
+		}
+		names := map[string]bool{"command": true, "sample": true}
 		for _, e := range entities {
 			t, err := newTable(e.ProtoReflect().Descriptor())
 			if err != nil {
@@ -129,7 +135,13 @@ type Reader interface {
 }
 
 func (s *Store) query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return s.db.QueryContext(ctx, query, args...)
+	start := time.Now()
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if took := time.Since(start); took > logx.Slow {
+		// Waiting for the connection, or the query itself: its SQL, never its arguments.
+		logx.L().Warn("database query slow", "took", took.Round(time.Millisecond), "sql", logx.Cut(query, 80))
+	}
+	return rows, err
 }
 
 func (s *Store) table(md protoreflect.MessageDescriptor) (*table, error) {
@@ -159,6 +171,25 @@ func List[T proto.Message](ctx context.Context, r Reader, where Where) ([]T, err
 	mt := zero.ProtoReflect().Type()
 	var out []T
 	err := list(ctx, r, mt, where, "id", func(m proto.Message) bool { out = append(out, m.(T)); return true })
+	return out, err
+}
+
+// After narrows a ListAfter to the entities whose indexed integer field Field is past From, and whose payload holds
+// each of Contains: a filter on the encoded bytes that skips decoding the others, which the caller checks again
+// once decoded, as an entity may hold the bytes elsewhere.
+type After struct {
+	Field    string
+	From     int64
+	Contains [][]byte
+}
+
+// ListAfter is List narrowed by after, in the order of its field: through an index on where's fields and after's,
+// it reads only the entities past From, where List reads them all.
+func ListAfter[T proto.Message](ctx context.Context, r Reader, where Where, after After) ([]T, error) {
+	var zero T
+	mt := zero.ProtoReflect().Type()
+	var out []T
+	err := listAfter(ctx, r, mt, where, after, func(m proto.Message) bool { out = append(out, m.(T)); return true })
 	return out, err
 }
 
@@ -195,9 +226,36 @@ func get(ctx context.Context, r Reader, id string, m proto.Message) error {
 
 // list calls add on the entities of type mt that match where, in order (an ORDER BY clause), until add returns false.
 func list(ctx context.Context, r Reader, mt protoreflect.MessageType, where Where, order string, add func(proto.Message) bool) error {
-	t, err := r.table(mt.Descriptor())
+	t, conds, args, err := conditions(r, mt, where)
 	if err != nil {
 		return err
+	}
+	return query(ctx, r, mt, t, conds, args, order, add)
+}
+
+func listAfter(ctx context.Context, r Reader, mt protoreflect.MessageType, where Where, after After, add func(proto.Message) bool) error {
+	t, conds, args, err := conditions(r, mt, where)
+	if err != nil {
+		return err
+	}
+	fd := t.column(after.Field)
+	if fd == nil || fd.Kind() == protoreflect.StringKind {
+		return fmt.Errorf("%s: %s is not an indexed integer field", mt.Descriptor().Name(), after.Field)
+	}
+	conds = append(conds, quote(after.Field)+" > ?")
+	args = append(args, after.From)
+	for _, b := range after.Contains {
+		conds = append(conds, "instr(payload, ?) > 0")
+		args = append(args, b)
+	}
+	return query(ctx, r, mt, t, conds, args, quote(after.Field), add)
+}
+
+// conditions gives the table of mt and where as SQL conditions, each field indexed.
+func conditions(r Reader, mt protoreflect.MessageType, where Where) (*table, []string, []any, error) {
+	t, err := r.table(mt.Descriptor())
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	keys := make([]string, 0, len(where))
 	for k := range where {
@@ -208,11 +266,19 @@ func list(ctx context.Context, r Reader, mt protoreflect.MessageType, where Wher
 	args := make([]any, 0, len(keys))
 	for _, k := range keys {
 		if t.column(k) == nil {
-			return fmt.Errorf("%s: %s is not an indexed field", mt.Descriptor().Name(), k)
+			return nil, nil, nil, fmt.Errorf("%s: %s is not an indexed field", mt.Descriptor().Name(), k)
 		}
 		conds = append(conds, quote(k)+" = ?")
 		args = append(args, where[k])
 	}
+	return t, conds, args, nil
+}
+
+// query decodes the payloads of t's rows that meet conds, in order, until add returns false.
+func query(
+	ctx context.Context, r Reader, mt protoreflect.MessageType, t *table, conds []string, args []any, order string,
+	add func(proto.Message) bool,
+) error {
 	q := `SELECT payload FROM ` + quote(t.name)
 	if len(conds) > 0 {
 		q += " WHERE " + strings.Join(conds, " AND ")
@@ -243,7 +309,8 @@ type Tx struct {
 	ctx     context.Context
 	tx      *sql.Tx
 	s       *Store
-	journal bool
+	journal string
+	method  string // The journal's method, for the log.
 	changed []proto.Message
 }
 
@@ -251,7 +318,21 @@ type Tx struct {
 // command that caused it: call Journal before Put.
 func (s *Store) Tx(ctx context.Context, fn func(*Tx) error) error {
 	t := &Tx{ctx: ctx, s: s}
-	if err := s.tx(ctx, func(tx *sql.Tx) error { t.tx = tx; return fn(t) }); err != nil {
+	asked := time.Now()
+	var began time.Time
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		began = time.Now()
+		if waited := began.Sub(asked); waited > logx.Slow {
+			logx.L().Warn("database waited", "took", waited.Round(time.Millisecond))
+		}
+		t.tx = tx
+		return fn(t)
+	})
+	// A transaction that holds the one connection long holds up every other call (W504).
+	if !began.IsZero() && time.Since(began) > logx.Slow {
+		logx.Took(slog.LevelWarn, "transaction held the database", began, "method", t.method)
+	}
+	if err != nil {
 		return err
 	}
 	if len(t.changed) > 0 {
@@ -297,14 +378,18 @@ func (tx *Tx) Journal(actor, method string, req proto.Message) error {
 		id.String(), actor, at, method, b); err != nil {
 		return fmt.Errorf("journal %s: %w", method, err)
 	}
-	tx.journal = true
+	tx.journal, tx.method = id.String(), method
 	return nil
 }
+
+// JournalID returns the identifier of the last command journaled in this transaction, or empty before Journal.
+// A newly created entity may use it as its identifier, tying creation to its command without extra stored fields.
+func (tx *Tx) JournalID() string { return tx.journal }
 
 // Put inserts or replaces an entity. It returns an error wrapping ErrDuplicate when another entity has the same
 // values in a unique group.
 func (tx *Tx) Put(m proto.Message) error {
-	if !tx.journal {
+	if tx.journal == "" {
 		return errors.New("store: journal the command before changing an entity")
 	}
 	t, err := tx.s.table(m.ProtoReflect().Descriptor())
@@ -320,7 +405,7 @@ func (tx *Tx) Put(m proto.Message) error {
 
 // Delete removes an entity, found by the type and the id of m. Like Put, it follows the command that caused it.
 func (tx *Tx) Delete(m proto.Message) error {
-	if !tx.journal {
+	if tx.journal == "" {
 		return errors.New("store: journal the command before changing an entity")
 	}
 	t, err := tx.s.table(m.ProtoReflect().Descriptor())
@@ -331,6 +416,20 @@ func (tx *Tx) Delete(m proto.Message) error {
 		return err
 	}
 	tx.changed = append(tx.changed, m)
+	return nil
+}
+
+// Change notes entities that changed outside of Put or Delete (such as an entity moved to another wish),
+// to be reported to OnCommit hooks. Like Put, it follows the command that caused it.
+func (tx *Tx) Change(ms ...proto.Message) error {
+	if tx.journal == "" {
+		return errors.New("store: journal the command before changing an entity")
+	}
+	for _, m := range ms {
+		if m != nil {
+			tx.changed = append(tx.changed, proto.Clone(m))
+		}
+	}
 	return nil
 }
 

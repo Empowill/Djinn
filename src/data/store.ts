@@ -13,18 +13,28 @@ import {
   BlockSchema,
   Change,
   type InboxItem,
+  InboxItemSchema,
   type InboxSource,
+  InboxSourceSchema,
+  type Lead,
+  type LeadExit,
+  type LeadPrompt,
+  LeadPromptSchema,
+  LeadSchema,
   type Project,
+  ProjectSchema,
   type Question,
   QuestionSchema,
   type Task,
   type TaskEvent,
+  TaskEventKind,
   TaskSchema,
   type Wish,
+  WishSchema,
   type WishChanges,
 } from "../../gen/ts/plan/v1/plan_pb";
-import type { Tilasm } from "../../gen/ts/plan/v1/tilasm_pb";
-import { type Clients, message, notFound } from "./client";
+import { type Tilasm, TilasmSchema } from "../../gen/ts/plan/v1/tilasm_pb";
+import { type Clients, message, notFound, unimplemented } from "./client";
 
 // What the page shows of one wish, read while a screen shows it.
 export interface WishDetail {
@@ -35,6 +45,16 @@ export interface WishDetail {
   tilasms: Tilasm[];
   // Read at least once.
   loaded: boolean;
+  // Totals from the server for paginated lists.
+  tasksTotal?: number;
+  questionsTotal?: number;
+  blocksTotal?: number;
+  // Next page tokens from the server.
+  tasksNextToken?: string;
+  questionsNextToken?: string;
+  blocksNextToken?: string;
+  // The kinds of entities loaded so far for this wish.
+  loadedKinds: Set<Change>;
 }
 
 export interface State {
@@ -45,6 +65,13 @@ export interface State {
   // Why the last read failed; empty when it did not.
   error: string;
   projects: Project[];
+  lead?: Lead;
+  // The choice the lead's agent shows in its terminal, waiting for the developer: an approval, a folder to trust.
+  leadPrompt?: LeadPrompt;
+  // How the lead's program ended, until Lead starts it again; unset while it runs.
+  leadExit?: LeadExit;
+  // Why the last start of the lead failed, until one succeeds; empty when none did.
+  leadStartError?: string;
   // As WishService.List gives them: the active ones by rank, then the paused ones, then the granted ones.
   wishes: Wish[];
   details: Readonly<Record<string, WishDetail>>;
@@ -54,6 +81,8 @@ export interface State {
   sources: InboxSource[];
   // The events of the tasks followed, oldest first.
   events: Readonly<Record<string, TaskEvent[]>>;
+  // The first prompt of each task read alone or followed, by task id.
+  prompts: Readonly<Record<string, string>>;
   machine?: Machine;
   gates: Gate[];
 }
@@ -64,10 +93,16 @@ export interface Store {
   subscribe(listener: () => void): () => void;
   // Follows djinn until the returned function is called: reads everything, then what changes.
   start(): () => void;
-  // Reads a wish's tasks, questions, blocks and tilasms, and again when they change, until the returned function is called.
-  open(wishId: string): () => void;
+  // Reads a wish's tasks, questions, blocks and tilasms, or the given kinds, and again when they change, until the returned function is called.
+  open(wishId: string, kinds?: readonly Change[]): () => void;
+  // Loads kinds for a wish that are not yet loaded.
+  loadKinds(wishId: string, kinds: readonly Change[]): Promise<void>;
+  // Loads the next page for a kind; of that many items at most, the server's default when none.
+  loadMore(wishId: string, kind: Change, pageSize?: number): Promise<void>;
   // Follows a task's events until the returned function is called, or the task ends.
   follow(taskId: string): () => void;
+  // Reads a task's prompt alone, without loading its other events.
+  readPrompt(taskId: string): Promise<string>;
   // Reads again what changed, as a write the page made says it: the watch says it too, a moment later.
   changed(wishId: string, changes: Change[]): Promise<void>;
   // Reads the machine and its gates.
@@ -82,6 +117,7 @@ const EMPTY_DETAIL: WishDetail = {
   blocks: [],
   tilasms: [],
   loaded: false,
+  loadedKinds: new Set<Change>(),
 };
 
 export const emptyDetail = EMPTY_DETAIL;
@@ -90,6 +126,41 @@ export const emptyDetail = EMPTY_DETAIL;
 const CARRIED = new Set([Change.TASK, Change.QUESTION, Change.BLOCK]);
 // What a wish shows, read again for it all.
 const DETAIL = [Change.TASK, Change.QUESTION, Change.BLOCK, Change.TILASM];
+
+const keyOf = (m: unknown) =>
+  m && typeof m === "object"
+    ? "id" in m
+      ? String((m as { id: unknown }).id)
+      : "name" in m
+        ? String((m as { name: unknown }).name)
+        : ""
+    : "";
+
+// reconcile compares incoming entities against prev, reusing previous objects if equal according to the schema.
+// If all elements in order match prev, prev itself is returned so the array reference remains stable.
+function reconcile<Desc extends DescMessage>(
+  schema: Desc,
+  prev: readonly MessageShape<Desc>[],
+  incoming: readonly MessageShape<Desc>[],
+): MessageShape<Desc>[] {
+  if (!prev.length && !incoming.length) return prev as MessageShape<Desc>[];
+  const oldByKey = new Map(prev.map((m) => [keyOf(m), m]));
+  let identical = prev.length === incoming.length;
+  const out: MessageShape<Desc>[] = [];
+  for (let i = 0; i < incoming.length; i++) {
+    const next = incoming[i];
+    const key = keyOf(next);
+    const old = key ? oldByKey.get(key) : undefined;
+    if (old && equals(schema, old, next)) {
+      out.push(old);
+      if (prev[i] !== old) identical = false;
+    } else {
+      out.push(next);
+      identical = false;
+    }
+  }
+  return identical ? (prev as MessageShape<Desc>[]) : out;
+}
 
 // merge puts the entities that changed in place of theirs in list, and takes out those deleted. The others keep their
 // place and their reference, and so does one that comes back equal: a screen that shows them draws them again only
@@ -137,33 +208,107 @@ const byID = (a: { id: string }, b: { id: string }) =>
 const byPosition = (a: Block, b: Block) =>
   a.position < b.position ? -1 : a.position > b.position ? 1 : byID(a, b);
 
+// adjustTotal updates total when incremental changes add or remove items.
+function adjustTotal<T extends { id: string }>(
+  total: number | undefined,
+  oldList: readonly T[],
+  newList: readonly T[],
+  incoming: readonly T[],
+  deleted: ReadonlySet<string>,
+): number | undefined {
+  if (total === undefined) return undefined;
+  const oldIds = new Set(oldList.map((x) => x.id));
+  let delta = 0;
+  for (const m of incoming) {
+    if (!oldIds.has(m.id)) delta++;
+  }
+  for (const old of oldList) {
+    if (deleted.has(old.id)) delta--;
+  }
+  return Math.max(0, total + delta);
+}
+
 // apply puts what a watch message brought of a wish in place of what it shows, but for what was just read: a read
-// made after the message is newer.
+// made after the message is newer. Only kinds that are already loaded are updated; hidden tabs are untouched.
 function apply(
   detail: WishDetail,
   changes: WishChanges,
   read: Partial<WishDetail>,
 ): WishDetail {
   const deleted = new Set(changes.deleted);
-  const tasks = read.tasks
+  const tasks = !detail.loadedKinds.has(Change.TASK)
     ? detail.tasks
-    : merge(TaskSchema, detail.tasks, changes.tasks, deleted, byID);
-  const questions = read.questions
+    : read.tasks
+      ? detail.tasks
+      : merge(TaskSchema, detail.tasks, changes.tasks, deleted, byID);
+  const questions = !detail.loadedKinds.has(Change.QUESTION)
     ? detail.questions
-    : merge(QuestionSchema, detail.questions, changes.questions, deleted, byID);
-  const blocks = read.blocks
+    : read.questions
+      ? detail.questions
+      : merge(
+          QuestionSchema,
+          detail.questions,
+          changes.questions,
+          deleted,
+          byID,
+        );
+  const blocks = !detail.loadedKinds.has(Change.BLOCK)
     ? detail.blocks
-    : merge(BlockSchema, detail.blocks, changes.blocks, deleted, byPosition);
+    : read.blocks
+      ? detail.blocks
+      : merge(BlockSchema, detail.blocks, changes.blocks, deleted, byPosition);
+  const tasksTotal = read.tasks
+    ? detail.tasksTotal
+    : adjustTotal(
+        detail.tasksTotal,
+        detail.tasks,
+        tasks,
+        changes.tasks,
+        deleted,
+      );
+  const questionsTotal = read.questions
+    ? detail.questionsTotal
+    : adjustTotal(
+        detail.questionsTotal,
+        detail.questions,
+        questions,
+        changes.questions,
+        deleted,
+      );
+  const blocksTotal = read.blocks
+    ? detail.blocksTotal
+    : adjustTotal(
+        detail.blocksTotal,
+        detail.blocks,
+        blocks,
+        changes.blocks,
+        deleted,
+      );
   if (
     tasks === detail.tasks &&
     questions === detail.questions &&
-    blocks === detail.blocks
+    blocks === detail.blocks &&
+    tasksTotal === detail.tasksTotal &&
+    questionsTotal === detail.questionsTotal &&
+    blocksTotal === detail.blocksTotal
   )
     return detail;
-  return { ...detail, tasks, questions, blocks };
+  return {
+    ...detail,
+    tasks,
+    questions,
+    blocks,
+    tasksTotal,
+    questionsTotal,
+    blocksTotal,
+  };
 }
 
-export function createStore(clients: Clients, retry = 1000): Store {
+export function createStore(
+  clients: Clients,
+  retry = 1000,
+  throttle = Math.min(retry, 200),
+): Store {
   let state: State = {
     live: false,
     loaded: false,
@@ -174,6 +319,7 @@ export function createStore(clients: Clients, retry = 1000): Store {
     inbox: [],
     sources: [],
     events: {},
+    prompts: {},
     gates: [],
   };
   const listeners = new Set<() => void>();
@@ -191,11 +337,27 @@ export function createStore(clients: Clients, retry = 1000): Store {
     changes: new Map<string, WishChanges[]>(),
   };
   const opened = new Map<string, number>();
-  let flushing: Promise<void> | undefined;
-  let again = false;
+  // The kinds of each wish not shown that changed meanwhile: what it holds of them is read again when it shows.
+  const stale = new Map<string, Set<Change>>();
+  const fresh = (wishId: string, kind: Change) =>
+    !!state.details[wishId]?.loadedKinds.has(kind) &&
+    !stale.get(wishId)?.has(kind);
+  const loadingMore = new Set<string>();
+  const pendingPrompts = new Map<string, Promise<string>>();
+  const lastReadAt = new Map<string, number>();
+  // How long a read that failed waits before it is made again, by key: it doubles at each failure, up to a minute.
+  const backoff = new Map<string, number>();
+  // The store no longer follows djinn: a read that failed is not made again.
+  let stopped = false;
+
+  let active: Promise<void> | undefined;
+  let scheduled: Promise<void> | undefined;
+  let scheduledResolve: (() => void) | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timerAt = 0;
 
   // mark notes what to read again; with changed, the tasks, questions and blocks it brings need no read. A change
-  // this page does not know reads everything again.
+  // this page does not know reads everything again. Only loaded kinds of opened wishes are re-read.
   function mark(
     wishId: string,
     changes: readonly Change[],
@@ -208,18 +370,41 @@ export function createStore(clients: Clients, retry = 1000): Store {
       ]);
     for (const change of changes) {
       if (!Change[change] || change === Change.UNSPECIFIED) {
-        mark(wishId, [Change.WISH, Change.PROJECT, Change.INBOX, ...DETAIL]);
+        const base = [Change.WISH, Change.PROJECT, Change.INBOX];
+        if (wishId) {
+          const loaded = state.details[wishId]?.loadedKinds;
+          mark(wishId, [
+            ...base,
+            ...(loaded && loaded.size > 0 ? [...loaded] : DETAIL),
+          ]);
+        } else {
+          pending.projects = pending.wishes = pending.inbox = true;
+          for (const id of opened.keys()) {
+            const loaded = state.details[id]?.loadedKinds;
+            const kinds = loaded && loaded.size > 0 ? [...loaded] : DETAIL;
+            mark(id, kinds);
+          }
+        }
         continue;
       }
       if (change === Change.PROJECT) pending.projects = true;
       if (change === Change.WISH) pending.wishes = true;
       if (change === Change.INBOX) pending.inbox = true;
       if (!DETAIL.includes(change)) continue;
+      for (const id of wishId ? [wishId] : Object.keys(state.details))
+        if (!opened.has(id) && state.details[id]?.loadedKinds.has(change))
+          stale.set(id, (stale.get(id) ?? new Set<Change>()).add(change));
       if (changed && wishId && CARRIED.has(change)) continue;
       // Without a wish, every wish shown; a wish not shown is read when it is.
       const ids = wishId ? [wishId] : [...opened.keys()];
       for (const id of ids) {
         if (!opened.has(id)) continue;
+        const detail = state.details[id];
+        // Do not load hidden tabs! Only re-read if already loaded.
+        const loaded = detail
+          ? detail.loadedKinds.has(change)
+          : pending.details.get(id)?.has(change);
+        if (!loaded) continue;
         const kinds = pending.details.get(id) ?? new Set<Change>();
         kinds.add(change);
         pending.details.set(id, kinds);
@@ -227,64 +412,311 @@ export function createStore(clients: Clients, retry = 1000): Store {
     }
   }
 
+  function canRead(key: string, now: number): boolean {
+    const last = lastReadAt.get(key);
+    return last === undefined || now - last >= throttle;
+  }
+
+  function nextDelay(now: number): number {
+    let minWait = Infinity;
+    const check = (key: string) => {
+      const last = lastReadAt.get(key);
+      if (last === undefined) minWait = 0;
+      else {
+        const wait = throttle - (now - last);
+        if (wait <= 0) minWait = 0;
+        else if (wait < minWait) minWait = wait;
+      }
+    };
+    if (pending.wishes) check("wishes");
+    if (pending.projects) check("projects");
+    if (pending.inbox) check("inbox");
+    for (const [wishId, kinds] of pending.details) {
+      for (const k of kinds) {
+        check(`${wishId}:${k}`);
+      }
+    }
+    if (pending.changes.size > 0) {
+      minWait = 0;
+    }
+    return minWait === Infinity ? -1 : minWait;
+  }
+
   async function read() {
-    const wishes = pending.wishes;
-    const projects = pending.projects;
-    const inbox = pending.inbox;
-    const details = [...pending.details];
+    const now = Date.now();
+    const wishes = pending.wishes && canRead("wishes", now);
+    const projects = pending.projects && canRead("projects", now);
+    const inbox = pending.inbox && canRead("inbox", now);
+    if (wishes) {
+      pending.wishes = false;
+      lastReadAt.set("wishes", now);
+    }
+    if (projects) {
+      pending.projects = false;
+      lastReadAt.set("projects", now);
+    }
+    if (inbox) {
+      pending.inbox = false;
+      lastReadAt.set("inbox", now);
+    }
+
+    const details: [string, Set<Change>][] = [];
+    for (const [wishId, kinds] of pending.details) {
+      const eligible = new Set<Change>();
+      for (const k of kinds) {
+        if (canRead(`${wishId}:${k}`, now)) {
+          eligible.add(k);
+        }
+      }
+      if (eligible.size > 0) {
+        details.push([wishId, eligible]);
+        for (const k of eligible) {
+          kinds.delete(k);
+          lastReadAt.set(`${wishId}:${k}`, now);
+        }
+        if (kinds.size === 0) {
+          pending.details.delete(wishId);
+        }
+      }
+    }
+
     const changes = [...pending.changes];
-    pending.wishes = pending.projects = pending.inbox = false;
-    pending.details.clear();
     pending.changes.clear();
+
+    if (
+      !wishes &&
+      !projects &&
+      !inbox &&
+      details.length === 0 &&
+      changes.length === 0
+    ) {
+      return;
+    }
     const patch: Partial<State> = {};
     const errors: string[] = [];
     const reads: Promise<void>[] = [];
-    const attempt = (run: () => Promise<void>) =>
-      reads.push(run().catch((error) => void errors.push(message(error))));
+    // A read that fails is read again after retry: what it would have brought (a task spawned, a worker started)
+    // must not wait for the next change of the same thing, which may come only as it ends.
+    const again = (key: string, pend: () => void) => {
+      if (stopped) return;
+      const wait = backoff.get(key) ?? retry;
+      backoff.set(key, Math.min(wait * 2, 60_000));
+      pend();
+      lastReadAt.set(key, Date.now() + Math.max(0, wait - throttle));
+    };
+    const attempt = (
+      run: () => Promise<void>,
+      failed?: () => void,
+      key?: string,
+    ) =>
+      reads.push(
+        run().then(
+          () => void (key && backoff.delete(key)),
+          (error) => {
+            errors.push(message(error));
+            if (!unimplemented(error)) failed?.();
+          },
+        ),
+      );
+    // The kinds of each wish whose read failed: not taken as loaded, read again.
+    const failedKinds = new Map<string, Set<Change>>();
+    const attemptKind = (
+      wishId: string,
+      kind: Change,
+      run: () => Promise<void>,
+    ) =>
+      attempt(
+        run,
+        () => {
+          failedKinds.set(
+            wishId,
+            (failedKinds.get(wishId) ?? new Set<Change>()).add(kind),
+          );
+          // A wish no longer shown reads it when it shows again.
+          stale.set(wishId, (stale.get(wishId) ?? new Set<Change>()).add(kind));
+          if (opened.has(wishId))
+            again(`${wishId}:${kind}`, () =>
+              pending.details.set(
+                wishId,
+                (pending.details.get(wishId) ?? new Set<Change>()).add(kind),
+              ),
+            );
+        },
+        `${wishId}:${kind}`,
+      );
     if (wishes)
-      attempt(async () => {
-        patch.wishes = (await clients.wishes.list({})).wishes;
-      });
+      attempt(
+        async () => {
+          const list = (await clients.wishes.list({})).wishes;
+          const reconciled = reconcile(WishSchema, state.wishes, list);
+          if (reconciled !== state.wishes) patch.wishes = reconciled;
+          const { lead, prompt, exit, startError } = await clients.lead.get({});
+          const sameLead =
+            (!state.lead && !lead) ||
+            (state.lead && lead ? equals(LeadSchema, state.lead, lead) : false);
+          if (!sameLead) patch.lead = lead;
+          const samePrompt =
+            (!state.leadPrompt && !prompt) ||
+            (state.leadPrompt && prompt
+              ? equals(LeadPromptSchema, state.leadPrompt, prompt)
+              : false);
+          if (!samePrompt) patch.leadPrompt = prompt;
+          if (state.leadExit?.code !== exit?.code || !state.leadExit !== !exit)
+            patch.leadExit = exit;
+          if ((state.leadStartError ?? "") !== startError)
+            patch.leadStartError = startError;
+        },
+        () => again("wishes", () => (pending.wishes = true)),
+        "wishes",
+      );
     if (projects)
       attempt(async () => {
-        patch.projects = (await clients.projects.list({})).projects;
+        const list = (await clients.projects.list({})).projects;
+        const reconciled = reconcile(ProjectSchema, state.projects, list);
+        if (reconciled !== state.projects) patch.projects = reconciled;
       });
     if (inbox)
       attempt(async () => {
-        patch.inbox = (await clients.inbox.list({})).items;
+        const list = (await clients.inbox.list({})).items;
+        const reconciled = reconcile(InboxItemSchema, state.inbox, list);
+        if (reconciled !== state.inbox) patch.inbox = reconciled;
       });
     if (inbox)
       attempt(async () => {
-        patch.sources = (await clients.inbox.sources({})).sources;
+        const list = (await clients.inbox.sources({})).sources;
+        const reconciled = reconcile(InboxSourceSchema, state.sources, list);
+        if (reconciled !== state.sources) patch.sources = reconciled;
       });
     const read: Record<string, Partial<WishDetail>> = {};
     for (const [wishId, kinds] of details) {
+      const prevDetail = state.details[wishId] ?? EMPTY_DETAIL;
       const into: Partial<WishDetail> = (read[wishId] = {});
       if (kinds.has(Change.TASK))
-        attempt(async () => {
-          into.tasks = (await clients.tasks.list({ wishId })).tasks;
+        attemptKind(wishId, Change.TASK, async () => {
+          const res = await clients.tasks.list({ wishId });
+          into.tasks = reconcile(TaskSchema, prevDetail.tasks, res.tasks);
+          into.tasksTotal = res.total;
+          into.tasksNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.QUESTION))
-        attempt(async () => {
-          into.questions = (await clients.questions.list({ wishId })).questions;
+        attemptKind(wishId, Change.QUESTION, async () => {
+          const res = await clients.questions.list({ wishId });
+          let allQuestions = res.questions;
+          if (res.nextPageToken) {
+            let openList: Question[] = [];
+            let token: string | undefined;
+            do {
+              const page = await clients.questions.list({
+                wishId,
+                open: true,
+                pageSize: 200,
+                pageToken: token,
+              });
+              openList = openList.concat(page.questions);
+              token = page.nextPageToken;
+            } while (token);
+            allQuestions = merge(
+              QuestionSchema,
+              res.questions,
+              openList,
+              new Set(),
+              byID,
+            );
+          }
+          into.questions = reconcile(
+            QuestionSchema,
+            prevDetail.questions,
+            allQuestions,
+          );
+          into.questionsTotal = res.total;
+          into.questionsNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.BLOCK))
-        attempt(async () => {
-          into.blocks = (await clients.blocks.list({ wishId })).blocks;
+        attemptKind(wishId, Change.BLOCK, async () => {
+          const res = await clients.blocks.list({ wishId });
+          into.blocks = reconcile(BlockSchema, prevDetail.blocks, res.blocks);
+          into.blocksTotal = res.total;
+          into.blocksNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.TILASM))
-        attempt(async () => {
-          into.tilasms = (await clients.tilasms.list({ wish: wishId })).tilasms;
+        attemptKind(wishId, Change.TILASM, async () => {
+          const list = (await clients.tilasms.list({ wish: wishId })).tilasms;
+          into.tilasms = reconcile(TilasmSchema, prevDetail.tilasms, list);
         });
     }
     await Promise.all(reads);
     const next = { ...state.details };
     let touched = false;
     for (const [wishId, got] of Object.entries(read)) {
+      const prevDetail = next[wishId] ?? EMPTY_DETAIL;
+      const tasks = got.tasks ?? prevDetail.tasks;
+      const questions = got.questions ?? prevDetail.questions;
+      const blocks = got.blocks ?? prevDetail.blocks;
+      const tilasms = got.tilasms ?? prevDetail.tilasms;
+      const tasksTotal =
+        got.tasksTotal !== undefined ? got.tasksTotal : prevDetail.tasksTotal;
+      const questionsTotal =
+        got.questionsTotal !== undefined
+          ? got.questionsTotal
+          : prevDetail.questionsTotal;
+      const blocksTotal =
+        got.blocksTotal !== undefined
+          ? got.blocksTotal
+          : prevDetail.blocksTotal;
+      const tasksNextToken =
+        got.tasksNextToken !== undefined
+          ? got.tasksNextToken
+          : prevDetail.tasksNextToken;
+      const questionsNextToken =
+        got.questionsNextToken !== undefined
+          ? got.questionsNextToken
+          : prevDetail.questionsNextToken;
+      const blocksNextToken =
+        got.blocksNextToken !== undefined
+          ? got.blocksNextToken
+          : prevDetail.blocksNextToken;
+      const loadedKinds = new Set(prevDetail.loadedKinds);
+      let kindsChanged = false;
+      const requested = details.find(([id]) => id === wishId)?.[1];
+      if (requested) {
+        for (const k of requested) {
+          if (failedKinds.get(wishId)?.has(k)) continue;
+          stale.get(wishId)?.delete(k);
+          if (!loadedKinds.has(k)) {
+            loadedKinds.add(k);
+            kindsChanged = true;
+          }
+        }
+      }
+      if (
+        prevDetail.loaded &&
+        tasks === prevDetail.tasks &&
+        questions === prevDetail.questions &&
+        blocks === prevDetail.blocks &&
+        tilasms === prevDetail.tilasms &&
+        tasksTotal === prevDetail.tasksTotal &&
+        questionsTotal === prevDetail.questionsTotal &&
+        blocksTotal === prevDetail.blocksTotal &&
+        tasksNextToken === prevDetail.tasksNextToken &&
+        questionsNextToken === prevDetail.questionsNextToken &&
+        blocksNextToken === prevDetail.blocksNextToken &&
+        !kindsChanged
+      ) {
+        continue;
+      }
       next[wishId] = {
-        ...(next[wishId] ?? EMPTY_DETAIL),
-        ...got,
+        tasks,
+        questions,
+        blocks,
+        tilasms,
         loaded: true,
+        tasksTotal,
+        questionsTotal,
+        blocksTotal,
+        tasksNextToken,
+        questionsNextToken,
+        blocksNextToken,
+        loadedKinds: kindsChanged ? loadedKinds : prevDetail.loadedKinds,
       };
       touched = true;
     }
@@ -298,27 +730,110 @@ export function createStore(clients: Clients, retry = 1000): Store {
     }
     if (touched) patch.details = next;
     if (wishes && projects && !errors.length) patch.loaded = true;
-    patch.error = errors[0] ?? "";
-    set(patch);
+    if (
+      wishes ||
+      projects ||
+      inbox ||
+      details.length > 0 ||
+      changes.length > 0 ||
+      errors.length > 0 ||
+      state.error
+    ) {
+      patch.error = errors[0] ?? "";
+      set(patch);
+    }
   }
 
-  // flush reads what is pending; a change that comes while it reads is read right after.
-  function flush(): Promise<void> {
-    if (flushing) {
-      again = true;
-      return flushing;
+  function scheduleFlush(delay: number): Promise<void> {
+    if (!scheduled) {
+      scheduled = new Promise<void>((resolve) => {
+        scheduledResolve = resolve;
+      });
     }
-    flushing = (async () => {
+    const target = Date.now() + Math.max(0, delay);
+    if (timer !== undefined) {
+      if (target < timerAt) {
+        clearTimeout(timer);
+        timer = undefined;
+      } else {
+        return scheduled;
+      }
+    }
+    timerAt = target;
+    const wait = Math.max(0, target - Date.now());
+    timer = setTimeout(runScheduled, wait);
+    return scheduled;
+  }
+
+  async function runScheduled() {
+    timer = undefined;
+    timerAt = 0;
+    if (active) return;
+    const resolve = scheduledResolve;
+    scheduled = undefined;
+    scheduledResolve = undefined;
+
+    const promise = (async () => {
       try {
-        do {
-          again = false;
-          await read();
-        } while (again);
+        await read();
       } finally {
-        flushing = undefined;
+        active = undefined;
+        checkAfterActive();
       }
     })();
-    return flushing;
+    active = promise;
+    await promise;
+    resolve?.();
+  }
+
+  function checkAfterActive() {
+    const delay = nextDelay(Date.now());
+    if (delay >= 0) {
+      scheduleFlush(delay);
+    } else if (scheduledResolve) {
+      const resolve = scheduledResolve;
+      scheduled = undefined;
+      scheduledResolve = undefined;
+      resolve();
+    }
+  }
+
+  // flush reads what is pending; a change that comes while it reads is read right after, coalesced and throttled.
+  function flush(): Promise<void> {
+    if (active) {
+      if (!scheduled) {
+        scheduled = new Promise<void>((resolve) => {
+          scheduledResolve = resolve;
+        });
+      }
+      return scheduled;
+    }
+    const now = Date.now();
+    const delay = nextDelay(now);
+    if (delay > 0) {
+      return scheduleFlush(delay);
+    }
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+      timerAt = 0;
+    }
+    const resolve = scheduledResolve;
+    scheduled = undefined;
+    scheduledResolve = undefined;
+    const promise = (async () => {
+      try {
+        await read();
+      } finally {
+        active = undefined;
+        checkAfterActive();
+      }
+    })();
+    active = promise;
+    if (resolve) {
+      void promise.then(resolve);
+    }
+    return active;
   }
 
   const following = new Map<
@@ -332,12 +847,23 @@ export function createStore(clients: Clients, retry = 1000): Store {
     // Events come in bursts: the screen gets them together, at most every 50 ms.
     const push = () => {
       timer = undefined;
-      if (!buffer.length) return;
-      const kept = [...(state.events[taskId] ?? []), ...buffer].slice(
-        -MAX_EVENTS,
-      );
+      // A follow stopped as a new status follows again pushes what it held, and the new one reads it again: an
+      // event already kept is not kept twice.
+      const known = state.events[taskId] ?? [];
+      const lastSeq = known.at(-1)?.seq ?? 0n;
+      const fresh = buffer.filter((e) => e.seq > lastSeq);
       buffer = [];
-      set({ events: { ...state.events, [taskId]: kept } });
+      if (!fresh.length) return;
+      const promptEvent = fresh.find((e) => e.kind === TaskEventKind.PROMPT);
+      const patchPrompts =
+        promptEvent && !state.prompts[taskId]
+          ? { prompts: { ...state.prompts, [taskId]: promptEvent.text } }
+          : undefined;
+      const kept = [...known, ...fresh].slice(-MAX_EVENTS);
+      set({
+        events: { ...state.events, [taskId]: kept },
+        ...(patchPrompts ?? {}),
+      });
     };
     for (;;) {
       const known = state.events[taskId] ?? [];
@@ -373,6 +899,7 @@ export function createStore(clients: Clients, retry = 1000): Store {
       return () => void listeners.delete(listener);
     },
     start() {
+      stopped = false;
       const abort = new AbortController();
       void (async () => {
         while (!abort.signal.aborted) {
@@ -381,7 +908,10 @@ export function createStore(clients: Clients, retry = 1000): Store {
               {},
               { signal: abort.signal },
             )) {
-              if (!state.live) set({ live: true });
+              if (!state.live) {
+                lastReadAt.clear();
+                set({ live: true });
+              }
               mark(res.wishId, res.changes, res.changed);
               void flush();
             }
@@ -393,17 +923,134 @@ export function createStore(clients: Clients, retry = 1000): Store {
           await new Promise((r) => setTimeout(r, retry));
         }
       })();
-      return () => abort.abort();
+      return () => {
+        stopped = true;
+        abort.abort();
+        if (timer !== undefined) {
+          clearTimeout(timer);
+          timer = undefined;
+          timerAt = 0;
+        }
+      };
     },
-    open(wishId) {
+    open(wishId, kinds) {
       opened.set(wishId, (opened.get(wishId) ?? 0) + 1);
-      mark(wishId, DETAIL);
-      void flush();
+      const toLoad = kinds && kinds.length > 0 ? kinds : DETAIL;
+      const pendingKinds = pending.details.get(wishId) ?? new Set<Change>();
+      let added = false;
+      for (const k of toLoad) {
+        if (!fresh(wishId, k)) {
+          pendingKinds.add(k);
+          added = true;
+        }
+      }
+      if (added) {
+        pending.details.set(wishId, pendingKinds);
+        void flush();
+      }
       return () => {
         const count = (opened.get(wishId) ?? 1) - 1;
         if (count > 0) opened.set(wishId, count);
         else opened.delete(wishId);
       };
+    },
+    async loadKinds(wishId, kinds) {
+      const needed = kinds.filter((k) => !fresh(wishId, k));
+      if (!needed.length) return;
+      const pendingKinds = pending.details.get(wishId) ?? new Set<Change>();
+      for (const k of needed) pendingKinds.add(k);
+      pending.details.set(wishId, pendingKinds);
+      await flush();
+    },
+    async loadMore(wishId, kind, pageSize) {
+      const key = `${wishId}:${kind}`;
+      if (loadingMore.has(key)) return;
+      const detail = state.details[wishId];
+      if (!detail) return;
+      loadingMore.add(key);
+      try {
+        if (kind === Change.QUESTION && detail.questionsNextToken) {
+          const res = await clients.questions.list({
+            wishId,
+            pageToken: detail.questionsNextToken,
+          });
+          const cur = state.details[wishId];
+          if (!cur) return;
+          const questions = merge(
+            QuestionSchema,
+            cur.questions,
+            res.questions,
+            new Set(),
+            byID,
+          );
+          set({
+            details: {
+              ...state.details,
+              [wishId]: {
+                ...cur,
+                questions,
+                questionsTotal: res.total,
+                questionsNextToken: res.nextPageToken,
+              },
+            },
+          });
+        } else if (kind === Change.TASK && detail.tasksNextToken) {
+          const res = await clients.tasks.list({
+            wishId,
+            pageToken: detail.tasksNextToken,
+            pageSize,
+          });
+          const cur = state.details[wishId];
+          if (!cur) return;
+          const tasks = merge(
+            TaskSchema,
+            cur.tasks,
+            res.tasks,
+            new Set(),
+            byID,
+          );
+          set({
+            details: {
+              ...state.details,
+              [wishId]: {
+                ...cur,
+                tasks,
+                tasksTotal: res.total,
+                tasksNextToken: res.nextPageToken,
+              },
+            },
+          });
+        } else if (kind === Change.BLOCK && detail.blocksNextToken) {
+          const res = await clients.blocks.list({
+            wishId,
+            pageToken: detail.blocksNextToken,
+          });
+          const cur = state.details[wishId];
+          if (!cur) return;
+          const blocks = merge(
+            BlockSchema,
+            cur.blocks,
+            res.blocks,
+            new Set(),
+            byPosition,
+          );
+          set({
+            details: {
+              ...state.details,
+              [wishId]: {
+                ...cur,
+                blocks,
+                blocksTotal: res.total,
+                blocksNextToken: res.nextPageToken,
+              },
+            },
+          });
+        }
+      } catch (error) {
+        set({ error: message(error) });
+      } finally {
+        loadingMore.delete(key);
+      }
     },
     follow(taskId) {
       const current = following.get(taskId);
@@ -423,7 +1070,38 @@ export function createStore(clients: Clients, retry = 1000): Store {
         following.delete(taskId);
       };
     },
+    async readPrompt(taskId) {
+      if (state.prompts[taskId]) return state.prompts[taskId];
+      const pending = pendingPrompts.get(taskId);
+      if (pending) return pending;
+      const read = (async () => {
+        try {
+          const res = await clients.tasks.get({ taskId });
+          const prompt = res.task?.prompt ?? "";
+          if (prompt) {
+            set({ prompts: { ...state.prompts, [taskId]: prompt } });
+          }
+          return prompt;
+        } finally {
+          pendingPrompts.delete(taskId);
+        }
+      })();
+      pendingPrompts.set(taskId, read);
+      return read;
+    },
     changed(wishId, changes) {
+      for (const change of changes) {
+        if (change === Change.WISH) lastReadAt.delete("wishes");
+        else if (change === Change.PROJECT) lastReadAt.delete("projects");
+        else if (change === Change.INBOX) lastReadAt.delete("inbox");
+        else if (wishId && DETAIL.includes(change))
+          lastReadAt.delete(`${wishId}:${change}`);
+      }
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+        timerAt = 0;
+      }
       mark(wishId, changes);
       return flush();
     },

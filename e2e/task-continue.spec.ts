@@ -9,18 +9,21 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { withAgents } from "./agents";
+
 const binary = path.resolve(
   __dirname,
   "../bin/djinn-e2e" + (process.platform === "win32" ? ".exe" : ""),
 );
 
-// up starts djinn up --browser on home, and gives its URL once it answers.
+// up starts djinn up --browser on home, and gives its URL once it answers. Its PATH has the fake agents: with none
+// ready, the setup of the agents would cover the window.
 async function up(
   home: string,
 ): Promise<{ url: string; proc: ChildProcess; exited: Promise<unknown> }> {
   const proc = spawn(binary, ["up", "--browser"], {
     stdio: ["ignore", "pipe", "inherit"],
-    env: { ...process.env, DJINN_HOME: home },
+    env: { ...withAgents(process.env), DJINN_HOME: home },
   });
   const exited = new Promise((resolve) => proc.once("exit", resolve));
   const url = await new Promise<string>((resolve, reject) => {
@@ -75,6 +78,18 @@ test("an interrupted task continued from the command line stays one task", async
   try {
     const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
       .id as string;
+    const azima = JSON.parse(
+      djinn(
+        "task",
+        "spawn",
+        wishId,
+        "--kind",
+        "azima",
+        "--title",
+        "The mission",
+        "--json",
+      ),
+    ).task as Task;
     const id = (
       JSON.parse(
         djinn(
@@ -87,6 +102,8 @@ test("an interrupted task continued from the command line stays one task", async
           "fake",
           "--prompt",
           "text first\nsleep 1h",
+          "--part-of",
+          azima.code,
           "--json",
         ),
       ).task as Task
@@ -118,7 +135,14 @@ test("an interrupted task continued from the command line stays one task", async
     await expect(page.locator(".tasks-moving h2")).toHaveText(
       "Moving or waiting0",
     );
-    const finished = page.locator(".tasks-finished .wish-task");
+    await expect(page.locator(".tasks-finished")).toHaveCount(0);
+
+    const azimaCard = page.locator(".azima-card");
+    await expect(azimaCard.locator(".azima-heading strong")).toHaveText(
+      "The mission",
+    );
+    await azimaCard.locator(".azima-heading").click();
+    const finished = azimaCard.locator(".azima-parts .wish-task");
     await expect(finished).toHaveCount(1);
     await expect(finished).toContainText("Work cut short");
     await finished.getByRole("button", { name: /Work cut short/ }).click();
@@ -135,7 +159,7 @@ test("an interrupted task continued from the command line stays one task", async
     const listed = JSON.parse(
       djinn("task", "list", "--wish-id", wishId, "--json"),
     ).tasks as Task[];
-    expect(listed.map((t) => t.code)).toEqual(["W1"]);
+    expect(listed.map((t) => t.code)).toEqual(["T1", "W1"]);
     expect(errors).toEqual([]);
   } finally {
     await down(running);
