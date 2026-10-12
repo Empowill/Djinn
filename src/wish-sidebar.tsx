@@ -1,8 +1,9 @@
 // The side panel's lists, read from the services: the flight plan's entry with what waits for you there (questions,
 // new inbox items), the wishes, the active ones by rank (drag one up or down, or Alt+Arrow) and how many of the three
-// places they take, then the paused ones and the granted ones; and the projects. The wishes' list shows three rows and
-// scrolls under the pointer. A paused wish dragged onto an active one, or sent first with its button, becomes active
-// there: the wish pushed past the third place is paused.
+// places they take, then the paused ones and the granted ones; and the projects, each with its branches out of sync
+// with their remote (project-sync.tsx). The wishes' list shows three rows and scrolls under the pointer. A paused wish
+// dragged onto an active one, or sent first with its button, becomes active there: the wish pushed past the third
+// place is paused.
 import {
   ArrowUpToLine,
   ChevronDown,
@@ -16,11 +17,12 @@ import {
 } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 
-import type { Project, Wish } from "../gen/ts/plan/v1/plan_pb";
+import type { Project, ProjectSync, Wish } from "../gen/ts/plan/v1/plan_pb";
 import { WishState } from "../gen/ts/plan/v1/plan_pb";
-import { MAX_ACTIVE, isActive, syncDescription, wishTone } from "./data/format";
+import { MAX_ACTIVE, isActive, wishTone } from "./data/format";
 import { t } from "./i18n";
 import { useOpenTerminal } from "./lead-terminal";
+import { SyncLines } from "./project-sync";
 import { CountPill, ToneIcon } from "./status";
 
 // What the side panel counts in a wish.
@@ -64,7 +66,8 @@ export function WishSidebar({
   // Moves a wish to a rank, from 1: a paused one becomes active there.
   onMove: (wishId: string, to: number) => void;
   onNewProject: () => void;
-  onPush?: (projectId: string) => void;
+  // Pushes one branch of the project, out of sync with its remote.
+  onPush?: (projectId: string, sync: ProjectSync) => Promise<unknown> | void;
 }) {
   const active = wishes.filter(isActive);
   const paused = wishes.filter((w) => w.state === WishState.PAUSED);
@@ -257,62 +260,43 @@ export function WishSidebar({
         </button>
       </div>
       <div className="mission-list project-list">
-        {projects.map((project) => {
-          const sync = project.sync;
-          const isOutOfSync = Boolean(
-            sync && (sync.ahead > 0 || sync.behind > 0),
-          );
-          const syncText = syncDescription(sync);
-          return (
-            <div
-              key={project.id}
-              className={`project-nav ${selectedProjectId === project.id ? "selected" : ""}`}
-            >
-              <div className="project-nav-main">
+        {projects.map((project) => (
+          <div
+            key={project.id}
+            className={`project-nav ${selectedProjectId === project.id ? "selected" : ""}`}
+          >
+            <div className="project-nav-main">
+              <button
+                className="project-select"
+                title={project.directory || t("project.no_folder")}
+                onClick={() => onSelectProject(project.id)}
+              >
+                <FolderOpen size={collapsed ? 16 : 15} />
+                {!collapsed && <span>{project.name}</span>}
+              </button>
+              {openTerminal && project.directory && !collapsed && (
                 <button
-                  className="project-select"
-                  title={project.directory || t("project.no_folder")}
-                  onClick={() => onSelectProject(project.id)}
+                  className="icon-button project-terminal"
+                  onClick={() => openTerminal(project)}
+                  title={t("sidebar.project_terminal", {
+                    project: project.name,
+                  })}
+                  aria-label={t("sidebar.project_terminal", {
+                    project: project.name,
+                  })}
                 >
-                  <FolderOpen size={collapsed ? 16 : 15} />
-                  {!collapsed && <span>{project.name}</span>}
+                  <SquareTerminal size={13} />
                 </button>
-                {openTerminal && project.directory && !collapsed && (
-                  <button
-                    className="icon-button project-terminal"
-                    onClick={() => openTerminal(project)}
-                    title={t("sidebar.project_terminal", {
-                      project: project.name,
-                    })}
-                    aria-label={t("sidebar.project_terminal", {
-                      project: project.name,
-                    })}
-                  >
-                    <SquareTerminal size={13} />
-                  </button>
-                )}
-              </div>
-              {isOutOfSync && !collapsed && (
-                <div className="project-sync-row">
-                  <span className="project-sync-status" title={syncText}>
-                    {syncText}
-                  </span>
-                  <button
-                    type="button"
-                    className="button accent small"
-                    title={t("project.push")}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onPush?.(project.id);
-                    }}
-                  >
-                    {t("project.push")}
-                  </button>
-                </div>
               )}
             </div>
-          );
-        })}
+            {!collapsed && (
+              <SyncLines
+                syncs={project.syncs}
+                onPush={onPush && ((sync) => onPush(project.id, sync))}
+              />
+            )}
+          </div>
+        ))}
       </div>
     </>
   );

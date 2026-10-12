@@ -19,6 +19,7 @@ import {
 import {
   AzimaPrState,
   AzimaState,
+  type ProjectSync,
   type ProofNeed,
   Prover,
   type Task,
@@ -37,13 +38,13 @@ import {
   azimaBranchName,
   azimaTime,
   isTaskMerging,
-  syncDescription,
   type Tone,
   useNow,
 } from "./data/format";
 import { ModalFrame } from "./frame";
 import { t, type TextKey } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
+import { isOutOfSync, SyncLine } from "./project-sync";
 import { StatusBadge } from "./status";
 import { Fold } from "./task-tabs";
 
@@ -160,6 +161,7 @@ export const AzimaCard = memo(function AzimaCard({
   render,
   focus = "",
   isPerAzima = false,
+  sync: ownSync,
   onPush,
   onOpenPr,
   onValidate,
@@ -177,7 +179,9 @@ export const AzimaCard = memo(function AzimaCard({
   focus?: string;
   // Whether the wish integrates per azima.
   isPerAzima?: boolean;
-  // Pushes the azima's integration branch.
+  // How its own branch stands against its remote, among its project's syncs (Project.syncs).
+  sync?: ProjectSync;
+  // Pushes the azima's own branch.
   onPush?: (azima: Task) => Promise<unknown> | void;
   // Opens the pull request in the external browser.
   onOpenPr?: (url: string) => void;
@@ -280,16 +284,15 @@ export const AzimaCard = memo(function AzimaCard({
           t("azima.lands_in", { branch: baseBranch || "main" }),
       ].filter((x): x is string => Boolean(x))
     : [];
-  const sync = azima.azima?.sync;
-  const isOutOfSync = Boolean(sync && (sync.ahead > 0 || sync.behind > 0));
+  const sync = ownSync ?? azima.azima?.sync;
+  const outOfSync = isOutOfSync(sync);
   const isPushed = Boolean(
     sync &&
     sync.ahead === 0 &&
     sync.behind === 0 &&
     (sync.target || sync.remote || sync.branch),
   );
-  const syncText = syncDescription(sync);
-  const canPush = isOutOfSync && Boolean(onPush);
+  const canPush = outOfSync && Boolean(onPush);
 
   const pr = azima.azima?.pr;
   const prUrl = pr?.url;
@@ -301,8 +304,7 @@ export const AzimaCard = memo(function AzimaCard({
         : t("azima.pr_open")
     : null;
 
-  const handlePush = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handlePush = async () => {
     if (!onPush || pushing) return;
     setPushing(true);
     try {
@@ -314,7 +316,7 @@ export const AzimaCard = memo(function AzimaCard({
     }
   };
 
-  const hasActions = isOutOfSync || canPush || isPushed || Boolean(prText);
+  const hasActions = outOfSync || isPushed || Boolean(prText);
   // The heading reads at a glance: its state, code, title, what it waits for, its bar. The rest is on hover: what comes
   // before it on its title; its parts, counted by state, and its time on its bar; what its proof needs on its badge,
   // and in the card opened, with its own branch.
@@ -384,22 +386,18 @@ export const AzimaCard = memo(function AzimaCard({
         </button>
         {isPerAzima && hasActions && (
           <div className="azima-actions">
-            {isOutOfSync && syncText && (
-              <span className="azima-sync-status" title={syncText}>
-                {syncText}
-              </span>
+            {outOfSync && (
+              <SyncLine
+                sync={sync}
+                busy={
+                  pushing
+                    ? t("project.pushing_branch", { branch: sync.branch })
+                    : ""
+                }
+                onPush={canPush ? () => void handlePush() : undefined}
+              />
             )}
-            {canPush && (
-              <button
-                type="button"
-                className="button accent small"
-                disabled={pushing}
-                onClick={handlePush}
-              >
-                {pushing ? t("project.pushing") : t("project.push")}
-              </button>
-            )}
-            {isPushed && !isOutOfSync && (
+            {isPushed && !outOfSync && (
               <span className="azima-pushed-status">{t("azima.pushed")}</span>
             )}
             {prUrl ? (

@@ -2023,12 +2023,13 @@ type Project struct {
 	Summons []*Summon `protobuf:"bytes,7,rep,name=summons,proto3" json:"summons,omitempty"`
 	// The last run of each of its checks, and of its setup, as Djinn integrated and pushed its wishes' work.
 	CheckRuns []*CheckRun `protobuf:"bytes,8,rep,name=check_runs,json=checkRuns,proto3" json:"check_runs,omitempty"`
-	// Out of sync with its remote on the integration branch.
-	Sync *ProjectSync `protobuf:"bytes,9,opt,name=sync,proto3" json:"sync,omitempty"`
 	// When Djinn pushes its integration branch: standard cadence or on demand.
 	Push ProjectPush `protobuf:"varint,10,opt,name=push,proto3,enum=plan.v1.ProjectPush" json:"push,omitempty"`
 	// Push strategy for the project's wishes: one integration branch per wish (wish) or per azima (azima).
-	PushStrategy  PushStrategy `protobuf:"varint,11,opt,name=push_strategy,json=pushStrategy,proto3,enum=plan.v1.PushStrategy" json:"push_strategy,omitempty"`
+	PushStrategy PushStrategy `protobuf:"varint,11,opt,name=push_strategy,json=pushStrategy,proto3,enum=plan.v1.PushStrategy" json:"push_strategy,omitempty"`
+	// How each branch Djinn pushes in the project stands against its remote, computed on every read: the integration
+	// branch of each active or paused wish there, then the own branch of each of their azimas, once the branch exists.
+	Syncs         []*ProjectSync `protobuf:"bytes,12,rep,name=syncs,proto3" json:"syncs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2119,13 +2120,6 @@ func (x *Project) GetCheckRuns() []*CheckRun {
 	return nil
 }
 
-func (x *Project) GetSync() *ProjectSync {
-	if x != nil {
-		return x.Sync
-	}
-	return nil
-}
-
 func (x *Project) GetPush() ProjectPush {
 	if x != nil {
 		return x.Push
@@ -2140,12 +2134,20 @@ func (x *Project) GetPushStrategy() PushStrategy {
 	return PushStrategy_PUSH_STRATEGY_UNSPECIFIED
 }
 
-// ProjectSync says how the project's integration branch stands against its remote target for a wish.
+func (x *Project) GetSyncs() []*ProjectSync {
+	if x != nil {
+		return x.Syncs
+	}
+	return nil
+}
+
+// ProjectSync says how a branch Djinn pushes stands against its remote target: a wish's integration branch, or an
+// azima's own branch.
 type ProjectSync struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The wish whose integration branch this is.
+	// The wish whose branch this is.
 	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
-	// The local integration branch.
+	// The local branch.
 	Branch string `protobuf:"bytes,2,opt,name=branch,proto3" json:"branch,omitempty"`
 	// The remote name: origin.
 	Remote string `protobuf:"bytes,3,opt,name=remote,proto3" json:"remote,omitempty"`
@@ -2154,7 +2156,13 @@ type ProjectSync struct {
 	// How many commits the local branch is ahead of the remote target.
 	Ahead int32 `protobuf:"varint,5,opt,name=ahead,proto3" json:"ahead,omitempty"`
 	// How many commits the local branch is behind the remote target.
-	Behind        int32 `protobuf:"varint,6,opt,name=behind,proto3" json:"behind,omitempty"`
+	Behind int32 `protobuf:"varint,6,opt,name=behind,proto3" json:"behind,omitempty"`
+	// The azima whose own branch this is; empty for the wish's integration branch. Its code and title, and the wish's
+	// title, as they are when read: what the branch belongs to, said on hover.
+	AzimaId       string `protobuf:"bytes,7,opt,name=azima_id,json=azimaId,proto3" json:"azima_id,omitempty"`
+	AzimaCode     string `protobuf:"bytes,8,opt,name=azima_code,json=azimaCode,proto3" json:"azima_code,omitempty"`
+	AzimaTitle    string `protobuf:"bytes,9,opt,name=azima_title,json=azimaTitle,proto3" json:"azima_title,omitempty"`
+	WishTitle     string `protobuf:"bytes,10,opt,name=wish_title,json=wishTitle,proto3" json:"wish_title,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2229,6 +2237,34 @@ func (x *ProjectSync) GetBehind() int32 {
 		return x.Behind
 	}
 	return 0
+}
+
+func (x *ProjectSync) GetAzimaId() string {
+	if x != nil {
+		return x.AzimaId
+	}
+	return ""
+}
+
+func (x *ProjectSync) GetAzimaCode() string {
+	if x != nil {
+		return x.AzimaCode
+	}
+	return ""
+}
+
+func (x *ProjectSync) GetAzimaTitle() string {
+	if x != nil {
+		return x.AzimaTitle
+	}
+	return ""
+}
+
+func (x *ProjectSync) GetWishTitle() string {
+	if x != nil {
+		return x.WishTitle
+	}
+	return ""
 }
 
 // CheckRun is the last run of a project's check (ProjectCheck), or of its setup command.
@@ -8314,8 +8350,12 @@ type ProjectServicePushRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The project, by name (case ignored) or identifier.
 	Project string `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
-	// The wish whose integration branch to push; empty: the active wish on this project.
-	Wish          *string `protobuf:"bytes,2,opt,name=wish,proto3,oneof" json:"wish,omitempty"`
+	// The wish whose integration branch to push; empty: the wish whose branch this is, else the active wish on this
+	// project.
+	Wish *string `protobuf:"bytes,2,opt,name=wish,proto3,oneof" json:"wish,omitempty"`
+	// Only this branch: the wish's integration branch or one of its azimas' own branches (Project.syncs); empty: every
+	// branch of the wish that Djinn pushes.
+	Branch        *string `protobuf:"bytes,3,opt,name=branch,proto3,oneof" json:"branch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -8360,6 +8400,13 @@ func (x *ProjectServicePushRequest) GetProject() string {
 func (x *ProjectServicePushRequest) GetWish() string {
 	if x != nil && x.Wish != nil {
 		return *x.Wish
+	}
+	return ""
+}
+
+func (x *ProjectServicePushRequest) GetBranch() string {
+	if x != nil && x.Branch != nil {
+		return *x.Branch
 	}
 	return ""
 }
@@ -17802,7 +17849,7 @@ var File_plan_v1_plan_proto protoreflect.FileDescriptor
 
 const file_plan_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x12plan/v1/plan.proto\x12\aplan.v1\x1a\x1bbuf/validate/validate.proto\x1a\x13djinn/v1/load.proto\x1a\x16djinn/v1/options.proto\x1a\x19google/protobuf/any.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14plan/v1/tilasm.proto\"\xc4\x03\n" +
+	"\x12plan/v1/plan.proto\x12\aplan.v1\x1a\x1bbuf/validate/validate.proto\x1a\x13djinn/v1/load.proto\x1a\x16djinn/v1/options.proto\x1a\x19google/protobuf/any.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14plan/v1/tilasm.proto\"\xd2\x03\n" +
 	"\aProject\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -17814,19 +17861,28 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\asummons\x18\a \x03(\v2\x0f.plan.v1.SummonR\asummons\x120\n" +
 	"\n" +
 	"check_runs\x18\b \x03(\v2\x11.plan.v1.CheckRunR\tcheckRuns\x12(\n" +
-	"\x04sync\x18\t \x01(\v2\x14.plan.v1.ProjectSyncR\x04sync\x12(\n" +
 	"\x04push\x18\n" +
 	" \x01(\x0e2\x14.plan.v1.ProjectPushR\x04push\x12:\n" +
-	"\rpush_strategy\x18\v \x01(\x0e2\x15.plan.v1.PushStrategyR\fpushStrategy:\x19\xd2\xf3\x18\x06\n" +
+	"\rpush_strategy\x18\v \x01(\x0e2\x15.plan.v1.PushStrategyR\fpushStrategy\x12*\n" +
+	"\x05syncs\x18\f \x03(\v2\x14.plan.v1.ProjectSyncR\x05syncs:\x19\xd2\xf3\x18\x06\n" +
 	"\x04name\xd2\xf3\x18\v\n" +
-	"\tdirectory\"\x9c\x01\n" +
+	"\tdirectoryJ\x04\b\t\x10\n" +
+	"R\x04sync\"\x96\x02\n" +
 	"\vProjectSync\x12\x17\n" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x16\n" +
 	"\x06branch\x18\x02 \x01(\tR\x06branch\x12\x16\n" +
 	"\x06remote\x18\x03 \x01(\tR\x06remote\x12\x16\n" +
 	"\x06target\x18\x04 \x01(\tR\x06target\x12\x14\n" +
 	"\x05ahead\x18\x05 \x01(\x05R\x05ahead\x12\x16\n" +
-	"\x06behind\x18\x06 \x01(\x05R\x06behind\"\xf7\x02\n" +
+	"\x06behind\x18\x06 \x01(\x05R\x06behind\x12\x19\n" +
+	"\bazima_id\x18\a \x01(\tR\aazimaId\x12\x1d\n" +
+	"\n" +
+	"azima_code\x18\b \x01(\tR\tazimaCode\x12\x1f\n" +
+	"\vazima_title\x18\t \x01(\tR\n" +
+	"azimaTitle\x12\x1d\n" +
+	"\n" +
+	"wish_title\x18\n" +
+	" \x01(\tR\twishTitle\"\xf7\x02\n" +
 	"\bCheckRun\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05setup\x18\x02 \x01(\bR\x05setup\x12\x18\n" +
@@ -18414,12 +18470,14 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\bproblems\x18\x05 \x03(\tR\bproblems\x12\x14\n" +
 	"\x05setup\x18\x06 \x01(\tR\x05setup\x12-\n" +
 	"\x06checks\x18\a \x03(\v2\x15.plan.v1.ProjectCheckR\x06checks\x12\x1a\n" +
-	"\bwarnings\x18\b \x03(\tR\bwarnings\"l\n" +
+	"\bwarnings\x18\b \x03(\tR\bwarnings\"\x9e\x01\n" +
 	"\x19ProjectServicePushRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\x12 \n" +
-	"\x04wish\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x18dH\x00R\x04wish\x88\x01\x01B\a\n" +
-	"\x05_wish\"J\n" +
+	"\x04wish\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x18dH\x00R\x04wish\x88\x01\x01\x12%\n" +
+	"\x06branch\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xff\x01H\x01R\x06branch\x88\x01\x01B\a\n" +
+	"\x05_wishB\t\n" +
+	"\a_branch\"J\n" +
 	"\x1aProjectServicePushResponse\x12,\n" +
 	"\x04push\x18\x01 \x01(\v2\x18.plan.v1.IntegrationPushR\x04push\"}\n" +
 	"\x1cProjectServiceSetPushRequest\x12$\n" +
@@ -19647,9 +19705,9 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	250, // 0: plan.v1.Project.create_time:type_name -> google.protobuf.Timestamp
 	34,  // 1: plan.v1.Project.summons:type_name -> plan.v1.Summon
 	33,  // 2: plan.v1.Project.check_runs:type_name -> plan.v1.CheckRun
-	32,  // 3: plan.v1.Project.sync:type_name -> plan.v1.ProjectSync
-	1,   // 4: plan.v1.Project.push:type_name -> plan.v1.ProjectPush
-	5,   // 5: plan.v1.Project.push_strategy:type_name -> plan.v1.PushStrategy
+	1,   // 3: plan.v1.Project.push:type_name -> plan.v1.ProjectPush
+	5,   // 4: plan.v1.Project.push_strategy:type_name -> plan.v1.PushStrategy
+	32,  // 5: plan.v1.Project.syncs:type_name -> plan.v1.ProjectSync
 	2,   // 6: plan.v1.CheckRun.when:type_name -> plan.v1.CheckWhen
 	250, // 7: plan.v1.CheckRun.end_time:type_name -> google.protobuf.Timestamp
 	250, // 8: plan.v1.Summon.create_time:type_name -> google.protobuf.Timestamp

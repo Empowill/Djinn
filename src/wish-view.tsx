@@ -488,6 +488,19 @@ export function WishView({
     [act, clients.wishes, wish.id],
   );
 
+  // The own branch of each azima, by azima id, as its project's syncs say it stands against its remote.
+  const azimaSyncs = useMemo(
+    () =>
+      new Map(
+        projects.flatMap((p) =>
+          (p.syncs ?? [])
+            .filter((x) => x.azimaId)
+            .map((x) => [x.azimaId, x] as const),
+        ),
+      ),
+    [projects],
+  );
+
   const handlePushAzima = useCallback(
     (azima: Task) =>
       act(
@@ -495,10 +508,11 @@ export function WishView({
           clients.projects.push({
             project: azima.projectId || projects[0]?.id || "",
             wish: wish.id,
+            branch: azimaSyncs.get(azima.id)?.branch ?? azima.azima?.branch,
           }),
-        [Change.WISH, Change.TASK],
+        [Change.WISH, Change.TASK, Change.PROJECT],
       ),
-    [act, clients.projects, projects, wish.id],
+    [act, azimaSyncs, clients.projects, projects, wish.id],
   );
 
   const handleOpenPr = useCallback(
@@ -541,6 +555,7 @@ export function WishView({
         nest={nest}
         onValidate={handleValidateAzima}
         isPerAzima={isPerAzima}
+        sync={azimaSyncs.get(azima.id)}
         onPush={handlePushAzima}
         onOpenPr={handleOpenPr}
       />
@@ -552,6 +567,7 @@ export function WishView({
       focus,
       handleValidateAzima,
       isPerAzima,
+      azimaSyncs,
       handlePushAzima,
       handleOpenPr,
     ],

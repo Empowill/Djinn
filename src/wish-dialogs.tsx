@@ -10,6 +10,7 @@ import {
   type ProjectCheck,
   ProjectPush,
   type ProjectServiceShowResponse,
+  type ProjectSync,
   type Question,
   type Skill,
   type Wish,
@@ -20,8 +21,9 @@ import type {
 } from "../gen/ts/ui/v1/ui_pb";
 import { message } from "./data/client";
 import { useClients } from "./data/djinn";
-import { MAX_ACTIVE, span, syncDescription, when } from "./data/format";
+import { MAX_ACTIVE, span, when } from "./data/format";
 import { Brand, ModalFrame } from "./frame";
+import { SyncLines } from "./project-sync";
 import {
   chosenLanguage,
   languageName,
@@ -264,9 +266,6 @@ export function FolderField({
   );
 }
 
-// syncDescription says how the integration branch stands against its remote target.
-export { syncDescription };
-
 // ProjectPanel shows a project as djinn knows it, the checks Djinn runs on its work with their last runs
 // (ProjectService.Show), and its skills (SkillService.List): its own and those it summons.
 export function ProjectPanel({
@@ -282,7 +281,6 @@ export function ProjectPanel({
   const [skills, setSkills] = useState<Skill[] | undefined>();
   const [shown, setShown] = useState<ProjectServiceShowResponse>();
   const [error, setError] = useState("");
-  const [pushing, setPushing] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -301,24 +299,21 @@ export function ProjectPanel({
 
   const currentPush =
     shown?.project?.push ?? project.push ?? ProjectPush.STANDARD;
-  const currentSync = shown?.project?.sync ?? project.sync;
-  const isOutOfSync = Boolean(
-    currentSync && (currentSync.ahead > 0 || currentSync.behind > 0),
-  );
-  const syncText = syncDescription(currentSync);
+  const syncs = shown?.project?.syncs ?? project.syncs;
 
-  const handlePush = async () => {
-    setPushing(true);
+  const handlePush = async (sync: ProjectSync) => {
     try {
-      await clients.projects.push({ project: project.id });
+      await clients.projects.push({
+        project: project.id,
+        wish: sync.wishId,
+        branch: sync.branch,
+      });
       const res = await clients.projects.show({ project: project.id });
       setShown(res);
     } catch (err) {
       const msg = message(err);
       setError(msg);
       onToast?.(msg);
-    } finally {
-      setPushing(false);
     }
   };
 
@@ -383,19 +378,9 @@ export function ProjectPanel({
                 ? t("project.push_on_demand_detail")
                 : t("project.push_standard_detail")}
             </p>
-            {isOutOfSync && <p className="project-sync-status">{syncText}</p>}
+            <SyncLines syncs={syncs} onPush={handlePush} />
           </div>
           <div className="project-push-actions">
-            {isOutOfSync && (
-              <button
-                type="button"
-                className="button accent small"
-                disabled={pushing}
-                onClick={handlePush}
-              >
-                {pushing ? t("project.pushing") : t("project.push")}
-              </button>
-            )}
             <div
               className="segmented-switch"
               role="group"
