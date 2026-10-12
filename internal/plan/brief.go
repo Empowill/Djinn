@@ -268,8 +268,12 @@ func BuildBrief(ctx context.Context, r store.Reader, home, wishID string, leads 
 	wish := exp.GetWish()
 	rank := wish.GetRank()
 	ready := wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions())
+	strategy, _, err := EffectiveWishPushStrategy(ctx, r, home, wish)
+	if err != nil {
+		return Brief{}, err
+	}
 	exp = portable(exp, newScrubber(all, home, dataName))
-	return Brief{Stable: stableBrief(home, projects), Moving: movingBrief(exp, rank, ready)}, nil
+	return Brief{Stable: stableBrief(home, projects), Moving: movingBrief(exp, rank, ready, strategy)}, nil
 }
 
 // StableBrief is the part of a brief that changes rarely, for a wish on projects: Djinn's rules, then where each
@@ -337,7 +341,7 @@ func presentFiles(dir string, names []string) []string {
 
 // movingBrief is where the wish stands: its description, its azimas, what runs and waits, its tilasms, its open
 // questions, its latest decisions and blocks, and when a lead last acted. Empty sections are left out.
-func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
+func movingBrief(exp *planv1.WishExport, rank int32, ready bool, strategy planv1.PushStrategy) string {
 	wish := exp.GetWish()
 	var b strings.Builder
 	fmt.Fprintf(&b, "# The wish: %s\n\n", oneLine(wish.GetTitle()))
@@ -363,6 +367,9 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 			names[i] = p.GetName()
 		}
 		b.WriteString("- Projects: " + strings.Join(names, ", ") + ".\n")
+	}
+	if wish.GetState() != planv1.WishState_WISH_STATE_GRANTED {
+		b.WriteString(landsLine(exp, strategy))
 	}
 	if t := wish.GetTemplate(); t != nil {
 		fmt.Fprintf(&b, "- Made from the wish template of the skill `%s`: follow that skill.", t.GetSkill())
@@ -965,12 +972,16 @@ func BuildGlobalBrief(ctx context.Context, r store.Reader, home string) (string,
 			if err != nil {
 				return "", err
 			}
+			strategy, _, err := EffectiveWishPushStrategy(ctx, r, home, wish)
+			if err != nil {
+				return "", err
+			}
 			exp = portable(exp, newScrubber(allProjects, home, dataName))
 			ready := wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions())
 			if i > 0 {
 				b.WriteString("\n")
 			}
-			activeWishBrief(&b, exp, wish.GetRank(), ready)
+			activeWishBrief(&b, exp, wish.GetRank(), ready, strategy)
 		}
 	}
 
@@ -998,7 +1009,46 @@ func BuildGlobalBrief(ctx context.Context, r store.Reader, home string) (string,
 	return stripCredentials(b.String()), nil
 }
 
-func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, ready bool) {
+// landsLine says in one line where the wish's work lands, and how to change it: its integration branch in each of its
+// projects, named when it has several; or, per azima, each azima's own branch landing in main, and the wish's branch
+// for work of no azima. Empty for a wish without a branch, outside Git.
+func landsLine(exp *planv1.WishExport, strategy planv1.PushStrategy) string {
+	wish := exp.GetWish()
+	names := map[string]string{}
+	for _, p := range exp.GetProjects() {
+		names[strings.ToLower(p.GetId())] = p.GetName()
+	}
+	var branches []string
+	for _, id := range wish.GetProjectIds() {
+		branch := IntegrationBranchOf(wish, id)
+		if branch == "" {
+			continue
+		}
+		if len(wish.GetProjectIds()) > 1 {
+			branches = append(branches, fmt.Sprintf("`%s` (%s)", branch, names[strings.ToLower(id)]))
+		} else {
+			branches = append(branches, "`"+branch+"`")
+		}
+	}
+	change := "`djinn wish set-integration <wish> --branch <branch>`"
+	if len(wish.GetProjectIds()) > 1 {
+		change = "`djinn wish set-integration <wish> --project-id <project> --branch <branch>`"
+	}
+	if strategy == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
+		line := "- Work lands per azima: each azima on its own branch, `djinn/<code>-<slug>`, cut from main and landing in main " +
+			"through its pull request"
+		if len(branches) > 0 {
+			line += "; work of no azima in " + strings.Join(branches, ", ")
+		}
+		return line + ".\n"
+	}
+	if len(branches) == 0 {
+		return ""
+	}
+	return "- Work lands in " + strings.Join(branches, ", ") + ": " + change + " changes it.\n"
+}
+
+func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, ready bool, strategy planv1.PushStrategy) {
 	wish := exp.GetWish()
 	fmt.Fprintf(b, "# The wish: %s\n\n", oneLine(wish.GetTitle()))
 	if desc := strings.TrimSpace(wish.GetDescription()); desc != "" {
@@ -1017,6 +1067,7 @@ func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, rea
 		}
 		b.WriteString("- Projects: " + strings.Join(names, ", ") + ".\n")
 	}
+	b.WriteString(landsLine(exp, strategy))
 	if t := wish.GetTemplate(); t != nil {
 		fmt.Fprintf(b, "- Made from the wish template of the skill `%s`: follow that skill.", t.GetSkill())
 		if t.GetWatch() != "" {

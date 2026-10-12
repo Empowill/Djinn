@@ -70,6 +70,80 @@ func integrationBranches(ctx context.Context, tx store.Reader, wish *planv1.Wish
 	return nil
 }
 
+// MergeRunning says, in a phrase, what merges into wish's integration branch in the project projectID now: a batch of
+// its work being merged and tested, a correction or review worker bringing work into it, or one settling main's merge;
+// "" when none does. While one runs, the branch does not change under it.
+func MergeRunning(wish *planv1.Wish, tasks []*planv1.Task, projectID string) string {
+	codes := map[string]string{}
+	for _, t := range tasks {
+		codes[t.GetId()] = t.GetCode()
+	}
+	recorded := IntegrationBranchOf(wish, projectID)
+	var merging, merges []string
+	for _, t := range tasks {
+		if !strings.EqualFold(t.GetProjectId(), projectID) {
+			continue
+		}
+		// A batch merged into another branch, an azima's, leaves the wish's alone.
+		if in := t.GetIntegration(); in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING &&
+			(in.GetBranch() == "" || recorded == "" || strings.EqualFold(in.GetBranch(), recorded)) {
+			merging = append(merging, t.GetCode())
+		}
+		if IsMerge(t) && !Finished(t) && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
+			merges = append(merges, t.GetCode())
+		}
+	}
+	branch := recorded
+	if branch == "" {
+		branch = "the integration branch"
+	}
+	switch {
+	case len(merging) > 0:
+		return fmt.Sprintf("the work of %s is being merged into %s", strings.Join(merging, ", "), branch)
+	case len(merges) > 0:
+		return fmt.Sprintf("%s brings work into %s", strings.Join(merges, ", "), branch)
+	}
+	for _, m := range wish.GetMains() {
+		if strings.EqualFold(m.GetProjectId(), projectID) && m.GetCorrectedBy() != "" {
+			code := codes[m.GetCorrectedBy()]
+			if code == "" {
+				code = "a correction worker"
+			}
+			return fmt.Sprintf("%s settles the merge of main into %s", code, branch)
+		}
+	}
+	return ""
+}
+
+// createIntegrationBranch makes branch in the repository of the project projectID, at the tip of wish's integration
+// branch there (the branch its checkout is on, for a wish that records none); a branch of that name already there is
+// left as it is.
+func createIntegrationBranch(ctx context.Context, tx store.Reader, wish *planv1.Wish, projectID, branch string) error {
+	project, err := store.Get[*planv1.Project](ctx, tx, projectID)
+	if err != nil {
+		return err
+	}
+	dir := project.GetDirectory()
+	if !project.GetGit() || dir == "" {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s is not in Git: no branch to make", project.GetName()))
+	}
+	if _, err := gitOut(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		return nil
+	}
+	from := IntegrationBranchOf(wish, projectID)
+	if from == "" {
+		from = CheckedOutBranch(ctx, dir)
+	}
+	if from == "" {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"project %s has no integration branch to make %s from: name an existing branch", project.GetName(), branch))
+	}
+	if _, err := gitOut(ctx, dir, "branch", "--no-track", branch, "refs/heads/"+from); err != nil {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("make %s from %s: %w", branch, from, err))
+	}
+	return nil
+}
+
 func (w *Wishes) SetIntegration(
 	ctx context.Context, req *connect.Request[planv1.WishServiceSetIntegrationRequest],
 ) (*connect.Response[planv1.WishServiceSetIntegrationResponse], error) {
@@ -92,6 +166,21 @@ func (w *Wishes) SetIntegration(
 			i := slices.IndexFunc(ids, func(p string) bool { return strings.EqualFold(p, id) })
 			if i < 0 {
 				return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("project %s is not one of the wish's projects", id))
+			}
+			if !strings.EqualFold(branch, IntegrationBranchOf(wish, ids[i])) {
+				tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": wish.GetId()})
+				if err != nil {
+					return err
+				}
+				if merge := MergeRunning(wish, tasks, ids[i]); merge != "" {
+					return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+						"cannot change the integration branch now: %s; change it once that merge has ended", merge))
+				}
+				if req.Msg.GetCreateBranch() {
+					if err := createIntegrationBranch(ctx, tx, wish, ids[i], branch); err != nil {
+						return err
+					}
+				}
 			}
 			SetIntegrationBranch(wish, ids[i], branch)
 		}

@@ -4,7 +4,7 @@
 // its parts on the right, as the Tasks tab shows any task: under work that still moves, the finished parts fold behind
 // "show the N finished" (src/task-tabs.tsx).
 // An azima never waits for the person as work: its proof is no task.
-import { BadgeCheck, ChevronDown, ExternalLink } from "lucide-react";
+import { BadgeCheck, ChevronDown, ExternalLink, GitBranch } from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -258,6 +258,21 @@ export const AzimaCard = memo(function AzimaCard({
 
   const branch = azima.azima?.branch || azimaBranchName(azima);
   const baseBranch = azima.azima?.baseBranch;
+  const cutFrom = azima.azima?.cutFrom;
+  // Opened, its own branch: where it was cut from and that it lands in main. One cut before Djinn recorded it (stacked
+  // on another azima's) says its name only; one not cut yet, that it will be when its first part starts.
+  const landing = isPerAzima
+    ? [
+        cutFrom
+          ? t("azima.cut_from", {
+              main: baseBranch || "main",
+              sha: cutFrom.slice(0, 8),
+            })
+          : state === AzimaState.OPEN && t("azima.cut_when_started"),
+        (cutFrom || state === AzimaState.OPEN) &&
+          t("azima.lands_in", { branch: baseBranch || "main" }),
+      ].filter((x): x is string => Boolean(x))
+    : [];
   const sync = azima.azima?.sync;
   const isOutOfSync = Boolean(sync && (sync.ahead > 0 || sync.behind > 0));
   const isPushed = Boolean(
@@ -293,13 +308,11 @@ export const AzimaCard = memo(function AzimaCard({
   };
 
   const hasActions = isOutOfSync || canPush || isPushed || Boolean(prText);
-  // The heading reads at a glance: its state, code, title, what it waits for, its bar. The rest is on hover: its
-  // branches and what comes before it on its title; its parts, counted by state, and its time on its bar; what its
-  // proof needs on its badge, and in the card opened.
+  // The heading reads at a glance: its state, code, title, what it waits for, its bar. The rest is on hover: what comes
+  // before it on its title; its parts, counted by state, and its time on its bar; what its proof needs on its badge,
+  // and in the card opened, with its own branch.
   const facts = [
     azima.title,
-    isPerAzima && branch,
-    isPerAzima && baseBranch && t("azima.lands_in", { branch: baseBranch }),
     after.length > 0 && t("page.after", { tasks: after.join(", ") }),
   ]
     .filter(Boolean)
@@ -409,6 +422,15 @@ export const AzimaCard = memo(function AzimaCard({
           right, one per row; on a narrow card, one above the other. With neither, its parts take the width. */}
       {open && (
         <div className={`azima-body${side ? " with-side" : ""}`}>
+          {isPerAzima && (
+            <p className="azima-landing">
+              <GitBranch size={13} aria-hidden="true" />
+              <code>{branch}</code>
+              {landing.map((text) => (
+                <span key={text}>{text}</span>
+              ))}
+            </p>
+          )}
           {side && (
             <div className="azima-side">
               {azima.description && (

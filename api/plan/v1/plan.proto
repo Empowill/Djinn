@@ -1755,6 +1755,12 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // List the local branches of a project's repository a wish's work may land in, the latest commit first: those
+  // Djinn made for its tasks' worktrees left out.
+  rpc Branches(ProjectServiceBranchesRequest) returns (ProjectServiceBranchesResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
 }
 
 message ProjectServiceAddRequest {
@@ -1858,6 +1864,21 @@ message ProjectServicePushStrategyResponse {
   PushStrategy strategy = 1;
   // Where the setting comes from: default, repository, or developer.
   SettingSource source = 2;
+}
+
+message ProjectServiceBranchesRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+}
+
+message ProjectServiceBranchesResponse {
+  // The branches, without refs/heads/, the latest commit first; empty for a project outside Git.
+  repeated string branches = 1;
+  // The branch the project's checkout is on; empty when it is on none.
+  string checked_out = 2;
 }
 
 // Skills: what a project's agents know how to do, one folder each in the Agent Skills format (a SKILL.md, maybe
@@ -2211,7 +2232,8 @@ service WishService {
   }
   // Set where the wish's finished work is committed, and when it is pushed: the integration branch of one of its
   // projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
-  // itself or asks first. Only what is given changes.
+  // itself or asks first. Only what is given changes. The branch is refused while a merge runs into the wish's branch
+  // in that project: its work, a correction or a review, or main's merge.
   rpc SetIntegration(WishServiceSetIntegrationRequest) returns (WishServiceSetIntegrationResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -2458,6 +2480,10 @@ message WishServiceSetIntegrationRequest {
   PushMode push_mode = 6 [(buf.validate.field).enum.defined_only = true];
   // Push strategy for the wish: wish or azima. Unset: unchanged.
   optional PushStrategy push_strategy = 7 [(buf.validate.field).enum.defined_only = true];
+  // Make the branch when the project's repository has none of that name: a new branch at the tip of the wish's
+  // current integration branch there. Without it, a branch the repository lacks is recorded, and the work waits for
+  // it.
+  bool create_branch = 8;
 }
 
 message WishServiceSetIntegrationResponse {

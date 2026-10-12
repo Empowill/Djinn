@@ -335,7 +335,11 @@ workers, naming them), or when the running build is broken (a crash or failed ch
 (set in Djinn's own settings: the window proposes each new build, to install or skip), no install questions are asked.
 
 The commands' words are split on spaces, without a shell. The integration branch of a wish is, in each project, the
-branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it.
+branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it, or
+the chip that names it in the wish's head, to a local branch (`djinn project branches <project>` lists them, Djinn's
+task branches left out) or to a new one made from it (`--create-branch`). A change is refused while a merge into the
+branch runs (a batch merged and tested, a correction or review worker, main's merge settled), Djinn naming it. Per wish,
+a wish's work lands in that branch; per azima, an azima's work lands in main through its own branch and pull request.
 
 ## Keeping up with main
 

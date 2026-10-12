@@ -1,19 +1,22 @@
 // The wish's head, around its title: its description, a few lines the person edits in place (a click, saved when the
 // field is left), the Lead button, split: Lead resumes the one lead, focused on the wish, the arrow beside it lists the
-// agents found on this machine, to start a lead of another one from the brief; and where Djinn last pushed its
-// integration branches.
+// agents found on this machine, to start a lead of another one from the brief; where its work lands; and where Djinn
+// last pushed its integration branches.
 import {
   Check,
   ChevronDown,
   CloudUpload,
   GitBranch,
+  GitBranchPlus,
   GitMerge,
+  GitPullRequestArrow,
   Star,
   Terminal,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import {
+  type IntegrationBranch,
   type Lead,
   ProjectPush,
   Provider,
@@ -484,5 +487,235 @@ export function PrincipalSelector({
         </button>
       </div>
     </span>
+  );
+}
+
+// The most branches the picker lists at once: typing narrows them.
+const shownBranches = 8;
+
+// WhereWorkLands says, in the wish's head, where its work lands. Per wish, a chip for each of its projects in Git: the
+// integration branch Djinn merges its finished work into, the project named when the wish has several; a click opens
+// the picker that changes it. Per azima, one chip: each azima lands in main from a branch of its own.
+export function WhereWorkLands({
+  branches,
+  projects,
+  perAzima,
+  open: startOpen = "",
+  loadBranches,
+  onChange,
+}: {
+  branches: IntegrationBranch[];
+  projects: { id: string; name: string; git?: boolean }[];
+  perAzima: boolean;
+  // The project whose picker shows at first.
+  open?: string;
+  loadBranches: (
+    projectId: string,
+  ) => Promise<{ branches: string[]; checkedOut: string }>;
+  onChange: (
+    projectId: string,
+    branch: string,
+    create: boolean,
+  ) => Promise<unknown>;
+}) {
+  const [open, setOpen] = useState(startOpen);
+  const branchOf = (id: string) =>
+    branches.find((b) => b.projectId.toLowerCase() === id.toLowerCase())
+      ?.branch ?? "";
+  if (perAzima) {
+    const rest = projects.map((p) => branchOf(p.id)).filter(Boolean);
+    return (
+      <span
+        className="wish-lands"
+        title={[
+          t("wish.lands_per_azima_detail"),
+          rest.length > 0 &&
+            t("wish.lands_rest", { branches: rest.join(", ") }),
+        ]
+          .filter(Boolean)
+          .join("\n")}
+      >
+        <GitPullRequestArrow size={13} />
+        {t("wish.lands_per_azima")}
+      </span>
+    );
+  }
+  return (
+    <>
+      {projects
+        .filter((p) => p.git !== false || branchOf(p.id))
+        .map((project) => {
+          const branch = branchOf(project.id);
+          const name = projects.length > 1 ? project.name : undefined;
+          return (
+            <span key={project.id} className="wish-lands-chip">
+              <button
+                type="button"
+                className="wish-lands"
+                aria-haspopup="dialog"
+                aria-expanded={open === project.id}
+                title={
+                  branch
+                    ? t("wish.lands_detail", { branch })
+                    : t("wish.lands_unset_detail")
+                }
+                onClick={() => setOpen(open === project.id ? "" : project.id)}
+              >
+                <GitPullRequestArrow size={13} />
+                {name && <b>{name}</b>}
+                {branch ? (
+                  <span>
+                    {t("wish.lands_in")} <code>{branch}</code>
+                  </span>
+                ) : (
+                  <span>{t("wish.lands_unset")}</span>
+                )}
+                <ChevronDown size={12} />
+              </button>
+              {open === project.id && (
+                <BranchPicker
+                  current={branch}
+                  project={name}
+                  load={() => loadBranches(project.id)}
+                  onClose={() => setOpen("")}
+                  onPick={(to, create) =>
+                    onChange(project.id, to, create).then(() => setOpen(""))
+                  }
+                />
+              )}
+            </span>
+          );
+        })}
+    </>
+  );
+}
+
+// BranchPicker lists the project's local branches, the latest first, narrowed by what is typed, the current one
+// marked; a name no branch has makes a new branch from the current one. A click elsewhere, or Escape, closes it.
+export function BranchPicker({
+  current,
+  project,
+  branches: given,
+  load,
+  onClose,
+  onPick,
+}: {
+  current: string;
+  project?: string;
+  branches?: string[];
+  load: () => Promise<{ branches: string[]; checkedOut: string }>;
+  onClose: () => void;
+  onPick: (branch: string, create: boolean) => Promise<unknown>;
+}) {
+  const [found, setFound] = useState<string[] | undefined>(given);
+  const [checkedOut, setCheckedOut] = useState("");
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let live = true;
+    load()
+      .then((res) => {
+        if (!live) return;
+        setFound(res.branches);
+        setCheckedOut(res.checkedOut);
+      })
+      .catch(() => live && setFound([]));
+    const away = (event: MouseEvent) => {
+      if (!root.current?.parentElement?.contains(event.target as Node))
+        onClose();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", escape);
+    return () => {
+      live = false;
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", escape);
+    };
+    // Opening the picker loads the branches once; new callbacks, at each render of the head, do not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps, @eslint-react/exhaustive-deps -- load and onClose left out, see above
+  }, []);
+  const name = typed.trim();
+  const all = found ?? [];
+  const matching = all.filter((b) =>
+    b.toLowerCase().includes(name.toLowerCase()),
+  );
+  const exists = all.some((b) => b.toLowerCase() === name.toLowerCase());
+  // A new branch starts from the current one; for a wish that records none, from the branch the checkout is on.
+  const from = current || checkedOut;
+  const pick = (branch: string, create: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    onPick(branch, create)
+      .catch(() => undefined)
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div
+      className="branch-picker"
+      role="dialog"
+      aria-label={
+        project
+          ? t("wish.lands_pick_project", { project })
+          : t("wish.lands_pick")
+      }
+      ref={root}
+    >
+      <input
+        type="text"
+        aria-label={t("wish.lands_branch")}
+        placeholder={t("wish.lands_placeholder")}
+        value={typed}
+        maxLength={200}
+        autoFocus
+        onChange={(event) => setTyped(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" || !name) return;
+          event.preventDefault();
+          if (exists)
+            pick(
+              all.find((b) => b.toLowerCase() === name.toLowerCase())!,
+              false,
+            );
+          else if (from) pick(name, true);
+        }}
+      />
+      {!found && <p className="muted-text">{t("common.loading")}</p>}
+      {matching.slice(0, shownBranches).map((branch) => {
+        const here = branch.toLowerCase() === current.toLowerCase();
+        return (
+          <button
+            key={branch}
+            type="button"
+            className={here ? "branch-option current" : "branch-option"}
+            aria-current={here || undefined}
+            disabled={busy}
+            onClick={() => !here && pick(branch, false)}
+          >
+            <code>{branch}</code>
+            {here && <Check size={13} aria-hidden="true" />}
+          </button>
+        );
+      })}
+      {found && matching.length > shownBranches && (
+        <p className="muted-text">
+          {t("wish.lands_more", { count: matching.length - shownBranches })}
+        </p>
+      )}
+      {found && name && !exists && from && (
+        <button
+          type="button"
+          className="branch-option new"
+          disabled={busy}
+          onClick={() => pick(name, true)}
+        >
+          <GitBranchPlus size={13} aria-hidden="true" />
+          <span>{t("wish.lands_new", { branch: name, from })}</span>
+        </button>
+      )}
+    </div>
   );
 }
