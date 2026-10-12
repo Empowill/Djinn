@@ -183,13 +183,16 @@ test("the head says where the wish's work lands, and a click changes the branch"
       }[]
     ).find((w) => w.id === wishId)?.integration_branches?.[0]?.branch;
   try {
+    // The show of the last minute is this wish's, not the Lead test's: the window gets that one again as it connects
+    // (UiService.Watch), and may get it after the click below.
+    djinn("open", `djinn://wish/${wishId}`);
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     const chip = page.locator(".hero-meta button.wish-lands");
     await expect(chip).toHaveText("Lands in main");
 
-    // Read in both themes, chosen as the settings do (setTheme), once the colours have changed: a reload would get the
-    // show of a minute ago again (UiService.Watch), the Lead test's wish, deleted since, and open the first wish.
+    // Read in both themes, switched as the settings do, once the colours have changed: a reload within a minute of the
+    // Lead test above would show its wish again (UiService.Watch), deleted since, and open the first wish instead.
     for (const theme of ["dark", "light"] as const) {
       await page.evaluate((v) => {
         localStorage.setItem("djinn.theme", v);
@@ -203,12 +206,13 @@ test("the head says where the wish's work lands, and a click changes the branch"
       }, theme);
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       await expect(chip).toBeVisible();
-      expect(
-        await contrast(page, ".hero-meta .wish-lands code"),
-      ).toBeGreaterThanOrEqual(4.5);
-      expect(
-        await contrast(page, ".hero-meta .wish-lands > span"),
-      ).toBeGreaterThanOrEqual(4.5);
+      // Polled: the colours fade from one theme to the other.
+      await expect
+        .poll(() => contrast(page, ".hero-meta .wish-lands code"))
+        .toBeGreaterThanOrEqual(4.5);
+      await expect
+        .poll(() => contrast(page, ".hero-meta .wish-lands > span"))
+        .toBeGreaterThanOrEqual(4.5);
     }
 
     // The picker lists the project's branches; a new name is made from the current one.

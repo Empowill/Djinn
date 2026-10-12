@@ -27,8 +27,9 @@ const TaskMaxWallTime = 2 * time.Hour
 // TaskMaxTurns is how many model turns a worker may take before being stopped: a guard against an endless loop, not a
 // cap on real work. Real Opus tasks take a hundred turns and more (W442: 102, W453: 112, both stopped at the former
 // limit of 50). The count is per run, not per task: start sets it to 1 each time a worker starts (first start,
-// restart, resume, continue, answer); each message sent to the worker adds one, and the provider's own count of a
-// result (num_turns) replaces it when larger.
+// restart, resume, continue, answer); each prompt the worker says adds one; claude's count of its assistant messages
+// (Event.Turns) and the provider's own count of a result (num_turns) replace it when larger. The task shows it
+// (Task.turns).
 const TaskMaxTurns = 500
 
 // WithSilenceLimit sets the silence limit before the watchdog checks a worker: tests set a shorter one.
@@ -36,6 +37,27 @@ func WithSilenceLimit(d time.Duration) Option { return func(h *Harness) { h.sile
 
 // WithTaskMaxWallTime sets the maximum wall time budget per task before being stopped: tests set a shorter one.
 func WithTaskMaxWallTime(d time.Duration) Option { return func(h *Harness) { h.maxWallTime = d } }
+
+// turnLimit is how many model turns a run may take before the watchdog stops it.
+func (h *Harness) turnLimit() int { return cmp.Or(h.maxTurns, TaskMaxTurns) }
+
+// setTurns sets the run's turns to f of them, and keeps them on its task: the turns of its current worker, out of
+// the limit, and over all its runs. They are written with the task's next write: the sampler's (measure), or an
+// event's that changes the task. Runs where the task is owned: start, then the pump. A watcher runs no model: its
+// task shows none.
+func (h *Harness) setTurns(r *run, f func(turns int) int) {
+	h.mu.Lock()
+	r.turns = f(r.turns)
+	turns := r.turns
+	h.mu.Unlock()
+	if r.watcher {
+		return
+	}
+	n := &planv1.Turns{Run: int32(turns), Limit: int32(h.turnLimit()), Total: int32(r.turnsBefore + turns)}
+	if !proto.Equal(r.task.GetTurns(), n) {
+		r.task.Turns = n // Replaced, never changed: a copy of the task taken before shares it, and measure compares it.
+	}
+}
 
 // WithTaskMaxTurns sets the maximum turn budget per task before being stopped: tests set a lower one.
 func WithTaskMaxTurns(n int) Option { return func(h *Harness) { h.maxTurns = n } }
@@ -69,7 +91,7 @@ func (h *Harness) watchdog(ctx context.Context, tasks []*planv1.Task) (anyLost b
 
 		// Budget per task: check wall time and turns against limits.
 		maxWall := cmp.Or(h.maxWallTime, TaskMaxWallTime)
-		maxTurns := cmp.Or(h.maxTurns, TaskMaxTurns)
+		maxTurns := h.turnLimit()
 
 		wallTime := taskWallTime(t, now)
 		if wallTime >= maxWall {
