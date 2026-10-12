@@ -125,3 +125,34 @@ Comparison of re-reading and broadcasting the whole wish on each change versus e
 
 - **Re-reading on each change scales linearly with total wish size**: On a `x10` wish, re-reading on every small task progress change takes ~97 ms, generates 764 KiB of wire traffic, and allocates 23 MB across 165,000 objects.
 - **Incremental dispatch scales with the change**: Transmitting incremental updates takes ~1.58 ms, only 524 wire bytes, and allocates 58 KB (a **60x speedup** and **1,450x reduction in wire traffic**).
+
+## A djinn up that stops answering
+
+Every call of Djinn goes through one SQLite connection: a call that holds it long makes every other one wait, the
+command line's included. W504 found one: `djinn task list` decoded every event of every task to add up the time each
+waited for a gate, 270,000 events and about 480 MB on the developer's data, half a minute while the lead's other calls
+waited. A task's gate wait now reads only its gate events, and only those past the last fill (`plan.FillTimes`); a
+`task list` on that data takes 5 s the first time after a start, then under half a second. Every git command Djinn
+runs has a deadline (`internal/gitx`): 5 minutes for one that reaches a remote, 10 for one that stays in the
+repository, and its output is let go 5 s after it is killed, even when an ssh it started still holds it.
+
+The same commands held djinn up's shutdown: it waits for the integration's pass to end, and a git killed at the
+stop whose ssh still held its output, or a project's check (`go tool task test`) whose test runner did, kept that
+pass running, for good or for as long as the tests ran, until the developer forced Djinn to quit. A check now dies
+with everything it started (its process group), and a killed command's output is let go after 5 s.
+
+To see where a frozen djinn up waits, without stopping it:
+
+- **On Linux and macOS**, send it `SIGUSR2`: it writes the stacks of all its goroutines to `goroutines.txt` in its data
+  folder and goes on. This is the one command to run before restarting a djinn that does not answer; the process that
+  holds the data folder's socket is djinn up, whatever its command line (`djinn open` from the desktop menu):
+
+  ```bash
+  kill -USR2 "$(lsof -t ~/.config/djinn/djinn.sock)"   # macOS: ~/Library/Application\ Support/djinn/djinn.sock
+  ```
+
+  A djinn built before W504 ignores the signal. `SIGUSR1` is no good: WebKit takes it over in the window's process.
+  In the dump, look for goroutines waiting in `database/sql.(*DB).conn` (waiting for the connection), and the one
+  holding it. The dump is kept minimal on purpose: W511 adds structured logs and dumps on a slow shutdown.
+- **Anywhere**, start it with `--pprof` (or `DJINN_PPROF=on`): it serves Go's profiles at `/debug/pprof/` on its own
+  address, `goroutine?debug=2` for the stacks, `profile?seconds=30` for where its CPU goes.

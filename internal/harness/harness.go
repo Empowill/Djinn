@@ -2257,12 +2257,14 @@ func (h *Harness) Watch(ctx context.Context, taskID string, after int64, send fu
 		// Subscribe, then read what is stored: an event written in between comes both ways, and only once out.
 		changed := h.generation()
 		ch := h.subscribe(taskID)
-		events, err := store.List[*planv1.TaskEvent](ctx, h.store, store.Where{"task_id": taskID})
+		// Those past after only: a watcher let go, or following a task that starts, reads again what it lacks, not
+		// the thousands of events of a long task (W504).
+		events, err := store.ListAfter[*planv1.TaskEvent](ctx, h.store, store.Where{"task_id": taskID},
+			store.After{Field: "seq", From: after})
 		if err != nil {
 			h.unsubscribe(taskID, ch)
 			return plan.Status(err)
 		}
-		slices.SortFunc(events, func(a, b *planv1.TaskEvent) int { return cmp.Compare(a.GetSeq(), b.GetSeq()) })
 		for _, ev := range events {
 			if err := emit(ev); err != nil {
 				h.unsubscribe(taskID, ch)

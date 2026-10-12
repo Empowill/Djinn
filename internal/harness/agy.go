@@ -180,7 +180,10 @@ var (
 func agyCaches() (goRoot, modCache, buildCache, npmCache string) {
 	agyCachesOnce.Do(func() {
 		home, _ := os.UserHomeDir()
-		if out, err := exec.Command("go", "env", "GOROOT", "GOMODCACHE", "GOCACHE").Output(); err == nil {
+		// A go that would download its toolchain, or an npm that hangs, delays a worker's start no longer (W504).
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if out, err := exec.CommandContext(ctx, "go", "env", "GOROOT", "GOMODCACHE", "GOCACHE").Output(); err == nil {
 			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 			if len(lines) >= 3 {
 				cachedGoRoot = strings.TrimSpace(lines[0])
@@ -197,7 +200,7 @@ func agyCaches() (goRoot, modCache, buildCache, npmCache string) {
 		if cachedBuild == "" && home != "" {
 			cachedBuild = filepath.Join(home, ".cache", "go-build")
 		}
-		if out, err := exec.Command("npm", "config", "get", "cache").Output(); err == nil {
+		if out, err := exec.CommandContext(ctx, "npm", "config", "get", "cache").Output(); err == nil {
 			cachedNpm = strings.TrimSpace(string(out))
 		}
 		if cachedNpm == "" && home != "" {

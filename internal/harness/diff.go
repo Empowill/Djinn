@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -17,6 +16,7 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -322,7 +322,8 @@ func (h *Harness) diffSingleFile(ctx context.Context, dir, base, head, filePath 
 
 // gitLines runs git in dir and hands its output to visit one line at a time, without its newline.
 func gitLines(ctx context.Context, dir string, visit func(string), args ...string) error {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd, cancel := gitx.Command(ctx, dir, args...)
+	defer cancel()
 	var errOut bytes.Buffer
 	cmd.Stderr = &errOut
 	out, err := cmd.StdoutPipe()
