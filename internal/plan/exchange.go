@@ -440,13 +440,13 @@ func newScrubber(projects []*planv1.Project, extra ...string) *scrubber {
 }
 
 // aliases returns dir and the other paths of the same folder that text may hold: dir with its symbolic links
-// resolved, as a project's folder is stored, and, on macOS, the path without /private that a shell or a temporary
-// folder gives (/var, /tmp and /etc are links into /private there).
+// resolved, as a project's folder is stored, on macOS the path without /private that a shell or a temporary folder
+// gives (/var, /tmp and /etc are links into /private there), and on Windows its short names.
 func aliases(dir string) []string {
 	all := []string{dir}
 	resolved, err := filepath.EvalSymlinks(dir)
 	if err != nil {
-		return all
+		return append(all, shortForms(dir)...)
 	}
 	if resolved != dir {
 		all = append(all, resolved)
@@ -457,7 +457,31 @@ func aliases(dir string) []string {
 			all = append(all, short)
 		}
 	}
-	return all
+	return append(all, shortForms(resolved)...)
+}
+
+// shortName gives the short name of a path where the system has one. A test swaps it.
+var shortName = systemShortName
+
+// shortForms returns dir with short names for its first folders and long names for the rest, as a program writes a
+// path it built under %TEMP% (C:\Users\RUNNER~1\AppData\Local\Temp\Test1\001), and dir all in short names. Windows
+// resolves the symbolic links of a project's folder to long names: without them, these paths stay in the text.
+func shortForms(dir string) []string {
+	var forms []string
+	for i := 1; i <= len(dir); i++ {
+		if i < len(dir) && dir[i] != '\\' && dir[i] != '/' {
+			continue
+		}
+		prefix := dir[:i]
+		if strings.HasSuffix(prefix, ":") {
+			continue // C: alone is the current folder of the drive.
+		}
+		short, ok := shortName(prefix)
+		if form := short + dir[i:]; ok && form != dir && !slices.Contains(forms, form) {
+			forms = append(forms, form)
+		}
+	}
+	return forms
 }
 
 func (s *scrubber) message(m protoreflect.Message) {

@@ -87,14 +87,40 @@ test("tooltips expose labels and real keyboard hints", async ({ page }) => {
 });
 
 // The sidebar spans the whole height of the window, the lead's terminal sits under the main view only, and the creation
-// page, which takes the terminal's place until Back, moves nothing of the sidebar.
+// page, which takes the terminal's place until Back, moves nothing of the sidebar. The sidebar is measured once the
+// wishes and the projects are read: on the Windows CI they came during the creation, and a paused wish's row moved the
+// list (PR #2). A paused wish and late lists reproduce it anywhere.
 test("sidebar geometry stays stable while creation hides the terminal", async ({
   page,
 }) => {
+  const title = `Hold the sidebar ${randomUUID().slice(0, 8)}`;
+  const wishId = JSON.parse(djinn("wish", "make", title, "--paused", "--json"))
+    .wish.id;
+  try {
+    await sidebarStaysStable(page, title);
+  } finally {
+    djinn("wish", "delete", wishId);
+  }
+});
+
+async function sidebarStaysStable(page: Page, title: string) {
+  for (const list of ["WishService/List", "ProjectService/List"])
+    await page.route(`**/plan.v1.${list}`, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      await route.continue();
+    });
   await page.goto(djinnURL());
   await expect(page.locator(".sidebar")).toBeVisible();
   const terminal = page.locator(".lead-terminal");
   await expect(terminal).toBeVisible();
+  const importButton = page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Import a wish" });
+  await expect(importButton).toBeDisabled();
+  await expect(importButton).toBeEnabled();
+  await expect(
+    page.locator(".sidebar .wish-list").getByTitle(title),
+  ).toBeVisible();
 
   const viewport = page.viewportSize()!;
   const sidebar = (await page.locator(".sidebar").boundingBox())!;
@@ -148,7 +174,7 @@ test("sidebar geometry stays stable while creation hides the terminal", async ({
   await expect(creation).toHaveCount(0);
   await expect(terminal).toBeVisible();
   expectSameGeometry(existing, await snapshot());
-});
+}
 
 // Folded, the sidebar keeps a rail of icons with each wish's tone, which says what waits in it (Q03); the toggle stays
 // in the toolbar, focused, and the fold is remembered.
