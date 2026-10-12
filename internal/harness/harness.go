@@ -1957,11 +1957,15 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 }
 
 // carry copies onto the run's copy of its task, before it is written, what is stored on the task from outside the
-// run while it runs: the comments on its diff, and the developer's marks.
+// run while it runs: the comments on its diff, the developer's marks, and the babysit Djinn found it does
+// (adoptBabysit).
 func carry(tx *store.Tx, t *planv1.Task) {
 	if stored, err := store.Get[*planv1.Task](context.Background(), tx, t.GetId()); err == nil {
 		t.Comments = stored.GetComments()
 		t.Marks = stored.GetMarks()
+		if t.GetBabysit().GetUrl() == "" && stored.GetBabysit().GetUrl() != "" {
+			t.Babysit = stored.GetBabysit()
+		}
 	}
 }
 

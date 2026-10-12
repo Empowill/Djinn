@@ -165,7 +165,10 @@ project's repository; else the one open for the task's branch; else the one open
 (`gh pr list --head`, `glab mr list --source-branch`). It spawns the watcher in the task's wish, part of the task's
 azima (`Task.babysit` holds the request), and tells the lead once: `Djinn: W5 opened MR !123: W7 babysits it; follow
 the skill babysit-mr-empowill each time it speaks.` A request that a task already babysits, or that the watcher of an
-open wish made from a template runs on, is not watched twice. A look that fails (no `gh`, no network) starts nothing.
+open wish made from a template runs on, is not watched twice. Nor is one a watcher spawned by hand already watches,
+running or resuming in any wish of the project, on the declared command for that request (`{pr}` or `{mr}` filled,
+`{state}` any word, both trimmed): Djinn records the request on that watcher (`Task.babysit`, its done line with it),
+starts none, and tells the lead once: `Djinn: W5 opened PR #3: W2 already babysits it; …`. A look that fails (no `gh`, no network) starts nothing.
 
 **By hand.** `djinn task spawn <wish> --title "Babysit W5's MR" --babysit --after W5` spawns the project's watcher
 (its command, unless `--prompt` gives one, its restart and its done line); the request is found as it starts, the one

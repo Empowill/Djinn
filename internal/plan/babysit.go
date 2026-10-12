@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -115,4 +116,31 @@ func FillBabysit(watch string, number int, state string) string {
 		}
 		return p
 	})
+}
+
+// shellWord matches one word of a command line: a quoted one, as quoteWord writes it, or one without blanks.
+const shellWord = `(?:'(?:[^']|'\\'')*'|\S+)`
+
+// Watches tells whether the command line command babysits the request number: the declaration's command, {pr} and
+// {mr} filled with number, {state} any one word, both trimmed. A watcher spawned by hand on it runs that command.
+func (b *Babysit) Watches(command string, number int) bool {
+	watch := strings.TrimSpace(b.Watch)
+	var re strings.Builder
+	re.WriteString("^")
+	last := 0
+	for _, m := range placeholders.FindAllStringSubmatchIndex(watch, -1) {
+		re.WriteString(regexp.QuoteMeta(watch[last:m[0]]))
+		switch watch[m[2]:m[3]] {
+		case "pr", "mr":
+			re.WriteString(strconv.Itoa(number))
+		case "state":
+			re.WriteString(shellWord)
+		default:
+			re.WriteString(regexp.QuoteMeta(watch[m[0]:m[1]]))
+		}
+		last = m[1]
+	}
+	re.WriteString(regexp.QuoteMeta(watch[last:]) + "$")
+	ok, err := regexp.MatchString(re.String(), strings.TrimSpace(command))
+	return err == nil && ok
 }
