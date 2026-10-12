@@ -4,6 +4,7 @@ import { LoadNotch } from "../gen/ts/djinn/v1/load_pb";
 import type { Clients } from "./data/client";
 import { type Djinn, useDjinn } from "./data/djinn";
 import { t } from "./i18n";
+import { still } from "./stillness";
 import { memory } from "./usage";
 import "./operating-load.css";
 
@@ -392,7 +393,15 @@ function notchTooltip(
   }
 }
 
-function useAnimatedNumber(target: number, durationMs = 300): number {
+// useAnimatedNumber glides to target when glide changes with it: the notch the developer moves to. Any other move
+// takes its new value at once: the memory available moves every second, and gliding through each move drew frames
+// all the time (W513).
+function useAnimatedNumber(
+  target: number,
+  glide: unknown,
+  durationMs = 300,
+): number {
+  const glideRef = React.useRef(glide);
   const [current, setCurrent] = React.useState(target);
   const currentRef = React.useRef(current);
   currentRef.current = current;
@@ -401,15 +410,20 @@ function useAnimatedNumber(target: number, durationMs = 300): number {
   const startTimeRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
+    const from = currentRef.current;
+    const moved = glideRef.current !== glide;
+    glideRef.current = glide;
+    if (from === target) return;
     if (
+      !moved ||
       typeof window === "undefined" ||
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ||
+      document.documentElement.dataset.motion === "reduced" ||
+      still()
     ) {
       setCurrent(target);
       return;
     }
-    const from = currentRef.current;
-    if (from === target) return;
 
     startValRef.current = from;
     startTimeRef.current = null;
@@ -430,14 +444,18 @@ function useAnimatedNumber(target: number, durationMs = 300): number {
     return () => {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
     };
-  }, [target, durationMs]);
+  }, [target, glide, durationMs]);
 
   return current;
 }
 
-function useAnimatedBigInt(target: bigint, durationMs = 300): bigint {
+function useAnimatedBigInt(
+  target: bigint,
+  glide: unknown,
+  durationMs = 300,
+): bigint {
   const numTarget = Number(target);
-  const animated = useAnimatedNumber(numTarget, durationMs);
+  const animated = useAnimatedNumber(numTarget, glide, durationMs);
   return BigInt(Math.round(animated));
 }
 
@@ -638,8 +656,8 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
     data.memoryTotalBytes,
   );
 
-  const animatedWorkers = useAnimatedNumber(allowedWorkers, 300);
-  const animatedEngaged = useAnimatedBigInt(limitMemory, 300);
+  const animatedWorkers = useAnimatedNumber(allowedWorkers, displayNotch);
+  const animatedEngaged = useAnimatedBigInt(limitMemory, displayNotch);
 
   if (data.memoryTotalBytes === 0n && data.memoryAvailableBytes === 0n)
     return null;

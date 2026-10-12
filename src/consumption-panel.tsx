@@ -15,6 +15,7 @@ import type {
 import { useDjinn } from "./data/djinn";
 import { shortModel } from "./data/format";
 import { t } from "./i18n";
+import { onStillness, still } from "./stillness";
 import "./consumption-panel.css";
 
 const providerNames: Record<Provider, string> = {
@@ -1305,12 +1306,18 @@ export function ConsumptionPanel({
       }
     };
 
+    // A window at rest (stillness.ts) draws no new graph: it reads them again as it wakes.
+    const poll = () => {
+      if (!still()) void fetchSeries();
+    };
     void fetchSeries();
-    const interval = setInterval(fetchSeries, 5000);
+    const interval = setInterval(poll, 5000);
+    const stop = onStillness(poll);
 
     return () => {
       active = false;
       clearInterval(interval);
+      stop();
     };
   }, [djinn, folded, minutes]);
 

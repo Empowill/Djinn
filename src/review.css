@@ -124,21 +124,34 @@ html[data-theme="light"] {
 .count-pill b {
   font-weight: 600;
 }
+/* A running task's dot sends out a ring. The ring grows and fades by transform and opacity only, which WebKit composes
+   without painting: the box-shadow it grew before repainted the window on every frame of every dot (W503, W513). */
 .live-dot {
+  position: relative;
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--st-running);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--st-running) 60%, transparent);
-  animation: live-dot 1.6s ease-out infinite;
   flex-shrink: 0;
 }
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--st-running);
+  opacity: 0;
+  animation: live-dot 1.6s ease-out infinite;
+}
 @keyframes live-dot {
-  70% {
-    box-shadow: 0 0 0 6px transparent;
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
   }
+  70%,
   100% {
-    box-shadow: 0 0 0 0 transparent;
+    transform: scale(2.7);
+    opacity: 0;
   }
 }
 
