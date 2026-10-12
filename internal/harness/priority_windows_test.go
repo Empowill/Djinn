@@ -5,7 +5,10 @@ package harness
 import (
 	"context"
 	"os"
+	"os/exec"
+	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -27,8 +30,23 @@ func processPriorityClass(pid int) (uint32, error) {
 	return windows.GetPriorityClass(handle)
 }
 
+// wantClass is the priority class a worker must run at: the test process's own at standard priority, as Djinn's own
+// is a worker's; BELOW_NORMAL_PRIORITY_CLASS at low priority, or the test process's own when it runs lower already
+// (IDLE_PRIORITY_CLASS). A CI runner does not run at NORMAL_PRIORITY_CLASS: Windows's ran the tests at BELOW_NORMAL.
+func wantClass(t *testing.T, low bool) uint32 {
+	t.Helper()
+	own, err := windows.GetPriorityClass(windows.CurrentProcess())
+	if err != nil {
+		t.Fatalf("read the test process's priority class: %v", err)
+	}
+	if low && own != windows.IDLE_PRIORITY_CLASS {
+		return windows.BELOW_NORMAL_PRIORITY_CLASS
+	}
+	return own
+}
+
 // TestWorkerPriorityWindows verifies that workers run with BELOW_NORMAL_PRIORITY_CLASS under
-// minimal and light operating load notches, and NORMAL_PRIORITY_CLASS under normal notches (decision Q68).
+// minimal and light operating load notches, and at Djinn's own priority class under normal notches (decision Q68).
 // It is a system test that must run under DJINN_TEST_SYSTEM_ONLY=1 (omits testx.Portable).
 func TestWorkerPriorityWindows(t *testing.T) {
 	t.Parallel()
@@ -37,10 +55,9 @@ func TestWorkerPriorityWindows(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		lowPriority bool
-		wantClass   uint32
 	}{
-		{name: "normal priority", lowPriority: false, wantClass: windows.NORMAL_PRIORITY_CLASS},
-		{name: "low priority", lowPriority: true, wantClass: windows.BELOW_NORMAL_PRIORITY_CLASS},
+		{name: "normal priority", lowPriority: false},
+		{name: "low priority", lowPriority: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			spec := Spec{
@@ -65,12 +82,13 @@ func TestWorkerPriorityWindows(t *testing.T) {
 				t.Fatalf("invalid worker PID %d", pid)
 			}
 
+			want := wantClass(t, tc.lowPriority)
 			cls, err := processPriorityClass(pid)
 			if err != nil {
 				t.Fatalf("read priority class of PID %d: %v", pid, err)
 			}
-			if cls != tc.wantClass {
-				t.Errorf("worker PID %d priority class = 0x%08x, want 0x%08x", pid, cls, tc.wantClass)
+			if cls != want {
+				t.Errorf("worker PID %d priority class = 0x%08x, want 0x%08x", pid, cls, want)
 			}
 		})
 	}
@@ -122,7 +140,7 @@ func TestWorkerPriorityPolicyChangeWindows(t *testing.T) {
 	e := upWith(t, t.TempDir(), providers, WithPolicy(initialPolicy))
 	wishID, _ := e.wish(t, gitRepo(t))
 
-	spawnAndCheck := func(title string, wantClass uint32) int {
+	spawnAndCheck := func(title string, low bool) int {
 		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 			WishId: wishID, Title: title, Prompt: "do work", Provider: planv1.Provider_PROVIDER_CLAUDE,
 		}))
@@ -133,12 +151,13 @@ func TestWorkerPriorityPolicyChangeWindows(t *testing.T) {
 		waitFor(t, title+" PID", func() bool { return hook.pidOf(id) > 0 })
 		pid := hook.pidOf(id)
 
+		want := wantClass(t, low)
 		cls, err := processPriorityClass(pid)
 		if err != nil {
 			t.Fatalf("read priority class for %q (PID %d): %v", title, pid, err)
 		}
-		if cls != wantClass {
-			t.Errorf("%q (PID %d) priority class = 0x%08x, want 0x%08x", title, pid, cls, wantClass)
+		if cls != want {
+			t.Errorf("%q (PID %d) priority class = 0x%08x, want 0x%08x", title, pid, cls, want)
 		}
 
 		if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: id})); err != nil {
@@ -147,18 +166,42 @@ func TestWorkerPriorityPolicyChangeWindows(t *testing.T) {
 		return pid
 	}
 
-	// 1. Initial MEDIUM notch: normal priority class.
-	spawnAndCheck("Worker 1 Medium", windows.NORMAL_PRIORITY_CLASS)
+	// 1. Initial MEDIUM notch: low priority class.
+	spawnAndCheck("Worker 1 Medium", true)
 
 	// 2. Change policy to MINIMAL notch: low priority class.
 	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL))
-	spawnAndCheck("Worker 2 Minimal", windows.BELOW_NORMAL_PRIORITY_CLASS)
+	spawnAndCheck("Worker 2 Minimal", true)
 
-	// 3. Change policy to LIGHT notch: low priority class.
-	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_LIGHT))
-	spawnAndCheck("Worker 3 Light", windows.BELOW_NORMAL_PRIORITY_CLASS)
-
-	// 4. Change policy to HIGH notch: normal priority class.
+	// 3. Change policy to HIGH notch: standard priority (Djinn's own class).
 	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_HIGH))
-	spawnAndCheck("Worker 4 High", windows.NORMAL_PRIORITY_CLASS)
+	spawnAndCheck("Worker 3 High", false)
+
+	// 4. Change policy to MAX notch: standard priority (Djinn's own class).
+	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MAX))
+	spawnAndCheck("Worker 4 Max", false)
+
+	// 5. Change policy to OVERCLOCK notch: standard priority (Djinn's own class).
+	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK))
+	spawnAndCheck("Worker 5 Overclock", false)
+}
+
+// TestWorkerPriorityUnderBelowNormal runs the priority tests again from a test process started at
+// BELOW_NORMAL_PRIORITY_CLASS: the Windows CI runner ran the tests there, and a worker at standard priority runs at
+// Djinn's own class (PR #2's CI). The Unix twin starts it under nice -n 5.
+func TestWorkerPriorityUnderBelowNormal(t *testing.T) {
+	t.Parallel()
+	tests := []string{"TestWorkerPriorityWindows", "TestWorkerPriorityPolicyChangeWindows"}
+	cmd := exec.CommandContext(t.Context(), os.Args[0],
+		"-test.run", "^("+strings.Join(tests, "|")+")$", "-test.count=1", "-test.v")
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.BELOW_NORMAL_PRIORITY_CLASS}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the priority tests fail at BELOW_NORMAL_PRIORITY_CLASS: %v\n%s", err, out)
+	}
+	for _, name := range []string{"TestWorkerPriorityWindows/normal_priority", "TestWorkerPriorityPolicyChangeWindows"} {
+		if !strings.Contains(string(out), "--- PASS: "+name+" ") {
+			t.Errorf("%s did not pass at BELOW_NORMAL_PRIORITY_CLASS:\n%s", name, out)
+		}
+	}
 }

@@ -21,18 +21,19 @@ import (
 	"github.com/empowill/djinn/internal/machine"
 )
 
-// processNice reads the nice level of pid.
-// On Linux, the raw getpriority syscall returns 20 - nice.
-// On Darwin, libc's getpriority directly returns the nice value (-20 to 19).
-func processNice(pid int) (int, error) {
-	prio, err := syscall.Getpriority(syscall.PRIO_PROCESS, pid)
+// wantNice is the nice level a worker must run at: the test process's own at standard priority, as Djinn's own is a
+// worker's; nice 10 at low priority, or the test process's own when it runs lower already. A CI runner does not run
+// at nice 0: macOS's ran the tests at -10, and nice -n 5 go test runs them at 5.
+func wantNice(t *testing.T, low bool) int {
+	t.Helper()
+	own, err := niceOf(0)
 	if err != nil {
-		return 0, err
+		t.Fatalf("read the test process's nice: %v", err)
 	}
-	if runtime.GOOS == "linux" {
-		return 20 - prio, nil
+	if low {
+		return max(own, 10)
 	}
-	return prio, nil
+	return own
 }
 
 // readProcStatNice reads the nice value directly from /proc/<pid>/stat on Linux.
@@ -56,7 +57,7 @@ func readProcStatNice(pid int) (int, error) {
 }
 
 // TestWorkerPriorityUnix verifies that workers run with nice 10 under minimal and light
-// operating load notches, and nice 0 under normal notches (decision Q68).
+// operating load notches, and at Djinn's own nice level under normal notches (decision Q68).
 // It is a system test that must run under DJINN_TEST_SYSTEM_ONLY=1 (omits testx.Portable).
 func TestWorkerPriorityUnix(t *testing.T) {
 	t.Parallel()
@@ -65,10 +66,9 @@ func TestWorkerPriorityUnix(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		lowPriority bool
-		wantNice    int
 	}{
-		{name: "normal priority", lowPriority: false, wantNice: 0},
-		{name: "low priority", lowPriority: true, wantNice: 10},
+		{name: "normal priority", lowPriority: false},
+		{name: "low priority", lowPriority: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			spec := Spec{
@@ -93,12 +93,13 @@ func TestWorkerPriorityUnix(t *testing.T) {
 				t.Fatalf("invalid worker PID %d", pid)
 			}
 
-			nice, err := processNice(pid)
+			want := wantNice(t, tc.lowPriority)
+			nice, err := niceOf(pid)
 			if err != nil {
 				t.Fatalf("read nice of PID %d: %v", pid, err)
 			}
-			if nice != tc.wantNice {
-				t.Errorf("worker PID %d nice = %d, want %d", pid, nice, tc.wantNice)
+			if nice != want {
+				t.Errorf("worker PID %d nice = %d, want %d", pid, nice, want)
 			}
 
 			if runtime.GOOS == "linux" {
@@ -106,8 +107,8 @@ func TestWorkerPriorityUnix(t *testing.T) {
 				if err != nil {
 					t.Fatalf("read /proc/%d/stat: %v", pid, err)
 				}
-				if procNice != tc.wantNice {
-					t.Errorf("/proc/%d/stat nice = %d, want %d", pid, procNice, tc.wantNice)
+				if procNice != want {
+					t.Errorf("/proc/%d/stat nice = %d, want %d", pid, procNice, want)
 				}
 			}
 		})
@@ -160,7 +161,7 @@ func TestWorkerPriorityPolicyChangeUnix(t *testing.T) {
 	e := upWith(t, t.TempDir(), providers, WithPolicy(initialPolicy))
 	wishID, _ := e.wish(t, gitRepo(t))
 
-	spawnAndCheck := func(title string, wantNice int) int {
+	spawnAndCheck := func(title string, low bool) int {
 		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 			WishId: wishID, Title: title, Prompt: "do work", Provider: planv1.Provider_PROVIDER_CLAUDE,
 		}))
@@ -171,12 +172,13 @@ func TestWorkerPriorityPolicyChangeUnix(t *testing.T) {
 		waitFor(t, title+" PID", func() bool { return hook.pidOf(id) > 0 })
 		pid := hook.pidOf(id)
 
-		nice, err := processNice(pid)
+		want := wantNice(t, low)
+		nice, err := niceOf(pid)
 		if err != nil {
 			t.Fatalf("read nice for %q (PID %d): %v", title, pid, err)
 		}
-		if nice != wantNice {
-			t.Errorf("%q (PID %d) nice = %d, want %d", title, pid, nice, wantNice)
+		if nice != want {
+			t.Errorf("%q (PID %d) nice = %d, want %d", title, pid, nice, want)
 		}
 
 		// Stop the task to free worker slots.
@@ -187,27 +189,27 @@ func TestWorkerPriorityPolicyChangeUnix(t *testing.T) {
 	}
 
 	// 1. Initial MEDIUM notch: low priority (nice 10).
-	spawnAndCheck("Worker 1 Medium", 10)
+	spawnAndCheck("Worker 1 Medium", true)
 
 	// 2. Change policy to MINIMAL notch: low priority (nice 10).
 	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL))
-	spawnAndCheck("Worker 2 Minimal", 10)
+	spawnAndCheck("Worker 2 Minimal", true)
 
-	// 3. Change policy to HIGH notch: standard priority (nice 0).
+	// 3. Change policy to HIGH notch: standard priority (Djinn's own nice level).
 	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_HIGH))
-	spawnAndCheck("Worker 3 High", 0)
+	spawnAndCheck("Worker 3 High", false)
 
-	// 4. Change policy to MAX notch: standard priority (nice 0).
+	// 4. Change policy to MAX notch: standard priority (Djinn's own nice level).
 	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MAX))
-	spawnAndCheck("Worker 4 Max", 0)
+	spawnAndCheck("Worker 4 Max", false)
 
-	// 5. Change policy to OVERCLOCK notch: standard priority (nice 0).
+	// 5. Change policy to OVERCLOCK notch: standard priority (Djinn's own nice level).
 	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK))
-	spawnAndCheck("Worker 5 Overclock", 0)
+	spawnAndCheck("Worker 5 Overclock", false)
 }
 
 // TestWorkerChildPriorityInheritanceUnix verifies that child commands executed by a low-priority
-// worker automatically inherit the low priority (nice 10).
+// worker automatically inherit the low priority (nice 10, or Djinn's own when lower).
 func TestWorkerChildPriorityInheritanceUnix(t *testing.T) {
 	t.Parallel()
 	// Create a parent process with lowPriority: true that starts a child process.
@@ -261,28 +263,53 @@ func TestWorkerChildPriorityInheritanceUnix(t *testing.T) {
 	}
 
 	parentPID := cmd.Process.Pid
-	parentNice, err := processNice(parentPID)
+	want := wantNice(t, true)
+	parentNice, err := niceOf(parentPID)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		t.Fatalf("read parent nice: %v", err)
 	}
-	if parentNice != 10 {
-		t.Errorf("parent PID %d nice = %d, want 10", parentPID, parentNice)
+	if parentNice != want {
+		t.Errorf("parent PID %d nice = %d, want %d", parentPID, parentNice, want)
 	}
 
-	childNice, err := processNice(childPID)
+	childNice, err := niceOf(childPID)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		t.Fatalf("read child nice: %v", err)
 	}
-	if childNice != 10 {
-		t.Errorf("child PID %d nice = %d, want 10", childPID, childNice)
+	if childNice != want {
+		t.Errorf("child PID %d nice = %d, want %d", childPID, childNice, want)
 	}
 
 	// Clean up processes.
 	_ = syscall.Kill(childPID, syscall.SIGKILL)
 	_ = cmd.Process.Kill()
 	_ = cmd.Wait()
+}
+
+// TestWorkerPriorityUnderNice runs the priority tests again from a test process started under nice -n 5: the CI
+// runners do not run the tests at nice 0 (macOS's at -10), and a worker at standard priority runs at Djinn's own
+// nice level, which an unprivileged process cannot go below (PR #2's CI).
+func TestWorkerPriorityUnderNice(t *testing.T) {
+	t.Parallel()
+	nice, err := exec.LookPath("nice")
+	if err != nil {
+		t.Skipf("no nice command to start the test process under: %v", err)
+	}
+	tests := []string{"TestWorkerPriorityUnix", "TestWorkerPriorityPolicyChangeUnix",
+		"TestWorkerChildPriorityInheritanceUnix", "TestProcessUnixSetPriorityTree"}
+	cmd := exec.CommandContext(t.Context(), nice, "-n", "5", os.Args[0],
+		"-test.run", "^("+strings.Join(tests, "|")+")$", "-test.count=1", "-test.v")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the priority tests fail under nice -n 5: %v\n%s", err, out)
+	}
+	for _, name := range []string{"TestWorkerPriorityUnix/normal_priority", "TestWorkerPriorityPolicyChangeUnix"} {
+		if !strings.Contains(string(out), "--- PASS: "+name+" ") {
+			t.Errorf("%s did not pass under nice -n 5:\n%s", name, out)
+		}
+	}
 }

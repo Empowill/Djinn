@@ -5,6 +5,7 @@ package harness
 import (
 	"errors"
 	"os/exec"
+	"runtime"
 	"syscall"
 
 	"github.com/empowill/djinn/internal/machine"
@@ -21,12 +22,43 @@ func ownGroup(cmd *exec.Cmd, _ bool) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }
 
-// applyPriority sets low CPU priority (nice 10) on the started process if lowPriority is true.
+// lowNice is the nice level of a worker at low CPU priority, below the developer's applications (nice 0).
+const lowNice = 10
+
+// niceOf reads the nice level of pid, 0 for the calling process. Linux's raw getpriority returns 20 - nice; the
+// other systems return the nice level itself.
+func niceOf(pid int) (int, error) {
+	prio, err := syscall.Getpriority(syscall.PRIO_PROCESS, pid)
+	if err != nil {
+		return 0, err
+	}
+	if runtime.GOOS == "linux" {
+		return 20 - prio, nil
+	}
+	return prio, nil
+}
+
+// workerNice is the nice level of a worker. At standard priority, Djinn's own: a worker runs as Djinn was started
+// (nice djinn, a launcher at -10), and an unprivileged process cannot go below its own nice level anyway. At low
+// priority, lowNice, or Djinn's own when Djinn already runs lower.
+func workerNice(low bool) int {
+	own, err := niceOf(0)
+	if err != nil {
+		own = 0
+	}
+	if low && own < lowNice {
+		return lowNice
+	}
+	return own
+}
+
+// applyPriority sets low CPU priority on the started process if lowPriority is true; at standard priority, it runs
+// at Djinn's own, which it inherited.
 func applyPriority(cmd *exec.Cmd, lowPriority bool) {
 	if !lowPriority || cmd.Process == nil {
 		return
 	}
-	_ = syscall.Setpriority(syscall.PRIO_PROCESS, cmd.Process.Pid, 10)
+	_ = syscall.Setpriority(syscall.PRIO_PROCESS, cmd.Process.Pid, workerNice(true))
 }
 
 // setPriority sets CPU priority on the running process and its process tree,
@@ -45,10 +77,7 @@ func setPriority(p *process, low bool) error {
 			errs = append(errs, err)
 		}
 	}
-	nice := 0
-	if low {
-		nice = 10
-	}
+	nice := workerNice(low)
 	pids, err := workerPIDsFn(p.cmd.Process.Pid, p.cgroup)
 	if err != nil && len(pids) == 0 {
 		pids = []int{p.cmd.Process.Pid}

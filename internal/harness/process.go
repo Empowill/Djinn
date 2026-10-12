@@ -41,7 +41,8 @@ type line struct {
 // startProcess starts name in dir with args, in a scope of its own when scope is set. The process gets Djinn's
 // environment plus env, which Djinn passes on without reading. On Unix it leads a process group of its own, so that
 // stopping it stops what it started; in a scope, its cgroup holds even what left the group.
-// When lowPriority is true, the process runs with low CPU priority (nice 10 on Unix, BELOW_NORMAL_PRIORITY_CLASS on Windows).
+// When lowPriority is true, the process runs with low CPU priority (nice 10 on Unix, BELOW_NORMAL_PRIORITY_CLASS on
+// Windows); else at Djinn's own priority.
 func startProcess(dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, lowPriority bool) (*process, error) {
 	return startCommand(dir, name, args, env, scope, grace, false, lowPriority)
 }
