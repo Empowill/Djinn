@@ -37,16 +37,22 @@ func lowerHex(s string) bool {
 	return s != "" && strings.Trim(s, "0123456789abcdef") == ""
 }
 
-// versionRev is the revision a Djinn of version was built from: its commit when built from a checkout, its tag when
-// released; "" for a development build, which names none.
-func versionRev(version string) string {
+// versionCommit is the commit a Djinn of version was built from, in the repository holding repo: its commit when built
+// from a checkout, its tag's when released; "" for a development build, which names none, or when the repository holds
+// neither. A tag is looked up among the refs only: git 2.47 still read refs/tags/local-g1a2b3c4, which names no tag, as
+// a git describe name, the commit 1a2b3c4, and the git 2.55 of CI did not.
+func versionCommit(ctx context.Context, repo, version string) string {
 	if version == "" || version == "dev" {
 		return ""
 	}
 	if commit, _, ok := LocalBuild(version); ok {
-		return commit
+		return commitOf(ctx, repo, commit)
 	}
-	return "refs/tags/" + version
+	tag := "refs/tags/" + version
+	if _, err := git(ctx, repo, "show-ref", "--verify", "--quiet", tag); err != nil {
+		return ""
+	}
+	return commitOf(ctx, repo, tag)
 }
 
 // mergeSubject is the subject of a merge the integration makes (Merge branch 'w5-…' into feat/x): the branch merged,
@@ -61,11 +67,10 @@ const compareTasks = 100
 // adds (Changes, ChangesCount) and those it lacks (Lacks, LacksCount). It leaves b as it is otherwise.
 func (h *Harness) compare(ctx context.Context, project *planv1.Project, b *Built) {
 	repo := project.GetDirectory()
-	rev := versionRev(h.version)
-	if rev == "" || b.Sha == "" || repo == "" {
+	if b.Sha == "" || repo == "" {
 		return
 	}
-	base := commitOf(ctx, repo, rev)
+	base := versionCommit(ctx, repo, h.version)
 	if base == "" {
 		return
 	}
@@ -221,8 +226,7 @@ func firstParentDistance(ctx context.Context, repo, sha, branch string) int {
 // repository holds its commit, the branch and wish it comes from, and what it holds against the running Djinn. ok is
 // false when no project holds its commit: a release no checkout knows yet, or a development build.
 func (h *Harness) DescribeVersion(ctx context.Context, version string) (Built, bool) {
-	rev := versionRev(version)
-	if rev == "" {
+	if version == "" || version == "dev" {
 		return Built{}, false
 	}
 	projects, err := store.List[*planv1.Project](ctx, h.store, nil)
@@ -233,7 +237,7 @@ func (h *Harness) DescribeVersion(ctx context.Context, version string) (Built, b
 		if !p.GetGit() {
 			continue
 		}
-		sha := commitOf(ctx, p.GetDirectory(), rev)
+		sha := versionCommit(ctx, p.GetDirectory(), version)
 		if sha == "" {
 			continue
 		}
