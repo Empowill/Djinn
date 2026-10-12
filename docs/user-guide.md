@@ -391,8 +391,12 @@ or **On demand** (pushes only when you click **Push** or run `djinn project push
 switch cadence in the project view or with `djinn project set-push <project> standard|on_demand`. Before it pushes the branch,
 it runs the checks named for `push`: red, the push is held, and Djinn starts a correction worker; if that fails or attempts
 are spent, it asks you. `djinn project show` and the project's view in the window list the checks and how each last ran.
-When the settings also name an install command, the window proposes the batch it committed, with **What changed** displaying
-folded task summaries; **Install and restart** installs it, nothing before your click. With `install_questions: when_needed`,
+When the settings also name an install command, the window proposes the build it pushed, one per integration branch:
+on one line, its commit, the branch and wish it comes from, and against the running Djinn the tasks it adds, or "older
+than the running Djinn on 3 commits" when the running Djinn holds commits it lacks; **Details** unfolds the tasks merged
+since, each with its title and folded summary, and the commits' titles, folded. The build of the branch the running
+Djinn was built from comes first; the other branches' builds are folded under one line that names them, each with its
+own **Install and restart** and ×. Nothing installs before your click; × hides that build until a newer one comes. With `install_questions: when_needed`,
 Djinn raises no routine install question: the banner and post-push install are enough, and it asks only when necessary
 (e.g. a build carries a fix for a task you are waiting on, a change that takes effect after restart and matters now, or
 the running build is broken), saying why in the question; with `install_questions: never` (set in Djinn itself), no
@@ -433,7 +437,9 @@ stopped worker 500 turns again, not more time.
 
 At every start, the lead of the first active wish comes back on its session, in its folder. The lead terminals come
 back after an update or a crash too, on the same sessions; not after you quit. When a newer Djinn is installed, a
-banner offers **Update**, with its **Release notes** when it has some: nothing restarts without that click. After the
+banner offers **Update**, with its **Release notes** when it has some: nothing restarts without that click. A Djinn
+built from a checkout is named as a build is (its commit, branch and wish, what it adds and lacks); × hides it until
+another version is installed. After the
 restart, it lists the terminals that did not start again.
 
 A Djinn you built from your checkout of Djinn (`go tool task install`) watches the releases too. With your checkout

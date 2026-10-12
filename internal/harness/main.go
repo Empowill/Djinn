@@ -487,11 +487,16 @@ func (h *Harness) mainMerged(
 	h.notify()
 	h.wake() // The tasks that start next start from main's commits.
 	if release != "" && settings.Install != "" && h.built != nil && l.azima == nil {
-		h.built(Built{
+		merged := TaskSummary{Title: fmt.Sprintf("%s merged into %s: %s", shown, branch, commitsText(int(record.GetCount()), nil)+", "+release)}
+		b := Built{
 			WishID: wish.GetId(), WishTitle: wish.GetTitle(), ProjectID: project.GetId(), Project: project.GetName(), Branch: branch,
-			Sha: sha, Changes: record.GetCommits(), Install: settings.Install,
-			Summaries: []TaskSummary{{Title: fmt.Sprintf("%s merged into %s: %s", shown, branch, commitsText(int(record.GetCount()), nil)+", "+release)}},
-		})
+			Sha: sha, Changes: record.GetCommits(), Install: settings.Install, Summaries: []TaskSummary{merged},
+		}
+		h.compare(ctx, project, &b)
+		if b.Base != "" {
+			b.Summaries = append(b.Summaries, merged)
+		}
+		h.built(b)
 	}
 }
 

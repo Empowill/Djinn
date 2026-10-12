@@ -126,6 +126,7 @@ type Harness struct {
 	maxWallTime  time.Duration                // ceiling on wall time budget per task (watchdog.go)
 	maxTurns     int                          // ceiling on model turns budget per task (watchdog.go)
 	version      string                       // version of the running binary (WithVersion)
+	builtFrom    map[string]string            // by project id: the branch the running binary was built from (compare.go)
 	runs         map[string]*run              // by task id
 	changed      chan struct{}                // closed at the next change of a task without worker (notifyLocked)
 	preempted    map[string]string            // investigator task ID -> paused work task ID, guarded by mu

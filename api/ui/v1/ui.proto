@@ -45,7 +45,8 @@ service UiService {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
   // Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-  // change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
+  // change. With the leads that a restart could not resume, once, and the last build pushed of each integration branch
+  // that is not installed.
   rpc WatchUpdate(UiServiceWatchUpdateRequest) returns (stream UiServiceWatchUpdateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
@@ -196,12 +197,18 @@ message UiServiceWatchUpdateResponse {
   // Where the release notes of the newer Djinn are, an http(s) link; empty when none waits, or when it comes from a
   // local install, which has none.
   string notes_url = 4;
-  // The last push of a wish's integration branch, in a project whose settings name an install command, and not
-  // installed since: the window proposes to install it and restart on it. Unset for none.
-  Build build = 5;
+  reserved 5;
+  reserved "build";
+  // The last push of each integration branch, in a project whose settings name an install command, and not installed
+  // since: one per branch, the branch the running Djinn was built from first. The window proposes to install each and
+  // restart on it, the other branches' folded.
+  repeated Build builds = 7;
   // The install of a build that runs now (Update), and where it stands; unset for none. The window says it in place
   // of the build's buttons: what it waits for, then that it builds, then that Djinn restarts.
   Installing installing = 6;
+  // The newer Djinn of version ready, named as a build is: its commit, the branch and wish it comes from, and how it
+  // compares with the running Djinn. Unset when no project holds its commit (a release no checkout knows yet).
+  Build ready_build = 8;
 }
 
 message UiServiceWatchRequest {}
@@ -267,11 +274,22 @@ message Build {
   repeated TaskSummary summaries = 9;
   // The command that installs it: go tool task install.
   string install = 10;
+  // The commit of the running Djinn it is compared with, when a project holds it: tasks, summaries and changes are
+  // then what the build adds to it, and lacks what it lacks. Empty: they are what the push brought.
+  string base = 11;
+  // The running Djinn was built from this branch: its build comes first.
+  bool running = 12;
+  // How many commits, merges aside, the build adds to the running Djinn; changes holds the latest of them.
+  int32 changes_count = 13;
+  // The titles of the commits the running Djinn holds and the build does not, the latest first, and how many there
+  // are: the build is older than the running Djinn on them.
+  repeated string lacks = 14;
+  int32 lacks_count = 15;
 }
 
 message UiServiceUpdateRequest {
   // The commit of the build to install first, as WatchUpdate proposed it; empty to restart on the newer Djinn
-  // already installed. Refused when it is not the build proposed.
+  // already installed. Refused when it is none of the builds proposed.
   string build = 1 [(buf.validate.field).string.max_len = 64];
 }
 

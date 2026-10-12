@@ -7,7 +7,7 @@ import {
   type LoadServiceWatchResponse,
 } from "../../gen/ts/djinn/v1/load_pb";
 import { type DjinnFocus, type Focus, none as noneFocus } from "./focus";
-import { type DjinnUpdate, type UpdateState } from "./update";
+import { type DjinnUpdate, type UpdateState, updateState } from "./update";
 import {
   UiService,
   type UiServiceWatchShowResponse,
@@ -54,30 +54,7 @@ export function createUi(transport: Transport, retry = 1000): DjinnUi {
   }
 
   function handleUpdate(res: UiServiceWatchUpdateResponse) {
-    const state: UpdateState = {
-      current: res.current,
-      ready: res.ready,
-      notResumed: [...res.notResumed],
-      notesUrl: res.notesUrl,
-      build: res.build && {
-        wishTitle: res.build.wishTitle,
-        project: res.build.project,
-        branch: res.build.branch,
-        sha: res.build.sha,
-        tasks: [...res.build.tasks],
-        changes: [...res.build.changes],
-        summaries: res.build.summaries.map((s) => ({
-          code: s.code,
-          title: s.title,
-          summary: s.summary,
-        })),
-      },
-      installing: res.installing && {
-        sha: res.installing.sha,
-        step: res.installing.step,
-        waiting: res.installing.waiting,
-      },
-    };
+    const state = updateState(res);
     lastUpdate = state;
     updateListeners.forEach((listener) => listener(state));
   }

@@ -80,6 +80,16 @@ type Built struct {
 	Summaries []TaskSummary
 	// The install command.
 	Install string
+	// The commit the running Djinn was built from, when the project holds it: Tasks, Summaries and Changes are then
+	// what the build adds to it (compare.go). Empty: they are what the push brought.
+	Base string
+	// The running Djinn was built from Branch.
+	Running bool
+	// How many commits, merges aside, the build adds to the running Djinn; Changes holds the latest.
+	ChangesCount int
+	// The titles of the commits the running Djinn holds and the build does not, the latest first, and how many.
+	Lacks      []string
+	LacksCount int
 }
 
 // WithBuilt calls built after each push of an integration branch in a project whose settings name an install command.
@@ -456,6 +466,7 @@ func (h *Harness) build(ctx context.Context, wish *planv1.Wish, project *planv1.
 			Summary: h.lastWords(ctx, t.GetId()),
 		})
 	}
+	h.compare(ctx, project, &b)
 	return b
 }
 

@@ -258,6 +258,13 @@ func runUp(args []string) (restart bool, err error) {
 	defer func() { restart = err == nil && updates.Restarting() }()
 	if updates != nil {
 		uiSvc.Restart = updates.restart
+		// The newer Djinn waiting is named as a build: where it comes from, what it holds against this one.
+		updates.describe = func(ctx context.Context, v string) *uiv1.Build {
+			if b, ok := workers.DescribeVersion(ctx, v); ok {
+				return buildOf(b)
+			}
+			return nil
+		}
 		if commit, dirty, ok := localBuild(version); ok {
 			updates.fit = func(ctx context.Context, tag string) (harness.ReleaseFit, error) {
 				return workers.Release(ctx, commit, dirty, tag)
@@ -613,5 +620,6 @@ func buildOf(b harness.Built) *uiv1.Build {
 	return &uiv1.Build{
 		WishId: b.WishID, WishTitle: b.WishTitle, ProjectId: b.ProjectID, Project: b.Project, Branch: b.Branch, Sha: b.Sha,
 		Tasks: b.Tasks, Changes: b.Changes, Summaries: summaries, Install: b.Install,
+		Base: b.Base, Running: b.Running, ChangesCount: int32(b.ChangesCount), Lacks: b.Lacks, LacksCount: int32(b.LacksCount),
 	}
 }
