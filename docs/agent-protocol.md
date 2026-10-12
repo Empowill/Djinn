@@ -127,7 +127,19 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   once until the lead watches again (or ten minutes passed); a lead that does not run is reopened on its session first,
   as `djinn lead resume` does, without taking the window. djinn up does the same a minute after it starts, so that a
   lead whose watch died with the last djinn up hears of the restart. The line waits until the developer has not typed
-  in that terminal for three seconds.
+  in that terminal for three seconds, and goes only to the lead's prompt (`Terminal.Say`, `internal/terminal/say.go`),
+  read on the screen as it shows now (a small model of the terminal, `screen.go`), not on what it once drew:
+  - **Never into a choice.** A hint that ends a line, or a part of it between `·`, with a key, `to` and what it does
+    (`Esc to cancel`, `Enter to confirm`, `Esc to exit`, `Press enter to confirm or esc to cancel`) is a choice: a
+    permission prompt or an approval of Claude Code or Codex, the folder trust, a first run's onboarding. The line
+    waits until the developer answers it: a digit in it would pick an option, its Enter confirm one, usually "Yes".
+    A choice covered since holds nothing, nor a sentence about one that ends with a period.
+  - **Never joined to a line under way.** Where the agent shows its prompt (Claude Code's `❯`, Codex's `›`), text
+    there that is not its faint placeholder holds the line until the developer sends or clears it, however long
+    they think. Elsewhere Djinn follows the keys: what is typed holds the line until it is sent or cleared (Enter,
+    Ctrl+C, Ctrl+U, Esc twice, a word erased by Ctrl+W or Alt+Backspace), or for 30 seconds after the last key. What
+    the window's terminal sends on its own (answers to the agent's queries, the mouse, the focus) is no key.
+  - **As a paste** when the agent turned bracketed paste on, so that it takes the line whole, then Enter on its own.
 - **Each agent is woken up by its finished watch** (recorded in `internal/plan/testdata/wake`):
   - **Claude Code** runs it with the Bash tool and `run_in_background: true`; when it exits, Claude Code adds a
     `<task-notification>` and the agent takes a turn, even idle (Claude Code 2.1.296; an interactive session sets no

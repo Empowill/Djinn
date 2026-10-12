@@ -304,8 +304,10 @@ func (t *Terminal) pump() {
 func (t *Terminal) append(b []byte) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	from := len(t.buf)
 	t.buf = append(t.buf, b...)
 	t.voice.output = time.Now()
+	t.pasteMode(from)
 	t.screen.write(b)
 	if len(t.buf) > Scrollback+Scrollback/4 {
 		drop := len(t.buf) - Scrollback
@@ -351,7 +353,7 @@ func (t *Terminal) Write(b []byte) error {
 		return ErrExited
 	}
 	t.mu.Lock()
-	t.voice.typed = time.Now()
+	t.keys(b)
 	t.mu.Unlock()
 	return t.put(b)
 }
