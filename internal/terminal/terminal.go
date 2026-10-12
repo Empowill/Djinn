@@ -253,8 +253,8 @@ func (m *Manager) Hangup(name string) bool {
 	return true
 }
 
-// Close hangs up every terminal, kills the programs still there after Grace, and returns once they ended. No
-// terminal opens after.
+// Close hangs up every terminal, kills the programs still there after Grace, and returns once they ended and Say
+// stopped typing into them. No terminal opens after.
 func (m *Manager) Close() {
 	m.mu.Lock()
 	m.closed = true
@@ -268,6 +268,12 @@ func (m *Manager) Close() {
 	}
 	for _, t := range all {
 		<-t.done
+		t.mu.Lock()
+		hushed := t.voice.hushed
+		t.mu.Unlock()
+		if hushed != nil { // Djinn's voice stops with the program.
+			<-hushed
+		}
 	}
 }
 
@@ -304,8 +310,10 @@ func (t *Terminal) pump() {
 func (t *Terminal) append(b []byte) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	from := len(t.buf)
 	t.buf = append(t.buf, b...)
 	t.voice.output = time.Now()
+	t.pasteMode(from)
 	t.screen.write(b)
 	if len(t.buf) > Scrollback+Scrollback/4 {
 		drop := len(t.buf) - Scrollback
@@ -351,7 +359,7 @@ func (t *Terminal) Write(b []byte) error {
 		return ErrExited
 	}
 	t.mu.Lock()
-	t.voice.typed = time.Now()
+	t.keys(b)
 	t.mu.Unlock()
 	return t.put(b)
 }
