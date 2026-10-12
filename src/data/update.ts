@@ -3,7 +3,12 @@
 // (UiService.Update). Nothing installs nor restarts without that click.
 import { type Transport, createClient } from "@connectrpc/connect";
 
-import { InstallStep, UiService } from "../../gen/ts/ui/v1/ui_pb";
+import {
+  type Build,
+  InstallStep,
+  UiService,
+  type UiServiceWatchUpdateResponse,
+} from "../../gen/ts/ui/v1/ui_pb";
 
 export { InstallStep };
 
@@ -12,12 +17,15 @@ export interface UpdateState {
   current: string;
   // Version of the newer Djinn waiting; empty for none.
   ready: string;
+  // The newer Djinn waiting, named as a build: where it comes from, what it holds against the running one; undefined
+  // when Djinn cannot tell.
+  readyBuild?: BuildProposal;
   // The terminals the last restart could not run again, one line each.
   notResumed: string[];
   // Where the release notes of the newer Djinn are; empty for none.
   notesUrl: string;
-  // The last batch committed into a wish's integration branch and not installed; undefined for none.
-  build?: BuildProposal;
+  // The last build pushed of each integration branch and not installed, the running Djinn's branch first.
+  builds: BuildProposal[];
   // The install of a build that runs now, and where it stands; undefined for none.
   installing?: Installing;
 }
@@ -36,18 +44,66 @@ export interface TaskSummary {
   summary: string;
 }
 
-// A batch of finished work committed into a wish's integration branch, to install (T07).
+// A build of an integration branch, to install (T07), or the newer Djinn waiting, named as one.
 export interface BuildProposal {
   wishTitle: string;
   project: string;
   branch: string;
   sha: string;
-  // The tasks of the batch, by code.
+  // The tasks it brings, by code: merged since the running Djinn when base is set, else in the push.
   tasks: string[];
-  // The titles of the commits it brought, the latest first.
+  // The titles of the commits it brings, the latest first.
   changes: string[];
   // What changed, one per task: its code, title and worker's summary.
   summaries: TaskSummary[];
+  // The commit of the running Djinn it is compared with; empty when it is not.
+  base: string;
+  // The running Djinn was built from its branch.
+  running: boolean;
+  // How many commits it adds to the running Djinn: changes holds the latest.
+  changesCount: number;
+  // The commits the running Djinn holds and it does not, the latest first, and how many.
+  lacks: string[];
+  lacksCount: number;
+}
+
+// buildProposal reads a build as the server sends it.
+export function buildProposal(b: Build): BuildProposal {
+  return {
+    wishTitle: b.wishTitle,
+    project: b.project,
+    branch: b.branch,
+    sha: b.sha,
+    tasks: [...b.tasks],
+    changes: [...b.changes],
+    summaries: b.summaries.map((s) => ({
+      code: s.code,
+      title: s.title,
+      summary: s.summary,
+    })),
+    base: b.base,
+    running: b.running,
+    changesCount: b.changesCount,
+    lacks: [...b.lacks],
+    lacksCount: b.lacksCount,
+  };
+}
+
+// updateState reads the update as the server sends it.
+export function updateState(res: UiServiceWatchUpdateResponse): UpdateState {
+  return {
+    current: res.current,
+    ready: res.ready,
+    readyBuild: res.readyBuild && buildProposal(res.readyBuild),
+    notResumed: [...res.notResumed],
+    notesUrl: res.notesUrl,
+    builds: res.builds.map(buildProposal),
+    installing: res.installing && {
+      sha: res.installing.sha,
+      step: res.installing.step,
+      waiting: res.installing.waiting,
+    },
+  };
 }
 
 export interface DjinnUpdate {
@@ -70,30 +126,7 @@ export function createUpdate(transport: Transport, retry = 1000): DjinnUpdate {
     for (;;) {
       try {
         for await (const res of ui.watchUpdate({})) {
-          last = {
-            current: res.current,
-            ready: res.ready,
-            notResumed: [...res.notResumed],
-            notesUrl: res.notesUrl,
-            build: res.build && {
-              wishTitle: res.build.wishTitle,
-              project: res.build.project,
-              branch: res.build.branch,
-              sha: res.build.sha,
-              tasks: [...res.build.tasks],
-              changes: [...res.build.changes],
-              summaries: res.build.summaries.map((s) => ({
-                code: s.code,
-                title: s.title,
-                summary: s.summary,
-              })),
-            },
-            installing: res.installing && {
-              sha: res.installing.sha,
-              step: res.installing.step,
-              waiting: res.installing.waiting,
-            },
-          };
+          last = updateState(res);
           listeners.forEach((listener) => listener(last!));
         }
       } catch {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -425,7 +426,8 @@ func TestUpdateInstallsABuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !watch.Receive() || watch.Msg().GetBuild().GetSha() != "abc" || watch.Msg().GetBuild().GetChanges()[0] != "Work of W1" {
+	if !watch.Receive() || len(watch.Msg().GetBuilds()) != 1 || watch.Msg().GetBuilds()[0].GetSha() != "abc" ||
+		watch.Msg().GetBuilds()[0].GetChanges()[0] != "Work of W1" {
 		t.Fatalf("the window is not proposed the build: %v, %v", watch.Msg(), watch.Err())
 	}
 
@@ -456,7 +458,7 @@ func TestUpdateInstallsABuild(t *testing.T) {
 		t.Errorf("a build that installed no newer Djinn: %v, %v, %d restarts", r.res, r.err, restarts)
 	}
 	// The window sees it build, maybe, then the install over: nothing proposed, nothing installing.
-	for watch.Receive() && (watch.Msg().GetBuild() != nil || watch.Msg().GetInstalling() != nil) {
+	for watch.Receive() && (len(watch.Msg().GetBuilds()) > 0 || watch.Msg().GetInstalling() != nil) {
 		if step := watch.Msg().GetInstalling().GetStep(); step != uiv1.InstallStep_INSTALL_STEP_BUILDING {
 			t.Errorf("installing: %v", watch.Msg())
 		}
@@ -465,7 +467,7 @@ func TestUpdateInstallsABuild(t *testing.T) {
 		t.Errorf("still proposed or installing once installed: %v", watch.Err())
 	}
 	newer = true
-	s.SetBuild(&uiv1.Build{Sha: "def"})
+	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/x", Sha: "def"})
 	if res, err := update("def"); err != nil || res.GetInstalled() != "def" || res.GetVersion() != "v2" || restarts != 1 {
 		t.Errorf("a build that installed a newer Djinn: %v, %v, %d restarts", res, err, restarts)
 	}
@@ -475,6 +477,61 @@ func TestUpdateInstallsABuild(t *testing.T) {
 	}
 	if !restarting {
 		t.Errorf("the window is not told Djinn restarts: %v", watch.Err())
+	}
+}
+
+// TestBuildsByBranch: each integration branch keeps its own proposal, a newer push of a branch replaces only that
+// branch's; the branch the running Djinn was built from comes first; installing one leaves the others. The newer Djinn
+// ready is named once described, and forgotten when another version waits.
+func TestBuildsByBranch(t *testing.T) {
+	s, _ := newService(t)
+	s.Install = func(context.Context, *uiv1.Build, func(uiv1.InstallStep, string)) (bool, error) { return false, nil }
+	shas := func() []string {
+		s.updates.Lock()
+		defer s.updates.Unlock()
+		var out []string
+		for _, b := range s.updateState().GetBuilds() {
+			out = append(out, b.GetBranch()+"@"+b.GetSha())
+		}
+		return out
+	}
+	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/clement-port", WishTitle: "Clément's branches", Sha: "e60f8fc"})
+	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/wails-go", Sha: "aaa", Running: true})
+	s.SetBuild(&uiv1.Build{ProjectId: "q", Branch: "feat/wails-go", Sha: "ccc"})
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/clement-port@e60f8fc", "feat/wails-go@ccc"}) {
+		t.Errorf("builds = %v, want the running branch first, one per branch and project", got)
+	}
+	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/clement-port", Sha: "e70"})
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/clement-port@e70", "feat/wails-go@ccc"}) {
+		t.Errorf("builds = %v, want the newer push of feat/clement-port in place of its last", got)
+	}
+	if _, err := s.Update(t.Context(), connect.NewRequest(&uiv1.UiServiceUpdateRequest{Build: "e70"})); err != nil {
+		t.Fatal(err)
+	}
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/wails-go@ccc"}) {
+		t.Errorf("builds = %v, want the others kept once one is installed", got)
+	}
+	if _, err := s.Update(t.Context(), connect.NewRequest(&uiv1.UiServiceUpdateRequest{Build: "e60f8fc"})); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("a build replaced since installs: %v", err)
+	}
+
+	s.SetReady("local-g1", "")
+	s.SetReadyBuild("local-g0", &uiv1.Build{Sha: "0"})
+	ready := func() *uiv1.Build {
+		s.updates.Lock()
+		defer s.updates.Unlock()
+		return s.updateState().GetReadyBuild()
+	}
+	if ready() != nil {
+		t.Error("a version no longer waiting is named")
+	}
+	s.SetReadyBuild("local-g1", &uiv1.Build{Sha: "1", Branch: "feat/clement-port"})
+	if ready().GetBranch() != "feat/clement-port" {
+		t.Errorf("ready build = %v", ready())
+	}
+	s.SetReady("local-g2", "")
+	if ready() != nil {
+		t.Error("the name of the version before stays")
 	}
 }
 

@@ -81,7 +81,7 @@ export {
   WishTitle,
   recordedAgent,
 } from "@/src/wish-head.tsx";
-export { UpdateBannerView } from "@/src/update-banner.tsx";
+export { UpdateBannerView, readyKey } from "@/src/update-banner.tsx";
 export { InstallStep } from "@/gen/ts/ui/v1/ui_pb.ts";
 export {
   memory,
@@ -2790,14 +2790,14 @@ test("the update banner links the release notes of a newer release, and only a w
     release,
     /<a href="https:\/\/github.com\/Empowill\/Djinn\/releases\/tag\/v2.0.0" target="_blank" rel="noopener noreferrer">Release notes<\/a>/,
   );
-  // The djinn's mark heads it; the brass Update sits beside the title, the notes a quiet link after it.
+  // The djinn's mark heads it; the brass Update sits beside the title, the notes a quiet link after it, then the ×.
   assert.match(
     release,
-    /^<div class="update-banner" role="status"><section class="update-banner-part"><div class="update-banner-head"><div class="update-banner-title"><span class="brand small"><span class="brand-mark"><img/,
+    /^<div class="update-banner" role="status"><section class="update-banner-part"><div class="update-banner-head"><div class="update-banner-title" title="v1.0.0 → v2.0.0"><span class="brand small"><span class="brand-mark"><img/,
   );
   assert.match(
     release,
-    /A new version of Djinn is ready<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Update<\/button><a /,
+    /A new version of Djinn is ready<\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Update<\/button><a [^>]*>Release notes<\/a><button type="button" class="update-banner-close" aria-label="Dismiss" title="Dismiss">×<\/button><\/div>/,
   );
   // While it restarts, the notes stay; the button goes.
   const restarting = banner(
@@ -3428,7 +3428,7 @@ test("work that merges stays in sight, counts as running everywhere, then folds 
   assert.doesNotMatch(later.plan, /plan-wish tone-running/);
 });
 
-test("the update banner proposes to install a build committed, with what changed", () => {
+test("the update banner proposes to install a build committed, on one line, what changed unfolded on demand", () => {
   const build = {
     wishTitle: "Run Djinn on itself",
     project: "djinn",
@@ -3448,8 +3448,18 @@ test("the update banner proposes to install a build committed, with what changed
         summary: "Done: W6 finished.",
       },
     ],
+    base: "",
+    running: true,
+    changesCount: 0,
+    lacks: [],
+    lacksCount: 0,
   };
-  const banner = (phase = { kind: "idle" }, dismissedBuild = "", installing) =>
+  const banner = (
+    phase = { kind: "idle" },
+    dismissedBuilds = [],
+    installing,
+    open = [],
+  ) =>
     s.renderToStaticMarkup(
       h(s.UpdateBannerView, {
         state: {
@@ -3457,59 +3467,76 @@ test("the update banner proposes to install a build committed, with what changed
           ready: "",
           notResumed: [],
           notesUrl: "",
-          build,
+          builds: [build],
           installing,
         },
         phase,
         dismissed: false,
-        dismissedBuild,
+        dismissedBuilds,
+        open,
         onInstall() {},
         onDismiss() {},
         onNotes() {},
       }),
     );
   const html = banner();
+  // One line: the build named by its commit, branch and wish, the tasks it brings; its actions beside it, the
+  // details folded.
   assert.match(
     html,
-    /W5, W6 pushed with feat\/wails-go of djinn <code>1a2b3c4d<\/code>/,
-  );
-  assert.doesNotMatch(html, /What to check/);
-  assert.match(
-    html,
-    /<ul class="update-banner-tasks"><li><details class="update-banner-task"><summary><code>W5<\/code> Work of W5<\/summary><div class="update-banner-summary">To check: the banner shows the build\.<\/div><\/details><\/li><li><details class="update-banner-task"><summary><code>W6<\/code> Work of W6<\/summary><div class="update-banner-summary">Done: W6 finished\.<\/div><\/details><\/li><\/ul>/,
+    /<span class="update-banner-text">Build <code>1a2b3c4d<\/code> of feat\/wails-go<span class="update-banner-quiet"> · Run Djinn on itself<\/span><span class="update-banner-quiet"> — W5, W6<\/span><\/span>/,
   );
   assert.match(
     html,
-    /<details class="update-banner-commits"><summary>commits<\/summary><ul><li>Work of W6<\/li><li>Work of W5<\/li><\/ul><\/details>/,
+    /title="1a2b3c4d · feat\/wails-go · Run Djinn on itself · djinn\nW5, W6"/,
   );
-  // The mark and the actions head the banner, beside the title: Install and restart in brass, Dismiss in violet; what
-  // changed comes below, at its full width.
   assert.match(html, /<span class="brand small"><span class="brand-mark"><img/);
   assert.match(
     html,
-    /<\/code><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Install and restart<\/button><button type="button" class="update-banner-dismiss">Dismiss<\/button><\/div><\/div><div class="update-banner-body"><strong>What changed/,
+    /<div class="update-banner-actions"><button type="button" class="update-banner-primary">Install and restart<\/button><button type="button" class="update-banner-more" aria-expanded="false">Details<\/button><button type="button" class="update-banner-close" aria-label="Dismiss" title="Dismiss">×<\/button><\/div><\/div><\/section>/,
   );
-  // While it installs, the buttons go.
-  const installing = banner({ kind: "installing" });
+  assert.doesNotMatch(html, /update-banner-body/);
+  // Unfolded: what changed, each task with its worker's summary folded, then the commits folded.
+  const unfolded = banner({ kind: "idle" }, [], undefined, [build.sha]);
+  assert.match(
+    unfolded,
+    /aria-expanded="true">Less<\/button>.*<div class="update-banner-body"><strong>What changed<\/strong>/,
+  );
+  assert.match(
+    unfolded,
+    /<ul class="update-banner-tasks"><li><details class="update-banner-task"><summary><code>W5<\/code> Work of W5<\/summary><div class="update-banner-summary">To check: the banner shows the build\.<\/div><\/details><\/li><li><details class="update-banner-task"><summary><code>W6<\/code> Work of W6<\/summary><div class="update-banner-summary">Done: W6 finished\.<\/div><\/details><\/li><\/ul>/,
+  );
+  assert.match(
+    unfolded,
+    /<details class="update-banner-commits"><summary>commits<\/summary><ul><li>Work of W6<\/li><li>Work of W5<\/li><\/ul><\/details>/,
+  );
+  // While it installs, its buttons go; its details stay.
+  const installing = banner({ kind: "installing", sha: build.sha });
   assert.match(installing, /Installing…/);
-  assert.doesNotMatch(installing, /<button/);
+  assert.doesNotMatch(installing, /update-banner-primary|update-banner-close/);
   // Then it says where the install stands, as Djinn tells it, in this window or another: what it waits for, that it
   // builds, that Djinn restarts.
   const step = (step, waiting = "") =>
-    banner({ kind: "idle" }, "", { sha: build.sha, step, waiting });
+    banner({ kind: "idle" }, [], { sha: build.sha, step, waiting });
   const waits = step(s.InstallStep.WAITING, "gate install: held by W9 (Other)");
   assert.match(waits, /Waiting — gate install: held by W9 \(Other\)/);
-  assert.doesNotMatch(waits, /<button/);
+  assert.doesNotMatch(waits, /update-banner-primary|update-banner-close/);
   assert.match(step(s.InstallStep.PREPARING), /Preparing the build…/);
   assert.match(step(s.InstallStep.BUILDING), /Building…/);
   assert.match(step(s.InstallStep.RESTARTING), /Restarting…/);
   // Dismissed, that build no longer shows.
-  assert.equal(banner({ kind: "idle" }, build.sha), "");
+  assert.equal(banner({ kind: "idle" }, [build.sha]), "");
   // A build that installed no newer Djinn says it is installed, and restarts nothing.
   assert.match(
     s.renderToStaticMarkup(
       h(s.UpdateBannerView, {
-        state: { current: "v1", ready: "", notResumed: [], notesUrl: "" },
+        state: {
+          current: "v1",
+          ready: "",
+          notResumed: [],
+          notesUrl: "",
+          builds: [],
+        },
         phase: { kind: "installed", sha: build.sha },
         dismissed: false,
         onInstall() {},
@@ -3518,6 +3545,139 @@ test("the update banner proposes to install a build committed, with what changed
       }),
     ),
     /Installed 1a2b3c4d/,
+  );
+});
+
+test("the update banner names the build against the running Djinn: what it adds, what it lacks, the other branches folded", () => {
+  const proposal = (branch, sha, wishTitle, extra = {}) => ({
+    wishTitle,
+    project: "djinn",
+    branch,
+    sha,
+    tasks: [],
+    changes: [],
+    summaries: [],
+    base: "abcdef0123",
+    running: false,
+    changesCount: 0,
+    lacks: [],
+    lacksCount: 0,
+    ...extra,
+  });
+  const mine = proposal(
+    "feat/wails-go",
+    "aaaa1111bbbb",
+    "Run Djinn on itself",
+    {
+      running: true,
+      tasks: ["W466", "W467"],
+      summaries: [
+        { code: "W466", title: "The tasks tab", summary: "" },
+        { code: "W467", title: "The diff", summary: "" },
+      ],
+      changes: ["ui: the diff", "ui: the tasks tab"],
+      changesCount: 2,
+    },
+  );
+  const side = proposal(
+    "feat/clement-port",
+    "e60f8fc00000",
+    "Clément's branches",
+    {
+      tasks: ["W2"],
+      summaries: [{ code: "W2", title: "Port Clément's work", summary: "" }],
+      changes: ["port: Clément's work"],
+      changesCount: 1,
+      lacks: ["ui: the tasks tab", "ui: the diff", "harness: azimas"],
+      lacksCount: 3,
+    },
+  );
+  const other = proposal("feat/x", "cccc2222dddd", "", {
+    changes: ["fix"],
+    changesCount: 1,
+  });
+  const banner = (state, { dismissedBuilds = [], open = [] } = {}) =>
+    s.renderToStaticMarkup(
+      h(s.UpdateBannerView, {
+        state: {
+          current: "local-g abcdef0",
+          ready: "",
+          notResumed: [],
+          notesUrl: "",
+          builds: [],
+          ...state,
+        },
+        phase: { kind: "idle" },
+        dismissed: false,
+        dismissedBuilds,
+        open,
+        onInstall() {},
+        onDismiss() {},
+        onNotes() {},
+      }),
+    );
+  // The running Djinn's branch first, on its line; the other branches' builds folded under one line naming them.
+  const html = banner({ builds: [mine, side, other] });
+  assert.match(
+    html,
+    /Build <code>aaaa1111<\/code> of feat\/wails-go<span class="update-banner-quiet"> · Run Djinn on itself<\/span><span class="update-banner-quiet"> — adds 2 tasks<\/span>/,
+  );
+  assert.match(
+    html,
+    /Builds of 2 other branches: feat\/clement-port, feat\/x<\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-more" aria-expanded="false">Details<\/button><\/div>/,
+  );
+  assert.doesNotMatch(html, /e60f8fc0/);
+  assert.equal(html.match(/<img/g).length, 1);
+  // Unfolded, each other branch on its line, with its own install and ×: what it adds, and that it is older than the
+  // running Djinn.
+  const others = banner({ builds: [mine, side, other] }, { open: ["others"] });
+  assert.match(
+    others,
+    /<div class="update-banner-others"><section class="update-banner-part"><div class="update-banner-head"><div class="update-banner-title" title="e60f8fc0 · feat\/clement-port · Clément&#x27;s branches · djinn\nadds 1 task · older than the running Djinn on 3 commits"><span class="update-banner-text">Build <code>e60f8fc0<\/code> of feat\/clement-port<span class="update-banner-quiet"> · Clément&#x27;s branches<\/span><span class="update-banner-quiet"> — adds 1 task · older than the running Djinn on 3 commits<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Install and restart<\/button>/,
+  );
+  assert.match(others, /— adds 1 commit<\/span>/);
+  assert.equal(others.match(/class="update-banner-close"/g).length, 3);
+  // A build's details: the tasks merged since the running Djinn, the commits folded, and those it lacks folded.
+  const details = banner({ builds: [side] }, { open: ["others", side.sha] });
+  assert.match(
+    details,
+    /<strong>Since the running Djinn \(abcdef01\)<\/strong><ul class="update-banner-tasks"><li><div class="update-banner-task-line"><code>W2<\/code> Port Clément&#x27;s work<\/div><\/li><\/ul><details class="update-banner-commits"><summary>1 commit<\/summary><ul><li>port: Clément&#x27;s work<\/li><\/ul><\/details><details class="update-banner-commits update-banner-lacks"><summary>Older than the running Djinn on 3 commits<\/summary><ul><li>ui: the tasks tab<\/li>/,
+  );
+  // A dismissed build goes, the others stay; all dismissed, no banner.
+  assert.doesNotMatch(
+    banner({ builds: [mine, side] }, { dismissedBuilds: [mine.sha] }),
+    /aaaa1111/,
+  );
+  assert.equal(
+    banner({ builds: [mine, side] }, { dismissedBuilds: [mine.sha, side.sha] }),
+    "",
+  );
+
+  // The newer Djinn ready is named the same way, with its own ×, dismissed by its version.
+  const ready = banner({ ready: "local-ge60f8fc", readyBuild: side });
+  assert.match(
+    ready,
+    /<div class="update-banner-title" title="local-g abcdef0 → local-ge60f8fc\ne60f8fc0 · feat\/clement-port · Clément&#x27;s branches · djinn\nadds 1 task · older than the running Djinn on 3 commits">/,
+  );
+  assert.match(
+    ready,
+    /New Djinn ready: <code>e60f8fc0<\/code> of feat\/clement-port<span class="update-banner-quiet"> · Clément&#x27;s branches<\/span><span class="update-banner-quiet"> — adds 1 task · older than the running Djinn on 3 commits<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Update<\/button><button type="button" class="update-banner-more" aria-expanded="false">Details<\/button><button type="button" class="update-banner-close" aria-label="Dismiss" title="Dismiss">×<\/button>/,
+  );
+  assert.equal(s.readyKey("local-ge60f8fc"), "ready:local-ge60f8fc");
+  assert.equal(
+    banner(
+      { ready: "local-ge60f8fc", readyBuild: side },
+      { dismissedBuilds: ["ready:local-ge60f8fc"] },
+    ),
+    "",
+  );
+  // Another version ready shows again.
+  assert.match(
+    banner(
+      { ready: "local-g0123456", readyBuild: undefined },
+      { dismissedBuilds: ["ready:local-ge60f8fc"] },
+    ),
+    /A new version of Djinn is ready<\/span>/,
   );
 });
 

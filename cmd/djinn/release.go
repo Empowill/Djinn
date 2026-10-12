@@ -25,6 +25,8 @@ import (
 	wails "github.com/wailsapp/wails/v3/pkg/updater"
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 	"golang.org/x/mod/semver"
+
+	"github.com/empowill/djinn/internal/harness"
 )
 
 var (
@@ -82,25 +84,8 @@ func releaseSource(version string) (source, error) {
 	return nil, nil
 }
 
-// localBuild is the commit a Djinn built from a checkout comes from, as go tool task install stamps its version
-// (local-<git describe --always --dirty>: local-1a2b3c4, local-v0.1.0-3-g1a2b3c4-dirty), and whether its tree had
-// changes not committed; ok is false for any other version.
-func localBuild(version string) (commit string, dirty, ok bool) {
-	rest, ok := strings.CutPrefix(version, "local-")
-	if !ok {
-		return "", false, false
-	}
-	rest, dirty = strings.CutSuffix(rest, "-dirty")
-	if i := strings.LastIndex(rest, "-g"); i >= 0 && isHex(rest[i+2:]) {
-		rest = rest[i+2:]
-	}
-	return rest, dirty, len(rest) >= 4 && isHex(rest)
-}
-
-// isHex tells whether s is made of lowercase hexadecimal digits only.
-func isHex(s string) bool {
-	return s != "" && strings.Trim(s, "0123456789abcdef") == ""
-}
+// localBuild is the commit a Djinn built from a checkout names in its version (harness.LocalBuild).
+var localBuild = harness.LocalBuild
 
 // localAsset names the release archive of the variant this binary would be, built from a checkout: what
 // task release-build names it for the same system, architecture and window (Taskfile.yml).
