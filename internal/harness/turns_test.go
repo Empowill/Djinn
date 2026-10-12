@@ -42,7 +42,7 @@ func TestClaudeTurns(t *testing.T) {
 }
 
 // TestTurnsAcrossRuns: an ended task keeps the turns of its run, the limit, and the total; a continue counts its
-// run again from 1, as the watchdog's limit applies to a run, and adds it to the total.
+// run again from 1, as the seal's limit applies to a run, and adds it to the total.
 func TestTurnsAcrossRuns(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()

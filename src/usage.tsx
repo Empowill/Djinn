@@ -391,8 +391,9 @@ export function resourcesDetail(r: Resources, running: boolean): string {
   return out.join(" · ");
 }
 
-// TaskTurns is how many model turns the task's worker took against the limit past which Djinn stops a run: its
-// tone warns past 80% of it. The hover says what it counts, and the total over its runs when it ran more than once.
+// TaskTurns is how many model turns the task's worker took against the limit its seal sets a run (TaskMaxTurns),
+// past which the Lamplighter stops it: its tone warns past 80% of it. The hover says what it counts, and the total
+// over its runs when it ran more than once.
 export function TaskTurns({ task }: { task: Task }) {
   const turns = task.turns;
   if (!turns || turns.limit <= 0) return null;

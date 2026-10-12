@@ -4275,7 +4275,7 @@ type Task struct {
 	Comments []*TaskComment `protobuf:"bytes,63,rep,name=comments,proto3" json:"comments,omitempty"`
 	// The developer's marks on the task (MarkService.Put): reviewed, once its diff was read, by whom and when.
 	Marks []*Mark `protobuf:"bytes,64,rep,name=marks,proto3" json:"marks,omitempty"`
-	// Model turns its worker took, against the limit the watchdog stops a run at: written as they grow, with the
+	// Model turns its worker took, against the limit the Lamplighter stops a run at: written as they grow, with the
 	// resources. Unset before its first start.
 	Turns *Turns `protobuf:"bytes,65,opt,name=turns,proto3" json:"turns,omitempty"`
 	// The planned task waits for the machine alone: no slot is free, or the machine is under pressure. djinn task
@@ -5709,13 +5709,13 @@ func (x *AzimaPr) GetState() AzimaPrState {
 	return AzimaPrState_AZIMA_PR_STATE_UNSPECIFIED
 }
 
-// Turns counts a task's model turns against the watchdog's limit (TaskMaxTurns): a guard against an endless loop.
+// Turns counts a task's model turns against the seal's limit (TaskMaxTurns): a guard against an endless loop.
 type Turns struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Turns of the current run, or of the last one: each start of a worker (restart, resume, continue, answer) counts
 	// again from 1, as the limit applies to a run.
 	Run int32 `protobuf:"varint,1,opt,name=run,proto3" json:"run,omitempty"`
-	// How many turns a run may take before the watchdog stops it.
+	// How many turns a run may take before the Lamplighter stops it.
 	Limit int32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
 	// Turns over all the task's runs.
 	Total         int32 `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`

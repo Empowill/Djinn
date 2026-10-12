@@ -1947,7 +1947,7 @@ test("a task card shows its model turns against the limit, its tone warning past
   });
   assert.match(
     running,
-    /<span class="task-turns" title="37 model turns in this run, of the 500 past which Djinn stops it"><svg[^>]*aria-label="model turns"[^>]*>.*?<\/svg>37\/500<\/span>/,
+    /<span class="task-turns" title="37 model turns in this run, of the 500 its seal allows a run"><svg[^>]*aria-label="model turns"[^>]*>.*?<\/svg>37\/500<\/span>/,
   );
   // 80% is not past it.
   assert.match(
@@ -1956,11 +1956,11 @@ test("a task card shows its model turns against the limit, its tone warning past
   );
   assert.match(
     card(s.TaskStatus.RUNNING, { run: 401, limit: 500, total: 450 }),
-    /<span class="task-turns warning" title="401 model turns in this run, of the 500 past which Djinn stops it · 450 over all its runs">.*?401\/500</,
+    /<span class="task-turns warning" title="401 model turns in this run, of the 500 its seal allows a run · 450 over all its runs">.*?401\/500</,
   );
   assert.match(
     card(s.TaskStatus.DONE, { run: 12, limit: 500, total: 12 }),
-    /title="12 model turns in its last run, of the 500 past which Djinn stops a run">.*?12\/500</,
+    /title="12 model turns in its last run, of the 500 its seal allows a run">.*?12\/500</,
   );
   assert.doesNotMatch(card(s.TaskStatus.PENDING, undefined), /task-turns/);
 });

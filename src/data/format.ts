@@ -203,7 +203,7 @@ export function taskTime(
   return { text, title };
 }
 
-// Silence limit: 15 minutes before watchdog checks an idle running worker.
+// Silence limit (a task's seal): 15 minutes before the Lamplighter checks an idle running worker.
 // Past half this limit (7.5 min), the UI highlights silence.
 export const SILENCE_LIMIT_MS = 15 * 60 * 1000;
 export const SILENCE_HOVER_MS = SILENCE_LIMIT_MS / 2;

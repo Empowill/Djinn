@@ -147,7 +147,7 @@ type Event struct {
 	Watched *Watched
 	// Model is the model the worker actually runs, when the event tells it.
 	Model string
-	// Turns is how many model turns the worker took so far, on the first event of a new one: the watchdog's count
+	// Turns is how many model turns the worker took so far, on the first event of a new one: the Lamplighter's count
 	// grows as they come, not only at a result (num_turns).
 	Turns int
 }

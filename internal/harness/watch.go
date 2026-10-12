@@ -205,7 +205,7 @@ func (w *watchWorker) SetPriority(low bool) error {
 	return nil
 }
 
-// loop runs the command, and again as the watchdog says (watcherLife): after it dies, and after each exit when the
+// loop runs the command, and again as the Lamplighter says (watcherLife): after it dies, and after each exit when the
 // task restarts it, until it is stopped, finished, or it died watchTries times in a row.
 func (w *watchWorker) loop() {
 	defer close(w.done)

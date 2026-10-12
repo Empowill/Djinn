@@ -919,7 +919,7 @@ message Task {
   repeated TaskComment comments = 63;
   // The developer's marks on the task (MarkService.Put): reviewed, once its diff was read, by whom and when.
   repeated Mark marks = 64;
-  // Model turns its worker took, against the limit the watchdog stops a run at: written as they grow, with the
+  // Model turns its worker took, against the limit the Lamplighter stops a run at: written as they grow, with the
   // resources. Unset before its first start.
   Turns turns = 65;
   // The planned task waits for the machine alone: no slot is free, or the machine is under pressure. djinn task
@@ -1181,12 +1181,12 @@ message AzimaPr {
   AzimaPrState state = 2;
 }
 
-// Turns counts a task's model turns against the watchdog's limit (TaskMaxTurns): a guard against an endless loop.
+// Turns counts a task's model turns against the seal's limit (TaskMaxTurns): a guard against an endless loop.
 message Turns {
   // Turns of the current run, or of the last one: each start of a worker (restart, resume, continue, answer) counts
   // again from 1, as the limit applies to a run.
   int32 run = 1;
-  // How many turns a run may take before the watchdog stops it.
+  // How many turns a run may take before the Lamplighter stops it.
   int32 limit = 2;
   // Turns over all the task's runs.
   int32 total = 3;

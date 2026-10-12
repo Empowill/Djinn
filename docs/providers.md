@@ -253,7 +253,7 @@ command, are to check on a real run.
 
 ## When Djinn resumes a worker
 
-Djinn resumes a worker by itself, in the same task (status `resuming`), in three cases:
+Djinn resumes a worker by itself, in the same task (status `resuming`), in four cases:
 
 - **djinn up stopped or crashed while it ran.** At the next start the task is interrupted, then resumed, unless a
   person stopped it, it was imported, its worktree is gone, its wish is granted, or another task was forked from it
@@ -265,9 +265,19 @@ Djinn resumes a worker by itself, in the same task (status `resuming`), in three
   cannot start, Djinn makes room: it interrupts the running work task of lowest priority so that it resumes later in
   its session or conversation (Claude, Antigravity), RESUMING with the wait reason "made room for Qxx: enlighten",
   without consuming a resume attempt.
+- **The Lamplighter wakes it.** The Lamplighter is Djinn's watchdog (`internal/harness/lamplighter.go`; the
+  lamplighter woke the street's lamps one by one, and lit again the ones the wind blew out). It wakes before it
+  fails: a worker silent past the silence limit with no process busy and no gate held or awaited, a worker whose
+  stream went idle, or a task running without a process (a lost process) is ended, then continued on its session
+  ("continue where you stopped…"), its run ending `wake` (`TaskRun.reason`). Only after 3 wakes in a row does the
+  task fail, with "silent for 15 min; the Lamplighter woke it 3 times in a row and gives up", its lead told once; a
+  run that ends otherwise (done, a limit, a restart) ends the row. Wakes are counted apart from usage-limit
+  resumes: a worker that waited for its limits is woken all the same, and a wake spends no resume. A budget of
+  the task's [seal](#a-tasks-seal) is no wake: a task stopped past its wall time or its turns stays stopped.
 
 The scheduler starts a resumed task like a planned one: slots, pressure and gates still apply. After 3
-resumes without finishing (unspent by preemption, pauses, or grants), the task fails, saying so. What each agent gets:
+resumes on usage limits without finishing (unspent by preemption, pauses, grants or wakes), the task fails, saying
+so. What each agent gets:
 
 | Agent  | Resumed with                                                                                                       |
 | ------ | ------------------------------------------------------------------------------------------------------------------ |
@@ -344,8 +354,8 @@ wish's lead, typed in the lead's terminal as an answer is:
 Djinn: W70's watcher says: New thread on !41. mrwatch -watch 41 is still watching.
 ```
 
-- **Supervised by the watchdog.** A watcher is no worker: the watchdog supervises it apart, as long as its wish needs
-  it. No silence limit, no wall-time budget and no turn budget apply to it; what counts is that its command lives
+- **Supervised by the Lamplighter.** A watcher is no worker: the Lamplighter, Djinn's watchdog, supervises it
+  apart, as long as its wish needs it. No silence limit, no wall-time budget and no turn budget apply to it; what counts is that its command lives
   while its task runs. A command that dies (an error, an exit code other than 0, a kill) starts again, in the same
   task: one second later, doubling up to five minutes, the backoff starting over after a run that lived a minute.
   Its state folder, `$DJINN_HOME/watchers/<task>` (Djinn sets `DJINN_HOME` for it), stays as the command left it,
@@ -379,9 +389,9 @@ watcher, done, and asks whether to grant the wish.
 
 Tests: `TestWatchParagraphs`, `TestWatcher` (no slot, the restart loop, the line to the lead, pause),
 `TestWatcherEnds`, `TestWatcherResumes` (and the restart line), `TestWatcherPermissions` (`watch_test.go`, the test
-binary plays the command), `TestWatcherLife`, `TestWatchdogWatcherOutlivesBudgets`,
-`TestWatcherStartsAgainWhenItDies`, `TestWatcherGivesUp`, `TestWatchdogLostWatcherStartsAgain`
-(`watchdog_test.go`), and `TestWatcherTakesNoSlot` (`internal/dispatch`).
+binary plays the command), `TestWatcherLife`, `TestLamplighterWatcherOutlivesBudgets`,
+`TestWatcherStartsAgainWhenItDies`, `TestWatcherGivesUp`, `TestLamplighterLostWatcherStartsAgain`
+(`lamplighter_test.go`), and `TestWatcherTakesNoSlot` (`internal/dispatch`).
 
 ## Claude
 

@@ -20,7 +20,7 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
-func TestWatchdogSilentWorkerResumes(t *testing.T) {
+func TestLamplighterSilentWorkerResumes(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
@@ -53,10 +53,10 @@ func TestWatchdogSilentWorkerResumes(t *testing.T) {
 	// Advance time by 15 minutes so silence limit is exceeded.
 	clock.set(clock.now().Add(15 * time.Minute))
 
-	// Trigger scheduler / watchdog pass.
+	// Trigger scheduler / Lamplighter pass.
 	e.h.Wake()
 
-	// Task should be ended by watchdog, marked RESUMING with Continuing=true, and then continuation runs and ends done.
+	// Task should be ended by the Lamplighter, marked RESUMING with Continuing=true, and then continuation runs and ends done.
 	done := e.ended(t, id)
 	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Fatalf("status = %v, want DONE", done.GetStatus())
@@ -96,7 +96,7 @@ func TestWatchdogSilentWorkerResumes(t *testing.T) {
 	}
 }
 
-func TestWatchdogBusyWorkerNotStopped(t *testing.T) {
+func TestLamplighterBusyWorkerNotStopped(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
@@ -139,7 +139,7 @@ func TestWatchdogBusyWorkerNotStopped(t *testing.T) {
 	// Advance time past silence limit.
 	clock.set(clock.now().Add(15 * time.Minute))
 
-	// Trigger scheduler / watchdog pass.
+	// Trigger scheduler / Lamplighter pass.
 	e.h.Wake()
 	time.Sleep(50 * time.Millisecond)
 
@@ -150,7 +150,7 @@ func TestWatchdogBusyWorkerNotStopped(t *testing.T) {
 	}
 }
 
-func TestWatchdogGatedWorkerNotStopped(t *testing.T) {
+func TestLamplighterGatedWorkerNotStopped(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
@@ -188,7 +188,7 @@ func TestWatchdogGatedWorkerNotStopped(t *testing.T) {
 	}
 }
 
-func TestWatchdogLostProcessResumesAndStopSucceeds(t *testing.T) {
+func TestLamplighterLostProcessResumesAndStopSucceeds(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
@@ -236,7 +236,7 @@ func TestWatchdogLostProcessResumesAndStopSucceeds(t *testing.T) {
 	delete(e.h.runs, task2.GetId())
 	e.h.mu.Unlock()
 
-	// Run watchdog pass.
+	// Run a Lamplighter pass.
 	e.h.Wake()
 
 	// It should resume and its continuation should run and end done.
@@ -279,7 +279,7 @@ func TestWatchdogLostProcessResumesAndStopSucceeds(t *testing.T) {
 	}
 }
 
-func TestWatchdogBudgetWallTimeExceeded(t *testing.T) {
+func TestLamplighterBudgetWallTimeExceeded(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
@@ -335,7 +335,7 @@ func TestWatchdogBudgetWallTimeExceeded(t *testing.T) {
 	}
 }
 
-func TestWatchdogBudgetTurnsExceeded(t *testing.T) {
+func TestLamplighterBudgetTurnsExceeded(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
@@ -398,7 +398,7 @@ func TestWatchdogBudgetTurnsExceeded(t *testing.T) {
 }
 
 // A worker at 120 turns, as real Opus tasks take (W442, W453), goes on under the default budget; past it, it stops.
-func TestWatchdogBudgetTurnsDefault(t *testing.T) {
+func TestLamplighterBudgetTurnsDefault(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
@@ -418,7 +418,7 @@ func TestWatchdogBudgetTurnsDefault(t *testing.T) {
 		e.h.mu.Unlock()
 	}
 	turns(120)
-	e.h.watchdog(t.Context(), []*planv1.Task{running})
+	e.h.lamplighter(t.Context(), []*planv1.Task{running})
 	e.h.mu.Lock()
 	stopping, reason := e.h.runs[id].stopping, e.h.runs[id].stoppingReason
 	e.h.mu.Unlock()
@@ -427,14 +427,14 @@ func TestWatchdogBudgetTurnsDefault(t *testing.T) {
 	}
 
 	turns(TaskMaxTurns + 1)
-	e.h.watchdog(t.Context(), []*planv1.Task{running})
+	e.h.lamplighter(t.Context(), []*planv1.Task{running})
 	done := e.ended(t, id)
 	if want := fmt.Sprintf("budget exceeded: %d turns (limit %d)", TaskMaxTurns+1, TaskMaxTurns); done.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED || done.GetError() != want {
 		t.Errorf("status = %v, error = %q; want STOPPED, %q", done.GetStatus(), done.GetError(), want)
 	}
 }
 
-func TestWatchdogDeadProcessEnds(t *testing.T) {
+func TestLamplighterDeadProcessEnds(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
@@ -485,11 +485,11 @@ func TestWatchdogDeadProcessEnds(t *testing.T) {
 	}
 }
 
-// TestWatchdogWatcherOutlivesBudgets replays Babysit PR #2 (12/10/2026): W1 and W6, the template's watcher, were
+// TestLamplighterWatcherOutlivesBudgets replays Babysit PR #2 (12/10/2026): W1 and W6, the template's watcher, were
 // failed as silent for 15 min, and W9 would have been stopped as a runaway past the 2 h budget. A watcher past the
 // silence limit, the wall-time budget and the turn budget still runs; the agent worker checked in the same pass
 // does not.
-func TestWatchdogWatcherOutlivesBudgets(t *testing.T) {
+func TestLamplighterWatcherOutlivesBudgets(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
@@ -513,22 +513,22 @@ func TestWatchdogWatcherOutlivesBudgets(t *testing.T) {
 	clock.set(clock.now().Add(3 * time.Hour))
 	e.h.Wake()
 
-	// One watchdog pass checks both: the worker's end says it ran.
+	// One Lamplighter pass checks both: the worker's end says it ran.
 	if got := e.ended(t, worker.GetId()); !strings.Contains(got.GetError(), "budget exceeded") {
 		t.Errorf("the agent worker past its budgets: %v", got)
 	}
 
 	e.h.mu.Lock()
 	r := e.h.runs[watcher.GetId()]
-	ended := r == nil || r.watchdogEnd || r.stopping
+	ended := r == nil || r.lamplighterEnd || r.stopping
 	e.h.mu.Unlock()
 	if tk := e.get(t, watcher.GetId()); ended || tk.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
-		t.Fatalf("silent watcher past its budgets: status = %v, error = %q, ended by the watchdog = %v; want RUNNING",
+		t.Fatalf("silent watcher past its budgets: status = %v, error = %q, ended by the Lamplighter = %v; want RUNNING",
 			tk.GetStatus(), tk.GetError(), ended)
 	}
 }
 
-// TestWatcherStartsAgainWhenItDies: a watcher whose command dies is started again by the watchdog, in the same task,
+// TestWatcherStartsAgainWhenItDies: a watcher whose command dies is started again by the Lamplighter, in the same task,
 // its state folder as it left it: the lead spawned W6 then W9 by hand, each time losing what the watch had said.
 func TestWatcherStartsAgainWhenItDies(t *testing.T) {
 	testx.Portable(t)
@@ -602,9 +602,9 @@ func TestWatcherGivesUp(t *testing.T) {
 	}
 }
 
-// TestWatchdogLostWatcherStartsAgain: a watcher whose task runs without a run (a lost process) starts again, in the
+// TestLamplighterLostWatcherStartsAgain: a watcher whose task runs without a run (a lost process) starts again, in the
 // same task, instead of failing: plan.CanResume is false for a watcher, which has no session to resume.
-func TestWatchdogLostWatcherStartsAgain(t *testing.T) {
+func TestLamplighterLostWatcherStartsAgain(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	home := t.TempDir()
@@ -681,10 +681,10 @@ func TestWatcherLife(t *testing.T) {
 	}
 }
 
-// TestWatchdogWakesAfterUsageLimitResumes replays W485's check of the watchdog: wakes and usage-limit resumes spent
-// one count (Task.resumes), so a worker resumed three times on its usage limits failed at its first silence or its
+// TestLamplighterWakesAfterUsageLimitResumes replays W485's check of the Lamplighter: wakes and usage-limit resumes
+// spent one count (Task.resumes), so a worker resumed three times on its usage limits failed at its first silence or its
 // first lost process, although its agent could resume it. Now its wakes are counted apart: it is woken.
-func TestWatchdogWakesAfterUsageLimitResumes(t *testing.T) {
+func TestLamplighterWakesAfterUsageLimitResumes(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
@@ -719,9 +719,9 @@ func TestWatchdogWakesAfterUsageLimitResumes(t *testing.T) {
 	}
 }
 
-// TestWatchdogGivesUpAfterWakes: a worker silent run after run is woken maxWakes times in a row; silent once more,
+// TestLamplighterGivesUpAfterWakes: a worker silent run after run is woken maxWakes times in a row; silent once more,
 // its task fails saying so, and its lead is told once that it failed.
-func TestWatchdogGivesUpAfterWakes(t *testing.T) {
+func TestLamplighterGivesUpAfterWakes(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
@@ -765,7 +765,7 @@ func TestWatchdogGivesUpAfterWakes(t *testing.T) {
 	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
 		t.Fatalf("status = %v, want FAILED after %d wakes", done.GetStatus(), maxWakes)
 	}
-	want := fmt.Sprintf("silent for 15 min; woken %d times in a row", maxWakes)
+	want := fmt.Sprintf("silent for 15 min; the Lamplighter woke it %d times in a row and gives up", maxWakes)
 	if !strings.Contains(done.GetError(), want) {
 		t.Errorf("error = %q, want %q", done.GetError(), want)
 	}
