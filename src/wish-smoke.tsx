@@ -6,7 +6,12 @@ import {
   ASCII_REFERENCE,
   type AsciiGridFrame,
 } from "./wish-ascii-grid";
-import { computeWishSmokeLayout } from "./wish-smoke-layout";
+import {
+  computeWishSmokeCameraScale,
+  computeWishSmokeLayout,
+  interpolateWishSmokeCameraScale,
+  type WishSmokeLayout,
+} from "./wish-smoke-layout";
 
 type ShaderProgram = {
   program: WebGLProgram;
@@ -218,6 +223,29 @@ function createAsciiLayers(asciiOutput: HTMLElement) {
     return layer;
   });
   return layers;
+}
+
+function applyAsciiLayout(
+  asciiOutput: HTMLElement,
+  layers: readonly HTMLElement[],
+  layout: WishSmokeLayout,
+) {
+  asciiOutput.style.fontSize = `${layout.fontSize}px`;
+  asciiOutput.style.lineHeight = `${layout.lineHeight}px`;
+  const textWidth = layout.gridWidth * layout.charWidth;
+  const textHeight = layout.gridHeight * layout.lineHeight;
+  for (const layer of layers) {
+    // Keep the committed text surface anchored to the right and bottom while
+    // the surrounding creation layout changes. The next full frame swaps in
+    // new dimensions atomically, so a sidebar resize never drags old glyphs.
+    layer.style.left = "auto";
+    layer.style.right = "0";
+    layer.style.top = "auto";
+    layer.style.bottom = "0";
+    layer.style.width = `${textWidth}px`;
+    layer.style.height = `${textHeight}px`;
+    layer.style.transform = "none";
+  }
 }
 // Adapted from the user's supplied local generated reference at /Users/clementfauvelle/Documents/Codex/2026-10-09/
 // referenced-chatgpt-conversation-this-is-an/outputs/smoke/{smoke.js,style.css,index.html}; no third-party dependency.
@@ -445,6 +473,10 @@ function mountSmoke(
   let accumulator = 0;
   let grid: AsciiGrid | null = null;
   let lastAscii = -Infinity;
+  let cameraScale = computeWishSmokeCameraScale(1, 1);
+  let cameraStartScale = cameraScale;
+  let cameraTargetScale = cameraScale;
+  let cameraTransitionStarted = 0;
   const tones = ASCII_TONES;
   const layers = createAsciiLayers(asciiOutput);
   const measureCanvas = document.createElement("canvas");
@@ -457,6 +489,28 @@ function mountSmoke(
     active: false,
     points: [] as Array<[number, number]>,
     last: 0,
+  };
+
+  const setCameraSurface = (width: number, height: number) => {
+    const now = performance.now();
+    cameraScale = interpolateWishSmokeCameraScale(
+      cameraStartScale,
+      cameraTargetScale,
+      now - cameraTransitionStarted,
+    );
+    cameraStartScale = cameraScale;
+    cameraTargetScale = computeWishSmokeCameraScale(width, height);
+    cameraTransitionStarted = now;
+    if (state.paused) cameraScale = cameraTargetScale;
+  };
+  const updateCamera = (now: number) => {
+    cameraScale = state.paused
+      ? cameraTargetScale
+      : interpolateWishSmokeCameraScale(
+          cameraStartScale,
+          cameraTargetScale,
+          now - cameraTransitionStarted,
+        );
   };
 
   const velocity = createDoubleTarget();
@@ -577,10 +631,11 @@ function mountSmoke(
     float r=texture(pressure,uv+vec2(texel.x,0)).x;float b=texture(pressure,uv-vec2(0,texel.y)).x;
     float t=texture(pressure,uv+vec2(0,texel.y)).x;color=vec4(texture(velocity,uv).xy-.5*vec2(r-l,t-b),0,1);}`);
   const smokeField = `${bilinear}
-    uniform vec2 resolution;uniform float zoom;
+    uniform vec2 resolution;uniform float zoom;uniform float cameraScale;
     float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-    vec2 domain(vec2 p){float aspect=resolution.x/resolution.y;float fit=min(1.65,aspect*1.35);
-      vec2 q=vec2((.5-p.x)*aspect/fit+.5,(p.y-.038)/1.16);vec2 focus=vec2(.565,.18);return focus+(q-focus)/zoom;}
+    vec2 domain(vec2 p){
+      vec2 q=vec2((.5-p.x)*cameraScale+.5,(p.y-.038)/1.16);
+      vec2 focus=vec2(.565,.18);return focus+(q-focus)/zoom;}
     float smoke(vec2 p){vec2 q=domain(p);if(q.x<0.||q.x>1.||q.y<0.||q.y>1.)return 0.;
       float d=sampleLinear(density,q).x;vec2 cell=1./vec2(textureSize(density,0));
       float dx=(sampleLinear(density,q+vec2(cell.x,0)).x-sampleLinear(density,q-vec2(cell.x,0)).x)*texel.x/cell.x;
@@ -597,13 +652,17 @@ function mountSmoke(
       color=vec4(bg+tint*value*vignette+vec3(grain),1.);
     }`);
   const sampleAscii = makeProgram(`${smokeField}uniform vec2 coverage;
-    void main(){float d=smoke(uv*coverage+vec2(0.,1.-coverage.y));color=vec4(d,d,d,1.);}`);
+    void main(){float d=smoke(uv*coverage+vec2(1.-coverage.x,0.));color=vec4(d,d,d,1.);}`);
   const trimDensity = makeProgram(`uniform float cutoff;uniform float edge;
     void main(){float inkValue=texture(density,uv).x;
     float above=smoothstep(cutoff-edge,cutoff+edge,uv.y);
     color=vec4(inkValue*(1.-above),0,0,1.);}`);
 
-  const resizeAscii = (layout: ReturnType<typeof computeWishSmokeLayout>) => {
+  const resizeAscii = (
+    layout: ReturnType<typeof computeWishSmokeLayout>,
+    surfaceWidth: number,
+    surfaceHeight: number,
+  ) => {
     if (grid) {
       context.deleteFramebuffer(grid.framebuffer);
       context.deleteTexture(grid.texture);
@@ -658,6 +717,8 @@ function mountSmoke(
       trailActive: false,
       coverage: [...layout.coverage] as [number, number],
     };
+    applyAsciiLayout(asciiOutput, layers, layout);
+    setCameraSurface(surfaceWidth, surfaceHeight);
     lastAscii = -Infinity;
   };
 
@@ -687,7 +748,7 @@ function mountSmoke(
     );
     canvas.width = layout.canvasWidth;
     canvas.height = layout.canvasHeight;
-    resizeAscii(layout);
+    resizeAscii(layout, Math.max(rect.width, 1), Math.max(rect.height, 1));
   };
 
   const renderAscii = (now: number) => {
@@ -750,6 +811,7 @@ function mountSmoke(
         resolution: [Math.max(rect.width, 1), Math.max(rect.height, 1)],
         coverage: grid.coverage,
         zoom: state.zoom,
+        cameraScale,
       },
       { density: ink.read },
     );
@@ -922,8 +984,10 @@ function mountSmoke(
   };
 
   const render = () => {
+    const now = performance.now();
+    updateCamera(now);
     if (surfaceVisible() && (!state.paused || startupSteps >= 72))
-      renderAscii(performance.now());
+      renderAscii(now);
     const rect = container.getBoundingClientRect();
     draw(
       display,
@@ -932,6 +996,7 @@ function mountSmoke(
         time: simulationTime,
         resolution: [Math.max(rect.width, 1), Math.max(rect.height, 1)],
         zoom: state.zoom,
+        cameraScale,
         asciiOn: 1,
       },
       { density: ink.read },
@@ -1056,6 +1121,7 @@ function mountSmoke(
 type SmokeWorkerFrameMessage = {
   type: "frame";
   frame: AsciiGridFrame;
+  layoutGeneration: number;
   computeMs: number;
   gridMs: number;
   metrics?: SmokeWorkerMetrics;
@@ -1099,7 +1165,9 @@ function isSmokeWorkerFrame(
     typeof message === "object" &&
     message !== null &&
     (message as { type?: unknown }).type === "frame" &&
-    typeof (message as { frame?: unknown }).frame === "object"
+    typeof (message as { frame?: unknown }).frame === "object" &&
+    typeof (message as { layoutGeneration?: unknown }).layoutGeneration ===
+      "number"
   );
 }
 
@@ -1233,6 +1301,7 @@ export function startWishSmokePrewarm() {
       gridWidth: 64,
       gridHeight: 32,
       coverage: [1, 1],
+      layoutGeneration: 0,
       reducedMotion: false,
       perfEnabled:
         new URLSearchParams(window.location.search).get("djinnPerf") === "1",
@@ -1332,8 +1401,6 @@ function mountSmokeWorker(
       baseCharWidth,
       window.devicePixelRatio || 1,
     );
-    asciiOutput.style.fontSize = `${computed.fontSize}px`;
-    asciiOutput.style.lineHeight = `${computed.lineHeight}px`;
     return {
       width,
       height,
@@ -1508,6 +1575,12 @@ function mountSmokeWorker(
   );
   let gridWidth = 0;
   let gridHeight = 0;
+  let activeLayout: ReturnType<typeof layout>;
+  let pendingLayout:
+    | { layout: ReturnType<typeof layout>; generation: number }
+    | undefined;
+  let layoutGeneration = prewarm ? 1 : 0;
+  let committedLayoutGeneration = layoutGeneration;
   let pendingPointer = {
     type: "pointer" as const,
     x: 0,
@@ -1540,6 +1613,34 @@ function mountSmokeWorker(
     gridWidth = nextWidth;
     gridHeight = nextHeight;
     for (let layer = 0; layer < layers.length; layer++) installLayer(layer, "");
+  };
+  const sameLayout = (
+    left: ReturnType<typeof layout>,
+    right: ReturnType<typeof layout>,
+  ) =>
+    left.width === right.width &&
+    left.height === right.height &&
+    left.fontSize === right.fontSize &&
+    left.charWidth === right.charWidth &&
+    left.lineHeight === right.lineHeight &&
+    left.gridWidth === right.gridWidth &&
+    left.gridHeight === right.gridHeight &&
+    left.coverage[0] === right.coverage[0] &&
+    left.coverage[1] === right.coverage[1] &&
+    left.offsetY === right.offsetY &&
+    left.canvasWidth === right.canvasWidth &&
+    left.canvasHeight === right.canvasHeight &&
+    left.backgroundPixelRatio === right.backgroundPixelRatio;
+  const commitLayout = (
+    next: ReturnType<typeof layout>,
+    generation: number,
+  ) => {
+    activeLayout = next;
+    committedLayoutGeneration = generation;
+    appliedSequence = 0;
+    resetRows(next.gridWidth, next.gridHeight);
+    applyAsciiLayout(asciiOutput, layers, next);
+    publishLayoutMetrics(next);
   };
   const publishMetric = (name: string, value: number) => {
     if (!perfEnabled) return;
@@ -1593,8 +1694,36 @@ function mountSmokeWorker(
     const started = perfEnabled ? performance.now() : 0;
     let mutatedTextNodes = 0;
     const frame = message.frame;
-    if (frame.width !== gridWidth || frame.height !== gridHeight)
-      resetRows(frame.width, frame.height);
+    const expectedLayout = pendingLayout?.layout ?? activeLayout;
+    const expectedGeneration =
+      pendingLayout?.generation ?? committedLayoutGeneration;
+    if (message.layoutGeneration !== expectedGeneration) {
+      // A frame from a superseded resize must never replace the committed
+      // text. Acknowledge it only to release the worker's backpressure slot.
+      worker.postMessage({ type: "ack", sequence: frame.sequence });
+      return;
+    }
+    if (pendingLayout) {
+      if (
+        !frame.full ||
+        !frame.fullStrings ||
+        frame.width !== pendingLayout.layout.gridWidth ||
+        frame.height !== pendingLayout.layout.gridHeight
+      ) {
+        worker.postMessage({ type: "request-full" });
+        worker.postMessage({ type: "ack", sequence: frame.sequence });
+        return;
+      }
+      commitLayout(pendingLayout.layout, pendingLayout.generation);
+      pendingLayout = undefined;
+    } else if (
+      frame.width !== expectedLayout.gridWidth ||
+      frame.height !== expectedLayout.gridHeight
+    ) {
+      worker.postMessage({ type: "request-full" });
+      worker.postMessage({ type: "ack", sequence: frame.sequence });
+      return;
+    }
     if (frame.full && frame.fullStrings) {
       for (let index = 0; index < layers.length; index++) {
         installLayer(index, frame.fullStrings[index] || "");
@@ -1767,8 +1896,10 @@ function mountSmokeWorker(
 
   const sendResize = () => {
     const next = layout();
-    resetRows(next.gridWidth, next.gridHeight);
-    publishLayoutMetrics(next);
+    const baseline = pendingLayout?.layout ?? activeLayout;
+    if (sameLayout(next, baseline)) return;
+    const generation = ++layoutGeneration;
+    pendingLayout = { layout: next, generation };
     worker.postMessage({
       type: "resize",
       viewportWidth: window.innerWidth,
@@ -1782,6 +1913,7 @@ function mountSmokeWorker(
       gridWidth: next.gridWidth,
       gridHeight: next.gridHeight,
       coverage: next.coverage,
+      layoutGeneration: generation,
     });
   };
   const onResize = () => {
@@ -1844,10 +1976,8 @@ function mountSmokeWorker(
       attributes: true,
       attributeFilter: ["hidden"],
     });
-  resetRows(1, 1);
   const initial = layout();
-  resetRows(initial.gridWidth, initial.gridHeight);
-  publishLayoutMetrics(initial);
+  commitLayout(initial, layoutGeneration);
   canvas.style.display = "none";
   canvas.setAttribute("aria-hidden", "true");
   canvas.dataset.ready = "false";
@@ -1881,6 +2011,7 @@ function mountSmokeWorker(
         gridWidth: initial.gridWidth,
         gridHeight: initial.gridHeight,
         coverage: initial.coverage,
+        layoutGeneration,
       });
       worker.postMessage({ type: "request-full" });
       worker.postMessage({ type: "visibility", visible: surfaceVisible() });
@@ -1905,6 +2036,7 @@ function mountSmokeWorker(
         gridWidth: initial.gridWidth,
         gridHeight: initial.gridHeight,
         coverage: initial.coverage,
+        layoutGeneration,
         reducedMotion: reducedMotion.matches,
         perfEnabled,
         mountEpoch,

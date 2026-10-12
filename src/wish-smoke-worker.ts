@@ -3,6 +3,10 @@ import {
   createAsciiGrid,
   type AsciiGridFrame,
 } from "./wish-ascii-grid";
+import {
+  computeWishSmokeCameraScale,
+  interpolateWishSmokeCameraScale,
+} from "./wish-smoke-layout";
 
 type ShaderProgram = {
   program: WebGLProgram;
@@ -59,6 +63,7 @@ type WorkerInit = {
   gridWidth: number;
   gridHeight: number;
   coverage: [number, number];
+  layoutGeneration: number;
   reducedMotion: boolean;
   perfEnabled: boolean;
   mountEpoch: number;
@@ -78,6 +83,7 @@ type WorkerResize = {
   gridWidth: number;
   gridHeight: number;
   coverage: [number, number];
+  layoutGeneration: number;
 };
 
 type WorkerPointer = {
@@ -113,6 +119,7 @@ type WorkerOutput =
   | {
       type: "frame";
       frame: AsciiGridFrame;
+      layoutGeneration: number;
       computeMs: number;
       gridMs: number;
       metrics?: SmokeWorkerMetrics;
@@ -281,6 +288,11 @@ class SmokeRuntime {
   private height: number;
   private pixelRatio = 1;
   private coverage: [number, number];
+  private layoutGeneration: number;
+  private cameraScale = 1;
+  private cameraStartScale = 1;
+  private cameraTargetScale = 1;
+  private cameraTransitionStarted = 0;
   private textureBytes = 0;
   private lastMetricsPublish = 0;
   private readonly renderer: string;
@@ -334,6 +346,11 @@ class SmokeRuntime {
     this.height = Math.max(1, message.height);
     this.pixelRatio = message.pixelRatio;
     this.coverage = message.coverage;
+    this.layoutGeneration = message.layoutGeneration;
+    this.cameraScale = computeWishSmokeCameraScale(this.width, this.height);
+    this.cameraStartScale = this.cameraScale;
+    this.cameraTargetScale = this.cameraScale;
+    this.cameraTransitionStarted = performance.now();
     this.mountEpoch = message.mountEpoch;
     this.charWidth = message.charWidth;
     this.lineHeight = message.lineHeight;
@@ -646,10 +663,10 @@ class SmokeRuntime {
       float r=texture(pressure,uv+vec2(texel.x,0)).x;float b=texture(pressure,uv-vec2(0,texel.y)).x;
       float t=texture(pressure,uv+vec2(0,texel.y)).x;color=vec4(texture(velocity,uv).xy-.5*vec2(r-l,t-b),0,1);}`);
     const smokeField = `${bilinear}
-      uniform vec2 resolution;uniform float zoom;
+      uniform vec2 resolution;uniform float zoom;uniform float cameraScale;
       float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-      vec2 domain(vec2 p){float aspect=resolution.x/resolution.y;float fit=min(1.65,aspect*1.35);
-        vec2 q=vec2((.5-p.x)*aspect/fit+.5,(p.y-.038)/1.16);vec2 focus=vec2(.565,.18);return focus+(q-focus)/zoom;}
+      vec2 domain(vec2 p){vec2 q=vec2((.5-p.x)*cameraScale+.5,(p.y-.038)/1.16);
+        vec2 focus=vec2(.565,.18);return focus+(q-focus)/zoom;}
       float smoke(vec2 p){vec2 q=domain(p);if(q.x<0.||q.x>1.||q.y<0.||q.y>1.)return 0.;
         float d=sampleLinear(density,q).x;vec2 cell=1./vec2(textureSize(density,0));
         float dx=(sampleLinear(density,q+vec2(cell.x,0)).x-sampleLinear(density,q-vec2(cell.x,0)).x)*texel.x/cell.x;
@@ -660,7 +677,7 @@ class SmokeRuntime {
         vec3 bg=vec3(.018,.022,.032);vec3 tint=mix(vec3(.56,.60,.63),vec3(.93,.90,.84),smoothstep(.08,.75,raw));
         color=vec4(bg+tint*value*vignette+vec3(grain),1.);}`);
     this.sampleAscii = makeProgram(`${smokeField}uniform vec2 coverage;
-      void main(){float d=smoke(uv*coverage+vec2(0.,1.-coverage.y));color=vec4(d,d,d,1.);}`);
+      void main(){float d=smoke(uv*coverage+vec2(1.-coverage.x,0.));color=vec4(d,d,d,1.);}`);
     this.trimDensity = makeProgram(`uniform float cutoff;uniform float edge;
       void main(){float inkValue=texture(density,uv).x;
       float above=smoothstep(cutoff-edge,cutoff+edge,uv.y);
@@ -947,14 +964,39 @@ class SmokeRuntime {
     };
   }
 
+  private setCameraSurface(width: number, height: number) {
+    const now = performance.now();
+    this.cameraScale = interpolateWishSmokeCameraScale(
+      this.cameraStartScale,
+      this.cameraTargetScale,
+      now - this.cameraTransitionStarted,
+    );
+    this.cameraStartScale = this.cameraScale;
+    this.cameraTargetScale = computeWishSmokeCameraScale(width, height);
+    this.cameraTransitionStarted = now;
+    if (this.reducedMotion) this.cameraScale = this.cameraTargetScale;
+  }
+
+  private updateCamera(now: number) {
+    this.cameraScale = this.reducedMotion
+      ? this.cameraTargetScale
+      : interpolateWishSmokeCameraScale(
+          this.cameraStartScale,
+          this.cameraTargetScale,
+          now - this.cameraTransitionStarted,
+        );
+  }
+
   resize(message: WorkerResize) {
     this.viewportWidth = message.viewportWidth;
     this.width = Math.max(1, message.width);
     this.height = Math.max(1, message.height);
+    this.layoutGeneration = message.layoutGeneration;
     this.pixelRatio = message.pixelRatio;
     this.coverage = message.coverage;
     this.charWidth = message.charWidth;
     this.lineHeight = message.lineHeight;
+    this.setCameraSurface(this.width, this.height);
     this.canvas.width = Math.max(1, message.canvasWidth);
     this.canvas.height = Math.max(1, message.canvasHeight);
     this.grid.resize(message.gridWidth, message.gridHeight);
@@ -1029,6 +1071,7 @@ class SmokeRuntime {
   motion(reducedMotion: boolean) {
     this.reducedMotion = reducedMotion;
     this.state.paused = reducedMotion;
+    if (reducedMotion) this.cameraScale = this.cameraTargetScale;
     this.resetReadbackRing();
     this.readbackValidated = false;
     this.staticFrameSent = false;
@@ -1328,6 +1371,7 @@ class SmokeRuntime {
     scope.postMessage({
       type: "frame",
       frame,
+      layoutGeneration: this.layoutGeneration,
       computeMs:
         Math.round((pending.issuedAt - pending.computeStarted) * 100) / 100,
       gridMs: Math.round((performance.now() - gridStarted) * 100) / 100,
@@ -1419,6 +1463,7 @@ class SmokeRuntime {
         resolution: [Math.max(this.width, 1), Math.max(this.height, 1)],
         coverage: this.coverage,
         zoom: this.state.zoom,
+        cameraScale: this.cameraScale,
       },
       { density: this.ink.read },
     );
@@ -1463,6 +1508,7 @@ class SmokeRuntime {
     this.stepsThisFrame = 0;
     this.sampleGpuThisFrame = this.perfEnabled && this.frameCounter++ % 8 === 0;
     this.gpuQueryStartedThisFrame = false;
+    this.updateCamera(now);
     if (!this.visible) {
       return;
     }
@@ -1484,6 +1530,7 @@ class SmokeRuntime {
           time: this.simulationTime,
           resolution: [Math.max(this.width, 1), Math.max(this.height, 1)],
           zoom: this.state.zoom,
+          cameraScale: this.cameraScale,
           asciiOn: 1,
         },
         { density: this.ink.read },
@@ -1535,6 +1582,7 @@ class SmokeRuntime {
         time: this.simulationTime,
         resolution: [Math.max(this.width, 1), Math.max(this.height, 1)],
         zoom: this.state.zoom,
+        cameraScale: this.cameraScale,
         asciiOn: 1,
       },
       { density: this.ink.read },
