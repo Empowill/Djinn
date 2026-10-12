@@ -22,12 +22,13 @@ You lead a wish made for one pull request: bring it to a merge, and nothing else
 
 - The wish's watcher runs `sh .agents/skills/babysit-pr/watch.sh <pr>`. It spends no token: it looks at the pull
   request every minute, and each paragraph it prints wakes you. Its first line reaches your terminal:
-  `Djinn: W1's watcher says: PR #12 · checks failed: lint`.
+  `Djinn: W1's watcher says: PR #12 · checks failed at 3f2a9c1: lint`.
 - It wakes you only for what needs you, each once:
-  - `checks failed: lint, test`: a check that newly fails. The same failure seen again says nothing; failing again
-    after a new push, or after a re-run, it is new.
-  - `all checks pass (5)`: once per push, and again after a failure. Wait for it before you say the pull request is
-    ready.
+  - `checks failed at <commit>: lint, test`: a check that newly fails at the pull request's head commit, then one
+    line per check with its job's link. The same failure seen again says nothing; failing again after a new push, or
+    after a re-run, it is new. Check the commit: a failure of a commit you already pushed past is no news.
+  - `all checks pass at <commit> (5)`: once per push, and again after a failure. Wait for it before you say the pull
+    request is ready.
   - `new comment by <login>`, then `latest comment, by <login>: <its first line>`: a new comment, or a review with a
     body.
   - `changes requested`: the review decision turned to `CHANGES_REQUESTED`.
@@ -37,7 +38,9 @@ You lead a wish made for one pull request: bring it to a merge, and nothing else
   Pending checks and partial passes say nothing: no news is no failure yet. Its first look says what is already
   there (failures, all passing, the latest comment, changes requested, a conflict).
 - It keeps what it said in `$DJINN_HOME/watchers/<task>/babysit-pr-<pr>`, never in the repository: after a restart of
-  Djinn, or of its command when it dies, it does not say it again.
+  Djinn, or of its command when it dies, it does not say it again; but for the checks, which its first look says
+  again (what it printed as a Djinn hung reached no one). Djinn does not wake you when that is the last line it told
+  you.
 - It is a POSIX shell script, for Linux and macOS. Windows is not supported: only the `sh` of Git for Windows could
   run it, and no test does.
 - When the pull request is merged, the watcher prints `MERGED` and stops. Djinn then asks the developer whether to

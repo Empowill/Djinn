@@ -58,6 +58,9 @@ type Spec struct {
 	// Restart starts a watcher's command again after an exit 0 too, until it is stopped: one that dies starts again
 	// anyway (watcherLife). Agents ignore it.
 	Restart bool
+	// LastLine is the first line of the last paragraph a watcher's task said before this start (Task.last_line): its
+	// command's first paragraph wakes no one when it says it again. Agents ignore it.
+	LastLine string
 	// LowPriority runs the worker process with low CPU priority (nice 10 on Unix,
 	// BELOW_NORMAL_PRIORITY_CLASS on Windows) when running at minimal or medium operating load;
 	// else it runs at Djinn's own priority.

@@ -1,8 +1,10 @@
 #!/bin/sh
 # Watches a GitHub pull request for the babysit-pr skill: a Djinn watcher runs it, and each paragraph it prints wakes
 # the wish's lead. So it looks at the pull request every minute and speaks only of what needs the lead:
-#   - a check that newly fails, by name: once per failure, again only after a new push or a re-run;
-#   - all checks passing, once per push, and again after a failure: the lead waits for it before merging;
+#   - a check that newly fails, by name, at the head commit, with its job's link: once per failure, again only after
+#     a new push or a re-run;
+#   - all checks passing, at the head commit, once per push, and again after a failure: the lead waits for it before
+#     merging;
 #   - a new comment, or a review with a body: the latest one;
 #   - a review decision that turns to CHANGES_REQUESTED;
 #   - the pull request no longer mergeable (CONFLICTING; UNKNOWN is GitHub still computing, and says nothing);
@@ -10,6 +12,10 @@
 # Pending checks and partial passes say nothing. A failed look (no network, gh not logged in) prints once, then it
 # tries again. What it said is kept outside the repository, under $DJINN_HOME by the watcher's task
 # ($DJINN_TASK_ID), so that a watcher Djinn starts again does not say it again; run by hand, it keeps it while it runs.
+# Each paragraph names what it is about (the head commit, the failed job), so that Djinn, which tells the lead a
+# paragraph only when it differs from the last one, never takes a new failure for the old one. Only the checks are
+# said again on its first look: a paragraph printed as a Djinn hung or was killed reached no lead, though it is kept
+# as said (PR #2, 12/10/2026); Djinn tells the lead nothing when it is the task's last line.
 #
 # Usage: watch.sh <pr> [seconds between two looks, 60 by default] [looks before it exits, endless by default].
 # Needs gh, logged in. POSIX sh, for Linux and macOS.
@@ -42,6 +48,8 @@ trap 'exit 130' INT
 # they all pass, the latest comment it showed (its time and author), the last review decision and mergeable state,
 # and whether it said gh failed.
 head="" failed="" green="" comment="" review="" mergeable="" broken="" saved=""
+# The pull requests it read since it started: the first look that reads one says its checks again.
+looked=""
 
 load_state() {
 	curr=$1
@@ -96,6 +104,13 @@ look() {
 		return 0
 	fi
 	broken=""
+	case " $looked " in
+	*" $curr "*) ;;
+	*)
+		looked="${looked:+$looked }$curr"
+		failed="" green=""
+		;;
+	esac
 	set -f
 	old=$IFS
 	IFS=$us
@@ -120,11 +135,11 @@ look() {
 		head=$now_head failed="" green=""
 	fi
 
-	# The checks: their number, whether they all pass (or skip), then the names of those that fail. gh pr checks
-	# exits non-zero while a check fails or is pending: its output is what counts, and none says nothing.
-	checks=$(gh pr checks "$curr" --json name,bucket --jq '
-		length, all(.bucket == "pass" or .bucket == "skipping"), (map(select(.bucket == "fail") | .name) | unique[])' \
-		2>/dev/null)
+	# The checks: their number, whether they all pass (or skip), then those that fail, by name, each with its link.
+	# gh pr checks exits non-zero while a check fails or is pending: its output is what counts, and none says nothing.
+	checks=$(gh pr checks "$curr" --json name,bucket,link --jq '
+		length, all(.bucket == "pass" or .bucket == "skipping"),
+		(map(select(.bucket == "fail")) | unique_by(.name)[] | "\(.name)\t\(.link // "")")' 2>/dev/null)
 	if [ -n "$checks" ]; then
 		total=${checks%%"$nl"*}
 		rest=${checks#*"$nl"}
@@ -133,23 +148,32 @@ look() {
 		*"$nl"*) now_failed=${rest#*"$nl"} ;;
 		*) now_failed="" ;;
 		esac
-		new=""
-		while IFS= read -r name; do
+		short=$(printf '%.7s' "$head")
+		new="" names=""
+		while IFS= read -r line; do
+			[ -n "$line" ] || continue
+			name=${line%%"$tab"*}
+			link=${line#*"$tab"}
+			names=${names:+$names$nl}$name
 			case "$nl$failed$nl" in
 			*"$nl$name$nl"*) ;;
-			*) [ -n "$name" ] && new=${new:+$new, }$name ;;
+			*)
+				new=${new:+$new, }$name
+				# Its job's link: the lead reads its log there, and a re-run makes another.
+				[ -n "$link" ] && more="$more${nl}$name: $link"
+				;;
 			esac
 		done <<EOF
 $now_failed
 EOF
 		if [ -n "$new" ]; then
-			news="$news · checks failed: $new"
+			news="$news · checks failed at $short: $new"
 			green=""
 		fi
 		# A check that runs again leaves the list: failing again, it is new.
-		failed=$now_failed
+		failed=$names
 		if [ "$all" = true ] && [ "$total" -gt 0 ] && [ "$green" != yes ]; then
-			news="$news · all checks pass ($total)"
+			news="$news · all checks pass at $short ($total)"
 			green=yes
 		fi
 	fi
@@ -168,7 +192,7 @@ EOF
 	# A comment newer than the last one shown: its time first, so that the latest sorts last.
 	if [ -n "$latest" ] && [ "$latest" != "$comment" ] && awk -v a="$latest" -v b="$comment" 'BEGIN { exit !(a > b) }'; then
 		news="$news · new comment by ${text%%:*}"
-		more="${nl}latest comment, by $text"
+		more="$more${nl}latest comment, by $text"
 		comment=$latest
 	fi
 
