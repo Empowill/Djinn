@@ -521,7 +521,8 @@ func (p *Projects) Branches(
 }
 
 // refuseProjectSwitchToAzima refuses making per azima the push strategy of the project projectID while a wish of it
-// that takes the project's strategy, not granted, has azimas that wait for each other (RefuseSwitchToAzima).
+// that takes the project's strategy, not granted, has azimas that wait for each other (RefuseSwitchToAzima), or work
+// the switch would strand (RefuseStranding).
 func refuseProjectSwitchToAzima(ctx context.Context, tx *store.Tx, projectID string) error {
 	wishes, err := store.List[*planv1.Wish](ctx, tx, nil)
 	if err != nil {
@@ -539,6 +540,9 @@ func refuseProjectSwitchToAzima(ctx context.Context, tx *store.Tx, projectID str
 		if deps := AzimaDependencies(tasks); len(deps) > 0 {
 			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 				"per azima refused: the azimas of wish %q depend on each other (%s)", w.GetTitle(), AzimaDependenciesText(deps)))
+		}
+		if err := RefuseStranding(w, tasks, planv1.PushStrategy_PUSH_STRATEGY_AZIMA); err != nil {
+			return err
 		}
 	}
 	return nil

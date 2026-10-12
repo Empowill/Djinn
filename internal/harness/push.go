@@ -611,7 +611,8 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 	pushAfterEvery := cmp.Or(every, DefaultPushAfter)
 	pushAfterTasks := int(cmp.Or(wish.GetPushAfterTasks(), DefaultPushTasks))
 
-	for _, azima := range h.wishAzimas(ctx, wish) {
+	azimas := h.wishAzimas(ctx, wish)
+	for _, azima := range azimas {
 		branch := azimaBranchName(azima)
 		if commitOf(ctx, repo, "refs/heads/"+branch) == "" {
 			continue
@@ -632,8 +633,9 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 		}
 	}
 
+	// An azima that adopted the wish's branch pushed it above.
 	wishBranch := plan.IntegrationBranchOf(wish, project.GetId())
-	if commitOf(ctx, repo, "refs/heads/"+wishBranch) != "" {
+	if commitOf(ctx, repo, "refs/heads/"+wishBranch) != "" && azimaOwning(azimas, wishBranch) == nil {
 		if strings.HasSuffix(state.GetHeld(), "; left to the lead") && state.GetFailedSha() == commitOf(ctx, repo, "refs/heads/"+wishBranch) {
 			return
 		}
@@ -659,7 +661,8 @@ func (h *Harness) pushAzimaApproved(ctx context.Context, wish *planv1.Wish, proj
 		return
 	}
 	repo := project.GetDirectory()
-	for _, azima := range h.wishAzimas(ctx, wish) {
+	azimas := h.wishAzimas(ctx, wish)
+	for _, azima := range azimas {
 		branch := azimaBranchName(azima)
 		if commitOf(ctx, repo, "refs/heads/"+branch) == "" {
 			continue
@@ -671,7 +674,7 @@ func (h *Harness) pushAzimaApproved(ctx context.Context, wish *planv1.Wish, proj
 		}
 	}
 	wishBranch := plan.IntegrationBranchOf(wish, project.GetId())
-	if commitOf(ctx, repo, "refs/heads/"+wishBranch) != "" {
+	if commitOf(ctx, repo, "refs/heads/"+wishBranch) != "" && azimaOwning(azimas, wishBranch) == nil {
 		since := h.lastBranchPush(ctx, repo, wish, p, wishBranch)
 		committed := h.committedBranchTasks(ctx, repo, tasks, project.GetId(), wishBranch, since)
 		if _, err := h.pushBranch(ctx, wish, project, wishBranch, committed, "you said to push it", true); err != nil {
@@ -711,7 +714,8 @@ func (h *Harness) pushAzima(ctx context.Context, wish *planv1.Wish, project *pla
 	repo := project.GetDirectory()
 	var lastPush *planv1.IntegrationPush
 	var lastErr error
-	for _, azima := range h.wishAzimas(ctx, wish) {
+	azimas := h.wishAzimas(ctx, wish)
+	for _, azima := range azimas {
 		branch := azimaBranchName(azima)
 		if commitOf(ctx, repo, "refs/heads/"+branch) == "" {
 			continue
@@ -726,7 +730,7 @@ func (h *Harness) pushAzima(ctx context.Context, wish *planv1.Wish, project *pla
 		}
 	}
 	wishBranch := plan.IntegrationBranchOf(wish, project.GetId())
-	if commitOf(ctx, repo, "refs/heads/"+wishBranch) != "" {
+	if commitOf(ctx, repo, "refs/heads/"+wishBranch) != "" && azimaOwning(azimas, wishBranch) == nil {
 		since := h.lastBranchPush(ctx, repo, wish, pushState(wish, project.GetId()), wishBranch)
 		committed := h.committedBranchTasks(ctx, repo, tasks, project.GetId(), wishBranch, since)
 		p, err := h.pushBranch(ctx, wish, project, wishBranch, committed, "you said to push it", true)
@@ -791,8 +795,13 @@ func (h *Harness) Syncs(ctx context.Context, project *planv1.Project) ([]*planv1
 		syncs = append(syncs, sync)
 	}
 	for _, wish := range wishes {
-		add(wish, nil, plan.IntegrationBranchOf(wish, project.GetId()))
 		azimas := h.wishAzimas(ctx, wish)
+		// Per azima, an azima that adopted the wish's integration branch shows it as its own.
+		var owner *planv1.Task
+		if h.pushesPerAzima(ctx, h.store, wish) {
+			owner = azimaOwning(azimas, plan.IntegrationBranchOf(wish, project.GetId()))
+		}
+		add(wish, owner, plan.IntegrationBranchOf(wish, project.GetId()))
 		slices.SortStableFunc(azimas, func(a, b *planv1.Task) int { return cmp.Compare(a.GetId(), b.GetId()) })
 		for _, azima := range azimas {
 			add(wish, azima, azimaBranchName(azima))

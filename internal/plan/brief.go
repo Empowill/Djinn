@@ -132,6 +132,12 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"drift. Before you add tasks or azimas, an answer turned into tasks included, look for the azima they belong to: " +
 		"group what goes together, merge duplicates, and open a new azima only for a will no existing one carries; " +
 		"never mix things that do not belong together.\n" +
+		"- **One subject, one azima, one branch.** A wish whose work spans several subjects (tickets, pull or merge " +
+		"requests) goes per azima from the start, before any of its work is merged: `djinn wish push-strategy <wish> " +
+		"--strategy azima`, one azima per subject, each with its branch named as the project's convention requires " +
+		"(`djinn task update <azima> --branch <ticket>-<slug>`), and its own pull or merge request. A wish switched " +
+		"later keeps the branch its work lives on: the azima carrying it adopts it first (`djinn task update <azima> " +
+		"--branch <the wish's branch>`), then the switch; Djinn refuses a switch that would strand merged work.\n" +
 		"- **Give a task its place when you spawn it.** What comes before it: `--after W1,W2`. To put a new task before " +
 		"a planned one, spawn it `--blocks W5`: W5 waits for it from the same step. Never spawn, then depend: a pass of " +
 		"the scheduler may start W5 in between. Djinn refuses `--blocks` on a task that has started.\n" +
@@ -449,7 +455,7 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool, strategy planv1
 	for _, t := range exp.GetTilasms() {
 		tilasms = append(tilasms, t.GetTilasm())
 	}
-	azimasBrief(&b, exp.GetTasks(), codes, tilasms)
+	azimasBrief(&b, exp.GetTasks(), codes, tilasms, strategy == planv1.PushStrategy_PUSH_STRATEGY_AZIMA)
 	var running, waiting, done []*planv1.Task
 	for _, t := range exp.GetTasks() {
 		if IsAzima(t) {
@@ -639,10 +645,32 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool, strategy planv1
 	return stripCredentials(b.String())
 }
 
+// azimaBranchText says, for a wish that pushes per azima, the own branch of the azima t and where its pull or merge
+// request stands, as its card shows them: "branch `ET-4368-x`, pull request open: <url>".
+func azimaBranchText(t *planv1.Task) string {
+	text := "branch `" + AzimaBranchName(t) + "`"
+	if t.GetAzima().GetNamed() {
+		text += " (named)"
+	}
+	switch pr := t.GetAzima().GetPr(); pr.GetState() {
+	case planv1.AzimaPrState_AZIMA_PR_STATE_PROPOSED:
+		text += ", pull request proposed"
+	case planv1.AzimaPrState_AZIMA_PR_STATE_OPEN:
+		text += ", pull request open"
+	case planv1.AzimaPrState_AZIMA_PR_STATE_MERGED:
+		text += ", pull request merged"
+	}
+	if url := t.GetAzima().GetPr().GetUrl(); url != "" {
+		text += ": " + url
+	}
+	return text
+}
+
 // azimasBrief writes the plan's azimas as a graph: the ready ones first, under way before open, then the blocked ones
 // with what they wait for, then those whose work is done and that wait for their proof, with who gives it, then the
-// done ones on one line; each with the tilasms that explain it. Nothing without an azima.
-func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]string, tilasms []*planv1.Tilasm) {
+// done ones on one line; each with the tilasms that explain it, and, per azima (perAzima), its own branch and its pull
+// request. Nothing without an azima.
+func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]string, tilasms []*planv1.Tilasm, perAzima bool) {
 	tasks = WithAzimas(tasks)
 	var ready, blocked, proof, done, drafts []*planv1.Task
 	for _, t := range tasks {
@@ -692,6 +720,9 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 		if ls := citing(tilasms, t.GetId()); len(ls) > 0 {
 			text += "; explained by " + strings.Join(ls, ", ")
 		}
+		if perAzima {
+			text += "; " + azimaBranchText(t)
+		}
 		status[t] = text
 	}
 	byID := map[string]*planv1.Task{}
@@ -737,6 +768,9 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 			needs[i] = t.GetCode() + " needs " + NeedsWords(t.GetProofNeeds())
 			if ls := citing(tilasms, t.GetId()); len(ls) > 0 {
 				needs[i] += " (explained by " + strings.Join(ls, ", ") + ")"
+			}
+			if perAzima {
+				needs[i] += " (" + azimaBranchText(t) + ")"
 			}
 		}
 		fmt.Fprintf(b, "- Work done, waiting for its proof: %s.\n", strings.Join(needs, "; "))
@@ -1091,8 +1125,8 @@ func landsLine(exp *planv1.WishExport, strategy planv1.PushStrategy) string {
 		change = "`djinn wish set-integration <wish> --project-id <project> --branch <branch>`"
 	}
 	if strategy == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
-		line := "- Work lands per azima: each azima on its own branch, `djinn/<code>-<slug>`, cut from main and landing in main " +
-			"through its pull request"
+		line := "- Work lands per azima: each azima on its own branch, `djinn/<code>-<slug>` or the one named with " +
+			"`djinn task update <azima> --branch <name>`, cut from main and landing in main through its pull request"
 		if len(branches) > 0 {
 			line += "; work of no azima in " + strings.Join(branches, ", ")
 		}
@@ -1165,7 +1199,7 @@ func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, rea
 	for _, t := range exp.GetTilasms() {
 		tilasms = append(tilasms, t.GetTilasm())
 	}
-	azimasBrief(b, exp.GetTasks(), codes, tilasms)
+	azimasBrief(b, exp.GetTasks(), codes, tilasms, strategy == planv1.PushStrategy_PUSH_STRATEGY_AZIMA)
 
 	var running, waiting []*planv1.Task
 	for _, t := range exp.GetTasks() {

@@ -488,7 +488,8 @@ func TestImportState(t *testing.T) {
 }
 
 // TestWishPushStrategy: a wish without a value inherits the project's default; an explicit strategy overrides it;
-// switching the push strategy is refused when work is already merged into the wish's integration branch.
+// switching the push strategy is refused when it would strand merged work, and goes once the azima carrying that work
+// adopts the branch it lives on.
 func TestWishPushStrategy(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
@@ -554,16 +555,22 @@ func TestWishPushStrategy(t *testing.T) {
 		t.Errorf("set wish strategy = %v from %v; want wish from wish", setWishRes.Msg.GetStrategy(), setWishRes.Msg.GetSource())
 	}
 
-	// 4. Create a committed task on the wish.
+	// 4. Work of an azima merged into the wish's integration branch.
+	t1 := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Title: "Silae"}
+	c.put(t, t1)
 	c.put(t, &planv1.Task{
-		Id:     store.NewID(),
-		WishId: wishID,
+		Id:        store.NewID(),
+		WishId:    wishID,
+		Code:      "W1",
+		ProjectId: projectID,
+		PartOf:    t1.GetId(),
 		Integration: &planv1.TaskIntegration{
-			State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+			State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+			Branch: "ET-4368-silae",
 		},
 	})
 
-	// Switching strategy to azima must be refused because work is already merged.
+	// Switching strategy to azima must be refused: T1's work would be stranded, and the refusal says how to keep it.
 	_, err = c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{
 		WishId:   wishID,
 		Strategy: planv1.PushStrategy_PUSH_STRATEGY_AZIMA.Enum(),
@@ -571,8 +578,10 @@ func TestWishPushStrategy(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error switching push strategy with committed task, got nil")
 	}
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "already merged into its integration branch") {
-		t.Errorf("switch error = %v; want FailedPrecondition naming already merged", err)
+	const strands = "the work of W1 (T1) is merged into ET-4368-silae, its azima's goes to djinn/T1-silae"
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), strands) ||
+		!strings.Contains(err.Error(), "djinn task update T1 --branch ET-4368-silae") {
+		t.Errorf("switch error = %v; want FailedPrecondition saying %q and how to adopt the branch", err, strands)
 	}
 
 	// Setting the same strategy should succeed (no switch).
@@ -595,8 +604,19 @@ func TestWishPushStrategy(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error in SetIntegration switching push strategy with committed task, got nil")
 	}
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "already merged into its integration branch") {
-		t.Errorf("SetIntegration switch error = %v; want FailedPrecondition naming already merged", err)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), strands) {
+		t.Errorf("SetIntegration switch error = %v; want FailedPrecondition saying %q", err, strands)
+	}
+
+	// Once T1 adopts the branch its work lives on, nothing is stranded: the switch goes, and back too.
+	t1.Azima = &planv1.Azima{Branch: "ET-4368-silae", BaseBranch: "main", CutFrom: strings.Repeat("a", 40), Named: true}
+	c.put(t, t1)
+	for _, s := range []planv1.PushStrategy{planv1.PushStrategy_PUSH_STRATEGY_AZIMA, planv1.PushStrategy_PUSH_STRATEGY_WISH} {
+		if _, err := c.wishes.SetIntegration(ctx, connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+			WishId: wishID, Branch: "ET-4368-silae", PushStrategy: s.Enum(),
+		})); err != nil {
+			t.Errorf("switch to %v once T1 adopted its branch: %v", s, err)
+		}
 	}
 
 	// 5. Creating a wish with an explicit push strategy.

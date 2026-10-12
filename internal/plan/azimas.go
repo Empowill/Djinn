@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"cmp"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -113,7 +114,7 @@ func FillAzimas(tasks []*planv1.Task) {
 			e.Pr = existing.GetPr()
 			e.Main = existing.GetMain()
 			if existing.GetCutFrom() != "" {
-				e.CutFrom, e.BaseBranch = existing.GetCutFrom(), existing.GetBaseBranch()
+				e.CutFrom, e.BaseBranch, e.Named = existing.GetCutFrom(), existing.GetBaseBranch(), existing.GetNamed()
 			}
 		}
 		// A merge counts with the original task it serves (MergeHost): it runs, its original runs.
@@ -192,8 +193,8 @@ func Slug(s string, n int) string {
 	return strings.Trim(out, "-")
 }
 
-// AzimaBranchName is the branch of an azima under the per-azima push strategy: the one recorded when Djinn cut it
-// (Azima.cut_from), else djinn/<code>-<slug of its title>, or djinn/<code>.
+// AzimaBranchName is the branch of an azima under the per-azima push strategy: the one recorded when Djinn cut it or
+// the developer named it (Azima.cut_from), else djinn/<code>-<slug of its title>, or djinn/<code>.
 func AzimaBranchName(a *planv1.Task) string {
 	if a == nil {
 		return ""
@@ -359,6 +360,84 @@ func RefuseSwitchToAzima(tasks []*planv1.Task) error {
 	}
 	return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 		"per azima refused: azimas depend on each other (%s)", AzimaDependenciesText(deps)))
+}
+
+// AzimaOf is the azima t is part of among byID, the tasks of its wish by id, walking up part_of: t itself when it is
+// an azima; nil when none.
+func AzimaOf(t *planv1.Task, byID map[string]*planv1.Task) *planv1.Task {
+	seen := map[string]bool{}
+	for t != nil && !seen[t.GetId()] {
+		if IsAzima(t) {
+			return t
+		}
+		seen[t.GetId()] = true
+		t = byID[t.GetPartOf()]
+	}
+	return nil
+}
+
+// RefuseStranding refuses switching wish to the push strategy to when work of it, among tasks, merged into a branch,
+// would be left there, its further work going to another: per azima, the work of an azima merged into the wish's
+// integration branch while the azima's own branch is another; per wish, work merged into an azima's branch other than
+// the wish's integration branch. The work of an azima stays where it is once the azima adopts the branch it lives on
+// (djinn task update <azima> --branch <branch>), which the refusal says. Work of no azima stays in the wish's branch.
+func RefuseStranding(wish *planv1.Wish, tasks []*planv1.Task, to planv1.PushStrategy) error {
+	byID := map[string]*planv1.Task{}
+	for _, t := range tasks {
+		byID[t.GetId()] = t
+	}
+	type strand struct {
+		azima       *planv1.Task
+		codes       []string
+		lives, goes string
+	}
+	var strands []*strand
+	for _, t := range tasks {
+		in := t.GetIntegration()
+		if in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || IsAzima(t) {
+			continue
+		}
+		wishBranch := IntegrationBranchOf(wish, t.GetProjectId())
+		lives := cmp.Or(in.GetBranch(), wishBranch)
+		azima := AzimaOf(t, byID)
+		goes := wishBranch
+		if to == planv1.PushStrategy_PUSH_STRATEGY_AZIMA && azima != nil {
+			goes = AzimaBranchName(azima)
+		}
+		if lives == "" || goes == "" || strings.EqualFold(lives, goes) {
+			continue
+		}
+		i := slices.IndexFunc(strands, func(s *strand) bool { return s.azima == azima && s.lives == lives })
+		if i < 0 {
+			strands = append(strands, &strand{azima: azima, lives: lives, goes: goes})
+			i = len(strands) - 1
+		}
+		strands[i].codes = append(strands[i].codes, t.GetCode())
+	}
+	if len(strands) == 0 {
+		return nil
+	}
+	slices.SortFunc(strands, func(a, b *strand) int { return CompareCodes(a.azima.GetCode(), b.azima.GetCode()) })
+	var said, adopt []string
+	for _, s := range strands {
+		slices.SortFunc(s.codes, CompareCodes)
+		whose := strings.Join(s.codes, ", ")
+		if s.azima != nil {
+			whose += " (" + s.azima.GetCode() + ")"
+		}
+		next := "the wish's"
+		if to == planv1.PushStrategy_PUSH_STRATEGY_AZIMA && s.azima != nil {
+			next = "its azima's"
+			adopt = append(adopt, fmt.Sprintf("djinn task update %s --branch %s", s.azima.GetCode(), s.lives))
+		}
+		said = append(said, fmt.Sprintf("the work of %s is merged into %s, %s goes to %s", whose, s.lives, next, s.goes))
+	}
+	text := fmt.Sprintf("cannot switch wish %q to per %s: it would strand merged work: %s", wish.GetTitle(),
+		PushStrategyWord(to), strings.Join(said, "; "))
+	if len(adopt) > 0 {
+		text += "; have each azima adopt the branch its work lives on first (" + strings.Join(adopt, "; ") + "), then switch"
+	}
+	return connect.NewError(connect.CodeFailedPrecondition, errors.New(text))
 }
 
 // HasUnfinishedParts tells whether an azima has parts still to finish: work not finished,

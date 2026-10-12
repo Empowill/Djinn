@@ -196,14 +196,29 @@ func TestBriefSaysWhereWorkLands(t *testing.T) {
 		one.GetId(): "- Work lands in `feat/one`: `djinn wish set-integration <wish> --branch <branch>` changes it.\n",
 		two.GetId(): "- Work lands in `feat/two` (api), `main` (web): " +
 			"`djinn wish set-integration <wish> --project-id <project> --branch <branch>` changes it.\n",
-		azimas.GetId(): "- Work lands per azima: each azima on its own branch, `djinn/<code>-<slug>`, cut from main and " +
-			"landing in main through its pull request; work of no azima in `feat/rest`.\n",
+		azimas.GetId(): "- Work lands per azima: each azima on its own branch, `djinn/<code>-<slug>` or the one named with " +
+			"`djinn task update <azima> --branch <name>`, cut from main and landing in main through its pull request; " +
+			"work of no azima in `feat/rest`.\n",
 	}
+	// Per azima, each azima says its own branch and where its pull or merge request stands, as its card does.
+	const mr = "https://gitlab.example.com/dolmen/-/merge_requests/12"
+	c.put(t, &planv1.Task{
+		Id: store.NewID(), WishId: azimas.GetId(), ProjectId: ids[0], Code: "T1", Title: "Silae", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
+		Azima: &planv1.Azima{
+			Branch: "ET-4368-silae", BaseBranch: "main", CutFrom: strings.Repeat("a", 40), Named: true,
+			Pr: &planv1.AzimaPr{Url: mr, State: planv1.AzimaPrState_AZIMA_PR_STATE_OPEN},
+		},
+	}, &planv1.Task{
+		Id: store.NewID(), WishId: azimas.GetId(), ProjectId: ids[0], Code: "T2", Title: "Other subject", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
+	})
+	lines[azimas.GetId()+" T1"] = "- **T1** Silae: ready, open; branch `ET-4368-silae` (named), pull request open: " + mr + "\n"
+	lines[azimas.GetId()+" T2"] = "- **T2** Other subject: ready, open; branch `djinn/T2-other-subject`\n"
 	global, err := BuildGlobalBrief(ctx, c.store, home)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for id, line := range lines {
+	for key, line := range lines {
+		id, _, _ := strings.Cut(key, " ")
 		brief, err := BuildBrief(ctx, c.store, home, id)
 		if err != nil {
 			t.Fatal(err)
