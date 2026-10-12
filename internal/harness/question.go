@@ -425,7 +425,7 @@ func questionEndLine(t *planv1.Task, tasks []*planv1.Task, questions []*planv1.Q
 	case t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE:
 		line += fmt.Sprintf(" Check what is left of %s: djinn wish brief %s has the context.", code, wish)
 	case len(spawned) > 0:
-		line += " Check every task that ends: read its final note (djinn task watch <task>, or the line Djinn types): when it leaves an uncertainty (a choice it made in the developer's place, something it did not verify, a partial result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too. Withdraw the open questions its work made needless."
+		line += " Check every task that ends: read its final note (djinn task watch <task>, or the line Djinn types): what it leaves to verify (something it did not verify, a failing test it calls unrelated) goes to a task or a watcher that verifies it, never to the developer; when it leaves an uncertainty (a choice it made in the developer's place, a partial result, a step it skipped, 'to validate'), ask the developer a question about it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too. Withdraw the open questions its work made needless."
 	}
 	return line
 }

@@ -38,6 +38,21 @@ func TestWorkerPromptMoveRule(t *testing.T) {
 	if !strings.Contains(got1, workerHandRule) {
 		t.Errorf("briefed with checks missing workerHandRule:\ngot: %q", got1)
 	}
+	// Q246: a check is never asked of the developer; a question is for a decision or a person's move only, its
+	// command at the top of the context.
+	for _, want := range []string{
+		"Never ask the developer for a check, a measure, a log to read, a CI result to look at or a command to run",
+		"do it yourself when you can",
+		"say in your final note what remains to verify",
+		"the lead spawns a task for it or lets a watcher report it",
+		"a CI result comes from the PR's babysit watcher",
+		"A question to the developer is only for a decision or a move only a person can make",
+		"the exact command in a code block at the top of its `--context`, never mid-sentence",
+	} {
+		if !strings.Contains(got1, want) {
+			t.Errorf("worker prompt lacks %q:\n%s", want, got1)
+		}
+	}
 
 	// 2. Real provider without checks: rule is appended.
 	for _, provider := range []planv1.Provider{
