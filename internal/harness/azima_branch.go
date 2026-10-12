@@ -12,7 +12,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 
@@ -20,6 +19,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -74,7 +74,7 @@ func (h *Harness) azimaBranch(ctx context.Context, project *planv1.Project, sett
 		}
 		return "", fmt.Errorf("cut %s from %s: %w", branch, main, err)
 	}
-	log.Printf("djinn: azima %s: cut %s from %s at %s", azima.GetCode(), branch, main, short8(sha))
+	logx.L().Info("azima branch cut", "azima", azima.GetCode(), "branch", branch, "from", main, "at", short8(sha))
 	if p := azima.GetProjectId(); p == "" || p == project.GetId() {
 		if main == "HEAD" {
 			main = "" // No main branch: the checkout's commit, landing nowhere named.
@@ -112,7 +112,7 @@ func (h *Harness) cutAzimaBranch(ctx context.Context, wish *planv1.Wish, azima *
 		return
 	}
 	if _, err := h.azimaBranch(ctx, project, settings, azima); err != nil {
-		log.Printf("djinn: azima %s: %v", azima.GetCode(), err)
+		logx.L().Warn("cut an azima's branch", "azima", azima.GetCode(), "err", err)
 	}
 }
 
@@ -120,7 +120,7 @@ func (h *Harness) cutAzimaBranch(ctx context.Context, wish *planv1.Wish, azima *
 func (h *Harness) editAzima(ctx context.Context, id string, edit func(*planv1.Azima)) {
 	ctx = context.WithoutCancel(ctx)
 	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return editAzima(ctx, tx, id, edit) }); err != nil {
-		log.Printf("djinn: azima %s: %v", short8(id), err)
+		logx.L().Error("record an azima", "azima", short8(id), "err", err)
 	}
 	h.notify()
 }
@@ -252,9 +252,9 @@ func (h *Harness) nameAzimaBranch(ctx context.Context, procedure string, req *pl
 		return nil, plan.Status(err)
 	}
 	if tip != "" {
-		log.Printf("djinn: azima %s: adopted %s, from %s at %s", azima.GetCode(), branch, main, short8(cut))
+		logx.L().Info("azima branch adopted", "azima", azima.GetCode(), "branch", branch, "from", main, "at", short8(cut))
 	} else {
-		log.Printf("djinn: azima %s: cut %s from %s at %s", azima.GetCode(), branch, main, short8(cut))
+		logx.L().Info("azima branch cut", "azima", azima.GetCode(), "branch", branch, "from", main, "at", short8(cut))
 	}
 	h.notify()
 	return h.withAzima(ctx, named)

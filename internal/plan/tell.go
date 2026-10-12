@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -80,14 +80,16 @@ func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, did string) {
 		// No lead runs at all: the answer waits, marked waiting for a lead.
 		spec := connect.Spec{Procedure: planv1connect.QuestionServiceAnswerProcedure}
 		req := &planv1.QuestionServiceAnswerRequest{Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}}}
-		_ = write(ctx, w.Store, spec, req, func(tx *store.Tx) error {
+		if err := write(ctx, w.Store, spec, req, func(tx *store.Tx) error {
 			cur, err := store.Get[*planv1.Question](ctx, tx, q.GetId())
 			if err != nil {
 				return err
 			}
 			cur.WaitingLead = true
 			return tx.Put(cur)
-		})
+		}); err != nil {
+			logx.L().Error("mark an answer waiting for a lead", "wish", q.GetWishId(), "question", q.GetCode(), "err", err)
+		}
 		q.WaitingLead = true
 	}
 	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, line)
@@ -98,12 +100,12 @@ func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, did string) {
 func (w *Wishes) queueWaitingAnswers(ctx context.Context) {
 	questions, err := store.List[*planv1.Question](ctx, w.Store, nil)
 	if err != nil {
-		log.Printf("djinn: list waiting answers: %v", err)
+		logx.L().Error("list the answers waiting for a lead", "err", err)
 		return
 	}
 	events, err := store.List[*planv1.LeadEvent](ctx, w.Store, nil)
 	if err != nil {
-		log.Printf("djinn: list the lead's events: %v", err)
+		logx.L().Error("list the lead's events", "err", err)
 		return
 	}
 	queued := map[string]bool{}
@@ -119,7 +121,7 @@ func (w *Wishes) queueWaitingAnswers(ctx context.Context) {
 		e := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, WishId: q.GetWishId(), Code: q.GetCode(),
 			Text: AnswerLine(q, "")}
 		if err := QueueLeadEvent(ctx, w.Store, e, w.now()); err != nil {
-			log.Printf("djinn: queue the answer to %s: %v", q.GetCode(), err)
+			logx.L().Error("queue an answer for the lead", "wish", q.GetWishId(), "question", q.GetCode(), "err", err)
 		}
 	}
 }
@@ -163,7 +165,7 @@ func ApprovedLine(q *planv1.Question, by string) string {
 func (w *Wishes) workerOf(ctx context.Context, q *planv1.Question, role planv1.TaskRole) string {
 	t, err := QuestionWorkerOf(ctx, w.Store, q, role)
 	if err != nil {
-		log.Printf("djinn: question %s: find its worker: %v", q.GetCode(), err)
+		logx.L().Error("find a question's worker", "wish", q.GetWishId(), "question", q.GetCode(), "err", err)
 	}
 	return t.GetCode()
 }
@@ -196,7 +198,7 @@ func (w *Wishes) notify(ctx context.Context, q *planv1.Question, kind planv1.Lea
 	}
 	e := &planv1.LeadEvent{Kind: kind, WishId: q.GetWishId(), Code: q.GetCode(), Text: line}
 	if err := w.Notify(ctx, e); err != nil {
-		log.Printf("djinn: wish %s: tell the lead about %s: %v", q.GetWishId(), q.GetCode(), err)
+		logx.L().Error("tell the lead about a question", "wish", q.GetWishId(), "question", q.GetCode(), "err", err)
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/terminal"
@@ -26,6 +27,7 @@ func carryLead(ctx context.Context, db *store.Store, say io.Writer) *planv1.Lead
 	carried, err := plan.CarryLead(ctx, db)
 	if err != nil {
 		fmt.Fprintln(say, "djinn: the lead of the wishes is not carried over:", err)
+		logx.L().Warn("the lead of the wishes is not carried over", "err", err)
 	} else if carried != nil {
 		fmt.Fprintf(say, "djinn: the lead of the wishes is the lead now: %s in %s\n",
 			carried.GetSessionId(), carried.GetDirectory())
@@ -48,6 +50,7 @@ func resumeLead(ctx context.Context, db *store.Store, home string, terms *termin
 	res, err := leadSvc.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{}))
 	if err != nil {
 		fmt.Fprintf(say, "djinn: the lead is not resumed: %v\n", err)
+		logx.L().Warn("the lead is not resumed", "err", err)
 		if errors.Is(err, plan.ErrNoProject) {
 			return nil
 		}

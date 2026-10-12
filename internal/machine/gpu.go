@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // GPU is a graphics processor of the machine.
@@ -150,7 +152,10 @@ func readLine(fsys fs.FS, name string) string {
 // the GPUs starts now, in the background: asking a driver may take a moment.
 func Reader(dir string) func() (Snapshot, error) {
 	gpus := sync.OnceValue(readGPUs)
-	go gpus()
+	go func() {
+		defer logx.Crash("gpus")
+		gpus()
+	}()
 	return func() (Snapshot, error) {
 		s, err := Read()
 		if d, err := ReadDisk(dir); err == nil {

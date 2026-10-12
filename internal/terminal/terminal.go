@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/empowill/djinn/internal/logx"
 )
 
 const (
@@ -203,6 +205,7 @@ func (m *Manager) OpenExclusive(
 	m.byID[t.ID] = t
 	m.byName[name] = t
 	go func() {
+		defer logx.Crash("terminal pump", "terminal", name)
 		t.pump()
 		m.changed()
 	}()
@@ -307,6 +310,7 @@ func (m *Manager) Close() {
 func (t *Terminal) pump() {
 	read := make(chan struct{})
 	go func() {
+		defer logx.Crash("terminal read", "terminal", t.Name)
 		defer close(read)
 		b := make([]byte, 32<<10)
 		for {
@@ -439,6 +443,7 @@ func (t *Terminal) Hangup() {
 		// Read the delay here, not in the goroutine: it may outlive the caller, and a test restores grace after.
 		wait := grace
 		go func() {
+			defer logx.Crash("terminal hangup", "terminal", t.Name)
 			select {
 			case <-t.done:
 			case <-time.After(wait):

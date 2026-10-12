@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -135,7 +135,7 @@ func (h *Harness) tellDone(ctx context.Context, t *planv1.Task, why string) {
 	line := doneLine(t, wish, h.finalNote(ctx, t.GetId()), why)
 	if err := h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, t.GetWishId(), t.GetCode(), line); err != nil &&
 		!errors.Is(err, plan.ErrNoLead) {
-		log.Printf("djinn: wish %s: tell the lead %s is done: %v", t.GetWishId(), t.GetCode(), err)
+		logx.L().Warn("tell the lead a task is done", "wish", t.GetWishId(), "task", t.GetCode(), "err", err)
 	}
 }
 

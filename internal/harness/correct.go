@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 
@@ -12,6 +11,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -57,7 +57,7 @@ func (h *Harness) failed(
 	f.TaskIds = unique(append(before, f.GetTaskIds()...))
 	group, err := tasksByID(ctx, h.store, f.GetTaskIds())
 	if err != nil {
-		log.Printf("djinn: integrate %s: %v", codes(held), err)
+		logx.L().Error("read the failed tasks", "loop", "correct", "task", codes(held), "err", err)
 		group = held
 	}
 	var activeGroup []*planv1.Task
@@ -243,7 +243,7 @@ func (h *Harness) settleCorrected(ctx context.Context, batch []*planv1.Task, in 
 		}
 		group, err := tasksByID(ctx, h.store, c.GetCorrection().GetFailure().GetTaskIds())
 		if err != nil {
-			log.Printf("djinn: integrate %s: %v", c.GetCode(), err)
+			logx.L().Error("read the corrected tasks", "loop", "correct", "task", c.GetCode(), "err", err)
 			continue
 		}
 		group = slices.DeleteFunc(group, func(t *planv1.Task) bool {
@@ -331,9 +331,12 @@ func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 					}
 				}
 			}
-			_ = h.store.Tx(ctx, func(tx *store.Tx) error {
+			err = h.store.Tx(ctx, func(tx *store.Tx) error {
 				return h.clearCorrectionLinks(ctx, tx, c.GetWishId(), c.GetId())
 			})
+			if err != nil {
+				logx.L().Error("clear the correction links", "loop", "correct", "task", c.GetCode(), "wish", c.GetWishId(), "err", err)
+			}
 			continue
 		}
 		if c.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
@@ -370,7 +373,7 @@ func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 		}
 		wish, project, settings, err := h.integrationOf(ctx, c)
 		if err != nil {
-			log.Printf("djinn: integrate %s: %v", c.GetCode(), err)
+			logx.L().Error("read the integration", "loop", "correct", "task", c.GetCode(), "wish", c.GetWishId(), "err", err)
 			continue
 		}
 		worker := "correction"
@@ -410,7 +413,7 @@ func (h *Harness) integrationOf(ctx context.Context, t *planv1.Task) (*planv1.Wi
 func (h *Harness) answerIntegration(ctx context.Context, q *planv1.Question) (string, bool) {
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": q.GetWishId()})
 	if err != nil {
-		log.Printf("djinn: question %s: %v", q.GetCode(), err)
+		logx.L().Error("read the tasks", "loop", "correct", "question", q.GetCode(), "wish", q.GetWishId(), "err", err)
 		return "", false
 	}
 	group := slices.DeleteFunc(tasks, func(t *planv1.Task) bool { return t.GetIntegration().GetQuestionId() != q.GetId() })
@@ -423,7 +426,8 @@ func (h *Harness) answerIntegration(ctx context.Context, q *planv1.Question) (st
 	case planv1.Choice_CHOICE_A:
 		wish, project, settings, err := h.integrationOf(ctx, group[0])
 		if err != nil {
-			log.Printf("djinn: question %s: %v", q.GetCode(), err)
+			logx.L().Error("read the integration", "loop", "correct", "question", q.GetCode(), "wish", q.GetWishId(),
+				"task", group[0].GetCode(), "err", err)
 			return "Djinn could not try again: " + err.Error(), true
 		}
 		settings.CorrectionAttempts = max(settings.CorrectionAttempts, 1) // Asked for, even where none starts by itself.

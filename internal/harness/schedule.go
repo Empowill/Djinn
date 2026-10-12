@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"path"
 	"path/filepath"
@@ -153,6 +152,7 @@ func (h *Harness) Schedule() {
 }
 
 func (h *Harness) loop() {
+	defer logx.Crash("schedule")
 	defer close(h.loopDone)
 	tick := time.NewTicker(h.tick)
 	defer tick.Stop()
@@ -241,7 +241,7 @@ func (h *Harness) schedule(ctx context.Context) {
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
 		if ctx.Err() == nil {
-			log.Printf("djinn: schedule: %v", err)
+			logx.L().Error("schedule failed", "loop", "schedule", "err", err)
 		}
 		return
 	}
@@ -256,7 +256,7 @@ func (h *Harness) schedule(ctx context.Context) {
 	s, err := h.situation(ctx, tasks)
 	if err != nil {
 		if ctx.Err() == nil {
-			log.Printf("djinn: schedule: %v", err)
+			logx.L().Error("schedule failed", "loop", "schedule", "err", err)
 		}
 		return
 	}
@@ -274,7 +274,7 @@ func (h *Harness) schedule(ctx context.Context) {
 			if isMemoryShort(d.Why) {
 				if code, err := h.interruptPausedForMemory(ctx, t); err == nil && code != "" {
 					if err := h.launchPlannedWithPreemption(ctx, t, code); err != nil {
-						log.Printf("djinn: task %s: %v", t.GetCode(), err)
+						logx.L().Error("start a planned task", "loop", "schedule", "task", t.GetCode(), "err", err)
 					}
 					continue
 				}
@@ -282,7 +282,7 @@ func (h *Harness) schedule(ctx context.Context) {
 			if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && isMemoryShort(d.Why) {
 				if code, err := h.preemptForMemory(ctx, t); err == nil && code != "" {
 					if err := h.launchPlannedWithPreemption(ctx, t, code); err != nil {
-						log.Printf("djinn: task %s: %v", t.GetCode(), err)
+						logx.L().Error("start a planned task", "loop", "schedule", "task", t.GetCode(), "err", err)
 					}
 					continue
 				}
@@ -296,7 +296,7 @@ func (h *Harness) schedule(ctx context.Context) {
 				}
 			}
 			if err := h.launchPlannedWithPreemption(ctx, t, preemptedCode); err != nil {
-				log.Printf("djinn: task %s: %v", t.GetCode(), err)
+				logx.L().Error("start a planned task", "loop", "schedule", "task", t.GetCode(), "err", err)
 			}
 		}
 	}
@@ -490,7 +490,7 @@ func (h *Harness) writeAlone(ctx context.Context, actor, method string, req prot
 		return tx.Put(te)
 	})
 	if err != nil {
-		log.Printf("djinn: task %s: record an event: %v", id, err)
+		logx.L().Error("record an event", "task", id, "err", err)
 	}
 	h.notify()
 }

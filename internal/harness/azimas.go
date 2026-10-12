@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -189,7 +188,7 @@ func (h *Harness) ungroupOrphans(ctx context.Context, tasks []*planv1.Task) erro
 		}
 		t.PartOf = ""
 		text := "part of no azima: its azima " + short8(id) + " is no longer one of the wish's"
-		log.Printf("djinn: task %s: %s", t.GetCode(), text)
+		logx.L().Info("task ungrouped: its azima is no longer one of the wish's", "task", t.GetCode(), "azima", short8(id))
 		err := h.store.Tx(ctx, func(tx *store.Tx) error {
 			if err := tx.Journal(actorHarness, methodUngroup, t); err != nil {
 				return err
@@ -724,8 +723,10 @@ func (h *Harness) Open(ctx context.Context, procedure string, req *planv1.TaskSe
 	}
 	h.notify()
 	h.wake()
-	_ = h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_REQUEST, task.GetWishId(), task.GetCode(),
-		fmt.Sprintf("Djinn: azima %s opened: plan its tasks", task.GetCode()))
+	if err := h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_REQUEST, task.GetWishId(), task.GetCode(),
+		fmt.Sprintf("Djinn: azima %s opened: plan its tasks", task.GetCode())); err != nil && !errors.Is(err, plan.ErrNoLead) {
+		logx.L().Warn("tell the lead", "wish", task.GetWishId(), "task", task.GetCode(), "err", err)
+	}
 	return task, nil
 }
 

@@ -3,7 +3,6 @@ package harness
 import (
 	"cmp"
 	"context"
-	"log"
 	"math"
 	"slices"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -134,7 +134,7 @@ func (h *Harness) measure(r *run, m *meter) {
 		return tx.Put(t)
 	})
 	if err != nil {
-		log.Printf("djinn: task %s: record what its worker uses: %v", r.id, err)
+		logx.L().Error("record what a worker uses", "task", r.id, "err", err)
 		return
 	}
 	m.written, m.turns = res, t.GetTurns()

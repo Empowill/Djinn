@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,6 +16,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/fsx"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -85,7 +85,7 @@ func (s *Shortcuts) Use(r Registrar) {
 	s.registrar = r
 	chord, err := s.load()
 	if err != nil {
-		log.Printf("djinn: global shortcut: %v", err)
+		logx.L().Warn("load the global shortcut", "err", err)
 	}
 	s.take(chord)
 }
@@ -115,7 +115,7 @@ func (s *Shortcuts) Set(chord string) (*uiv1.Shortcut, error) {
 	defer s.mu.Unlock()
 	settings, err := s.read()
 	if err != nil {
-		log.Printf("djinn: %v; written again", err)
+		logx.L().Warn("settings unreadable: written again", "path", filepath.Join(s.Home, settingsFile), "err", err)
 		settings = &uiv1.Settings{}
 	}
 	settings.Shortcut = &chord
@@ -177,7 +177,7 @@ func (s *Shortcuts) take(chord string) {
 	}
 	if err := s.registrar.Register(chord, s.pressed); err != nil {
 		s.problem = err.Error()
-		log.Printf("djinn: global shortcut %s: %v", chord, err)
+		logx.L().Warn("take the global shortcut", "chord", chord, "err", err)
 		return
 	}
 	s.taken = chord
@@ -190,7 +190,7 @@ func (s *Shortcuts) release() {
 	}
 	if s.registrar != nil {
 		if err := s.registrar.Unregister(s.taken); err != nil {
-			log.Printf("djinn: global shortcut %s: %v", s.taken, err)
+			logx.L().Warn("give back the global shortcut", "chord", s.taken, "err", err)
 		}
 	}
 	s.taken = ""
@@ -203,7 +203,7 @@ func (s *Shortcuts) pressed() {
 	}
 	target, err := Summoned(context.Background(), s.Store)
 	if err != nil {
-		log.Printf("djinn: global shortcut: %v", err)
+		logx.L().Error("find what the global shortcut shows", "err", err)
 	}
 	s.Show(target)
 }

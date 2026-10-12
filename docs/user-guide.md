@@ -537,15 +537,22 @@ Djinn logs what it does in `logs/` of its data folder (`~/.config/djinn/logs` on
 `~/Library/Application Support/djinn/logs` on macOS, `%AppData%\djinn\logs` on Windows):
 
 - `djinn.log`: one line per event, with its level: each call to the server (its method, how long it took, its error;
-  over a second, a warning), each command Djinn runs (git, gh, glab, the projects' checks: the program and its
-  arguments, its folder, how long it took, its exit code, and whether it was killed at its deadline), each worker
+  over a second, a warning; an internal error, an error with its whole message), each command Djinn runs (git, gh,
+  glab, the projects' checks: the program and its arguments, its folder, how long it took, its exit code, and whether
+  it was killed at its deadline; one that succeeds within a second only at debug), each error of Djinn's loops (the
+  scheduler, the integration, the pushes, the watchers: which one, which task or wish), each panic with its stack, each worker
   started and ended, the Lamplighter's acts, waits for the database or a lock over a second, a restart asked, and
   each step of a stop. It never holds a prompt, a message you wrote, or a secret. It rolls over at 10 MB and keeps
   4 older files (`djinn.log.1`, the most recent, to `djinn.log.4`): 50 MB at most, on every system. `DJINN_LOG=debug`
   adds the scheduler's and the integration's passes and the window's streams; `warn` keeps only what went wrong.
 - `console.log`: what a Djinn started in the background prints (the window's toolkit, a crash), rolled over at a start
   past 10 MB.
+- `crash.txt`: what Djinn died of, written by Go itself when a panic or a fatal error ends it; empty while Djinn
+  runs. The next start renames it `crash-<time>.txt`, logs it in `djinn.log`, and keeps the last 5.
 - `goroutines-<time>.txt`: where each part of Djinn waits, written on demand; the last 5 are kept.
+
+A panic in a call to the server, or in the window, is logged with its stack and Djinn goes on (the call fails with an
+internal error). Elsewhere, Djinn logs it with its stack and that it stops, then exits; the crash file says the rest.
 
 When Djinn freezes, or does not quit, do not kill it first: run `djinn debug dump`. Djinn writes where each of its
 parts waits to a new `goroutines-<time>.txt` and the command prints its path. It asks Djinn's server; a server that
@@ -563,7 +570,8 @@ same, the next start stops it before it resumes any task (its start time tells i
 same number: Djinn never touches a process it did not start), and the restart line tells the lead: "2 orphans
 stopped: W488's watcher ×2".
 
-To report it, send `logs/djinn.log` and the latest `goroutines-*.txt` (and `console.log` if Djinn crashed). They
+To report it, send `logs/djinn.log` and the latest `goroutines-*.txt` (and the latest `crash-*.txt` and `console.log`
+if Djinn crashed). They
 name your projects' folders and branches and your tasks' codes; nothing else of yours.
 
 ## More

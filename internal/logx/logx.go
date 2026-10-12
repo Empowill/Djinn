@@ -51,7 +51,8 @@ func Use(l *slog.Logger) (restore func()) {
 }
 
 // Start opens the log of the data folder home, rolled over at MaxSize, at the level DJINN_LOG names, and makes it the
-// log, and the log package's, until stop.
+// log, and the log package's, until stop. A panic or a fatal error that ends the process lands in CrashFile beside it;
+// the one the last djinn up left is kept under its time, and logged.
 func Start(home string) (stop func() error, err error) {
 	level, err := ParseLevel(os.Getenv(Level))
 	if err != nil {
@@ -69,7 +70,13 @@ func Start(home string) (stop func() error, err error) {
 	// What Djinn still writes with the log package goes to the same file, at info.
 	before, out, flags := slog.Default(), log.Writer(), log.Flags()
 	slog.SetDefault(l)
+	stopCrash, err := crashOutput(Folder(home))
+	if err != nil {
+		l.Warn("no crash file: a crash goes to the standard error only", "err", err)
+		stopCrash = func() {}
+	}
 	return func() error {
+		stopCrash()
 		slog.SetDefault(before)
 		log.SetOutput(out)
 		log.SetFlags(flags)

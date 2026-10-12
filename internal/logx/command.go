@@ -19,31 +19,47 @@ const argMax = 80
 const argsMax = 16
 
 // Ran logs cmd once it has run since start, with the error it returned: its program and arguments (Args), its folder,
-// how long it took, its exit code, and whether its context killed it at a deadline. Each one logs at info, at warn past
-// Slow or killed at its deadline. ctx is the context cmd ran under, or nil; err is what running it returned, or nil
-// when only its exit code is known.
+// how long it took, its exit code, and whether its context killed it at a deadline (W511). A command that succeeds in
+// less than Slow logs at debug; one that exits non-zero logs at info; one past Slow or killed at its deadline, at warn;
+// one that could not run or died of something else than its exit code or its context, at error (Q243). ctx is the
+// context cmd ran under, or nil; err is what running it returned, or nil when only its exit code is known.
 func Ran(ctx context.Context, cmd *exec.Cmd, start time.Time, err error) {
 	took := time.Since(start)
-	level := slog.LevelInfo
+	level := slog.LevelDebug
 	args := []any{"argv", Argv(cmd.Args), "dir", cmd.Dir, "took", took.Round(time.Millisecond)}
 	exit := 0
-	if cmd.ProcessState != nil {
+	switch {
+	case cmd.ProcessState != nil:
 		exit = cmd.ProcessState.ExitCode()
-	} else if err != nil {
+	case err != nil:
 		exit = -1
 	}
 	args = append(args, "exit", exit)
-	if err != nil {
-		var exitErr *exec.ExitError
-		if !errors.As(err, &exitErr) {
-			args = append(args, "err", err)
+	var exitErr *exec.ExitError
+	stopped := ctx != nil && ctx.Err() != nil
+	switch {
+	case cmd.ProcessState == nil && err == nil:
+		// Never started, or not waited for: nothing to tell of how it ran.
+		level = slog.LevelInfo
+		args = append(args, "started", false)
+	case err != nil && !errors.As(err, &exitErr):
+		// It could not start, or its output could not be read: unexpected, unless its context stopped it.
+		args = append(args, "err", err)
+		level = slog.LevelError
+		if stopped {
+			level = slog.LevelInfo
 		}
+	case exit < 0 && !stopped:
+		// Killed by a signal that no context of Djinn sent.
+		level = slog.LevelError
+	case exit != 0:
+		level = slog.LevelInfo
 	}
-	if took > Slow {
+	if took > Slow && level < slog.LevelWarn {
 		level = slog.LevelWarn
 	}
 	if ctx != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		level = slog.LevelWarn
+		level = max(level, slog.LevelWarn)
 		args = append(args, "timeout", true)
 	}
 	L().Log(context.Background(), level, "command", args...)

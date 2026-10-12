@@ -169,28 +169,49 @@ func TestArgvHidesMessagesAndUsers(t *testing.T) {
 	}
 }
 
-// TestRanLogsACommand: a command logs its argv, folder, exit code; one killed at its deadline logs at warn.
+// TestRanLogsACommand: a command logs its argv, folder, exit code: at debug when it succeeds at once, at info when it
+// exits non-zero, at warn when slow or killed at its deadline, at error when it cannot run (Q243).
 func TestRanLogsACommand(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
 	b := capture(t)
+	line := func() string {
+		t.Helper()
+		lines := strings.Split(strings.TrimSpace(b.String()), "\n")
+		return lines[len(lines)-1]
+	}
 	cmd := exec.Command(exe, "-test.run=^$")
 	cmd.Dir = t.TempDir()
-	start := time.Now()
-	Ran(context.Background(), cmd, start, cmd.Run())
-	if s := b.String(); !strings.Contains(s, "level=INFO msg=command argv=\""+filepath.Base(exe)+" -test.run=^$\"") ||
+	Ran(context.Background(), cmd, time.Now(), cmd.Run())
+	if s := line(); !strings.Contains(s, "level=DEBUG msg=command argv=\""+filepath.Base(exe)+" -test.run=^$\"") ||
 		!strings.Contains(s, "exit=0") {
-		t.Errorf("log:\n%s", s)
+		t.Errorf("fast success: %s", s)
+	}
+	cmd = exec.Command(exe, "-test.run=^$")
+	Ran(context.Background(), cmd, time.Now().Add(-2*Slow), cmd.Run())
+	if s := line(); !strings.Contains(s, "level=WARN msg=command") || !strings.Contains(s, "took=2") {
+		t.Errorf("slow success: %s", s)
+	}
+	cmd = exec.Command(exe, "-test.run=^$", "-test.count=x")
+	Ran(context.Background(), cmd, time.Now(), cmd.Run())
+	if s := line(); !strings.Contains(s, "level=INFO msg=command") || !strings.Contains(s, "exit=2") {
+		t.Errorf("failure: %s", s)
+	}
+	cmd = exec.Command(filepath.Join(t.TempDir(), "missing"))
+	Ran(context.Background(), cmd, time.Now(), cmd.Run())
+	if s := line(); !strings.Contains(s, "level=ERROR msg=command") || !strings.Contains(s, "exit=-1") ||
+		!strings.Contains(s, "err=") {
+		t.Errorf("not run: %s", s)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
 	defer cancel()
 	<-ctx.Done()
 	cmd = exec.CommandContext(ctx, exe, "-test.run=^$")
 	Ran(ctx, cmd, time.Now(), cmd.Run())
-	if s := b.String(); !strings.Contains(s, "level=WARN msg=command") || !strings.Contains(s, "timeout=true") {
-		t.Errorf("log:\n%s", s)
+	if s := line(); !strings.Contains(s, "level=WARN msg=command") || !strings.Contains(s, "timeout=true") {
+		t.Errorf("deadline: %s", s)
 	}
 }
 

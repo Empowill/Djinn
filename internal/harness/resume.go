@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
@@ -106,7 +107,9 @@ func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) (r
 				Text: fmt.Sprintf("resuming: %s (%d of 2); Djinn starts it again by itself", byEnvReplay, t.GetEnvReplays()),
 			}
 			h.writeAlone(ctx, actorHarness, methodResume, t, t.GetId(), t, ev)
-			_ = h.unblockDependencyFailed(ctx, t.GetCode())
+			if err := h.unblockDependencyFailed(ctx, t.GetCode()); err != nil {
+				logx.L().Error("unblock the tasks a dependency failed", "task", t.GetCode(), "err", err)
+			}
 			continue
 		}
 		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
@@ -507,7 +510,9 @@ func (h *Harness) replayEnvFailures(ctx context.Context, provider planv1.Provide
 				Text: fmt.Sprintf("resuming: %s (%d of 2); Djinn starts it again by itself", byEnvReplay, t.GetEnvReplays()),
 			}
 			h.writeAlone(ctx, actorHarness, methodResume, t, t.GetId(), t, ev)
-			_ = h.unblockDependencyFailed(ctx, t.GetCode())
+			if err := h.unblockDependencyFailed(ctx, t.GetCode()); err != nil {
+				logx.L().Error("unblock the tasks a dependency failed", "task", t.GetCode(), "err", err)
+			}
 		}
 	}
 	h.wake()

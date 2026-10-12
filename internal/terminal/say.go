@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // Djinn types a line into a terminal for the person: the lead of a wish learns so that the person answered one of
@@ -137,6 +139,7 @@ func (t *Terminal) queue(text string) (waiting bool, err error) {
 
 // speak types the lines as they come, until the program ends; then it closes hushed.
 func (t *Terminal) speak(lines <-chan string, hushed chan<- struct{}) {
+	defer logx.Crash("terminal say", "terminal", t.Name)
 	defer close(hushed)
 	for {
 		select {

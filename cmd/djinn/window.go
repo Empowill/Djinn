@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
 	"net/http"
 	"runtime"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 
 	"github.com/empowill/djinn"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/ui"
 )
 
@@ -43,12 +43,23 @@ func openWindow(
 		Name: "Djinn",
 		Icon: appIcon(),
 		// Wails reports here what goes wrong outside a call, such as a global shortcut that the portal of a Wayland
-		// desktop refuses, or cannot take, after it was asked.
+		// desktop refuses, or cannot take, after it was asked; a fatal error, after which Wails exits.
 		ErrorHandler: func(err error) {
-			log.Printf("djinn: window: %v", err)
+			var fatal *application.FatalError
+			if errors.As(err, &fatal) {
+				logx.L().Error("window: fatal error, djinn up stops", "err", err)
+			} else {
+				logx.L().Warn("window", "err", err)
+			}
 			if shortcutRefusal(err) {
 				shortcuts.Refused(err)
 			}
+		},
+		WarningHandler: func(msg string) { logx.L().Warn("window", "warning", msg) },
+		// A panic in a callback of the window (an event, a menu, a call on the main thread) is recovered by Wails: it
+		// is logged with its stack, and the window goes on, where Wails would exit.
+		PanicHandler: func(p *application.PanicDetails) {
+			logx.L().Error("panic recovered", "in", "window", "panic", p.Error, "stack", p.FullStackTrace)
 		},
 		// The window never closes, it only goes out of sight: these keep the app running whatever happens to it.
 		Mac:     application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: false},
@@ -107,7 +118,10 @@ func openWindow(
 	defer shortcuts.Use(nil)
 	app.Event.OnApplicationEvent(events.Common.ApplicationLaunchedWithUrl, func(e *application.ApplicationEvent) {
 		if raw := e.Context().URL(); raw != "" {
-			go links(raw)
+			go func() {
+				defer logx.Crash("window: open a link")
+				links(raw)
+			}()
 		}
 	})
 	if runtime.GOOS == "darwin" {
@@ -128,6 +142,7 @@ func openWindow(
 	}
 
 	go func() {
+		defer logx.Crash("window: raise")
 		for {
 			select {
 			case <-ctx.Done():
@@ -198,7 +213,7 @@ type noticeService struct {
 
 func (n *noticeService) ServiceStartup(ctx context.Context, opts application.ServiceOptions) error {
 	if err := n.svc.ServiceStartup(ctx, opts); err != nil {
-		log.Printf("djinn: no system notifications: %v", err)
+		logx.L().Warn("no system notifications", "err", err)
 		return nil
 	}
 	n.mu.Lock()
@@ -206,7 +221,7 @@ func (n *noticeService) ServiceStartup(ctx context.Context, opts application.Ser
 	n.mu.Unlock()
 	n.svc.OnNotificationResponse(func(res notifications.NotificationResult) {
 		if res.Error != nil {
-			log.Printf("djinn: a notification's response: %v", res.Error)
+			logx.L().Warn("a notification's response", "err", res.Error)
 			return
 		}
 		r := ui.Response{}
@@ -216,13 +231,17 @@ func (n *noticeService) ServiceStartup(ctx context.Context, opts application.Ser
 		if action := res.Response.ActionIdentifier; action != notifications.DefaultActionIdentifier {
 			r.Action = action
 		}
-		go n.notices.Respond(n.ctx, r)
+		go func() {
+			defer logx.Crash("notices: respond", "wish", r.WishID)
+			n.notices.Respond(n.ctx, r)
+		}()
 	})
 	n.notices.Use(wailsNotifier{n})
 	go func() {
+		defer logx.Crash("notices: permission")
 		// Without the user's permission, macOS refuses every notification (UNErrorDomain error 1).
 		if allowed, err := n.svc.RequestNotificationAuthorization(); err != nil || !allowed {
-			log.Printf("djinn: system notifications are not allowed (%v): see Djinn's settings", err)
+			logx.L().Warn("system notifications are not allowed: see Djinn's settings", "err", err)
 		}
 	}()
 	return nil

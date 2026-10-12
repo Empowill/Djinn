@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -654,10 +653,10 @@ func (h *Harness) cleanWarmLeftovers(ctx context.Context) {
 			case strings.HasPrefix(line, "branch refs/heads/"+warmBranchPrefix) && strings.HasPrefix(path+string(filepath.Separator), root):
 				branch := strings.TrimPrefix(line, "branch refs/heads/")
 				if err := removeWorktree(ctx, p.GetDirectory(), path, true); err != nil {
-					log.Printf("djinn: remove leftover warm worktree: %v", err)
+					logx.L().Warn("remove a leftover warm worktree", "project", p.GetId(), "path", path, "err", err)
 				}
 				if _, err := git(ctx, p.GetDirectory(), "branch", "-D", branch); err != nil {
-					log.Printf("djinn: remove leftover warm branch: %v", err)
+					logx.L().Warn("remove a leftover warm branch", "project", p.GetId(), "branch", branch, "err", err)
 				}
 			}
 		}
@@ -1108,7 +1107,7 @@ func (h *Harness) launch(
 		default:
 			if sha, from, err = startPoint(ctx, project.GetDirectory(), r.from); err == nil {
 				if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), task, sha, r.from); depWhy != "" {
-					log.Printf("djinn: task %s: worktree not created: %s", task.GetCode(), depWhy)
+					logx.L().Info("worktree not created: a dependency is not merged", "task", task.GetCode(), "why", depWhy)
 					_ = os.RemoveAll(skillsDir)
 					task.Branch, task.Worktree = "", ""
 					h.forget(r)
@@ -1365,6 +1364,7 @@ func nextNumber(ctx context.Context, r store.Reader, wishID, letter string) (str
 // pump records the worker's events until the task ends for good: a worker stopped to start again, allowed to
 // edit, is followed by the next one.
 func (h *Harness) pump(r *run) {
+	defer logx.Crash("pump", "task", r.id, "wish", r.wish) // It only ever runs as a goroutine.
 	for !h.settle(r, h.drain(r)) {
 	}
 }
@@ -1486,7 +1486,9 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	if !r.envReplayed && (ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL || ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT) {
 		r.envReplayed = true
-		_ = h.replayEnvFailures(context.Background(), r.task.GetProvider())
+		if err := h.replayEnvFailures(context.Background(), r.task.GetProvider()); err != nil {
+			logx.L().Error("start again the tasks failed for their environment", "task", r.id, "err", err)
+		}
 	}
 }
 
@@ -1764,8 +1766,12 @@ func (h *Harness) end(r *run, res Result) {
 		}
 	}
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
-		_ = h.replayEnvFailures(context.Background(), t.GetProvider())
-		_ = h.unblockDependencyFailed(context.Background(), t.GetCode())
+		if err := h.replayEnvFailures(context.Background(), t.GetProvider()); err != nil {
+			logx.L().Error("start again the tasks failed for their environment", "task", t.GetCode(), "err", err)
+		}
+		if err := h.unblockDependencyFailed(context.Background(), t.GetCode()); err != nil {
+			logx.L().Error("unblock the tasks a dependency failed", "task", t.GetCode(), "err", err)
+		}
 	}
 	reason := runReason(t, r)
 	if len(t.Runs) > 0 {
@@ -1905,7 +1911,7 @@ func (h *Harness) write(r *run, actor, method string, task proto.Message, ev Eve
 	}
 	if _, err := h.writeAs(r, actor, method, req, task, ev); err != nil {
 		// The worker goes on: losing one event is better than losing the worker.
-		log.Printf("djinn: task %s: record an event: %v", r.id, err)
+		logx.L().Error("record an event", "task", r.id, "err", err)
 	}
 }
 

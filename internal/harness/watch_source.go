@@ -9,12 +9,12 @@ package harness
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -83,6 +83,7 @@ type sourceRun struct {
 // declares any more. A source whose command ended (not found, or refused) starts again at the next rescan, its error said once.
 // Each pass answers the scans asked before it began.
 func (h *Harness) sources(receive ReceiveFunc, c Watch, rescan time.Duration, kick <-chan struct{}, asked <-chan chan int) {
+	defer logx.Crash("inbox")
 	defer h.wg.Done()
 	c.Items = true
 	running := map[string]*sourceRun{}
@@ -90,7 +91,7 @@ func (h *Harness) sources(receive ReceiveFunc, c Watch, rescan time.Duration, ki
 	say := func(key string, s *plan.Source, err error) {
 		if said[key] != err.Error() {
 			said[key] = err.Error()
-			log.Printf("djinn: the inbox source of the skill %s does not run: %v", s.Skill, err)
+			logx.L().Warn("inbox source does not run", "loop", "inbox", "skill", s.Skill, "err", err)
 		}
 	}
 	tick := time.NewTicker(rescan)
@@ -105,7 +106,7 @@ func (h *Harness) sources(receive ReceiveFunc, c Watch, rescan time.Duration, ki
 	for {
 		want, err := h.readSources()
 		if err != nil {
-			log.Printf("djinn: read the inbox sources: %v", err)
+			logx.L().Error("read the inbox sources", "loop", "inbox", "err", err)
 		}
 		for key, r := range running {
 			select {
@@ -194,17 +195,18 @@ func (h *Harness) startSource(c Watch, s wantedSource, receive ReceiveFunc) (*so
 	}
 	r := &sourceRun{src: s.src, worker: w, done: make(chan struct{})}
 	go func() {
+		defer logx.Crash("inbox", "skill", s.src.Skill)
 		defer close(r.done)
 		for ev := range w.Events() {
 			switch {
 			case ev.Watched != nil && ev.Watched.First != "":
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				if _, err := receive(ctx, s.src, ev.Text); err != nil {
-					log.Printf("djinn: the inbox source of the skill %s: an item was not kept: %v", s.src.Skill, err)
+					logx.L().Error("keep an inbox item", "loop", "inbox", "skill", s.src.Skill, "err", err)
 				}
 				cancel()
 			case ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && ev.Text != "":
-				log.Printf("djinn: the inbox source of the skill %s: %s", s.src.Skill, ev.Text)
+				logx.L().Info("inbox source status", "loop", "inbox", "skill", s.src.Skill, "status", ev.Text)
 			}
 		}
 		r.err = w.Wait().Err
