@@ -174,9 +174,6 @@ test("sidebar collapse glides, keeps focus, and persists", async ({ page }) => {
       0,
     );
     const toggleBox = await toggle.boundingBox();
-    await page.screenshot({
-      path: "test-results/e2e/sidebar-rail-expanded.png",
-    });
 
     await toggle.click();
     await expect(app).toHaveClass(/sidebar-collapsed/);
@@ -194,9 +191,6 @@ test("sidebar collapse glides, keeps focus, and persists", async ({ page }) => {
     expect(await sidebarContent.locator(".new-mission > span").count()).toBe(0);
     await expect(row).toBeVisible();
     await expect(row.locator(".wish-tone")).toBeVisible();
-    await page.screenshot({
-      path: "test-results/e2e/sidebar-rail-collapsed.png",
-    });
 
     await expect
       .poll(() =>
