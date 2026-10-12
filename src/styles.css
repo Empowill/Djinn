@@ -129,6 +129,24 @@ button {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+/* The window: the update banner's row when it shows (update-banner.css), then the app in the rest of the height. */
+.window {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg);
+}
+.window-app {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.window-app > .lead-frame,
+.window-app > .app {
+  flex: 1 1 0;
+  height: auto;
+}
 .app {
   display: flex;
   width: 100vw;

@@ -151,6 +151,12 @@ func IsTestBuild() bool {
 	return false
 }
 
+// StampedTestBuild reports whether the binary was stamped a test build when linked, as task e2e and e2e-native stamp
+// theirs: unlike IsTestBuild, a go test binary is not.
+func StampedTestBuild() bool {
+	return isTestBuild == "true"
+}
+
 // InTest reports whether the current process is running under `go test`, with DJINN_TEST=1, or is a test build.
 func InTest() bool {
 	return testing.Testing() || os.Getenv("DJINN_TEST") == "1" || IsTestBuild()
