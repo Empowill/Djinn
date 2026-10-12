@@ -129,8 +129,13 @@ const ASCII_PALETTE = Array.from(
 const ASCII_OPACITIES = [0.14, 0.28, 0.44, 0.61, 0.77, 0.88, 0.95, 0.95];
 const CAMERA_BOTTOM_CUTOFF_ZOOM10 = 0.158724;
 
+// Every native window's WebKit quantizes a fractional line advance (WKWebView up, WebKitGTK down), so the native
+// window takes the whole-pixel rows of the Mac's layout on every system; the browser keeps fractional rows.
 function usesNativeMacSmokeLayout(): boolean {
-  return document.documentElement.classList.contains("native-mac");
+  return (
+    document.documentElement.classList.contains("native-mac") ||
+    window.location.protocol === "wails:"
+  );
 }
 
 function createAsciiLayers(asciiOutput: HTMLElement) {

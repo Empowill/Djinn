@@ -92,12 +92,35 @@ func TestNativeSmokeGeometry(t *testing.T) {
 		width  int
 		height int
 	}{{1280, 900}, {1280, 1200}, {2560, 1080}} {
+		var before struct {
+			Width  float64 `json:"width"`
+			Height float64 `json:"height"`
+		}
+		if err := d.eval(`return {width: window.innerWidth, height: window.innerHeight};`, &before); err != nil {
+			t.Fatal(err)
+		}
 		if _, err := d.call("window_control", map[string]any{
 			"action": "set_size",
 			"width":  size.width,
 			"height": size.height,
 		}); err != nil {
 			t.Fatal(err)
+		}
+		// set_size returns before the window manager resizes the window (X11 does it asynchronously), and the
+		// manager may clamp the size to the screen: give the window a few seconds to change, if it does.
+		resized := time.Now().Add(5 * time.Second)
+		for time.Now().Before(resized) {
+			var after struct {
+				Width  float64 `json:"width"`
+				Height float64 `json:"height"`
+			}
+			if err := d.eval(`return {width: window.innerWidth, height: window.innerHeight};`, &after); err != nil {
+				t.Fatal(err)
+			}
+			if after != before || (before.Width == float64(size.width) && before.Height == float64(size.height)) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
 		}
 		// Resize commits a new native PRE asynchronously. Wait for the new
 		// committed frame instead of sampling the old frame after set_size.
@@ -202,78 +225,82 @@ func TestNativeSmokeGeometry(t *testing.T) {
 			} `json:"lastNonemptyRange"`
 			StatusbarDisplay string `json:"statusbarDisplay"`
 		}
-		if err := d.eval(`
-			const rect = (element) => {
-				if (!element) return {width: 0, height: 0, bottom: 0};
-				const box = element.getBoundingClientRect();
-				return {width: box.width, height: box.height, bottom: box.bottom};
-			};
-			const surface = document.querySelector(".wish-creation");
-			const smoke = document.querySelector(".wish-smoke");
-			const ascii = document.querySelector(".wish-smoke-ascii");
-			const layers = [...document.querySelectorAll(".wish-smoke-ascii pre")];
-			const pre = layers[0];
-			const text = pre?.textContent ?? "";
-			const lines = text.split("\n");
-			const lineRanges = (element) => {
-				if (!element) return [];
-				const range = document.createRange();
-				range.selectNodeContents(element);
-				const boxes = [...range.getClientRects()].filter((box) => box.height).map((box) => ({top: box.top, bottom: box.bottom, height: box.height}));
-				range.detach();
-				const rows = [];
-				for (const box of boxes) {
-					const row = rows[rows.length - 1];
-					if (row && Math.abs(row.top - box.top) < 0.5) row.bottom = Math.max(row.bottom, box.bottom);
-					else rows.push({...box});
-				}
-				return rows;
-			};
-			const fullRows = lineRanges(pre);
-			const lastRow = fullRows[fullRows.length - 1] || {top: 0, bottom: 0, height: 0};
-			let lastNonemptyLayer = -1;
-			let lastNonemptyRow = -1;
-			for (let layerIndex = 0; layerIndex < layers.length; layerIndex++) {
-				const layerLines = (layers[layerIndex].textContent || "").split("\n");
-				for (let rowIndex = 0; rowIndex < layerLines.length; rowIndex++) {
-					if (
-						/\S/.test(layerLines[rowIndex]) &&
-						rowIndex >= lastNonemptyRow
-					) {
-						lastNonemptyLayer = layerIndex;
-						lastNonemptyRow = rowIndex;
+		// The rows may still be committing: measure until the window and its committed rows agree.
+		eventually(t, 15*time.Second, func() error {
+			if err := d.eval(`
+				const rect = (element) => {
+					if (!element) return {width: 0, height: 0, bottom: 0};
+					const box = element.getBoundingClientRect();
+					return {width: box.width, height: box.height, bottom: box.bottom};
+				};
+				const surface = document.querySelector(".wish-creation");
+				const smoke = document.querySelector(".wish-smoke");
+				const ascii = document.querySelector(".wish-smoke-ascii");
+				const layers = [...document.querySelectorAll(".wish-smoke-ascii pre")];
+				const pre = layers[0];
+				const text = pre?.textContent ?? "";
+				const lines = text.split("\n");
+				const lineRanges = (element) => {
+					if (!element) return [];
+					const range = document.createRange();
+					range.selectNodeContents(element);
+					const boxes = [...range.getClientRects()].filter((box) => box.height).map((box) => ({top: box.top, bottom: box.bottom, height: box.height}));
+					range.detach();
+					const rows = [];
+					for (const box of boxes) {
+						const row = rows[rows.length - 1];
+						if (row && Math.abs(row.top - box.top) < 0.5) row.bottom = Math.max(row.bottom, box.bottom);
+						else rows.push({...box});
+					}
+					return rows;
+				};
+				const fullRows = lineRanges(pre);
+				const lastRow = fullRows[fullRows.length - 1] || {top: 0, bottom: 0, height: 0};
+				let lastNonemptyLayer = -1;
+				let lastNonemptyRow = -1;
+				for (let layerIndex = 0; layerIndex < layers.length; layerIndex++) {
+					const layerLines = (layers[layerIndex].textContent || "").split("\n");
+					for (let rowIndex = 0; rowIndex < layerLines.length; rowIndex++) {
+						if (
+							/\S/.test(layerLines[rowIndex]) &&
+							rowIndex >= lastNonemptyRow
+						) {
+							lastNonemptyLayer = layerIndex;
+							lastNonemptyRow = rowIndex;
+						}
 					}
 				}
+				const nonemptyRows = lineRanges(layers[lastNonemptyLayer]);
+				const lastNonemptyRange = nonemptyRows[lastNonemptyRow] || nonemptyRows[nonemptyRows.length - 1] || {top: 0, bottom: 0, height: 0};
+				const style = pre ? getComputedStyle(pre) : null;
+				return {
+					window: {width: window.innerWidth, height: window.innerHeight},
+					surface: rect(surface), smoke: rect(smoke), ascii: rect(ascii), pre: rect(pre),
+					fontSize: style ? parseFloat(style.fontSize) : 0,
+					lineHeight: style ? parseFloat(style.lineHeight) : 0,
+					lineCount: lines.length, textLength: text.length,
+					nonWhitespace: (text.match(/\S/g) ?? []).length,
+					rangeRectCount: fullRows.length, fullRangeRowCount: fullRows.length,
+					lastRow, lastNonemptyLayer, lastNonemptyRow, lastNonemptyRange,
+					statusbarDisplay: getComputedStyle(document.querySelector(".app-statusbar") ?? document.body).display,
+				};`, &metrics); err != nil {
+				return err
 			}
-			const nonemptyRows = lineRanges(layers[lastNonemptyLayer]);
-			const lastNonemptyRange = nonemptyRows[lastNonemptyRow] || nonemptyRows[nonemptyRows.length - 1] || {top: 0, bottom: 0, height: 0};
-			const style = pre ? getComputedStyle(pre) : null;
-			return {
-				window: {width: window.innerWidth, height: window.innerHeight},
-				surface: rect(surface), smoke: rect(smoke), ascii: rect(ascii), pre: rect(pre),
-				fontSize: style ? parseFloat(style.fontSize) : 0,
-				lineHeight: style ? parseFloat(style.lineHeight) : 0,
-				lineCount: lines.length, textLength: text.length,
-				nonWhitespace: (text.match(/\S/g) ?? []).length,
-				rangeRectCount: fullRows.length, fullRangeRowCount: fullRows.length,
-				lastRow, lastNonemptyLayer, lastNonemptyRow, lastNonemptyRange,
-				statusbarDisplay: getComputedStyle(document.querySelector(".app-statusbar") ?? document.body).display,
-			};`, &metrics); err != nil {
-			t.Fatal(err)
-		}
-		logicalGap := metrics.Pre.Bottom - metrics.LastRow.Bottom
-		t.Logf("native smoke geometry window=%gx%g surface=%gx%g smoke=%gx%g bottom=%g ascii=%gx%g bottom=%g pre=%gx%g bottom=%g font=%g line=%g lines=%d chars=%d nonspace=%d rangeRects=%d lastRow=%+v logicalGap=%g lastNonempty=layer%d/row%d range=%+v nonemptyGap=%g statusbar=%s",
-			metrics.Window.Width, metrics.Window.Height,
-			metrics.Surface.Width, metrics.Surface.Height,
-			metrics.Smoke.Width, metrics.Smoke.Height, metrics.Smoke.Bottom,
-			metrics.ASCII.Width, metrics.ASCII.Height, metrics.ASCII.Bottom,
-			metrics.Pre.Width, metrics.Pre.Height, metrics.Pre.Bottom,
-			metrics.FontSize, metrics.LineHeight, metrics.LineCount, metrics.TextLength,
-			metrics.NonWhitespace, metrics.RangeRectCount, metrics.LastRow, logicalGap,
-			metrics.LastNonemptyLayer, metrics.LastNonemptyRow, metrics.LastNonemptyRange,
-			metrics.Pre.Bottom-metrics.LastNonemptyRange.Bottom, metrics.StatusbarDisplay)
-		if metrics.LastRow.Height <= 0 || logicalGap < -1 || logicalGap > metrics.LineHeight+1 {
-			t.Errorf("native smoke last logical row leaves a bottom gap: preBottom=%g lastRowBottom=%g lineHeight=%g row=%+v", metrics.Pre.Bottom, metrics.LastRow.Bottom, metrics.LineHeight, metrics.LastRow)
-		}
+			logicalGap := metrics.Pre.Bottom - metrics.LastRow.Bottom
+			if metrics.LastRow.Height <= 0 || logicalGap < -1 || logicalGap > metrics.LineHeight+1 {
+				return fmt.Errorf("native smoke last logical row leaves a bottom gap: preBottom=%g lastRowBottom=%g lineHeight=%g row=%+v", metrics.Pre.Bottom, metrics.LastRow.Bottom, metrics.LineHeight, metrics.LastRow)
+			}
+			t.Logf("native smoke geometry window=%gx%g surface=%gx%g smoke=%gx%g bottom=%g ascii=%gx%g bottom=%g pre=%gx%g bottom=%g font=%g line=%g lines=%d chars=%d nonspace=%d rangeRects=%d lastRow=%+v logicalGap=%g lastNonempty=layer%d/row%d range=%+v nonemptyGap=%g statusbar=%s",
+				metrics.Window.Width, metrics.Window.Height,
+				metrics.Surface.Width, metrics.Surface.Height,
+				metrics.Smoke.Width, metrics.Smoke.Height, metrics.Smoke.Bottom,
+				metrics.ASCII.Width, metrics.ASCII.Height, metrics.ASCII.Bottom,
+				metrics.Pre.Width, metrics.Pre.Height, metrics.Pre.Bottom,
+				metrics.FontSize, metrics.LineHeight, metrics.LineCount, metrics.TextLength,
+				metrics.NonWhitespace, metrics.RangeRectCount, metrics.LastRow, logicalGap,
+				metrics.LastNonemptyLayer, metrics.LastNonemptyRow, metrics.LastNonemptyRange,
+				metrics.Pre.Bottom-metrics.LastNonemptyRange.Bottom, metrics.StatusbarDisplay)
+			return nil
+		})
 	}
 }
