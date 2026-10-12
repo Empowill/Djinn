@@ -107,6 +107,31 @@ func TestFillQuotes(t *testing.T) {
 	}
 }
 
+// TestTemplateBuilds: a command is the template's when Fill could make it, each placeholder one word as Fill quotes
+// it; not one that merely starts like it, adds a word, or splits a value in two.
+func TestTemplateBuilds(t *testing.T) {
+	tmpl, err := parseTemplate("s", "", templateYAML{Title: "Watch {what}", Match: `watch (?P<what>.+)`, Watch: "w --on {what} -watch"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, request := range []string{"watch acme/lamp!12", "watch it's; rm -rf ~", "watch $(touch x) `x` y"} {
+		if _, watch, _ := tmpl.Fill(request); !tmpl.Builds(watch) || !tmpl.Builds(" "+watch+" ") {
+			t.Errorf("%q, filled from %q, is not the template's", watch, request)
+		}
+	}
+	for _, command := range []string{
+		"w --on 12 -watch; rm -rf ~", "w --on 12 -watch --more", "w --on 12 13 -watch", "w --on $HOME -watch",
+		`w --on "a b" -watch`, "w --on 12", "w --on 'a'b' -watch",
+	} {
+		if tmpl.Builds(command) {
+			t.Errorf("%q is taken for the template's", command)
+		}
+	}
+	if (&Template{}).Builds("") {
+		t.Error("a template without a watcher builds a command")
+	}
+}
+
 func TestDoneLine(t *testing.T) {
 	tmpl := &planv1.WishTemplate{DoneWhen: "MERGED"}
 	for text, want := range map[string]string{

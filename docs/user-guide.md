@@ -424,7 +424,10 @@ stop).
 
 A *watcher* is a task that runs a command, with no agent and no model: a pipeline, a merge request, a queue. Each
 new paragraph it prints wakes the lead. Its card shows the first line of its last paragraph; **Pause the worker**
-holds it, **Resume the worker** lets it go on. The project must allow the command.
+holds it, **Resume the worker** lets it go on. Its command runs when the project lists it in
+`.agents/permissions.txtpb`, when a skill of the project declares it (a template's or a babysit's watcher, as Djinn
+builds it), or when you allow it for yourself in the project's panel ("Watcher commands you allow") or with `djinn
+project allow <project> --watch '<command>'`: [what a watcher may run](wish-templates.md#what-a-watcher-may-run).
 
 A *wish template* turns a request that comes back (babysit a pull request, a QA run) into a wish that already knows
 how to work: a skill declares it in its `SKILL.md`. When a routed request matches it, the new wish starts its watcher

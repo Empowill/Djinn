@@ -37,9 +37,10 @@ const (
 )
 
 // Watch runs a command instead of an agent: the task's prompt is its command line. It runs without a shell, in the
-// worker's folder, under the worker's environment and prefix; quotes group words, as in a shell. Where the project
-// lists the commands its workers may run (.agents/permissions.txtpb), the command must be one of them, and not
-// denied: a watcher has no reviewer. It cannot run read-only.
+// worker's folder, under the worker's environment and prefix; quotes group words, as in a shell. Where the worker's
+// permissions list the commands it may run, the command must be one of them, and not denied: a watcher has no
+// reviewer. The harness adds the command a skill of the project declares, or the developer allows (watch_allow.go).
+// It cannot run read-only.
 type Watch struct {
 	// Quiet is how long the command stays silent before what it printed makes a paragraph; 0 for WatchQuiet.
 	Quiet time.Duration

@@ -53,9 +53,36 @@ metadata:
 `djinn skill list` shows each skill's template, or why it cannot be used: no title or match, a match that does not
 compile, a placeholder that is no group of the match, a `done_when` or a `restart` without `watch`.
 
-The watcher's command must be allowed where the project lists its commands (`.agents/permissions.txtpb`): a watcher
-has no reviewer. Djinn's own repository lists `sh .agents/skills/babysit-pr/watch.sh` and
-`sh .agents/skills/babysit-mr/watch.sh`.
+### What a watcher may run
+
+A watcher has no reviewer. Where its permissions list commands (the project's `.agents/permissions.txtpb`, or a wish's
+allowance, which lists none without that file), its command runs when it is one of three:
+
+1. **Listed** by `.agents/permissions.txtpb` (`commands`, a start of the command on a word boundary). Djinn's own
+   repository lists `sh .agents/skills/babysit-pr/watch.sh` and `sh .agents/skills/babysit-mr/watch.sh`.
+2. **Declared** by a skill of the project itself: the repository says it, so it runs, with a permissions file or
+   without. Strictly the command Djinn builds from the declaration: the watcher of a wish made from the skill's
+   template (`metadata.djinn.wish`), on the command the wish holds, each placeholder one word as Djinn fills it; or
+   the babysit watcher Djinn starts on a request (`metadata.djinn.babysit`, by itself or with `djinn task spawn
+   --babysit`), `{pr}` or `{mr}` the request's number and `{state}` its own file. A summoned skill's does not count,
+   nor a command typed by hand (`--provider watch --prompt '…'`), even one that starts the same way.
+3. **Allowed by you** in the project, for yourself: `djinn project allow <project> --watch '<command or its start>'`,
+   or the project's panel in the window ("Watcher commands you allow"). It goes into your own settings file
+   (`watch_commands`, [team settings](team-settings.md)), never into the repository; `--revoke` takes it back, and
+   `djinn project allow <project>` lists them.
+
+The project's `denied_commands` win over all three. The start event says which one let the command run. A refused
+watcher fails at start, and its error says what the project lacks, the commands its skills declare, and the exact
+`djinn project allow` command that would let it run:
+
+```
+dolmen lists no command its workers run without review (it has no .agents/permissions.txtpb, and a wish's allowance
+adds none), so it does not let them run "go run ./.agents/skills/babysit-mr-empowill/mrwatch -mr 2855 -watch …", and
+a watcher has no reviewer. No skill of dolmen declares it: one that does, under metadata.djinn.babysit or
+metadata.djinn.wish (docs/wish-templates.md), lets Djinn run the command it builds from it. Or allow it for yourself
+in dolmen, in your own settings, never in the repository: djinn project allow dolmen --watch 'go run
+./.agents/skills/babysit-mr-empowill/mrwatch'
+```
 
 ## Djinn's own: babysit-pr, for GitHub
 
@@ -120,7 +147,8 @@ metadata:
 ---
 ```
 
-and, in its `.agents/permissions.txtpb`:
+The skill declares the command, so its template's watcher runs it without a line in `.agents/permissions.txtpb`
+([what a watcher may run](#what-a-watcher-may-run)). A watcher spawned by hand on `mrwatch` needs the line:
 
 ```
 commands: "mrwatch -mr"
@@ -157,7 +185,8 @@ metadata:
   the wish has other work.
 
 Only the project's own skills count: a summoned skill's watcher would run in the folder of the project that holds it.
-`djinn skill list` shows each skill's babysit command, or why it cannot be used.
+`djinn skill list` shows each skill's babysit command, or why it cannot be used. The watcher Djinn starts runs that
+command without any line in `.agents/permissions.txtpb` ([what a watcher may run](#what-a-watcher-may-run)).
 
 **When.** Once a work task ends done, in a Git project whose skills declare a babysit, Djinn looks for the request it
 opened, still open: the address its `gh pr create` or `glab mr create` printed, if the forge says it is of the

@@ -160,6 +160,14 @@ func (t *Template) Fill(request string) (title, watch string, ok bool) {
 	return title, watch, true
 }
 
+// Builds tells whether command is a command line Fill makes from the template: its watch, each placeholder filled
+// with one word as quoteWord writes it, both trimmed. A command that merely starts the same way, or holds another word,
+// is not.
+func (t *Template) Builds(command string) bool {
+	return t.Watch != "" &&
+		filledPattern(t.Watch, func(string) string { return quotedWord }).MatchString(strings.TrimSpace(command))
+}
+
 // quoteWord quotes s so that a watcher's command line reads it as one word, whatever it holds: a value from a
 // request never adds an argument (harness.splitCommand reads quotes as a shell does).
 func quoteWord(s string) string {

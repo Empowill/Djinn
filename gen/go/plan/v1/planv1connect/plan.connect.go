@@ -82,6 +82,8 @@ const (
 	// ProjectServicePushStrategyProcedure is the fully-qualified name of the ProjectService's
 	// PushStrategy RPC.
 	ProjectServicePushStrategyProcedure = "/plan.v1.ProjectService/PushStrategy"
+	// ProjectServiceAllowProcedure is the fully-qualified name of the ProjectService's Allow RPC.
+	ProjectServiceAllowProcedure = "/plan.v1.ProjectService/Allow"
 	// ProjectServiceBranchesProcedure is the fully-qualified name of the ProjectService's Branches RPC.
 	ProjectServiceBranchesProcedure = "/plan.v1.ProjectService/Branches"
 	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
@@ -482,6 +484,9 @@ type ProjectServiceClient interface {
 	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
 	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
 	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
+	// Show or change the watcher commands you allow in a project for yourself, besides those its
+	// .agents/permissions.txtpb lists: kept in your own settings file, never in the repository.
+	Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error)
 	// List the local branches of a project's repository a wish's work may land in, the latest commit first: those
 	// Djinn made for its tasks' worktrees left out.
 	Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error)
@@ -536,6 +541,12 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(projectServiceMethods.ByName("PushStrategy")),
 			connect.WithClientOptions(opts...),
 		),
+		allow: connect.NewClient[v1.ProjectServiceAllowRequest, v1.ProjectServiceAllowResponse](
+			httpClient,
+			baseURL+ProjectServiceAllowProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Allow")),
+			connect.WithClientOptions(opts...),
+		),
 		branches: connect.NewClient[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse](
 			httpClient,
 			baseURL+ProjectServiceBranchesProcedure,
@@ -554,6 +565,7 @@ type projectServiceClient struct {
 	push         *connect.Client[v1.ProjectServicePushRequest, v1.ProjectServicePushResponse]
 	setPush      *connect.Client[v1.ProjectServiceSetPushRequest, v1.ProjectServiceSetPushResponse]
 	pushStrategy *connect.Client[v1.ProjectServicePushStrategyRequest, v1.ProjectServicePushStrategyResponse]
+	allow        *connect.Client[v1.ProjectServiceAllowRequest, v1.ProjectServiceAllowResponse]
 	branches     *connect.Client[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse]
 }
 
@@ -587,6 +599,11 @@ func (c *projectServiceClient) PushStrategy(ctx context.Context, req *connect.Re
 	return c.pushStrategy.CallUnary(ctx, req)
 }
 
+// Allow calls plan.v1.ProjectService.Allow.
+func (c *projectServiceClient) Allow(ctx context.Context, req *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error) {
+	return c.allow.CallUnary(ctx, req)
+}
+
 // Branches calls plan.v1.ProjectService.Branches.
 func (c *projectServiceClient) Branches(ctx context.Context, req *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error) {
 	return c.branches.CallUnary(ctx, req)
@@ -607,6 +624,9 @@ type ProjectServiceHandler interface {
 	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
 	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
 	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
+	// Show or change the watcher commands you allow in a project for yourself, besides those its
+	// .agents/permissions.txtpb lists: kept in your own settings file, never in the repository.
+	Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error)
 	// List the local branches of a project's repository a wish's work may land in, the latest commit first: those
 	// Djinn made for its tasks' worktrees left out.
 	Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error)
@@ -657,6 +677,12 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithSchema(projectServiceMethods.ByName("PushStrategy")),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServiceAllowHandler := connect.NewUnaryHandler(
+		ProjectServiceAllowProcedure,
+		svc.Allow,
+		connect.WithSchema(projectServiceMethods.ByName("Allow")),
+		connect.WithHandlerOptions(opts...),
+	)
 	projectServiceBranchesHandler := connect.NewUnaryHandler(
 		ProjectServiceBranchesProcedure,
 		svc.Branches,
@@ -678,6 +704,8 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServiceSetPushHandler.ServeHTTP(w, r)
 		case ProjectServicePushStrategyProcedure:
 			projectServicePushStrategyHandler.ServeHTTP(w, r)
+		case ProjectServiceAllowProcedure:
+			projectServiceAllowHandler.ServeHTTP(w, r)
 		case ProjectServiceBranchesProcedure:
 			projectServiceBranchesHandler.ServeHTTP(w, r)
 		default:
@@ -711,6 +739,10 @@ func (UnimplementedProjectServiceHandler) SetPush(context.Context, *connect.Requ
 
 func (UnimplementedProjectServiceHandler) PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.PushStrategy is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Allow is not implemented"))
 }
 
 func (UnimplementedProjectServiceHandler) Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error) {

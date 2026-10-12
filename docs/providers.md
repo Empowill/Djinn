@@ -401,9 +401,12 @@ Djinn: W70's watcher says: New thread on !41. mrwatch -watch 41 is still watchin
   the machine, starts under pressure, and holds no write scope. Its wish and its dependencies still hold it.
 - **No shell.** The command line is split into words: quotes group them, a backslash keeps a quote, a backslash or
   a space; a pipe or a `&&` is only a word. Run `sh -c "…"` for a shell, where the project allows it.
-- **What it may run.** A watcher needs a project. Where the project lists its commands
-  (`.agents/permissions.txtpb`), the command must be one of them, and not denied: a watcher has no reviewer to
-  approve it. A folder outside Git without agent configuration runs no watcher.
+- **What it may run.** A watcher needs a project. Where its permissions list commands (the project's
+  `.agents/permissions.txtpb`, a wish's allowance over it, which lists none without that file), the command must be
+  one of them, or the command Djinn builds from a skill of the project
+  ([declared](wish-templates.md#what-a-watcher-may-run)), or one you allow in the project for yourself (`djinn
+  project allow <project> --watch '<command>'`): a watcher has no reviewer to approve it. The project's denied
+  commands win over all three. A folder outside Git without agent configuration runs no watcher.
 - **Resumed.** A watcher `djinn up` cut short starts again at the next start, on its command, in its project's
   folder, however many times (the limit of 3 resumes is for agents). The lead's restart line counts the watchers
   apart from the workers: "Djinn: restarted on version v1.2.0: 1 watcher resumed: W9." It reads no message (`djinn task send`

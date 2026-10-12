@@ -385,6 +385,7 @@ func (p *Projects) Show(
 	settings := ResolveSettings(repo, dev)
 	out := &planv1.ProjectServiceShowResponse{
 		Project: project, Settings: settings.Rows(), Setup: settings.Setup, Checks: settings.Checks,
+		WatchCommands: settings.WatchCommands,
 	}
 	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
 	for _, err := range problems {
@@ -481,6 +482,41 @@ func (p *Projects) PushStrategy(
 		Strategy: settings.PushStrategy,
 		Source:   settings.PushStrategyFrom,
 	}), nil
+}
+
+// Allow shows the watcher commands the developer allows in a project for themselves, or allows one, or takes one
+// back: in their own settings file, never in the repository.
+func (p *Projects) Allow(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceAllowRequest],
+) (*connect.Response[planv1.ProjectServiceAllowResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	out := &planv1.ProjectServiceAllowResponse{DeveloperFile: DeveloperSettingsFile(p.Home, project.GetId())}
+	if req.Msg.Watch == nil {
+		if req.Msg.GetRevoke() {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--revoke takes back the command --watch names"))
+		}
+		dev, err := ReadSettings(out.DeveloperFile)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		out.WatchCommands = dev.GetWatchCommands()
+		return connect.NewResponse(out), nil
+	}
+	err = write(ctx, p.Store, req.Spec(), req.Msg, func(*store.Tx) error {
+		commands, err := AllowWatch(p.Home, project.GetId(), req.Msg.GetWatch(), req.Msg.GetRevoke())
+		if err != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		out.WatchCommands = commands
+		return nil
+	})
+	if err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(out), nil
 }
 
 // Branches lists the local branches of a project's repository, the latest commit first, without the branches of
