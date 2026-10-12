@@ -43,6 +43,37 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.instruction-replies {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 12px 0 0 12px;
+  border-top: 1px solid var(--line);
+}
+.instruction-reply {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.instruction-reply header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.instruction-reply-label {
+  font-weight: 600;
+}
+.instruction-reply time {
+  margin-left: auto;
+  color: var(--muted-dim);
+}
+.instruction-reply p {
+  margin: 0;
+}
 
 /* Durable indications use uniform outlines. Cards keep two separate native buttons. */
 .review .plan-wish.instruction-card {
