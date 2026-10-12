@@ -272,7 +272,9 @@ test("agent setup keeps the plain draft, project and allowance choices and resto
     page.getByRole("heading", { name: "Set up the agents" }),
   ).toBeVisible();
   await expect(editor).toBeHidden();
-  await page.getByRole("button", { name: "Back to the wish" }).click();
+  const toolbarBack = page.locator(".app-toolbar-back");
+  await expect(toolbarBack).toBeFocused();
+  await toolbarBack.press("Escape");
   await expect(editor).toBeFocused();
   await expect(editor).toHaveValue(
     "Keep this draft through setup\nwith its second line.",

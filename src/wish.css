@@ -847,19 +847,6 @@
   background: var(--bg);
   color: var(--text);
 }
-.wish-creation-header {
-  position: absolute;
-  top: 16px;
-  left: 34px;
-  z-index: 8;
-  display: flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 0 0 6px;
-  border: 0;
-  background: transparent;
-  pointer-events: none;
-}
 .wish-creation-back {
   display: inline-flex;
   align-items: center;
@@ -1384,10 +1371,6 @@
     bottom: 122px;
     left: 24px;
     width: auto;
-  }
-  .wish-creation-header {
-    left: 18px;
-    padding: 0 0 0 6px;
   }
   .wish-creation-footer {
     min-height: 60px;
