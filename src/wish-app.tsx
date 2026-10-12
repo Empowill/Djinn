@@ -63,6 +63,8 @@ export function WishApp() {
   const [collapsed, setCollapsed] = useState(
     () => stored("djinn.sidebar.collapsed") === "1",
   );
+  // The sidebar glides only once folded or unfolded by hand, never as the page opens.
+  const [glide, setGlide] = useState(false);
   const [modal, setModal] = useState<Modal>(null);
   const [projectId, setProjectId] = useState("");
   const [toast, setToast] = useState("");
@@ -161,12 +163,17 @@ export function WishApp() {
   );
 
   return (
-    <div className={`app wish-app ${collapsed ? "sidebar-collapsed" : ""}`}>
+    <div
+      className={`app wish-app ${collapsed ? "sidebar-collapsed" : ""} ${glide ? "sidebar-glide" : ""}`}
+    >
       <div className="app-toolbar">
         <button
           type="button"
           className="sidebar-toggle app-toolbar-toggle"
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => {
+            setGlide(true);
+            setCollapsed(!collapsed);
+          }}
           title={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
           aria-label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
           aria-expanded={!collapsed}
@@ -178,23 +185,24 @@ export function WishApp() {
       <aside id="djinn-sidebar" className="sidebar">
         <div className="sidebar-brand">
           <div className="sidebar-brand-main">
-            <Brand />
-            <span className="version-tag">EARLY ACCESS</span>
+            <Brand small={collapsed} />
+            {!collapsed && <span className="version-tag">EARLY ACCESS</span>}
           </div>
         </div>
-        <div
-          className="sidebar-content"
-          aria-hidden={collapsed ? "true" : undefined}
-          inert={collapsed}
-        >
+        {/* Folded, the sidebar is a rail of icons that keeps each wish's counts (Q03). */}
+        <div className="sidebar-content">
           <button
             className="new-mission"
             onClick={() => setModal("make")}
             title={t("app.new_wish")}
           >
             <Plus size={16} />
-            <span>{t("app.new_wish")}</span>
-            <kbd>⌘ N</kbd>
+            {!collapsed && (
+              <>
+                <span>{t("app.new_wish")}</span>
+                <kbd>⌘ N</kbd>
+              </>
+            )}
           </button>
           <WishSidebar
             wishes={wishes}
@@ -205,7 +213,7 @@ export function WishApp() {
             onSelectPlan={() => setSelected(PLAN)}
             selectedWishId={wish?.id ?? ""}
             selectedProjectId={projectId}
-            collapsed={false}
+            collapsed={collapsed}
             onSelectWish={setSelected}
             onSelectProject={setProjectId}
             onMove={move}
@@ -219,7 +227,7 @@ export function WishApp() {
             disabled={!loaded}
           >
             <Upload size={15} />
-            <span>{t("app.import_wish")}</span>
+            {!collapsed && <span>{t("app.import_wish")}</span>}
           </button>
           <div className="sidebar-bottom">
             <button
@@ -228,11 +236,15 @@ export function WishApp() {
               title={t("app.connections_preferences")}
             >
               <span className="profile-avatar">C</span>
-              <span>
-                {t("app.personal_space")}
-                <small>{t("app.local_app")}</small>
-              </span>
-              <Settings2 size={15} />
+              {!collapsed && (
+                <>
+                  <span>
+                    {t("app.personal_space")}
+                    <small>{t("app.local_app")}</small>
+                  </span>
+                  <Settings2 size={15} />
+                </>
+              )}
             </button>
           </div>
         </div>

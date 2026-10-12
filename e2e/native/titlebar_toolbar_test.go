@@ -11,8 +11,8 @@ import (
 )
 
 // TestNativeToolbarControls exercises the persistent toolbar through Wails' animated MCP pointer/mouse sequence.
-// The macOS geometry check keeps both controls below the native drag strip; this test does not claim to synthesize an
-// AppKit NSEvent.
+// The macOS geometry check keeps the sidebar's toggle below the native drag strip; this test does not claim to
+// synthesize an AppKit NSEvent. The toolbar holds no Back until a page needs one.
 func TestNativeToolbarControls(t *testing.T) {
 	binary := os.Getenv("DJINN_E2E_NATIVE")
 	if binary == "" {
@@ -43,21 +43,17 @@ func TestNativeToolbarControls(t *testing.T) {
 	})
 
 	var geometry struct {
-		Back   map[string]float64 `json:"back"`
 		Toggle map[string]float64 `json:"toggle"`
 	}
 	if err := d.eval(`
 		const box = (selector) => { const r = document.querySelector(selector)?.getBoundingClientRect(); return r && {
 			x: r.x, y: r.y, width: r.width, height: r.height,
 		}; };
-		return { back: box(".app-toolbar-back"), toggle: box(".app-toolbar-toggle") };
+		return { toggle: box(".app-toolbar-toggle") };
 	`, &geometry); err != nil {
 		t.Fatal(err)
 	}
-	if geometry.Back["x"] != 92 || geometry.Back["y"] != 6 || geometry.Back["width"] != 20 || geometry.Back["height"] != 20 {
-		t.Fatalf("unexpected native back geometry: %+v", geometry.Back)
-	}
-	if geometry.Toggle["x"] != 124 || geometry.Toggle["y"] != 6 || geometry.Toggle["width"] != 20 || geometry.Toggle["height"] != 20 {
+	if geometry.Toggle["x"] != 92 || geometry.Toggle["y"] != 6 || geometry.Toggle["width"] != 20 || geometry.Toggle["height"] != 20 {
 		t.Fatalf("unexpected native toggle geometry: %+v", geometry.Toggle)
 	}
 
@@ -99,33 +95,6 @@ func TestNativeToolbarControls(t *testing.T) {
 		}
 		if state.Collapsed || state.Expanded != "true" {
 			return fmt.Errorf("toolbar did not expand sidebar: %+v", state)
-		}
-		return nil
-	})
-
-	click(".sidebar .new-mission")
-	eventually(t, 30*time.Second, func() error {
-		var creation struct {
-			Mounted bool `json:"mounted"`
-		}
-		if err := d.eval(`return { mounted: !!document.querySelector(".wish-creation") };`, &creation); err != nil {
-			return err
-		}
-		if !creation.Mounted {
-			return fmt.Errorf("creation surface has not mounted")
-		}
-		return nil
-	})
-	click(".app-toolbar-back")
-	eventually(t, 10*time.Second, func() error {
-		var creation struct {
-			Mounted bool `json:"mounted"`
-		}
-		if err := d.eval(`return { mounted: !!document.querySelector(".wish-creation") };`, &creation); err != nil {
-			return err
-		}
-		if creation.Mounted {
-			return fmt.Errorf("native back did not close creation")
 		}
 		return nil
 	})
