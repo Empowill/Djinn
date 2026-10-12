@@ -33,6 +33,31 @@ reason in the task's error, whatever the provider. Two places decide:
 A refused permission is not an error in itself: Claude and Codex tell the agent, which goes on and ends its turn
 (`permission denied: …` is a `STATUS`). Antigravity's denial ends its turn: the task fails (below).
 
+## A task's seal
+
+A task's seal is the set of constraints Djinn gives the worker of a task: what it may spend, what it may touch, how
+it shares the machine. Each part comes from a default of Djinn, the project's settings (`.agents/settings.txtpb`,
+the developer's file over the repository's), the wish (its allowance), the task's spawn request, or Djinn's own
+flags; none of it is the worker's to change.
+
+| Part | What it bounds | Where it comes from |
+| ---- | -------------- | ------------------- |
+| Silence limit | 15 minutes without an event, no process busy, no gate held or awaited: the Lamplighter ends the worker, then [wakes it](#when-djinn-resumes-a-worker) | Djinn's default (`SilenceLimit`) |
+| Wall time | 2 hours of work over all its runs, gate waits included; past it the task is stopped, "budget exceeded", and stays stopped | Djinn's default (`TaskMaxWallTime`) |
+| Model turns | 500 turns in one run (`Task.turns`, shown `37/500`); past it the run is stopped; `djinn task continue` gives 500 again | Djinn's default (`TaskMaxTurns`) |
+| Wakes and resumes | 3 wakes in a row, 3 resumes on usage limits, 2 replays after an environment failure | Djinn's defaults |
+| Spending cap | US dollars over its runs; Claude alone enforces it (`--max-budget-usd`), Codex and Antigravity have none | the spawn request (`max_budget_usd`), else the project's `max_budget_usd`; a question worker's, `question_budget_usd` (2 by default) |
+| Access | editing, the auto mode, its commands and the network ([what a worker may do](#what-a-worker-may-do)), applied by each agent's own sandbox | the wish's allowance (`djinn wish allow`), else `.agents/permissions.txtpb`, else the agent's own configuration, else the developer's answer |
+| No push | every `git push` of the worker goes nowhere ([no worker pushes](#no-worker-pushes)) | always |
+| Its calls to Djinn | what it may call with its token (`DJINN_WORKER_TOKEN`): its own wish's questions, blocks and tilasms, its own task, reads; never a new wish | always (`plan.WorkerGuard`) |
+| Write scopes | outside Git, two tasks whose scopes overlap never run together | the spawn request (`write_scopes`) |
+| CPU priority | `nice 10` at the Minimal to Medium load notches ([operating load](#operating-load-runtime-adjustments)) | the machine's load notch |
+| Memory and slots | a memory ceiling in its own scope, a slot among the workers, room to start | `djinn up --workers`, `--worker-memory`, `--worker-memory-guard`, `--worker-cpu`, and the load notch |
+| Gates | one holder per gate, held an hour at most unless its holder states another timeout | Djinn's defaults ([gates](user-guide.md#gates)) |
+
+The task carries only some of it: its turns and their limit (`turns`), its spending cap, its access, its write
+scopes. The other parts are Djinn's, and the same for every task.
+
 ## What a worker may do
 
 **Cross-agent first: a project says once, in `.agents/permissions.txtpb`, what any agent may do in it, and Djinn
@@ -253,7 +278,7 @@ command, are to check on a real run.
 
 ## When Djinn resumes a worker
 
-Djinn resumes a worker by itself, in the same task (status `resuming`), in three cases:
+Djinn resumes a worker by itself, in the same task (status `resuming`), in four cases:
 
 - **djinn up stopped or crashed while it ran.** At the next start the task is interrupted, then resumed, unless a
   person stopped it, it was imported, its worktree is gone, its wish is granted, or another task was forked from it
@@ -265,9 +290,19 @@ Djinn resumes a worker by itself, in the same task (status `resuming`), in three
   cannot start, Djinn makes room: it interrupts the running work task of lowest priority so that it resumes later in
   its session or conversation (Claude, Antigravity), RESUMING with the wait reason "made room for Qxx: enlighten",
   without consuming a resume attempt.
+- **The Lamplighter wakes it.** The Lamplighter is Djinn's watchdog (`internal/harness/lamplighter.go`; the
+  lamplighter woke the street's lamps one by one, and lit again the ones the wind blew out). It wakes before it
+  fails: a worker silent past the silence limit with no process busy and no gate held or awaited, a worker whose
+  stream went idle, or a task running without a process (a lost process) is ended, then continued on its session
+  ("continue where you stopped…"), its run ending `wake` (`TaskRun.reason`). Only after 3 wakes in a row does the
+  task fail, with "silent for 15 min; the Lamplighter woke it 3 times in a row and gives up", its lead told once; a
+  run that ends otherwise (done, a limit, a restart) ends the row. Wakes are counted apart from usage-limit
+  resumes: a worker that waited for its limits is woken all the same, and a wake spends no resume. A budget of
+  the task's [seal](#a-tasks-seal) is no wake: a task stopped past its wall time or its turns stays stopped.
 
 The scheduler starts a resumed task like a planned one: slots, pressure and gates still apply. After 3
-resumes without finishing (unspent by preemption, pauses, or grants), the task fails, saying so. What each agent gets:
+resumes on usage limits without finishing (unspent by preemption, pauses, grants or wakes), the task fails, saying
+so. What each agent gets:
 
 | Agent  | Resumed with                                                                                                       |
 | ------ | ------------------------------------------------------------------------------------------------------------------ |
@@ -344,8 +379,8 @@ wish's lead, typed in the lead's terminal as an answer is:
 Djinn: W70's watcher says: New thread on !41. mrwatch -watch 41 is still watching.
 ```
 
-- **Supervised by the watchdog.** A watcher is no worker: the watchdog supervises it apart, as long as its wish needs
-  it. No silence limit, no wall-time budget and no turn budget apply to it; what counts is that its command lives
+- **Supervised by the Lamplighter.** A watcher is no worker: the Lamplighter, Djinn's watchdog, supervises it
+  apart, as long as its wish needs it. No silence limit, no wall-time budget and no turn budget apply to it; what counts is that its command lives
   while its task runs. A command that dies (an error, an exit code other than 0, a kill) starts again, in the same
   task: one second later, doubling up to five minutes, the backoff starting over after a run that lived a minute.
   Its state folder, `$DJINN_HOME/watchers/<task>` (Djinn sets `DJINN_HOME` for it), stays as the command left it,
@@ -379,9 +414,9 @@ watcher, done, and asks whether to grant the wish.
 
 Tests: `TestWatchParagraphs`, `TestWatcher` (no slot, the restart loop, the line to the lead, pause),
 `TestWatcherEnds`, `TestWatcherResumes` (and the restart line), `TestWatcherPermissions` (`watch_test.go`, the test
-binary plays the command), `TestWatcherLife`, `TestWatchdogWatcherOutlivesBudgets`,
-`TestWatcherStartsAgainWhenItDies`, `TestWatcherGivesUp`, `TestWatchdogLostWatcherStartsAgain`
-(`watchdog_test.go`), and `TestWatcherTakesNoSlot` (`internal/dispatch`).
+binary plays the command), `TestWatcherLife`, `TestLamplighterWatcherOutlivesBudgets`,
+`TestWatcherStartsAgainWhenItDies`, `TestWatcherGivesUp`, `TestLamplighterLostWatcherStartsAgain`
+(`lamplighter_test.go`), and `TestWatcherTakesNoSlot` (`internal/dispatch`).
 
 ## Claude
 

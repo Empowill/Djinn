@@ -18,7 +18,14 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// SilenceLimit is how long a worker may produce no event before the watchdog checks its process tree and CPU:
+// A task's seal is the set of constraints Djinn gives the worker of a task (docs/providers.md, "A task's seal"). Its
+// budgets are here, enforced by the Lamplighter: SilenceLimit, TaskMaxWallTime and TaskMaxTurns. The rest is decided
+// where it applies: the access and how each agent's sandbox applies it (decideAccess, accessSpec), the wakes
+// (maxWakes) and usage-limit resumes (maxResumes), the spending cap (Task.max_budget_usd), the push guard and the
+// worker's identity (gitGuard, plan.WorkerGuard), the write scopes (dispatch), the load notch's CPU priority
+// (lowPriority) and the worker's memory ceiling (scopeFor), the slots and the gates.
+
+// SilenceLimit is how long a worker may produce no event before the Lamplighter checks its process tree and CPU:
 // long builds and test runs print periodically; background tasks in agy might execute commands, and any gated
 // command is excluded by checking the gate it holds or waits for. An idle or dead worker past this limit is ended.
 const SilenceLimit = 15 * time.Minute
@@ -36,13 +43,13 @@ const TaskMaxWallTime = 2 * time.Hour
 // (Task.turns).
 const TaskMaxTurns = 500
 
-// WithSilenceLimit sets the silence limit before the watchdog checks a worker: tests set a shorter one.
+// WithSilenceLimit sets the silence limit before the Lamplighter checks a worker: tests set a shorter one.
 func WithSilenceLimit(d time.Duration) Option { return func(h *Harness) { h.silenceLimit = d } }
 
 // WithTaskMaxWallTime sets the maximum wall time budget per task before being stopped: tests set a shorter one.
 func WithTaskMaxWallTime(d time.Duration) Option { return func(h *Harness) { h.maxWallTime = d } }
 
-// turnLimit is how many model turns a run may take before the watchdog stops it.
+// turnLimit is how many model turns a run may take before the Lamplighter stops it.
 func (h *Harness) turnLimit() int { return cmp.Or(h.maxTurns, TaskMaxTurns) }
 
 // setTurns sets the run's turns to f of them, and keeps them on its task: the turns of its current worker, out of
@@ -66,11 +73,13 @@ func (h *Harness) setTurns(r *run, f func(turns int) int) {
 // WithTaskMaxTurns sets the maximum turn budget per task before being stopped: tests set a lower one.
 func WithTaskMaxTurns(n int) Option { return func(h *Harness) { h.maxTurns = n } }
 
-// watchdog checks running workers: if a worker produces no events for longer than the silence limit,
-// its process tree and CPU usage are inspected. Dead or idle workers are ended (continued per W296/W320
-// if resumable, else failed). A task whose status is RUNNING but has no active worker run (a lost process)
-// is also found and ended the same way. A watcher is supervised apart, before any budget (watcherLife).
-func (h *Harness) watchdog(ctx context.Context, tasks []*planv1.Task) (anyLost bool) {
+// lamplighter is Djinn's watchdog, the Lamplighter: it wakes before it fails. It checks running workers: if a worker
+// produces no events for longer than the silence limit, its process tree and CPU usage are inspected. Dead or idle
+// workers are ended, then woken (continued on their session, W296/W320) up to maxWakes times in a row, else failed. A
+// task whose status is RUNNING but has no active worker run (a lost process) is also found and ended the same way. A
+// budget of the task's seal (wall time, turns) stops a worker for good: no wake. A watcher is supervised apart, before
+// any budget (watcherLife).
+func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLost bool) {
 	now := h.now()
 	limit := cmp.Or(h.silenceLimit, SilenceLimit)
 
@@ -92,7 +101,7 @@ func (h *Harness) watchdog(ctx context.Context, tasks []*planv1.Task) (anyLost b
 			continue
 		}
 
-		if r.stopping || r.final || r.paused || r.watchdogEnd {
+		if r.stopping || r.final || r.paused || r.lamplighterEnd {
 			h.mu.Unlock()
 			continue
 		}
@@ -152,7 +161,7 @@ func (h *Harness) watchdog(ctx context.Context, tasks []*planv1.Task) (anyLost b
 			// Update CPU baseline while worker is active or within limit.
 			if p, ok := r.worker.(Process); ok && p != nil && p.PID() != 0 && h.measureRead != nil {
 				if g, err := h.measureRead(p.PID(), p.Cgroup()); err == nil {
-					r.lastWatchdogCPU = g.CPU
+					r.lastLamplighterCPU = g.CPU
 				}
 			}
 			h.mu.Unlock()
@@ -166,9 +175,9 @@ func (h *Harness) watchdog(ctx context.Context, tasks []*planv1.Task) (anyLost b
 			g, err := h.measureRead(p.PID(), p.Cgroup())
 			if err == nil && g.Processes > 0 {
 				alive = true
-				if g.CPU > r.lastWatchdogCPU {
+				if g.CPU > r.lastLamplighterCPU {
 					busy = true
-					r.lastWatchdogCPU = g.CPU
+					r.lastLamplighterCPU = g.CPU
 				}
 			}
 		}
@@ -183,8 +192,8 @@ func (h *Harness) watchdog(ctx context.Context, tasks []*planv1.Task) (anyLost b
 		if mins < 1 {
 			mins = 1
 		}
-		r.watchdogEnd = true
-		r.watchdogReason = fmt.Sprintf("silent for %d min", mins)
+		r.lamplighterEnd = true
+		r.lamplighterReason = fmt.Sprintf("silent for %d min", mins)
 		worker := r.worker
 		h.mu.Unlock()
 
@@ -195,24 +204,65 @@ func (h *Harness) watchdog(ctx context.Context, tasks []*planv1.Task) (anyLost b
 	return anyLost
 }
 
+// maxWakes is how many times in a row the Lamplighter wakes a worker it found silent, idle or lost, or whose stream
+// went idle: found so once more, its task fails, saying so, and its lead is told once. A run that ends otherwise
+// (done, a usage limit, a restart of Djinn) ends the row. Usage-limit resumes are counted apart (maxResumes): a worker that
+// waited for its limits is woken all the same.
+const maxWakes = 3
+
+// runWoken is why a run ended that the Lamplighter ended to wake its worker (TaskRun.reason).
+const runWoken = "wake"
+
+// wakes counts the last runs of t in a row that the Lamplighter ended to wake its worker, before the one that runs.
+func wakes(t *planv1.Task) int {
+	runs := t.GetRuns()
+	if len(runs) > 0 && runs[len(runs)-1].GetEndTime() == nil {
+		runs = runs[:len(runs)-1]
+	}
+	n := 0
+	for i := len(runs) - 1; i >= 0 && runs[i].GetReason() == runWoken; i-- {
+		n++
+	}
+	return n
+}
+
+// canWake tells whether the Lamplighter wakes the worker of t rather than failing it: its agent can resume its
+// session, and it was not woken maxWakes times in a row.
+func canWake(t *planv1.Task) bool { return plan.CanResume(t.GetProvider()) && wakes(t) < maxWakes }
+
+// notWoken is the error of a task the Lamplighter does not wake, ended for why.
+func notWoken(t *planv1.Task, why string) string {
+	if !plan.CanResume(t.GetProvider()) {
+		return why
+	}
+	return fmt.Sprintf("%s; the Lamplighter woke it %d times in a row and gives up", why, wakes(t))
+}
+
+// markWoken makes t, whose worker the Lamplighter ended for why, wait to be continued on its session: its last run
+// ends woken.
+func markWoken(t *planv1.Task, why string, end *timestamppb.Timestamp) {
+	t.Status, t.Error, t.Continuing, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true, why
+	if len(t.Runs) > 0 && t.Runs[len(t.Runs)-1].GetEndTime() == nil {
+		t.Runs[len(t.Runs)-1].EndTime = end
+	}
+	if len(t.Runs) > 0 {
+		t.Runs[len(t.Runs)-1].Reason = runWoken
+	}
+}
+
 // endLostProcess ends a task whose status is RUNNING but that the harness has no run for (a lost process).
 func (h *Harness) endLostProcess(ctx context.Context, t *planv1.Task) {
 	now := h.now()
 	nowPb := timestamppb.New(now)
-	canResume := plan.CanResume(t.GetProvider()) && t.GetResumes() < maxResumes
 	t = proto.CloneOf(t)
 	t.EndTime = nowPb
-	if canResume {
-		t.Status = planv1.TaskStatus_TASK_STATUS_RESUMING
-		t.WaitReason = whyLost
-		t.Continuing = true
-		t.Resumes++
-		t.Error = ""
+	if canWake(t) {
+		markWoken(t, whyLost, nowPb)
 		h.writeAlone(ctx, actorHarness, methodEvent, nil, t.GetId(), nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: agyContinuePrompt})
 		h.writeAlone(ctx, actorHarness, methodEnd, nil, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "resuming: lost process; continued"})
 	} else {
 		t.Status = planv1.TaskStatus_TASK_STATUS_FAILED
-		t.Error = "lost process: worker is not running"
+		t.Error = notWoken(t, "lost process: worker is not running")
 		h.writeAlone(ctx, actorHarness, methodEnd, nil, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "failed: " + t.GetError()})
 	}
 	h.tellWorkerFailed(t)
@@ -244,7 +294,7 @@ func taskWallTime(t *planv1.Task, now time.Time) time.Duration {
 	return total
 }
 
-// A watcher runs a command, not an agent: the watchdog supervises it as a process of its own. Its silence is its
+// A watcher runs a command, not an agent: the Lamplighter supervises it as a process of its own. Its silence is its
 // normal state, and it watches as long as its wish needs it: no silence rule, no wall-time budget, no turn budget.
 // What counts is that its command lives while its task runs. A command that dies (an error, an exit code other than
 // 0) starts again after a backoff, in the same task: its folder and its state folder (DJINN_HOME/watchers/<task>)
@@ -264,7 +314,7 @@ const (
 	watchErrLines = 3
 )
 
-// watcherLife is what the watchdog keeps of a watcher's command from one run to the next: the next backoff, and its
+// watcherLife is what the Lamplighter keeps of a watcher's command from one run to the next: the next backoff, and its
 // deaths in a row. The watcher's loop asks it what follows each run.
 type watcherLife struct {
 	first, backoff time.Duration

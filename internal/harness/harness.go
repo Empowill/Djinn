@@ -124,9 +124,9 @@ type Harness struct {
 	held         func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
 	waiting      func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
 	outside      func() int                   // the gates held outside the running workers (GatesOutside); nil: none
-	silenceLimit time.Duration                // silence limit before watchdog checks a worker (watchdog.go)
-	maxWallTime  time.Duration                // ceiling on wall time budget per task (watchdog.go)
-	maxTurns     int                          // ceiling on model turns budget per task (watchdog.go)
+	silenceLimit time.Duration                // silence limit before the Lamplighter checks a worker (lamplighter.go)
+	maxWallTime  time.Duration                // ceiling on wall time budget per task (lamplighter.go)
+	maxTurns     int                          // ceiling on model turns budget per task (lamplighter.go)
 	version      string                       // version of the running binary (WithVersion)
 	builtFrom    map[string]string            // by project id: the branch the running binary was built from (compare.go)
 	runs         map[string]*run              // by task id
@@ -148,30 +148,30 @@ type run struct {
 	holds chan chan struct{} // a pause or a resume for the pump to write; closed once written
 
 	// Guarded by Harness.mu.
-	worker          Worker
-	pid             int    // process ID of the running worker (0 if none)
-	cgroup          string // cgroup of the running worker
-	token           string // secret per-run token passed in DJINN_WORKER_TOKEN
-	stopping        bool
-	stoppingReason  string               // why worker was stopped if not stopped on request (e.g. budget exceeded)
-	shelved         bool                 // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
-	paused          bool                 // the worker holds still: it takes no slot
-	notchPaused     bool                 // paused by the operating load notch
-	holdWhy         string               // why the worker holds still (preemption or pause reason)
-	preemptedWhy    string               // if set, stopping to make room for an investigator
-	watcher         bool                 // a watcher runs a command, and takes no slot
-	light           bool                 // a question worker reads and runs djinn's commands: it takes no slot
-	final           bool                 // the task is getting its final status: an answer waits for done instead
-	answers         []*planv1.Question   // answers to the task's edit question, for the pump to apply
-	use             *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one
-	samples         *workerRing          // recent measurement samples (measure.go)
-	subs            map[chan *planv1.TaskEvent]struct{}
-	startTime       time.Time     // when the current run started
-	turns           int           // model turns of the current worker (watchdog.go), kept on the task by setTurns
-	lastActivity    time.Time     // when the worker last produced an event (watchdog.go)
-	lastWatchdogCPU time.Duration // CPU time used at previous watchdog check
-	watchdogEnd     bool          // watchdog ended this worker
-	watchdogReason  string        // why watchdog ended it ("silent for N min")
+	worker             Worker
+	pid                int    // process ID of the running worker (0 if none)
+	cgroup             string // cgroup of the running worker
+	token              string // secret per-run token passed in DJINN_WORKER_TOKEN
+	stopping           bool
+	stoppingReason     string               // why worker was stopped if not stopped on request (e.g. budget exceeded)
+	shelved            bool                 // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
+	paused             bool                 // the worker holds still: it takes no slot
+	notchPaused        bool                 // paused by the operating load notch
+	holdWhy            string               // why the worker holds still (preemption or pause reason)
+	preemptedWhy       string               // if set, stopping to make room for an investigator
+	watcher            bool                 // a watcher runs a command, and takes no slot
+	light              bool                 // a question worker reads and runs djinn's commands: it takes no slot
+	final              bool                 // the task is getting its final status: an answer waits for done instead
+	answers            []*planv1.Question   // answers to the task's edit question, for the pump to apply
+	use                *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one
+	samples            *workerRing          // recent measurement samples (measure.go)
+	subs               map[chan *planv1.TaskEvent]struct{}
+	startTime          time.Time     // when the current run started
+	turns              int           // model turns of the current worker (lamplighter.go), kept on the task by setTurns
+	lastActivity       time.Time     // when the worker last produced an event (lamplighter.go)
+	lastLamplighterCPU time.Duration // CPU time used at the Lamplighter's previous check
+	lamplighterEnd     bool          // the Lamplighter ended this worker
+	lamplighterReason  string        // why the Lamplighter ended it ("silent for N min")
 
 	// Owned by whoever writes the task: Spawn, then the pump.
 	task           *planv1.Task
@@ -1580,7 +1580,7 @@ func (h *Harness) end(r *run, res Result) {
 		}
 	}
 	h.mu.Lock()
-	stopping, stoppingReason, shelved, preemptedWhy, watchdogEnd, watchdogReason := r.stopping, r.stoppingReason, r.shelved, r.preemptedWhy, r.watchdogEnd, r.watchdogReason
+	stopping, stoppingReason, shelved, preemptedWhy, lamplighterEnd, lamplighterReason := r.stopping, r.stoppingReason, r.shelved, r.preemptedWhy, r.lamplighterEnd, r.lamplighterReason
 	h.mu.Unlock()
 	var streamIdleReason string
 	if isStreamIdle(res.Err) {
@@ -1628,21 +1628,15 @@ func (h *Harness) end(r *run, res Result) {
 		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy
 	case stopping:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, cmp.Or(stoppingReason, "stopped on request")
-	case watchdogEnd:
-		if plan.CanResume(t.GetProvider()) && t.GetResumes() < maxResumes {
-			t.Status, t.Error, t.Continuing = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true
-			t.WaitReason = watchdogReason
-			t.Resumes++
-		} else {
-			t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, watchdogReason
+	case lamplighterEnd || streamIdleEnd:
+		why := streamIdleReason
+		if lamplighterEnd {
+			why = lamplighterReason
 		}
-	case streamIdleEnd:
-		if plan.CanResume(t.GetProvider()) && t.GetResumes() < maxResumes {
-			t.Status, t.Error, t.Continuing = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true
-			t.WaitReason = streamIdleReason
-			t.Resumes++
+		if canWake(t) {
+			markWoken(t, why, nowPb)
 		} else {
-			t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, streamIdleReason
+			t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, notWoken(t, why)
 		}
 	case shelved:
 		shelve(t)
@@ -1711,8 +1705,8 @@ func (h *Harness) end(r *run, res Result) {
 		text = "resuming: " + preemptedWhy
 	case shelved:
 		text = "resuming: " + whyWishPaused
-	case watchdogEnd && t.GetContinuing():
-		text = "resuming: " + watchdogReason + "; continued"
+	case lamplighterEnd && t.GetContinuing():
+		text = "resuming: " + lamplighterReason + "; continued"
 	case streamIdleEnd && t.GetContinuing():
 		text = "resuming: " + streamIdleReason + "; continued"
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING:
@@ -1722,7 +1716,7 @@ func (h *Harness) end(r *run, res Result) {
 	case t.GetError() != "":
 		text += ": " + t.GetError()
 	}
-	if (watchdogEnd || streamIdleEnd) && t.GetContinuing() {
+	if (lamplighterEnd || streamIdleEnd) && t.GetContinuing() {
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: agyContinuePrompt})
 	}
 	h.write(r, actorHarness, methodEnd, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})

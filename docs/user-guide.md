@@ -194,7 +194,7 @@ Each task is displayed as a two-line row:
 - The first line displays the status badge first (**Running**, **Waits for your answer**, **Planned**, **Done**,
   **Failed**, etc.), its code `W1`, `W2`…, and its title, with the full prompt on hover.
 - The second line gives its project, agent provider and model, duration (or waiting time: for a slot, dependency,
-  or gate), its model turns against the watchdog's limit (`37/500`, its run's; it turns orange past 80%, and its
+  or gate), its model turns against its seal's limit (`37/500`, its run's; it turns orange past 80%, and its
   hover gives the total over its runs), token counts and cost estimate, and for a running worker its live CPU and
   memory usage (not measured on Windows yet).
 
@@ -472,13 +472,15 @@ task fails. Such a task is history: it shows among the finished parts of its azi
 
 A worker stopped by its provider's usage limit shows "Waiting for the limit", then resumes once the limit resets.
 
-A watchdog guards against runaway workers. A worker that prints nothing for 15 minutes, with no process busy and no
-gate held or awaited, is ended (continued when its provider can resume). A watcher (`--provider watch`) is
-supervised apart, for as long as its wish needs it: never ended for its silence, which is its normal state, nor for
-a budget; a command of it that dies starts again in the same task, and only five deaths in a row fail it, its lead
-told why. A task is stopped, "budget exceeded", past
-2 hours of work in total across its runs, or a worker past 500 model turns in one run; `djinn task continue` gives a
-stopped worker 500 turns again, not more time. A Claude worker's count grows as it works; Antigravity
+The Lamplighter, Djinn's watchdog, wakes before it fails. A worker that prints nothing for 15 minutes, with no
+process busy and no gate held or awaited, a worker whose stream goes idle, or whose process is lost, is ended and
+continued on its session; only after three wakes in a row does its task fail, saying so, its lead told once. A
+watcher (`--provider watch`) is supervised apart, for as long as its wish needs it: never ended for its silence,
+which is its normal state, nor for a budget; a command of it that dies starts again in the same task, and only five
+deaths in a row fail it, its lead told why. A budget is no wake: a task is stopped, "budget exceeded", past 2 hours
+of work in total across its runs, or a worker past 500 model turns in one run, and stays stopped; `djinn task
+continue` gives a stopped worker 500 turns again, not more time. These budgets are part of the task's
+[seal](providers.md#a-tasks-seal). A Claude worker's count grows as it works; Antigravity
 reports its own at the end of each answer, Codex none.
 
 At every start, the lead of the first active wish comes back on its session, in its folder. The lead terminals come

@@ -1876,7 +1876,7 @@ export type Task = Message<"plan.v1.Task"> & {
   marks: Mark[];
 
   /**
-   * Model turns its worker took, against the limit the watchdog stops a run at: written as they grow, with the
+   * Model turns its worker took, against the limit the Lamplighter stops a run at: written as they grow, with the
    * resources. Unset before its first start.
    *
    * @generated from field: plan.v1.Turns turns = 65;
@@ -2474,7 +2474,7 @@ export const AzimaPrSchema: GenMessage<AzimaPr> = /*@__PURE__*/
   messageDesc(file_plan_v1_plan, 28);
 
 /**
- * Turns counts a task's model turns against the watchdog's limit (TaskMaxTurns): a guard against an endless loop.
+ * Turns counts a task's model turns against the seal's limit (TaskMaxTurns): a guard against an endless loop.
  *
  * @generated from message plan.v1.Turns
  */
@@ -2488,7 +2488,7 @@ export type Turns = Message<"plan.v1.Turns"> & {
   run: number;
 
   /**
-   * How many turns a run may take before the watchdog stops it.
+   * How many turns a run may take before the Lamplighter stops it.
    *
    * @generated from field: int32 limit = 2;
    */

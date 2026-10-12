@@ -240,7 +240,7 @@ func (h *Harness) schedule(ctx context.Context) {
 		}
 		return
 	}
-	if h.watchdog(ctx, tasks) {
+	if h.lamplighter(ctx, tasks) {
 		if reloaded, err := store.List[*planv1.Task](ctx, h.store, nil); err == nil {
 			tasks = reloaded
 		}

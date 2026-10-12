@@ -48,7 +48,7 @@ metadata:
 - `restart`: `true` for a command that exits on each change: Djinn starts it again after each exit 0 too, and
   stops it on its done line. Without it, the watcher still restarts by default: a command that dies (an error, an
   exit code other than 0) starts again in the same task, keeping its state folder; an exit 0 ends it, done
-  ([supervised by the watchdog](providers.md#watch-a-command-no-agent)).
+  ([supervised by the Lamplighter](providers.md#watch-a-command-no-agent)).
 
 `djinn skill list` shows each skill's template, or why it cannot be used: no title or match, a match that does not
 compile, a placeholder that is no group of the match, a `done_when` or a `restart` without `watch`.

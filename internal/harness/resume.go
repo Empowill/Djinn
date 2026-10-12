@@ -50,7 +50,7 @@ const (
 	byLost       = "after its process was lost" // a watcher's (restartLostWatcher)
 )
 
-// whyLost is why a task waits whose process was lost: the watchdog found it running without a run.
+// whyLost is why a task waits whose process was lost: the Lamplighter found it running without a run.
 const whyLost = "lost process"
 
 // whyStoppedFirst is why a planned task waits that djinn up stopped before its worker started (its worktree being
