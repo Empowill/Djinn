@@ -4457,6 +4457,50 @@ test("the wish's head says the merge of main waits, why visible and on hover", (
   );
 });
 
+test("a merge git refuses for want of an identity waits, the git config to run said, no conflict", () => {
+  // The reason Djinn writes (noIdentity, internal/harness/worktree.go), as W5 of PR #2's CI met it.
+  const reason =
+    "git has no identity to sign Djinn's merges and commits: run git config --global user.name \"Your Name\" and git config --global user.email you@example.com (or the same without --global, in the project's repository)";
+  const said =
+    "git has no identity to sign Djinn&#x27;s merges and commits: run git config --global user.name &quot;Your Name&quot; and git config --global user.email you@example.com (or the same without --global, in the project&#x27;s repository)";
+  const card = s.renderToStaticMarkup(
+    h(s.WishTask, {
+      task: {
+        id: "W1",
+        code: "W1",
+        title: "Task W1",
+        status: s.TaskStatus.DONE,
+        createTime: { seconds: 1n, nanos: 0 },
+        endTime: { seconds: 2n, nanos: 0 },
+        integration: {
+          state: s.IntegrationState.PENDING,
+          branch: "main",
+          sha: "",
+          reason,
+          correctedBy: "",
+          reviewedBy: "",
+        },
+      },
+      onStop() {},
+      async onSend() {},
+    }),
+  );
+  assert.ok(
+    card.includes(
+      `<p class="wish-task-note wish-task-work work-waiting">Waiting to be committed: ${said}</p>`,
+    ),
+    card,
+  );
+  assert.doesNotMatch(card, /Conflict/);
+  const head = s.renderToStaticMarkup(
+    h(s.MainMerges, {
+      mains: [{ projectId: "p1", held: reason }],
+      projects: [{ id: "p1", name: "app" }],
+    }),
+  );
+  assert.ok(head.includes(`The merge of main waits: ${said}`), head);
+});
+
 test("the project view lists the setup and the checks, when each runs, and how each last ran", () => {
   const none = s.renderToStaticMarkup(
     h(s.ProjectChecks, { setup: "", checks: [], runs: [] }),

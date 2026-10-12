@@ -958,3 +958,11 @@ export function effectivePushStrategy(
   }
   return PushStrategy.WISH;
 }
+
+// gitReason is a reason Djinn wrote, in the window's language when it is git refusing to sign a merge for want of a
+// name and an email (noIdentity, internal/harness/worktree.go): the git config to run. Any other stays as written.
+export function gitReason(reason: string): string {
+  return reason.startsWith("git has no identity")
+    ? t("work.no_identity")
+    : reason;
+}

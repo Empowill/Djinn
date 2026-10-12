@@ -46,6 +46,7 @@ import { useOptionalData, useTaskEvents, useTaskPrompt } from "./data/djinn";
 import { isMerge } from "./data/flight";
 import {
   cancelledText,
+  gitReason,
   taskActivity,
   taskFinished,
   taskModelDisplay,
@@ -559,7 +560,7 @@ export function taskWork(
     case IntegrationState.PENDING:
       out = {
         text: work.reason
-          ? t("work.pending_why", { reason: work.reason })
+          ? t("work.pending_why", { reason: gitReason(work.reason) })
           : t("work.pending"),
         tone: "waiting",
       };
