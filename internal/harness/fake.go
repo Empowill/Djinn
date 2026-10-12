@@ -23,6 +23,7 @@ import (
 //	tool Bash ls -la      it calls a tool
 //	result total 8        the tool returns
 //	usage 1200 300 0.02   it has spent so far 1200 tokens in, 300 out, $0.02
+//	turns 37              it has taken 37 model turns so far in this run
 //	write notes.md Hi     it writes Hi in notes.md, in its folder, when it may edit (else: permission denied)
 //	sleep 5s              it works for a while
 //	wait                  it works until a message comes (Send), which it says back at the end as the others
@@ -182,6 +183,13 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 			}
 			ev.Kind, ev.Usage = planv1.TaskEventKind_TASK_EVENT_KIND_USAGE, u
 			ev.Text = fmt.Sprintf("%d tokens in, %d out, $%.4f", u.GetInputTokens(), u.GetOutputTokens(), u.GetCostUsd())
+		case "turns":
+			n, err := strconv.Atoi(rest)
+			if err != nil || n < 1 {
+				ev.Kind, ev.Text = planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, "turns: want a count, got "+rest
+				break
+			}
+			ev.Kind, ev.Text, ev.Turns = planv1.TaskEventKind_TASK_EVENT_KIND_OTHER, raw, n
 		case "write":
 			ev = fakeWrite(spec, rest)
 			ev.Raw = raw

@@ -44,6 +44,9 @@ type Snapshot struct {
 	Disk        *Disk // the data folder's; nil when unknown
 	GPUs        []GPU
 	Time        time.Time
+	// WorkersResident is the resident memory of Djinn's running workers, in bytes (Monitor.SetWorkerMemory): memory
+	// available already leaves it out, so what Djinn may commit counts it back in (CommitMemory); 0 when unknown.
+	WorkersResident uint64
 }
 
 // macOS's memory pressure levels that may hold new workers: warning at the Minimal notch, critical from Medium up.
@@ -96,6 +99,11 @@ type Policy struct {
 	WorkerPeak   uint64
 	WorkerPeaks  int
 	WorkerMargin uint64
+	// Percentile is the percentile of a worker's memory series it is engaged at (95, 80, 70, 60 or 50): a running
+	// worker at that percentile of its own readings, a new one at the median of the latest WorkerPeaks finished
+	// workers' value at it. The higher the notch, the lower: builds and tests spike a worker's memory, and the gates
+	// already serialize them. 0 is 95.
+	Percentile int
 	// Share is the fraction of machine capacity this policy grants (0.20 to 1.50).
 	Share float64
 	// MemoryShare is the maximum fraction of total RAM Djinn may commit in peak forecasts (0.20 to 1.50).
@@ -163,6 +171,7 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			WorkerPeak:     GiB,
 			WorkerPeaks:    10,
 			WorkerMargin:   512 << 20,
+			Percentile:     95,
 			Share:          0.20,
 			MemoryShare:    0.20,
 			ModelGPUMemory: 6 * GiB,
@@ -190,7 +199,8 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			CommandMargin:  384 << 20,
 			WorkerPeak:     GiB,
 			WorkerPeaks:    10,
-			WorkerMargin:   512 << 20,
+			WorkerMargin:   384 << 20,
+			Percentile:     70,
 			Share:          0.80,
 			MemoryShare:    0.80,
 			ModelGPUMemory: 6 * GiB,
@@ -215,7 +225,8 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			CommandMargin:  256 << 20,
 			WorkerPeak:     GiB,
 			WorkerPeaks:    10,
-			WorkerMargin:   512 << 20,
+			WorkerMargin:   256 << 20,
+			Percentile:     60,
 			Share:          1.0,
 			MemoryShare:    1.0,
 			ModelGPUMemory: 6 * GiB,
@@ -239,7 +250,8 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			CommandMargin:  128 << 20,
 			WorkerPeak:     GiB,
 			WorkerPeaks:    10,
-			WorkerMargin:   512 << 20,
+			WorkerMargin:   256 << 20,
+			Percentile:     50,
 			Share:          1.50,
 			MemoryShare:    1.50,
 			ModelGPUMemory: 6 * GiB,
@@ -268,6 +280,7 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			WorkerPeak:     GiB,
 			WorkerPeaks:    10,
 			WorkerMargin:   512 << 20,
+			Percentile:     80,
 			Share:          0.50,
 			MemoryShare:    0.50,
 			ModelGPUMemory: 6 * GiB,
@@ -293,10 +306,42 @@ func (p Policy) AvailableMemory(s Snapshot) uint64 {
 	return s.MemoryTotal
 }
 
-// UsableMemory returns the memory available to Djinn beyond the reserve:
-// max(0, AvailableMemory - MemoryReserve).
+// CommitMemory returns the memory Djinn could use with no worker running: the memory available plus what its
+// running workers hold (s.WorkersResident), which the memory available already leaves out; at most the total. Counting
+// the workers' own memory both out of what is available and into what they engage would count it twice.
+func (p Policy) CommitMemory(s Snapshot) uint64 {
+	return p.commitBase(s.MemoryTotal, p.AvailableMemory(s), s.WorkersResident)
+}
+
+// commitBase is available plus resident, at most total when total is known.
+func (p Policy) commitBase(total, available, resident uint64) uint64 {
+	if available == 0 {
+		return 0
+	}
+	base := available + resident
+	if total > 0 && base > total {
+		base = max(total, available)
+	}
+	return base
+}
+
+// MemoryPercentile is the percentile a worker is engaged at (Percentile): 95 when unset.
+func (p Policy) MemoryPercentile() int {
+	if p.Percentile <= 0 || p.Percentile > 95 {
+		return 95
+	}
+	return p.Percentile
+}
+
+// EngagedAt says at which percentile of its memory a worker is engaged, and why: "engaged at p50 (overclock)".
+func (p Policy) EngagedAt() string {
+	return fmt.Sprintf("engaged at p%d (%s)", p.MemoryPercentile(), p.NotchName())
+}
+
+// UsableMemory returns the memory Djinn could use beyond the reserve, its running workers' included:
+// max(0, CommitMemory - MemoryReserve).
 func (p Policy) UsableMemory(s Snapshot) uint64 {
-	avail := p.AvailableMemory(s)
+	avail := p.CommitMemory(s)
 	res := p.MemoryReserve
 	if res == 0 {
 		res = 2 * GiB
@@ -332,10 +377,10 @@ func (p Policy) RuleMemory(total uint64) uint64 {
 	return total - p.WorkerMargin
 }
 
-// CommittableLimit is the maximum memory Djinn commits to peak forecasts on a machine with available bytes of RAM.
-// Djinn's engaged memory never exceeds the notch's share of the memory available to it (free + reclaimable minus reserve),
-// with Overclock included only up to the reserve (at most available).
-// It returns 0 when available is 0 or unknown.
+// CommittableLimit is the maximum memory Djinn commits to peak forecasts, available being the memory Djinn could use
+// with no worker running (CommitMemory: free + reclaimable + its running workers' own). Djinn's engaged memory never
+// exceeds the notch's share of it beyond the reserve, with Overclock included only up to the reserve (at most
+// available). It returns 0 when available is 0 or unknown.
 func (p Policy) CommittableLimit(available uint64) uint64 {
 	if available == 0 {
 		return 0
@@ -477,10 +522,11 @@ func (p Policy) CPUSlots(s Snapshot) int {
 }
 
 // MemorySlots returns the worker slots allowed by memory at 100% (usable memory / worker forecast) before notch scaling:
-// usable memory is available minus reserve; forecast is measured peak per worker or default; at least 1, up to MaxWorkers.
+// usable memory is available plus the running workers' own, minus reserve (UsableMemory); forecast is measured peak
+// per worker or default; at least 1, up to MaxWorkers.
 // A machine whose memory is unknown returns MaxWorkers.
 func (p Policy) MemorySlots(s Snapshot, peaks ...uint64) int {
-	avail := p.AvailableMemory(s)
+	avail := p.CommitMemory(s)
 	maxW := p.MaxWorkers
 	if maxW <= 0 {
 		maxW = 16
@@ -515,7 +561,7 @@ func (p Policy) BaseSlots(s Snapshot, peaks ...uint64) (int, string) {
 	cpuRule := fmt.Sprintf("one per %d cores of %d", cpw, cores)
 	rawCPU := max(cores/cpw, 1)
 
-	avail := p.AvailableMemory(s)
+	avail := p.CommitMemory(s)
 	res := p.MemoryReserve
 	if res == 0 {
 		res = 2 * GiB
@@ -556,7 +602,9 @@ func BaseSlots(s Snapshot) int {
 
 // Slots is the most workers the machine runs at once, and the rule that gave it.
 // Workers allowed = the notch's share of min(what the CPU rule allows, what the memory allows),
-// where memory allows (memory Djinn may engage at that notch) / (the measured peak forecast per worker).
+// where memory allows (memory Djinn may engage at that notch) / (the measured peak forecast per worker); the memory
+// Djinn may engage counts its running workers' own back in (CommitMemory), so a worker's memory does not take a slot
+// from the others.
 func (p Policy) Slots(s Snapshot, peaks ...uint64) (int, string) {
 	if p.Workers > 0 {
 		return p.Workers, fmt.Sprintf("%d, set by djinn up --workers", p.Workers)
@@ -572,7 +620,7 @@ func (p Policy) Slots(s Snapshot, peaks ...uint64) (int, string) {
 	}
 	cpuAllowed := max(1, int(math.Round(share*float64(p.CPUSlots(s)))))
 	workers := cpuAllowed
-	avail := p.AvailableMemory(s)
+	avail := p.CommitMemory(s)
 	if avail > 0 {
 		memEngaged := p.CommittableLimit(avail)
 		forecast := p.WorkerForecast(peaks...)
@@ -674,19 +722,26 @@ func (p Policy) WorkerMemoryCeiling(peak uint64, measured int) uint64 {
 	}
 }
 
-// WorkerRoom says why the machine cannot hold another worker of provider yet, or "" when it can: memory
-// commits up to CommittableLimit in peak forecasts, and the memory available, less held (what the workers running
-// may still take), holds peak, the typical peak of a worker of provider measured over measured workers (Typical),
-// plus WorkerMargin. A machine whose memory is unknown (available 0) has room.
-func (p Policy) WorkerRoom(total, available, held, engaged uint64, provider string, peak uint64, measured int) string {
+// WorkerRoom says why the machine cannot hold another worker of provider yet, or "" when it can. Two checks:
+//   - engaged (what the workers running are engaged at, their resident memory included) plus the new worker's
+//     forecast stays within CommittableLimit of the memory Djinn could use with no worker running: available plus
+//     resident, the running workers' resident memory, which available already leaves out;
+//   - the memory available, less held (what the workers running may still take beyond what they hold), holds peak,
+//     the typical memory of a worker of provider measured over measured workers (Typical), plus WorkerMargin.
+//
+// A machine whose memory is unknown (available 0) has room.
+func (p Policy) WorkerRoom(total, available, resident, held, engaged uint64, provider string, peak uint64, measured int) string {
 	forecast := peak + p.WorkerMargin
 	if total > 0 && available > 0 {
-		if limit := p.CommittableLimit(available); limit > 0 && engaged+forecast > limit {
+		if limit := p.CommittableLimit(p.commitBase(total, available, resident)); limit > 0 && engaged+forecast > limit {
 			why := fmt.Sprintf("load %s commits up to %s of memory", p.NotchName(), size(limit))
+			if resident > 0 {
+				why += fmt.Sprintf(" (%s available, %s held by the workers running)", size(available), size(resident))
+			}
 			if engaged > 0 {
 				why += fmt.Sprintf(", %s already engaged", size(engaged))
 			}
-			return why + fmt.Sprintf(", needs %s", size(forecast))
+			return why + fmt.Sprintf(", needs %s at p%d", size(forecast), p.MemoryPercentile())
 		}
 	}
 	free := available - min(held, available)
@@ -776,9 +831,10 @@ type Monitor struct {
 	read   func() (Snapshot, error)
 	every  time.Duration
 
-	mu   sync.Mutex
-	last Snapshot
-	at   time.Time
+	mu      sync.Mutex
+	last    Snapshot
+	at      time.Time
+	workers func() uint64
 }
 
 // NewMonitor is a monitor of this machine with the policy p. read, when not nil, replaces reading the machine: the
@@ -790,12 +846,30 @@ func NewMonitor(p Policy, read func() (Snapshot, error)) *Monitor {
 	return &Monitor{policy: p, read: read, every: time.Second}
 }
 
-// Snapshot is the machine, read at most a second ago. A reading that fails keeps what is known: the cores.
+// SetWorkerMemory gives the resident memory of Djinn's running workers, in bytes, which each snapshot carries
+// (Snapshot.WorkersResident): djinn up gives the harness's (harness.Harness.Resident). It must not call the monitor.
+func (m *Monitor) SetWorkerMemory(resident func() uint64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.workers = resident
+}
+
+// Snapshot is the machine, read at most a second ago, with the resident memory of Djinn's running workers read now. A
+// reading that fails keeps what is known: the cores.
 func (m *Monitor) Snapshot() Snapshot {
+	s, workers := m.machine()
+	if workers != nil {
+		s.WorkersResident = workers()
+	}
+	return s
+}
+
+// machine is the machine, read at most a second ago, and the function giving the workers' resident memory.
+func (m *Monitor) machine() (Snapshot, func() uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !m.at.IsZero() && time.Since(m.at) < m.every {
-		return m.last
+		return m.last, m.workers
 	}
 	var s Snapshot
 	var err error
@@ -813,7 +887,7 @@ func (m *Monitor) Snapshot() Snapshot {
 		s.Time = time.Now()
 	}
 	m.last, m.at = s, time.Now()
-	return s
+	return s, m.workers
 }
 
 // Capacity is the most workers the machine runs at once and its rule, and why it is under pressure ("" when it is

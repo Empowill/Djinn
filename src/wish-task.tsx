@@ -62,7 +62,14 @@ import { language, t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
 import { TaskDiffView } from "./diff";
-import { resourcesDetail, resourcesNow, TaskUsage, usageDetail } from "./usage";
+import {
+  costTitle,
+  resourcesDetail,
+  resourcesNow,
+  TaskTurns,
+  TaskUsage,
+  usageDetail,
+} from "./usage";
 
 const eventIcons: Partial<Record<TaskEventKind, typeof FileText>> = {
   [TaskEventKind.PROMPT]: MessageSquare,
@@ -169,6 +176,26 @@ export function compactGreenWait(reason?: string): string {
   if (!reason) return "";
   const idx = reason.indexOf(" (push checks red at ");
   return idx > 0 ? reason.slice(0, idx) : reason;
+}
+
+// WaitReason is why a task waits, as Djinn says it; the task it waits for ("waits for W8 to be committed") is a link
+// to its card, which stays in sight until its work is committed (settledTask).
+function WaitReason({
+  reason,
+  codes,
+}: {
+  reason: string;
+  codes?: ReadonlyMap<string, string>;
+}) {
+  const m = /^(.*?waits for )([A-Za-z]+\d+)\b(.*)$/s.exec(reason);
+  if (!m) return <>{reason}</>;
+  return (
+    <>
+      {m[1]}
+      <TaskLink code={m[2]} codes={codes} />
+      {m[3]}
+    </>
+  );
 }
 
 export const WishTask = memo(function WishTask({
@@ -309,6 +336,7 @@ export const WishTask = memo(function WishTask({
                   {time.text}
                 </span>
               )}
+              <TaskTurns task={task} />
               {origin}
               <TaskUsage task={task} />
               {task.status === TaskStatus.RUNNING &&
@@ -423,8 +451,10 @@ export const WishTask = memo(function WishTask({
               <span title={task.waitReason}>
                 {compactGreenWait(task.waitReason)}
               </span>
+            ) : task.waitReason ? (
+              <WaitReason reason={task.waitReason} codes={codes} />
             ) : (
-              task.waitReason || (watcher && task.lastLine)
+              watcher && task.lastLine
             )}
             {after.length > 0 && (
               <span className="wish-task-after">
@@ -715,7 +745,11 @@ function TaskBody({
         {task.maxBudgetUsd > 0 && (
           <span>{t("task.budget", { cost: usd(task.maxBudgetUsd) })}</span>
         )}
-        {spent && <span>{spent}</span>}
+        {spent && (
+          <span title={costTitle(task.usage, task.model, task.provider)}>
+            {spent}
+          </span>
+        )}
         {used && <span>{used}</span>}
         {!used && unmeasured && <span>{t("resources.not_measured")}</span>}
       </div>
@@ -883,12 +917,12 @@ function EventLine({
   provider?: Provider;
 }) {
   const Icon = eventIcons[event.kind] ?? FileText;
-  const text =
-    event.kind === TaskEventKind.USAGE && event.usage
-      ? usageDetail(event.usage, model, provider)
-      : event.kind === TaskEventKind.RECEIVED
-        ? t("task.received", { text: event.text })
-        : event.text;
+  const usage = event.kind === TaskEventKind.USAGE ? event.usage : undefined;
+  const text = usage
+    ? usageDetail(usage, model, provider)
+    : event.kind === TaskEventKind.RECEIVED
+      ? t("task.received", { text: event.text })
+      : event.text;
   return (
     <tr className={`wish-event kind-${event.kind}`}>
       <td>
@@ -897,7 +931,12 @@ function EventLine({
       <td title={TaskEventKind[event.kind]?.toLowerCase()}>
         <Icon size={13} aria-hidden="true" />
       </td>
-      <td className="wish-event-text">{text}</td>
+      <td
+        className="wish-event-text"
+        title={usage ? costTitle(usage, model, provider) : undefined}
+      >
+        {text}
+      </td>
     </tr>
   );
 }

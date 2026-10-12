@@ -107,6 +107,9 @@ func TestLoadServiceHandler(t *testing.T) {
 	if getRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
 		t.Errorf("Get notch: got %v, want MEDIUM", getRes.Msg.GetNotch())
 	}
+	if getRes.Msg.GetWorkerPercentile() != 80 || getRes.Msg.GetWorkerEngagedAt() != "engaged at p80 (medium)" {
+		t.Errorf("Get percentile: p%d, %q", getRes.Msg.GetWorkerPercentile(), getRes.Msg.GetWorkerEngagedAt())
+	}
 
 	// Test Set with invalid/unspecified notch.
 	_, err = client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
@@ -154,6 +157,9 @@ func TestLoadServiceHandler(t *testing.T) {
 	}
 	if getRes2.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
 		t.Errorf("Get after Set: got %v, want MINIMAL", getRes2.Msg.GetNotch())
+	}
+	if getRes2.Msg.GetWorkerPercentile() != 95 || getRes2.Msg.GetWorkerEngagedAt() != "engaged at p95 (minimal)" {
+		t.Errorf("Get after Set percentile: p%d, %q", getRes2.Msg.GetWorkerPercentile(), getRes2.Msg.GetWorkerEngagedAt())
 	}
 }
 

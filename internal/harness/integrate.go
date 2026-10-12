@@ -80,6 +80,16 @@ type Built struct {
 	Summaries []TaskSummary
 	// The install command.
 	Install string
+	// The commit the running Djinn was built from, when the project holds it: Tasks, Summaries and Changes are then
+	// what the build adds to it (compare.go). Empty: they are what the push brought.
+	Base string
+	// The running Djinn was built from Branch.
+	Running bool
+	// How many commits, merges aside, the build adds to the running Djinn; Changes holds the latest.
+	ChangesCount int
+	// The titles of the commits the running Djinn holds and the build does not, the latest first, and how many.
+	Lacks      []string
+	LacksCount int
 }
 
 // WithBuilt calls built after each push of an integration branch in a project whose settings name an install command.
@@ -173,7 +183,6 @@ func (h *Harness) integratePass(ctx context.Context) {
 		return
 	}
 	h.correctionsEnded(ctx, tasks)
-	h.followStackedBranches(ctx, tasks)
 	var waiting []*planv1.Task
 	for _, t := range tasks {
 		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || h.running(t.GetId()) {
@@ -457,6 +466,7 @@ func (h *Harness) build(ctx context.Context, wish *planv1.Wish, project *planv1.
 			Summary: h.lastWords(ctx, t.GetId()),
 		})
 	}
+	h.compare(ctx, project, &b)
 	return b
 }
 
@@ -1529,7 +1539,7 @@ func (h *Harness) handleMergeMoves(
 				return strings.Contains(q.GetText(), tag)
 			})
 			if !asked {
-				q := tagMoveQuestion(wish.GetId(), tag, remote)
+				q := tagMoveQuestion(wish.GetId(), project.GetId(), tag, remote)
 				if err := h.askMove(ctx, q); err == nil {
 					existing = append(existing, q)
 					moves = append(moves, moveName)
@@ -1768,7 +1778,7 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 										}
 									}
 									if !asked {
-										q := installMoveQuestionWithReason(wish.GetId(), sha, branch, reason)
+										q := installMoveQuestionWithReason(wish.GetId(), projectID, sha, branch, reason)
 										if err := h.askMove(ctx, q); err == nil {
 											allQuestions = append(allQuestions, q)
 										}
@@ -1783,7 +1793,7 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 									}
 								}
 								if !asked {
-									q := installMoveQuestion(wish.GetId(), sha, branch, delay)
+									q := installMoveQuestion(wish.GetId(), projectID, sha, branch, delay)
 									if err := h.askMove(ctx, q); err == nil {
 										allQuestions = append(allQuestions, q)
 									}
@@ -1842,8 +1852,8 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 }
 
 // targetBranch determines the branch to merge the batch into:
-// When the push strategy is azima, each azima gets its own integration branch (djinn/<azima code>-<slug of title>).
-// A task with no azima goes to the wish's own integration branch.
+// When the push strategy is azima, each azima gets its own integration branch (djinn/<azima code>-<slug of title>),
+// cut from main if it does not exist yet (azimaBranch). A task with no azima goes to the wish's own integration branch.
 // In per-wish mode, it returns the wish's integration branch as today.
 func (h *Harness) targetBranch(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, batch []*planv1.Task,
@@ -1861,27 +1871,8 @@ func (h *Harness) targetBranch(
 		b, why := h.integrationBranch(ctx, wish, project)
 		return b, why, true
 	}
-	branch = azimaBranchName(azima)
-	repo := project.GetDirectory()
-	branchSha := commitOf(ctx, repo, "refs/heads/"+branch)
-	if branchSha == "" {
-		startSha, err := h.startShaForAzima(ctx, repo, settings, azima)
-		if err != nil {
-			return "", "find start commit for " + branch + ": " + err.Error(), false
-		}
-		if _, err := git(ctx, repo, "branch", branch, startSha); err != nil {
-			return "", "create branch " + branch + ": " + err.Error(), false
-		}
-	} else {
-		needs, mainSha, err := h.needsFollowMain(ctx, repo, settings, azima, branch, branchSha)
-		if err != nil {
-			return "", "check if " + branch + " follows main: " + err.Error(), false
-		}
-		if needs {
-			if err := h.followMain(ctx, wish, project, settings, azima, branch, branchSha, mainSha, batch); err != nil {
-				return "", "", false
-			}
-		}
+	if branch, err = h.azimaBranch(ctx, project, settings, azima); err != nil {
+		return "", err.Error(), false
 	}
 	return branch, "", true
 }
@@ -1964,62 +1955,6 @@ func (h *Harness) wishAzimas(ctx context.Context, wish *planv1.Wish) []*planv1.T
 	return azimas
 }
 
-// dependencyAzimas finds all unique azimas that azima (or its work tasks) depends on in the same wish.
-func (h *Harness) dependencyAzimas(ctx context.Context, azima *planv1.Task) []*planv1.Task {
-	if azima == nil {
-		return nil
-	}
-	wishID := azima.GetWishId()
-	allTasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wishID})
-	if err != nil {
-		return nil
-	}
-	taskMap := make(map[string]*planv1.Task, len(allTasks))
-	for _, t := range allTasks {
-		taskMap[t.GetId()] = t
-	}
-
-	findAzima := func(taskID string) *planv1.Task {
-		curr := taskMap[taskID]
-		visited := make(map[string]bool)
-		for curr != nil && !visited[curr.GetId()] {
-			visited[curr.GetId()] = true
-			if plan.IsAzima(curr) {
-				return curr
-			}
-			if curr.GetPartOf() == "" {
-				break
-			}
-			curr = taskMap[curr.GetPartOf()]
-		}
-		return nil
-	}
-
-	depAzimaMap := make(map[string]*planv1.Task)
-	for _, depID := range azima.GetDependsOn() {
-		if a := findAzima(depID); a != nil && a.GetId() != azima.GetId() {
-			depAzimaMap[a.GetId()] = a
-		}
-	}
-	for _, t := range allTasks {
-		if a := findAzima(t.GetId()); a != nil && a.GetId() == azima.GetId() && !plan.IsAzima(t) {
-			for _, depID := range t.GetDependsOn() {
-				if da := findAzima(depID); da != nil && da.GetId() != azima.GetId() {
-					depAzimaMap[da.GetId()] = da
-				}
-			}
-		}
-	}
-	var res []*planv1.Task
-	for _, da := range depAzimaMap {
-		res = append(res, da)
-	}
-	slices.SortStableFunc(res, func(a, b *planv1.Task) int {
-		return strings.Compare(a.GetCode(), b.GetCode())
-	})
-	return res
-}
-
 // azimaBranchesOf lists all existing azima branches for wish in project's repo.
 func (h *Harness) azimaBranchesOf(ctx context.Context, wish *planv1.Wish, project *planv1.Project) []string {
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
@@ -2078,297 +2013,8 @@ func resolveMainSha(ctx context.Context, repo string, settings plan.Settings) (n
 	return "", "", errors.New("the project has no main branch: name it with main_branch in its settings")
 }
 
-// startShaForAzima determines the commit an azima's branch starts from:
-// It starts from an unmerged dependency's branch; or once dependencies are merged into main, from main.
-func (h *Harness) startShaForAzima(ctx context.Context, repo string, settings plan.Settings, azima *planv1.Task) (string, error) {
-	_, mainSha, err := resolveMainSha(ctx, repo, settings)
-	if err != nil {
-		return "", err
-	}
-	deps := h.dependencyAzimas(ctx, azima)
-	var unmerged []string
-	for _, dep := range deps {
-		depBranch := azimaBranchName(dep)
-		if depSha := commitOf(ctx, repo, "refs/heads/"+depBranch); depSha != "" {
-			if !isAncestor(ctx, repo, depSha, mainSha) {
-				unmerged = append(unmerged, depSha)
-			}
-		}
-	}
-	if len(unmerged) == 0 {
-		return mainSha, nil
-	}
-	leaf := unmerged[0]
-	for _, cand := range unmerged {
-		isAnc := false
-		for _, other := range unmerged {
-			if cand != other && isAncestor(ctx, repo, cand, other) {
-				isAnc = true
-				break
-			}
-		}
-		if !isAnc {
-			leaf = cand
-			break
-		}
-	}
-	return leaf, nil
-}
-
-// needsFollowMain tells whether branch needs to follow main (base azima merged into main).
-func (h *Harness) needsFollowMain(ctx context.Context, repo string, settings plan.Settings, azima *planv1.Task, branch, branchSha string) (bool, string, error) {
-	_, mainSha, err := resolveMainSha(ctx, repo, settings)
-	if err != nil {
-		return false, "", err
-	}
-	if mainSha == "" {
-		return false, "", nil
-	}
-	if isAncestor(ctx, repo, mainSha, branchSha) {
-		return false, mainSha, nil
-	}
-	deps := h.dependencyAzimas(ctx, azima)
-	for _, dep := range deps {
-		depBranch := azimaBranchName(dep)
-		depSha := commitOf(ctx, repo, "refs/heads/"+depBranch)
-		if depSha != "" && isAncestor(ctx, repo, depSha, mainSha) && isAncestor(ctx, repo, depSha, branchSha) {
-			return true, mainSha, nil
-		}
-		depTasks, _ := h.azimaTasks(ctx, azima.GetWishId(), dep.GetId())
-		for _, dt := range depTasks {
-			if tSha := dt.GetIntegration().GetSha(); tSha != "" {
-				if isAncestor(ctx, repo, tSha, mainSha) && isAncestor(ctx, repo, tSha, branchSha) {
-					return true, mainSha, nil
-				}
-			}
-		}
-	}
-	return false, mainSha, nil
-}
-
-// followMain brings main into branch when base azima was merged into main:
-// rebases if never pushed; merges main into it if pushed; on conflict raises a question or spawns correction.
-func (h *Harness) followMain(
-	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings,
-	azima *planv1.Task, branch, branchSha, mainSha string, batch []*planv1.Task,
-) error {
-	repo := project.GetDirectory()
-	shownMain, _, _ := mainRef(ctx, repo, settings.MainBranch)
-	if shownMain == "" {
-		shownMain = "main"
-	}
-	pushed := h.isBranchPushed(ctx, wish, project, branch)
-	wt := integrationDir(h.home, project.GetId(), wish.GetId())
-	dir, prefix, err := integrationWorktree(ctx, repo, wt, branchSha)
-	if err != nil {
-		return fmt.Errorf("prepare integration worktree: %w", err)
-	}
-
-	if !pushed {
-		// Never pushed: rebase onto main
-		if _, err := git(ctx, wt, "rebase", "--rebase-merges", mainSha); err != nil {
-			conflicts := conflicted(ctx, wt)
-			_, _ = git(ctx, wt, "rebase", "--abort")
-			why := fmt.Sprintf("%s conflicts with %s in %s", branch, shownMain, strings.Join(conflicts, ", "))
-			f := &planv1.IntegrationFailure{
-				State: planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, Base: branchSha,
-				MergeBranch: mainSha, Files: conflicts, Reason: why, TaskIds: ids(batch),
-			}
-			in := &planv1.TaskIntegration{
-				State: planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, Reason: why, Failure: f, Branch: branch,
-			}
-			h.failed(ctx, wish, project, settings, batch, in, "integration: conflict: "+why+"; "+branch+" stays as it was")
-			return errors.New(why)
-		}
-		newSha, err := git(ctx, wt, "rev-parse", "HEAD")
-		if err != nil {
-			return err
-		}
-		command, why, out, stopped := h.commitChecks(ctx, wish, project, settings, batch[0].GetId(), newSha, wt, dir, func(*planv1.ProjectCheck) {})
-		switch {
-		case stopped != "":
-			return errors.New(stopped)
-		case why != "":
-			f := &planv1.IntegrationFailure{
-				State: planv1.IntegrationState_INTEGRATION_STATE_RED, Base: newSha,
-				Command: command, Output: tail(out), Reason: why, TaskIds: ids(batch),
-			}
-			in := &planv1.TaskIntegration{
-				State: planv1.IntegrationState_INTEGRATION_STATE_RED, Reason: why, Failure: f, Branch: branch,
-			}
-			h.failed(ctx, wish, project, settings, batch, in, "integration: red: "+why+"; "+branch+" stays as it was")
-			return errors.New(why)
-		}
-		holder, why, _ := moveBranch(ctx, repo, branch, branchSha, newSha, "djinn: rebase on "+shownMain)
-		if why != "" {
-			return errors.New(why)
-		}
-		_ = holder
-		h.updateRebasedTasks(ctx, repo, batch, branch, newSha)
-		azTasks, _ := h.azimaTasks(ctx, wish.GetId(), azima.GetId())
-		h.updateRebasedTasks(ctx, repo, azTasks, branch, newSha)
-		return nil
-	}
-
-	// Already pushed: merge main into branch without force
-	msg := fmt.Sprintf("Merge branch '%s' into %s", shownMain, branch)
-	if _, err := git(ctx, wt, "merge", "--no-ff", "--no-edit", "--quiet", "-m", msg, mainSha); err != nil {
-		conflicts := conflicted(ctx, wt)
-		var why string
-		switch {
-		case len(conflicts) == 0:
-			_, _ = git(ctx, wt, "merge", "--abort")
-			why = fmt.Sprintf("merge %s: %v", shownMain, err)
-		case !generatedOnly(conflicts, prefix, settings.Generated) || settings.Generate == "":
-			why = fmt.Sprintf("%s conflicts with %s in %s", shownMain, branch, strings.Join(conflicts, ", "))
-		default:
-			why = h.settleGenerated(ctx, shownMain, batch[0].GetId(), wt, dir, settings.Generate, conflicts, func() string {
-				failed, _, _ := h.setUp(ctx, project, settings, wish.GetId(), batch[0].GetId(), wt, dir)
-				return failed
-			})
-		}
-		if why != "" {
-			_, _ = git(ctx, wt, "merge", "--abort")
-			f := &planv1.IntegrationFailure{
-				State: planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, Base: branchSha,
-				MergeBranch: mainSha, Files: conflicts, Reason: why, TaskIds: ids(batch),
-			}
-			in := &planv1.TaskIntegration{
-				State: planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, Reason: why, Failure: f, Branch: branch,
-			}
-			h.failed(ctx, wish, project, settings, batch, in, "integration: conflict: "+why+"; "+branch+" stays as it was")
-			return errors.New(why)
-		}
-	}
-	newSha, err := git(ctx, wt, "rev-parse", "HEAD")
-	if err != nil {
-		return err
-	}
-	command, why, out, stopped := h.commitChecks(ctx, wish, project, settings, batch[0].GetId(), newSha, wt, dir, func(*planv1.ProjectCheck) {})
-	switch {
-	case stopped != "":
-		return errors.New(stopped)
-	case why != "":
-		f := &planv1.IntegrationFailure{
-			State: planv1.IntegrationState_INTEGRATION_STATE_RED, Base: newSha,
-			Command: command, Output: tail(out), Reason: why, TaskIds: ids(batch),
-		}
-		in := &planv1.TaskIntegration{
-			State: planv1.IntegrationState_INTEGRATION_STATE_RED, Reason: why, Failure: f, Branch: branch,
-		}
-		h.failed(ctx, wish, project, settings, batch, in, "integration: red: "+why+"; "+branch+" stays as it was")
-		return errors.New(why)
-	}
-	holder, why, _ := moveBranch(ctx, repo, branch, branchSha, newSha, "djinn: merge "+shownMain+" into "+branch)
-	if why != "" {
-		return errors.New(why)
-	}
-	_ = holder
-	return nil
-}
-
-// updateRebasedTasks updates the recorded integration sha for committed tasks of azima after rebase.
-func (h *Harness) updateRebasedTasks(ctx context.Context, repo string, tasks []*planv1.Task, branch, newSha string) {
-	ctx = context.WithoutCancel(ctx)
-	for _, t := range tasks {
-		if t.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
-			continue
-		}
-		sha := newSha
-		if out, err := git(ctx, repo, "log", "-n", "1", "--format=%H", "-i", "--grep="+t.GetBranch(), newSha); err == nil && strings.TrimSpace(out) != "" {
-			sha = strings.TrimSpace(out)
-		} else if out, err := git(ctx, repo, "log", "-n", "1", "--format=%H", "-i", "--grep="+t.GetCode(), newSha); err == nil && strings.TrimSpace(out) != "" {
-			sha = strings.TrimSpace(out)
-		}
-		_ = h.store.Tx(ctx, func(tx *store.Tx) error {
-			cur, err := store.Get[*planv1.Task](ctx, tx, t.GetId())
-			if err != nil {
-				return err
-			}
-			if cur.Integration == nil {
-				return nil
-			}
-			cur.Integration.Sha = sha
-			cur.Integration.Branch = branch
-			cur.Integration.UpdateTime = timestamppb.New(h.now())
-			if err := tx.Journal(actorHarness, methodIntegrate, cur); err != nil {
-				return err
-			}
-			return tx.Put(cur)
-		})
-	}
-}
-
-// followStackedBranches checks active wishes under azima push strategy and rebases/merges main into branches when base was merged into main.
-func (h *Harness) followStackedBranches(ctx context.Context, tasks []*planv1.Task) {
-	wishes, err := store.List[*planv1.Wish](ctx, h.store, nil)
-	if err != nil {
-		return
-	}
-	for _, wish := range wishes {
-		if s := wish.GetState(); s == planv1.WishState_WISH_STATE_PAUSED || s == planv1.WishState_WISH_STATE_GRANTED {
-			continue
-		}
-		for _, projectID := range wish.GetProjectIds() {
-			if ctx.Err() != nil {
-				return
-			}
-			project, err := store.Get[*planv1.Project](ctx, h.store, projectID)
-			if err != nil || !project.GetGit() {
-				continue
-			}
-			settings, err := plan.LoadSettings(h.home, project)
-			if err != nil || !settings.Integrates() {
-				continue
-			}
-			strat, _ := plan.ResolveWishPushStrategy(wish, settings)
-			if strat != planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
-				continue
-			}
-			repo := project.GetDirectory()
-			for _, azima := range h.wishAzimas(ctx, wish) {
-				branch := azimaBranchName(azima)
-				branchSha := commitOf(ctx, repo, "refs/heads/"+branch)
-				if branchSha == "" {
-					continue
-				}
-				needs, _, err := h.needsFollowMain(ctx, repo, settings, azima, branch, branchSha)
-				if err != nil || !needs {
-					continue
-				}
-				h.integrateMu.Lock()
-				branchSha = commitOf(ctx, repo, "refs/heads/"+branch)
-				if branchSha != "" {
-					if n, mSha, _ := h.needsFollowMain(ctx, repo, settings, azima, branch, branchSha); n {
-						azTasks, _ := h.azimaTasks(ctx, wish.GetId(), azima.GetId())
-						batch := committedTasks(azTasks)
-						if len(batch) == 0 {
-							batch = azTasks
-						}
-						if len(batch) == 0 {
-							batch = []*planv1.Task{azima}
-						}
-						_ = h.followMain(ctx, wish, project, settings, azima, branch, branchSha, mSha, batch)
-					}
-				}
-				h.integrateMu.Unlock()
-			}
-		}
-	}
-}
-
-// committedTasks returns the tasks among tasks whose work is committed.
-func committedTasks(tasks []*planv1.Task) []*planv1.Task {
-	var out []*planv1.Task
-	for _, t := range tasks {
-		if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-// workerStartBranch determines the branch or ref a worker starts from.
+// workerStartBranch determines the branch or ref a worker starts from: under the per-azima push strategy, the branch
+// of the task's azima, cut from main when its first part starts if it was not when the azima was made.
 func (h *Harness) workerStartBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, t *planv1.Task) string {
 	strat, _ := plan.ResolveWishPushStrategy(wish, settings)
 	if strat != planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
@@ -2378,25 +2024,12 @@ func (h *Harness) workerStartBranch(ctx context.Context, wish *planv1.Wish, proj
 	if err != nil || azima == nil {
 		return plan.IntegrationBranchOf(wish, project.GetId())
 	}
-	repo := project.GetDirectory()
-	azimaBranch := azimaBranchName(azima)
-	if _, err := git(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+azimaBranch); err == nil {
-		return azimaBranch
+	branch, err := h.azimaBranch(ctx, project, settings, azima)
+	if err != nil {
+		log.Printf("djinn: task %s: %v", t.GetCode(), err)
+		return plan.IntegrationBranchOf(wish, project.GetId())
 	}
-	deps := h.dependencyAzimas(ctx, azima)
-	mainName, mainSha, _ := resolveMainSha(ctx, repo, settings)
-	for _, dep := range deps {
-		depBranch := azimaBranchName(dep)
-		if depSha := commitOf(ctx, repo, "refs/heads/"+depBranch); depSha != "" {
-			if mainSha == "" || !isAncestor(ctx, repo, depSha, mainSha) {
-				return depBranch
-			}
-		}
-	}
-	if mainName != "" {
-		return mainName
-	}
-	return plan.IntegrationBranchOf(wish, project.GetId())
+	return branch
 }
 
 // azimaGoal extracts the goal sentence from an azima task.
@@ -2490,51 +2123,16 @@ func (h *Harness) draftAzimaPR(ctx context.Context, azima *planv1.Task, parts []
 	return title, strings.TrimSpace(b.String())
 }
 
-// azimaPRBase computes the base branch for an azima's PR:
-// main for independent azima, or the branch of the azima it depends on for stacked azima.
-func (h *Harness) azimaPRBase(ctx context.Context, repo string, settings plan.Settings, azima *planv1.Task) (string, error) {
-	mainName, mainSha, _ := resolveMainSha(ctx, repo, settings)
-	if mainName == "" {
-		mainName = "main"
+// azimaPRBase is the branch an azima's pull request targets: main, the one recorded when its branch was cut, else the
+// project's main branch as Djinn names it. Never another azima's branch, and never changed once the PR is open.
+func azimaPRBase(ctx context.Context, repo string, settings plan.Settings, azima *planv1.Task) string {
+	if base := azima.GetAzima().GetBaseBranch(); base != "" && azima.GetAzima().GetCutFrom() != "" {
+		return base
 	}
-	deps := h.dependencyAzimas(ctx, azima)
-	var unmerged []*planv1.Task
-	for _, dep := range deps {
-		if dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
-			continue
-		}
-		depBranch := azimaBranchName(dep)
-		depSha := commitOf(ctx, repo, "refs/heads/"+depBranch)
-		if depSha != "" && mainSha != "" && isAncestor(ctx, repo, depSha, mainSha) {
-			continue
-		}
-		unmerged = append(unmerged, dep)
+	if main, _, err := resolveMainSha(ctx, repo, settings); err == nil && main != "HEAD" {
+		return main
 	}
-	if len(unmerged) == 0 {
-		return mainName, nil
-	}
-	leaf := unmerged[0]
-	for _, cand := range unmerged {
-		candBranch := azimaBranchName(cand)
-		candSha := commitOf(ctx, repo, "refs/heads/"+candBranch)
-		isLeaf := true
-		for _, other := range unmerged {
-			if cand.GetId() == other.GetId() {
-				continue
-			}
-			otherBranch := azimaBranchName(other)
-			otherSha := commitOf(ctx, repo, "refs/heads/"+otherBranch)
-			if slices.Contains(other.GetDependsOn(), cand.GetId()) || (candSha != "" && otherSha != "" && isAncestor(ctx, repo, candSha, otherSha)) {
-				isLeaf = false
-				break
-			}
-		}
-		if isLeaf {
-			leaf = cand
-			break
-		}
-	}
-	return azimaBranchName(leaf), nil
+	return cmp.Or(settings.MainBranch, "main")
 }
 
 // detectForge detects whether the project remote uses GitLab ("glab") or GitHub ("gh").
@@ -2559,6 +2157,7 @@ type forgePR struct {
 	Number    int
 	State     string // OPEN, MERGED, CLOSED
 	Base      string
+	URL       string
 	Mergeable bool
 	Green     bool
 }
@@ -2574,7 +2173,7 @@ func (h *Harness) runCmd(ctx context.Context, dir string, args []string) (string
 
 // queryGhPR queries GitHub via gh for branch's pull request.
 func (h *Harness) queryGhPR(ctx context.Context, repo, branch string) *forgePR {
-	out, code, err := h.runCmd(ctx, repo, []string{"gh", "pr", "view", branch, "--json", "number,state,baseRefName,mergeable"})
+	out, code, err := h.runCmd(ctx, repo, []string{"gh", "pr", "view", branch, "--json", "number,state,baseRefName,mergeable,url"})
 	if err != nil || code != 0 {
 		return nil
 	}
@@ -2583,6 +2182,7 @@ func (h *Harness) queryGhPR(ctx context.Context, repo, branch string) *forgePR {
 		State       string `json:"state"`
 		BaseRefName string `json:"baseRefName"`
 		Mergeable   string `json:"mergeable"`
+		URL         string `json:"url"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &view); err != nil || view.Number == 0 {
 		return nil
@@ -2591,6 +2191,7 @@ func (h *Harness) queryGhPR(ctx context.Context, repo, branch string) *forgePR {
 		Number:    view.Number,
 		State:     strings.ToUpper(view.State),
 		Base:      view.BaseRefName,
+		URL:       view.URL,
 		Mergeable: view.Mergeable == "MERGEABLE",
 	}
 	if pr.State == "MERGED" || pr.State == "CLOSED" {
@@ -2627,6 +2228,7 @@ func (h *Harness) queryGlabMR(ctx context.Context, repo, branch string) *forgePR
 		ID                  int    `json:"id"`
 		State               string `json:"state"`
 		TargetBranch        string `json:"target_branch"`
+		WebURL              string `json:"web_url"`
 		DetailedMergeStatus string `json:"detailed_merge_status"`
 		HeadPipeline        struct {
 			ID     int    `json:"id"`
@@ -2653,6 +2255,7 @@ func (h *Harness) queryGlabMR(ctx context.Context, repo, branch string) *forgePR
 		Number:    num,
 		State:     state,
 		Base:      view.TargetBranch,
+		URL:       view.WebURL,
 		Mergeable: mergeable,
 		Green:     green,
 	}
@@ -2667,24 +2270,10 @@ func (h *Harness) queryForgePR(ctx context.Context, repo string, project *planv1
 	return h.queryGhPR(ctx, repo, branch)
 }
 
-// retargetForgePR updates the base/target branch of a pull request or merge request on the forge.
-func (h *Harness) retargetForgePR(ctx context.Context, repo string, project *planv1.Project, prNumber int, newBase string) error {
-	forge := detectForge(ctx, repo, project)
-	var args []string
-	if forge == "glab" {
-		args = []string{"glab", "mr", "update", strconv.Itoa(prNumber), "--target-branch", newBase}
-	} else {
-		args = []string{"gh", "pr", "edit", strconv.Itoa(prNumber), "--base", newBase}
-	}
-	out, code, err := h.runCmd(ctx, repo, args)
-	if err != nil || code != 0 {
-		return fmt.Errorf("retarget %s to %s: %s (%w)", forge, newBase, out, err)
-	}
-	return nil
-}
-
-// azimaPRPass manages the PR lifecycle for all azimas of wish in project under azima push strategy:
-// proposing open PR, retargeting when base azima merges, ready-to-merge notification, and marking merged.
+// azimaPRPass manages the PR lifecycle for all azimas of wish in project under azima push strategy: proposing to open
+// its PR to main, the ready-to-merge notification, and marking it merged; where it stands is recorded on the azima
+// (Azima.pr) for the window. The PR follows its branch: each push of the branch updates it, and it targets main from
+// the start, never re-targeted.
 func (h *Harness) azimaPRPass(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings,
 	allQuestions []*planv1.Question,
@@ -2698,8 +2287,7 @@ func (h *Harness) azimaPRPass(
 		return false
 	}
 	repo := project.GetDirectory()
-	azimas := h.wishAzimas(ctx, wish)
-	for _, azima := range azimas {
+	for _, azima := range h.wishAzimas(ctx, wish) {
 		if ctx.Err() != nil {
 			return allQuestions
 		}
@@ -2714,61 +2302,63 @@ func (h *Harness) azimaPRPass(
 		if !ok {
 			continue
 		}
-		base, err := h.azimaPRBase(ctx, repo, settings, azima)
-		if err != nil || base == "" {
-			continue
-		}
+		base := azimaPRBase(ctx, repo, settings, azima)
 
 		pr := h.queryForgePR(ctx, repo, project, branch)
 		if pr == nil {
 			if azima.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
 				continue
 			}
-			if !hasQuestion(func(q *planv1.Question) bool {
+			proposed := hasQuestion(func(q *planv1.Question) bool {
 				return q.GetTaskId() == azima.GetId() && strings.Contains(strings.ToLower(q.GetText()), "pull request")
-			}) {
+			})
+			if !proposed {
 				title, desc := h.draftAzimaPR(ctx, azima, parts)
 				q := &planv1.Question{
-					WishId:  wish.GetId(),
-					TaskId:  azima.GetId(),
-					Text:    fmt.Sprintf("Open a pull request for %s to %s?", azima.GetCode(), base),
-					Context: fmt.Sprintf("**Title**: %s\n**Base**: %s\n\n%s", title, base, desc),
-					Options: []string{"Open pull request", "Not yet"},
-					Move:    true,
-					Before:  "before the merge",
+					WishId:    wish.GetId(),
+					TaskId:    azima.GetId(),
+					Text:      fmt.Sprintf("Open a pull request for %s to %s?", azima.GetCode(), base),
+					Context:   fmt.Sprintf("**Title**: %s\n**Base**: %s\n\n%s", title, base, desc),
+					Options:   []string{"Open pull request", "Not yet"},
+					Move:      true,
+					Before:    "before the merge",
+					DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_PULL_REQUEST},
 				}
 				if err := h.askMove(ctx, q); err == nil {
 					allQuestions = append(allQuestions, q)
+					proposed = true
 				}
+			}
+			if proposed {
+				h.recordAzimaPR(ctx, azima, &planv1.AzimaPr{State: planv1.AzimaPrState_AZIMA_PR_STATE_PROPOSED})
 			}
 			continue
 		}
 
-		if pr.State == "OPEN" {
-			if pr.Base != "" && base != "" && pr.Base != base {
-				if err := h.retargetForgePR(ctx, repo, project, pr.Number, base); err == nil {
-					pr.Base = base
-				}
-			}
+		switch pr.State {
+		case "OPEN":
+			h.recordAzimaPR(ctx, azima, &planv1.AzimaPr{Url: pr.URL, State: planv1.AzimaPrState_AZIMA_PR_STATE_OPEN})
 			if pr.Mergeable && pr.Green && azima.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 				if !hasQuestion(func(q *planv1.Question) bool {
 					return q.GetTaskId() == azima.GetId() && strings.Contains(strings.ToLower(q.GetText()), "ready to merge")
 				}) {
 					q := &planv1.Question{
-						WishId:  wish.GetId(),
-						TaskId:  azima.GetId(),
-						Text:    fmt.Sprintf("Pull request #%d for %s is ready to merge?", pr.Number, azima.GetCode()),
-						Context: fmt.Sprintf("Pull request #%d for azima %s (%s) is mergeable and all checks are green.", pr.Number, azima.GetCode(), azima.GetTitle()),
-						Options: []string{"Ready to merge", "Not yet"},
-						Move:    true,
-						Before:  "before the merge",
+						WishId:    wish.GetId(),
+						TaskId:    azima.GetId(),
+						Text:      fmt.Sprintf("Pull request #%d for %s is ready to merge?", pr.Number, azima.GetCode()),
+						Context:   fmt.Sprintf("Pull request #%d for azima %s (%s) is mergeable and all checks are green.", pr.Number, azima.GetCode(), azima.GetTitle()),
+						Options:   []string{"Ready to merge", "Not yet"},
+						Move:      true,
+						Before:    "before the merge",
+						DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_READY_TO_MERGE},
 					}
 					if err := h.askMove(ctx, q); err == nil {
 						allQuestions = append(allQuestions, q)
 					}
 				}
 			}
-		} else if pr.State == "MERGED" {
+		case "MERGED":
+			h.recordAzimaPR(ctx, azima, &planv1.AzimaPr{Url: pr.URL, State: planv1.AzimaPrState_AZIMA_PR_STATE_MERGED})
 			if azima.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 				_, _ = h.Done(ctx, "/plan.v1.TaskService/Done", &planv1.TaskServiceDoneRequest{
 					TaskId: azima.GetId(),
@@ -2776,26 +2366,16 @@ func (h *Harness) azimaPRPass(
 					Note:   fmt.Sprintf("merged in pull request #%d", pr.Number),
 				})
 				azima.Status = planv1.TaskStatus_TASK_STATUS_DONE
-				allTasks, _ := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
-				for _, otherAzima := range azimas {
-					if otherAzima.GetId() == azima.GetId() {
-						continue
-					}
-					for _, depID := range otherAzima.GetDependsOn() {
-						if depID == azima.GetId() {
-							otherBranch := azimaBranchName(otherAzima)
-							if otherPR := h.queryForgePR(ctx, repo, project, otherBranch); otherPR != nil && otherPR.State == "OPEN" {
-								newBase, err := h.azimaPRBase(ctx, repo, settings, otherAzima)
-								if err == nil && newBase != "" && otherPR.Base != newBase {
-									_ = h.retargetForgePR(ctx, repo, project, otherPR.Number, newBase)
-								}
-							}
-						}
-					}
-				}
-				h.followStackedBranches(ctx, allTasks)
 			}
 		}
 	}
 	return allQuestions
+}
+
+// recordAzimaPR records where the pull request of azima stands (Azima.pr), when it changed.
+func (h *Harness) recordAzimaPR(ctx context.Context, azima *planv1.Task, pr *planv1.AzimaPr) {
+	if proto.Equal(azima.GetAzima().GetPr(), pr) {
+		return
+	}
+	h.editAzima(ctx, azima.GetId(), func(e *planv1.Azima) { e.Pr = pr })
 }

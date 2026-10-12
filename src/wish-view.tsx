@@ -118,6 +118,8 @@ import {
   ViewTabs,
 } from "./task-tabs";
 import { TaskTree } from "./task-tree";
+import { reviewLeft, reviewRows } from "./data/review";
+import { ReviewTab } from "./review-tab";
 import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
@@ -129,6 +131,7 @@ import {
   MainMerges,
   PrincipalSelector,
   PushStrategySelector,
+  WhereWorkLands,
   WishDescription,
   WishTitle,
   leadTrouble,
@@ -282,10 +285,13 @@ export function WishView({
   // page holds.
   const [layout] = useTaskLayout();
   const tree = view === "tasks" && layout === "tree";
+  // The Review tab reads every task too: what is left to review is counted on all of them.
+  const reviewing = view === "review";
   useEffect(() => {
-    if (tree && store && detail.tasksNextToken)
+    if ((tree || reviewing) && store && detail.tasksNextToken)
       void store.loadMore(wish.id, Change.TASK, 200);
-  }, [tree, store, wish.id, detail.tasksNextToken]);
+  }, [tree, reviewing, store, wish.id, detail.tasksNextToken]);
+  const review = useMemo(() => reviewRows(detail.tasks), [detail.tasks]);
   const byId = taskMapOf(detail.tasks);
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -317,6 +323,7 @@ export function WishView({
     answer,
     enlighten,
     mark,
+    review: markReviewed,
     move,
     withdraw,
   } = useWrites(onToast);
@@ -408,6 +415,11 @@ export function WishView({
     [write, clients.tasks],
   );
 
+  const handleReview = useCallback(
+    (task: Task, remove: boolean) => markReviewed(task.wishId, task.id, remove),
+    [markReviewed],
+  );
+
   const handleDecision = useCallback(
     (task: Task) => {
       const d = decisionOf(task, decisions);
@@ -478,6 +490,40 @@ export function WishView({
     [quiet, act, clients.wishes, wish.id],
   );
 
+  const loadBranches = useCallback(
+    (projectId: string) => clients.projects.branches({ project: projectId }),
+    [clients.projects],
+  );
+
+  const handleLands = useCallback(
+    (projectId: string, branch: string, create: boolean) =>
+      act(
+        () =>
+          clients.wishes.setIntegration({
+            wishId: wish.id,
+            projectId,
+            branch,
+            createBranch: create,
+          }),
+        [Change.WISH],
+        t("wish.lands_changed", { branch }),
+      ),
+    [act, clients.wishes, wish.id],
+  );
+
+  // The own branch of each azima, by azima id, as its project's syncs say it stands against its remote.
+  const azimaSyncs = useMemo(
+    () =>
+      new Map(
+        projects.flatMap((p) =>
+          (p.syncs ?? [])
+            .filter((x) => x.azimaId)
+            .map((x) => [x.azimaId, x] as const),
+        ),
+      ),
+    [projects],
+  );
+
   const handlePushAzima = useCallback(
     (azima: Task) =>
       act(
@@ -485,10 +531,11 @@ export function WishView({
           clients.projects.push({
             project: azima.projectId || projects[0]?.id || "",
             wish: wish.id,
+            branch: azimaSyncs.get(azima.id)?.branch ?? azima.azima?.branch,
           }),
-        [Change.WISH, Change.TASK],
+        [Change.WISH, Change.TASK, Change.PROJECT],
       ),
-    [act, clients.projects, projects, wish.id],
+    [act, azimaSyncs, clients.projects, projects, wish.id],
   );
 
   const handleOpenPr = useCallback(
@@ -531,6 +578,7 @@ export function WishView({
         nest={nest}
         onValidate={handleValidateAzima}
         isPerAzima={isPerAzima}
+        sync={azimaSyncs.get(azima.id)}
         onPush={handlePushAzima}
         onOpenPr={handleOpenPr}
       />
@@ -542,6 +590,7 @@ export function WishView({
       focus,
       handleValidateAzima,
       isPerAzima,
+      azimaSyncs,
       handlePushAzima,
       handleOpenPr,
     ],
@@ -973,6 +1022,13 @@ export function WishView({
                   projects={projects}
                   onChange={handlePushStrategy}
                 />
+                <WhereWorkLands
+                  branches={wish.integrationBranches}
+                  projects={projects}
+                  perAzima={isPerAzima}
+                  loadBranches={loadBranches}
+                  onChange={handleLands}
+                />
                 <LastPushes
                   pushes={wish.pushes}
                   projects={projects}
@@ -992,6 +1048,7 @@ export function WishView({
             view={view}
             main={t("tabs.wish")}
             tasks={workCount(detail.tasks)}
+            review={reviewLeft(review)}
             decisions={decisionsTotal ?? decisions.length}
             tilasms={detail.tilasms.length}
             agents={forAgents.length}
@@ -1009,6 +1066,14 @@ export function WishView({
           )}
           {view === "agents" && (
             <AgentBlocks blocks={forAgents} codes={codes} />
+          )}
+          {view === "review" && (
+            <ReviewTab
+              rows={review}
+              fold={wish.id}
+              codes={codes}
+              onReview={handleReview}
+            />
           )}
           {view === "decisions" && (
             <DecisionLog

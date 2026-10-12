@@ -474,19 +474,32 @@ export function watcherRuns(
   return task.provider === Provider.WATCH && task.status === TaskStatus.RUNNING;
 }
 
+// isTaskMerging tells whether a done task's work is merging: waiting for its batch, or in it. It shows blue, as work
+// that runs (taskTone), and counts with it (runningOf).
+export function isTaskMerging(
+  task: Pick<Task, "status"> & Partial<Pick<Task, "integration">>,
+): boolean {
+  if (task.status !== TaskStatus.DONE) return false;
+  const s = task.integration?.state;
+  return s === IntegrationState.PENDING || s === IntegrationState.INTEGRATING;
+}
+
 // Running counts a wish's tasks whose process runs, apart: workers at work, and watchers that wait for their command to
-// print. A watcher is not work in progress: "1 running" for a PR watched alone said a worker ran.
+// print. A watcher is not work in progress: "1 running" for a PR watched alone said a worker ran. Work that merges
+// (isTaskMerging) counts as running: Djinn is at work on it.
 export interface Running {
   running: number;
   watching: number;
 }
 
 export function runningOf(
-  tasks: (Pick<Task, "status"> & Partial<Pick<Task, "provider">>)[],
+  tasks: (Pick<Task, "status"> &
+    Partial<Pick<Task, "provider" | "integration">>)[],
 ): Running {
   const live = tasks.filter((task) => task.status === TaskStatus.RUNNING);
   const watching = live.filter(watcherRuns).length;
-  return { running: live.length - watching, watching };
+  const merging = tasks.filter(isTaskMerging).length;
+  return { running: live.length - watching + merging, watching };
 }
 
 export function taskFinished(status: TaskStatus): boolean {

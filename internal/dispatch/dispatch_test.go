@@ -511,12 +511,12 @@ func TestMemoryCommittableLimit(t *testing.T) {
 
 	tasks := []*planv1.Task{done, busy, t1, t2}
 
-	// 24 GiB total, 22 GiB available (usable 20 GiB beyond 2 GiB reserve).
-	// On minimal load (20%), ceiling is 4.0 GiB.
+	// 24 GiB total, 22 GiB available, 1 GiB held by busy: Djinn could use 23 GiB, 21 GiB beyond the 2 GiB reserve.
+	// On minimal load (20%), ceiling is 4.2 GiB.
 	// busy engaged is 1.5 GiB (1 GiB peak + 512 MiB margin).
 	// t1 forecast is 1.5 GiB.
 	// Total engaged with t1 would be 1.5 + 1.5 = 3.0 GiB <= 4.0 GiB -> t1 starts.
-	// Total engaged with t2 would be 3.0 + 1.5 = 4.5 GiB > 4.0 GiB -> t2 blocked by committable limit.
+	// Total engaged with t2 would be 3.0 + 1.5 = 4.5 GiB > 4.2 GiB -> t2 blocked by committable limit.
 	minPolicy := machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
 	m := &Machine{
 		Slots:     4,
@@ -535,7 +535,8 @@ func TestMemoryCommittableLimit(t *testing.T) {
 	if got["t1"] != "" {
 		t.Errorf("t1 should start, but got why: %q", got["t1"])
 	}
-	wantWhy := "load minimal commits up to 4.0 GiB of memory, 3.0 GiB already engaged, needs 1.5 GiB"
+	wantWhy := "load minimal commits up to 4.2 GiB of memory (22.0 GiB available, 1.0 GiB held by the workers running), " +
+		"3.0 GiB already engaged, needs 1.5 GiB at p95"
 	if got["t2"] != wantWhy {
 		t.Errorf("t2 why:\ngot:  %q\nwant: %q", got["t2"], wantWhy)
 	}
@@ -1064,14 +1065,14 @@ func TestOverclockRoomForOneMore(t *testing.T) {
 
 	sit := New(tasks, []*planv1.Wish{wish}, nil, m).At(at)
 
-	// Engaged memory:
-	// Worker 1: 921 + 512 = 1433 MiB
-	// Worker 2: 1638 + 512 = 2150 MiB
-	// Worker 3: 2048 + 512 = 2560 MiB
-	// Worker 4: 2150 + 512 = 2662 MiB
-	// Total engaged: 8805 MiB (~8.6 GiB), down from 4 * 3.0 GiB = 12.0 GiB (or old 4 * 3.5 = 14.0 GiB).
+	// Engaged memory (no p50 recorded: each at its p95; Overclock keeps a 256 MiB margin):
+	// Worker 1: 921 + 256 = 1177 MiB
+	// Worker 2: 1638 + 256 = 1894 MiB
+	// Worker 3: 2048 + 256 = 2304 MiB
+	// Worker 4: 2150 + 256 = 2406 MiB
+	// Total engaged: 7781 MiB (~7.6 GiB), down from 4 * 3.0 GiB = 12.0 GiB (or old 4 * 3.5 = 14.0 GiB).
 	engaged := sit.Engaged()
-	wantEngaged := uint64((921 + 1638 + 2048 + 2150 + 4*512) * machine.MiB)
+	wantEngaged := uint64((921 + 1638 + 2048 + 2150 + 4*256) * machine.MiB)
 	if engaged != wantEngaged {
 		t.Fatalf("sit.Engaged(): got %d, want %d", engaged, wantEngaged)
 	}

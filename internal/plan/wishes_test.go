@@ -612,6 +612,62 @@ func TestWishPushStrategy(t *testing.T) {
 	}
 }
 
+// TestSwitchToAzimaRefusedWhileAzimasWait: a wish whose azimas wait for each other is not switched to per azima, by
+// itself (PushStrategy, SetIntegration) or through its project's default, the refusal naming them in a line; work
+// waiting inside one azima is no reason, and a wish switched keeps its strategy.
+func TestSwitchToAzimaRefusedWhileAzimasWait(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	c := serve(t, WithHome(home))
+	add, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir(), Name: "app"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := add.Msg.GetProject()
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Plan", ProjectIds: []string{project.GetId()}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	task := func(code string, kind planv1.TaskKind, partOf string, deps ...string) *planv1.Task {
+		task := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: code, Kind: kind, PartOf: partOf, DependsOn: deps}
+		c.put(t, task)
+		return task
+	}
+	t1 := task("T1", planv1.TaskKind_TASK_KIND_AZIMA, "")
+	t2 := task("T2", planv1.TaskKind_TASK_KIND_AZIMA, "")
+	w1 := task("W1", planv1.TaskKind_TASK_KIND_WORK, t1.GetId())
+	task("W2", planv1.TaskKind_TASK_KIND_WORK, t1.GetId(), w1.GetId()) // inside T1
+	w3 := task("W3", planv1.TaskKind_TASK_KIND_WORK, t2.GetId(), w1.GetId())
+
+	const want = "per azima refused: azimas depend on each other (T2 after T1)"
+	azima := planv1.PushStrategy_PUSH_STRATEGY_AZIMA.Enum()
+	_, err = c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{WishId: wishID, Strategy: azima}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+		t.Errorf("PushStrategy = %v, want %q", err, want)
+	}
+	_, err = c.wishes.SetIntegration(ctx, connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{WishId: wishID, PushStrategy: azima}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+		t.Errorf("SetIntegration = %v, want %q", err, want)
+	}
+	_, err = c.projects.PushStrategy(ctx, connect.NewRequest(&planv1.ProjectServicePushStrategyRequest{Project: project.GetName(), Strategy: azima}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), `the azimas of wish "Plan" depend on each other (T2 after T1)`) {
+		t.Errorf("project PushStrategy = %v", err)
+	}
+	shown, err := c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{WishId: wishID}))
+	if err != nil || shown.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_WISH {
+		t.Fatalf("strategy after the refusals = %v, %v; want wish", shown.Msg.GetStrategy(), err)
+	}
+
+	// W3 waits for work of its own azima only: the switch goes.
+	w3.DependsOn = nil
+	c.put(t, w3)
+	set, err := c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{WishId: wishID, Strategy: azima}))
+	if err != nil || set.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
+		t.Fatalf("switch = %v, %v; want azima", set.Msg.GetStrategy(), err)
+	}
+}
+
 // TestWishRename: a wish can be renamed; the new title is validated (non-empty, max length 500),
 // journaled, and reflected in lists, brief, rendered page, and exports.
 func TestWishRename(t *testing.T) {

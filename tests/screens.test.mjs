@@ -17,6 +17,7 @@ export { renderToStaticMarkup } from "react-dom/server";
 export { createRouterTransport } from "@connectrpc/connect";
 export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
 export { WishSidebar } from "@/src/wish-sidebar.tsx";
+export { SyncLine, SyncLines } from "@/src/project-sync.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
 export {
@@ -36,6 +37,7 @@ export {
   taskModelDisplay,
   isPrincipal,
   principalWish,
+  runningOf,
 } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
 export {
@@ -45,7 +47,9 @@ export {
   wayTo,
 } from "@/src/attention.tsx";
 export { DecisionLog } from "@/src/decision-log.tsx";
-export { TaskSections } from "@/src/task-tabs.tsx";
+export { TaskSections, ViewTabs } from "@/src/task-tabs.tsx";
+export { ReviewTab, ReviewLine } from "@/src/review-tab.tsx";
+export { reviewRows, reviewLeft, toReview } from "@/src/data/review.ts";
 export {
   azimaGroups,
   azimaRank,
@@ -57,6 +61,7 @@ export {
   waitingLeadQuestions,
   waitingTasks,
   workCount,
+  spent,
 } from "@/src/data/flight.ts";
 export { AzimaCard, azimaFinished, DraftAzimaCard } from "@/src/azima.tsx";
 export {
@@ -71,12 +76,14 @@ export {
   LeadMenu,
   MainMerges,
   PushStrategySelector,
+  WhereWorkLands,
+  BranchPicker,
   WishDescription,
   WishTitle,
   leadTrouble,
   recordedAgent,
 } from "@/src/wish-head.tsx";
-export { UpdateBannerView } from "@/src/update-banner.tsx";
+export { UpdateBannerView, readyKey } from "@/src/update-banner.tsx";
 export { platformShortcut } from "@/src/tooltip.tsx";
 export { PageHeaderAction } from "@/src/page-header.tsx";
 export { InstallStep } from "@/gen/ts/ui/v1/ui_pb.ts";
@@ -85,6 +92,7 @@ export {
   resourcesDetail,
   setUsageUnit,
   getUsageUnit,
+  SpentLine,
 } from "@/src/usage.tsx";
 export { TilasmList } from "@/src/tilasms.tsx";
 export { AgentBlocks } from "@/src/agent-blocks.tsx";
@@ -96,7 +104,13 @@ export { readDrop } from "@/src/data/tilasms.ts";
 export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export { ConsumptionPanel } from "@/src/consumption-panel.tsx";
 export { MachineService, CommandService } from "@/gen/ts/machine/v1/machine_pb.ts";
-export { TaskDiffView, UnifiedView, SplitView, CommentBox } from "@/src/diff.tsx";
+export {
+  TaskDiffView,
+  UnifiedView,
+  SplitView,
+  CommentBox,
+  appendChunk,
+} from "@/src/diff.tsx";
 export { setPriceTable } from "@/src/data/prices.ts";
 export {
   OperatingLoad,
@@ -174,6 +188,10 @@ function live(component, props) {
       useEffect() {},
       useSyncExternalStore(subscribe, getSnapshot) {
         return getSnapshot();
+      },
+      // A context reads its default: no provider above.
+      use(context) {
+        return context._currentValue;
       },
     };
     try {
@@ -1132,7 +1150,7 @@ const usage = (input, output, read, write, costUsd) => ({
   costUsd,
 });
 
-test("a task shows its tokens, estimated cost, reported cost, or missing price", () => {
+test("a task shows its tokens and one price: the reported cost, else ≈ the estimate; its hover tells which", () => {
   const claude = s.renderToStaticMarkup(
     h(s.WishTask, {
       task: {
@@ -1145,14 +1163,12 @@ test("a task shows its tokens, estimated cost, reported cost, or missing price",
       onStop() {},
     }),
   );
+  // A reported cost is the price, without ≈; its hover says it was reported, with the tokens in full.
   assert.match(
     claude,
-    /51\.4K tokens · \$0\.003 reported · \$0\.04 estimated, prices of 2026-01-01/,
+    /<span class="task-usage" title="input 4 · output 409 · cache read 38\.2K · cache written 12\.8K\n\$0\.003 reported">51\.4K tokens · \$0\.003<\/span>/,
   );
-  assert.match(
-    claude,
-    /input 4 · output 409 · cache read 38\.2K · cache written 12\.8K · \$0\.003 reported · \$0\.04 estimated, prices of 2026-01-01/,
-  );
+  assert.doesNotMatch(claude, /estimated|≈/);
 
   const codex = s.renderToStaticMarkup(
     h(s.WishTask, {
@@ -1167,14 +1183,12 @@ test("a task shows its tokens, estimated cost, reported cost, or missing price",
       onStop() {},
     }),
   );
+  // An estimate reads ≈; its hover gives the table's date.
   assert.match(
     codex,
-    /6\.5K tokens · \$0\.018 estimated, prices of 2026-01-01/,
+    /<span class="task-usage" title="input 1\.2K · output 300 · cache read 5K\n\$0\.018 estimated, prices of 2026-01-01">6\.5K tokens · ≈ \$0\.018<\/span>/,
   );
-  assert.match(
-    codex,
-    /input 1\.2K · output 300 · cache read 5K · \$0\.018 estimated, prices of 2026-01-01/,
-  );
+  assert.doesNotMatch(codex, /reported/);
 
   const unpriced = s.renderToStaticMarkup(
     h(s.WishTask, {
@@ -1208,7 +1222,12 @@ test("a task shows its tokens, estimated cost, reported cost, or missing price",
       onStop() {},
     }),
   );
-  assert.match(antigravity, /an estimate at API prices, not the bill/);
+  // Antigravity's estimate is not its bill: the hover says so, the card shows the figure alone.
+  assert.match(
+    antigravity,
+    /title="[^"]*estimated, prices of 2026-01-01 \(an estimate at API prices, not the bill\)"/,
+  );
+  assert.match(antigravity, />1\.2K tokens · ≈ \$[0-9.]+<\/span>/);
 
   // When usage unit is switched to tokens, costs are hidden
   s.setUsageUnit("tokens");
@@ -1913,6 +1932,39 @@ test("a running task shows what its worker uses now; its facts, the peaks too", 
   assert.equal(s.memory(1536n), "1.5 kB");
 });
 
+test("a task card shows its model turns against the limit, its tone warning past 80%; hover says run, limit, total", () => {
+  const card = (status, turns) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: { id: "t1", code: "W1", title: "Trim the wick", status, turns },
+        onStop() {},
+      }),
+    );
+  const running = card(s.TaskStatus.RUNNING, {
+    run: 37,
+    limit: 500,
+    total: 37,
+  });
+  assert.match(
+    running,
+    /<span class="task-turns" title="37 model turns in this run, of the 500 past which Djinn stops it"><svg[^>]*aria-label="model turns"[^>]*>.*?<\/svg>37\/500<\/span>/,
+  );
+  // 80% is not past it.
+  assert.match(
+    card(s.TaskStatus.RUNNING, { run: 400, limit: 500, total: 400 }),
+    /class="task-turns"/,
+  );
+  assert.match(
+    card(s.TaskStatus.RUNNING, { run: 401, limit: 500, total: 450 }),
+    /<span class="task-turns warning" title="401 model turns in this run, of the 500 past which Djinn stops it · 450 over all its runs">.*?401\/500</,
+  );
+  assert.match(
+    card(s.TaskStatus.DONE, { run: 12, limit: 500, total: 12 }),
+    /title="12 model turns in its last run, of the 500 past which Djinn stops a run">.*?12\/500</,
+  );
+  assert.doesNotMatch(card(s.TaskStatus.PENDING, undefined), /task-turns/);
+});
+
 test("a task no worker runs can be marked done; a task closed by hand says who closed it, and why", () => {
   const card = (status, extra = {}) =>
     s.renderToStaticMarkup(
@@ -2496,13 +2548,87 @@ test("the flight plan merges the active wishes: their questions, the blocking on
     /id="view-tab-decisions"[^>]*>Decisions<span class="count">1<\/span>/,
   );
   assert.doesNotMatch(html, /Tonight\?/);
-  // What each wish spent: the first with its cost, the second in tokens only with missing price note.
+  // What each wish spent: the first its price, reported, then its tokens; the second, with no price at all, its tokens
+  // and why.
   assert.match(
     html,
-    /input 10 · output 400 · cache read 38K · cache written 12K · \$0\.42 reported · \$0\.038 estimated, prices of 2026-01-01/,
+    /<span class="spent-price" title="\$0\.42 reported">\$0\.42<\/span><span>input 10 · output 400 · cache read 38K · cache written 12K<\/span>/,
   );
+  assert.doesNotMatch(html, /estimated/);
   assert.match(html, /input 1\.2K · output 300 · cache read 5K/);
-  assert.match(html, /1 task without a price in the table/);
+  assert.match(html, /<small>1 task without a price in the table<\/small>/);
+});
+
+test("what a wish spent shows one price, ≈ when an estimate is in it; the hover splits it, in money only", () => {
+  const spent = s.spent([
+    // Claude reports its cost: it is the price, whatever the table says.
+    { usage: usage(10, 400, 38000, 12000, 0.42) },
+    // Codex reports tokens: the table prices them (1200 × 5 + 300 × 30 + 5000 × 0.5) / 1M = $0.0175.
+    {
+      provider: s.Provider.CODEX,
+      model: "gpt-5.5",
+      usage: usage(1200, 300, 5000, 0, 0),
+    },
+    // An Antigravity estimate is at API prices, not the bill.
+    {
+      provider: s.Provider.ANTIGRAVITY,
+      model: "gemini-3.8-flash-high",
+      usage: usage(1000, 200, 0, 0, 0),
+    },
+    // A model the table does not know: no price.
+    { model: "fixture-unpriced", usage: usage(100, 200, 0, 0, 0) },
+  ]);
+  assert.equal(spent.costUsd, 0.42);
+  assert.equal(spent.priced, 2);
+  assert.equal(spent.withoutPrice, 1);
+  const total = spent.costUsd + spent.estimatedCostUsd;
+  const money = (n) =>
+    new Intl.NumberFormat("en", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: n < 1 ? 3 : 2,
+    })
+      .format(n)
+      .replace(/[$.]/g, "\\$&");
+  const html = s.renderToStaticMarkup(h(s.SpentLine, { spent }));
+  const title = html.match(
+    /<span class="spent-price" title="([^"]*)">([^<]*)</,
+  );
+  assert.ok(title, html);
+  // One figure: the reported cost plus the estimate of the tasks that reported none, read ≈.
+  assert.match(title[2], new RegExp(`^≈ ${money(total)}$`));
+  const split = title[1].split("\n");
+  assert.equal(split[0], "$0.42 reported");
+  assert.match(
+    split[1],
+    new RegExp(
+      `^${money(spent.estimatedCostUsd)} estimated, prices of 2026-01-01 \\(an estimate at API prices, not the bill\\)$`,
+    ),
+  );
+  assert.equal(split[2], "1 task without a price in the table");
+  // Several providers: each one's price, in the hover too.
+  assert.ok(split.includes("claude: $0.42"), split.join(" | "));
+  assert.ok(split.includes("codex: ≈ $0.018"), split.join(" | "));
+  assert.ok(split.some((line) => line.startsWith("antigravity: ≈ $")));
+  // Nothing of the split shows outside the hover; the tokens read as they did.
+  const shown = html.replace(/title="[^"]*"/g, "");
+  assert.doesNotMatch(shown, /reported|estimated|without a price|not the bill/);
+  assert.match(
+    shown,
+    /<span>input 2\.3K · output 1\.1K · cache read 43K · cache written 12K<\/span>/,
+  );
+  assert.doesNotMatch(shown, /spent-providers/);
+
+  // In tokens, nothing changes: the total, the detail, each provider's count, and no price.
+  s.setUsageUnit("tokens");
+  try {
+    const counted = s.renderToStaticMarkup(h(s.SpentLine, { spent }));
+    assert.match(counted, /<span class="spent-total">58\.4K tokens<\/span>/);
+    assert.match(counted, /class="spent-providers"/);
+    assert.doesNotMatch(counted, /\$|spent-price/);
+  } finally {
+    s.setUsageUnit("money");
+  }
 });
 
 test("the flight plan hides its empty sections", async () => {
@@ -2766,14 +2892,14 @@ test("the update banner links the release notes of a newer release, and only a w
     release,
     /<a href="https:\/\/github.com\/Empowill\/Djinn\/releases\/tag\/v2.0.0" target="_blank" rel="noopener noreferrer">Release notes<\/a>/,
   );
-  // The djinn's mark heads it; the brass Update sits beside the title, the notes a quiet link after it.
+  // The djinn's mark heads it; the brass Update sits beside the title, the notes a quiet link after it, then the ×.
   assert.match(
     release,
-    /^<div class="update-banner" role="status"><section class="update-banner-part"><div class="update-banner-head"><div class="update-banner-title"><span class="brand small"><span class="brand-mark"><img/,
+    /^<div class="update-banner" role="status"><section class="update-banner-part"><div class="update-banner-head"><div class="update-banner-title" title="v1.0.0 → v2.0.0"><span class="brand small"><span class="brand-mark"><img/,
   );
   assert.match(
     release,
-    /A new version of Djinn is ready<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Update<\/button><a /,
+    /A new version of Djinn is ready<\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Update<\/button><a [^>]*>Release notes<\/a><button type="button" class="update-banner-close" aria-label="Dismiss" title="Dismiss">×<\/button><\/div>/,
   );
   // While it restarts, the notes stay; the button goes.
   const restarting = banner(
@@ -3220,19 +3346,191 @@ test("the Tasks tab says where each task's work stands on its way into the wish'
     "W8 waiting: To review",
     "W10 done: Done",
   ]);
-  // A task that waits for another's work to be committed says so.
-  const waits = card({
+  // A task that waits for another's work to be committed says so; the task it waits for is a link to its card, which
+  // stays in sight until its work is committed (settledTask).
+  const next = {
     id: "W7",
     code: "W7",
     title: "Next",
     status: s.TaskStatus.PENDING,
     createTime: at(1),
     waitReason: "waits for W2 to be committed",
-  });
-  assert.match(waits, /waits for W2 to be committed/);
+  };
+  assert.match(
+    card(next),
+    /waits for <span class="agent-code">W2<\/span> to be committed/,
+  );
+  const linked = s.renderToStaticMarkup(
+    h(s.WishTask, {
+      task: next,
+      codes: new Map([["t2", "W2"]]),
+      onStop() {},
+      async onSend() {},
+    }),
+  );
+  assert.match(
+    linked,
+    /waits for <button type="button" class="text-button agent-code task-link">W2<\/button> to be committed/,
+  );
 });
 
-test("the update banner proposes to install a build committed, with what changed", () => {
+test("work that merges stays in sight, counts as running everywhere, then folds once committed", async () => {
+  const wishId = "01a11833-a440-7479-a067-52615c91da72";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const tasks = (state) => [
+    {
+      id: "t1",
+      wishId,
+      code: "T1",
+      title: "Lay the ground",
+      kind: s.TaskKind.AZIMA,
+      status: s.TaskStatus.PENDING,
+      dependsOn: [],
+      proofNeeds: [],
+      // No counts from the server: the card counts its parts as the server would.
+      azima: { state: s.AzimaState.IN_PROGRESS, ready: true },
+    },
+    {
+      id: "w1",
+      wishId,
+      code: "W1",
+      title: "Dig",
+      status: s.TaskStatus.DONE,
+      partOf: "t1",
+      dependsOn: [],
+      createTime: at(1),
+      endTime: at(10),
+      integration: { state: s.IntegrationState.COMMITTED, branch: "feat/x" },
+    },
+    {
+      id: "w8",
+      wishId,
+      code: "W8",
+      title: "Pour",
+      status: s.TaskStatus.DONE,
+      partOf: "t1",
+      dependsOn: [],
+      createTime: at(2),
+      endTime: at(20),
+      integration: { state, branch: "feat/x" },
+    },
+    {
+      id: "w9",
+      wishId,
+      code: "W9",
+      title: "Build",
+      status: s.TaskStatus.PENDING,
+      partOf: "t1",
+      dependsOn: ["w8"],
+      createTime: at(3),
+      waitReason: "waits for W8 to be committed",
+    },
+  ];
+  const azimaCard = (list) => {
+    const byId = new Map(list.map((x) => [x.id, x]));
+    return s.renderToStaticMarkup(
+      h(s.AzimaCard, {
+        azima: list[0],
+        parts: list.slice(1),
+        tasks: byId,
+        nest: s.mergeNest(list),
+        render: (task) =>
+          h(s.WishTask, {
+            key: task.id,
+            task,
+            codes: new Map(list.map((x) => [x.id, x.code])),
+            onStop() {},
+          }),
+      }),
+    );
+  };
+  // W8 merges: among the moving parts, in sight, blue; only W1 is behind the fold. W9 links to it.
+  const merging = tasks(s.IntegrationState.PENDING);
+  const card = azimaCard(merging);
+  const fold = card.indexOf('class="fold-line"');
+  assert.ok(fold > 0);
+  assert.match(card.slice(0, fold), /id="task-w8"/);
+  assert.match(card.slice(0, fold), /id="task-w9"/);
+  assert.doesNotMatch(card, /id="task-w1"/);
+  assert.match(card, />Show 1 finished</);
+  assert.match(card, /wish-task tone-running[^"]*" id="task-w8"/);
+  assert.match(
+    card,
+    /waits for <button type="button" class="text-button agent-code task-link">W8<\/button> to be committed/,
+  );
+  // Its bar: W1 done, W8 running, W9 waiting.
+  assert.match(card, /1 done, 1 running, 1 waiting/);
+  assert.match(card, /class="azima-bar-running" style="width:33\.3/);
+  // Committed, W8 folds with the finished, and runs no more.
+  const committed = tasks(s.IntegrationState.COMMITTED);
+  const after = azimaCard(committed);
+  assert.doesNotMatch(after, /id="task-w8"/);
+  assert.match(after, />Show the 2 finished</);
+  assert.match(after, /2 done, 0 running, 1 waiting/);
+
+  // The side panel and its icon rail count it as running: the wish is blue, even folded to its icons.
+  const sidebar = (list, collapsed) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [lamp],
+        projects: [],
+        counts: {
+          [wishId]: { questions: 0, ...s.runningOf(list) },
+        },
+        onSelectPlan() {},
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  assert.match(sidebar(merging, false), /aria-label="1 running"/);
+  assert.match(sidebar(merging, true), /wish-tone tone-running/);
+  assert.doesNotMatch(sidebar(committed, false), /running/);
+  assert.doesNotMatch(sidebar(committed, true), /tone-running/);
+
+  // The head of the wish and the flight plan count it as running.
+  const page = async (list) => {
+    const transport = s.createRouterTransport(({ service }) => {
+      service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+      service(s.TaskService, { list: () => ({ tasks: list }) });
+      service(s.QuestionService, { list: () => ({ questions: [] }) });
+      service(s.BlockService, { list: () => ({ blocks: [] }) });
+    });
+    const djinn = s.createDjinn(transport, 10);
+    const close = djinn.store.open(wishId);
+    await djinn.store.changed(wishId, [s.Change.WISH]);
+    close();
+    const view = s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishView, { wish: lamp, onToast() {} }),
+      ),
+    );
+    const plan = s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.FlightPlan, { wishes: [lamp], onOpen() {}, onToast() {} }),
+      ),
+    );
+    return { view, plan };
+  };
+  const now = await page(merging);
+  assert.match(now.view, /count-pill tone-running" title="1 running"/);
+  assert.match(now.plan, /plan-wish tone-running/);
+  assert.match(now.plan, /<span>1 running<\/span>/);
+  const later = await page(committed);
+  assert.doesNotMatch(later.view, /count-pill tone-running/);
+  assert.doesNotMatch(later.plan, /plan-wish tone-running/);
+});
+
+test("the update banner proposes to install a build committed, on one line, what changed unfolded on demand", () => {
   const build = {
     wishTitle: "Run Djinn on itself",
     project: "djinn",
@@ -3252,8 +3550,18 @@ test("the update banner proposes to install a build committed, with what changed
         summary: "Done: W6 finished.",
       },
     ],
+    base: "",
+    running: true,
+    changesCount: 0,
+    lacks: [],
+    lacksCount: 0,
   };
-  const banner = (phase = { kind: "idle" }, dismissedBuild = "", installing) =>
+  const banner = (
+    phase = { kind: "idle" },
+    dismissedBuilds = [],
+    installing,
+    open = [],
+  ) =>
     s.renderToStaticMarkup(
       h(s.UpdateBannerView, {
         state: {
@@ -3261,59 +3569,76 @@ test("the update banner proposes to install a build committed, with what changed
           ready: "",
           notResumed: [],
           notesUrl: "",
-          build,
+          builds: [build],
           installing,
         },
         phase,
         dismissed: false,
-        dismissedBuild,
+        dismissedBuilds,
+        open,
         onInstall() {},
         onDismiss() {},
         onNotes() {},
       }),
     );
   const html = banner();
+  // One line: the build named by its commit, branch and wish, the tasks it brings; its actions beside it, the
+  // details folded.
   assert.match(
     html,
-    /W5, W6 pushed with feat\/wails-go of djinn <code>1a2b3c4d<\/code>/,
-  );
-  assert.doesNotMatch(html, /What to check/);
-  assert.match(
-    html,
-    /<ul class="update-banner-tasks"><li><details class="update-banner-task"><summary><code>W5<\/code> Work of W5<\/summary><div class="update-banner-summary">To check: the banner shows the build\.<\/div><\/details><\/li><li><details class="update-banner-task"><summary><code>W6<\/code> Work of W6<\/summary><div class="update-banner-summary">Done: W6 finished\.<\/div><\/details><\/li><\/ul>/,
+    /<span class="update-banner-text">Build <code>1a2b3c4d<\/code> of feat\/wails-go<span class="update-banner-quiet"> · Run Djinn on itself<\/span><span class="update-banner-quiet"> — W5, W6<\/span><\/span>/,
   );
   assert.match(
     html,
-    /<details class="update-banner-commits"><summary>commits<\/summary><ul><li>Work of W6<\/li><li>Work of W5<\/li><\/ul><\/details>/,
+    /title="1a2b3c4d · feat\/wails-go · Run Djinn on itself · djinn\nW5, W6"/,
   );
-  // The mark and the actions head the banner, beside the title: Install and restart in brass, Dismiss in violet; what
-  // changed comes below, at its full width.
   assert.match(html, /<span class="brand small"><span class="brand-mark"><img/);
   assert.match(
     html,
-    /<\/code><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Install and restart<\/button><button type="button" class="update-banner-dismiss">Dismiss<\/button><\/div><\/div><div class="update-banner-body"><strong>What changed/,
+    /<div class="update-banner-actions"><button type="button" class="update-banner-primary">Install and restart<\/button><button type="button" class="update-banner-more" aria-expanded="false">Details<\/button><button type="button" class="update-banner-close" aria-label="Dismiss" title="Dismiss">×<\/button><\/div><\/div><\/section>/,
   );
-  // While it installs, the buttons go.
-  const installing = banner({ kind: "installing" });
+  assert.doesNotMatch(html, /update-banner-body/);
+  // Unfolded: what changed, each task with its worker's summary folded, then the commits folded.
+  const unfolded = banner({ kind: "idle" }, [], undefined, [build.sha]);
+  assert.match(
+    unfolded,
+    /aria-expanded="true">Less<\/button>.*<div class="update-banner-body"><strong>What changed<\/strong>/,
+  );
+  assert.match(
+    unfolded,
+    /<ul class="update-banner-tasks"><li><details class="update-banner-task"><summary><code>W5<\/code> Work of W5<\/summary><div class="update-banner-summary">To check: the banner shows the build\.<\/div><\/details><\/li><li><details class="update-banner-task"><summary><code>W6<\/code> Work of W6<\/summary><div class="update-banner-summary">Done: W6 finished\.<\/div><\/details><\/li><\/ul>/,
+  );
+  assert.match(
+    unfolded,
+    /<details class="update-banner-commits"><summary>commits<\/summary><ul><li>Work of W6<\/li><li>Work of W5<\/li><\/ul><\/details>/,
+  );
+  // While it installs, its buttons go; its details stay.
+  const installing = banner({ kind: "installing", sha: build.sha });
   assert.match(installing, /Installing…/);
-  assert.doesNotMatch(installing, /<button/);
+  assert.doesNotMatch(installing, /update-banner-primary|update-banner-close/);
   // Then it says where the install stands, as Djinn tells it, in this window or another: what it waits for, that it
   // builds, that Djinn restarts.
   const step = (step, waiting = "") =>
-    banner({ kind: "idle" }, "", { sha: build.sha, step, waiting });
+    banner({ kind: "idle" }, [], { sha: build.sha, step, waiting });
   const waits = step(s.InstallStep.WAITING, "gate install: held by W9 (Other)");
   assert.match(waits, /Waiting — gate install: held by W9 \(Other\)/);
-  assert.doesNotMatch(waits, /<button/);
+  assert.doesNotMatch(waits, /update-banner-primary|update-banner-close/);
   assert.match(step(s.InstallStep.PREPARING), /Preparing the build…/);
   assert.match(step(s.InstallStep.BUILDING), /Building…/);
   assert.match(step(s.InstallStep.RESTARTING), /Restarting…/);
   // Dismissed, that build no longer shows.
-  assert.equal(banner({ kind: "idle" }, build.sha), "");
+  assert.equal(banner({ kind: "idle" }, [build.sha]), "");
   // A build that installed no newer Djinn says it is installed, and restarts nothing.
   assert.match(
     s.renderToStaticMarkup(
       h(s.UpdateBannerView, {
-        state: { current: "v1", ready: "", notResumed: [], notesUrl: "" },
+        state: {
+          current: "v1",
+          ready: "",
+          notResumed: [],
+          notesUrl: "",
+          builds: [],
+        },
         phase: { kind: "installed", sha: build.sha },
         dismissed: false,
         onInstall() {},
@@ -3322,6 +3647,139 @@ test("the update banner proposes to install a build committed, with what changed
       }),
     ),
     /Installed 1a2b3c4d/,
+  );
+});
+
+test("the update banner names the build against the running Djinn: what it adds, what it lacks, the other branches folded", () => {
+  const proposal = (branch, sha, wishTitle, extra = {}) => ({
+    wishTitle,
+    project: "djinn",
+    branch,
+    sha,
+    tasks: [],
+    changes: [],
+    summaries: [],
+    base: "abcdef0123",
+    running: false,
+    changesCount: 0,
+    lacks: [],
+    lacksCount: 0,
+    ...extra,
+  });
+  const mine = proposal(
+    "feat/wails-go",
+    "aaaa1111bbbb",
+    "Run Djinn on itself",
+    {
+      running: true,
+      tasks: ["W466", "W467"],
+      summaries: [
+        { code: "W466", title: "The tasks tab", summary: "" },
+        { code: "W467", title: "The diff", summary: "" },
+      ],
+      changes: ["ui: the diff", "ui: the tasks tab"],
+      changesCount: 2,
+    },
+  );
+  const side = proposal(
+    "feat/clement-port",
+    "e60f8fc00000",
+    "Clément's branches",
+    {
+      tasks: ["W2"],
+      summaries: [{ code: "W2", title: "Port Clément's work", summary: "" }],
+      changes: ["port: Clément's work"],
+      changesCount: 1,
+      lacks: ["ui: the tasks tab", "ui: the diff", "harness: azimas"],
+      lacksCount: 3,
+    },
+  );
+  const other = proposal("feat/x", "cccc2222dddd", "", {
+    changes: ["fix"],
+    changesCount: 1,
+  });
+  const banner = (state, { dismissedBuilds = [], open = [] } = {}) =>
+    s.renderToStaticMarkup(
+      h(s.UpdateBannerView, {
+        state: {
+          current: "local-g abcdef0",
+          ready: "",
+          notResumed: [],
+          notesUrl: "",
+          builds: [],
+          ...state,
+        },
+        phase: { kind: "idle" },
+        dismissed: false,
+        dismissedBuilds,
+        open,
+        onInstall() {},
+        onDismiss() {},
+        onNotes() {},
+      }),
+    );
+  // The running Djinn's branch first, on its line; the other branches' builds folded under one line naming them.
+  const html = banner({ builds: [mine, side, other] });
+  assert.match(
+    html,
+    /Build <code>aaaa1111<\/code> of feat\/wails-go<span class="update-banner-quiet"> · Run Djinn on itself<\/span><span class="update-banner-quiet"> — adds 2 tasks<\/span>/,
+  );
+  assert.match(
+    html,
+    /Builds of 2 other branches: feat\/clement-port, feat\/x<\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-more" aria-expanded="false">Details<\/button><\/div>/,
+  );
+  assert.doesNotMatch(html, /e60f8fc0/);
+  assert.equal(html.match(/<img/g).length, 1);
+  // Unfolded, each other branch on its line, with its own install and ×: what it adds, and that it is older than the
+  // running Djinn.
+  const others = banner({ builds: [mine, side, other] }, { open: ["others"] });
+  assert.match(
+    others,
+    /<div class="update-banner-others"><section class="update-banner-part"><div class="update-banner-head"><div class="update-banner-title" title="e60f8fc0 · feat\/clement-port · Clément&#x27;s branches · djinn\nadds 1 task · older than the running Djinn on 3 commits"><span class="update-banner-text">Build <code>e60f8fc0<\/code> of feat\/clement-port<span class="update-banner-quiet"> · Clément&#x27;s branches<\/span><span class="update-banner-quiet"> — adds 1 task · older than the running Djinn on 3 commits<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Install and restart<\/button>/,
+  );
+  assert.match(others, /— adds 1 commit<\/span>/);
+  assert.equal(others.match(/class="update-banner-close"/g).length, 3);
+  // A build's details: the tasks merged since the running Djinn, the commits folded, and those it lacks folded.
+  const details = banner({ builds: [side] }, { open: ["others", side.sha] });
+  assert.match(
+    details,
+    /<strong>Since the running Djinn \(abcdef01\)<\/strong><ul class="update-banner-tasks"><li><div class="update-banner-task-line"><code>W2<\/code> Port Clément&#x27;s work<\/div><\/li><\/ul><details class="update-banner-commits"><summary>1 commit<\/summary><ul><li>port: Clément&#x27;s work<\/li><\/ul><\/details><details class="update-banner-commits update-banner-lacks"><summary>Older than the running Djinn on 3 commits<\/summary><ul><li>ui: the tasks tab<\/li>/,
+  );
+  // A dismissed build goes, the others stay; all dismissed, no banner.
+  assert.doesNotMatch(
+    banner({ builds: [mine, side] }, { dismissedBuilds: [mine.sha] }),
+    /aaaa1111/,
+  );
+  assert.equal(
+    banner({ builds: [mine, side] }, { dismissedBuilds: [mine.sha, side.sha] }),
+    "",
+  );
+
+  // The newer Djinn ready is named the same way, with its own ×, dismissed by its version.
+  const ready = banner({ ready: "local-ge60f8fc", readyBuild: side });
+  assert.match(
+    ready,
+    /<div class="update-banner-title" title="local-g abcdef0 → local-ge60f8fc\ne60f8fc0 · feat\/clement-port · Clément&#x27;s branches · djinn\nadds 1 task · older than the running Djinn on 3 commits">/,
+  );
+  assert.match(
+    ready,
+    /New Djinn ready: <code>e60f8fc0<\/code> of feat\/clement-port<span class="update-banner-quiet"> · Clément&#x27;s branches<\/span><span class="update-banner-quiet"> — adds 1 task · older than the running Djinn on 3 commits<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Update<\/button><button type="button" class="update-banner-more" aria-expanded="false">Details<\/button><button type="button" class="update-banner-close" aria-label="Dismiss" title="Dismiss">×<\/button>/,
+  );
+  assert.equal(s.readyKey("local-ge60f8fc"), "ready:local-ge60f8fc");
+  assert.equal(
+    banner(
+      { ready: "local-ge60f8fc", readyBuild: side },
+      { dismissedBuilds: ["ready:local-ge60f8fc"] },
+    ),
+    "",
+  );
+  // Another version ready shows again.
+  assert.match(
+    banner(
+      { ready: "local-g0123456", readyBuild: undefined },
+      { dismissedBuilds: ["ready:local-ge60f8fc"] },
+    ),
+    /A new version of Djinn is ready<\/span>/,
   );
 });
 
@@ -4495,56 +4953,171 @@ test("the wish's head says when pushes are on demand", () => {
   );
 });
 
-test("the side panel shows when a project's integration branch is out of sync and offers a push button", () => {
+// A branch Djinn pushes, as ProjectService sends it in Project.syncs.
+const projectSync = (branch, ahead, behind, extra = {}) => ({
+  wishId: "w1",
+  wishTitle: "Lamp",
+  branch,
+  remote: "origin",
+  target: branch,
+  ahead,
+  behind,
+  azimaId: "",
+  azimaCode: "",
+  azimaTitle: "",
+  ...extra,
+});
+
+test("the side panel lists each branch of a project out of sync, one short line each, with a small push button", () => {
   const project = {
     id: "p1",
     name: "lamp",
     directory: "/tmp/lamp",
     git: true,
-    sync: {
-      ahead: 3,
-      behind: 1,
-      remote: "origin",
-      branch: "feat/x",
-      target: "feat/x",
-    },
+    syncs: [
+      projectSync("feat/x", 3, 1),
+      projectSync("feat/clean", 0, 0, { wishTitle: "Gong" }),
+      projectSync("djinn/T27-djinn-stays-fast", 2, 0, {
+        azimaId: "a27",
+        azimaCode: "T27",
+        azimaTitle: "Djinn stays fast",
+      }),
+    ],
   };
-  const html = s.renderToStaticMarkup(
-    h(s.WishSidebar, {
-      wishes: [],
-      projects: [project],
-      selectedWishId: "",
-      selectedProjectId: "",
-      collapsed: false,
-      onSelectWish() {},
-      onSelectProject() {},
-      onMove() {},
-      onNewProject() {},
-      onPush() {},
-    }),
-  );
-  assert.match(html, /class="project-sync-row"/);
-  assert.match(html, /3 commits ahead of origin\/feat\/x, 1 behind/);
+  const sidebar = (extra) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [],
+        projects: [project],
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed: false,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+        onPush() {},
+        ...extra,
+      }),
+    );
+  const html = sidebar();
+  // The branch first, then its counts with their symbols; never the long sentence nor origin/ in sight.
   assert.match(
     html,
-    /<button type="button" class="button accent small"[^>]*>Push<\/button>/,
+    /<div class="sync-line" title="Integration branch of the wish Lamp\n3 commits ahead of origin\/feat\/x, 1 behind"><span class="sync-branch">feat\/x<\/span><span class="sync-counts"><span class="sync-ahead">↑3<\/span><span class="sync-behind">↓1<\/span><\/span><button type="button" class="icon-button sync-push" title="Push feat\/x" aria-label="Push feat\/x">/,
+  );
+  assert.match(
+    html,
+    /<div class="sync-line" title="Branch of the azima T27 Djinn stays fast, wish Lamp\n2 commits ahead of origin\/djinn\/T27-djinn-stays-fast"><span class="sync-branch">djinn\/T27-djinn-stays-fast<\/span><span class="sync-counts"><span class="sync-ahead">↑2<\/span><\/span>/,
+  );
+  // In sync, a branch does not show.
+  assert.doesNotMatch(html, /feat\/clean/);
+  assert.equal(html.match(/class="sync-line"/g).length, 2);
+  assert.doesNotMatch(html, /sync-fold/);
+  assert.doesNotMatch(html, /button accent/);
+  assert.doesNotMatch(html, />[^<]*origin\/[^<]*</);
+
+  // Collapsed, or nothing out of sync: no line.
+  assert.doesNotMatch(sidebar({ collapsed: true }), /sync-line/);
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [],
+        projects: [{ ...project, syncs: [projectSync("feat/x", 0, 0)] }],
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed: false,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    ),
+    /sync-lines/,
   );
 
-  const collapsedHtml = s.renderToStaticMarkup(
-    h(s.WishSidebar, {
-      wishes: [],
-      projects: [project],
-      selectedWishId: "",
-      selectedProjectId: "",
-      collapsed: true,
-      onSelectWish() {},
-      onSelectProject() {},
-      onMove() {},
-      onNewProject() {},
+  // Its button pushes that branch of that project.
+  const pushed = [];
+  const lines = live(s.WishSidebar, {
+    wishes: [],
+    projects: [project],
+    selectedWishId: "",
+    selectedProjectId: "",
+    collapsed: false,
+    onSelectWish() {},
+    onSelectProject() {},
+    onMove() {},
+    onNewProject() {},
+    onPush: (id, sync) => pushed.push(`${id} ${sync.wishId} ${sync.branch}`),
+  }).one(s.SyncLines);
+  lines.onPush(project.syncs[2]);
+  assert.deepEqual(pushed, ["p1 w1 djinn/T27-djinn-stays-fast"]);
+});
+
+test("more than three branches out of sync fold behind the first two; while one pushes, every button waits and says why", async () => {
+  const syncs = [
+    projectSync("feat/a", 1, 0),
+    projectSync("feat/b", 0, 2),
+    projectSync("feat/in-sync", 0, 0),
+    projectSync("feat/c", 4, 1),
+    projectSync("feat/d", 5, 0),
+  ];
+  let release;
+  const pushed = [];
+  const lines = live(s.SyncLines, {
+    syncs,
+    onPush: (sync) => {
+      pushed.push(sync.branch);
+      return new Promise((resolve) => {
+        release = resolve;
+      });
+    },
+  });
+  const branches = () => lines.all(s.SyncLine).map((x) => x.props.sync.branch);
+  assert.deepEqual(branches(), ["feat/a", "feat/b"]);
+  const fold = lines.one("sync-fold");
+  assert.equal(fold["aria-expanded"], false);
+  assert.match(lines.html(), /<span>2 more branches<\/span>/);
+  fold.onClick({ stopPropagation() {} });
+  assert.deepEqual(branches(), ["feat/a", "feat/b", "feat/c", "feat/d"]);
+  assert.match(lines.html(), /<span>Fewer branches<\/span>/);
+
+  // A push runs: its own button says so, the others that one runs; none pushes again.
+  lines.all(s.SyncLine)[2].props.onPush();
+  assert.deepEqual(pushed, ["feat/c"]);
+  const busy = lines.all(s.SyncLine).map((x) => x.props.busy);
+  assert.deepEqual(busy, [
+    "A push is running: wait for it to end",
+    "A push is running: wait for it to end",
+    "Pushing feat/c…",
+    "A push is running: wait for it to end",
+  ]);
+  lines.all(s.SyncLine)[0].props.onPush();
+  assert.deepEqual(pushed, ["feat/c"]);
+  release();
+  await lines.settle();
+  assert.deepEqual(
+    lines.all(s.SyncLine).map((x) => x.props.busy),
+    ["", "", "", ""],
+  );
+
+  // The line itself: its button disabled with the reason as its title.
+  const waiting = s.renderToStaticMarkup(
+    h(s.SyncLine, {
+      sync: syncs[3],
+      busy: "A push is running: wait for it to end",
       onPush() {},
     }),
   );
-  assert.doesNotMatch(collapsedHtml, /class="project-sync-row"/);
+  assert.match(
+    waiting,
+    /<button type="button" class="icon-button sync-push" disabled="" title="A push is running: wait for it to end" aria-label="A push is running: wait for it to end">/,
+  );
+  // Three lines never fold.
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(h(s.SyncLines, { syncs: syncs.slice(0, 4) })),
+    /sync-fold/,
+  );
 });
 
 test("the project panel displays the push cadence setting, out-of-sync status, and push button", () => {
@@ -4555,13 +5128,7 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
     directory: "/tmp/app",
     remote: "git@github.com:org/app.git",
     push: s.ProjectPush.STANDARD,
-    sync: {
-      ahead: 3,
-      behind: 0,
-      remote: "origin",
-      branch: "feat/x",
-      target: "feat/x",
-    },
+    syncs: [projectSync("feat/x", 3, 0), projectSync("feat/y", 0, 0)],
   };
   const transport = s.createRouterTransport(({ service }) => {
     service(s.ProjectService, {
@@ -4581,11 +5148,12 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
       h(s.ProjectPanel, { project: p1, onClose() {} }),
     ),
   );
-  assert.match(html, /3 commits ahead of origin\/feat\/x/);
+  // The same short line as the side panel's: the branch, its counts, a small grey button.
   assert.match(
     html,
-    /<button type="button" class="button accent small"[^>]*>Push<\/button>/,
+    /<div class="sync-line" title="Integration branch of the wish Lamp\n3 commits ahead of origin\/feat\/x"><span class="sync-branch">feat\/x<\/span><span class="sync-counts"><span class="sync-ahead">↑3<\/span><\/span><button type="button" class="icon-button sync-push" title="Push feat\/x"/,
   );
+  assert.doesNotMatch(html, /feat\/y|button accent/);
   assert.match(
     html,
     /Pushes at an azima(?:'|&#x27;)s end or after 3 tasks and an hour\./,
@@ -4598,7 +5166,7 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
   const p2 = {
     ...p1,
     push: s.ProjectPush.ON_DEMAND,
-    sync: undefined,
+    syncs: [],
   };
   const htmlOnDemand = s.renderToStaticMarkup(
     h(
@@ -4608,10 +5176,7 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
     ),
   );
   assert.match(htmlOnDemand, /Pushes only when you ask\./);
-  assert.doesNotMatch(
-    htmlOnDemand,
-    /<button type="button" class="button accent small"[^>]*>Push<\/button>/,
-  );
+  assert.doesNotMatch(htmlOnDemand, /sync-line/);
   assert.match(
     htmlOnDemand,
     /<button type="button" class="">Standard<\/button><button type="button" class="active">On demand<\/button>/,
@@ -5222,6 +5787,118 @@ test("azimas are ordered in a stable 6-tier order and laid out in a single colum
   assert.match(doneTime.title, /ran from .* to/i);
 });
 
+test("the wish's head says where its work lands, and a click changes the branch", async () => {
+  const projects = [{ id: "p1", name: "lamp", git: true }];
+  const branches = [{ projectId: "p1", branch: "feat/wails-go" }];
+  const noLoad = () => Promise.resolve({ branches: [], checkedOut: "" });
+
+  // Per wish, one project: a chip with its integration branch, the project not named.
+  const one = s.renderToStaticMarkup(
+    h(s.WhereWorkLands, {
+      branches,
+      projects,
+      perAzima: false,
+      loadBranches: noLoad,
+      onChange: () => Promise.resolve(),
+    }),
+  );
+  assert.match(
+    one,
+    /<button type="button" class="wish-lands" aria-haspopup="dialog" aria-expanded="false" title="Djinn merges the wish&#x27;s finished work into feat\/wails-go, then pushes it\. Click to change the branch\.">/,
+  );
+  assert.match(one, /<span>Lands in <code>feat\/wails-go<\/code><\/span>/);
+  assert.doesNotMatch(one, /<b>lamp<\/b>/);
+
+  // Several projects: one chip each, the project named.
+  const two = s.renderToStaticMarkup(
+    h(s.WhereWorkLands, {
+      branches: [...branches, { projectId: "p2", branch: "main" }],
+      projects: [...projects, { id: "p2", name: "wick", git: true }],
+      perAzima: false,
+      loadBranches: noLoad,
+      onChange: () => Promise.resolve(),
+    }),
+  );
+  assert.match(two, /<b>lamp<\/b><span>Lands in <code>feat\/wails-go<\/code>/);
+  assert.match(two, /<b>wick<\/b><span>Lands in <code>main<\/code>/);
+
+  // Per azima: one chip that says so, not a button; the wish's branch for work of no azima on hover.
+  const perAzima = s.renderToStaticMarkup(
+    h(s.WhereWorkLands, {
+      branches,
+      projects,
+      perAzima: true,
+      loadBranches: noLoad,
+      onChange: () => Promise.resolve(),
+    }),
+  );
+  assert.match(
+    perAzima,
+    /<span class="wish-lands" title="Per azima: each azima has its own branch, djinn\/&lt;code&gt;-&lt;slug&gt;, cut from main, and its pull request lands it in main\.\nWork of no azima lands in feat\/wails-go\.">.*Each azima lands in main<\/span>/,
+  );
+  assert.doesNotMatch(perAzima, /<button/);
+
+  // A click on the chip opens the picker of its project.
+  const chip = live(s.WhereWorkLands, {
+    branches,
+    projects,
+    perAzima: false,
+    loadBranches: noLoad,
+    onChange: () => Promise.resolve(),
+  });
+  assert.equal(chip.all(s.BranchPicker).length, 0);
+  chip.one("wish-lands").onClick();
+  assert.equal(chip.all(s.BranchPicker).length, 1);
+  assert.equal(chip.one("wish-lands")["aria-expanded"], true);
+
+  // The picker: the branches, the current one marked; a click on another sets it; a name none has makes it from the
+  // current one; what is typed narrows the list.
+  const picked = [];
+  const picker = live(s.BranchPicker, {
+    current: "feat/wails-go",
+    branches: ["feat/wails-go", "main", "release/v1"],
+    load: noLoad,
+    onClose() {},
+    onPick: (branch, create) => {
+      picked.push([branch, create]);
+      return Promise.resolve();
+    },
+  });
+  const html = picker.html();
+  assert.match(
+    html,
+    /role="dialog" aria-label="Where the wish&#x27;s work lands"/,
+  );
+  assert.match(
+    html,
+    /<button type="button" class="branch-option current" aria-current="true"><code>feat\/wails-go<\/code>/,
+  );
+  const option = (name) =>
+    picker
+      .all("branch-option")
+      .find((b) =>
+        [b.props.children].flat().some((c) => c?.props?.children === name),
+      );
+  option("main").props.onClick();
+  await picker.settle();
+  assert.deepEqual(picked, [["main", false]]);
+  picker.one("input").onChange({ currentTarget: { value: "feat/lamp" } });
+  assert.doesNotMatch(picker.html(), /<code>main<\/code>/);
+  assert.match(
+    picker.html(),
+    /class="branch-option new"[^>]*>.*<span>New branch feat\/lamp from feat\/wails-go<\/span>/,
+  );
+  picker.all("new")[0].props.onClick();
+  await picker.settle();
+  assert.deepEqual(picked.at(-1), ["feat/lamp", true]);
+  // An existing name typed whole: no new branch offered; Enter picks it.
+  picker.one("input").onChange({ currentTarget: { value: "release/v1" } });
+  assert.doesNotMatch(picker.html(), /branch-option new/);
+  picker.one("input").onKeyDown({ key: "Enter", preventDefault() {} });
+  await picker.settle();
+  assert.deepEqual(picked.at(-1), ["release/v1", false]);
+});
+
 test("the wish shows its push strategy and azima cards show branch, sync and PR in per-azima mode", () => {
   // 1. Effective strategy resolution
   const wDefault = { id: "w1", pushStrategy: s.PushStrategy.UNSPECIFIED };
@@ -5299,15 +5976,22 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
   assert.doesNotMatch(defaultCardHtml, /T27-djinn-stays-fast/);
   assert.doesNotMatch(defaultCardHtml, /azima-actions/);
 
-  // 5. AzimaCard in per-azima mode with branch, base branch, sync, push button, and PR
+  // 5. AzimaCard in per-azima mode with branch, the main it lands in, sync, push button, and PR
   let pushedAzima = null;
   let openedPrUrl = null;
   const azimaPerAzima = {
     ...taskT27,
     azima: {
       branch: "djinn/T27-djinn-stays-fast",
-      baseBranch: "djinn/T26-split-the-branch",
-      sync: { ahead: 2, behind: 0 },
+      baseBranch: "main",
+      cutFrom: "0123456789abcdef0123456789abcdef01234567",
+      sync: {
+        ahead: 2,
+        behind: 0,
+        branch: "djinn/T27-djinn-stays-fast",
+        remote: "origin",
+        target: "djinn/T27-djinn-stays-fast",
+      },
       pr: {
         state: s.AzimaPrState.OPEN,
         url: "https://github.com/Empowill/Djinn/pull/42",
@@ -5331,22 +6015,72 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
     }),
   );
 
-  // Branch and base branch: on its title's hover, not in its heading.
-  assert.match(
-    perAzimaHtml,
-    /<strong title="[^"]*\ndjinn\/T27-djinn-stays-fast\nbased on djinn\/T26-split-the-branch">/,
+  // Closed, its heading says nothing of its branch, neither shown nor on hover: only its line out of sync names it.
+  assert.match(perAzimaHtml, /<strong title="Djinn stays fast">/);
+  assert.doesNotMatch(perAzimaHtml, /azima-landing/);
+  assert.doesNotMatch(
+    perAzimaHtml.match(
+      /<button type="button" class="azima-heading".*?<\/button>/,
+    )[0],
+    /T27-djinn-stays-fast/,
   );
-  assert.doesNotMatch(perAzimaHtml, /azima-branch|azima-base-branch/);
 
-  // Sync state and push button
-  assert.match(
-    perAzimaHtml,
-    /<span class="azima-sync-status"[^>]*>2 commits ahead of origin\/<\/span>/,
+  // Opened, its branch, the commit of main it was cut from, and that it lands in main, across the card.
+  const openedHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: azimaPerAzima,
+      parts: [],
+      tasks: new Map(),
+      render: () => null,
+      isPerAzima: true,
+      focus: "a27",
+    }),
   );
   assert.match(
-    perAzimaHtml,
-    /<button[^>]*class="button accent small"[^>]*>Push<\/button>/,
+    openedHtml,
+    /<div class="azima-body"><p class="azima-landing">.*?<code>djinn\/T27-djinn-stays-fast<\/code><span>cut from main at 01234567<\/span><span>lands in main<\/span><\/p>/,
   );
+  // Not cut yet: it will be when its first part starts. Never stacked on another azima's branch.
+  const notCutHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: {
+        ...taskT27,
+        azima: {
+          state: s.AzimaState.OPEN,
+          branch: "djinn/T27-djinn-stays-fast",
+        },
+      },
+      parts: [],
+      tasks: new Map(),
+      render: () => null,
+      isPerAzima: true,
+      focus: "a27",
+    }),
+  );
+  assert.match(
+    notCutHtml,
+    /<span>cut from main when its first part starts<\/span><span>lands in main<\/span>/,
+  );
+  // Per wish, no branch of its own: no line.
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(
+      h(s.AzimaCard, {
+        azima: azimaPerAzima,
+        parts: [],
+        tasks: new Map(),
+        render: () => null,
+        focus: "a27",
+      }),
+    ),
+    /azima-landing/,
+  );
+
+  // Sync state and push button: the short line of the side panel.
+  assert.match(
+    perAzimaHtml,
+    /<div class="sync-line" title="2 commits ahead of origin\/djinn\/T27-djinn-stays-fast"><span class="sync-branch">djinn\/T27-djinn-stays-fast<\/span><span class="sync-counts"><span class="sync-ahead">↑2<\/span><\/span><button type="button" class="icon-button sync-push" title="Push djinn\/T27-djinn-stays-fast"/,
+  );
+  assert.doesNotMatch(perAzimaHtml, /button accent/);
 
   // PR link with state "PR open"
   assert.match(
@@ -5369,12 +6103,13 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
       openedPrUrl = url;
     },
   });
-  const cardButtons = liveAzimaCard.all("button");
-  const pushBtn = cardButtons.find((b) => b.props.children === "Push");
-  assert.ok(pushBtn);
   const fakeEvent = { stopPropagation() {}, preventDefault() {} };
-  pushBtn.props.onClick(fakeEvent);
+  liveAzimaCard.one(s.SyncLine).onPush();
   assert.equal(pushedAzima?.id, "a27");
+  assert.equal(
+    liveAzimaCard.one(s.SyncLine).busy,
+    "Pushing djinn/T27-djinn-stays-fast…",
+  );
 
   const prLink = liveAzimaCard
     .all("a")
@@ -5408,7 +6143,28 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
     cleanAndProposedHtml,
     /<span class="azima-pr-badge">PR proposed<\/span>/,
   );
-  assert.doesNotMatch(cleanAndProposedHtml, /<button[^>]*>Push<\/button>/);
+  assert.doesNotMatch(cleanAndProposedHtml, /sync-line/);
+
+  // Its project's syncs tell how its branch stands, over what the task recorded.
+  const fromProjectHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: { ...taskT27, azima: { branch: "djinn/T27-djinn-stays-fast" } },
+      sync: projectSync("djinn/T27-djinn-stays-fast", 1, 3, {
+        azimaId: "a27",
+        azimaCode: "T27",
+        azimaTitle: "Djinn stays fast",
+      }),
+      parts: [],
+      tasks: new Map(),
+      render: () => null,
+      isPerAzima: true,
+      onPush() {},
+    }),
+  );
+  assert.match(
+    fromProjectHtml,
+    /<span class="sync-branch">djinn\/T27-djinn-stays-fast<\/span><span class="sync-counts"><span class="sync-ahead">↑1<\/span><span class="sync-behind">↓3<\/span><\/span>/,
+  );
 
   const mergedHtml = s.renderToStaticMarkup(
     h(s.AzimaCard, {
@@ -6077,4 +6833,295 @@ test("azima counters and states in the window are right before any azima is open
     }),
   );
   assert.match(tasksTab, /200\/250<\/span>/);
+});
+
+test("a long diff loads its next chunk as the reader scrolls near its end, a hunk cut between chunks joined back", async () => {
+  const line = (kind, n, text) => ({
+    kind,
+    oldLine: kind === s.DiffLineKind.ADDED ? 0 : n,
+    newLine: kind === s.DiffLineKind.DELETED ? 0 : n,
+    text,
+    tokens: [],
+  });
+  const first = {
+    path: "big.txt",
+    totalLines: 9,
+    offset: 0,
+    nextOffset: 5,
+    hunks: [
+      {
+        header: "@@ -1,4 +1,4 @@",
+        lines: [
+          line(s.DiffLineKind.CONTEXT, 1, "line one"),
+          line(s.DiffLineKind.ADDED, 2, "line two"),
+          line(s.DiffLineKind.ADDED, 3, "line three"),
+        ],
+      },
+    ],
+  };
+  const second = {
+    path: "big.txt",
+    totalLines: 9,
+    offset: 5,
+    nextOffset: 0,
+    hunks: [
+      {
+        header: "@@ -1,4 +1,4 @@",
+        continued: true,
+        lines: [line(s.DiffLineKind.ADDED, 4, "line four")],
+      },
+      {
+        header: "@@ -20,1 +20,1 @@",
+        lines: [line(s.DiffLineKind.ADDED, 20, "line twenty")],
+      },
+    ],
+  };
+
+  // appendChunk joins the hunk the second chunk carries on to the first chunk's last one.
+  const joined = s.appendChunk(s.appendChunk(null, first), second);
+  assert.deepEqual(
+    joined.hunks.map((hk) => [hk.header, hk.lines.map((l) => l.text)]),
+    [
+      ["@@ -1,4 +1,4 @@", ["line one", "line two", "line three", "line four"]],
+      ["@@ -20,1 +20,1 @@", ["line twenty"]],
+    ],
+  );
+  assert.equal(joined.nextOffset, 0);
+
+  const container = setupMockDom();
+  const observers = [];
+  const savedObserver = globalThis.IntersectionObserver;
+  globalThis.IntersectionObserver = class {
+    constructor(callback) {
+      this.callback = callback;
+      this.live = true;
+      observers.push(this);
+    }
+    observe() {}
+    disconnect() {
+      this.live = false;
+    }
+  };
+  const asked = [];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.TaskService, {
+      diff: (req) => {
+        if (req.file === "") {
+          return { files: [{ path: "big.txt", added: 5 }], head: "abc" };
+        }
+        asked.push(req.offset);
+        return { file: req.offset === 0 ? first : second, head: "abc" };
+      },
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  // React sets a lone text child as textContent, and clears a root's: children first.
+  const text = (node) =>
+    node.childNodes.length > 0
+      ? node.childNodes.map(text).join("")
+      : (node.nodeValue ?? node.textContent ?? "");
+  const count = (node, cls) =>
+    (node.attributes?.class?.split(" ").includes(cls) ? 1 : 0) +
+    node.childNodes.reduce((n, c) => n + count(c, cls), 0);
+  const settle = async () => {
+    for (let i = 0; i < 5; i++) {
+      await s.act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+  };
+
+  const root = s.createRoot(container);
+  try {
+    s.act(() => {
+      root.render(
+        h(
+          s.DjinnProvider,
+          { djinn },
+          h(s.TaskDiffView, { task: { id: "t1", comments: [] } }),
+        ),
+      );
+    });
+    await settle();
+    assert.deepEqual(asked, [0], "the first chunk alone at first");
+    let shown = text(container);
+    assert.match(shown, /line three/);
+    assert.doesNotMatch(shown, /line four/);
+    assert.match(shown, /5 of 9 lines shown/);
+    assert.equal(count(container, "diff-next-chunk"), 1);
+
+    // The end of the diff nears the view: the window asks for the next chunk, once.
+    const live = observers.filter((o) => o.live);
+    assert.equal(live.length, 1);
+    await s.act(async () => {
+      live[0].callback([{ isIntersecting: true }]);
+      live[0].callback([{ isIntersecting: true }]);
+    });
+    await settle();
+    assert.deepEqual(asked, [0, 5]);
+    shown = text(container);
+    assert.match(shown, /line four/);
+    assert.match(shown, /line twenty/);
+    assert.equal(count(container, "diff-hunk-header"), 2);
+    assert.equal(
+      count(container, "diff-next-chunk"),
+      0,
+      "nothing more to load",
+    );
+  } finally {
+    s.act(() => root.unmount());
+    globalThis.IntersectionObserver = savedObserver;
+    for (const handle of process._getActiveHandles()) {
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+    }
+  }
+});
+
+test("the Review tab lists merged work, its merges under the task they serve, checks each, and counts what is left", async () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const merged = { state: s.IntegrationState.COMMITTED, sha: "abc" };
+  const work = (code, extra) => ({
+    id: code,
+    code,
+    wishId: "w",
+    title: `Task ${code}`,
+    status: s.TaskStatus.DONE,
+    branch: `b-${code}`,
+    dependsOn: [],
+    createTime: at(1),
+    integration: merged,
+    ...extra,
+  });
+  const reviewed = (actor) => ({
+    marks: [
+      { kind: s.MarkKind.REVIEWED, actor, createTime: at(1_760_000_000) },
+    ],
+  });
+  const tasks = [
+    work("W1", {
+      comments: [
+        {
+          id: "c1",
+          file: "src/lamp.go",
+          line: 3,
+          endLine: 5,
+          text: "Off by one",
+        },
+        {
+          id: "c2",
+          file: "src/lamp.go",
+          line: 9,
+          endLine: 9,
+          text: "Done",
+          resolved: true,
+        },
+      ],
+    }),
+    // Not merged: its tests failed; still running; an azima; a question worker, without a branch.
+    work("W2", { integration: { state: s.IntegrationState.RED } }),
+    work("W3", { status: s.TaskStatus.RUNNING, integration: undefined }),
+    work("W4", { kind: s.TaskKind.AZIMA, branch: "" }),
+    work("W5", { branch: "", integration: undefined }),
+    // A correction of W1, merged: under W1.
+    work("W6", { correction: { failure: { taskIds: ["W1"] }, attempt: 1 } }),
+    // Merged and checked by the developer.
+    work("W7", reviewed("local")),
+    // A push correction serves no task: a row of its own.
+    work("W8", { correction: { failure: { taskIds: [] }, attempt: 1 } }),
+  ];
+  const rows = s.reviewRows(tasks);
+  assert.deepEqual(
+    rows.map((r) => [r.task.code, r.merges.map((x) => x.code)]),
+    [
+      ["W1", ["W6"]],
+      ["W7", []],
+      ["W8", []],
+    ],
+  );
+  assert.equal(s.reviewLeft(rows), 3);
+  // W6 checked: W1's row still waits on W1 itself.
+  const rowsChecked = s.reviewRows(
+    tasks.map((x) => (x.code === "W6" ? { ...x, ...reviewed("local") } : x)),
+  );
+  assert.equal(s.reviewLeft(rowsChecked), 2);
+
+  const html = s.renderToStaticMarkup(
+    h(s.ReviewTab, {
+      rows,
+      fold: "w-review-test",
+      codes: new Map(tasks.map((x) => [x.id, x.code])),
+      onReview: async () => {},
+    }),
+  );
+  // What is left first, the merge indented under the task it serves, marked; the comments counted; the checked folded.
+  assert.match(
+    html,
+    /aria-checked="false"[^>]*aria-label="Mark W1 reviewed".*review-code">W1<.*Task W1<.*title="2 comments on its diff".*review-merges.*review-code">W6<\/span><span class="review-merge">Merge<\/span>.*review-code">W8</s,
+  );
+  assert.doesNotMatch(html, /review-code">W7</);
+  assert.match(html, /Show 1 reviewed/);
+  for (const code of ["W2", "W3", "W4", "W5"])
+    assert.doesNotMatch(html, new RegExp(`review-code">${code}<`));
+
+  // A click on the box checks the task; checked, it says who and when, and a click takes the mark off.
+  const calls = [];
+  const opened = [];
+  const props = (task, open = false) => ({
+    task,
+    merge: false,
+    open,
+    codes: new Map(),
+    onOpen: (id) => opened.push(id),
+    onReview: async (x, remove) => calls.push([x.code, remove]),
+  });
+  const line = live(s.ReviewLine.type, props(tasks[0]));
+  line.one("review-check").onClick();
+  line.one("review-open").onClick();
+  await line.settle();
+  assert.deepEqual(calls, [["W1", false]]);
+  assert.deepEqual(opened, ["W1"]);
+  const checked = live(s.ReviewLine.type, props(tasks[6]));
+  assert.match(
+    checked.html(),
+    /aria-checked="true"[^>]*aria-label="W7 reviewed: take the mark off"/,
+  );
+  assert.match(checked.html(), /class="review-by">you, /);
+  checked.one("review-check").onClick();
+  await checked.settle();
+  assert.deepEqual(calls[1], ["W7", true]);
+  // Opened: the comments on its lines, where they are, the resolved one struck; then its diff.
+  const open = s.renderToStaticMarkup(h(s.ReviewLine, props(tasks[0], true)));
+  assert.match(
+    open,
+    /review-comment-list"><li class=""><span class="review-where">src\/lamp.go:3-5<\/span><span>Off by one<\/span><\/li><li class="resolved"><span class="review-where">src\/lamp.go:9<\/span>.*task-diff-view/s,
+  );
+
+  // The tab sits after Tasks, with what is left to review.
+  const tabs = s.renderToStaticMarkup(
+    h(s.ViewTabs, {
+      view: "review",
+      main: "Wish",
+      tasks: 8,
+      review: 3,
+      decisions: 0,
+      onView() {},
+    }),
+  );
+  assert.match(
+    tabs,
+    /id="view-tab-tasks".*id="view-tab-review" aria-selected="true" class="active">Review<span class="count">3<\/span>.*id="view-tab-decisions"/,
+  );
+  // The flight plan has no Review tab.
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(
+      h(s.ViewTabs, {
+        view: "main",
+        main: "Flight plan",
+        tasks: 0,
+        decisions: 0,
+        onView() {},
+      }),
+    ),
+    /view-tab-review/,
+  );
 });

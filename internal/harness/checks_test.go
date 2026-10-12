@@ -958,7 +958,7 @@ func TestPushRedAgainOnAStaleQuestion(t *testing.T) {
 	q := in.attachPushQuestion(t)
 	tip := in.handCommit(t)
 
-	if _, err := in.h.Push(t.Context(), in.wishID, in.projectID); err == nil {
+	if _, err := in.h.Push(t.Context(), in.wishID, in.projectID, ""); err == nil {
 		t.Fatal("pushed with its push checks red")
 	}
 	state := in.pushState(t)

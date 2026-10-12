@@ -35,19 +35,25 @@ message Project {
   repeated Summon summons = 7;
   // The last run of each of its checks, and of its setup, as Djinn integrated and pushed its wishes' work.
   repeated CheckRun check_runs = 8;
-  // Out of sync with its remote on the integration branch.
-  ProjectSync sync = 9;
   // When Djinn pushes its integration branch: standard cadence or on demand.
   ProjectPush push = 10;
   // Push strategy for the project's wishes: one integration branch per wish (wish) or per azima (azima).
   PushStrategy push_strategy = 11;
+  // How each branch Djinn pushes in the project stands against its remote, computed on every read: the integration
+  // branch of each active or paused wish there, then the own branch of each of their azimas, once the branch exists.
+  repeated ProjectSync syncs = 12;
+
+  // The one sync of the integration branch of a single wish, which syncs replaced.
+  reserved 9;
+  reserved "sync";
 }
 
-// ProjectSync says how the project's integration branch stands against its remote target for a wish.
+// ProjectSync says how a branch Djinn pushes stands against its remote target: a wish's integration branch, or an
+// azima's own branch.
 message ProjectSync {
-  // The wish whose integration branch this is.
+  // The wish whose branch this is.
   string wish_id = 1;
-  // The local integration branch.
+  // The local branch.
   string branch = 2;
   // The remote name: origin.
   string remote = 3;
@@ -57,6 +63,12 @@ message ProjectSync {
   int32 ahead = 5;
   // How many commits the local branch is behind the remote target.
   int32 behind = 6;
+  // The azima whose own branch this is; empty for the wish's integration branch. Its code and title, and the wish's
+  // title, as they are when read: what the branch belongs to, said on hover.
+  string azima_id = 7;
+  string azima_code = 8;
+  string azima_title = 9;
+  string wish_title = 10;
 }
 
 // CheckRun is the last run of a project's check (ProjectCheck), or of its setup command.
@@ -904,9 +916,14 @@ message Task {
   Cancellation cancelled = 62;
   // Comments on lines or ranges of the task's diff (TaskService.Comment).
   repeated TaskComment comments = 63;
+  // The developer's marks on the task (MarkService.Put): reviewed, once its diff was read, by whom and when.
+  repeated Mark marks = 64;
+  // Model turns its worker took, against the limit the watchdog stops a run at: written as they grow, with the
+  // resources. Unset before its first start.
+  Turns turns = 65;
   // The planned task waits for the machine alone: no slot is free, or the machine is under pressure. djinn task
   // start starts it anyway.
-  bool machine_wait = 64;
+  bool machine_wait = 66;
 }
 
 // TaskRun is a single run of a task's worker.
@@ -1097,7 +1114,8 @@ enum TaskKind {
   TASK_KIND_AZIMA = 2;
 }
 
-// Azima is where an azima stands, computed on every read from the tasks of its wish; never stored.
+// Azima is where an azima stands, computed on every read from the tasks of its wish; but for what Djinn records of its
+// branch under the per-azima push strategy (branch once cut, base_branch, cut_from, main) and of its pull request.
 message Azima {
   // Open, in progress, awaiting its proof, or done.
   AzimaState state = 1;
@@ -1108,14 +1126,23 @@ message Azima {
   int32 parts = 3;
   int32 parts_done = 4;
   int32 parts_running = 5;
-  // Integration branch of the azima: djinn/<code-slug>.
+  // The azima's own branch under the per-azima push strategy, djinn/<code>-<slug of its title>: cut from main, its
+  // work merged into it, kept up with main, and landing in main. Recorded once Djinn cuts it (cut_from), so that a
+  // title changed later does not rename it; named from the code and title before.
   string branch = 6;
-  // Branch the azima is based on when stacked, empty when based on main.
+  // The branch it lands in: the project's main branch, as Djinn named it when it cut the branch. Empty before, and for a
+  // branch made before Djinn cut them from main (stacked on another azima's), which keeps working as it is.
   string base_branch = 7;
   // Out of sync with its remote on the azima's branch.
   ProjectSync sync = 8;
   // Pull request for the azima's branch, once it exists.
   AzimaPr pr = 9;
+  // The commit of main the branch was cut from, in the azima's project: when the azima was made under the per-azima
+  // strategy, else when its first part started or its first work was merged. Never cut again while the branch exists.
+  string cut_from = 10;
+  // Where its branch stands against main, as a wish's integration branch does (Wish.mains): Djinn merges main into it
+  // by the same merge_main rules.
+  WishMain main = 11;
 }
 
 // AzimaState is where an azima stands.
@@ -1153,6 +1180,17 @@ message AzimaPr {
   AzimaPrState state = 2;
 }
 
+// Turns counts a task's model turns against the watchdog's limit (TaskMaxTurns): a guard against an endless loop.
+message Turns {
+  // Turns of the current run, or of the last one: each start of a worker (restart, resume, continue, answer) counts
+  // again from 1, as the limit applies to a run.
+  int32 run = 1;
+  // How many turns a run may take before the watchdog stops it.
+  int32 limit = 2;
+  // Turns over all the task's runs.
+  int32 total = 3;
+}
+
 // Resources is what a task's worker uses of the machine: its process group and every process it started, even one
 // that left the group. Linux reads the cgroup of the worker's systemd scope when it runs in one, else /proc; macOS,
 // ps.
@@ -1172,6 +1210,14 @@ message Resources {
   google.protobuf.Timestamp read_time = 6;
   // 95th percentile of resident memory_bytes read over its worker's measurement series.
   uint64 p95_memory_bytes = 7;
+  // 50th percentile of the same series: Overclock engages a worker at it (machine.Policy.Percentile).
+  uint64 p50_memory_bytes = 8;
+  // 60th percentile of the same series: Max engages a worker at it.
+  uint64 p60_memory_bytes = 9;
+  // 70th percentile of the same series: High engages a worker at it.
+  uint64 p70_memory_bytes = 10;
+  // 80th percentile of the same series: Medium engages a worker at it.
+  uint64 p80_memory_bytes = 11;
 }
 
 // Closure records a task marked done by hand: its worker's own done records none.
@@ -1332,6 +1378,41 @@ message Question {
   Withdrawal withdrawal = 19;
   // The answer was recorded but no lead was running to receive it; it waits for the next lead to start.
   bool waiting_lead = 20;
+  // The move Djinn asked for, set only when Djinn asks the question itself: Djinn acts on the answer by it alone,
+  // never by the words of the question. Empty on a worker's or the lead's move question, whose answer is only noted.
+  DjinnMove djinn_move = 21;
+}
+
+// DjinnMove is a move Djinn asked the developer for on its own move question, recorded when Djinn asks it.
+message DjinnMove {
+  // Which move.
+  MoveKind kind = 1;
+  // What the move acts on: the full sha of the build to install, or the tag to push.
+  string ref = 2;
+  // The remote a tag is pushed to.
+  string remote = 3;
+  // The project the build is installed from, or the tag pushed in.
+  string project_id = 4;
+}
+
+// MoveKind is which move Djinn asked for on its own move question.
+enum MoveKind {
+  // Not one of Djinn's moves: the answer is only noted.
+  MOVE_KIND_UNSPECIFIED = 0;
+  // Install and restart a build: a yes installs the build named by ref.
+  MOVE_KIND_INSTALL = 1;
+  // Push a local tag: a yes pushes the tag named by ref to remote.
+  MOVE_KIND_TAG = 2;
+  // Start a release dry run: noted.
+  MOVE_KIND_RELEASE = 3;
+  // Open a pull request: noted.
+  MOVE_KIND_PULL_REQUEST = 4;
+  // Merge a pull request whose checks are green: noted.
+  MOVE_KIND_READY_TO_MERGE = 5;
+  // Check a needs: box on a machine Djinn lacks: noted.
+  MOVE_KIND_CHECK = 6;
+  // Verify the proof an azima awaits: a yes marks the question's azima done.
+  MOVE_KIND_AZIMA_PROOF = 7;
 }
 
 // Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or
@@ -1430,6 +1511,8 @@ enum MarkKind {
   MARK_KIND_READ = 1;
   // Approved as it is. On an open question, it answers with the option the recommendation names.
   MARK_KIND_APPROVED = 2;
+  // Reviewed: the developer has read a task's diff. Only a task takes it, and a task takes no other mark.
+  MARK_KIND_REVIEWED = 3;
 }
 
 // The answer to a question.
@@ -1751,6 +1834,12 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // List the local branches of a project's repository a wish's work may land in, the latest commit first: those
+  // Djinn made for its tasks' worktrees left out.
+  rpc Branches(ProjectServiceBranchesRequest) returns (ProjectServiceBranchesResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
 }
 
 message ProjectServiceAddRequest {
@@ -1809,8 +1898,12 @@ message ProjectServicePushRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_len = 100
   ];
-  // The wish whose integration branch to push; empty: the active wish on this project.
+  // The wish whose integration branch to push; empty: the wish whose branch this is, else the active wish on this
+  // project.
   optional string wish = 2 [(buf.validate.field).string.max_len = 100];
+  // Only this branch: the wish's integration branch or one of its azimas' own branches (Project.syncs); empty: every
+  // branch of the wish that Djinn pushes.
+  optional string branch = 3 [(buf.validate.field).string.max_len = 255];
 }
 
 message ProjectServicePushResponse {
@@ -1854,6 +1947,21 @@ message ProjectServicePushStrategyResponse {
   PushStrategy strategy = 1;
   // Where the setting comes from: default, repository, or developer.
   SettingSource source = 2;
+}
+
+message ProjectServiceBranchesRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+}
+
+message ProjectServiceBranchesResponse {
+  // The branches, without refs/heads/, the latest commit first; empty for a project outside Git.
+  repeated string branches = 1;
+  // The branch the project's checkout is on; empty when it is on none.
+  string checked_out = 2;
 }
 
 // Skills: what a project's agents know how to do, one folder each in the Agent Skills format (a SKILL.md, maybe
@@ -2207,7 +2315,8 @@ service WishService {
   }
   // Set where the wish's finished work is committed, and when it is pushed: the integration branch of one of its
   // projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
-  // itself or asks first. Only what is given changes.
+  // itself or asks first. Only what is given changes. The branch is refused while a merge runs into the wish's branch
+  // in that project: its work, a correction or a review, or main's merge.
   rpc SetIntegration(WishServiceSetIntegrationRequest) returns (WishServiceSetIntegrationResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -2454,6 +2563,10 @@ message WishServiceSetIntegrationRequest {
   PushMode push_mode = 6 [(buf.validate.field).enum.defined_only = true];
   // Push strategy for the wish: wish or azima. Unset: unchanged.
   optional PushStrategy push_strategy = 7 [(buf.validate.field).enum.defined_only = true];
+  // Make the branch when the project's repository has none of that name: a new branch at the tip of the wish's
+  // current integration branch there. Without it, a branch the repository lacks is recorded, and the work waits for
+  // it.
+  bool create_branch = 8;
 }
 
 message WishServiceSetIntegrationResponse {
@@ -3167,30 +3280,34 @@ message BlockServiceDeleteResponse {}
 // acts on a click without a word.
 service MarkService {
   // Mark a question: read, or approved as it is. Approving an open question answers it with the option its
-  // recommendation names, as djinn question answer does. A block takes no mark: blocks are for agents.
+  // recommendation names, as djinn question answer does. Mark a task reviewed, once its diff was read. A block takes
+  // no mark: blocks are for agents.
   rpc Put(MarkServicePutRequest) returns (MarkServicePutResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // List the marks on a wish's questions, the latest last.
+  // List the marks on a wish's questions and tasks, the latest last.
   rpc List(MarkServiceListRequest) returns (MarkServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 }
 
-// MarkTarget points to the question a mark is on, by its code or its identifier. A block's identifier is refused.
+// MarkTarget points to the question or the task a mark is on, by its code or its identifier. A block's identifier is
+// refused.
 message MarkTarget {
   oneof ref {
     option (buf.validate.oneof).required = true;
     // A question's code, like Q03.
     string code = 1 [(buf.validate.field).string.pattern = "^Q[0-9]{2,3}$"];
-    // The identifier of a question.
+    // The identifier of a question, or of a task.
     string id = 2 [(buf.validate.field).string.uuid = true];
+    // A task's code, like W3: a task takes the mark reviewed.
+    string task = 3 [(buf.validate.field).string.pattern = "^[Ww][0-9]{1,4}$"];
   }
 }
 
-// Marked is a mark with the question it is on.
+// Marked is a mark with the question or the task it is on.
 message Marked {
   // Wish of the question.
   string wish_id = 1;
@@ -3204,17 +3321,19 @@ message Marked {
   string title = 5;
   // The mark.
   Mark mark = 6;
+  // The task marked, for a mark on a task; then label is its code and title its title.
+  string task_id = 7;
 }
 
 message MarkServicePutRequest {
-  // What to mark: a question's code, like Q03, or its identifier.
+  // What to mark: a question's code, like Q03, a task's, like W3, or the identifier of either.
   MarkTarget target = 1 [(buf.validate.field).required = true];
-  // The mark: read, or approved.
+  // The mark: read, or approved, on a question; reviewed, on a task.
   MarkKind kind = 2 [
     (buf.validate.field).required = true,
     (buf.validate.field).enum.defined_only = true
   ];
-  // Wish of the question, needed only when its code exists in several wishes.
+  // Wish of the question or task, needed only when its code exists in several wishes.
   string wish_id = 3 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
@@ -3262,7 +3381,7 @@ service TaskService {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // File diff of a task against its base: with no file given, the files changed and their counts; with a file, the
-  // unified diff of that file with syntax tokens.
+  // unified diff of that file with syntax tokens, by chunks of 2 000 lines at most: --offset asks for the next one.
   rpc Diff(TaskServiceDiffRequest) returns (TaskServiceDiffResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -3584,6 +3703,8 @@ message DiffHunk {
   int32 new_lines = 5;
   // The lines belonging to this hunk.
   repeated DiffLine lines = 6;
+  // The hunk began in an earlier chunk, where its header was: these lines carry it on.
+  bool continued = 7;
 }
 
 // A file changed by a task, with added/deleted line counts and flags.
@@ -3610,8 +3731,10 @@ message TaskDiffFile {
   DiffStatus status = 10;
 }
 
-// The diff of a single file, with hunks or a truncation message when too large.
+// The diff of a single file, or one chunk of it when it is long: its hunks and its lines from offset on.
 message TaskFileDiff {
+  reserved 11, 13;
+  reserved "too_large", "command";
   // Path of the file, relative to the repository root.
   string path = 1;
   // Previous path when renamed.
@@ -3630,16 +3753,16 @@ message TaskFileDiff {
   int32 added = 8;
   // Total lines deleted in this file.
   int32 deleted = 9;
-  // Unified diff hunks with syntax tokens.
+  // Unified diff hunks with syntax tokens, of this chunk's lines only.
   repeated DiffHunk hunks = 10;
-  // Whether the diff was cut because it exceeded the size threshold.
-  bool too_large = 11;
-  // Total lines of diff when cut.
+  // Lines of the whole unified diff of the file, its header included.
   int32 total_lines = 12;
-  // Shell command to inspect the full diff.
-  string command = 13;
-  // Full unified diff patch text.
+  // Unified diff patch text of this chunk's lines, as git prints them.
   string patch = 14;
+  // First line of the diff in this chunk, from 0.
+  int32 offset = 15;
+  // Where the next chunk starts: ask for it with this offset. 0 when this chunk ends the file's diff.
+  int32 next_offset = 16;
 }
 
 // Reference to a task, by code (W1, T07) or by UUID.
@@ -3667,6 +3790,13 @@ message TaskServiceDiffRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
+  // First line of the file's diff to show, from 0: a long diff comes by chunks, each one giving the next one's offset.
+  int32 offset = 4 [(buf.validate.field).int32.gte = 0];
+  // Lines of the file's diff to show from the offset. 0: 2 000, the most a chunk holds.
+  int32 limit = 5 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 2000
+  }];
 }
 
 message TaskServiceDiffResponse {

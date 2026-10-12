@@ -66,7 +66,9 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   or a correction stopped by the lead) are settled silently without raising questions. The lead decides: retry a
   correction, drop the work (`djinn task done --drop` or `djinn task cancel`), re-sequence the graph (`djinn task depend`),
   or leave it waiting. Questions to the developer are reserved for moves only a person can make (a tag, a PR, a release,
-  a right) or a real choice.
+  a right) or a real choice. Djinn acts on a yes only to the move questions it asked itself, as each records its move
+  (`djinn_move`: install the build it named, push the tag it named, mark an azima whose proof it asked for done), never
+  by the words of a question; an answer to a worker's or the lead's move question is only noted (`Djinn noted move`).
 - **When Djinn misbehaves.** When Djinn misbehaves while the developer is away, the lead may stop the damage without
   touching code: redirect the wish's integration to another branch, stop workers, withdraw useless questions. The lead
   may also revert a faulty merge on the integration branch, telling the developer at once; every other commit on the
@@ -78,7 +80,8 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   A decision may take several rounds.
 - **Marks.** The open questions the developer marked read, from the window: `djinn mark list <wish>`, and the
   brief's "Marked by the developer". Approving an open question (`djinn mark put Q03 approved`) answers it with
-  its recommendation. A block takes no mark: Djinn refuses one.
+  its recommendation. A task the developer reviewed, from the window's Review tab, is marked reviewed (`djinn mark put
+  W3 reviewed`); a task takes no other mark. A block takes no mark: Djinn refuses one.
 - **Investigators clarify questions; the lead turns answers into tasks.** Djinn does not turn answers into tasks
   with workers: the DAG is the lead's responsibility (keeping it free of conflicts so workers do not collide along an
   iterative and de-risked path), and the lead turns each answer into tasks itself, in one pass,

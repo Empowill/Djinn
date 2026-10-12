@@ -231,7 +231,7 @@ func TestRemoteTags(t *testing.T) {
 // - red push check, refused push, failed integration, correction past attempts -> "before the push"
 // - install proposals and proof checks -> can wait (Before: "", Urgency: Later).
 func TestComputedQuestionLevels(t *testing.T) {
-	tagQ := tagMoveQuestion("w1", "v1.0.0", "origin")
+	tagQ := tagMoveQuestion("w1", "p1", "v1.0.0", "origin")
 	if !tagQ.GetMove() || tagQ.GetBefore() != "before the release" {
 		t.Errorf("tagMoveQuestion: move=%v, before=%q; want move=true, before='before the release'", tagQ.GetMove(), tagQ.GetBefore())
 	}
@@ -246,7 +246,7 @@ func TestComputedQuestionLevels(t *testing.T) {
 		t.Errorf("prMoveQuestion: move=%v, before=%q; want move=true, before='before the merge'", prQ.GetMove(), prQ.GetBefore())
 	}
 
-	instQ := installMoveQuestion("w1", "abcdef123456", "feat", time.Hour)
+	instQ := installMoveQuestion("w1", "p1", "abcdef123456", "feat", time.Hour)
 	if !instQ.GetMove() || instQ.GetBefore() != "" {
 		t.Errorf("installMoveQuestion: move=%v, before=%q; want move=true, before=''", instQ.GetMove(), instQ.GetBefore())
 	}
@@ -1035,7 +1035,7 @@ func TestMoveTemplatesNoUnfilledFormatVerbs(t *testing.T) {
 
 	// tagMoveName & tagMoveQuestion
 	assertNoVerb("tagMoveName", tagMoveName("v1.2.3"))
-	assertQuestion("tagMoveQuestion", tagMoveQuestion("wish1", "v1.2.3", "origin"))
+	assertQuestion("tagMoveQuestion", tagMoveQuestion("wish1", "p1", "v1.2.3", "origin"))
 
 	// releaseMoveQuestion
 	assertQuestion("releaseMoveQuestion", releaseMoveQuestion("wish1", "1234567890abcdef"))
@@ -1048,7 +1048,7 @@ func TestMoveTemplatesNoUnfilledFormatVerbs(t *testing.T) {
 	assertQuestion("prMoveQuestion.percentInBody", prMoveQuestion("wish1", "main", "Title 100%", "Coverage at 99%"))
 
 	// installMoveQuestion
-	assertQuestion("installMoveQuestion", installMoveQuestion("wish1", "1234567890abcdef", "feat/branch", 10*time.Minute))
+	assertQuestion("installMoveQuestion", installMoveQuestion("wish1", "p1", "1234567890abcdef", "feat/branch", 10*time.Minute))
 
 	// azimaProofMoveQuestion
 	assertQuestion("azimaProofMoveQuestion", azimaProofMoveQuestion("wish1", "t1", "T01", "a Mac", []string{"- [ ] Cocoa (needs: a Mac)"}))

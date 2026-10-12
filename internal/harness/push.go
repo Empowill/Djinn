@@ -445,8 +445,10 @@ func (h *Harness) pushedByHand(
 	return record, nil
 }
 
-// Push pushes the integration branch of wishID in projectID: runs push checks under gates, never with --force.
-func (h *Harness) Push(ctx context.Context, wishID, projectID string) (*planv1.IntegrationPush, error) {
+// Push pushes the integration branch of wishID in projectID, or under the per-azima strategy its azimas' branches too;
+// only branch when it is not empty: the wish's integration branch or one of its azimas' own. It runs push checks under
+// gates, never with --force.
+func (h *Harness) Push(ctx context.Context, wishID, projectID, branch string) (*planv1.IntegrationPush, error) {
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, wishID)
 	if err != nil {
 		return nil, err
@@ -455,12 +457,16 @@ func (h *Harness) Push(ctx context.Context, wishID, projectID string) (*planv1.I
 	if err != nil {
 		return nil, err
 	}
-	settings, err := plan.LoadSettings(h.home, project)
-	if err == nil {
+	perAzima := false
+	if settings, err := plan.LoadSettings(h.home, project); err == nil {
 		strat, _ := plan.ResolveWishPushStrategy(wish, settings)
-		if strat == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
-			return h.pushAzima(ctx, wish, project)
-		}
+		perAzima = strat == planv1.PushStrategy_PUSH_STRATEGY_AZIMA
+	}
+	if branch != "" && (perAzima || branch != plan.IntegrationBranchOf(wish, projectID)) {
+		return h.pushOne(ctx, wish, project, branch)
+	}
+	if perAzima {
+		return h.pushAzima(ctx, wish, project)
 	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wishID})
 	if err != nil {
@@ -656,6 +662,28 @@ func (h *Harness) pushAzimaApproved(ctx context.Context, wish *planv1.Wish, proj
 	}
 }
 
+// pushOne pushes branch of wish in project, as the person asked: its integration branch or one of its azimas' own.
+func (h *Harness) pushOne(ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch string) (*planv1.IntegrationPush, error) {
+	ours := branch == plan.IntegrationBranchOf(wish, project.GetId())
+	for _, azima := range h.wishAzimas(ctx, wish) {
+		ours = ours || branch == azimaBranchName(azima)
+	}
+	if !ours {
+		return nil, fmt.Errorf("%s is no branch Djinn pushes for the wish %q", branch, wish.GetTitle())
+	}
+	repo := project.GetDirectory()
+	if commitOf(ctx, repo, "refs/heads/"+branch) == "" {
+		return nil, fmt.Errorf("branch %s does not exist yet in %s", branch, repo)
+	}
+	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
+	if err != nil {
+		return nil, err
+	}
+	since := h.lastBranchPush(ctx, repo, wish, pushState(wish, project.GetId()), branch)
+	committed := h.committedBranchTasks(ctx, repo, tasks, project.GetId(), branch, since)
+	return h.pushBranch(ctx, wish, project, branch, committed, "you said to push it", true)
+}
+
 // pushAzima pushes all azima branches of wish in project that have unpushed commits.
 func (h *Harness) pushAzima(ctx context.Context, wish *planv1.Wish, project *planv1.Project) (*planv1.IntegrationPush, error) {
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
@@ -696,22 +724,69 @@ func (h *Harness) pushAzima(ctx context.Context, wish *planv1.Wish, project *pla
 	return nil, lastErr
 }
 
-// Sync computes how far the integration branch of wish in project is ahead of and behind its remote.
-func (h *Harness) Sync(ctx context.Context, wish *planv1.Wish, project *planv1.Project) (*planv1.ProjectSync, error) {
-	if wish == nil || project == nil {
-		return nil, nil
-	}
-	branch := plan.IntegrationBranchOf(wish, project.GetId())
+// Syncs computes how far each branch Djinn pushes in project stands against its remote: the integration branch of each
+// active or paused wish there, the active ones by rank then the paused ones, each followed by its azimas' own branches.
+// A branch that does not exist yet, or has no remote, is left out.
+func (h *Harness) Syncs(ctx context.Context, project *planv1.Project) ([]*planv1.ProjectSync, error) {
 	repo := project.GetDirectory()
-	if branch == "" || repo == "" {
+	if repo == "" || !project.GetGit() {
 		return nil, nil
 	}
+	out, err := git(ctx, repo, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+	if err != nil {
+		return nil, nil //nolint:nilerr // no branch yet: nothing to sync
+	}
+	branches := map[string]bool{}
+	for _, b := range strings.Fields(out) {
+		branches[b] = true
+	}
+	all, err := store.List[*planv1.Wish](ctx, h.store, nil)
+	if err != nil {
+		return nil, err
+	}
+	var wishes []*planv1.Wish
+	for _, w := range all {
+		state := w.GetState()
+		if slices.Contains(w.GetProjectIds(), project.GetId()) &&
+			(state == planv1.WishState_WISH_STATE_ACTIVE || state == planv1.WishState_WISH_STATE_PAUSED) {
+			wishes = append(wishes, w)
+		}
+	}
+	slices.SortStableFunc(wishes, func(a, b *planv1.Wish) int {
+		return cmp.Or(cmp.Compare(a.GetState(), b.GetState()), cmp.Compare(a.GetRank(), b.GetRank()))
+	})
+	var syncs []*planv1.ProjectSync
+	add := func(wish *planv1.Wish, azima *planv1.Task, branch string) {
+		if !branches[branch] {
+			return
+		}
+		delete(branches, branch) // a branch shows once
+		sync := branchSync(ctx, repo, branch)
+		if sync == nil {
+			return
+		}
+		sync.WishId, sync.WishTitle = wish.GetId(), wish.GetTitle()
+		if azima != nil {
+			sync.AzimaId, sync.AzimaCode, sync.AzimaTitle = azima.GetId(), azima.GetCode(), azima.GetTitle()
+		}
+		syncs = append(syncs, sync)
+	}
+	for _, wish := range wishes {
+		add(wish, nil, plan.IntegrationBranchOf(wish, project.GetId()))
+		azimas := h.wishAzimas(ctx, wish)
+		slices.SortStableFunc(azimas, func(a, b *planv1.Task) int { return cmp.Compare(a.GetId(), b.GetId()) })
+		for _, azima := range azimas {
+			add(wish, azima, azimaBranchName(azima))
+		}
+	}
+	return syncs, nil
+}
+
+// branchSync computes how far branch of repo is ahead of and behind its remote target; nil without a remote.
+func branchSync(ctx context.Context, repo, branch string) *planv1.ProjectSync {
 	remote, target := pushTarget(ctx, repo, branch)
 	if remote == "" || target == "" {
-		return nil, nil
-	}
-	if _, err := git(ctx, repo, "rev-parse", "--verify", "refs/heads/"+branch); err != nil {
-		return nil, nil //nolint:nilerr // the integration branch does not exist yet
+		return nil
 	}
 	var ahead, behind int64
 	remoteRef := "refs/remotes/" + remote + "/" + target
@@ -730,13 +805,12 @@ func (h *Harness) Sync(ctx context.Context, wish *planv1.Wish, project *planv1.P
 		}
 	}
 	return &planv1.ProjectSync{
-		WishId: wish.GetId(),
 		Branch: branch,
 		Remote: remote,
 		Target: target,
 		Ahead:  int32(ahead),
 		Behind: int32(behind),
-	}, nil
+	}
 }
 
 // clearApproved forgets an approval that found nothing to push.

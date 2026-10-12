@@ -782,16 +782,19 @@ export function createStore(
     // Events come in bursts: the screen gets them together, at most every 50 ms.
     const push = () => {
       timer = undefined;
-      if (!buffer.length) return;
-      const promptEvent = buffer.find((e) => e.kind === TaskEventKind.PROMPT);
+      // A follow stopped as a new status follows again pushes what it held, and the new one reads it again: an
+      // event already kept is not kept twice.
+      const known = state.events[taskId] ?? [];
+      const lastSeq = known.at(-1)?.seq ?? 0n;
+      const fresh = buffer.filter((e) => e.seq > lastSeq);
+      buffer = [];
+      if (!fresh.length) return;
+      const promptEvent = fresh.find((e) => e.kind === TaskEventKind.PROMPT);
       const patchPrompts =
         promptEvent && !state.prompts[taskId]
           ? { prompts: { ...state.prompts, [taskId]: promptEvent.text } }
           : undefined;
-      const kept = [...(state.events[taskId] ?? []), ...buffer].slice(
-        -MAX_EVENTS,
-      );
-      buffer = [];
+      const kept = [...known, ...fresh].slice(-MAX_EVENTS);
       set({
         events: { ...state.events, [taskId]: kept },
         ...(patchPrompts ?? {}),

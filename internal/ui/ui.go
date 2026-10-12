@@ -78,7 +78,8 @@ type Service struct {
 	ready      string           // version of the newer Djinn waiting; empty for none
 	notesURL   string           // where its release notes are; empty for none
 	notResumed []string         // terminals the last restart could not run again
-	build      *uiv1.Build      // the last build committed and not installed; nil for none
+	builds     []*uiv1.Build    // the last build pushed of each integration branch, not installed; the running one's first
+	readyBuild *uiv1.Build      // the newer Djinn waiting, named as a build; nil when not known
 	installing *uiv1.Installing // the install that runs now; nil for none
 	updated    chan struct{}    // closed and replaced at each change
 }
@@ -456,17 +457,66 @@ func (s *Service) SetReady(version, notesURL string) {
 	if s.ready == version && s.notesURL == notesURL {
 		return
 	}
+	if s.ready != version {
+		s.readyBuild = nil
+	}
 	s.ready, s.notesURL = version, notesURL
 	s.notifyUpdate()
 }
 
-// SetBuild proposes to install build, a batch committed into a wish's integration branch, in place of the one
-// proposed before; nil proposes none.
-func (s *Service) SetBuild(build *uiv1.Build) {
+// SetReadyBuild names the newer Djinn of version that waits, as a build: its commit, the branch and wish it comes
+// from, how it compares with the running one. Nothing when another version waits now.
+func (s *Service) SetReadyBuild(version string, build *uiv1.Build) {
 	s.updates.Lock()
 	defer s.updates.Unlock()
-	s.build = build
+	if s.ready != version || proto.Equal(s.readyBuild, build) {
+		return
+	}
+	s.readyBuild = build
 	s.notifyUpdate()
+}
+
+// SetBuild proposes to install build, the last push of an integration branch, in place of the one proposed before
+// for the same branch of the same project: each branch keeps its own, the branch the running Djinn was built from
+// first.
+func (s *Service) SetBuild(build *uiv1.Build) {
+	if build == nil {
+		return
+	}
+	s.updates.Lock()
+	defer s.updates.Unlock()
+	if i := slices.IndexFunc(s.builds, func(b *uiv1.Build) bool { return sameBranch(b, build) }); i >= 0 {
+		s.builds[i] = build
+	} else {
+		s.builds = append(s.builds, build)
+	}
+	slices.SortStableFunc(s.builds, func(a, b *uiv1.Build) int {
+		switch {
+		case a.GetRunning() == b.GetRunning():
+			return 0
+		case a.GetRunning():
+			return -1
+		}
+		return 1
+	})
+	s.notifyUpdate()
+}
+
+// sameBranch tells whether a and b are builds of the same integration branch of the same project.
+func sameBranch(a, b *uiv1.Build) bool {
+	return strings.EqualFold(a.GetProjectId(), b.GetProjectId()) && a.GetBranch() == b.GetBranch()
+}
+
+// updateState is what the window is told of the update now; s.updates is held.
+func (s *Service) updateState() *uiv1.UiServiceWatchUpdateResponse {
+	builds := make([]*uiv1.Build, len(s.builds))
+	for i, b := range s.builds {
+		builds[i] = proto.CloneOf(b)
+	}
+	return &uiv1.UiServiceWatchUpdateResponse{
+		Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed), NotesUrl: s.notesURL,
+		Builds: builds, Installing: proto.CloneOf(s.installing), ReadyBuild: proto.CloneOf(s.readyBuild),
+	}
 }
 
 // setInstalling says where the install that runs now stands; nil when none runs.
@@ -520,10 +570,7 @@ func (s *Service) WatchUpdate(
 			s.updated = make(chan struct{})
 		}
 		changed := s.updated
-		msg := &uiv1.UiServiceWatchUpdateResponse{
-			Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed), NotesUrl: s.notesURL,
-			Build: proto.CloneOf(s.build), Installing: proto.CloneOf(s.installing),
-		}
+		msg := s.updateState()
 		s.updates.Unlock()
 		if err := stream.Send(msg); err != nil {
 			return err
@@ -542,11 +589,14 @@ func (s *Service) Update(
 	installed := ""
 	if sha := req.Msg.GetBuild(); sha != "" {
 		s.updates.Lock()
-		build := s.build
+		var build *uiv1.Build
+		if i := slices.IndexFunc(s.builds, func(b *uiv1.Build) bool { return b.GetSha() == sha }); i >= 0 {
+			build = s.builds[i]
+		}
 		s.updates.Unlock()
 		switch {
-		case build.GetSha() != sha:
-			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the build %s is not the one proposed", sha))
+		case build == nil:
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the build %s is not one proposed", sha))
 		case s.Install == nil:
 			return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this djinn installs no build"))
 		}
@@ -559,8 +609,8 @@ func (s *Service) Update(
 		}
 		installed = sha
 		s.updates.Lock()
-		if s.build == build { // Proposed no more, unless a newer one came meanwhile.
-			s.build = nil
+		if i := slices.Index(s.builds, build); i >= 0 { // Proposed no more, unless a newer one came meanwhile.
+			s.builds = slices.Delete(s.builds, i, i+1)
 			s.notifyUpdate()
 		}
 		s.updates.Unlock()
@@ -643,10 +693,7 @@ func (s *Service) Watch(
 		s.updated = make(chan struct{})
 	}
 	updateChanged := s.updated
-	initialUpdate := &uiv1.UiServiceWatchUpdateResponse{
-		Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed), NotesUrl: s.notesURL,
-		Build: proto.CloneOf(s.build), Installing: proto.CloneOf(s.installing),
-	}
+	initialUpdate := s.updateState()
 	s.updates.Unlock()
 
 	initMsg := &uiv1.UiServiceWatchResponse{
@@ -687,10 +734,7 @@ func (s *Service) Watch(
 				s.updated = make(chan struct{})
 			}
 			updateChanged = s.updated
-			updateMsg := &uiv1.UiServiceWatchUpdateResponse{
-				Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed), NotesUrl: s.notesURL,
-				Build: proto.CloneOf(s.build), Installing: proto.CloneOf(s.installing),
-			}
+			updateMsg := s.updateState()
 			s.updates.Unlock()
 			if err := stream.Send(&uiv1.UiServiceWatchResponse{Update: updateMsg}); err != nil {
 				return err

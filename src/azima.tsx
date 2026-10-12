@@ -4,7 +4,7 @@
 // its parts on the right, as the Tasks tab shows any task: under work that still moves, the finished parts fold behind
 // "show the N finished" (src/task-tabs.tsx).
 // An azima never waits for the person as work: its proof is no task.
-import { BadgeCheck, ChevronDown, ExternalLink } from "lucide-react";
+import { BadgeCheck, ChevronDown, ExternalLink, GitBranch } from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -19,6 +19,7 @@ import {
 import {
   AzimaPrState,
   AzimaState,
+  type ProjectSync,
   type ProofNeed,
   Prover,
   type Task,
@@ -28,6 +29,7 @@ import {
 import {
   compareCodes,
   isAzima,
+  isTaskMergingOrFailed,
   type MergeNest,
   mergeNest,
   settledTask,
@@ -35,13 +37,14 @@ import {
 import {
   azimaBranchName,
   azimaTime,
-  syncDescription,
+  isTaskMerging,
   type Tone,
   useNow,
 } from "./data/format";
 import { ModalFrame } from "./frame";
 import { t, type TextKey } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
+import { isOutOfSync, SyncLine } from "./project-sync";
 import { StatusBadge } from "./status";
 import { Fold } from "./task-tabs";
 
@@ -158,6 +161,7 @@ export const AzimaCard = memo(function AzimaCard({
   render,
   focus = "",
   isPerAzima = false,
+  sync: ownSync,
   onPush,
   onOpenPr,
   onValidate,
@@ -175,7 +179,9 @@ export const AzimaCard = memo(function AzimaCard({
   focus?: string;
   // Whether the wish integrates per azima.
   isPerAzima?: boolean;
-  // Pushes the azima's integration branch.
+  // How its own branch stands against its remote, among its project's syncs (Project.syncs).
+  sync?: ProjectSync;
+  // Pushes the azima's own branch.
   onPush?: (azima: Task) => Promise<unknown> | void;
   // Opens the pull request in the external browser.
   onOpenPr?: (url: string) => void;
@@ -222,16 +228,21 @@ export const AzimaCard = memo(function AzimaCard({
   const total =
     azima.azima?.parts ??
     parts.filter((x) => x.status !== TaskStatus.CANCELLED || isAzima(x)).length;
+  // Work that merges runs, not done, as the server counts it (internal/plan azimas).
   const done =
     azima.azima?.partsDone ??
     parts.filter((x) =>
-      isAzima(x) ? azimaFinished(x) : x.status === TaskStatus.DONE,
+      isAzima(x)
+        ? azimaFinished(x)
+        : x.status === TaskStatus.DONE && !isTaskMergingOrFailed(x),
     ).length;
   const running =
     azima.azima?.partsRunning ??
     parts.filter(
       (x) =>
-        x.status === TaskStatus.RUNNING || x.status === TaskStatus.RESUMING,
+        x.status === TaskStatus.RUNNING ||
+        x.status === TaskStatus.RESUMING ||
+        isTaskMerging(x),
     ).length;
   const waiting = Math.max(0, total - done - running);
   const isRunning =
@@ -258,16 +269,30 @@ export const AzimaCard = memo(function AzimaCard({
 
   const branch = azima.azima?.branch || azimaBranchName(azima);
   const baseBranch = azima.azima?.baseBranch;
-  const sync = azima.azima?.sync;
-  const isOutOfSync = Boolean(sync && (sync.ahead > 0 || sync.behind > 0));
+  const cutFrom = azima.azima?.cutFrom;
+  // Opened, its own branch: where it was cut from and that it lands in main. One cut before Djinn recorded it (stacked
+  // on another azima's) says its name only; one not cut yet, that it will be when its first part starts.
+  const landing = isPerAzima
+    ? [
+        cutFrom
+          ? t("azima.cut_from", {
+              main: baseBranch || "main",
+              sha: cutFrom.slice(0, 8),
+            })
+          : state === AzimaState.OPEN && t("azima.cut_when_started"),
+        (cutFrom || state === AzimaState.OPEN) &&
+          t("azima.lands_in", { branch: baseBranch || "main" }),
+      ].filter((x): x is string => Boolean(x))
+    : [];
+  const sync = ownSync ?? azima.azima?.sync;
+  const outOfSync = isOutOfSync(sync);
   const isPushed = Boolean(
     sync &&
     sync.ahead === 0 &&
     sync.behind === 0 &&
     (sync.target || sync.remote || sync.branch),
   );
-  const syncText = syncDescription(sync);
-  const canPush = isOutOfSync && Boolean(onPush);
+  const canPush = outOfSync && Boolean(onPush);
 
   const pr = azima.azima?.pr;
   const prUrl = pr?.url;
@@ -279,8 +304,7 @@ export const AzimaCard = memo(function AzimaCard({
         : t("azima.pr_open")
     : null;
 
-  const handlePush = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handlePush = async () => {
     if (!onPush || pushing) return;
     setPushing(true);
     try {
@@ -292,14 +316,12 @@ export const AzimaCard = memo(function AzimaCard({
     }
   };
 
-  const hasActions = isOutOfSync || canPush || isPushed || Boolean(prText);
-  // The heading reads at a glance: its state, code, title, what it waits for, its bar. The rest is on hover: its
-  // branches and what comes before it on its title; its parts, counted by state, and its time on its bar; what its
-  // proof needs on its badge, and in the card opened.
+  const hasActions = outOfSync || isPushed || Boolean(prText);
+  // The heading reads at a glance: its state, code, title, what it waits for, its bar. The rest is on hover: what comes
+  // before it on its title; its parts, counted by state, and its time on its bar; what its proof needs on its badge,
+  // and in the card opened, with its own branch.
   const facts = [
     azima.title,
-    isPerAzima && branch,
-    isPerAzima && baseBranch && t("azima.based_on", { branch: baseBranch }),
     after.length > 0 && t("page.after", { tasks: after.join(", ") }),
   ]
     .filter(Boolean)
@@ -364,22 +386,18 @@ export const AzimaCard = memo(function AzimaCard({
         </button>
         {isPerAzima && hasActions && (
           <div className="azima-actions">
-            {isOutOfSync && syncText && (
-              <span className="azima-sync-status" title={syncText}>
-                {syncText}
-              </span>
+            {outOfSync && (
+              <SyncLine
+                sync={sync}
+                busy={
+                  pushing
+                    ? t("project.pushing_branch", { branch: sync.branch })
+                    : ""
+                }
+                onPush={canPush ? () => void handlePush() : undefined}
+              />
             )}
-            {canPush && (
-              <button
-                type="button"
-                className="button accent small"
-                disabled={pushing}
-                onClick={handlePush}
-              >
-                {pushing ? t("project.pushing") : t("project.push")}
-              </button>
-            )}
-            {isPushed && !isOutOfSync && (
+            {isPushed && !outOfSync && (
               <span className="azima-pushed-status">{t("azima.pushed")}</span>
             )}
             {prUrl ? (
@@ -409,6 +427,15 @@ export const AzimaCard = memo(function AzimaCard({
           right, one per row; on a narrow card, one above the other. With neither, its parts take the width. */}
       {open && (
         <div className={`azima-body${side ? " with-side" : ""}`}>
+          {isPerAzima && (
+            <p className="azima-landing">
+              <GitBranch size={13} aria-hidden="true" />
+              <code>{branch}</code>
+              {landing.map((text) => (
+                <span key={text}>{text}</span>
+              ))}
+            </p>
+          )}
           {side && (
             <div className="azima-side">
               {azima.description && (

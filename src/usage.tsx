@@ -1,13 +1,16 @@
-// What workers spent: tokens (input, output, cache read and written, thinking) and the cost (reported and estimated).
-// Codex and Antigravity report tokens only; the page estimates cost from prices.yaml, and preserves Claude's reported cost.
+// What workers spent: tokens (input, output, cache read and written, thinking) and the price, one total.
+// Codex and Antigravity report tokens only; the page estimates their cost from prices.yaml, and keeps Claude's reported
+// cost: the price is the reported cost where there is one, else the estimate; its hover tells the two apart.
+import { Footprints } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import {
   Provider,
   type Resources,
   type Task,
+  TaskStatus,
   type Usage,
 } from "../gen/ts/plan/v1/plan_pb";
-import { type Spent, tokensOf } from "./data/flight";
+import { type ProviderSpent, type Spent, tokensOf } from "./data/flight";
 import { usd } from "./data/format";
 import { estimateCost } from "./data/prices";
 import { language, t } from "./i18n";
@@ -97,7 +100,87 @@ function parts(u: {
   return out;
 }
 
-// usageDetail is a task's usage in full, one line: for a title, or the task's facts.
+// Cost is what a price is made of: what the agents reported, and the estimate of what they did not (tokens at the
+// table's prices of date), with how many tasks the table priced and how many it could not.
+interface Cost {
+  reported: number;
+  estimated: number;
+  priced: number;
+  unpriced: number;
+  date: string;
+  // An Antigravity task is in the estimate: it is at API prices, not the bill.
+  antigravity: boolean;
+}
+
+// taskCost is a task's cost: the reported cost when its agent gave one, else its tokens at the table's prices.
+function taskCost(u: Usage, model?: string, provider?: Provider): Cost {
+  const est = estimateCost(u, model, provider);
+  const reported = u.costUsd > 0;
+  const priced = !reported && est.hasPrice;
+  return {
+    reported: reported ? u.costUsd : 0,
+    estimated: priced ? est.costUsd : 0,
+    priced: priced ? 1 : 0,
+    unpriced: !reported && !est.hasPrice ? 1 : 0,
+    date: est.tableDate,
+    antigravity: priced && provider === Provider.ANTIGRAVITY,
+  };
+}
+
+function spentCost(
+  s: Omit<Spent, "byProvider" | "tableDate">,
+  date: string,
+  antigravity: boolean,
+): Cost {
+  return {
+    reported: s.costUsd,
+    estimated: s.estimatedCostUsd,
+    priced: s.priced,
+    unpriced: s.withoutPrice,
+    date,
+    antigravity,
+  };
+}
+
+// price is a cost in one figure, the total; "≈" when an estimate is in it; nothing when nothing has a price.
+function price(c: Cost): string {
+  if (!(c.reported > 0) && !c.priced) return "";
+  const cost = usd(c.reported + c.estimated);
+  return c.priced ? t("usage.about", { cost }) : cost;
+}
+
+// costSplit is what a price is made of, one line each: for its hover.
+function costSplit(c: Cost, one: boolean): string[] {
+  const out: string[] = [];
+  if (c.reported > 0) out.push(t("usage.reported", { cost: usd(c.reported) }));
+  if (c.priced) {
+    let estimated = t("usage.estimated", {
+      cost: usd(c.estimated),
+      date: c.date,
+    });
+    if (c.antigravity) estimated += ` (${t("usage.antigravity_estimate")})`;
+    out.push(estimated);
+  }
+  if (c.unpriced)
+    out.push(
+      one
+        ? t("usage.no_price")
+        : t("usage.without_price", { count: c.unpriced }),
+    );
+  return out;
+}
+
+// costTitle is the hover of a task's price: what it is made of.
+export function costTitle(
+  usage?: Usage,
+  model?: string,
+  provider?: Provider,
+): string {
+  if (!usage) return "";
+  return costSplit(taskCost(usage, model, provider), true).join("\n");
+}
+
+// usageDetail is a task's usage in full, one line: its tokens and its price; costTitle tells the price's parts.
 export function usageDetail(
   usage?: Usage,
   model?: string,
@@ -107,26 +190,12 @@ export function usageDetail(
   const total = tokensOf(usage);
   if (total === 0n && !(usage.costUsd > 0)) return "";
   const out = parts(usage);
-  if (usage.costUsd > 0) {
-    out.push(t("usage.reported", { cost: usd(usage.costUsd) }));
-  }
-  const est = estimateCost(usage, model, provider);
-  if (est.hasPrice) {
-    let estText = t("usage.estimated", {
-      cost: usd(est.costUsd),
-      date: est.tableDate,
-    });
-    if (provider === Provider.ANTIGRAVITY) {
-      estText += ` (${t("usage.antigravity_estimate")})`;
-    }
-    out.push(estText);
-  } else {
-    out.push(t("usage.no_price"));
-  }
+  const p = price(taskCost(usage, model, provider));
+  if (p) out.push(p);
   return out.join(" · ");
 }
 
-// TaskUsage is a task's usage, short: its tokens and its cost (reported and estimated); the detail in its title.
+// TaskUsage is a task's usage, short: its tokens and its price; the detail and the price's parts in its title.
 export function TaskUsage({
   usage,
   model,
@@ -153,22 +222,20 @@ export function TaskUsage({
     );
   }
 
-  const est = estimateCost(u, m, p);
+  const cost = taskCost(u, m, p);
   const items: string[] = [];
   if (total > 0n) {
     items.push(t("usage.tokens", { count: tokens(total) }));
   }
-  if (est.hasPrice) {
-    if (u.costUsd > 0) {
-      items.push(t("usage.reported", { cost: usd(u.costUsd) }));
-    }
-    items.push(
-      t("usage.estimated", { cost: usd(est.costUsd), date: est.tableDate }),
-    );
-  }
+  const figure = price(cost);
+  if (figure) items.push(figure);
+  const detail = parts(u).join(" · ");
 
   return (
-    <span className="task-usage" title={usageDetail(u, m, p)}>
+    <span
+      className="task-usage"
+      title={[detail, ...costSplit(cost, true)].filter(Boolean).join("\n")}
+    >
       {items.join(" · ")}
     </span>
   );
@@ -224,54 +291,34 @@ export function SpentLine({
   }
 
   const items = parts(spent);
-  const costItems: string[] = [];
-  if (spent.costUsd > 0) {
-    costItems.push(t("usage.reported", { cost: usd(spent.costUsd) }));
-  }
-  if (spent.estimatedCostUsd > 0 || spent.tasks > spent.withoutPrice) {
-    costItems.push(
-      t("usage.estimated", {
-        cost: usd(spent.estimatedCostUsd),
-        date: spent.tableDate,
-      }),
-    );
-  }
-
-  const allItems = [...items, ...costItems];
+  const antigravity = (p: ProviderSpent) =>
+    p.provider === Provider.ANTIGRAVITY && p.priced > 0;
+  const cost = spentCost(
+    spent,
+    spent.tableDate,
+    spent.byProvider.some(antigravity),
+  );
+  const figure = price(cost);
+  // The hover tells the price's parts, then each provider's price when there are several.
+  const split = costSplit(cost, false);
+  if (spent.byProvider.length > 1)
+    for (const p of spent.byProvider) {
+      const each = price(spentCost(p, spent.tableDate, antigravity(p)));
+      if (each) split.push(`${providerName(p.provider)}: ${each}`);
+    }
 
   return (
     <span className="wish-spent">
       <span className="eyebrow">{t("usage.spent")}</span>
-      {allItems.length > 0 && <span>{allItems.join(" · ")}</span>}
-      {spent.withoutPrice > 0 && (
-        <small>{t("usage.without_price", { count: spent.withoutPrice })}</small>
-      )}
-      {spent.byProvider.length > 1 && (
-        <span className="spent-providers">
-          {spent.byProvider
-            .filter((p) => p.tasks > 0)
-            .map((p) => {
-              const pItems: string[] = [];
-              if (p.costUsd > 0) {
-                pItems.push(t("usage.reported", { cost: usd(p.costUsd) }));
-              }
-              if (p.tasks > p.withoutPrice) {
-                pItems.push(
-                  t("usage.estimated", {
-                    cost: usd(p.estimatedCostUsd),
-                    date: spent.tableDate,
-                  }),
-                );
-              }
-              if (p.withoutPrice > 0) {
-                pItems.push(
-                  t("usage.without_price", { count: p.withoutPrice }),
-                );
-              }
-              return `${providerName(p.provider)}: ${pItems.join(", ")}`;
-            })
-            .join(" · ")}
+      {figure && (
+        <span className="spent-price" title={split.join("\n")}>
+          {figure}
         </span>
+      )}
+      {items.length > 0 && <span>{items.join(" · ")}</span>}
+      {/* Without any price, the reason shows: the hover has nowhere to be. */}
+      {!figure && spent.withoutPrice > 0 && (
+        <small>{t("usage.without_price", { count: spent.withoutPrice })}</small>
       )}
       {showSwitch && (
         <button
@@ -342,4 +389,31 @@ export function resourcesDetail(r: Resources, running: boolean): string {
       }),
     );
   return out.join(" · ");
+}
+
+// TaskTurns is how many model turns the task's worker took against the limit past which Djinn stops a run: its
+// tone warns past 80% of it. The hover says what it counts, and the total over its runs when it ran more than once.
+export function TaskTurns({ task }: { task: Task }) {
+  const turns = task.turns;
+  if (!turns || turns.limit <= 0) return null;
+  const warn = turns.run * 5 > turns.limit * 4;
+  const title = [
+    t(
+      task.status === TaskStatus.RUNNING
+        ? "task.turns_run"
+        : "task.turns_last_run",
+      { run: turns.run, limit: turns.limit },
+    ),
+  ];
+  if (turns.total > turns.run)
+    title.push(t("task.turns_total", { total: turns.total }));
+  return (
+    <span
+      className={warn ? "task-turns warning" : "task-turns"}
+      title={title.join(" · ")}
+    >
+      <Footprints size={12} aria-label={t("task.turns")} />
+      {`${turns.run}/${turns.limit}`}
+    </span>
+  );
 }

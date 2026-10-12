@@ -1,7 +1,7 @@
 // The read mark, the click that says "I saw it" on an open question without a word: it goes to the lamp
 // (MarkService.Put), where the lead reads it in the brief and with djinn mark list. A block takes no mark: it is for
 // agents (src/agent-blocks.tsx). And the writes the screens share: an answer, a mark, a request to investigate, each
-// read again once djinn has it.
+// read again once djinn has it. A task takes another mark, reviewed (src/review-tab.tsx).
 import { Check, Eye } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
@@ -139,6 +139,23 @@ export function useWrites(onToast: (text: string) => void) {
     [act, clients.marks],
   );
 
+  // review checks a task reviewed, by its id, or takes the mark off.
+  const review = useCallback(
+    (wishId: string, id: string, remove: boolean) =>
+      act(
+        wishId,
+        () =>
+          clients.marks.put({
+            target: { ref: { case: "id", value: id } },
+            kind: MarkKind.REVIEWED,
+            remove,
+            wishId,
+          }),
+        [Change.TASK],
+      ),
+    [act, clients.marks],
+  );
+
   const move = useCallback(
     (wishId: string, id: string, targetWish: string, follow: boolean) =>
       act(
@@ -190,9 +207,10 @@ export function useWrites(onToast: (text: string) => void) {
       answer,
       enlighten,
       mark,
+      review,
       move,
       withdraw,
     }),
-    [clients, act, quiet, answer, enlighten, mark, move, withdraw],
+    [clients, act, quiet, answer, enlighten, mark, review, move, withdraw],
   );
 }

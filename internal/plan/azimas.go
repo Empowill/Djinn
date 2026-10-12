@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -105,12 +106,14 @@ func FillAzimas(tasks []*planv1.Task) {
 			Ready:  true,
 			Branch: AzimaBranchName(t),
 		}
-		if deps := DependencyAzimas(t, tasks); len(deps) > 0 {
-			e.BaseBranch = AzimaBranchName(deps[len(deps)-1])
-		}
+		// What Djinn records of its branch and pull request stays: its branch is cut from main, never from another's.
 		if existing := t.GetAzima(); existing != nil {
 			e.Sync = existing.GetSync()
 			e.Pr = existing.GetPr()
+			e.Main = existing.GetMain()
+			if existing.GetCutFrom() != "" {
+				e.CutFrom, e.BaseBranch = existing.GetCutFrom(), existing.GetBaseBranch()
+			}
 		}
 		// A merge counts with the original task it serves (MergeHost): it runs, its original runs.
 		running := map[string]bool{}
@@ -188,10 +191,14 @@ func Slug(s string, n int) string {
 	return strings.Trim(out, "-")
 }
 
-// AzimaBranchName is the integration branch name of an azima: djinn/<code-slug> or djinn/<code>.
+// AzimaBranchName is the branch of an azima under the per-azima push strategy: the one recorded when Djinn cut it
+// (Azima.cut_from), else djinn/<code>-<slug of its title>, or djinn/<code>.
 func AzimaBranchName(a *planv1.Task) string {
 	if a == nil {
 		return ""
+	}
+	if e := a.GetAzima(); e.GetCutFrom() != "" && e.GetBranch() != "" {
+		return e.GetBranch()
 	}
 	s := Slug(a.GetTitle(), 40)
 	if s != "" {
@@ -274,6 +281,83 @@ func DependencyAzimas(azima *planv1.Task, tasks []*planv1.Task) []*planv1.Task {
 		return strings.Compare(a.GetCode(), b.GetCode())
 	})
 	return res
+}
+
+// AzimaDependency is an azima that waits for others, itself or through the work part of it (DependencyAzimas). Under
+// the per-azima push strategy Djinn refuses it: each azima's branch is cut from main and lands there on its own, so
+// none holds another's work.
+type AzimaDependency struct {
+	Azima *planv1.Task
+	After []*planv1.Task
+}
+
+// AzimaDependencies lists the azimas among tasks, every task of a wish, that wait for others, in the order of their
+// codes.
+func AzimaDependencies(tasks []*planv1.Task) []AzimaDependency {
+	var out []AzimaDependency
+	for _, t := range tasks {
+		if !IsAzima(t) {
+			continue
+		}
+		if after := DependencyAzimas(t, tasks); len(after) > 0 {
+			out = append(out, AzimaDependency{Azima: t, After: after})
+		}
+	}
+	slices.SortFunc(out, func(a, b AzimaDependency) int { return CompareCodes(a.Azima.GetCode(), b.Azima.GetCode()) })
+	return out
+}
+
+// AzimaDependenciesText says deps in a line: "T2 after T1; T3 after T1, T2".
+func AzimaDependenciesText(deps []AzimaDependency) string {
+	parts := make([]string, 0, len(deps))
+	for _, d := range deps {
+		codes := make([]string, 0, len(d.After))
+		for _, a := range d.After {
+			codes = append(codes, a.GetCode())
+		}
+		slices.SortFunc(codes, CompareCodes)
+		parts = append(parts, d.Azima.GetCode()+" after "+strings.Join(codes, ", "))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// RefuseAzimaDependencies refuses graph, the tasks of a wish that pushes per azima as a change would leave them, when
+// it makes an azima wait for another that it did not wait for among tasks, the wish's tasks as they are: an azima
+// spawned or synced from its plan file with one after it, a dependency set, a task grouped into another azima. What a
+// wish waited for before it was switched stays.
+func RefuseAzimaDependencies(tasks, graph []*planv1.Task) error {
+	had := map[[2]string]bool{}
+	for _, d := range AzimaDependencies(tasks) {
+		for _, a := range d.After {
+			had[[2]string{d.Azima.GetId(), a.GetId()}] = true
+		}
+	}
+	var added []AzimaDependency
+	for _, d := range AzimaDependencies(graph) {
+		d.After = slices.DeleteFunc(slices.Clone(d.After), func(a *planv1.Task) bool {
+			return had[[2]string{d.Azima.GetId(), a.GetId()}]
+		})
+		if len(d.After) > 0 {
+			added = append(added, d)
+		}
+	}
+	if len(added) == 0 {
+		return nil
+	}
+	return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+		"the wish pushes per azima: no azima waits for another, each one's branch cut from main (%s)",
+		AzimaDependenciesText(added)))
+}
+
+// RefuseSwitchToAzima refuses switching a wish to the per-azima push strategy while its azimas, among tasks, wait for
+// each other, naming them in a line.
+func RefuseSwitchToAzima(tasks []*planv1.Task) error {
+	deps := AzimaDependencies(tasks)
+	if len(deps) == 0 {
+		return nil
+	}
+	return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+		"per azima refused: azimas depend on each other (%s)", AzimaDependenciesText(deps)))
 }
 
 // HasUnfinishedParts tells whether an azima has parts still to finish: work not finished,

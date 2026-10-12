@@ -1224,12 +1224,16 @@ type UiServiceWatchUpdateResponse struct {
 	// Where the release notes of the newer Djinn are, an http(s) link; empty when none waits, or when it comes from a
 	// local install, which has none.
 	NotesUrl string `protobuf:"bytes,4,opt,name=notes_url,json=notesUrl,proto3" json:"notes_url,omitempty"`
-	// The last push of a wish's integration branch, in a project whose settings name an install command, and not
-	// installed since: the window proposes to install it and restart on it. Unset for none.
-	Build *Build `protobuf:"bytes,5,opt,name=build,proto3" json:"build,omitempty"`
+	// The last push of each integration branch, in a project whose settings name an install command, and not installed
+	// since: one per branch, the branch the running Djinn was built from first. The window proposes to install each and
+	// restart on it, the other branches' folded.
+	Builds []*Build `protobuf:"bytes,7,rep,name=builds,proto3" json:"builds,omitempty"`
 	// The install of a build that runs now (Update), and where it stands; unset for none. The window says it in place
 	// of the build's buttons: what it waits for, then that it builds, then that Djinn restarts.
-	Installing    *Installing `protobuf:"bytes,6,opt,name=installing,proto3" json:"installing,omitempty"`
+	Installing *Installing `protobuf:"bytes,6,opt,name=installing,proto3" json:"installing,omitempty"`
+	// The newer Djinn of version ready, named as a build is: its commit, the branch and wish it comes from, and how it
+	// compares with the running Djinn. Unset when no project holds its commit (a release no checkout knows yet).
+	ReadyBuild    *Build `protobuf:"bytes,8,opt,name=ready_build,json=readyBuild,proto3" json:"ready_build,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1292,9 +1296,9 @@ func (x *UiServiceWatchUpdateResponse) GetNotesUrl() string {
 	return ""
 }
 
-func (x *UiServiceWatchUpdateResponse) GetBuild() *Build {
+func (x *UiServiceWatchUpdateResponse) GetBuilds() []*Build {
 	if x != nil {
-		return x.Build
+		return x.Builds
 	}
 	return nil
 }
@@ -1302,6 +1306,13 @@ func (x *UiServiceWatchUpdateResponse) GetBuild() *Build {
 func (x *UiServiceWatchUpdateResponse) GetInstalling() *Installing {
 	if x != nil {
 		return x.Installing
+	}
+	return nil
+}
+
+func (x *UiServiceWatchUpdateResponse) GetReadyBuild() *Build {
+	if x != nil {
+		return x.ReadyBuild
 	}
 	return nil
 }
@@ -1552,7 +1563,18 @@ type Build struct {
 	// What changed, one per task: its code and title, and its worker's summary.
 	Summaries []*TaskSummary `protobuf:"bytes,9,rep,name=summaries,proto3" json:"summaries,omitempty"`
 	// The command that installs it: go tool task install.
-	Install       string `protobuf:"bytes,10,opt,name=install,proto3" json:"install,omitempty"`
+	Install string `protobuf:"bytes,10,opt,name=install,proto3" json:"install,omitempty"`
+	// The commit of the running Djinn it is compared with, when a project holds it: tasks, summaries and changes are
+	// then what the build adds to it, and lacks what it lacks. Empty: they are what the push brought.
+	Base string `protobuf:"bytes,11,opt,name=base,proto3" json:"base,omitempty"`
+	// The running Djinn was built from this branch: its build comes first.
+	Running bool `protobuf:"varint,12,opt,name=running,proto3" json:"running,omitempty"`
+	// How many commits, merges aside, the build adds to the running Djinn; changes holds the latest of them.
+	ChangesCount int32 `protobuf:"varint,13,opt,name=changes_count,json=changesCount,proto3" json:"changes_count,omitempty"`
+	// The titles of the commits the running Djinn holds and the build does not, the latest first, and how many there
+	// are: the build is older than the running Djinn on them.
+	Lacks         []string `protobuf:"bytes,14,rep,name=lacks,proto3" json:"lacks,omitempty"`
+	LacksCount    int32    `protobuf:"varint,15,opt,name=lacks_count,json=lacksCount,proto3" json:"lacks_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1657,10 +1679,45 @@ func (x *Build) GetInstall() string {
 	return ""
 }
 
+func (x *Build) GetBase() string {
+	if x != nil {
+		return x.Base
+	}
+	return ""
+}
+
+func (x *Build) GetRunning() bool {
+	if x != nil {
+		return x.Running
+	}
+	return false
+}
+
+func (x *Build) GetChangesCount() int32 {
+	if x != nil {
+		return x.ChangesCount
+	}
+	return 0
+}
+
+func (x *Build) GetLacks() []string {
+	if x != nil {
+		return x.Lacks
+	}
+	return nil
+}
+
+func (x *Build) GetLacksCount() int32 {
+	if x != nil {
+		return x.LacksCount
+	}
+	return 0
+}
+
 type UiServiceUpdateRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The commit of the build to install first, as WatchUpdate proposed it; empty to restart on the newer Djinn
-	// already installed. Refused when it is not the build proposed.
+	// already installed. Refused when it is none of the builds proposed.
 	Build         string `protobuf:"bytes,1,opt,name=build,proto3" json:"build,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2160,17 +2217,19 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\ttilasm_id\x18\x03 \x01(\tR\btilasmId\x12!\n" +
 	"\funknown_link\x18\x04 \x01(\tR\vunknownLink\x12\x16\n" +
 	"\x06target\x18\x05 \x01(\tR\x06target\"\x1d\n" +
-	"\x1bUiServiceWatchUpdateRequest\"\xe3\x01\n" +
+	"\x1bUiServiceWatchUpdateRequest\"\xa1\x02\n" +
 	"\x1cUiServiceWatchUpdateResponse\x12\x18\n" +
 	"\acurrent\x18\x01 \x01(\tR\acurrent\x12\x14\n" +
 	"\x05ready\x18\x02 \x01(\tR\x05ready\x12\x1f\n" +
 	"\vnot_resumed\x18\x03 \x03(\tR\n" +
 	"notResumed\x12\x1b\n" +
-	"\tnotes_url\x18\x04 \x01(\tR\bnotesUrl\x12\"\n" +
-	"\x05build\x18\x05 \x01(\v2\f.ui.v1.BuildR\x05build\x121\n" +
+	"\tnotes_url\x18\x04 \x01(\tR\bnotesUrl\x12$\n" +
+	"\x06builds\x18\a \x03(\v2\f.ui.v1.BuildR\x06builds\x121\n" +
 	"\n" +
 	"installing\x18\x06 \x01(\v2\x11.ui.v1.InstallingR\n" +
-	"installing\"\x17\n" +
+	"installing\x12-\n" +
+	"\vready_build\x18\b \x01(\v2\f.ui.v1.BuildR\n" +
+	"readyBuildJ\x04\b\x05\x10\x06R\x05build\"\x17\n" +
 	"\x15UiServiceWatchRequest\"\xc4\x01\n" +
 	"\x16UiServiceWatchResponse\x125\n" +
 	"\x04show\x18\x01 \x01(\v2!.ui.v1.UiServiceWatchShowResponseR\x04show\x12;\n" +
@@ -2184,7 +2243,7 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\vTaskSummary\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x18\n" +
-	"\asummary\x18\x03 \x01(\tR\asummary\"\x9e\x02\n" +
+	"\asummary\x18\x03 \x01(\tR\asummary\"\xa8\x03\n" +
 	"\x05Build\x12\x17\n" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1d\n" +
 	"\n" +
@@ -2198,7 +2257,13 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\achanges\x18\b \x03(\tR\achanges\x120\n" +
 	"\tsummaries\x18\t \x03(\v2\x12.ui.v1.TaskSummaryR\tsummaries\x12\x18\n" +
 	"\ainstall\x18\n" +
-	" \x01(\tR\ainstall\"7\n" +
+	" \x01(\tR\ainstall\x12\x12\n" +
+	"\x04base\x18\v \x01(\tR\x04base\x12\x18\n" +
+	"\arunning\x18\f \x01(\bR\arunning\x12#\n" +
+	"\rchanges_count\x18\r \x01(\x05R\fchangesCount\x12\x14\n" +
+	"\x05lacks\x18\x0e \x03(\tR\x05lacks\x12\x1f\n" +
+	"\vlacks_count\x18\x0f \x01(\x05R\n" +
+	"lacksCount\"7\n" +
 	"\x16UiServiceUpdateRequest\x12\x1d\n" +
 	"\x05build\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x18@R\x05build\"o\n" +
 	"\x17UiServiceUpdateResponse\x12\x18\n" +
@@ -2314,48 +2379,49 @@ var file_ui_v1_ui_proto_depIdxs = []int32{
 	37, // 2: ui.v1.Settings.load:type_name -> djinn.v1.LoadNotch
 	0,  // 3: ui.v1.Provider.state:type_name -> ui.v1.ProviderState
 	5,  // 4: ui.v1.UiServiceSetShortcutResponse.shortcut:type_name -> ui.v1.Shortcut
-	26, // 5: ui.v1.UiServiceWatchUpdateResponse.build:type_name -> ui.v1.Build
+	26, // 5: ui.v1.UiServiceWatchUpdateResponse.builds:type_name -> ui.v1.Build
 	24, // 6: ui.v1.UiServiceWatchUpdateResponse.installing:type_name -> ui.v1.Installing
-	19, // 7: ui.v1.UiServiceWatchResponse.show:type_name -> ui.v1.UiServiceWatchShowResponse
-	21, // 8: ui.v1.UiServiceWatchResponse.update:type_name -> ui.v1.UiServiceWatchUpdateResponse
-	38, // 9: ui.v1.UiServiceWatchResponse.load:type_name -> djinn.v1.LoadServiceWatchResponse
-	1,  // 10: ui.v1.Installing.step:type_name -> ui.v1.InstallStep
-	25, // 11: ui.v1.Build.summaries:type_name -> ui.v1.TaskSummary
-	2,  // 12: ui.v1.UiServiceGetNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
-	2,  // 13: ui.v1.UiServiceRequestNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
-	3,  // 14: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
-	8,  // 15: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
-	10, // 16: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
-	12, // 17: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
-	14, // 18: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
-	16, // 19: ui.v1.UiService.OpenLink:input_type -> ui.v1.UiServiceOpenLinkRequest
-	18, // 20: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
-	20, // 21: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
-	22, // 22: ui.v1.UiService.Watch:input_type -> ui.v1.UiServiceWatchRequest
-	27, // 23: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
-	29, // 24: ui.v1.UiService.GetNotifications:input_type -> ui.v1.UiServiceGetNotificationsRequest
-	31, // 25: ui.v1.UiService.RequestNotifications:input_type -> ui.v1.UiServiceRequestNotificationsRequest
-	33, // 26: ui.v1.UiService.OpenNotificationSettings:input_type -> ui.v1.UiServiceOpenNotificationSettingsRequest
-	35, // 27: ui.v1.UiService.View:input_type -> ui.v1.UiServiceViewRequest
-	4,  // 28: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
-	9,  // 29: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
-	11, // 30: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
-	13, // 31: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
-	15, // 32: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
-	17, // 33: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
-	19, // 34: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
-	21, // 35: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
-	23, // 36: ui.v1.UiService.Watch:output_type -> ui.v1.UiServiceWatchResponse
-	28, // 37: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
-	30, // 38: ui.v1.UiService.GetNotifications:output_type -> ui.v1.UiServiceGetNotificationsResponse
-	32, // 39: ui.v1.UiService.RequestNotifications:output_type -> ui.v1.UiServiceRequestNotificationsResponse
-	34, // 40: ui.v1.UiService.OpenNotificationSettings:output_type -> ui.v1.UiServiceOpenNotificationSettingsResponse
-	36, // 41: ui.v1.UiService.View:output_type -> ui.v1.UiServiceViewResponse
-	28, // [28:42] is the sub-list for method output_type
-	14, // [14:28] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	26, // 7: ui.v1.UiServiceWatchUpdateResponse.ready_build:type_name -> ui.v1.Build
+	19, // 8: ui.v1.UiServiceWatchResponse.show:type_name -> ui.v1.UiServiceWatchShowResponse
+	21, // 9: ui.v1.UiServiceWatchResponse.update:type_name -> ui.v1.UiServiceWatchUpdateResponse
+	38, // 10: ui.v1.UiServiceWatchResponse.load:type_name -> djinn.v1.LoadServiceWatchResponse
+	1,  // 11: ui.v1.Installing.step:type_name -> ui.v1.InstallStep
+	25, // 12: ui.v1.Build.summaries:type_name -> ui.v1.TaskSummary
+	2,  // 13: ui.v1.UiServiceGetNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
+	2,  // 14: ui.v1.UiServiceRequestNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
+	3,  // 15: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
+	8,  // 16: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
+	10, // 17: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
+	12, // 18: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
+	14, // 19: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
+	16, // 20: ui.v1.UiService.OpenLink:input_type -> ui.v1.UiServiceOpenLinkRequest
+	18, // 21: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
+	20, // 22: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
+	22, // 23: ui.v1.UiService.Watch:input_type -> ui.v1.UiServiceWatchRequest
+	27, // 24: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
+	29, // 25: ui.v1.UiService.GetNotifications:input_type -> ui.v1.UiServiceGetNotificationsRequest
+	31, // 26: ui.v1.UiService.RequestNotifications:input_type -> ui.v1.UiServiceRequestNotificationsRequest
+	33, // 27: ui.v1.UiService.OpenNotificationSettings:input_type -> ui.v1.UiServiceOpenNotificationSettingsRequest
+	35, // 28: ui.v1.UiService.View:input_type -> ui.v1.UiServiceViewRequest
+	4,  // 29: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
+	9,  // 30: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
+	11, // 31: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
+	13, // 32: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
+	15, // 33: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
+	17, // 34: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
+	19, // 35: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
+	21, // 36: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
+	23, // 37: ui.v1.UiService.Watch:output_type -> ui.v1.UiServiceWatchResponse
+	28, // 38: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
+	30, // 39: ui.v1.UiService.GetNotifications:output_type -> ui.v1.UiServiceGetNotificationsResponse
+	32, // 40: ui.v1.UiService.RequestNotifications:output_type -> ui.v1.UiServiceRequestNotificationsResponse
+	34, // 41: ui.v1.UiService.OpenNotificationSettings:output_type -> ui.v1.UiServiceOpenNotificationSettingsResponse
+	36, // 42: ui.v1.UiService.View:output_type -> ui.v1.UiServiceViewResponse
+	29, // [29:43] is the sub-list for method output_type
+	15, // [15:29] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_ui_v1_ui_proto_init() }

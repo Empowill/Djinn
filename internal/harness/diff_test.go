@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -256,28 +258,51 @@ func TestDiff(t *testing.T) {
 		t.Errorf("expected syntax tokens in main.go diff lines")
 	}
 
-	// 6. Test large diff truncation for large.txt
-	largeDiffReq := &planv1.TaskServiceDiffRequest{
-		Task:   &planv1.TaskRef{Ref: &planv1.TaskRef_Code{Code: "W1"}},
-		File:   "large.txt",
-		WishId: wishID,
+	// 6. A diff past 2 000 lines comes by chunks: large.txt is a new file of 2 500 lines, its diff 2 506 with the
+	// header (5 lines) and the hunk's.
+	chunk := func(offset, limit int32) *planv1.TaskFileDiff {
+		t.Helper()
+		res, err := e.tasks.Diff(ctx, connect.NewRequest(&planv1.TaskServiceDiffRequest{
+			Task: &planv1.TaskRef{Ref: &planv1.TaskRef_Code{Code: "W1"}}, File: "large.txt", WishId: wishID,
+			Offset: offset, Limit: limit,
+		}))
+		if err != nil {
+			t.Fatalf("TaskService.Diff large.txt from %d: %v", offset, err)
+		}
+		return res.Msg.GetFile()
 	}
-	resLarge, err := e.tasks.Diff(ctx, connect.NewRequest(largeDiffReq))
-	if err != nil {
-		t.Fatalf("TaskService.Diff large file failed: %v", err)
+	first := chunk(0, 0)
+	if first.GetTotalLines() != 2506 || first.GetOffset() != 0 || first.GetNextOffset() != 2000 || first.GetAdded() != 2500 {
+		t.Errorf("large.txt first chunk: total %d, offset %d, next %d, added %d; want 2506, 0, 2000, 2500",
+			first.GetTotalLines(), first.GetOffset(), first.GetNextOffset(), first.GetAdded())
 	}
-	dLarge := resLarge.Msg.GetFile()
-	if dLarge == nil {
-		t.Fatalf("expected Diff for large.txt")
+	if h := first.GetHunks(); len(h) != 1 || h[0].GetContinued() || len(h[0].GetLines()) != 1994 ||
+		h[0].GetLines()[1993].GetNewLine() != 1994 {
+		t.Fatalf("large.txt first chunk hunks = %d, want one of 1994 lines ending at line 1994", len(h))
 	}
-	if !dLarge.GetTooLarge() {
-		t.Errorf("large.txt too_large = false, want true")
+	if n := strings.Count(first.GetPatch(), "\n"); n != 2000 || !strings.HasPrefix(first.GetPatch(), "diff --git") {
+		t.Errorf("large.txt first chunk patch has %d lines, want the diff's first 2000", n)
 	}
-	if dLarge.GetTotalLines() < 2000 {
-		t.Errorf("large.txt total_lines = %d, want >= 2000", dLarge.GetTotalLines())
+	last := chunk(first.GetNextOffset(), 0)
+	if last.GetOffset() != 2000 || last.GetNextOffset() != 0 || last.GetTotalLines() != 2506 {
+		t.Errorf("large.txt last chunk: offset %d, next %d, total %d; want 2000, 0, 2506",
+			last.GetOffset(), last.GetNextOffset(), last.GetTotalLines())
 	}
-	if !strings.Contains(dLarge.GetCommand(), "git diff") {
-		t.Errorf("large.txt command = %q, want containing git diff", dLarge.GetCommand())
+	if h := last.GetHunks(); len(h) != 1 || !h[0].GetContinued() || h[0].GetHeader() != "@@ -0,0 +1,2500 @@" ||
+		len(h[0].GetLines()) != 506 || h[0].GetLines()[0].GetNewLine() != 1995 || h[0].GetLines()[505].GetText() != "Line 2500 of a very large diff" {
+		t.Fatalf("large.txt last chunk does not carry the hunk on to line 2500: %v", h)
+	}
+	if small := chunk(10, 5); small.GetNextOffset() != 15 || len(small.GetHunks()[0].GetLines()) != 5 ||
+		small.GetHunks()[0].GetLines()[0].GetNewLine() != 5 {
+		t.Errorf("large.txt lines 10 to 15: next %d, want 15 and new lines 5 to 9", small.GetNextOffset())
+	}
+	if past := chunk(5000, 0); len(past.GetHunks()) != 0 || past.GetNextOffset() != 0 || past.GetTotalLines() != 2506 {
+		t.Errorf("large.txt past its end: %d hunks, next %d", len(past.GetHunks()), past.GetNextOffset())
+	}
+	if _, err := e.tasks.Diff(ctx, connect.NewRequest(&planv1.TaskServiceDiffRequest{
+		Task: &planv1.TaskRef{Ref: &planv1.TaskRef_Code{Code: "W1"}}, File: "large.txt", WishId: wishID, Limit: 2001,
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("a chunk of 2001 lines: %v, want invalid_argument", err)
 	}
 
 	// 7. Test CLI: djinn task diff W1 and djinn task diff W1 --file main.go
@@ -308,6 +333,21 @@ func TestDiff(t *testing.T) {
 	fileOutStr := stdout.String()
 	if !strings.Contains(fileOutStr, "main.go") {
 		t.Errorf("cli task diff W1 --file stdout missing main.go: %s", fileOutStr)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = cli.Run(ctx, []string{"task", "diff", "W1", "--file", filepath.Join(repo, "large.txt"), "--offset", "2000", "--wish-id", wishID, "--json"}, cliCfg)
+	if code != 0 {
+		t.Fatalf("cli task diff W1 --file large.txt --offset 2000 exited %d: %s", code, stderr.String())
+	}
+	var cliLast planv1.TaskServiceDiffResponse
+	if err := protojson.Unmarshal(stdout.Bytes(), &cliLast); err != nil {
+		t.Fatal(err)
+	}
+	if f := cliLast.GetFile(); f.GetOffset() != 2000 || f.GetNextOffset() != 0 || !strings.HasSuffix(f.GetPatch(), "+Line 2500 of a very large diff\n") ||
+		strings.Contains(f.GetPatch(), "Line 1994 of") {
+		t.Errorf("cli task diff --offset 2000 does not show the last chunk alone: offset %d, %.200s", f.GetOffset(), f.GetPatch())
 	}
 
 	// 8. Test integrated task diff (from integration.sha against sha^1)
@@ -345,5 +385,69 @@ func TestDiff(t *testing.T) {
 	}
 	if len(resIntegrated.Msg.GetFiles()) == 0 {
 		t.Errorf("integrated task diff expected changed files, got 0")
+	}
+}
+
+// TestDiffChunks reads a diff of several hunks by chunks of every size: put end to end, the chunks give back the whole
+// diff's lines, a hunk cut by a chunk carried on in the next.
+func TestDiffChunks(t *testing.T) {
+	t.Parallel()
+	diff := []string{
+		"diff --git a/a.go b/a.go", "index 1..2 100644", "--- a/a.go", "+++ b/a.go",
+		"@@ -1,3 +1,4 @@ func A()", " package a", "-var x = 1", "+var x = 2", "+var y = 3", " ",
+		"@@ -10,2 +11,2 @@", " func B() {}", "-func C() {}", "\\ No newline at end of file", "+func D() {}",
+	}
+	read := func(from, to int) *diffChunk {
+		c := newDiffChunk("a.go", from, to)
+		for _, l := range diff {
+			c.line(l)
+		}
+		c.end()
+		return c
+	}
+	type row struct {
+		hunk     string
+		old, new int32
+		text     string
+	}
+	rows := func(hunks []*planv1.DiffHunk) (out []row) {
+		for _, h := range hunks {
+			for _, l := range h.GetLines() {
+				out = append(out, row{h.GetHeader(), l.GetOldLine(), l.GetNewLine(), l.GetText()})
+			}
+		}
+		return out
+	}
+	whole := read(0, len(diff))
+	want := rows(whole.hunks)
+	if len(whole.hunks) != 2 || len(want) != 8 || whole.added != 3 || whole.deleted != 2 || whole.n != len(diff) {
+		t.Fatalf("whole diff: %d hunks, %d lines, +%d -%d, %d read", len(whole.hunks), len(want), whole.added, whole.deleted, whole.n)
+	}
+	if want[2] != (row{"@@ -1,3 +1,4 @@ func A()", 0, 2, "var x = 2"}) || want[7] != (row{"@@ -10,2 +11,2 @@", 0, 12, "func D() {}"}) {
+		t.Errorf("whole diff lines = %v", want)
+	}
+	for size := 1; size <= len(diff); size++ {
+		var got []row
+		var patch strings.Builder
+		for from := 0; from < len(diff); from += size {
+			c := read(from, from+size)
+			if c.added != 3 || c.deleted != 2 || c.n != len(diff) {
+				t.Errorf("chunk %d+%d: +%d -%d of %d lines, want the whole diff's counts", from, size, c.added, c.deleted, c.n)
+			}
+			for _, h := range c.hunks {
+				// A hunk carries on one begun before the chunk when its header lies before the chunk's first line.
+				if h.GetContinued() != (slices.Index(diff, h.GetHeader()) < from) {
+					t.Errorf("chunk %d+%d hunk %s continued = %v", from, size, h.GetHeader(), h.GetContinued())
+				}
+			}
+			got = append(got, rows(c.hunks)...)
+			patch.WriteString(c.patch.String())
+		}
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("chunks of %d lines give %v, want %v", size, got, want)
+		}
+		if patch.String() != strings.Join(diff, "\n")+"\n" {
+			t.Errorf("chunks of %d lines give back another patch: %q", size, patch.String())
+		}
 	}
 }
