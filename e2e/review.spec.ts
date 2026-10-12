@@ -80,6 +80,12 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   page.on("pageerror", (err) => errors.push(err.message));
   for (const w of wishes().filter((w) => w.state === "WISH_STATE_ACTIVE"))
     djinn("wish", "pause", w.id);
+  // W501: a wish shown by a link, then deleted, as operating-load.spec.ts leaves it: the show of the last minute that
+  // each reload below gets must not take the window from this spec's wish to the flight plan.
+  const shown = JSON.parse(djinn("wish", "make", "Shown then gone", "--json"))
+    .wish.id as string;
+  djinn("open", `djinn://wish/${shown}`);
+  djinn("wish", "delete", shown);
 
   const tag = randomUUID().slice(0, 8);
   const wishId = randomUUID();

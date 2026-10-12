@@ -265,6 +265,10 @@ func runUp(args []string) (restart bool, err error) {
 	uiSvc.Shown = func(wishID, terminal string) {
 		leadNotes.update()
 	}
+	uiSvc.Known = func(ctx context.Context, wishID string) bool {
+		_, err := store.Get[*planv1.Wish](ctx, db, wishID)
+		return !errors.Is(err, store.ErrNotFound)
+	}
 	// A djinn:// link shows the tilasm's wish, or the wish.
 	uiSvc.Linked = func(ctx context.Context, l link.Link) (string, error) { return plan.Linked(ctx, db, l) }
 	registerLinks(os.Stderr)

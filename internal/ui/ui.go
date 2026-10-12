@@ -64,6 +64,9 @@ type Service struct {
 
 	// Shown is called when the window is asked to show a wish or a terminal.
 	Shown func(wishID, terminal string)
+	// Known tells whether a wish is still on this machine: a show of the last minute whose wish was deleted since is
+	// not replayed to a window that opens, which would leave the wish it shows for the flight plan. Nil: every wish is.
+	Known func(ctx context.Context, wishID string) bool
 	// Notices shows the system notifications, and knows whether the system lets it. Nil: none (a test).
 	Notices *Notices
 
@@ -639,28 +642,53 @@ func (s *Service) Update(
 	return connect.NewResponse(&uiv1.UiServiceUpdateResponse{Version: version, Terminals: int32(terminals), Installed: installed}), nil
 }
 
-func (s *Service) WatchShow(
-	ctx context.Context, _ *connect.Request[uiv1.UiServiceWatchShowRequest],
-	stream *connect.ServerStream[uiv1.UiServiceWatchShowResponse],
-) error {
-	ch := make(chan *uiv1.UiServiceWatchShowResponse, 8)
+// watchShows registers a window that starts watching: ch gets each request to show something from now on, show is
+// the one of the last minute to replay first (nil for none, or when its wish is gone), stop ends the watch.
+func (s *Service) watchShows(ctx context.Context) (
+	ch chan *uiv1.UiServiceWatchShowResponse, show *uiv1.UiServiceWatchShowResponse, stop func(),
+) {
+	recent := func() *uiv1.UiServiceWatchShowResponse {
+		if s.lastShow != nil && time.Since(s.lastAt) < replay {
+			return s.lastShow
+		}
+		return nil
+	}
+	// The store is read out of the lock; a request made meanwhile is newer, and replayed whatever it names.
 	s.shows.Lock()
+	last := recent()
+	s.shows.Unlock()
+	gone := last != nil && last.GetWishId() != "" && s.Known != nil && !s.Known(ctx, last.GetWishId())
+	ch = make(chan *uiv1.UiServiceWatchShowResponse, 8)
+	s.shows.Lock()
+	defer s.shows.Unlock()
 	if s.watchers == nil {
 		s.watchers = map[chan *uiv1.UiServiceWatchShowResponse]struct{}{}
 	}
 	s.watchers[ch] = struct{}{}
-	if s.lastShow != nil && time.Since(s.lastAt) < replay {
-		ch <- s.lastShow
+	if show = recent(); gone && show == last {
+		show = nil
 	}
-	s.shows.Unlock()
-	defer func() {
+	return ch, show, func() {
 		s.shows.Lock()
 		delete(s.watchers, ch)
 		s.shows.Unlock()
-	}()
+	}
+}
+
+func (s *Service) WatchShow(
+	ctx context.Context, _ *connect.Request[uiv1.UiServiceWatchShowRequest],
+	stream *connect.ServerStream[uiv1.UiServiceWatchShowResponse],
+) error {
+	ch, show, stop := s.watchShows(ctx)
+	defer stop()
 	// The headers go out at once: the window knows it is watching before anything is asked.
 	if err := stream.Send(nil); err != nil {
 		return err
+	}
+	if show != nil {
+		if err := stream.Send(show); err != nil {
+			return err
+		}
 	}
 	for {
 		select {
@@ -678,22 +706,8 @@ func (s *Service) Watch(
 	ctx context.Context, _ *connect.Request[uiv1.UiServiceWatchRequest],
 	stream *connect.ServerStream[uiv1.UiServiceWatchResponse],
 ) error {
-	ch := make(chan *uiv1.UiServiceWatchShowResponse, 8)
-	s.shows.Lock()
-	if s.watchers == nil {
-		s.watchers = map[chan *uiv1.UiServiceWatchShowResponse]struct{}{}
-	}
-	s.watchers[ch] = struct{}{}
-	var replayShow *uiv1.UiServiceWatchShowResponse
-	if s.lastShow != nil && time.Since(s.lastAt) < replay {
-		replayShow = s.lastShow
-	}
-	s.shows.Unlock()
-	defer func() {
-		s.shows.Lock()
-		delete(s.watchers, ch)
-		s.shows.Unlock()
-	}()
+	ch, replayShow, stop := s.watchShows(ctx)
+	defer stop()
 
 	s.updates.Lock()
 	if s.updated == nil {
