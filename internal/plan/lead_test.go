@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -24,6 +25,7 @@ type fakeLeads struct {
 	shown   []string            // wish/terminal of each show
 	said    []string            // terminal: line of each line typed
 	closed  []string            // name of each running terminal closed
+	waiting bool                // what SayText says of the texts said
 	err     error
 }
 
@@ -76,6 +78,13 @@ func (f *fakeLeads) Say(name, line string) error {
 	}
 	f.said = append(f.said, name+": "+line)
 	return nil
+}
+
+func (f *fakeLeads) SayText(name, text string) (bool, error) {
+	if err := f.Say(name, text); err != nil {
+		return false, err
+	}
+	return f.waiting, nil
 }
 
 func setLead(t *testing.T, c clients, req *planv1.LeadServiceSetRequest) (*planv1.Lead, error) {
@@ -448,5 +457,73 @@ func TestResumeAnotherAgent(t *testing.T) {
 	if lead.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || lead.GetSessionId() == "thread-1" ||
 		len(leads.opened) != 4 || leads.opened[3] != "claude --session-id "+lead.GetSessionId()+" '"+StartLine()+"' in "+folder {
 		t.Errorf("claude over codex = %v, opened %q", res, leads.opened)
+	}
+}
+
+// TestLeadTell: what the developer writes reaches the lead's terminal as their own words, its line breaks kept,
+// about a wish when they name one, and whether it waits for them; never a terminal that runs no lead, nor a shell.
+func TestLeadTell(t *testing.T) {
+	ctx := t.Context()
+	tellReq := func(text, wishID string) *connect.Request[planv1.LeadServiceTellRequest] {
+		return connect.NewRequest(&planv1.LeadServiceTellRequest{Text: text, WishId: wishID})
+	}
+	if _, err := serve(t).lead.Tell(ctx, tellReq("hi", "")); code(err) != connect.CodeUnimplemented {
+		t.Errorf("tell without terminals: %v, want unimplemented", err)
+	}
+
+	leads := &fakeLeads{}
+	c := serve(t, WithLeads(leads))
+	tell := func(text, wishID string) (*planv1.LeadServiceTellResponse, error) {
+		res, err := c.lead.Tell(ctx, tellReq(text, wishID))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+	if _, err := tell("Hello", ""); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "djinn lead resume") {
+		t.Errorf("tell without a lead: %v, want a hint to resume", err)
+	}
+	if _, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tell("Hello", ""); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "djinn lead resume") {
+		t.Errorf("tell while the lead does not run: %v, want a hint to resume", err)
+	}
+	leads.running = map[string][]string{LeadTerminal: {"/bin/sh"}}
+	if _, err := tell("rm -rf ~", ""); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "/bin/sh") {
+		t.Errorf("tell while the lead's terminal runs a shell: %v, want a refusal", err)
+	}
+	if len(leads.said) != 0 || len(leads.opened) != 0 {
+		t.Fatalf("opened %q, said %q: nothing starts, nothing goes to a shell", leads.opened, leads.said)
+	}
+
+	leads.running[LeadTerminal] = []string{"/bin/sh", "-c", "claude --resume " + session}
+	res, err := tell("  First line\nsecond line \n", "")
+	if err != nil || res.GetWaiting() {
+		t.Fatalf("tell = %v, %v", res, err)
+	}
+	leads.waiting = true
+	id := c.wish(t)
+	if res, err = tell("Then", id); err != nil || !res.GetWaiting() {
+		t.Errorf("tell while the developer types = %v, %v, want waiting", res, err)
+	}
+	want := []string{
+		LeadTerminal + ": First line\nsecond line",
+		LeadTerminal + ": About wish Try Djinn on itself (" + id + "): Then",
+	}
+	if !slices.Equal(leads.said, want) {
+		t.Errorf("said %q, want %q", leads.said, want)
+	}
+	if _, err := tell(" \n ", ""); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("tell nothing: %v, want invalid", err)
+	}
+	if _, err := tell("hi", session); code(err) != connect.CodeNotFound {
+		t.Errorf("tell about an unknown wish: %v, want not found", err)
+	}
+	if len(leads.opened) != 0 || len(leads.shown) != 0 {
+		t.Errorf("opened %q, shown %q: telling the lead starts nothing, raises nothing", leads.opened, leads.shown)
 	}
 }

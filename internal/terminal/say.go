@@ -74,6 +74,17 @@ func (m *Manager) Say(name, line string) error {
 	return t.Say(line)
 }
 
+// SayText types text into the running terminal of name: see Terminal.SayText. ErrNotFound when none runs.
+func (m *Manager) SayText(name, text string) (waiting bool, err error) {
+	m.mu.Lock()
+	t := m.byName[name]
+	m.mu.Unlock()
+	if t == nil || t.Exited() {
+		return false, ErrNotFound
+	}
+	return t.SayText(text)
+}
+
 // Say types line into the program, then Enter, as the person would: once the person has not typed for Quiet, a
 // program just started has drawn its screen, no choice is on screen and nothing is under way at the prompt (ready).
 // A program that turned bracketed paste on gets the line as a paste, so that it takes it whole, then Enter on its
@@ -81,26 +92,46 @@ func (m *Manager) Say(name, line string) error {
 // ErrFull when SayQueue lines wait already. Line breaks and other control characters become spaces: Djinn types one
 // line.
 func (t *Terminal) Say(line string) error {
-	line = strings.TrimSpace(strings.Map(func(r rune) rune {
+	_, err := t.queue(strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return ' '
 		}
 		return r
 	}, line))
+	return err
+}
+
+// SayText is Say for a text the person wrote, which may hold line breaks: they stay line breaks in a program that
+// turned bracketed paste on, inside the one paste, and become spaces in one that did not, where each would send a
+// line. Tabs and other control characters become spaces. SayText tells whether the text waits for the person: they
+// are typing in the terminal, have something under way at its prompt, or a choice is on screen.
+func (t *Terminal) SayText(text string) (waiting bool, err error) {
+	return t.queue(strings.Map(func(r rune) rune {
+		if r != '\n' && unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(text)))
+}
+
+// queue puts text, without control characters but line breaks, on the lines that wait for the program, trimmed;
+// waiting tells whether the person holds it.
+func (t *Terminal) queue(text string) (waiting bool, err error) {
+	text = strings.TrimSpace(text)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.exited {
-		return ErrExited
+		return false, ErrExited
 	}
 	if t.voice.lines == nil {
 		t.voice.lines, t.voice.hushed = make(chan string, SayQueue), make(chan struct{})
 		go t.speak(t.voice.lines, t.voice.hushed)
 	}
 	select {
-	case t.voice.lines <- line:
-		return nil
+	case t.voice.lines <- text:
+		return t.choosing() || t.underWay() || time.Since(t.voice.typed) < quiet, nil
 	default:
-		return ErrFull
+		return false, ErrFull
 	}
 }
 
@@ -119,7 +150,10 @@ func (t *Terminal) speak(lines <-chan string, hushed chan<- struct{}) {
 			paste := t.voice.paste
 			t.mu.Unlock()
 			if paste { // The program tells a paste from keys: the line is one, and the Enter after it submits.
-				line = "\x1b[200~" + line + "\x1b[201~"
+				// A terminal pastes a line break as Enter, which the paste keeps from submitting.
+				line = "\x1b[200~" + strings.ReplaceAll(line, "\n", "\r") + "\x1b[201~"
+			} else {
+				line = strings.ReplaceAll(line, "\n", " ")
 			}
 			if t.put([]byte(line)) != nil || !t.sleep(enter) || t.put([]byte("\r")) != nil || !t.sleep(afterEnter) {
 				return

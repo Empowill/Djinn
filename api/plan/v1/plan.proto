@@ -2858,6 +2858,15 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
+  // queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
+  // the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
+  // djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
+  rpc Tell(LeadServiceTellRequest) returns (LeadServiceTellResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+    option (djinn.v1.command_line_only) = true;
+  }
 }
 
 message LeadServiceSetRequest {
@@ -2933,6 +2942,25 @@ message LeadServiceWatchRequest {
 message LeadServiceWatchResponse {
   // The digest: a line per event, then the cursor and the command to run next.
   string text = 1;
+}
+
+message LeadServiceTellRequest {
+  // What to say to the lead. Line breaks stay line breaks for an agent that takes a paste.
+  string text = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 20000
+  ];
+  // The wish the text is about, if any.
+  string wish_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message LeadServiceTellResponse {
+  // The text waits in the lead's terminal: something is being typed there, or a choice is on screen. It goes once
+  // they are done.
+  bool waiting = 1;
 }
 
 message LeadServiceBriefRequest {}

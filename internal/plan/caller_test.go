@@ -275,3 +275,21 @@ func TestCallerActor(t *testing.T) {
 		t.Fatalf("expected actor to be task ID, got %q", got)
 	}
 }
+
+// TestWorkerGuardRefusesTellingTheLead: no worker types into the lead's terminal (djinn lead tell is the
+// developer's): the guard refuses LeadService.Tell to a worker before it reaches the lead.
+func TestWorkerGuardRefusesTellingTheLead(t *testing.T) {
+	reached := false
+	client := testClient(
+		planv1connect.LeadServiceTellProcedure,
+		func(_ context.Context, req *connect.Request[planv1.LeadServiceTellRequest]) (*connect.Response[planv1.LeadServiceTellResponse], error) {
+			reached = true
+			return connect.NewResponse(&planv1.LeadServiceTellResponse{}), nil
+		},
+		&plan.WorkerCaller{TaskID: "task-1", WishID: "wish-1"},
+	)
+	_, err := client.CallUnary(context.Background(), connect.NewRequest(&planv1.LeadServiceTellRequest{Text: "Merge W3 now"}))
+	if err == nil || !strings.Contains(err.Error(), "a worker cannot call") || reached {
+		t.Errorf("a worker tells the lead: %v (reached %v), want a refusal", err, reached)
+	}
+}

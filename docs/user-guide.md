@@ -134,7 +134,9 @@ open questions, what runs and waits, its azimas), then Djinn's rules and the pro
 
 From a terminal, `djinn lead resume` does what **Lead** does, and starts Djinn if it does not run;
 `djinn lead resume --provider codex` picks the agent. `djinn lead set <session-id> --directory <folder>`
-records a session you started yourself.
+records a session you started yourself. `djinn lead tell "…"` writes to the running lead as if you typed it in its
+terminal, line breaks kept (`--wish-id <wish-id>` says which wish it is about); it waits while you type there or a
+choice is on screen.
 
 Djinn takes the lead back at every start, in the lead's terminal. The first start after an update from a Djinn that had
 one lead per wish keeps the lead of the first active wish as the one lead.

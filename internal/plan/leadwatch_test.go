@@ -47,6 +47,11 @@ func (s *syncLeads) Say(name, line string) error {
 	defer s.mu.Unlock()
 	return s.f.Say(name, line)
 }
+func (s *syncLeads) SayText(name, text string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.f.SayText(name, text)
+}
 func (s *syncLeads) said() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()

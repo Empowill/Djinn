@@ -720,3 +720,48 @@ func TestSayNeverJoinsAWordLeftAtThePrompt(t *testing.T) {
 		})
 	}
 }
+
+// TestSayTextKeepsLineBreaksAndOrder: what the person writes to the lead keeps its line breaks inside one paste, and
+// the texts said while the person types wait, then arrive in the order said, after the person's own line.
+func TestSayTextKeepsLineBreaksAndOrder(t *testing.T) {
+	_, term := fakeLead(t)
+	from := term.End()
+	if err := term.Write([]byte("hel")); err != nil {
+		t.Fatal(err)
+	}
+	waiting, err := term.SayText("first\nsecond\r\nthird\n")
+	if err != nil || !waiting {
+		t.Errorf("SayText = %v, %v: want the text waiting, the person is typing", waiting, err)
+	}
+	if _, err := term.SayText("then\tthis\x1b[201~"); err != nil {
+		t.Fatal(err)
+	}
+	none(t, term, from, "the person is typing")
+	if err := term.Write([]byte("lo\r")); err != nil {
+		t.Fatal(err)
+	}
+	out := output(t, term, from, contains(`line "then this [201~" pasted`))
+	first := strings.Index(out, `line "first\rsecond\rthird" pasted, enter apart`)
+	if i, j := strings.Index(out, `line "hello"`), strings.Index(out, `line "then this [201~"`); i < 0 || first < i || j < first {
+		t.Fatalf("the person's line, then the texts in the order said:\n%q", out)
+	}
+}
+
+// TestSayTextJoinsLinesWithoutPaste: a program that did not turn bracketed paste on would take each line break as
+// Enter: the text goes as one line, its breaks as spaces.
+func TestSayTextJoinsLinesWithoutPaste(t *testing.T) {
+	fastVoice(t, 100*time.Millisecond, 50*time.Millisecond, 2*time.Second)
+	m := NewManager(Config{})
+	term := sh(t, m, "lead", "-c", echoes)
+	output(t, term, 0, contains("ready"))
+	if waiting, err := m.SayText("lead", "  one\ntwo\r\n"); err != nil || waiting {
+		t.Fatalf("SayText = %v, %v", waiting, err)
+	}
+	out := output(t, term, 0, contains("got[one two]"))
+	if strings.Count(out, "got[") != 1 {
+		t.Fatalf("want one line read:\n%q", out)
+	}
+	if _, err := m.SayText("nobody", "hi"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("SayText to no terminal: %v, want ErrNotFound", err)
+	}
+}

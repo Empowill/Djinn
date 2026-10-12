@@ -156,6 +156,8 @@ const (
 	LeadServiceBriefProcedure = "/plan.v1.LeadService/Brief"
 	// LeadServiceWatchProcedure is the fully-qualified name of the LeadService's Watch RPC.
 	LeadServiceWatchProcedure = "/plan.v1.LeadService/Watch"
+	// LeadServiceTellProcedure is the fully-qualified name of the LeadService's Tell RPC.
+	LeadServiceTellProcedure = "/plan.v1.LeadService/Tell"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
 	BlockServicePutProcedure = "/plan.v1.BlockService/Put"
 	// BlockServiceListProcedure is the fully-qualified name of the BlockService's List RPC.
@@ -1782,6 +1784,11 @@ type LeadServiceClient interface {
 	// without one, it types one short line, "Djinn: N events waiting, run djinn lead watch". The lead runs it as a
 	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent).
 	Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error)
+	// Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
+	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
+	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
+	// djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
+	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
 }
 
 // NewLeadServiceClient constructs a client for the plan.v1.LeadService service. By default, it uses
@@ -1827,6 +1834,12 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(leadServiceMethods.ByName("Watch")),
 			connect.WithClientOptions(opts...),
 		),
+		tell: connect.NewClient[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse](
+			httpClient,
+			baseURL+LeadServiceTellProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Tell")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1837,6 +1850,7 @@ type leadServiceClient struct {
 	get    *connect.Client[v1.LeadServiceGetRequest, v1.LeadServiceGetResponse]
 	brief  *connect.Client[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse]
 	watch  *connect.Client[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse]
+	tell   *connect.Client[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse]
 }
 
 // Set calls plan.v1.LeadService.Set.
@@ -1862,6 +1876,11 @@ func (c *leadServiceClient) Brief(ctx context.Context, req *connect.Request[v1.L
 // Watch calls plan.v1.LeadService.Watch.
 func (c *leadServiceClient) Watch(ctx context.Context, req *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error) {
 	return c.watch.CallUnary(ctx, req)
+}
+
+// Tell calls plan.v1.LeadService.Tell.
+func (c *leadServiceClient) Tell(ctx context.Context, req *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error) {
+	return c.tell.CallUnary(ctx, req)
 }
 
 // LeadServiceHandler is an implementation of the plan.v1.LeadService service.
@@ -1891,6 +1910,11 @@ type LeadServiceHandler interface {
 	// without one, it types one short line, "Djinn: N events waiting, run djinn lead watch". The lead runs it as a
 	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent).
 	Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error)
+	// Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
+	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
+	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
+	// djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
+	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
 }
 
 // NewLeadServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -1932,6 +1956,12 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(leadServiceMethods.ByName("Watch")),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceTellHandler := connect.NewUnaryHandler(
+		LeadServiceTellProcedure,
+		svc.Tell,
+		connect.WithSchema(leadServiceMethods.ByName("Tell")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.LeadService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case LeadServiceSetProcedure:
@@ -1944,6 +1974,8 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceBriefHandler.ServeHTTP(w, r)
 		case LeadServiceWatchProcedure:
 			leadServiceWatchHandler.ServeHTTP(w, r)
+		case LeadServiceTellProcedure:
+			leadServiceTellHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1971,6 +2003,10 @@ func (UnimplementedLeadServiceHandler) Brief(context.Context, *connect.Request[v
 
 func (UnimplementedLeadServiceHandler) Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Watch is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Tell is not implemented"))
 }
 
 // BlockServiceClient is a client for the plan.v1.BlockService service.

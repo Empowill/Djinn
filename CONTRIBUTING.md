@@ -278,7 +278,9 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
 - One lead leads every wish, in the window's terminal "lead". `djinn lead set <session-id> [--provider <agent>]
   [--directory <folder>]` records its session; `djinn lead get` shows it; `djinn lead resume` resumes it, starting
   Djinn if needed, and `--wish-id <wish-id>` shows the wish and focuses the lead on it (the wish's Lead button does the
-  same). A second `djinn up` brings the window to the front.
+  same). A second `djinn up` brings the window to the front. `djinn lead tell "…" [--wish-id <wish-id>]` writes to the
+  lead in its terminal as if you typed it there, line breaks kept: it waits while you type there or a choice is on
+  screen; about a wish, it starts with "About wish <title> (<id>):". It never starts the lead, nor types into a shell.
 - `djinn wish route "<request>" --wish-id <wish-id> --ask`: a request that is not about the wish becomes a card, without a
   model: open a new wish, which the window opens and the lead is told of, file it in an existing wish, or keep it here
   ([T26](plan/e1210c5e-request-routing.md)). A request that matches a skill's wish template (`metadata.djinn.wish` in its

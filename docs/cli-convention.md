@@ -112,7 +112,9 @@ as above.
 
 - **One tool per public method that answers once**, named like its command in snake_case: `djinn lead set`
   is `lead_set`. The streaming methods (`gate hold`, `wish watch`, `task watch`) stay on the command line: a
-  tool call answers once.
+  tool call answers once. So does a method marked `option (djinn.v1.command_line_only) = true`, which only the
+  developer types: `djinn lead tell` writes to the lead in its terminal, and no agent's client may do that through a
+  tool (the server refuses it to a worker too).
 - **The input schema is the request**, field by field, by proto name: what is positional on the command line is
   `required`; an enum lists its short values; a `oneof` reference and a time are strings; a repeated field is an
   array. The description is the proto comment, with what the field expects.
