@@ -89,6 +89,32 @@ func (p *Peaks) Peak(ctx context.Context, taskID, dir, command string) uint64 {
 	return find(all, command).GetPeakMemoryBytes()
 }
 
+// Ask counts a run asked of the command in its project: the task's, else the one holding dir; the hold of gate asked
+// is journaled. Nothing is counted outside any project, nor when the store fails: the gate is granted all the same.
+func (p *Peaks) Ask(ctx context.Context, gate, taskID, dir, command string) {
+	c := &costs{db: p.db}
+	projectID, err := c.project(ctx, taskID, dir)
+	if err != nil || projectID == "" {
+		return
+	}
+	_ = p.db.Tx(ctx, func(tx *store.Tx) error {
+		all, err := store.List[*machinev1.CommandCost](ctx, tx, store.Where{"project_id": projectID})
+		if err != nil {
+			return err
+		}
+		out := find(all, command)
+		if out == nil {
+			out = &machinev1.CommandCost{Id: store.NewID(), ProjectId: projectID, Command: command}
+		}
+		out.Asked = max(out.GetAsked(), out.GetRuns()) + 1
+		hold := &machinev1.GateServiceHoldRequest{Name: gate, TaskId: taskID, What: command, Directory: dir}
+		if err := tx.Journal("local", machinev1connect.GateServiceHoldProcedure, hold); err != nil {
+			return err
+		}
+		return tx.Put(out)
+	})
+}
+
 // percentile calculates the p-th percentile (0.0 to 1.0) using linear interpolation.
 func percentile(vals []float64, p float64) float64 {
 	if len(vals) == 0 {
@@ -113,6 +139,8 @@ func percentile(vals []float64, p float64) float64 {
 // wait and held times are tracked, percentiles computed, and recent runs recorded (up to 200).
 func Add(c *machinev1.CommandCost, run *machinev1.CommandServiceRecordRequest) {
 	c.Runs++
+	// A cost from before runs were counted as asked: its runs were asked too.
+	c.Asked = max(c.GetAsked(), c.GetRuns())
 	n := float64(c.GetRuns())
 	c.CpuSeconds += (run.GetCpuSeconds() - c.GetCpuSeconds()) / n
 	c.Seconds += (run.GetSeconds() - c.GetSeconds()) / n
