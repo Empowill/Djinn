@@ -96,7 +96,7 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   the provider's own default otherwise) and `question_budget_usd` (default $2). In settings, `enlighten_workers`
   (default `true`) controls them (`docs/team-settings.md`).
 - **What reaches the lead (Decision Q173).** Djinn tells the lead only what changes something:
-  - a real merge where the branch moved (no-op batches where work was already in the branch tell nothing;
+  - a real merge where the branch moved (a no-op batch, its work already in the branch, tells no merge line;
     repeated merges of a pass go out as one coalesced event: `W12, W14, W15 merged into feat/foo as 1a2b3c4d`);
   - moves only when a question was actually asked on that merge (`: push tag v1.0.0`, `: start a release`);
   - an actionable failure (a work worker failed or was cut short; an integration failed; push checks stay red; a main merge failed);
@@ -104,7 +104,16 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
     disabled, a filed request or inbox item, a wish made from a request, an azima opened to plan its tasks);
   - the developer's approval of a decision the lead or a worker took (a question they answered); approving an open
     question is its answer, and approving one of the developer's own decisions, or one approved already, tells nothing;
-  - a task ending without failure (the lead's cue to check its final note, revised questions, or spawned tasks);
+  - a task ending without failure (the lead's cue to check its final note, revised questions, or spawned tasks),
+    once: a work worker's end is its merge line; with nothing to merge, or in a project that integrates nothing, an
+    `ended` event says it, with the first line of its final note (`W1 done: …`, incident W1 of wish Dew,
+    12/10/2026);
+  - the calls a worker's permissions refused in its run (its `permission denied: …` events, counted on the task's
+    `refused`), in its `ended` or `failed` event, with the command that grants them, whole in the digest:
+    `W1 done, 6 commands refused (permission): djinn, ls, git, …; djinn wish allow <wish> --mode auto lets the agent
+    judge them.` Only auto mode lets the agent judge a command (an edit allowance adds none), and granting stays the
+    developer's move. A claude worker started with its own settings (`TASK_ACCESS_NATIVE`) that allow no djinn
+    command cannot report: its spawn answers a `note` saying so;
   - a watcher waking the lead;
   - Djinn restarted: `Djinn: restarted on version v1.4.0: 2 workers interrupted (W12, W14), resumed by Djinn: W12; not
     resumed, the move is yours: W14.`

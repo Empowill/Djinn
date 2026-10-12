@@ -800,9 +800,10 @@ func TestOldTaskWithoutIntegrationRecordIsNotQueued(t *testing.T) {
 	}
 }
 
-// TestNoOpBatchTellsNothing verifies that a batch that does not move the branch
-// (its work was already in) tells nothing in the lead's terminal (Decision Q173).
-func TestNoOpBatchTellsNothing(t *testing.T) {
+// TestNoOpBatchTellsTheEndOnly verifies that a batch that does not move the branch
+// (its work was already in) tells no merge line (Decision Q173), but its task's end once:
+// no other line would (incident W1 of wish Dew, 12/10/2026).
+func TestNoOpBatchTellsTheEndOnly(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
 
@@ -827,8 +828,9 @@ func TestNoOpBatchTellsNothing(t *testing.T) {
 		t.Fatalf("W2 state: %s", got)
 	}
 
-	if len(told) != 0 {
-		t.Errorf("told lines %v; want nothing told in terminal for no-op batch", told)
+	want := []string{"Djinn: W2 done, nothing to merge into " + in.branch + ". It left no final note."}
+	if !slices.Equal(told, want) {
+		t.Errorf("told lines %q; want only %q for a no-op batch", told, want)
 	}
 }
 

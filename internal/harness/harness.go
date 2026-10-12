@@ -192,6 +192,7 @@ type run struct {
 	failure        string        // the last error the current worker said: it never ends done
 	limit          *Limit        // the usage limit the current worker said it hit: it wins over failure
 	refused        string        // the last call its permissions refused, as the worker said it (question.go)
+	refusals       *denials      // the calls its permissions refused in this run (refusals.go)
 	envReplayed    bool          // a tool call/result already triggered replay of env failures
 	startHead      string        // HEAD commit when the worker started
 	answered       bool          // worker gave its final answer (text after tool calls)
@@ -1393,6 +1394,7 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	if what, ok := strings.CutPrefix(ev.Text, permissionDenied); ok && ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS {
 		r.refused = what
+		r.refuse(what)
 	}
 	if w := ev.Watched; w != nil && w.First != "" {
 		r.task.LastLine, changed = clipRunes(w.First, watchLineMax), true
@@ -1678,6 +1680,9 @@ func (h *Harness) end(r *run, res Result) {
 	default:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_DONE, ""
 	}
+	if !r.watcher {
+		t.Refused = r.refusals
+	}
 	integrate := h.pendIntegration(t)
 	why := t.GetError()
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
@@ -1735,6 +1740,9 @@ func (h *Harness) end(r *run, res Result) {
 		h.tellWatcherFailed(t)
 	case !r.light && !watching(t):
 		h.workerEnded(t)
+	}
+	if tellsDone(t) && toldDoneAtEnd(t, integrate) {
+		h.tellDone(context.Background(), t, "")
 	}
 	if t.GetCorrection() != nil || t.GetReview() != nil {
 		h.kickIntegrate()
