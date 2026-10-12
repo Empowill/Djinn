@@ -73,13 +73,14 @@ func TestProcessUnixSetPriorityTree(t *testing.T) {
 		t.Errorf("expected weight 10, got %v", weightCalls)
 	}
 
+	low, standard := wantNice(t, true), wantNice(t, false)
 	wantPids := []int{cmd.Process.Pid, cmd.Process.Pid + 1, cmd.Process.Pid + 2}
 	if len(priorityCalls) != 3 {
 		t.Fatalf("expected 3 priority calls, got %d", len(priorityCalls))
 	}
 	for i, call := range priorityCalls {
-		if call.pid != wantPids[i] || call.nice != 10 {
-			t.Errorf("call %d: got pid=%d nice=%d, want pid=%d nice=10", i, call.pid, call.nice, wantPids[i])
+		if call.pid != wantPids[i] || call.nice != low {
+			t.Errorf("call %d: got pid=%d nice=%d, want pid=%d nice=%d", i, call.pid, call.nice, wantPids[i], low)
 		}
 	}
 
@@ -98,8 +99,8 @@ func TestProcessUnixSetPriorityTree(t *testing.T) {
 		t.Fatalf("expected 3 priority calls, got %d", len(priorityCalls))
 	}
 	for i, call := range priorityCalls {
-		if call.pid != wantPids[i] || call.nice != 0 {
-			t.Errorf("call %d: got pid=%d nice=%d, want pid=%d nice=0", i, call.pid, call.nice, wantPids[i])
+		if call.pid != wantPids[i] || call.nice != standard {
+			t.Errorf("call %d: got pid=%d nice=%d, want pid=%d nice=%d", i, call.pid, call.nice, wantPids[i], standard)
 		}
 	}
 }
