@@ -15,6 +15,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
 
@@ -359,4 +360,119 @@ func TestQuestionWorkerProvider(t *testing.T) {
 	}) {
 		t.Errorf("start event for explicit provider: %v", eventsExplicit)
 	}
+}
+
+// projectless makes a wish of no project, as the developer's "Install Wispr Flow on Linux" was, and returns it.
+func (e *env) projectless(t *testing.T) string {
+	t.Helper()
+	w, err := e.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Install a tool"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return w.Msg.GetWish().GetId()
+}
+
+// enlightenLost stores a request to investigate code as djinn up did before it hung and was made to quit: the
+// request alone, neither its investigator started nor the lead told.
+func (e *env) enlightenLost(t *testing.T, wishID, code, note string) {
+	t.Helper()
+	q := &plan.Questions{Store: e.db}
+	if _, err := q.Enlighten(t.Context(), connect.NewRequest(&planv1.QuestionServiceEnlightenRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: code}}, Note: note, WishId: wishID,
+	})); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// leadEvents are the lead's events about the wish, queued in the store as djinn up queues them.
+func (e *env) leadEvents(t *testing.T, wishID string) []*planv1.LeadEvent {
+	t.Helper()
+	events, err := store.List[*planv1.LeadEvent](t.Context(), e.db, store.Where{"wish_id": wishID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return events
+}
+
+// TestEnlightenWithoutProject replays W536: the developer pressed "Enlighten me" on Q01 of a wish of no project;
+// the question showed as under investigation for hours, with no investigator and no event for the lead. A wish of no
+// project gets its investigator as its tasks run, outside any project, in an empty folder, reading; a request left
+// without a follow-up by a djinn up that stopped gets it at the next start, or else one lead event, never none.
+func TestEnlightenWithoutProject(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_CLAUDE] = Fake{} // The default provider outside any project: no paid model.
+
+	t.Run("live", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		e := upWith(t, home, providers)
+		wishID := e.projectless(t)
+		q := e.asker(wishID)
+		asked := q.ask(t, "wait")
+		q.enlighten(t, asked.GetCode(), "are my machine's specs enough first?")
+		invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+		if len(invs) != 1 {
+			t.Fatalf("%d investigators, want 1", len(invs))
+		}
+		inv := invs[0]
+		if inv.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || inv.GetProjectId() != "" ||
+			inv.GetAccess() != planv1.TaskAccess_TASK_ACCESS_DJINN {
+			t.Errorf("investigator: %v, want running in no project, with djinn's commands only", inv)
+		}
+		e.release(t, inv.GetId())
+		e.ended(t, inv.GetId())
+		if !strings.Contains(e.prompt(t, inv.GetId()), "are my machine's specs enough first?") {
+			t.Error("the investigator was not given the developer's note")
+		}
+	})
+
+	t.Run("lost_then_investigator", func(t *testing.T) {
+		t.Parallel()
+		e := upWith(t, t.TempDir(), providers)
+		wishID := e.projectless(t)
+		asked := e.asker(wishID).ask(t, "wait")
+		e.enlightenLost(t, wishID, asked.GetCode(), "are my machine's specs enough first?")
+		if invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR); len(invs) != 0 {
+			t.Fatalf("%d investigators before the pass, want none", len(invs))
+		}
+		e.h.resumeInvestigations(t.Context())
+		invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+		if len(invs) != 1 || invs[0].GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+			t.Fatalf("investigators after the pass: %v, want one running", invs)
+		}
+		// Another pass while it works starts no second one, and tells it nothing again.
+		e.h.resumeInvestigations(t.Context())
+		if n := len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)); n != 1 {
+			t.Errorf("%d investigators after a second pass, want 1", n)
+		}
+		e.release(t, invs[0].GetId())
+		e.ended(t, invs[0].GetId())
+	})
+
+	t.Run("lost_then_lead", func(t *testing.T) {
+		t.Parallel()
+		e := upWith(t, t.TempDir(), providers, WithEnlightenWorkers(false))
+		e.h.NotifyLead(func(ctx context.Context, ev *planv1.LeadEvent) error {
+			return plan.QueueLeadEvent(ctx, e.db, ev, time.Now())
+		})
+		wishID := e.projectless(t)
+		asked := e.asker(wishID).ask(t, "")
+		e.enlightenLost(t, wishID, asked.GetCode(), "are my machine's specs enough first?")
+		e.h.resumeInvestigations(t.Context())
+		e.h.resumeInvestigations(t.Context()) // Told once: the next start tells it no more.
+		events := e.leadEvents(t, wishID)
+		if len(events) != 1 || events[0].GetKind() != planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN ||
+			events[0].GetCode() != asked.GetCode() {
+			t.Fatalf("lead events: %v, want one to investigate %s", events, asked.GetCode())
+		}
+		want := plan.EnlightenLine(asked, "are my machine's specs enough first?", "")
+		if events[0].GetText() != want {
+			t.Errorf("lead event %q, want %q", events[0].GetText(), want)
+		}
+		if n := len(e.list(t, wishID)); n != 0 {
+			t.Errorf("%d tasks, want none: the lead investigates", n)
+		}
+	})
 }

@@ -33,6 +33,9 @@ func (q *Questions) Enlighten(
 	if err != nil {
 		return nil, err
 	}
+	// The request is stored: its investigator starts, or its lead hears of it, even when the caller hangs up
+	// meanwhile. A window that gave up left it under investigation with neither (W536).
+	ctx = context.WithoutCancel(ctx)
 	for _, f := range q.Enlightened {
 		f(ctx, proto.CloneOf(question), req.Msg.GetNote())
 	}

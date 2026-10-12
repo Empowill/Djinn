@@ -49,6 +49,94 @@ func (h *Harness) Enlightened(ctx context.Context, q *planv1.Question, note stri
 	h.askWorker(ctx, q, planv1.TaskRole_TASK_ROLE_INVESTIGATOR, note)
 }
 
+// ResumeInvestigations follows up each request to investigate that was left without one: djinn up stopped, or hung
+// until it was made to quit, between storing the request and starting its investigator or telling the lead, and the
+// question stayed under investigation with no one on it (W536). Each one gets its investigator now, or else the
+// lead's event, once: a request that an investigator took on, or the lead heard of, is followed up already. djinn
+// up calls it once the lead's events go out; it works in the background, and Close waits for it.
+func (h *Harness) ResumeInvestigations() {
+	h.wg.Add(1)
+	go func() {
+		defer logx.Crash("question")
+		defer h.wg.Done()
+		h.resumeInvestigations(h.ctx)
+	}()
+}
+
+// resumeInvestigations is ResumeInvestigations, done now.
+func (h *Harness) resumeInvestigations(ctx context.Context) {
+	questions, err := store.List[*planv1.Question](ctx, h.store, nil)
+	if err != nil {
+		logx.L().Error("list the questions under investigation", "loop", "question", "err", err)
+		return
+	}
+	for _, q := range questions {
+		if !plan.Investigating(q) {
+			continue
+		}
+		if err := h.resumeInvestigation(ctx, q); err != nil {
+			logx.L().Error("follow up a request to investigate", "loop", "question", "wish", q.GetWishId(),
+				"question", q.GetCode(), "err", err)
+		}
+	}
+}
+
+// resumeInvestigation follows up the last request to investigate q, unless it was: its investigator, or else the
+// lead, is told.
+func (h *Harness) resumeInvestigation(ctx context.Context, q *planv1.Question) error {
+	rounds := q.GetRounds()
+	asked := rounds[len(rounds)-1]
+	wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
+	if err != nil || wish.GetState() == planv1.WishState_WISH_STATE_GRANTED {
+		return err
+	}
+	if followed, err := h.investigationFollowed(ctx, q, asked); err != nil || followed {
+		return err
+	}
+	h.questioning.Lock()
+	t, err := h.startQuestionWorker(ctx, q, planv1.TaskRole_TASK_ROLE_INVESTIGATOR, asked.GetNote(), nil)
+	h.questioning.Unlock()
+	if t != nil {
+		return nil
+	}
+	if err != nil {
+		logx.L().Error("start an investigator", "loop", "question", "question", q.GetCode(), "err", err)
+	}
+	err = h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN, q.GetWishId(), q.GetCode(),
+		plan.EnlightenLine(q, asked.GetNote(), ""))
+	if errors.Is(err, plan.ErrNoLead) {
+		return nil
+	}
+	return err
+}
+
+// investigationFollowed tells whether the request to investigate q, asked, was followed up: an investigator still
+// works on q, or one was made since, or the lead was told of q since.
+func (h *Harness) investigationFollowed(ctx context.Context, q *planv1.Question, asked *planv1.Round) (bool, error) {
+	if t, err := plan.QuestionWorkerOf(ctx, h.store, q, planv1.TaskRole_TASK_ROLE_INVESTIGATOR); err != nil || t != nil {
+		return t != nil, err
+	}
+	since := asked.GetCreateTime().AsTime()
+	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": q.GetWishId()})
+	if err != nil {
+		return false, err
+	}
+	if slices.ContainsFunc(tasks, func(t *planv1.Task) bool {
+		return t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && t.GetQuestion() == q.GetCode() &&
+			!t.GetCreateTime().AsTime().Before(since)
+	}) {
+		return true, nil
+	}
+	events, err := store.List[*planv1.LeadEvent](ctx, h.store, store.Where{"wish_id": q.GetWishId()})
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(events, func(e *planv1.LeadEvent) bool {
+		return e.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN && e.GetCode() == q.GetCode() &&
+			!e.GetCreateTime().AsTime().Before(since)
+	}), nil
+}
+
 // askWorker starts a question worker of role on q, unless the project's settings turn them off, the wish is granted,
 // or one of that role still works on q: that one is sent the new answer or note instead.
 func (h *Harness) askWorker(ctx context.Context, q *planv1.Question, role planv1.TaskRole, note string) {
