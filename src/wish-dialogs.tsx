@@ -102,9 +102,9 @@ export function MakeWish({
     document.activeElement as HTMLElement | null,
   );
   useEffect(() => {
+    const focus = previousFocus.current;
     return () => {
-      if (previousFocus.current?.isConnected)
-        previousFocus.current.focus({ preventScroll: true });
+      if (focus?.isConnected) focus.focus({ preventScroll: true });
     };
   }, []);
   useLayoutEffect(() => {
