@@ -12,6 +12,7 @@ import (
 	"time"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/plan"
 )
 
@@ -161,6 +162,7 @@ func openPRFromBranch(ctx context.Context, repo, branch string) (prNum string, o
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "gh", "pr", "list", "--head", cleanBranch, "--state", "open")
+	cmd.WaitDelay = gitx.WaitDelay
 	if repo != "" {
 		cmd.Dir = repo
 	}

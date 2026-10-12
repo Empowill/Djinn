@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
-	"os/exec"
 	"regexp"
 	"slices"
 	"strconv"
@@ -21,6 +19,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -593,15 +592,17 @@ func (h *Harness) fetchMain(ctx context.Context, wishID, repo, ref string) error
 	remote, target, _ := strings.Cut(remoteBranch, "/")
 	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", repo, "fetch", "--no-tags", remote, "+refs/heads/"+target+":"+ref)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
+	cmd, cancelFetch := gitx.Command(ctx, repo, "fetch", "--no-tags", remote, "+refs/heads/"+target+":"+ref)
+	defer cancelFetch()
+	cmd.Env = append(cmd.Env, "LC_ALL=C")
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("fetch %s from %s: %s", target, remote, cmp.Or(strings.TrimSpace(out.String()), err.Error()))
 	}
-	tagCmd := exec.CommandContext(ctx, "git", "-C", repo, "fetch", "--tags", remote)
-	tagCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
+	tagCmd, cancelTags := gitx.Command(ctx, repo, "fetch", "--tags", remote)
+	defer cancelTags()
+	tagCmd.Env = append(tagCmd.Env, "LC_ALL=C")
 	var tagOut bytes.Buffer
 	tagCmd.Stdout, tagCmd.Stderr = &tagOut, &tagOut
 	_ = tagCmd.Run()

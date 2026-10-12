@@ -22,6 +22,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -1416,6 +1417,7 @@ type gateWaitKey struct{}
 func runCommand(ctx context.Context, dir string, args []string) (string, int, error) {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
+	cmd.WaitDelay = gitx.WaitDelay // Killed at ctx's end, it may leave a child holding its output.
 	out := &tailBuffer{max: 16 << 10}
 	cmd.Stdout, cmd.Stderr = out, out
 	err := cmd.Run()
@@ -2321,8 +2323,14 @@ func (h *Harness) queryGlabMR(ctx context.Context, repo, branch string) *forgePR
 	}
 }
 
+// forgeTimeout is the longest the questions to a forge about one branch may take: a forge that does not answer holds
+// the integration back no longer (W504).
+const forgeTimeout = time.Minute
+
 // queryForgePR queries the forge (gh or glab) for branch's pull or merge request.
 func (h *Harness) queryForgePR(ctx context.Context, repo string, project *planv1.Project, branch string) *forgePR {
+	ctx, cancel := context.WithTimeout(ctx, forgeTimeout)
+	defer cancel()
 	forge := detectForge(ctx, repo, project)
 	if forge == "glab" {
 		return h.queryGlabMR(ctx, repo, branch)

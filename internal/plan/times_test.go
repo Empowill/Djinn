@@ -1,6 +1,7 @@
 package plan_test
 
 import (
+	"runtime"
 	"testing"
 	"time"
 
@@ -236,5 +237,127 @@ func TestAzimaTimesSum(t *testing.T) {
 	// Azima sums running times of its parts: 10m + 15m = 25m
 	if got := azima.GetRunning().AsDuration(); got != 25*time.Minute {
 		t.Errorf("azima running = %v, want 25m", got)
+	}
+}
+
+// TestGateWaitFollowsNewEvents: the gate wait of a running task follows the events written after the last fill, which
+// reads only those (W504), and ignores an event that only says "gate".
+func TestGateWaitFollowsNewEvents(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	s, err := store.Open(ctx, "", plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	t0 := time.Date(2026, 10, 12, 18, 0, 0, 0, time.UTC)
+	task := &planv1.Task{
+		Id: store.NewID(), WishId: "wish-1", FirstStartTime: timestamppb.New(t0), StartTime: timestamppb.New(t0),
+		Status: planv1.TaskStatus_TASK_STATUS_RUNNING, Runs: []*planv1.TaskRun{{StartTime: timestamppb.New(t0)}},
+	}
+	seq := int64(0)
+	write := func(kind planv1.TaskEventKind, text string, at time.Duration) {
+		t.Helper()
+		seq++
+		ev := &planv1.TaskEvent{
+			Id: store.NewID(), TaskId: task.GetId(), Seq: seq, Kind: kind, Text: text, CreateTime: timestamppb.New(t0.Add(at)),
+		}
+		err := s.Tx(ctx, func(tx *store.Tx) error {
+			if err := tx.Journal("test", "test/put", ev); err != nil {
+				return err
+			}
+			return tx.Put(ev)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	waited := func(now time.Duration) time.Duration {
+		t.Helper()
+		if err := plan.FillTimes(ctx, s, []*planv1.Task{task}, t0.Add(now)); err != nil {
+			t.Fatal(err)
+		}
+		return task.GetWaitingGate().AsDuration()
+	}
+	gate := planv1.TaskEventKind_TASK_EVENT_KIND_GATE
+	write(planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, "gate build: asked", time.Minute) // A worker's words, no gate.
+	if got := waited(10 * time.Minute); got != 0 {
+		t.Errorf("waiting gate before any gate = %v, want 0", got)
+	}
+	write(gate, "gate build: asked", 2*time.Minute)
+	if got := waited(4 * time.Minute); got != 2*time.Minute {
+		t.Errorf("waiting gate on a gate asked = %v, want 2m", got)
+	}
+	write(gate, "gate build: taken", 5*time.Minute)
+	write(planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, "built", 6*time.Minute)
+	write(gate, "gate test: asked", 7*time.Minute)
+	if got := waited(10 * time.Minute); got != 6*time.Minute {
+		t.Errorf("waiting gate = %v, want 3m for build and 3m for test so far", got)
+	}
+	write(gate, "gate test: taken", 11*time.Minute)
+	if got := waited(20 * time.Minute); got != 7*time.Minute {
+		t.Errorf("waiting gate = %v, want 7m", got)
+	}
+}
+
+// TestFillTimesDecodesNoWorkerLine is the cause of W504: a task list filled each task's times by decoding every event
+// of the task, half a gigabyte on the developer's wishes, holding the store's one connection for half a minute while
+// every other call waited. A fill decodes the gate events only, and a fill again reads none it read.
+func TestFillTimesDecodesNoWorkerLine(t *testing.T) {
+	ctx := t.Context()
+	s, err := store.Open(ctx, "", plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	t0 := time.Date(2026, 10, 12, 18, 0, 0, 0, time.UTC)
+	task := &planv1.Task{
+		Id: store.NewID(), WishId: "wish-1", FirstStartTime: timestamppb.New(t0), StartTime: timestamppb.New(t0),
+		Status: planv1.TaskStatus_TASK_STATUS_RUNNING, Runs: []*planv1.TaskRun{{StartTime: timestamppb.New(t0)}},
+	}
+	const lines = 3000
+	err = s.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("test", "test/put", task); err != nil {
+			return err
+		}
+		for seq := int64(1); seq <= lines+2; seq++ {
+			ev := &planv1.TaskEvent{
+				Id: store.NewID(), TaskId: task.GetId(), Seq: seq, Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT,
+				Text: "a line a worker wrote", CreateTime: timestamppb.New(t0.Add(time.Duration(seq) * time.Second)),
+			}
+			switch seq {
+			case 10:
+				ev.Kind, ev.Text = planv1.TaskEventKind_TASK_EVENT_KIND_GATE, "gate test: asked"
+			case 70:
+				ev.Kind, ev.Text = planv1.TaskEventKind_TASK_EVENT_KIND_GATE, "gate test: taken"
+			}
+			if err := tx.Put(ev); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := t0.Add(2 * time.Hour)
+	fill := func() {
+		if err := plan.FillTimes(ctx, s, []*planv1.Task{task}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	fill()
+	runtime.ReadMemStats(&after)
+	// Decoding each line costs a few allocations: 3000 lines cost over 10 000.
+	if allocs := after.Mallocs - before.Mallocs; allocs > lines/2 {
+		t.Errorf("a first fill allocated %d times: it decodes the worker's lines", allocs)
+	}
+	if got := task.GetWaitingGate().AsDuration(); got != time.Minute {
+		t.Errorf("waiting gate = %v, want 1m", got)
+	}
+	if allocs := testing.AllocsPerRun(5, fill); allocs > 200 {
+		t.Errorf("a fill again allocated %v times: it reads the events it read", allocs)
 	}
 }

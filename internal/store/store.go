@@ -162,6 +162,25 @@ func List[T proto.Message](ctx context.Context, r Reader, where Where) ([]T, err
 	return out, err
 }
 
+// After narrows a ListAfter to the entities whose indexed integer field Field is past From, and whose payload holds
+// each of Contains: a filter on the encoded bytes that skips decoding the others, which the caller checks again
+// once decoded, as an entity may hold the bytes elsewhere.
+type After struct {
+	Field    string
+	From     int64
+	Contains [][]byte
+}
+
+// ListAfter is List narrowed by after, in the order of its field: through an index on where's fields and after's,
+// it reads only the entities past From, where List reads them all.
+func ListAfter[T proto.Message](ctx context.Context, r Reader, where Where, after After) ([]T, error) {
+	var zero T
+	mt := zero.ProtoReflect().Type()
+	var out []T
+	err := listAfter(ctx, r, mt, where, after, func(m proto.Message) bool { out = append(out, m.(T)); return true })
+	return out, err
+}
+
 // Latest calls f on the entities of type T that match where, the last written first, until f returns false: an entity
 // put again keeps its place. It reads no further than f asks, where List reads everything.
 func Latest[T proto.Message](ctx context.Context, r Reader, where Where, f func(T) bool) error {
@@ -195,9 +214,36 @@ func get(ctx context.Context, r Reader, id string, m proto.Message) error {
 
 // list calls add on the entities of type mt that match where, in order (an ORDER BY clause), until add returns false.
 func list(ctx context.Context, r Reader, mt protoreflect.MessageType, where Where, order string, add func(proto.Message) bool) error {
-	t, err := r.table(mt.Descriptor())
+	t, conds, args, err := conditions(r, mt, where)
 	if err != nil {
 		return err
+	}
+	return query(ctx, r, mt, t, conds, args, order, add)
+}
+
+func listAfter(ctx context.Context, r Reader, mt protoreflect.MessageType, where Where, after After, add func(proto.Message) bool) error {
+	t, conds, args, err := conditions(r, mt, where)
+	if err != nil {
+		return err
+	}
+	fd := t.column(after.Field)
+	if fd == nil || fd.Kind() == protoreflect.StringKind {
+		return fmt.Errorf("%s: %s is not an indexed integer field", mt.Descriptor().Name(), after.Field)
+	}
+	conds = append(conds, quote(after.Field)+" > ?")
+	args = append(args, after.From)
+	for _, b := range after.Contains {
+		conds = append(conds, "instr(payload, ?) > 0")
+		args = append(args, b)
+	}
+	return query(ctx, r, mt, t, conds, args, quote(after.Field), add)
+}
+
+// conditions gives the table of mt and where as SQL conditions, each field indexed.
+func conditions(r Reader, mt protoreflect.MessageType, where Where) (*table, []string, []any, error) {
+	t, err := r.table(mt.Descriptor())
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	keys := make([]string, 0, len(where))
 	for k := range where {
@@ -208,11 +254,19 @@ func list(ctx context.Context, r Reader, mt protoreflect.MessageType, where Wher
 	args := make([]any, 0, len(keys))
 	for _, k := range keys {
 		if t.column(k) == nil {
-			return fmt.Errorf("%s: %s is not an indexed field", mt.Descriptor().Name(), k)
+			return nil, nil, nil, fmt.Errorf("%s: %s is not an indexed field", mt.Descriptor().Name(), k)
 		}
 		conds = append(conds, quote(k)+" = ?")
 		args = append(args, where[k])
 	}
+	return t, conds, args, nil
+}
+
+// query decodes the payloads of t's rows that meet conds, in order, until add returns false.
+func query(
+	ctx context.Context, r Reader, mt protoreflect.MessageType, t *table, conds []string, args []any, order string,
+	add func(proto.Message) bool,
+) error {
 	q := `SELECT payload FROM ` + quote(t.name)
 	if len(conds) > 0 {
 		q += " WHERE " + strings.Join(conds, " AND ")

@@ -6,11 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
+
 	"strconv"
 	"strings"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/gitx"
 )
 
 // cleanWorktree removes the worktree of a task of a deleted wish, from the repository of dir, its project's folder,
@@ -73,7 +74,8 @@ func cleanWorktree(ctx context.Context, dir string, task *planv1.Task) (bool, *p
 
 // gitOut runs git in dir and returns its output, trimmed; an error carries git's own message.
 func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd, cancel := gitx.Command(ctx, dir, args...)
+	defer cancel()
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	if err := cmd.Run(); err != nil {
