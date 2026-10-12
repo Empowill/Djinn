@@ -369,14 +369,19 @@ func TestScrubberFollowsLinks(t *testing.T) {
 
 // On Windows, %TEMP% gives a folder with a short name (C:\Users\RUNNER~1) while a project's folder is stored with long
 // names: the scrubber replaces both forms, and a path that mixes them, as a prompt written under %TEMP% holds (CI of
-// PR #2, where the brief kept such a path).
+// PR #2, where the brief kept such a path). The home is a fake one, not the machine's: on the CI runner, RUNNER~1 is
+// the short name of the real home, which the scrubber rightly replaces by ~.
 func TestScrubberShortNames(t *testing.T) {
 	const (
-		long = `C:\Users\runneradmin\AppData\Local\Temp\TestBrief1`
-		mix  = `C:\Users\RUNNER~1\AppData\Local\Temp\TestBrief1`
-		all  = `C:\Users\RUNNER~1\AppData\Local\Temp\TESTBR~1`
+		home      = `C:\Users\djinnuser`
+		homeShort = `C:\Users\DJINNU~1`
+		long      = home + `\AppData\Local\Temp\TestBrief1`
+		mix       = homeShort + `\AppData\Local\Temp\TestBrief1`
+		all       = homeShort + `\AppData\Local\Temp\TESTBR~1`
 	)
-	short := map[string]string{`C:\Users\runneradmin`: `C:\Users\RUNNER~1`, long: all}
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	short := map[string]string{home: homeShort, long: all}
 	saved := shortName
 	t.Cleanup(func() { shortName = saved })
 	shortName = func(path string) (string, bool) {
@@ -394,12 +399,15 @@ func TestScrubberShortNames(t *testing.T) {
 
 	s := newScrubber([]*planv1.Project{{Name: "api", Directory: long + `\001`}}, long+`\002`, "djinn-data")
 	for in, want := range map[string]string{
-		mix + `\001/internal`:         "api/internal",
-		mix + `\001\cmd\main.go`:      `api\cmd\main.go`,
-		all + `\001\go.mod`:           `api\go.mod`,
-		long + `\001\go.mod`:          `api\go.mod`,
-		mix + `\002/state`:            "djinn-data/state",
-		`C:\Users\RUNNER~1\Documents`: `C:\Users\RUNNER~1\Documents`,
+		mix + `\001/internal`:          "api/internal",
+		mix + `\001\cmd\main.go`:       `api\cmd\main.go`,
+		all + `\001\go.mod`:            `api\go.mod`,
+		long + `\001\go.mod`:           `api\go.mod`,
+		mix + `\002/state`:             "djinn-data/state",
+		homeShort + `\Documents`:       `~\Documents`,
+		home + `\Documents`:            `~\Documents`,
+		`C:\Users\OTHERU~1\Documents`:  `C:\Users\OTHERU~1\Documents`,
+		`C:\Users\otheruser\Documents`: `C:\Users\otheruser\Documents`,
 	} {
 		if got := s.r.Replace("In " + in + "."); got != "In "+want+"." {
 			t.Errorf("scrub(%q) = %q, want %q", in, got, "In "+want+".")
