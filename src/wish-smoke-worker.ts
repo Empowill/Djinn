@@ -17,17 +17,12 @@ type FloatTextureFormat = {
   name: "r16f" | "rg16f" | "rgba16f";
   internalFormat: number;
   format: number;
-  bytesPerPixel: number;
 };
 
 type PendingGrid = {
   now: number;
-  computeStarted: number;
-  sampleStarted: number;
   sampleWidth: number;
   sampleHeight: number;
-  issuedAt: number;
-  sampleCpuMs?: number;
 };
 
 type ReadbackSlot = {
@@ -40,7 +35,6 @@ type RenderTarget = {
   framebuffer: WebGLFramebuffer;
   width: number;
   height: number;
-  textureBytes: number;
 };
 
 type DoubleTarget = RenderTarget & {
@@ -65,7 +59,6 @@ type WorkerInit = {
   coverage: [number, number];
   layoutGeneration: number;
   reducedMotion: boolean;
-  perfEnabled: boolean;
   mountEpoch: number;
   prewarm?: boolean;
   palette: SmokePalette;
@@ -119,105 +112,17 @@ type WorkerOutput =
   | {
       type: "ready";
       startupSteps: number;
-      renderer?: string;
-      vendor?: string;
-      unmaskedRenderer?: string;
-      unmaskedVendor?: string;
     }
   | {
       type: "frame";
       frame: AsciiGridFrame;
       layoutGeneration: number;
-      computeMs: number;
-      gridMs: number;
-      metrics?: SmokeWorkerMetrics;
     }
   | { type: "activated" }
   | { type: "prepared"; startupSteps: number }
   | { type: "error"; message: string };
 
-type TimingSummary = {
-  p50: number;
-  p95: number;
-  p99: number;
-  count: number;
-};
-
-type SmokeWorkerMetrics = {
-  windowMs: number;
-  cpuStep?: TimingSummary;
-  stepCount?: TimingSummary;
-  sample?: TimingSummary;
-  grid?: TimingSummary;
-  gpu?: TimingSummary;
-  gpuTimer: boolean;
-  textureBytes: number;
-  canvasWidth: number;
-  canvasHeight: number;
-  gridWidth: number;
-  gridHeight: number;
-  gridCells: number;
-  pixelRatio: number;
-  renderer?: string;
-  vendor?: string;
-  unmaskedRenderer?: string;
-  unmaskedVendor?: string;
-  scalarFormat: FloatTextureFormat["name"];
-  velocityFormat: FloatTextureFormat["name"];
-  readbackMode: "pbo" | "direct";
-};
-
-type GpuTimerExtension = {
-  TIME_ELAPSED_EXT: number;
-  GPU_DISJOINT_EXT: number;
-};
-
 const CAMERA_BOTTOM_CUTOFF_ZOOM10 = 0.158724;
-
-class RollingTimings {
-  private readonly values: Array<{ value: number; at: number }> = [];
-  private readonly maxSamples: number;
-  private readonly windowMs: number;
-
-  constructor(maxSamples = 600, windowMs = 10_000) {
-    this.maxSamples = maxSamples;
-    this.windowMs = windowMs;
-  }
-
-  add(value: number, at = performance.now()) {
-    if (!Number.isFinite(value)) return;
-    this.prune(at);
-    this.values.push({ value, at });
-    if (this.values.length > this.maxSamples) this.values.shift();
-  }
-
-  private prune(now: number) {
-    const oldest = now - this.windowMs;
-    while (this.values.length && this.values[0].at < oldest)
-      this.values.shift();
-  }
-
-  summary(now = performance.now()): TimingSummary | undefined {
-    this.prune(now);
-    if (!this.values.length) return undefined;
-    const ordered = this.values
-      .map((sample) => sample.value)
-      .sort((left, right) => left - right);
-    const quantile = (percentile: number) =>
-      ordered[
-        Math.min(
-          ordered.length - 1,
-          Math.floor((ordered.length - 1) * percentile),
-        )
-      ];
-    return {
-      p50: Math.round(quantile(0.5) * 100) / 100,
-      p95: Math.round(quantile(0.95) * 100) / 100,
-      p99: Math.round(quantile(0.99) * 100) / 100,
-      count: ordered.length,
-    };
-  }
-}
 
 type WorkerScope = {
   onmessage: ((event: MessageEvent<WorkerMessage>) => void) | null;
@@ -246,15 +151,6 @@ const cancelFrame = (handle: ReturnType<typeof requestFrame>) => {
 class SmokeRuntime {
   private readonly canvas: OffscreenCanvas;
   private readonly context: WebGL2RenderingContext;
-  private readonly perfEnabled: boolean;
-  private readonly timingWindowMs = 10_000;
-  private readonly cpuStepTimings = new RollingTimings();
-  private readonly stepCountTimings = new RollingTimings();
-  private readonly sampleTimings = new RollingTimings();
-  private readonly gridTimings = new RollingTimings();
-  private readonly gpuTimings = new RollingTimings();
-  private readonly gpuTimerExtension: GpuTimerExtension | null;
-  private readonly pendingGpuQueries: WebGLQuery[] = [];
   private readonly scalarFormat: FloatTextureFormat;
   private readonly velocityFormat: FloatTextureFormat;
   private mountEpoch: number;
@@ -301,12 +197,6 @@ class SmokeRuntime {
   private cameraStartScale = 1;
   private cameraTargetScale = 1;
   private cameraTransitionStarted = 0;
-  private textureBytes = 0;
-  private lastMetricsPublish = 0;
-  private readonly renderer: string;
-  private readonly vendor: string;
-  private readonly unmaskedRenderer?: string;
-  private readonly unmaskedVendor?: string;
   private simulationTime = 0;
   private windTime: number;
   private activated = false;
@@ -336,10 +226,6 @@ class SmokeRuntime {
     last: 0,
   };
   private pixels: Uint8Array;
-  private stepsThisFrame = 0;
-  private frameCounter = 0;
-  private sampleGpuThisFrame = false;
-  private gpuQueryStartedThisFrame = false;
   private readonly readbackSlots: ReadbackSlot[] = [];
   private readbackCursor = 0;
   private pendingReadbackSlot: ReadbackSlot | undefined;
@@ -348,7 +234,6 @@ class SmokeRuntime {
   private pboReadbackEnabled = false;
 
   constructor(message: WorkerInit) {
-    this.perfEnabled = message.perfEnabled;
     this.canvas = message.canvas;
     this.viewportWidth = message.viewportWidth;
     this.width = Math.max(1, message.width);
@@ -378,52 +263,20 @@ class SmokeRuntime {
     this.densityWidth = this.simulationWidth * 4;
     this.densityHeight = this.simulationHeight * 4;
     this.context = this.createContext();
-    this.gpuTimerExtension = this.perfEnabled
-      ? (this.context.getExtension(
-          "EXT_disjoint_timer_query_webgl2",
-        ) as GpuTimerExtension | null)
-      : null;
-    const debugRenderer = this.perfEnabled
-      ? (this.context.getExtension("WEBGL_debug_renderer_info") as {
-          UNMASKED_RENDERER_WEBGL: number;
-          UNMASKED_VENDOR_WEBGL: number;
-        } | null)
-      : null;
-    this.renderer = String(
-      this.context.getParameter(
-        debugRenderer?.UNMASKED_RENDERER_WEBGL ?? this.context.RENDERER,
-      ),
-    );
-    this.vendor = String(
-      this.context.getParameter(
-        debugRenderer?.UNMASKED_VENDOR_WEBGL ?? this.context.VENDOR,
-      ),
-    );
-    if (debugRenderer) {
-      this.unmaskedRenderer = String(
-        this.context.getParameter(debugRenderer.UNMASKED_RENDERER_WEBGL),
-      );
-      this.unmaskedVendor = String(
-        this.context.getParameter(debugRenderer.UNMASKED_VENDOR_WEBGL),
-      );
-    }
     const rgba16f: FloatTextureFormat = {
       name: "rgba16f",
       internalFormat: this.context.RGBA16F,
       format: this.context.RGBA,
-      bytesPerPixel: 8,
     };
     const r16f: FloatTextureFormat = {
       name: "r16f",
       internalFormat: this.context.R16F,
       format: this.context.RED,
-      bytesPerPixel: 2,
     };
     const rg16f: FloatTextureFormat = {
       name: "rg16f",
       internalFormat: this.context.RG16F,
       format: this.context.RG,
-      bytesPerPixel: 4,
     };
     this.scalarFormat = this.probeFloatFormat(r16f) ? r16f : rgba16f;
     this.velocityFormat = this.probeFloatFormat(rg16f) ? rg16f : rgba16f;
@@ -728,7 +581,6 @@ class SmokeRuntime {
       ? {
           internalFormat: this.context.RGBA8,
           format: this.context.RGBA,
-          bytesPerPixel: 4,
         }
       : (floatFormat ?? this.scalarFormat);
     this.context.bindTexture(this.context.TEXTURE_2D, texture);
@@ -773,11 +625,8 @@ class SmokeRuntime {
     this.context.clearColor(0, 0, 0, 0);
     this.context.clear(this.context.COLOR_BUFFER_BIT);
     const target = { texture, framebuffer, width, height };
-    const textureBytes = width * height * targetFormat.bytesPerPixel;
-    if (this.perfEnabled) this.textureBytes += textureBytes;
-    const measuredTarget = { ...target, textureBytes };
-    this.renderTargets.push(measuredTarget);
-    return measuredTarget;
+    this.renderTargets.push(target);
+    return target;
   }
 
   private releaseReadbackRing() {
@@ -886,100 +735,6 @@ class SmokeRuntime {
     this.context.drawArrays(this.context.TRIANGLES, 0, 6);
   }
 
-  private recordTiming(target: RollingTimings, started: number) {
-    if (this.perfEnabled) target.add(performance.now() - started);
-  }
-
-  private beginGpuTimer() {
-    if (
-      !this.perfEnabled ||
-      !this.sampleGpuThisFrame ||
-      this.gpuQueryStartedThisFrame ||
-      !this.gpuTimerExtension ||
-      this.pendingGpuQueries.length >= 8
-    )
-      return undefined;
-    const query = this.context.createQuery();
-    if (!query) return undefined;
-    this.context.beginQuery(this.gpuTimerExtension.TIME_ELAPSED_EXT, query);
-    this.gpuQueryStartedThisFrame = true;
-    return query;
-  }
-
-  private endGpuTimer(query: WebGLQuery | undefined) {
-    if (!query || !this.gpuTimerExtension) return;
-    this.context.endQuery(this.gpuTimerExtension.TIME_ELAPSED_EXT);
-    this.pendingGpuQueries.push(query);
-  }
-
-  private pollGpuTimers() {
-    if (!this.gpuTimerExtension || !this.pendingGpuQueries.length) return;
-    let hasAvailableQuery = false;
-    for (const query of this.pendingGpuQueries) {
-      if (
-        this.context.getQueryParameter(
-          query,
-          this.context.QUERY_RESULT_AVAILABLE,
-        )
-      ) {
-        hasAvailableQuery = true;
-        break;
-      }
-    }
-    if (!hasAvailableQuery) return;
-    const disjoint = Boolean(
-      this.context.getParameter(this.gpuTimerExtension.GPU_DISJOINT_EXT),
-    );
-    for (let index = this.pendingGpuQueries.length - 1; index >= 0; index--) {
-      const query = this.pendingGpuQueries[index];
-      if (
-        !this.context.getQueryParameter(
-          query,
-          this.context.QUERY_RESULT_AVAILABLE,
-        )
-      )
-        continue;
-      if (!disjoint) {
-        const nanoseconds = Number(
-          this.context.getQueryParameter(query, this.context.QUERY_RESULT),
-        );
-        if (Number.isFinite(nanoseconds))
-          this.gpuTimings.add(nanoseconds / 1e6);
-      }
-      this.context.deleteQuery(query);
-      this.pendingGpuQueries.splice(index, 1);
-    }
-  }
-
-  private collectMetrics(now: number): SmokeWorkerMetrics | undefined {
-    if (!this.perfEnabled || now - this.lastMetricsPublish < 250)
-      return undefined;
-    this.lastMetricsPublish = now;
-    return {
-      windowMs: this.timingWindowMs,
-      cpuStep: this.cpuStepTimings.summary(now),
-      stepCount: this.stepCountTimings.summary(now),
-      sample: this.sampleTimings.summary(now),
-      grid: this.gridTimings.summary(now),
-      gpu: this.gpuTimings.summary(now),
-      gpuTimer: this.gpuTimerExtension !== null,
-      textureBytes: this.textureBytes,
-      canvasWidth: this.canvas.width,
-      canvasHeight: this.canvas.height,
-      gridWidth: this.grid.width,
-      gridHeight: this.grid.height,
-      gridCells: this.grid.area,
-      pixelRatio: this.pixelRatio,
-      renderer: this.renderer,
-      vendor: this.vendor,
-      unmaskedRenderer: this.unmaskedRenderer,
-      unmaskedVendor: this.unmaskedVendor,
-      scalarFormat: this.scalarFormat.name,
-      velocityFormat: this.velocityFormat.name,
-      readbackMode: this.pboReadbackEnabled ? "pbo" : "direct",
-    };
-  }
-
   private setCameraSurface(width: number, height: number) {
     const now = performance.now();
     this.cameraScale = interpolateWishSmokeCameraScale(
@@ -1019,7 +774,6 @@ class SmokeRuntime {
     this.pixels = new Uint8Array(this.grid.area * 4);
     this.trail = new Float32Array(this.grid.area);
     this.resetReadbackRing();
-    if (this.perfEnabled) this.textureBytes -= this.sampleTarget.textureBytes;
     this.context.deleteFramebuffer(this.sampleTarget.framebuffer);
     this.context.deleteTexture(this.sampleTarget.texture);
     this.sampleTarget = this.createTarget(
@@ -1161,8 +915,6 @@ class SmokeRuntime {
   }
 
   private step(dt: number, wallDt = dt) {
-    const started = this.perfEnabled ? performance.now() : 0;
-    const gpuQuery = this.beginGpuTimer();
     this.simulationTime += dt;
     this.windTime += wallDt;
     const values = {
@@ -1219,8 +971,6 @@ class SmokeRuntime {
       { density: this.ink.read },
     );
     this.ink.swap();
-    this.endGpuTimer(gpuQuery);
-    if (this.perfEnabled) this.recordTiming(this.cpuStepTimings, started);
   }
 
   private readAsciiPixels(width: number, height: number) {
@@ -1250,8 +1000,6 @@ class SmokeRuntime {
         this.sampleTarget.framebuffer,
       );
       this.readAsciiPixels(pending.sampleWidth, pending.sampleHeight);
-      if (this.perfEnabled)
-        this.recordTiming(this.sampleTimings, pending.sampleStarted);
       return "ready";
     }
 
@@ -1273,8 +1021,6 @@ class SmokeRuntime {
         this.sampleTarget.framebuffer,
       );
       this.readAsciiPixels(pending.sampleWidth, pending.sampleHeight);
-      if (this.perfEnabled)
-        this.recordTiming(this.sampleTimings, pending.sampleStarted);
       return "ready";
     }
 
@@ -1298,8 +1044,6 @@ class SmokeRuntime {
           this.sampleTarget.framebuffer,
         );
         this.readAsciiPixels(pending.sampleWidth, pending.sampleHeight);
-        if (this.perfEnabled)
-          this.recordTiming(this.sampleTimings, pending.sampleStarted);
         return "ready";
       }
       this.readbackValidated = true;
@@ -1315,16 +1059,12 @@ class SmokeRuntime {
         this.sampleTarget.framebuffer,
       );
       this.readAsciiPixels(pending.sampleWidth, pending.sampleHeight);
-      if (this.perfEnabled)
-        this.recordTiming(this.sampleTimings, pending.sampleStarted);
       return "ready";
     }
     slot.fence = fence;
     this.pendingReadbackSlot = slot;
     this.pendingGrid = pending;
     this.readbackCursor = (slotIndex + 1) % this.readbackSlots.length;
-    if (this.perfEnabled)
-      pending.sampleCpuMs = performance.now() - pending.sampleStarted;
     this.context.flush();
     return "pending";
   }
@@ -1344,7 +1084,6 @@ class SmokeRuntime {
       return undefined;
     }
     try {
-      const copyStarted = this.perfEnabled ? performance.now() : 0;
       this.context.bindBuffer(this.context.PIXEL_PACK_BUFFER, slot.buffer);
       this.context.getBufferSubData(
         this.context.PIXEL_PACK_BUFFER,
@@ -1352,10 +1091,6 @@ class SmokeRuntime {
         this.pixels,
       );
       this.context.bindBuffer(this.context.PIXEL_PACK_BUFFER, null);
-      if (this.perfEnabled)
-        this.sampleTimings.add(
-          (pending.sampleCpuMs ?? 0) + performance.now() - copyStarted,
-        );
     } catch {
       this.context.bindBuffer(this.context.PIXEL_PACK_BUFFER, null);
       this.disableReadbackPbo();
@@ -1373,12 +1108,10 @@ class SmokeRuntime {
   }
 
   private finishGrid(pending: PendingGrid): boolean {
-    const gridStarted = performance.now();
     const frame = this.grid.render(this.pixels, this.trail, pending.now, {
       appliedSequence: this.appliedSequence,
       forceFull: this.forceFull,
     });
-    if (this.perfEnabled) this.gridTimings.add(performance.now() - gridStarted);
     this.forceFull = false;
     this.lastGridSample = pending.now;
     if (!frame.changed) return false;
@@ -1387,15 +1120,10 @@ class SmokeRuntime {
       this.visibleAscii = frame.fullStrings.some((text) => /\S/.test(text));
     else if (!this.visibleAscii)
       this.visibleAscii = frame.patches.some((patch) => /\S/.test(patch.text));
-    const metrics = this.collectMetrics(pending.now);
     scope.postMessage({
       type: "frame",
       frame,
       layoutGeneration: this.layoutGeneration,
-      computeMs:
-        Math.round((pending.issuedAt - pending.computeStarted) * 100) / 100,
-      gridMs: Math.round((performance.now() - gridStarted) * 100) / 100,
-      ...(metrics ? { metrics } : {}),
     });
     if (this.reducedMotion) this.staticFrameSent = true;
     return true;
@@ -1407,10 +1135,6 @@ class SmokeRuntime {
     scope.postMessage({
       type: "ready",
       startupSteps: this.startupSteps,
-      renderer: this.renderer,
-      vendor: this.vendor,
-      unmaskedRenderer: this.unmaskedRenderer,
-      unmaskedVendor: this.unmaskedVendor,
     });
   }
 
@@ -1432,7 +1156,6 @@ class SmokeRuntime {
       (this.inFlight && !this.pboReadbackEnabled)
     )
       return false;
-    const computeStarted = performance.now();
     const grid = this.grid;
     const gridWidth = grid.width;
     const gridHeight = grid.height;
@@ -1475,7 +1198,6 @@ class SmokeRuntime {
       }
     }
     this.textPointer.points.length = 0;
-    const sampleStarted = this.perfEnabled ? performance.now() : 0;
     this.draw(
       this.sampleAscii,
       this.sampleTarget,
@@ -1493,15 +1215,11 @@ class SmokeRuntime {
     );
     const pending: PendingGrid = {
       now,
-      computeStarted,
-      sampleStarted,
       sampleWidth: gridWidth,
       sampleHeight: gridHeight,
-      issuedAt: performance.now(),
     };
     const status = this.queueReadback(pending);
     if (status === "pending") return false;
-    pending.issuedAt = performance.now();
     if (this.inFlight) {
       this.completedGrid = pending;
       return false;
@@ -1517,7 +1235,6 @@ class SmokeRuntime {
   private frame(now: number) {
     this.animationFrame = undefined;
     if (this.disposed) return;
-    this.pollGpuTimers();
     this.finishCompletedGrid();
     const completedReadback = this.pollReadback();
     if (completedReadback) {
@@ -1525,9 +1242,6 @@ class SmokeRuntime {
       if (sent && this.visibleAscii) this.initialFrameSent = true;
       this.sendReadyIfNeeded();
     }
-    this.stepsThisFrame = 0;
-    this.sampleGpuThisFrame = this.perfEnabled && this.frameCounter++ % 8 === 0;
-    this.gpuQueryStartedThisFrame = false;
     this.updateCamera(now);
     if (!this.visible) {
       return;
@@ -1541,7 +1255,6 @@ class SmokeRuntime {
         this.step(1 / 60, 1 / 60);
         if (this.activated && !this.reducedMotion) this.trimInkAboveViewport();
         this.startupSteps++;
-        this.stepsThisFrame++;
       }
       this.draw(
         this.display,
@@ -1558,7 +1271,6 @@ class SmokeRuntime {
         },
         { density: this.ink.read },
       );
-      if (this.perfEnabled) this.stepCountTimings.add(this.stepsThisFrame);
       if (
         this.startupSteps >= 8 &&
         (!this.reducedMotion || this.startupSteps >= 72)
@@ -1594,10 +1306,8 @@ class SmokeRuntime {
       while (this.accumulator >= 1 / 60) {
         this.step((1 / 60) * this.state.speed * 1.45, 1 / 60);
         this.accumulator -= 1 / 60;
-        this.stepsThisFrame++;
       }
     } else this.accumulator = 0;
-    if (this.perfEnabled) this.stepCountTimings.add(this.stepsThisFrame);
     this.draw(
       this.display,
       null,
@@ -1629,8 +1339,6 @@ class SmokeRuntime {
     this.disposed = true;
     if (this.animationFrame) cancelFrame(this.animationFrame);
     this.releaseReadbackRing();
-    for (const query of this.pendingGpuQueries) this.context.deleteQuery(query);
-    this.pendingGpuQueries.length = 0;
     for (const target of this.renderTargets) {
       this.context.deleteFramebuffer(target.framebuffer);
       this.context.deleteTexture(target.texture);

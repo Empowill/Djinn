@@ -118,162 +118,6 @@ type SmokeState = {
   paused: boolean;
 };
 
-type SmokePerformanceCleanup = () => void;
-
-// Opt-in browser instrumentation for measuring the real renderer without adding work to ordinary sessions. Open the
-// creation surface with `?djinnPerf=1`; attributes are published on the creation and smoke roots for CUA inspection.
-function mountSmokePerformanceProbe(
-  canvas: HTMLCanvasElement,
-): SmokePerformanceCleanup {
-  if (new URLSearchParams(window.location.search).get("djinnPerf") !== "1")
-    return () => undefined;
-
-  const smoke = canvas.parentElement;
-  const creation = canvas.closest<HTMLElement>(".wish-creation");
-  const targets = [creation, smoke, canvas].filter(
-    (target): target is HTMLElement => target !== null,
-  );
-  for (const target of targets) target.dataset.perfEnabled = "true";
-  const frameIntervals: Array<{ value: number; at: number }> = [];
-  const pendingInputs: number[] = [];
-  const inputLatencies: number[] = [];
-  const longTasks: Array<{ start: number; duration: number }> = [];
-  const windowMs = 10_000;
-  let animationFrame = 0;
-  let lastFrame: number | undefined;
-  let lastPublish = 0;
-  let stopped = false;
-
-  const quantile = (values: number[], percentile: number) => {
-    if (!values.length) return undefined;
-    const ordered = values.slice().sort((left, right) => left - right);
-    return ordered[
-      Math.min(
-        ordered.length - 1,
-        Math.floor((ordered.length - 1) * percentile),
-      )
-    ];
-  };
-  const rounded = (value: number | undefined) =>
-    value === undefined ? undefined : Math.round(value * 100) / 100;
-  const setAttribute = (name: string, value: number | undefined) => {
-    for (const target of targets) {
-      if (value === undefined || !Number.isFinite(value))
-        target.removeAttribute(name);
-      else target.setAttribute(name, String(rounded(value)));
-    }
-  };
-  const prune = (now: number) => {
-    // Intervals are recorded at their ending timestamp in a parallel queue to keep the published window bounded.
-    while (frameIntervals.length && frameIntervals[0].at < now - windowMs)
-      frameIntervals.shift();
-    while (
-      longTasks.length &&
-      longTasks[0].start + longTasks[0].duration < now - windowMs
-    )
-      longTasks.shift();
-    while (inputLatencies.length > 600) inputLatencies.shift();
-  };
-  const publish = (now: number) => {
-    if (now - lastPublish < 250) return;
-    lastPublish = now;
-    const intervals = frameIntervals.map((sample) => sample.value);
-    const median = quantile(intervals, 0.5);
-    const p95 = quantile(intervals, 0.95);
-    const p99 = quantile(intervals, 0.99);
-    const longTaskDuration = longTasks.reduce(
-      (total, task) => total + task.duration,
-      0,
-    );
-    for (const target of targets) {
-      target.dataset.perfEnabled = "true";
-      target.dataset.perfWindowMs = String(windowMs);
-      target.dataset.perfFramesOver25ms = String(
-        intervals.filter((interval) => interval >= 25).length,
-      );
-      target.dataset.perfLongtasks = String(longTasks.length);
-      target.dataset.perfLongtaskMs = String(rounded(longTaskDuration) ?? 0);
-    }
-    setAttribute("data-perf-raf-median", median);
-    setAttribute("data-perf-raf-p95", p95);
-    setAttribute("data-perf-raf-p99", p99);
-    setAttribute("data-perf-fps-median", median ? 1000 / median : undefined);
-    setAttribute("data-perf-input-latency-p95", quantile(inputLatencies, 0.95));
-  };
-  const frame = (now: number) => {
-    if (stopped) return;
-    if (document.hidden) {
-      animationFrame = 0;
-      lastFrame = undefined;
-      pendingInputs.length = 0;
-      return;
-    }
-    if (lastFrame !== undefined && now > lastFrame) {
-      frameIntervals.push({ value: now - lastFrame, at: now });
-      for (const started of pendingInputs.splice(0))
-        inputLatencies.push(now - started);
-    }
-    lastFrame = now;
-    prune(now);
-    publish(now);
-    animationFrame = window.requestAnimationFrame(frame);
-  };
-  const resume = () => {
-    if (stopped || document.hidden || animationFrame) return;
-    lastFrame = undefined;
-    animationFrame = window.requestAnimationFrame(frame);
-  };
-  const onVisibilityChange = () => {
-    if (document.hidden) {
-      if (animationFrame) window.cancelAnimationFrame(animationFrame);
-      animationFrame = 0;
-      lastFrame = undefined;
-      pendingInputs.length = 0;
-    } else resume();
-  };
-  const onInput = () => {
-    if (!document.hidden) pendingInputs.push(performance.now());
-  };
-  for (const type of ["keydown", "input", "pointerdown"])
-    document.addEventListener(type, onInput, true);
-  document.addEventListener("visibilitychange", onVisibilityChange);
-  let observer: PerformanceObserver | undefined;
-  try {
-    observer = new PerformanceObserver((list) => {
-      for (const entry of list.getEntries())
-        longTasks.push({ start: entry.startTime, duration: entry.duration });
-    });
-    observer.observe({ type: "longtask", buffered: true });
-  } catch {
-    observer = undefined;
-  }
-  resume();
-
-  return () => {
-    stopped = true;
-    if (animationFrame) window.cancelAnimationFrame(animationFrame);
-    observer?.disconnect();
-    document.removeEventListener("visibilitychange", onVisibilityChange);
-    for (const type of ["keydown", "input", "pointerdown"])
-      document.removeEventListener(type, onInput, true);
-    for (const target of targets) {
-      for (const name of [
-        "perfEnabled",
-        "perfWindowMs",
-        "perfRafMedian",
-        "perfRafP95",
-        "perfRafP99",
-        "perfFpsMedian",
-        "perfInputLatencyP95",
-        "perfFramesOver25ms",
-        "perfLongtasks",
-        "perfLongtaskMs",
-      ])
-        delete target.dataset[name];
-    }
-  };
-}
-
 const FONT_FAMILY =
   'ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace';
 const ASCII_PALETTE = Array.from(
@@ -325,8 +169,8 @@ function applyAsciiLayout(
     layer.style.transform = "none";
   }
 }
-// Adapted from the user's supplied local generated reference at /Users/clementfauvelle/Documents/Codex/2026-10-09/
-// referenced-chatgpt-conversation-this-is-an/outputs/smoke/{smoke.js,style.css,index.html}; no third-party dependency.
+// The smoke was generated with an AI model, from a generated reference (smoke.js, style.css, index.html): no
+// third-party code or dependency.
 
 type AsciiGrid = {
   texture: WebGLTexture;
@@ -369,15 +213,6 @@ function mountSmoke(
   const stopTheme = onTheme(() => {
     smokePalette = readSmokePalette();
   });
-  if (canvas.dataset.perfEnabled === "true") {
-    const renderer = String(context.getParameter(context.RENDERER));
-    const vendor = String(context.getParameter(context.VENDOR));
-    for (const target of [canvas, canvas.parentElement]) {
-      if (!target) continue;
-      target.dataset.perfRendererWebgl = renderer;
-      target.dataset.perfVendorWebgl = vendor;
-    }
-  }
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   const state: SmokeState = {
     density: 1.23,
@@ -1199,11 +1034,6 @@ function mountSmoke(
     for (const shader of programs) context.deleteProgram(shader.program);
     context.deleteBuffer(buffer);
     context.deleteVertexArray(vertexArray);
-    for (const target of [canvas, canvas.parentElement]) {
-      if (!target) continue;
-      for (const name of ["perfRendererWebgl", "perfVendorWebgl"])
-        delete target.dataset[name];
-    }
   };
 }
 
@@ -1211,40 +1041,6 @@ type SmokeWorkerFrameMessage = {
   type: "frame";
   frame: AsciiGridFrame;
   layoutGeneration: number;
-  computeMs: number;
-  gridMs: number;
-  metrics?: SmokeWorkerMetrics;
-};
-
-type SmokeWorkerTimingSummary = {
-  p50: number;
-  p95: number;
-  p99: number;
-  count: number;
-};
-
-type SmokeWorkerMetrics = {
-  windowMs: number;
-  cpuStep?: SmokeWorkerTimingSummary;
-  stepCount?: SmokeWorkerTimingSummary;
-  sample?: SmokeWorkerTimingSummary;
-  grid?: SmokeWorkerTimingSummary;
-  gpu?: SmokeWorkerTimingSummary;
-  gpuTimer: boolean;
-  textureBytes: number;
-  canvasWidth: number;
-  canvasHeight: number;
-  gridWidth: number;
-  gridHeight: number;
-  gridCells: number;
-  pixelRatio: number;
-  renderer?: string;
-  vendor?: string;
-  unmaskedRenderer?: string;
-  unmaskedVendor?: string;
-  scalarFormat: "r16f" | "rgba16f";
-  velocityFormat: "rg16f" | "rgba16f";
-  readbackMode: "pbo" | "direct";
 };
 
 function isSmokeWorkerFrame(
@@ -1391,8 +1187,6 @@ export function startWishSmokePrewarm() {
       coverage: [1, 1],
       layoutGeneration: 0,
       reducedMotion: false,
-      perfEnabled:
-        new URLSearchParams(window.location.search).get("djinnPerf") === "1",
       mountEpoch: performance.timeOrigin + performance.now(),
       prewarm: true,
       palette: readSmokePalette(),
@@ -1520,128 +1314,7 @@ function mountSmokeWorker(
   workerCanvas.dataset.zoom = String(ASCII_REFERENCE.zoom);
   workerCanvas.dataset.ready = "false";
   workerCanvas.dataset.visible = "false";
-  if (canvas.dataset.perfEnabled === "true")
-    workerCanvas.dataset.perfEnabled = "true";
   container.insertBefore(workerCanvas, canvas);
-  const perfEnabled = canvas.dataset.perfEnabled === "true";
-  const perfTargets = Array.from(
-    new Set(
-      [
-        canvas,
-        workerCanvas,
-        container,
-        canvas.closest<HTMLElement>(".wish-creation"),
-      ].filter((target): target is HTMLElement => target !== null),
-    ),
-  );
-  const domTimings: Array<{ value: number; at: number }> = [];
-  const changedIntervals: Array<{ value: number; at: number }> = [];
-  const changedFrames: number[] = [];
-  const maxDomSamples = 600;
-  const domWindowMs = 10_000;
-  const changedWindowMs = 10_000;
-  let lastChangedFrameAt: number | undefined;
-  const setPerfAttribute = (
-    name: string,
-    value: number | string | undefined,
-  ) => {
-    if (!perfEnabled) return;
-    for (const target of perfTargets) {
-      if (value === undefined || value === "") target.removeAttribute(name);
-      else target.setAttribute(name, String(value));
-    }
-  };
-  const roundedMetric = (value: number) =>
-    String(Math.round(value * 100) / 100);
-  const publishTimingSummary = (
-    name: string,
-    summary: SmokeWorkerTimingSummary | undefined,
-  ) => {
-    if (!summary) return;
-    setPerfAttribute(`data-perf-${name}-p50`, roundedMetric(summary.p50));
-    setPerfAttribute(`data-perf-${name}-p95`, roundedMetric(summary.p95));
-    setPerfAttribute(`data-perf-${name}-p99`, roundedMetric(summary.p99));
-    setPerfAttribute(`data-perf-${name}-count`, summary.count);
-  };
-  const summarizeDomTimings = (): SmokeWorkerTimingSummary | undefined => {
-    const now = performance.now();
-    while (domTimings.length && domTimings[0].at < now - domWindowMs)
-      domTimings.shift();
-    if (!domTimings.length) return undefined;
-    const ordered = domTimings
-      .map((sample) => sample.value)
-      .sort((left, right) => left - right);
-    const quantile = (percentile: number) =>
-      ordered[
-        Math.min(
-          ordered.length - 1,
-          Math.floor((ordered.length - 1) * percentile),
-        )
-      ];
-    return {
-      p50: Math.round(quantile(0.5) * 100) / 100,
-      p95: Math.round(quantile(0.95) * 100) / 100,
-      p99: Math.round(quantile(0.99) * 100) / 100,
-      count: ordered.length,
-    };
-  };
-  const recordChangedFrame = (at: number) => {
-    if (lastChangedFrameAt !== undefined) {
-      changedIntervals.push({ value: at - lastChangedFrameAt, at });
-      if (changedIntervals.length > maxDomSamples) changedIntervals.shift();
-    }
-    lastChangedFrameAt = at;
-    changedFrames.push(at);
-    while (changedFrames.length && changedFrames[0] < at - changedWindowMs)
-      changedFrames.shift();
-    while (
-      changedIntervals.length &&
-      changedIntervals[0].at < at - changedWindowMs
-    )
-      changedIntervals.shift();
-  };
-  const summarizeChangedIntervals = ():
-    SmokeWorkerTimingSummary | undefined => {
-    if (!changedIntervals.length) return undefined;
-    const ordered = changedIntervals
-      .map((sample) => sample.value)
-      .sort((left, right) => left - right);
-    const quantile = (percentile: number) =>
-      ordered[
-        Math.min(
-          ordered.length - 1,
-          Math.floor((ordered.length - 1) * percentile),
-        )
-      ];
-    return {
-      p50: Math.round(quantile(0.5) * 100) / 100,
-      p95: Math.round(quantile(0.95) * 100) / 100,
-      p99: Math.round(quantile(0.99) * 100) / 100,
-      count: changedIntervals.length,
-    };
-  };
-  const publishLayoutMetrics = (next: {
-    width: number;
-    height: number;
-    gridWidth: number;
-    gridHeight: number;
-    canvasWidth: number;
-    canvasHeight: number;
-    backgroundPixelRatio: number;
-  }) => {
-    if (!perfEnabled) return;
-    setPerfAttribute("data-perf-canvas-css-width", roundedMetric(next.width));
-    setPerfAttribute("data-perf-canvas-css-height", roundedMetric(next.height));
-    setPerfAttribute("data-perf-canvas-pixel-width", next.canvasWidth);
-    setPerfAttribute("data-perf-canvas-pixel-height", next.canvasHeight);
-    setPerfAttribute("data-perf-grid-width", next.gridWidth);
-    setPerfAttribute("data-perf-grid-height", next.gridHeight);
-    setPerfAttribute("data-perf-grid-cells", next.gridWidth * next.gridHeight);
-    setPerfAttribute(
-      "data-perf-pixel-ratio",
-      roundedMetric(next.backgroundPixelRatio),
-    );
-  };
   let offscreen: OffscreenCanvas | undefined;
   if (!prewarm) {
     try {
@@ -1734,46 +1407,6 @@ function mountSmokeWorker(
     appliedSequence = 0;
     resetRows(next.gridWidth, next.gridHeight);
     applyAsciiLayout(asciiOutput, layers, next);
-    publishLayoutMetrics(next);
-  };
-  const publishMetric = (name: string, value: number) => {
-    if (!perfEnabled) return;
-    const metric = roundedMetric(value);
-    const kebabName = name.replace(
-      /[A-Z]/g,
-      (letter) => `-${letter.toLowerCase()}`,
-    );
-    setPerfAttribute(`data-perf-worker${kebabName}`, metric);
-  };
-  const publishWorkerMetrics = (metrics: SmokeWorkerMetrics | undefined) => {
-    if (!perfEnabled || !metrics) return;
-    setPerfAttribute("data-perf-timing-window-ms", metrics.windowMs);
-    setPerfAttribute(
-      "data-perf-gpu-timer",
-      metrics.gpuTimer ? "supported" : "unavailable",
-    );
-    setPerfAttribute("data-perf-gl-texture-bytes", metrics.textureBytes);
-    setPerfAttribute("data-perf-renderer", metrics.renderer);
-    setPerfAttribute("data-perf-vendor", metrics.vendor);
-    setPerfAttribute("data-perf-gl-scalar-format", metrics.scalarFormat);
-    setPerfAttribute("data-perf-gl-velocity-format", metrics.velocityFormat);
-    setPerfAttribute("data-perf-gl-readback-mode", metrics.readbackMode);
-    setPerfAttribute("data-perf-renderer-unmasked", metrics.unmaskedRenderer);
-    setPerfAttribute("data-perf-vendor-unmasked", metrics.unmaskedVendor);
-    setPerfAttribute("data-perf-canvas-pixel-width", metrics.canvasWidth);
-    setPerfAttribute("data-perf-canvas-pixel-height", metrics.canvasHeight);
-    setPerfAttribute("data-perf-grid-width", metrics.gridWidth);
-    setPerfAttribute("data-perf-grid-height", metrics.gridHeight);
-    setPerfAttribute("data-perf-grid-cells", metrics.gridCells);
-    setPerfAttribute(
-      "data-perf-pixel-ratio",
-      roundedMetric(metrics.pixelRatio),
-    );
-    publishTimingSummary("worker-cpu-step", metrics.cpuStep);
-    publishTimingSummary("worker-steps", metrics.stepCount);
-    publishTimingSummary("worker-sample", metrics.sample);
-    publishTimingSummary("worker-grid", metrics.grid);
-    publishTimingSummary("worker-gpu", metrics.gpu);
   };
   const publishReadyIfVisible = () => {
     if (!ready || canvas.dataset.visible !== "true") return;
@@ -1785,8 +1418,6 @@ function mountSmokeWorker(
       worker.postMessage({ type: "ack", sequence: message.frame.sequence });
       return;
     }
-    const started = perfEnabled ? performance.now() : 0;
-    let mutatedTextNodes = 0;
     const frame = message.frame;
     const expectedLayout = pendingLayout?.layout ?? activeLayout;
     const expectedGeneration =
@@ -1822,8 +1453,6 @@ function mountSmokeWorker(
       for (let index = 0; index < layers.length; index++) {
         installLayer(index, frame.fullStrings[index] || "");
       }
-      mutatedTextNodes =
-        layers.length * Math.ceil(gridWidth / textChunkWidth) * gridHeight;
     } else {
       if (frame.baseSequence !== appliedSequence) {
         worker.postMessage({ type: "request-full" });
@@ -1849,10 +1478,7 @@ function mountSmokeWorker(
               current.slice(0, localStart) +
               patch.text.slice(sourceOffset, sourceOffset + amount) +
               current.slice(localStart + amount);
-            if (next !== chunk.data) {
-              chunk.data = next;
-              mutatedTextNodes++;
-            }
+            if (next !== chunk.data) chunk.data = next;
           }
           cursor += amount;
           sourceOffset += amount;
@@ -1864,28 +1490,6 @@ function mountSmokeWorker(
     canvas.dataset.visible = "true";
     workerCanvas.dataset.visible = "true";
     publishReadyIfVisible();
-    if (perfEnabled) {
-      const appliedAt = performance.now();
-      const domElapsed = appliedAt - started;
-      publishMetric("DomMs", domElapsed);
-      publishMetric("ComputeMs", message.computeMs);
-      publishMetric("GridMs", message.gridMs);
-      domTimings.push({ value: domElapsed, at: appliedAt });
-      if (domTimings.length > maxDomSamples) domTimings.shift();
-      setPerfAttribute("data-perf-main-dom-patches", frame.patches.length);
-      setPerfAttribute("data-perf-main-dom-text-mutations", mutatedTextNodes);
-      recordChangedFrame(appliedAt);
-      setPerfAttribute(
-        "data-perf-main-dom-changed-count",
-        changedFrames.length,
-      );
-      publishTimingSummary("main-dom", summarizeDomTimings());
-      publishTimingSummary(
-        "main-dom-changed-interval",
-        summarizeChangedIntervals(),
-      );
-      publishWorkerMetrics(message.metrics);
-    }
   };
   const startFallback = (error?: unknown) => {
     if (stopped || fallbackCleanup) return;
@@ -1936,10 +1540,6 @@ function mountSmokeWorker(
       | {
           type?: string;
           startupSteps?: number;
-          renderer?: string;
-          vendor?: string;
-          unmaskedRenderer?: string;
-          unmaskedVendor?: string;
         }
       | SmokeWorkerFrameMessage;
     if (message?.type === "activated" && prewarm) {
@@ -1959,18 +1559,6 @@ function mountSmokeWorker(
       if (!message.startupSteps) return;
       ready = true;
       publishReadyIfVisible();
-      if (message.renderer) {
-        canvas.dataset.perfRendererWebgl = message.renderer;
-        workerCanvas.dataset.perfRendererWebgl = message.renderer;
-      }
-      if (message.vendor) {
-        canvas.dataset.perfVendorWebgl = message.vendor;
-        workerCanvas.dataset.perfVendorWebgl = message.vendor;
-      }
-      setPerfAttribute("data-perf-renderer", message.renderer);
-      setPerfAttribute("data-perf-vendor", message.vendor);
-      setPerfAttribute("data-perf-renderer-unmasked", message.unmaskedRenderer);
-      setPerfAttribute("data-perf-vendor-unmasked", message.unmaskedVendor);
       return;
     }
     if (message?.type === "error") {
@@ -2133,7 +1721,6 @@ function mountSmokeWorker(
         coverage: initial.coverage,
         layoutGeneration,
         reducedMotion: reducedMotion.matches,
-        perfEnabled,
         mountEpoch,
         prewarm: false,
         palette: smokePalette,
@@ -2173,70 +1760,6 @@ function mountSmokeWorker(
     canvas.removeAttribute("aria-hidden");
     canvas.dataset.visible = "false";
     canvas.dataset.ready = "false";
-    for (const name of [
-      "perfWorkerDomMs",
-      "perfWorkerComputeMs",
-      "perfWorkerGridMs",
-      "perfRendererWebgl",
-      "perfVendorWebgl",
-    ])
-      delete canvas.dataset[name];
-    for (const target of perfTargets)
-      for (const name of [
-        "data-perf-worker-dom-ms",
-        "data-perf-worker-compute-ms",
-        "data-perf-worker-grid-ms",
-        "data-perf-main-dom-patches",
-        "data-perf-main-dom-text-mutations",
-        "data-perf-main-dom-changed-count",
-        "data-perf-timing-window-ms",
-        "data-perf-gpu-timer",
-        "data-perf-gl-texture-bytes",
-        "data-perf-gl-scalar-format",
-        "data-perf-gl-velocity-format",
-        "data-perf-gl-readback-mode",
-        "data-perf-renderer",
-        "data-perf-vendor",
-        "data-perf-renderer-unmasked",
-        "data-perf-vendor-unmasked",
-        "data-perf-canvas-css-width",
-        "data-perf-canvas-css-height",
-        "data-perf-canvas-pixel-width",
-        "data-perf-canvas-pixel-height",
-        "data-perf-grid-width",
-        "data-perf-grid-height",
-        "data-perf-grid-cells",
-        "data-perf-pixel-ratio",
-        "data-perf-worker-cpu-step-p50",
-        "data-perf-worker-cpu-step-p95",
-        "data-perf-worker-cpu-step-p99",
-        "data-perf-worker-cpu-step-count",
-        "data-perf-worker-steps-p50",
-        "data-perf-worker-steps-p95",
-        "data-perf-worker-steps-p99",
-        "data-perf-worker-steps-count",
-        "data-perf-worker-sample-p50",
-        "data-perf-worker-sample-p95",
-        "data-perf-worker-sample-p99",
-        "data-perf-worker-sample-count",
-        "data-perf-worker-grid-p50",
-        "data-perf-worker-grid-p95",
-        "data-perf-worker-grid-p99",
-        "data-perf-worker-grid-count",
-        "data-perf-worker-gpu-p50",
-        "data-perf-worker-gpu-p95",
-        "data-perf-worker-gpu-p99",
-        "data-perf-worker-gpu-count",
-        "data-perf-main-dom-p50",
-        "data-perf-main-dom-p95",
-        "data-perf-main-dom-p99",
-        "data-perf-main-dom-count",
-        "data-perf-main-dom-changed-interval-p50",
-        "data-perf-main-dom-changed-interval-p95",
-        "data-perf-main-dom-changed-interval-p99",
-        "data-perf-main-dom-changed-interval-count",
-      ])
-        target.removeAttribute(name);
   };
 }
 
@@ -2248,40 +1771,23 @@ export function WishSmoke() {
     const canvasElement = canvas.current;
     const asciiElement = asciiOutput.current;
     if (!canvasElement || !asciiElement) return undefined;
-    const diagnostics = new URLSearchParams(window.location.search);
-    const diagnosticsEnabled = diagnostics.get("djinnPerf") === "1";
-    const smokeEnabled =
-      !diagnosticsEnabled || diagnostics.get("djinnPerfSmoke") !== "0";
     const mountEpoch = performance.timeOrigin + performance.now();
-    const performanceCleanup = mountSmokePerformanceProbe(canvasElement);
-    if (diagnosticsEnabled) {
-      const mode = smokeEnabled ? "enabled" : "disabled";
-      canvasElement.dataset.perfSmokeMode = mode;
-      canvasElement.parentElement?.setAttribute("data-perf-smoke-mode", mode);
-    }
     let cleanup: (() => void) | undefined;
-    if (smokeEnabled) {
+    try {
+      cleanup = mountSmokeWorker(canvasElement, asciiElement, mountEpoch);
+    } catch (error) {
       try {
-        cleanup = mountSmokeWorker(canvasElement, asciiElement, mountEpoch);
-      } catch (error) {
-        try {
-          cleanup = mountSmoke(canvasElement, asciiElement);
-        } catch (fallbackError) {
-          canvasElement.dataset.error =
-            fallbackError instanceof Error
-              ? fallbackError.message
-              : error instanceof Error
-                ? error.message
-                : "smoke";
-        }
+        cleanup = mountSmoke(canvasElement, asciiElement);
+      } catch (fallbackError) {
+        canvasElement.dataset.error =
+          fallbackError instanceof Error
+            ? fallbackError.message
+            : error instanceof Error
+              ? error.message
+              : "smoke";
       }
     }
-    return () => {
-      cleanup?.();
-      performanceCleanup();
-      delete canvasElement.dataset.perfSmokeMode;
-      canvasElement.parentElement?.removeAttribute("data-perf-smoke-mode");
-    };
+    return () => cleanup?.();
   }, []);
 
   return (
