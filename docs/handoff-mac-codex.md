@@ -127,7 +127,7 @@ Each check below comes as its port lands on `feat/clement-port`, then on `feat/w
 
 The developer has no Mac: the checks below go to you. Each runs on `feat/clement-port`, where your ports are merged
 (`git checkout feat/clement-port && git pull && npm ci`); its `grep` prints a line once the port is there. Report each
-one as **pass** or **fail** with its number (Q05, Q06, Q07) and what you saw, as in [section 7](#7-how-to-report).
+one as **pass** or **fail** with its number (Q05, Q06, Q07, Q234) and what you saw, as in [section 7](#7-how-to-report).
 
 ### Q05: a question asked from the command line shows live (P1, your `70ca727`)
 
@@ -177,6 +177,38 @@ starts, install it while Djinn runs (`curl -fsSL https://claude.ai/install.sh | 
 it is found without restarting Djinn. If one fails, the Finder shows no stderr: quit Djinn, run
 `env -i HOME=$HOME bin/app/Djinn.app/Contents/MacOS/djinn up </dev/null` in a Terminal (an environment as bare as
 launchd's), and send the line that starts "djinn: the PATH of the login shell: …".
+
+### Q234: Djinn logs what it does, and a stop that hangs dumps then exits (W511, on a Mac and on Windows)
+
+**Proves** `internal/logx` where Linux cannot: Windows renames only a closed file (the log rolls over in the process),
+has no `SIGUSR2` (`djinn debug dump` falls back to `logs/dump.request`), and a stop must end on both systems. W511 is on
+`feat/wails-go`; `feat/clement-port` has it once its grep prints a line. Run it on the Mac, then on Windows in
+PowerShell (`$env:DJINN_HOME = "$env:TEMP\djinn-q234"`, `$L = "$env:DJINN_HOME\logs"`, `.\bin\djinn.exe`, `dir`).
+
+```sh
+grep -n 'HungExit = 3' internal/logx/shutdown.go
+go tool task build && export DJINN_HOME=$(mktemp -d) L=$DJINN_HOME/logs && ./bin/djinn
+```
+
+**Look at**, one line per check, Djinn running unless said (commands from a second terminal, same `DJINN_HOME` and `L`):
+1. **The log fills**: add a project and start a task; `grep -E 'msg=(call|command|"process started")' $L/djinn.log`
+   shows `msg=call method=/…` lines, `msg=command argv="git …" dir=… took=… exit=0`, and `msg="process started"`.
+2. **Rotation at 10 MB keeps 4**: quit Djinn, `mkfile 10m $L/djinn.log` (Windows:
+   `$f=[IO.File]::Open("$env:DJINN_HOME\logs\djinn.log",'OpenOrCreate'); $f.SetLength(10MB); $f.Close()`), start and
+   quit Djinn; five times over, `ls -l $L` shows `djinn.log` and `djinn.log.1` to `djinn.log.4` (10 MB each), no `.5`.
+3. **A dump through the server**: `./bin/djinn debug dump` prints `$L/goroutines-<time>.txt`, which starts
+   `djinn: goroutines of pid …`; `djinn.log` gets `msg="goroutines dumped"`.
+4. **A dump through `logs/dump.request`** (a server that does not answer; the only way on Windows): `./bin/djinn
+   debug dump --addr 127.0.0.1:1` says `the server does not answer (…): asking through dump.request`, then prints a
+   new `goroutines-<time>.txt` within a few seconds whose first line ends `asked by dump.request`; no `dump.request`
+   is left.
+5. **Quitting**: quit from the window; the last lines of `djinn.log` are `msg="shutdown begins"`, a
+   `msg="shutdown step ended" step=…` per step, then `msg="shutdown ended"`.
+6. **A stop that hangs** (no way to provoke one by hand): `go tool task test-pkg -- -count=1 -v -run
+   'TestShutdownDumpsThenExits|TestRotating|TestDebugDump|TestDumpGoroutinesOnRequestFile' ./internal/logx ./cmd/djinn`
+   ends `PASS` for both packages. If a real quit ever takes over 10 s: `msg="shutdown is slow"` and a
+   `goroutines-<time>.txt` at 10 s, `msg="shutdown hangs: exiting" … code=3` at 30 s, and `echo $?` (Windows:
+   `$LASTEXITCODE`) prints `3`; send both files.
 
 ## 6. New since PR #1 worth trying in passing
 
