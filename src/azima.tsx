@@ -28,6 +28,7 @@ import {
 import {
   compareCodes,
   isAzima,
+  isTaskMergingOrFailed,
   type MergeNest,
   mergeNest,
   settledTask,
@@ -35,6 +36,7 @@ import {
 import {
   azimaBranchName,
   azimaTime,
+  isTaskMerging,
   syncDescription,
   type Tone,
   useNow,
@@ -222,16 +224,21 @@ export const AzimaCard = memo(function AzimaCard({
   const total =
     azima.azima?.parts ??
     parts.filter((x) => x.status !== TaskStatus.CANCELLED || isAzima(x)).length;
+  // Work that merges runs, not done, as the server counts it (internal/plan azimas).
   const done =
     azima.azima?.partsDone ??
     parts.filter((x) =>
-      isAzima(x) ? azimaFinished(x) : x.status === TaskStatus.DONE,
+      isAzima(x)
+        ? azimaFinished(x)
+        : x.status === TaskStatus.DONE && !isTaskMergingOrFailed(x),
     ).length;
   const running =
     azima.azima?.partsRunning ??
     parts.filter(
       (x) =>
-        x.status === TaskStatus.RUNNING || x.status === TaskStatus.RESUMING,
+        x.status === TaskStatus.RUNNING ||
+        x.status === TaskStatus.RESUMING ||
+        isTaskMerging(x),
     ).length;
   const waiting = Math.max(0, total - done - running);
   const isRunning =

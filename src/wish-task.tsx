@@ -170,6 +170,26 @@ export function compactGreenWait(reason?: string): string {
   return idx > 0 ? reason.slice(0, idx) : reason;
 }
 
+// WaitReason is why a task waits, as Djinn says it; the task it waits for ("waits for W8 to be committed") is a link
+// to its card, which stays in sight until its work is committed (settledTask).
+function WaitReason({
+  reason,
+  codes,
+}: {
+  reason: string;
+  codes?: ReadonlyMap<string, string>;
+}) {
+  const m = /^(.*?waits for )([A-Za-z]+\d+)\b(.*)$/s.exec(reason);
+  if (!m) return <>{reason}</>;
+  return (
+    <>
+      {m[1]}
+      <TaskLink code={m[2]} codes={codes} />
+      {m[3]}
+    </>
+  );
+}
+
 export const WishTask = memo(function WishTask({
   task,
   project,
@@ -402,8 +422,10 @@ export const WishTask = memo(function WishTask({
             <span title={task.waitReason}>
               {compactGreenWait(task.waitReason)}
             </span>
+          ) : task.waitReason ? (
+            <WaitReason reason={task.waitReason} codes={codes} />
           ) : (
-            task.waitReason || (watcher && task.lastLine)
+            watcher && task.lastLine
           )}
           {after.length > 0 && (
             <span className="wish-task-after">
