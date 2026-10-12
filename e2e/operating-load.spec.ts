@@ -109,8 +109,10 @@ test.describe("operating load slider", () => {
       page.locator(".app-statusbar").getByText("Live"),
     ).toBeVisible();
 
+    // The gauge shows once the page is chosen, the wishes read (wish-app.tsx): a key reaches the one focused here.
     const range = page.locator(".operating-load-input");
     await range.focus();
+    await expect(range).toBeFocused();
 
     // Medium is value 2. Step up to high (value 3)
     await page.keyboard.press("ArrowRight");
@@ -143,6 +145,43 @@ test.describe("operating load slider", () => {
     await expect.poll(getNotch).toBe("overclock");
 
     expect(errors).toEqual([]);
+  });
+
+  // W496: the window showed the home page, its gauge included, until the wishes were read, then the page it opens on
+  // with a gauge of its own: a key pressed on the first one was lost (CI, after the specs that leave wishes active).
+  test("the gauge shows once, in the page the window opens on", async ({
+    page,
+  }) => {
+    const wishId = JSON.parse(
+      djinn("wish", "make", "Gauge shows once", "--json"),
+    ).wish.id as string;
+    try {
+      // The window opens on this wish: the show of the last minute (UiService.Watch) is this one, not an earlier spec's.
+      djinn("open", `djinn://wish/${wishId}`);
+      await page.addInitScript(() => {
+        const seen: Element[] = [];
+        Object.defineProperty(window, "__djinnGauges", { value: seen });
+        new MutationObserver(() => {
+          for (const gauge of document.querySelectorAll(".operating-load"))
+            if (!seen.includes(gauge)) seen.push(gauge);
+        }).observe(document, { childList: true, subtree: true });
+      });
+      await page.goto(djinnURL());
+      await expect(
+        page.locator(".page-header .breadcrumbs", {
+          hasText: "Gauge shows once",
+        }),
+      ).toBeVisible();
+      expect(
+        await page.evaluate(() => {
+          const seen = (window as unknown as { __djinnGauges: Element[] })
+            .__djinnGauges;
+          return seen.map((gauge) => gauge.isConnected);
+        }),
+      ).toEqual([true]);
+    } finally {
+      djinn("wish", "delete", wishId);
+    }
   });
 
   test("clicking a notch button sets the load notch", async ({ page }) => {
