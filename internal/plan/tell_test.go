@@ -3,6 +3,7 @@ package plan
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -432,5 +433,98 @@ func TestTellNeverTypesIntoAShell(t *testing.T) {
 	}
 	if want := []string{LeadTerminal + ": Djinn: hello"}; len(leads.opened) != 0 || !slices.Equal(leads.said, want) {
 		t.Errorf("tell a running lead about a paused wish: opened %q, said %q, want %q", leads.opened, leads.said, want)
+	}
+}
+
+// TestOneAnswerReachesTheLeadOnce replays incident Q253: the window kept the card of an answered question open, so
+// the developer sent the same answer again and again (37 times, its note grown once), and the lead's digest held one
+// event for each. One answer is one event: the same answer again changes nothing, a new note takes the place of the
+// old one in the event that waits, or comes in one event once the lead read the answer; another choice is a change.
+func TestOneAnswerReachesTheLeadOnce(t *testing.T) {
+	ctx := t.Context()
+	leads := &fakeLeads{}
+	hooks := 0 // How many times the harness acted on an answer.
+	c := serve(t, WithLeads(leads), WithAnswered(func(context.Context, *planv1.Question) string { hooks++; return "" }))
+	project, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Name the page", ProjectIds: []string{project.Msg.GetProject().GetId()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := made.Msg.GetWish().GetId()
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
+		t.Fatal(err)
+	}
+	q := c.ask(t, id, "Brazier", "Hourglass")
+	digest := func() string {
+		t.Helper()
+		res, err := c.lead.Watch(ctx, connect.NewRequest(&planv1.LeadServiceWatchRequest{Timeout: durationpb.New(0)}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetText()
+	}
+	answered := func() *planv1.Question {
+		t.Helper()
+		got, err := store.Get[*planv1.Question](ctx, c.store, q.GetId())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	// The incident: an answer, the same with a longer note, then 35 more times the same.
+	c.answer(t, q, planv1.Choice_CHOICE_B, "The hourglass is fine.")
+	first := answered().GetAnswer().GetCreateTime().AsTime()
+	note := "The hourglass is fine. It centralises the performance worries in this page."
+	for range 36 {
+		c.answer(t, q, planv1.Choice_CHOICE_B, note)
+	}
+	if got := answered(); got.GetAnswer().GetNote() != note || !got.GetAnswer().GetCreateTime().AsTime().Equal(first) {
+		t.Errorf("answer = %v, want the first one with the new note", got.GetAnswer())
+	}
+	want := []string{LeadTerminal + ": " + AnswerLine(answered(), "")}
+	if got := told(t, c.store); !slices.Equal(got, want) {
+		t.Errorf("queued\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if d := digest(); strings.Count(d, "Q01 answer:") != 1 || !strings.Contains(d, "1 event for the lead") {
+		t.Errorf("digest:\n%s\nwant one answer event", d)
+	}
+	if hooks != 1 {
+		t.Errorf("the harness acted %d times on one answer", hooks)
+	}
+
+	// The lead read it: then 15 edits of the note in a row are one event, with the last note.
+	take(t, c.store)
+	for i := range 15 {
+		c.answer(t, q, planv1.Choice_CHOICE_B, fmt.Sprintf("%s Edit %d.", note, i+1))
+	}
+	want = []string{LeadTerminal + ": " + NoteEditedLine(answered())}
+	if got := told(t, c.store); !slices.Equal(got, want) || !strings.Contains(got[0], "Edit 15.") ||
+		!strings.Contains(got[0], `the answer stays B — "Hourglass"`) {
+		t.Errorf("after the lead read it, queued\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if hooks != 1 {
+		t.Errorf("a note edit made the harness act again: %d", hooks)
+	}
+
+	// The same answer once more, after the lead read everything: nothing.
+	take(t, c.store)
+	c.answer(t, q, planv1.Choice_CHOICE_B, fmt.Sprintf("%s Edit 15.", note))
+	if got := told(t, c.store); len(got) != 0 {
+		t.Errorf("the same answer again queued %q", got)
+	}
+
+	// Another choice is a change, and the line says so; the harness acts on it.
+	c.answer(t, q, planv1.Choice_CHOICE_A, "")
+	if got := told(t, c.store); len(got) != 1 || !strings.Contains(got[0], `Q01 answer changed from B to A — "Brazier".`) {
+		t.Errorf("another choice queued %q", got)
+	}
+	if hooks != 2 {
+		t.Errorf("another choice: the harness acted %d times, want 2", hooks)
 	}
 }

@@ -171,6 +171,9 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 		o.enlight = append(o.enlight, wishes.Enlightened) // The lead learns each request to investigate, after the harness.
 	}
 	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle, Workers: o.workers}
+	if o.leads != nil {
+		questions.NoteEdited = wishes.NoteEdited // The lead learns an answer's new note, once.
+	}
 	p, h = planv1connect.NewQuestionServiceHandler(questions, opt)
 	out[p] = h
 	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
@@ -856,6 +859,9 @@ type Questions struct {
 	Answered []AnswerHook
 	// Told, when set, is called next, with what they did.
 	Told Told
+	// NoteEdited, when set, is called with a question whose answer kept its choice and changed its note only, with
+	// the note it had: the hooks do not run again, the lead hears of the note.
+	NoteEdited func(ctx context.Context, q *planv1.Question, was string)
 	// Enlightened are called with a question once a request to investigate it is stored, with its note.
 	Enlightened []func(ctx context.Context, q *planv1.Question, note string)
 	// Settle, when set, acts on an answer in the transaction that stores it, and returns what follows once it is
@@ -869,11 +875,13 @@ type Questions struct {
 // wish's lead: "Djinn started W12: …"; "" when the answer is the lead's to act on.
 type AnswerHook func(ctx context.Context, q *planv1.Question) string
 
-// Told tells the wish's lead that q was answered, did saying what the hooks did with the answer.
-type Told func(ctx context.Context, q *planv1.Question, did string)
+// Told tells the wish's lead that q was answered, did saying what the hooks did with the answer; was is the answer it
+// replaced, when the developer changed their choice, or nil.
+type Told func(ctx context.Context, q *planv1.Question, was *planv1.Answer, did string)
 
-// afterAnswer calls hooks with q, its answer stored, then told, when set, with what they did.
-func afterAnswer(ctx context.Context, hooks []AnswerHook, told Told, q *planv1.Question) {
+// afterAnswer calls hooks with q, its answer stored, then told, when set, with what they did; was is the answer it
+// replaced, or nil.
+func afterAnswer(ctx context.Context, hooks []AnswerHook, told Told, q *planv1.Question, was *planv1.Answer) {
 	var did []string
 	for _, f := range hooks {
 		if d := f(ctx, proto.CloneOf(q)); d != "" {
@@ -881,7 +889,10 @@ func afterAnswer(ctx context.Context, hooks []AnswerHook, told Told, q *planv1.Q
 		}
 	}
 	if told != nil {
-		told(ctx, proto.CloneOf(q), strings.Join(did, "; "))
+		if was != nil {
+			was = proto.CloneOf(was)
+		}
+		told(ctx, proto.CloneOf(q), was, strings.Join(did, "; "))
 	}
 }
 
@@ -983,6 +994,10 @@ func (q *Questions) Answer(
 ) (*connect.Response[planv1.QuestionServiceAnswerResponse], error) {
 	var question *planv1.Question
 	var then func(context.Context)
+	// was is the answer this one replaces; same, an answer it repeats, changes nothing; edited, one that changes its
+	// note only (incident Q253: a window that kept the card open sent the same answer 37 times, the lead got each).
+	var was *planv1.Answer
+	var same, edited bool
 	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
 		if question, err = find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId()); err != nil {
@@ -1019,6 +1034,17 @@ func (q *Questions) Answer(
 				actor = planv1.Closer_CLOSER_DEVELOPER
 			}
 		}
+		was = question.GetAnswer()
+		if was.GetChoice() == choice && was.GetActor() == actor && was.GetTaskId() == taskID {
+			if was.GetNote() == req.Msg.GetNote() {
+				same = true
+				return errSameAnswer // Nothing to store, not even the command.
+			}
+			edited = true
+			question.Answer = proto.CloneOf(was)
+			question.Answer.Note = req.Msg.GetNote()
+			return tx.Put(question)
+		}
 		question.Answer = &planv1.Answer{
 			Choice:     choice,
 			Note:       req.Msg.GetNote(),
@@ -1031,15 +1057,26 @@ func (q *Questions) Answer(
 		}
 		return tx.Put(question)
 	})
-	if err != nil {
+	switch {
+	case same:
+		return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
+	case err != nil:
 		return nil, err
+	case edited:
+		if q.NoteEdited != nil {
+			q.NoteEdited(ctx, proto.CloneOf(question), was.GetNote())
+		}
+		return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
 	}
 	if then != nil {
 		then(ctx)
 	}
-	afterAnswer(ctx, q.Answered, q.Told, question)
+	afterAnswer(ctx, q.Answered, q.Told, question, was)
 	return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
 }
+
+// errSameAnswer rolls back an answer that repeats the one a question has.
+var errSameAnswer = errors.New("the question has this answer already")
 
 // find resolves a reference to a question: its id, or its code within wishID, or within every wish when the code
 // is used by one only.
