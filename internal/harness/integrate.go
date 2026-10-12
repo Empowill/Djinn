@@ -1103,7 +1103,7 @@ func (h *Harness) mergeAndTest(
 		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, why,
 			&planv1.IntegrationFailure{Base: sha, Command: command, Output: tail(out), TaskIds: ids(batch)})
 	}
-	command, why, out, stopped := h.commitChecks(ctx, wish, project, settings, batch[0].GetId(), sha, wt, dir, func(c *planv1.ProjectCheck) {
+	command, why, out, stopped := h.commitChecks(ctx, wish, project, settings, batch, sha, wt, dir, func(c *planv1.ProjectCheck) {
 		h.integrationStep(ctx, batch[0], fmt.Sprintf("integration: checking %s: %s (%s)", codes(batch), c.GetName(), c.GetCommand()))
 	})
 	switch {
@@ -1116,13 +1116,19 @@ func (h *Harness) mergeAndTest(
 }
 
 // commitChecks makes the integration worktree wt ready with the setup, then runs the project's commit checks on sha
-// there, in dir, for the task taskID ("" for none), each through its gate, saying each with step before it runs. It
+// there, in dir, for the tasks of batch (none: for no task), each through its gate, saying each with step before it
+// runs. A check a task's worker passed on sha's tree is not run again, said in that task's events (passedOnTree). It
 // returns the command that failed, why, and the end of its output; or why it stopped, when djinn up stopped.
 func (h *Harness) commitChecks(
-	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, taskID, sha, wt, dir string,
-	step func(*planv1.ProjectCheck),
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, batch []*planv1.Task,
+	sha, wt, dir string, step func(*planv1.ProjectCheck),
 ) (command, why, out, stopped string) {
 	checks := settings.ChecksAt(planv1.CheckWhen_CHECK_WHEN_COMMIT)
+	taskID := ""
+	if len(batch) > 0 {
+		taskID = batch[0].GetId()
+		checks = h.passedOnTree(ctx, project.GetId(), checks, batch, wt, sha)
+	}
 	if len(checks) == 0 {
 		return "", "", "", ""
 	}

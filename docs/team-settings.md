@@ -176,7 +176,10 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
 ```
 
 - **Commit checks** run on the merge of each task's work: red, the merge fails as a conflict does, and a correction
-  worker starts (below).
+  worker starts (below). A check whose command the task's worker ran last through `djinn gate run`, and passed, on the
+  very tree of the merge (its uncommitted changes and files not tracked included, the same once it ended) does not run
+  again: the task's events say `commit checks: lint passed by the worker on this tree, not run again`. Any change
+  after it, a merge that brings other work, or a failed run, and the check runs.
 - **Push checks** run on the branch's tip when a push is due. A check that passed as a commit check on that very commit
   does not run again. Red, the push is **held**: the tasks' events and the wish's head say why. Red twice in a row, or
   at once when no work of the wish is left to commit in the project, Djinn starts a correction worker (within

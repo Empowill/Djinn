@@ -361,7 +361,7 @@ func (h *Harness) mergeAndCheckMain(
 	if err != nil {
 		return "", nil, err.Error()
 	}
-	command, why, out, stopped := h.commitChecks(ctx, wish, project, settings, "", sha, wt, dir, func(*planv1.ProjectCheck) {})
+	command, why, out, stopped := h.commitChecks(ctx, wish, project, settings, nil, sha, wt, dir, func(*planv1.ProjectCheck) {})
 	switch {
 	case stopped != "":
 		return "", nil, stopped

@@ -1311,7 +1311,12 @@ type CommandRun struct {
 	// Duration the gate was held, in seconds.
 	HeldSeconds float64 `protobuf:"fixed64,7,opt,name=held_seconds,json=heldSeconds,proto3" json:"held_seconds,omitempty"`
 	// Gate name.
-	Gate          string `protobuf:"bytes,8,opt,name=gate,proto3" json:"gate,omitempty"`
+	Gate string `protobuf:"bytes,8,opt,name=gate,proto3" json:"gate,omitempty"`
+	// Task that ran it; empty when none did.
+	TaskId string `protobuf:"bytes,9,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// Git tree the command ran on, its worktree's changes and files not tracked included: the same before and after it
+	// ran. Empty when its folder is not in a git worktree, or the worktree changed while it ran.
+	Tree          string `protobuf:"bytes,10,opt,name=tree,proto3" json:"tree,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1398,6 +1403,20 @@ func (x *CommandRun) GetHeldSeconds() float64 {
 func (x *CommandRun) GetGate() string {
 	if x != nil {
 		return x.Gate
+	}
+	return ""
+}
+
+func (x *CommandRun) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *CommandRun) GetTree() string {
+	if x != nil {
+		return x.Tree
 	}
 	return ""
 }
@@ -2089,7 +2108,11 @@ type CommandServiceRecordRequest struct {
 	// Duration the gate was held, in seconds.
 	HeldSeconds float64 `protobuf:"fixed64,9,opt,name=held_seconds,json=heldSeconds,proto3" json:"held_seconds,omitempty"`
 	// Gate that was held.
-	Gate          string `protobuf:"bytes,10,opt,name=gate,proto3" json:"gate,omitempty"`
+	Gate string `protobuf:"bytes,10,opt,name=gate,proto3" json:"gate,omitempty"`
+	// Git tree the command ran on, its worktree's changes and files not tracked included: the same before and after it
+	// ran. Empty when its folder is not in a git worktree, or the worktree changed while it ran. Djinn skips a commit
+	// check its task's worker passed on the tree it is about to commit.
+	Tree          string `protobuf:"bytes,11,opt,name=tree,proto3" json:"tree,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2190,6 +2213,13 @@ func (x *CommandServiceRecordRequest) GetHeldSeconds() float64 {
 func (x *CommandServiceRecordRequest) GetGate() string {
 	if x != nil {
 		return x.Gate
+	}
+	return ""
+}
+
+func (x *CommandServiceRecordRequest) GetTree() string {
+	if x != nil {
+		return x.Tree
 	}
 	return ""
 }
@@ -2346,7 +2376,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"asked_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\taskedTime\x129\n" +
 	"\n" +
 	"grant_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tgrantTime\x12=\n" +
-	"\frelease_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vreleaseTime\"\x9a\x02\n" +
+	"\frelease_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vreleaseTime\"\xc7\x02\n" +
 	"\n" +
 	"CommandRun\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x18\n" +
@@ -2357,7 +2387,10 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\texit_code\x18\x05 \x01(\x05R\bexitCode\x12!\n" +
 	"\fwait_seconds\x18\x06 \x01(\x01R\vwaitSeconds\x12!\n" +
 	"\fheld_seconds\x18\a \x01(\x01R\vheldSeconds\x12\x12\n" +
-	"\x04gate\x18\b \x01(\tR\x04gate\"\xb2\x02\n" +
+	"\x04gate\x18\b \x01(\tR\x04gate\x12\x17\n" +
+	"\atask_id\x18\t \x01(\tR\x06taskId\x12\x12\n" +
+	"\x04tree\x18\n" +
+	" \x01(\tR\x04tree\"\xb2\x02\n" +
 	"\x04Gate\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\x12$\n" +
@@ -2415,7 +2448,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x19CommandServiceListRequest\x12!\n" +
 	"\aproject\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x18dR\aproject\"K\n" +
 	"\x1aCommandServiceListResponse\x12-\n" +
-	"\x05costs\x18\x01 \x03(\v2\x17.machine.v1.CommandCostR\x05costs\"\x90\x03\n" +
+	"\x05costs\x18\x01 \x03(\v2\x17.machine.v1.CommandCostR\x05costs\"\xad\x03\n" +
 	"\x1bCommandServiceRecordRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12&\n" +
 	"\tdirectory\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\tdirectory\x12%\n" +
@@ -2428,7 +2461,8 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\fwait_seconds\x18\b \x01(\x01R\vwaitSeconds\x12!\n" +
 	"\fheld_seconds\x18\t \x01(\x01R\vheldSeconds\x12\x12\n" +
 	"\x04gate\x18\n" +
-	" \x01(\tR\x04gate\"K\n" +
+	" \x01(\tR\x04gate\x12\x1b\n" +
+	"\x04tree\x18\v \x01(\tB\a\xbaH\x04r\x02\x18@R\x04tree\"K\n" +
 	"\x1cCommandServiceRecordResponse\x12+\n" +
 	"\x04cost\x18\x01 \x01(\v2\x17.machine.v1.CommandCostR\x04cost*o\n" +
 	"\tGateState\x12\x1a\n" +

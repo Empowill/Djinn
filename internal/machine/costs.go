@@ -135,6 +135,8 @@ func Add(c *machinev1.CommandCost, run *machinev1.CommandServiceRecordRequest) {
 		WaitSeconds:     run.GetWaitSeconds(),
 		HeldSeconds:     run.GetHeldSeconds(),
 		Gate:            run.GetGate(),
+		TaskId:          run.GetTaskId(),
+		Tree:            run.GetTree(),
 	})
 	const maxRecent = 200
 	if len(c.RecentRuns) > maxRecent {

@@ -85,6 +85,11 @@ func Run(ctx context.Context, client machinev1connect.GateServiceClient, name, t
 	cmd := exec.Command(c.Args[0], c.Args[1:]...)
 	cmd.Dir, cmd.Stdin, cmd.Stdout, cmd.Stderr = c.Dir, c.Stdin, c.Stdout, c.Stderr
 	cmd.Env = os.Environ()
+	// The tree the command runs on, recorded with its cost: kept only when the worktree is the same once it ended.
+	tree := ""
+	if c.Costs != nil {
+		tree = worktreeTree(ctx, dir)
+	}
 	began := time.Now()
 	var cpu time.Duration
 	var peak uint64
@@ -108,23 +113,27 @@ func Run(ctx context.Context, client machinev1connect.GateServiceClient, name, t
 		if !grantedAt.IsZero() && grantedAt.After(askedAt) {
 			wait = grantedAt.Sub(askedAt)
 		}
-		heldDuration := time.Since(grantedAt)
-		record(ctx, c, taskID, what, dir, name, cmd.ProcessState, cpu, peak, time.Since(began), wait, heldDuration)
+		heldDuration, took := time.Since(grantedAt), time.Since(began)
+		if tree != "" && worktreeTree(ctx, dir) != tree {
+			tree = ""
+		}
+		record(ctx, c, taskID, what, dir, name, tree, cmd.ProcessState, cpu, peak, took, wait, heldDuration)
 	}
 	return code, nil
 }
 
-// record sends what the command cost. Its project is the task's, or the one holding dir, the folder it ran in.
+// record sends what the command cost, and the tree it ran on ("" for none). Its project is the task's, or the one
+// holding dir, the folder it ran in.
 func record(
-	ctx context.Context, c Command, taskID, what, dir, gateName string, ps *os.ProcessState, cpu time.Duration, peak uint64,
-	took, wait, held time.Duration,
+	ctx context.Context, c Command, taskID, what, dir, gateName, tree string, ps *os.ProcessState, cpu time.Duration,
+	peak uint64, took, wait, held time.Duration,
 ) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_, err := c.Costs.Record(ctx, connect.NewRequest(&machinev1.CommandServiceRecordRequest{
 		TaskId: taskID, Directory: dir, Command: what, CpuSeconds: cpu.Seconds(),
 		Seconds: took.Seconds(), PeakMemoryBytes: peak, ExitCode: int32(ps.ExitCode()),
-		WaitSeconds: wait.Seconds(), HeldSeconds: held.Seconds(), Gate: gateName,
+		WaitSeconds: wait.Seconds(), HeldSeconds: held.Seconds(), Gate: gateName, Tree: tree,
 	}))
 	if err != nil {
 		fmt.Fprintf(c.Notice, "djinn: the cost of the command is not recorded: %v\n", err)

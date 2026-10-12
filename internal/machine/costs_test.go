@@ -167,6 +167,7 @@ func TestGateCostWaitAndHeld(t *testing.T) {
 			HeldSeconds: float64(i * 10),
 			CpuSeconds:  float64(i),
 			Seconds:     float64(i * 10),
+			Tree:        "4fc36b4b8037059160c6d398c70b3cf49a87e2d8",
 		}))
 		if err != nil {
 			t.Fatalf("run %d failed: %v", i, err)
@@ -205,5 +206,9 @@ func TestGateCostWaitAndHeld(t *testing.T) {
 	}
 	if len(c.GetRecentHeldSeconds()) != 10 {
 		t.Errorf("recentHeld length = %d, want 10", len(c.GetRecentHeldSeconds()))
+	}
+	// Each run keeps the tree it ran on: Djinn skips a commit check a worker passed on the tree it commits.
+	if runs := c.GetRecentRuns(); len(runs) != 10 || runs[9].GetTree() != "4fc36b4b8037059160c6d398c70b3cf49a87e2d8" {
+		t.Errorf("recent runs %v; want 10, each with its tree", runs)
 	}
 }

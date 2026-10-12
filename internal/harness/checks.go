@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
@@ -64,6 +65,47 @@ func (h *Harness) check(ctx context.Context, projectID string, run *planv1.Check
 	run.EndTime, run.DurationMs = timestamppb.New(end), end.Sub(start).Milliseconds()
 	h.recordCheck(ctx, projectID, run)
 	return run.GetReason(), out, false
+}
+
+// passedOnTree is checks without those a task of batch had its worker pass on sha's tree, read in the worktree wt:
+// the worker's last run of the check's command through djinn gate run exited 0 on that very tree (CommandRun.tree),
+// so the same command on the same files needs no second run. Each one left out is said in that task's events. A tree
+// not read, a run that failed, a change after it, or no run at all: the check stays.
+func (h *Harness) passedOnTree(
+	ctx context.Context, projectID string, checks []*planv1.ProjectCheck, batch []*planv1.Task, wt, sha string,
+) []*planv1.ProjectCheck {
+	tree, err := git(ctx, wt, "rev-parse", sha+"^{tree}")
+	if err != nil || tree == "" {
+		return checks
+	}
+	costs, err := store.List[*machinev1.CommandCost](ctx, h.store, store.Where{"project_id": projectID})
+	if err != nil || len(costs) == 0 {
+		return checks
+	}
+	return slices.DeleteFunc(slices.Clone(checks), func(c *planv1.ProjectCheck) bool {
+		line := strings.Join(strings.Fields(c.GetCommand()), " ")
+		i := slices.IndexFunc(costs, func(o *machinev1.CommandCost) bool { return strings.EqualFold(o.GetCommand(), line) })
+		if i < 0 {
+			return false
+		}
+		for _, t := range batch {
+			if lastRunPassed(costs[i].GetRecentRuns(), t.GetId(), tree) {
+				h.integrationStep(ctx, t, "commit checks: "+c.GetName()+" passed by the worker on this tree, not run again")
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// lastRunPassed tells whether the last of runs the task taskID made exited 0 on tree.
+func lastRunPassed(runs []*machinev1.CommandRun, taskID, tree string) bool {
+	for _, r := range slices.Backward(runs) {
+		if r.GetTaskId() == taskID {
+			return r.GetExitCode() == 0 && r.GetTree() == tree
+		}
+	}
+	return false
 }
 
 // recordCheck keeps run as the project's last run of its check, or of its setup, with its journal entry.
