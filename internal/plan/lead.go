@@ -239,7 +239,7 @@ func (s *LeadService) Tell(
 	switch {
 	case !hasLead(lead):
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
-			"Djinn has no lead: djinn lead resume starts one"))
+			"no lead is recorded: djinn lead resume starts one"))
 	case command == nil:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
 			"the lead does not run: djinn lead resume starts it"))
