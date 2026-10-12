@@ -808,6 +808,7 @@
   "update.dismiss": "Fermer",
   "update.failed": "La mise à jour a échoué : {message}",
   "update.from": "de {branch}",
+  "update.from_continuing": "de {branch}, qui prolonge {line}",
   "update.install": "Mettre à jour",
   "update.lacks.one": "En retard de {count} commit sur le Djinn en cours",
   "update.lacks.other": "En retard de {count} commits sur le Djinn en cours",

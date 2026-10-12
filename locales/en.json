@@ -808,6 +808,7 @@
   "update.dismiss": "Dismiss",
   "update.failed": "The update failed: {message}",
   "update.from": "of {branch}",
+  "update.from_continuing": "of {branch}, continuing {line}",
   "update.install": "Update",
   "update.lacks.one": "Older than the running Djinn on {count} commit",
   "update.lacks.other": "Older than the running Djinn on {count} commits",

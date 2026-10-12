@@ -94,6 +94,10 @@ type Built struct {
 	// The titles of the commits the running Djinn holds and the build does not, the latest first, and how many.
 	Lacks      []string
 	LacksCount int
+	// The line of the running Djinn this build carries on from another branch: Sha holds the commit the running
+	// Djinn was built from (compare.go). The branch that one was built from, or its short commit; empty for a build of
+	// that branch (Running) and for a parallel one.
+	Continues string
 }
 
 // WithBuilt calls built after each push of an integration branch in a project whose settings name an install command.

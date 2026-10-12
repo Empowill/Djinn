@@ -14,7 +14,9 @@ import (
 
 // TestCompareWithTheRunningDjinn: a build is named by the branch and wish it comes from, and compared with the commit
 // the running Djinn was built from: the tasks merged since, by code and title, the commits it adds, and those it lacks
-// when it comes from another branch (W468: feat/clement-port's build, installed over a Djinn of feat/wails-go).
+// when it comes from another branch (W468: feat/clement-port's build, installed over a Djinn of feat/wails-go). A build
+// of another branch that holds the running commit carries the running line on (W527: the wish moved its integration
+// to feat/robustness, cut at feat/wails-go's tip); a parallel one does not.
 func TestCompareWithTheRunningDjinn(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
@@ -74,11 +76,29 @@ func TestCompareWithTheRunningDjinn(t *testing.T) {
 		!slices.Equal(b.Changes, []string{"Work of W3"}) || b.ChangesCount != 1 || b.LacksCount != 0 {
 		t.Errorf("the running branch's build: %+v", b)
 	}
+	if b.Continues != "" {
+		t.Errorf("the running branch's build carries another line on: %q", b.Continues)
+	}
+
+	// The wish moves its integration to feat/robustness, cut at feat/wails-go's tip, and pushes a build of it.
+	in.git(t, in.repo, "branch", "feat/robustness", "feat/wails-go")
+	if _, err := in.wishes.SetIntegration(ctx, connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+		WishId: in.wishID, ProjectId: in.projectID, Branch: "feat/robustness",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	_, moved := merge(in.wishID, "W4", "feat/robustness")
+	in.git(t, in.repo, "switch", "--quiet", "feat/wails-go")
+	b = Built{Branch: "feat/robustness", Sha: moved}
+	in.h.compare(ctx, project, &b)
+	if b.Running || b.Continues != "feat/wails-go" || b.LacksCount != 0 || b.ChangesCount != 2 {
+		t.Errorf("the moved branch's build, want it to continue feat/wails-go: %+v", b)
+	}
 
 	b, ok := in.h.DescribeVersion(ctx, "local-v0.1.0-5-g"+side[:8])
 	if !ok || b.Sha != side || b.Branch != "feat/clement-port" || b.WishID != clementID || b.WishTitle != "Clément's branches" ||
 		b.Running || !slices.Equal(b.Tasks, []string{"W2"}) || !slices.Equal(b.Changes, []string{"Work of W2"}) ||
-		!slices.Equal(b.Lacks, []string{"Work of W1"}) || b.LacksCount != 1 {
+		!slices.Equal(b.Lacks, []string{"Work of W1"}) || b.LacksCount != 1 || b.Continues != "" {
 		t.Errorf("the side branch's Djinn, ready: %+v, %v", b, ok)
 	}
 	// A commit no merge names: the branch whose history holds it.

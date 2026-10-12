@@ -8,7 +8,9 @@
 //
 // Each part holds one line: what waits, named by its commit, the branch and wish it comes from, and what it adds to the
 // running Djinn or lacks of it, its actions beside it; the tasks and commits unfold on demand (W468). Each branch keeps
-// its build: the branch the running Djinn was built from shows first, the other branches' folded under one line. A
+// its build: the branch the running Djinn was built from shows first, with any branch that carries its line on (its
+// build holds the running commit: a wish moved its integration branch, W527), the other branches' folded under one
+// line. A
 // build, or the newer Djinn ready, dismissed with its ×, stays hidden, in this window's storage, until another comes.
 import { type ReactNode, useEffect, useState } from "react";
 
@@ -156,8 +158,9 @@ export function UpdateBannerView({
   const builds = (state.builds ?? []).filter(
     (b) => !dismissedBuilds.includes(b.sha),
   );
-  const running = builds.filter((b) => b.running);
-  const others = builds.filter((b) => !b.running);
+  // The running line: its branch, and those that carry it on.
+  const running = builds.filter((b) => b.running || b.continues);
+  const others = builds.filter((b) => !b.running && !b.continues);
   if (
     !ready &&
     !notResumed.length &&
@@ -369,7 +372,17 @@ function Named({ build }: { build: BuildProposal }) {
   return (
     <>
       <code>{build.sha.slice(0, 8)}</code>
-      {build.branch && <> {t("update.from", { branch: build.branch })}</>}
+      {build.branch && (
+        <>
+          {" "}
+          {build.continues
+            ? t("update.from_continuing", {
+                branch: build.branch,
+                line: build.continues,
+              })
+            : t("update.from", { branch: build.branch })}
+        </>
+      )}
       {build.wishTitle && (
         <span className="update-banner-quiet"> · {build.wishTitle}</span>
       )}

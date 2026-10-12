@@ -4180,6 +4180,62 @@ test("the update banner names the build against the running Djinn: what it adds,
   );
 });
 
+test("the update banner shows a build of the wish's moved branch as the update, a parallel branch as another (W527)", () => {
+  const proposal = (branch, sha, wishTitle, extra = {}) => ({
+    wishTitle,
+    project: "djinn",
+    branch,
+    sha,
+    tasks: [],
+    changes: ["harness: no orphan"],
+    summaries: [],
+    base: "abcdef0123",
+    running: false,
+    continues: "",
+    changesCount: 1,
+    lacks: [],
+    lacksCount: 0,
+    ...extra,
+  });
+  // The wish moved its integration from feat/wails-go, which the running Djinn was built from, to feat/robustness,
+  // cut at its tip: that build holds the running commit. feat/clement-port's does not.
+  const moved = proposal("feat/robustness", "bbbb3333cccc", "Orchestrator", {
+    continues: "feat/wails-go",
+  });
+  const parallel = proposal(
+    "feat/clement-port",
+    "e60f8fc00000",
+    "Clément's branches",
+    { lacks: ["ui: the diff"], lacksCount: 1 },
+  );
+  const html = s.renderToStaticMarkup(
+    h(s.UpdateBannerView, {
+      state: {
+        current: "local-300b7fe",
+        ready: "",
+        notResumed: [],
+        notesUrl: "",
+        builds: [moved, parallel],
+      },
+      phase: { kind: "idle" },
+      dismissed: false,
+      onInstall() {},
+      onDismiss() {},
+      onNotes() {},
+    }),
+  );
+  // The moved branch's build heads the banner, with the djinn's mark, as the update of the running line.
+  assert.match(
+    html,
+    /<span class="brand small">.*<span class="update-banner-text">Build <code>bbbb3333<\/code> of feat\/robustness, continuing feat\/wails-go<span class="update-banner-quiet"> · Orchestrator<\/span><span class="update-banner-quiet"> — adds 1 commit<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Install and restart<\/button>/,
+  );
+  // Only the parallel branch is another branch, folded.
+  assert.match(html, /A build of another branch: feat\/clement-port<\/span>/);
+  assert.doesNotMatch(html, /another branch[^<]*feat\/robustness/);
+  assert.doesNotMatch(html, /e60f8fc0/);
+  assert.equal(html.match(/<img/g).length, 1);
+});
+
 test("an azima whose work is done awaits its proof: its own label and tone, what it needs, the pill apart, and the flying carpet lists what a person can give", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da71";
   const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);

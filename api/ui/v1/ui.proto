@@ -248,8 +248,8 @@ message UiServiceWatchUpdateResponse {
   reserved 5;
   reserved "build";
   // The last push of each integration branch, in a project whose settings name an install command, and not installed
-  // since: one per branch, the branch the running Djinn was built from first. The window proposes to install each and
-  // restart on it, the other branches' folded.
+  // since: one per branch, the branch the running Djinn was built from first, then those that carry its line on
+  // (Build.continues). The window proposes to install each and restart on it, the other branches' folded.
   repeated Build builds = 7;
   // The install of a build that runs now (Update), and where it stands; unset for none. The window says it in place
   // of the build's buttons: what it waits for, then that it builds, then that Djinn restarts.
@@ -333,6 +333,11 @@ message Build {
   // are: the build is older than the running Djinn on them.
   repeated string lacks = 14;
   int32 lacks_count = 15;
+  // The line of the running Djinn this build carries on from another branch: its commit holds the running Djinn's,
+  // as when a wish moves its integration branch to one cut at the tip of the running one (W527). It names the
+  // branch the running Djinn was built from, or its short commit when no branch names it. Empty for a build of that
+  // branch itself (running), and for one that does not hold the running commit: a parallel branch.
+  string continues = 16;
 }
 
 message UiServiceUpdateRequest {

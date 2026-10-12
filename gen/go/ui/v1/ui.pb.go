@@ -1225,8 +1225,8 @@ type UiServiceWatchUpdateResponse struct {
 	// local install, which has none.
 	NotesUrl string `protobuf:"bytes,4,opt,name=notes_url,json=notesUrl,proto3" json:"notes_url,omitempty"`
 	// The last push of each integration branch, in a project whose settings name an install command, and not installed
-	// since: one per branch, the branch the running Djinn was built from first. The window proposes to install each and
-	// restart on it, the other branches' folded.
+	// since: one per branch, the branch the running Djinn was built from first, then those that carry its line on
+	// (Build.continues). The window proposes to install each and restart on it, the other branches' folded.
 	Builds []*Build `protobuf:"bytes,7,rep,name=builds,proto3" json:"builds,omitempty"`
 	// The install of a build that runs now (Update), and where it stands; unset for none. The window says it in place
 	// of the build's buttons: what it waits for, then that it builds, then that Djinn restarts.
@@ -1573,8 +1573,13 @@ type Build struct {
 	ChangesCount int32 `protobuf:"varint,13,opt,name=changes_count,json=changesCount,proto3" json:"changes_count,omitempty"`
 	// The titles of the commits the running Djinn holds and the build does not, the latest first, and how many there
 	// are: the build is older than the running Djinn on them.
-	Lacks         []string `protobuf:"bytes,14,rep,name=lacks,proto3" json:"lacks,omitempty"`
-	LacksCount    int32    `protobuf:"varint,15,opt,name=lacks_count,json=lacksCount,proto3" json:"lacks_count,omitempty"`
+	Lacks      []string `protobuf:"bytes,14,rep,name=lacks,proto3" json:"lacks,omitempty"`
+	LacksCount int32    `protobuf:"varint,15,opt,name=lacks_count,json=lacksCount,proto3" json:"lacks_count,omitempty"`
+	// The line of the running Djinn this build carries on from another branch: its commit holds the running Djinn's,
+	// as when a wish moves its integration branch to one cut at the tip of the running one (W527). It names the
+	// branch the running Djinn was built from, or its short commit when no branch names it. Empty for a build of that
+	// branch itself (running), and for one that does not hold the running commit: a parallel branch.
+	Continues     string `protobuf:"bytes,16,opt,name=continues,proto3" json:"continues,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1712,6 +1717,13 @@ func (x *Build) GetLacksCount() int32 {
 		return x.LacksCount
 	}
 	return 0
+}
+
+func (x *Build) GetContinues() string {
+	if x != nil {
+		return x.Continues
+	}
+	return ""
 }
 
 type UiServiceUpdateRequest struct {
@@ -2243,7 +2255,7 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\vTaskSummary\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x18\n" +
-	"\asummary\x18\x03 \x01(\tR\asummary\"\xa8\x03\n" +
+	"\asummary\x18\x03 \x01(\tR\asummary\"\xc6\x03\n" +
 	"\x05Build\x12\x17\n" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1d\n" +
 	"\n" +
@@ -2263,7 +2275,8 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\rchanges_count\x18\r \x01(\x05R\fchangesCount\x12\x14\n" +
 	"\x05lacks\x18\x0e \x03(\tR\x05lacks\x12\x1f\n" +
 	"\vlacks_count\x18\x0f \x01(\x05R\n" +
-	"lacksCount\"7\n" +
+	"lacksCount\x12\x1c\n" +
+	"\tcontinues\x18\x10 \x01(\tR\tcontinues\"7\n" +
 	"\x16UiServiceUpdateRequest\x12\x1d\n" +
 	"\x05build\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x18@R\x05build\"o\n" +
 	"\x17UiServiceUpdateResponse\x12\x18\n" +
