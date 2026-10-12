@@ -126,6 +126,7 @@ func TestMachineServiceSeries(t *testing.T) {
 		},
 	}
 
+	workers := func(time.Time) {}
 	mux := http.NewServeMux()
 	path, h := Handler(
 		NewMonitor(Policy{Share: 0.8}, func() (Snapshot, error) {
@@ -135,6 +136,7 @@ func TestMachineServiceSeries(t *testing.T) {
 		nil,
 		WithSeriesRecorder(rec),
 		WithSeriesWorkers(func(cutoff time.Time, ivs []*machinev1.GateInterval) []*machinev1.WorkerSeries {
+			workers(cutoff)
 			return workerList
 		}),
 		WithSeriesIntervals(func(cutoff time.Time) []*machinev1.GateInterval {
@@ -169,5 +171,35 @@ func TestMachineServiceSeries(t *testing.T) {
 	}
 	if len(msg.GetGates()) != 1 {
 		t.Errorf("expected 1 gate interval, got %d", len(msg.GetGates()))
+	}
+
+	// Since a point: only the points measured after it, the gate intervals of the whole window.
+	rec.AddPoint(&machinev1.MachinePoint{Time: timestamppb.New(now.Add(-time.Minute)), CpuPercent: 40})
+	var asked time.Time
+	workers = func(cutoff time.Time) { asked = cutoff }
+	res, err = client.Series(context.Background(), connect.NewRequest(&machinev1.MachineServiceSeriesRequest{
+		Minutes: 30, Since: timestamppb.New(now.Add(-5 * time.Minute)),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pts := res.Msg.GetMachine().GetPoints(); len(pts) != 1 || pts[0].GetCpuPercent() != 40 {
+		t.Errorf("points since the first = %v, want the second alone", pts)
+	}
+	if !asked.After(now.Add(-5 * time.Minute)) {
+		t.Errorf("workers asked from %v, want after the first point", asked)
+	}
+	if len(res.Msg.GetGates()) != 1 {
+		t.Errorf("gate intervals since = %d, want the window's 1", len(res.Msg.GetGates()))
+	}
+	// A since older than the window: the window.
+	res, err = client.Series(context.Background(), connect.NewRequest(&machinev1.MachineServiceSeriesRequest{
+		Minutes: 30, Since: timestamppb.New(now.Add(-2 * time.Hour)),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pts := res.Msg.GetMachine().GetPoints(); len(pts) != 2 {
+		t.Errorf("points since before the window = %d, want 2", len(pts))
 	}
 }

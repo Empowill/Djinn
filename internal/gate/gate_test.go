@@ -123,6 +123,8 @@ type peaks map[string]uint64
 
 func (p peaks) Peak(_ context.Context, _, _, command string) uint64 { return p[command] }
 
+func (p peaks) Ask(context.Context, string, string, string, string) {}
+
 // take takes the gate in the background; the channel gets the give function once granted.
 func take(t *testing.T, g *Gates, name, taskID string) (<-chan func(), <-chan string) {
 	t.Helper()

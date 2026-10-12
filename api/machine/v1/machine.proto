@@ -137,8 +137,11 @@ message MachineServiceShowResponse {
 }
 
 message MachineServiceSeriesRequest {
-  // Number of minutes of history to return (10, 30, 120; defaults to 30).
+  // Number of minutes of history to return (10, 30, 120, 1440, 10080; defaults to 30).
   int32 minutes = 1;
+  // When set, only the points measured after it: the window reads the whole series once, then what came since, as
+  // the samples arrive. The workers running and the gate intervals come whole each time.
+  google.protobuf.Timestamp since = 2;
 }
 
 message MachineServiceSeriesResponse {
@@ -411,6 +414,9 @@ message CommandCost {
   string gate = 21;
   // Project short name for display.
   string project_name = 22;
+  // How many runs were asked: djinn gate run asked its gate for the command, whether the command then ran to its end
+  // (runs) or not (interrupted, killed, given up while waiting). Never below runs.
+  int32 asked = 23;
 }
 
 message CommandServiceListRequest {

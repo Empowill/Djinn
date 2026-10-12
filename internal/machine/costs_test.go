@@ -206,4 +206,66 @@ func TestGateCostWaitAndHeld(t *testing.T) {
 	if len(c.GetRecentHeldSeconds()) != 10 {
 		t.Errorf("recentHeld length = %d, want 10", len(c.GetRecentHeldSeconds()))
 	}
+	// Runs recorded before asks were counted: as many asked as ran.
+	if c.GetAsked() != 10 {
+		t.Errorf("asked = %d, want the 10 runs", c.GetAsked())
+	}
+}
+
+// TestCostAsked: each gate asked for a command counts a run asked, ended or not; a command never run shows asked
+// alone; outside any project nothing is counted.
+func TestCostAsked(t *testing.T) {
+	ctx := t.Context()
+	db, err := store.Open(ctx, "", plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &planv1.Project{Id: store.NewID(), Name: "app", Directory: dir}
+	if err := db.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("test", "setup", app); err != nil {
+			return err
+		}
+		return tx.Put(app)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.Handle(CostsHandler(db))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := machinev1connect.NewCommandServiceClient(srv.Client(), srv.URL)
+	peaks := NewPeaks(db)
+
+	// Three asks, one interrupted: two runs end by themselves.
+	for range 3 {
+		peaks.Ask(ctx, "e2e", "", dir, "go tool task e2e")
+	}
+	for range 2 {
+		if _, err := client.Record(ctx, connect.NewRequest(&machinev1.CommandServiceRecordRequest{
+			Directory: dir, Command: "go tool task e2e", Gate: "e2e", Seconds: 60,
+		})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	peaks.Ask(ctx, "lint", "", dir, "go tool task lint")
+	peaks.Ask(ctx, "lint", "", os.TempDir(), "ls")
+
+	res, err := client.List(ctx, connect.NewRequest(&machinev1.CommandServiceListRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][2]int32{}
+	for _, c := range res.Msg.GetCosts() {
+		got[c.GetCommand()] = [2]int32{c.GetAsked(), c.GetRuns()}
+	}
+	want := map[string][2]int32{"go tool task e2e": {3, 2}, "go tool task lint": {1, 0}}
+	if len(got) != len(want) || got["go tool task e2e"] != want["go tool task e2e"] ||
+		got["go tool task lint"] != want["go tool task lint"] {
+		t.Errorf("asked and runs = %v, want %v", got, want)
+	}
 }

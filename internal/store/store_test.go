@@ -65,7 +65,7 @@ func strs(t *testing.T, s *Store, q string, args ...any) []string {
 func TestSchema(t *testing.T) {
 	s := open(t)
 	tables := strs(t, s, `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
-	if want := []string{"command", "project", "question"}; !slices.Equal(tables, want) {
+	if want := []string{"command", "project", "question", "sample"}; !slices.Equal(tables, want) {
 		t.Errorf("tables = %v, want %v", tables, want)
 	}
 	if cols, want := strs(t, s, `SELECT name FROM pragma_table_info('question')`), []string{"id", "payload", "wish_id", "task_id", "code"}; !slices.Equal(cols, want) {
@@ -77,6 +77,7 @@ func TestSchema(t *testing.T) {
 	indexes := strs(t, s, `SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL ORDER BY name`)
 	want := []string{
 		"command_method", "project_unique_directory", "project_unique_name", "question_task_id", "question_unique_wish_id_code", "question_wish_id",
+		"sample_at", "sample_series_at",
 	}
 	if !slices.Equal(indexes, want) {
 		t.Errorf("indexes = %v, want %v", indexes, want)

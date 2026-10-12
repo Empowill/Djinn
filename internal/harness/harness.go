@@ -81,8 +81,9 @@ type Harness struct {
 
 	clock func() time.Time // nil: the machine's (WithClock)
 
-	measureEvery time.Duration // how often a worker is read (WithMeasure); 0: never
-	measureRead  MeasureFunc   // nil: workers are not measured
+	measureEvery time.Duration    // how often a worker is read (WithMeasure); 0: never
+	measureRead  MeasureFunc      // nil: workers are not measured
+	history      *machine.History // nil: the readings are kept in memory only (WithHistory)
 
 	tell       TellFunc      // wakes the lead of a watcher's wish (TellLeads); guarded by mu
 	notifyLead NotifyFunc    // queues an event for the lead (NotifyLead), in place of tell; guarded by mu

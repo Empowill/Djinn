@@ -32,6 +32,7 @@ type SeriesRecorder struct {
 	lastIdleTicks  uint64
 	lastDjinnCPU   time.Duration
 	lastDjinnAt    time.Time
+	history        *History // nil: the samples are kept in memory only
 }
 
 // NewSeriesRecorder returns a recorder for machine metrics.
@@ -76,9 +77,11 @@ func (r *SeriesRecorder) Sample() {
 
 	// 1. Machine CPU % from /proc/stat if available.
 	var machineCPU float64
+	first := false // The first reading of /proc/stat: no CPU % yet.
 	if r.fsys != nil {
 		if data, err := fs.ReadFile(r.fsys, "proc/stat"); err == nil {
 			total, idle := parseProcStat(data)
+			first = r.lastTotalTicks == 0
 			if r.lastTotalTicks > 0 && total > r.lastTotalTicks {
 				dTotal := total - r.lastTotalTicks
 				dIdle := uint64(0)
@@ -134,6 +137,16 @@ func (r *SeriesRecorder) Sample() {
 		r.head = 0
 		r.full = true
 	}
+	if r.history != nil && !first {
+		r.history.Machine(point)
+	}
+}
+
+// Keep keeps each sample in h too, the store's series that outlive a restart.
+func (r *SeriesRecorder) Keep(h *History) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.history = h
 }
 
 // Points returns all recorded machine points since cutoff.
