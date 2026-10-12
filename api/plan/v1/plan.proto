@@ -2861,10 +2861,11 @@ service LeadService {
   // Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
   // queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
   // the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
-  // djinn lead resume starts it. A worker cannot call it.
+  // djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
   rpc Tell(LeadServiceTellRequest) returns (LeadServiceTellResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
+    option (djinn.v1.command_line_only) = true;
   }
 }
 

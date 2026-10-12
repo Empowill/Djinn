@@ -1787,7 +1787,7 @@ type LeadServiceClient interface {
 	// Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
 	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
 	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
-	// djinn lead resume starts it. A worker cannot call it.
+	// djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
 }
 
@@ -1913,7 +1913,7 @@ type LeadServiceHandler interface {
 	// Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
 	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
 	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
-	// djinn lead resume starts it. A worker cannot call it.
+	// djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
 }
 

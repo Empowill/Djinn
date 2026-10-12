@@ -18920,14 +18920,14 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06Render\x12!.plan.v1.WishServiceRenderRequest\x1a\".plan.v1.WishServiceRenderResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x02\x12S\n" +
 	"\x04Sync\x12\x1f.plan.v1.WishServiceSyncRequest\x1a .plan.v1.WishServiceSyncResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
 	"\x05Route\x12 .plan.v1.WishServiceRouteRequest\x1a!.plan.v1.WishServiceRouteResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12T\n" +
-	"\x05Watch\x12 .plan.v1.WishServiceWatchRequest\x1a!.plan.v1.WishServiceWatchResponse\"\x04\xc8\xf3\x18\x010\x012\x97\x04\n" +
+	"\x05Watch\x12 .plan.v1.WishServiceWatchRequest\x1a!.plan.v1.WishServiceWatchResponse\"\x04\xc8\xf3\x18\x010\x012\x9b\x04\n" +
 	"\vLeadService\x12T\n" +
 	"\x03Set\x12\x1e.plan.v1.LeadServiceSetRequest\x1a\x1f.plan.v1.LeadServiceSetResponse\"\f\xc8\xf3\x18\x01\xd8\xf3\x18\x01\xe0\xf3\x18\x01\x12]\n" +
 	"\x06Resume\x12!.plan.v1.LeadServiceResumeRequest\x1a\".plan.v1.LeadServiceResumeResponse\"\f\xc8\xf3\x18\x01\xd8\xf3\x18\x01\xe0\xf3\x18\x01\x12O\n" +
 	"\x03Get\x12\x1e.plan.v1.LeadServiceGetRequest\x1a\x1f.plan.v1.LeadServiceGetResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12U\n" +
 	"\x05Brief\x12 .plan.v1.LeadServiceBriefRequest\x1a!.plan.v1.LeadServiceBriefResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12V\n" +
-	"\x05Watch\x12 .plan.v1.LeadServiceWatchRequest\x1a!.plan.v1.LeadServiceWatchResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12S\n" +
-	"\x04Tell\x12\x1f.plan.v1.LeadServiceTellRequest\x1a .plan.v1.LeadServiceTellResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x012\x95\x02\n" +
+	"\x05Watch\x12 .plan.v1.LeadServiceWatchRequest\x1a!.plan.v1.LeadServiceWatchResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12W\n" +
+	"\x04Tell\x12\x1f.plan.v1.LeadServiceTellRequest\x1a .plan.v1.LeadServiceTellResponse\"\f\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x80\xf4\x18\x012\x95\x02\n" +
 	"\fBlockService\x12R\n" +
 	"\x03Put\x12\x1f.plan.v1.BlockServicePutRequest\x1a .plan.v1.BlockServicePutResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12T\n" +
 	"\x04List\x12 .plan.v1.BlockServiceListRequest\x1a!.plan.v1.BlockServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12[\n" +
