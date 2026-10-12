@@ -1529,6 +1529,31 @@ test("a task card offers Start anyway from machine_wait, not from its reason's t
   );
 });
 
+test("a task card warns of the calls its permissions refused, and which on hover with the command that grants them", () => {
+  const card = (task) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: {
+          id: "t1",
+          code: "W1",
+          wishId: "w1",
+          title: "Silae study",
+          status: s.TaskStatus.DONE,
+          ...task,
+        },
+        onStop() {},
+      }),
+    );
+  const refused = card({
+    refused: { count: 6, names: ["djinn", "ls", "git", "task", "gcloud"] },
+  });
+  assert.match(
+    refused,
+    /<span class="task-refused" title="6 calls refused by its permissions in its last run, with nobody to approve them: djinn, ls, git, task, gcloud. djinn wish allow w1 --mode auto lets the agent judge them.">/,
+  );
+  assert.doesNotMatch(card({}), /task-refused/);
+});
+
 test("a task row reads on two lines: status, code and long title on the first, details on the second", () => {
   const longTitle =
     "Configure the multi-environment deployment pipeline with automated rollbacks and canary release verification across staging and production clusters";

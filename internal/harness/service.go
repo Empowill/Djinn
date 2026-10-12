@@ -65,7 +65,7 @@ func (s *Tasks) Spawn(
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&planv1.TaskServiceSpawnResponse{Task: task}), nil
+	return connect.NewResponse(&planv1.TaskServiceSpawnResponse{Task: task, Note: s.h.spawnNote(ctx, task)}), nil
 }
 
 func (s *Tasks) List(

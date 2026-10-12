@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -25,6 +26,7 @@ import (
 //	usage 1200 300 0.02   it has spent so far 1200 tokens in, 300 out, $0.02
 //	turns 37              it has taken 37 model turns so far in this run
 //	write notes.md Hi     it writes Hi in notes.md, in its folder, when it may edit (else: permission denied)
+//	refuse Bash gcloud x  its permissions refuse the call, as claude says it: Bash {"command":"gcloud x"}
 //	sleep 5s              it works for a while
 //	wait                  it works until a message comes (Send), which it says back at the end as the others
 //	fail no tests         it fails with this reason
@@ -193,6 +195,8 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 		case "write":
 			ev = fakeWrite(spec, rest)
 			ev.Raw = raw
+		case "refuse":
+			ev.Kind, ev.Text = planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, permissionDenied+fakeCall(rest)
 		case "sleep":
 			d, err := time.ParseDuration(rest)
 			if err != nil {
@@ -257,6 +261,16 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 			return
 		}
 	}
+}
+
+// fakeCall is the call "tool input" as claude names it: a shell command's input in JSON.
+func fakeCall(call string) string {
+	tool, input, _ := strings.Cut(call, " ")
+	if tool != "Bash" && tool != "PowerShell" {
+		return call
+	}
+	b, _ := json.Marshal(map[string]string{"command": input}) // A map of strings: it cannot fail.
+	return tool + " " + string(b)
 }
 
 // fakeWrite writes "file text" in the worker's folder, as an agent that respects its rights: refused to a

@@ -609,7 +609,8 @@ message LeadEvent {
 enum LeadEventKind {
   // Not set.
   LEAD_EVENT_KIND_UNSPECIFIED = 0;
-  // A task's worker ended: a question worker that investigated, a watcher whose command ended.
+  // A task's worker ended: a question worker that investigated, a watcher whose command ended, a work worker done
+  // whose end no merge tells (nothing to merge, no integration) or whose calls its permissions refused.
   LEAD_EVENT_KIND_ENDED = 1;
   // A task's worker failed, and what Djinn does about it.
   LEAD_EVENT_KIND_FAILED = 2;
@@ -925,6 +926,18 @@ message Task {
   // The planned task waits for the machine alone: no slot is free, or the machine is under pressure. djinn task
   // start starts it anyway.
   bool machine_wait = 66;
+  // The calls its worker's permissions refused in its last run, counted from its "permission denied" events: a
+  // worker nobody approves anything for ends with what it could not do. Unset when none was refused.
+  TaskRefusals refused = 67;
+}
+
+// TaskRefusals are the calls a worker's permissions refused in a run: what the lead hears when it ends, and the
+// window's warning on its task.
+message TaskRefusals {
+  // How many calls were refused.
+  int32 count = 1;
+  // What they ran, each once, djinn first: the command's name for a shell call (gcloud, git), the tool's otherwise.
+  repeated string names = 2;
 }
 
 // TaskRun is a single run of a task's worker.
@@ -3604,6 +3617,9 @@ message TaskServiceSpawnRequest {
 message TaskServiceSpawnResponse {
   // The task: running, or waiting with its reason.
   Task task = 1;
+  // What the spawner should know of where the task runs: its worker cannot run djinn, which its prompt asks of it,
+  // and how to grant it. Empty when nothing is to say.
+  string note = 2;
 }
 
 message TaskServiceListRequest {

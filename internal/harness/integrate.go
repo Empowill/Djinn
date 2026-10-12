@@ -360,6 +360,7 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 		for _, t := range settled {
 			h.dropWorktree(ctx, project, t)
 		}
+		h.tellNothingMerged(ctx, alreadyIn, branch)
 		h.wake()
 		if len(remaining) == 0 {
 			return true, nil
@@ -386,7 +387,8 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 		h.dropWorktree(ctx, project, t)
 	}
 	if commit == nil || commit.GetOldSha() == in.GetSha() {
-		// Decision Q173: no-op batches are silent in terminal (journal & window only via settleIntegration).
+		// Decision Q173: no merge line for a batch that moves nothing; its tasks' ends are told once all the same.
+		h.tellNothingMerged(ctx, batch, branch)
 		h.wake()
 		return true, nil
 	}
@@ -399,6 +401,16 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 		codes:  taskBatchCodes(batch),
 		sha:    in.GetSha(),
 		moves:  moves,
+	}
+}
+
+// tellNothingMerged tells the lead that the work workers of batch ended done, their work bringing nothing to branch:
+// no merge line tells it (incident W1 of wish Dew, 12/10/2026). One told when it ended is not told again.
+func (h *Harness) tellNothingMerged(ctx context.Context, batch []*planv1.Task, branch string) {
+	for _, t := range batch {
+		if tellsDone(t) && !toldDoneAtEnd(t, true) {
+			h.tellDone(ctx, t, "nothing to merge into "+branch)
+		}
 	}
 }
 

@@ -1,7 +1,7 @@
 // What workers spent: tokens (input, output, cache read and written, thinking) and the price, one total.
 // Codex and Antigravity report tokens only; the page estimates their cost from prices.yaml, and keeps Claude's reported
 // cost: the price is the reported cost where there is one, else the estimate; its hover tells the two apart.
-import { Footprints } from "lucide-react";
+import { Footprints, ShieldAlert } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import {
   Provider,
@@ -415,6 +415,27 @@ export function TaskTurns({ task }: { task: Task }) {
     >
       <Footprints size={12} aria-label={t("task.turns")} />
       {`${turns.run}/${turns.limit}`}
+    </span>
+  );
+}
+
+// TaskRefused warns that its permissions refused calls of the task's worker in its last run, which nobody approves
+// headless: how many, and on hover which, with the command that lets its agent judge them. Granting stays the
+// developer's move.
+export function TaskRefused({ task }: { task: Task }) {
+  const refused = task.refused;
+  if (!refused || refused.count <= 0) return null;
+  return (
+    <span
+      className="task-refused"
+      title={t("task.refused_detail", {
+        count: refused.count,
+        names: refused.names.join(", "),
+        wish: task.wishId,
+      })}
+    >
+      <ShieldAlert size={12} aria-label={t("task.refused")} />
+      {refused.count}
     </span>
   );
 }

@@ -453,6 +453,11 @@ func (w *Wishes) digest(ctx context.Context, events []*planv1.LeadEvent, after s
 	return b.String()
 }
 
+// DigestKeeps tells whether a digest's line keeps the whole text of e, uncut.
+func DigestKeeps(e *planv1.LeadEvent) bool {
+	return !strings.HasSuffix(DigestLine(e), "…") || strings.HasSuffix(oneLine(e.GetText()), "…")
+}
+
 // DigestLine is an event in a digest's line: its code, its kind, and its text in a few words.
 func DigestLine(e *planv1.LeadEvent) string {
 	kind := strings.ToLower(strings.TrimPrefix(e.GetKind().String(), "LEAD_EVENT_KIND_"))
