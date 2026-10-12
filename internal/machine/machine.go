@@ -46,8 +46,11 @@ type Snapshot struct {
 	Time        time.Time
 }
 
-// MemoryCritical is macOS's critical memory pressure level, the one that holds new workers.
-const MemoryCritical = 4
+// macOS's memory pressure levels that may hold new workers: warning at the Minimal notch, critical from Medium up.
+const (
+	MemoryWarning  = 2
+	MemoryCritical = 4
+)
 
 // Policy turns a snapshot into a number of workers and a pressure verdict. Every threshold is a field: the
 // defaults are DefaultPolicy.
@@ -76,11 +79,12 @@ type Policy struct {
 	CPUPressure    float64
 	MemoryPressure float64
 	// Without PSI: when the load average per core reaches LoadPerCore, or the memory available falls below
-	// MemoryFree of the total. On macOS, only the system's own memory pressure level at critical: warning is frequent
-	// and passing on a busy Mac, and a build or a test run there loads every core well past LoadPerCore while a
-	// worker, mostly waiting for its model, would run fine. Neither holds a worker.
+	// MemoryFree of the total. On macOS, instead of MemoryFree, the system's own memory pressure level at MemoryLevel
+	// or above: warning (MemoryWarning) at Minimal only, since warning is frequent and passing on a busy Mac;
+	// critical (MemoryCritical, also what 0 means) from Medium up.
 	LoadPerCore float64
 	MemoryFree  float64
+	MemoryLevel int
 	// A gate goes to a command measured in its project only when the memory available, less the peaks of the
 	// commands holding a gate, holds its highest peak plus CommandMargin; a command never measured goes as it comes.
 	// Djinn's recommendation: the developer may change it.
@@ -149,9 +153,11 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			// Strict PSI pressure thresholds: yields at the slightest resource contention.
 			CPUPressure:    25,
 			MemoryPressure: 5,
-			// Strict load and memory limits without PSI: back off at 1 load per core or <20% free RAM.
+			// Strict load and memory limits without PSI: back off at 1 load per core or <20% free RAM, or at
+			// macOS's warning.
 			LoadPerCore: 1.0,
 			MemoryFree:  0.20,
+			MemoryLevel: MemoryWarning,
 			// 1 GiB gate margin: ample headroom for host commands.
 			CommandMargin:  1024 << 20,
 			WorkerPeak:     GiB,
@@ -179,6 +185,7 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			// Tolerant non-PSI thresholds: 3.0 load per core or <5% free RAM.
 			LoadPerCore: 3.0,
 			MemoryFree:  0.05,
+			MemoryLevel: MemoryCritical,
 			// 384 MiB gate margin: compact gate buffer allowing more concurrent gated commands.
 			CommandMargin:  384 << 20,
 			WorkerPeak:     GiB,
@@ -203,6 +210,7 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			// Aggressive non-PSI thresholds: 5.0 load per core or <2% free RAM.
 			LoadPerCore: 5.0,
 			MemoryFree:  0.02,
+			MemoryLevel: MemoryCritical,
 			// 256 MiB gate margin: minimum safe gate margin.
 			CommandMargin:  256 << 20,
 			WorkerPeak:     GiB,
@@ -226,6 +234,7 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			MemoryPressure: 40,
 			LoadPerCore:    8.0,
 			MemoryFree:     0.01,
+			MemoryLevel:    MemoryCritical,
 			// 128 MiB gate margin: very compact gate buffer.
 			CommandMargin:  128 << 20,
 			WorkerPeak:     GiB,
@@ -250,9 +259,10 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			// Standard PSI thresholds: 50% CPU wait, 10% memory wait.
 			CPUPressure:    50,
 			MemoryPressure: 10,
-			// Standard non-PSI thresholds: 2.0 load per core or <10% free RAM.
+			// Standard non-PSI thresholds: 2.0 load per core or <10% free RAM, or macOS's critical.
 			LoadPerCore: 2.0,
 			MemoryFree:  0.10,
+			MemoryLevel: MemoryCritical,
 			// 512 MiB gate margin: default gate margin.
 			CommandMargin:  512 << 20,
 			WorkerPeak:     GiB,
@@ -584,9 +594,12 @@ func (p Policy) Pressure(s Snapshot) string {
 		return fmt.Sprintf("tasks waited for the CPU %.0f%% of the last 10 s (%.0f%% at most)", s.CPU.Some, p.CPUPressure)
 	case s.Memory != nil && s.Memory.Some >= p.MemoryPressure:
 		return fmt.Sprintf("tasks waited for memory %.0f%% of the last 10 s (%.0f%% at most)", s.Memory.Some, p.MemoryPressure)
-	case s.MemoryLevel >= MemoryCritical:
-		return "the system reports critical memory pressure"
-	case s.CPU == nil && s.MemoryLevel == 0 && s.LoadKnown && s.Cores > 0 && s.Load1/float64(s.Cores) >= p.LoadPerCore:
+	case s.MemoryLevel >= cmp.Or(p.MemoryLevel, MemoryCritical):
+		if s.MemoryLevel >= MemoryCritical {
+			return "the system reports critical memory pressure"
+		}
+		return "the system reports memory pressure"
+	case s.CPU == nil && s.LoadKnown && s.Cores > 0 && s.Load1/float64(s.Cores) >= p.LoadPerCore:
 		return fmt.Sprintf("the load is %.1f on %d cores (%.1f a core at most)", s.Load1, s.Cores, p.LoadPerCore)
 	case s.Memory == nil && s.MemoryLevel == 0 && s.MemoryTotal > 0 &&
 		float64(s.MemoryAvailable) < p.MemoryFree*float64(s.MemoryTotal):

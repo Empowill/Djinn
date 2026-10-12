@@ -195,8 +195,9 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
   on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. The buttons on
   its card in the window do the same. Not on Windows yet.
 - A planned task that waits for the machine alone (no slot free, or the machine under pressure) says so in the window,
-  with "Start anyway"; `djinn task start <task-id>` does the same. On macOS, only a critical memory pressure holds
-  workers back.
+  with "Start anyway"; `djinn task start <task-id>` does the same. It never jumps a usage limit, a push hold or a
+  task that goes first. On macOS, the system's memory pressure holds workers back at warning on the Minimal notch,
+  at critical only from Medium up.
 - In a project whose settings name its checks ([`docs/team-settings.md`](docs/team-settings.md#checks)), Djinn
   integrates finished work by itself: as each task ends, alone, it merges the task's branch in a worktree of its own
   (made ready by the `setup` command, again when a lock file changes), makes the generated files again on a conflict

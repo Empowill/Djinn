@@ -98,9 +98,12 @@ func TestPressure(t *testing.T) {
 		{"memory", Snapshot{Cores: 8, CPU: &Pressure{}, Memory: &Pressure{Some: 12}}, "waited for memory 12%"},
 		{"macOS critical", Snapshot{Cores: 8, MemoryLevel: 4, MemoryTotal: 16 * GiB}, "critical memory pressure"},
 		{"macOS warning", Snapshot{Cores: 8, MemoryLevel: 2, MemoryTotal: 16 * GiB}, ""},
-		// A Mac busy with a test run: warning level, little memory free as macOS counts it, a load of 3.4 a core.
+		// A Mac at warning, little memory free as macOS counts it, a load of 1.9 a core: below Medium's 2.
 		{"macOS busy", Snapshot{Cores: 10, MemoryLevel: 2, MemoryTotal: 16 * GiB, MemoryAvailable: GiB / 4, LoadKnown: true,
-			Load1: 34}, ""},
+			Load1: 19}, ""},
+		// The load rule holds on macOS too (LoadPerCore per notch): a test run at 3.4 a core holds at Medium.
+		{"macOS loaded", Snapshot{Cores: 10, MemoryLevel: 2, MemoryTotal: 16 * GiB, LoadKnown: true, Load1: 34},
+			"load is 34.0 on 10 cores"},
 		{"macOS calm", Snapshot{Cores: 8, MemoryLevel: 1, MemoryTotal: 16 * GiB, MemoryAvailable: GiB / 2}, ""},
 		{"load without PSI", Snapshot{Cores: 4, LoadKnown: true, Load1: 9}, "load is 9.0 on 4 cores"},
 		{"memory without PSI", Snapshot{Cores: 4, MemoryTotal: 16 * GiB, MemoryAvailable: GiB}, "1.0 GiB of memory available"},
@@ -108,6 +111,33 @@ func TestPressure(t *testing.T) {
 		if got := p.Pressure(tt.s); (tt.want == "") != (got == "") || !strings.Contains(got, tt.want) {
 			t.Errorf("%s: %q, want %q", tt.name, got, tt.want)
 		}
+	}
+}
+
+// TestPressureMacOSLevelByNotch: macOS's warning holds workers at Minimal only, its critical level at every notch; a
+// policy that names no level holds at critical.
+func TestPressureMacOSLevelByNotch(t *testing.T) {
+	warning := Snapshot{Cores: 8, MemoryLevel: MemoryWarning, MemoryTotal: 16 * GiB}
+	critical := Snapshot{Cores: 8, MemoryLevel: MemoryCritical, MemoryTotal: 16 * GiB}
+	normal := Snapshot{Cores: 8, MemoryLevel: 1, MemoryTotal: 16 * GiB}
+	for _, notch := range append(ManualNotches, djinnv1.LoadNotch_LOAD_NOTCH_AUTO) {
+		p := NotchPolicy(notch)
+		wantWarning := notch == djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL || notch == djinnv1.LoadNotch_LOAD_NOTCH_AUTO
+		if got := p.Pressure(warning); (got != "") != wantWarning || wantWarning && got != "the system reports memory pressure" {
+			t.Errorf("%s at warning: %q, want held %v", notch, got, wantWarning)
+		}
+		if got := p.Pressure(critical); got != "the system reports critical memory pressure" {
+			t.Errorf("%s at critical: %q", notch, got)
+		}
+		if got := p.Pressure(normal); got != "" {
+			t.Errorf("%s at normal: %q", notch, got)
+		}
+	}
+	if got := (Policy{}).Pressure(warning); got != "" {
+		t.Errorf("no level named, at warning: %q", got)
+	}
+	if got := (Policy{}).Pressure(critical); got == "" {
+		t.Error("no level named, at critical: not held")
 	}
 }
 
