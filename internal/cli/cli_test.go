@@ -279,13 +279,14 @@ type tasks struct {
 	*fake
 }
 
-// Get is a task done whose work a correction worker took over, its batch red.
+// Get is a task done whose work a correction worker took over, its batch red, after 412 model turns.
 func (f tasks) Get(_ context.Context, req *connect.Request[planv1.TaskServiceGetRequest]) (*connect.Response[planv1.TaskServiceGetResponse], error) {
 	f.record(req.Msg)
 	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: &planv1.Task{
 		Id: req.Msg.GetTaskId(), Code: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE, Model: "claude-sonnet-5-5", Integration: &planv1.TaskIntegration{
 			State: planv1.IntegrationState_INTEGRATION_STATE_RED, Branch: "feat/x", Reason: "test exited 1", CorrectedBy: "W9",
 		},
+		Turns: &planv1.Turns{Run: 37, Limit: 500, Total: 412},
 	}}), nil
 }
 
@@ -449,7 +450,8 @@ func TestRun(t *testing.T) {
 		{name: "json output", args: []string{"--json", "q", "answer", questionID, "a"}, wantOut: `"CHOICE_A"`, wantCalled: true},
 		{name: "where a task's work stands", args: []string{"task", "get", wishID}, wantOut: "status: done\n" +
 			"model: claude-sonnet-5-5\n" +
-			"integration:\n  state: red\n  branch: feat/x\n  reason: test exited 1\n  corrected_by: W9\n", wantCalled: true},
+			"integration:\n  state: red\n  branch: feat/x\n  reason: test exited 1\n  corrected_by: W9\n" +
+			"turns:\n  run: 37\n  limit: 500\n  total: 412\n", wantCalled: true},
 		{name: "task list output", args: []string{"task", "list", "--wish-id", wishID}, wantOut: "model: claude-sonnet-5-5\n", wantCalled: true},
 		{name: "list output", args: []string{"pr", "l"}, wantOut: "- id: " + projectID + "\n  name: api\n", wantCalled: true},
 		{name: "server error", args: []string{"q", "answer", "Q99", "a"}, wantCode: 1, wantErr: "not_found: no question Q99", wantCalled: true},
