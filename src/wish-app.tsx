@@ -6,7 +6,6 @@ import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Change } from "../gen/ts/plan/v1/plan_pb";
-import { ProviderState } from "../gen/ts/ui/v1/ui_pb";
 import { message } from "./data/client";
 import {
   useClients,
@@ -18,7 +17,7 @@ import {
 } from "./data/djinn";
 import { importWish } from "./data/exchange";
 import { isActive, runningOf, waitsForYou } from "./data/format";
-import { AgentSetup } from "./agent-setup";
+import { AgentSetup, needsSetup } from "./agent-setup";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
 import { t } from "./i18n";
@@ -103,17 +102,14 @@ export function WishApp() {
     setOpening((o) => (o && o.wishId !== selected ? undefined : o));
     setReaching((r) => (r && r.wishId !== selected ? undefined : r));
   }, [selected]);
-  // At the first start, with no agent ready, the setup of the agents opens by itself; once checked, it waits in the
-  // settings.
+  // The window opens with no agent ready (none installed and signed in, or of unknown sign-in): the setup of the agents
+  // opens by itself. Otherwise it waits in the settings and the lead's menu.
   useEffect(() => {
-    if (stored("djinn.agents.offered")) return;
     let live = true;
     clients.ui
       .getEnvironment({ agents: true })
       .then((res) => {
-        if (!live) return;
-        store("djinn.agents.offered", "1");
-        if (!res.providers.some((p) => p.state === ProviderState.READY))
+        if (live && res.providers.length > 0 && res.providers.every(needsSetup))
           setModal((m) => m ?? "agents");
       })
       .catch(() => undefined);
@@ -279,6 +275,7 @@ export function WishApp() {
             opening={opening?.wishId === wish.id ? opening : undefined}
             reaching={reaching?.wishId === wish.id ? reaching : undefined}
             onToast={setToast}
+            onSetupAgents={() => setModal("agents")}
           />
         ) : (
           <Welcome

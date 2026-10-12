@@ -15,7 +15,7 @@ test.skip(process.platform === "win32", "the commands are POSIX shell lines");
 type States = {
   claude: ProviderState;
   codex: ProviderState;
-  agy: ProviderState;
+  antigravity: ProviderState;
 };
 
 // simulate answers GetEnvironment with the agents in states, read at each request: a test changes them as it goes.
@@ -54,7 +54,12 @@ async function simulate(page: Page, states: States) {
           "printf 'install''ed codex\\n'",
           "printf 'sign''ed in codex\\n'",
         ),
-        agent("agy", "Antigravity", "printf 'install''ed agy\\n'", "agy"),
+        agent(
+          "antigravity",
+          "Antigravity",
+          "printf 'install''ed agy\\n'",
+          "agy",
+        ),
       ],
     });
     await route.fulfill({
@@ -76,37 +81,37 @@ test("with no agent ready, the setup opens by itself, installs an agent and chec
   const states: States = {
     claude: ProviderState.MISSING,
     codex: ProviderState.SIGNED_OUT,
-    agy: ProviderState.MISSING,
+    antigravity: ProviderState.MISSING,
   };
   await simulate(page, states);
   await page.goto(process.env.DJINN_URL!);
 
   const panel = page.getByRole("dialog");
   await expect(panel.getByText("Set up the agents")).toBeVisible();
-  await expect(panel.getByText(/No agent is ready yet/)).toBeVisible();
+  await expect(panel.getByText(/No agent is ready/)).toBeVisible();
+  // One line and one button per agent: what the step does shows on hover.
   const claude = row(page, "claude");
-  await expect(claude.getByText(/Next step: install it/)).toBeVisible();
-  await expect(
-    row(page, "codex").getByText(/Next step: sign in/),
-  ).toBeVisible();
+  const install = claude.getByRole("button", { name: "Install" });
+  await expect(install).toHaveAttribute("title", /Runs its installer here/);
   await expect(
     row(page, "codex").getByRole("button", { name: "Sign in" }),
   ).toBeVisible();
   await expect(claude.getByRole("button", { name: "Sign in" })).toHaveCount(0);
+  await expect(claude.getByRole("button")).toHaveCount(1);
 
   // The command ends: the page checks again by itself, and finds the agent installed and signed in.
   states.claude = ProviderState.READY;
-  await claude.getByRole("button", { name: "Install" }).click();
+  await install.click();
   const step = page.getByRole("group", { name: "Installing" });
   await expect(step.locator(".xterm-rows")).toContainText("installed claude");
-  await expect(step.getByRole("status")).toHaveText(/Done/);
+  await expect(step.getByRole("status")).toHaveText("Done.");
   await expect(claude.getByText("Ready", { exact: true })).toBeVisible();
-  await expect(claude.getByRole("button", { name: "Install" })).toHaveCount(0);
-  await expect(panel.getByText(/No agent is ready yet/)).toHaveCount(0);
+  await expect(claude.getByRole("button")).toHaveCount(0);
+  await expect(panel.getByText(/No agent is ready/)).toHaveCount(0);
 
   await panel.getByRole("button", { name: "Close" }).last().click();
   await expect(page.getByText("Set up the agents")).toHaveCount(0);
-  // Once offered, it does not open by itself again.
+  // An agent is ready now: the setup no longer opens by itself.
   await page.reload();
   await expect(page.locator(".sidebar")).toBeVisible();
   await page.waitForTimeout(500);
@@ -114,49 +119,11 @@ test("with no agent ready, the setup opens by itself, installs an agent and chec
   expect(errors).toEqual([]);
 });
 
-test("a new wish whose agent is not ready offers the setup, and keeps what was typed", async ({
-  page,
-}) => {
-  await simulate(page, {
-    claude: ProviderState.READY,
-    codex: ProviderState.SIGNED_OUT,
-    agy: ProviderState.MISSING,
-  });
-  await page.goto(process.env.DJINN_URL!);
-  await expect(page.locator(".sidebar")).toBeVisible();
-  await page
-    .locator(".sidebar")
-    .getByRole("button", { name: /New wish/ })
-    .click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("What do you wish?").fill("Polish the lamp");
-  await expect(dialog.locator(".agent-warning")).toHaveCount(0);
-
-  await dialog.getByLabel("Agent").selectOption({ label: "Antigravity" });
-  await expect(
-    dialog.getByText("Antigravity is not installed on this computer yet."),
-  ).toBeVisible();
-  await dialog.getByLabel("Agent").selectOption({ label: "Codex" });
-  await expect(
-    dialog.getByText("Codex is installed, but not signed in."),
-  ).toBeVisible();
-
-  await dialog.getByRole("button", { name: "Set it up" }).click();
-  await expect(dialog.getByText("Set up the agents")).toBeVisible();
-  await expect(
-    row(page, "codex").getByRole("button", { name: "Sign in" }),
-  ).toBeVisible();
-  await dialog.getByRole("button", { name: "Back to the wish" }).click();
-  await expect(dialog.getByLabel("What do you wish?")).toHaveValue(
-    "Polish the lamp",
-  );
-});
-
 test("the settings show the setup of the agents", async ({ page }) => {
   await simulate(page, {
     claude: ProviderState.READY,
     codex: ProviderState.UNKNOWN,
-    agy: ProviderState.MISSING,
+    antigravity: ProviderState.MISSING,
   });
   await page.goto(process.env.DJINN_URL!);
   await page.getByTitle("Connections & preferences").click();
@@ -164,15 +131,15 @@ test("the settings show the setup of the agents", async ({ page }) => {
   await expect(
     row(page, "claude").getByText("Ready", { exact: true }),
   ).toBeVisible();
+  await expect(row(page, "claude").getByRole("button")).toHaveCount(0);
   // Sign-in unknown: signing in stays offered, never pushed.
+  const login = row(page, "codex").getByRole("button", { name: "Sign in" });
+  await expect(login).toHaveClass(/secondary/);
+  await expect(login).toHaveAttribute("title", /cannot tell whether/);
   await expect(
-    row(page, "codex").getByText(/cannot tell whether it is signed in/),
+    row(page, "antigravity").getByRole("button", { name: "Install" }),
   ).toBeVisible();
-  await expect(
-    row(page, "codex").getByRole("button", { name: "Sign in" }),
-  ).toBeVisible();
-  await expect(
-    row(page, "agy").getByRole("button", { name: "Install" }),
-  ).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Check" })).toHaveCount(3);
+  await expect(dialog.getByRole("button", { name: "Check again" })).toHaveCount(
+    1,
+  );
 });

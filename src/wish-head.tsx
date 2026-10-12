@@ -1,13 +1,14 @@
 // The wish's head, around its title: its description, a few lines the person edits in place (a click, saved when the
 // field is left), the Lead button, split: Lead resumes the one lead, focused on the wish, the arrow beside it lists the
-// agents found on this machine, to start a lead of another one from the brief; and where Djinn last pushed its
-// integration branches.
+// agents found on this machine, to start a lead of another one from the brief, and opens their setup; and where
+// Djinn last pushed its integration branches.
 import {
   Check,
   ChevronDown,
   CloudUpload,
   GitBranch,
   GitMerge,
+  Settings2,
   Star,
   Terminal,
 } from "lucide-react";
@@ -158,6 +159,7 @@ export function LeadButton({
   loadAgents,
   onLead,
   onPick,
+  onSetup,
 }: {
   recorded?: Provider;
   agents?: Agent[];
@@ -165,6 +167,8 @@ export function LeadButton({
   loadAgents: () => Promise<Agent[]>;
   onLead: () => void;
   onPick: (provider: Provider) => void;
+  // Opens the setup of the agents: install one, sign it in.
+  onSetup?: () => void;
 }) {
   const [open, setOpen] = useState(startOpen);
   const [found, setFound] = useState<Agent[] | undefined>(given);
@@ -220,6 +224,13 @@ export function LeadButton({
             setOpen(false);
             onPick(provider);
           }}
+          onSetup={
+            onSetup &&
+            (() => {
+              setOpen(false);
+              onSetup();
+            })
+          }
         />
       )}
     </div>
@@ -227,15 +238,17 @@ export function LeadButton({
 }
 
 // LeadMenu lists the agents a lead may run, those missing from this machine disabled, saying why; the recorded
-// lead's is marked, and picking it resumes that lead, focused on the wish.
+// lead's is marked, and picking it resumes that lead, focused on the wish. Last, the way to set the agents up.
 export function LeadMenu({
   agents: found,
   recorded,
   onPick,
+  onSetup,
 }: {
   agents?: Agent[];
   recorded?: Provider;
   onPick: (provider: Provider) => void;
+  onSetup?: () => void;
 }) {
   if (!found)
     return (
@@ -272,6 +285,14 @@ export function LeadMenu({
           </button>
         );
       })}
+      {onSetup && (
+        <button role="menuitem" className="lead-agent" onClick={onSetup}>
+          <span className="lead-agent-name">
+            <Settings2 size={13} aria-hidden="true" />
+            {t("agents.title")}
+          </span>
+        </button>
+      )}
     </div>
   );
 }

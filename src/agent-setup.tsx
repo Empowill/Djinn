@@ -1,11 +1,10 @@
-// The setup of the agents: where each one stands, the next step in plain words, and the buttons that take it. Install
-// and sign in run the agent's own command in a terminal of the panel, so nobody opens a terminal of theirs; once
-// the command ends, Djinn checks again. Shown in the settings, by itself at the first start when no agent is ready,
-// and from a new wish whose agent is not ready.
+// The setup of the agents: one line per agent, where it stands, and one button for its next step, which says what it
+// does on hover. Install and sign in run the agent's own command in a terminal of the panel, so nobody opens a
+// terminal of theirs; once the command ends, Djinn checks again. Shown in the settings, from the lead's menu, and by
+// itself when the window opens with no agent ready.
 import { Download, LogIn, RefreshCw, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Provider } from "../gen/ts/plan/v1/plan_pb";
 import {
   type Provider as AgentEnvironment,
   ProviderState,
@@ -17,19 +16,12 @@ import { ModalFrame } from "./frame";
 import { type TextKey, t } from "./i18n";
 import { type TerminalStatus, fitSafely, mountTerminal } from "./lead-terminal";
 
-// agentOf is the agent command line of a wish's agent.
-export const agentOf: Partial<Record<Provider, string>> = {
-  [Provider.CLAUDE]: "claude",
-  [Provider.CODEX]: "codex",
-  [Provider.ANTIGRAVITY]: "agy",
-};
-
-// needsSetup tells an agent that cannot run a wish as it is: not installed, or not signed in. One whose sign-in is
-// unknown may well be ready: it is not held back.
-export function needsSetup(agent: AgentEnvironment | undefined): boolean {
+// needsSetup tells an agent that cannot run as it is: not installed, or not signed in. One whose sign-in is unknown
+// may well be ready: it is not held back.
+export function needsSetup(agent: AgentEnvironment): boolean {
   return (
-    agent?.state === ProviderState.MISSING ||
-    agent?.state === ProviderState.SIGNED_OUT
+    agent.state === ProviderState.MISSING ||
+    agent.state === ProviderState.SIGNED_OUT
   );
 }
 
@@ -59,45 +51,29 @@ export function useAgents(): Agents {
       .catch((err) => n === asked.current && setError(message(err)))
       .finally(() => n === asked.current && setChecking(false));
   }, [clients]);
+  const cancelPending = useCallback(() => {
+    asked.current++; // Unmounted: what comes back is dropped.
+  }, []);
   useEffect(() => {
     check();
-    return () => {
-      asked.current++; // Unmounted: what comes back is dropped.
-    };
-  }, [check]);
+    return cancelPending;
+  }, [cancelPending, check]);
   return { env, checking, error, check };
 }
 
-// agentStates names where an agent stands, the dot that shows it, and the next step.
-const agentStates: Record<
-  ProviderState,
-  { label: TextKey; dot: string; next: TextKey }
-> = {
+// agentStates names where an agent stands, and the dot that shows it.
+const agentStates: Record<ProviderState, { label: TextKey; dot: string }> = {
   [ProviderState.UNSPECIFIED]: {
     label: "settings.agent_unknown",
     dot: "neutral",
-    next: "agents.next_unknown",
   },
-  [ProviderState.MISSING]: {
-    label: "settings.agent_missing",
-    dot: "neutral",
-    next: "agents.next_install",
-  },
+  [ProviderState.MISSING]: { label: "settings.agent_missing", dot: "neutral" },
   [ProviderState.SIGNED_OUT]: {
     label: "settings.agent_signed_out",
     dot: "blocked",
-    next: "agents.next_login",
   },
-  [ProviderState.READY]: {
-    label: "settings.agent_ready",
-    dot: "green",
-    next: "agents.next_ready",
-  },
-  [ProviderState.UNKNOWN]: {
-    label: "settings.agent_unknown",
-    dot: "blocked",
-    next: "agents.next_unknown",
-  },
+  [ProviderState.READY]: { label: "settings.agent_ready", dot: "green" },
+  [ProviderState.UNKNOWN]: { label: "settings.agent_unknown", dot: "blocked" },
 };
 
 // A step that runs: an agent's install or sign-in command, in the panel's terminal.
@@ -108,7 +84,33 @@ interface Step {
   name: string; // The terminal's: new for each run, so a run never attaches to the one before.
 }
 
-// AgentSetupPanel lists the agents with their next step; Install and Sign in run it below the agent.
+// nextStep is the step that takes an agent further, if any: install it, or sign it in. A sign-in Djinn cannot check
+// stays offered, never pushed.
+function nextStep(
+  agent: AgentEnvironment,
+): { kind: Step["kind"]; line: string; hint: TextKey } | undefined {
+  if (agent.state === ProviderState.MISSING && agent.installCommand)
+    return {
+      kind: "install",
+      line: agent.installCommand,
+      hint: "agents.next_install",
+    };
+  if (agent.state === ProviderState.SIGNED_OUT && agent.loginCommand)
+    return {
+      kind: "login",
+      line: agent.loginCommand,
+      hint: "agents.next_login",
+    };
+  if (agent.state === ProviderState.UNKNOWN && agent.loginCommand)
+    return {
+      kind: "login",
+      line: agent.loginCommand,
+      hint: "agents.next_unknown",
+    };
+  return undefined;
+}
+
+// AgentSetupPanel lists the agents, one line each with its next step; that step runs below its line.
 export function AgentSetupPanel({ agents }: { agents: Agents }) {
   const { env, checking, error, check } = agents;
   const [step, setStep] = useState<Step>();
@@ -126,12 +128,10 @@ export function AgentSetupPanel({ agents }: { agents: Agents }) {
     setRunning(false);
     check();
   }, [check]);
-  const ready = env?.providers.some((p) => p.state === ProviderState.READY);
+  const none = env !== undefined && env.providers.every(needsSetup);
   return (
     <div className="agent-setup">
-      <p className="agent-setup-intro">
-        {env && !ready ? t("agents.intro_none") : t("agents.intro")}
-      </p>
+      {none && <p className="agent-setup-intro">{t("agents.intro_none")}</p>}
       {error && <p role="alert">{error}</p>}
       <div className="provider-settings">
         {env === undefined && (
@@ -147,11 +147,20 @@ export function AgentSetupPanel({ agents }: { agents: Agents }) {
             busy={running}
             step={step?.agentId === agent.id ? step : undefined}
             onRun={run}
-            onCheck={check}
             onEnded={ended}
           />
         ))}
       </div>
+      <button
+        type="button"
+        className="button secondary small agent-check"
+        title={t("agents.check_detail")}
+        disabled={running || checking}
+        onClick={check}
+      >
+        <RefreshCw size={13} />
+        {checking ? t("agents.checking") : t("agents.check")}
+      </button>
     </div>
   );
 }
@@ -162,7 +171,6 @@ function AgentRow({
   busy,
   step,
   onRun,
-  onCheck,
   onEnded,
 }: {
   agent: AgentEnvironment;
@@ -170,71 +178,44 @@ function AgentRow({
   busy: boolean;
   step?: Step;
   onRun: (agentId: string, kind: Step["kind"], line: string) => void;
-  onCheck: () => void;
   onEnded: () => void;
 }) {
   const state = agentStates[agent.state] ?? agentStates[ProviderState.UNKNOWN];
-  const install =
-    agent.state === ProviderState.MISSING ? agent.installCommand : "";
-  const login =
-    agent.state === ProviderState.SIGNED_OUT ||
-    agent.state === ProviderState.UNKNOWN
-      ? agent.loginCommand
-      : "";
+  const next = nextStep(agent);
   return (
     <>
-      <div className="provider-setting" data-agent={agent.id}>
+      <div
+        className="provider-setting"
+        data-agent={agent.id}
+        title={agent.available ? agent.command : undefined}
+      >
         <span className="provider-glyph">
-          {agent.id === "codex" ? "⬡" : agent.id === "agy" ? "◆" : "✳"}
+          {agent.id === "codex" ? "⬡" : agent.id === "antigravity" ? "◆" : "✳"}
         </span>
         <div>
           <h3>{agent.name}</h3>
-          <span className="muted-text">
-            {agent.available
-              ? [agent.version, agent.command].filter(Boolean).join(" · ")
-              : t("settings.agent_missing")}
-          </span>
-          <p className="agent-next">{t(state.next)}</p>
+          {agent.version && <span className="muted-text">{agent.version}</span>}
         </div>
-        <div className="agent-side">
-          <span className="status-text">
-            <span className={`status-dot ${state.dot}`} />
-            {checking ? t("agents.checking") : t(state.label)}
-          </span>
-          <div className="notification-actions">
-            {install && (
-              <button
-                type="button"
-                className="button accent small"
-                disabled={busy || checking}
-                onClick={() => onRun(agent.id, "install", install)}
-              >
-                <Download size={13} />
-                {t("agents.install")}
-              </button>
+        <span className="status-text">
+          <span className={`status-dot ${state.dot}`} />
+          {t(state.label)}
+        </span>
+        {next && (
+          <button
+            type="button"
+            className={`button small ${agent.state === ProviderState.UNKNOWN ? "secondary" : "accent"}`}
+            title={`${t(next.hint)}\n${next.line}`}
+            disabled={busy || checking}
+            onClick={() => onRun(agent.id, next.kind, next.line)}
+          >
+            {next.kind === "install" ? (
+              <Download size={13} />
+            ) : (
+              <LogIn size={13} />
             )}
-            {login && (
-              <button
-                type="button"
-                className={`button small ${agent.state === ProviderState.SIGNED_OUT ? "accent" : "secondary"}`}
-                disabled={busy || checking}
-                onClick={() => onRun(agent.id, "login", login)}
-              >
-                <LogIn size={13} />
-                {t("agents.login")}
-              </button>
-            )}
-            <button
-              type="button"
-              className="button secondary small"
-              disabled={busy || checking}
-              onClick={onCheck}
-            >
-              <RefreshCw size={13} />
-              {t("agents.check")}
-            </button>
-          </div>
-        </div>
+            {next.kind === "install" ? t("agents.install") : t("agents.login")}
+          </button>
+        )}
       </div>
       {step && <StepTerminal key={step.name} step={step} onEnded={onEnded} />}
     </>
@@ -315,7 +296,7 @@ function StepTerminal({ step, onEnded }: { step: Step; onEnded: () => void }) {
   );
 }
 
-// AgentSetup is the panel on its own, as the window opens it at the first start.
+// AgentSetup is the panel on its own, as the lead's menu opens it, and the window when no agent is ready.
 export function AgentSetup({ onClose }: { onClose: () => void }) {
   const agents = useAgents();
   return (
