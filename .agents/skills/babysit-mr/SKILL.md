@@ -10,11 +10,20 @@ metadata:
       match: '(?i)\bbabysit\w*\b.*?(?:/merge_requests/|!)(?P<mr>\d+)'
       watch: "sh .agents/skills/babysit-mr/watch.sh {mr}"
       done_when: MERGED
+    babysit:
+      forge: gitlab
+      watch: "sh .agents/skills/babysit-mr/watch.sh {mr}"
+      done_when: MERGED
 ---
 
 # Babysit a merge request
 
-You lead a wish made for one merge request: bring it to a merge, and nothing else.
+You lead a wish made for one merge request, or a wish one of whose tasks opened it: bring it to a merge.
+
+A task of a wish that opens a merge request (`glab mr create`) gets its watcher too, in the same wish: Djinn starts it
+once the task ends, from this skill's `metadata.djinn.babysit`, and tells you `W5 opened MR !12: W7 babysits it`.
+`djinn task spawn <wish> "Babysit W5's MR" --babysit --after W5` does it by hand. There, `MERGED` ends the watcher;
+the wish goes on with its other work.
 
 ## How Djinn helps
 

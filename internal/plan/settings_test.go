@@ -270,9 +270,42 @@ func TestResolveSettings(t *testing.T) {
 		got.TestOne, got.TestOneFrom = "", 0
 		// Install questions is TestInstallQuestionsSettings'.
 		got.InstallQuestions, got.InstallQuestionsFrom = 0, 0
+		// Babysit is TestBabysitSettings'.
+		got.Babysit, got.BabysitFrom = false, 0
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
 		}
+	}
+}
+
+// TestBabysitSettings: babysitting what tasks open is on by default; either file turns it off, the developer's
+// winning, read from a settings file as babysit: false.
+func TestBabysitSettings(t *testing.T) {
+	t.Parallel()
+	const (
+		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
+		repo = planv1.SettingSource_SETTING_SOURCE_REPOSITORY
+		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
+	)
+	for _, c := range []struct {
+		name      string
+		repo, dev *planv1.ProjectSettings
+		want      bool
+		from      planv1.SettingSource
+	}{
+		{"neither file", nil, nil, true, def},
+		{"the repository turns it off", &planv1.ProjectSettings{Babysit: proto.Bool(false)}, nil, false, repo},
+		{"the developer turns it on again", &planv1.ProjectSettings{Babysit: proto.Bool(false)},
+			&planv1.ProjectSettings{Babysit: proto.Bool(true)}, true, dev},
+	} {
+		if s := ResolveSettings(c.repo, c.dev); s.Babysit != c.want || s.BabysitFrom != c.from {
+			t.Errorf("%s: babysit %v from %v, want %v from %v", c.name, s.Babysit, s.BabysitFrom, c.want, c.from)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "settings.txtpb")
+	writeSettings(t, path, "babysit: false\n")
+	if s, err := ReadSettings(path); err != nil || s.Babysit == nil || s.GetBabysit() {
+		t.Errorf("babysit: false read as %v (%v)", s.Babysit, err)
 	}
 }
 
@@ -442,7 +475,7 @@ func TestProjectShow(t *testing.T) {
 		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetProblems(), repoFile, devFile)
 	}
 	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT, "+
-		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, install_questions=always DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
+		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, install_questions=always DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT"; got != want {
 		t.Errorf("no file: %s; want %s", got, want)
 	}
 	var question []string
@@ -461,7 +494,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY, "+
 		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/schema.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
 		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
 	}
 
@@ -471,7 +504,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=djinn/{code}-{uuid8} REPOSITORY, generated=gen/**,docs/schema.json REPOSITORY, "+
 		"generate=go tool task gen REPOSITORY, setup= DEFAULT, checks=test: go tool task test (commit) REPOSITORY, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)
 	}
 	if len(res.GetProblems()) != 1 || !strings.Contains(res.GetProblems()[0], devFile) {

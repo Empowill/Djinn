@@ -193,14 +193,16 @@ type Settings struct {
 	Push             planv1.ProjectPush
 	PushStrategy     planv1.PushStrategy
 	InstallQuestions planv1.InstallQuestions
-	Warnings         []string
+	// Babysit says whether Djinn babysits the pull or merge request a task opens, with the project's babysit skill.
+	Babysit  bool
+	Warnings []string
 
 	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom            planv1.SettingSource
 	ChecksFrom, AttemptsFrom, InstallFrom, TestOneFrom                                                 planv1.SettingSource
 	EnlightenWorkersFrom                                                                               planv1.SettingSource
 	QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                                        planv1.SettingSource
 	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom, PushStrategyFrom planv1.SettingSource
-	InstallQuestionsFrom                                                                               planv1.SettingSource
+	InstallQuestionsFrom, BabysitFrom                                                                  planv1.SettingSource
 }
 
 // CanReadOnly tells whether a provider can run a question worker (read-only).
@@ -251,7 +253,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		PushStrategy:     planv1.PushStrategy_PUSH_STRATEGY_WISH,
 		InstallQuestions: DefaultInstallQuestions,
 		MainBranchFrom:   def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def, PushStrategyFrom: def,
-		InstallQuestionsFrom: def,
+		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def,
 	}
 	questionModel := false // a file set it
 	for _, f := range []struct {
@@ -329,6 +331,9 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		}
 		if f.settings.InstallQuestions != nil {
 			s.InstallQuestions, s.InstallQuestionsFrom = f.settings.GetInstallQuestions(), f.from
+		}
+		if f.settings.Babysit != nil {
+			s.Babysit, s.BabysitFrom = f.settings.GetBabysit(), f.from
 		}
 	}
 	effective := s.QuestionProvider
@@ -430,6 +435,7 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "install_releases", Value: strconv.FormatBool(s.InstallReleases), Source: s.InstallReleasesFrom},
 		{Name: "push", Value: ProjectPushWord(s.Push), Source: s.PushFrom},
 		{Name: "push_strategy", Value: PushStrategyWord(s.PushStrategy), Source: s.PushStrategyFrom},
+		{Name: "babysit", Value: strconv.FormatBool(s.Babysit), Source: s.BabysitFrom},
 	}
 }
 

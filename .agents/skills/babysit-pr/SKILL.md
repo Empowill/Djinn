@@ -10,13 +10,17 @@ metadata:
       match: '(?i)\bbabysit\w*\b.*?(?:/pull/|#|\bpr\s*#?)(?P<pr>\d+)'
       watch: "sh .agents/skills/babysit-pr/watch.sh {pr}"
       done_when: MERGED
+    babysit:
+      forge: github
+      watch: "sh .agents/skills/babysit-pr/watch.sh {pr}"
+      done_when: MERGED
     source:
       watch: "sh .agents/skills/babysit-pr/inbox.sh"
 ---
 
 # Babysit a pull request
 
-You lead a wish made for one pull request: bring it to a merge, and nothing else.
+You lead a wish made for one pull request, or a wish one of whose tasks opened it: bring it to a merge.
 
 ## How Djinn helps
 
@@ -49,6 +53,11 @@ You lead a wish made for one pull request: bring it to a merge, and nothing else
 `sh .agents/skills/babysit-pr/inbox.sh`: the open pull requests of this repository assigned to the developer or that
 request their review, one paragraph each with its link. It runs only once the developer plugs it in on their machine
 (`djinn inbox plug babysit-pr`, or "Plug in" in the inbox); a clone polls nothing by itself. It only reads.
+
+A task of a wish that opens a pull request (`gh pr create`) gets its watcher too, in the same wish: Djinn starts it
+once the task ends, from this skill's `metadata.djinn.babysit`, and tells you `W5 opened PR #12: W7 babysits it`.
+`djinn task spawn <wish> "Babysit W5's PR" --babysit --after W5` does it by hand. There, `MERGED` ends the watcher;
+the wish goes on with its other work.
 
 ## Each time the watcher speaks
 

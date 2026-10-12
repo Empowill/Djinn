@@ -534,6 +534,21 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 	if err != nil {
 		return err
 	}
+	// A babysit spawned by hand watches what the tasks it comes after opened: its command, filled, is its prompt
+	// from now on.
+	var prompted *planv1.TaskEvent
+	if t.GetBabysit() != nil && t.GetBabysit().GetNumber() == 0 && project != nil {
+		filled, why := h.babysitPrompt(ctx, project, t, prompt)
+		if why != "" {
+			h.failPlanned(ctx, t, why)
+			t.Error = why
+			h.tellWatcherFailed(t)
+			return nil
+		}
+		prompt = filled
+		seq++
+		prompted = h.newEvent(t.GetId(), seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
+	}
 	r, err := h.newRun(t, seq)
 	if err != nil {
 		return err
@@ -559,6 +574,11 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		if err := tx.Put(t); err != nil {
 			return err
 		}
+		if prompted != nil {
+			if err := tx.Put(prompted); err != nil {
+				return err
+			}
+		}
 		if preEv != nil {
 			if err := tx.Put(preEv); err != nil {
 				return err
@@ -569,6 +589,9 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 	if err != nil {
 		h.finish(r, Result{ExitCode: -1, Err: err})
 		return err
+	}
+	if prompted != nil {
+		h.publish(r, prompted)
 	}
 	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		// Its branch follows the project's settings as they are now, like its access.

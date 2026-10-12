@@ -178,6 +178,10 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"(`title`, `match`, `watch`, `restart`, `done_when`): a routed request it matches becomes a wish that follows the " +
 		"skill, its watcher started. When the developer asks for the same kind of work again, propose one. " +
 		"`djinn skill list` shows the templates, or why one cannot be used.\n" +
+		"- **A pull or merge request a task opens is babysat in its wish.** When a skill of the project declares " +
+		"`metadata.djinn.babysit`, Djinn starts its watcher once the task ends and tells you (`W5 opened MR !12: W7 " +
+		"babysits it`): follow that skill each time the watcher speaks. By hand: `djinn task spawn <wish> --title " +
+		"\"Babysit W5's MR\" --babysit --after W5`.\n" +
 		"- **To try a command by hand, start a Djinn of your own with its own data folder; never create a wish, a question or a task in the person's Djinn to test.**\n\n" +
 		"## Commands\n\n" +
 		"`<wish>` is a wish's identifier.\n\n" +

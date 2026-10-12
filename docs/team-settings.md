@@ -52,6 +52,7 @@ install: "go tool task install"
 | `install_releases` | For the project a Djinn built from a checkout comes from: a newer release installs by itself while that checkout is on main. `false`: it is only offered. | on |
 | `push`           | When Djinn pushes the integration branch: `PROJECT_PUSH_STANDARD` (today's cadence: at an azima's end or 3 tasks and an hour), `PROJECT_PUSH_ON_DEMAND` (never pushes by itself, only the developer's push does). | `PROJECT_PUSH_STANDARD` |
 | `push_strategy`  | The branch strategy for integration and push: `PUSH_STRATEGY_WISH` (today's behavior: one integration branch per wish and project), `PUSH_STRATEGY_AZIMA` (one branch per azima, `djinn/<code>-<slug>`, cut from main and landing in main). | `PUSH_STRATEGY_WISH` |
+| `babysit`        | `false`: a pull or merge request a task opens is not watched by itself: see [babysitting](wish-templates.md#babysitting-what-a-task-opens). `djinn task spawn --babysit` still works. | on, when a skill of the project declares one |
 
 A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
 
