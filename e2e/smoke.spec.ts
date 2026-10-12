@@ -215,12 +215,19 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
   await expect(page.locator(".sidebar")).toHaveCSS("padding-top", "28px");
   const sidebarBox = await page.locator(".sidebar").boundingBox();
   expect(sidebarBox).toMatchObject({ width: 67 });
-  const toggleBox = await page.locator(".sidebar-toggle").boundingBox();
-  expect(toggleBox?.width).toBeGreaterThanOrEqual(30);
-  expect(toggleBox?.x).toBeGreaterThanOrEqual(sidebarBox?.x ?? Infinity);
-  expect(toggleBox?.x! + toggleBox?.width!).toBeLessThanOrEqual(
-    (sidebarBox?.x ?? 0) + (sidebarBox?.width ?? 0),
-  );
+  const toggle = page.locator(".app-toolbar-toggle");
+  const toolbar = page.locator(".app-toolbar");
+  const toggleBox = await toggle.boundingBox();
+  expect(toggleBox).toMatchObject({ width: 20, height: 20, x: 82, y: 6 });
+  expect(await toolbar.boundingBox()).toMatchObject({
+    x: 82,
+    y: 6,
+    height: 20,
+  });
+  const iconBefore = await toggle
+    .locator("svg")
+    .evaluate((svg) => svg.outerHTML);
+  expect(await page.locator(".app-toolbar > button").count()).toBe(1);
   await expect(page.locator(".sidebar-brand")).toHaveCSS(
     "--wails-draggable",
     "drag",
@@ -229,6 +236,17 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
     "--wails-draggable",
     "no-drag",
   );
+  const planNav = page.locator(".sidebar .plan-nav");
+  if (await planNav.count()) await planNav.click();
+  const topbar = page.locator(".main-shell .topbar");
+  if (await topbar.count()) {
+    const breadcrumbs = page.locator(".main-shell .topbar .breadcrumbs");
+    const breadcrumbsBox = await breadcrumbs.boundingBox();
+    expect(breadcrumbsBox).not.toBeNull();
+    expect(breadcrumbsBox!.x).toBeGreaterThanOrEqual(
+      toggleBox!.x + toggleBox!.width,
+    );
+  }
 
   try {
     await page.locator(".sidebar").getByRole("button", { name: title }).click();
@@ -248,6 +266,12 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
   } finally {
     djinn("wish", "delete", wishId);
   }
+  await toggle.click();
+  await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
+  expect(await toggle.boundingBox()).toEqual(toggleBox);
+  expect(await toggle.locator("svg").evaluate((svg) => svg.outerHTML)).toBe(
+    iconBefore,
+  );
 });
 
 // The browser has no folder dialog: the path is typed, and the button of the native window is not there.

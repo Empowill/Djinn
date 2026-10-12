@@ -1,13 +1,7 @@
 // The window, on the services: the side panel (the flight plan, the wishes by rank, the projects), the flight plan of
 // the active wishes or the wish shown, and the status bar (whether the page follows djinn, the machine). What stays on
 // this page is how it shows: what is shown and the side panel folded.
-import {
-  PanelLeft,
-  PanelLeftClose,
-  Plus,
-  Settings2,
-  Upload,
-} from "lucide-react";
+import { PanelLeft, Plus, Settings2, Upload } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -168,26 +162,25 @@ export function WishApp() {
 
   return (
     <div className={`app wish-app ${collapsed ? "sidebar-collapsed" : ""}`}>
+      <div className="app-toolbar">
+        <button
+          type="button"
+          className="sidebar-toggle app-toolbar-toggle"
+          onClick={() => setCollapsed(!collapsed)}
+          title={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+          aria-label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+          aria-expanded={!collapsed}
+          aria-controls="djinn-sidebar"
+        >
+          <PanelLeft size={16} aria-hidden="true" />
+        </button>
+      </div>
       <aside id="djinn-sidebar" className="sidebar">
         <div className="sidebar-brand">
           <div className="sidebar-brand-main">
             <Brand />
             <span className="version-tag">EARLY ACCESS</span>
           </div>
-          <button
-            className="sidebar-toggle"
-            onClick={() => setCollapsed(!collapsed)}
-            title={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
-            aria-label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
-            aria-expanded={!collapsed}
-            aria-controls="djinn-sidebar"
-          >
-            {collapsed ? (
-              <PanelLeft size={16} aria-hidden="true" />
-            ) : (
-              <PanelLeftClose size={16} aria-hidden="true" />
-            )}
-          </button>
         </div>
         <div
           className="sidebar-content"
