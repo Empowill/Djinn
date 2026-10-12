@@ -269,6 +269,9 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     the wish at the question, the task or the grant (`UiServiceWatchShowResponse.target`, through the attention
     bar's way to an element). (`TestNoticesAskPermission`, `TestNoticesShowAFailedTaskOnce`,
     `TestNoticesShowAWishReadyToReview`, `TestNoticesQuietOnTheWishInView`)
+  - [x] Followed on a change of state only: a task written again in the same status (its events, its resources)
+    is not, so readiness is checked when a task's status or a question's answer changes, not at every commit.
+    (`TestNoticesFollowStatusChangesOnly`)
   - [ ] Seen on macOS from the app: the dialog at first start, a question, a click and a button (by hand).
     (needs: a person on a Mac)
   - [ ] macOS: needs the `.app` bundle and its identifier. T19 builds `Djinn.app`, identifier

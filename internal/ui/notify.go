@@ -99,6 +99,7 @@ type Notices struct {
 	mu       sync.Mutex
 	notifier Notifier
 	seen     map[string]bool    // events notified, by key
+	states   map[string]string  // each task's status and each question's answer, as last passed on (state)
 	changes  chan proto.Message // questions, tasks, inbox items and the lead's choices to follow
 	focused  bool               // the window is in front
 	viewing  string             // the wish the page shows
@@ -208,19 +209,26 @@ func (n *Notices) Run(ctx context.Context) {
 	}
 }
 
-// committed passes on the questions, tasks and inbox items just written, while a notifier shows them; it runs in the
-// writer's goroutine, so it never waits.
+// committed passes on what may be news, while a notifier shows them: a question asked or answered, a task whose
+// status changed, a new inbox item. A task written again in the same status (its events, its resources) is not
+// passed on: what waits, and whether a wish is ready, change only with a status. It runs in the writer's goroutine,
+// so it never waits.
 func (n *Notices) committed(changes []proto.Message) {
 	n.mu.Lock()
-	off := n.notifier == nil
-	n.mu.Unlock()
-	if off {
+	defer n.mu.Unlock()
+	if n.notifier == nil {
 		return
 	}
 	for _, m := range changes {
 		switch m := m.(type) {
-		case *planv1.Question, *planv1.Task:
-			// These are filtered by follow, which needs the task's status and the wish's state.
+		case *planv1.Question:
+			if !n.moved(m.GetId(), fmt.Sprint(m.GetAnswer() != nil)) {
+				continue
+			}
+		case *planv1.Task:
+			if !n.moved(m.GetId(), m.GetStatus().String()) {
+				continue
+			}
 		case *planv1.InboxItem:
 			if m.GetState() != planv1.InboxState_INBOX_STATE_NEW || !recent(m.GetCreateTime()) {
 				continue
@@ -233,6 +241,16 @@ func (n *Notices) committed(changes []proto.Message) {
 		default: // Far behind: the window shows it anyway.
 		}
 	}
+}
+
+// moved notes state as the one of id, and tells whether it is another than the one noted before. n.mu is held.
+func (n *Notices) moved(id, state string) bool {
+	if n.states == nil {
+		n.states = map[string]string{}
+	}
+	was, ok := n.states[id]
+	n.states[id] = state
+	return !ok || was != state
 }
 
 // follow notifies what a question, a task or an inbox item just written tells, then whether its wish became ready.

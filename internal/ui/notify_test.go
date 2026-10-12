@@ -281,7 +281,8 @@ func TestNoticesAskPermission(t *testing.T) {
 	task.Status, task.EndTime = planv1.TaskStatus_TASK_STATUS_WAITING, timestamppb.Now()
 	put(t, db, task)
 	got = notes.next(t)
-	if got.Title != "W1 attend votre réponse · Livrer" || got.ID != q.GetId() || got.QuestionID != q.GetId() {
+	waiting := locales.T("fr", "notify.task_waiting_title", map[string]string{"code": "W1", "wish": "Livrer"})
+	if got.Title != waiting || got.ID != q.GetId() || got.QuestionID != q.GetId() {
 		t.Errorf("waiting = %+v", got)
 	}
 	// The same task written again, waiting still: the same event, not shown again.
@@ -359,6 +360,32 @@ func TestNoticesQuietOnTheWishInView(t *testing.T) {
 		t.Errorf("notification = %+v, want the one asked while the window is behind", got)
 	}
 	notes.none(t)
+}
+
+// TestNoticesFollowStatusChangesOnly: a task written again in the same status (its events, its resources) is not
+// followed: what waits for the developer, and whether a wish is ready, change only with a task's status or a
+// question's answer.
+func TestNoticesFollowStatusChangesOnly(t *testing.T) {
+	n := &Notices{changes: make(chan proto.Message, 16)}
+	n.Use(make(fakeNotifier))
+	task := &planv1.Task{Id: "t1", WishId: "w1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING}
+	q := &planv1.Question{Id: "q1", WishId: "w1", CreateTime: timestamppb.Now()}
+	n.committed([]proto.Message{task, q})
+	task = proto.CloneOf(task)
+	task.Resources = &planv1.Resources{Processes: 2}
+	n.committed([]proto.Message{task, q})
+	if got := len(n.changes); got != 2 {
+		t.Fatalf("followed %d changes, want the task and the question once", got)
+	}
+	task = proto.CloneOf(task)
+	task.Status = planv1.TaskStatus_TASK_STATUS_DONE
+	q = proto.CloneOf(q)
+	q.Answer = &planv1.Answer{Choice: planv1.Choice_CHOICE_YES}
+	n.committed([]proto.Message{task, q})
+	n.committed([]proto.Message{task, q})
+	if got := len(n.changes); got != 4 {
+		t.Fatalf("followed %d changes, want the task done and the question answered once more", got)
+	}
 }
 
 // permitted is a notifier that needs the system's permission.
