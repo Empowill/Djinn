@@ -445,6 +445,11 @@ release, it looks at the checkout its build comes from, in the project whose rep
 - **A release the checkout says nothing about** (no project holds the build, or its repository does not know the
   release) is offered, as to a Djinn installed from a release.
 
+A release of Djinn starts from its notes, `docs/releases/<tag>.md`: the
+[`release-notes`](../.agents/skills/release-notes/SKILL.md) skill says how to gather everything merged since the last
+tag, group it by what the user gets, claim only what was checked, and which commands make the release (a dry run
+first). Tagging and publishing stay the developer's moves.
+
 ## Left out, on purpose
 
 Permissions stay in [`.agents/permissions.txtpb`](providers.md#the-agentspermissionstxtpb-format), templates in

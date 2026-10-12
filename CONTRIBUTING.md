@@ -332,7 +332,11 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
 - **Tasks live in [`plan/`](plan/README.md)**, one file each. The README checklist is the only
   tracker.
 - **Every change is reviewed** by a maintainer.
-- **How to release**: create the release on GitHub's page, from main (or push a tag `vX.Y.Z`).
+- **How to release**: write the notes first, `docs/releases/vX.Y.Z.md`, with the
+  [`release-notes`](.agents/skills/release-notes/SKILL.md) skill, which also gives the commands. From main, `go tool
+  task release VERSION=vX.Y.Z` then `git push origin vX.Y.Z` opens a draft with every binary, published once read
+  (`gh release edit vX.Y.Z --draft=false`); `gh release create vX.Y.Z --target main --notes-file …` is quicker but
+  its tag has no `dist/`, so `go install …@vX.Y.Z` fails, and its binaries come some minutes after it is public.
   Before tagging or publishing, run the dry run from your branch:
   `gh workflow run release.yml --ref <branch> -f version=v0.0.0-dryrun`
   It builds every target (each Linux variant, Windows amd64 and arm64, macOS universal and `Djinn.app`), verifies
