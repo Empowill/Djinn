@@ -208,6 +208,8 @@
   "load.tooltip_detail": "{base} · {engaged} engaged / {limit} limit · forecast: {forecast}",
   "make.full": "{max} wishes are active already: this one waits, paused, until you resume it.",
   "make.projects": "Projects it works on",
+  "make.smoke_label": "Animated ASCII smoke study",
+  "make.smoke_fallback": "The smoke preview is unavailable on this device.",
   "make.submit": "Make the wish",
   "make.submit_paused": "Make it paused",
   "make.title": "What would you like to make happen?",

@@ -208,6 +208,8 @@
   "load.tooltip_detail": "{base} · {engaged} engagés / {limit} limite · prévision : {forecast}",
   "make.full": "{max} vœux sont déjà actifs : celui-ci attend en pause, jusqu’à ce que vous le repreniez.",
   "make.projects": "Projets concernés",
+  "make.smoke_label": "Étude animée de fumée en caractères ASCII",
+  "make.smoke_fallback": "L’aperçu de la fumée est indisponible sur cet appareil.",
   "make.submit": "Faire le souhait",
   "make.submit_paused": "Le faire en pause",
   "make.title": "Que voulez-vous exaucer ?",
