@@ -8,10 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -34,6 +34,26 @@ func wantNice(t *testing.T, low bool) int {
 		return max(own, 10)
 	}
 	return own
+}
+
+// waitNice waits for pid to run at want, and fails with the level it runs at: a low-priority worker starts under nice,
+// which sets its level a moment after Djinn started it.
+func waitNice(t *testing.T, what string, pid, want int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		nice, err := niceOf(pid)
+		if err != nil {
+			t.Fatalf("read the nice of %s (PID %d): %v", what, pid, err)
+		}
+		if nice == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s (PID %d) nice = %d, want %d", what, pid, nice, want)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 // readProcStatNice reads the nice value directly from /proc/<pid>/stat on Linux.
@@ -94,13 +114,7 @@ func TestWorkerPriorityUnix(t *testing.T) {
 			}
 
 			want := wantNice(t, tc.lowPriority)
-			nice, err := niceOf(pid)
-			if err != nil {
-				t.Fatalf("read nice of PID %d: %v", pid, err)
-			}
-			if nice != want {
-				t.Errorf("worker PID %d nice = %d, want %d", pid, nice, want)
-			}
+			waitNice(t, "worker", pid, want)
 
 			if runtime.GOOS == "linux" {
 				procNice, err := readProcStatNice(pid)
@@ -172,14 +186,7 @@ func TestWorkerPriorityPolicyChangeUnix(t *testing.T) {
 		waitFor(t, title+" PID", func() bool { return hook.pidOf(id) > 0 })
 		pid := hook.pidOf(id)
 
-		want := wantNice(t, low)
-		nice, err := niceOf(pid)
-		if err != nil {
-			t.Fatalf("read nice for %q (PID %d): %v", title, pid, err)
-		}
-		if nice != want {
-			t.Errorf("%q (PID %d) nice = %d, want %d", title, pid, nice, want)
-		}
+		waitNice(t, title, pid, wantNice(t, low))
 
 		// Stop the task to free worker slots.
 		if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: id})); err != nil {
@@ -208,86 +215,60 @@ func TestWorkerPriorityPolicyChangeUnix(t *testing.T) {
 	spawnAndCheck("Worker 5 Overclock", false)
 }
 
-// TestWorkerChildPriorityInheritanceUnix verifies that child commands executed by a low-priority
-// worker automatically inherit the low priority (nice 10, or Djinn's own when lower).
+// TestWorkerChildPriorityInheritanceUnix verifies that a low-priority worker, and the commands it runs, start at the low
+// nice level (nice 10, or Djinn's own when lower) with no setpriority from Djinn once it started: on macOS, PR #2's
+// CI saw a low-priority sh, which execs bash at once, run on at nice -10 with its child, Djinn's late setpriority lost
+// to the exec. The worker starts under nice instead (lowCommand). It sets the hook every worker reaches: no t.Parallel.
 func TestWorkerChildPriorityInheritanceUnix(t *testing.T) {
-	t.Parallel()
-	// Create a parent process with lowPriority: true that starts a child process.
-	// The parent script prints the child's PID and waits.
-	cmd := exec.Command("sh", "-c", `read dummy; sh -c 'sleep 10' & echo $!; wait`)
-	ownGroup(cmd, true)
-	r, w, err := os.Pipe()
+	orig := setPriorityFn
+	t.Cleanup(func() { setPriorityFn = orig })
+	var mu sync.Mutex
+	var late []int
+	setPriorityFn = func(_, who, _ int) error {
+		mu.Lock()
+		defer mu.Unlock()
+		late = append(late, who)
+		return nil
+	}
+
+	// The worker prints its child's PID, then waits for it.
+	p, err := startProcess(t.TempDir(), "sh", []string{"-c", "sleep 10 & echo $!; wait"}, nil, nil, time.Second, true)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("start the worker: %v", err)
 	}
-	defer r.Close()
-	cmd.Stdout = w
-
-	inR, inW, err := os.Pipe()
+	t.Cleanup(func() {
+		p.Stop()
+		<-p.done
+	})
+	var first line
+	select {
+	case first = <-p.lines:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the worker printed no child PID")
+	}
+	childPID, err := strconv.Atoi(first.text)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("parse the child PID %q: %v", first.text, err)
 	}
-	defer inW.Close()
-	cmd.Stdin = inR
+	mu.Lock()
+	if slices.Contains(late, p.cmd.Process.Pid) {
+		t.Errorf("Djinn set the worker's priority once it started: a worker must start at its level")
+	}
+	mu.Unlock()
 
-	if err := cmd.Start(); err != nil {
-		w.Close()
-		t.Fatalf("start parent: %v", err)
-	}
-	applyPriority(cmd, true)
-	w.Close()
-
-	// Signal parent to proceed now that priority has been applied.
-	if _, err := inW.Write([]byte("go\n")); err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		t.Fatalf("signal parent: %v", err)
-	}
-	_ = inW.Close()
-
-	// Read child PID from stdout.
-	var childPidStr string
-	buf := make([]byte, 64)
-	n, err := r.Read(buf)
-	if err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		t.Fatalf("read child PID: %v", err)
-	}
-	childPidStr = strings.TrimSpace(string(buf[:n]))
-	childPID, err := strconv.Atoi(childPidStr)
-	if err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		t.Fatalf("parse child PID %q: %v", childPidStr, err)
-	}
-
-	parentPID := cmd.Process.Pid
 	want := wantNice(t, true)
-	parentNice, err := niceOf(parentPID)
-	if err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		t.Fatalf("read parent nice: %v", err)
+	for _, pr := range []struct {
+		name string
+		pid  int
+	}{{"worker", p.cmd.Process.Pid}, {"child", childPID}} {
+		nice, err := niceOf(pr.pid)
+		if err != nil {
+			t.Fatalf("read the %s's nice: %v", pr.name, err)
+		}
+		if nice != want {
+			t.Errorf("%s PID %d nice = %d, want %d", pr.name, pr.pid, nice, want)
+		}
 	}
-	if parentNice != want {
-		t.Errorf("parent PID %d nice = %d, want %d", parentPID, parentNice, want)
-	}
-
-	childNice, err := niceOf(childPID)
-	if err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		t.Fatalf("read child nice: %v", err)
-	}
-	if childNice != want {
-		t.Errorf("child PID %d nice = %d, want %d", childPID, childNice, want)
-	}
-
-	// Clean up processes.
-	_ = syscall.Kill(childPID, syscall.SIGKILL)
-	_ = cmd.Process.Kill()
-	_ = cmd.Wait()
 }
 
 // TestWorkerPriorityUnderNice runs the priority tests again from a test process started under nice -n 5: the CI

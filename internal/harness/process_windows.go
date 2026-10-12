@@ -32,6 +32,9 @@ func workerClass(low bool) uint32 {
 	return own
 }
 
+// lowCommand runs path as it is: on Windows, a worker starts in its class (ownGroup).
+func lowCommand(path string, args []string) (string, []string, bool) { return path, args, true }
+
 // applyPriority is a no-op on Windows: the priority class is set at process creation via CreationFlags.
 func applyPriority(cmd *exec.Cmd, lowPriority bool) {}
 

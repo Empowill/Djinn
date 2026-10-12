@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"syscall"
 
 	"github.com/empowill/djinn/internal/machine"
@@ -52,13 +53,33 @@ func workerNice(low bool) int {
 	return own
 }
 
-// applyPriority sets low CPU priority on the started process if lowPriority is true; at standard priority, it runs
-// at Djinn's own, which it inherited.
+// lowCommand runs path under nice(1) at a worker's low nice level: nice sets its own level, then execs the program,
+// which starts at it. A setpriority once the process started is not enough: on macOS, a program that execs another at
+// once (/bin/sh execs bash, env execs node) can lose it, and the low-priority sh of PR #2's CI ran on at nice -10, its
+// child too. When Djinn already runs at that level or lower, path as it is, which inherits it. False when the program
+// does not start at its level (Djinn's own unknown, no nice on PATH): applyPriority sets it then.
+func lowCommand(path string, args []string) (string, []string, bool) {
+	own, err := niceOf(0)
+	if err != nil {
+		return path, args, false
+	}
+	if own >= lowNice {
+		return path, args, true
+	}
+	nice, err := exec.LookPath("nice")
+	if err != nil {
+		return path, args, false
+	}
+	return nice, append([]string{"-n", strconv.Itoa(lowNice - own), path}, args...), true
+}
+
+// applyPriority sets low CPU priority on the started process if lowPriority is true, when it did not start under nice
+// (lowCommand); at standard priority, it runs at Djinn's own, which it inherited.
 func applyPriority(cmd *exec.Cmd, lowPriority bool) {
 	if !lowPriority || cmd.Process == nil {
 		return
 	}
-	_ = syscall.Setpriority(syscall.PRIO_PROCESS, cmd.Process.Pid, workerNice(true))
+	_ = setPriorityFn(syscall.PRIO_PROCESS, cmd.Process.Pid, workerNice(true))
 }
 
 // setPriority sets CPU priority on the running process and its process tree,
