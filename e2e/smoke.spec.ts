@@ -296,6 +296,96 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
   );
 });
 
+// Without Wails' JavaScript runtime, --wails-draggable does nothing: src/native-window.ts posts Wails' own drag and
+// double-click messages for a press in the top 40 px that is not on a control. A fake WebKit bridge records them.
+test("native mac drag protocol ignores controls and handles the empty titlebar", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const userAgent = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      get: () => `${userAgent} wails.io`,
+    });
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      get: () => "MacIntel",
+    });
+    const messages: string[] = [];
+    Object.defineProperty(window, "__djinnNativeDragMessages", {
+      configurable: true,
+      value: messages,
+    });
+    Object.defineProperty(window, "webkit", {
+      configurable: true,
+      value: {
+        messageHandlers: {
+          external: {
+            postMessage: (message: string) => messages.push(message),
+          },
+        },
+      },
+    });
+  });
+  await page.setViewportSize({ width: 1100, height: 760 });
+  await page.goto(djinnURL());
+  await expect(page.locator("html")).toHaveClass(/native-mac/);
+
+  const messages = () =>
+    page.evaluate(
+      () =>
+        (window as unknown as { __djinnNativeDragMessages: string[] })
+          .__djinnNativeDragMessages,
+    );
+  const clearMessages = () =>
+    page.evaluate(() => {
+      (
+        window as unknown as { __djinnNativeDragMessages: string[] }
+      ).__djinnNativeDragMessages.length = 0;
+    });
+
+  // The topbar centres the operating-load gauge: the strip between the sidebar and the gauge is empty.
+  const main = await page.locator(".main-shell").boundingBox();
+  const gauge = await page
+    .getByRole("group", { name: "Operating load" })
+    .boundingBox();
+  expect(main).not.toBeNull();
+  expect(gauge).not.toBeNull();
+  expect(gauge!.y).toBeLessThan(40);
+  const x = Math.round((main!.x + gauge!.x) / 2);
+
+  await page.mouse.move(x, 20);
+  await page.mouse.down();
+  await page.mouse.move(x + 10, 20);
+  await page.mouse.up();
+  expect(await messages()).toEqual(["wails:drag"]);
+
+  await clearMessages();
+  await page.mouse.dblclick(x, 20);
+  expect(await messages()).toEqual(["wails:drag:doubleclick"]);
+
+  await clearMessages();
+  await page.mouse.move(x + 10, 48);
+  await page.mouse.down();
+  await page.mouse.move(x + 20, 48);
+  await page.mouse.up();
+  expect(await messages()).toEqual([]);
+
+  // A control inside the strip keeps its clicks: the toolbar's toggle folds the sidebar, and unfolds it again.
+  await clearMessages();
+  const toggle = await page.locator(".app-toolbar-toggle").boundingBox();
+  expect(toggle).not.toBeNull();
+  expect(toggle!.y).toBeLessThan(40);
+  await page.mouse.move(toggle!.x + 6, toggle!.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(toggle!.x + 14, toggle!.y + 10);
+  await page.mouse.up();
+  await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
+  await page.mouse.dblclick(toggle!.x + 10, toggle!.y + 10);
+  expect(await messages()).toEqual([]);
+  await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
+});
+
 // The browser has no folder dialog: the path is typed, and the button of the native window is not there.
 test("adding a project in the browser types the folder", async ({ page }) => {
   const errors = collectErrors(page);
