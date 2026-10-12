@@ -65,7 +65,7 @@ type Service struct {
 	// Shown is called when the window is asked to show a wish or a terminal.
 	Shown func(wishID, terminal string)
 	// Known tells whether a wish is still on this machine: a show of the last minute whose wish was deleted since is
-	// not replayed to a window that opens, which would leave the wish it shows for the flight plan. Nil: every wish is.
+	// not replayed to a window that opens, which would leave the wish it shows for the flying carpet. Nil: every wish is.
 	Known func(ctx context.Context, wishID string) bool
 	// Notices shows the system notifications, and knows whether the system lets it. Nil: none (a test).
 	Notices *Notices

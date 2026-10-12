@@ -332,7 +332,7 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   assert.match(html, />lamp</);
 });
 
-test("the side panel counts the new inbox items on the flight plan's entry, even with no active wish", () => {
+test("the side panel counts the new inbox items on the flying carpet's entry, even with no active wish", () => {
   const sidebar = (wishes, inbox) =>
     s.renderToStaticMarkup(
       h(s.WishSidebar, {
@@ -350,9 +350,9 @@ test("the side panel counts the new inbox items on the flight plan's entry, even
       }),
     );
   const paused = wish("w1", "Trim the wick", s.WishState.PAUSED, 0);
-  // Nothing active, nothing new: no flight plan.
+  // Nothing active, nothing new: no flying carpet.
   assert.doesNotMatch(sidebar([paused], 0), /plan-nav/);
-  // Two new items: the flight plan shows them, its entry counts them.
+  // Two new items: the flying carpet shows them, its entry counts them.
   const html = sidebar([paused], 2);
   assert.match(html, /plan-nav/);
   assert.match(
@@ -2678,7 +2678,7 @@ test("the Tasks tab groups work under its azima, which says what it waits for an
   assert.doesNotMatch(html, /Waits for your answer/);
   assert.doesNotMatch(html, /tone-waiting/);
 
-  // Nor does the flight plan: an azima neither waits for you nor moves.
+  // Nor does the flying carpet: an azima neither waits for you nor moves.
   const wish = { id: "w1", title: "Lamp", state: s.WishState.ACTIVE, rank: 1 };
   const plan = s.flightPlan([wish], {
     w1: { tasks, questions: [], blocks: [], loaded: true },
@@ -2910,7 +2910,7 @@ test("a merge sits under the original task it serves, folded and marked Merge; t
   assert.equal(line.target, "waiting-W422");
 });
 
-test("the flight plan merges the active wishes: their questions, the blocking one first, each with its wish", async () => {
+test("the flying carpet merges the active wishes: their questions, the blocking one first, each with its wish", async () => {
   const { lamp, oil, djinn } = twoWishes();
   const closes = [djinn.store.open(lamp.id), djinn.store.open(oil.id)];
   await djinn.store.changed(lamp.id, [s.Change.WISH]);
@@ -2922,7 +2922,7 @@ test("the flight plan merges the active wishes: their questions, the blocking on
       h(s.FlightPlan, { wishes: [lamp, oil], onOpen() {}, onToast() {} }),
     ),
   );
-  assert.match(html, /<h1>Flight plan<\/h1>/);
+  assert.match(html, /<h1>Flying carpet<\/h1>/);
   // The blocking question of the second wish comes before the free one of the first, each marked with its wish.
   const blocking = html.indexOf("May W2 pour?");
   const free = html.indexOf("Brass or glass?");
@@ -3028,7 +3028,7 @@ test("what a wish spent shows one price, ≈ when an estimate is in it; the hove
   }
 });
 
-test("the flight plan hides its empty sections", async () => {
+test("the flying carpet hides its empty sections", async () => {
   const lamp = wish(
     "01a11833-a440-7479-a067-52615c91da71",
     "Ship the lamp",
@@ -3890,7 +3890,7 @@ test("work that merges stays in sight, counts as running everywhere, then folds 
   assert.doesNotMatch(sidebar(committed, false), /running/);
   assert.doesNotMatch(sidebar(committed, true), /tone-running/);
 
-  // The head of the wish and the flight plan count it as running.
+  // The head of the wish and the flying carpet count it as running.
   const page = async (list) => {
     const transport = s.createRouterTransport(({ service }) => {
       service(s.WishService, { list: () => ({ wishes: [lamp] }) });
@@ -4180,7 +4180,7 @@ test("the update banner names the build against the running Djinn: what it adds,
   );
 });
 
-test("an azima whose work is done awaits its proof: its own label and tone, what it needs, the pill apart, and the flight plan lists what a person can give", async () => {
+test("an azima whose work is done awaits its proof: its own label and tone, what it needs, the pill apart, and the flying carpet lists what a person can give", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da71";
   const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
   const need = (box, needs, provers, reviewer = "") => ({
@@ -4274,7 +4274,7 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
     page,
     /title="1 of 4 azimas done, 2 to validate"[^>]*>.*?<b>1<\/b>done · <b class="tone-proof">2<\/b> to validate \/ 4 azimas<\/span>/,
   );
-  // The flight plan lists the proof a person can give among what waits for them, never as work; a Mac's is not.
+  // The flying carpet lists the proof a person can give among what waits for them, never as work; a Mac's is not.
   const plan = s.renderToStaticMarkup(
     h(
       s.DjinnProvider,
@@ -4744,7 +4744,7 @@ test("a line of the attention bar takes you to its target in another tab, a fold
   assert.deepEqual(s.wayTo(line("q2"), shown, "w1"), { tab: "decisions" });
   assert.deepEqual(s.wayTo(line("t9"), shown, "w1"), { tab: "main" });
   assert.deepEqual(s.wayTo(line("ready-w1"), shown, "w1"), { tab: "main" });
-  // In another wish: its wish opens, whatever this one shows; in the flight plan, every wish is here.
+  // In another wish: its wish opens, whatever this one shows; in the flying carpet, every wish is here.
   assert.deepEqual(s.wayTo(line("q3"), shown, "w1"), { wishId: "w2" });
   assert.equal(s.wayTo(line("q3"), shown), undefined);
   assert.deepEqual(s.wayTo(line("q3"), new Set(["question-q3"])), {
@@ -6067,7 +6067,7 @@ test("an opened azima: its description, then its proof, on the left; its parts o
   assert.doesNotMatch(bare, /azima-side/);
 });
 
-test("draft azimas: fold, card with description, actions, and flight plan", () => {
+test("draft azimas: fold, card with description, actions, and flying carpet", () => {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
   const draft = (code, title, extra = {}) => ({
     id: code,
@@ -6113,7 +6113,7 @@ test("draft azimas: fold, card with description, actions, and flight plan", () =
   const allTasks = [d1, d2, openAzima, runningWork];
   const byId = new Map(allTasks.map((t) => [t.id, t]));
 
-  // 1. Flight plan: drafts are collected in drafts, NOT in moving, waiting, or azimas.
+  // 1. Flying carpet: drafts are collected in drafts, NOT in moving, waiting, or azimas.
   const myWish = wish("w1", "Multi-machine", s.WishState.ACTIVE, 1);
   const plan = s.flightPlan([myWish], {
     [myWish.id]: {
@@ -6408,7 +6408,7 @@ test("azimas are ordered in a stable 6-tier order and laid out in a single colum
     ["T30", "T31"],
   );
 
-  // 3. Flight plan azimas are sorted by azimaRank, then compareCodes
+  // 3. Flying carpet azimas are sorted by azimaRank, then compareCodes
   const testWish = wish("w_test", "Azima layout wish", s.WishState.ACTIVE, 1);
   const plan = s.flightPlan([testWish], {
     [testWish.id]: {
@@ -6983,7 +6983,7 @@ const t3 = 1700001800n; // end of the 30 min window
 const at = (seconds) => ({ seconds, nanos: 0 });
 const mib = 1024n * 1024n;
 const longTitle =
-  "Make the flight plan's resources read at a glance: one title line per worker with its code, its agent and this whole title, which wraps rather than being cut, then the facts of its job beside larger charts";
+  "Make the flying carpet's resources read at a glance: one title line per worker with its code, its agent and this whole title, which wraps rather than being cut, then the facts of its job beside larger charts";
 const lintGate = {
   gate: "lint",
   command: "go tool task lint",
@@ -7184,7 +7184,7 @@ test("the resources panel: the machine's charts, each worker's title line in ful
   );
   assert.match(
     w1,
-    /<h4 class="resource-worker-title"><span class="agent-code">W1<\/span><span class="provider-badge provider-claude">claude<\/span><span class="resource-worker-name">Make the flight plan&#x27;s resources read at a glance: [^<]*larger charts<\/span>/,
+    /<h4 class="resource-worker-title"><span class="agent-code">W1<\/span><span class="provider-badge provider-claude">claude<\/span><span class="resource-worker-name">Make the flying carpet&#x27;s resources read at a glance: [^<]*larger charts<\/span>/,
   );
   assert.doesNotMatch(w1, /…<\/span>/);
   // Its link to the task in its wish: a small eye on the title line.
@@ -8054,12 +8054,12 @@ test("the Review tab lists merged work, its merges under the task they serve, ch
     tabs,
     /id="view-tab-tasks".*id="view-tab-review" aria-selected="true" class="active">Review<span class="count">3<\/span>.*id="view-tab-decisions"/,
   );
-  // The flight plan has no Review tab.
+  // The flying carpet has no Review tab.
   assert.doesNotMatch(
     s.renderToStaticMarkup(
       h(s.ViewTabs, {
         view: "main",
-        main: "Flight plan",
+        main: "Flying carpet",
         tasks: 0,
         decisions: 0,
         onView() {},

@@ -24,7 +24,7 @@ projects it touches, and a project is not necessarily a Git repository.
   proposes: a big, friendly "My wish is granted" button. The wish is granted when you click it.
 - **Opening a wish is a moment, not a command.** You say it ("open a new wish: …"); the lead
   recognizes it and opens the wish in Djinn (`djinn wish make`): a short title, the projects it
-  touches, the first questions. The new wish shows at once in the flight plan, below the others
+  touches, the first questions. The new wish shows at once in the flying carpet, below the others
   by rank. With three active, a new wish is made paused: it waits, set aside, until you resume it.
 - **Djinn is an orchestration layer, kept apart from the projects it works on.** One central
   store for the machine (missions, tasks, questions, journal) and one folder per project for its
@@ -48,9 +48,9 @@ projects it touches, and a project is not necessarily a Git repository.
   wish keeps the provider and the session ID, never a secret), and otherwise starts a new lead
   from a brief built out of the store (plan, open questions, decisions, journal). The wish's
   page shows this command at the top, so whoever has the page open is one command away.
-- **Several wishes at once, in one Djinn, in one flight plan.** The active wishes are ranked by
+- **Several wishes at once, in one Djinn, in one flying carpet.** The active wishes are ranked by
   hand: drag a wish up or down, and the one on top has priority (the scheduler serves it first,
-  T07). Their flight plans merge into one: one list of questions, one list of workers, one
+  T07). Their flying carpets merge into one: one list of questions, one list of workers, one
   journal, sorted as usual (blocking first). Every item keeps the wish it comes from, shown on
   it, so that an answer, a task or a block goes back to the right wish. The machine and the
   gates are shared by all wishes; the rank decides who goes first.
@@ -62,11 +62,11 @@ projects it touches, and a project is not necessarily a Git repository.
 ## What we want
 - **Projects are a registry**, set up once: point at a folder ("it is here"), or ask Djinn to
   clone a repository, and it is indexed in seconds (what to read first, how to test).
-- **Sessions are independent of projects.** A session (today's "mission" and its flight plan)
+- **Sessions are independent of projects.** A session (today's "mission" and its flying carpet)
   lists the projects it works on, and can add one along the way.
 - **Each task names its project.** In a Git project it gets its own worktree; elsewhere, writers
   are serialized by exclusive write scopes.
-- **Several sessions at once**, in the same project or not, each with its own flight plan.
+- **Several sessions at once**, in the same project or not, each with its own flying carpet.
 - **Export and import a session**, so a teammate opens it on another machine; projects are
   matched by name or remote URL, and asked for when missing.
 
@@ -94,16 +94,16 @@ projects it touches, and a project is not necessarily a Git repository.
   order, for the scheduler (T07).
 - [x] Djinn proposes a ready wish and never grants it: only `djinn wish grant`, or "My wish is granted" in the
   window, does.
-- [x] The window ranks the wishes by dragging them (done in `w27-ui-switch`, T03), and shows them in one flight plan:
+- [x] The window ranks the wishes by dragging them (done in `w27-ui-switch`, T03), and shows them in one flying carpet:
   the open questions of every active wish, blocking first, what waits, what runs, the latest decisions, each line
   marked with its wish; a question answered there goes to its wish. (branch `w30-ui`: `src/flight-plan.tsx`,
-  `tests/data-flight.test.mjs`, the flight plan tests of `tests/screens.test.mjs`, `e2e/flight-plan.spec.ts`: two
+  `tests/data-flight.test.mjs`, the flying carpet tests of `tests/screens.test.mjs`, `e2e/flight-plan.spec.ts`: two
   wishes, a question each, one answered from the merged view and read answered by `djinn question list`)
 - [x] Each wish shows its own lead: the wish shown brings its lead's terminal (`lead-<wish id>`) while it runs, else
-  the window's terminal; the flight plan shows the window's. Switching back finds the same lead, its output kept.
+  the window's terminal; the flying carpet shows the window's. Switching back finds the same lead, its output kept.
   (`TestServiceList`, `tests/data-terminal.test.mjs`, e2e `lead-switch.spec.ts`: two wishes with a lead each and one
   without, switched from the side panel)
-- [x] ~~Clément has reviewed the flight plan of several wishes: it changes `src/`.~~ *Waived by the developer on 10/10/2026: the project is at its very beginning, no review now.*
+- [x] ~~Clément has reviewed the flying carpet of several wishes: it changes `src/`.~~ *Waived by the developer on 10/10/2026: the project is at its very beginning, no review now.*
 - [x] Adding a project in the native window, "Choose a folder…" opens the system's folder dialog and fills the field;
   in the browser the button is hidden and the path is typed. (`UiService.ChooseDirectory` on the Wails dialog:
   `TestChooseDirectory`, `TestChooseDirectoryWithoutADialog`, `TestChooseDirectoryOneAtATime` in `internal/ui`; the
@@ -196,8 +196,8 @@ projects it touches, and a project is not necessarily a Git repository.
   and recorded as the lead once the terminal runs; codex and agy with the whole brief as their first message. The
   details, and what is verified or supposed, are in T22.
 
-- **One flight plan, in the window** (`src/flight-plan.tsx`, branch `w30-ui`). An entry above the wishes, "Flight
-  plan", with the count of questions waiting. The window opens on it while a wish is active; a wish chosen, or shown
+- **One flying carpet, in the window** (`src/flight-plan.tsx`, branch `w30-ui`). An entry above the wishes, "Flying
+  carpet", with the count of questions waiting. The window opens on it while a wish is active; a wish chosen, or shown
   by `djinn wish resume`, opens its own view, which stays. It reads the tasks, questions and blocks of the active
   wishes (three at most) all the time: the side panel counts the questions waiting in each. Sections, each hidden
   when empty: a card per wish (rank, questions, tasks running, what it spent; a click opens it), "Your move" (the open
@@ -208,7 +208,7 @@ projects it touches, and a project is not necessarily a Git repository.
   page.
 - **Each wish shows its own lead, in the one terminal.** The window keeps one terminal at the bottom; the wish it
   shows switches it to that wish's lead (`lead-<wish id>`) when it runs, else to the window's own (`main`), and so
-  does the flight plan. The window asks `TerminalService.List` (internal: the terminals whose program runs) and
+  does the flying carpet. The window asks `TerminalService.List` (internal: the terminals whose program runs) and
   never opens a lead itself: only `djinn wish resume` and the routing start one. `UiService.WatchShow` still
   switches it, with the wish it shows. A lead that ends while shown stays, with its restart button.
 - **The journal stays per wish.** The merged plan has no merged journal: a wish's journal (its commands, from
@@ -216,7 +216,7 @@ projects it touches, and a project is not necessarily a Git repository.
   the whole wish.
 
 ## Open questions
-- A journal of every active wish in the flight plan, merged by time? *Recommendation: not before someone asks;
+- A journal of every active wish in the flying carpet, merged by time? *Recommendation: not before someone asks;
   Snapshot reads a whole wish, events included, and three of them on every change is heavy. A light read of the
   journal (`WishService.Journal`, the entries only) would come first.*
 - `Harness.Recover` marks every pending task interrupted at start-up, so the planned items of an

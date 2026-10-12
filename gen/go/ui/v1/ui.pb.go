@@ -332,7 +332,7 @@ func (x *UiServiceGetEnvironmentResponse) GetShortcut() *Shortcut {
 }
 
 // The global shortcut that brings the window forward from anywhere on the desktop, on the wish with the newest open
-// question, else on the flight plan.
+// question, else on the flying carpet.
 type Shortcut struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The chord in effect, such as Ctrl+Alt+Space; empty when off.
@@ -2075,7 +2075,7 @@ func (*UiServiceOpenNotificationSettingsResponse) Descriptor() ([]byte, []int) {
 
 type UiServiceViewRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The wish the page shows; empty for none (the flight plan, a dialog of its own).
+	// The wish the page shows; empty for none (the flying carpet, a dialog of its own).
 	WishId        string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

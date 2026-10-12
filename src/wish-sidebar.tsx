@@ -1,4 +1,4 @@
-// The side panel's lists, read from the services: the flight plan's entry with what waits for you there (questions,
+// The side panel's lists, read from the services: the flying carpet's entry with what waits for you there (questions,
 // new inbox items), the wishes, the active ones by rank (drag one up or down, or Alt+Arrow) and how many of the three
 // places they take, then the paused ones and the granted ones; and the projects, each with its branches out of sync
 // with their remote (project-sync.tsx). The wishes' list shows three rows and scrolls under the pointer. A paused wish
@@ -53,9 +53,9 @@ export function WishSidebar({
   projects: Project[];
   // What each active wish holds, by id: questions that wait for you, workers that run.
   counts?: Readonly<Record<string, WishCounts>>;
-  // How many inbox items wait for your answer: the flight plan shows them.
+  // How many inbox items wait for your answer: the flying carpet shows them.
   inbox?: number;
-  // The flight plan of the active wishes shows.
+  // The flying carpet of the active wishes shows.
   planSelected?: boolean;
   onSelectPlan?: () => void;
   selectedWishId: string;

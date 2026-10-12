@@ -498,7 +498,7 @@
   color: var(--muted-dim);
 }
 
-/* The flight plan of the active wishes: each line shows its wish. */
+/* The flying carpet of the active wishes: each line shows its wish. */
 .plan-nav.selected,
 .plan-nav.selected:hover {
   background: var(--n-28);

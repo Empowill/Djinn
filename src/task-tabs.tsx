@@ -1,4 +1,4 @@
-// The tasks have a tab of their own, in a wish's view and in the flight plan, next to the rest. In it, a list: at the
+// The tasks have a tab of their own, in a wish's view and in the flying carpet, next to the rest. In it, a list: at the
 // top what moves or waits for someone, by status (running, cut short and failed first, then waiting and paused, the
 // planned ones last); then the azimas of the plan, each with the work part of it (src/azima.tsx), the done ones folded
 // (Fold). A wish's merged work has the next tab, to review (src/review-tab.tsx), the decisions the one after
@@ -60,17 +60,17 @@ export function ViewTabs({
   onView,
 }: {
   view: View;
-  // The name of the rest: the wish, the flight plan.
+  // The name of the rest: the wish, the flying carpet.
   main: string;
   // How many tasks the Tasks tab holds.
   tasks: number;
-  // How many tasks the Review tab holds still to review; without it, a view with no such tab (the flight plan).
+  // How many tasks the Review tab holds still to review; without it, a view with no such tab (the flying carpet).
   review?: number;
   // How many decisions the Decisions tab holds.
   decisions: number;
-  // How many tilasms the Tilasms tab holds; without it, a view with no such tab (the flight plan).
+  // How many tilasms the Tilasms tab holds; without it, a view with no such tab (the flying carpet).
   tilasms?: number;
-  // How many blocks the For agents tab holds; without it, a view with no such tab (the flight plan).
+  // How many blocks the For agents tab holds; without it, a view with no such tab (the flying carpet).
   agents?: number;
   onView: (view: View) => void;
 }) {
@@ -262,7 +262,7 @@ export function TaskSections<T, A = never, D = never>({
   // The draft azimas, behind their Fold at the end of the Tasks tab.
   drafts?: readonly D[];
   renderDraft?: (draft: D) => ReactNode;
-  // The key of the folds: the wish's id, or the flight plan's.
+  // The key of the folds: the wish's id, or the flying carpet's.
   fold?: string;
   // The done azimas show: a link brings one of them, or one of their parts, into sight.
   showDone?: boolean;

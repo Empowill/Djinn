@@ -1,4 +1,4 @@
-// The resources panel under the flight plan: the machine's CPU and memory over time with Djinn's share and the load
+// The resources panel under the flying carpet: the machine's CPU and memory over time with Djinn's share and the load
 // limit, then each running worker (its title line, the facts of its job, its CPU and memory over time, a link to
 // its task in its wish), then where the time of the commands goes, by project and gate. The series are kept in the
 // store (internal/machine/history.go): the panel reads the range once, then every 5 s only what came since.

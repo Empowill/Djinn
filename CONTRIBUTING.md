@@ -319,7 +319,7 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
 - With the window, what waits for you in an active wish shows as a system notification: a question (a button
   answers it), a task that waits or failed, a wish ready to review; a click shows the wish there. None for the wish
   the window shows while it is in front. A new inbox item shows as one too, and the side panel counts the new ones on
-  the flight plan. On macOS it needs the `.app` bundle (T19) and your permission: Djinn asks at its first start, and
+  the flying carpet. On macOS it needs the `.app` bundle (T19) and your permission: Djinn asks at its first start, and
   the settings show the state. A headless build and `--browser` show none.
 - `go tool task check-window`: open a window a few seconds and check that a stream reaches it
   value by value. PASS or FAIL.

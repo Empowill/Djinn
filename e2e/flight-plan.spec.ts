@@ -1,4 +1,4 @@
-// The flight plan of the active wishes, against the real djinn up --browser (see global-setup.ts): two wishes, a
+// The flying carpet of the active wishes, against the real djinn up --browser (see global-setup.ts): two wishes, a
 // question each, merged in one view; a question answered there reads as answered by the command line. A wish's
 // tasks show what they spent: tokens, and one price.
 import { expect, test } from "@playwright/test";
@@ -117,7 +117,7 @@ const lampOf = (wishId: string, title: string) => {
   };
 };
 
-test("the flight plan merges two wishes, and a question is answered from it", async ({
+test("the flying carpet merges two wishes, and a question is answered from it", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -148,8 +148,8 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   // Tall enough for the screenshots to hold the whole plan: the page scrolls inside the window.
   await page.setViewportSize({ width: 1440, height: 1900 });
   await page.goto(process.env.DJINN_URL!);
-  // With wishes active, the window opens on their flight plan.
-  await expect(page.locator(".hero h1")).toHaveText("Flight plan");
+  // With wishes active, the window opens on their flying carpet.
+  await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
 
   // The page header's row is the window's toolbar's, its breadcrumbs where the page's content starts, past the
   // sidebar or its rail, past the traffic lights in the macOS window, where the row is the lights' and the gauge
@@ -216,7 +216,7 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await assertHeaderChrome(248);
 
   await expect(
-    page.locator(".plan-nav").filter({ hasText: "Flight plan" }),
+    page.locator(".plan-nav").filter({ hasText: "Flying carpet" }),
   ).toHaveClass(/selected/);
 
   // Both questions, each marked with its wish.
@@ -283,7 +283,7 @@ test("the flight plan merges two wishes, and a question is answered from it", as
     .filter({ hasText: "May the worker pour the oil?" });
   await expect(decided.locator(".wish-origin")).toHaveText(`2${oilTitle}`);
   await expect(decided.locator(".status-badge")).toHaveText("Decided by you");
-  await page.getByRole("tab", { name: /^Flight plan/ }).click();
+  await page.getByRole("tab", { name: /^Flying carpet/ }).click();
   const [answered] = JSON.parse(
     djinn("question", "list", "--wish-id", oilId, "--json"),
   ).questions;

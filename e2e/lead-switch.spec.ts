@@ -107,7 +107,7 @@ test("Lead on each wish focuses the one lead on it, whatever wish is shown", asy
     ).session_id,
   ).toBe(session);
 
-  // The flight plan shows no wish: the lead stays shown.
+  // The flying carpet shows no wish: the lead stays shown.
   await page.locator(".plan-nav").click();
   await expect(command).toContainText(`claude --resume ${session}`);
 });

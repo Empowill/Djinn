@@ -87,7 +87,7 @@ export const UiServiceGetEnvironmentResponseSchema: GenMessage<UiServiceGetEnvir
 
 /**
  * The global shortcut that brings the window forward from anywhere on the desktop, on the wish with the newest open
- * question, else on the flight plan.
+ * question, else on the flying carpet.
  *
  * @generated from message ui.v1.Shortcut
  */
@@ -974,7 +974,7 @@ export const UiServiceOpenNotificationSettingsResponseSchema: GenMessage<UiServi
  */
 export type UiServiceViewRequest = Message<"ui.v1.UiServiceViewRequest"> & {
   /**
-   * The wish the page shows; empty for none (the flight plan, a dialog of its own).
+   * The wish the page shows; empty for none (the flying carpet, a dialog of its own).
    *
    * @generated from field: string wish_id = 1;
    */

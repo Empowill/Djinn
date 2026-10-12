@@ -105,7 +105,7 @@ export function useWishDetail(
   return useData((state) => state.details[wishId] ?? emptyDetail);
 }
 
-// useWishDetails reads the tasks, questions and blocks of several wishes while the screen shows them: the flight plan
+// useWishDetails reads the tasks, questions and blocks of several wishes while the screen shows them: the flying carpet
 // of the active wishes. What is read is in the store's details, by wish.
 export function useWishDetails(wishIds: readonly string[]) {
   const { store } = useRequiredDjinn();

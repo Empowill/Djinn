@@ -189,7 +189,7 @@ read, install and contribute.
 
 Delegable, not needed to start testing. Given to Djinn itself once phase 2 is done.
 
-- [x] The lead's terminal pinned at the bottom of the flight plan: moved to T21, in phase 2. (done in T21;
+- [x] The lead's terminal pinned at the bottom of the flying carpet: moved to T21, in phase 2. (done in T21;
   e2e "the terminal shows at the bottom and runs a command")
 - [x] An inbox for instructions added while an agent works, with acknowledgements: `djinn task send <task> "…"`
   (`TaskService.Send`), or the box under a running task's events in the window. The message is a `MESSAGE` event of
@@ -279,7 +279,7 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     whether the ad hoc signature suffices)
   - [ ] A global shortcut.
     - [x] A chord anywhere on the desktop brings the window forward on the active wish with the newest question
-      that waits for you (not one being investigated), else on the flight plan. Through Wails beta.28's
+      that waits for you (not one being investigated), else on the flying carpet. Through Wails beta.28's
       `app.GlobalShortcut`, taken once the app runs (`events.Common.ApplicationStarted`), so that a refusal is
       known at once; off in headless builds and with `--browser`. (`internal/ui/shortcut.go`;
       `TestShortcutShowsWhatWaits`, `TestShortcutsSet`, `TestShortcutsRefused` with a fake registrar)
@@ -306,7 +306,7 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
       - Windows: `RegisterHotKey`; a chord another app holds is refused at once. Supposed; built (`GOOS=windows go
         vet`), not run.
     - [ ] Pressed by hand on GNOME on X11: the window comes forward on the wish with the newest open question, then
-      on the flight plan once it is answered; a chord another app holds says so in the settings; turned off, the
+      on the flying carpet once it is answered; a chord another app holds says so in the settings; turned off, the
       chord does nothing. A development build next to the installed Djinn finds `Ctrl+Alt+Space` taken by it: that
       is the refusal case; choose another chord in its settings to try a press. (needs: a person on Linux, with an
       installed Djinn)

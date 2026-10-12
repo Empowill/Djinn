@@ -1,4 +1,4 @@
-// The flight plan of several wishes, what tasks spent, and the journal of a wish, read from the protos. Run with
+// The flying carpet of several wishes, what tasks spent, and the journal of a wish, read from the protos. Run with
 // `go tool task test-ui`.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -40,7 +40,7 @@ const detail = (tasks, questions) => ({
   loaded: true,
 });
 
-test("the flight plan merges the wishes: blocking questions first, every item keeps its wish", () => {
+test("the flying carpet merges the wishes: blocking questions first, every item keeps its wish", () => {
   const lamp = wish("w1", "Ship the lamp", 1);
   const oil = wish("w2", "Find the oil", 2, { ready: true });
   const plan = f.flightPlan([lamp, oil], {
@@ -195,7 +195,7 @@ test("the Tasks tab: what moves or waits by status, then the finished tasks, the
     f.finishedTasks(forked).map((t) => t.code),
     ["W1"],
   );
-  // The flight plan merges the Tasks tabs of its wishes, each task with its wish.
+  // The flying carpet merges the Tasks tabs of its wishes, each task with its wish.
   const lamp = wish("w1", "Ship the lamp", 1);
   const oil = wish("w2", "Find the oil", 2);
   const plan = f.flightPlan([lamp, oil], {
@@ -316,7 +316,7 @@ test("work that merges stays among the moving tasks, then folds with the finishe
     group.parts.filter((x) => !f.settledTask(x, nest)).map((x) => x.code),
     ["W8"],
   );
-  // The flight plan does the same, and counts the work that merges as running.
+  // The flying carpet does the same, and counts the work that merges as running.
   const lamp = wish("w1", "Ship the lamp", 1);
   const plan = f.flightPlan([lamp], { w1: detail(merging, []) });
   assert.deepEqual(

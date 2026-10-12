@@ -193,7 +193,7 @@ func TestShow(t *testing.T) {
 }
 
 // W501: a spec opened a wish, then deleted it; a reload within the minute got that show again, and the window left the
-// wish it showed for the flight plan. A show whose wish is gone is not replayed; one of a wish still here is.
+// wish it showed for the flying carpet. A show whose wish is gone is not replayed; one of a wish still here is.
 func TestReplayForgetsADeletedWish(t *testing.T) {
 	s, _ := newService(t)
 	deleted := map[string]bool{"gone": true}

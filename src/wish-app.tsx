@@ -1,4 +1,4 @@
-// The window, on the services: the side panel (the flight plan, the wishes by rank, the projects), the flight plan of
+// The window, on the services: the side panel (the flying carpet, the wishes by rank, the projects), the flying carpet of
 // the active wishes or the wish shown, and the status bar (whether the page follows djinn, the machine). What stays on
 // this page is how it shows: what is shown and the side panel folded.
 import { ArrowLeft, PanelLeft, Plus, Settings2, Upload } from "lucide-react";
@@ -34,7 +34,7 @@ import "./review.css";
 
 type Modal = "make" | "project" | "settings" | "docs" | "agents" | null;
 
-// What the window shows instead of a wish: the flight plan of the active wishes. A wish's id is a UUID: never this.
+// What the window shows instead of a wish: the flying carpet of the active wishes. A wish's id is a UUID: never this.
 export const PLAN = "plan";
 
 function stored(key: string): string {
@@ -169,7 +169,7 @@ export function WishApp() {
     return () => window.removeEventListener("keydown", keys);
   }, [making, modal, toggleSidebar]);
 
-  // The active wishes are always read: the flight plan and the side panel count what waits in each.
+  // The active wishes are always read: the flying carpet and the side panel count what waits in each.
   const active = wishes.filter(isActive);
   const details = useWishDetails(active.map((w) => w.id));
   const counts = Object.fromEntries(
@@ -181,13 +181,13 @@ export function WishApp() {
       },
     ]),
   );
-  // What shows: the wish chosen, else the flight plan while a wish is active, else the first wish.
+  // What shows: the wish chosen, else the flying carpet while a wish is active, else the first wish.
   const chosen = wishes.find((w) => w.id === selected);
   const pendingWish = justMade?.id === selected ? justMade : undefined;
   const plan =
     !chosen && !pendingWish && (selected === PLAN || active.length > 0);
   const wish = plan ? undefined : (chosen ?? pendingWish ?? wishes[0]);
-  // Until the wishes are read, no page is chosen: the home page would show, then give way to the flight plan or a wish
+  // Until the wishes are read, no page is chosen: the home page would show, then give way to the flying carpet or a wish
   // with a header of its own, and a gauge focused or measured in between would be gone. A failed read shows home.
   const settling = !loaded && !error;
   const shownId = wish?.id ?? "";
