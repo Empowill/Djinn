@@ -28,11 +28,30 @@ export default async function globalSetup() {
   // The window's terminal opens in a folder of its own: without a project, djinn would ask for one instead.
   const shell = path.join(home, "shell");
   fs.mkdirSync(shell);
+  // djinn's git sees what a CI runner's sees, not the developer's: no identity (a spec gives its project's repository
+  // one: Djinn's merge commits take it), files kept as committed.
+  const gitconfig = path.join(home, "gitconfig");
+  fs.writeFileSync(
+    gitconfig,
+    "[core]\n\tautocrlf = false\n\tlongpaths = true\n",
+  );
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: gitconfig,
+  };
+  for (const name of [
+    "GIT_AUTHOR_NAME",
+    "GIT_AUTHOR_EMAIL",
+    "GIT_COMMITTER_NAME",
+    "GIT_COMMITTER_EMAIL",
+    "EMAIL",
+  ])
+    delete env[name];
   const djinn = spawn(binary, ["up", "--browser", "--terminal-dir", shell], {
     stdio: ["ignore", "pipe", "inherit"],
     // The terminal of the window runs a plain POSIX shell, whatever the developer's own shell is.
     env: {
-      ...process.env,
+      ...env,
       DJINN_HOME: home,
       PATH: bin + path.delimiter + process.env.PATH,
       ...(process.platform === "win32" ? {} : { SHELL: "/bin/sh" }),

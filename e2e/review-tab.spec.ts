@@ -58,6 +58,9 @@ test("the Review tab lists a merged task, opens its diff with its comment, and k
     fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "lamp-")),
   );
   git(folder, "init", "--quiet", "-b", "main");
+  // The merge Djinn commits takes the repository's identity: a CI runner has none of its own (e2e/global-setup.ts).
+  git(folder, "config", "user.name", "e2e");
+  git(folder, "config", "user.email", "e2e@example.com");
   fs.writeFileSync(path.join(folder, "README.md"), "A lamp.\n");
   // A check names the project's work as integrated by Djinn: one that always passes.
   fs.mkdirSync(path.join(folder, ".agents"));
@@ -114,14 +117,14 @@ test("the Review tab lists a merged task, opens its diff with its comment, and k
       "--line",
       "2",
     );
+    // The whole integration, so that a failure shows its reason.
     await expect
       .poll(
         () =>
-          JSON.parse(djinn("task", "get", taskId, "--json")).task.integration
-            ?.state,
+          JSON.parse(djinn("task", "get", taskId, "--json")).task.integration,
         { timeout: 60_000 },
       )
-      .toBe("INTEGRATION_STATE_COMMITTED");
+      .toMatchObject({ state: "INTEGRATION_STATE_COMMITTED" });
 
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
