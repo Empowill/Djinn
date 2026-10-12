@@ -63,7 +63,7 @@ func (h *Harness) setTurns(r *run, f func(turns int) int) {
 func WithTaskMaxTurns(n int) Option { return func(h *Harness) { h.maxTurns = n } }
 
 // watchdog checks running workers: if a worker produces no events for longer than the silence limit,
-// its process tree and CPU usage are inspected. Dead or idle workers are ended (continued per W296/W320
+// its process tree and CPU usage are inspected; a watcher's silence is never checked. Dead or idle workers are ended (continued per W296/W320
 // if resumable, else failed). A task whose status is RUNNING but has no active worker run (a lost process)
 // is also found and ended the same way.
 func (h *Harness) watchdog(ctx context.Context, tasks []*planv1.Task) (anyLost bool) {
@@ -118,6 +118,13 @@ func (h *Harness) watchdog(ctx context.Context, tasks []*planv1.Task) (anyLost b
 
 		// agy's background tasks may be silent while a gated command runs: check the gate it holds or waits for.
 		if (h.held != nil && len(h.held(id)) > 0) || (h.waiting != nil && len(h.waiting(id)) > 0) {
+			h.mu.Unlock()
+			continue
+		}
+
+		// A watcher's command prints only when what it watches changes: its silence is its normal state. A command
+		// that ends is the watcher's own to handle: it fails the task, or starts again (--restart).
+		if r.watcher {
 			h.mu.Unlock()
 			continue
 		}
