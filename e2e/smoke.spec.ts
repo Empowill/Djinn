@@ -427,10 +427,11 @@ test("native mac drag protocol ignores controls and handles the empty titlebar",
     });
 
   // The topbar centres the operating-load gauge: the strip between the sidebar and the gauge is empty.
+  // The gauge shows in the page's header once the wishes are read (wish-app.tsx).
+  const gaugeGroup = page.getByRole("group", { name: "Operating load" });
+  await expect(gaugeGroup).toBeVisible();
   const main = await page.locator(".main-shell").boundingBox();
-  const gauge = await page
-    .getByRole("group", { name: "Operating load" })
-    .boundingBox();
+  const gauge = await gaugeGroup.boundingBox();
   expect(main).not.toBeNull();
   expect(gauge).not.toBeNull();
   expect(gauge!.y).toBeLessThan(40);

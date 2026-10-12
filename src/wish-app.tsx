@@ -187,6 +187,9 @@ export function WishApp() {
   const plan =
     !chosen && !pendingWish && (selected === PLAN || active.length > 0);
   const wish = plan ? undefined : (chosen ?? pendingWish ?? wishes[0]);
+  // Until the wishes are read, no page is chosen: the home page would show, then give way to the flight plan or a wish
+  // with a header of its own, and a gauge focused or measured in between would be gone. A failed read shows home.
+  const settling = !loaded && !error;
   const shownId = wish?.id ?? "";
   const newWishShortcut = platformShortcut("N");
   const sidebarShortcut = platformShortcut("\\");
@@ -374,6 +377,8 @@ export function WishApp() {
                 if (warning) setToast(warning);
               }}
             />
+          ) : settling ? (
+            <div className="wish-view" aria-busy="true" />
           ) : plan ? (
             <FlightPlan
               wishes={active}
