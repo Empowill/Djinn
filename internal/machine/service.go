@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"runtime"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -19,6 +20,11 @@ type HandlerOption func(*service)
 // WithSeriesRecorder sets the machine series recorder.
 func WithSeriesRecorder(rec *SeriesRecorder) HandlerOption {
 	return func(s *service) { s.recorder = rec }
+}
+
+// WithHistory reads the series from the store's history, which outlives a restart, rather than from memory.
+func WithHistory(h *History) HandlerOption {
+	return func(s *service) { s.history = h }
 }
 
 // WithSeriesWorkers sets the function returning series of running workers.
@@ -47,6 +53,7 @@ type service struct {
 	running   func() int
 	uses      func() []*machinev1.WorkerUse
 	recorder  *SeriesRecorder
+	history   *History
 	workers   func(cutoff time.Time, gateIntervals []*machinev1.GateInterval) []*machinev1.WorkerSeries
 	intervals func(cutoff time.Time) []*machinev1.GateInterval
 }
@@ -92,14 +99,23 @@ func (s *service) Show(
 	return connect.NewResponse(&machinev1.MachineServiceShowResponse{Machine: out}), nil
 }
 
+// SeriesMinutes are the ranges a series may be asked for: 10 and 30 minutes, 2 hours, a day, a week.
+var SeriesMinutes = []int32{10, 30, 120, 24 * 60, 7 * 24 * 60}
+
 func (s *service) Series(
-	_ context.Context, req *connect.Request[machinev1.MachineServiceSeriesRequest],
+	ctx context.Context, req *connect.Request[machinev1.MachineServiceSeriesRequest],
 ) (*connect.Response[machinev1.MachineServiceSeriesResponse], error) {
 	minutes := req.Msg.GetMinutes()
-	if minutes != 10 && minutes != 30 && minutes != 120 {
+	if !slices.Contains(SeriesMinutes, minutes) {
 		minutes = 30
 	}
-	cutoff := time.Now().Add(-time.Duration(minutes) * time.Minute)
+	now := time.Now()
+	cutoff := now.Add(-time.Duration(minutes) * time.Minute)
+	// The points: those of the window, or those measured after since; the gate intervals are always the window's.
+	points := cutoff
+	if since := req.Msg.GetSince(); since != nil && since.AsTime().After(cutoff) {
+		points = since.AsTime().Add(time.Nanosecond)
+	}
 
 	var gateIntervals []*machinev1.GateInterval
 	if s.intervals != nil {
@@ -108,7 +124,12 @@ func (s *service) Series(
 
 	var workerSeries []*machinev1.WorkerSeries
 	if s.workers != nil {
-		workerSeries = s.workers(cutoff, gateIntervals)
+		workerSeries = s.workers(points, gateIntervals)
+	}
+	if s.history != nil {
+		for _, ws := range workerSeries {
+			ws.Points = s.history.WorkerPoints(ctx, ws.GetTaskId(), points, now)
+		}
 	}
 
 	var snap Snapshot
@@ -119,8 +140,11 @@ func (s *service) Series(
 	}
 
 	var machinePoints []*machinev1.MachinePoint
-	if s.recorder != nil {
-		machinePoints = s.recorder.Points(cutoff)
+	switch {
+	case s.history != nil:
+		machinePoints = s.history.MachinePoints(ctx, points, now)
+	case s.recorder != nil:
+		machinePoints = s.recorder.Points(points)
 	}
 
 	limitShare := policy.Share

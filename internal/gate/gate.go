@@ -41,9 +41,11 @@ type Machine interface {
 }
 
 // Costs gives the highest peak memory a command was measured at, in its project: the task's, else the one holding
-// dir; 0 when never measured. machine.Peaks is one.
+// dir; 0 when never measured. Ask counts a run of the command asked under the gate, whether it then runs to its end or not.
+// machine.Peaks is one.
 type Costs interface {
 	Peak(ctx context.Context, taskID, dir, command string) uint64
+	Ask(ctx context.Context, gate, taskID, dir, command string)
 }
 
 // Read reads what the process pid uses, with every process it started: machine.ReadWorker.
@@ -174,6 +176,7 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 		who += ": " + what
 		if g.costs != nil {
 			peak = g.costs.Peak(ctx, taskID, r.Dir, what)
+			g.costs.Ask(ctx, name, taskID, r.Dir, what)
 		}
 	}
 	g.mu.Lock()

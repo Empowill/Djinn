@@ -1,6 +1,11 @@
-/* Consumption Panel: running workers, pretty CPU & memory charts, machine band, gate intervals, and commands table */
+/* The resources panel: the machine, the workers running, and where the commands' time goes. Its charts
+   (resource-chart.tsx) draw with the series colours below, validated against both themes' surfaces. */
 
 .consumption-panel {
+  /* CPU and memory: one hue each, the same in every chart; the reference lines and Djinn's share are neutral ink. */
+  --chart-cpu: #5b8def;
+  --chart-memory: #b8822a;
+  --chart-surface: var(--n-19);
   margin: var(--space-4, 16px) 0;
   border: 1px solid var(--n-2a);
   border-radius: 6px;
@@ -8,19 +13,28 @@
   overflow: hidden;
 }
 
+html[data-theme="light"] .consumption-panel {
+  --chart-cpu: #1d4ed8;
+  --chart-memory: #a35f00;
+  background: var(--n-1c);
+  border-color: var(--n-30);
+}
+
 .consumption-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   padding: 8px 14px;
   background: var(--n-19);
   border-bottom: 1px solid var(--n-25);
   user-select: none;
 }
 
-.consumption-title-wrap {
-  display: flex;
-  align-items: center;
+html[data-theme="light"] .consumption-header {
+  background: var(--n-20);
+  border-bottom-color: var(--n-2c);
 }
 
 .consumption-fold-btn {
@@ -44,12 +58,6 @@
   background: var(--n-22);
 }
 
-.consumption-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .consumption-range-selector {
   display: flex;
   align-items: center;
@@ -57,6 +65,11 @@
   border: 1px solid var(--n-28);
   border-radius: 4px;
   padding: 2px;
+}
+
+html[data-theme="light"] .consumption-range-selector {
+  background: var(--n-22);
+  border-color: var(--n-30);
 }
 
 .range-pill {
@@ -81,291 +94,569 @@
   font-weight: 500;
 }
 
+html[data-theme="light"] .range-pill.active {
+  background: var(--n-17);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
 .consumption-body {
-  padding: 12px 14px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
 }
 
 .consumption-notice {
+  margin: 0;
   padding: 8px 12px;
   background: var(--n-1e);
   border: 1px dashed var(--n-33);
   border-radius: 4px;
-  font-size: 12px;
 }
 
-/* Top Machine Band */
-.consumption-machine-band {
+.resource-section-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 8px;
+  color: var(--n-e7);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.resource-section-detail {
+  color: var(--n-88);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* The machine */
+.resource-machine {
   background: var(--n-19);
   border: 1px solid var(--n-25);
   border-radius: 6px;
-  padding: 10px 12px;
+  padding: 12px 14px;
+}
+
+.resource-machine-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.resource-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--n-a9);
+  font-size: 12px;
+}
+
+.resource-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.resource-legend-key {
+  width: 18px;
+  border-top: 2px solid var(--n-88);
+}
+
+.resource-legend-key.dash {
+  border-top-style: dashed;
+}
+
+.resource-legend-key.dot {
+  border-top-style: dotted;
+}
+
+.resource-gates {
+  margin-top: 12px;
+}
+
+.resource-gates-title {
+  margin: 0 0 6px;
+  color: var(--n-88);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Aligned with the charts' plot: their left and right paddings. */
+.resource-gates-lanes {
+  position: relative;
+  margin: 0 14px 0 56px;
+}
+
+.resource-gates-band {
+  position: absolute;
+  display: flex;
+  height: 18px;
+  min-width: 3px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--n-2a);
+}
+
+.resource-gates-wait {
+  flex-shrink: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--n-33) 0 2px,
+    transparent 2px 5px
+  );
+}
+
+.resource-gates-held {
+  flex: 1;
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  color: var(--n-c4);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+/* The workers */
+.resource-workers {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.consumption-machine-stats {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
+.resource-workers > .resource-section-title {
+  margin-bottom: 0;
+}
+
+.resource-workers-scale {
+  margin: 0;
+  color: var(--n-a9);
   font-size: 12px;
+}
+
+.resource-worker {
+  background: var(--n-19);
+  border: 1px solid var(--n-25);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.resource-worker.is-paused {
+  opacity: 0.8;
+}
+
+.resource-worker-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 10px;
+  color: var(--n-e7);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.resource-worker-title .agent-code,
+.resource-worker-title .provider-badge,
+.resource-worker-paused,
+.resource-worker-open {
+  flex-shrink: 0;
+}
+
+/* The title in full: it wraps, never cut. */
+.resource-worker-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.resource-worker-open {
+  align-self: center;
+}
+
+.resource-worker-paused {
+  padding: 1px 6px;
+  border: 1px solid var(--st-paused);
+  border-radius: 3px;
+  color: var(--st-paused);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.resource-worker-body {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.resource-worker-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.resource-worker-fact {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.resource-worker-fact dt {
   color: var(--n-88);
 }
 
-.consumption-machine-name {
-  font-weight: 600;
-  color: var(--n-e7);
+.resource-worker-fact dd {
+  margin: 0;
+  color: var(--n-de);
+  overflow-wrap: anywhere;
 }
 
-.consumption-machine-cores {
-  font-family: var(--mono);
-  color: var(--n-79);
-  background: var(--n-20);
-  padding: 1px 6px;
-  border-radius: 3px;
-  border: 1px solid var(--n-2a);
+.resource-worker-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
 }
 
-.consumption-stat-item {
-  font-family: var(--mono);
+/* A chart */
+.resource-chart {
+  min-width: 0;
+  margin: 0;
 }
 
-.consumption-stat-item strong {
+.resource-chart.cpu {
+  --series: var(--chart-cpu);
+}
+
+.resource-chart.memory {
+  --series: var(--chart-memory);
+}
+
+.resource-chart-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.resource-chart-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--n-de);
   font-weight: 600;
 }
 
-.consumption-stat-item small {
-  color: var(--n-6f);
+.resource-chart-key {
+  width: 14px;
+  border-top: 2px solid var(--series);
 }
 
-.consumption-limit-badge {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--term-yellow);
-  background: rgba(196, 160, 0, 0.12);
-  border: 1px solid rgba(196, 160, 0, 0.3);
-  padding: 1px 6px;
-  border-radius: 3px;
-}
-
-.consumption-machine-charts {
-  display: flex;
-  gap: 12px;
-}
-
-.consumption-machine-charts > .consumption-chart-box {
-  flex: 1;
-  min-width: 0;
-}
-
-/* Stacked Gates Timeline */
-.consumption-stacked-gates {
-  margin-top: 4px;
-  border-top: 1px solid var(--n-25);
-  padding-top: 6px;
-}
-
-.consumption-stacked-header {
-  margin-bottom: 4px;
-}
-
-.consumption-stacked-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--n-79);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.consumption-stacked-svg {
-  display: block;
-}
-
-/* Worker Rows */
-.consumption-workers-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.consumption-no-workers {
-  padding: 14px;
-  text-align: center;
-  background: var(--n-19);
-  border: 1px dashed var(--n-2a);
-  border-radius: 6px;
-}
-
-.consumption-workers-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.consumption-worker-row {
-  display: flex;
-  align-items: stretch;
-  gap: 16px;
-  background: var(--n-19);
-  border: 1px solid var(--n-25);
-  border-radius: 6px;
-  padding: 10px 12px;
-}
-
-.consumption-worker-row.is-paused {
-  opacity: 0.75;
-}
-
-.consumption-worker-paused-badge {
-  display: inline-block;
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-size: 12px;
-  font-family: var(--mono);
-  line-height: 1.3;
-  background: rgba(245, 158, 11, 0.12);
-  color: #f59e0b;
-  border: 1px solid rgba(245, 158, 11, 0.3);
-}
-
-.consumption-worker-meta {
-  width: 200px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.consumption-worker-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.consumption-worker-head .agent-code {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--n-e7);
-}
-
-.consumption-worker-model {
-  font-size: 12px;
-  color: var(--n-79);
+.resource-chart-now {
+  color: var(--n-a9);
   font-family: var(--mono);
 }
 
-.consumption-worker-title {
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--n-b6);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.consumption-worker-charts {
-  flex: 1;
-  display: flex;
-  gap: 12px;
-  min-width: 0;
-}
-
-.consumption-worker-charts > .consumption-chart-box {
-  flex: 1;
-  min-width: 0;
-}
-
-/* Chart Box */
-.consumption-chart-box {
-  background: var(--n-17);
-  border: 1px solid var(--n-25);
+.resource-chart-plot {
+  position: relative;
   border-radius: 4px;
-  padding: 6px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow: hidden;
+  outline: none;
+  cursor: crosshair;
 }
 
-.consumption-chart-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 12px;
-  line-height: 1.2;
+.resource-chart-plot:focus-visible {
+  box-shadow: 0 0 0 2px var(--chart-cpu);
 }
 
-.consumption-chart-title {
-  color: var(--n-79);
-  font-weight: 500;
-}
-
-.consumption-chart-stat {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--n-b6);
-  white-space: nowrap;
-}
-
-.consumption-chart-svg {
+.resource-chart-svg {
   display: block;
   overflow: visible;
 }
 
-.chart-axis-label {
+.resource-chart-grid {
+  stroke: var(--n-25);
+  stroke-width: 1;
+}
+
+.resource-chart-axis {
+  stroke: var(--n-47);
+  stroke-width: 1;
+}
+
+.resource-chart-tick {
+  fill: var(--n-88);
   font-family: var(--mono);
-  user-select: none;
+  font-size: 12px;
 }
 
-/* Gate Overlay Bands */
-.gate-band-group {
-  cursor: pointer;
+.resource-chart-hatch {
+  stroke: var(--n-47);
+  stroke-width: 1.5;
 }
 
-.gate-wait-rect {
-  opacity: 0.8;
+.resource-chart-gate {
+  fill: var(--n-2a);
+  opacity: 0.7;
 }
 
-.gate-held-rect {
-  fill: var(--sand-raised);
-  stroke: var(--sand-edge);
-  stroke-width: 1px;
-  opacity: 0.85;
-  transition: opacity 0.15s ease;
-}
-
-.gate-band-group:hover .gate-held-rect {
-  opacity: 1;
-  stroke: var(--sand);
-}
-
-.gate-held-label {
-  fill: var(--sand-ink);
+.resource-chart-gate-label {
+  fill: var(--n-a9);
   font-family: var(--mono);
-  font-weight: 600;
+  font-size: 12px;
+}
+
+.resource-chart-ref {
+  stroke: var(--n-79);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
+
+.resource-chart-ref-label {
+  fill: var(--n-a9);
+  font-size: 12px;
+  paint-order: stroke;
+  stroke: var(--chart-surface);
+  stroke-width: 3px;
+}
+
+.resource-chart-area {
+  fill: var(--series);
+  opacity: 0.12;
+}
+
+.resource-chart-line {
+  fill: none;
+  stroke: var(--series);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.resource-chart-extra {
+  fill: none;
+  stroke: var(--n-a9);
+  stroke-width: 1.5;
+}
+
+.resource-chart-extra.dash {
+  stroke-dasharray: 5 3;
+}
+
+.resource-chart-extra.dot {
+  stroke-dasharray: 1.5 3;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.resource-chart-dot {
+  fill: var(--series);
+  stroke: var(--chart-surface);
+  stroke-width: 2;
+}
+
+.resource-chart-cursor line {
+  stroke: var(--n-a9);
+  stroke-width: 1;
+}
+
+.resource-chart-readout {
+  position: absolute;
+  top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--n-33);
+  border-radius: 4px;
+  background: var(--n-14);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  color: var(--n-a9);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
   pointer-events: none;
-  user-select: none;
 }
 
-/* Provider Badges */
+html[data-theme="light"] .resource-chart-readout {
+  background: var(--n-19);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.resource-chart-readout strong {
+  color: var(--n-ff);
+  font-weight: 600;
+}
+
+.resource-chart-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Where the time goes */
+.resource-commands-help {
+  max-width: 900px;
+  margin: 0 0 12px;
+  color: var(--n-a9);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.resource-project + .resource-project {
+  margin-top: 16px;
+}
+
+.resource-project-name {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 6px;
+  color: var(--n-de);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.resource-project-top {
+  margin: 0 0 8px;
+  color: var(--n-c4);
+  font-size: 12px;
+}
+
+.resource-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--n-25);
+  border-radius: 6px;
+}
+
+.resource-commands-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.resource-commands-table th,
+.resource-commands-table td {
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.resource-commands-table thead th {
+  background: var(--n-1e);
+  color: var(--n-88);
+  font-weight: 500;
+  line-height: 1.3;
+  vertical-align: bottom;
+}
+
+.resource-commands-table thead th:first-child {
+  min-width: 260px;
+}
+
+.resource-commands-table thead .resource-col-group {
+  padding-bottom: 0;
+  color: var(--n-c4);
+  text-align: center;
+}
+
+/* The figures take the room they need, the commands the rest. */
+.resource-commands-table .num-col {
+  width: 1%;
+  text-align: right;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+
+.resource-gate-row th,
+.resource-gate-row td {
+  border-top: 1px solid var(--n-2a);
+  background: var(--n-1c);
+  color: var(--n-e7);
+  font-weight: 600;
+}
+
+.resource-gate-row th {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+}
+
+.resource-command-row th,
+.resource-command-row td {
+  border-top: 1px solid var(--n-22);
+  color: var(--n-c4);
+  font-weight: 400;
+}
+
+.resource-commands-table .resource-command-name {
+  padding-left: 28px;
+}
+
+.resource-command-name code {
+  color: var(--n-e7);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.resource-command-args {
+  display: block;
+  margin-top: 2px;
+  color: var(--n-88);
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.resource-command-total {
+  width: 96px;
+}
+
+.resource-share {
+  display: block;
+  height: 4px;
+  margin: 4px 0 2px auto;
+  width: 80px;
+  border-radius: 2px;
+  background: var(--n-25);
+  overflow: hidden;
+}
+
+.resource-share > span {
+  display: block;
+  height: 100%;
+  margin-left: auto;
+  background: var(--chart-cpu);
+}
+
+.resource-share-text {
+  color: var(--n-88);
+}
+
+/* Provider badges */
 .provider-badge {
   display: inline-block;
   padding: 1px 6px;
   border-radius: 3px;
   font-size: 12px;
   font-family: var(--mono);
+  font-weight: 400;
   text-transform: lowercase;
   line-height: 1.3;
 }
@@ -400,182 +691,8 @@
   border: 1px solid var(--n-33);
 }
 
-/* Commands & Gates Table */
-.consumption-table-wrap {
-  margin-top: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.consumption-table-heading h4 {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--n-b6);
-}
-
-.table-scroller {
-  overflow-x: auto;
-  border: 1px solid var(--n-25);
-  border-radius: 4px;
-  background: var(--n-19);
-}
-
-.consumption-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-  text-align: left;
-}
-
-.consumption-table thead {
-  background: var(--n-20);
-  border-bottom: 1px solid var(--n-28);
-}
-
-.consumption-table th {
-  padding: 6px 10px;
-  font-weight: 600;
-  color: var(--n-79);
-  cursor: pointer;
-  white-space: nowrap;
-  user-select: none;
-}
-
-.consumption-table th:hover {
-  color: var(--n-de);
-}
-
-.consumption-table th.num-col,
-.consumption-table td.num-col {
-  text-align: right;
-  font-family: var(--mono);
-}
-
-.consumption-table th.sparkline-col,
-.consumption-table td.sparkline-col {
-  text-align: center;
-  width: 80px;
-}
-
-.consumption-table td {
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--n-22);
-  color: var(--n-de);
-  white-space: nowrap;
-}
-
-.consumption-table tbody tr:nth-child(even) {
-  background: var(--n-1c);
-}
-
-.consumption-table tbody tr:hover {
-  background: var(--n-25);
-}
-
-.col-proj {
-  font-weight: 500;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.col-cmd code {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--n-e7);
-  background: var(--n-22);
-  padding: 1px 4px;
-  border-radius: 3px;
-}
-
-.sort-arrow {
-  color: var(--sand);
-  font-size: 12px;
-}
-
-.exit-code-ok {
-  color: var(--term-green);
-}
-
-.exit-code-err {
-  color: var(--danger);
-  font-weight: 600;
-}
-
-.consumption-sparkline {
-  display: inline-block;
-  vertical-align: middle;
-}
-
-.sparkline-bar {
-  fill: var(--sand);
-  opacity: 0.85;
-}
-
-.sparkline-bar:hover {
-  opacity: 1;
-  fill: var(--sand-ink);
-}
-
-.sparkline-empty {
-  color: var(--n-4c);
-}
-
-/* Light Theme Adjustments */
-html[data-theme="light"] .consumption-panel {
-  background: var(--n-1c);
-  border-color: var(--n-30);
-}
-
-html[data-theme="light"] .consumption-header {
-  background: var(--n-20);
-  border-bottom-color: var(--n-2c);
-}
-
-html[data-theme="light"] .consumption-range-selector {
-  background: var(--n-22);
-  border-color: var(--n-30);
-}
-
-html[data-theme="light"] .range-pill.active {
-  background: var(--n-17);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-}
-
-html[data-theme="light"] .consumption-machine-band,
-html[data-theme="light"] .consumption-worker-row,
-html[data-theme="light"] .table-scroller {
-  background: var(--n-19);
-  border-color: var(--n-2c);
-}
-
-html[data-theme="light"] .consumption-chart-box {
-  background: var(--n-17);
-  border-color: var(--n-28);
-}
-
-html[data-theme="light"] .consumption-table thead {
-  background: var(--n-22);
-  border-bottom-color: var(--n-2c);
-}
-
-html[data-theme="light"] .consumption-table tbody tr:nth-child(even) {
-  background: var(--n-20);
-}
-
-/* Responsive wrap on narrower viewports */
 @media (max-width: 900px) {
-  .consumption-worker-row {
-    flex-direction: column;
-    gap: 10px;
-  }
-  .consumption-worker-meta {
-    width: 100%;
-  }
-  .consumption-machine-charts,
-  .consumption-worker-charts {
-    flex-direction: column;
+  .resource-worker-body {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

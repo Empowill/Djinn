@@ -103,7 +103,10 @@ func (s *Store) migrate(ctx context.Context, entities []proto.Message) error {
 		if _, err := tx.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS command_method ON command (method)`); err != nil {
 			return fmt.Errorf("index the journal: %w", err)
 		}
-		names := map[string]bool{"command": true}
+		if err := s.migrateSamples(ctx, tx); err != nil {
+			return err
+		}
+		names := map[string]bool{"command": true, "sample": true}
 		for _, e := range entities {
 			t, err := newTable(e.ProtoReflect().Descriptor())
 			if err != nil {

@@ -158,7 +158,11 @@ func runUp(args []string) (restart bool, err error) {
 		read = machine.Reader(home)
 	}
 	monitor := machine.NewMonitor(policy, read)
+	// The machine's and the workers' series, kept in the store: the resources panel reads them across restarts.
+	history := machine.NewHistory(db)
+	defer history.Flush(context.WithoutCancel(ctx))
 	opts := []harness.Option{
+		harness.WithHistory(history),
 		harness.WithCapacity(monitor.Capacity),
 		harness.WithMemory(monitor.Available, policy),
 		harness.WithTotal(monitor.Total),
@@ -205,16 +209,21 @@ func runUp(args []string) (restart bool, err error) {
 		return name
 	})
 	seriesRec := machine.NewSeriesRecorder(monitor, machine.ReadWorker)
+	seriesRec.Keep(history)
+	seriesRec.ReadSelf(machine.ReadSelf)
 	seriesRec.Sample()
 	go func() {
 		t := time.NewTicker(5 * time.Second)
 		defer t.Stop()
-		for {
+		for n := 1; ; n++ {
 			select {
 			case <-ctx.Done():
 				return
 			case <-t.C:
 				seriesRec.Sample()
+				if n%6 == 0 {
+					history.Flush(ctx)
+				}
 			}
 		}
 	}()
@@ -378,6 +387,7 @@ func runUp(args []string) (restart bool, err error) {
 	svc[loadPrefix] = loadHandler
 	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running, workers.Uses,
 		machine.WithSeriesRecorder(seriesRec),
+		machine.WithHistory(history),
 		machine.WithSeriesWorkers(workers.RunsSeries),
 		machine.WithSeriesIntervals(gates.Intervals),
 	)

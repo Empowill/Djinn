@@ -29,6 +29,11 @@ func WithMeasure(every time.Duration, read MeasureFunc) Option {
 	return func(h *Harness) { h.measureEvery, h.measureRead = every, read }
 }
 
+// WithHistory keeps each reading of a worker in the store's series too, which outlive a restart of Djinn.
+func WithHistory(history *machine.History) Option {
+	return func(h *Harness) { h.history = history }
+}
+
 // rewrite is how long a task keeps a reading on the store while its worker's use barely moves: past it, the next
 // reading is written anyway.
 const rewrite = time.Minute
@@ -98,6 +103,9 @@ func (h *Harness) measure(r *run, m *meter) {
 	r.samples.Add(point)
 	pct := r.samples.MemoryPercentiles()
 	h.mu.Unlock()
+	if h.history != nil {
+		h.history.Worker(r.task.GetId(), point)
+	}
 
 	t := r.task
 	res := &planv1.Resources{
