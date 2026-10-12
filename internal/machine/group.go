@@ -275,7 +275,8 @@ var listing struct {
 
 // ReadWorker reads what the worker whose process leads group pid uses: from its cgroup when it runs in one
 // (Scope.Cgroup, ReadCgroup), else from its processes, listed at most once a second for every worker. Where workers
-// are not measured (NotMeasured), it fails.
+// are not measured (NotMeasured), it fails. A worker not listed yet, or listed at its exec, before it touched a page,
+// reads as a zero Group: no reading.
 func ReadWorker(pid int, cgroup string) (Group, error) {
 	if NotMeasured != "" {
 		return Group{}, errors.New(NotMeasured)
@@ -292,5 +293,11 @@ func ReadWorker(pid int, cgroup string) (Group, error) {
 		listing.procs, listing.err = listProcs()
 		listing.at = now
 	}
-	return sumGroup(listing.procs, pid), listing.err
+	g := sumGroup(listing.procs, pid)
+	if g.Memory == 0 {
+		// Linux shows no resident memory for a process that just exec'd: it counts the pages per CPU and folds them
+		// only past a batch. Kept, that reading showed the worker at 0 bytes until the next listing (PR #3's CI).
+		return Group{}, listing.err
+	}
+	return g, listing.err
 }
