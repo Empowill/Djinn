@@ -65,8 +65,9 @@ func ReadTemplate(dir string) (*Template, error) {
 
 // djinnYAML is what a skill's SKILL.md declares for Djinn, under metadata.djinn.
 type djinnYAML struct {
-	Wish   *templateYAML `yaml:"wish"`
-	Source *sourceYAML   `yaml:"source"`
+	Wish    *templateYAML `yaml:"wish"`
+	Source  *sourceYAML   `yaml:"source"`
+	Babysit *babysitYAML  `yaml:"babysit"`
 }
 
 // readDjinn reads metadata.djinn in the SKILL.md of the skill in dir: empty without it.
@@ -204,7 +205,12 @@ func matchTemplate(templates []*Template, request string) (*Template, *planv1.Wi
 // DoneLine is the first line of text that says the template's work is done: a line that is done_when, or starts
 // with it before a character that is not a letter nor a digit. Empty when none does.
 func DoneLine(t *planv1.WishTemplate, text string) string {
-	done := t.GetDoneWhen()
+	return DoneLineOf(t.GetDoneWhen(), text)
+}
+
+// DoneLineOf is the first line of text that says done: a line that is done, or starts with it before a character
+// that is not a letter nor a digit. Empty when none does, or done is.
+func DoneLineOf(done, text string) string {
 	if done == "" {
 		return ""
 	}

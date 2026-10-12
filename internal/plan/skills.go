@@ -304,8 +304,8 @@ func ProjectNamed(ctx context.Context, r store.Reader, name string) (*planv1.Pro
 	return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no project %s: djinn project list shows them, %w", name, store.ErrNotFound))
 }
 
-// withTemplate adds to skill the title of its wish template and the command of its inbox source, or why they cannot
-// be used.
+// withTemplate adds to skill the title of its wish template, the command of its inbox source and of its babysit, or
+// why they cannot be used.
 func withTemplate(skill *planv1.Skill) *planv1.Skill {
 	if skill.GetDirectory() == "" || skill.GetMissing() != "" {
 		return skill
@@ -322,6 +322,12 @@ func withTemplate(skill *planv1.Skill) *planv1.Skill {
 		skill.InboxSourceError = err.Error()
 	case src != nil:
 		skill.InboxSource = src.Watch
+	}
+	switch b, err := ReadBabysit(skill.GetDirectory()); {
+	case err != nil:
+		skill.BabysitError = err.Error()
+	case b != nil:
+		skill.Babysit = b.Watch
 	}
 	return skill
 }

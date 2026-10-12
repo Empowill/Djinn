@@ -121,6 +121,10 @@ type Harness struct {
 	mainTested       map[string]mainTested // by mainLine.key; owned by the integration's pass
 	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
 
+	// Babysitting what tasks open (babysit.go).
+	babysitting sync.WaitGroup // one per look for what a task opened; Close waits for them
+	babysitMu   sync.Mutex     // one watcher decided at a time
+
 	mu           sync.Mutex
 	closed       bool
 	held         func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
@@ -281,6 +285,7 @@ func (h *Harness) Close() {
 		h.batcher.Close()
 	}
 	h.wg.Wait()
+	h.babysitting.Wait()
 }
 
 // Recover marks as interrupted the tasks a previous djinn up left running: their workers died with it. They keep
@@ -674,13 +679,14 @@ func (h *Harness) spawn(
 		Id: store.NewID(), WishId: req.GetWishId(), Title: req.GetTitle(), Status: planv1.TaskStatus_TASK_STATUS_PENDING,
 		CreateTime: timestamppb.New(h.now()), Model: req.GetModel(), MaxBudgetUsd: req.GetMaxBudgetUsd(),
 		WriteScopes: scopes, Scheduled: true, Correction: made.GetCorrection(), Review: made.GetReview(), Role: made.GetRole(),
-		Question: made.GetQuestion(),
+		Question: made.GetQuestion(), Babysit: made.GetBabysit(),
+	}
+	if made.GetId() != "" {
+		task.Id = made.GetId()
 	}
 	if made.GetReview() != nil {
 		task.Branch, task.Worktree = made.GetBranch(), made.GetWorktree()
 	}
-	prompt := cmp.Or(req.GetPrompt(), req.GetTitle())
-
 	h.sched.Lock()
 	defer h.sched.Unlock()
 	// What the task needs, read before it exists, tells whether it starts in this call.
@@ -693,6 +699,10 @@ func (h *Harness) spawn(
 		return nil, plan.Status(err)
 	}
 	task.ProjectId = project.GetId()
+	if req, err = babysitSpawn(ctx, req, project, task); err != nil {
+		return nil, err
+	}
+	prompt := cmp.Or(req.GetPrompt(), req.GetTitle())
 	// The project's settings fill what the request leaves out (docs/team-settings.md). A watcher runs a command:
 	// none applies to it.
 	var settings plan.Settings
@@ -856,6 +866,13 @@ func (h *Harness) spawn(
 		return h.plan(ctx, procedure, req, task, parent, prompt, why)
 	}
 
+	actor := spawner(task) // before a babysit spawned by hand knows its request
+	if task.GetBabysit() != nil && task.GetBabysit().GetNumber() == 0 {
+		// A babysit spawned by hand that starts now watches what is open now.
+		if prompt, err = h.resolveBabysit(ctx, wish, project, task, prompt); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("--babysit: %w", err))
+		}
+	}
 	r, err := h.newRun(task, 1)
 	if err != nil {
 		return nil, err
@@ -876,7 +893,7 @@ func (h *Harness) spawn(
 		preEv = h.newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
 	}
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal(spawner(task), procedure, req); err != nil {
+		if err := tx.Journal(actor, procedure, req); err != nil {
 			return err
 		}
 		if task.Code, err = nextCode(ctx, tx, wish.GetId()); err != nil {
@@ -925,10 +942,10 @@ func (h *Harness) spawn(
 	return h.launch(ctx, r, provider, project, prep, prompt)
 }
 
-// spawner is who spawns task, as the journal records it: Djinn for a correction, a review or a question worker, the
-// developer's side otherwise.
+// spawner is who spawns task, as the journal records it: Djinn for a correction, a review or a question worker, or the
+// watcher of a request a task opened; the developer's side otherwise.
 func spawner(task *planv1.Task) string {
-	if task.GetCorrection() != nil || task.GetReview() != nil || questionWorker(task) {
+	if task.GetCorrection() != nil || task.GetReview() != nil || questionWorker(task) || task.GetBabysit().GetUrl() != "" {
 		return actorHarness
 	}
 	return actorLocal
@@ -1771,6 +1788,7 @@ func (h *Harness) end(r *run, res Result) {
 		h.tellWatcherFailed(t)
 	case !r.light && !watching(t):
 		h.workerEnded(t)
+		h.babysitOpened(proto.CloneOf(t))
 	}
 	if tellsDone(t) && toldDoneAtEnd(t, integrate) {
 		h.tellDone(context.Background(), t, notIntegrated(left))

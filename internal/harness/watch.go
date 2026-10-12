@@ -461,7 +461,7 @@ func (h *Harness) SpawnWatcher(ctx context.Context, wishID, projectID, title, wa
 }
 
 // wakeLead tells the lead of the run's wish what its watcher's command printed, then gives the paragraph text to
-// OnWatched's function: on its template's done line, the watcher ends, done. A wish without a lead to tell keeps the
+// OnWatched's function: on its template's done line, or its babysit's, the watcher ends, done. A wish without a lead to tell keeps the
 // paragraph in its task's events.
 func (h *Harness) wakeLead(r *run, w *Watched, text string) {
 	h.mu.Lock()
@@ -476,12 +476,17 @@ func (h *Harness) wakeLead(r *run, w *Watched, text string) {
 	if err != nil && !errors.Is(err, plan.ErrNoLead) {
 		h.Note(r.id, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: "the lead was not told: " + err.Error()})
 	}
-	if watched == nil || w.First == "" {
+	if w.First == "" {
 		return
 	}
-	done, err := watched(ctx, r.task, text)
-	if err != nil {
-		h.Note(r.id, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: "the paragraph was not read: " + err.Error()})
+	// A babysit's done line ends it, in any wish; a template's asks whether to grant the wish too.
+	done := plan.DoneLineOf(r.task.GetBabysit().GetDoneWhen(), text) != ""
+	if watched != nil {
+		grant, err := watched(ctx, r.task, text)
+		if err != nil {
+			h.Note(r.id, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: "the paragraph was not read: " + err.Error()})
+		}
+		done = done || grant
 	}
 	if f, ok := r.worker.(interface{ Finish() }); done && ok {
 		f.Finish() // Its work is done: the command would only say so again, or wait for nothing.

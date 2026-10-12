@@ -252,6 +252,9 @@ message ProjectSettings {
     defined_only: true
     not_in: [0]
   }];
+  // Djinn babysits the pull or merge request a task of a wish opens, in that wish, with the watcher a skill of the
+  // project declares (metadata.djinn.babysit): false turns it off. Not set: on. djinn task spawn --babysit still works.
+  optional bool babysit = 26;
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.
@@ -967,6 +970,24 @@ message Task {
   // The calls its worker's permissions refused in its last run, counted from its "permission denied" events: a
   // worker nobody approves anything for ends with what it could not do. Unset when none was refused.
   TaskRefusals refused = 67;
+  // For a watcher that babysits a pull or merge request with the project's babysit skill (metadata.djinn.babysit): the
+  // request, and the line that ends the watcher. Unset for any other task.
+  TaskBabysit babysit = 68;
+}
+
+// TaskBabysit is the pull or merge request a watcher babysits.
+message TaskBabysit {
+  // Its forge's web address: https://github.com/acme/lamp/pull/12, https://gitlab.com/acme/lamp/-/merge_requests/3.
+  // Empty until Djinn finds it, as the watcher starts.
+  string url = 1;
+  // Its number on the forge: the pull request's number, the merge request's iid; 0 until found.
+  int32 number = 2;
+  // The skill of the project that declares the watcher.
+  string skill = 3;
+  // A line of the watcher that ends it, done: MERGED. Empty: its command's exit ends it.
+  string done_when = 4;
+  // The task that opened it, by code (W5); empty for one found open for the wish's branch.
+  string opened_by = 5;
 }
 
 // TaskRefusals are the calls a worker's permissions refused in a run: what the lead hears when it ends, and the
@@ -2065,6 +2086,11 @@ message Skill {
   string inbox_source = 9;
   // Why its inbox source cannot be used; empty when it can, or without one.
   string inbox_source_error = 10;
+  // The watcher command its SKILL.md declares to babysit the project's pull or merge requests
+  // (metadata.djinn.babysit), placeholders and all; empty without one.
+  string babysit = 11;
+  // Why that declaration cannot be used; empty when it can, or without one.
+  string babysit_error = 12;
 }
 
 message SkillServiceSummonRequest {
@@ -3655,6 +3681,10 @@ message TaskServiceSpawnRequest {
   bool draft = 20;
   // For an azima: its description, explaining its purpose or design before it is opened.
   string description = 21 [(buf.validate.field).string.max_len = 20000];
+  // A watcher that babysits a pull or merge request with the project's babysit skill (metadata.djinn.babysit): its
+  // command, its restart and its done line come from the skill, the prompt and the provider need not be given. The
+  // request is found as it starts: the one a task of after opened, else the one open for the wish's branch.
+  bool babysit = 22;
 }
 
 message TaskServiceSpawnResponse {

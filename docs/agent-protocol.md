@@ -240,6 +240,10 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   `djinn task spawn <wish> --title … --provider watch --prompt "<command>"` runs the command, with no agent, no model
   and no slot, and each new paragraph it prints wakes the lead. `--restart` starts again a command that exits on each
   change ([watch](providers.md#watch-a-command-no-agent)).
+- **Babysitting.** A pull or merge request a task opens is watched in the same wish, with the watcher a skill of
+  the project declares (`metadata.djinn.babysit`); the lead hears `W5 opened MR !12: W7 babysits it` and follows that
+  skill. `djinn task spawn <wish> --title … --babysit --after W5` does it by hand
+  ([wish templates](wish-templates.md#babysitting-what-a-task-opens)).
 - **Every request finds its wish.** A request that is not about the wish goes through
   `djinn wish route "<request>" --wish-id <wish> --ask`: a card asks the developer to open a new wish, to file it in
   an existing wish, or to keep it in this one. Answering NEW makes the wish and tells the lead without starting a second lead.

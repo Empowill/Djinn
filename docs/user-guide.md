@@ -413,6 +413,17 @@ how to work: a skill declares it in its `SKILL.md`. When a routed request matche
 and its lead follows the skill. When the watcher prints its "done" line, Djinn asks whether to grant the wish; it never
 grants one itself. How to write one: [wish templates](wish-templates.md).
 
+## Babysitting pull requests
+
+When a task opens a pull or merge request (`gh pr create`, `glab mr create`), Djinn watches it at once, in the same
+wish: once the task ends, a watcher task starts on it, part of the task's azima, and the lead hears `W5 opened MR
+!123: W7 babysits it`. Each change the watcher prints (a failed pipeline, a comment, a conflict) wakes the lead, which
+follows the project's babysit skill; the watcher ends when the request is merged. A request already babysat is not
+watched twice. The project names its watcher in one of its skills (`metadata.djinn.babysit`); without one, nothing
+starts. `babysit: false` in the project's settings turns it off. The lead can start one by hand: `djinn task spawn
+<wish> --title "Babysit W5's MR" --babysit --after W5`. How to declare it: [babysitting what a task
+opens](wish-templates.md#babysitting-what-a-task-opens).
+
 ## The inbox
 
 A skill may also declare a *source*: a command that prints what comes from outside, like the merge requests assigned
