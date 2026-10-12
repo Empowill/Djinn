@@ -2075,6 +2075,7 @@ html.native-mac [role="button"] {
 .app-toolbar > button {
   pointer-events: auto;
 }
+.app-toolbar-back,
 .app-toolbar-toggle {
   flex: 0 0 32px;
   width: 32px;
@@ -2088,6 +2089,10 @@ html.native-mac .app-toolbar {
   height: 20px;
   --wails-draggable: no-drag;
 }
+.app-toolbar-back:disabled {
+  cursor: default;
+}
+html.native-mac .app-toolbar-back,
 html.native-mac .app-toolbar-toggle {
   flex: 0 0 20px;
   width: 20px;

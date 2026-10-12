@@ -1,7 +1,7 @@
 // The window, on the services: the side panel (the flight plan, the wishes by rank, the projects), the flight plan of
 // the active wishes or the wish shown, and the status bar (whether the page follows djinn, the machine). What stays on
 // this page is how it shows: what is shown and the side panel folded.
-import { PanelLeft, Plus, Settings2, Upload } from "lucide-react";
+import { ArrowLeft, PanelLeft, Plus, Settings2, Upload } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -69,14 +69,18 @@ export function WishApp() {
   // The sidebar glides only once folded or unfolded by hand, never as the page opens.
   const [glide, setGlide] = useState(false);
   const [modal, setModal] = useState<Modal>(null);
+  const [making, setMaking] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [toast, setToast] = useState("");
+  const makeBackAction = useRef<(() => void) | null>(null);
+  const [makeBackInSetup, setMakeBackInSetup] = useState(false);
   // The tilasm a djinn:// link asks to show, in its wish; a new object at each request.
   const [opening, setOpening] = useState<Opening>();
   // The element a line of the attention bar asks to bring into sight, in its wish; a new object at each request.
   const [reaching, setReaching] = useState<Reaching>();
   const importRef = useRef<HTMLInputElement>(null);
   const closeToast = useCallback(() => setToast(""), []);
+  const closeMake = useCallback(() => setModal(null), []);
   const closeDocs = useCallback(() => setModal(null), []);
   const toggleSidebar = useCallback(() => {
     setGlide(true);
@@ -142,7 +146,8 @@ export function WishApp() {
         event.defaultPrevented ||
         event.repeat ||
         event.isComposing ||
-        modal !== null ||
+        (modal !== null && modal !== "make") ||
+        making ||
         !(event.metaKey || event.ctrlKey) ||
         (event.key !== "\\" && event.code !== "Backslash")
       )
@@ -154,7 +159,7 @@ export function WishApp() {
     };
     window.addEventListener("keydown", keys);
     return () => window.removeEventListener("keydown", keys);
-  }, [modal, toggleSidebar]);
+  }, [making, modal, toggleSidebar]);
 
   // The active wishes are always read: the flight plan and the side panel count what waits in each.
   const active = wishes.filter(isActive);
@@ -216,11 +221,25 @@ export function WishApp() {
     <div
       className={`app wish-app ${collapsed ? "sidebar-collapsed" : ""} ${glide ? "sidebar-glide" : ""}`}
     >
-      <div className="app-toolbar">
+      <div
+        className="app-toolbar"
+        onKeyDown={(event) => {
+          if (
+            event.key !== "Escape" ||
+            event.defaultPrevented ||
+            modal !== "make" ||
+            making
+          )
+            return;
+          event.preventDefault();
+          makeBackAction.current?.();
+        }}
+      >
         <TooltipButton
           type="button"
           className="sidebar-toggle app-toolbar-toggle"
           onClick={toggleSidebar}
+          disabled={making}
           label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
           tooltip={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
           shortcut={sidebarShortcut.label}
@@ -230,8 +249,28 @@ export function WishApp() {
         >
           <PanelLeft size={16} aria-hidden="true" />
         </TooltipButton>
+        {/* Back shows on the page that needs it, after the toggle, which never moves. */}
+        {modal === "make" && (
+          <TooltipButton
+            type="button"
+            className="wish-creation-back app-toolbar-back"
+            label={makeBackInSetup ? t("agents.back") : t("make.back")}
+            tooltip={makeBackInSetup ? t("agents.back") : t("make.back")}
+            shortcut={making ? undefined : t("app.shortcut_escape")}
+            aria-keyshortcuts={making ? undefined : "Escape"}
+            disabled={making}
+            onClick={() => makeBackAction.current?.()}
+            data-setup-back={makeBackInSetup || undefined}
+          >
+            <ArrowLeft size={16} aria-hidden="true" />
+          </TooltipButton>
+        )}
       </div>
-      <aside id="djinn-sidebar" className="sidebar">
+      <aside
+        id="djinn-sidebar"
+        className="sidebar"
+        inert={modal === "make" && making}
+      >
         <div className="sidebar-brand">
           <div className="sidebar-brand-main">
             <Brand small={collapsed} />
@@ -262,11 +301,17 @@ export function WishApp() {
             counts={counts}
             inbox={inbox}
             planSelected={plan}
-            onSelectPlan={() => setSelected(PLAN)}
+            onSelectPlan={() => {
+              setSelected(PLAN);
+              setModal(null);
+            }}
             selectedWishId={wish?.id ?? ""}
             selectedProjectId={projectId}
             collapsed={collapsed}
-            onSelectWish={setSelected}
+            onSelectWish={(id) => {
+              setSelected(id);
+              setModal(null);
+            }}
             onSelectProject={setProjectId}
             onMove={move}
             onNewProject={() => setModal("project")}
@@ -302,7 +347,22 @@ export function WishApp() {
         </div>
       </aside>
       <main className="main-shell">
-        {plan ? (
+        {modal === "make" ? (
+          <MakeWish
+            projects={projects}
+            active={active.length}
+            onBusyChange={setMaking}
+            backActionRef={makeBackAction}
+            onBackSetupChange={setMakeBackInSetup}
+            onClose={closeMake}
+            onMade={(made, warning) => {
+              setModal(null);
+              setSelected(made.id);
+              void data.changed(made.id, [Change.WISH]);
+              if (warning) setToast(warning);
+            }}
+          />
+        ) : plan ? (
           <FlightPlan wishes={active} onOpen={setSelected} onToast={setToast} />
         ) : wish ? (
           <WishView
@@ -323,18 +383,6 @@ export function WishApp() {
         <StatusBar live={live} error={error} />
       </main>
       <AnimatePresence>
-        {modal === "make" && (
-          <MakeWish
-            projects={projects}
-            active={wishes.filter(isActive).length}
-            onClose={() => setModal(null)}
-            onMade={(id) => {
-              setModal(null);
-              setSelected(id);
-              void data.changed(id, [Change.WISH]);
-            }}
-          />
-        )}
         {modal === "project" && (
           <AddProject
             onClose={() => setModal(null)}
@@ -353,7 +401,7 @@ export function WishApp() {
         )}
         {modal === "docs" && <Docs onClose={closeDocs} />}
         {modal === "agents" && <AgentSetup onClose={() => setModal(null)} />}
-        {project && (
+        {project && modal !== "make" && (
           <ProjectPanel
             project={project}
             onClose={() => setProjectId("")}

@@ -430,18 +430,6 @@
 }
 
 /* Dialogs. */
-.wish-projects {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.wish-projects legend {
-  margin-bottom: var(--space-2);
-  color: var(--muted);
-}
 .wish-project-choice {
   display: flex;
   align-items: center;
@@ -823,4 +811,608 @@
   display: flex;
   align-items: center;
   gap: 6px;
+}
+/* Wish creation is a page of the main shell. The request, tags, and actions float over its surface. */
+.lead-frame:has(.wish-creation) > .lead-terminal {
+  display: none;
+}
+.wish-creation .form-tip {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.wish-creation {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+.wish-creation-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  border-radius: 999px;
+  color: var(--muted);
+  pointer-events: auto;
+}
+.wish-creation-back:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.wish-creation-scroll {
+  position: relative;
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.wish-creation-content {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.wish-creation-intro {
+  position: relative;
+  z-index: 6;
+  width: max-content;
+  max-width: 100%;
+  flex: none;
+  margin: 0;
+  padding: 80px 40px 0;
+  pointer-events: none;
+}
+.wish-creation-intro h1 {
+  margin: 0;
+  width: max-content;
+  max-width: 100%;
+  font-size: 2.5rem;
+  line-height: 1.2;
+  letter-spacing: -1.4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+@keyframes wish-creation-enter {
+  from {
+    opacity: 0;
+    transform: translateY(75px);
+  }
+  to {
+    opacity: var(--wish-entry-opacity, 1);
+    transform: none;
+  }
+}
+.wish-creation-intro h1,
+.wish-creation-controls,
+.wish-composer,
+.wish-creation-footer .button.accent {
+  animation: wish-creation-enter 550ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  will-change: transform, opacity;
+}
+.wish-creation-footer .button.accent:disabled {
+  --wish-entry-opacity: 0.4;
+}
+.wish-composer.is-disabled {
+  --wish-entry-opacity: 0.55;
+}
+.wish-creation-controls {
+  animation-delay: 80ms;
+}
+.wish-composer {
+  animation-delay: 160ms;
+}
+.wish-creation-footer .button.accent {
+  animation-delay: 240ms;
+}
+.wish-creation-intro p {
+  max-width: 620px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+/* The smoke follows the selected theme, so the request surface keeps a translucent plane over the solver without
+   hiding its texture behind an opaque card. */
+html[data-theme="light"] .wish-creation-content::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 1;
+  width: min(40%, 640px);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--bg) 91%, transparent),
+    color-mix(in srgb, var(--bg) 62%, transparent)
+  );
+  content: "";
+  pointer-events: none;
+}
+html[data-theme="light"] .wish-creation-intro h1,
+html[data-theme="light"] .wish-composer-input {
+  color: var(--text);
+}
+html[data-theme="light"] .wish-composer .wish-composer-input {
+  background: transparent;
+}
+html[data-theme="light"] .wish-creation-request {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--bg) 68%, transparent),
+    transparent 100%
+  );
+}
+html[data-theme="light"] .wish-composer-caret {
+  background: var(--text);
+}
+.wish-creation-form[hidden] {
+  display: none;
+}
+.wish-creation-form {
+  position: static;
+  z-index: 2;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.wish-creation-workspace {
+  position: relative;
+  z-index: 2;
+  display: block;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: transparent;
+}
+.wish-creation-request {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  width: min(40%, 640px);
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  padding: 20px 40px 110px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--bg) 91%, transparent),
+    transparent 100%
+  );
+}
+.wish-creation-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.wish-composer {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.wish-composer:focus-within {
+  border: 0;
+  box-shadow: none;
+}
+.wish-composer-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  color: var(--muted-dim);
+  opacity: 1;
+  font-size: 16px;
+  line-height: 1.65;
+  letter-spacing: normal;
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.wish-composer-caret {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  width: 1px;
+  height: 1.65em;
+  opacity: 0;
+  background: var(--n-ff);
+  animation: wish-composer-caret 1s steps(1, end) infinite;
+}
+.wish-composer:focus-within .wish-composer-caret {
+  opacity: 1;
+}
+.wish-composer[data-empty="true"] .wish-composer-input {
+  caret-color: transparent;
+}
+.wish-composer-input {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  min-height: min(34vh, 420px);
+  max-height: none;
+  flex: 1;
+  resize: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  background: transparent;
+  color: var(--n-eb);
+  font-size: 16px;
+  line-height: 1.65;
+  letter-spacing: normal;
+  cursor: text;
+}
+.wish-composer-input:focus {
+  border: 0;
+  box-shadow: none;
+}
+.wish-composer-input::placeholder {
+  color: var(--muted-dim);
+  opacity: 1;
+}
+.wish-composer.is-disabled {
+  opacity: 0.55;
+}
+@keyframes wish-composer-caret {
+  50% {
+    opacity: 0;
+  }
+}
+.wish-creation-error {
+  flex-shrink: 0;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--st-failed);
+  border-radius: 7px;
+  color: var(--st-failed);
+  background: color-mix(in srgb, var(--st-failed) 7%, transparent);
+}
+.wish-creation-form > .wish-creation-error {
+  position: absolute;
+  bottom: 132px;
+  left: 40px;
+  z-index: 8;
+  width: min(40%, 640px);
+  margin: 0;
+}
+.wish-creation-controls {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  min-height: 0;
+  margin: 0 0 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.wish-tag,
+.wish-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  min-height: 26px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-raised);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.wish-tag:hover,
+.wish-dropdown-trigger:hover,
+.wish-dropdown.is-open .wish-dropdown-trigger {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+.wish-tag:focus-visible,
+.wish-dropdown-trigger:focus-visible,
+.wish-dropdown-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.wish-dropdown {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+.wish-dropdown-trigger {
+  cursor: pointer;
+}
+.wish-dropdown-trigger:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.wish-dropdown-value {
+  display: inline-flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wish-dropdown-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+.wish-dropdown-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wish-dropdown-trigger > svg {
+  flex: 0 0 auto;
+}
+.wish-dropdown-project-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wish-tag-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 5;
+  width: min(320px, calc(100vw - 40px));
+  max-height: min(54vh, 360px);
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--shadow) 43.9%, transparent);
+}
+.wish-dropdown-options {
+  display: grid;
+  gap: 2px;
+}
+.wish-dropdown-option {
+  display: block;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.wish-dropdown-option:hover,
+.wish-dropdown-option[aria-selected="true"] {
+  color: var(--text);
+  background: var(--surface-soft);
+}
+.wish-project-search {
+  position: relative;
+  margin: 0 0 6px;
+}
+.wish-project-search > svg {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+.wish-project-search input {
+  width: 100%;
+  padding: 8px 9px 8px 30px;
+  border-color: var(--line);
+  background: var(--surface);
+}
+.wish-project-options {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.wish-project-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 9px;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.wish-project-option:hover,
+.wish-project-option.is-selected {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+.wish-project-option input {
+  accent-color: var(--text);
+}
+.wish-project-option > span:not(.wish-creation-sr-only) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wish-project-option svg {
+  margin-left: auto;
+  opacity: 0;
+}
+.wish-project-option.is-selected svg {
+  opacity: 1;
+}
+.wish-project-empty {
+  padding: 10px 9px;
+  color: var(--muted);
+}
+.wish-creation-inline-status {
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.wish-creation-controls .agent-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--st-failed);
+}
+.wish-creation-controls .agent-warning .button {
+  padding: 5px 8px;
+}
+.wish-creation-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  font-size: var(--font-size-body);
+}
+.wish-creation-status .status-dot {
+  margin: 0;
+}
+.wish-creation-footer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  min-height: 66px;
+  padding: 12px 40px;
+  border: 0;
+  background: linear-gradient(
+    0deg,
+    color-mix(in srgb, var(--bg) 93%, transparent),
+    transparent
+  );
+  pointer-events: none;
+}
+.wish-creation-footer > * {
+  pointer-events: auto;
+}
+.wish-creation-footer .button.accent {
+  min-width: 148px;
+}
+.wish-creation-spinner {
+  animation: wish-creation-spin 1s linear infinite;
+}
+@keyframes wish-creation-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.wish-creation-content > .agent-setup {
+  position: relative;
+  z-index: 7;
+  width: min(720px, calc(100% - 80px));
+  margin: 12px 40px 0;
+}
+.wish-creation:has(.agent-setup) .wish-creation-scroll {
+  overflow: auto;
+}
+@media (max-width: 880px) {
+  .wish-creation-request {
+    width: min(52%, 560px);
+  }
+  .wish-creation-controls {
+    width: 100%;
+  }
+}
+@media (max-width: 700px) {
+  .wish-creation-intro {
+    width: 100%;
+    max-width: 100%;
+    padding: 68px 24px 0;
+  }
+  .wish-creation-request {
+    width: 100%;
+    padding: 20px 24px 110px;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--bg) 94%, transparent),
+      transparent
+    );
+  }
+  .wish-creation-controls {
+    right: auto;
+    bottom: auto;
+    left: auto;
+    width: 100%;
+    align-items: flex-start;
+  }
+  .wish-creation-form > .wish-creation-error {
+    right: 24px;
+    bottom: 122px;
+    left: 24px;
+    width: auto;
+  }
+  .wish-creation-footer {
+    min-height: 60px;
+    padding-right: 24px;
+    padding-left: 24px;
+  }
+  .wish-creation-footer .button.accent {
+    min-width: 0;
+  }
+  .wish-creation-content > .agent-setup {
+    width: calc(100% - 48px);
+    margin-right: 24px;
+    margin-left: 24px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wish-composer-caret,
+  .wish-creation-spinner,
+  .wish-creation-intro h1,
+  .wish-creation-controls,
+  .wish-composer,
+  .wish-creation-footer .button.accent {
+    animation: none;
+  }
 }
