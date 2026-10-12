@@ -1,13 +1,171 @@
-import { Bold, Italic, List, ListOrdered } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import { t } from "./i18n";
-import { composerMarkdown } from "./wish-composer-markdown";
 
-type Command = "bold" | "italic" | "insertUnorderedList" | "insertOrderedList";
+const PLACEHOLDER_KEYS = [
+  "make.placeholder_build",
+  "make.placeholder_plan",
+  "make.placeholder_research",
+] as const;
 
-// The browser owns the editable DOM and its undo stack. React owns the serialized draft, never the editor's
-// children: checking an agent or changing a project must not move the caret or replace the text.
+const PLACEHOLDER_PROMPTS = PLACEHOLDER_KEYS.map((key) => t(key));
+const DELETE_DELAY = 8;
+const TYPE_DELAY = 48;
+const HOLD_DELAY = 1700;
+const MAX_CATCH_UP_STEPS = 32;
+
+type PlaceholderAnimation = {
+  promptIndex: number;
+  character: number;
+  deleting: boolean;
+  dueAt: number;
+};
+
+const AnimatedPlaceholder = memo(function AnimatedPlaceholder({
+  empty,
+}: {
+  empty: boolean;
+}) {
+  const [value, setValue] = useState(PLACEHOLDER_PROMPTS[0]);
+  const animation = useRef<PlaceholderAnimation | null>(null);
+
+  useEffect(() => {
+    if (!empty) {
+      animation.current = null;
+      setValue(PLACEHOLDER_PROMPTS[0]);
+      return;
+    }
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let frame = 0;
+    let cancelled = false;
+    let lastPublished = PLACEHOLDER_PROMPTS[0];
+
+    const clearFrame = () => {
+      if (!frame) return;
+      window.cancelAnimationFrame(frame);
+      frame = 0;
+    };
+    const publish = (next: string) => {
+      if (next === lastPublished) return;
+      lastPublished = next;
+      setValue(next);
+    };
+    const currentDelay = () => {
+      const state = animation.current;
+      if (!state) return HOLD_DELAY;
+      if (state.deleting) {
+        return state.character === PLACEHOLDER_PROMPTS[state.promptIndex].length
+          ? HOLD_DELAY
+          : DELETE_DELAY;
+      }
+      return TYPE_DELAY;
+    };
+    const schedule = () => {
+      if (frame || cancelled || !empty || media.matches || document.hidden)
+        return;
+      frame = window.requestAnimationFrame(step);
+    };
+    const reset = (now: number) => {
+      clearFrame();
+      const first = PLACEHOLDER_PROMPTS[0];
+      animation.current = {
+        promptIndex: 0,
+        character: first.length,
+        deleting: true,
+        dueAt: now + HOLD_DELAY,
+      };
+      lastPublished = first;
+      setValue(first);
+      schedule();
+    };
+    const pause = () => clearFrame();
+    const resume = () => {
+      if (cancelled || !empty || media.matches || document.hidden) return;
+      const now = performance.now();
+      const state = animation.current;
+      if (state) state.dueAt = now + currentDelay();
+      schedule();
+    };
+    const step = (now: number) => {
+      frame = 0;
+      if (cancelled || !empty || media.matches || document.hidden) return;
+      const state = animation.current;
+      if (!state) return;
+
+      let steps = 0;
+      while (now >= state.dueAt && steps < MAX_CATCH_UP_STEPS) {
+        const prompt = PLACEHOLDER_PROMPTS[state.promptIndex];
+        if (state.deleting) {
+          state.character = Math.max(0, state.character - 1);
+          if (state.character === 0) {
+            state.deleting = false;
+            state.promptIndex =
+              (state.promptIndex + 1) % PLACEHOLDER_PROMPTS.length;
+            state.dueAt += TYPE_DELAY;
+          } else {
+            state.dueAt += DELETE_DELAY;
+          }
+        } else {
+          state.character = Math.min(prompt.length, state.character + 1);
+          if (state.character === prompt.length) {
+            state.deleting = true;
+            state.dueAt += HOLD_DELAY;
+          } else {
+            state.dueAt += TYPE_DELAY;
+          }
+        }
+        steps++;
+      }
+      if (steps === MAX_CATCH_UP_STEPS && now >= state.dueAt)
+        state.dueAt = now + currentDelay();
+      publish(PLACEHOLDER_PROMPTS[state.promptIndex].slice(0, state.character));
+      schedule();
+    };
+    const restart = () => {
+      const now = performance.now();
+      if (media.matches) {
+        clearFrame();
+        const first = PLACEHOLDER_PROMPTS[0];
+        animation.current = {
+          promptIndex: 0,
+          character: first.length,
+          deleting: true,
+          dueAt: Number.POSITIVE_INFINITY,
+        };
+        lastPublished = first;
+        setValue(first);
+        return;
+      }
+      reset(now);
+    };
+
+    restart();
+    const onMotionPreferenceChange = () => restart();
+    const onVisibilityChange = () => {
+      if (document.hidden) pause();
+      else resume();
+    };
+    media.addEventListener?.("change", onMotionPreferenceChange);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      clearFrame();
+      media.removeEventListener?.("change", onMotionPreferenceChange);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [empty]);
+
+  if (!empty) return null;
+  return (
+    <span className="wish-composer-placeholder" aria-hidden="true">
+      <span className="wish-composer-caret" />
+      {value}
+    </span>
+  );
+});
+
+// The request is deliberately a native textarea: it keeps the browser's caret, selection, undo stack and paste
+// behavior while sending plain Markdown-compatible text to the API. Formatting controls are intentionally absent.
 export function WishComposer({
   id,
   describedBy,
@@ -16,163 +174,39 @@ export function WishComposer({
   onChange,
 }: {
   id: string;
-  describedBy: string;
+  describedBy?: string;
   disabled: boolean;
   invalid?: boolean;
   onChange: (markdown: string, hasText: boolean) => void;
 }) {
-  const editor = useRef<HTMLDivElement>(null);
-  const selection = useRef<Range | null>(null);
   const [empty, setEmpty] = useState(true);
-  const [active, setActive] = useState<Partial<Record<Command, boolean>>>({});
-  const commands = [
-    { command: "bold" as const, label: t("make.bold"), icon: Bold },
-    { command: "italic" as const, label: t("make.italic"), icon: Italic },
-    {
-      command: "insertUnorderedList" as const,
-      label: t("make.bullets"),
-      icon: List,
-    },
-    {
-      command: "insertOrderedList" as const,
-      label: t("make.numbered"),
-      icon: ListOrdered,
-    },
-  ];
-  const update = () => {
-    if (!editor.current) return;
-    const hasText = Boolean(
-      // Spaces and invisible Unicode formatting controls alone do not make a request.
-      editor.current.textContent?.replace(/[\s\p{Cf}]/gu, ""),
-    );
+
+  const update = (value: string) => {
+    const hasText = Boolean(value.replace(/[\s\p{Cf}]/gu, ""));
     setEmpty(!hasText);
-    onChange(composerMarkdown(editor.current), hasText);
+    onChange(value, hasText);
   };
-  useEffect(() => {
-    const remember = () => {
-      const current = window.getSelection();
-      if (
-        !current?.rangeCount ||
-        !editor.current?.contains(current.anchorNode) ||
-        !editor.current.contains(current.focusNode)
-      )
-        return;
-      selection.current = current.getRangeAt(0).cloneRange();
-      setActive(
-        Object.fromEntries(
-          commands.map(({ command }) => [
-            command,
-            document.queryCommandState(command),
-          ]),
-        ),
-      );
-    };
-    document.addEventListener("selectionchange", remember);
-    return () => document.removeEventListener("selectionchange", remember);
-  }, []);
-  const format = (command: Command) => {
-    if (disabled || !editor.current) return;
-    const current = window.getSelection();
-    // Read a current editor selection synchronously: selectionchange may still be queued when a shortcut fires.
-    // The saved range is only for a toolbar button reached by keyboard, which can move focus outside the editor.
-    const range =
-      current?.rangeCount &&
-      editor.current.contains(current.anchorNode) &&
-      editor.current.contains(current.focusNode)
-        ? current.getRangeAt(0).cloneRange()
-        : selection.current;
-    editor.current.focus();
-    if (range && editor.current.contains(range.commonAncestorContainer)) {
-      current?.removeAllRanges();
-      current?.addRange(range);
-    }
-    // Native commands preserve undo/redo and work in Chromium and the Wails WebKit window.
-    document.execCommand(command, false);
-    setActive((previous) => ({
-      ...previous,
-      [command]: document.queryCommandState(command),
-    }));
-    update();
-  };
-  const insertText = (text: string) => {
-    document.execCommand(
-      "insertText",
-      false,
-      text.replace(/\r\n?/g, "\n").replace(/\0/g, ""),
-    );
-    update();
-  };
+
   return (
-    <div className={`wish-composer ${disabled ? "is-disabled" : ""}`}>
-      <div
-        className="wish-composer-tools"
-        role="group"
-        aria-label={t("make.formatting")}
-      >
-        {commands.map(({ command, label, icon: Icon }) => (
-          <button
-            key={command}
-            type="button"
-            title={label}
-            aria-label={label}
-            aria-pressed={Boolean(active[command])}
-            aria-controls={id}
-            disabled={disabled}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => format(command)}
-          >
-            <Icon size={16} />
-          </button>
-        ))}
-      </div>
-      <div
-        ref={editor}
+    <div
+      className={`wish-composer ${disabled ? "is-disabled" : ""}`}
+      data-empty={empty}
+    >
+      <AnimatedPlaceholder empty={empty} />
+      <textarea
         id={id}
-        role="textbox"
+        name="prompt"
+        rows={8}
         aria-multiline="true"
         aria-required="true"
         aria-disabled={disabled}
         aria-invalid={invalid || undefined}
         aria-labelledby={`${id}-label`}
         aria-describedby={describedBy}
-        contentEditable={!disabled}
-        suppressContentEditableWarning
-        tabIndex={0}
+        disabled={disabled}
         className="wish-composer-input"
-        data-empty={empty}
-        data-placeholder={t("make.what_placeholder")}
-        onInput={update}
-        onPaste={(event) => {
-          event.preventDefault();
-          if (!disabled) insertText(event.clipboardData.getData("text/plain"));
-        }}
-        onDrop={(event) => {
-          // Do not let the browser insert dragged HTML, images or files into the prompt.
-          event.preventDefault();
-        }}
-        onKeyDown={(event) => {
-          if (
-            event.nativeEvent.isComposing ||
-            !(event.metaKey || event.ctrlKey) ||
-            event.altKey
-          )
-            return;
-          const key = event.key.toLowerCase();
-          const command =
-            key === "b"
-              ? "bold"
-              : key === "i"
-                ? "italic"
-                : event.shiftKey && (key === "7" || event.code === "Digit7")
-                  ? "insertOrderedList"
-                  : event.shiftKey && (key === "8" || event.code === "Digit8")
-                    ? "insertUnorderedList"
-                    : undefined;
-          if (command) {
-            event.preventDefault();
-            format(command);
-          }
-        }}
+        placeholder=""
+        onChange={(event) => update(event.target.value)}
       />
     </div>
   );
