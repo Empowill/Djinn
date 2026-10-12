@@ -1519,6 +1519,10 @@ test("the durable list shows every lifecycle and links delegated workers", () =>
         text: `Full indication ${i}\nKeep the line`,
         status,
         taskId: i > 1 ? "task-one" : "",
+        replies:
+          i === 2
+            ? [{ text: "First lead reply" }, { text: "Second lead reply" }]
+            : [],
       })),
       tasks: [{ id: "task-one", code: "W7" }],
     }),
@@ -1529,6 +1533,11 @@ test("the durable list shows every lifecycle and links delegated workers", () =>
   assert.match(html, /Done/);
   assert.equal((html.match(/href="#task-task-one"/g) ?? []).length, 2);
   assert.match(html, /Full indication 3\nKeep the line/);
+  assert.match(html, /aria-label="Lead replies"/);
+  assert.ok(
+    html.indexOf("First lead reply") < html.indexOf("Second lead reply"),
+  );
+  assert.equal((html.match(/class="instruction-reply"/g) ?? []).length, 2);
   assert.equal(
     s.renderToStaticMarkup(
       h(s.InstructionList, { instructions: [], tasks: [] }),

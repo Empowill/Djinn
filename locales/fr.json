@@ -409,6 +409,8 @@
   "instruction.worker_unavailable": "Worker {task} indisponible",
   "instruction.saved": "Enregistrée · en attente",
   "instruction.open_for": "Ajouter une indication à {wish}",
+  "instruction.replies": "Réponses du lead",
+  "instruction.reply": "Réponse du lead",
   "instructionBackend.heading": "Indications du développeur",
   "instructionBackend.sub": "Le lead réfléchit, délègue à un worker et vérifie la réalisation.",
   "instructionBackend.pending": "En attente",

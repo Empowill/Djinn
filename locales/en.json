@@ -409,6 +409,8 @@
   "instruction.worker_unavailable": "Worker {task} unavailable",
   "instruction.saved": "Saved · pending",
   "instruction.open_for": "Add an indication to {wish}",
+  "instruction.replies": "Lead replies",
+  "instruction.reply": "Lead reply",
   "instructionBackend.heading": "Developer instructions",
   "instructionBackend.sub": "The lead reflects, delegates to a worker, and verifies completion.",
   "instructionBackend.pending": "Pending",
