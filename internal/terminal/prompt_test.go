@@ -17,30 +17,7 @@ func shown(cols, rows int, out string) []string {
 	return strings.Split(strings.TrimRight(s.text(), "\n"), "\n")
 }
 
-// The approvals below are written by hand from the words in the binaries (claude 2.1.295, codex-cli 0.162.0-alpha.2)
-// and the layout of their screens; Claude Code's folder trust is recorded (testdata/claude-trust.out).
-const (
-	claudeBash = "\x1b[38;5;220m" + "────────────────────────────────────────" + "\x1b[39m\r\n" +
-		" Bash command\r\n\r\n" +
-		"   djinn task list --wish-id 01a11f56\r\n" +
-		"   List the tasks of the wish\r\n\r\n" +
-		" Do you want to proceed?\r\n" +
-		" \x1b[38;5;153m❯\x1b[39m 1. Yes\r\n" +
-		"   2. Yes, and don't ask again for djinn task list commands in\r\n" +
-		"      /Users/me/CODE/dolmen\r\n" +
-		"   3. No, and tell Claude what to do differently (esc)\r\n\r\n" +
-		" \x1b[2mEsc to cancel · Tab to amend\x1b[22m\r\n"
-	codexCommand = "› Lance le test\r\n\r\n" +
-		"• J’utilise le skill djinn. Je vérifie :\r\n" +
-		"  1. les tâches\r\n  2. les questions\r\n\r\n" +
-		"  Would you like to run the following command?\r\n\r\n" +
-		"  Reason: Autoriser l’accès à Djinn pour lire le souhait ?\r\n\r\n" +
-		"  $ djinn wish brief 01a11f56\r\n\r\n" +
-		"\x1b[1m› 1. Yes, proceed (y)\x1b[0m\r\n" +
-		"  2. Yes, and don't ask again for commands that start with `djinn` (p)\r\n" +
-		"  3. No, and tell Codex what to do differently (esc)\r\n\r\n" +
-		"  Press enter to confirm or esc to cancel\r\n"
-)
+// The approvals read below are those of the fake lead (say_test.go): claudeApproval and codexApproval.
 
 func TestReadPrompt(t *testing.T) {
 	trust, err := os.ReadFile(filepath.Join("testdata", "claude-trust.out"))
@@ -51,7 +28,7 @@ func TestReadPrompt(t *testing.T) {
 		out  string
 		want *Prompt
 	}{
-		"claude approval": {claudeBash, &Prompt{
+		"claude approval": {claudeApproval, &Prompt{
 			Title: "Do you want to proceed?",
 			Lines: []string{"Bash command", "djinn task list --wish-id 01a11f56", "List the tasks of the wish"},
 			Options: []string{"Yes", "Yes, and don't ask again for djinn task list commands in /Users/me/CODE/dolmen",
@@ -59,9 +36,9 @@ func TestReadPrompt(t *testing.T) {
 			Selected: 0,
 		}},
 		// The reason ends with "?" too; the question is the one Codex asks. The list the agent wrote is no choice.
-		"codex approval": {codexCommand, &Prompt{
+		"codex approval": {codexApproval, &Prompt{
 			Title: "Would you like to run the following command?",
-			Lines: []string{"Reason: Autoriser l’accès à Djinn pour lire le souhait ?", "$ djinn wish brief 01a11f56"},
+			Lines: []string{"Reason: Allow Djinn to read the wish?", "$ djinn wish brief 01a11f56"},
 			Options: []string{"Yes, proceed (y)", "Yes, and don't ask again for commands that start with `djinn` (p)",
 				"No, and tell Codex what to do differently (esc)"},
 			Selected: 0,
@@ -92,7 +69,7 @@ func TestReadPrompt(t *testing.T) {
 // away is gone.
 func TestPromptNeedsAChoice(t *testing.T) {
 	term := &Terminal{screen: newScreen(120, 30)}
-	term.screen.write([]byte(codexCommand))
+	term.screen.write([]byte(codexApproval))
 	if p := term.Prompt(); p == nil || p.Title != "Would you like to run the following command?" {
 		t.Fatalf("Prompt = %#v", p)
 	}
@@ -161,12 +138,12 @@ func TestChoose(t *testing.T) {
 // A changed command with the same title and buttons must require a new decision.
 func TestChooseRejectsChangedCommand(t *testing.T) {
 	term := &Terminal{screen: newScreen(120, 40), done: make(chan struct{})}
-	term.screen.write([]byte(codexCommand))
+	term.screen.write([]byte(codexApproval))
 	p := term.Prompt()
 	if p == nil {
 		t.Fatal("no prompt")
 	}
-	term.screen.write([]byte("\x1b[2J\x1b[H" + strings.ReplaceAll(codexCommand, "djinn wish brief 01a11f56", "delete another file")))
+	term.screen.write([]byte("\x1b[2J\x1b[H" + strings.ReplaceAll(codexApproval, "djinn wish brief 01a11f56", "delete another file")))
 	if err := term.Choose(p.Title, p.Lines, p.Options, 0); !errors.Is(err, ErrNoPrompt) {
 		t.Fatalf("stale command: %v", err)
 	}
