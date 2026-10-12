@@ -133,3 +133,68 @@ test("a word written in the pill reaches the lead's terminal", async ({
     djinn("wish", "delete", wishId);
   }
 });
+
+// W551: the box lost its focus and stayed open, so the shortcut found it open and gave it no focus back. Focus out now
+// folds it, the draft kept: the shortcut always opens it focused.
+test("the box folds when the focus leaves it, and the shortcut opens it focused", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const listed = JSON.parse(djinn("wish", "list", "--json")).wishes ?? [];
+  for (const w of listed.filter(
+    (w: { state: string }) => w.state === "WISH_STATE_ACTIVE",
+  ))
+    djinn("wish", "pause", w.id);
+  const title = "Fold the box";
+  const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
+    .id as string;
+  const shortcut = process.platform === "darwin" ? "Meta+I" : "Control+I";
+  try {
+    await page.goto(process.env.DJINN_URL!);
+    await page.locator(".wish-nav").filter({ hasText: title }).click();
+    const toggle = page.getByRole("button", { name: "Write to the Djinn" });
+    await expect(toggle).toBeVisible();
+    const panel = page.getByRole("dialog", { name: "To the Djinn" });
+    const box = panel.getByLabel(
+      "A word for the Djinn about this wish, as if typed in its terminal",
+    );
+
+    await page.keyboard.press(shortcut);
+    await expect(box).toBeFocused();
+    await box.fill("Half a thought");
+
+    // A click inside the box, off its text, keeps it open; the shortcut gives the focus back to its text.
+    const form = await panel.locator("form").boundingBox();
+    expect(form).not.toBeNull();
+    await page.mouse.click(form!.x + 8, form!.y + form!.height / 2);
+    await expect(panel).toBeVisible();
+    await page.keyboard.press(shortcut);
+    await expect(box).toBeFocused();
+
+    // A click elsewhere folds it, and leaves the focus where it went.
+    const panelBox = await panel.boundingBox();
+    expect(panelBox).not.toBeNull();
+    await page.mouse.click(panelBox!.x + panelBox!.width / 2, panelBox!.y - 40);
+    await expect(panel).toHaveCount(0);
+    await expect(toggle).toBeVisible();
+    await expect(toggle).not.toBeFocused();
+
+    // The shortcut opens it again, focused, with the draft.
+    await page.keyboard.press(shortcut);
+    await expect(box).toBeFocused();
+    await expect(box).toHaveValue("Half a thought");
+
+    // The focus moving away by the keyboard folds it too.
+    // Back past the box's own buttons, if any, to the page before it.
+    for (let i = 0; i < 3 && (await panel.count()) > 0; i++)
+      await page.keyboard.press("Shift+Tab");
+    await expect(panel).toHaveCount(0);
+    await page.keyboard.press(shortcut);
+    await expect(box).toBeFocused();
+    await expect(box).toHaveValue("Half a thought");
+    expect(errors).toEqual([]);
+  } finally {
+    djinn("wish", "delete", wishId);
+  }
+});
