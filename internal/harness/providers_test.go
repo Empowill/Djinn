@@ -127,6 +127,20 @@ func catalog() []catalogCase {
 			}},
 		{provider: "claude", fixture: "process-dies", end: "exit:2", want: []string{"STATUS", "TOOL_CALL", "ERROR"},
 			exit: 2, err: "claude ended before the end of its turn"},
+		{provider: "claude", fixture: "turns-mid-run", end: "exit:2",
+			want: []string{"STATUS", "TEXT", "TOOL_CALL", "TEXT", "TOOL_RESULT", "OTHER", "TOOL_CALL", "TOOL_RESULT", "TEXT", "ERROR"},
+			exit: 2, err: "claude ended before the end of its turn",
+			check: func(t *testing.T, events []Event, _, _ string) {
+				var turns []int
+				for _, ev := range events {
+					if ev.Turns > 0 {
+						turns = append(turns, ev.Turns)
+					}
+				}
+				if !slices.Equal(turns, []int{1, 2, 3}) {
+					t.Errorf("turns = %v, want 1, 2, 3 as they come, the subagent's line aside", turns)
+				}
+			}},
 		{provider: "claude", fixture: "two-turns", send: []string{"And then?"},
 			want: []string{"STATUS", "TEXT", "USAGE", "TEXT", "USAGE"},
 			check: func(t *testing.T, _ []Event, _, input string) {

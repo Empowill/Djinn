@@ -65,6 +65,7 @@ import {
   costTitle,
   resourcesDetail,
   resourcesNow,
+  TaskTurns,
   TaskUsage,
   usageDetail,
 } from "./usage";
@@ -330,6 +331,7 @@ export const WishTask = memo(function WishTask({
                   {time.text}
                 </span>
               )}
+              <TaskTurns task={task} />
               {origin}
               <TaskUsage task={task} />
               {task.status === TaskStatus.RUNNING &&

@@ -177,8 +177,9 @@ Each task is displayed as a two-line row:
 - The first line displays the status badge first (**Running**, **Waits for your answer**, **Planned**, **Done**,
   **Failed**, etc.), its code `W1`, `W2`…, and its title, with the full prompt on hover.
 - The second line gives its project, agent provider and model, duration (or waiting time: for a slot, dependency,
-  or gate), token counts and cost estimate, and for a running worker its live CPU and memory usage (not measured
-  on Windows yet).
+  or gate), its model turns against the watchdog's limit (`37/500`, its run's; it turns orange past 80%, and its
+  hover gives the total over its runs), token counts and cost estimate, and for a running worker its live CPU and
+  memory usage (not measured on Windows yet).
 
 Clicking a task opens its card body: when it started and ended, the files it writes, its budget, its folded prompt,
 diffs, its worker's last word, where its work stands, its events, and folded terminal logs with **See logs** (or
@@ -457,7 +458,8 @@ A worker stopped by its provider's usage limit shows "Waiting for the limit", th
 A watchdog guards against runaway workers. A worker that prints nothing for 15 minutes, with no process busy and no
 gate held or awaited, is ended (continued when its provider can resume). A task is stopped, "budget exceeded", past
 2 hours of work in total across its runs, or a worker past 500 model turns in one run; `djinn task continue` gives a
-stopped worker 500 turns again, not more time.
+stopped worker 500 turns again, not more time. A Claude worker's count grows as it works; Antigravity
+reports its own at the end of each answer, Codex none.
 
 At every start, the lead of the first active wish comes back on its session, in its folder. The lead terminals come
 back after an update or a crash too, on the same sessions; not after you quit. When a newer Djinn is installed, a

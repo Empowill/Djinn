@@ -46,6 +46,7 @@ type meter struct {
 	cpu     time.Duration // CPU time at the reading before
 	at      time.Time     // when it was read
 	written *planv1.Resources
+	turns   *planv1.Turns // the task's turns, as last written
 }
 
 // newMeter follows the run's current worker; nil when it is not measured: no measure given, or a worker without a
@@ -55,7 +56,7 @@ func (h *Harness) newMeter(r *run) *meter {
 	if !ok || h.measureRead == nil || h.measureEvery <= 0 {
 		return nil
 	}
-	m := &meter{proc: p, pid: p.PID(), at: time.Now(), written: r.task.GetResources()}
+	m := &meter{proc: p, pid: p.PID(), at: time.Now(), written: r.task.GetResources(), turns: r.task.GetTurns()}
 	// Initial CPU baseline: CPU time before the meter starts is not the task's.
 	if m.pid != 0 {
 		if g, err := h.measureRead(m.pid, p.Cgroup()); err == nil {
@@ -66,7 +67,7 @@ func (h *Harness) newMeter(r *run) *meter {
 }
 
 // measure reads what the run's worker uses, keeps it on the task, and writes the task when the reading moved
-// enough to show (worth). Runs in the pump, which owns the task.
+// enough to show (worth), or its turns grew (setTurns). Runs in the pump, which owns the task.
 func (h *Harness) measure(r *run, m *meter) {
 	pid := m.proc.PID()
 	if pid == 0 {
@@ -113,20 +114,22 @@ func (h *Harness) measure(r *run, m *meter) {
 	h.mu.Lock()
 	r.use = use
 	h.mu.Unlock()
-	if !worth(m.written, res) {
+	// The turns the worker took since the last write go with the reading: an event writes the task seldom.
+	if !worth(m.written, res) && t.GetTurns() == m.turns {
 		return
 	}
 	err = h.store.Tx(context.Background(), func(tx *store.Tx) error {
 		if err := tx.Journal(actorHarness, methodMeasure, res); err != nil {
 			return err
 		}
+		carry(tx, t)
 		return tx.Put(t)
 	})
 	if err != nil {
 		log.Printf("djinn: task %s: record what its worker uses: %v", r.id, err)
 		return
 	}
-	m.written = res
+	m.written, m.turns = res, t.GetTurns()
 }
 
 // worth says whether a reading moved enough from the one written to be written: a process more or less,

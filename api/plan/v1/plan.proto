@@ -903,6 +903,9 @@ message Task {
   repeated TaskComment comments = 63;
   // The developer's marks on the task (MarkService.Put): reviewed, once its diff was read, by whom and when.
   repeated Mark marks = 64;
+  // Model turns its worker took, against the limit the watchdog stops a run at: written as they grow, with the
+  // resources. Unset before its first start.
+  Turns turns = 65;
 }
 
 // TaskRun is a single run of a task's worker.
@@ -1157,6 +1160,17 @@ message AzimaPr {
   string url = 1;
   // Where the pull request stands: proposed, open, merged.
   AzimaPrState state = 2;
+}
+
+// Turns counts a task's model turns against the watchdog's limit (TaskMaxTurns): a guard against an endless loop.
+message Turns {
+  // Turns of the current run, or of the last one: each start of a worker (restart, resume, continue, answer) counts
+  // again from 1, as the limit applies to a run.
+  int32 run = 1;
+  // How many turns a run may take before the watchdog stops it.
+  int32 limit = 2;
+  // Turns over all the task's runs.
+  int32 total = 3;
 }
 
 // Resources is what a task's worker uses of the machine: its process group and every process it started, even one
