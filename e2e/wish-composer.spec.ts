@@ -287,7 +287,9 @@ test("French empty creation keeps the title and caret visible", async ({
   ).toBe(20);
   expect(requestBox!.width / regionBox!.width).toBeGreaterThan(0.38);
   expect(requestBox!.width / regionBox!.width).toBeLessThan(0.42);
-  expect(submitBox!.x).toBeLessThan(footerBox!.x + footerBox!.width / 3);
+  const submitCenter = submitBox!.x + submitBox!.width / 2;
+  const footerCenter = footerBox!.x + footerBox!.width / 2;
+  expect(Math.abs(submitCenter - footerCenter)).toBeLessThan(2);
   await page.screenshot({ path: "test-results/e2e/wish-creation-fr.png" });
 });
 
