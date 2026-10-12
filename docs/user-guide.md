@@ -240,9 +240,16 @@ azima with its own branch, status badges show **PR proposed**, **PR open** or **
 merge the PR. An individual **Push** button (`djinn project push <project> --wish <wish>`) pushes the branch on demand
 when you choose.
 
+**Where work lands.** Per wish, a wish's work lands in its integration branch, in each project the branch your checkout
+was on when the wish was made: the chip beside the push strategy names it (with the project, when the wish has several),
+and a click on it changes it to another local branch or to a new one made from it (`djinn wish set-integration <wish>
+--branch feat/x`, `--create-branch` for a new one), refused while a merge into it runs. Per azima, each azima's work
+lands in main through its own branch and pull request, which its card shows once opened, and work of no azima in the wish's
+integration branch; `djinn wish brief` and `djinn brief` say it in a line for each wish.
+
 An azima's branch works like a wish's integration branch. Djinn cuts it from main when the azima is made (an azima made
-before its wish was switched gets its branch when its first part starts), and records it on the azima: its card shows
-the branch, and that it lands in main, on its title's hover. The azima's work merges into it, and Djinn keeps it up with
+before its wish was switched gets its branch when its first part starts), and records it on the azima: its card, opened,
+shows the branch, the commit of main it was cut from, and that it lands in main. The azima's work merges into it, and Djinn keeps it up with
 main by the same rules as a wish's branch ([keeping up with main](team-settings.md#keeping-up-with-main)). It lands in
 main: its pull request, opened when you say so after Djinn proposes it, targets main and follows each push of the
 branch; Djinn never re-targets it.

@@ -73,6 +73,8 @@ export {
   LeadMenu,
   MainMerges,
   PushStrategySelector,
+  WhereWorkLands,
+  BranchPicker,
   WishDescription,
   WishTitle,
   recordedAgent,
@@ -5322,6 +5324,118 @@ test("azimas are ordered in a stable 6-tier order and laid out in a single colum
   assert.match(doneTime.title, /ran from .* to/i);
 });
 
+test("the wish's head says where its work lands, and a click changes the branch", async () => {
+  const projects = [{ id: "p1", name: "lamp", git: true }];
+  const branches = [{ projectId: "p1", branch: "feat/wails-go" }];
+  const noLoad = () => Promise.resolve({ branches: [], checkedOut: "" });
+
+  // Per wish, one project: a chip with its integration branch, the project not named.
+  const one = s.renderToStaticMarkup(
+    h(s.WhereWorkLands, {
+      branches,
+      projects,
+      perAzima: false,
+      loadBranches: noLoad,
+      onChange: () => Promise.resolve(),
+    }),
+  );
+  assert.match(
+    one,
+    /<button type="button" class="wish-lands" aria-haspopup="dialog" aria-expanded="false" title="Djinn merges the wish&#x27;s finished work into feat\/wails-go, then pushes it\. Click to change the branch\.">/,
+  );
+  assert.match(one, /<span>Lands in <code>feat\/wails-go<\/code><\/span>/);
+  assert.doesNotMatch(one, /<b>lamp<\/b>/);
+
+  // Several projects: one chip each, the project named.
+  const two = s.renderToStaticMarkup(
+    h(s.WhereWorkLands, {
+      branches: [...branches, { projectId: "p2", branch: "main" }],
+      projects: [...projects, { id: "p2", name: "wick", git: true }],
+      perAzima: false,
+      loadBranches: noLoad,
+      onChange: () => Promise.resolve(),
+    }),
+  );
+  assert.match(two, /<b>lamp<\/b><span>Lands in <code>feat\/wails-go<\/code>/);
+  assert.match(two, /<b>wick<\/b><span>Lands in <code>main<\/code>/);
+
+  // Per azima: one chip that says so, not a button; the wish's branch for work of no azima on hover.
+  const perAzima = s.renderToStaticMarkup(
+    h(s.WhereWorkLands, {
+      branches,
+      projects,
+      perAzima: true,
+      loadBranches: noLoad,
+      onChange: () => Promise.resolve(),
+    }),
+  );
+  assert.match(
+    perAzima,
+    /<span class="wish-lands" title="Per azima: each azima has its own branch, djinn\/&lt;code&gt;-&lt;slug&gt;, cut from main, and its pull request lands it in main\.\nWork of no azima lands in feat\/wails-go\.">.*Each azima lands in main<\/span>/,
+  );
+  assert.doesNotMatch(perAzima, /<button/);
+
+  // A click on the chip opens the picker of its project.
+  const chip = live(s.WhereWorkLands, {
+    branches,
+    projects,
+    perAzima: false,
+    loadBranches: noLoad,
+    onChange: () => Promise.resolve(),
+  });
+  assert.equal(chip.all(s.BranchPicker).length, 0);
+  chip.one("wish-lands").onClick();
+  assert.equal(chip.all(s.BranchPicker).length, 1);
+  assert.equal(chip.one("wish-lands")["aria-expanded"], true);
+
+  // The picker: the branches, the current one marked; a click on another sets it; a name none has makes it from the
+  // current one; what is typed narrows the list.
+  const picked = [];
+  const picker = live(s.BranchPicker, {
+    current: "feat/wails-go",
+    branches: ["feat/wails-go", "main", "release/v1"],
+    load: noLoad,
+    onClose() {},
+    onPick: (branch, create) => {
+      picked.push([branch, create]);
+      return Promise.resolve();
+    },
+  });
+  const html = picker.html();
+  assert.match(
+    html,
+    /role="dialog" aria-label="Where the wish&#x27;s work lands"/,
+  );
+  assert.match(
+    html,
+    /<button type="button" class="branch-option current" aria-current="true"><code>feat\/wails-go<\/code>/,
+  );
+  const option = (name) =>
+    picker
+      .all("branch-option")
+      .find((b) =>
+        [b.props.children].flat().some((c) => c?.props?.children === name),
+      );
+  option("main").props.onClick();
+  await picker.settle();
+  assert.deepEqual(picked, [["main", false]]);
+  picker.one("input").onChange({ currentTarget: { value: "feat/lamp" } });
+  assert.doesNotMatch(picker.html(), /<code>main<\/code>/);
+  assert.match(
+    picker.html(),
+    /class="branch-option new"[^>]*>.*<span>New branch feat\/lamp from feat\/wails-go<\/span>/,
+  );
+  picker.all("new")[0].props.onClick();
+  await picker.settle();
+  assert.deepEqual(picked.at(-1), ["feat/lamp", true]);
+  // An existing name typed whole: no new branch offered; Enter picks it.
+  picker.one("input").onChange({ currentTarget: { value: "release/v1" } });
+  assert.doesNotMatch(picker.html(), /branch-option new/);
+  picker.one("input").onKeyDown({ key: "Enter", preventDefault() {} });
+  await picker.settle();
+  assert.deepEqual(picked.at(-1), ["release/v1", false]);
+});
+
 test("the wish shows its push strategy and azima cards show branch, sync and PR in per-azima mode", () => {
   // 1. Effective strategy resolution
   const wDefault = { id: "w1", pushStrategy: s.PushStrategy.UNSPECIFIED };
@@ -5432,12 +5546,59 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
     }),
   );
 
-  // Its branch and the main it lands in: on its title's hover, not in its heading.
-  assert.match(
-    perAzimaHtml,
-    /<strong title="[^"]*\ndjinn\/T27-djinn-stays-fast\nlands in main">/,
+  // Closed, its heading says nothing of its branch, neither shown nor on hover.
+  assert.match(perAzimaHtml, /<strong title="Djinn stays fast">/);
+  assert.doesNotMatch(perAzimaHtml, /azima-landing|T27-djinn-stays-fast/);
+
+  // Opened, its branch, the commit of main it was cut from, and that it lands in main, across the card.
+  const openedHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: azimaPerAzima,
+      parts: [],
+      tasks: new Map(),
+      render: () => null,
+      isPerAzima: true,
+      focus: "a27",
+    }),
   );
-  assert.doesNotMatch(perAzimaHtml, /azima-branch|azima-base-branch/);
+  assert.match(
+    openedHtml,
+    /<div class="azima-body"><p class="azima-landing">.*?<code>djinn\/T27-djinn-stays-fast<\/code><span>cut from main at 01234567<\/span><span>lands in main<\/span><\/p>/,
+  );
+  // Not cut yet: it will be when its first part starts. Never stacked on another azima's branch.
+  const notCutHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: {
+        ...taskT27,
+        azima: {
+          state: s.AzimaState.OPEN,
+          branch: "djinn/T27-djinn-stays-fast",
+        },
+      },
+      parts: [],
+      tasks: new Map(),
+      render: () => null,
+      isPerAzima: true,
+      focus: "a27",
+    }),
+  );
+  assert.match(
+    notCutHtml,
+    /<span>cut from main when its first part starts<\/span><span>lands in main<\/span>/,
+  );
+  // Per wish, no branch of its own: no line.
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(
+      h(s.AzimaCard, {
+        azima: azimaPerAzima,
+        parts: [],
+        tasks: new Map(),
+        render: () => null,
+        focus: "a27",
+      }),
+    ),
+    /azima-landing/,
+  );
 
   // Sync state and push button
   assert.match(

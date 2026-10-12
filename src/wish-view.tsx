@@ -129,6 +129,7 @@ import {
   MainMerges,
   PrincipalSelector,
   PushStrategySelector,
+  WhereWorkLands,
   WishDescription,
   WishTitle,
   recordedAgent,
@@ -453,6 +454,27 @@ export function WishView({
       );
     },
     [quiet, act, clients.wishes, wish.id],
+  );
+
+  const loadBranches = useCallback(
+    (projectId: string) => clients.projects.branches({ project: projectId }),
+    [clients.projects],
+  );
+
+  const handleLands = useCallback(
+    (projectId: string, branch: string, create: boolean) =>
+      act(
+        () =>
+          clients.wishes.setIntegration({
+            wishId: wish.id,
+            projectId,
+            branch,
+            createBranch: create,
+          }),
+        [Change.WISH],
+        t("wish.lands_changed", { branch }),
+      ),
+    [act, clients.wishes, wish.id],
   );
 
   const handlePushAzima = useCallback(
@@ -943,6 +965,13 @@ export function WishView({
                   wish={wish}
                   projects={projects}
                   onChange={handlePushStrategy}
+                />
+                <WhereWorkLands
+                  branches={wish.integrationBranches}
+                  projects={projects}
+                  perAzima={isPerAzima}
+                  loadBranches={loadBranches}
+                  onChange={handleLands}
                 />
                 <LastPushes
                   pushes={wish.pushes}

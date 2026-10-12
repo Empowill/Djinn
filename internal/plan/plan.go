@@ -446,6 +446,43 @@ func (p *Projects) PushStrategy(
 	}), nil
 }
 
+// Branches lists the local branches of a project's repository, the latest commit first, without the branches of
+// Djinn's tasks: where a wish's work may land.
+func (p *Projects) Branches(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceBranchesRequest],
+) (*connect.Response[planv1.ProjectServiceBranchesResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	out := &planv1.ProjectServiceBranchesResponse{}
+	dir := project.GetDirectory()
+	if !project.GetGit() || dir == "" {
+		return connect.NewResponse(out), nil
+	}
+	refs, err := gitOut(ctx, dir, "for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads")
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	tasks, err := store.List[*planv1.Task](ctx, p.Store, nil)
+	if err != nil {
+		return nil, Status(err)
+	}
+	workers := map[string]bool{}
+	for _, t := range tasks {
+		if t.GetBranch() != "" && strings.EqualFold(t.GetProjectId(), project.GetId()) && !IsAzima(t) {
+			workers[strings.ToLower(t.GetBranch())] = true
+		}
+	}
+	for _, b := range strings.Fields(refs) {
+		if !workers[strings.ToLower(b)] {
+			out.Branches = append(out.Branches, b)
+		}
+	}
+	out.CheckedOut = CheckedOutBranch(ctx, dir)
+	return connect.NewResponse(out), nil
+}
+
 // refuseProjectSwitchToAzima refuses making per azima the push strategy of the project projectID while a wish of it
 // that takes the project's strategy, not granted, has azimas that wait for each other (RefuseSwitchToAzima).
 func refuseProjectSwitchToAzima(ctx context.Context, tx *store.Tx, projectID string) error {
