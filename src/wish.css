@@ -451,6 +451,13 @@
 .wish-spent small {
   color: var(--muted-dim);
 }
+/* The price, one figure: its hover tells what the agents reported and what the table estimated. */
+.wish-spent .spent-price {
+  color: var(--n-e7);
+  cursor: help;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
 .wish-spent .usage-unit-switch {
   background: transparent;
   border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));

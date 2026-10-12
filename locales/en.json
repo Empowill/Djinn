@@ -657,6 +657,7 @@
   "update.ready": "A new version of Djinn is ready",
   "update.restarting": "Restarting…",
   "update.versions": "{current} → {ready}",
+  "usage.about": "≈ {cost}",
   "usage.antigravity_estimate": "an estimate at API prices, not the bill",
   "usage.cache_read": "cache read {count}",
   "usage.cache_write": "cache written {count}",
