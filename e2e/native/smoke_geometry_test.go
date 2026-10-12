@@ -172,7 +172,7 @@ func TestNativeSmokeGeometry(t *testing.T) {
 				Height float64 `json:"height"`
 				Bottom float64 `json:"bottom"`
 			} `json:"smoke"`
-			Ascii struct {
+			ASCII struct {
 				Width  float64 `json:"width"`
 				Height float64 `json:"height"`
 				Bottom float64 `json:"bottom"`
@@ -266,7 +266,7 @@ func TestNativeSmokeGeometry(t *testing.T) {
 			metrics.Window.Width, metrics.Window.Height,
 			metrics.Surface.Width, metrics.Surface.Height,
 			metrics.Smoke.Width, metrics.Smoke.Height, metrics.Smoke.Bottom,
-			metrics.Ascii.Width, metrics.Ascii.Height, metrics.Ascii.Bottom,
+			metrics.ASCII.Width, metrics.ASCII.Height, metrics.ASCII.Bottom,
 			metrics.Pre.Width, metrics.Pre.Height, metrics.Pre.Bottom,
 			metrics.FontSize, metrics.LineHeight, metrics.LineCount, metrics.TextLength,
 			metrics.NonWhitespace, metrics.RangeRectCount, metrics.LastRow, logicalGap,

@@ -55,13 +55,9 @@ function assertLayoutInvariants(
   assert.ok(layout.offsetY >= 0);
   const textWidth = layout.gridWidth * layout.charWidth;
   const textHeight = layout.gridHeight * layout.lineHeight;
-  if (width >= layout.charWidth)
-    assert.ok(textWidth <= width + 1e-9);
-  if (height >= layout.lineHeight)
-    assert.ok(textHeight <= height + 1e-9);
-  assert.ok(
-    Math.abs(layout.offsetY - Math.max(0, height - textHeight)) < 1e-9,
-  );
+  if (width >= layout.charWidth) assert.ok(textWidth <= width + 1e-9);
+  if (height >= layout.lineHeight) assert.ok(textHeight <= height + 1e-9);
+  assert.ok(Math.abs(layout.offsetY - Math.max(0, height - textHeight)) < 1e-9);
   assert.equal(layout.canvasWidth, Math.round(layout.canvasWidth));
   assert.equal(layout.canvasHeight, Math.round(layout.canvasHeight));
   assert.ok(
@@ -222,11 +218,7 @@ test("camera scale settles format changes without changing the fluid zoom", () =
   const target = computeWishSmokeCameraScale(2560, 1080);
   assert.equal(interpolateWishSmokeCameraScale(start, target, 0), start);
   assert.equal(
-    interpolateWishSmokeCameraScale(
-      start,
-      target,
-      SMOKE_CAMERA_TRANSITION_MS,
-    ),
+    interpolateWishSmokeCameraScale(start, target, SMOKE_CAMERA_TRANSITION_MS),
     target,
   );
   const middle = interpolateWishSmokeCameraScale(

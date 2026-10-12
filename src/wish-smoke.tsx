@@ -15,6 +15,7 @@ import {
   interpolateWishSmokeCameraScale,
   type WishSmokeLayout,
 } from "./wish-smoke-layout";
+import { onTheme } from "./theme";
 
 type ShaderProgram = {
   program: WebGLProgram;
@@ -33,6 +34,81 @@ type DoubleTarget = RenderTarget & {
   write: RenderTarget;
   swap: () => void;
 };
+
+export type SmokePalette = {
+  background: [number, number, number];
+  tintLow: [number, number, number];
+  tintHigh: [number, number, number];
+};
+
+const DEFAULT_SMOKE_PALETTE: SmokePalette = {
+  background: [0.024, 0.027, 0.027],
+  tintLow: [0.561, 0.6, 0.624],
+  tintHigh: [0.929, 0.898, 0.839],
+};
+
+function parseSmokeColor(
+  value: string,
+  fallback: [number, number, number],
+): [number, number, number] {
+  const normalized = value.trim();
+  const hex = normalized.match(/^#([0-9a-f]{3,8})$/i)?.[1];
+  if (hex) {
+    const expanded =
+      hex.length === 3 || hex.length === 4
+        ? hex
+            .slice(0, 3)
+            .split("")
+            .map((part) => part + part)
+            .join("")
+        : hex.slice(0, 6);
+    if (expanded.length === 6) {
+      return [
+        Number.parseInt(expanded.slice(0, 2), 16) / 255,
+        Number.parseInt(expanded.slice(2, 4), 16) / 255,
+        Number.parseInt(expanded.slice(4, 6), 16) / 255,
+      ];
+    }
+  }
+  const rgb = normalized.match(/^rgba?\(([^)]+)\)$/i)?.[1];
+  if (rgb) {
+    const channels = rgb
+      .split(",")
+      .slice(0, 3)
+      .map((channel) => {
+        const numeric = Number.parseFloat(channel.trim());
+        return Number.isFinite(numeric)
+          ? Math.max(0, Math.min(255, numeric))
+          : -1;
+      });
+    if (channels.length === 3 && channels.every((channel) => channel >= 0))
+      return channels.map((channel) => channel / 255) as [
+        number,
+        number,
+        number,
+      ];
+  }
+  return fallback;
+}
+
+function readSmokePalette(): SmokePalette {
+  if (typeof getComputedStyle === "undefined") return DEFAULT_SMOKE_PALETTE;
+  const styles = getComputedStyle(document.documentElement);
+  return {
+    background: parseSmokeColor(
+      styles.getPropertyValue("--smoke-bg"),
+      DEFAULT_SMOKE_PALETTE.background,
+    ),
+    tintLow: parseSmokeColor(
+      styles.getPropertyValue("--smoke-tint-low"),
+      DEFAULT_SMOKE_PALETTE.tintLow,
+    ),
+    tintHigh: parseSmokeColor(
+      styles.getPropertyValue("--smoke-tint-high"),
+      DEFAULT_SMOKE_PALETTE.tintHigh,
+    ),
+  };
+}
 
 type SmokeState = {
   density: number;
@@ -200,16 +276,10 @@ function mountSmokePerformanceProbe(
 
 const FONT_FAMILY =
   'ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace';
-const ASCII_PALETTE = [
-  "#7d8790",
-  "#919ca3",
-  "#a7b1b3",
-  "#c1c8c5",
-  "#e3e6df",
-  "#fffdf2",
-  "#fff0d4",
-  "#cad0d5",
-];
+const ASCII_PALETTE = Array.from(
+  { length: 8 },
+  (_, index) => `var(--smoke-ascii-${index})`,
+);
 const CAMERA_BOTTOM_CUTOFF_ZOOM10 = 0.158724;
 
 function usesNativeMacSmokeLayout(): boolean {
@@ -275,7 +345,7 @@ function mountSmoke(
   const container = canvas.parentElement;
   if (!container) return () => undefined;
 
-  let gl: WebGL2RenderingContext | null = null;
+  let gl: WebGL2RenderingContext | null;
   try {
     gl = canvas.getContext("webgl2", {
       alpha: false,
@@ -292,6 +362,10 @@ function mountSmoke(
   }
 
   const context = gl;
+  let smokePalette = readSmokePalette();
+  const stopTheme = onTheme(() => {
+    smokePalette = readSmokePalette();
+  });
   if (canvas.dataset.perfEnabled === "true") {
     const renderer = String(context.getParameter(context.RENDERER));
     const vendor = String(context.getParameter(context.VENDOR));
@@ -527,7 +601,10 @@ function mountSmoke(
   const draw = (
     shader: ShaderProgram,
     destination: RenderTarget | null,
-    values: Record<string, number | [number, number]> = {},
+    values: Record<
+      string,
+      number | [number, number] | [number, number, number]
+    > = {},
     textures: Record<string, WebGLTexture | RenderTarget> = {},
   ) => {
     context.useProgram(shader.program);
@@ -555,8 +632,10 @@ function mountSmoke(
     for (const [name, value] of Object.entries(values)) {
       const location = shader.uniforms[name];
       if (!location) continue;
-      if (Array.isArray(value)) context.uniform2fv(location, value);
-      else context.uniform1f(location, value);
+      if (Array.isArray(value)) {
+        if (value.length === 3) context.uniform3fv(location, value);
+        else context.uniform2fv(location, value);
+      } else context.uniform1f(location, value);
     }
     let unit = 0;
     for (const [name, value] of Object.entries(textures)) {
@@ -646,15 +725,14 @@ function mountSmoke(
       float dx=(sampleLinear(density,q+vec2(cell.x,0)).x-sampleLinear(density,q-vec2(cell.x,0)).x)*texel.x/cell.x;
       float light=.80+.20*tanh(dx*4.);return clamp((1.-exp(-d*6.5))*light,0.,1.);}`;
   const display = makeProgram(`${smokeField}
-    uniform float asciiOn;
+    uniform float asciiOn; uniform vec3 smokeBackground; uniform vec3 smokeTintLow; uniform vec3 smokeTintHigh;
     void main(){
       vec2 pixel=uv*resolution;float raw=smoke(uv);
       float value=asciiOn>.5?raw*.025:raw;
       float grain=(hash(pixel+floor(time*20.))-.5)*.007;
       float vignette=1.-.24*length((uv-.5)*vec2(1.,.7));
-      vec3 bg=vec3(.018,.022,.032);
-      vec3 tint=mix(vec3(.56,.60,.63),vec3(.93,.90,.84),smoothstep(.08,.75,raw));
-      color=vec4(bg+tint*value*vignette+vec3(grain),1.);
+      vec3 tint=mix(smokeTintLow,smokeTintHigh,smoothstep(.08,.75,raw));
+      color=vec4(smokeBackground+tint*value*vignette+vec3(grain),1.);
     }`);
   const sampleAscii = makeProgram(`${smokeField}uniform vec2 coverage;
     void main(){float d=smoke(uv*coverage+vec2(1.-coverage.x,0.));color=vec4(d,d,d,1.);}`);
@@ -1002,6 +1080,9 @@ function mountSmoke(
         zoom: state.zoom,
         cameraScale,
         asciiOn: 1,
+        smokeBackground: smokePalette.background,
+        smokeTintLow: smokePalette.tintLow,
+        smokeTintHigh: smokePalette.tintHigh,
       },
       { density: ink.read },
     );
@@ -1092,6 +1173,7 @@ function mountSmoke(
 
   return () => {
     disposed = true;
+    stopTheme();
     cancelAnimationFrame(animationFrame);
     if (resizeFrame) cancelAnimationFrame(resizeFrame);
     observer.disconnect();
@@ -1230,7 +1312,6 @@ export function startWishSmokePrewarm() {
     "display:block;position:relative;width:1px;height:1px;visibility:hidden;";
   host.append(workerCanvas);
   document.body.append(host);
-  let cache: SmokePrewarmCache;
   const disposeCache = () => {
     if (cache.failed) return;
     cache.failed = true;
@@ -1267,7 +1348,7 @@ export function startWishSmokePrewarm() {
       visible: !document.hidden && !cache.ready,
     });
   };
-  cache = {
+  const cache: SmokePrewarmCache = {
     worker,
     workerCanvas,
     host,
@@ -1311,6 +1392,7 @@ export function startWishSmokePrewarm() {
         new URLSearchParams(window.location.search).get("djinnPerf") === "1",
       mountEpoch: performance.timeOrigin + performance.now(),
       prewarm: true,
+      palette: readSmokePalette(),
     },
     [offscreen],
   );
@@ -1419,6 +1501,11 @@ function mountSmokeWorker(
     new Worker(new URL("./wish-smoke-worker.ts", import.meta.url), {
       type: "module",
     });
+  let smokePalette = readSmokePalette();
+  const stopTheme = onTheme(() => {
+    smokePalette = readSmokePalette();
+    worker.postMessage({ type: "palette", palette: smokePalette });
+  });
   const workerCanvas =
     prewarm?.workerCanvas ?? document.createElement("canvas");
   workerCanvas.className = "wish-smoke-worker-canvas";
@@ -1574,7 +1661,7 @@ function mountSmokeWorker(
   let activatePrewarm = () => undefined;
   let appliedSequence = 0;
   const textChunkWidth = 64;
-  let rowNodes: Array<Array<Array<Text>>> = Array.from(
+  const rowNodes: Array<Array<Array<Text>>> = Array.from(
     { length: ASCII_LAYER_COUNT },
     () => [],
   );
@@ -1582,8 +1669,7 @@ function mountSmokeWorker(
   let gridHeight = 0;
   let activeLayout: ReturnType<typeof layout>;
   let pendingLayout:
-    | { layout: ReturnType<typeof layout>; generation: number }
-    | undefined;
+    { layout: ReturnType<typeof layout>; generation: number } | undefined;
   let layoutGeneration = prewarm ? 1 : 0;
   let committedLayoutGeneration = layoutGeneration;
   let pendingPointer = {
@@ -1999,6 +2085,7 @@ function mountSmokeWorker(
         mountEpoch,
         reducedMotion: reducedMotion.matches,
       });
+      worker.postMessage({ type: "palette", palette: smokePalette });
       worker.postMessage({
         type: "motion",
         reducedMotion: reducedMotion.matches,
@@ -2046,6 +2133,7 @@ function mountSmokeWorker(
         perfEnabled,
         mountEpoch,
         prewarm: false,
+        palette: smokePalette,
       },
       [offscreen],
     );
@@ -2055,6 +2143,7 @@ function mountSmokeWorker(
 
   return () => {
     stopped = true;
+    stopTheme();
     resizeObserver.disconnect();
     interactionTarget.removeEventListener("pointermove", onPointerMove);
     interactionTarget.removeEventListener("pointerleave", onPointerLeave);

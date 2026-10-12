@@ -68,6 +68,13 @@ type WorkerInit = {
   perfEnabled: boolean;
   mountEpoch: number;
   prewarm?: boolean;
+  palette: SmokePalette;
+};
+
+type SmokePalette = {
+  background: [number, number, number];
+  tintLow: [number, number, number];
+  tintHigh: [number, number, number];
 };
 
 type WorkerResize = {
@@ -104,6 +111,7 @@ type WorkerMessage =
   | WorkerPointer
   | { type: "visibility"; visible: boolean }
   | { type: "motion"; reducedMotion: boolean }
+  | { type: "palette"; palette: SmokePalette }
   | { type: "ack"; sequence: number }
   | { type: "request-full" };
 
@@ -303,6 +311,7 @@ class SmokeRuntime {
   private windTime: number;
   private activated = false;
   private readonly prewarm: boolean;
+  private palette: SmokePalette;
   private animationFrame: ReturnType<typeof requestFrame> | undefined;
   private disposed = false;
   private visible = true;
@@ -357,6 +366,7 @@ class SmokeRuntime {
     this.reducedMotion = message.reducedMotion;
     this.state.paused = message.reducedMotion;
     this.prewarm = message.prewarm === true;
+    this.palette = message.palette;
     // Ordinary workers belong to an already-visible creation surface. Keep
     // their cold warmup below the viewport from its first simulation step;
     // hidden prewarm workers are trimmed when they are borrowed instead.
@@ -671,11 +681,12 @@ class SmokeRuntime {
         float d=sampleLinear(density,q).x;vec2 cell=1./vec2(textureSize(density,0));
         float dx=(sampleLinear(density,q+vec2(cell.x,0)).x-sampleLinear(density,q-vec2(cell.x,0)).x)*texel.x/cell.x;
         float light=.80+.20*tanh(dx*4.);return clamp((1.-exp(-d*6.5))*light,0.,1.);}`;
-    this.display = makeProgram(`${smokeField}uniform float asciiOn;
+    this.display =
+      makeProgram(`${smokeField}uniform float asciiOn; uniform vec3 smokeBackground; uniform vec3 smokeTintLow; uniform vec3 smokeTintHigh;
       void main(){vec2 pixel=uv*resolution;float raw=smoke(uv);float value=asciiOn>.5?raw*.025:raw;
         float grain=(hash(pixel+floor(time*20.))-.5)*.007;float vignette=1.-.24*length((uv-.5)*vec2(1.,.7));
-        vec3 bg=vec3(.018,.022,.032);vec3 tint=mix(vec3(.56,.60,.63),vec3(.93,.90,.84),smoothstep(.08,.75,raw));
-        color=vec4(bg+tint*value*vignette+vec3(grain),1.);}`);
+        vec3 tint=mix(smokeTintLow,smokeTintHigh,smoothstep(.08,.75,raw));
+        color=vec4(smokeBackground+tint*value*vignette+vec3(grain),1.);}`);
     this.sampleAscii = makeProgram(`${smokeField}uniform vec2 coverage;
       void main(){float d=smoke(uv*coverage+vec2(1.-coverage.x,0.));color=vec4(d,d,d,1.);}`);
     this.trimDensity = makeProgram(`uniform float cutoff;uniform float edge;
@@ -829,7 +840,10 @@ class SmokeRuntime {
   private draw(
     shader: ShaderProgram,
     destination: RenderTarget | null,
-    values: Record<string, number | [number, number]> = {},
+    values: Record<
+      string,
+      number | [number, number] | [number, number, number]
+    > = {},
     textures: Record<string, WebGLTexture | RenderTarget> = {},
   ) {
     this.context.useProgram(shader.program);
@@ -853,8 +867,10 @@ class SmokeRuntime {
     for (const [name, value] of Object.entries(values)) {
       const location = shader.uniforms[name];
       if (!location) continue;
-      if (Array.isArray(value)) this.context.uniform2fv(location, value);
-      else this.context.uniform1f(location, value);
+      if (Array.isArray(value)) {
+        if (value.length === 3) this.context.uniform3fv(location, value);
+        else this.context.uniform2fv(location, value);
+      } else this.context.uniform1f(location, value);
     }
     let unit = 0;
     for (const [name, value] of Object.entries(textures)) {
@@ -1081,6 +1097,10 @@ class SmokeRuntime {
       this.lastFrame = 0;
       this.accumulator = 0;
     }
+  }
+
+  setPalette(palette: SmokePalette) {
+    this.palette = palette;
   }
 
   activate(mountEpoch: number, reducedMotion: boolean) {
@@ -1532,6 +1552,9 @@ class SmokeRuntime {
           zoom: this.state.zoom,
           cameraScale: this.cameraScale,
           asciiOn: 1,
+          smokeBackground: this.palette.background,
+          smokeTintLow: this.palette.tintLow,
+          smokeTintHigh: this.palette.tintHigh,
         },
         { density: this.ink.read },
       );
@@ -1584,6 +1607,9 @@ class SmokeRuntime {
         zoom: this.state.zoom,
         cameraScale: this.cameraScale,
         asciiOn: 1,
+        smokeBackground: this.palette.background,
+        smokeTintLow: this.palette.tintLow,
+        smokeTintHigh: this.palette.tintHigh,
       },
       { density: this.ink.read },
     );
@@ -1634,6 +1660,7 @@ scope.onmessage = (event) => {
     else if (message.type === "pointer") runtime.pointer(message);
     else if (message.type === "visibility") runtime.visibility(message.visible);
     else if (message.type === "motion") runtime.motion(message.reducedMotion);
+    else if (message.type === "palette") runtime.setPalette(message.palette);
     else if (message.type === "ack") runtime.acknowledge(message.sequence);
     else if (message.type === "request-full") runtime.requestFull();
   } catch (error) {

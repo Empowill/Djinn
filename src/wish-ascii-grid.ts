@@ -210,7 +210,7 @@ export function createAsciiGrid(
   let width = checkedDimension(initialWidth, "width");
   let height = checkedDimension(initialHeight, "height");
   let area = width * height;
-  let chunkWidth = options.chunkWidth ?? width;
+  const chunkWidth = options.chunkWidth ?? width;
   if (!Number.isInteger(chunkWidth) || chunkWidth < 1)
     throw new RangeError("chunkWidth must be a positive integer.");
 

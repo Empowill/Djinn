@@ -58,6 +58,19 @@
   --sand-bg: #23231f;
   --sand-raised: #28251d;
   --danger: #e0a0a0;
+  /* The smoke study follows the selected theme, including its GPU canvas and ASCII fallback. */
+  --smoke-bg: #060707;
+  --smoke-fg: #d7dad4;
+  --smoke-tint-low: #8f999f;
+  --smoke-tint-high: #ede5d6;
+  --smoke-ascii-0: #7d8790;
+  --smoke-ascii-1: #919ca3;
+  --smoke-ascii-2: #a7b1b3;
+  --smoke-ascii-3: #c1c8c5;
+  --smoke-ascii-4: #e3e6df;
+  --smoke-ascii-5: #fffdf2;
+  --smoke-ascii-6: #fff0d4;
+  --smoke-ascii-7: #cad0d5;
   /* The terminal: xterm's own colours in the dark theme. */
   --term-bg: #111111;
   --term-fg: #e7e7e7;
@@ -132,6 +145,18 @@ html[data-theme="light"] {
   --sand-bg: #fbf8ef;
   --sand-raised: #f8f2e2;
   --danger: #a3261b;
+  --smoke-bg: #f4f3ef;
+  --smoke-fg: #262925;
+  --smoke-tint-low: #515d62;
+  --smoke-tint-high: #1b2527;
+  --smoke-ascii-0: #5d696d;
+  --smoke-ascii-1: #526065;
+  --smoke-ascii-2: #48565a;
+  --smoke-ascii-3: #3e4c50;
+  --smoke-ascii-4: #354348;
+  --smoke-ascii-5: #2d3a3f;
+  --smoke-ascii-6: #253238;
+  --smoke-ascii-7: #1d292c;
   /* Every colour reads at 4.5:1 at least on the terminal's ground: white and bright white are dark greys. */
   --term-bg: #f6f6f4;
   --term-fg: #1c1c1a;
