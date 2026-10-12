@@ -26,6 +26,13 @@ git log --no-merges --format='%h %s' <last-tag>..origin/main   # the commits, `<
 git diff --stat <last-tag>..origin/main -- docs/ plan/         # what the docs and the plans' proof boxes say now
 ```
 
+- **The notes describe the tag's commit, never the branch.** What a release holds is `git log <last tag>..<new
+  tag>`: work merged on the branch you write from (a wish's integration branch) but not in the commit the tag points
+  at is not in the release, however close it is to main. Before the tag exists, read the commit it will be cut from;
+  once it exists, check every section against `git log <last tag>..<new tag>` and `git show <new tag>:<file>` (the
+  user guide, the code), not against your branch.
+- What the tag does not hold goes to the next release's notes, `docs/releases/<next>.md`, titled `# Djinn vX.Y.Z
+  (unreleased)`, in the same shape, so nothing is lost; drop `(unreleased)` when that release is written.
 - A merge's branch is cut from its task's title: `djinn task list --project-id <id> --json` gives the whole title.
 - The why lives in the decisions: `djinn question list --wish-id <wish> --since <tag's date>` (answered questions)
   and `djinn block list <wish> --kind decision`. Read them before deciding what a change is for.
