@@ -58,7 +58,8 @@ type Spec struct {
 	// Restart starts a watcher's command again after each exit, until it is stopped. Agents ignore it.
 	Restart bool
 	// LowPriority runs the worker process with low CPU priority (nice 10 on Unix,
-	// BELOW_NORMAL_PRIORITY_CLASS on Windows) when running at minimal or light operating load.
+	// BELOW_NORMAL_PRIORITY_CLASS on Windows) when running at minimal or medium operating load;
+	// else it runs at Djinn's own priority.
 	LowPriority bool
 	// StartHead is the git commit hash at task start, used to verify progress.
 	StartHead string
@@ -106,7 +107,8 @@ type Pauser interface {
 // Prioritizer is a worker that can change its CPU priority while running.
 type Prioritizer interface {
 	// SetPriority sets the worker and its process tree to low CPU priority (nice 10 / cpu.weight 10)
-	// when low is true, or standard priority (nice 0 / cpu.weight 100) when low is false.
+	// when low is true, or standard priority (Djinn's own nice level or priority class / cpu.weight 100)
+	// when low is false.
 	SetPriority(low bool) error
 }
 
