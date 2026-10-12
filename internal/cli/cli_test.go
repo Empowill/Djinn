@@ -491,7 +491,7 @@ func TestRun(t *testing.T) {
 		{name: "wish push strategy show", args: []string{"wish", "push-strategy", wishID}, wantOut: "strategy: wish\nsource: default\n", wantCalled: true},
 		{name: "wish push strategy set", args: []string{"wish", "push-strategy", wishID, "--strategy", "azima"}, wantOut: "strategy: azima\nsource: wish\n", wantCalled: true},
 		{name: "task update integration none", args: []string{"task", "update", taskID, "--integration", "none"}, wantCalled: true},
-		{name: "task update integration invalid", args: []string{"task", "update", taskID, "--integration", "other"}, wantCode: 2, wantErr: "--integration: must be in list [none]"},
+		{name: "task update integration invalid", args: []string{"task", "update", taskID, "--integration", "other"}, wantCode: 2, wantErr: "--integration: must be in list [none, pending]"},
 		{name: "task cancel", args: []string{"task", "cancel", taskID, "--note", "not needed"}, wantOut: "status: cancelled", wantCalled: true},
 	}
 	for _, tt := range tests {

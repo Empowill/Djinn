@@ -421,7 +421,7 @@
   "project.folder_placeholder": "/home/you/code/app",
   "project.git": "Git repository",
   "project.name": "Name",
-  "project.no_checks": "No check: Djinn does not integrate this project's work by itself. Name some in .agents/settings.txtpb.",
+  "project.no_checks": "No check: Djinn integrates this project's work only into a wish's own branch, untested. Name some in .agents/settings.txtpb.",
   "project.no_folder": "No folder on this machine",
   "project.no_folder_detail": "No folder on this machine yet: djinn project add <folder> attaches it.",
   "project.no_skills": "No skill in this project.",

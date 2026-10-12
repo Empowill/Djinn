@@ -27,12 +27,13 @@ import (
 )
 
 // Integration (T07): a worker's work counts once it is in its wish's integration branch, tested. When a worker ends
-// done in a project that names a check, its task's integration is pending; Djinn then commits the work at once,
-// task by task, by itself, no model: a task whose worktree holds changes not committed goes to a review worker instead
-// (review.go), and nothing commits them blindly; in a worktree of its own per wish and project, never the person's
-// checkout, it merges the task's branch, makes the generated files again on a conflict only in them, runs the
-// project's commit checks (checks.go) each through a gate, moves the integration branch when they pass, and removes the
-// task's worktree when clean. Pushing the branch to its remote follows on a cadence (push.go).
+// done in a project that names a check, or into a branch of its wish's own in one that names none, its task's
+// integration is pending; Djinn then commits the work at once, task by task, by itself, no model: a task whose
+// worktree holds changes not committed goes to a review worker instead (review.go), and nothing commits them blindly;
+// in a worktree of its own per wish and project, never the person's checkout, it merges the task's branch, makes the
+// generated files again on a conflict only in them, runs the project's commit checks (checks.go) each through a gate,
+// moves the integration branch when they pass, and removes the task's worktree when clean. Pushing the branch to its
+// remote follows on a cadence (push.go).
 
 // How the journal records the integration.
 const (
@@ -131,14 +132,17 @@ func (h *Harness) kickIntegrate() {
 }
 
 // pendIntegration marks the work of t, a task its worker just finished, as waiting to be merged, when Djinn
-// integrates it: a work task on a branch of its own, in a project whose settings name a check.
-func (h *Harness) pendIntegration(t *planv1.Task) bool {
+// integrates it: a work task on a branch of its own, in a project whose settings name a check, or, naming none, into
+// a branch of the wish's own (uncheckedBranch). Otherwise it returns why the work stays out when its branch holds
+// commits the integration branch lacks: no done task with commits is left out silently (W4 of wish Dew, 12/10/2026).
+func (h *Harness) pendIntegration(t *planv1.Task) (bool, string) {
 	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || t.GetBranch() == "" || plan.IsAzima(t) {
-		return false
+		return false, ""
 	}
-	project, err := store.Get[*planv1.Project](context.Background(), h.store, t.GetProjectId())
+	ctx := context.Background()
+	project, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
 	if err != nil || !project.GetGit() {
-		return false
+		return false, ""
 	}
 	settings, err := plan.LoadSettings(h.home, project)
 	if err != nil {
@@ -147,15 +151,51 @@ func (h *Harness) pendIntegration(t *planv1.Task) bool {
 			Reason:     fmt.Sprintf("settings unreadable: %v", err),
 			UpdateTime: timestamppb.New(h.now()),
 		}
-		return true
+		return true, ""
 	}
 	if !settings.Integrates() {
-		return false
+		wish, err := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId())
+		if err != nil {
+			return false, ""
+		}
+		if _, why := uncheckedBranch(ctx, wish, project, settings); why != "" {
+			into := cmp.Or(plan.IntegrationBranchOf(wish, project.GetId()), plan.CheckedOutBranch(ctx, project.GetDirectory()))
+			if !branchHoldsUnmergedCommits(ctx, project.GetDirectory(), t.GetBranch(), into) {
+				return false, ""
+			}
+			return false, why
+		}
 	}
 	t.Integration = &planv1.TaskIntegration{
 		State: planv1.IntegrationState_INTEGRATION_STATE_PENDING, UpdateTime: timestamppb.New(h.now()),
 	}
-	return true
+	return true, ""
+}
+
+// uncheckedBranch is the branch Djinn merges the work of wish into in project, a project whose settings name no
+// check: the wish's own integration branch there, as djinn wish set-integration names it; merged as any work, no
+// check run (W4 of wish Dew, 12/10/2026). Otherwise "" and why the work stays out: Djinn commits nothing untested into
+// the project's main branch, nor into an azima's branch, which lands there.
+func uncheckedBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings) (string, string) {
+	if strat, _ := plan.ResolveWishPushStrategy(wish, settings); strat == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
+		return "", errNoChecks.Error() + ", and Djinn merges no untested work into an azima's branch"
+	}
+	branch := plan.IntegrationBranchOf(wish, project.GetId())
+	if branch != "" {
+		if main, _, err := resolveMainSha(ctx, project.GetDirectory(), settings); err == nil && !strings.EqualFold(main, branch) {
+			return branch, ""
+		}
+	}
+	return "", errNoChecks.Error() + ", and untested work goes only to a wish's own branch (djinn wish set-integration --create-branch)"
+}
+
+// notIntegrated is what the lead hears of a done task's work left out of its wish's branch, for the reason left; ""
+// when none.
+func notIntegrated(left string) string {
+	if left == "" {
+		return ""
+	}
+	return "not integrated: " + left
 }
 
 // recoverIntegrations puts back to pending the work a previous djinn up was integrating when it stopped: its batch
@@ -315,8 +355,9 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	case err != nil:
 		why = fmt.Sprintf("settings unreadable: %v", err)
 	case !settings.Integrates():
-		why = errNoChecks.Error()
-		branch, _ = h.integrationBranch(ctx, wish, project)
+		if branch, why = uncheckedBranch(ctx, wish, project, settings); why != "" {
+			branch = plan.IntegrationBranchOf(wish, project.GetId())
+		}
 	default:
 		branch, why, ok = h.targetBranch(ctx, wish, project, settings, batch)
 		if !ok {

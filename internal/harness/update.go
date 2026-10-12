@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -17,7 +18,8 @@ import (
 // Update edits a task in place: only the fields given change, in one journaled transaction.
 // A task not started (planned, waiting) may change everything; a running or paused task may change its title only;
 // a finished task (done, failed, stopped, cut short) may change title, provider/model, prompt (for its next continue),
-// azima, and integration (none clears it); never its dependencies once it ran.
+// azima, and integration (none clears it, pending puts a done task's work back in line); never its dependencies once
+// it ran.
 func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.TaskServiceUpdateRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
 	h.answering.Lock()
@@ -150,21 +152,27 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 			return nil, connect.NewError(connect.CodeFailedPrecondition,
 				fmt.Errorf("task %s is integrating: refused while it merges", task.GetCode()))
 		}
-		if req.GetIntegration() != "none" {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("integration may only be set to none"))
-		}
-		if task.GetBranch() != "" && !req.GetForce() {
-			wish, _ := store.Get[*planv1.Wish](ctx, h.store, task.GetWishId())
-			project, _ := store.Get[*planv1.Project](ctx, h.store, task.GetProjectId())
-			if project != nil && project.GetGit() {
-				intBranch, _ := h.integrationBranch(ctx, wish, project)
-				if branchHoldsUnmergedCommits(ctx, project.GetDirectory(), task.GetBranch(), intBranch) {
-					return nil, connect.NewError(connect.CodeFailedPrecondition,
-						fmt.Errorf("task %s's branch holds commits not in the integration branch: refused unless --force is given", task.GetCode()))
+		switch req.GetIntegration() {
+		case "pending":
+			if err := h.pendAgain(task, t); err != nil {
+				return nil, err
+			}
+		case "none":
+			if task.GetBranch() != "" && !req.GetForce() {
+				wish, _ := store.Get[*planv1.Wish](ctx, h.store, task.GetWishId())
+				project, _ := store.Get[*planv1.Project](ctx, h.store, task.GetProjectId())
+				if project != nil && project.GetGit() {
+					intBranch, _ := h.integrationBranch(ctx, wish, project)
+					if branchHoldsUnmergedCommits(ctx, project.GetDirectory(), task.GetBranch(), intBranch) {
+						return nil, connect.NewError(connect.CodeFailedPrecondition,
+							fmt.Errorf("task %s's branch holds commits not in the integration branch: refused unless --force is given", task.GetCode()))
+					}
 				}
 			}
+			t.Integration = nil
+		default:
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("integration may only be set to none or pending"))
 		}
-		t.Integration = nil
 	}
 
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": task.GetWishId()})
@@ -234,6 +242,17 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 				return err
 			}
 		}
+		if integrationGiven && t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING {
+			seq, err := lastSeq(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			if err := tx.Put(newEvent(id, seq+1, Event{
+				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: pending, to be merged into the integration branch",
+			})); err != nil {
+				return err
+			}
+		}
 		return tx.Put(t)
 	})
 	if err != nil {
@@ -257,4 +276,27 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		filled[0].Prompt = p
 	}
 	return filled[0], nil
+}
+
+// pendAgain puts the work of task, done without an integration record, back in line to be merged in t, its copy: as
+// when its worker ended (pendIntegration). It returns why not when Djinn does not integrate it.
+func (h *Harness) pendAgain(task, t *planv1.Task) error {
+	if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || task.GetBranch() == "" {
+		return connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("task %s is not done on a branch of its own: no work to integrate", task.GetCode()))
+	}
+	if task.GetIntegration() != nil {
+		return connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("task %s's work is %s already", task.GetCode(),
+				strings.ToLower(strings.TrimPrefix(task.GetIntegration().GetState().String(), "INTEGRATION_STATE_"))))
+	}
+	integrate, left := h.pendIntegration(t)
+	switch {
+	case integrate:
+		return nil
+	case left != "":
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s's work: %s", task.GetCode(), left))
+	}
+	return connect.NewError(connect.CodeFailedPrecondition,
+		fmt.Errorf("task %s's work: Djinn does not integrate it: its branch brings nothing, or its project is not in Git", task.GetCode()))
 }

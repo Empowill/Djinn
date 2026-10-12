@@ -421,7 +421,7 @@
   "project.folder_placeholder": "/home/vous/code/app",
   "project.git": "Dépôt Git",
   "project.name": "Nom",
-  "project.no_checks": "Aucune vérification : Djinn n’intègre pas de lui-même le travail de ce projet. Nommez-en dans .agents/settings.txtpb.",
+  "project.no_checks": "Aucune vérification : Djinn n’intègre le travail de ce projet que dans une branche propre à un souhait, sans le vérifier. Nommez-en dans .agents/settings.txtpb.",
   "project.no_folder": "Aucun dossier sur cette machine",
   "project.no_folder_detail": "Pas encore de dossier sur cette machine : djinn project add <dossier> le rattache.",
   "project.no_skills": "Aucune skill dans ce projet.",
