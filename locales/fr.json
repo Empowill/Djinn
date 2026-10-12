@@ -647,6 +647,7 @@
   "sidebar.inbox_new.other": "{count} nouveaux éléments dans la boîte de réception",
   "sidebar.new_project": "Créer un projet",
   "sidebar.no_active": "Aucun souhait actif.",
+  "sidebar.page_shortcut": "{page} ({shortcut})",
   "sidebar.paused": "En pause",
   "sidebar.project_terminal": "Ouvrir un terminal à la racine de {project}",
   "sidebar.projects": "PROJETS",

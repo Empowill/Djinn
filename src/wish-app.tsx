@@ -30,6 +30,7 @@ import { startWishSmokePrewarm } from "./wish-smoke";
 import { type Opening, type Reaching, WishView } from "./wish-view";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
+import { CARPET_DIGIT, HOURGLASS_DIGIT, pageDigit } from "./page-keys";
 import "./wish.css";
 import "./review.css";
 
@@ -37,6 +38,12 @@ type Modal = "make" | "project" | "settings" | "docs" | "agents" | null;
 
 // What the window shows instead of a wish: the flying carpet of the active wishes. A wish's id is a UUID: never this.
 export const PLAN = "plan";
+
+// The pages a shortcut shows, by its digit (page-keys.ts).
+const PAGES: Record<number, string> = {
+  [CARPET_DIGIT]: PLAN,
+  [HOURGLASS_DIGIT]: HOURGLASS,
+};
 
 function stored(key: string): string {
   try {
@@ -91,8 +98,8 @@ export function WishApp() {
     setGlide(true);
     setCollapsed((value) => !value);
   }, []);
-  // showPage shows a page of the window instead of a wish: the flying carpet (PLAN) or the Hourglass (HOURGLASS). The
-  // keyboard shortcuts of Q254 call it.
+  // showPage shows a page of the window instead of a wish: the flying carpet (PLAN) or the Hourglass (HOURGLASS), by
+  // the side panel or by the keyboard (PAGES).
   const showPage = useCallback((page: string) => {
     setSelected(page);
     setModal(null);
@@ -180,6 +187,30 @@ export function WishApp() {
     window.addEventListener("keydown", keys);
     return () => window.removeEventListener("keydown", keys);
   }, [making, modal, toggleSidebar]);
+  // Ctrl+1 (Cmd+1) shows the flying carpet, Ctrl+2 (Cmd+2) the Hourglass, by the key's place: on AZERTY, Ctrl+& and
+  // Ctrl with the key of e acute; the numpad's digits too. In a text field too: Ctrl and a digit type and edit nothing
+  // there. Never from a terminal, whose keys stay its own (Ctrl+3 to Ctrl+8 type Escape and other control codes
+  // there), nor over a dialog, as Ctrl+\.
+  useEffect(() => {
+    const keys = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        (modal !== null && modal !== "make") ||
+        making
+      )
+        return;
+      const page = PAGES[pageDigit(event)];
+      if (!page) return;
+      if (event.target instanceof HTMLElement && event.target.closest(".xterm"))
+        return;
+      event.preventDefault();
+      showPage(page);
+    };
+    window.addEventListener("keydown", keys);
+    return () => window.removeEventListener("keydown", keys);
+  }, [making, modal, showPage]);
 
   // The active wishes are always read: the flying carpet and the side panel count what waits in each.
   const active = wishes.filter(isActive);
