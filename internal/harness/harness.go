@@ -164,7 +164,7 @@ type run struct {
 	samples         *workerRing          // recent measurement samples (measure.go)
 	subs            map[chan *planv1.TaskEvent]struct{}
 	startTime       time.Time     // when the current run started
-	turns           int           // model turns consumed so far
+	turns           int           // model turns of the current worker (watchdog.go), kept on the task by setTurns
 	lastActivity    time.Time     // when the worker last produced an event (watchdog.go)
 	lastWatchdogCPU time.Duration // CPU time used at previous watchdog check
 	watchdogEnd     bool          // watchdog ended this worker
@@ -174,6 +174,7 @@ type run struct {
 	task           *planv1.Task
 	seq            int64         // last event written
 	base           *planv1.Usage // what the task had spent before this worker
+	turnsBefore    int           // the task's model turns before this worker
 	restart        bool          // the worker stops to start again, allowed to edit
 	unread         []string      // messages the worker took on its input and has said nothing after yet
 	branch         string        // the branch template of the project's settings, for launch; empty: the default
@@ -1114,8 +1115,9 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	h.mu.Lock()
 	r.startTime = now
 	r.lastActivity = now
-	r.turns = 1
 	h.mu.Unlock()
+	r.turnsBefore = int(t.GetTurns().GetTotal())
+	h.setTurns(r, func(int) int { return 1 })
 	if len(t.Runs) > 0 && t.Runs[len(t.Runs)-1].EndTime == nil {
 		t.Runs[len(t.Runs)-1].EndTime = nowPb
 		if t.Runs[len(t.Runs)-1].Reason == "" {
@@ -1324,20 +1326,17 @@ func (h *Harness) record(r *run, ev Event) {
 	if ev.Usage != nil {
 		r.task.Usage, changed = sum(r.base, ev.Usage), true
 	}
+	if ev.Turns > 0 {
+		h.setTurns(r, func(n int) int { return max(n, ev.Turns) })
+	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_USAGE {
 		var uTurns int
 		if _, err := fmt.Sscanf(ev.Text, "%d turns", &uTurns); err == nil && uTurns > 0 {
-			h.mu.Lock()
-			if uTurns > r.turns {
-				r.turns = uTurns
-			}
-			h.mu.Unlock()
+			h.setTurns(r, func(n int) int { return max(n, uTurns) })
 		}
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
-		h.mu.Lock()
-		r.turns++
-		h.mu.Unlock()
+		h.setTurns(r, func(n int) int { return n + 1 })
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
 		r.failure = ev.Text
@@ -1808,11 +1807,8 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 			return err
 		}
 		if task != nil {
-			// The run's copy of its task is older than the comments on its diff, which come while it runs.
 			if pt, ok := task.(*planv1.Task); ok {
-				if stored, err := store.Get[*planv1.Task](context.Background(), tx, pt.GetId()); err == nil {
-					pt.Comments = stored.GetComments()
-				}
+				carry(tx, pt)
 			}
 			if err := tx.Put(task); err != nil {
 				return err
@@ -1845,6 +1841,14 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 	h.mu.Unlock()
 	h.publish(r, te)
 	return te, nil
+}
+
+// carry copies onto the run's copy of its task, before it is written, what is stored on the task from outside the
+// run while it runs: the comments on its diff.
+func carry(tx *store.Tx, t *planv1.Task) {
+	if stored, err := store.Get[*planv1.Task](context.Background(), tx, t.GetId()); err == nil {
+		t.Comments = stored.GetComments()
+	}
 }
 
 // newEvent builds a stored event, its text and raw line cut to maxText.

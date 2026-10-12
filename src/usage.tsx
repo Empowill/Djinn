@@ -1,10 +1,12 @@
 // What workers spent: tokens (input, output, cache read and written, thinking) and the cost (reported and estimated).
 // Codex and Antigravity report tokens only; the page estimates cost from prices.yaml, and preserves Claude's reported cost.
+import { Footprints } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import {
   Provider,
   type Resources,
   type Task,
+  TaskStatus,
   type Usage,
 } from "../gen/ts/plan/v1/plan_pb";
 import { type Spent, tokensOf } from "./data/flight";
@@ -342,4 +344,31 @@ export function resourcesDetail(r: Resources, running: boolean): string {
       }),
     );
   return out.join(" · ");
+}
+
+// TaskTurns is how many model turns the task's worker took against the limit past which Djinn stops a run: its
+// tone warns past 80% of it. The hover says what it counts, and the total over its runs when it ran more than once.
+export function TaskTurns({ task }: { task: Task }) {
+  const turns = task.turns;
+  if (!turns || turns.limit <= 0) return null;
+  const warn = turns.run * 5 > turns.limit * 4;
+  const title = [
+    t(
+      task.status === TaskStatus.RUNNING
+        ? "task.turns_run"
+        : "task.turns_last_run",
+      { run: turns.run, limit: turns.limit },
+    ),
+  ];
+  if (turns.total > turns.run)
+    title.push(t("task.turns_total", { total: turns.total }));
+  return (
+    <span
+      className={warn ? "task-turns warning" : "task-turns"}
+      title={title.join(" · ")}
+    >
+      <Footprints size={12} aria-label={t("task.turns")} />
+      {`${turns.run}/${turns.limit}`}
+    </span>
+  );
 }

@@ -61,7 +61,13 @@ import { language, t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
 import { TaskDiffView } from "./diff";
-import { resourcesDetail, resourcesNow, TaskUsage, usageDetail } from "./usage";
+import {
+  resourcesDetail,
+  resourcesNow,
+  TaskTurns,
+  TaskUsage,
+  usageDetail,
+} from "./usage";
 
 const eventIcons: Partial<Record<TaskEventKind, typeof FileText>> = {
   [TaskEventKind.PROMPT]: MessageSquare,
@@ -304,6 +310,7 @@ export const WishTask = memo(function WishTask({
                   {time.text}
                 </span>
               )}
+              <TaskTurns task={task} />
               {origin}
               <TaskUsage task={task} />
               {task.status === TaskStatus.RUNNING &&
