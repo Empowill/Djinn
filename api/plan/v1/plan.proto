@@ -613,7 +613,7 @@ enum LeadEventKind {
   LEAD_EVENT_KIND_RESTART = 7;
   // A watcher's command printed what it watches for.
   LEAD_EVENT_KIND_WATCH = 8;
-  // A request came in for a wish: filed from the inbox, or an azima opened to plan.
+  // A request came in for a wish: filed from the inbox, a wish made from one, or an azima opened to plan.
   LEAD_EVENT_KIND_REQUEST = 9;
 }
 

@@ -497,7 +497,7 @@ const (
 	LeadEventKind_LEAD_EVENT_KIND_RESTART LeadEventKind = 7
 	// A watcher's command printed what it watches for.
 	LeadEventKind_LEAD_EVENT_KIND_WATCH LeadEventKind = 8
-	// A request came in for a wish: filed from the inbox, or an azima opened to plan.
+	// A request came in for a wish: filed from the inbox, a wish made from one, or an azima opened to plan.
 	LeadEventKind_LEAD_EVENT_KIND_REQUEST LeadEventKind = 9
 )
 

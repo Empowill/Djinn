@@ -21,14 +21,18 @@ import (
 )
 
 func TestMakePrompt(t *testing.T) {
-	c := serve(t)
+	c := serve(t, WithLanguage("fr"))
+	// The made wish's commit, before the lead's event is queued in its own.
 	var committed []proto.Message
-	c.store.OnCommit(func(ms []proto.Message) { committed = slices.Clone(ms) })
+	c.store.OnCommit(func(ms []proto.Message) {
+		if committed == nil {
+			committed = slices.Clone(ms)
+		}
+	})
 	prompt := "# Original request\n\n" + strings.Repeat("**Complete** request, with a list.\n- Keep this.\n", 30) + "\nFINAL DETAIL\n"
 	for _, paused := range []bool{false, true} {
-		req := connect.NewRequest(&planv1.WishServiceMakeRequest{Prompt: prompt, Paused: paused})
-		req.Header().Set("Accept-Language", "fr-FR,en;q=0.8")
-		res, err := c.wishes.Make(t.Context(), req)
+		committed = nil
+		res, err := c.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Prompt: prompt, Paused: paused}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -40,7 +44,7 @@ func TestMakePrompt(t *testing.T) {
 		if err != nil || len(history.GetCommands()) != 1 || history.GetCommands()[0].GetId() != wish.GetId() {
 			t.Fatalf("creation was not tied exactly to its command: %v, %v", history, err)
 		}
-		if wish.GetTitle() != locales.T("fr", "wish.provisionalTitle", nil) || Active(wish) == paused {
+		if wish.GetTitle() != locales.T("fr", "wish.provisional_title", nil) || Active(wish) == paused {
 			t.Fatalf("prompt-only wish: %v", wish)
 		}
 		blocks, err := store.List[*planv1.Block](t.Context(), c.store, store.Where{"wish_id": wish.GetId()})
@@ -49,7 +53,7 @@ func TestMakePrompt(t *testing.T) {
 		}
 		b := blocks[0]
 		if b.GetContent() != prompt || b.GetKind() != creationKind || b.GetMediaType() != "text/markdown" ||
-			b.GetTitle() != locales.T("fr", "wish.originalPrompt", nil) {
+			b.GetTitle() != locales.T("fr", "wish.original_request", nil) {
 			t.Fatalf("creation block changed the original request: %v", b)
 		}
 	}
@@ -60,7 +64,7 @@ func TestMakePrompt(t *testing.T) {
 		t.Fatalf("explicit title with prompt: %v, %v", res, err)
 	}
 	brief, err := BuildBrief(t.Context(), c.store, "", res.Msg.GetWish().GetId())
-	if err != nil || strings.Contains(brief.Moving, "At startup, write a concise title") {
+	if err != nil || strings.Contains(brief.Moving, "First, write a concise title") {
 		t.Fatalf("explicit title was made provisional: %v", err)
 	}
 	legacy, err := c.make(t, "Title only", true)
@@ -100,6 +104,78 @@ func TestPromptCreationJournalExact(t *testing.T) {
 		if !needsTitle(exp) {
 			t.Fatalf("wish %d lost title authorship instruction", i)
 		}
+	}
+}
+
+// A wish made from a request queues an event for the one lead: name it when its title is provisional, then take it
+// on. A wish made from a title alone, or routed from another wish, tells the lead nothing new.
+func TestMadeFromRequestTellsTheLead(t *testing.T) {
+	c := serve(t)
+	res, err := c.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Prompt: "Ship the export", Paused: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provisional := res.Msg.GetWish()
+	res, err = c.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Ship the export", Prompt: "Ship the export, in CSV", Paused: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	titled := res.Msg.GetWish()
+	if _, err := c.make(t, "Title only", true); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{LeadTerminal + ": " + MadeLine(provisional, true), LeadTerminal + ": " + MadeLine(titled, false)}
+	if got := told(t, c.store); !slices.Equal(got, want) {
+		t.Fatalf("lead told %q, want %q", got, want)
+	}
+	events, err := waitingEvents(t.Context(), c.store)
+	if err != nil || events[0].GetKind() != planv1.LeadEventKind_LEAD_EVENT_KIND_REQUEST || events[0].GetWishId() != provisional.GetId() {
+		t.Fatalf("events %v, %v", events, err)
+	}
+	// The digest cuts a line at digestLineMax, "Djinn: " left out: the command must fit.
+	if line := MadeLine(provisional, true); !strings.Contains(line, "djinn wish rename "+provisional.GetId()) ||
+		len(strings.TrimPrefix(line, "Djinn: ")) > digestLineMax {
+		t.Errorf("the line %q does not name the wish within a digest's line", line)
+	}
+	if line := MadeLine(titled, false); strings.Contains(line, "rename") || !strings.Contains(line, "djinn wish brief "+titled.GetId()) {
+		t.Errorf("a titled wish: %q", line)
+	}
+}
+
+// A wish made before its identifier was its creation's keeps its own creation after a rename, never the creation of
+// a wish made just after it under its new title.
+func TestLegacyRenameKeepsItsOwnCreation(t *testing.T) {
+	c := serve(t)
+	legacy := &planv1.Wish{Id: store.NewID(), Title: "Original title", State: planv1.WishState_WISH_STATE_PAUSED}
+	if err := c.store.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal(actor, planv1connect.WishServiceMakeProcedure, &planv1.WishServiceMakeRequest{
+			Title: legacy.GetTitle(), Paused: true,
+		}); err != nil {
+			return err
+		}
+		legacy.CreateTime = timestamppb.Now()
+		return tx.Put(legacy)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.make(t, "New title", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.wishes.Rename(t.Context(), connect.NewRequest(&planv1.WishServiceRenameRequest{
+		WishId: legacy.GetId(), Title: "New title",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	exp, _, err := collect(t.Context(), c.store, legacy.GetId(), allEvents)
+	if err != nil || len(exp.GetCommands()) != 2 {
+		t.Fatalf("commands %v, %v", exp.GetCommands(), err)
+	}
+	var made planv1.WishServiceMakeRequest
+	if err := exp.GetCommands()[0].GetRequest().UnmarshalTo(&made); err != nil || made.GetTitle() != "Original title" ||
+		exp.GetCommands()[1].GetMethod() != planv1connect.WishServiceRenameProcedure {
+		t.Fatalf("the renamed wish's history: %v, %v", exp.GetCommands(), err)
 	}
 }
 
@@ -179,7 +255,7 @@ func TestBriefOriginalPromptWholeAndPortable(t *testing.T) {
 	}
 	if strings.Count(brief.Moving, "FINAL REQUIREMENT") != 1 ||
 		strings.Count(brief.Moving, "- Keep **all** requirements.") != 80 ||
-		!strings.Contains(brief.Moving, "At startup, write a concise title") ||
+		!strings.Contains(brief.Moving, "First, write a concise title") ||
 		!strings.Contains(brief.Moving, "api/internal") ||
 		!strings.Contains(brief.Moving, "https://example.com/api.git") {
 		t.Fatalf("original prompt clipped, duplicated, or missing title instruction: %s", brief.Moving)
@@ -223,7 +299,7 @@ func TestPromptRestartExportImport(t *testing.T) {
 	}
 	reopened := promptDiskClient(t, file)
 	brief, err := BuildBrief(t.Context(), reopened.store, "", wishID)
-	if err != nil || !strings.Contains(brief.Moving, prompt) || !strings.Contains(brief.Moving, "At startup, write a concise title") {
+	if err != nil || !strings.Contains(brief.Moving, prompt) || !strings.Contains(brief.Moving, "First, write a concise title") {
 		t.Fatalf("restart lost the original request: %v", err)
 	}
 	for _, json := range []bool{false, true} {
@@ -247,7 +323,7 @@ func TestPromptRestartExportImport(t *testing.T) {
 			t.Fatalf("import lost paused wish or full prompt: %v, %v", imported, err)
 		}
 		brief, err := BuildBrief(t.Context(), dst.store, "", wishID)
-		if err != nil || !strings.Contains(brief.Moving, prompt) || !strings.Contains(brief.Moving, "At startup, write a concise title") {
+		if err != nil || !strings.Contains(brief.Moving, prompt) || !strings.Contains(brief.Moving, "First, write a concise title") {
 			t.Fatalf("imported brief lost prompt or title instruction: %v", err)
 		}
 		if _, err := dst.wishes.Rename(t.Context(), connect.NewRequest(&planv1.WishServiceRenameRequest{

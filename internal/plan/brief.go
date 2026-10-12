@@ -393,7 +393,7 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		b.WriteString(bl.GetContent() + "\n")
 	}
 	if len(originals) > 0 && needsTitle(exp) {
-		b.WriteString("\nAt startup, write a concise title in the developer's language, using the language of the complete " +
+		b.WriteString("\nFirst, write a concise title in the developer's language, using the language of the complete " +
 			"original request above when no preference is given, then run " +
 			"`djinn wish rename <wish> \"<title>\"`. The current title is provisional; keep the original request whole.\n")
 	}
