@@ -108,7 +108,17 @@ export { readDrop } from "@/src/data/tilasms.ts";
 export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export { ConsumptionPanel, WorkerRow } from "@/src/consumption-panel.tsx";
 export { ResourceChart } from "@/src/resource-chart.tsx";
-export { MachineService, CommandService } from "@/gen/ts/machine/v1/machine_pb.ts";
+export {
+  MachineService,
+  CommandService,
+  GateService,
+} from "@/gen/ts/machine/v1/machine_pb.ts";
+export {
+  HOURGLASS,
+  Hourglass,
+  HourglassLine,
+  HourglassSections,
+} from "@/src/hourglass.tsx";
 export {
   TaskDiffView,
   UnifiedView,
@@ -2325,6 +2335,30 @@ test("a running task shows what its worker uses now; its facts, the peaks too", 
   );
   assert.doesNotMatch(card(s.TaskStatus.DONE), /CPU/);
   assert.equal(s.resourcesDetail(resources, false), "peak CPU 180% · 1.2 GB");
+  // Open, a running task links to its worker's row in the Hourglass, its CPU and memory over time.
+  const open = (status) =>
+    s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn: hourglassDjinn().djinn },
+        h(s.WishTask, {
+          task: {
+            id: "t1",
+            code: "W1",
+            title: "Trim the wick",
+            status,
+            resources,
+          },
+          focused: true,
+          onStop() {},
+        }),
+      ),
+    );
+  assert.match(
+    open(s.TaskStatus.RUNNING),
+    /<button type="button" class="text-link task-hourglass-open">Live in the Hourglass<\/button>/,
+  );
+  assert.doesNotMatch(open(s.TaskStatus.DONE), /task-hourglass-open/);
   assert.equal(s.memory(1536n), "1.5 kB");
 });
 
@@ -2923,6 +2957,8 @@ test("the flying carpet merges the active wishes: their questions, the blocking 
     ),
   );
   assert.match(html, /<h1>Flying carpet<\/h1>/);
+  // Its live graphs are in the Hourglass (W542): none here.
+  assert.doesNotMatch(html, /consumption-panel|resource-chart/);
   // W538: the Djinn is at hand as on a wish: Talk to the Djinn in the header opens its terminal, on no wish, and the
   // pill at the bottom writes to it, Cmd/Ctrl+I.
   assert.match(
@@ -7436,6 +7472,137 @@ test("a worker's eye opens its task in its wish, through the window's focus", ()
   assert.deepEqual(opened, [["wish-1", "task-w1"]]);
   // The window's focus takes it to the Tasks tab, where the task's card shows.
   assert.equal(s.tabOf("task-task-w1"), "tasks");
+});
+
+test("the side panel's Hourglass comes right below the flying carpet, before the wishes, and stays with no active wish", () => {
+  const sidebar = (wishes, selected) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes,
+        projects: [],
+        onSelectPlan() {},
+        hourglassSelected: selected,
+        onSelectHourglass() {},
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed: false,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  const html = sidebar(
+    [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
+    true,
+  );
+  const carpet = html.indexOf("plan-nav");
+  const glass = html.indexOf("hourglass-nav");
+  const wishes = html.indexOf("Ship the lamp");
+  assert.ok(carpet >= 0 && glass > carpet && wishes > glass, html);
+  assert.match(
+    html,
+    /<button class="nav-item hourglass-nav selected" title="Hourglass"><svg[^>]*lucide-hourglass[^>]*>[^]*?<\/svg><span>Hourglass<\/span><\/button>/,
+  );
+  // No active wish: no flying carpet, the Hourglass still.
+  const calm = sidebar(
+    [wish("w1", "Trim the wick", s.WishState.PAUSED, 0)],
+    false,
+  );
+  assert.doesNotMatch(calm, /plan-nav/);
+  assert.match(calm, /class="nav-item hourglass-nav " title="Hourglass"/);
+});
+
+// A djinn whose machine services count their reads: the series, the commands, the machine the status bar reads.
+function hourglassDjinn() {
+  const reads = { series: 0, commands: 0 };
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.MachineService, {
+      series: () => {
+        reads.series++;
+        return resourceData();
+      },
+      show: () => ({
+        machine: {
+          cores: 8,
+          workers: 4,
+          running: 1,
+          memoryTotalBytes: 16n * 1024n ** 3n,
+          memoryAvailableBytes: 12n * 1024n ** 3n,
+        },
+      }),
+    });
+    service(s.GateService, { list: () => ({ gates: [] }) });
+    service(s.CommandService, {
+      list: () => {
+        reads.commands++;
+        return { costs: resourceCommands };
+      },
+    });
+  });
+  return { reads, djinn: s.createDjinn(transport, 10) };
+}
+
+test("the Hourglass: its sections, the machine first, and the flying carpet's line to it", async () => {
+  const { djinn } = hourglassDjinn();
+  const html = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.Hourglass, { wishes: [] })),
+  );
+  assert.match(
+    html,
+    /<div class="breadcrumbs"><strong>Hourglass<\/strong><\/div>/,
+  );
+  assert.match(html, /<h1>Hourglass<\/h1>/);
+  // One section per live metric, the machine first: the whole resources panel, with its range.
+  const sections = [...html.matchAll(/class="hourglass-section"/g)];
+  assert.equal(sections.length, 1);
+  assert.match(
+    html,
+    /<div id="hourglass-machine" class="hourglass-section"><section class="consumption-panel" aria-label="Resource consumption">/,
+  );
+  assert.match(html, /aria-pressed="true">30 min<\/button>/);
+
+  // The flying carpet keeps one line of the machine's load, read for the status bar, with a link to the Hourglass.
+  await djinn.store.readMachine();
+  const line = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.HourglassLine)),
+  );
+  assert.equal(
+    line.replace(/<[^>]+>/g, ""),
+    "1 of 4 workers running, memory 4 GB · 25% of the machine. See it live in the Hourglass",
+  );
+  assert.match(
+    line,
+    /<button type="button" class="text-link hourglass-line-open">See it live in the Hourglass<\/button>/,
+  );
+});
+
+test("leaving the Hourglass stops its reads and its timers", async () => {
+  const container = setupMockDom();
+  const { reads, djinn } = hourglassDjinn();
+  const timers = () =>
+    process.getActiveResourcesInfo().filter((r) => r === "Timeout").length;
+  const before = timers();
+  const root = s.createRoot(container);
+  await s.act(async () => {
+    root.render(
+      h(s.DjinnProvider, { djinn }, h(s.HourglassSections, { wishes: [] })),
+    );
+  });
+  await s.act(() => new Promise((resolve) => setImmediate(resolve)));
+  // Shown: the machine's series and the commands are read, and read again by timers.
+  const shown = timers();
+  s.act(() => root.unmount());
+  // The store's watch, stopped with the provider, ends its last wait of 10 ms.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const left = timers();
+  // React's scheduler keeps a port open: it holds the test's process no more.
+  for (const handle of process._getActiveHandles())
+    if (handle?.constructor?.name === "MessagePort") handle.unref();
+  assert.ok(reads.series >= 1 && reads.commands >= 1, JSON.stringify(reads));
+  assert.ok(shown > before, `timers while shown: ${shown}, before: ${before}`);
+  // Left: no timer stays.
+  assert.equal(left, before);
 });
 
 test("principal wish: rank 1 is principal by default, wish with principal: true overrides rank", () => {

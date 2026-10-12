@@ -66,6 +66,7 @@ test("a single watch stream shares show, update and load across subscribers", as
   assert.equal(focusSeen.length, 1);
   assert.deepEqual(focusSeen[0], {
     wishId,
+    page: "",
     terminal: `lead-${wishId}`,
     tilasmId: "",
     target: "",

@@ -8,11 +8,14 @@ import { UiService } from "../../gen/ts/ui/v1/ui_pb";
 export interface Focus {
   // The wish to show; empty for none.
   wishId: string;
+  // A page to show instead of a wish, as a link in the page asks (the Hourglass, hourglass.tsx); empty for none.
+  page: string;
   // The terminal to show at the bottom of the window; empty for none.
   terminal: string;
   // The tilasm to show, in the wish's Tilasms tab; empty for none.
   tilasmId: string;
-  // An element of the wish to bring into sight, as a line of the attention bar asks: its id; empty for none.
+  // An element of the wish, or of the page, to bring into sight, as a line of the attention bar asks: its id; empty
+  // for none.
   target: string;
   // A link the window was asked to open and does not know, or whose tilasm or wish is not on this machine; empty for
   // none.
@@ -28,6 +31,7 @@ export interface DjinnFocus {
 
 export const none: Focus = {
   wishId: "",
+  page: "",
   terminal: "",
   tilasmId: "",
   target: "",
@@ -49,6 +53,7 @@ export function createFocus(transport: Transport, retry = 1000): DjinnFocus {
           if (!res.wishId && !res.terminal && !res.unknownLink) continue;
           const focus = {
             wishId: res.wishId,
+            page: "",
             terminal: res.terminal,
             tilasmId: res.tilasmId,
             target: res.target,

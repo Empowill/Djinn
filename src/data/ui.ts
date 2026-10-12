@@ -44,6 +44,7 @@ export function createUi(transport: Transport, retry = 1000): DjinnUi {
     if (!res.wishId && !res.terminal && !res.unknownLink) return;
     const focus: Focus = {
       wishId: res.wishId,
+      page: "",
       terminal: res.terminal,
       tilasmId: res.tilasmId,
       target: "",

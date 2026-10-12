@@ -43,7 +43,12 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { jump } from "./attention";
 import { type Decision } from "./data/decisions";
-import { useOptionalData, useTaskEvents, useTaskPrompt } from "./data/djinn";
+import {
+  useDjinn,
+  useOptionalData,
+  useTaskEvents,
+  useTaskPrompt,
+} from "./data/djinn";
 import { isMerge } from "./data/flight";
 import {
   cancelledText,
@@ -60,6 +65,7 @@ import {
   when,
 } from "./data/format";
 import { DecisionLink } from "./decision-log";
+import { HOURGLASS } from "./hourglass";
 import { language, t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
@@ -729,6 +735,7 @@ function TaskBody({
   const spent = usageDetail(task.usage, task.model, task.provider);
   const running = task.status === TaskStatus.RUNNING;
   const used = task.resources ? resourcesDetail(task.resources, running) : "";
+  const djinn = useDjinn();
   // Where Djinn does not measure workers (Windows), a running worker says so.
   const unmeasured =
     useOptionalData((s) => !!s.machine?.workerMeasure, false) && running;
@@ -757,6 +764,18 @@ function TaskBody({
           </span>
         )}
         {used && <span>{used}</span>}
+        {/* A running worker's row in the Hourglass: its CPU and memory over time. */}
+        {used && running && djinn && (
+          <button
+            type="button"
+            className="text-link task-hourglass-open"
+            onClick={() =>
+              djinn.focus.show({ page: HOURGLASS, target: `worker-${task.id}` })
+            }
+          >
+            {t("hourglass.worker")}
+          </button>
+        )}
         {!used && unmeasured && <span>{t("resources.not_measured")}</span>}
       </div>
       <TaskPromptFold prompt={prompt} />

@@ -1,6 +1,6 @@
-// The window, on the services: the side panel (the flying carpet, the wishes by rank, the projects), the flying carpet of
-// the active wishes or the wish shown, and the status bar (whether the page follows djinn, the machine). What stays on
-// this page is how it shows: what is shown and the side panel folded.
+// The window, on the services: the side panel (the flying carpet, the Hourglass, the wishes by rank, the projects), the
+// flying carpet of the active wishes, the Hourglass's live metrics or the wish shown, and the status bar (whether the
+// page follows djinn, the machine). What stays on this page is how it shows: what is shown and the side panel folded.
 import { ArrowLeft, PanelLeft, Plus, Settings2, Upload } from "lucide-react";
 import { AnimatePresence, LayoutGroup } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -20,6 +20,7 @@ import { isActive, runningOf, waitsForYou } from "./data/format";
 import { AgentSetup, needsSetup } from "./agent-setup";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
+import { HOURGLASS, Hourglass } from "./hourglass";
 import { t } from "./i18n";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
@@ -90,6 +91,12 @@ export function WishApp() {
     setGlide(true);
     setCollapsed((value) => !value);
   }, []);
+  // showPage shows a page of the window instead of a wish: the flying carpet (PLAN) or the Hourglass (HOURGLASS). The
+  // keyboard shortcuts of Q254 call it.
+  const showPage = useCallback((page: string) => {
+    setSelected(page);
+    setModal(null);
+  }, []);
 
   useEffect(() => store("djinn.wish", selected), [selected]);
   useEffect(() => {
@@ -106,10 +113,15 @@ export function WishApp() {
     () =>
       djinn.focus.subscribe((focus) => {
         if (focus.wishId) setSelected(focus.wishId);
+        // A page a link asks for (a worker's row in the Hourglass): its target is reached there as in a wish.
+        if (focus.page) setSelected(focus.page);
         if (focus.tilasmId)
           setOpening({ wishId: focus.wishId, tilasmId: focus.tilasmId });
         if (focus.target)
-          setReaching({ wishId: focus.wishId, target: focus.target });
+          setReaching({
+            wishId: focus.page || focus.wishId,
+            target: focus.target,
+          });
         if (focus.unknownLink)
           setToast(t("link.unknown", { link: focus.unknownLink }));
       }),
@@ -181,12 +193,17 @@ export function WishApp() {
       },
     ]),
   );
-  // What shows: the wish chosen, else the flying carpet while a wish is active, else the first wish.
+  // What shows: the wish chosen, or the Hourglass, else the flying carpet while a wish is active, else the first wish.
   const chosen = wishes.find((w) => w.id === selected);
   const pendingWish = justMade?.id === selected ? justMade : undefined;
+  const hourglass = !chosen && !pendingWish && selected === HOURGLASS;
   const plan =
-    !chosen && !pendingWish && (selected === PLAN || active.length > 0);
-  const wish = plan ? undefined : (chosen ?? pendingWish ?? wishes[0]);
+    !hourglass &&
+    !chosen &&
+    !pendingWish &&
+    (selected === PLAN || active.length > 0);
+  const wish =
+    plan || hourglass ? undefined : (chosen ?? pendingWish ?? wishes[0]);
   // Until the wishes are read, no page is chosen: the home page would show, then give way to the flying carpet or a wish
   // with a header of its own, and a gauge focused or measured in between would be gone. A failed read shows home.
   const settling = !loaded && !error;
@@ -314,10 +331,9 @@ export function WishApp() {
             counts={counts}
             inbox={inbox}
             planSelected={plan}
-            onSelectPlan={() => {
-              setSelected(PLAN);
-              setModal(null);
-            }}
+            onSelectPlan={() => showPage(PLAN)}
+            hourglassSelected={hourglass}
+            onSelectHourglass={() => showPage(HOURGLASS)}
             selectedWishId={wish?.id ?? ""}
             selectedProjectId={projectId}
             collapsed={collapsed}
@@ -379,6 +395,11 @@ export function WishApp() {
             />
           ) : settling ? (
             <div className="wish-view" aria-busy="true" />
+          ) : hourglass ? (
+            <Hourglass
+              wishes={active}
+              target={reaching?.wishId === HOURGLASS ? reaching : undefined}
+            />
           ) : plan ? (
             <FlightPlan
               wishes={active}
