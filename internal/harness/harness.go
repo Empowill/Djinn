@@ -115,6 +115,8 @@ type Harness struct {
 	installed        map[string]string     // by projectID: sha of last installed build, guarded by mu
 	uninstalledDelay time.Duration         // how long a build waits uninstalled before asking; 0: defaultUninstalledDelay
 	pushMu           sync.Mutex            // held while an integration branch is pushed
+	pushingMu        sync.Mutex            // guards pushing
+	pushing          string                // the push that runs now (pushKey), "" between pushes
 	built            func(Built)           // nil: no build is proposed
 	mainTested       map[string]mainTested // by mainLine.key; owned by the integration's pass
 	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence

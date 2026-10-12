@@ -2013,6 +2013,39 @@ html[data-motion="reduced"] *::after {
   color: var(--n-79);
   cursor: default;
 }
+/* A push that runs keeps its button, disabled but not faded: its spinner says it works. */
+.icon-button.sync-push:disabled:has(.sync-spinner) {
+  opacity: 1;
+}
+.sync-spinner {
+  animation: sync-spin 1s linear infinite;
+}
+@keyframes sync-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sync-spinner {
+    animation: none;
+  }
+}
+.sync-status {
+  display: inline-flex;
+  flex: none;
+  cursor: default;
+}
+.sync-status.pushed {
+  color: var(--st-done);
+}
+.sync-status.held,
+.sync-status.failed {
+  color: var(--st-failed);
+}
+.sync-note {
+  color: var(--n-8f);
+  font-style: italic;
+}
 .sync-fold {
   display: inline-flex;
   align-items: center;

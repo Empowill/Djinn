@@ -69,6 +69,11 @@ message ProjectSync {
   string azima_code = 8;
   string azima_title = 9;
   string wish_title = 10;
+  // Where the last push of this branch stands, or how it ended: started from the window, by djinn project push, or
+  // by Djinn itself (WishPush.run). Unset when none ran since its wish's last push of another branch.
+  PushRun push = 11;
+  // The correction worker Djinn started to make the push checks pass, by code, while the push is held.
+  string correction = 12;
 }
 
 // CheckRun is the last run of a project's check (ProjectCheck), or of its setup command.
@@ -460,6 +465,39 @@ message WishPush {
   string failed_sha = 11;
   // The push checks failure that holds the push.
   IntegrationFailure failure = 12;
+  // The last push Djinn ran in this project, or runs now: its push checks, then git push.
+  PushRun run = 13;
+}
+
+// PushRun is a push Djinn runs, or ran, of one branch: what the window shows on its sync line, the same however it
+// started.
+message PushRun {
+  // The branch pushed.
+  string branch = 1;
+  // Where it stands.
+  PushStage stage = 2;
+  // While CHECKING: the push check that runs, by name.
+  string check = 3;
+  // When it started, and when it ended; end_time is unset while it runs.
+  google.protobuf.Timestamp start_time = 4;
+  google.protobuf.Timestamp end_time = 5;
+  // For HELD: the check that failed and the first lines of its output. For FAILED: why, in git's or Djinn's words.
+  string note = 6;
+}
+
+// PushStage is where a push Djinn runs stands: running, or how it ended.
+enum PushStage {
+  PUSH_STAGE_UNSPECIFIED = 0;
+  // Its push checks run.
+  PUSH_STAGE_CHECKING = 1;
+  // git push runs.
+  PUSH_STAGE_PUSHING = 2;
+  // The remote holds the branch.
+  PUSH_STAGE_PUSHED = 3;
+  // Its push checks are red: the push waits until they pass.
+  PUSH_STAGE_HELD = 4;
+  // The remote refused it, or Djinn could not run it.
+  PUSH_STAGE_FAILED = 5;
 }
 
 // IntegrationPush is a push of a wish's integration branch to its remote, as the journal records it and the wish shows
@@ -1910,6 +1948,8 @@ message ProjectServicePushRequest {
 message ProjectServicePushResponse {
   // The push recorded.
   IntegrationPush push = 1;
+  // Nothing was pushed: the remote holds the branch already.
+  bool up_to_date = 2;
 }
 
 message ProjectServiceSetPushRequest {

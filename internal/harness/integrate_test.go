@@ -35,6 +35,7 @@ type integration struct {
 	testCode  int      // what the test command exits with
 	testOut   string
 	afterTest func()         // run once by the next test command, then forgotten
+	testWait  chan struct{}  // the test command waits until it closes, the clock free meanwhile
 	exits     map[string]int // what the other commands exit with, by their first word: setup, lint
 }
 
@@ -109,6 +110,11 @@ func (in *integration) run(ctx context.Context, dir string, args []string) (stri
 		if f := in.afterTest; f != nil {
 			in.afterTest = nil
 			f()
+		}
+		if wait := in.testWait; wait != nil {
+			in.mu.Unlock()
+			<-wait
+			in.mu.Lock()
 		}
 		return in.testOut, in.testCode, nil
 	case "install":

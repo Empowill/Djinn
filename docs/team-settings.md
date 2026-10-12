@@ -288,9 +288,16 @@ now, but never pushes by itself and asks nothing; only the developer's push does
 window's project view and an azima's card list each branch Djinn pushes that is out of sync with its remote, one line
 each: the integration branch of every active or paused wish there, and every azima's own branch, as `feat/x ↑2 ↓1`
 (commits to push, commits the remote has that the branch lacks), its wish and azima on hover; a small button pushes
-that branch alone. Past three branches, the lines fold behind the first two. The project view has the cadence switch;
-`djinn project push <project> [--wish <wish>] [--branch <branch>]` pushes from the command line. In On demand, the
-wish's head says "pushes on demand".
+that branch alone, offered only when it has commits to push. Past three branches, the lines fold behind the first two.
+A push shows on its line until it ends, whoever started it (the window, the command line, or Djinn by its cadence),
+as the wish records it (`WishPush.run`): a spinner while its push checks run (the check on hover) and while git
+pushes, every button of the list waiting meanwhile; a check mark a few seconds once pushed; a cross when its push
+checks hold it, with the check that failed, the first lines of its output, and the correction Djinn started, on hover;
+a cross with git's words when the remote refused it. Each change of a push's state, and each push, has the window read
+its projects again: the counts follow the remote at once. A push that finds the remote up to date is no failure:
+the line says "up to date", and `djinn project push` exits 0 with `up_to_date`. The project view has the cadence
+switch; `djinn project push <project> [--wish <wish>] [--branch <branch>]` pushes from the command line. In On demand,
+the wish's head says "pushes on demand".
 
 A project also sets the default push strategy with `push_strategy`: `PUSH_STRATEGY_WISH` (the default: one
 integration branch per wish and per project) or `PUSH_STRATEGY_AZIMA` (one integration branch per azima).

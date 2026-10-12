@@ -425,6 +425,9 @@ func (p *Projects) Push(
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("no wish for project %s", project.GetName()))
 	}
 	push, err := p.Pusher.Push(ctx, wish.GetId(), project.GetId(), branch)
+	if errors.Is(err, ErrUpToDate) {
+		return connect.NewResponse(&planv1.ProjectServicePushResponse{UpToDate: true}), nil
+	}
 	if err != nil {
 		var cerr *connect.Error
 		if errors.As(err, &cerr) {

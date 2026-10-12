@@ -2,6 +2,7 @@ package plan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -32,6 +33,9 @@ func IntegrationBranchOf(wish *planv1.Wish, projectID string) string {
 	}
 	return ""
 }
+
+// ErrUpToDate says that a push found nothing to push: the remote holds the branch already.
+var ErrUpToDate = errors.New("nothing to push: the remote is up to date")
 
 // PushStateOf is the state of the push of wish in the project projectID; nil when none is recorded.
 func PushStateOf(wish *planv1.Wish, projectID string) *planv1.WishPush {
