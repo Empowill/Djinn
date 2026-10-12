@@ -172,7 +172,7 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"in the wrong wish, unless the developer keeps it there.\n" +
 		"- **Watch, do not poll.** To wait on something outside (a pipeline, a merge request, a queue), spawn a watcher: " +
 		"`--provider watch --prompt \"<command>\"` runs the command with no agent, no model and no slot, and each new " +
-		"paragraph it prints comes to you in your lead watch. `--restart` starts again a command that exits on each change. The project must " +
+		"paragraph it prints comes to you in your lead watch. `--restart` starts again a command that exits on each change; one that dies starts again by itself, in the same task. The project must " +
 		"allow the command.\n" +
 		"- **A request that comes back is a template.** A skill holds one under `metadata.djinn.wish` in its `SKILL.md` " +
 		"(`title`, `match`, `watch`, `restart`, `done_when`): a routed request it matches becomes a wish that follows the " +

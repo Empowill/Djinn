@@ -25,10 +25,6 @@ import (
 const (
 	// WatchQuiet is how long a command stays silent before what it printed makes a paragraph.
 	WatchQuiet = time.Second
-	// watchBackoff is the first wait before a command that failed starts again; it doubles up to watchMaxBackoff,
-	// and starts over once the command exits 0 or ran longer than that.
-	watchBackoff    = time.Second
-	watchMaxBackoff = time.Minute
 	// watchGap is the least time between two starts of a command that exits 0 at once: its loop never spins.
 	watchGap = time.Second
 	// watchLines is the most lines of a paragraph: a command that never pauses still wakes its lead.
@@ -48,13 +44,15 @@ type Watch struct {
 	Quiet time.Duration
 	// Grace is how long the command has to stop before it is killed; 0 for Grace.
 	Grace time.Duration
-	// Backoff is the first wait before a command that failed starts again; 0 for one second.
+	// Backoff is the first wait before a command that died starts again; 0 for watchBackoff.
 	Backoff time.Duration
 	// Gap is the least time between two starts of a command that exits 0 at once, and between two starts of one
 	// that fails; 0 for one second.
 	Gap time.Duration
 	// Items ends a paragraph on an empty line too: each one is an item of an inbox source.
 	Items bool
+	// Endless starts the command again however many times it dies in a row: an inbox source never gives up.
+	Endless bool
 }
 
 // Watched is a paragraph a watcher's command printed, on its event; or, without a first line, the end of a command
@@ -120,8 +118,9 @@ type watchWorker struct {
 	cancel  context.CancelFunc
 	done    chan struct{}
 	res     Result
-	last    string // the last paragraph, to say a new one only
-	told    bool   // the lead was last told that the command still watches
+	last    string   // the last paragraph, to say a new one only
+	told    bool     // the lead was last told that the command still watches
+	errs    []string // the last lines of the command's error output, in its last run
 
 	finished atomic.Bool // Finish ended it: done, not stopped
 
@@ -206,53 +205,62 @@ func (w *watchWorker) SetPriority(low bool) error {
 	return nil
 }
 
-// loop runs the command, and again after each exit when the task restarts it, until it is stopped.
+// loop runs the command, and again as the watchdog says (watcherLife): after it dies, and after each exit when the
+// task restarts it, until it is stopped, finished, or it died watchTries times in a row.
 func (w *watchWorker) loop() {
 	defer close(w.done)
 	defer close(w.events)
-	backoff := w.c.Backoff
+	life := newWatcherLife(w.c.Backoff, w.c.Endless)
 	for {
 		if !w.hold() {
 			w.res = Result{}
 			return
 		}
 		started := time.Now()
+		var res Result
+		var wait time.Duration
+		again := false
+		next := func(r Result) bool {
+			wait, again = life.ended(r, w.spec.Restart, time.Since(started))
+			return again
+		}
+		w.errs = nil
 		p, err := startCommand(w.spec.Dir, w.args[0], w.args[1:], w.spec.Env, w.spec.Scope, w.c.Grace, w.c.Items, w.spec.LowPriority)
 		if err != nil {
-			w.res = Result{ExitCode: -1, Err: err}
-			return
+			res = Result{ExitCode: -1, Err: err}
+			next(res)
+		} else {
+			// A watcher reads no message: its command reads an empty input, and Djinn never writes to it.
+			_ = p.stdin.Close()
+			w.running(p)
+			res = w.read(p, next)
+			w.running(nil)
 		}
-		// A watcher reads no message: its command reads an empty input, and Djinn never writes to it.
-		_ = p.stdin.Close()
-		w.running(p)
-		res := w.read(p)
-		w.running(nil)
 		if w.finished.Load() {
 			w.res = Result{}
 			return
 		}
-		if w.ctx.Err() != nil || !w.spec.Restart {
+		if w.ctx.Err() != nil || !again {
 			w.res = res
+			if w.ctx.Err() == nil && died(res) {
+				w.res.Err = gaveUp(res, w.errs)
+			}
 			return
 		}
-		ran := time.Since(started)
-		var wait time.Duration
-		if res.Err != nil || res.ExitCode != 0 {
-			if ran > watchMaxBackoff {
-				backoff = w.c.Backoff
-			}
-			wait = max(backoff, w.c.Gap)
-			backoff = min(2*backoff, watchMaxBackoff)
+		if died(res) {
+			wait = max(wait, w.c.Gap)
 			why := fmt.Sprintf("exit code %d", res.ExitCode)
 			if res.Err != nil {
 				why = res.Err.Error()
+			}
+			if !life.endless {
+				why += fmt.Sprintf(", %d of %d in a row", life.deaths, watchTries)
 			}
 			w.events <- Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
 				Text: fmt.Sprintf("the command failed (%s); it starts again in %s", why, wait.Round(time.Millisecond))}
 		} else {
 			// Its loop: it starts again without a word, its paragraphs say it lives.
-			backoff = w.c.Backoff
-			wait = max(0, w.c.Gap-ran)
+			wait = max(0, w.c.Gap-time.Since(started))
 		}
 		select {
 		case <-time.After(wait):
@@ -293,8 +301,9 @@ func (w *watchWorker) running(p *process) {
 	}
 }
 
-// read makes paragraphs of what the command prints, until it ends; stopping the watcher stops it.
-func (w *watchWorker) read(p *process) Result {
+// read makes paragraphs of what the command prints, until it ends; stopping the watcher stops it. next says, at its
+// end, whether the command starts again: its last paragraph says it still watches.
+func (w *watchWorker) read(p *process, next func(Result) bool) Result {
 	var lines, raw []string
 	quiet := time.NewTimer(w.c.Quiet)
 	quiet.Stop()
@@ -311,10 +320,11 @@ func (w *watchWorker) read(p *process) Result {
 		case l, ok := <-p.lines:
 			if !ok {
 				<-p.done
-				watching := w.spec.Restart && w.ctx.Err() == nil
+				watching := next(p.res) && w.ctx.Err() == nil
 				flush(watching)
-				if !watching && w.told && w.ctx.Err() == nil {
-					// Its last paragraph came before its exit, and said it watched: the lead learns it ended.
+				if !watching && w.told && w.ctx.Err() == nil && !died(p.res) {
+					// Its last paragraph came before its exit, and said it watched: the lead learns it ended. A watcher
+					// that died for good tells its lead why, once, as it fails (tellWatcherFailed).
 					w.told = false
 					w.events <- Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
 						Text:    fmt.Sprintf("the command ended (exit code %d)", p.res.ExitCode),
@@ -323,6 +333,12 @@ func (w *watchWorker) read(p *process) Result {
 				return p.res
 			}
 			text := cleanLine(l.text)
+			if l.stderr && text != "" {
+				w.errs = append(w.errs, clipRunes(text, watchLineMax))
+				if len(w.errs) > watchErrLines {
+					w.errs = w.errs[1:]
+				}
+			}
 			if text == "" {
 				if w.c.Items {
 					flush(true)
@@ -445,8 +461,8 @@ func (h *Harness) SpawnWatcher(ctx context.Context, wishID, projectID, title, wa
 }
 
 // wakeLead tells the lead of the run's wish what its watcher's command printed, then gives the paragraph text to
-// OnWatched's function: on its template's done line, a watcher that restarts its command ends, done. A wish without
-// a lead to tell keeps the paragraph in its task's events.
+// OnWatched's function: on its template's done line, the watcher ends, done. A wish without a lead to tell keeps the
+// paragraph in its task's events.
 func (h *Harness) wakeLead(r *run, w *Watched, text string) {
 	h.mu.Lock()
 	watched := h.watched
@@ -467,8 +483,8 @@ func (h *Harness) wakeLead(r *run, w *Watched, text string) {
 	if err != nil {
 		h.Note(r.id, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: "the paragraph was not read: " + err.Error()})
 	}
-	if f, ok := r.worker.(interface{ Finish() }); done && r.task.GetRestart() && ok {
-		f.Finish() // Its work is done: the command would only say so again.
+	if f, ok := r.worker.(interface{ Finish() }); done && ok {
+		f.Finish() // Its work is done: the command would only say so again, or wait for nothing.
 	}
 }
 
@@ -503,5 +519,5 @@ func watchText(t *planv1.Task) string {
 	if t.GetRestart() {
 		return ": no agent, no model; its command starts again after each exit"
 	}
-	return ": no agent, no model"
+	return ": no agent, no model; its command starts again if it dies"
 }

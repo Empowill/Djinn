@@ -1179,8 +1179,8 @@ export type WishTemplate = Message<"plan.v1.WishTemplate"> & {
   doneWhen: string;
 
   /**
-   * The watcher's command starts again after each exit, for a command that exits on each change; its done line
-   * ends it.
+   * The watcher's command starts again after an exit 0 too, for a command that exits on each change; its done line
+   * ends it. Without it, the watcher still starts again a command that dies.
    *
    * @generated from field: bool restart = 5;
    */
@@ -1609,7 +1609,8 @@ export type Task = Message<"plan.v1.Task"> & {
   resumes: number;
 
   /**
-   * A watcher's command starts again after each exit, until the task is stopped (djinn task spawn --restart).
+   * A watcher's command starts again after an exit 0 too, until the task is stopped (djinn task spawn --restart);
+   * one that dies starts again anyway.
    *
    * @generated from field: bool restart = 29;
    */
@@ -7349,7 +7350,8 @@ export type TaskServiceSpawnRequest = Message<"plan.v1.TaskServiceSpawnRequest">
   fromLead: boolean;
 
   /**
-   * For a watcher (--provider watch): start its command again after each exit, until the task is stopped.
+   * For a watcher (--provider watch): start its command again after an exit 0 too, until the task is stopped; one
+   * that dies starts again anyway.
    *
    * @generated from field: bool restart = 13;
    */

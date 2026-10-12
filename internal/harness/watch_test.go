@@ -31,6 +31,8 @@ import (
 //	count:<file>   it counts its runs in file, and prints "run N"
 //	input:<file>   it reads its input to the end, and adds a line to file: how many bytes it read
 //	exit:2         it exits with this code
+//	keep:<name>    it counts its runs in its state folder, DJINN_HOME/watchers/$DJINN_TASK_ID/<name>, silently
+//	die-before:3   while the last keep counted fewer runs, it says so on its error output and exits with code 1
 //	wait           it waits until it is stopped
 //
 // wait sleeps, it does not block on an empty select: in a test binary without cgo, as on macOS and Windows, the
@@ -39,9 +41,22 @@ import (
 const fakeWatchArg = "djinn-fake-watch"
 
 func fakeWatch(steps []string) int {
+	kept := 0
 	for _, step := range steps {
 		verb, arg, _ := strings.Cut(step, ":")
 		switch verb {
+		case "keep":
+			dir := filepath.Join(os.Getenv("DJINN_HOME"), "watchers", os.Getenv("DJINN_TASK_ID"))
+			_ = os.MkdirAll(dir, 0o700)
+			b, _ := os.ReadFile(filepath.Join(dir, arg))
+			kept, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+			kept++
+			_ = os.WriteFile(filepath.Join(dir, arg), []byte(strconv.Itoa(kept)), 0o600)
+		case "die-before":
+			if n, _ := strconv.Atoi(arg); kept < n {
+				fmt.Fprintf(os.Stderr, "died at run %d\n", kept)
+				return 1
+			}
 		case "say":
 			fmt.Println(arg)
 		case "err":
@@ -330,8 +345,8 @@ func TestWatcher(t *testing.T) {
 	e.ended(t, agent.GetId())
 }
 
-// TestWatcherEnds: without --restart, the watcher ends with its command, and the lead learns it has ended; a failing
-// command fails the task. --restart is for a watcher only, and a watcher needs a project.
+// TestWatcherEnds: without --restart, the watcher ends with its command, done, and the lead learns it has ended; a
+// command that dies at each start fails the task. --restart is for a watcher only, and a watcher needs a project.
 func TestWatcherEnds(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(time.Hour))
@@ -352,11 +367,13 @@ func TestWatcherEnds(t *testing.T) {
 		t.Errorf("the lead was told %q", lines)
 	}
 
+	// A command that dies starts again: dead at each start, it fails the task (TestWatcherGivesUp).
 	task, err = e.spawnWatch(t, wishID, watchCommand("err:no token", "exit:3"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := e.ended(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED || got.GetError() != "exit code 3" {
+	if got := e.ended(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED ||
+		got.GetError() != "its command died 5 times in a row; the last time: exit code 3; its error output: no token" {
 		t.Errorf("failing watcher = %v", got)
 	}
 
@@ -394,6 +411,21 @@ func TestWatcherResumes(t *testing.T) {
 		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || got.GetWorktree() != "" {
 			t.Fatalf("after restart %d: %v", i-1, got)
 		}
+	}
+	// Babysit PR #2, 12/10/2026: the restart line said no worker was running while W9, a watcher, came back. It counts
+	// the watchers apart.
+	events, err := store.List[*planv1.LeadEvent](t.Context(), e.db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restarts []string
+	for _, ev := range events {
+		if ev.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART {
+			restarts = append(restarts, ev.GetText())
+		}
+	}
+	if want := "Djinn: restarted on version unknown: 1 watcher resumed: W1."; len(restarts) < 2 || restarts[len(restarts)-1] != want {
+		t.Errorf("restart events %q, want the last %q", restarts, want)
 	}
 	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
 		t.Fatal(err)

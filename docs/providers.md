@@ -344,11 +344,20 @@ wish's lead, typed in the lead's terminal as an answer is:
 Djinn: W70's watcher says: New thread on !41. mrwatch -watch 41 is still watching.
 ```
 
-- **Its loop.** With `--restart`, the command starts again after each exit, until the task is stopped: a command
-  that exits on each change (`mrwatch -watch`) becomes a lasting watcher. It starts again at once after exit 0 (a
-  second apart at least), after a failure one second later, doubling up to a minute. Without `--restart`, the task
-  ends with the command: done on exit 0, failed otherwise, and the lead reads "… has ended" (or "Djinn: W70's
-  watcher: <command> has ended.", when its last paragraph came before its exit).
+- **Supervised by the watchdog.** A watcher is no worker: the watchdog supervises it apart, as long as its wish needs
+  it. No silence limit, no wall-time budget and no turn budget apply to it; what counts is that its command lives
+  while its task runs. A command that dies (an error, an exit code other than 0, a kill) starts again, in the same
+  task: one second later, doubling up to five minutes, the backoff starting over after a run that lived a minute.
+  Its state folder, `$DJINN_HOME/watchers/<task>` (Djinn sets `DJINN_HOME` for it), stays as the command left it,
+  so that it does not say again what it said. After five deaths in a row, the task fails, and the lead is told once
+  why, with the command's last error lines: "Djinn: W70's watcher failed: its command died 5 times in a row; the
+  last time: exit code 4; its error output: gh: not logged in". A watcher whose process is lost (its task running
+  in the store, no run in Djinn) starts again too. Stopped, it stays stopped.
+- **Its loop.** `--restart` keeps one meaning: the command starts again after an exit 0 too, until the task is
+  stopped or its done line comes: a command that exits on each change (`mrwatch -watch`) becomes a lasting watcher.
+  It starts again at once after exit 0 (a second apart at least). Without `--restart`, an exit 0 ends the task,
+  done, and the lead reads "… has ended" (or "Djinn: W70's watcher: <command> has ended.", when its last paragraph
+  came before its exit); a command that dies still starts again.
 - **What the lead is told.** The first line of each paragraph, without colours nor control characters, 200
   characters at most. A paragraph that says again what the last one said is recorded, and wakes no one; nor does
   the last one of a watcher stopped on request. A wish without a lead keeps the paragraphs in the task's events.
@@ -361,15 +370,18 @@ Djinn: W70's watcher says: New thread on !41. mrwatch -watch 41 is still watchin
   (`.agents/permissions.txtpb`), the command must be one of them, and not denied: a watcher has no reviewer to
   approve it. A folder outside Git without agent configuration runs no watcher.
 - **Resumed.** A watcher `djinn up` cut short starts again at the next start, on its command, in its project's
-  folder, however many times (the limit of 3 resumes is for agents). It reads no message (`djinn task send`
+  folder, however many times (the limit of 3 resumes is for agents). The lead's restart line counts the watchers
+  apart from the workers: "Djinn: restarted on version v1.2.0: 1 watcher resumed: W9." It reads no message (`djinn task send`
   refuses); `djinn task pause` holds its command still, and the next run waits.
 
-A skill's [wish template](wish-templates.md) starts a watcher with the wish it makes; its done line ends a watcher
-that restarts, done, and asks whether to grant the wish.
+A skill's [wish template](wish-templates.md) starts a watcher with the wish it makes; its done line ends the
+watcher, done, and asks whether to grant the wish.
 
 Tests: `TestWatchParagraphs`, `TestWatcher` (no slot, the restart loop, the line to the lead, pause),
-`TestWatcherEnds`, `TestWatcherResumes`, `TestWatcherPermissions` (`watch_test.go`, the test binary plays the
-command), and `TestWatcherTakesNoSlot` (`internal/dispatch`).
+`TestWatcherEnds`, `TestWatcherResumes` (and the restart line), `TestWatcherPermissions` (`watch_test.go`, the test
+binary plays the command), `TestWatcherLife`, `TestWatchdogWatcherOutlivesBudgets`,
+`TestWatcherStartsAgainWhenItDies`, `TestWatcherGivesUp`, `TestWatchdogLostWatcherStartsAgain`
+(`watchdog_test.go`), and `TestWatcherTakesNoSlot` (`internal/dispatch`).
 
 ## Claude
 

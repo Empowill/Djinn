@@ -55,7 +55,8 @@ type Spec struct {
 	// Scope, when set, gives each process the worker starts a systemd scope of its own (Harness.WithScopes): the
 	// process runs under its prefix, and stopping, pausing and measuring take its cgroup. Nil: it runs as is.
 	Scope func() machine.Scope
-	// Restart starts a watcher's command again after each exit, until it is stopped. Agents ignore it.
+	// Restart starts a watcher's command again after an exit 0 too, until it is stopped: one that dies starts again
+	// anyway (watcherLife). Agents ignore it.
 	Restart bool
 	// LowPriority runs the worker process with low CPU priority (nice 10 on Unix,
 	// BELOW_NORMAL_PRIORITY_CLASS on Windows) when running at minimal or medium operating load;

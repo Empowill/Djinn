@@ -37,7 +37,7 @@ You lead a wish made for one pull request: bring it to a merge, and nothing else
   Pending checks and partial passes say nothing: no news is no failure yet. Its first look says what is already
   there (failures, all passing, the latest comment, changes requested, a conflict).
 - It keeps what it said in `$DJINN_HOME/watchers/<task>/babysit-pr-<pr>`, never in the repository: after a restart of
-  Djinn it does not say it again.
+  Djinn, or of its command when it dies, it does not say it again.
 - It is a POSIX shell script, for Linux and macOS. Windows is not supported: only the `sh` of Git for Windows could
   run it, and no test does.
 - When the pull request is merged, the watcher prints `MERGED` and stops. Djinn then asks the developer whether to
