@@ -17,6 +17,8 @@ func TestMergeTitleThroughCorrections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Closed before TempDir's removal: Windows refuses to delete an open djinn.db.
+	t.Cleanup(func() { db.Close() })
 	w401 := &planv1.Task{Id: "w401", Code: "W401", Title: "Bring W333's documentation, W369's lead marking\nand W370's guards into the agent protocol"}
 	w402 := &planv1.Task{Id: "w402", Code: "W402", Title: "Antigravity workers may read web pages"}
 	red := &planv1.IntegrationFailure{State: planv1.IntegrationState_INTEGRATION_STATE_RED, TaskIds: []string{"w401", "w402"}}
