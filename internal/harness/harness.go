@@ -128,7 +128,10 @@ type Harness struct {
 	babysitting sync.WaitGroup // one per look for what a task opened; Close waits for them
 	babysitMu   sync.Mutex     // one watcher decided at a time
 
-	mu           sync.Mutex
+	// mu guards the runs and the fields marked "guarded by mu". Never send on a channel, run a command or call out (a func
+	// given by an option: gates, tell, watched) while holding it: a callee that calls the harness back locks it again
+	// (W549's freeze). It logs a holder that keeps it past logx.HeldLong (New).
+	mu           logx.Mutex
 	closed       bool
 	held         func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
 	waiting      func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
@@ -144,6 +147,11 @@ type Harness struct {
 	goos         func() string                // runtime.GOOS; nil: runtime.GOOS
 	aliasesMu    sync.RWMutex
 	aliases      map[string]string // alias -> model ID
+
+	// What the workers use (measure.go), apart from mu: a pump measures its worker, and the machine reads the memory
+	// they hold (Resident), without waiting for a pass or a spawn that holds mu. Taken after mu, never before it.
+	useMu    sync.Mutex
+	resident map[string]uint64 // by task ID: the resident memory of a worker, as last read, watchers left out
 }
 
 // run is a task at work: its worker, or the workers it runs one after the other when the task starts again.
@@ -173,8 +181,9 @@ type run struct {
 	light              bool                 // a question worker reads and runs djinn's commands: it takes no slot
 	final              bool                 // the task is getting its final status: an answer waits for done instead
 	answers            []*planv1.Question   // answers to the task's edit question, for the pump to apply
-	use                *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one
-	samples            *workerRing          // recent measurement samples (measure.go)
+	use                *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one; guarded by Harness.useMu
+	samples            *workerRing          // recent measurement samples (measure.go); guarded by Harness.useMu
+	resources          *planv1.Resources    // the task's resources as its pump last set them, for the readers apart from the pump; guarded by Harness.useMu
 	subs               map[chan *planv1.TaskEvent]struct{}
 	startTime          time.Time     // when the current run started
 	turns              int           // model turns of the current worker (lamplighter.go), kept on the task by setTurns
@@ -241,6 +250,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
 		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{},
 		installed: map[string]string{}, preempted: map[string]string{}, aliases: map[string]string{},
+		resident: map[string]uint64{},
 	}
 	def := machine.DefaultPolicy()
 	h.policy.Store(&def)
@@ -248,6 +258,11 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 		o(h)
 	}
 	h.batcher = newTellBatcher(h)
+	dumps := ""
+	if home != "" {
+		dumps = logx.Folder(home)
+	}
+	go h.mu.Watch(ctx, "harness", dumps)
 	if home != "" && h.children == nil {
 		h.children = newChildren(filepath.Join(home, runDir), Grace)
 	}
@@ -1271,7 +1286,11 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		return err
 	}
 	h.mu.Lock()
-	r.worker, r.use = w, nil
+	r.worker = w
+	h.useMu.Lock()
+	r.use = nil
+	delete(h.resident, r.id)
+	h.useMu.Unlock()
 	if proc, ok := w.(Process); ok {
 		r.pid = proc.PID()
 		r.cgroup = proc.Cgroup()
@@ -1367,6 +1386,9 @@ func (h *Harness) pump(r *run) {
 // drain records the worker's events, and applies the answers to the task's edit question, until the worker ends.
 func (h *Harness) drain(r *run) Result {
 	events := r.worker.Events()
+	h.useMu.Lock()
+	r.resources = r.task.GetResources()
+	h.useMu.Unlock()
 	var measuring <-chan time.Time
 	m := h.newMeter(r)
 	if m != nil {
@@ -1680,6 +1702,12 @@ func (h *Harness) end(r *run, res Result) {
 	now := h.now()
 	nowPb := timestamppb.New(now)
 	t.EndTime, t.ExitCode = nowPb, int32(res.ExitCode)
+	// Under useMu, as measure sets them (lowestWorkTask copies the task). A copy: the reading is shared with what the
+	// workers use (Uses, RunsSeries), which never changes it.
+	h.useMu.Lock()
+	if t.Resources != nil {
+		t.Resources = proto.CloneOf(t.Resources)
+	}
 	if r.samples != nil {
 		if pct := r.samples.MemoryPercentiles(); pct.p95 > 0 {
 			if t.Resources == nil {
@@ -1691,6 +1719,7 @@ func (h *Harness) end(r *run, res Result) {
 	if t.Resources != nil && t.Resources.P95MemoryBytes == 0 && t.Resources.PeakMemoryBytes > 0 {
 		t.Resources.P95MemoryBytes = t.Resources.PeakMemoryBytes
 	}
+	h.useMu.Unlock()
 	switch {
 	case preemptedWhy != "":
 		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy
@@ -1886,6 +1915,9 @@ func (h *Harness) workerEnded(t *planv1.Task) {
 func (h *Harness) forget(r *run) {
 	h.mu.Lock()
 	delete(h.runs, r.id)
+	h.useMu.Lock()
+	delete(h.resident, r.id)
+	h.useMu.Unlock()
 	for ch := range r.subs {
 		close(ch)
 	}

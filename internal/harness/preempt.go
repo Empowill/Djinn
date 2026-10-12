@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/protobuf/proto"
-
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -43,10 +41,12 @@ func (h *Harness) slotsFull() bool {
 			running++
 		}
 	}
-	if h.outside != nil {
-		running += h.outside()
-	}
+	outside := h.outside
 	h.mu.Unlock()
+	// The gates ask the harness whether each holder works (Works): called under h.mu, it froze Djinn (W549).
+	if outside != nil {
+		running += outside()
+	}
 	return running >= slots
 }
 
@@ -104,7 +104,7 @@ func (h *Harness) lowestWorkTask(ctx context.Context, forSlot bool) (*planv1.Tas
 				continue
 			}
 		}
-		candidates = append(candidates, candidate{r: r, t: proto.CloneOf(t)})
+		candidates = append(candidates, candidate{r: r, t: h.copyRunning(t)})
 		ids = append(ids, t.GetId())
 	}
 	h.mu.Unlock()

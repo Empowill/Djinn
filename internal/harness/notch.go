@@ -7,8 +7,6 @@ import (
 	"slices"
 	"time"
 
-	"google.golang.org/protobuf/proto"
-
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
@@ -96,7 +94,7 @@ func (h *Harness) resumeNotchPaused(ctx context.Context) {
 		if t == nil || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_PAUSED {
 			continue
 		}
-		candidates = append(candidates, candidate{r: r, t: proto.CloneOf(t)})
+		candidates = append(candidates, candidate{r: r, t: h.copyRunning(t)})
 		ids = append(ids, t.GetId())
 	}
 	h.mu.Unlock()
@@ -195,7 +193,7 @@ func (h *Harness) lowestPausedWorkTask(ctx context.Context, forTask *planv1.Task
 		if !plan.CanResume(t.GetProvider()) {
 			continue
 		}
-		candidates = append(candidates, candidate{r: r, t: proto.CloneOf(t)})
+		candidates = append(candidates, candidate{r: r, t: h.copyRunning(t)})
 		ids = append(ids, t.GetId())
 	}
 	h.mu.Unlock()

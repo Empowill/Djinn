@@ -45,6 +45,8 @@ type Store struct {
 
 	hooksMu sync.RWMutex
 	hooks   []func([]proto.Message)
+
+	held logx.Held // the transaction that holds the one connection (Watch)
 }
 
 // OnCommit calls f after each committed transaction that changed entities, with what it put and deleted, in
@@ -322,6 +324,8 @@ func (s *Store) Tx(ctx context.Context, fn func(*Tx) error) error {
 	var began time.Time
 	err := s.tx(ctx, func(tx *sql.Tx) error {
 		began = time.Now()
+		s.held.Take()
+		defer s.held.Give()
 		if waited := began.Sub(asked); waited > logx.Slow {
 			logx.L().Warn("database waited", "took", waited.Round(time.Millisecond))
 		}
@@ -345,6 +349,10 @@ func (s *Store) Tx(ctx context.Context, fn func(*Tx) error) error {
 	}
 	return nil
 }
+
+// Watch logs, until ctx ends, a transaction that holds the database's one connection past logx.HeldLong: every
+// other call waits for it. Past logx.HeldFrozen it dumps the goroutines to dir (logx.Held.Watch).
+func (s *Store) Watch(ctx context.Context, dir string) { s.held.Watch(ctx, "database", dir) }
 
 func (s *Store) tx(ctx context.Context, fn func(*sql.Tx) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)

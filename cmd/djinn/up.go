@@ -167,6 +167,8 @@ func runUp(args []string) (restart bool, err error) {
 		return false, fmt.Errorf("open the database: %w", err)
 	}
 	defer down.Step("database", func() { db.Close() })
+	// A transaction that holds the one connection past logx.HeldLong names itself in the log, with a dump (W549).
+	go db.Watch(ctx, logx.Folder(home))
 	// The workers stop before the database closes: deferred calls run last first.
 	savedNotch := machine.ReadNotch(home)
 	policy := machine.NotchPolicy(savedNotch)

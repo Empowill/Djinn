@@ -425,7 +425,8 @@ func (h *Harness) Describe(ctx context.Context, taskID string) (string, error) {
 }
 
 // HeldGates tells the harness which gates a task holds, and which it waits for, by name: a worker holding or
-// waiting for one is not paused. djinn up gives the gates' (gate.Gates.Held and Waiting), once they exist.
+// waiting for one is not paused. djinn up gives the gates' (gate.Gates.Held and Waiting), once they exist. They run
+// under h.mu: they must never call the harness back.
 func (h *Harness) HeldGates(held, waiting func(taskID string) []string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -434,7 +435,7 @@ func (h *Harness) HeldGates(held, waiting func(taskID string) []string) {
 
 // GatesOutside tells the harness how many gates are held outside its running workers, by a person's terminal, a
 // lead or a script: each takes a slot, so no new worker starts on it while it is held. djinn up gives the gates'
-// (gate.Gates.Outside).
+// (gate.Gates.Outside). n calls the harness back (Works): it runs without h.mu (W549).
 func (h *Harness) GatesOutside(n func() int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
