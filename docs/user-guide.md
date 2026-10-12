@@ -143,8 +143,8 @@ waits for you shows it first, in the flight plan and in every wish, with its opt
 says so. A button answers in the terminal as its keys would, only while the terminal still shows that very choice: a
 different command needs a new click.
 
-When the lead could not start, or its program ended (it failed at once, or you quit it), a small dot on **Lead**
-says so, in every wish: its tooltip gives the error or the exit code. The lead's tab keeps its last output, and
+When the lead could not start, from **Lead** or as Djinn starts, or its program ended (it failed at once, or you quit
+it), a small dot on **Lead** says so, in every wish: its tooltip gives the error or the exit code. The lead's tab keeps its last output, and
 reopening it starts nothing. Only **Lead**, or `djinn lead resume`, starts it again; the dot goes once it runs.
 
 Djinn takes the lead back at every start, in the lead's terminal. The first start after an update from a Djinn that had

@@ -271,7 +271,7 @@ func runUp(args []string) (restart bool, err error) {
 	// After an update, the terminals that ran before it run again; after a crash, the leads.
 	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, lead.GetSessionId(), os.Stderr))
 	// Then the lead, unless a lead came back already.
-	resumeLead(ctx, db, home, terminals, uiSvc, os.Stderr)
+	leadFailed := resumeLead(ctx, db, home, terminals, uiSvc, os.Stderr)
 	updates, err := newUpdater(version, uiSvc, terminals, leadNotes, stop)
 	if err != nil {
 		return false, err
@@ -345,7 +345,7 @@ func runUp(args []string) (restart bool, err error) {
 	svc := services(db, home, workers, terminals, uiSvc, pages,
 		plan.WithShowTilasm(showTilasm), plan.WithTilasmURL(tilasmURL),
 		plan.WithLoad(func() djinnv1.LoadNotch { return monitor.Policy().Notch }),
-		plan.WithLoadBroadcaster(&broadcastLoad), plan.WithLeadBroadcaster(&changeLead),
+		plan.WithLoadBroadcaster(&broadcastLoad), plan.WithLeadBroadcaster(&changeLead), plan.WithLeadFailed(leadFailed),
 	)
 	loadPrefix, loadHandler := machine.LoadHandler(home, monitor, workers.SetPolicy, func(n djinnv1.LoadNotch) {
 		if broadcastLoad != nil {
@@ -524,9 +524,11 @@ func (l leads) SayText(name, text string) (bool, error) { return l.terminals.Say
 
 func (l leads) Running(name string) bool { return l.terminals.IsRunning(name) }
 
+// Exit is how the lead's program ended on its own: a lead closed on request (its tab's ×, another agent, Djinn
+// stopping) is no news.
 func (l leads) Exit(name string) *planv1.LeadExit {
 	t := l.terminals.Latest(name)
-	if t == nil {
+	if t == nil || t.HungUp() {
 		return nil
 	}
 	if _, _, exited, code := t.State(); exited {

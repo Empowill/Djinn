@@ -64,9 +64,16 @@ type options struct {
 	load            func() djinnv1.LoadNotch
 	loadBroadcaster *func(djinnv1.LoadNotch)
 	leadBroadcaster *func()
+	leadFailed      error
 	pusher          Pusher
 	fillModels      func(context.Context, []*planv1.Task)
 	clock           func() time.Time
+}
+
+// WithLeadFailed gives LeadService.Get why the lead could not start before the services ran, as djinn up resumes it:
+// the window shows it beside Lead until Lead starts it.
+func WithLeadFailed(err error) Option {
+	return func(o *options) { o.leadFailed = err }
 }
 
 // WithPusher gives ProjectService the pusher for pushing and computing sync status.
@@ -151,6 +158,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	if o.leadBroadcaster != nil {
 		*o.leadBroadcaster = wishes.ChangeLead
 	}
+	wishes.leadFailure.set(o.leadFailed)
 	var told Told
 	if o.leads != nil {
 		told = wishes.Answered // The lead learns each answer, after the harness, and what it did.

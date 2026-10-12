@@ -479,6 +479,55 @@ exec cat
 	if got := starts(t, count); got != 2 {
 		t.Fatalf("codex started %d times after the retry, want twice", got)
 	}
+
+	// Closed on request, its tab's × or djinn lead resume of another agent: no news to show.
+	if _, err := terminals.Close(ctx, connect.NewRequest(&terminalv1.TerminalServiceCloseRequest{Id: retry.GetId()})); err != nil {
+		t.Fatal(err)
+	}
+	read(t, terminals, retry.GetId(), "") // Until it ends.
+	if got := exit(); got != nil {
+		t.Fatalf("lead exit %v after a close, want none", got)
+	}
+}
+
+// TestLeadStartFailureAtStartShows: the lead djinn up could not resume at its start shows beside Lead, as a
+// failed Lead would, where a Djinn started from a menu has no terminal to print it in.
+func TestLeadStartFailureAtStartShows(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	bin, count := fakeClaude(t)
+	env := environ(home, bin, "DJINN_TEST_COUNT="+count)
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone := filepath.Join(folder, "gone")
+	db, err := store.Open(ctx, filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.Tx(ctx, func(tx *store.Tx) error {
+		return errors.Join(
+			tx.Journal("test", planv1connect.LeadServiceSetProcedure, &planv1.LeadServiceSetRequest{SessionId: "s"}),
+			tx.Put(&planv1.Project{Id: store.NewID(), Name: "lamp", Directory: folder, CreateTime: timestamppb.Now()}),
+			tx.Put(&planv1.Lead{Id: "lead", Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69", Directory: gone}))
+	})
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, addr := up(t, home, env)
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := planv1connect.NewLeadServiceClient(httpClient, base).Get(ctx, connect.NewRequest(&planv1.LeadServiceGetRequest{}))
+	if err != nil || !strings.Contains(got.Msg.GetStartError(), "is not on this machine") {
+		t.Fatalf("lead at start: %v, %v; want why it did not start", got, err)
+	}
+	if starts(t, count) != 0 {
+		t.Fatal("claude started")
+	}
 }
 
 // read follows the output of a terminal until it holds want, or with an empty want until the program ends.

@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -101,6 +102,7 @@ type Terminal struct {
 	wmu  sync.Mutex    // keeps the bytes of one write together
 	done chan struct{} // closed once the program ended and its output is read
 	hang sync.Once
+	hung atomic.Bool // Hangup was asked: the program ends as someone wished
 
 	mu       sync.Mutex
 	cols     int
@@ -431,6 +433,7 @@ func (t *Terminal) Resize(cols, rows int) error {
 
 // Hangup asks the program to end, as a terminal that closes does, and kills it after Grace.
 func (t *Terminal) Hangup() {
+	t.hung.Store(true)
 	t.hang.Do(func() {
 		t.p.hangup()
 		// Read the delay here, not in the goroutine: it may outlive the caller, and a test restores grace after.
@@ -444,6 +447,9 @@ func (t *Terminal) Hangup() {
 		}()
 	})
 }
+
+// HungUp tells whether the program was asked to end, by Hangup: closed in the window, or as Djinn stops.
+func (t *Terminal) HungUp() bool { return t.hung.Load() }
 
 // Output is a piece of output from Read.
 type Output struct {
