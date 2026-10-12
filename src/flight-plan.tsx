@@ -521,6 +521,11 @@ export function FlightPlan({
           <div className="hero-visual">
             <Machine
               active={plan.running.some(({ item }) => !watcherRuns(item))}
+              pulse={plan.running
+                .filter(({ item }) => !watcherRuns(item))
+                .map(({ item }) => item.id)
+                .sort()
+                .join(",")}
             />
           </div>
         </div>

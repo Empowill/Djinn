@@ -99,7 +99,8 @@ export interface Store {
   loadKinds(wishId: string, kinds: readonly Change[]): Promise<void>;
   // Loads the next page for a kind; of that many items at most, the server's default when none.
   loadMore(wishId: string, kind: Change, pageSize?: number): Promise<void>;
-  // Follows a task's events until the returned function is called, or the task ends.
+  // Follows a task's events until the returned function is called, or the task ends. Once no screen follows it, its
+  // events are dropped after a while: a task card closed frees them.
   follow(taskId: string): () => void;
   // Reads a task's prompt alone, without loading its other events.
   readPrompt(taskId: string): Promise<string>;
@@ -308,6 +309,8 @@ export function createStore(
   clients: Clients,
   retry = 1000,
   throttle = Math.min(retry, 200),
+  // How long the events of a task no screen shows stay kept.
+  forget = 5_000,
 ): Store {
   let state: State = {
     live: false,
@@ -836,10 +839,10 @@ export function createStore(
     return active;
   }
 
-  const following = new Map<
-    string,
-    { count: number; abort: AbortController }
-  >();
+  // How many screens show each task's events; its stream runs while one does.
+  const shown = new Map<string, number>();
+  const following = new Map<string, AbortController>();
+  const forgetting = new Map<string, ReturnType<typeof setTimeout>>();
 
   async function followEvents(taskId: string, abort: AbortController) {
     let buffer: TaskEvent[] = [];
@@ -1053,21 +1056,40 @@ export function createStore(
       }
     },
     follow(taskId) {
-      const current = following.get(taskId);
-      if (current) current.count++;
-      else {
-        const entry = { count: 1, abort: new AbortController() };
-        following.set(taskId, entry);
-        void followEvents(taskId, entry.abort).finally(() => {
-          if (following.get(taskId) === entry) following.delete(taskId);
+      shown.set(taskId, (shown.get(taskId) ?? 0) + 1);
+      clearTimeout(forgetting.get(taskId));
+      forgetting.delete(taskId);
+      if (!following.has(taskId)) {
+        const abort = new AbortController();
+        following.set(taskId, abort);
+        void followEvents(taskId, abort).finally(() => {
+          if (following.get(taskId) === abort) following.delete(taskId);
         });
       }
+      let released = false;
       return () => {
-        const entry = following.get(taskId);
-        if (!entry) return;
-        if (--entry.count > 0) return;
-        entry.abort.abort();
+        if (released) return;
+        released = true;
+        const count = (shown.get(taskId) ?? 1) - 1;
+        if (count > 0) {
+          shown.set(taskId, count);
+          return;
+        }
+        shown.delete(taskId);
+        following.get(taskId)?.abort();
         following.delete(taskId);
+        // No screen shows the task's events any more: they leave the window's memory after a while, and are read
+        // again if it shows them again. A status that follows the task again at once keeps them.
+        forgetting.set(
+          taskId,
+          setTimeout(() => {
+            forgetting.delete(taskId);
+            if (shown.has(taskId) || !(taskId in state.events)) return;
+            const events = { ...state.events };
+            delete events[taskId];
+            set({ events });
+          }, forget),
+        );
       };
     },
     async readPrompt(taskId) {
