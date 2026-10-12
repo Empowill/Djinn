@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -19,6 +20,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -63,7 +65,7 @@ func WithTotal(total func() uint64) Option {
 // SetPolicy updates the scheduling policy and wakes the scheduler for the next pass.
 func (h *Harness) SetPolicy(p machine.Policy) {
 	h.updatePriorities(p.LowPriority())
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	h.policy.Store(&p)
 	if !p.Auto && h.capacity != nil {
 		h.enforceNotchCapacity(h.ctx, p)
@@ -222,11 +224,14 @@ func planned(t *planv1.Task) bool { return dispatch.Planned(t) }
 // schedule makes one pass over the planned tasks, the first wish first: each one starts, waits with its reason,
 // or fails when a dependency failed. The rules are internal/dispatch's.
 func (h *Harness) schedule(ctx context.Context) {
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	if ctx.Err() != nil {
 		return
 	}
+	start := time.Now()
+	logx.L().Debug("scheduler pass begins")
+	defer func() { logx.Took(slog.LevelDebug, "scheduler pass ended", start) }()
 	p := h.Policy()
 	if !p.Auto && h.capacity != nil {
 		h.enforceNotchCapacity(ctx, p)
@@ -590,7 +595,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 // limit, a write scope) is refused, with why, and so is one that waits for a task going first: Start frees the
 // machine, never the priority order. The scheduler's pass decides, as it would now.
 func (h *Harness) Start(ctx context.Context, procedure string, req *planv1.TaskServiceStartRequest) (*planv1.Task, error) {
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	task, err := store.Get[*planv1.Task](ctx, h.store, req.GetTaskId())
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 )
 
@@ -127,7 +128,10 @@ func run(ctx context.Context, command string, args []string, path string, out *b
 	}
 	// A child that keeps the output open does not hold the check past its time.
 	cmd.WaitDelay = 500 * time.Millisecond
-	return cmd.Run()
+	start := time.Now()
+	err := cmd.Run()
+	logx.Ran(ctx, cmd, start, err)
+	return err
 }
 
 var versionPattern = regexp.MustCompile(`\d+(\.\d+)+[0-9A-Za-z.+-]*`)

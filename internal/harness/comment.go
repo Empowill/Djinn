@@ -14,6 +14,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -199,7 +200,7 @@ func (h *Harness) TurnComments(ctx context.Context, procedure string, req *planv
 
 	prompt := formatTurnCommentsPrompt(task, waiting)
 
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	h.mu.Lock()
 	running := h.runs[task.GetId()] != nil
 	h.mu.Unlock()

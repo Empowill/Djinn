@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -30,7 +31,7 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 	// No answer starts the worker again, and no pass of the scheduler decides, while it is planned again.
 	h.answering.Lock()
 	defer h.answering.Unlock()
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	task, err := store.Get[*planv1.Task](ctx, h.store, id)
 	if err != nil {

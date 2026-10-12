@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"time"
+
+	"github.com/empowill/djinn/internal/logx"
 )
 
 var (
@@ -22,15 +24,20 @@ var (
 var network = map[string]bool{"fetch": true, "push": true, "ls-remote": true, "pull": true, "clone": true}
 
 // Command is git with args, run in dir, never prompting for credentials, killed at the earlier of ctx's deadline and
-// its own: Network for a command that reaches a remote, Local otherwise. Call cancel once it has run.
+// its own: Network for a command that reaches a remote, Local otherwise. Call cancel once it has run: it logs it.
 func Command(ctx context.Context, dir string, args ...string) (cmd *exec.Cmd, cancel context.CancelFunc) {
 	limit := Local
 	if len(args) > 0 && network[args[0]] {
 		limit = Network
 	}
-	ctx, cancel = context.WithTimeout(ctx, limit)
+	ctx, stop := context.WithTimeout(ctx, limit)
 	cmd = exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	cmd.WaitDelay = WaitDelay
-	return cmd, cancel
+	start := time.Now()
+	return cmd, func() {
+		// The log tells how long each git ran, how it exited, and which one met its deadline (W511).
+		logx.Ran(ctx, cmd, start, nil)
+		stop()
+	}
 }

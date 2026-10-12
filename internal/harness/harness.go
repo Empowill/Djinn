@@ -23,6 +23,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -681,7 +682,7 @@ func (h *Harness) spawn(
 	}
 	prompt := cmp.Or(req.GetPrompt(), req.GetTitle())
 
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	// What the task needs, read before it exists, tells whether it starts in this call.
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, req.GetWishId())
@@ -1667,8 +1668,10 @@ func (h *Harness) end(r *run, res Result) {
 		}
 		if canWake(t) {
 			markWoken(t, why, nowPb)
+			logx.L().Info("lamplighter wakes a task", "task", t.GetCode(), "why", why)
 		} else {
 			t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, notWoken(t, why)
+			logx.L().Info("lamplighter fails a task", "task", t.GetCode(), "why", why)
 		}
 	case shelved:
 		shelve(t)
@@ -2008,7 +2011,7 @@ func (h *Harness) Stop(ctx context.Context, procedure string, req *planv1.TaskSe
 
 // stopPlanned stops a planned task before it starts. When the scheduler started it meanwhile, its worker stops.
 func (h *Harness) stopPlanned(ctx context.Context, procedure string, req *planv1.TaskServiceStopRequest) (*planv1.Task, error) {
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	task, err := store.Get[*planv1.Task](ctx, h.store, req.GetTaskId())
 	if err != nil {
 		h.sched.Unlock()
@@ -2032,7 +2035,7 @@ func (h *Harness) stopPlanned(ctx context.Context, procedure string, req *planv1
 
 // stopLost stops a task whose status is RUNNING but has no worker running in harness (a lost process).
 func (h *Harness) stopLost(ctx context.Context, procedure string, req *planv1.TaskServiceStopRequest, task *planv1.Task) (*planv1.Task, error) {
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	latest, err := store.Get[*planv1.Task](ctx, h.store, req.GetTaskId())
 	if err != nil {

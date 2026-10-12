@@ -13,6 +13,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/gitx"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 )
 
@@ -166,7 +167,9 @@ func openPRFromBranch(ctx context.Context, repo, branch string) (prNum string, o
 	if repo != "" {
 		cmd.Dir = repo
 	}
+	start := time.Now()
 	out, err := cmd.Output()
+	logx.Ran(ctx, cmd, start, err)
 	if err != nil {
 		return "", false
 	}

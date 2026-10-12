@@ -179,8 +179,22 @@ the slowest first.`,
 	},
 }
 
+// DebugDump is djinn debug dump.
+var DebugDump = Command{
+	Name:    "debug dump",
+	Usage:   "djinn debug dump [flags]",
+	Summary: "Make a running djinn up write where each of its goroutines waits, without stopping it.",
+	Help: `Make a running djinn up write the stacks of all its goroutines to a file of its log folder (logs/ in the
+data folder), and print the file's path: what a frozen djinn up, or one that does not quit, is waiting for. It asks
+the server first; when the server does not answer, it leaves a request file the djinn up looks for every second.
+Send the dump with logs/djinn.log when you report a freeze. On Linux and macOS, kill -USR2 <pid> does the same.`,
+	Flags: []Param{
+		{Name: "--addr", Type: "string", Env: "DJINN_ADDR", Help: "Address of the djinn server (default $DJINN_ADDR, then the one djinn up writes)."},
+	},
+}
+
 // Builtins are the commands written by hand, in the order the help lists them.
-var Builtins = []Command{Up, Open, Update, Backup, Restore, Version, MCP, GateRun, MachineCommands}
+var Builtins = []Command{Up, Open, Update, Backup, Restore, Version, MCP, GateRun, MachineCommands, DebugDump}
 
 // Builtin returns the command written by hand whose words args start with, the longest, and the arguments after them.
 func Builtin(args []string) (Command, []string, bool) {

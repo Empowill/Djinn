@@ -138,8 +138,9 @@ repository, and its output is let go 5 s after it is killed, even when an ssh it
 
 To see where a frozen djinn up waits, without stopping it:
 
-- **On Linux and macOS**, send it `SIGUSR2`: it writes the stacks of all its goroutines to `goroutines.txt` in its data
-  folder (`~/.config/djinn` on Linux) and logs where in `djinn.log`.
+- **Anywhere**, run `djinn debug dump`: it writes the stacks of all its goroutines to a new `goroutines-<time>.txt` in
+  the log folder of its data folder (`~/.config/djinn/logs` on Linux) and prints its path ([when Djinn is
+  stuck](user-guide.md#when-djinn-is-stuck)). On Linux and macOS, `SIGUSR2` does the same:
 
   ```bash
   kill -USR2 "$(pgrep -f 'djinn up' | head -1)"
@@ -147,5 +148,5 @@ To see where a frozen djinn up waits, without stopping it:
 
   `SIGUSR1` is no good: WebKit takes it over in the window's process. Look for goroutines waiting in
   `database/sql.(*DB).conn` (waiting for the connection), and the one holding it.
-- **Anywhere**, start it with `--pprof` (or `DJINN_PPROF=on`): it serves Go's profiles at `/debug/pprof/` on its own
+- **For profiles**, start it with `--pprof` (or `DJINN_PPROF=on`): it serves Go's profiles at `/debug/pprof/` on its own
   address, `goroutine?debug=2` for the stacks, `profile?seconds=30` for where its CPU goes.

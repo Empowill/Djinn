@@ -35,6 +35,7 @@ import (
 	"github.com/empowill/djinn/internal/gate"
 	"github.com/empowill/djinn/internal/harness"
 	"github.com/empowill/djinn/internal/link"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/render"
@@ -136,9 +137,21 @@ func runUp(args []string) (restart bool, err error) {
 		}
 		fmt.Fprintln(os.Stderr, "djinn: the last djinn up did not stop cleanly; starting again")
 	}
+	// What djinn up does goes to logs/djinn.log, rolled over (W511); its stop is followed step by step there, and a
+	// stop that hangs dumps its goroutines, then exits.
+	stopLog, err := logx.Start(home)
+	if err != nil {
+		return false, fmt.Errorf("open the log: %w", err)
+	}
+	defer stopLog() //nolint:errcheck // The last line is written; nothing to tell.
+	logx.L().Info("djinn up starts", "version", version, "pid", os.Getpid(), "os", runtime.GOOS, "arch", runtime.GOARCH,
+		"flags", flagNames(flags))
+	down := logx.NewShutdown(logx.Folder(home))
+	defer down.End()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	// kill -USR2 <pid> writes where each goroutine waits to goroutines.txt, without stopping djinn (W504).
+	// kill -USR2 <pid>, or djinn debug dump, writes where each goroutine waits to the log folder, without stopping
+	// djinn (W504, W511).
 	dump := make(chan os.Signal, 1)
 	defer notifyDump(dump)()
 	go dumpGoroutines(ctx, home, dump, os.Stderr)
@@ -146,7 +159,7 @@ func runUp(args []string) (restart bool, err error) {
 	if err != nil {
 		return false, fmt.Errorf("open the database: %w", err)
 	}
-	defer db.Close()
+	defer down.Step("database", func() { db.Close() })
 	// The workers stop before the database closes: deferred calls run last first.
 	savedNotch := machine.ReadNotch(home)
 	policy := machine.NotchPolicy(savedNotch)
@@ -191,7 +204,7 @@ func runUp(args []string) (restart bool, err error) {
 	workers := harness.New(db, home, harness.Providers(), opts...)
 	// What the workers hold is left out of the memory available: the memory Djinn may commit counts it back in.
 	monitor.SetWorkerMemory(workers.Resident)
-	defer workers.Close()
+	defer down.Step("workers", workers.Close)
 	if err := workers.Recover(ctx); err != nil {
 		return false, err
 	}
@@ -252,8 +265,8 @@ func runUp(args []string) (restart bool, err error) {
 		},
 	})
 	leadNotes.terms = terminals
-	defer terminals.Close()
-	defer leadNotes.freeze()
+	defer down.Step("terminals", terminals.Close)
+	defer down.Step("lead note", leadNotes.freeze)
 	if !hasWindow && !browser {
 		fmt.Fprintln(os.Stderr, "djinn: this build has no native window, serving the browser instead")
 		browser = true
@@ -286,7 +299,10 @@ func runUp(args []string) (restart bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	defer func() { restart = err == nil && updates.Restarting() }()
+	defer func() {
+		restart = err == nil && updates.Restarting()
+		logx.L().Info("djinn up returns", "restart", restart, "err", err)
+	}()
 	if updates != nil {
 		uiSvc.Restart = updates.restart
 		// The newer Djinn waiting is named as a build: where it comes from, what it holds against this one.
@@ -391,6 +407,7 @@ func runUp(args []string) (restart bool, err error) {
 	if profiles {
 		svc[server.ProfilePath] = server.Profiles()
 	}
+	svc[server.DumpPath] = server.Dump(logx.Folder(home))
 	h := server.Handler(djinn.UI(), djinn.Docs(), svc)
 	h = server.WorkerContext(h, func(ctx context.Context, peerPID int, token string) context.Context {
 		if caller := workers.Caller(peerPID, token); caller != nil {
@@ -423,9 +440,34 @@ func runUp(args []string) (restart bool, err error) {
 		ln.Close()
 		return false, err
 	}
-	defer remove()
+	defer down.Step("address", remove)
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(ctx, ln, h) }()
+	// Once asked to stop, the window and the server are waited for; a restart that hangs starts the newer djinn all
+	// the same before it exits.
+	down.BeforeExit = func() {
+		if updates == nil || !updates.Restarting() {
+			return
+		}
+		remove()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		startDetached(ctx, home, os.Stderr, append([]string{"up"}, args...)...) //nolint:errcheck // Exiting: it runs alone.
+	}
+	closed := make(chan struct{})
+	defer close(closed)
+	go func() {
+		<-ctx.Done()
+		why := "quit or a signal"
+		if updates != nil && updates.Restarting() {
+			why = "restart"
+		} else if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
+			why = cause.Error()
+		}
+		down.Begin(why)
+		defer down.Start("window and server")()
+		<-closed
+	}()
 	// The window tells what waits for the developer in an active wish by system notifications: questions, tasks
 	// that wait or failed, wishes ready to review. A click shows the wish there; an answer from one goes through the
 	// server, as the window's would.
@@ -728,4 +770,11 @@ func buildOf(b harness.Built) *uiv1.Build {
 		Tasks: b.Tasks, Changes: b.Changes, Summaries: summaries, Install: b.Install,
 		Base: b.Base, Running: b.Running, ChangesCount: int32(b.ChangesCount), Lacks: b.Lacks, LacksCount: int32(b.LacksCount),
 	}
+}
+
+// flagNames names the flags the command line set, without their values.
+func flagNames(flags *flag.FlagSet) []string {
+	var names []string
+	flags.Visit(func(f *flag.Flag) { names = append(names, f.Name) })
+	return names
 }

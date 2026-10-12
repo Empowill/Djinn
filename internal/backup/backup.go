@@ -24,6 +24,7 @@ import (
 
 	backupv1 "github.com/empowill/djinn/gen/go/backup/v1"
 	"github.com/empowill/djinn/internal/fsx"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
@@ -177,9 +178,12 @@ func skipped(d fs.DirEntry) error {
 
 // excluded tells whether a path of the data folder, relative and with slashes, stays out of a backup and out of a
 // restore: the database's own side files, the socket and the address of a running djinn, the logs of its
-// processes, the worktrees, and any environment file.
+// processes and the log folder (logx), the worktrees, and any environment file.
 func excluded(rel string, dir bool) bool {
 	parts := strings.Split(rel, "/")
+	if parts[0] == logx.Dir {
+		return true
+	}
 	// A task's worktree: projects/<project>/worktrees/<task> (harness.worktreeDir). Git holds it.
 	if len(parts) >= 3 && parts[0] == "projects" && parts[2] == "worktrees" {
 		return true

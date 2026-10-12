@@ -24,6 +24,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -38,7 +39,7 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 			"an azima has no worker: no prompt, provider, model, budget, write scope, --later, --fork, --from-lead, "+
 				"--restart or --tilasm"))
 	}
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, req.GetWishId())
 	if err != nil {
@@ -349,7 +350,7 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 			"no project of the wish has plan files here: plan/*.md, each with a front matter that gives its code"))
 	}
 
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	res := &planv1.PlanServiceSyncResponse{}
 	var tasks []*planv1.Task
@@ -652,7 +653,7 @@ func resolvePlanFilePath(ctx context.Context, r store.Reader, t *planv1.Task, wi
 
 // DescribeTask sets the description of an azima, and writes it back to its plan file if it has one.
 func (h *Harness) DescribeTask(ctx context.Context, procedure string, req *planv1.TaskServiceDescribeRequest) (*planv1.Task, error) {
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	var task *planv1.Task
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -688,7 +689,7 @@ func (h *Harness) DescribeTask(ctx context.Context, procedure string, req *planv
 
 // Open turns a draft azima OPEN: its plan file front matter says status: open, and the lead is told to plan its tasks.
 func (h *Harness) Open(ctx context.Context, procedure string, req *planv1.TaskServiceOpenRequest) (*planv1.Task, error) {
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	var task *planv1.Task
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -730,7 +731,7 @@ func (h *Harness) Open(ctx context.Context, procedure string, req *planv1.TaskSe
 
 // Move moves an azima and its unstarted parts to another wish, with its plan file reference.
 func (h *Harness) Move(ctx context.Context, procedure string, req *planv1.TaskServiceMoveRequest) (*planv1.Task, error) {
-	h.sched.Lock()
+	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 	var movedAzima *planv1.Task
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
