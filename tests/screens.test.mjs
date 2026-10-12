@@ -36,6 +36,7 @@ export {
   taskModelDisplay,
   isPrincipal,
   principalWish,
+  runningOf,
 } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
 export {
@@ -3162,16 +3163,188 @@ test("the Tasks tab says where each task's work stands on its way into the wish'
     "W8 waiting: To review",
     "W10 done: Done",
   ]);
-  // A task that waits for another's work to be committed says so.
-  const waits = card({
+  // A task that waits for another's work to be committed says so; the task it waits for is a link to its card, which
+  // stays in sight until its work is committed (settledTask).
+  const next = {
     id: "W7",
     code: "W7",
     title: "Next",
     status: s.TaskStatus.PENDING,
     createTime: at(1),
     waitReason: "waits for W2 to be committed",
-  });
-  assert.match(waits, /waits for W2 to be committed/);
+  };
+  assert.match(
+    card(next),
+    /waits for <span class="agent-code">W2<\/span> to be committed/,
+  );
+  const linked = s.renderToStaticMarkup(
+    h(s.WishTask, {
+      task: next,
+      codes: new Map([["t2", "W2"]]),
+      onStop() {},
+      async onSend() {},
+    }),
+  );
+  assert.match(
+    linked,
+    /waits for <button type="button" class="text-button agent-code task-link">W2<\/button> to be committed/,
+  );
+});
+
+test("work that merges stays in sight, counts as running everywhere, then folds once committed", async () => {
+  const wishId = "01a11833-a440-7479-a067-52615c91da72";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const tasks = (state) => [
+    {
+      id: "t1",
+      wishId,
+      code: "T1",
+      title: "Lay the ground",
+      kind: s.TaskKind.AZIMA,
+      status: s.TaskStatus.PENDING,
+      dependsOn: [],
+      proofNeeds: [],
+      // No counts from the server: the card counts its parts as the server would.
+      azima: { state: s.AzimaState.IN_PROGRESS, ready: true },
+    },
+    {
+      id: "w1",
+      wishId,
+      code: "W1",
+      title: "Dig",
+      status: s.TaskStatus.DONE,
+      partOf: "t1",
+      dependsOn: [],
+      createTime: at(1),
+      endTime: at(10),
+      integration: { state: s.IntegrationState.COMMITTED, branch: "feat/x" },
+    },
+    {
+      id: "w8",
+      wishId,
+      code: "W8",
+      title: "Pour",
+      status: s.TaskStatus.DONE,
+      partOf: "t1",
+      dependsOn: [],
+      createTime: at(2),
+      endTime: at(20),
+      integration: { state, branch: "feat/x" },
+    },
+    {
+      id: "w9",
+      wishId,
+      code: "W9",
+      title: "Build",
+      status: s.TaskStatus.PENDING,
+      partOf: "t1",
+      dependsOn: ["w8"],
+      createTime: at(3),
+      waitReason: "waits for W8 to be committed",
+    },
+  ];
+  const azimaCard = (list) => {
+    const byId = new Map(list.map((x) => [x.id, x]));
+    return s.renderToStaticMarkup(
+      h(s.AzimaCard, {
+        azima: list[0],
+        parts: list.slice(1),
+        tasks: byId,
+        nest: s.mergeNest(list),
+        render: (task) =>
+          h(s.WishTask, {
+            key: task.id,
+            task,
+            codes: new Map(list.map((x) => [x.id, x.code])),
+            onStop() {},
+          }),
+      }),
+    );
+  };
+  // W8 merges: among the moving parts, in sight, blue; only W1 is behind the fold. W9 links to it.
+  const merging = tasks(s.IntegrationState.PENDING);
+  const card = azimaCard(merging);
+  const fold = card.indexOf('class="fold-line"');
+  assert.ok(fold > 0);
+  assert.match(card.slice(0, fold), /id="task-w8"/);
+  assert.match(card.slice(0, fold), /id="task-w9"/);
+  assert.doesNotMatch(card, /id="task-w1"/);
+  assert.match(card, />Show 1 finished</);
+  assert.match(card, /wish-task tone-running[^"]*" id="task-w8"/);
+  assert.match(
+    card,
+    /waits for <button type="button" class="text-button agent-code task-link">W8<\/button> to be committed/,
+  );
+  // Its bar: W1 done, W8 running, W9 waiting.
+  assert.match(card, /1 done, 1 running, 1 waiting/);
+  assert.match(card, /class="azima-bar-running" style="width:33\.3/);
+  // Committed, W8 folds with the finished, and runs no more.
+  const committed = tasks(s.IntegrationState.COMMITTED);
+  const after = azimaCard(committed);
+  assert.doesNotMatch(after, /id="task-w8"/);
+  assert.match(after, />Show the 2 finished</);
+  assert.match(after, /2 done, 0 running, 1 waiting/);
+
+  // The side panel and its icon rail count it as running: the wish is blue, even folded to its icons.
+  const sidebar = (list, collapsed) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [lamp],
+        projects: [],
+        counts: {
+          [wishId]: { questions: 0, ...s.runningOf(list) },
+        },
+        onSelectPlan() {},
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  assert.match(sidebar(merging, false), /aria-label="1 running"/);
+  assert.match(sidebar(merging, true), /wish-tone tone-running/);
+  assert.doesNotMatch(sidebar(committed, false), /running/);
+  assert.doesNotMatch(sidebar(committed, true), /tone-running/);
+
+  // The head of the wish and the flight plan count it as running.
+  const page = async (list) => {
+    const transport = s.createRouterTransport(({ service }) => {
+      service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+      service(s.TaskService, { list: () => ({ tasks: list }) });
+      service(s.QuestionService, { list: () => ({ questions: [] }) });
+      service(s.BlockService, { list: () => ({ blocks: [] }) });
+    });
+    const djinn = s.createDjinn(transport, 10);
+    const close = djinn.store.open(wishId);
+    await djinn.store.changed(wishId, [s.Change.WISH]);
+    close();
+    const view = s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishView, { wish: lamp, onToast() {} }),
+      ),
+    );
+    const plan = s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.FlightPlan, { wishes: [lamp], onOpen() {}, onToast() {} }),
+      ),
+    );
+    return { view, plan };
+  };
+  const now = await page(merging);
+  assert.match(now.view, /count-pill tone-running" title="1 running"/);
+  assert.match(now.plan, /plan-wish tone-running/);
+  assert.match(now.plan, /<span>1 running<\/span>/);
+  const later = await page(committed);
+  assert.doesNotMatch(later.view, /count-pill tone-running/);
+  assert.doesNotMatch(later.plan, /plan-wish tone-running/);
 });
 
 test("the update banner proposes to install a build committed, with what changed", () => {
