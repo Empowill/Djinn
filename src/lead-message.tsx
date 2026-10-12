@@ -259,7 +259,9 @@ export function LeadMessage({
                   ) : (
                     <Check size={12} aria-hidden="true" />
                   )}
-                  {t(`lead_message.${state.notice}`)}
+                  {state.notice === "waiting"
+                    ? t("lead_message.waiting")
+                    : t("lead_message.sent")}
                 </span>
               )}
               <TooltipButton
