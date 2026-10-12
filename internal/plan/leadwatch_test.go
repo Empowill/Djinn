@@ -36,6 +36,11 @@ func (s *syncLeads) Running(name string) bool {
 	defer s.mu.Unlock()
 	return s.f.Running(name)
 }
+func (s *syncLeads) Command(name string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.f.Command(name))
+}
 func (s *syncLeads) Close(name string) {}
 func (s *syncLeads) Say(name, line string) error {
 	s.mu.Lock()

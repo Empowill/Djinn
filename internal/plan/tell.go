@@ -36,6 +36,14 @@ func (w *Wishes) Tell(ctx context.Context, wishID, line string) error {
 	if wishID != "" {
 		wish, err := store.Get[*planv1.Wish](ctx, w.Store, wishID)
 		if err == nil && wish.GetState() != planv1.WishState_WISH_STATE_ACTIVE {
+			// A wish not active does not reopen the lead: the line goes to the lead if it runs, never to a shell.
+			command := w.Leads.Command(name)
+			if command == nil {
+				return fmt.Errorf("%w: the lead does not run", ErrNoLead)
+			}
+			if !runsLead(command, lead) {
+				return fmt.Errorf("%w: the lead's terminal runs %s, not the lead", ErrNoLead, strings.Join(command, " "))
+			}
 			if err := w.Leads.Say(name, line); err != nil {
 				return fmt.Errorf("%w: %w", ErrNoLead, err)
 			}
@@ -50,9 +58,8 @@ func (w *Wishes) Tell(ctx context.Context, wishID, line string) error {
 	if err != nil {
 		return err
 	}
-	// The lead's terminal runs something else, a shell perhaps: a line typed there would run as a command.
-	if running := strings.Join(command, " "); attached && !strings.Contains(running, lead.GetSessionId()) {
-		return fmt.Errorf("the lead's terminal runs %s, not the lead", running)
+	if attached && !runsLead(command, lead) {
+		return fmt.Errorf("the lead's terminal runs %s, not the lead", strings.Join(command, " "))
 	}
 	return w.Leads.Say(name, line)
 }

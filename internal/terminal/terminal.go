@@ -219,6 +219,16 @@ func (m *Manager) Get(id string) (*Terminal, error) {
 	return nil, ErrNotFound
 }
 
+// Lookup returns the terminal called name if its program runs, nil otherwise.
+func (m *Manager) Lookup(name string) *Terminal {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if t := m.byName[name]; t != nil && !t.Exited() {
+		return t
+	}
+	return nil
+}
+
 // Running returns the terminals whose program still runs, by name.
 func (m *Manager) Running() []*Terminal {
 	m.mu.Lock()
