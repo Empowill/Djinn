@@ -66,6 +66,11 @@ export function message(error: unknown): string {
   return String(error);
 }
 
+// unimplemented tells an error that says the service has no such call: an older djinn. Asking again changes nothing.
+export function unimplemented(error: unknown): boolean {
+  return error instanceof ConnectError && error.code === Code.Unimplemented;
+}
+
 // notFound tells an error that says the thing is gone, such as a task's events after djinn up restarted.
 export function notFound(error: unknown): boolean {
   return error instanceof ConnectError && error.code === Code.NotFound;

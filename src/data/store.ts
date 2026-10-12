@@ -34,7 +34,7 @@ import {
   type WishChanges,
 } from "../../gen/ts/plan/v1/plan_pb";
 import { type Tilasm, TilasmSchema } from "../../gen/ts/plan/v1/tilasm_pb";
-import { type Clients, message, notFound } from "./client";
+import { type Clients, message, notFound, unimplemented } from "./client";
 
 // What the page shows of one wish, read while a screen shows it.
 export interface WishDetail {
@@ -337,9 +337,18 @@ export function createStore(
     changes: new Map<string, WishChanges[]>(),
   };
   const opened = new Map<string, number>();
+  // The kinds of each wish not shown that changed meanwhile: what it holds of them is read again when it shows.
+  const stale = new Map<string, Set<Change>>();
+  const fresh = (wishId: string, kind: Change) =>
+    !!state.details[wishId]?.loadedKinds.has(kind) &&
+    !stale.get(wishId)?.has(kind);
   const loadingMore = new Set<string>();
   const pendingPrompts = new Map<string, Promise<string>>();
   const lastReadAt = new Map<string, number>();
+  // How long a read that failed waits before it is made again, by key: it doubles at each failure, up to a minute.
+  const backoff = new Map<string, number>();
+  // The store no longer follows djinn: a read that failed is not made again.
+  let stopped = false;
 
   let active: Promise<void> | undefined;
   let scheduled: Promise<void> | undefined;
@@ -382,6 +391,9 @@ export function createStore(
       if (change === Change.WISH) pending.wishes = true;
       if (change === Change.INBOX) pending.inbox = true;
       if (!DETAIL.includes(change)) continue;
+      for (const id of wishId ? [wishId] : Object.keys(state.details))
+        if (!opened.has(id) && state.details[id]?.loadedKinds.has(change))
+          stale.set(id, (stale.get(id) ?? new Set<Change>()).add(change));
       if (changed && wishId && CARRIED.has(change)) continue;
       // Without a wish, every wish shown; a wish not shown is read when it is.
       const ids = wishId ? [wishId] : [...opened.keys()];
@@ -483,29 +495,80 @@ export function createStore(
     const patch: Partial<State> = {};
     const errors: string[] = [];
     const reads: Promise<void>[] = [];
-    const attempt = (run: () => Promise<void>) =>
-      reads.push(run().catch((error) => void errors.push(message(error))));
+    // A read that fails is read again after retry: what it would have brought (a task spawned, a worker started)
+    // must not wait for the next change of the same thing, which may come only as it ends.
+    const again = (key: string, pend: () => void) => {
+      if (stopped) return;
+      const wait = backoff.get(key) ?? retry;
+      backoff.set(key, Math.min(wait * 2, 60_000));
+      pend();
+      lastReadAt.set(key, Date.now() + Math.max(0, wait - throttle));
+    };
+    const attempt = (
+      run: () => Promise<void>,
+      failed?: () => void,
+      key?: string,
+    ) =>
+      reads.push(
+        run().then(
+          () => void (key && backoff.delete(key)),
+          (error) => {
+            errors.push(message(error));
+            if (!unimplemented(error)) failed?.();
+          },
+        ),
+      );
+    // The kinds of each wish whose read failed: not taken as loaded, read again.
+    const failedKinds = new Map<string, Set<Change>>();
+    const attemptKind = (
+      wishId: string,
+      kind: Change,
+      run: () => Promise<void>,
+    ) =>
+      attempt(
+        run,
+        () => {
+          failedKinds.set(
+            wishId,
+            (failedKinds.get(wishId) ?? new Set<Change>()).add(kind),
+          );
+          // A wish no longer shown reads it when it shows again.
+          stale.set(wishId, (stale.get(wishId) ?? new Set<Change>()).add(kind));
+          if (opened.has(wishId))
+            again(`${wishId}:${kind}`, () =>
+              pending.details.set(
+                wishId,
+                (pending.details.get(wishId) ?? new Set<Change>()).add(kind),
+              ),
+            );
+        },
+        `${wishId}:${kind}`,
+      );
     if (wishes)
-      attempt(async () => {
-        const list = (await clients.wishes.list({})).wishes;
-        const reconciled = reconcile(WishSchema, state.wishes, list);
-        if (reconciled !== state.wishes) patch.wishes = reconciled;
-        const { lead, prompt, exit, startError } = await clients.lead.get({});
-        const sameLead =
-          (!state.lead && !lead) ||
-          (state.lead && lead ? equals(LeadSchema, state.lead, lead) : false);
-        if (!sameLead) patch.lead = lead;
-        const samePrompt =
-          (!state.leadPrompt && !prompt) ||
-          (state.leadPrompt && prompt
-            ? equals(LeadPromptSchema, state.leadPrompt, prompt)
-            : false);
-        if (!samePrompt) patch.leadPrompt = prompt;
-        if (state.leadExit?.code !== exit?.code || !state.leadExit !== !exit)
-          patch.leadExit = exit;
-        if ((state.leadStartError ?? "") !== startError)
-          patch.leadStartError = startError;
-      });
+      attempt(
+        async () => {
+          const list = (await clients.wishes.list({})).wishes;
+          const reconciled = reconcile(WishSchema, state.wishes, list);
+          if (reconciled !== state.wishes) patch.wishes = reconciled;
+          const { lead, prompt, exit, startError } = await clients.lead.get({});
+          const sameLead =
+            (!state.lead && !lead) ||
+            (state.lead && lead ? equals(LeadSchema, state.lead, lead) : false);
+          if (!sameLead) patch.lead = lead;
+          const samePrompt =
+            (!state.leadPrompt && !prompt) ||
+            (state.leadPrompt && prompt
+              ? equals(LeadPromptSchema, state.leadPrompt, prompt)
+              : false);
+          if (!samePrompt) patch.leadPrompt = prompt;
+          if (state.leadExit?.code !== exit?.code || !state.leadExit !== !exit)
+            patch.leadExit = exit;
+          if ((state.leadStartError ?? "") !== startError)
+            patch.leadStartError = startError;
+        },
+        () => again("wishes", () => (pending.wishes = true)),
+        "wishes",
+      );
     if (projects)
       attempt(async () => {
         const list = (await clients.projects.list({})).projects;
@@ -529,14 +592,14 @@ export function createStore(
       const prevDetail = state.details[wishId] ?? EMPTY_DETAIL;
       const into: Partial<WishDetail> = (read[wishId] = {});
       if (kinds.has(Change.TASK))
-        attempt(async () => {
+        attemptKind(wishId, Change.TASK, async () => {
           const res = await clients.tasks.list({ wishId });
           into.tasks = reconcile(TaskSchema, prevDetail.tasks, res.tasks);
           into.tasksTotal = res.total;
           into.tasksNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.QUESTION))
-        attempt(async () => {
+        attemptKind(wishId, Change.QUESTION, async () => {
           const res = await clients.questions.list({ wishId });
           let allQuestions = res.questions;
           if (res.nextPageToken) {
@@ -569,14 +632,14 @@ export function createStore(
           into.questionsNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.BLOCK))
-        attempt(async () => {
+        attemptKind(wishId, Change.BLOCK, async () => {
           const res = await clients.blocks.list({ wishId });
           into.blocks = reconcile(BlockSchema, prevDetail.blocks, res.blocks);
           into.blocksTotal = res.total;
           into.blocksNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.TILASM))
-        attempt(async () => {
+        attemptKind(wishId, Change.TILASM, async () => {
           const list = (await clients.tilasms.list({ wish: wishId })).tilasms;
           into.tilasms = reconcile(TilasmSchema, prevDetail.tilasms, list);
         });
@@ -617,6 +680,8 @@ export function createStore(
       const requested = details.find(([id]) => id === wishId)?.[1];
       if (requested) {
         for (const k of requested) {
+          if (failedKinds.get(wishId)?.has(k)) continue;
+          stale.get(wishId)?.delete(k);
           if (!loadedKinds.has(k)) {
             loadedKinds.add(k);
             kindsChanged = true;
@@ -834,6 +899,7 @@ export function createStore(
       return () => void listeners.delete(listener);
     },
     start() {
+      stopped = false;
       const abort = new AbortController();
       void (async () => {
         while (!abort.signal.aborted) {
@@ -858,6 +924,7 @@ export function createStore(
         }
       })();
       return () => {
+        stopped = true;
         abort.abort();
         if (timer !== undefined) {
           clearTimeout(timer);
@@ -869,11 +936,10 @@ export function createStore(
     open(wishId, kinds) {
       opened.set(wishId, (opened.get(wishId) ?? 0) + 1);
       const toLoad = kinds && kinds.length > 0 ? kinds : DETAIL;
-      const detail = state.details[wishId];
       const pendingKinds = pending.details.get(wishId) ?? new Set<Change>();
       let added = false;
       for (const k of toLoad) {
-        if (!detail?.loadedKinds.has(k)) {
+        if (!fresh(wishId, k)) {
           pendingKinds.add(k);
           added = true;
         }
@@ -889,8 +955,7 @@ export function createStore(
       };
     },
     async loadKinds(wishId, kinds) {
-      const detail = state.details[wishId];
-      const needed = kinds.filter((k) => !detail?.loadedKinds.has(k));
+      const needed = kinds.filter((k) => !fresh(wishId, k));
       if (!needed.length) return;
       const pendingKinds = pending.details.get(wishId) ?? new Set<Change>();
       for (const k of needed) pendingKinds.add(k);

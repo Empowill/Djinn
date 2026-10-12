@@ -1087,3 +1087,119 @@ test("a wish with more tasks than one page has right azima counters before any a
 
   stop();
 });
+
+// W486: the wish Dew, made from the command line, held an azima T1 the lead spawned with no plan file and W1, a
+// worker part of it, running. The window showed neither W1 nor a running worker in its counters until W1 ended. The
+// store kept a wish's tasks as a failed read, or a change taken while the wish was not shown, left them, until the
+// same task changed again: both are read again now.
+function dew() {
+  const t1 = {
+    id: "01a130b1-4a8a-7761-9222-553b369b85cc",
+    wishId,
+    code: "T1",
+    title: "Silae",
+    kind: TaskKind.AZIMA,
+    status: TaskStatus.PENDING,
+    description: "Can it be done?",
+    azima: { state: AzimaState.OPEN, ready: true },
+  };
+  const w1 = {
+    id: "01a130b1-d124-77f1-8ce9-f40d4530bcbe",
+    wishId,
+    code: "W1",
+    title: "Silae feasibility study",
+    kind: TaskKind.WORK,
+    status: TaskStatus.RUNNING,
+    partOf: t1.id,
+  };
+  return { t1, w1 };
+}
+
+// running are the tasks of a wish whose worker runs, as the window's counters count them.
+const runningIn = (s) =>
+  (s.details[wishId]?.tasks ?? []).filter(
+    (x) => x.status === TaskStatus.RUNNING,
+  );
+
+test("a task list whose read failed is read again: the worker spawned meanwhile shows in its azima and counts", async () => {
+  const { t1, w1 } = dew();
+  const data = { ...sample(), tasks: [t1] };
+  let fail = 0;
+  data.listTasks = () => {
+    if (fail-- > 0) throw new Error("database is locked");
+    return { tasks: data.tasks, total: data.tasks.length, nextPageToken: "" };
+  };
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId);
+  await until(store, (s) => s.details[wishId]?.tasks.length === 1);
+
+  // The server could not carry W1 (no entities): the window reads the list, and that read fails once.
+  data.tasks = [t1, w1];
+  fail = 1;
+  const before = reads.tasks;
+  watch.push({ wishId, changes: [Change.TASK, Change.WISH] });
+  const state = await until(store, (s) => runningIn(s).length === 1);
+  assert.ok(reads.tasks >= before + 2, "read again after it failed");
+  const [group] = azimaGroups(state.details[wishId].tasks);
+  assert.equal(group.azima.code, "T1");
+  assert.deepEqual(
+    group.parts.map((x) => x.code),
+    ["W1"],
+  );
+  assert.deepEqual(loose(state.details[wishId].tasks), []);
+  stop();
+});
+
+test("a wish's first task list that failed is not taken as read: it is read again", async () => {
+  const { t1, w1 } = dew();
+  const data = { ...sample(), tasks: [t1, w1] };
+  let fail = 1;
+  data.listTasks = () => {
+    if (fail-- > 0) throw new Error("unavailable");
+    return { tasks: data.tasks, total: data.tasks.length, nextPageToken: "" };
+  };
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId);
+  const state = await until(store, (s) => runningIn(s).length === 1);
+  assert.ok(state.details[wishId].loadedKinds.has(Change.TASK));
+  stop();
+});
+
+test("a wish shown again reads again what changed while it was not shown", async () => {
+  const { t1, w1 } = dew();
+  const data = { ...sample(), tasks: [t1] };
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  const close = store.open(wishId);
+  await until(store, (s) => s.details[wishId]?.tasks.length === 1);
+  close();
+
+  // W1 is spawned and starts while no screen shows the wish: the window does not take it.
+  data.tasks = [t1, w1];
+  watch.push({
+    wishId,
+    changes: [Change.TASK],
+    changed: carried({ tasks: [w1] }),
+  });
+  watch.push({ wishId: "", changes: [Change.PROJECT] });
+  const projects = reads.projects;
+  await until(store, () => reads.projects === projects + 1);
+  assert.equal(runningIn(store.getState()).length, 0);
+
+  // Shown again, its tasks are read again, not kept as they were.
+  store.open(wishId);
+  const state = await until(store, (s) => runningIn(s).length === 1);
+  assert.equal(azimaGroups(state.details[wishId].tasks)[0].parts[0].code, "W1");
+  stop();
+});
