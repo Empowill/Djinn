@@ -184,7 +184,9 @@ test.describe("operating load slider", () => {
       page.locator(".app-statusbar").getByText("Live"),
     ).toBeVisible();
 
+    // boundingBox does not wait: the slider is measured once it shows, not while the top bar mounts again.
     const slider = page.locator(".operating-load-slider");
+    await expect(slider).toBeVisible();
     const box = await slider.boundingBox();
     expect(box).toBeTruthy();
     if (!box) return;

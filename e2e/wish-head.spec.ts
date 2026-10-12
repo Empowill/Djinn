@@ -188,10 +188,19 @@ test("the head says where the wish's work lands, and a click changes the branch"
     const chip = page.locator(".hero-meta button.wish-lands");
     await expect(chip).toHaveText("Lands in main");
 
-    // Read in both themes.
+    // Read in both themes, chosen as the settings do (setTheme), once the colours have changed: a reload would get the
+    // show of a minute ago again (UiService.Watch), the Lead test's wish, deleted since, and open the first wish.
     for (const theme of ["dark", "light"] as const) {
-      await page.evaluate((v) => localStorage.setItem("djinn.theme", v), theme);
-      await page.reload();
+      await page.evaluate((v) => {
+        localStorage.setItem("djinn.theme", v);
+        document.documentElement.dataset.theme = v;
+        return Promise.all(
+          document
+            .getAnimations()
+            .filter((a) => a instanceof CSSTransition)
+            .map((a) => a.finished),
+        );
+      }, theme);
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       await expect(chip).toBeVisible();
       expect(
