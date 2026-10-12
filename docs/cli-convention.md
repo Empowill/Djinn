@@ -1,8 +1,9 @@
 # The command line convention
 
-Every command of `djinn` comes from a proto in `api/`. No CLI option lives in the proto: the command line is
-read from the request messages by convention, at runtime, through `protoreflect`. Adding a public method to a
-service adds a command, with its help, its arguments and their validation.
+Every command of `djinn` comes from a proto in `api/`. The command line reads request messages
+by convention, at runtime, through `protoreflect`; an optional positional annotation preserves arguments
+when a field becomes optional. Adding a public method to a service adds a command, with its help, its
+arguments and their validation.
 
 ## Commands
 
@@ -45,6 +46,7 @@ The arguments are the fields of the request.
 | Field                                       | On the command line                                      |
 | ------------------------------------------- | -------------------------------------------------------- |
 | `(buf.validate.field).required = true`      | Positional, in field-number order: `<question> <choice>` |
+| `(djinn.v1.positional) = true`               | Optional positional: `[<title>]`                         |
 | any other field                             | `--kebab-case value` or `--kebab-case=value`             |
 | `bool`                                      | `--open`, without a value (`--open=false` also works)    |
 | `repeated`                                  | A repeatable flag: `--options a --options b`             |
@@ -64,6 +66,11 @@ or a tool call of `djinn mcp`, leaves it empty: Djinn sets `$DJINN_TASK_ID` for 
 lead's terminal, so commands name the caller by themselves. A value given wins. The help says it, from the field's comment.
 The option may name several variables, separated by spaces: the first one set wins. `djinn lead watch` names its session
 by `"CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID ANTIGRAVITY_CONVERSATION_ID"`, the variable each agent sets for its commands.
+
+A field marked `(djinn.v1.positional) = true` keeps its positional spelling even when validation allows
+it to be omitted; the help displays it in brackets. For example, `djinn wish make "Short title"` keeps its
+existing spelling, while `djinn wish make --prompt "The complete request"` creates a wish whose lead will write the title. MCP and
+OpenAPI mark only fields whose validation requires a value as required; positional spelling alone does not.
 
 The `oneof` rule is how a question is named by its code or its identifier: `QuestionRef` has `code` (pattern
 `^Q[0-9]{2,3}$`) then `id` (a UUID), so `Q03` lands in `code` and a UUID in `id`. An input no member accepts
@@ -112,7 +119,9 @@ as above.
 
 - **One tool per public method that answers once**, named like its command in snake_case: `djinn lead set`
   is `lead_set`. The streaming methods (`gate hold`, `wish watch`, `task watch`) stay on the command line: a
-  tool call answers once.
+  tool call answers once. So does a method marked `option (djinn.v1.command_line_only) = true`, which only the
+  developer types: `djinn lead tell` writes to the lead in its terminal, and no agent's client may do that through a
+  tool (the server refuses it to a worker too).
 - **The input schema is the request**, field by field, by proto name: what is positional on the command line is
   `required`; an enum lists its short values; a `oneof` reference and a time are strings; a repeated field is an
   array. The description is the proto comment, with what the field expects.

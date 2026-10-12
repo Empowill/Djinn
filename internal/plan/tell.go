@@ -36,6 +36,14 @@ func (w *Wishes) Tell(ctx context.Context, wishID, line string) error {
 	if wishID != "" {
 		wish, err := store.Get[*planv1.Wish](ctx, w.Store, wishID)
 		if err == nil && wish.GetState() != planv1.WishState_WISH_STATE_ACTIVE {
+			// A wish not active does not reopen the lead: the line goes to the lead if it runs, never to a shell.
+			command := w.Leads.Command(name)
+			if command == nil {
+				return fmt.Errorf("%w: the lead does not run", ErrNoLead)
+			}
+			if !runsLead(command, lead) {
+				return fmt.Errorf("%w: the lead's terminal runs %s, not the lead", ErrNoLead, strings.Join(command, " "))
+			}
 			if err := w.Leads.Say(name, line); err != nil {
 				return fmt.Errorf("%w: %w", ErrNoLead, err)
 			}
@@ -50,9 +58,8 @@ func (w *Wishes) Tell(ctx context.Context, wishID, line string) error {
 	if err != nil {
 		return err
 	}
-	// The lead's terminal runs something else, a shell perhaps: a line typed there would run as a command.
-	if running := strings.Join(command, " "); attached && !strings.Contains(running, lead.GetSessionId()) {
-		return fmt.Errorf("the lead's terminal runs %s, not the lead", running)
+	if attached && !runsLead(command, lead) {
+		return fmt.Errorf("the lead's terminal runs %s, not the lead", strings.Join(command, " "))
 	}
 	return w.Leads.Say(name, line)
 }
@@ -125,6 +132,30 @@ func (w *Wishes) Enlightened(ctx context.Context, q *planv1.Question, note strin
 		return
 	}
 	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN, EnlightenLine(q, note, ""))
+}
+
+// Approved tells the lead that the developer approved the answer the lead or a worker gave q: the decision is the
+// developer's now. Marks calls it once the approval is stored, and only for such an answer (decision Q173).
+func (w *Wishes) Approved(ctx context.Context, q *planv1.Question) {
+	by := "you"
+	if id := q.GetAnswer().GetTaskId(); id != "" {
+		by = "a worker"
+		if t, err := store.Get[*planv1.Task](ctx, w.Store, id); err == nil && t.GetCode() != "" {
+			by = t.GetCode()
+		}
+	}
+	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_APPROVED, ApprovedLine(q, by))
+}
+
+// ApprovedLine is the line that tells a lead the developer approved the answer by gave q (you, or a worker's code):
+// the decision is theirs now.
+func ApprovedLine(q *planv1.Question, by string) string {
+	choice := choiceText(q)
+	if letter, option, ok := strings.Cut(choice, ": "); ok {
+		choice = fmt.Sprintf("%s — %q", letter, option)
+	}
+	return fmt.Sprintf("Djinn: %s approved by the developer, as %s answered it: %s. The decision is theirs now.",
+		q.GetCode(), by, choice)
 }
 
 // workerOf is the code of the question worker of role that works on q, started just before the lead is told; ""

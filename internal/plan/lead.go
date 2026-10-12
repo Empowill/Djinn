@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"connectrpc.com/connect"
 
@@ -27,14 +28,41 @@ type Leads interface {
 	// Say types line into the running terminal called name, then Enter, once the person is not typing there. It
 	// returns at once; the lines go out in order.
 	Say(name, line string) error
+	// SayText is Say for a text the person wrote: its line breaks stay line breaks for a program that takes a
+	// paste. It tells whether the text waits for the person, typing there or before a choice on screen.
+	SayText(name, text string) (waiting bool, err error)
 	// Running tells whether the terminal called name runs.
 	Running(name string) bool
+	// Exit is how the program of the terminal called name ended, kept until a program starts there again; nil while
+	// it runs, or when none ran.
+	Exit(name string) *planv1.LeadExit
+	// Command is the command line of the running terminal called name; nil when none runs.
+	Command(name string) []string
 	// Close hangs up the running terminal called name, as closing it in the window does; none runs, nothing.
 	Close(name string)
+	// Prompt is the choice the program of the terminal called name shows now, as read from its screen: an approval,
+	// a folder to trust. Nil when it shows none, or runs nothing.
+	Prompt(name string) *planv1.LeadPrompt
+	// Choose picks the option index (from 0) of the choice the terminal called name shows, as its keys would. It
+	// returns ErrNoChoice, typing nothing, when the screen no longer shows the choice of title, lines and options.
+	Choose(name, title string, lines, options []string, index int) error
 }
+
+// ErrNoChoice says that the lead's terminal no longer shows the choice the window showed: answered there, or changed.
+var ErrNoChoice = errors.New("the lead no longer shows this choice")
 
 // LeadTerminal is the name of the terminal of the lead.
 const LeadTerminal = "lead"
+
+// runsLead tells whether command, the command line of the lead's terminal, runs lead and not something else, a
+// shell perhaps, where a line typed to the lead would run as a command.
+func runsLead(command []string, lead *planv1.Lead) bool {
+	running := strings.Join(command, " ")
+	if id := lead.GetSessionId(); id != "" {
+		return strings.Contains(running, id)
+	}
+	return strings.Contains(running, "agy") // An antigravity lead without a session: agy --continue, or agy -i.
+}
 
 // leadProvider is the agent of a recorded lead: claude when the record names none.
 func leadProvider(lead *planv1.Lead) planv1.Provider {
@@ -121,7 +149,50 @@ func (s *LeadService) Set(
 	return connect.NewResponse(&planv1.LeadServiceSetResponse{Lead: lead}), nil
 }
 
+// leadFailure is why the last LeadService.Resume could not start the lead, as it answered, until one starts or
+// attaches to it: the window shows it beside Lead, whatever page is open. Like the lead's terminal, Djinn keeps it in
+// memory only.
+type leadFailure struct {
+	mu   sync.Mutex
+	text string
+}
+
+// set records the outcome of a start, err nil for a success, and tells whether that changes what LeadService.Get says.
+func (f *leadFailure) set(err error) bool {
+	text := ""
+	if err != nil {
+		text = err.Error()
+		var ce *connect.Error
+		if errors.As(err, &ce) {
+			text = ce.Message()
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	changed := f.text != text
+	f.text = text
+	return changed
+}
+
+func (f *leadFailure) get() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.text
+}
+
+// Resume starts the lead, or attaches to it, and keeps why it could not: the window shows it until Lead is clicked
+// again.
 func (s *LeadService) Resume(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceResumeRequest],
+) (*connect.Response[planv1.LeadServiceResumeResponse], error) {
+	res, err := s.resume(ctx, req)
+	if s.Wishes.leadFailure.set(err) {
+		s.Wishes.ChangeLead()
+	}
+	return res, err
+}
+
+func (s *LeadService) resume(
 	ctx context.Context, req *connect.Request[planv1.LeadServiceResumeRequest],
 ) (*connect.Response[planv1.LeadServiceResumeResponse], error) {
 	if s.Wishes.Leads == nil {
@@ -197,17 +268,88 @@ func (s *LeadService) Resume(
 	return connect.NewResponse(res), nil
 }
 
+// Tell types what the developer writes in the lead's terminal, as their own words: the lead must run there, never a
+// shell, where the text would run as a command. About a wish, the text starts by naming it.
+func (s *LeadService) Tell(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceTellRequest],
+) (*connect.Response[planv1.LeadServiceTellResponse], error) {
+	if s.Wishes.Leads == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this server runs no terminal"))
+	}
+	text := strings.TrimSpace(req.Msg.GetText())
+	if text == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text: nothing to say"))
+	}
+	if id := req.Msg.GetWishId(); id != "" {
+		wish, err := store.Get[*planv1.Wish](ctx, s.Wishes.Store, id)
+		if err != nil {
+			return nil, Status(err)
+		}
+		text = fmt.Sprintf("About wish %s (%s): %s", wish.GetTitle(), wish.GetId(), text)
+	}
+	lead, err := store.Get[*planv1.Lead](ctx, s.Wishes.Store, "lead")
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, Status(err)
+	}
+	command := s.Wishes.Leads.Command(LeadTerminal)
+	switch {
+	case !hasLead(lead):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
+			"no lead is recorded: djinn lead resume starts one"))
+	case command == nil:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
+			"the lead does not run: djinn lead resume starts it"))
+	case !runsLead(command, lead):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"the lead's terminal runs %s, not the lead: exit it there, then djinn lead resume", strings.Join(command, " ")))
+	}
+	waiting, err := s.Wishes.Leads.SayText(LeadTerminal, text)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the lead's terminal: %w", err))
+	}
+	return connect.NewResponse(&planv1.LeadServiceTellResponse{Waiting: waiting}), nil
+}
+
+// Choose answers the choice the lead's agent shows in its terminal, as its keys would: the window's answer to an
+// approval. The lead's terminal never runs a shell (P9), so the keys go to the agent.
+func (s *LeadService) Choose(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceChooseRequest],
+) (*connect.Response[planv1.LeadServiceChooseResponse], error) {
+	if s.Wishes.Leads == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this server runs no terminal"))
+	}
+	if s.Wishes.Leads.Command(LeadTerminal) == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
+			"the lead does not run: djinn lead resume starts it"))
+	}
+	m := req.Msg
+	err := s.Wishes.Leads.Choose(LeadTerminal, m.GetTitle(), m.GetLines(), m.GetOptions(), int(m.GetOption())-1)
+	switch {
+	case errors.Is(err, ErrNoChoice):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	case err != nil:
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("the lead's terminal: %w", err))
+	}
+	return connect.NewResponse(&planv1.LeadServiceChooseResponse{}), nil
+}
+
 func (s *LeadService) Get(
 	ctx context.Context, req *connect.Request[planv1.LeadServiceGetRequest],
 ) (*connect.Response[planv1.LeadServiceGetResponse], error) {
 	lead, err := store.Get[*planv1.Lead](ctx, s.Wishes.Store, "lead")
-	if errors.Is(err, store.ErrNotFound) {
-		return connect.NewResponse(&planv1.LeadServiceGetResponse{}), nil
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, Status(err)
 	}
-	return connect.NewResponse(&planv1.LeadServiceGetResponse{Lead: lead}), nil
+	res := &planv1.LeadServiceGetResponse{Lead: lead, StartError: s.Wishes.leadFailure.get()}
+	// The choice the lead shows comes with it: the window shows it in its attention bar, whatever page is open. So
+	// does how it ended, beside Lead, until Lead starts it again.
+	if s.Wishes.Leads != nil {
+		if s.Wishes.Leads.Command(LeadTerminal) != nil {
+			res.Prompt = s.Wishes.Leads.Prompt(LeadTerminal)
+		}
+		res.Exit = s.Wishes.Leads.Exit(LeadTerminal)
+	}
+	return connect.NewResponse(res), nil
 }
 
 func (s *LeadService) Brief(

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/terminal"
 	"github.com/empowill/djinn/internal/ui"
 )
@@ -102,5 +103,5 @@ func (n *leadNote) write(note restartNote) error {
 	if err != nil {
 		return err
 	}
-	return ui.WriteAtomic(n.path, data)
+	return fsx.WriteAtomic(n.path, data)
 }

@@ -80,9 +80,12 @@ export {
   BranchPicker,
   WishDescription,
   WishTitle,
+  leadTrouble,
   recordedAgent,
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView, readyKey } from "@/src/update-banner.tsx";
+export { platformShortcut } from "@/src/tooltip.tsx";
+export { PageHeaderAction } from "@/src/page-header.tsx";
 export { InstallStep } from "@/gen/ts/ui/v1/ui_pb.ts";
 export {
   memory,
@@ -841,6 +844,36 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   }
 });
 
+// A shortcut reads ⌘ on a Mac and Ctrl elsewhere, in the tooltip and in aria-keyshortcuts; an icon action of a page
+// header names itself by its label and keeps its explanation for the tooltip, not a native title.
+test("shortcuts follow the platform, and header actions carry tooltips, not titles", () => {
+  globalThis.__DJINN_MAC__ = true;
+  try {
+    assert.deepEqual(s.platformShortcut("N"), {
+      label: "⌘ N",
+      aria: "Meta+N",
+    });
+  } finally {
+    delete globalThis.__DJINN_MAC__;
+  }
+  globalThis.__DJINN_MAC__ = false;
+  try {
+    assert.deepEqual(s.platformShortcut("\\"), {
+      label: "Ctrl \\",
+      aria: "Control+\\",
+    });
+  } finally {
+    delete globalThis.__DJINN_MAC__;
+  }
+  const action = s.renderToStaticMarkup(
+    h(s.PageHeaderAction, { label: "Share", title: "Export the wish" }),
+  );
+  assert.match(action, /aria-label="Share"/);
+  assert.doesNotMatch(action, /title=/);
+  // Closed, the tooltip is not in the page.
+  assert.doesNotMatch(action, /role="tooltip"/);
+});
+
 test("a question of a wish without a lead session says no lead is told: open, then answered", () => {
   const props = (noLead, extra) =>
     s.renderToStaticMarkup(
@@ -1462,6 +1495,37 @@ test("a task card waiting for branch to be green again shows compact reason", ()
   assert.match(
     markup,
     /<span title="waits for feat\/wails-go to be green again \(push checks red at 12345678: test\)">waits for feat\/wails-go to be green again<\/span>/,
+  );
+});
+
+test("a task card offers Start anyway from machine_wait, not from its reason's text", () => {
+  const reason =
+    "the machine is under pressure: the system reports memory pressure";
+  const card = (task) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: {
+          id: "t1",
+          code: "W1",
+          title: "Waiting task",
+          status: s.TaskStatus.PENDING,
+          waitReason: reason,
+          ...task,
+        },
+        onStop() {},
+        onStart() {},
+      }),
+    );
+  const held = card({ machineWait: true });
+  assert.match(held, /class="wish-task-note machine-wait"/);
+  assert.match(held, /<strong>Waits for the machine<\/strong>/);
+  assert.match(held, /Start anyway/);
+  // The same words, but held by more than the machine (a usage limit, a push hold, a task going first): no button.
+  assert.doesNotMatch(card({ machineWait: false }), /Start anyway/);
+  // Running: whatever it carries, nothing to start.
+  assert.doesNotMatch(
+    card({ machineWait: true, status: s.TaskStatus.RUNNING }),
+    /Start anyway/,
   );
 });
 
@@ -3992,11 +4056,45 @@ test("Lead is split: the button resumes the one lead, focused on the wish, the a
     open,
     /<button role="menuitem" class="lead-agent"><span class="lead-agent-name">Antigravity<\/span><span class="lead-agent-detail">Starts a new lead from the brief<\/span>/,
   );
+  // The lead could not start, or ended: a dot on Lead, its tooltip saying why, until Lead starts it again.
+  assert.doesNotMatch(closed, /lead-dot/);
+  assert.equal(s.leadTrouble(undefined, ""), undefined);
+  const failed = s.leadTrouble(undefined, "no project yet");
+  assert.deepEqual(failed, {
+    text: "The lead could not start: no project yet. Lead tries again",
+    failed: true,
+  });
+  assert.equal(
+    s.leadTrouble({ code: 2 }, "").text,
+    "The lead ended (code 2): its tab keeps its last output. Lead starts it again",
+  );
+  assert.equal(s.leadTrouble({ code: 0 }, "").failed, false);
+  const dotted = s.renderToStaticMarkup(
+    h(s.LeadButton, { ...props, trouble: failed }),
+  );
+  assert.match(
+    dotted,
+    /<button class="button secondary small" title="The lead could not start: no project yet. Lead tries again">[^]*?<span>Lead<\/span><span class="lead-dot failed" aria-hidden="true"><\/span><\/button>/,
+  );
+  const quit = s.renderToStaticMarkup(
+    h(s.LeadButton, { ...props, trouble: s.leadTrouble({ code: 0 }, "") }),
+  );
+  assert.match(quit, /<span class="lead-dot" aria-hidden="true">/);
+
   // The agents not yet known: the menu says it loads.
   const loading = s.renderToStaticMarkup(
     h(s.LeadMenu, { recorded, onPick() {} }),
   );
   assert.match(loading, /Loading…/);
+  // Last, the way to set the agents up, when the window offers it.
+  assert.doesNotMatch(open, /Set up the agents/);
+  const setup = s.renderToStaticMarkup(
+    h(s.LeadButton, { ...props, open: true, onSetup() {} }),
+  );
+  assert.match(
+    setup,
+    /Antigravity<\/span>[^]*<button role="menuitem" class="lead-agent"><span class="lead-agent-name"><svg[^]*?<\/svg>Set up the agents<\/span><\/button><\/div>/,
+  );
 });
 
 test("the wish's description shows under its title, the title until one is written, and edits in place", () => {
@@ -4102,6 +4200,51 @@ test("the attention bar says how much each question holds up: blocking, your mov
   assert.match(
     markup,
     /<span class="attention-level"><svg[^>]*class="lucide lucide-circle-user-round[^>]*>.*<\/svg>Your move<\/span>/,
+  );
+});
+
+test("the choice the lead's agent shows is the first, blocking line of the attention bar, its options as buttons", () => {
+  const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const prompt = {
+    title: "Would you like to run the following command?",
+    lines: ["Reason: read the wish", "$ djinn wish brief"],
+    options: ["Yes, proceed (y)", "No, cancel"],
+  };
+  const items = s.attentionOf(
+    [{ wish: w, item: { id: "q1", code: "Q1", text: "q1" }, blocking: ["W1"] }],
+    [],
+    [],
+    undefined,
+    prompt,
+  );
+  assert.deepEqual(
+    items.map((i) => [i.key, i.level, i.label]),
+    [
+      ["lead-prompt", "blocking", "Lead approval"],
+      ["q1", "blocking", undefined],
+    ],
+  );
+  const djinn = s.createDjinn(
+    s.createRouterTransport(() => {}),
+    10,
+  );
+  const markup = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.AttentionBar, { items })),
+  );
+  assert.match(markup, /2 things wait for you/);
+  assert.match(
+    markup,
+    /<li><div id="lead-prompt" class="attention-item attention-prompt level-blocking"><div class="attention-prompt-head"><span class="attention-level"><svg[^>]*>.*?<\/svg>Lead approval<\/span><span class="attention-text">Would you like to run the following command\?<\/span><\/div><pre class="attention-prompt-lines">Reason: read the wish\n\$ djinn wish brief<\/pre>/,
+  );
+  assert.match(
+    markup,
+    /<button class="button secondary small">Yes, proceed \(y\)<\/button><button class="button secondary small">No, cancel<\/button>/,
+  );
+  // Without options, no choice shows: no line.
+  assert.equal(
+    s.attentionOf([], [], [], undefined, { title: "", lines: [], options: [] })
+      .length,
+    0,
   );
 });
 
@@ -4611,6 +4754,19 @@ function setupMockDom() {
     removeEventListener() {}
     querySelector() {
       return null;
+    }
+    // Motion measures the box of an element it lays out (the wish's pill, workspace-action.tsx).
+    getBoundingClientRect() {
+      return {
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: 0,
+        height: 0,
+      };
     }
   }
 

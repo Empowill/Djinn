@@ -17,6 +17,9 @@ import {
   type InboxSource,
   InboxSourceSchema,
   type Lead,
+  type LeadExit,
+  type LeadPrompt,
+  LeadPromptSchema,
   LeadSchema,
   type Project,
   ProjectSchema,
@@ -63,6 +66,12 @@ export interface State {
   error: string;
   projects: Project[];
   lead?: Lead;
+  // The choice the lead's agent shows in its terminal, waiting for the developer: an approval, a folder to trust.
+  leadPrompt?: LeadPrompt;
+  // How the lead's program ended, until Lead starts it again; unset while it runs.
+  leadExit?: LeadExit;
+  // Why the last start of the lead failed, until one succeeds; empty when none did.
+  leadStartError?: string;
   // As WishService.List gives them: the active ones by rank, then the paused ones, then the granted ones.
   wishes: Wish[];
   details: Readonly<Record<string, WishDetail>>;
@@ -481,11 +490,21 @@ export function createStore(
         const list = (await clients.wishes.list({})).wishes;
         const reconciled = reconcile(WishSchema, state.wishes, list);
         if (reconciled !== state.wishes) patch.wishes = reconciled;
-        const lead = (await clients.lead.get({})).lead;
+        const { lead, prompt, exit, startError } = await clients.lead.get({});
         const sameLead =
           (!state.lead && !lead) ||
           (state.lead && lead ? equals(LeadSchema, state.lead, lead) : false);
         if (!sameLead) patch.lead = lead;
+        const samePrompt =
+          (!state.leadPrompt && !prompt) ||
+          (state.leadPrompt && prompt
+            ? equals(LeadPromptSchema, state.leadPrompt, prompt)
+            : false);
+        if (!samePrompt) patch.leadPrompt = prompt;
+        if (state.leadExit?.code !== exit?.code || !state.leadExit !== !exit)
+          patch.leadExit = exit;
+        if ((state.leadStartError ?? "") !== startError)
+          patch.leadStartError = startError;
       });
     if (projects)
       attempt(async () => {

@@ -1,9 +1,10 @@
-// Package fsx holds the file system helpers several packages share: for now, a rename that Windows does not refuse
-// for a moment.
+// Package fsx holds the file system helpers several packages share: a rename that Windows does not refuse for a
+// moment, and a write that a reader never sees half done.
 package fsx
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 )
@@ -45,4 +46,40 @@ func (r Renamer) Rename(oldpath, newpath string) error {
 		}
 		sleep(retryEvery)
 	}
+}
+
+// WriteAtomic writes a temporary file next to path, readable by the owner only, then renames it over path: a
+// reader sees the old content or the new one, never a part of it. The rename tries again a moment on Windows,
+// where an antivirus scanning the file refuses it.
+func WriteAtomic(path string, data []byte) error {
+	return OS().WriteAtomic(path, data)
+}
+
+// WriteAtomic writes data at path as the package's WriteAtomic does, renaming with r.
+func (r Renamer) WriteAtomic(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // Fails harmlessly once renamed.
+	if err := tmp.Chmod(0o600); err != nil && runtime.GOOS != "windows" {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return r.Rename(tmp.Name(), path)
 }

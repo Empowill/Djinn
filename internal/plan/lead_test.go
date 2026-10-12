@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,11 +20,15 @@ const session = "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69"
 
 // fakeLeads records what Resume asks of the terminals and the window.
 type fakeLeads struct {
-	running map[string][]string // command of each running terminal, by name
-	opened  []string            // line of each program started
-	shown   []string            // wish/terminal of each show
-	said    []string            // terminal: line of each line typed
-	closed  []string            // name of each running terminal closed
+	running map[string][]string           // command of each running terminal, by name
+	opened  []string                      // line of each program started
+	shown   []string                      // wish/terminal of each show
+	said    []string                      // terminal: line of each line typed
+	closed  []string                      // name of each running terminal closed
+	waiting bool                          // what SayText says of the texts said
+	prompts map[string]*planv1.LeadPrompt // the choice each terminal shows, by name
+	exits   map[string]*planv1.LeadExit   // how the program of each ended terminal ended, by name
+	chosen  []string                      // terminal: option of each choice answered
 	err     error
 }
 
@@ -56,6 +61,13 @@ func (f *fakeLeads) Running(name string) bool {
 	return ok
 }
 
+func (f *fakeLeads) Command(name string) []string {
+	if f == nil {
+		return nil
+	}
+	return f.running[name]
+}
+
 func (f *fakeLeads) Close(name string) {
 	if _, ok := f.running[name]; ok {
 		delete(f.running, name)
@@ -68,6 +80,28 @@ func (f *fakeLeads) Say(name, line string) error {
 		return errors.New("no such terminal")
 	}
 	f.said = append(f.said, name+": "+line)
+	return nil
+}
+
+func (f *fakeLeads) SayText(name, text string) (bool, error) {
+	if err := f.Say(name, text); err != nil {
+		return false, err
+	}
+	return f.waiting, nil
+}
+
+func (f *fakeLeads) Prompt(name string) *planv1.LeadPrompt { return f.prompts[name] }
+
+func (f *fakeLeads) Exit(name string) *planv1.LeadExit { return f.exits[name] }
+
+func (f *fakeLeads) Choose(name, title string, lines, options []string, index int) error {
+	p := f.prompts[name]
+	if p == nil || p.GetTitle() != title || !slices.Equal(p.GetLines(), lines) ||
+		!slices.Equal(p.GetOptions(), options) || index >= len(options) {
+		return ErrNoChoice
+	}
+	f.chosen = append(f.chosen, name+": "+options[index])
+	delete(f.prompts, name)
 	return nil
 }
 
@@ -441,5 +475,176 @@ func TestResumeAnotherAgent(t *testing.T) {
 	if lead.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || lead.GetSessionId() == "thread-1" ||
 		len(leads.opened) != 4 || leads.opened[3] != "claude --session-id "+lead.GetSessionId()+" '"+StartLine()+"' in "+folder {
 		t.Errorf("claude over codex = %v, opened %q", res, leads.opened)
+	}
+}
+
+// TestLeadTell: what the developer writes reaches the lead's terminal as their own words, its line breaks kept,
+// about a wish when they name one, and whether it waits for them; never a terminal that runs no lead, nor a shell.
+func TestLeadTell(t *testing.T) {
+	ctx := t.Context()
+	tellReq := func(text, wishID string) *connect.Request[planv1.LeadServiceTellRequest] {
+		return connect.NewRequest(&planv1.LeadServiceTellRequest{Text: text, WishId: wishID})
+	}
+	if _, err := serve(t).lead.Tell(ctx, tellReq("hi", "")); code(err) != connect.CodeUnimplemented {
+		t.Errorf("tell without terminals: %v, want unimplemented", err)
+	}
+
+	leads := &fakeLeads{}
+	c := serve(t, WithLeads(leads))
+	tell := func(text, wishID string) (*planv1.LeadServiceTellResponse, error) {
+		res, err := c.lead.Tell(ctx, tellReq(text, wishID))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+	if _, err := tell("Hello", ""); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "djinn lead resume") {
+		t.Errorf("tell without a lead: %v, want a hint to resume", err)
+	}
+	if _, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tell("Hello", ""); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "djinn lead resume") {
+		t.Errorf("tell while the lead does not run: %v, want a hint to resume", err)
+	}
+	leads.running = map[string][]string{LeadTerminal: {"/bin/sh"}}
+	if _, err := tell("rm -rf ~", ""); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "/bin/sh") {
+		t.Errorf("tell while the lead's terminal runs a shell: %v, want a refusal", err)
+	}
+	if len(leads.said) != 0 || len(leads.opened) != 0 {
+		t.Fatalf("opened %q, said %q: nothing starts, nothing goes to a shell", leads.opened, leads.said)
+	}
+
+	leads.running[LeadTerminal] = []string{"/bin/sh", "-c", "claude --resume " + session}
+	res, err := tell("  First line\nsecond line \n", "")
+	if err != nil || res.GetWaiting() {
+		t.Fatalf("tell = %v, %v", res, err)
+	}
+	leads.waiting = true
+	id := c.wish(t)
+	if res, err = tell("Then", id); err != nil || !res.GetWaiting() {
+		t.Errorf("tell while the developer types = %v, %v, want waiting", res, err)
+	}
+	want := []string{
+		LeadTerminal + ": First line\nsecond line",
+		LeadTerminal + ": About wish Try Djinn on itself (" + id + "): Then",
+	}
+	if !slices.Equal(leads.said, want) {
+		t.Errorf("said %q, want %q", leads.said, want)
+	}
+	if _, err := tell(" \n ", ""); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("tell nothing: %v, want invalid", err)
+	}
+	if _, err := tell("hi", session); code(err) != connect.CodeNotFound {
+		t.Errorf("tell about an unknown wish: %v, want not found", err)
+	}
+	if len(leads.opened) != 0 || len(leads.shown) != 0 {
+		t.Errorf("opened %q, shown %q: telling the lead starts nothing, raises nothing", leads.opened, leads.shown)
+	}
+}
+
+// TestLeadChoose: the choice the lead's agent shows comes with the lead, and the window's answer goes to the lead's
+// terminal, only while that very choice shows: the same options on another command need a new decision.
+// TestLeadStartFailureVisibleUntilRetry: why the lead could not start, and how it ended, stay on LeadService.Get, for
+// the window to show beside Lead, until Lead starts it again.
+func TestLeadStartFailureVisibleUntilRetry(t *testing.T) {
+	ctx := t.Context()
+	leads := &fakeLeads{err: errors.New("agent executable unavailable")}
+	c := serve(t, WithLeads(leads))
+	if _, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
+		t.Fatal(err)
+	}
+	watcher := watch(t, c.wishes, "")
+	get := func() *planv1.LeadServiceGetResponse {
+		t.Helper()
+		res, err := c.lead.Get(ctx, connect.NewRequest(&planv1.LeadServiceGetRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg
+	}
+	resume := connect.NewRequest(&planv1.LeadServiceResumeRequest{})
+	if _, err := c.lead.Resume(ctx, resume); code(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("start: %v", err)
+	}
+	if msg := next(t, watcher); !slices.Contains(msg.GetChanges(), planv1.Change_CHANGE_WISH) {
+		t.Fatalf("the failure did not reach the window: %v", msg)
+	}
+	if got := get(); got.GetStartError() != "agent executable unavailable" || got.GetExit() != nil {
+		t.Fatalf("failure not visible: %v", got)
+	}
+	if got := get(); got.GetStartError() == "" {
+		t.Fatal("the failure went once read")
+	}
+
+	leads.err = nil
+	if _, err := c.lead.Resume(ctx, resume); err != nil {
+		t.Fatal(err)
+	}
+	if got := get(); got.GetStartError() != "" || got.GetExit() != nil {
+		t.Fatalf("the retry did not clear the failure: %v", got)
+	}
+	// The lead ends at once: how stays shown, until Lead starts it again.
+	delete(leads.running, LeadTerminal)
+	leads.exits = map[string]*planv1.LeadExit{LeadTerminal: {Code: 2}}
+	if got := get(); got.GetExit() == nil || got.GetExit().GetCode() != 2 {
+		t.Fatalf("exit not visible: %v", got)
+	}
+}
+
+func TestLeadChoose(t *testing.T) {
+	ctx := t.Context()
+	choose := func(c clients, req *planv1.LeadServiceChooseRequest) error {
+		_, err := c.lead.Choose(ctx, connect.NewRequest(req))
+		return err
+	}
+	if err := choose(serve(t), &planv1.LeadServiceChooseRequest{Option: 1}); code(err) != connect.CodeUnimplemented {
+		t.Errorf("choose without terminals: %v, want unimplemented", err)
+	}
+	leads := &fakeLeads{}
+	c := serve(t, WithLeads(leads))
+	prompt := &planv1.LeadPrompt{
+		Title: "Would you like to run the following command?", Lines: []string{"$ djinn wish brief"},
+		Options: []string{"Yes, proceed (y)", "Yes, and don't ask again for commands that start with `djinn` (p)", "No"},
+	}
+	leads.prompts = map[string]*planv1.LeadPrompt{LeadTerminal: prompt}
+	req := &planv1.LeadServiceChooseRequest{Option: 2, Title: prompt.GetTitle(), Lines: prompt.GetLines(), Options: prompt.GetOptions()}
+	if err := choose(c, req); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "djinn lead resume") {
+		t.Errorf("choose while the lead does not run: %v, want a hint to resume", err)
+	}
+	got, err := c.lead.Get(ctx, connect.NewRequest(&planv1.LeadServiceGetRequest{}))
+	if err != nil || got.Msg.GetPrompt() != nil {
+		t.Fatalf("the prompt of a lead that does not run: %v, %v", got.Msg.GetPrompt(), err)
+	}
+	leads.running = map[string][]string{LeadTerminal: {"/bin/sh", "-c", "codex resume s1"}}
+	got, err = c.lead.Get(ctx, connect.NewRequest(&planv1.LeadServiceGetRequest{}))
+	if err != nil || got.Msg.GetPrompt().GetTitle() != prompt.GetTitle() || len(got.Msg.GetPrompt().GetOptions()) != 3 {
+		t.Fatalf("lead prompt = %v, %v", got.Msg.GetPrompt(), err)
+	}
+	other := &planv1.LeadServiceChooseRequest{Option: 2, Title: "Do you want to proceed?", Lines: prompt.GetLines(), Options: prompt.GetOptions()}
+	if err := choose(c, other); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("another choice: %v, want failed precondition", err)
+	}
+	changed := &planv1.LeadServiceChooseRequest{Option: 2, Title: prompt.GetTitle(), Options: prompt.GetOptions(), Lines: []string{"$ another command"}}
+	if err := choose(c, changed); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("same options on another command: %v, want failed precondition", err)
+	}
+	if err := choose(c, req); err != nil {
+		t.Fatal(err)
+	}
+	if len(leads.chosen) != 1 || !strings.HasSuffix(leads.chosen[0], "start with `djinn` (p)") {
+		t.Errorf("chosen %q", leads.chosen)
+	}
+	if err := choose(c, req); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("answered twice: %v, want failed precondition", err)
+	}
+	if err := choose(c, &planv1.LeadServiceChooseRequest{Option: 0}); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("option 0: %v, want invalid argument", err)
 	}
 }

@@ -24,6 +24,9 @@ import (
 // first are active, the others wait paused, their workers stopped.
 const MaxActive = 3
 
+// creationKind is the original Markdown request, kept as free content rather than a field of the wish.
+const creationKind = "creation"
+
 // WishWorkers reaches the workers of the wishes: djinn up gives the harness's. A paused wish's workers stop, and
 // wait to resume with it; a wish active again wakes the scheduler, which starts them.
 type WishWorkers interface {

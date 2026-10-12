@@ -1,7 +1,7 @@
 // The wish's head, around its title: its description, a few lines the person edits in place (a click, saved when the
 // field is left), the Lead button, split: Lead resumes the one lead, focused on the wish, the arrow beside it lists the
-// agents found on this machine, to start a lead of another one from the brief; where its work lands; and where Djinn
-// last pushed its integration branches.
+// agents found on this machine, to start a lead of another one from the brief, and opens their setup; where its work
+// lands; and where Djinn last pushed its integration branches.
 import {
   Check,
   ChevronDown,
@@ -10,6 +10,7 @@ import {
   GitBranchPlus,
   GitMerge,
   GitPullRequestArrow,
+  Settings2,
   Star,
   Terminal,
 } from "lucide-react";
@@ -18,6 +19,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   type IntegrationBranch,
   type Lead,
+  type LeadExit,
   ProjectPush,
   Provider,
   PushStrategy,
@@ -43,6 +45,22 @@ export function recordedAgent(lead?: Lead): Provider | undefined {
   return lead.provider === Provider.UNSPECIFIED
     ? Provider.CLAUDE
     : lead.provider;
+}
+
+// leadTrouble is what the dot beside Lead says, from LeadService.Get: why the lead could not start, or how its program
+// ended, until Lead starts it again. Failed unless it ended with code 0. Undefined while it runs, or never ran.
+export function leadTrouble(
+  exit?: LeadExit,
+  startError?: string,
+): { text: string; failed: boolean } | undefined {
+  if (startError)
+    return { text: t("wish.lead_failed", { error: startError }), failed: true };
+  if (exit)
+    return {
+      text: t("wish.lead_ended", { code: exit.code }),
+      failed: exit.code !== 0,
+    };
+  return undefined;
 }
 
 export function WishTitle({
@@ -158,16 +176,22 @@ export function LeadButton({
   recorded,
   agents: given,
   open: startOpen = false,
+  trouble,
   loadAgents,
   onLead,
   onPick,
+  onSetup,
 }: {
   recorded?: Provider;
   agents?: Agent[];
   open?: boolean;
+  // The lead could not start, or ended: a dot on Lead, its tooltip saying why (leadTrouble).
+  trouble?: { text: string; failed: boolean };
   loadAgents: () => Promise<Agent[]>;
   onLead: () => void;
   onPick: (provider: Provider) => void;
+  // Opens the setup of the agents: install one, sign it in.
+  onSetup?: () => void;
 }) {
   const [open, setOpen] = useState(startOpen);
   const [found, setFound] = useState<Agent[] | undefined>(given);
@@ -199,11 +223,17 @@ export function LeadButton({
     <div className="split-button" ref={root}>
       <button
         className="button secondary small"
-        title={t("wish.resume_detail")}
+        title={trouble?.text ?? t("wish.resume_detail")}
         onClick={onLead}
       >
         <Terminal size={14} />
         <span>{t("wish.resume")}</span>
+        {trouble && (
+          <span
+            className={trouble.failed ? "lead-dot failed" : "lead-dot"}
+            aria-hidden="true"
+          />
+        )}
       </button>
       <button
         className="button secondary small split-arrow"
@@ -223,6 +253,13 @@ export function LeadButton({
             setOpen(false);
             onPick(provider);
           }}
+          onSetup={
+            onSetup &&
+            (() => {
+              setOpen(false);
+              onSetup();
+            })
+          }
         />
       )}
     </div>
@@ -230,15 +267,17 @@ export function LeadButton({
 }
 
 // LeadMenu lists the agents a lead may run, those missing from this machine disabled, saying why; the recorded
-// lead's is marked, and picking it resumes that lead, focused on the wish.
+// lead's is marked, and picking it resumes that lead, focused on the wish. Last, the way to set the agents up.
 export function LeadMenu({
   agents: found,
   recorded,
   onPick,
+  onSetup,
 }: {
   agents?: Agent[];
   recorded?: Provider;
   onPick: (provider: Provider) => void;
+  onSetup?: () => void;
 }) {
   if (!found)
     return (
@@ -275,6 +314,14 @@ export function LeadMenu({
           </button>
         );
       })}
+      {onSetup && (
+        <button role="menuitem" className="lead-agent" onClick={onSetup}>
+          <span className="lead-agent-name">
+            <Settings2 size={13} aria-hidden="true" />
+            {t("agents.title")}
+          </span>
+        </button>
+      )}
     </div>
   );
 }

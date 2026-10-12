@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -52,6 +53,12 @@ type Config struct {
 	// Changed, when set, runs once a program started and once one ended, outside the manager's lock: Running
 	// tells what runs then. Calls may overlap.
 	Changed func()
+	// BeforeStart, when set, runs before a program starts, outside the manager's lock: djinn up brings its PATH up
+	// to date there (machine.ExtendPath), so that a lead finds the agent the window's panel found.
+	BeforeStart func()
+	// Prompted, when set, runs when the choice a program shows (Terminal.Prompt) appears, changes or goes, outside
+	// the terminal's lock.
+	Prompted func(t *Terminal)
 }
 
 // Manager holds the terminals of a djinn up.
@@ -95,16 +102,21 @@ type Terminal struct {
 	wmu  sync.Mutex    // keeps the bytes of one write together
 	done chan struct{} // closed once the program ended and its output is read
 	hang sync.Once
+	hung atomic.Bool // Hangup was asked: the program ends as someone wished
 
-	mu      sync.Mutex
-	cols    int
-	rows    int
-	buf     []byte // the output kept, from offset base on
-	base    uint64
-	changed chan struct{} // closed and replaced at each change
-	exited  bool
-	code    int
-	voice   voice // the lines Djinn types, under mu
+	mu       sync.Mutex
+	cols     int
+	rows     int
+	buf      []byte // the output kept, from offset base on
+	base     uint64
+	changed  chan struct{} // closed and replaced at each change
+	exited   bool
+	code     int
+	voice    voice   // the lines Djinn types, under mu
+	screen   *screen // what the program shows now
+	answered string  // choice already sent, until it changes or disappears
+	shown    string  // the choice on screen as last seen (promptKey)
+	prompted func(*Terminal)
 }
 
 // Open returns the running terminal of name, attached true, or starts one: command in dir at cols×rows, each
@@ -119,6 +131,9 @@ func (m *Manager) Open(name string, command []string, dir string, cols, rows int
 func (m *Manager) OpenExclusive(
 	name string, command []string, dir string, cols, rows int, exclusive string,
 ) (t *Terminal, attached bool, err error) {
+	if m.cfg.BeforeStart != nil {
+		m.cfg.BeforeStart()
+	}
 	started := false
 	defer func() { // After the unlock below: deferred calls run last first.
 		if started {
@@ -180,7 +195,7 @@ func (m *Manager) OpenExclusive(
 	t = &Terminal{
 		ID: uuid.NewString(), Name: name, Command: slices.Clone(command), Dir: dir,
 		p: p, done: make(chan struct{}), cols: cols, rows: rows, changed: make(chan struct{}),
-		voice: voice{started: time.Now()},
+		voice: voice{started: time.Now()}, screen: newScreen(cols, rows), prompted: m.cfg.Prompted,
 	}
 	if old := m.byName[name]; old != nil {
 		delete(m.byID, old.ID) // Ended: its output goes with it.
@@ -210,6 +225,24 @@ func (m *Manager) Get(id string) (*Terminal, error) {
 		return t, nil
 	}
 	return nil, ErrNotFound
+}
+
+// Lookup returns the terminal called name if its program runs, nil otherwise.
+func (m *Manager) Lookup(name string) *Terminal {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if t := m.byName[name]; t != nil && !t.Exited() {
+		return t
+	}
+	return nil
+}
+
+// Latest returns the last terminal called name, whether its program runs or ended: an ended one keeps its output
+// until a terminal of that name starts again. Nil when none was opened.
+func (m *Manager) Latest(name string) *Terminal {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.byName[name]
 }
 
 // Running returns the terminals whose program still runs, by name.
@@ -246,8 +279,8 @@ func (m *Manager) Hangup(name string) bool {
 	return true
 }
 
-// Close hangs up every terminal, kills the programs still there after Grace, and returns once they ended. No
-// terminal opens after.
+// Close hangs up every terminal, kills the programs still there after Grace, and returns once they ended and Say
+// stopped typing into them. No terminal opens after.
 func (m *Manager) Close() {
 	m.mu.Lock()
 	m.closed = true
@@ -261,6 +294,12 @@ func (m *Manager) Close() {
 	}
 	for _, t := range all {
 		<-t.done
+		t.mu.Lock()
+		hushed := t.voice.hushed
+		t.mu.Unlock()
+		if hushed != nil { // Djinn's voice stops with the program.
+			<-hushed
+		}
 	}
 }
 
@@ -292,19 +331,37 @@ func (t *Terminal) pump() {
 	t.notify()
 	t.mu.Unlock()
 	close(t.done)
+	if t.prompted != nil {
+		t.prompted(t)
+	}
 }
 
 func (t *Terminal) append(b []byte) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	from := len(t.buf)
 	t.buf = append(t.buf, b...)
 	t.voice.output = time.Now()
+	t.pasteMode(from)
+	t.screen.write(b)
 	if len(t.buf) > Scrollback+Scrollback/4 {
 		drop := len(t.buf) - Scrollback
 		t.base += uint64(drop)
 		t.buf = append([]byte(nil), t.buf[drop:]...)
 	}
 	t.notify()
+	moved := false
+	if t.prompted != nil {
+		if key := promptKey(t.prompt()); key != t.shown {
+			t.shown, moved = key, true
+			if key != t.answered {
+				t.answered = ""
+			}
+		}
+	}
+	t.mu.Unlock()
+	if moved {
+		t.prompted(t)
+	}
 }
 
 // notify wakes the readers; t.mu is held.
@@ -343,7 +400,7 @@ func (t *Terminal) Write(b []byte) error {
 		return ErrExited
 	}
 	t.mu.Lock()
-	t.voice.typed = time.Now()
+	t.keys(b)
 	t.mu.Unlock()
 	return t.put(b)
 }
@@ -369,12 +426,14 @@ func (t *Terminal) Resize(cols, rows int) error {
 	}
 	t.mu.Lock()
 	t.cols, t.rows = cols, rows
+	t.screen.resize(cols, rows)
 	t.mu.Unlock()
 	return nil
 }
 
 // Hangup asks the program to end, as a terminal that closes does, and kills it after Grace.
 func (t *Terminal) Hangup() {
+	t.hung.Store(true)
 	t.hang.Do(func() {
 		t.p.hangup()
 		// Read the delay here, not in the goroutine: it may outlive the caller, and a test restores grace after.
@@ -388,6 +447,9 @@ func (t *Terminal) Hangup() {
 		}()
 	})
 }
+
+// HungUp tells whether the program was asked to end, by Hangup: closed in the window, or as Djinn stops.
+func (t *Terminal) HungUp() bool { return t.hung.Load() }
 
 // Output is a piece of output from Read.
 type Output struct {

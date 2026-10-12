@@ -18,7 +18,6 @@ import (
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
-	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/link"
 )
 
@@ -29,6 +28,9 @@ func newService(t *testing.T) (*Service, *[]string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// No test runs the real agents: none is found.
+	empty := t.TempDir()
+	s.AgentPath = func() string { return empty }
 	var opened []string
 	s.Open = func(link string) error { opened = append(opened, link); return nil }
 	return s, &opened
@@ -162,6 +164,11 @@ func TestShow(t *testing.T) {
 	s.Present("w2", "lead-w2")
 	if got := next(); got.GetWishId() != "w2" || got.GetTerminal() != "lead-w2" {
 		t.Fatalf("next message = %v", got)
+	}
+	// A click on a notification: the wish, there.
+	s.PresentAt("w3", "", "question-q1")
+	if got := next(); got.GetWishId() != "w3" || got.GetTarget() != "question-q1" {
+		t.Fatalf("message with a target = %v", got)
 	}
 	// An old request is not replayed.
 	s.shows.Lock()
@@ -311,7 +318,8 @@ func TestHandler(t *testing.T) {
 	defer server.Close()
 	client := uiv1connect.NewUiServiceClient(server.Client(), server.URL)
 
-	env, err := client.GetEnvironment(context.Background(), connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{}))
+	env, err := client.GetEnvironment(context.Background(),
+		connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{Agents: true}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -563,29 +571,6 @@ func TestEnvironmentProviders(t *testing.T) {
 	}
 }
 
-// TestWriteAtomicRetriesARefusedRename: a rename refused for a moment, as Windows refuses one while an antivirus
-// scans settings.json, is tried again, and the new content lands.
-func TestWriteAtomicRetriesARefusedRename(t *testing.T) {
-	path := filepath.Join(t.TempDir(), settingsFile)
-	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	tries := 0
-	refused := func(oldpath, newpath string) error {
-		if tries++; tries <= 2 {
-			return errors.New("Access is denied")
-		}
-		return os.Rename(oldpath, newpath)
-	}
-	r := fsx.Renamer{Func: refused, Wait: time.Second, Sleep: func(time.Duration) {}}
-	if err := writeAtomic(path, []byte("new"), r); err != nil || tries != 3 {
-		t.Fatalf("writeAtomic = %v after %d tries, want nil after 3", err, tries)
-	}
-	if got, _ := os.ReadFile(path); string(got) != "new" {
-		t.Errorf("file = %q, want the new content", got)
-	}
-}
-
 func TestWatchUnified(t *testing.T) {
 	s, _ := newService(t)
 	mux := http.NewServeMux()
@@ -666,5 +651,59 @@ func TestWatchUnifiedWithLoad(t *testing.T) {
 	loadMsg := stream.Msg()
 	if loadMsg.GetLoad() == nil || loadMsg.GetLoad().GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
 		t.Fatalf("load msg = %v, want notch HIGH", loadMsg)
+	}
+}
+
+// TestNotificationsService: the page reads whether the system shows notifications, asks for them, opens the
+// system's settings on macOS, and says which wish it shows.
+func TestNotificationsService(t *testing.T) {
+	ctx := context.Background()
+	s, opened := newService(t)
+	get := func() *uiv1.UiServiceGetNotificationsResponse {
+		t.Helper()
+		res, err := s.GetNotifications(ctx, connect.NewRequest(&uiv1.UiServiceGetNotificationsRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg
+	}
+	// No window: none, and no settings to open.
+	if got := get(); got.GetAccess() != uiv1.NotificationAccess_NOTIFICATION_ACCESS_UNAVAILABLE || got.GetSettings() {
+		t.Errorf("without notices: %v", got)
+	}
+	if _, err := s.OpenNotificationSettings(ctx, connect.NewRequest(&uiv1.UiServiceOpenNotificationSettingsRequest{})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("open the settings without notices: %v", err)
+	}
+
+	p := &permitted{}
+	s.Notices = &Notices{}
+	s.Notices.Use(p)
+	if got := get().GetAccess(); got != uiv1.NotificationAccess_NOTIFICATION_ACCESS_DENIED {
+		t.Errorf("not allowed yet: %v", got)
+	}
+	res, err := s.RequestNotifications(ctx, connect.NewRequest(&uiv1.UiServiceRequestNotificationsRequest{}))
+	if err != nil || res.Msg.GetAccess() != uiv1.NotificationAccess_NOTIFICATION_ACCESS_ALLOWED || !p.asked {
+		t.Errorf("request: %v, %v", res, err)
+	}
+	mac := runtime.GOOS == "darwin"
+	if got := get().GetSettings(); got != mac {
+		t.Errorf("settings = %v on %s", got, runtime.GOOS)
+	}
+	_, err = s.OpenNotificationSettings(ctx, connect.NewRequest(&uiv1.UiServiceOpenNotificationSettingsRequest{}))
+	if mac && (err != nil || len(*opened) != 1 || (*opened)[0] != notificationSettings) {
+		t.Errorf("open the settings: %v, opened %v", err, *opened)
+	}
+	if !mac && connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("open the settings on %s: %v", runtime.GOOS, err)
+	}
+
+	if _, err := s.View(ctx, connect.NewRequest(&uiv1.UiServiceViewRequest{WishId: "w1"})); err != nil {
+		t.Fatal(err)
+	}
+	s.Notices.mu.Lock()
+	viewing := s.Notices.viewing
+	s.Notices.mu.Unlock()
+	if viewing != "w1" {
+		t.Errorf("viewing = %q, want w1", viewing)
 	}
 }

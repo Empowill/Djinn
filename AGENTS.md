@@ -24,3 +24,7 @@ repeat them.
   `CONTRIBUTING.md`, and name every new dependency in your change description.
 - **What you add to a wish's plan is smoke** unless the code computes on it: write a block, do
   not add a field.
+
+## Interface
+- Rounded elements use a uniform border on all sides, or no border. Never combine a rounded card with a
+  one-sided border or a thicker accent border on one side. Straight separators belong on square elements.

@@ -219,7 +219,7 @@ func TestResize(t *testing.T) {
 // TestReadResumes checks the scrollback alone: a read from an offset gets what follows it, and a read from an
 // offset no longer kept starts at the oldest byte kept.
 func TestReadResumes(t *testing.T) {
-	term := &Terminal{changed: make(chan struct{})}
+	term := &Terminal{changed: make(chan struct{}), screen: newScreen(80, 24)}
 	var all []byte
 	for i := range 40 {
 		piece := bytes.Repeat([]byte{byte('a' + i%26)}, 50_000)
@@ -475,5 +475,187 @@ func TestServiceList(t *testing.T) {
 	sh(t, m, "lead-w2")
 	if got := strings.Join(names(), " "); got != "lead-w2 main" {
 		t.Fatalf("listed %q, want lead-w2 main", got)
+	}
+}
+
+// BeforeStart runs before the program starts, and what it sets is what the program gets: djinn up brings its PATH
+// up to date there, so that a lead finds an agent installed from the window meanwhile.
+func TestBeforeStartRunsBeforeTheProgram(t *testing.T) {
+	t.Setenv("DJINN_BEFORE_START", "")
+	m := NewManager(Config{BeforeStart: func() { _ = os.Setenv("DJINN_BEFORE_START", "set") }})
+	t.Cleanup(m.Close)
+	term, _, err := m.Open("main", []string{"/bin/sh", "-c", `echo "got $DJINN_BEFORE_START"`}, t.TempDir(), 80, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output(t, term, 0, contains("got set"))
+}
+
+// TestServiceRunsALine runs a command line through the user's shell, pipes and all, as the agents' setup does; a
+// line and a command together are refused.
+func TestServiceRunsALine(t *testing.T) {
+	t.Setenv("SHELL", "/bin/sh")
+	m := NewManager(Config{Dir: t.TempDir()})
+	t.Cleanup(m.Close)
+	srv := httptest.NewServer(func() *http.ServeMux {
+		mux := http.NewServeMux()
+		mux.Handle(Handler(m))
+		return mux
+	}())
+	t.Cleanup(srv.Close)
+	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
+	ctx := t.Context()
+	if _, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
+		Name: "both", Command: []string{"/bin/sh"}, Line: "true",
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("a command and a line: %v, want invalid argument", err)
+	}
+	open, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
+		Name: "setup", Line: "echo set''up | tr s S; exit 3",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := open.Msg.GetTerminal().GetCommand(); got[0] != "/bin/sh" || got[len(got)-1] != "echo set''up | tr s S; exit 3" {
+		t.Fatalf("command %q", got)
+	}
+	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	stream, err := c.Read(readCtx, connect.NewRequest(&terminalv1.TerminalServiceReadRequest{Id: open.Msg.GetTerminal().GetId()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	code := int32(0)
+	for stream.Receive() {
+		out.Write(stream.Msg().GetData())
+		if stream.Msg().GetExited() {
+			code = stream.Msg().GetExitCode()
+		}
+	}
+	if !strings.Contains(out.String(), "Setup") || code != 3 {
+		t.Fatalf("output %q, exit %d: %v", out.String(), code, stream.Err())
+	}
+}
+
+// TestServiceNeverOpensAShellForALead attaches the window to the lead's terminal while the lead runs, and refuses to
+// start the default shell under that name, with DJINN_LEAD=1: a line Djinn types to the lead would run there as a
+// command. A command the window names (a restart) still runs there, and a terminal of another name gets the shell.
+func TestServiceNeverOpensAShellForALead(t *testing.T) {
+	m := NewManager(Config{Command: []string{"/bin/sh"}, Dir: t.TempDir()})
+	t.Cleanup(m.Close)
+	srv := httptest.NewServer(func() *http.ServeMux {
+		mux := http.NewServeMux()
+		mux.Handle(Handler(m))
+		return mux
+	}())
+	t.Cleanup(srv.Close)
+	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
+	ctx := t.Context()
+	refused := func(when string) {
+		t.Helper()
+		_, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead", Cols: 80, Rows: 24}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+			t.Fatalf("open the lead's terminal %s: %v, want failed precondition", when, err)
+		}
+		if m.Lookup("lead") != nil {
+			t.Fatalf("a shell started under the lead's name %s", when)
+		}
+	}
+	refused("that runs nothing")
+
+	lead := sh(t, m, "lead", "-c", "echo lead here; exec cat")
+	output(t, lead, 0, contains("lead here"))
+	open, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead", Cols: 90, Rows: 20}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := open.Msg.GetTerminal(); got.GetId() != lead.ID || !open.Msg.GetAttached() || got.GetCols() != 90 ||
+		open.Msg.GetEndOffset() == 0 {
+		t.Fatalf("opened %v, want attached to %s at 90 columns, with the end of what it wrote", open.Msg, lead.ID)
+	}
+
+	// The lead ended: still no shell under its name, the window attaches to the ended lead
+	// (TestServiceAttachesToExitedLeadTerminal).
+	lead.Hangup()
+	select {
+	case <-lead.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatal("the lead did not end")
+	}
+	ended, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead", Cols: 80, Rows: 24}))
+	if err != nil || ended.Msg.GetTerminal().GetId() != lead.ID || !ended.Msg.GetTerminal().GetExited() {
+		t.Fatalf("open the lead's terminal whose lead ended: %v, %v, want the ended lead", ended.Msg, err)
+	}
+	if m.Lookup("lead") != nil {
+		t.Fatal("a shell started under the lead's name whose lead ended")
+	}
+
+	// A command the window names runs there; another terminal gets the shell.
+	again, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
+		Name: "lead", Command: []string{"/bin/sh", "-c", "exec cat"}, Cols: 80, Rows: 24,
+	}))
+	if err != nil || again.Msg.GetAttached() || again.Msg.GetTerminal().GetCommand()[0] != "/bin/sh" {
+		t.Fatalf("restart the lead's command: %v, %v", again.Msg, err)
+	}
+	shell, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "main", Cols: 80, Rows: 24}))
+	if err != nil || shell.Msg.GetAttached() {
+		t.Fatalf("open the window's shell: %v, %v", shell.Msg, err)
+	}
+}
+
+// TestServiceAttachesToExitedLeadTerminal keeps the lead's last terminal for the window after a fast exit: its
+// output can still be read, and opening it starts nothing in its place.
+func TestServiceAttachesToExitedLeadTerminal(t *testing.T) {
+	m := NewManager(Config{Command: []string{"/bin/sh"}, Dir: t.TempDir()})
+	t.Cleanup(m.Close)
+	srv := httptest.NewServer(func() *http.ServeMux {
+		mux := http.NewServeMux()
+		mux.Handle(Handler(m))
+		return mux
+	}())
+	t.Cleanup(srv.Close)
+	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
+	ctx := t.Context()
+	lead, attached, err := m.Open("lead", []string{"/bin/sh", "-c", "printf 'retained\\n'; exit 7"}, t.TempDir(), 80, 24)
+	if err != nil || attached {
+		t.Fatalf("start lead: attached %v, %v", attached, err)
+	}
+	if code := end(t, lead); code != 7 {
+		t.Fatalf("lead exit code %d, want 7", code)
+	}
+	if m.Latest("lead") != lead {
+		t.Fatal("Latest lost the ended lead")
+	}
+
+	open, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
+		Name: "lead", Cols: 90, Rows: 20,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := open.Msg.GetTerminal()
+	if got.GetId() != lead.ID || !open.Msg.GetAttached() || !got.GetExited() || got.GetExitCode() != 7 {
+		t.Fatalf("opened %v, want attached to exited terminal %s", open.Msg, lead.ID)
+	}
+	if m.Lookup("lead") != nil {
+		t.Fatal("opening an exited lead restarted it")
+	}
+
+	stream, err := c.Read(ctx, connect.NewRequest(&terminalv1.TerminalServiceReadRequest{Id: got.GetId()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	var code int32
+	var exited bool
+	for stream.Receive() {
+		out.Write(stream.Msg().GetData())
+		if stream.Msg().GetExited() {
+			exited, code = true, stream.Msg().GetExitCode()
+		}
+	}
+	if stream.Err() != nil || !strings.Contains(out.String(), "retained") || !exited || code != 7 {
+		t.Fatalf("read output %q, exited %v, code %d: %v", out.String(), exited, code, stream.Err())
 	}
 }

@@ -23,7 +23,6 @@ import (
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
-	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/link"
 )
 
@@ -31,7 +30,7 @@ import (
 type Service struct {
 	uiv1connect.UnimplementedUiServiceHandler
 
-	// Home is the data directory: $DJINN_HOME, by default ~/.config/djinn.
+	// Home is the data directory: $DJINN_HOME, by default djinn in the user's configuration folder.
 	Home string
 	// Version of djinn, as GetEnvironment reports it.
 	Version string
@@ -45,6 +44,9 @@ type Service struct {
 	// Restart restarts Djinn on the newer one that waits at its path, once the response to Update is sent, and
 	// returns the version it restarts on and how many terminals it will run again. Nil: Update is unavailable.
 	Restart func() (version string, terminals int, err error)
+	// AgentPath is the PATH where GetEnvironment looks for the agents, and nowhere else. Nil: Djinn's own, brought
+	// up to date by machine.ExtendPath, which the workers and the leads get too. Tests replace it.
+	AgentPath func() string
 	// Install installs a build that SetBuild proposed: its project's install command, run on its commit, telling
 	// progress each step and what it waits for. It tells whether a newer Djinn waits at the path of the running one
 	// since, to restart on. Nil: no build installs.
@@ -62,6 +64,8 @@ type Service struct {
 
 	// Shown is called when the window is asked to show a wish or a terminal.
 	Shown func(wishID, terminal string)
+	// Notices shows the system notifications, and knows whether the system lets it. Nil: none (a test).
+	Notices *Notices
 
 	dialogs sync.Mutex // One folder dialog at a time.
 
@@ -231,7 +235,8 @@ func IsRealHome(path string) bool {
 // its socket or its wishes. DJINN_HOME still decides when it is set.
 var Develop bool
 
-// Home is the data directory: $DJINN_HOME, by default ~/.config/djinn (djinn-dev for a development build).
+// Home is the data directory: $DJINN_HOME, by default djinn in the user's configuration folder (djinn-dev for a
+// development build).
 func Home() (string, error) {
 	home := os.Getenv("DJINN_HOME")
 	if home == "" {
@@ -259,7 +264,7 @@ var providers = []struct{ id, name, program string }{
 }
 
 func (s *Service) GetEnvironment(
-	context.Context, *connect.Request[uiv1.UiServiceGetEnvironmentRequest],
+	ctx context.Context, req *connect.Request[uiv1.UiServiceGetEnvironmentRequest],
 ) (*connect.Response[uiv1.UiServiceGetEnvironmentResponse], error) {
 	platform := runtime.GOOS
 	if platform == "windows" {
@@ -271,14 +276,22 @@ func (s *Service) GetEnvironment(
 	if s.Shortcuts != nil {
 		res.Shortcut = s.Shortcuts.State()
 	}
-	for _, p := range providers {
-		command, err := exec.LookPath(p.program)
-		if err != nil {
-			command = p.program
+	if req.Msg.GetAgents() {
+		if s.AgentPath != nil {
+			res.Providers = checkAgents(ctx, s.AgentPath())
+		} else {
+			res.Providers = checkAgents(ctx, launchPath())
 		}
-		res.Providers = append(res.Providers, &uiv1.Provider{
-			Id: p.id, Name: p.name, Available: err == nil, Command: command,
-		})
+	} else {
+		for _, p := range providers {
+			command, err := exec.LookPath(p.program)
+			if err != nil {
+				command = p.program
+			}
+			res.Providers = append(res.Providers, &uiv1.Provider{
+				Id: p.id, Name: p.name, Available: err == nil, Command: command,
+			})
+		}
 	}
 	return connect.NewResponse(res), nil
 }
@@ -297,41 +310,6 @@ func (s *Service) SetShortcut(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&uiv1.UiServiceSetShortcutResponse{Shortcut: shortcut}), nil
-}
-
-// WriteAtomic writes a temporary file next to path, readable by the owner only, then renames it over path: a
-// reader sees the old content or the new one, never a part of it. The rename tries again a moment on Windows,
-// where an antivirus scanning the file refuses it.
-func WriteAtomic(path string, data []byte) error {
-	return writeAtomic(path, data, fsx.OS())
-}
-
-func writeAtomic(path string, data []byte, r fsx.Renamer) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name()) // Fails harmlessly once renamed.
-	if err := tmp.Chmod(0o600); err != nil && runtime.GOOS != "windows" {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return r.Rename(tmp.Name(), path)
 }
 
 func (s *Service) ChooseDirectory(
@@ -455,8 +433,11 @@ func (s *Service) PresentTilasm(wishID, tilasmID string) {
 
 // Present asks the windows to show a wish and a terminal: the ones watching now, and one that starts watching
 // within a minute.
-func (s *Service) Present(wishID, terminal string) {
-	s.present(&uiv1.UiServiceWatchShowResponse{WishId: wishID, Terminal: terminal})
+func (s *Service) Present(wishID, terminal string) { s.PresentAt(wishID, terminal, "") }
+
+// PresentAt is Present with an element of the wish in view (UiServiceWatchShowResponse.target).
+func (s *Service) PresentAt(wishID, terminal, target string) {
+	s.present(&uiv1.UiServiceWatchShowResponse{WishId: wishID, Terminal: terminal, Target: target})
 }
 
 func (s *Service) present(msg *uiv1.UiServiceWatchShowResponse) {
@@ -771,4 +752,47 @@ func (s *Service) Watch(
 			}
 		}
 	}
+}
+
+// notificationSettings is the pane of the system's settings for notifications, on macOS.
+const notificationSettings = "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+
+func (s *Service) GetNotifications(
+	context.Context, *connect.Request[uiv1.UiServiceGetNotificationsRequest],
+) (*connect.Response[uiv1.UiServiceGetNotificationsResponse], error) {
+	access := s.Notices.Access()
+	return connect.NewResponse(&uiv1.UiServiceGetNotificationsResponse{Access: access, Settings: s.hasSettings(access)}), nil
+}
+
+func (s *Service) RequestNotifications(
+	context.Context, *connect.Request[uiv1.UiServiceRequestNotificationsRequest],
+) (*connect.Response[uiv1.UiServiceRequestNotificationsResponse], error) {
+	access := s.Notices.Request()
+	return connect.NewResponse(&uiv1.UiServiceRequestNotificationsResponse{Access: access, Settings: s.hasSettings(access)}), nil
+}
+
+// hasSettings tells that OpenNotificationSettings opens the system's settings: on macOS, where it decides.
+func (s *Service) hasSettings(access uiv1.NotificationAccess) bool {
+	return runtime.GOOS == "darwin" && access != uiv1.NotificationAccess_NOTIFICATION_ACCESS_UNAVAILABLE
+}
+
+func (s *Service) OpenNotificationSettings(
+	context.Context, *connect.Request[uiv1.UiServiceOpenNotificationSettingsRequest],
+) (*connect.Response[uiv1.UiServiceOpenNotificationSettingsResponse], error) {
+	if !s.hasSettings(s.Notices.Access()) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("no notification settings to open here"))
+	}
+	if err := s.Open(notificationSettings); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("open the notification settings: %w", err))
+	}
+	return connect.NewResponse(&uiv1.UiServiceOpenNotificationSettingsResponse{}), nil
+}
+
+func (s *Service) View(
+	_ context.Context, req *connect.Request[uiv1.UiServiceViewRequest],
+) (*connect.Response[uiv1.UiServiceViewResponse], error) {
+	if s.Notices != nil {
+		s.Notices.View(req.Msg.GetWishId())
+	}
+	return connect.NewResponse(&uiv1.UiServiceViewResponse{}), nil
 }

@@ -258,6 +258,22 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     bus, macOS without a bundle) leaves them off and the window opens. `UiService.NotifyQuestion`, never called,
     is gone. (`window_none.go`; `noticeService.ServiceStartup` returns no error)
   - [ ] Seen on GNOME, with a click and a button (by hand). (needs: a person on Linux)
+  - [x] On macOS nothing showed: the system refused each notification (`UNErrorDomain error 1`, not allowed), as
+    Djinn never asked for the permission; the error was only logged. The window now asks at start (macOS shows its
+    dialog the first time only), and the settings show the state, with "Allow" and "Open the macOS settings"
+    (`UiService.GetNotifications`, `RequestNotifications`, `OpenNotificationSettings`). (`TestNoticesAccess`,
+    `TestNotificationsService`)
+  - [x] More than questions: the edit question of a task says which task asks to change which project, with Yes
+    and No; a task that waits for that answer or fails; a wish that becomes ready to review. Each event shows once,
+    none for the wish the window shows while it is in front (`UiService.View`, the window's focus); a click shows
+    the wish at the question, the task or the grant (`UiServiceWatchShowResponse.target`, through the attention
+    bar's way to an element). (`TestNoticesAskPermission`, `TestNoticesShowAFailedTaskOnce`,
+    `TestNoticesShowAWishReadyToReview`, `TestNoticesQuietOnTheWishInView`)
+  - [x] Followed on a change of state only: a task written again in the same status (its events, its resources)
+    is not, so readiness is checked when a task's status or a question's answer changes, not at every commit.
+    (`TestNoticesFollowStatusChangesOnly`)
+  - [ ] Seen on macOS from the app: the dialog at first start, a question, a click and a button (by hand).
+    (needs: a person on a Mac)
   - [ ] macOS: needs the `.app` bundle and its identifier. T19 builds `Djinn.app`, identifier
     `io.github.empowill.djinn`; Wails asks for a signed app too, and the bundle is unsigned. (needs: a Mac, to see
     whether the ad hoc signature suffices)

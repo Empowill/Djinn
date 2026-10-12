@@ -1246,3 +1246,57 @@ func TestLostProcessNotWritingNorEngaged(t *testing.T) {
 		t.Errorf("expected next to be unblocked when lost process is not running, got why=%q, failed=%q", why, failed)
 	}
 }
+
+// TestMachineAlone: a decision says the task waits for the machine alone when slots, pressure or memory hold it, never
+// when its provider's usage limit, a push hold, a dependency or a task going first in the order does: djinn task start
+// frees the machine only.
+func TestMachineAlone(t *testing.T) {
+	now := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1,
+		Pushes: []*planv1.WishPush{{ProjectId: "held", Held: "at 12345678, test: exit status 1", FailedSha: "1234567890abcdef"}}}
+	task := func(id string, p planv1.Provider) *planv1.Task {
+		return &planv1.Task{Id: id, WishId: "w", Code: id, Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true,
+			Provider: p, CreateTime: timestamppb.New(now.Add(-time.Hour))}
+	}
+	free := task("free", planv1.Provider_PROVIDER_CODEX)
+	limitHolder := task("limit", planv1.Provider_PROVIDER_CLAUDE)
+	limitHolder.Status = planv1.TaskStatus_TASK_STATUS_RESUMING
+	limitHolder.ResumeAfter, limitHolder.WaitReason = timestamppb.New(now.Add(time.Hour)), "the session limit"
+	limited := task("limited", planv1.Provider_PROVIDER_CLAUDE)
+	pushed := task("pushed", planv1.Provider_PROVIDER_CODEX)
+	pushed.ProjectId = "held"
+	after := task("after", planv1.Provider_PROVIDER_CODEX)
+	after.DependsOn = []string{"free"}
+	tasks := []*planv1.Task{free, limitHolder, limited, pushed, after}
+	pass := func(m *Machine) map[string]Decision {
+		got := map[string]Decision{}
+		for _, d := range New(tasks, []*planv1.Wish{wish}, map[string]bool{"held": true}, m).At(now).Pass() {
+			got[d.Task.GetId()] = d
+		}
+		return got
+	}
+	for _, m := range []*Machine{{Slots: 4, Rule: "test", Pressure: "simulated"}, {Slots: 1, Running: 1, Rule: "test"}} {
+		got := pass(m)
+		if d := got["free"]; d.Why == "" || !d.Machine {
+			t.Errorf("%+v: free = %q, machine %v; want the machine alone", m, d.Why, d.Machine)
+		}
+		for _, id := range []string{"limit", "limited", "pushed", "after"} {
+			if d := got[id]; d.Why == "" || d.Machine {
+				t.Errorf("%+v: %s = %q, machine %v; want held by more than the machine", m, id, d.Why, d.Machine)
+			}
+		}
+	}
+	// Memory short for the first in the order: it waits for the machine; the next one waits for it, not the machine.
+	limitHolder.Status = planv1.TaskStatus_TASK_STATUS_DONE
+	limitHolder.Resources = &planv1.Resources{PeakMemoryBytes: 3 * machine.GiB}
+	limited.CreateTime = timestamppb.New(now.Add(-2 * time.Hour))
+	tasks = append(tasks, task("next", planv1.Provider_PROVIDER_CODEX))
+	got := pass(&Machine{Slots: 4, Rule: "test", Available: 2 * machine.GiB, Total: 16 * machine.GiB,
+		Policy: machine.DefaultPolicy()})
+	if d := got["limited"]; d.Why == "" || !d.Machine {
+		t.Errorf("short of memory: %q, machine %v", d.Why, d.Machine)
+	}
+	if d := got["next"]; !strings.Contains(d.Why, "limited goes first") || d.Machine {
+		t.Errorf("behind one short of memory: %q, machine %v", d.Why, d.Machine)
+	}
+}

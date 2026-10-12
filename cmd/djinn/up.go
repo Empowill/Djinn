@@ -15,6 +15,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -156,6 +158,9 @@ func runUp(args []string) (restart bool, err error) {
 		harness.WithCapacity(monitor.Capacity),
 		harness.WithMemory(monitor.Available, policy),
 		harness.WithTotal(monitor.Total),
+		// Started from the Finder or a desktop menu, Djinn has a bare PATH (fromLauncher): before each start, its PATH
+		// gains the folders of the agents installed meanwhile.
+		harness.WithBeforeStart(beforeStart()),
 	}
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
@@ -222,9 +227,25 @@ func runUp(args []string) (restart bool, err error) {
 	// them until djinn up stops, and is left as it is before they hang up: a crash, or an error, keeps it.
 	leadNotes := newLeadNote(home, os.Stderr)
 	// The window's terminal opens in the first project, never in the home folder, where djinn starts from a menu.
+	var leadPrompted atomic.Pointer[func()] // what follows the choice the lead shows, once the window's services run
+	var leadChanged atomic.Pointer[func()]  // what tells the window that the lead started or ended, once they run
 	terminals := terminal.NewManager(terminal.Config{
-		Command: terminal.ShellCommand(term), Dir: termDir, Changed: leadNotes.update,
+		Command: terminal.ShellCommand(term), Dir: termDir, BeforeStart: beforeStart(),
+		// A lead that ends shows beside Lead in the window, with its exit code, until Lead starts it again.
+		Changed: func() {
+			leadNotes.update()
+			if f := leadChanged.Load(); f != nil {
+				(*f)()
+			}
+		},
 		Folder: func() (string, error) { return plan.FirstProjectFolder(ctx, db) },
+		// A choice the lead's agent shows (an approval, a folder to trust) shows in the window's attention bar, and
+		// as a notification.
+		Prompted: func(t *terminal.Terminal) {
+			if f := leadPrompted.Load(); f != nil && t.Name == plan.LeadTerminal {
+				(*f)()
+			}
+		},
 	})
 	leadNotes.terms = terminals
 	defer terminals.Close()
@@ -252,7 +273,7 @@ func runUp(args []string) (restart bool, err error) {
 	// After an update, the terminals that ran before it run again; after a crash, the leads.
 	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, lead.GetSessionId(), os.Stderr))
 	// Then the lead, unless a lead came back already.
-	resumeLead(ctx, db, home, terminals, uiSvc, os.Stderr)
+	leadFailed := resumeLead(ctx, db, home, terminals, uiSvc, os.Stderr)
 	updates, err := newUpdater(version, uiSvc, terminals, leadNotes, stop)
 	if err != nil {
 		return false, err
@@ -329,10 +350,11 @@ func runUp(args []string) (restart bool, err error) {
 		return uiSvc.Window
 	}
 	var broadcastLoad func(djinnv1.LoadNotch)
+	var changeLead func()
 	svc := services(db, home, workers, terminals, uiSvc, pages,
 		plan.WithShowTilasm(showTilasm), plan.WithTilasmURL(tilasmURL),
 		plan.WithLoad(func() djinnv1.LoadNotch { return monitor.Policy().Notch }),
-		plan.WithLoadBroadcaster(&broadcastLoad),
+		plan.WithLoadBroadcaster(&broadcastLoad), plan.WithLeadBroadcaster(&changeLead), plan.WithLeadFailed(leadFailed),
 	)
 	loadPrefix, loadHandler := machine.LoadHandler(home, monitor, workers.SetPolicy, func(n djinnv1.LoadNotch) {
 		if broadcastLoad != nil {
@@ -396,14 +418,39 @@ func runUp(args []string) (restart bool, err error) {
 	defer remove()
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(ctx, ln, h) }()
-	// The window shows each question asked in an active wish as a system notification. An answer from one goes
-	// through the server, as the window's would.
+	// The window tells what waits for the developer in an active wish by system notifications: questions, tasks
+	// that wait or failed, wishes ready to review. A click shows the wish there; an answer from one goes through the
+	// server, as the window's would.
 	notices := &ui.Notices{
 		Store: db, Language: render.SystemLanguage(),
-		Show:   func(wishID string) { leads{terminals, uiSvc}.Show(wishID, "") },
+		Show:   func(wishID, target string) { leads{terminals, uiSvc}.ShowAt(wishID, "", target) },
 		Answer: func(ctx context.Context, id string, choice planv1.Choice) error { return answer(ctx, addr, id, choice) },
 	}
+	uiSvc.Notices = notices
 	go notices.Run(ctx)
+	prompted := func() {
+		changeLead()
+		notices.LeadPrompt(leads{terminals, uiSvc}.Prompt(plan.LeadTerminal))
+	}
+	leadPrompted.Store(&prompted)
+	// The window learns that the lead's terminal started or ended, not that another terminal did.
+	var leadSeen struct {
+		sync.Mutex
+		t      *terminal.Terminal
+		exited bool
+	}
+	leadChange := func() {
+		t := terminals.Latest(plan.LeadTerminal)
+		exited := t != nil && t.Exited()
+		leadSeen.Lock()
+		same := leadSeen.t == t && leadSeen.exited == exited
+		leadSeen.t, leadSeen.exited = t, exited
+		leadSeen.Unlock()
+		if !same {
+			changeLead()
+		}
+	}
+	leadChanged.Store(&leadChange)
 
 	// A link macOS gives the app, clicked anywhere: the window shows it, or says it does not know it.
 	openLinks := func(raw string) {
@@ -417,7 +464,7 @@ func runUp(args []string) (restart bool, err error) {
 		err = <-served
 	default:
 		if transport == server.Wails {
-			err = openWindow(ctx, "", h, raise, notices, shortcuts, openLinks)
+			err = openWindow(ctx, "", server.WholeWrites(h), raise, notices, shortcuts, openLinks)
 		} else {
 			err = openWindow(ctx, url, nil, raise, notices, shortcuts, openLinks)
 		}
@@ -484,15 +531,64 @@ func (l leads) Open(name, line, dir, exclusive string) ([]string, string, bool, 
 
 func (l leads) Say(name, line string) error { return l.terminals.Say(name, line) }
 
+func (l leads) SayText(name, text string) (bool, error) { return l.terminals.SayText(name, text) }
+
 func (l leads) Running(name string) bool { return l.terminals.IsRunning(name) }
+
+// Exit is how the lead's program ended on its own: a lead closed on request (its tab's ×, another agent, Djinn
+// stopping) is no news.
+func (l leads) Exit(name string) *planv1.LeadExit {
+	t := l.terminals.Latest(name)
+	if t == nil || t.HungUp() {
+		return nil
+	}
+	if _, _, exited, code := t.State(); exited {
+		return &planv1.LeadExit{Code: int32(code)}
+	}
+	return nil
+}
+
+func (l leads) Command(name string) []string {
+	if t := l.terminals.Lookup(name); t != nil {
+		return t.Command
+	}
+	return nil
+}
 
 func (l leads) Close(name string) { l.terminals.Hangup(name) }
 
-func (l leads) Show(wishID, name string) {
+func (l leads) Prompt(name string) *planv1.LeadPrompt {
+	t := l.terminals.Lookup(name)
+	if t == nil {
+		return nil
+	}
+	p := t.Prompt()
+	if p == nil {
+		return nil
+	}
+	return &planv1.LeadPrompt{Title: p.Title, Lines: p.Lines, Options: p.Options}
+}
+
+func (l leads) Choose(name, title string, lines, options []string, index int) error {
+	t := l.terminals.Lookup(name)
+	if t == nil {
+		return plan.ErrNoChoice
+	}
+	err := t.Choose(title, lines, options, index)
+	if errors.Is(err, terminal.ErrNoPrompt) || errors.Is(err, terminal.ErrExited) {
+		return plan.ErrNoChoice
+	}
+	return err
+}
+
+func (l leads) Show(wishID, name string) { l.ShowAt(wishID, name, "") }
+
+// ShowAt is Show with an element of the wish in view (UiServiceWatchShowResponse.target).
+func (l leads) ShowAt(wishID, name, target string) {
 	if l.ui.Raise != nil {
 		l.ui.Raise()
 	}
-	l.ui.Present(wishID, name)
+	l.ui.PresentAt(wishID, name, target)
 }
 
 // answer answers a question through the djinn that answers at addr.

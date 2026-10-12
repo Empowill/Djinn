@@ -17,8 +17,8 @@ import (
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	djinnv1connect "github.com/empowill/djinn/gen/go/djinn/v1/djinnv1connect"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/plan"
-	"github.com/empowill/djinn/internal/ui"
 )
 
 const settingsFile = "settings.json"
@@ -77,7 +77,7 @@ func WriteNotch(home string, notch djinnv1.LoadNotch) error {
 	if err != nil {
 		return err
 	}
-	return ui.WriteAtomic(path, data)
+	return fsx.WriteAtomic(path, data)
 }
 
 // LoadOption configures loadService.
