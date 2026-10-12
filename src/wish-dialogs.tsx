@@ -54,6 +54,7 @@ import { type Theme, chosenTheme, setTheme as applyTheme } from "./theme";
 import { WishComposer } from "./wish-composer";
 import { WishDropdown } from "./wish-dropdown";
 import { MAX_PROMPT_CHARACTERS, promptTooLong } from "./wish-composer-markdown";
+import { platformShortcut, TooltipButton } from "./tooltip";
 
 // MakeWish sends the complete request. Naming the wish belongs to the server and its lead. With three wishes active,
 // it is made paused, as the lamp would refuse a fourth.
@@ -140,6 +141,12 @@ export function MakeWish({
   const selectedProjectNames = selected
     .map((id) => projects.find((project) => project.id === id)?.name)
     .filter((name): name is string => Boolean(name));
+  const submitShortcut = platformShortcut("Enter", t("app.shortcut_enter"));
+  const submitLabel = busy
+    ? t("make.submitting")
+    : full
+      ? t("make.submit_paused")
+      : t("make.submit");
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (submitting.current || !hasText || !prompt.trim() || overLimit) return;
@@ -387,22 +394,22 @@ export function MakeWish({
               </p>
             )}
             <div className="wish-creation-footer">
-              <button
+              <TooltipButton
                 type="submit"
                 className="button accent"
                 disabled={busy || !hasText || !prompt.trim() || overLimit}
+                label={submitLabel}
+                tooltip={submitLabel}
+                shortcut={submitShortcut.label}
+                aria-keyshortcuts={submitShortcut.aria}
               >
-                {busy
-                  ? t("make.submitting")
-                  : full
-                    ? t("make.submit_paused")
-                    : t("make.submit")}
+                {submitLabel}
                 {busy ? (
                   <LoaderCircle className="wish-creation-spinner" size={14} />
                 ) : (
                   <ArrowRight size={14} />
                 )}
-              </button>
+              </TooltipButton>
             </div>
           </form>
         </div>

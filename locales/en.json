@@ -32,6 +32,8 @@
   "app.new_wish": "New wish",
   "app.personal_space": "Personal space",
   "app.share": "Share",
+  "app.shortcut_enter": "Enter",
+  "app.shortcut_escape": "Esc",
   "attention.label": "What waits for you",
   "attention.level_action": "Worker",
   "attention.level_blocking": "Blocking",

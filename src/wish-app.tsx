@@ -146,7 +146,8 @@ export function WishApp() {
         event.defaultPrevented ||
         event.repeat ||
         event.isComposing ||
-        modal !== null ||
+        (modal !== null && modal !== "make") ||
+        making ||
         !(event.metaKey || event.ctrlKey) ||
         (event.key !== "\\" && event.code !== "Backslash")
       )
@@ -158,7 +159,7 @@ export function WishApp() {
     };
     window.addEventListener("keydown", keys);
     return () => window.removeEventListener("keydown", keys);
-  }, [modal, toggleSidebar]);
+  }, [making, modal, toggleSidebar]);
 
   // The active wishes are always read: the flight plan and the side panel count what waits in each.
   const active = wishes.filter(isActive);
@@ -234,17 +235,21 @@ export function WishApp() {
           makeBackAction.current?.();
         }}
       >
-        <button
+        <TooltipButton
           type="button"
           className="wish-creation-back app-toolbar-back"
-          aria-label={makeBackInSetup ? t("agents.back") : t("make.back")}
-          title={makeBackInSetup ? t("agents.back") : t("make.back")}
+          label={makeBackInSetup ? t("agents.back") : t("make.back")}
+          tooltip={makeBackInSetup ? t("agents.back") : t("make.back")}
+          shortcut={
+            modal === "make" && !making ? t("app.shortcut_escape") : undefined
+          }
+          aria-keyshortcuts={modal === "make" && !making ? "Escape" : undefined}
           disabled={modal !== "make" || making}
           onClick={() => makeBackAction.current?.()}
           data-setup-back={makeBackInSetup || undefined}
         >
           <ArrowLeft size={16} aria-hidden="true" />
-        </button>
+        </TooltipButton>
         <TooltipButton
           type="button"
           className="sidebar-toggle app-toolbar-toggle"
