@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file ui/v1/ui.proto.
  */
 export const file_ui_v1_ui: GenFile = /*@__PURE__*/
-  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiMAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0Eg4KBmFnZW50cxgBIAEoCCKiAQofVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhAKCHBsYXRmb3JtGAIgASgJEiIKCXByb3ZpZGVycxgDIAMoCzIPLnVpLnYxLlByb3ZpZGVyEhUKDWZvbGRlcl9kaWFsb2cYBCABKAgSIQoIc2hvcnRjdXQYBSABKAsyDy51aS52MS5TaG9ydGN1dCJUCghTaG9ydGN1dBINCgVjaG9yZBgBIAEoCRIVCg1kZWZhdWx0X2Nob3JkGAIgASgJEhEKCWF2YWlsYWJsZRgDIAEoCBIPCgdwcm9ibGVtGAQgASgJIl8KCFNldHRpbmdzEhUKCHNob3J0Y3V0GAEgASgJSACIAQESJgoEbG9hZBgCIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaEgBiAEBQgsKCV9zaG9ydGN1dEIHCgVfbG9hZCKuAQoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHY29tbWFuZBgEIAEoCRIjCgVzdGF0ZRgFIAEoDjIULnVpLnYxLlByb3ZpZGVyU3RhdGUSDwoHdmVyc2lvbhgGIAEoCRIXCg9pbnN0YWxsX2NvbW1hbmQYByABKAkSFQoNbG9naW5fY29tbWFuZBgIIAEoCSJXCh9VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0EhcKBXRpdGxlGAEgASgJQgi6SAVyAxjIARIbCglkaXJlY3RvcnkYAiABKAlCCLpIBXIDGIAgIjUKIFVpU2VydmljZUNob29zZURpcmVjdG9yeVJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCSIrChxVaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0EgsKA3VybBgBIAEoCSIsCh1VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZRILCgN1cmwYASABKAkiNQobVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0EhYKBWNob3JkGAEgASgJQge6SARyAhhAIkEKHFVpU2VydmljZVNldFNob3J0Y3V0UmVzcG9uc2USIQoIc2hvcnRjdXQYASABKAsyDy51aS52MS5TaG9ydGN1dCJCChRVaVNlcnZpY2VTaG93UmVxdWVzdBIPCgd3aXNoX2lkGAEgASgJEhkKCHRlcm1pbmFsGAIgASgJQge6SARyAhhAIicKFVVpU2VydmljZVNob3dSZXNwb25zZRIOCgZ3aW5kb3cYASABKAgiMQoYVWlTZXJ2aWNlT3BlbkxpbmtSZXF1ZXN0EhUKA3VybBgBIAEoCUIIukgFcgMYgCAiTwoZVWlTZXJ2aWNlT3BlbkxpbmtSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhEKCXRpbGFzbV9pZBgCIAEoCRIOCgZ3aW5kb3cYAyABKAgiGwoZVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdCJoChpVaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhAKCHRlcm1pbmFsGAIgASgJEhEKCXRpbGFzbV9pZBgDIAEoCRIUCgx1bmtub3duX2xpbmsYBCABKAkiHQobVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0IqoBChxVaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlEg8KB2N1cnJlbnQYASABKAkSDQoFcmVhZHkYAiABKAkSEwoLbm90X3Jlc3VtZWQYAyADKAkSEQoJbm90ZXNfdXJsGAQgASgJEhsKBWJ1aWxkGAUgASgLMgwudWkudjEuQnVpbGQSJQoKaW5zdGFsbGluZxgGIAEoCzIRLnVpLnYxLkluc3RhbGxpbmciFwoVVWlTZXJ2aWNlV2F0Y2hSZXF1ZXN0IrABChZVaVNlcnZpY2VXYXRjaFJlc3BvbnNlEi8KBHNob3cYASABKAsyIS51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIzCgZ1cGRhdGUYAiABKAsyIy51aS52MS5VaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlEjAKBGxvYWQYAyABKAsyIi5kamlubi52MS5Mb2FkU2VydmljZVdhdGNoUmVzcG9uc2UiTAoKSW5zdGFsbGluZxILCgNzaGEYASABKAkSIAoEc3RlcBgCIAEoDjISLnVpLnYxLkluc3RhbGxTdGVwEg8KB3dhaXRpbmcYAyABKAkiOwoLVGFza1N1bW1hcnkSDAoEY29kZRgBIAEoCRINCgV0aXRsZRgCIAEoCRIPCgdzdW1tYXJ5GAMgASgJIsYBCgVCdWlsZBIPCgd3aXNoX2lkGAEgASgJEhIKCndpc2hfdGl0bGUYAiABKAkSEgoKcHJvamVjdF9pZBgDIAEoCRIPCgdwcm9qZWN0GAQgASgJEg4KBmJyYW5jaBgFIAEoCRILCgNzaGEYBiABKAkSDQoFdGFza3MYByADKAkSDwoHY2hhbmdlcxgIIAMoCRIlCglzdW1tYXJpZXMYCSADKAsyEi51aS52MS5UYXNrU3VtbWFyeRIPCgdpbnN0YWxsGAogASgJIjAKFlVpU2VydmljZVVwZGF0ZVJlcXVlc3QSFgoFYnVpbGQYASABKAlCB7pIBHICGEAiUAoXVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIRCgl0ZXJtaW5hbHMYAiABKAUSEQoJaW5zdGFsbGVkGAMgASgJKqABCg1Qcm92aWRlclN0YXRlEh4KGlBST1ZJREVSX1NUQVRFX1VOU1BFQ0lGSUVEEAASGgoWUFJPVklERVJfU1RBVEVfTUlTU0lORxABEh0KGVBST1ZJREVSX1NUQVRFX1NJR05FRF9PVVQQAhIYChRQUk9WSURFUl9TVEFURV9SRUFEWRADEhoKFlBST1ZJREVSX1NUQVRFX1VOS05PV04QBCqZAQoLSW5zdGFsbFN0ZXASHAoYSU5TVEFMTF9TVEVQX1VOU1BFQ0lGSUVEEAASGAoUSU5TVEFMTF9TVEVQX1dBSVRJTkcQARIaChZJTlNUQUxMX1NURVBfUFJFUEFSSU5HEAISGQoVSU5TVEFMTF9TVEVQX0JVSUxESU5HEAMSGwoXSU5TVEFMTF9TVEVQX1JFU1RBUlRJTkcQBDKQBwoJVWlTZXJ2aWNlEmUKDkdldEVudmlyb25tZW50EiUudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0GiYudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZSIEyPMYAhJoCg9DaG9vc2VEaXJlY3RvcnkSJi51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0GicudWkudjEuVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVzcG9uc2UiBMjzGAISXwoMT3BlbkV4dGVybmFsEiMudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBokLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlIgTI8xgCElwKC1NldFNob3J0Y3V0EiIudWkudjEuVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXNwb25zZSIEyPMYAhJHCgRTaG93EhsudWkudjEuVWlTZXJ2aWNlU2hvd1JlcXVlc3QaHC51aS52MS5VaVNlcnZpY2VTaG93UmVzcG9uc2UiBMjzGAISUwoIT3BlbkxpbmsSHy51aS52MS5VaVNlcnZpY2VPcGVuTGlua1JlcXVlc3QaIC51aS52MS5VaVNlcnZpY2VPcGVuTGlua1Jlc3BvbnNlIgTI8xgCElgKCVdhdGNoU2hvdxIgLnVpLnYxLlVpU2VydmljZVdhdGNoU2hvd1JlcXVlc3QaIS51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZSIEyPMYAjABEl4KC1dhdGNoVXBkYXRlEiIudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZSIEyPMYAjABEkwKBVdhdGNoEhwudWkudjEuVWlTZXJ2aWNlV2F0Y2hSZXF1ZXN0Gh0udWkudjEuVWlTZXJ2aWNlV2F0Y2hSZXNwb25zZSIEyPMYAjABEk0KBlVwZGF0ZRIdLnVpLnYxLlVpU2VydmljZVVwZGF0ZVJlcXVlc3QaHi51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXNwb25zZSIEyPMYAkJ2Cgljb20udWkudjFCB1VpUHJvdG9QAVorZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vdWkvdjE7dWl2MaICA1VYWKoCBVVpLlYxygIFVWlcVjHiAhFVaVxWMVxHUEJNZXRhZGF0YeoCBlVpOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_load, file_djinn_v1_options]);
+  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiMAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0Eg4KBmFnZW50cxgBIAEoCCKiAQofVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhAKCHBsYXRmb3JtGAIgASgJEiIKCXByb3ZpZGVycxgDIAMoCzIPLnVpLnYxLlByb3ZpZGVyEhUKDWZvbGRlcl9kaWFsb2cYBCABKAgSIQoIc2hvcnRjdXQYBSABKAsyDy51aS52MS5TaG9ydGN1dCJUCghTaG9ydGN1dBINCgVjaG9yZBgBIAEoCRIVCg1kZWZhdWx0X2Nob3JkGAIgASgJEhEKCWF2YWlsYWJsZRgDIAEoCBIPCgdwcm9ibGVtGAQgASgJIl8KCFNldHRpbmdzEhUKCHNob3J0Y3V0GAEgASgJSACIAQESJgoEbG9hZBgCIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaEgBiAEBQgsKCV9zaG9ydGN1dEIHCgVfbG9hZCKuAQoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHY29tbWFuZBgEIAEoCRIjCgVzdGF0ZRgFIAEoDjIULnVpLnYxLlByb3ZpZGVyU3RhdGUSDwoHdmVyc2lvbhgGIAEoCRIXCg9pbnN0YWxsX2NvbW1hbmQYByABKAkSFQoNbG9naW5fY29tbWFuZBgIIAEoCSJXCh9VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0EhcKBXRpdGxlGAEgASgJQgi6SAVyAxjIARIbCglkaXJlY3RvcnkYAiABKAlCCLpIBXIDGIAgIjUKIFVpU2VydmljZUNob29zZURpcmVjdG9yeVJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCSIrChxVaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0EgsKA3VybBgBIAEoCSIsCh1VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZRILCgN1cmwYASABKAkiNQobVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0EhYKBWNob3JkGAEgASgJQge6SARyAhhAIkEKHFVpU2VydmljZVNldFNob3J0Y3V0UmVzcG9uc2USIQoIc2hvcnRjdXQYASABKAsyDy51aS52MS5TaG9ydGN1dCJCChRVaVNlcnZpY2VTaG93UmVxdWVzdBIPCgd3aXNoX2lkGAEgASgJEhkKCHRlcm1pbmFsGAIgASgJQge6SARyAhhAIicKFVVpU2VydmljZVNob3dSZXNwb25zZRIOCgZ3aW5kb3cYASABKAgiMQoYVWlTZXJ2aWNlT3BlbkxpbmtSZXF1ZXN0EhUKA3VybBgBIAEoCUIIukgFcgMYgCAiTwoZVWlTZXJ2aWNlT3BlbkxpbmtSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhEKCXRpbGFzbV9pZBgCIAEoCRIOCgZ3aW5kb3cYAyABKAgiGwoZVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdCJ4ChpVaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhAKCHRlcm1pbmFsGAIgASgJEhEKCXRpbGFzbV9pZBgDIAEoCRIUCgx1bmtub3duX2xpbmsYBCABKAkSDgoGdGFyZ2V0GAUgASgJIh0KG1VpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdCKqAQocVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZRIPCgdjdXJyZW50GAEgASgJEg0KBXJlYWR5GAIgASgJEhMKC25vdF9yZXN1bWVkGAMgAygJEhEKCW5vdGVzX3VybBgEIAEoCRIbCgVidWlsZBgFIAEoCzIMLnVpLnYxLkJ1aWxkEiUKCmluc3RhbGxpbmcYBiABKAsyES51aS52MS5JbnN0YWxsaW5nIhcKFVVpU2VydmljZVdhdGNoUmVxdWVzdCKwAQoWVWlTZXJ2aWNlV2F0Y2hSZXNwb25zZRIvCgRzaG93GAEgASgLMiEudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2USMwoGdXBkYXRlGAIgASgLMiMudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZRIwCgRsb2FkGAMgASgLMiIuZGppbm4udjEuTG9hZFNlcnZpY2VXYXRjaFJlc3BvbnNlIkwKCkluc3RhbGxpbmcSCwoDc2hhGAEgASgJEiAKBHN0ZXAYAiABKA4yEi51aS52MS5JbnN0YWxsU3RlcBIPCgd3YWl0aW5nGAMgASgJIjsKC1Rhc2tTdW1tYXJ5EgwKBGNvZGUYASABKAkSDQoFdGl0bGUYAiABKAkSDwoHc3VtbWFyeRgDIAEoCSLGAQoFQnVpbGQSDwoHd2lzaF9pZBgBIAEoCRISCgp3aXNoX3RpdGxlGAIgASgJEhIKCnByb2plY3RfaWQYAyABKAkSDwoHcHJvamVjdBgEIAEoCRIOCgZicmFuY2gYBSABKAkSCwoDc2hhGAYgASgJEg0KBXRhc2tzGAcgAygJEg8KB2NoYW5nZXMYCCADKAkSJQoJc3VtbWFyaWVzGAkgAygLMhIudWkudjEuVGFza1N1bW1hcnkSDwoHaW5zdGFsbBgKIAEoCSIwChZVaVNlcnZpY2VVcGRhdGVSZXF1ZXN0EhYKBWJ1aWxkGAEgASgJQge6SARyAhhAIlAKF1VpU2VydmljZVVwZGF0ZVJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEQoJdGVybWluYWxzGAIgASgFEhEKCWluc3RhbGxlZBgDIAEoCSIiCiBVaVNlcnZpY2VHZXROb3RpZmljYXRpb25zUmVxdWVzdCJgCiFVaVNlcnZpY2VHZXROb3RpZmljYXRpb25zUmVzcG9uc2USKQoGYWNjZXNzGAEgASgOMhkudWkudjEuTm90aWZpY2F0aW9uQWNjZXNzEhAKCHNldHRpbmdzGAIgASgIIiYKJFVpU2VydmljZVJlcXVlc3ROb3RpZmljYXRpb25zUmVxdWVzdCJkCiVVaVNlcnZpY2VSZXF1ZXN0Tm90aWZpY2F0aW9uc1Jlc3BvbnNlEikKBmFjY2VzcxgBIAEoDjIZLnVpLnYxLk5vdGlmaWNhdGlvbkFjY2VzcxIQCghzZXR0aW5ncxgCIAEoCCIqCihVaVNlcnZpY2VPcGVuTm90aWZpY2F0aW9uU2V0dGluZ3NSZXF1ZXN0IisKKVVpU2VydmljZU9wZW5Ob3RpZmljYXRpb25TZXR0aW5nc1Jlc3BvbnNlIjAKFFVpU2VydmljZVZpZXdSZXF1ZXN0EhgKB3dpc2hfaWQYASABKAlCB7pIBHICGEAiFwoVVWlTZXJ2aWNlVmlld1Jlc3BvbnNlKqABCg1Qcm92aWRlclN0YXRlEh4KGlBST1ZJREVSX1NUQVRFX1VOU1BFQ0lGSUVEEAASGgoWUFJPVklERVJfU1RBVEVfTUlTU0lORxABEh0KGVBST1ZJREVSX1NUQVRFX1NJR05FRF9PVVQQAhIYChRQUk9WSURFUl9TVEFURV9SRUFEWRADEhoKFlBST1ZJREVSX1NUQVRFX1VOS05PV04QBCqZAQoLSW5zdGFsbFN0ZXASHAoYSU5TVEFMTF9TVEVQX1VOU1BFQ0lGSUVEEAASGAoUSU5TVEFMTF9TVEVQX1dBSVRJTkcQARIaChZJTlNUQUxMX1NURVBfUFJFUEFSSU5HEAISGQoVSU5TVEFMTF9TVEVQX0JVSUxESU5HEAMSGwoXSU5TVEFMTF9TVEVQX1JFU1RBUlRJTkcQBCqfAQoSTm90aWZpY2F0aW9uQWNjZXNzEiMKH05PVElGSUNBVElPTl9BQ0NFU1NfVU5TUEVDSUZJRUQQABIjCh9OT1RJRklDQVRJT05fQUNDRVNTX1VOQVZBSUxBQkxFEAESHwobTk9USUZJQ0FUSU9OX0FDQ0VTU19BTExPV0VEEAISHgoaTk9USUZJQ0FUSU9OX0FDQ0VTU19ERU5JRUQQAzLFCgoJVWlTZXJ2aWNlEmUKDkdldEVudmlyb25tZW50EiUudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0GiYudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZSIEyPMYAhJoCg9DaG9vc2VEaXJlY3RvcnkSJi51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0GicudWkudjEuVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVzcG9uc2UiBMjzGAISXwoMT3BlbkV4dGVybmFsEiMudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBokLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlIgTI8xgCElwKC1NldFNob3J0Y3V0EiIudWkudjEuVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXNwb25zZSIEyPMYAhJHCgRTaG93EhsudWkudjEuVWlTZXJ2aWNlU2hvd1JlcXVlc3QaHC51aS52MS5VaVNlcnZpY2VTaG93UmVzcG9uc2UiBMjzGAISUwoIT3BlbkxpbmsSHy51aS52MS5VaVNlcnZpY2VPcGVuTGlua1JlcXVlc3QaIC51aS52MS5VaVNlcnZpY2VPcGVuTGlua1Jlc3BvbnNlIgTI8xgCElgKCVdhdGNoU2hvdxIgLnVpLnYxLlVpU2VydmljZVdhdGNoU2hvd1JlcXVlc3QaIS51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZSIEyPMYAjABEl4KC1dhdGNoVXBkYXRlEiIudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZSIEyPMYAjABEkwKBVdhdGNoEhwudWkudjEuVWlTZXJ2aWNlV2F0Y2hSZXF1ZXN0Gh0udWkudjEuVWlTZXJ2aWNlV2F0Y2hSZXNwb25zZSIEyPMYAjABEk0KBlVwZGF0ZRIdLnVpLnYxLlVpU2VydmljZVVwZGF0ZVJlcXVlc3QaHi51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXNwb25zZSIEyPMYAhJrChBHZXROb3RpZmljYXRpb25zEicudWkudjEuVWlTZXJ2aWNlR2V0Tm90aWZpY2F0aW9uc1JlcXVlc3QaKC51aS52MS5VaVNlcnZpY2VHZXROb3RpZmljYXRpb25zUmVzcG9uc2UiBMjzGAISdwoUUmVxdWVzdE5vdGlmaWNhdGlvbnMSKy51aS52MS5VaVNlcnZpY2VSZXF1ZXN0Tm90aWZpY2F0aW9uc1JlcXVlc3QaLC51aS52MS5VaVNlcnZpY2VSZXF1ZXN0Tm90aWZpY2F0aW9uc1Jlc3BvbnNlIgTI8xgCEoMBChhPcGVuTm90aWZpY2F0aW9uU2V0dGluZ3MSLy51aS52MS5VaVNlcnZpY2VPcGVuTm90aWZpY2F0aW9uU2V0dGluZ3NSZXF1ZXN0GjAudWkudjEuVWlTZXJ2aWNlT3Blbk5vdGlmaWNhdGlvblNldHRpbmdzUmVzcG9uc2UiBMjzGAISRwoEVmlldxIbLnVpLnYxLlVpU2VydmljZVZpZXdSZXF1ZXN0GhwudWkudjEuVWlTZXJ2aWNlVmlld1Jlc3BvbnNlIgTI8xgCQnYKCWNvbS51aS52MUIHVWlQcm90b1ABWitnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby91aS92MTt1aXYxogIDVVhYqgIFVWkuVjHKAgVVaVxWMeICEVVpXFYxXEdQQk1ldGFkYXRh6gIGVWk6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_load, file_djinn_v1_options]);
 
 /**
  * @generated from message ui.v1.UiServiceGetEnvironmentRequest
@@ -492,6 +492,14 @@ export type UiServiceWatchShowResponse = Message<"ui.v1.UiServiceWatchShowRespon
    * @generated from field: string unknown_link = 4;
    */
   unknownLink: string;
+
+  /**
+   * The element of the wish to bring into view, by its id in the page: question-<id>, task-<id>, grant-<wish id>;
+   * empty for the top of the wish.
+   *
+   * @generated from field: string target = 5;
+   */
+  target: string;
 };
 
 /**
@@ -818,6 +826,138 @@ export const UiServiceUpdateResponseSchema: GenMessage<UiServiceUpdateResponse> 
   messageDesc(file_ui_v1_ui, 25);
 
 /**
+ * @generated from message ui.v1.UiServiceGetNotificationsRequest
+ */
+export type UiServiceGetNotificationsRequest = Message<"ui.v1.UiServiceGetNotificationsRequest"> & {
+};
+
+/**
+ * Describes the message ui.v1.UiServiceGetNotificationsRequest.
+ * Use `create(UiServiceGetNotificationsRequestSchema)` to create a new message.
+ */
+export const UiServiceGetNotificationsRequestSchema: GenMessage<UiServiceGetNotificationsRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 26);
+
+/**
+ * @generated from message ui.v1.UiServiceGetNotificationsResponse
+ */
+export type UiServiceGetNotificationsResponse = Message<"ui.v1.UiServiceGetNotificationsResponse"> & {
+  /**
+   * @generated from field: ui.v1.NotificationAccess access = 1;
+   */
+  access: NotificationAccess;
+
+  /**
+   * OpenNotificationSettings opens the system's settings (macOS).
+   *
+   * @generated from field: bool settings = 2;
+   */
+  settings: boolean;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceGetNotificationsResponse.
+ * Use `create(UiServiceGetNotificationsResponseSchema)` to create a new message.
+ */
+export const UiServiceGetNotificationsResponseSchema: GenMessage<UiServiceGetNotificationsResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 27);
+
+/**
+ * @generated from message ui.v1.UiServiceRequestNotificationsRequest
+ */
+export type UiServiceRequestNotificationsRequest = Message<"ui.v1.UiServiceRequestNotificationsRequest"> & {
+};
+
+/**
+ * Describes the message ui.v1.UiServiceRequestNotificationsRequest.
+ * Use `create(UiServiceRequestNotificationsRequestSchema)` to create a new message.
+ */
+export const UiServiceRequestNotificationsRequestSchema: GenMessage<UiServiceRequestNotificationsRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 28);
+
+/**
+ * @generated from message ui.v1.UiServiceRequestNotificationsResponse
+ */
+export type UiServiceRequestNotificationsResponse = Message<"ui.v1.UiServiceRequestNotificationsResponse"> & {
+  /**
+   * @generated from field: ui.v1.NotificationAccess access = 1;
+   */
+  access: NotificationAccess;
+
+  /**
+   * OpenNotificationSettings opens the system's settings (macOS).
+   *
+   * @generated from field: bool settings = 2;
+   */
+  settings: boolean;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceRequestNotificationsResponse.
+ * Use `create(UiServiceRequestNotificationsResponseSchema)` to create a new message.
+ */
+export const UiServiceRequestNotificationsResponseSchema: GenMessage<UiServiceRequestNotificationsResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 29);
+
+/**
+ * @generated from message ui.v1.UiServiceOpenNotificationSettingsRequest
+ */
+export type UiServiceOpenNotificationSettingsRequest = Message<"ui.v1.UiServiceOpenNotificationSettingsRequest"> & {
+};
+
+/**
+ * Describes the message ui.v1.UiServiceOpenNotificationSettingsRequest.
+ * Use `create(UiServiceOpenNotificationSettingsRequestSchema)` to create a new message.
+ */
+export const UiServiceOpenNotificationSettingsRequestSchema: GenMessage<UiServiceOpenNotificationSettingsRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 30);
+
+/**
+ * @generated from message ui.v1.UiServiceOpenNotificationSettingsResponse
+ */
+export type UiServiceOpenNotificationSettingsResponse = Message<"ui.v1.UiServiceOpenNotificationSettingsResponse"> & {
+};
+
+/**
+ * Describes the message ui.v1.UiServiceOpenNotificationSettingsResponse.
+ * Use `create(UiServiceOpenNotificationSettingsResponseSchema)` to create a new message.
+ */
+export const UiServiceOpenNotificationSettingsResponseSchema: GenMessage<UiServiceOpenNotificationSettingsResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 31);
+
+/**
+ * @generated from message ui.v1.UiServiceViewRequest
+ */
+export type UiServiceViewRequest = Message<"ui.v1.UiServiceViewRequest"> & {
+  /**
+   * The wish the page shows; empty for none (the flight plan, a dialog of its own).
+   *
+   * @generated from field: string wish_id = 1;
+   */
+  wishId: string;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceViewRequest.
+ * Use `create(UiServiceViewRequestSchema)` to create a new message.
+ */
+export const UiServiceViewRequestSchema: GenMessage<UiServiceViewRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 32);
+
+/**
+ * @generated from message ui.v1.UiServiceViewResponse
+ */
+export type UiServiceViewResponse = Message<"ui.v1.UiServiceViewResponse"> & {
+};
+
+/**
+ * Describes the message ui.v1.UiServiceViewResponse.
+ * Use `create(UiServiceViewResponseSchema)` to create a new message.
+ */
+export const UiServiceViewResponseSchema: GenMessage<UiServiceViewResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 33);
+
+/**
  * ProviderState is whether an agent command line is installed and signed in.
  *
  * @generated from enum ui.v1.ProviderState
@@ -910,6 +1050,48 @@ export enum InstallStep {
  */
 export const InstallStepSchema: GenEnum<InstallStep> = /*@__PURE__*/
   enumDesc(file_ui_v1_ui, 1);
+
+/**
+ * Whether the system lets Djinn show notifications.
+ *
+ * @generated from enum ui.v1.NotificationAccess
+ */
+export enum NotificationAccess {
+  /**
+   * Not known yet: the window is starting.
+   *
+   * @generated from enum value: NOTIFICATION_ACCESS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * This Djinn cannot show any: the browser, a build without a window, a system without notifications, or on macOS
+   * a Djinn that does not run from its app.
+   *
+   * @generated from enum value: NOTIFICATION_ACCESS_UNAVAILABLE = 1;
+   */
+  UNAVAILABLE = 1,
+
+  /**
+   * The system shows them.
+   *
+   * @generated from enum value: NOTIFICATION_ACCESS_ALLOWED = 2;
+   */
+  ALLOWED = 2,
+
+  /**
+   * The system does not show them: not allowed yet, or turned off in its settings.
+   *
+   * @generated from enum value: NOTIFICATION_ACCESS_DENIED = 3;
+   */
+  DENIED = 3,
+}
+
+/**
+ * Describes the enum ui.v1.NotificationAccess.
+ */
+export const NotificationAccessSchema: GenEnum<NotificationAccess> = /*@__PURE__*/
+  enumDesc(file_ui_v1_ui, 2);
 
 /**
  * What the window needs to show and follow the plan.
@@ -1027,6 +1209,48 @@ export const UiService: GenService<{
     methodKind: "unary";
     input: typeof UiServiceUpdateRequestSchema;
     output: typeof UiServiceUpdateResponseSchema;
+  },
+  /**
+   * Whether the system lets Djinn show notifications.
+   *
+   * @generated from rpc ui.v1.UiService.GetNotifications
+   */
+  getNotifications: {
+    methodKind: "unary";
+    input: typeof UiServiceGetNotificationsRequestSchema;
+    output: typeof UiServiceGetNotificationsResponseSchema;
+  },
+  /**
+   * Ask the system to let Djinn show notifications: on macOS, its dialog the first time; then the answer it keeps.
+   * Returns once the user answered.
+   *
+   * @generated from rpc ui.v1.UiService.RequestNotifications
+   */
+  requestNotifications: {
+    methodKind: "unary";
+    input: typeof UiServiceRequestNotificationsRequestSchema;
+    output: typeof UiServiceRequestNotificationsResponseSchema;
+  },
+  /**
+   * Open the system's notification settings, on Djinn where the system can: see
+   * UiServiceGetNotificationsResponse.settings.
+   *
+   * @generated from rpc ui.v1.UiService.OpenNotificationSettings
+   */
+  openNotificationSettings: {
+    methodKind: "unary";
+    input: typeof UiServiceOpenNotificationSettingsRequestSchema;
+    output: typeof UiServiceOpenNotificationSettingsResponseSchema;
+  },
+  /**
+   * Say which wish the page shows: no notification comes for it while the window is in front.
+   *
+   * @generated from rpc ui.v1.UiService.View
+   */
+  view: {
+    methodKind: "unary";
+    input: typeof UiServiceViewRequestSchema;
+    output: typeof UiServiceViewResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_ui_v1_ui, 0);

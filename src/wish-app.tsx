@@ -83,8 +83,8 @@ export function WishApp() {
     () => store("djinn.sidebar.collapsed", collapsed ? "1" : ""),
     [collapsed],
   );
-  // djinn lead resume --wish-id asks the window to show a wish, and so does a request routed to a new wish; a djinn://
-  // link, a wish or a tilasm in its wish, or says Djinn does not know it.
+  // djinn lead resume --wish-id asks the window to show a wish, and so does a request routed to a new wish, or a click
+  // on a notification, there; a djinn:// link, a wish or a tilasm in its wish, or says Djinn does not know it.
   useEffect(
     () =>
       djinn.focus.subscribe((focus) => {
@@ -146,6 +146,11 @@ export function WishApp() {
   const chosen = wishes.find((w) => w.id === selected);
   const plan = !chosen && (selected === PLAN || active.length > 0);
   const wish = plan ? undefined : (chosen ?? wishes[0]);
+  const shownId = wish?.id ?? "";
+  // djinn sends no notification for the wish shown while the window is in front.
+  useEffect(() => {
+    void clients.ui.view({ wishId: shownId }).catch(() => undefined);
+  }, [clients, shownId]);
   const project = projects.find((p) => p.id === projectId);
 
   const move = (wishId: string, to: number) =>
