@@ -228,6 +228,7 @@ func (h *Harness) recoverIntegrations(ctx context.Context, tasks []*planv1.Task)
 // branches whose push is due after each commit, and the pushes the person approved; then it merges main into the
 // integration branches where it is due (main.go).
 func (h *Harness) integratePass(ctx context.Context) {
+	ctx = withPassMemo(ctx)
 	start := time.Now()
 	logx.L().Debug("integration pass begins")
 	defer func() { logx.Took(slog.LevelDebug, "integration pass ended", start) }()

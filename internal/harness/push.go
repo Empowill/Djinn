@@ -1059,25 +1059,55 @@ func pushTarget(ctx context.Context, repo, branch string) (remote, target string
 	if branch == "" {
 		return "", ""
 	}
-	target = branch
-	if merge, err := git(ctx, repo, "config", "--get", "branch."+branch+".merge"); err == nil {
-		target = cmp.Or(strings.TrimPrefix(merge, "refs/heads/"), branch)
-	}
-	if r, err := git(ctx, repo, "config", "--get", "branch."+branch+".remote"); err == nil && r != "" && r != "." {
+	c := readRemotes(ctx, repo)
+	target = cmp.Or(strings.TrimPrefix(c.merge[branch], "refs/heads/"), branch)
+	if r := c.remote[branch]; r != "" && r != "." {
 		return r, target
 	}
-	out, err := git(ctx, repo, "remote")
-	if err != nil || out == "" {
-		return "", ""
-	}
-	remotes := strings.Fields(out)
 	switch {
-	case slices.Contains(remotes, "origin"):
+	case slices.Contains(c.remotes, "origin"):
 		return "origin", target
-	case len(remotes) == 1:
-		return remotes[0], target
+	case len(c.remotes) == 1:
+		return c.remotes[0], target
 	}
 	return "", ""
+}
+
+// remoteConfig is what pushTarget reads of a repository's configuration: the upstream of each branch, its remote and
+// its name there, and the names of the remotes, as git remote lists them.
+type remoteConfig struct {
+	merge, remote map[string]string
+	remotes       []string
+}
+
+// readRemotes reads the remoteConfig of repo in one git, or takes it from ctx's pass memo.
+func readRemotes(ctx context.Context, repo string) remoteConfig {
+	memo := passMemoOf(ctx)
+	if c, ok := memo.remotesOf(repo); ok {
+		return c
+	}
+	c := remoteConfig{merge: map[string]string{}, remote: map[string]string{}}
+	// git exits 1 when no key matches: a repository with no remote and no upstream.
+	out, _ := gitRaw(ctx, repo, "config", "--null", "--get-regexp", `^(branch|remote)\.`)
+	for entry := range strings.SplitSeq(out, "\x00") {
+		key, value, _ := strings.Cut(entry, "\n")
+		section, rest, ok := strings.Cut(key, ".")
+		dot := strings.LastIndex(rest, ".")
+		if !ok || dot < 0 {
+			continue // remote.pushDefault: no remote named
+		}
+		name, variable := rest[:dot], rest[dot+1:]
+		switch {
+		case section == "remote" && !slices.Contains(c.remotes, name):
+			c.remotes = append(c.remotes, name)
+		case section == "branch" && variable == "merge":
+			c.merge[name] = value
+		case section == "branch" && variable == "remote":
+			c.remote[name] = value
+		}
+	}
+	memo.keepRemotes(repo, c)
+	return c
 }
 
 // unpushed are the commits of branch that no branch of remote holds, as this repository last saw it: the titles of

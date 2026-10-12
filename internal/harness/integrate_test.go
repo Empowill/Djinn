@@ -44,16 +44,7 @@ type integration struct {
 // the command that makes it, "test" as the test command. opts are djinn up's options beside these.
 func integrating(t *testing.T, opts ...Option) *integration {
 	t.Helper()
-	in := &integration{repo: gitRepo(t), now: time.Now()}
-	for _, args := range [][]string{{"config", "user.name", "Test"}, {"config", "user.email", "test@example.com"}} {
-		if _, err := git(t.Context(), in.repo, args...); err != nil {
-			t.Fatal(err)
-		}
-	}
-	writeFile(t, in.repo, "app/gen/index.txt", "\n")
-	writeFile(t, in.repo, "app/src/.keep", "")
-	in.git(t, in.repo, "add", ".")
-	in.git(t, in.repo, "commit", "--quiet", "-m", "Generated files")
+	in := &integration{repo: gitRepoWith(t, map[string]string{"app/gen/index.txt": "\n", "app/src/.keep": ""}), now: time.Now()}
 	in.env = up(t, t.TempDir(), append([]Option{WithClock(in.clock), WithCommands(in.run), WithGates(in.gate)}, opts...)...)
 	in.wishID, in.projectID = in.wish(t, filepath.Join(in.repo, "app"))
 	in.branch = plan.CheckedOutBranch(t.Context(), in.repo)

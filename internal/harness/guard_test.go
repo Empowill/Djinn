@@ -2,6 +2,7 @@ package harness
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,8 +30,6 @@ func newGuardRepo(t *testing.T) guardRepo {
 		{"init", "--quiet", "--bare", g.remote},
 		{"init", "--quiet", "-b", "main", g.dir},
 		{"-C", g.dir, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "--quiet", "--allow-empty", "-m", "first"},
-		{"-C", g.dir, "config", "user.name", "T"},
-		{"-C", g.dir, "config", "user.email", "t@example.com"},
 		{"-C", g.dir, "remote", "add", "origin", g.remote},
 		{"-C", g.dir, "push", "--quiet", "origin", "main"},
 		{"-C", g.dir, "worktree", "add", "--quiet", "-b", "w1", g.worker},
@@ -39,8 +38,27 @@ func newGuardRepo(t *testing.T) guardRepo {
 		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
+		if args[0] == "init" && args[2] == "-b" {
+			// Written, not set with git config: each git costs 0.1 s on Windows. No maintenance after each commit.
+			appendFile(t, filepath.Join(g.dir, ".git", "config"),
+				"[user]\n\tname = T\n\temail = t@example.com\n[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n")
+		}
 	}
+	appendFile(t, filepath.Join(g.remote, "config"), "[receive]\n\tautogc = false\n")
 	return g
+}
+
+// appendFile appends text to the file at path.
+func appendFile(t *testing.T, path, text string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.WriteString(text)
+	if err := errors.Join(err, f.Close()); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // runIn runs name in dir with env added to the test's own environment, and returns what it printed.
