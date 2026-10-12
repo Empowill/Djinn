@@ -623,6 +623,80 @@ test("Enlighten me sends the answer's note in one click: no second field", async
   assert.match(kept.html(), /<textarea[^>]*>Cotton\?<\/textarea>/);
 });
 
+// A gesture shows on its card, by key as by click: its button is down while the answer waits, then the answer leaves
+// as it comes back up; the card keeps the gesture's colour, and a wisp rises from the chosen button only.
+test("a gesture presses its button and the card answers back in its colour", async () => {
+  const answered = [];
+  const enlightened = [];
+  const card = live(s.WishQuestion, {
+    question: {
+      id: "q1",
+      code: "Q01",
+      text: "Which oil?",
+      options: ["Olive", "Paraffin"],
+      recommendation: "A: it smells good.",
+    },
+    onAnswer: async (choice) => {
+      answered.push(choice);
+    },
+    onEnlighten: async (note) => {
+      enlightened.push(note);
+    },
+  });
+  assert.doesNotMatch(card.html(), /gesture-|is-pressed|question-wisp/);
+
+  // Enter on the card: the lamp is down, the card plays the rub, nothing has left yet.
+  card.one("question-card").onKeyDown({ key: "Enter", preventDefault() {} });
+  let html = card.html();
+  assert.match(html, /class="question-card open can-wait gesture-rub"/);
+  assert.match(html, /class="button accent lamp-rub is-pressed"/);
+  assert.match(
+    html,
+    /<span class="question-wisp" aria-hidden="true"><\/span><\/button>/,
+  );
+  assert.equal(html.match(/question-wisp/g).length, 1);
+  assert.match(html, /class="button secondary lamp-enlighten"/);
+  assert.equal(answered.length, 0);
+
+  // Back up: the answer left, the card still glows in the lamp's colour.
+  await card.settle();
+  assert.deepEqual(answered, [s.Choice.A]);
+  html = card.html();
+  assert.match(html, /class="button accent lamp-rub"/);
+  assert.match(html, /gesture-rub/);
+
+  // A click plays the same; Enlighten me plays its own, the wisp on its button.
+  const other = live(s.WishQuestion, {
+    question: { id: "q2", code: "Q02", text: "Which wick?", options: [] },
+    onAnswer: async () => {},
+    onEnlighten: async (note) => {
+      enlightened.push(note);
+    },
+  });
+  other.one("lamp-enlighten").onClick();
+  html = other.html();
+  assert.match(html, /class="question-card open can-wait gesture-enlighten"/);
+  assert.match(html, /class="button secondary lamp-enlighten is-pressed"/);
+  assert.match(
+    html,
+    /⇧↵<\/kbd><span class="question-wisp" aria-hidden="true">/,
+  );
+  await other.settle();
+  assert.deepEqual(enlightened, [""]);
+
+  // Refused: the card stops playing, as it was.
+  const refused = live(s.WishQuestion, {
+    question: { id: "q3", code: "Q03", text: "Which lamp?", options: [] },
+    onAnswer: async () => {
+      throw new Error("refused");
+    },
+  });
+  refused.one("lamp-rub").onClick();
+  assert.match(refused.html(), /gesture-rub/);
+  await refused.settle();
+  assert.doesNotMatch(refused.html(), /gesture-|is-pressed|question-wisp/);
+});
+
 test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enlighten, composing, arrows, 1-4, and macOS hints", async () => {
   const answered = [];
   const enlightened = [];
