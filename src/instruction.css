@@ -101,6 +101,7 @@
   isolation: isolate;
   border-radius: 999px;
   color: var(--workspace-action-ink, var(--text));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--text) 18%, transparent);
 }
 .workspace-action-surface {
   position: absolute;
@@ -109,7 +110,8 @@
   border: 1px solid var(--workspace-action-line, var(--line-strong));
   border-radius: inherit;
   background: var(--surface-raised);
-  box-shadow: 0 8px 22px color-mix(in srgb, var(--shadow) 36%, transparent);
+  overflow: hidden;
+  pointer-events: none;
   transition:
     background-color 0.26s ease,
     border-color 0.26s ease;
@@ -120,6 +122,7 @@
   border-radius: inherit;
   background: var(--accent);
   pointer-events: none;
+  will-change: transform;
 }
 .workspace-action-primary {
   --workspace-action-ink: var(--n-25);
@@ -186,12 +189,15 @@
   .workspace-action-control:focus-visible {
   color: var(--workspace-action-blend-ink);
 }
-.workspace-action-control:focus-visible,
-.workspace-action-leading:focus-visible,
-.workspace-action-send:focus-visible,
-.workspace-action-close:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: -4px;
+.workspace-action:has(:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.workspace-action .workspace-action-control:focus-visible,
+.workspace-action .workspace-action-leading:focus-visible,
+.workspace-action .workspace-action-send:focus-visible,
+.workspace-action .workspace-action-close:focus-visible {
+  outline: none;
 }
 .workspace-action .workspace-action-editor-shell {
   display: block;
@@ -251,7 +257,7 @@
   background: transparent;
   color: inherit;
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: 12px;
   line-height: 1.65;
   box-shadow: none;
 }
