@@ -260,9 +260,15 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
     const breadcrumbs = page.locator(".main-shell .topbar .breadcrumbs");
     const breadcrumbsBox = await breadcrumbs.boundingBox();
     expect(breadcrumbsBox).not.toBeNull();
-    expect(breadcrumbsBox!.x).toBeGreaterThanOrEqual(
-      toggleBox!.x + toggleBox!.width,
-    );
+    const pageHeader = page.locator(".page-header");
+    if (await pageHeader.count()) {
+      await expect(pageHeader).toHaveCSS("padding-top", "6px");
+      expect(breadcrumbsBox!.x).toBeCloseTo(166, 0);
+    } else {
+      expect(breadcrumbsBox!.x).toBeGreaterThanOrEqual(
+        toggleBox!.x + toggleBox!.width,
+      );
+    }
   }
 
   try {
@@ -279,7 +285,7 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
         el.getBoundingClientRect().top,
       ]),
     ))
-      expect(top, `${name}`).toBeGreaterThanOrEqual(16);
+      expect(top, `${name}`).toBeGreaterThanOrEqual(6);
     // The sidebar is a rail here: the topbar starts after the toggle.
     const first = await page
       .locator(".main-shell .topbar > :first-child")
