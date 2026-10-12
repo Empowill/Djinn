@@ -1711,7 +1711,7 @@ func (h *Harness) end(r *run, res Result) {
 	if !r.watcher {
 		t.Refused = r.refusals
 	}
-	integrate := h.pendIntegration(t)
+	integrate, left := h.pendIntegration(t)
 	why := t.GetError()
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
 		h.limited(r, t)
@@ -1763,6 +1763,9 @@ func (h *Harness) end(r *run, res Result) {
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 		h.kickIntegrate()
 	}
+	if left != "" {
+		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: none: " + left})
+	}
 	switch {
 	case watching(t) && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED:
 		h.tellWatcherFailed(t)
@@ -1770,7 +1773,7 @@ func (h *Harness) end(r *run, res Result) {
 		h.workerEnded(t)
 	}
 	if tellsDone(t) && toldDoneAtEnd(t, integrate) {
-		h.tellDone(context.Background(), t, "")
+		h.tellDone(context.Background(), t, notIntegrated(left))
 	}
 	if t.GetCorrection() != nil || t.GetReview() != nil {
 		h.kickIntegrate()

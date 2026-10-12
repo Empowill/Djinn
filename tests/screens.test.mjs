@@ -4942,7 +4942,10 @@ test("the project view lists the setup and the checks, when each runs, and how e
   const none = s.renderToStaticMarkup(
     h(s.ProjectChecks, { setup: "", checks: [], runs: [] }),
   );
-  assert.match(none, /No check: Djinn does not integrate this project/);
+  assert.match(
+    none,
+    /No check: Djinn integrates this project&#x27;s work only into a wish&#x27;s own branch, untested/,
+  );
   const html = s.renderToStaticMarkup(
     h(s.ProjectChecks, {
       setup: "npm ci",

@@ -17733,6 +17733,8 @@ type TaskServiceUpdateRequest struct {
 	// A path the task writes, in the project's folder; empty for the whole folder.
 	WriteScopes []string `protobuf:"bytes,10,rep,name=write_scopes,json=writeScopes,proto3" json:"write_scopes,omitempty"`
 	// Clear the task's integration record: "none" removes it. Refused while the task merges, or when its branch holds unmerged commits unless --force is given.
+	// "pending" puts the work of a done task without one back in line to be merged, as when its worker ended: refused,
+	// saying why, when Djinn does not integrate it.
 	Integration *string `protobuf:"bytes,11,opt,name=integration,proto3,oneof" json:"integration,omitempty"`
 	// Force clearing the integration record even if the task's branch holds unmerged commits.
 	Force         *bool `protobuf:"varint,12,opt,name=force,proto3,oneof" json:"force,omitempty"`
@@ -19844,7 +19846,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x02by\x18\x03 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02byB\t\n" +
 	"\a_prompt\"@\n" +
 	"\x1bTaskServiceContinueResponse\x12!\n" +
-	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\x84\x06\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\x8d\x06\n" +
 	"\x18TaskServiceUpdateRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12%\n" +
 	"\x05title\x18\x02 \x01(\tB\n" +
@@ -19857,8 +19859,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\bdecision\x18\b \x01(\tBf\xbaHcra2_^(|[Qq][0-9]{2,3}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$H\x05R\bdecision\x88\x01\x01\x129\n" +
 	"\x0emax_budget_usd\x18\t \x01(\x01B\x0e\xbaH\v\x12\t)\x00\x00\x00\x00\x00\x00\x00\x00H\x06R\fmaxBudgetUsd\x88\x01\x01\x124\n" +
 	"\fwrite_scopes\x18\n" +
-	" \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\vwriteScopes\x122\n" +
-	"\vintegration\x18\v \x01(\tB\v\xbaH\br\x06R\x04noneH\aR\vintegration\x88\x01\x01\x12\x19\n" +
+	" \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\vwriteScopes\x12;\n" +
+	"\vintegration\x18\v \x01(\tB\x14\xbaH\x11r\x0fR\x04noneR\apendingH\aR\vintegration\x88\x01\x01\x12\x19\n" +
 	"\x05force\x18\f \x01(\bH\bR\x05force\x88\x01\x01B\b\n" +
 	"\x06_titleB\t\n" +
 	"\a_promptB\v\n" +

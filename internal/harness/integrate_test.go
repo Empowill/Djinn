@@ -744,7 +744,7 @@ func TestTaskEndsWithUnreadableSettingsGetsMergedOnceFixed(t *testing.T) {
 	task2 := proto.CloneOf(w1)
 	task2.Id = store.NewID()
 	task2.Integration = nil
-	if !in.h.pendIntegration(task2) {
+	if integrate, _ := in.h.pendIntegration(task2); !integrate {
 		t.Fatal("pendIntegration should return true even when settings are unreadable")
 	}
 	if task2.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING {

@@ -40,7 +40,7 @@ install: "go tool task install"
 | `generated`      | The files code generation makes, as globs (`gen/**`), repeated: see [integration](#integration). | none |
 | `generate`       | The command that makes them, in the project's folder.                   | none                       |
 | `setup`          | The command that makes a fresh worktree ready (`npm ci`), in the project's folder: see [checks](#checks). | none |
-| `checks`         | The commands Djinn runs before it commits a task's work, before it pushes, or both, each through a gate of its name: see [checks](#checks). Set, Djinn integrates finished work. A file that sets some sets them all. | none: no integration |
+| `checks`         | The commands Djinn runs before it commits a task's work, before it pushes, or both, each through a gate of its name: see [checks](#checks). Set, Djinn integrates finished work. A file that sets some sets them all. | none: integration into a wish's own branch only, untested |
 | `test_one`       | The command template a worker runs for targeted tests (`go tool task test-pkg -- {pkg}`): see [checks](#checks). | none: worker runs tests covering what it changed |
 | `test`           | The former name of a check run before each commit: `test: "make test"` is the check `test` at `commit`. | none |
 | `correction_attempts` | How many correction workers Djinn starts for work that conflicts in code or tests red, before it asks you: see [integration](#integration). `0`: it asks at once. | `2` |
@@ -249,16 +249,23 @@ brings it there by itself, no model ([T07](../plan/8e8d3d76-orchestrator.md)):
    `git add`, `git commit`, `git restore`, `git rm` and `git clean` besides the project's `commands`; its
    `denied_commands` still win.
 
+In a project whose settings name no check, Djinn does the same, no check run, when the wish has a branch of its own
+there (`djinn wish set-integration <wish> --branch feat/x --create-branch`), neither the project's main branch nor an
+azima's: untested work never goes into main. The work of a done task it leaves out for want of one, commits and all,
+says why in the task's events (`integration: none: ...`) and in the one line the lead hears of its end.
+
 A task that waits for another (`--after W5`) waits for W5's work to be **committed**, not only done: it says `waits for
 W5 to be committed`, and W5 is committed at once, alone. Its worktree then starts from the integration branch's tip,
 whatever branch your checkout is on, so it builds on W5's work; its start event says `from feat/x at 1a2b3c4d`. Work
-Djinn does not integrate (a project that names no check) counts once done, as before.
+Djinn does not integrate (a project that names no check, its wish on main) counts once done, as before.
 
 Where each task's work stands shows in `djinn task get` (`integration`: its state, the commit, what failed, the task
 that corrects it), the lead's brief, the wish's page and the Tasks tab: done, waiting to be committed, being
 committed, committed as `1a2b3c4d`, conflict, red, corrected by W9, uncommitted, reviewed by W9. A finished task's
 integration record can be cleared with `djinn task update <task> --integration none` (refused while it is merging),
-leaving it without an integration record so Djinn will not integrate it on its own.
+leaving it without an integration record so Djinn will not integrate it on its own. `djinn task update <task>
+--integration pending` puts the work of a done task without one back in line, as when its worker ended: once the
+wish has a branch of its own, say; refused, saying why, when Djinn would not integrate it.
 
 ### Pushing
 
