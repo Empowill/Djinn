@@ -813,98 +813,24 @@
   align-items: center;
   gap: 6px;
 }
-/* Branch lead messaging and wish creation styles retained during the main merge. */
-/* Card indications stay compact; the floating wish action is centered in the workspace below. */
+/* Writing to the lead: a pill floating at the bottom centre of the wish, which unfolds into its box
+   (lead-message.tsx). Only the pill takes the pointer: the page under the row stays clickable. */
 .lead-message {
   position: absolute;
-  right: 20px;
-  bottom: calc(28px + var(--space-4));
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--space-2);
-}
-.lead-message-floating {
   right: 0;
   bottom: 20px;
   left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   pointer-events: none;
 }
-.lead-message-floating > .workspace-action {
+.lead-message > .workspace-action {
   pointer-events: auto;
 }
-.lead-message-floating .workspace-action-lead.is-expanded {
+.lead-message .workspace-action-lead.is-expanded {
   width: min(680px, calc(100% - 32px));
-}
-.lead-message-floating .lead-message-toggle {
-  width: auto;
-  height: auto;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-.lead-message-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 1px solid var(--line);
-  background: var(--surface-raised);
-  color: var(--muted);
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--shadow) 40%, transparent);
-}
-.lead-message-toggle:hover,
-.lead-message-toggle.open {
-  color: var(--accent);
-  border-color: var(--line-strong);
-}
-.lead-message-toggle.off {
-  color: var(--muted-dim);
-}
-.lead-message-panel {
-  width: min(360px, calc(100vw - 40px));
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-panel);
-  background: var(--surface);
-  box-shadow: 0 10px 35px color-mix(in srgb, var(--shadow) 60%, transparent);
-  padding: var(--space-2) var(--space-3) var(--space-2);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-.lead-message-panel header,
-.lead-message-panel footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  color: var(--muted);
-  font-size: var(--font-size-body);
-}
-.lead-message-panel textarea {
-  resize: vertical;
-  min-height: 56px;
-  max-height: 40vh;
-  font: var(--font-size-body) var(--mono);
-}
-.lead-message-off {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  color: var(--muted);
-  font-size: var(--font-size-body);
-}
-.lead-message-off p {
-  margin: 0;
-}
-.lead-message-hint {
-  color: var(--muted-dim);
-  min-width: 0;
 }
 .lead-message-sent {
   display: inline-flex;
@@ -920,9 +846,9 @@
   flex: none;
   margin-top: 2px;
 }
-/* The page scrolls past the button: nothing stays under it. */
+/* The page scrolls past the pill: nothing stays under it. */
 .wish-view .mission-scroll {
-  padding-bottom: 64px;
+  padding-bottom: 80px;
 }
 /* Wish creation is a page of the main shell. The request, tags, and actions float over its surface. */
 .lead-frame:has(.wish-creation) > .lead-terminal {

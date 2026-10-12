@@ -374,7 +374,11 @@ export function WishApp() {
               }}
             />
           ) : plan ? (
-            <FlightPlan wishes={active} onOpen={setSelected} onToast={setToast} />
+            <FlightPlan
+              wishes={active}
+              onOpen={setSelected}
+              onToast={setToast}
+            />
           ) : wish ? (
             <WishView
               key={wish.id}

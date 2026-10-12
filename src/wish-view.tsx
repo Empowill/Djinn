@@ -134,6 +134,7 @@ import {
   leadTrouble,
   recordedAgent,
 } from "./wish-head";
+import { LeadMessage } from "./lead-message";
 import { PageHeader, PageHeaderAction } from "./page-header";
 import { TooltipButton } from "./tooltip";
 
@@ -626,21 +627,20 @@ export function WishView({
 
   // lead resumes the lead, focusing on this wish, or starts one of another agent; what Djinn says of it shows as a toast: a terminal
   // that runs a program already, a session Djinn does not know.
-  const lead = (provider?: Provider) => {
+  const resumeLead = (provider?: Provider) => {
     let note = "";
-    quiet(
-      act(
-        async () => {
-          ({ note } = await clients.lead.resume({
-            wishId: wish.id,
-            provider,
-          }));
-        },
-        [Change.WISH],
-        () => note,
-      ),
+    return act(
+      async () => {
+        ({ note } = await clients.lead.resume({
+          wishId: wish.id,
+          provider,
+        }));
+      },
+      [Change.WISH],
+      () => note,
     );
   };
+  const lead = (provider?: Provider) => quiet(resumeLead(provider));
   const attention = attentionOf(
     [...open, ...waitingLead],
     waiting,
@@ -1165,6 +1165,11 @@ export function WishView({
           )}
         </div>
       </div>
+      <LeadMessage
+        wish={wish}
+        stopped={!leadRecord || !!leadTrouble(leadExit, leadStartError)}
+        onResume={() => resumeLead()}
+      />
     </div>
   );
 }

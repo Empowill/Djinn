@@ -136,7 +136,8 @@ From a terminal, `djinn lead resume` does what **Lead** does, and starts Djinn i
 `djinn lead resume --provider codex` picks the agent. `djinn lead set <session-id> --directory <folder>`
 records a session you started yourself. `djinn lead tell "…"` writes to the running lead as if you typed it in its
 terminal, line breaks kept (`--wish-id <wish-id>` says which wish it is about); it waits while you type there or a
-choice is on screen.
+choice is on screen. In a wish, the pill **Write to the lead** at the bottom does the same about that wish
+(Cmd/Ctrl+I opens it; Enter sends, Shift+Enter breaks the line, Escape folds it and keeps the draft).
 
 When the lead's agent asks for your approval in its terminal (a command to run, a folder to trust), the bar of what
 waits for you shows it first, in the flight plan and in every wish, with its options as buttons, and a notification

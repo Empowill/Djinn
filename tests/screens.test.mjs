@@ -4253,6 +4253,19 @@ function setupMockDom() {
     querySelector() {
       return null;
     }
+    // Motion measures the box of an element it lays out (the wish's pill, workspace-action.tsx).
+    getBoundingClientRect() {
+      return {
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: 0,
+        height: 0,
+      };
+    }
   }
 
   globalThis.HTMLIFrameElement = class HTMLIFrameElement {};
