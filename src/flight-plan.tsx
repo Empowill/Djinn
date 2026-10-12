@@ -707,30 +707,33 @@ export function FlightPlan({
                               </span>
                             </h3>
                           </div>
-                          {plan.questions.map(({ wish, item, blocking }) => (
-                            <WishQuestion
-                              key={item.id}
-                              question={item}
-                              origin={wishOrigin(wish)}
-                              blocking={blocking}
-                              noLead={noLead(lead)}
-                              onAnswer={handleQuestionAnswer}
-                              onMark={handleQuestionMark}
-                              onEnlighten={handleQuestionEnlighten}
-                              onMove={(q) =>
-                                setMovingQuestion({
-                                  wishId: wish.id,
-                                  question: q,
-                                })
-                              }
-                              onWithdraw={(q) =>
-                                setWithdrawingQuestion({
-                                  wishId: wish.id,
-                                  question: q,
-                                })
-                              }
-                            />
-                          ))}
+                          {plan.questions.map(
+                            ({ wish, item, blocking, report }) => (
+                              <WishQuestion
+                                key={item.id}
+                                question={item}
+                                origin={wishOrigin(wish)}
+                                blocking={blocking}
+                                report={report}
+                                noLead={noLead(lead)}
+                                onAnswer={handleQuestionAnswer}
+                                onMark={handleQuestionMark}
+                                onEnlighten={handleQuestionEnlighten}
+                                onMove={(q) =>
+                                  setMovingQuestion({
+                                    wishId: wish.id,
+                                    question: q,
+                                  })
+                                }
+                                onWithdraw={(q) =>
+                                  setWithdrawingQuestion({
+                                    wishId: wish.id,
+                                    question: q,
+                                  })
+                                }
+                              />
+                            ),
+                          )}
                         </section>
                       )}
                       {plan.waiting.length > 0 && (

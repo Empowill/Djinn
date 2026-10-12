@@ -3,6 +3,7 @@
 // wish sorts the same way); what the lamp decides (a wish's rank, whether it is ready) comes from the lamp.
 import {
   AzimaState,
+  type Block,
   IntegrationState,
   type ProofNeed,
   Prover,
@@ -22,6 +23,7 @@ import {
   watcherRuns,
 } from "./format";
 import { estimateCost, getPriceTable } from "./prices";
+import { reportOf, reportsOf } from "./reports";
 import type { WishDetail } from "./store";
 
 export interface Item<T> {
@@ -32,6 +34,8 @@ export interface Item<T> {
 export interface OpenQuestion extends Item<Question> {
   // The codes of the tasks that wait for this answer: such a question comes first.
   blocking: string[];
+  // The report of its wish it names (src/data/reports.ts), which its card links.
+  report?: Block;
 }
 
 export const EMPTY_BLOCKING: string[] = [];
@@ -490,13 +494,18 @@ function questionsWhere(
   keep: (q: Question) => boolean,
 ): OpenQuestion[] {
   const blocks = blocking(detail.tasks);
+  const reports = reportsOf(detail.blocks);
   return detail.questions
     .filter(keep)
-    .map((item) => ({
-      wish,
-      item,
-      blocking: blocks.get(item.id) ?? EMPTY_BLOCKING,
-    }))
+    .map((item) => {
+      const report = reportOf(item, reports);
+      return {
+        wish,
+        item,
+        blocking: blocks.get(item.id) ?? EMPTY_BLOCKING,
+        ...(report && { report }),
+      };
+    })
     .sort(byUrgency);
 }
 

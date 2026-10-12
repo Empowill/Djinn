@@ -7565,11 +7565,13 @@ type QuestionServiceAskRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The question, in one or two sentences.
 	Text string `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
-	// An option the developer can pick; repeat for each one, up to four.
+	// An option the developer can pick; repeat for each one, up to four. A command in backticks, or a djinn command,
+	// gets a copy button.
 	Options []string `protobuf:"bytes,2,rep,name=options,proto3" json:"options,omitempty"`
 	// Wish the question belongs to.
 	WishId string `protobuf:"bytes,3,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
-	// What is at stake, in Markdown: what the answer changes, what each option costs.
+	// What is at stake, in Markdown: what the answer changes, what each option costs. Naming a report of the wish (a
+	// block of kind report) by its title or its id links it on the card; an inline code gets a copy button.
 	Context string `protobuf:"bytes,4,opt,name=context,proto3" json:"context,omitempty"`
 	// The option you recommend, and why, in Markdown.
 	Recommendation string `protobuf:"bytes,5,opt,name=recommendation,proto3" json:"recommendation,omitempty"`

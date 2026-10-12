@@ -3562,7 +3562,8 @@ export type QuestionServiceAskRequest = Message<"plan.v1.QuestionServiceAskReque
   text: string;
 
   /**
-   * An option the developer can pick; repeat for each one, up to four.
+   * An option the developer can pick; repeat for each one, up to four. A command in backticks, or a djinn command,
+   * gets a copy button.
    *
    * @generated from field: repeated string options = 2;
    */
@@ -3576,7 +3577,8 @@ export type QuestionServiceAskRequest = Message<"plan.v1.QuestionServiceAskReque
   wishId: string;
 
   /**
-   * What is at stake, in Markdown: what the answer changes, what each option costs.
+   * What is at stake, in Markdown: what the answer changes, what each option costs. Naming a report of the wish (a
+   * block of kind report) by its title or its id links it on the card; an inline code gets a copy button.
    *
    * @generated from field: string context = 4;
    */

@@ -97,6 +97,8 @@ export {
 export { TilasmList } from "@/src/tilasms.tsx";
 export { AgentBlocks } from "@/src/agent-blocks.tsx";
 export { MarkdownBody } from "@/src/markdown-body.tsx";
+export { CopyButton } from "@/src/copy-command.tsx";
+export * as dew from "@/e2e/report-question.ts";
 export { SafeSvg, sanitizeSvg } from "@/src/safe-svg.tsx";
 export { openDjinnLink, parseDjinnLink } from "@/src/data/links.ts";
 export { ConnectError, Code } from "@connectrpc/connect";
@@ -376,7 +378,7 @@ test("a question shows its options by letter and its recommendation; answered, w
   assert.doesNotMatch(open, /Confirm/);
   assert.match(
     open,
-    /<button class="option selected" aria-pressed="true"><strong class="option-letter">A</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">A</,
   );
   assert.match(
     open,
@@ -433,7 +435,7 @@ test("a question shows its options by letter and its recommendation; answered, w
   assert.ok(lamp.indexOf("Enlighten me") < lamp.indexOf("Rub the lamp"));
   assert.match(
     lamp,
-    /<button class="option selected" aria-pressed="true"><strong class="option-letter">B</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">B</,
   );
   assert.match(lamp, /aria-pressed="true"[^>]*>.*Read<\/button>/);
   assert.match(lamp, /Blocks W2/);
@@ -630,7 +632,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   // 1. Initial state: option A is recommended and preselected.
   assert.match(
     card.html(),
-    /<button class="option selected" aria-pressed="true"><strong class="option-letter">A</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">A</,
   );
   assert.doesNotMatch(card.html(), /question-hint unpicked/);
 
@@ -645,7 +647,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   assert.ok(prevented);
   assert.match(
     card.html(),
-    /<button class="option selected" aria-pressed="true"><strong class="option-letter">B</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">B</,
   );
 
   card.one("question-card").onKeyDown({
@@ -654,7 +656,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   });
   assert.match(
     card.html(),
-    /<button class="option selected" aria-pressed="true"><strong class="option-letter">C</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">C</,
   );
 
   card.one("question-card").onKeyDown({
@@ -663,7 +665,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   });
   assert.match(
     card.html(),
-    /<button class="option selected" aria-pressed="true"><strong class="option-letter">B</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">B</,
   );
 
   card.one("question-card").onKeyDown({
@@ -672,7 +674,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   });
   assert.match(
     card.html(),
-    /<button class="option selected" aria-pressed="true"><strong class="option-letter">A</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">A</,
   );
 
   // Number keys 1-4 pick options
@@ -682,7 +684,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   });
   assert.match(
     card.html(),
-    /<button class="option selected" aria-pressed="true"><strong class="option-letter">D</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">D</,
   );
 
   card.one("question-card").onKeyDown({
@@ -691,7 +693,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   });
   assert.match(
     card.html(),
-    /<button class="option selected" aria-pressed="true"><strong class="option-letter">B</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">B</,
   );
 
   // Typing in the textarea
@@ -803,7 +805,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   });
   assert.match(
     cardNoRec.html(),
-    /<button class="option selected" aria-pressed="true"><strong class="option-letter">A</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">A</,
   );
   assert.doesNotMatch(cardNoRec.html(), /question-hint unpicked/);
 
@@ -872,6 +874,273 @@ test("shortcuts follow the platform, and header actions carry tooltips, not titl
   assert.doesNotMatch(action, /title=/);
   // Closed, the tooltip is not in the page.
   assert.doesNotMatch(action, /role="tooltip"/);
+});
+
+test("a question reads top-down: its title, what is at stake folded, its report, the recommendation, the options, the gestures, then the note", () => {
+  const wishId = "01a130b1-398a-7072-be60-ce928cb7241e";
+  const report = {
+    id: "01a130d9-0000-7000-8000-000000000001",
+    wishId,
+    kind: "report",
+    title: s.dew.REPORT_TITLE,
+    content: s.dew.REPORT,
+  };
+  const html = s.renderToStaticMarkup(
+    h(s.WishQuestion, {
+      question: {
+        id: "q4",
+        code: "Q04",
+        wishId,
+        text: s.dew.QUESTION,
+        options: s.dew.options(wishId),
+        context: s.dew.CONTEXT,
+        recommendation: s.dew.RECOMMENDATION,
+        before: "before the implementation starts",
+        move: true,
+        rounds: [],
+      },
+      report,
+      onAnswer: async () => {},
+      onEnlighten: async () => {},
+    }),
+  );
+  // The explanation comes before the call to act, the note last.
+  const at = (text) => {
+    const i = html.indexOf(text);
+    assert.ok(i >= 0, `the card shows ${text}`);
+    return i;
+  };
+  const order = [
+    "Will you run the command?",
+    "What is at stake</h4>",
+    s.dew.CONTEXT_FIRST,
+    "Read more",
+    `Report: ${s.dew.REPORT_TITLE}`,
+    "Recommendation · A",
+    '<strong class="option-letter">A</strong>',
+    '<strong class="option-letter">B</strong>',
+    "Enlighten me",
+    "Rub the lamp",
+    "<textarea",
+    "Your answer goes to the lead",
+  ].map(at);
+  assert.deepEqual(
+    order,
+    [...order].sort((a, b) => a - b),
+  );
+  // Its before words stay on its badge.
+  assert.match(
+    html,
+    /status-badge tone-waiting[^>]*>.*before the implementation starts/,
+  );
+  // The long context shows its first section; Read more unfolds the rest in place.
+  assert.match(
+    html,
+    /<button type="button" class="read-more" aria-expanded="false"><svg[^>]*>.*?<\/svg>Read more<\/button>/,
+  );
+  assert.doesNotMatch(html, new RegExp(s.dew.CONTEXT_LATER));
+  // The report it names is one click away, folded.
+  assert.match(
+    html,
+    /<button type="button" class="question-report-link" aria-expanded="false">.*Report: Payroll for acme: feasibility/,
+  );
+  assert.doesNotMatch(html, /What the fix costs/);
+  // The option's command is selectable text with its copy button, inside an option that is no button.
+  assert.match(
+    html,
+    new RegExp(
+      `<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">A</strong><p>Done: I ran <span class="command"><code>djinn wish allow ${wishId} --mode auto</code><button type="button" class="copy-command" title="Copy the command" aria-label="Copy the command">`,
+    ),
+  );
+  assert.doesNotMatch(html, /<button class="option/);
+});
+
+test("a copy button copies the exact command and says so, and never answers the question around it", async () => {
+  const copied = [];
+  const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: async (text) => copied.push(text) },
+  });
+  try {
+    const command =
+      "djinn wish allow 01a130b1-398a-7072-be60-ce928cb7241e --mode auto";
+    const button = live(s.CopyButton, { text: command });
+    let stopped = 0;
+    button.one("copy-command").onClick({
+      stopPropagation: () => stopped++,
+      preventDefault: () => {},
+    });
+    await button.settle();
+    assert.deepEqual(copied, [command]);
+    // Its click stops there: the option around it is not picked.
+    assert.equal(stopped, 1);
+    assert.match(
+      button.html(),
+      /class="copy-command copied" title="Copied" aria-label="Copied">.*<span class="copy-feedback" role="status">Copied<\/span>/,
+    );
+  } finally {
+    if (clipboard) Object.defineProperty(navigator, "clipboard", clipboard);
+    else delete navigator.clipboard;
+  }
+
+  // Enter on a copy button presses it: the card does not rub the lamp.
+  const answered = [];
+  const card = live(s.WishQuestion, {
+    question: {
+      id: "q4",
+      code: "Q04",
+      text: s.dew.QUESTION,
+      options: s.dew.options("w"),
+      recommendation: s.dew.RECOMMENDATION,
+    },
+    onAnswer: async (choice) => {
+      answered.push(choice);
+    },
+  });
+  const onCopy = {
+    tagName: "BUTTON",
+    closest: (selector) => (selector.startsWith("button") ? {} : null),
+  };
+  let prevented = false;
+  card.one("question-card").onKeyDown({
+    key: "Enter",
+    target: onCopy,
+    preventDefault: () => {
+      prevented = true;
+    },
+  });
+  await card.settle();
+  assert.deepEqual(answered, []);
+  assert.equal(prevented, false);
+  // Selecting the words of an option picks nothing; a plain click picks it, and answers nothing either.
+  const options = () => card.all("option");
+  globalThis.getSelection = () => ({ toString: () => "djinn wish allow" });
+  try {
+    options()[1].props.onClick();
+  } finally {
+    delete globalThis.getSelection;
+  }
+  assert.equal(options()[1].props["aria-pressed"], false);
+  options()[1].props.onClick();
+  assert.equal(options()[1].props["aria-pressed"], true);
+  // Space on a focused option picks it, as on a button.
+  const option0 = options()[0].props;
+  option0.onKeyDown({
+    key: " ",
+    target: "self",
+    currentTarget: "self",
+    preventDefault: () => {},
+  });
+  assert.equal(options()[0].props["aria-pressed"], true);
+  await card.settle();
+  assert.deepEqual(answered, []);
+  // Elsewhere on the card, Enter still rubs the lamp.
+  card.one("question-card").onKeyDown({
+    key: "Enter",
+    target: { tagName: "ARTICLE", closest: () => null },
+    preventDefault: () => {},
+  });
+  await card.settle();
+  assert.deepEqual(answered, [s.Choice.A]);
+});
+
+test("a wish's reports have a section of their own after what waits for you, and its question links the one it names", async () => {
+  const wishId = "01a130b1-398a-7072-be60-ce928cb7241e";
+  const dew = wish(wishId, "Dew", s.WishState.ACTIVE, 1);
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, { list: () => ({ wishes: [dew] }) });
+    service(s.TaskService, {
+      list: () => ({
+        tasks: [
+          {
+            id: "t1",
+            wishId,
+            code: "W1",
+            title: "Study the payroll API",
+            status: s.TaskStatus.DONE,
+          },
+        ],
+      }),
+    });
+    service(s.QuestionService, {
+      list: () => ({
+        questions: [
+          {
+            id: "q4",
+            wishId,
+            code: "Q04",
+            text: s.dew.QUESTION,
+            options: s.dew.options(wishId),
+            context: s.dew.CONTEXT,
+            recommendation: s.dew.RECOMMENDATION,
+            rounds: [],
+          },
+        ],
+      }),
+    });
+    service(s.BlockService, {
+      list: () => ({
+        blocks: [
+          {
+            id: "b1",
+            wishId,
+            taskId: "t1",
+            kind: "report",
+            title: s.dew.REPORT_TITLE,
+            content: s.dew.REPORT,
+          },
+          {
+            id: "b2",
+            wishId,
+            kind: "hand-off",
+            title: "Lexicon",
+            content: "x",
+          },
+        ],
+      }),
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const close = djinn.store.open(wishId);
+  await djinn.store.changed(wishId, [s.Change.WISH]);
+  close();
+  const html = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: dew, onToast() {} })),
+  );
+  // After the questions, before the journal: the reports, each with its title, its author and its first view.
+  const section = html.indexOf(
+    '<section class="wish-section wish-reports" id="reports"',
+  );
+  assert.ok(
+    section > html.indexOf('id="action-center"'),
+    "after what waits for you",
+  );
+  assert.ok(section < html.indexOf('class="main-side"'), "before the journal");
+  assert.match(
+    html,
+    /<h2>Reports<span class="count">1<\/span><\/h2><p>What the workers found out, to read before you decide\.<\/p>/,
+  );
+  assert.match(
+    html,
+    /<article class="report-card" id="report-b1">.*<h3>Payroll for acme: feasibility<\/h3><span class="eyebrow">By W1<\/span>/,
+  );
+  assert.match(html, /13 fields in one request/);
+  assert.doesNotMatch(html, /What is left to know/);
+  assert.match(
+    html,
+    /class="read-more" aria-expanded="false"><svg[^>]*>.*?<\/svg>Open the report<\/button>/,
+  );
+  // The question names it: its card links it.
+  assert.match(
+    html,
+    /question-report-link.*Report: Payroll for acme: feasibility/,
+  );
+  // The For agents tab keeps the other blocks only.
+  assert.match(
+    html,
+    /id="view-tab-agents" aria-selected="false" class="discreet">For agents<span class="count">1<\/span>/,
+  );
 });
 
 test("a question of a wish without a lead session says no lead is told: open, then answered", () => {

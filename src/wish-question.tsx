@@ -1,5 +1,8 @@
-// A question of a wish, on Clément's question card, laid out to decide at a glance: its title, the recommendation
-// boxed first, the options as buttons, then what is at stake. Two gestures, one note field for both: "Enlighten me",
+// A question of a wish, on Clément's question card, read top-down: its title, then what happened and what is at stake
+// (its context, in a first view that unfolds in place, so that the options stay in sight), the report it names, the
+// recommendation boxed, then the options and the two gestures, then the note. The explanation always comes before the
+// call to act. A command in an option or in the context is selectable, with a copy button that never answers.
+// Two gestures, one note field for both: "Enlighten me",
 // on the left, asks the lead to find out more first (QuestionService.Enlighten), the note saying what to look into;
 // "Rub the lamp", in the lamp's yellow, answers with the option selected, the recommended one until you pick another,
 // and the note with it. Open, it says how much it holds up: red when a task waits for it, orange under its before
@@ -13,6 +16,7 @@ import {
   ChevronDown,
   CircleOff,
   CornerDownRight,
+  FileText,
   History,
   Lamp,
   Lightbulb,
@@ -22,6 +26,7 @@ import { motion } from "motion/react";
 import { type ReactNode, memo, useEffect, useRef, useState } from "react";
 
 import {
+  type Block,
   Choice,
   MarkKind,
   type Question,
@@ -38,8 +43,9 @@ import {
   when,
 } from "./data/format";
 import { t } from "./i18n";
+import { CommandText } from "./copy-command";
 import { MarkButtons } from "./marks";
-import { MarkdownBody } from "./markdown-body";
+import { FoldedMarkdown, MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
 import { isMac } from "./tooltip";
 
@@ -48,6 +54,7 @@ export const WishQuestion = memo(function WishQuestion({
   expanded: open = false,
   origin,
   blocking = EMPTY_BLOCKING,
+  report,
   noLead = false,
   onAnswer,
   onMark,
@@ -60,6 +67,8 @@ export const WishQuestion = memo(function WishQuestion({
   origin?: ReactNode;
   // The codes of the tasks that wait for this answer.
   blocking?: readonly string[];
+  // The report of its wish it names (src/data/reports.ts): the card links it.
+  report?: Block;
   // A decision opened at first. An open question is always open.
   expanded?: boolean;
   // The wish has no lead session: no lead is told the answer, it waits in the wish's brief.
@@ -165,10 +174,12 @@ export const WishQuestion = memo(function WishQuestion({
     if (isComposing(e)) return;
 
     if (e.key === "Enter") {
-      const inEnlighten = !!(e.target as HTMLElement)?.closest(
-        ".lamp-enlighten",
+      // Enter on a control of its own (Enlighten me, a copy button, Read more, a mark) presses it; only Enter
+      // elsewhere on the card rubs the lamp.
+      const control = !!(e.target as HTMLElement)?.closest?.(
+        "button:not(.lamp-rub), a, summary",
       );
-      if (inEnlighten && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      if (control && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
@@ -336,6 +347,18 @@ export const WishQuestion = memo(function WishQuestion({
               </span>
             </p>
           )}
+          {q.context && (
+            <section className="question-context">
+              <h4>{t("page.context")}</h4>
+              <FoldedMarkdown
+                text={q.context}
+                more={t("question.read_more")}
+                less={t("question.read_less")}
+                copy
+              />
+            </section>
+          )}
+          {report && <QuestionReport report={report} />}
           {q.recommendation && (
             <section className="recommendation">
               <span className="eyebrow">
@@ -378,43 +401,46 @@ export const WishQuestion = memo(function WishQuestion({
                 >
                   {q.options.map((option, index) => {
                     const selected = choice === choiceOf(index);
+                    const pick = () => {
+                      setPicked(choiceOf(index));
+                      setUnpicked(false);
+                    };
+                    // Not a <button>: its text is selectable, and a command in it has a copy button of its own.
                     return (
-                      <button
+                      <div
                         key={index}
                         className={`option ${selected ? "selected" : ""}`}
-                        onClick={() => {
-                          setPicked(choiceOf(index));
-                          setUnpicked(false);
-                        }}
+                        role="button"
+                        tabIndex={0}
                         aria-pressed={selected}
+                        onClick={() => {
+                          // Selecting words in it picks nothing.
+                          if (globalThis.getSelection?.()?.toString()) return;
+                          pick();
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key !== " " || e.target !== e.currentTarget)
+                            return;
+                          e.preventDefault();
+                          pick();
+                        }}
                       >
                         <strong className="option-letter">
                           {letter(index)}
                         </strong>
-                        <p>{option}</p>
+                        <p>
+                          <CommandText text={option} />
+                        </p>
                         {recommended === choiceOf(index) && (
                           <span className="option-recommended">
                             {t("question.recommended")}
                           </span>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
               )}
-              <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                onKeyDown={handleTextareaKeyDown}
-                placeholder={
-                  q.options.length
-                    ? t("question.note_placeholder")
-                    : t("question.answer_placeholder")
-                }
-                rows={2}
-                maxLength={2000}
-                aria-label={t("question.note_label")}
-              />
               <div className="question-actions">
                 {onEnlighten && !digging && (
                   <button
@@ -448,6 +474,19 @@ export const WishQuestion = memo(function WishQuestion({
                   </kbd>
                 </button>
               </div>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                onKeyDown={handleTextareaKeyDown}
+                placeholder={
+                  q.options.length
+                    ? t("question.note_placeholder")
+                    : t("question.answer_placeholder")
+                }
+                rows={2}
+                maxLength={2000}
+                aria-label={t("question.note_label")}
+              />
               <p
                 className={`question-hint${unpicked ? " unpicked" : ""}`}
                 role={unpicked ? "alert" : undefined}
@@ -463,20 +502,45 @@ export const WishQuestion = memo(function WishQuestion({
               </p>
             </>
           )}
-          {q.context && (
-            <section className="question-context">
-              <h4>{t("page.context")}</h4>
-              <div className="prose">
-                <MarkdownBody text={q.context} />
-              </div>
-            </section>
-          )}
           {rounds.length > 0 && <Rounds question={q} />}
         </div>
       )}
     </motion.article>
   );
 });
+
+// QuestionReport is the report a question names, as a line that unfolds it in place: what was found, beside the
+// question it leads to.
+function QuestionReport({ report }: { report: Block }) {
+  const [open, setOpen] = useState(false);
+  const title = report.title || t("agents.untitled");
+  return (
+    <section className="question-report">
+      <button
+        type="button"
+        className="question-report-link"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <FileText size={14} aria-hidden="true" />
+        <span>{t("question.report", { title })}</span>
+        <ChevronDown
+          size={14}
+          aria-hidden="true"
+          className={open ? "rotated" : ""}
+        />
+      </button>
+      {open && (
+        <div className="question-report-body prose">
+          {report.updateTime && (
+            <span className="eyebrow">{when(report.updateTime)}</span>
+          )}
+          <MarkdownBody text={report.content} copy />
+        </div>
+      )}
+    </section>
+  );
+}
 
 // Rounds is a question's history, folded: each request to investigate and each revision, dated.
 function Rounds({ question }: { question: Question }) {
