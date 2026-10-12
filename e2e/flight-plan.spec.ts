@@ -1,6 +1,6 @@
 // The flight plan of the active wishes, against the real djinn up --browser (see global-setup.ts): two wishes, a
 // question each, merged in one view; a question answered there reads as answered by the command line. A wish's
-// tasks show what they spent: tokens, and the cost where the agent gives one.
+// tasks show what they spent: tokens, and one price.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -163,14 +163,45 @@ test("the flight plan merges two wishes, and a question is answered from it", as
     .filter({ hasText: "Which oil for the wick?" });
   await expect(oilCard.locator(".wish-origin")).toHaveText(`2${oilTitle}`);
   await expect(lampCard.locator(".wish-origin")).toHaveText(`1${lampTitle}`);
-  // Each wish's card says what it spent: tokens, the cost where it exists, and what has none.
+  // Each wish's card says what it spent: one price, then its tokens; the price's hover tells what was reported and
+  // what has no price.
   const lampSpent = page
     .locator(".plan-wish")
     .filter({ hasText: lampTitle })
     .locator(".wish-spent");
   await expect(lampSpent).toContainText("cache read");
-  await expect(lampSpent).toContainText("0.42");
-  await expect(lampSpent).toContainText("1 task without a price in the table");
+  const lampPrice = lampSpent.locator(".spent-price");
+  await expect(lampPrice).toHaveText("$0.42");
+  await expect(lampPrice).toHaveAttribute(
+    "title",
+    "$0.42 reported\n1 task without a price in the table\nclaude: $0.42",
+  );
+  await expect(lampSpent).not.toContainText("reported");
+  await expect(lampSpent).not.toContainText("without a price");
+  // The price reads in both themes, in a grey of each; the page then shows its own again.
+  const shown = await page.evaluate(
+    () => document.documentElement.dataset.theme,
+  );
+  const colours: string[] = [];
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (t) => document.documentElement.setAttribute("data-theme", t),
+      theme,
+    );
+    await expect(lampPrice).toBeVisible();
+    colours.push(await lampPrice.evaluate((e) => getComputedStyle(e).color));
+    await lampSpent.screenshot({
+      path: path.join(
+        __dirname,
+        `../test-results/e2e/flight-plan-spent-${theme}.png`,
+      ),
+    });
+  }
+  expect(colours[0]).not.toBe(colours[1]);
+  await page.evaluate(
+    (t) => document.documentElement.setAttribute("data-theme", t ?? "dark"),
+    shown,
+  );
   await page.screenshot({
     path: path.join(__dirname, "../test-results/e2e/flight-plan.png"),
     fullPage: true,

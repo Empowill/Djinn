@@ -61,7 +61,13 @@ import { language, t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
 import { TaskDiffView } from "./diff";
-import { resourcesDetail, resourcesNow, TaskUsage, usageDetail } from "./usage";
+import {
+  costTitle,
+  resourcesDetail,
+  resourcesNow,
+  TaskUsage,
+  usageDetail,
+} from "./usage";
 
 const eventIcons: Partial<Record<TaskEventKind, typeof FileText>> = {
   [TaskEventKind.PROMPT]: MessageSquare,
@@ -715,7 +721,11 @@ function TaskBody({
         {task.maxBudgetUsd > 0 && (
           <span>{t("task.budget", { cost: usd(task.maxBudgetUsd) })}</span>
         )}
-        {spent && <span>{spent}</span>}
+        {spent && (
+          <span title={costTitle(task.usage, task.model, task.provider)}>
+            {spent}
+          </span>
+        )}
         {used && <span>{used}</span>}
         {!used && unmeasured && <span>{t("resources.not_measured")}</span>}
       </div>
@@ -883,12 +893,12 @@ function EventLine({
   provider?: Provider;
 }) {
   const Icon = eventIcons[event.kind] ?? FileText;
-  const text =
-    event.kind === TaskEventKind.USAGE && event.usage
-      ? usageDetail(event.usage, model, provider)
-      : event.kind === TaskEventKind.RECEIVED
-        ? t("task.received", { text: event.text })
-        : event.text;
+  const usage = event.kind === TaskEventKind.USAGE ? event.usage : undefined;
+  const text = usage
+    ? usageDetail(usage, model, provider)
+    : event.kind === TaskEventKind.RECEIVED
+      ? t("task.received", { text: event.text })
+      : event.text;
   return (
     <tr className={`wish-event kind-${event.kind}`}>
       <td>
@@ -897,7 +907,12 @@ function EventLine({
       <td title={TaskEventKind[event.kind]?.toLowerCase()}>
         <Icon size={13} aria-hidden="true" />
       </td>
-      <td className="wish-event-text">{text}</td>
+      <td
+        className="wish-event-text"
+        title={usage ? costTitle(usage, model, provider) : undefined}
+      >
+        {text}
+      </td>
     </tr>
   );
 }

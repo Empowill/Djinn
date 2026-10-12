@@ -344,3 +344,45 @@ test("every class of the stylesheets is used by a component", () => {
   }
   assert.deepEqual(unused, [], "classes no component uses: remove their rules");
 });
+
+// A wish's price is the figure that matters on its Spent line: it takes a grey of the theme, which reads at 4.5:1 on
+// the page and on a card in the dark and the light theme, and marks its hover (the split) with a dotted underline.
+test("the price of what a wish spent reads in the dark and the light theme", () => {
+  const wish = fs.readFileSync(path.join(root, "wish.css"), "utf8");
+  const start = wish.indexOf(".wish-spent .spent-price {");
+  assert.ok(start >= 0, "the price has its rule");
+  const rule = wish.slice(start, wish.indexOf("}", start));
+  assert.match(rule, /cursor: help/);
+  assert.match(rule, /text-decoration: underline dotted/);
+  const colour = rule.match(/color: var\(--([\w-]+)\)/)?.[1];
+  assert.ok(colour, "the price's colour is a token");
+  const theme = fs.readFileSync(path.join(root, "theme.css"), "utf8");
+  const tokens = (selector) => {
+    const from = theme.indexOf(selector + " {");
+    return Object.fromEntries(
+      [
+        ...theme
+          .slice(from, theme.indexOf("\n}", from))
+          .matchAll(/--([\w-]+):\s*(#[0-9a-f]{6});/g),
+      ].map((m) => [m[1], m[2]]),
+    );
+  };
+  const lum = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((i) => {
+      const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  for (const [name, values] of [
+    ["dark", tokens(":root")],
+    ["light", tokens('html[data-theme="light"]')],
+  ])
+    for (const ground of ["n-11", "n-19"]) {
+      const [x, y] = [lum(values[colour]), lum(values[ground])].sort(
+        (p, q) => q - p,
+      );
+      const r = (x + 0.05) / (y + 0.05);
+      assert.ok(r >= 4.5, `${name}: ${colour} on ${ground} reads at ${r}:1`);
+    }
+});

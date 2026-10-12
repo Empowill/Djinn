@@ -58,6 +58,7 @@ export {
   waitingLeadQuestions,
   waitingTasks,
   workCount,
+  spent,
 } from "@/src/data/flight.ts";
 export { AzimaCard, azimaFinished, DraftAzimaCard } from "@/src/azima.tsx";
 export {
@@ -83,6 +84,7 @@ export {
   resourcesDetail,
   setUsageUnit,
   getUsageUnit,
+  SpentLine,
 } from "@/src/usage.tsx";
 export { TilasmList } from "@/src/tilasms.tsx";
 export { AgentBlocks } from "@/src/agent-blocks.tsx";
@@ -1106,7 +1108,7 @@ const usage = (input, output, read, write, costUsd) => ({
   costUsd,
 });
 
-test("a task shows its tokens, estimated cost, reported cost, or missing price", () => {
+test("a task shows its tokens and one price: the reported cost, else ≈ the estimate; its hover tells which", () => {
   const claude = s.renderToStaticMarkup(
     h(s.WishTask, {
       task: {
@@ -1119,14 +1121,12 @@ test("a task shows its tokens, estimated cost, reported cost, or missing price",
       onStop() {},
     }),
   );
+  // A reported cost is the price, without ≈; its hover says it was reported, with the tokens in full.
   assert.match(
     claude,
-    /51\.4K tokens · \$0\.003 reported · \$0\.04 estimated, prices of 2026-01-01/,
+    /<span class="task-usage" title="input 4 · output 409 · cache read 38\.2K · cache written 12\.8K\n\$0\.003 reported">51\.4K tokens · \$0\.003<\/span>/,
   );
-  assert.match(
-    claude,
-    /input 4 · output 409 · cache read 38\.2K · cache written 12\.8K · \$0\.003 reported · \$0\.04 estimated, prices of 2026-01-01/,
-  );
+  assert.doesNotMatch(claude, /estimated|≈/);
 
   const codex = s.renderToStaticMarkup(
     h(s.WishTask, {
@@ -1141,14 +1141,12 @@ test("a task shows its tokens, estimated cost, reported cost, or missing price",
       onStop() {},
     }),
   );
+  // An estimate reads ≈; its hover gives the table's date.
   assert.match(
     codex,
-    /6\.5K tokens · \$0\.018 estimated, prices of 2026-01-01/,
+    /<span class="task-usage" title="input 1\.2K · output 300 · cache read 5K\n\$0\.018 estimated, prices of 2026-01-01">6\.5K tokens · ≈ \$0\.018<\/span>/,
   );
-  assert.match(
-    codex,
-    /input 1\.2K · output 300 · cache read 5K · \$0\.018 estimated, prices of 2026-01-01/,
-  );
+  assert.doesNotMatch(codex, /reported/);
 
   const unpriced = s.renderToStaticMarkup(
     h(s.WishTask, {
@@ -1182,7 +1180,12 @@ test("a task shows its tokens, estimated cost, reported cost, or missing price",
       onStop() {},
     }),
   );
-  assert.match(antigravity, /an estimate at API prices, not the bill/);
+  // Antigravity's estimate is not its bill: the hover says so, the card shows the figure alone.
+  assert.match(
+    antigravity,
+    /title="[^"]*estimated, prices of 2026-01-01 \(an estimate at API prices, not the bill\)"/,
+  );
+  assert.match(antigravity, />1\.2K tokens · ≈ \$[0-9.]+<\/span>/);
 
   // When usage unit is switched to tokens, costs are hidden
   s.setUsageUnit("tokens");
@@ -2439,13 +2442,87 @@ test("the flight plan merges the active wishes: their questions, the blocking on
     /id="view-tab-decisions"[^>]*>Decisions<span class="count">1<\/span>/,
   );
   assert.doesNotMatch(html, /Tonight\?/);
-  // What each wish spent: the first with its cost, the second in tokens only with missing price note.
+  // What each wish spent: the first its price, reported, then its tokens; the second, with no price at all, its tokens
+  // and why.
   assert.match(
     html,
-    /input 10 · output 400 · cache read 38K · cache written 12K · \$0\.42 reported · \$0\.038 estimated, prices of 2026-01-01/,
+    /<span class="spent-price" title="\$0\.42 reported">\$0\.42<\/span><span>input 10 · output 400 · cache read 38K · cache written 12K<\/span>/,
   );
+  assert.doesNotMatch(html, /estimated/);
   assert.match(html, /input 1\.2K · output 300 · cache read 5K/);
-  assert.match(html, /1 task without a price in the table/);
+  assert.match(html, /<small>1 task without a price in the table<\/small>/);
+});
+
+test("what a wish spent shows one price, ≈ when an estimate is in it; the hover splits it, in money only", () => {
+  const spent = s.spent([
+    // Claude reports its cost: it is the price, whatever the table says.
+    { usage: usage(10, 400, 38000, 12000, 0.42) },
+    // Codex reports tokens: the table prices them (1200 × 5 + 300 × 30 + 5000 × 0.5) / 1M = $0.0175.
+    {
+      provider: s.Provider.CODEX,
+      model: "gpt-5.5",
+      usage: usage(1200, 300, 5000, 0, 0),
+    },
+    // An Antigravity estimate is at API prices, not the bill.
+    {
+      provider: s.Provider.ANTIGRAVITY,
+      model: "gemini-3.8-flash-high",
+      usage: usage(1000, 200, 0, 0, 0),
+    },
+    // A model the table does not know: no price.
+    { model: "fixture-unpriced", usage: usage(100, 200, 0, 0, 0) },
+  ]);
+  assert.equal(spent.costUsd, 0.42);
+  assert.equal(spent.priced, 2);
+  assert.equal(spent.withoutPrice, 1);
+  const total = spent.costUsd + spent.estimatedCostUsd;
+  const money = (n) =>
+    new Intl.NumberFormat("en", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: n < 1 ? 3 : 2,
+    })
+      .format(n)
+      .replace(/[$.]/g, "\\$&");
+  const html = s.renderToStaticMarkup(h(s.SpentLine, { spent }));
+  const title = html.match(
+    /<span class="spent-price" title="([^"]*)">([^<]*)</,
+  );
+  assert.ok(title, html);
+  // One figure: the reported cost plus the estimate of the tasks that reported none, read ≈.
+  assert.match(title[2], new RegExp(`^≈ ${money(total)}$`));
+  const split = title[1].split("\n");
+  assert.equal(split[0], "$0.42 reported");
+  assert.match(
+    split[1],
+    new RegExp(
+      `^${money(spent.estimatedCostUsd)} estimated, prices of 2026-01-01 \\(an estimate at API prices, not the bill\\)$`,
+    ),
+  );
+  assert.equal(split[2], "1 task without a price in the table");
+  // Several providers: each one's price, in the hover too.
+  assert.ok(split.includes("claude: $0.42"), split.join(" | "));
+  assert.ok(split.includes("codex: ≈ $0.018"), split.join(" | "));
+  assert.ok(split.some((line) => line.startsWith("antigravity: ≈ $")));
+  // Nothing of the split shows outside the hover; the tokens read as they did.
+  const shown = html.replace(/title="[^"]*"/g, "");
+  assert.doesNotMatch(shown, /reported|estimated|without a price|not the bill/);
+  assert.match(
+    shown,
+    /<span>input 2\.3K · output 1\.1K · cache read 43K · cache written 12K<\/span>/,
+  );
+  assert.doesNotMatch(shown, /spent-providers/);
+
+  // In tokens, nothing changes: the total, the detail, each provider's count, and no price.
+  s.setUsageUnit("tokens");
+  try {
+    const counted = s.renderToStaticMarkup(h(s.SpentLine, { spent }));
+    assert.match(counted, /<span class="spent-total">58\.4K tokens<\/span>/);
+    assert.match(counted, /class="spent-providers"/);
+    assert.doesNotMatch(counted, /\$|spent-price/);
+  } finally {
+    s.setUsageUnit("money");
+  }
 });
 
 test("the flight plan hides its empty sections", async () => {
