@@ -2467,7 +2467,7 @@ test("a running task shows what its worker uses now; its facts, the peaks too", 
   assert.equal(s.memory(1536n), "1.5 kB");
 });
 
-test("a task card shows its model turns against the limit, its tone warning past 80%; hover says run, limit, total", () => {
+test("a task card shows its model turns over its whole life, its run against the limit beside it, its tone warning past 80% of the run's; hover says total, run, limit", () => {
   const card = (status, turns) =>
     s.renderToStaticMarkup(
       h(s.WishTask, {
@@ -2475,6 +2475,7 @@ test("a task card shows its model turns against the limit, its tone warning past
         onStop() {},
       }),
     );
+  // A first run: its turns are its whole life's, shown once.
   const running = card(s.TaskStatus.RUNNING, {
     run: 37,
     limit: 500,
@@ -2484,6 +2485,12 @@ test("a task card shows its model turns against the limit, its tone warning past
     running,
     /<span class="task-turns" title="37 model turns in this run, of the 500 its seal allows a run"><svg[^>]*aria-label="model turns"[^>]*>.*?<\/svg>37\/500<\/span>/,
   );
+  assert.doesNotMatch(running, /task-turns-run/);
+  // Resumed: the whole life's 412 read first, this run's 37 against its 500 beside them, the tone still the run's.
+  assert.match(
+    card(s.TaskStatus.RUNNING, { run: 37, limit: 500, total: 412 }),
+    /<span class="task-turns" title="412 model turns over its whole life · 37 model turns in this run, of the 500 its seal allows a run"><svg[^>]*aria-label="model turns"[^>]*>.*?<\/svg>412<span class="task-turns-run">37\/500<\/span><\/span>/,
+  );
   // 80% is not past it.
   assert.match(
     card(s.TaskStatus.RUNNING, { run: 400, limit: 500, total: 400 }),
@@ -2491,7 +2498,7 @@ test("a task card shows its model turns against the limit, its tone warning past
   );
   assert.match(
     card(s.TaskStatus.RUNNING, { run: 401, limit: 500, total: 450 }),
-    /<span class="task-turns warning" title="401 model turns in this run, of the 500 its seal allows a run · 450 over all its runs">.*?401\/500</,
+    /<span class="task-turns warning" title="450 model turns over its whole life · 401 model turns in this run, of the 500 its seal allows a run">.*?450<span class="task-turns-run">401\/500</,
   );
   assert.match(
     card(s.TaskStatus.DONE, { run: 12, limit: 500, total: 12 }),
@@ -7500,7 +7507,7 @@ const resourceTask = {
   startTime: at(t0),
   firstStartTime: at(t0),
   runs: [{ startTime: at(t0) }],
-  turns: { run: 12, limit: 500, total: 12 },
+  turns: { run: 37, limit: 500, total: 412 },
   usage: { inputTokens: 10n, outputTokens: 2000n, costUsd: 1.25 },
 };
 
@@ -7575,7 +7582,8 @@ test("the resources panel: the machine's charts, each worker's title line in ful
   // The facts of its job, from its task.
   assert.match(w1, /<dt>Project<\/dt><dd>djinn<\/dd>/);
   assert.match(w1, /<dt>Turns<\/dt><dd><span class="task-turns"/);
-  assert.match(w1, /12\/500/);
+  // Its turns over its whole life first, its run against its limit beside them.
+  assert.match(w1, /<\/svg>412<span class="task-turns-run">37\/500<\/span>/);
   assert.match(w1, /<dt>Spent<\/dt>/);
   assert.match(w1, /<dt>Gate<\/dt><dd>held 13m20s, once<\/dd>/);
   assert.match(w1, /<dt>CPU<\/dt><dd>now 75\.4% · peak 85%<\/dd>/);
