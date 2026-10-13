@@ -28,7 +28,7 @@ Djinn is a local desktop app to work with **Codex** and **Claude Code**: a reada
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/readme/questions-light.png">
-  <img alt="A wish in Djinn: what waits for you, and a question with the lead's recommendation" src="docs/screenshots/readme/questions-dark.png">
+  <img alt="A wish in Djinn: what waits for you, and a question with the Djinn's recommendation" src="docs/screenshots/readme/questions-dark.png">
 </picture>
 
 ## Install
@@ -81,26 +81,26 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 
 ## From brief to result
 
-- **One wish, one lead.** Say what you wish. Its lead, Claude Code or Codex, splits it into tasks, each one a worker in
-  its own worktree. One lead is principal across active wishes to field shared decisions. Tasks can wait as drafts and
+- **One Djinn leads every wish.** Say what you wish. Djinn's lead, the Djinn (Claude Code or Codex), splits it into
+  tasks, each one a worker in its own worktree. One wish is principal: the Djinn coordinates the active wishes from it. Tasks can wait as drafts and
   move between wishes as priorities shift. Three wishes are active at most; the flying carpet shows them together.
 - **A visible team.** Two-line task rows show each worker's status first, prompt, live events, diffs, terminal logs and
   what it cost. An operating load cursor (from Minimal to Overclock, or Auto) meters concurrency to the machine,
-  giving investigators top priority. Send instructions while workers run, or talk to the lead in its terminal.
-- **You decide.** A question comes with its options, keyboard shortcuts and the lead's recommendation: **Rub the lamp**
+  giving investigators top priority. Send instructions while workers run, or talk to the Djinn in its terminal.
+- **You decide.** A question comes with its options, keyboard shortcuts and the Djinn's recommendation: **Rub the lamp**
   takes it, and a small worker turns your decision into tasks; **Enlighten me** sends one to dig first with your note,
-  then revise the question. Answers route directly to the principal lead's terminal.
+  then revise the question. Answers go straight to the Djinn.
 - **Ship with confidence.** A push strategy per wish integrates work into a single wish branch or dedicated azima
   branches with automated pull requests. Push on a standard cadence after tests pass or on demand with the **Push**
   button.
-- **What needs you is a question; the rest stays in the wish.** What the lead and the workers write down for one
+- **What needs you is a question; the rest stays in the wish.** What the Djinn and the workers write down for one
   another, Markdown and Mermaid diagrams, waits in a tab of its own. One HTML page shares the wish; `djinn wish
   export` hands it over whole, in one file.
 - **Nothing is lost.** Stopping Djinn interrupts the workers, never loses them: the next start resumes each one in
   its own worktree and session. A worker stopped by its usage limit waits for the reset, then goes on.
-- **Every request finds its wish.** Something unrelated comes up: the lead offers to open a new wish, to file it in
+- **Every request finds its wish.** Something unrelated comes up: the Djinn offers to open a new wish, to file it in
   an existing one, or to keep it where it is. A skill's [wish template](docs/wish-templates.md) makes a wish that already knows how to work, with
-  a watcher that wakes its lead on each change.
+  a watcher that wakes the Djinn on each change.
 - **Your language.** The interface follows the system language (English or French); change it in **Connections &
   preferences**.
 

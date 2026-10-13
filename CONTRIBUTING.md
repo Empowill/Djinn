@@ -287,7 +287,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   ([T07](plan/8e8d3d76-orchestrator.md)).
 - `djinn backup [--file <archive>]` copies the data folder, even while Djinn runs; `djinn backup restore <archive>`
   puts it back, Djinn stopped ([`docs/backup.md`](docs/backup.md)).
-- One lead leads every wish, in the window's terminal "lead". `djinn lead set <session-id> [--provider <agent>]
+- One lead, the Djinn, leads every wish, in the window's terminal tab "The Djinn". `djinn lead set <session-id> [--provider <agent>]
   [--directory <folder>]` records its session; `djinn lead get` shows it; `djinn lead resume` resumes it, starting
   Djinn if needed, and `--wish-id <wish-id>` shows the wish and focuses the lead on it (the wish's Talk to the Djinn button does the
   same). A second `djinn up` brings the window to the front. `djinn lead tell "…" [--wish-id <wish-id>]` writes to the
@@ -302,7 +302,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
 - `djinn lead brief` (or `djinn brief`): every active wish at once and how to lead them, computed from the store; every
   new lead, of any agent, starts by running it. `djinn wish brief <wish-id>`: where one wish stands, which the lead
   reads when focused on it. `djinn wish describe <wish-id> --text "…"` gives the wish the few lines it opens with
-  (also edited under the wish's title). `djinn lead resume --provider antigravity` (or the arrow beside Lead) starts a
+  (also edited under the wish's title). `djinn lead resume --provider antigravity` (or the arrow beside Talk to the Djinn) starts a
   lead of another agent than the recorded one's.
   `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `go tool task
   bench-workers` (paid, refuses without consent) compares the ways Djinn starts a worker ([T14](plan/8ce817da-cost.md)).

@@ -119,7 +119,7 @@ func TestBrief(t *testing.T) {
 		"`--restart` starts again", "`metadata.djinn.wish`", "`djinn skill list`",
 		// The decisions say who took them, and what they led to.
 		"- 💬 **Q01** Which store? → A: SQLite", ", by the developer; led to W2\n", "- 📌 **No CGO** (block ", "), by the lead\n",
-		"`--decision Q03`", "--icon 🔒",
+		"`--decision Q03`", "--icon 🔐",
 		// Everything for the developer is a question; a resolved one is resolved; blocks are for agents.
 		"Everything for the developer is a question", "with none when you really do not know what to think",
 		"goes in its `--context`", "ask again, a new question, only on a real doubt", "**Blocks are for agents**",
@@ -723,27 +723,69 @@ func TestBriefOperationalDecisionsRule(t *testing.T) {
 	}
 }
 
-// TestBriefSilentTerminalRule: a lead writes nothing for the developer in its terminal; every word, statements
-// included, is a question in the window, withdrawn once a task or Djinn does what it asked. Its first message says so.
+// TestBriefDjinnRule (Q259 C): the lead is the Djinn, first among the rules; workers never bear the name.
+func TestBriefDjinnRule(t *testing.T) {
+	rules := briefRules(nil, "")
+	want := "- **You are the Djinn.** In Djinn, the lead is called the Djinn, and you alone bear that name: the one of " +
+		"your kind who lives in the lamp, the developer's single voice for every wish. Workers are your hands, never " +
+		"Djinns; the app is \"Djinn\", you are \"the Djinn\". Speak of yourself that way in questions and blocks " +
+		"(\"the Djinn recommends…\")."
+	if i := strings.Index(rules, "\n- "); i < 0 || !strings.HasPrefix(rules[i+1:], want) {
+		t.Errorf("briefRules does not start its rules with %q:\n%s", want, rules)
+	}
+}
+
+// TestBriefSilentTerminalRule: a lead writes nothing at all in its terminal, second among the rules, and says why;
+// every word, statements included, is a question in the window, withdrawn once a task or Djinn does what it asked.
+// Its first message says so.
 func TestBriefSilentTerminalRule(t *testing.T) {
 	rules := briefRules(nil, "")
+	bullets := strings.Split(rules, "\n- ")
+	if len(bullets) < 3 || !strings.HasPrefix(bullets[2], "**Say nothing in your terminal, ever.**") {
+		t.Errorf("the second rule is not the terminal's:\n%s", rules)
+	}
 	for _, want := range []string{
-		"**Say nothing in your terminal.**",
-		"End your turns with no text, or at most one line naming the questions you asked (Q12)",
+		"The developer never reads your terminal",
+		"costs output tokens for nothing",
+		"A turn ends with no text at all: no recap, no summary, no question codes, no \"done\"",
+		"Everything for the developer goes through questions in the window",
 		"statements included",
 		"\"OK, nothing to do\" as an option",
 		"A real wait on the developer is a `--move` question that says so plainly",
 		"Never two questions for one gesture",
 		"withdraw a question (`djinn question withdraw`) the moment a task or Djinn does what it asked",
-		"A line the developer types in your terminal is a request like any other: answer it in the window",
+		"A line the developer types in your terminal is a request like any other: answer it in the window, never in the terminal",
 		"Withdraw the open questions its work made needless",
 	} {
 		if !strings.Contains(rules, want) {
 			t.Errorf("briefRules lacks %q:\n%s", want, rules)
 		}
 	}
+	for _, gone := range []string{"at most one line", "naming the questions you asked"} {
+		if strings.Contains(rules, gone) {
+			t.Errorf("briefRules still allows a line in the terminal, %q:\n%s", gone, rules)
+		}
+	}
 	if want := "write nothing in this terminal"; !strings.Contains(StartLine(), want) {
 		t.Errorf("StartLine lacks %q: %s", want, StartLine())
+	}
+}
+
+// TestBriefQuestionEmojiRule: every question's title starts with the emoji of its subject, the same as its --icon.
+func TestBriefQuestionEmojiRule(t *testing.T) {
+	rules := briefRules(nil, "")
+	for _, want := range []string{
+		"**Every question's title starts with its emoji.** One emoji that tells its subject at a glance, then a space and the title",
+		"🚀 a merge or a release, 🔎 a review, 🔐 a right or a permission, 🧪 a check or a test, 📦 a build, " +
+			"🌿 a branch, 🧭 an organisation choice, 🪵 logs, ⚠️ an incident",
+		"The same emoji goes in `--icon`",
+		"`djinn question ask \"🔐 <question>\" <wish>",
+		"--icon 🔐` (the emoji its title starts with)",
+		"its verb first after its emoji (\"🔎 Review MR !123",
+	} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("briefRules lacks %q:\n%s", want, rules)
+		}
 	}
 }
 
@@ -753,7 +795,7 @@ func TestBriefMovesRule(t *testing.T) {
 	rules := briefRules(nil, "")
 	for _, want := range []string{
 		"**You keep the developer's moves.**",
-		"Each such move is one `--move` question whose title is a call to action, its verb first",
+		"Each such move is one `--move` question whose title is a call to action, its verb first after its emoji",
 		"clickable links to where they act: the PR or MR, the CI run, the ticket, the file and line",
 		"every command to run in a code block, to copy as it is",
 		"When a task opens a pull or merge request, ask \"Review it and take it out of draft\" with its link at once",
@@ -1023,7 +1065,8 @@ func TestBriefComments(t *testing.T) {
 
 // TestBriefListsNotes (Q260): every brief gives the lead's notes as an index, a line per note with its name and
 // description, never a note's text; the rule says to open one before acting in its area, and to change them by a task
-// that edits lead/notes, never at run time.
+// that edits lead/notes, never at run time, and (Q262 B) to update or remove a note in the same breath as the task
+// that fixes what it describes.
 func TestBriefListsNotes(t *testing.T) {
 	all, err := notes.Notes()
 	if err != nil {
@@ -1040,6 +1083,8 @@ func TestBriefListsNotes(t *testing.T) {
 		"open it: `djinn lead notes <name>`",
 		"spawns a task there that edits `lead/notes/`",
 		"nothing writes them at run time",
+		"When a task fixes what a note describes, update or remove that note in the same breath",
+		"that task, or one spawned with it, edits `lead/notes/`; no cleanup waits for later",
 		"\n## The lead's notes\n\n",
 	} {
 		if !strings.Contains(brief, want) {
