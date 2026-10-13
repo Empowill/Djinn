@@ -94,7 +94,33 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
 - **Developer instructions.** `djinn instruction send <wish> "<full text>"` persists a durable instruction, with
   code I01, I02 and so on within the wish. It commits the instruction and the journal atomically before notifying
   the lead. Submission works while the lead is offline; it is available in full in the next brief. An optional
-  `--request-id <uuid>` makes retries return the original instruction, without a second notification. Reusing it with different text is rejected atomically.
+  `--request-id <uuid>` makes retries return the original instruction, without a second notification. Reusing it with different text or different image content is rejected atomically. Repeat
+  `--attachment-paths <local-image>` for up to eight PNG, JPEG or GIF files; paths are made absolute and resolved
+  before Djinn reads them. An image-only instruction is valid, while an empty text-only instruction remains invalid.
+  The window uses the internal typed `InstructionService.SendData` RPC with `AttachmentInput{name, media_type, data}`
+  for the same operation; binary data never enters a journal row. Each stored instruction attachment carries its UUID,
+  type, byte size, SHA-256 and decoded dimensions. Attachments are bounded to 5 MiB each, 10,000 pixels per side and
+  40 million pixels, and are exported with their bytes and remapped to fresh IDs on import.
+  After reload, the window retrieves a thumbnail or provider payload with the internal
+  `InstructionService.GetAttachment{wish_id, instruction_id, attachment_id}` RPC. It returns the matching validated
+  `Attachment` metadata and bounded bytes only after checking that the instruction belongs to the supplied wish; it
+  accepts no filesystem path.
+  Task composer messages use the internal `TaskService.SendData{task_id, text, attachments, attachment_metadata}`
+  RPC when they include images. The window leaves `attachment_metadata` empty; the server rejects caller-supplied
+  metadata, validates and stages each image, then creates a task event whose `attachments` hold the canonical
+  metadata. The bytes are delivered to a running worker through the provider's native image input. The event and its
+  blobs survive restart, export and import, with attachment IDs remapped on import. The `SendData` response carries
+  the explicit image delivery state. After reload, `TaskService.GetEvent{task_id, event_id}` returns the event and
+  bounded `AttachmentExport` bytes after checking event ownership; text-only task messages keep their existing
+  behavior.
+  **W21 TypeScript handoff.** Use the generated `InstructionServiceSendDataRequest` with
+  `{wishId, text, requestId, attachments: [{name, mediaType, data: Uint8Array}], attachmentMetadata: []}`;
+  `attachmentMetadata` is server-owned and must be empty in a window request. Image-only submissions are accepted.
+  Its `InstructionServiceSendDataResponse` returns `{instruction, imageDelivery, imageDeliveryNote}`: the instruction
+  is durable even when delivery is `DEFERRED`, `UNSUPPORTED` or `FAILED`, while `QUEUED` means a native image
+  transport accepted it and `UNSPECIFIED` covers text-only requests or an existing retry. Reload bytes with
+  `InstructionServiceGetAttachmentRequest{wishId, instructionId, attachmentId}`; the response is
+  `{attachment, data: Uint8Array}` and the server checks the instruction's wish and attachment ownership.
   `djinn instruction list <wish>` reads every instruction and its full text.
   The lead runs `djinn instruction reflect I01 --wish-id <wish>` (pending → reflecting), delegates to an existing
   worker or creates one, then `djinn instruction assign I01 W1 --wish-id <wish>` (reflecting → processing).
@@ -178,6 +204,12 @@ Djinn types into the lead's terminal as the developer would: the news of the wis
 generic messages sent with `djinn wish tell`. A durable instruction notification names its code and identifier,
 with explicit read/reflect/assign guidance; the lead reads the full text from the store before delegating. Its terminal reads on the screen as it shows now, not on what it
 once drew:
+
+An image instruction is delivered to a lead only through a native image-capable transport. A terminal that implements
+only the text `Leads.Tell` receives the ordinary durable lifecycle notice and returns an `UNSUPPORTED` image delivery
+state; the instruction remains durably stored. Djinn never pastes a filename as a substitute and never restarts a live lead to make room for an image. Supported
+worker providers resolve the stored attachment by UUID and send it as a typed image block. The PTY lead path and
+Antigravity stream currently have no proven image-block protocol.
 
 - **Never into a choice.** A hint that ends a line, or a part of it between `·`, with a key, `to` and what it does
   (`Esc to cancel`, `Enter to confirm`, `Esc to exit`, `Press Enter to continue`) is a choice: a permission prompt, the folder trust, a first run's

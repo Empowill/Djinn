@@ -149,18 +149,19 @@ type run struct {
 	subs     map[chan *planv1.TaskEvent]struct{}
 
 	// Owned by whoever writes the task: Spawn, then the pump.
-	task    *planv1.Task
-	seq     int64         // last event written
-	base    *planv1.Usage // what the task had spent before this worker
-	restart bool          // the worker stops to start again, allowed to edit
-	unread  []string      // messages the worker took on its input and has said nothing after yet
-	warm    *warm         // the warm worker the task takes, until launch
-	branch  string        // the branch template of the project's settings, for launch; empty: the default
-	from    string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
-	checks  string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
-	failure string        // the last error the current worker said: it never ends done
-	limit   *Limit        // the usage limit the current worker said it hit: it wins over failure
-	refused string        // the last call its permissions refused, as the worker said it (question.go)
+	task            *planv1.Task
+	seq             int64               // last event written
+	base            *planv1.Usage       // what the task had spent before this worker
+	restart         bool                // the worker stops to start again, allowed to edit
+	unread          []string            // messages the worker took on its input and has said nothing after yet
+	warm            *warm               // the warm worker the task takes, until launch
+	branch          string              // the branch template of the project's settings, for launch; empty: the default
+	from            string              // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
+	checks          string              // what the project's settings say of the checks Djinn runs, for the worker's first prompt
+	failure         string              // the last error the current worker said: it never ends done
+	limit           *Limit              // the usage limit the current worker said it hit: it wins over failure
+	refused         string              // the last call its permissions refused, as the worker said it (question.go)
+	deliveredImages map[string]struct{} // image attachment IDs already sent to this run's worker
 }
 
 // newRun is the run of task, its next event after seq, registered so that a watcher never misses its first events.
@@ -169,7 +170,7 @@ func (h *Harness) newRun(task *planv1.Task, seq int64) (*run, error) {
 	r := &run{
 		id: task.GetId(), wish: task.GetWishId(), task: task, seq: seq, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
 		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}),
-		subs: map[chan *planv1.TaskEvent]struct{}{}, watcher: watching(task),
+		subs: map[chan *planv1.TaskEvent]struct{}{}, watcher: watching(task), deliveredImages: map[string]struct{}{},
 		light: questionWorker(task),
 	}
 	h.mu.Lock()
@@ -614,6 +615,11 @@ func (h *Harness) launch(
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("task %s: create its folder: %w", task.GetCode(), err))
 		}
 	}
+	attachments, attachmentErr := h.taskAttachments(ctx, task.GetId())
+	if attachmentErr != nil {
+		h.finish(r, Result{ExitCode: -1, Err: attachmentErr})
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: read image attachments: %w", task.GetCode(), attachmentErr))
+	}
 	// The integration branch the worktree starts from, and its commit then, for the start event.
 	fromText := ""
 	if project.GetGit() && !r.watcher && !r.light { // They write nothing: they run in the project's folder.
@@ -651,7 +657,7 @@ func (h *Harness) launch(
 	spec := Spec{
 		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: task.GetModel(),
 		MaxBudgetUSD: task.GetMaxBudgetUsd(), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
-		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(),
+		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(), Attachments: attachments,
 	}
 	if task.GetForkOf() != "" {
 		where += ", forked from " + forkText(task.GetForkOf())
@@ -686,6 +692,7 @@ func (h *Harness) launch(
 	}
 	started := proto.CloneOf(task)
 	go h.pump(r)
+	h.deliverAssignedImagesAfterStart(h.ctx, task.GetId())
 	return started, nil
 }
 
@@ -719,6 +726,10 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	if err != nil {
 		return err
 	}
+	// The first provider input carries the launch snapshot. Later task sends compare their assignment snapshot with
+	// these IDs so an instruction assigned before spawn is not delivered a second time. A reused run gets a new ledger:
+	// image IDs delivered to its previous provider process are not present in this one.
+	r.beginWorkerImages(spec.Attachments)
 	h.mu.Lock()
 	r.worker, r.use = w, nil
 	if r.stopping || r.shelved {
@@ -1077,10 +1088,16 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 
 // newEvent builds a stored event, its text and raw line cut to maxText.
 func newEvent(taskID string, seq int64, ev Event) *planv1.TaskEvent {
-	return &planv1.TaskEvent{
+	event := &planv1.TaskEvent{
 		Id: store.NewID(), TaskId: taskID, Seq: seq, Kind: ev.Kind, Text: clip(ev.Text), Usage: ev.Usage,
 		Raw: clip(ev.Raw), CreateTime: timestamppb.Now(),
 	}
+	for _, attachment := range ev.Attachments {
+		if attachment != nil {
+			event.Attachments = append(event.Attachments, proto.Clone(attachment).(*planv1.Attachment))
+		}
+	}
+	return event
 }
 
 func clip(s string) string {

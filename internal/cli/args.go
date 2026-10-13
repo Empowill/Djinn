@@ -297,14 +297,14 @@ func set(msg protoreflect.Message, fd protoreflect.FieldDescriptor, s string) er
 	return nil
 }
 
-// onMachine tells whether fd holds a path of this machine: a string field named directory, file, path, or ending in
-// _directory, _file or _path.
+// onMachine tells whether fd holds a path of this machine: a string field named directory, file, path, paths, or
+// ending in _directory, _file, _path or _paths.
 func onMachine(fd protoreflect.FieldDescriptor) bool {
 	name := string(fd.Name())
 	if fd.Kind() != protoreflect.StringKind {
 		return false
 	}
-	for _, word := range []string{"directory", "file", "path"} {
+	for _, word := range []string{"directory", "file", "path", "paths"} {
 		if name == word || strings.HasSuffix(name, "_"+word) {
 			return true
 		}

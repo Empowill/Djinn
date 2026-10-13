@@ -251,15 +251,26 @@ func (h *Harness) again(r *run) error {
 	if err != nil {
 		return err
 	}
+	attachments, err := h.taskAttachments(context.Background(), t.GetId())
+	if err != nil {
+		return fmt.Errorf("read image attachments: %w", err)
+	}
 	readOnly, perms := accessSpec(t.GetAccess(), nil)
 	r.base = t.GetUsage()
 	spec := Spec{
 		TaskID: t.GetId(), Dir: project.GetDirectory(), ReadOnly: readOnly, Permissions: perms, Model: t.GetModel(),
-		MaxBudgetUSD: budget, Resume: t.GetSessionId(), Prompt: editLine + prompt,
+		MaxBudgetUSD: budget, Resume: t.GetSessionId(), Prompt: editLine + prompt, Attachments: attachments,
 	}
 	spec.Skills, spec.SkillsDir = h.summon(context.Background(), r, project)
-	return h.start(r, provider, spec, "started "+short(t.GetProvider())+" again in "+project.GetDirectory()+", "+
-		accessText(t, nil)+skillsText(spec.Skills))
+	if err := h.start(r, provider, spec, "started "+short(t.GetProvider())+" again in "+project.GetDirectory()+", "+
+		accessText(t, nil)+skillsText(spec.Skills)); err != nil {
+		return err
+	}
+	// again runs inside the existing pump's settle loop, so it cannot synchronously send on r.sends until the loop
+	// returns to drain. Let the pump accept the message first; this closes the assignment/start race for permission
+	// restarts without deadlocking the pump.
+	go h.deliverAssignedImagesAfterStart(h.ctx, t.GetId())
+	return nil
 }
 
 // firstPrompt is what the task's worker was first asked: its first event, read alone.

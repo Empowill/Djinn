@@ -333,12 +333,15 @@ func (h *Harness) adoptWarm(ctx context.Context, r *run, provider Provider, w *w
 	t := r.task
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, timestamppb.Now(), nil, 0, ""
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
-	if err := w.worker.Send(spec.Prompt); err != nil {
+	if err := sendWorkerInput(w.worker, spec.Prompt, spec.Attachments); err != nil {
 		h.stopWarm(w)
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
 			Text: "the warm worker took no message (" + err.Error() + "): starting cold"})
 		return h.start(r, provider, spec, "started "+short(t.GetProvider())+" cold in "+spec.Dir)
 	}
+	// The warm process has just received this task's launch snapshot, so it owns a fresh delivery ledger even when the
+	// run object was reused by a prior provider start.
+	r.beginWorkerImages(spec.Attachments)
 	h.mu.Lock()
 	r.worker = w.worker
 	if r.stopping {

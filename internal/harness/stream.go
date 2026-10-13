@@ -10,6 +10,7 @@ import (
 	"time"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 )
 
 // streamParser reads the output of an agent that writes one JSON line per event and ends each turn with a result
@@ -49,6 +50,9 @@ type streamAgent struct {
 	quiet  time.Duration // Quiet when 0
 	// encode writes a user message as the agent reads it on its input, without the newline.
 	encode func(text string) ([]byte, error)
+	// encodeImages writes a user message with native image blocks. It is nil for providers whose stream format has
+	// no supported image input shape.
+	encodeImages func(text string, attachments []plan.AttachmentData) ([]byte, error)
 	// settle, when set, says the agent may take a message sent during a turn into that turn, and give one result
 	// for both: after a result that leaves messages without one, the agent has finished once it says nothing of a
 	// turn for settle. Unset, every message waits for a result of its own.
@@ -70,6 +74,23 @@ func startStreamIdle(ctx context.Context, spec Spec, command string, args []stri
 func startStreamWith(
 	ctx context.Context, spec Spec, command string, args []string, grace time.Duration, a streamAgent, prompt bool,
 ) (Worker, error) {
+	var first []byte
+	if len(spec.Attachments) > 0 {
+		if err := validateImageInputs(spec.Attachments); err != nil {
+			return nil, err
+		}
+		if !prompt {
+			return nil, fmt.Errorf("%w: %s warm workers cannot carry an initial image message", ErrImageInputUnsupported, a.name)
+		}
+		if a.encodeImages == nil {
+			return nil, fmt.Errorf("%w: %s", ErrImageInputUnsupported, a.name)
+		}
+		var err error
+		first, err = a.encodeImages(spec.Prompt, spec.Attachments)
+		if err != nil {
+			return nil, err
+		}
+	}
 	p, err := startProcessWithPrefix(spec.Dir, command, args, spec.Env, spec.Scope, spec.Prefix, grace)
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command, err)
@@ -86,7 +107,17 @@ func startStreamWith(
 		}()
 		return w, nil
 	}
-	if err := w.Send(spec.Prompt); err != nil {
+	if len(spec.Attachments) > 0 {
+		if err := w.sendEncoded(first); err != nil {
+			p.Stop()
+			go func() {
+				for range w.events { // Drained so that the worker ends.
+				}
+			}()
+			<-w.done
+			return nil, err
+		}
+	} else if err := w.sendInput(spec.Prompt, nil); err != nil {
 		p.Stop()
 		go func() {
 			for range w.events { // Drained so that the worker ends.
@@ -153,10 +184,16 @@ func (w *streamWorker) Wait() Result {
 
 // Send writes a user message on the agent's input.
 func (w *streamWorker) Send(text string) error {
-	b, err := w.a.encode(text)
-	if err != nil {
-		return err
-	}
+	return w.sendInput(text, nil)
+}
+
+// SendWithAttachments writes a user message with native image blocks. A stream provider without an image encoder
+// refuses the input before writing any bytes to its process.
+func (w *streamWorker) SendWithAttachments(text string, attachments []plan.AttachmentData) error {
+	return w.sendInput(text, attachments)
+}
+
+func (w *streamWorker) sendEncoded(b []byte) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
@@ -166,8 +203,26 @@ func (w *streamWorker) Send(text string) error {
 		return fmt.Errorf("write to %s: %w", w.a.name, err)
 	}
 	w.pending++
-	w.settling = 0 // A message sent after the last result has a turn of its own.
+	w.settling = 0
 	return nil
+}
+
+func (w *streamWorker) sendInput(text string, attachments []plan.AttachmentData) error {
+	encode := w.a.encode
+	if len(attachments) > 0 {
+		if err := validateImageInputs(attachments); err != nil {
+			return err
+		}
+		if w.a.encodeImages == nil {
+			return fmt.Errorf("%w: %s", ErrImageInputUnsupported, w.a.name)
+		}
+		encode = func(_ string) ([]byte, error) { return w.a.encodeImages(text, attachments) }
+	}
+	b, err := encode(text)
+	if err != nil {
+		return err
+	}
+	return w.sendEncoded(b)
 }
 
 // closeInput closes the agent's input: it ends once it has answered what it read. The caller holds mu.

@@ -155,6 +155,8 @@ const (
 	TaskServiceListProcedure = "/plan.v1.TaskService/List"
 	// TaskServiceGetProcedure is the fully-qualified name of the TaskService's Get RPC.
 	TaskServiceGetProcedure = "/plan.v1.TaskService/Get"
+	// TaskServiceGetEventProcedure is the fully-qualified name of the TaskService's GetEvent RPC.
+	TaskServiceGetEventProcedure = "/plan.v1.TaskService/GetEvent"
 	// TaskServiceStopProcedure is the fully-qualified name of the TaskService's Stop RPC.
 	TaskServiceStopProcedure = "/plan.v1.TaskService/Stop"
 	// TaskServicePauseProcedure is the fully-qualified name of the TaskService's Pause RPC.
@@ -179,8 +181,16 @@ const (
 	TaskServiceContinueProcedure = "/plan.v1.TaskService/Continue"
 	// TaskServiceSendProcedure is the fully-qualified name of the TaskService's Send RPC.
 	TaskServiceSendProcedure = "/plan.v1.TaskService/Send"
+	// TaskServiceSendDataProcedure is the fully-qualified name of the TaskService's SendData RPC.
+	TaskServiceSendDataProcedure = "/plan.v1.TaskService/SendData"
 	// InstructionServiceSendProcedure is the fully-qualified name of the InstructionService's Send RPC.
 	InstructionServiceSendProcedure = "/plan.v1.InstructionService/Send"
+	// InstructionServiceSendDataProcedure is the fully-qualified name of the InstructionService's
+	// SendData RPC.
+	InstructionServiceSendDataProcedure = "/plan.v1.InstructionService/SendData"
+	// InstructionServiceGetAttachmentProcedure is the fully-qualified name of the InstructionService's
+	// GetAttachment RPC.
+	InstructionServiceGetAttachmentProcedure = "/plan.v1.InstructionService/GetAttachment"
 	// InstructionServiceListProcedure is the fully-qualified name of the InstructionService's List RPC.
 	InstructionServiceListProcedure = "/plan.v1.InstructionService/List"
 	// InstructionServiceReflectProcedure is the fully-qualified name of the InstructionService's
@@ -1964,6 +1974,9 @@ type TaskServiceClient interface {
 	List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error)
 	// Show a task.
 	Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error)
+	// Read one persisted task event and its image bytes after a reload. The task and event identifiers are both
+	// required so the UI cannot turn this into an arbitrary attachment-store read.
+	GetEvent(context.Context, *connect.Request[v1.TaskServiceGetEventRequest]) (*connect.Response[v1.TaskServiceGetEventResponse], error)
 	// Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
 	// started is stopped at once.
 	Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error)
@@ -2007,6 +2020,9 @@ type TaskServiceClient interface {
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
+	// Send a text or image indication to a running worker. Image bytes are validated and durably attached to the
+	// resulting task event before the provider's native image-input path receives them.
+	SendData(context.Context, *connect.Request[v1.TaskServiceSendDataRequest]) (*connect.Response[v1.TaskServiceSendDataResponse], error)
 }
 
 // NewTaskServiceClient constructs a client for the plan.v1.TaskService service. By default, it uses
@@ -2037,6 +2053,13 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+TaskServiceGetProcedure,
 			connect.WithSchema(taskServiceMethods.ByName("Get")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		getEvent: connect.NewClient[v1.TaskServiceGetEventRequest, v1.TaskServiceGetEventResponse](
+			httpClient,
+			baseURL+TaskServiceGetEventProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("GetEvent")),
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
@@ -2112,6 +2135,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Send")),
 			connect.WithClientOptions(opts...),
 		),
+		sendData: connect.NewClient[v1.TaskServiceSendDataRequest, v1.TaskServiceSendDataResponse](
+			httpClient,
+			baseURL+TaskServiceSendDataProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("SendData")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -2120,6 +2149,7 @@ type taskServiceClient struct {
 	spawn     *connect.Client[v1.TaskServiceSpawnRequest, v1.TaskServiceSpawnResponse]
 	list      *connect.Client[v1.TaskServiceListRequest, v1.TaskServiceListResponse]
 	get       *connect.Client[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse]
+	getEvent  *connect.Client[v1.TaskServiceGetEventRequest, v1.TaskServiceGetEventResponse]
 	stop      *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
 	pause     *connect.Client[v1.TaskServicePauseRequest, v1.TaskServicePauseResponse]
 	resume    *connect.Client[v1.TaskServiceResumeRequest, v1.TaskServiceResumeResponse]
@@ -2132,6 +2162,7 @@ type taskServiceClient struct {
 	done      *connect.Client[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse]
 	_continue *connect.Client[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse]
 	send      *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
+	sendData  *connect.Client[v1.TaskServiceSendDataRequest, v1.TaskServiceSendDataResponse]
 }
 
 // Spawn calls plan.v1.TaskService.Spawn.
@@ -2147,6 +2178,11 @@ func (c *taskServiceClient) List(ctx context.Context, req *connect.Request[v1.Ta
 // Get calls plan.v1.TaskService.Get.
 func (c *taskServiceClient) Get(ctx context.Context, req *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error) {
 	return c.get.CallUnary(ctx, req)
+}
+
+// GetEvent calls plan.v1.TaskService.GetEvent.
+func (c *taskServiceClient) GetEvent(ctx context.Context, req *connect.Request[v1.TaskServiceGetEventRequest]) (*connect.Response[v1.TaskServiceGetEventResponse], error) {
+	return c.getEvent.CallUnary(ctx, req)
 }
 
 // Stop calls plan.v1.TaskService.Stop.
@@ -2209,6 +2245,11 @@ func (c *taskServiceClient) Send(ctx context.Context, req *connect.Request[v1.Ta
 	return c.send.CallUnary(ctx, req)
 }
 
+// SendData calls plan.v1.TaskService.SendData.
+func (c *taskServiceClient) SendData(ctx context.Context, req *connect.Request[v1.TaskServiceSendDataRequest]) (*connect.Response[v1.TaskServiceSendDataResponse], error) {
+	return c.sendData.CallUnary(ctx, req)
+}
+
 // TaskServiceHandler is an implementation of the plan.v1.TaskService service.
 type TaskServiceHandler interface {
 	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
@@ -2220,6 +2261,9 @@ type TaskServiceHandler interface {
 	List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error)
 	// Show a task.
 	Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error)
+	// Read one persisted task event and its image bytes after a reload. The task and event identifiers are both
+	// required so the UI cannot turn this into an arbitrary attachment-store read.
+	GetEvent(context.Context, *connect.Request[v1.TaskServiceGetEventRequest]) (*connect.Response[v1.TaskServiceGetEventResponse], error)
 	// Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
 	// started is stopped at once.
 	Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error)
@@ -2263,6 +2307,9 @@ type TaskServiceHandler interface {
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
+	// Send a text or image indication to a running worker. Image bytes are validated and durably attached to the
+	// resulting task event before the provider's native image-input path receives them.
+	SendData(context.Context, *connect.Request[v1.TaskServiceSendDataRequest]) (*connect.Response[v1.TaskServiceSendDataResponse], error)
 }
 
 // NewTaskServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -2289,6 +2336,13 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		TaskServiceGetProcedure,
 		svc.Get,
 		connect.WithSchema(taskServiceMethods.ByName("Get")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceGetEventHandler := connect.NewUnaryHandler(
+		TaskServiceGetEventProcedure,
+		svc.GetEvent,
+		connect.WithSchema(taskServiceMethods.ByName("GetEvent")),
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
@@ -2364,6 +2418,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Send")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceSendDataHandler := connect.NewUnaryHandler(
+		TaskServiceSendDataProcedure,
+		svc.SendData,
+		connect.WithSchema(taskServiceMethods.ByName("SendData")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TaskService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TaskServiceSpawnProcedure:
@@ -2372,6 +2432,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceListHandler.ServeHTTP(w, r)
 		case TaskServiceGetProcedure:
 			taskServiceGetHandler.ServeHTTP(w, r)
+		case TaskServiceGetEventProcedure:
+			taskServiceGetEventHandler.ServeHTTP(w, r)
 		case TaskServiceStopProcedure:
 			taskServiceStopHandler.ServeHTTP(w, r)
 		case TaskServicePauseProcedure:
@@ -2396,6 +2458,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceContinueHandler.ServeHTTP(w, r)
 		case TaskServiceSendProcedure:
 			taskServiceSendHandler.ServeHTTP(w, r)
+		case TaskServiceSendDataProcedure:
+			taskServiceSendDataHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -2415,6 +2479,10 @@ func (UnimplementedTaskServiceHandler) List(context.Context, *connect.Request[v1
 
 func (UnimplementedTaskServiceHandler) Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Get is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) GetEvent(context.Context, *connect.Request[v1.TaskServiceGetEventRequest]) (*connect.Response[v1.TaskServiceGetEventResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.GetEvent is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error) {
@@ -2465,10 +2533,20 @@ func (UnimplementedTaskServiceHandler) Send(context.Context, *connect.Request[v1
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Send is not implemented"))
 }
 
+func (UnimplementedTaskServiceHandler) SendData(context.Context, *connect.Request[v1.TaskServiceSendDataRequest]) (*connect.Response[v1.TaskServiceSendDataResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.SendData is not implemented"))
+}
+
 // InstructionServiceClient is a client for the plan.v1.InstructionService service.
 type InstructionServiceClient interface {
 	// Persist an instruction and its journal entry before notifying the lead. Works while the lead is offline.
 	Send(context.Context, *connect.Request[v1.InstructionServiceSendRequest]) (*connect.Response[v1.InstructionServiceSendResponse], error)
+	// Persist an indication whose image bytes came from the window. This internal method shares Send's durable
+	// semantics; it is kept out of the generated command line because binary message fields are not CLI arguments.
+	SendData(context.Context, *connect.Request[v1.InstructionServiceSendDataRequest]) (*connect.Response[v1.InstructionServiceSendDataResponse], error)
+	// Read one persisted image for an instruction owned by the supplied wish. The identifier-only request keeps the
+	// attachment store private: a caller cannot turn this UI retrieval method into an arbitrary file read.
+	GetAttachment(context.Context, *connect.Request[v1.InstructionServiceGetAttachmentRequest]) (*connect.Response[v1.InstructionServiceGetAttachmentResponse], error)
 	// List every instruction of a wish, oldest first, with its full text and worker task reference.
 	List(context.Context, *connect.Request[v1.InstructionServiceListRequest]) (*connect.Response[v1.InstructionServiceListResponse], error)
 	// Move a pending instruction to reflecting: the lead considers which worker should handle it.
@@ -2496,6 +2574,19 @@ func NewInstructionServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			httpClient,
 			baseURL+InstructionServiceSendProcedure,
 			connect.WithSchema(instructionServiceMethods.ByName("Send")),
+			connect.WithClientOptions(opts...),
+		),
+		sendData: connect.NewClient[v1.InstructionServiceSendDataRequest, v1.InstructionServiceSendDataResponse](
+			httpClient,
+			baseURL+InstructionServiceSendDataProcedure,
+			connect.WithSchema(instructionServiceMethods.ByName("SendData")),
+			connect.WithClientOptions(opts...),
+		),
+		getAttachment: connect.NewClient[v1.InstructionServiceGetAttachmentRequest, v1.InstructionServiceGetAttachmentResponse](
+			httpClient,
+			baseURL+InstructionServiceGetAttachmentProcedure,
+			connect.WithSchema(instructionServiceMethods.ByName("GetAttachment")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		list: connect.NewClient[v1.InstructionServiceListRequest, v1.InstructionServiceListResponse](
@@ -2534,17 +2625,29 @@ func NewInstructionServiceClient(httpClient connect.HTTPClient, baseURL string, 
 
 // instructionServiceClient implements InstructionServiceClient.
 type instructionServiceClient struct {
-	send     *connect.Client[v1.InstructionServiceSendRequest, v1.InstructionServiceSendResponse]
-	list     *connect.Client[v1.InstructionServiceListRequest, v1.InstructionServiceListResponse]
-	reflect  *connect.Client[v1.InstructionServiceReflectRequest, v1.InstructionServiceReflectResponse]
-	assign   *connect.Client[v1.InstructionServiceAssignRequest, v1.InstructionServiceAssignResponse]
-	complete *connect.Client[v1.InstructionServiceCompleteRequest, v1.InstructionServiceCompleteResponse]
-	reply    *connect.Client[v1.InstructionServiceReplyRequest, v1.InstructionServiceReplyResponse]
+	send          *connect.Client[v1.InstructionServiceSendRequest, v1.InstructionServiceSendResponse]
+	sendData      *connect.Client[v1.InstructionServiceSendDataRequest, v1.InstructionServiceSendDataResponse]
+	getAttachment *connect.Client[v1.InstructionServiceGetAttachmentRequest, v1.InstructionServiceGetAttachmentResponse]
+	list          *connect.Client[v1.InstructionServiceListRequest, v1.InstructionServiceListResponse]
+	reflect       *connect.Client[v1.InstructionServiceReflectRequest, v1.InstructionServiceReflectResponse]
+	assign        *connect.Client[v1.InstructionServiceAssignRequest, v1.InstructionServiceAssignResponse]
+	complete      *connect.Client[v1.InstructionServiceCompleteRequest, v1.InstructionServiceCompleteResponse]
+	reply         *connect.Client[v1.InstructionServiceReplyRequest, v1.InstructionServiceReplyResponse]
 }
 
 // Send calls plan.v1.InstructionService.Send.
 func (c *instructionServiceClient) Send(ctx context.Context, req *connect.Request[v1.InstructionServiceSendRequest]) (*connect.Response[v1.InstructionServiceSendResponse], error) {
 	return c.send.CallUnary(ctx, req)
+}
+
+// SendData calls plan.v1.InstructionService.SendData.
+func (c *instructionServiceClient) SendData(ctx context.Context, req *connect.Request[v1.InstructionServiceSendDataRequest]) (*connect.Response[v1.InstructionServiceSendDataResponse], error) {
+	return c.sendData.CallUnary(ctx, req)
+}
+
+// GetAttachment calls plan.v1.InstructionService.GetAttachment.
+func (c *instructionServiceClient) GetAttachment(ctx context.Context, req *connect.Request[v1.InstructionServiceGetAttachmentRequest]) (*connect.Response[v1.InstructionServiceGetAttachmentResponse], error) {
+	return c.getAttachment.CallUnary(ctx, req)
 }
 
 // List calls plan.v1.InstructionService.List.
@@ -2576,6 +2679,12 @@ func (c *instructionServiceClient) Reply(ctx context.Context, req *connect.Reque
 type InstructionServiceHandler interface {
 	// Persist an instruction and its journal entry before notifying the lead. Works while the lead is offline.
 	Send(context.Context, *connect.Request[v1.InstructionServiceSendRequest]) (*connect.Response[v1.InstructionServiceSendResponse], error)
+	// Persist an indication whose image bytes came from the window. This internal method shares Send's durable
+	// semantics; it is kept out of the generated command line because binary message fields are not CLI arguments.
+	SendData(context.Context, *connect.Request[v1.InstructionServiceSendDataRequest]) (*connect.Response[v1.InstructionServiceSendDataResponse], error)
+	// Read one persisted image for an instruction owned by the supplied wish. The identifier-only request keeps the
+	// attachment store private: a caller cannot turn this UI retrieval method into an arbitrary file read.
+	GetAttachment(context.Context, *connect.Request[v1.InstructionServiceGetAttachmentRequest]) (*connect.Response[v1.InstructionServiceGetAttachmentResponse], error)
 	// List every instruction of a wish, oldest first, with its full text and worker task reference.
 	List(context.Context, *connect.Request[v1.InstructionServiceListRequest]) (*connect.Response[v1.InstructionServiceListResponse], error)
 	// Move a pending instruction to reflecting: the lead considers which worker should handle it.
@@ -2599,6 +2708,19 @@ func NewInstructionServiceHandler(svc InstructionServiceHandler, opts ...connect
 		InstructionServiceSendProcedure,
 		svc.Send,
 		connect.WithSchema(instructionServiceMethods.ByName("Send")),
+		connect.WithHandlerOptions(opts...),
+	)
+	instructionServiceSendDataHandler := connect.NewUnaryHandler(
+		InstructionServiceSendDataProcedure,
+		svc.SendData,
+		connect.WithSchema(instructionServiceMethods.ByName("SendData")),
+		connect.WithHandlerOptions(opts...),
+	)
+	instructionServiceGetAttachmentHandler := connect.NewUnaryHandler(
+		InstructionServiceGetAttachmentProcedure,
+		svc.GetAttachment,
+		connect.WithSchema(instructionServiceMethods.ByName("GetAttachment")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	instructionServiceListHandler := connect.NewUnaryHandler(
@@ -2636,6 +2758,10 @@ func NewInstructionServiceHandler(svc InstructionServiceHandler, opts ...connect
 		switch r.URL.Path {
 		case InstructionServiceSendProcedure:
 			instructionServiceSendHandler.ServeHTTP(w, r)
+		case InstructionServiceSendDataProcedure:
+			instructionServiceSendDataHandler.ServeHTTP(w, r)
+		case InstructionServiceGetAttachmentProcedure:
+			instructionServiceGetAttachmentHandler.ServeHTTP(w, r)
 		case InstructionServiceListProcedure:
 			instructionServiceListHandler.ServeHTTP(w, r)
 		case InstructionServiceReflectProcedure:
@@ -2657,6 +2783,14 @@ type UnimplementedInstructionServiceHandler struct{}
 
 func (UnimplementedInstructionServiceHandler) Send(context.Context, *connect.Request[v1.InstructionServiceSendRequest]) (*connect.Response[v1.InstructionServiceSendResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InstructionService.Send is not implemented"))
+}
+
+func (UnimplementedInstructionServiceHandler) SendData(context.Context, *connect.Request[v1.InstructionServiceSendDataRequest]) (*connect.Response[v1.InstructionServiceSendDataResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InstructionService.SendData is not implemented"))
+}
+
+func (UnimplementedInstructionServiceHandler) GetAttachment(context.Context, *connect.Request[v1.InstructionServiceGetAttachmentRequest]) (*connect.Response[v1.InstructionServiceGetAttachmentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InstructionService.GetAttachment is not implemented"))
 }
 
 func (UnimplementedInstructionServiceHandler) List(context.Context, *connect.Request[v1.InstructionServiceListRequest]) (*connect.Response[v1.InstructionServiceListResponse], error) {

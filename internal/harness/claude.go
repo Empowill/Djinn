@@ -3,6 +3,7 @@ package harness
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 )
 
 // Claude runs Claude Code: `claude -p` reading and writing stream-json, one JSON message per line. The process
@@ -179,14 +181,40 @@ func (c Claude) agent() streamAgent {
 	if settle == 0 {
 		settle = ClaudeSettle
 	}
-	return streamAgent{name: "claude", parser: claudeParser{}, encode: claudeMessageLine, settle: settle}
+	return streamAgent{name: "claude", parser: claudeParser{}, encode: claudeMessageLine,
+		encodeImages: claudeMessageWithImages, settle: settle}
 }
 
 // claudeMessageLine is a user message as claude reads it in stream-json.
 func claudeMessageLine(text string) ([]byte, error) {
+	return claudeMessageWithImages(text, nil)
+}
+
+// claudeMessageWithImages encodes the Anthropic user content blocks accepted by Claude's stream-json input. Image
+// bytes are embedded as base64 blocks because a PTY path or filename would be ordinary model text, not an image.
+func claudeMessageWithImages(text string, attachments []plan.AttachmentData) ([]byte, error) {
+	content := make([]any, 0, 1+len(attachments))
+	// Keep the original text-only wire shape, including an empty text block. Once an image is present, an empty
+	// text block would be redundant and Claude accepts the image-only user content.
+	if text != "" || len(attachments) == 0 {
+		content = append(content, map[string]any{"type": "text", "text": text})
+	}
+	for n, attachment := range attachments {
+		if _, err := imageDataURI(attachment, n); err != nil {
+			return nil, err
+		}
+		content = append(content, map[string]any{
+			"type": "image",
+			"source": map[string]any{
+				"type":       "base64",
+				"media_type": imageMediaType(attachment.Metadata),
+				"data":       base64.StdEncoding.EncodeToString(attachment.Data),
+			},
+		})
+	}
 	return json.Marshal(map[string]any{
 		"type":    "user",
-		"message": map[string]any{"role": "user", "content": []any{map[string]any{"type": "text", "text": text}}},
+		"message": map[string]any{"role": "user", "content": content},
 	})
 }
 

@@ -239,6 +239,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 		return err
 	}
 	go h.pump(r)
+	h.deliverAssignedImagesAfterStart(h.ctx, t.GetId())
 	return nil
 }
 
@@ -247,6 +248,10 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Project, prep prepared, prompt, by string) error {
 	t := r.task
 	dir := project.GetDirectory()
+	attachments, attachmentErr := h.taskAttachments(context.Background(), t.GetId())
+	if attachmentErr != nil {
+		return fmt.Errorf("read image attachments: %w", attachmentErr)
+	}
 	switch {
 	case project == nil:
 		dir = scratchDir(h.home, t.GetId())
@@ -256,7 +261,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	case r.watcher:
 		// In its project's folder, on its command: it has no session to resume, and nothing to be told.
 		readOnly, perms := accessSpec(t.GetAccess(), prep.declared)
-		spec := Spec{TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Restart: t.GetRestart()}
+		spec := Spec{TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Restart: t.GetRestart(), Attachments: attachments}
 		r.base = t.GetUsage()
 		text := fmt.Sprintf("resumed %s: started watch in %s%s", byRestart, dir, watchText(t))
 		return h.start(r, provider, spec, text)
@@ -301,7 +306,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	}
 	spec := Spec{
 		TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Model: t.GetModel(), MaxBudgetUSD: budget,
-		Resume: t.GetSessionId(), Prompt: line,
+		Resume: t.GetSessionId(), Prompt: line, Attachments: attachments,
 	}
 	how := ", resuming its session"
 	if by == byContinue && (t.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY || spec.Resume == "") {

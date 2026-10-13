@@ -72,6 +72,9 @@ type Watched struct {
 }
 
 func (c Watch) Start(ctx context.Context, spec Spec) (Worker, error) {
+	if len(spec.Attachments) > 0 {
+		return nil, fmt.Errorf("%w: watchers do not run an image-capable agent", ErrImageInputUnsupported)
+	}
 	command := strings.TrimSpace(spec.Prompt)
 	args, err := splitCommand(command)
 	switch {

@@ -1019,6 +1019,9 @@ message TaskEvent {
   string raw = 7;
   // When the event arrived.
   google.protobuf.Timestamp create_time = 8;
+  // Validated image metadata owned by this event. The bytes stay in Djinn's private attachment store and are
+  // returned only by the identifier-scoped task event retrieval method.
+  repeated Attachment attachments = 9 [(buf.validate.field).repeated.max_items = 8];
 }
 
 // Choice is an answer to a question: YES for a question without options, or the letter of an option.
@@ -2418,6 +2421,20 @@ enum TellWait {
   TELL_WAIT_CHOICE = 2;
 }
 
+// Delivery of image blocks to the lead after an instruction was durably accepted.
+enum InstructionImageDelivery {
+  // No image was supplied, or this response returned an existing retry without sending a new notification.
+  INSTRUCTION_IMAGE_DELIVERY_UNSPECIFIED = 0;
+  // The lead's native image transport accepted the image notification.
+  INSTRUCTION_IMAGE_DELIVERY_QUEUED = 1;
+  // The instruction is durable, but no live lead accepted the image; a later supported delivery may be requested.
+  INSTRUCTION_IMAGE_DELIVERY_DEFERRED = 2;
+  // The live lead transport cannot carry image blocks; no filename fallback was used.
+  INSTRUCTION_IMAGE_DELIVERY_UNSUPPORTED = 3;
+  // A native image transport was present but rejected the notification.
+  INSTRUCTION_IMAGE_DELIVERY_FAILED = 4;
+}
+
 message WishServiceChooseRequest {
   // The wish.
   string wish_id = 1 [
@@ -2501,6 +2518,45 @@ message WishExport {
   repeated Instruction instructions = 11;
   // The tilasms of the wish. An export to a file carries the files of every version; a snapshot, only the manifests.
   repeated TilasmExport tilasms = 10;
+  // The validated image bytes referenced by instructions and task events. Attachment identifiers are remapped on
+  // import.
+  repeated AttachmentExport attachments = 12;
+}
+
+// Metadata for an image attached to an instruction or task event. Bytes are kept in Djinn's attachment store and are
+// intentionally absent from the journal and normal plan responses.
+message Attachment {
+  // Identifier of the stored image, a UUIDv7. Empty only while it is an input attachment.
+  string id = 1 [(buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE, (buf.validate.field).string.uuid = true];
+  // Display name supplied by the caller, without a path or control character.
+  string name = 2 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+  // Content type. Djinn accepts image/png, image/jpeg and image/gif.
+  string media_type = 3 [(buf.validate.field).string.pattern = "^image/(png|jpeg|gif)$"];
+  // Number of bytes in the decoded stored file.
+  int64 size = 4 [(buf.validate.field).int64 = {gte: 1, lte: 5242880}];
+  // SHA-256 of the stored bytes, lower-case hexadecimal.
+  string sha256 = 5 [(buf.validate.field).string.pattern = "^[0-9a-f]{64}$"];
+  // Decoded image width in pixels.
+  uint32 width = 6 [(buf.validate.field).uint32 = {gte: 1, lte: 10000}];
+  // Decoded image height in pixels.
+  uint32 height = 7 [(buf.validate.field).uint32 = {gte: 1, lte: 10000}];
+}
+
+// An image supplied with an indication. The service validates and stores data before creating the indication. The
+// command line uses attachment_paths on the request so it never has to put binary data in argv.
+message AttachmentInput {
+  // Display name supplied by the caller, without a path or control character.
+  string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+  // Declared content type; the service also sniffs the bytes and rejects a mismatch.
+  string media_type = 2 [(buf.validate.field).string.pattern = "^image/(png|jpeg|gif)$"];
+  // Image bytes. The service bounds this field before decoding it.
+  bytes data = 3 [(buf.validate.field).bytes = {min_len: 1, max_len: 5242880}];
+}
+
+// An exported image and its metadata. Import validates it again and gives it a fresh identifier.
+message AttachmentExport {
+  Attachment attachment = 1 [(buf.validate.field).required = true];
+  bytes data = 2 [(buf.validate.field).bytes = {min_len: 1, max_len: 5242880}];
 }
 
 // ProjectRef names a project without its folder, so that another machine finds its own copy.
@@ -2745,6 +2801,12 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // Read one persisted task event and its image bytes after a reload. The task and event identifiers are both
+  // required so the UI cannot turn this into an arbitrary attachment-store read.
+  rpc GetEvent(TaskServiceGetEventRequest) returns (TaskServiceGetEventResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
   // started is stopped at once.
   rpc Stop(TaskServiceStopRequest) returns (TaskServiceStopResponse) {
@@ -2821,6 +2883,12 @@ service TaskService {
   // and a "received" event follows once the worker says something after it.
   rpc Send(TaskServiceSendRequest) returns (TaskServiceSendResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Send a text or image indication to a running worker. Image bytes are validated and durably attached to the
+  // resulting task event before the provider's native image-input path receives them.
+  rpc SendData(TaskServiceSendDataRequest) returns (TaskServiceSendDataResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
 }
@@ -2946,6 +3014,26 @@ message TaskServiceGetResponse {
   Task task = 1;
 }
 
+message TaskServiceGetEventRequest {
+  // The task that owns the event.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The event whose image blocks are being reloaded.
+  string event_id = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TaskServiceGetEventResponse {
+  // The persisted event, including image metadata but no binary payloads in its normal representation.
+  TaskEvent event = 1 [(buf.validate.field).required = true];
+  // The event's image bytes, in the same order as event.attachments.
+  repeated AttachmentExport attachments = 2 [(buf.validate.field).repeated.max_items = 8];
+}
+
 message TaskServiceStopRequest {
   // The task.
   string task_id = 1 [
@@ -2960,21 +3048,58 @@ message TaskServiceStopResponse {
 }
 
 message TaskServiceSendRequest {
+  option (buf.validate.message).cel = {
+    id: "task.send.content"
+    message: "text or an image attachment is required"
+    expression: "this.text != '' || this.attachment_paths.size() > 0"
+  };
   // The task, running.
   string task_id = 1 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.uuid = true
   ];
   // The message, as the worker reads it.
-  string text = 2 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.max_len = 20000
+  string text = 2 [(djinn.v1.positional) = true, (buf.validate.field).string.max_len = 20000];
+  // Local image files for the command line; paths are normalized and read by Djinn before durable event creation.
+  repeated string attachment_paths = 3 [
+    (buf.validate.field).repeated = {
+      max_items: 8
+      items: {string: {min_len: 1, max_len: 4096}}
+    }
   ];
 }
 
 message TaskServiceSendResponse {
   // The message, as an event of the task.
   TaskEvent event = 1;
+}
+
+message TaskServiceSendDataRequest {
+  option (buf.validate.message).cel = {
+    id: "task.send_data.content"
+    message: "text or an image attachment is required"
+    expression: "this.text != '' || this.attachments.size() > 0 || this.attachment_metadata.size() > 0"
+  };
+  // The task, running.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The message text. It may be empty when an image is supplied.
+  string text = 2 [(buf.validate.field).string.max_len = 20000];
+  // Image bytes supplied by the window; the service validates them before delivery.
+  repeated AttachmentInput attachments = 3 [(buf.validate.field).repeated.max_items = 8];
+  // Canonical metadata retained by the durable journal after binary inputs are removed from the command record.
+  repeated Attachment attachment_metadata = 4 [(buf.validate.field).repeated.max_items = 8];
+}
+
+message TaskServiceSendDataResponse {
+  // The message event, after the worker accepted the native input.
+  TaskEvent event = 1;
+  // The image delivery result. Text-only requests leave this unspecified.
+  InstructionImageDelivery image_delivery = 2;
+  // Optional detail for unsupported or failed image delivery.
+  string image_delivery_note = 3 [(buf.validate.field).string.max_len = 1000];
 }
 
 message TaskServicePauseRequest {
@@ -3128,6 +3253,11 @@ message Instruction {
     message: "processing and done require a worker task; pending and reflecting have none"
     expression: "(this.status == 3 || this.status == 4) ? this.task_id != '' : this.task_id == ''"
   };
+  option (buf.validate.message).cel = {
+    id: "instruction.content"
+    message: "an instruction needs text or an image attachment"
+    expression: "this.text != '' || this.attachments.size() > 0"
+  };
   // Identifier, a UUIDv7.
   string id = 1 [(buf.validate.field).string.uuid = true];
   // Wish this instruction belongs to.
@@ -3135,7 +3265,7 @@ message Instruction {
   // Code within its wish, I01, I02 and so on.
   string code = 3 [(buf.validate.field).string.pattern = "^I[0-9]{2,}$"];
   // The developer's full text, without truncation.
-  string text = 4 [(buf.validate.field).string = {min_len: 1, max_len: 200000}];
+  string text = 4 [(buf.validate.field).string.max_len = 200000];
   // Caller retry identifier, unique within the wish when set.
   string request_id = 9 [(buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE, (buf.validate.field).string.uuid = true];
   // When the instruction was submitted.
@@ -3148,6 +3278,9 @@ message Instruction {
   string task_id = 8 [(buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE, (buf.validate.field).string.uuid = true];
   // Informational replies from the lead, oldest first. Replies never change the instruction lifecycle.
   repeated InstructionReply replies = 10;
+  // Images supplied with the instruction, oldest first. The bytes are available to supported workers through the
+  // typed provider input path, but are not carried in this metadata response.
+  repeated Attachment attachments = 11;
 }
 
 // A concise informational reply on a durable developer instruction.
@@ -3179,6 +3312,18 @@ service InstructionService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Persist an indication whose image bytes came from the window. This internal method shares Send's durable
+  // semantics; it is kept out of the generated command line because binary message fields are not CLI arguments.
+  rpc SendData(InstructionServiceSendDataRequest) returns (InstructionServiceSendDataResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Read one persisted image for an instruction owned by the supplied wish. The identifier-only request keeps the
+  // attachment store private: a caller cannot turn this UI retrieval method into an arbitrary file read.
+  rpc GetAttachment(InstructionServiceGetAttachmentRequest) returns (InstructionServiceGetAttachmentResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // List every instruction of a wish, oldest first, with its full text and worker task reference.
   rpc List(InstructionServiceListRequest) returns (InstructionServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -3207,16 +3352,75 @@ service InstructionService {
 }
 
 message InstructionServiceSendRequest {
+  option (buf.validate.message).cel = {
+    id: "instruction.send.content"
+    message: "text or an image attachment is required"
+    expression: "this.text != '' || this.attachment_paths.size() > 0"
+  };
   // The wish.
   string wish_id = 1 [(buf.validate.field).required = true, (buf.validate.field).string.uuid = true];
   // The full developer instruction.
-  string text = 2 [(buf.validate.field).required = true, (buf.validate.field).string.max_len = 200000];
+  string text = 2 [(djinn.v1.positional) = true, (buf.validate.field).string.max_len = 200000];
   // Optional UUID for safe retries: the same wish and request id return the original instruction.
   string request_id = 3 [(buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE, (buf.validate.field).string.uuid = true];
+  // Local image files for the command line; paths are normalized and read by Djinn before persistence.
+  repeated string attachment_paths = 5 [
+    (buf.validate.field).repeated = {
+      max_items: 8
+      items: {string: {min_len: 1, max_len: 4096}}
+    }
+  ];
+}
+
+// The window's typed image upload for InstructionService.Send. The bytes are validated and stored outside the
+// journal before the indication is committed.
+message InstructionServiceSendDataRequest {
+  option (buf.validate.message).cel = {
+    id: "instruction.send_data.content"
+    message: "text or an image attachment is required"
+    expression: "this.text != '' || this.attachments.size() > 0 || this.attachment_metadata.size() > 0"
+  };
+  // The wish.
+  string wish_id = 1 [(buf.validate.field).required = true, (buf.validate.field).string.uuid = true];
+  // The full developer instruction. It may be empty when an image is supplied.
+  string text = 2 [(djinn.v1.positional) = true, (buf.validate.field).string.max_len = 200000];
+  // Optional UUID for safe retries: the same wish and request id return the original instruction.
+  string request_id = 3 [(buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE, (buf.validate.field).string.uuid = true];
+  // Images supplied by the window.
+  repeated AttachmentInput attachments = 4 [(buf.validate.field).repeated.max_items = 8];
+  // Canonical metadata used by the journal after the binary inputs have been staged. Callers must not provide this
+  // field; it is populated only in the durable command record and lets replay retain the request's image identity.
+  repeated Attachment attachment_metadata = 5 [(buf.validate.field).repeated.max_items = 8];
+}
+message InstructionServiceSendDataResponse {
+  // The instruction, persisted even when its lead is offline.
+  Instruction instruction = 1;
+  // What happened when Djinn tried to notify a live lead with the image blocks.
+  InstructionImageDelivery image_delivery = 2;
+  // Optional human-readable detail for a deferred, unsupported or failed delivery.
+  string image_delivery_note = 3 [(buf.validate.field).string.max_len = 1000];
+}
+message InstructionServiceGetAttachmentRequest {
+  // The wish that owns the instruction.
+  string wish_id = 1 [(buf.validate.field).required = true, (buf.validate.field).string.uuid = true];
+  // The instruction that references the image.
+  string instruction_id = 2 [(buf.validate.field).required = true, (buf.validate.field).string.uuid = true];
+  // The image identifier recorded on that instruction.
+  string attachment_id = 3 [(buf.validate.field).required = true, (buf.validate.field).string.uuid = true];
+}
+message InstructionServiceGetAttachmentResponse {
+  // Metadata is returned with the bytes so a reloaded thumbnail has the same validated identity and dimensions.
+  Attachment attachment = 1 [(buf.validate.field).required = true];
+  // The bounded, validated image bytes from Djinn's private attachment store.
+  bytes data = 2 [(buf.validate.field).bytes = {min_len: 1, max_len: 5242880}];
 }
 message InstructionServiceSendResponse {
   // The instruction, persisted even when its lead is offline.
   Instruction instruction = 1;
+  // What happened when Djinn tried to notify a live lead with the image blocks.
+  InstructionImageDelivery image_delivery = 2;
+  // Optional human-readable detail for a deferred, unsupported or failed delivery.
+  string image_delivery_note = 3 [(buf.validate.field).string.max_len = 1000];
 }
 message InstructionServiceListRequest {
   // The wish.
@@ -3247,6 +3451,10 @@ message InstructionServiceAssignRequest {
 message InstructionServiceAssignResponse {
   // The instruction, processing, with its worker task reference.
   Instruction instruction = 1;
+  // What happened when an assigned image indication was delivered to a running worker.
+  InstructionImageDelivery image_delivery = 2;
+  // Optional detail for deferred or failed worker delivery.
+  string image_delivery_note = 3 [(buf.validate.field).string.max_len = 1000];
 }
 message InstructionServiceCompleteRequest {
   // Instruction code (I01) or identifier; codes ignore case.

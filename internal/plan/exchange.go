@@ -49,6 +49,9 @@ func (w *Wishes) Export(
 	if err != nil {
 		return nil, Status(err)
 	}
+	if err := fillAttachmentExports(w.Home, exp); err != nil {
+		return nil, Status(err)
+	}
 	all, err := store.List[*planv1.Project](ctx, w.Store, nil)
 	if err != nil {
 		return nil, Status(err)
@@ -214,6 +217,139 @@ func collect(ctx context.Context, r store.Reader, wishID string, eventReaders ..
 		return nil, nil, err
 	}
 	return exp, projects, nil
+}
+
+// fillAttachmentExports reads the private blobs referenced by an export. Metadata is the ownership record; each
+// identifier is emitted once even if a malformed store happened to reference it twice (check rejects that on import).
+func fillAttachmentExports(home string, exp *planv1.WishExport) error {
+	seen := map[string]bool{}
+	appendAttachment := func(owner string, ref *planv1.Attachment) error {
+		if ref == nil || ref.GetId() == "" {
+			return fmt.Errorf("%s attachment has no identifier", owner)
+		}
+		if seen[strings.ToLower(ref.GetId())] {
+			return nil
+		}
+		data, err := ReadAttachment(home, ref)
+		if err != nil {
+			return err
+		}
+		exp.Attachments = append(exp.GetAttachments(), &planv1.AttachmentExport{
+			Attachment: proto.Clone(ref).(*planv1.Attachment), Data: data,
+		})
+		seen[strings.ToLower(ref.GetId())] = true
+		return nil
+	}
+	for _, instruction := range exp.GetInstructions() {
+		for _, ref := range instruction.GetAttachments() {
+			if err := appendAttachment("instruction", ref); err != nil {
+				return err
+			}
+		}
+	}
+	for _, event := range exp.GetEvents() {
+		for _, ref := range event.GetAttachments() {
+			if err := appendAttachment("event", ref); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// stripAttachmentData produces the command-journal form of an import. The durable import command records metadata
+// and plan history, while image payloads stay in the atomic attachment files and never enter a journal row.
+func stripAttachmentData(exp *planv1.WishExport) *planv1.WishExport {
+	clone := proto.Clone(exp).(*planv1.WishExport)
+	for _, exported := range clone.GetAttachments() {
+		exported.Data = nil
+	}
+	return clone
+}
+
+// remapAttachments gives every imported image a fresh owner identifier, then rewrites all instruction, task-event and
+// known image-command references. This prevents an imported wish from taking ownership of a blob belonging to another
+// wish on this machine while keeping its journal metadata aligned with the imported entities.
+func remapAttachments(exp *planv1.WishExport) error {
+	remap := map[string]string{}
+	for _, exported := range exp.GetAttachments() {
+		if exported == nil || exported.GetAttachment() == nil {
+			return errors.New("attachment export is empty")
+		}
+		old := exported.GetAttachment().GetId()
+		if old == "" || remap[strings.ToLower(old)] != "" {
+			return fmt.Errorf("attachment %q is duplicated or has no identifier", old)
+		}
+		fresh := store.NewID()
+		remap[strings.ToLower(old)] = fresh
+		exported.Attachment.Id = fresh
+	}
+	for _, instruction := range exp.GetInstructions() {
+		for _, ref := range instruction.GetAttachments() {
+			if ref == nil {
+				return errors.New("instruction attachment is empty")
+			}
+			fresh := remap[strings.ToLower(ref.GetId())]
+			if fresh == "" {
+				return fmt.Errorf("instruction attachment %q has no exported data", ref.GetId())
+			}
+			ref.Id = fresh
+		}
+	}
+	for _, event := range exp.GetEvents() {
+		for _, ref := range event.GetAttachments() {
+			if ref == nil {
+				return errors.New("event attachment is empty")
+			}
+			fresh := remap[strings.ToLower(ref.GetId())]
+			if fresh == "" {
+				return fmt.Errorf("event attachment %q has no exported data", ref.GetId())
+			}
+			ref.Id = fresh
+		}
+	}
+	for _, command := range exp.GetCommands() {
+		if command == nil || command.GetRequest() == nil {
+			continue
+		}
+		request, err := command.GetRequest().UnmarshalNew()
+		if err != nil {
+			// Commands from a newer Djinn may be kept as opaque history. The entity and attachment checks above
+			// still enforce the portable records this version understands.
+			continue
+		}
+		var changed bool
+		remapRequest := func(refs []*planv1.Attachment) {
+			for _, ref := range refs {
+				if ref == nil || ref.GetId() == "" {
+					continue
+				}
+				fresh := remap[strings.ToLower(ref.GetId())]
+				if fresh == "" {
+					// Command history can outlive a deleted task or instruction. Its metadata is
+					// retained for auditability, but the corresponding private blob is no longer
+					// part of the portable export. Entity references above remain strict.
+					continue
+				}
+				ref.Id = fresh
+				changed = true
+			}
+		}
+		switch request := request.(type) {
+		case *planv1.TaskServiceSendDataRequest:
+			remapRequest(request.GetAttachmentMetadata())
+		case *planv1.InstructionServiceSendDataRequest:
+			remapRequest(request.GetAttachmentMetadata())
+		}
+		if changed {
+			packed, err := anypb.New(request)
+			if err != nil {
+				return fmt.Errorf("remap attachment command %s: %w", command.GetMethod(), err)
+			}
+			command.Request = packed
+		}
+	}
+	return nil
 }
 
 // commands returns the journal entries that changed the wish: those whose request names the wish or one of its
@@ -403,6 +539,15 @@ func portable(exp *planv1.WishExport, scrub *scrubber) *planv1.WishExport {
 		}
 		if instruction, ok := req.(*planv1.InstructionServiceSendRequest); ok {
 			instruction.Text = stripCredentials(instruction.GetText())
+			// Attachment paths are machine-local input. The durable instruction and its exported bytes carry
+			// the image identity; a command history must never leak the source path or suggest it is reusable
+			// on the importing machine.
+			instruction.AttachmentPaths = nil
+		}
+		if task, ok := req.(*planv1.TaskServiceSendRequest); ok {
+			// Task attachment paths have the same local-only lifetime as instruction paths. The event and its
+			// exported attachment bytes are the portable record.
+			task.AttachmentPaths = nil
 		}
 		if instruction, ok := req.(*planv1.InstructionServiceReplyRequest); ok {
 			instruction.Reply = stripCredentials(instruction.GetReply())
@@ -657,6 +802,9 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 	if err := check(exp); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid export: %w", err))
 	}
+	if err := remapAttachments(exp); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid export attachments: %w", err))
+	}
 	// The tilasms' files go to the data folder; the journal keeps the rest of the export.
 	placed, err := stageTilasms(w.Home, exp)
 	if err != nil {
@@ -664,11 +812,22 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 	}
 	committed := false
 	defer func() { placed.done(committed) }()
-	canonical, err := proto.MarshalOptions{Deterministic: true}.Marshal(exp)
+	attachmentFiles, err := stageExportAttachments(w.Home, exp)
+	if err != nil {
+		return nil, Status(err)
+	}
+	defer func() {
+		if !committed {
+			removeAttachmentFiles(w.Home, placedIDs(attachmentFiles))
+		}
+	}()
+	journalExp := stripAttachmentData(exp)
+	canonical, err := proto.MarshalOptions{Deterministic: true}.Marshal(journalExp)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	res := &planv1.WishServiceImportDataResponse{}
+	var removedAttachments []string
 	err = w.Store.Tx(ctx, func(tx *store.Tx) error {
 		req := &planv1.WishServiceImportDataRequest{Data: canonical, Replace: replace}
 		if err := tx.Journal(actor, planv1connect.WishServiceImportDataProcedure, req); err != nil {
@@ -691,6 +850,22 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			}
 			if err := placed.replace(tilasms); err != nil {
 				return err
+			}
+			oldInstructions, err := store.List[*planv1.Instruction](ctx, tx, store.Where{"wish_id": old.GetId()})
+			if err != nil {
+				return err
+			}
+			removedAttachments = attachmentIDs(oldInstructions)
+			oldTasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": old.GetId()})
+			if err != nil {
+				return err
+			}
+			for _, oldTask := range oldTasks {
+				events, err := store.List[*planv1.TaskEvent](ctx, tx, store.Where{"task_id": oldTask.GetId()})
+				if err != nil {
+					return err
+				}
+				removedAttachments = append(removedAttachments, AttachmentIDsForEvents(events)...)
 			}
 			if err := forget(ctx, tx, old.GetId()); err != nil {
 				return err
@@ -771,6 +946,7 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 		return nil, Status(err)
 	}
 	committed = true
+	removeAttachmentFiles(w.Home, removedAttachments)
 	return res, nil
 }
 
@@ -880,13 +1056,65 @@ func check(exp *planv1.WishExport) error {
 	}
 	clear(codes)
 	requestIDs := map[string]bool{}
+	attachmentExports := map[string]*planv1.AttachmentExport{}
+	for n, exported := range exp.GetAttachments() {
+		if exported == nil || exported.GetAttachment() == nil {
+			return fmt.Errorf("attachment export %d is empty", n+1)
+		}
+		ref := exported.GetAttachment()
+		if ref.GetId() == "" {
+			return fmt.Errorf("attachment export %d has no identifier", n+1)
+		}
+		if err := protovalidate.Validate(ref); err != nil {
+			return fmt.Errorf("attachment export %s: %w", ref.GetId(), err)
+		}
+		validated, err := validateAttachment(ref.GetName(), ref.GetMediaType(), exported.GetData())
+		if err != nil {
+			return fmt.Errorf("attachment export %s: %w", ref.GetId(), err)
+		}
+		if validated.meta.GetSize() != ref.GetSize() || validated.meta.GetSha256() != ref.GetSha256() ||
+			validated.meta.GetWidth() != ref.GetWidth() || validated.meta.GetHeight() != ref.GetHeight() ||
+			validated.meta.GetMediaType() != ref.GetMediaType() {
+			return fmt.Errorf("attachment export %s metadata does not match its bytes", ref.GetId())
+		}
+		key := strings.ToLower(ref.GetId())
+		if attachmentExports[key] != nil {
+			return fmt.Errorf("attachment %s is given twice", ref.GetId())
+		}
+		attachmentExports[key] = exported
+	}
+	attachmentOwners := map[string]string{}
+	for _, event := range exp.GetEvents() {
+		if len(event.GetAttachments()) > maxAttachmentCount {
+			return fmt.Errorf("event %s: at most %d image attachments are allowed", event.GetId(), maxAttachmentCount)
+		}
+		for _, ref := range event.GetAttachments() {
+			if ref == nil || ref.GetId() == "" {
+				return fmt.Errorf("event %s: attachment needs an identifier", event.GetId())
+			}
+			if err := protovalidate.Validate(ref); err != nil {
+				return fmt.Errorf("event %s attachment %s: %w", event.GetId(), ref.GetId(), err)
+			}
+			key := strings.ToLower(ref.GetId())
+			if attachmentExports[key] == nil {
+				return fmt.Errorf("event %s attachment %s has no exported data", event.GetId(), ref.GetId())
+			}
+			if !sameAttachmentMetadata(ref, attachmentExports[key].GetAttachment()) {
+				return fmt.Errorf("event %s attachment %s metadata does not match its exported data", event.GetId(), ref.GetId())
+			}
+			if owner := attachmentOwners[key]; owner != "" {
+				return fmt.Errorf("attachment %s belongs to both %s and event %s", ref.GetId(), owner, event.GetId())
+			}
+			attachmentOwners[key] = "event " + event.GetId()
+		}
+	}
 	for _, instruction := range exp.GetInstructions() {
 		if err := errors.Join(valid("instruction", instruction, instruction.GetId()), ofWish("instruction", instruction.GetId(), instruction.GetWishId())); err != nil {
 			return err
 		}
 		code := strings.ToUpper(instruction.GetCode())
-		if !instructionCode.MatchString(code) || codes[code] || strings.TrimSpace(instruction.GetText()) == "" {
-			return fmt.Errorf("instruction %s: it needs nonblank text and a code of its own", code)
+		if !instructionCode.MatchString(code) || codes[code] || strings.TrimSpace(instruction.GetText()) == "" && len(instruction.GetAttachments()) == 0 {
+			return fmt.Errorf("instruction %s: it needs text or an image attachment, and a code of its own", code)
 		}
 		codes[code] = true
 		if requestID := strings.ToLower(instruction.GetRequestId()); requestID != "" {
@@ -905,6 +1133,28 @@ func check(exp *planv1.WishExport) error {
 		if id := instruction.GetTaskId(); id != "" && !tasks[id] {
 			return fmt.Errorf("instruction %s: its worker task must be in the export", code)
 		}
+		if len(instruction.GetAttachments()) > maxAttachmentCount {
+			return fmt.Errorf("instruction %s: at most %d image attachments are allowed", code, maxAttachmentCount)
+		}
+		for _, ref := range instruction.GetAttachments() {
+			if ref == nil || ref.GetId() == "" {
+				return fmt.Errorf("instruction %s: attachment needs an identifier", code)
+			}
+			if err := protovalidate.Validate(ref); err != nil {
+				return fmt.Errorf("instruction %s attachment %s: %w", code, ref.GetId(), err)
+			}
+			key := strings.ToLower(ref.GetId())
+			if attachmentExports[key] == nil {
+				return fmt.Errorf("instruction %s attachment %s has no exported data", code, ref.GetId())
+			}
+			if !sameAttachmentMetadata(ref, attachmentExports[key].GetAttachment()) {
+				return fmt.Errorf("instruction %s attachment %s metadata does not match its exported data", code, ref.GetId())
+			}
+			if owner := attachmentOwners[key]; owner != "" {
+				return fmt.Errorf("attachment %s belongs to both %s and %s", ref.GetId(), owner, code)
+			}
+			attachmentOwners[key] = code
+		}
 		var previous time.Time
 		for n, reply := range instruction.GetReplies() {
 			if reply == nil || strings.TrimSpace(reply.GetText()) == "" {
@@ -919,6 +1169,9 @@ func check(exp *planv1.WishExport) error {
 			}
 			previous = at
 		}
+	}
+	if len(attachmentOwners) != len(attachmentExports) {
+		return errors.New("export contains an unreferenced image attachment")
 	}
 	for _, b := range exp.GetBlocks() {
 		if err := errors.Join(valid("block", b, b.GetId()), ofWish("block", b.GetId(), b.GetWishId())); err != nil {
