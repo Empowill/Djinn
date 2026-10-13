@@ -8,9 +8,10 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { openShellTerminal } from "./terminal-selectors";
 import { disableWishSmokeWebGL } from "./wish-smoke-fixture";
 import { mergeVisual } from "./merge-visuals";
-import { openWorkspaceSection } from "./workspace-selectors";
+import { openWorkspaceSection, wishHeading } from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -204,21 +205,8 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
   // Every ANSI colour, normal and bright, on the terminal.
-  const terminal = page.locator(".lead-terminal .xterm");
-  const openTerminal = async () => {
-    if (!(await terminal.count())) {
-      await page
-        .getByRole("button", { name: /New terminal/ })
-        .last()
-        .click();
-    }
-    const expandTerminal = page
-      .locator(".lead-terminal-bar button[title='Expand the terminal']")
-      .last();
-    if (await expandTerminal.isVisible()) await expandTerminal.click();
-    await expect(terminal).toBeVisible();
-  };
-  await openTerminal();
+  const terminal = (await openShellTerminal(page)).locator(".xterm");
+  await expect(terminal).toBeVisible();
   await terminal.click();
   await page.keyboard.type(
     "for i in 0 1 2 3 4 5 6 7; do printf '\\033[3%sm col%s \\033[9%sm bright%s\\033[0m ' $i $i $i $i; done; echo",
@@ -235,21 +223,19 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
   for (const theme of ["dark", "light"] as const) {
     await choose(page, theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-    await openTerminal();
+    await openShellTerminal(page);
     const look = looks[theme];
 
     // The lead's blocks, in the agents' tab, opened: Markdown, a code block, a Mermaid diagram on the card's ground.
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    await expect(page.locator(".workspace-thread-head h1")).toHaveText(title);
-    const agentsPanel = await openWorkspaceSection(page, "agents");
+    await expect(wishHeading(page)).toHaveText(title);
+    await openWorkspaceSection(page, "agents");
     const heading = page
       .locator(".agent-block .fold-heading")
       .filter({ hasText: "How the wick burns" });
     if ((await heading.getAttribute("aria-expanded")) === "false")
       await heading.click();
-    const block = agentsPanel
-      .locator(".ac-markdown")
-      .filter({ hasText: "wick" });
+    const block = page.locator(".ac-markdown").filter({ hasText: "wick" });
     await expect(block.locator(".ac-code")).toBeVisible();
     // Mermaid draws in its frame: an SVG with the three nodes of the source, on the theme's ground, in the theme's
     // ink.
@@ -315,10 +301,12 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
 
     // The dialogs: the settings, and a new wish.
     await page.getByTitle("Connections & preferences").click();
-    const settings = page.locator(".modal");
+    const settings = page.getByRole("dialog", { name: "Connections" });
     await expect(settings).toBeVisible();
     await expect(page.getByLabel("Theme")).toHaveValue(theme);
-    expect(await background(page, ".modal")).toContain(look.card);
+    expect(
+      await background(page, '[role="dialog"][aria-label="Connections"]'),
+    ).toContain(look.card);
     await page.screenshot({
       path: path.join(shots, `theme-settings-${theme}.png`),
     });

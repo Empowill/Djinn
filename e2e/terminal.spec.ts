@@ -3,6 +3,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
+import { openShellTerminal } from "./terminal-selectors";
 
 function djinnURL(): string {
   const url = new URL(process.env.DJINN_URL!);
@@ -33,7 +34,7 @@ test("the terminal shows at the bottom and runs a command", async ({
   page,
 }) => {
   await page.goto(djinnURL());
-  const terminal = page.getByRole("region", { name: "Terminal" });
+  const terminal = await openShellTerminal(page);
   await expect(terminal).toBeVisible();
   // Pinned at the bottom of the window.
   const box = (await terminal.boundingBox())!;
@@ -51,7 +52,7 @@ test("a held Space reaches the program as a run of spaces", async ({
   page,
 }) => {
   await page.goto(djinnURL());
-  await expect(page.locator(".lead-terminal .xterm")).toBeVisible();
+  await expect((await openShellTerminal(page)).locator(".xterm")).toBeVisible();
   // In raw mode, as Claude Code reads its keys, count the spaces that arrive.
   await typeLine(
     page,
@@ -91,11 +92,13 @@ test("a reopened window finds the terminal and its output", async ({
   page,
 }) => {
   await page.goto(djinnURL());
+  await openShellTerminal(page);
   await typeLine(page, "echo still-''here");
   await expect(line(page, "still-here")).toHaveCount(1);
   await page.close({ runBeforeUnload: false });
   const again = await page.context().newPage();
   await again.goto(djinnURL());
+  await openShellTerminal(again);
   // The same shell, its output read again from the part djinn keeps.
   await expect(line(again, "still-here")).toHaveCount(1);
   await expect(line(again, "hello")).toHaveCount(1);
@@ -105,7 +108,7 @@ test("a key reaches the terminal in well under a key repeat", async ({
   page,
 }) => {
   await page.goto(djinnURL());
-  await expect(page.locator(".lead-terminal .xterm")).toBeVisible();
+  await expect((await openShellTerminal(page)).locator(".xterm")).toBeVisible();
   // The page's own requests, one after the other as the terminal sends keys: Connect in JSON, same origin, the
   // session cookie.
   const mean = await page.evaluate(async () => {
@@ -160,6 +163,7 @@ stty sane
     { mode: 0o755 },
   );
   await page.goto(djinnURL());
+  await openShellTerminal(page);
   await expect(page.locator(".lead-terminal .xterm")).toBeVisible();
   await typeLine(page, agy);
   await expect(line(page, "Accessing workspace:")).toHaveCount(1);
@@ -179,6 +183,7 @@ stty sane
   await typeLine(page, "echo agy-''ended");
   await expect(line(page, "agy-ended")).toHaveCount(1);
   await page.reload();
+  await openShellTerminal(page);
   // Read again past agy's queries.
   await expect(line(page, "agy-ended")).toHaveCount(1);
   await typeLine(page, "echo agy-''gone");

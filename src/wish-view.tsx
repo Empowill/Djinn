@@ -15,6 +15,7 @@ import {
   ScrollText,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -30,8 +31,6 @@ import {
   type Project,
   type Provider,
   type Task,
-  TaskStatus,
-  InstructionStatus,
   type Wish,
   type WishExport,
   WishState,
@@ -41,6 +40,7 @@ import { decisionOf, decisionsOf } from "./data/decisions";
 import {
   useClients,
   useData,
+  useDjinn,
   usePausable,
   useStore,
   useWishDetail,
@@ -51,12 +51,10 @@ import {
   forkedAs,
   finishedTasks,
   investigatingQuestions,
-  isAzima,
   movingTasks,
   openQuestions,
   spent,
   waitingTasks,
-  azimasDone,
   workCount,
 } from "./data/flight";
 import {
@@ -76,7 +74,7 @@ import {
 import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
 import { AgentBlocks, agentBlocks } from "./agent-blocks";
-import { AttentionBar, attentionOf } from "./attention";
+import { jump } from "./attention";
 import { ModalFrame } from "./frame";
 import { useWrites } from "./marks";
 import { InstructionList } from "./instruction-list";
@@ -124,6 +122,7 @@ export function WishView({
   onToast: (text: string) => void;
 }) {
   const allProjects = useData((s) => s.projects);
+  const djinn = useDjinn();
   const data = useStore();
   const pausable = usePausable();
   const detail = useWishDetail(wish.id);
@@ -147,22 +146,24 @@ export function WishView({
     [detail.blocks],
   );
   const { running, watching } = runningOf(detail.tasks);
-  const done = detail.tasks.filter(
-    (task) => task.status === TaskStatus.DONE && !isAzima(task),
-  ).length;
-  // The azimas' progress, then the work's: the azimas are not counted as tasks.
-  const azimaProgress = azimasDone(detail.tasks);
-  const work = workCount(detail.tasks);
   const granted = wish.state === WishState.GRANTED;
   const [changing, setChanging] = useState(false);
-  const [view, setView] = useState<View>(opening ? "tilasms" : "main");
+  type WorkspaceView = View | "rights" | "journal" | "instructions";
+  const [view, setView] = useState<WorkspaceView>(opening ? "tilasms" : "main");
   const [workspaceRequest, setWorkspaceRequest] = useState(0);
+  const [globalActionsOpen, setGlobalActionsOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [focusTarget, setFocusTarget] = useState("");
+  const [focusSource, setFocusSource] = useState<"workspace" | "notification">(
+    "workspace",
+  );
   // What a link between a decision and a task brings into sight in the other workspace panel: its id.
   const [focus, setFocus] = useState("");
-  const show = (to: View, id = "") => {
+  const show = (to: WorkspaceView, id = "") => {
     setView(to);
     setFocus(id);
+    setFocusSource("workspace");
+    setFocusTarget("");
     setWorkspaceRequest((request) => request + 1);
   };
   // The tilasm a link opened: the Tilasms workspace panel shows it, again at each new request.
@@ -174,66 +175,104 @@ export function WishView({
     setWorkspaceRequest((request) => request + 1);
   }, [opening]);
   useEffect(() => {
-    if (view !== "tasks" || !focus) return;
+    if (!djinn) return;
+    const off = djinn.focus.subscribe((request) => {
+      if (request.wishId && request.wishId !== wish.id) return;
+      const target = request.target;
+      if (!target) return;
+      if (
+        target.startsWith("question-") ||
+        target.startsWith("grant-") ||
+        target.startsWith("waiting-") ||
+        target.startsWith("lead-prompt-")
+      ) {
+        setFocusSource("notification");
+        setFocusTarget(target);
+        setGlobalActionsOpen(true);
+        return;
+      }
+      if (target.startsWith("task-")) {
+        setGlobalActionsOpen(false);
+        setFocusSource("notification");
+        setFocusTarget(target);
+        setView("tasks");
+        setFocus(target.slice("task-".length));
+        setWorkspaceRequest((requestId) => requestId + 1);
+      }
+    });
+    return off;
+  }, [djinn, wish.id]);
+  useEffect(() => {
+    if (!focusTarget) return;
+    const globalTarget =
+      focusTarget.startsWith("question-") ||
+      focusTarget.startsWith("grant-") ||
+      focusTarget.startsWith("waiting-") ||
+      focusTarget.startsWith("lead-prompt-");
+    if (
+      (globalTarget && !globalActionsOpen) ||
+      (!globalTarget && view !== "tasks")
+    )
+      return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = Date.now() + 5_000;
+    const reveal = () => {
+      const element = document.getElementById(focusTarget);
+      if (element?.getClientRects().length) {
+        jump(focusTarget);
+        setFocusTarget("");
+        return;
+      }
+      if (Date.now() < deadline) timer = setTimeout(reveal, 50);
+      else setFocusTarget("");
+    };
+    timer = setTimeout(reveal, 0);
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [detail.loaded, focusTarget, globalActionsOpen, view, workspaceRequest]);
+  useEffect(() => {
+    if (view !== "tasks" || !focus || focusSource === "notification") return;
     const timer = setTimeout(() => {
       document
         .querySelector<HTMLButtonElement>(`#task-${focus} .wish-task-heading`)
         ?.focus({ preventScroll: true });
     }, 0);
     return () => clearTimeout(timer);
-  }, [view, focus, workspaceRequest]);
+  }, [view, focus, focusSource, workspaceRequest]);
   const moving = movingTasks(detail.tasks);
   const finished = finishedTasks(detail.tasks);
+  // The done azimas fold, apart (src/task-tabs.tsx); a link to one, or to one of its parts, shows them.
+  const azimas = azimaGroups(detail.tasks);
+  const doneAzimas = azimas.filter((x) => azimaFinished(x.azima));
+  const showDone = doneAzimas.some(
+    (x) => x.azima.id === focus || x.parts.some((p) => p.id === focus),
+  );
   const latestTask = moving[0] ?? finished[0];
   const latestDecision = decisions[0];
   const latestTilasm = detail.tilasms.at(-1);
   const latestAgent = forAgents.at(-1);
-  const latestInstruction =
-    detail.instructions.find(
-      (instruction) => instruction.status !== InstructionStatus.DONE,
-    ) ?? detail.instructions.at(-1);
+  const latestInstruction = detail.instructions.at(-1);
   const latestJournal = journalEntries[0];
-  const previewText = (text: string | undefined, fallback: string) => {
+  const previewText = (text: string | undefined) => {
     const value = text?.replace(/\s+/g, " ").trim();
-    return value ? <span title={value}>{value}</span> : fallback;
+    return value ? <span title={value}>{value}</span> : undefined;
   };
   const taskPreview = latestTask
     ? previewText(
         [latestTask.code, latestTask.title, taskStatusText(latestTask)]
           .filter(Boolean)
           .join(" · "),
-        t("workspace.tasks", { count: work }),
       )
-    : work > 0
-      ? t("pill.done_detail", { done, count: work })
-      : t("workspace.tasks", { count: 0 });
+    : undefined;
   const decisionPreview = previewText(
     latestDecision?.question?.text || latestDecision?.block?.title,
-    t("workspace.decisions", { count: decisions.length }),
   );
-  const tilasmPreview = previewText(
-    latestTilasm?.title,
-    detail.tilasms.length > 0
-      ? t("workspace.tilasms", { count: detail.tilasms.length })
-      : t("tilasms.drop"),
-  );
-  const agentPreview = previewText(
-    latestAgent?.title,
-    t("workspace.agents", { count: forAgents.length }),
-  );
-  const instructionPreview = previewText(
-    latestInstruction?.text,
-    t("workspace.instructions", { count: detail.instructions.length }),
-  );
+  const tilasmPreview = previewText(latestTilasm?.title);
+  const agentPreview = previewText(latestAgent?.title);
+  const instructionPreview = previewText(latestInstruction?.text);
   const journalPreview = previewText(
     latestJournal?.summary || latestJournal?.note,
-    t("workspace.journal", { count: journalEntries.length }),
-  );
-  // The done azimas fold, apart (src/task-tabs.tsx); a link to one, or to one of its parts, shows them.
-  const azimas = azimaGroups(detail.tasks);
-  const doneAzimas = azimas.filter((x) => azimaFinished(x.azima));
-  const showDone = doneAzimas.some(
-    (x) => x.azima.id === focus || x.parts.some((p) => p.id === focus),
   );
   const byId = new Map(detail.tasks.map((task) => [task.id, task]));
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
@@ -338,13 +377,6 @@ export function WishView({
     }
   };
   const prompt = wish.leadRunning ? wish.leadPrompt : undefined;
-  const attention = attentionOf(
-    open,
-    waiting,
-    wish.ready ? [wish] : [],
-    undefined,
-    prompt ? [wish] : [],
-  );
   const tone = wishTone(wish, open.length, running, watching);
 
   const saveDescription = (text: string) =>
@@ -375,7 +407,9 @@ export function WishView({
         </details>
         <div className="review-facts workspace-facts">
           <div className="review-pills">
-            <StatusBadge tone={tone} label={wishStateText(wish)} />
+            {!isActive(wish) && (
+              <StatusBadge tone={tone} label={wishStateText(wish)} />
+            )}
             {open.length > 0 && (
               <CountPill
                 tone="waiting"
@@ -394,61 +428,6 @@ export function WishView({
                 })}
               >
                 {t("pill.investigating")}
-              </CountPill>
-            )}
-            {running > 0 && (
-              <CountPill
-                tone="running"
-                count={running}
-                label={t("plan.running", { count: running })}
-              >
-                {t("pill.running")}
-              </CountPill>
-            )}
-            {watching > 0 && (
-              <CountPill
-                tone="watching"
-                count={watching}
-                label={t("plan.watching", { count: watching })}
-              >
-                {t("pill.watching")}
-              </CountPill>
-            )}
-            {azimaProgress.count > 0 && azimaProgress.proof === 0 && (
-              <CountPill
-                tone="done"
-                count={azimaProgress.done}
-                label={t("pill.azimas_detail", {
-                  done: azimaProgress.done,
-                  count: azimaProgress.count,
-                })}
-              >
-                / {azimaProgress.count} {t("pill.azimas")}
-              </CountPill>
-            )}
-            {azimaProgress.proof > 0 && (
-              <CountPill
-                tone="done"
-                count={azimaProgress.done}
-                label={t("pill.azimas_proof_detail", {
-                  done: azimaProgress.done,
-                  proof: azimaProgress.proof,
-                  count: azimaProgress.count,
-                })}
-              >
-                {t("pill.azimas_done")} ·{" "}
-                <b className="tone-proof">{azimaProgress.proof}</b>{" "}
-                {t("pill.azimas_proof")} / {azimaProgress.count}{" "}
-                {t("pill.azimas")}
-              </CountPill>
-            )}
-            {work > 0 && (
-              <CountPill
-                tone="done"
-                count={done}
-                label={t("pill.done_detail", { done, count: work })}
-              >
-                / {work} {t("pill.done")}
               </CountPill>
             )}
           </div>
@@ -520,7 +499,7 @@ export function WishView({
 
   const summaryPanel: WishWorkspacePanel = {
     id: "summary",
-    title: t("workspace.summary"),
+    title: t("workspace.sections"),
     pinned: true,
     children: null,
   };
@@ -654,10 +633,7 @@ export function WishView({
     id: "rights",
     title: t("rights.title"),
     count: projects.length,
-    preview: previewText(
-      projects[0]?.name,
-      t("workspace.projects", { count: projects.length }),
-    ),
+    preview: previewText(projects[0]?.name),
     icon: <Pause size={14} aria-hidden="true" />,
     hidden: projects.length === 0,
     children: (
@@ -697,103 +673,117 @@ export function WishView({
     ),
   };
 
-  const globalActions =
-    open.length > 0 ||
-    waiting.length > 0 ||
-    wish.ready ||
-    !!prompt ||
-    digging.length > 0 ? (
-      <div className="workspace-global-actions">
-        {(open.length > 0 || waiting.length > 0 || wish.ready || prompt) && (
-          <section
-            className="action-center"
-            id="action-center"
-            aria-label={t("panels.your_move")}
-          >
-            <div className="section-title">
-              <h2>{t("panels.your_move")}</h2>
-              <p>
-                {prompt
-                  ? t("lead_prompt.waits")
-                  : open.length
-                    ? t("wish.questions_wait", { count: open.length })
-                    : wish.ready
-                      ? t("wish.ready_detail")
-                      : t("panels.your_move_detail")}
-              </p>
-            </div>
-            {prompt && (
-              <LeadPromptCard
-                wishId={wish.id}
-                prompt={prompt}
-                onChoose={(index) =>
+  const globalActionCount =
+    open.length +
+    waiting.length +
+    (wish.ready ? 1 : 0) +
+    (prompt ? 1 : 0) +
+    digging.length;
+  const hasGlobalActions = globalActionCount > 0;
+  useEffect(() => {
+    // A notification can open the overlay before its detail read completes. Keep it mounted while the target is
+    // still being revealed; once the bounded lookup ends, the empty overlay may close as usual.
+    if (detail.loaded && !hasGlobalActions && globalActionsOpen && !focusTarget)
+      setGlobalActionsOpen(false);
+  }, [detail.loaded, focusTarget, globalActionsOpen, hasGlobalActions]);
+  const globalActionDetail = prompt
+    ? t("lead_prompt.waits")
+    : open.length
+      ? t("wish.questions_wait", { count: open.length })
+      : wish.ready
+        ? t("wish.ready_detail")
+        : t("panels.your_move_detail");
+  const globalActionContent = (
+    <div className="workspace-global-modal-content">
+      <p className="workspace-action-drawer-detail">{globalActionDetail}</p>
+      {(open.length > 0 || waiting.length > 0 || wish.ready || prompt) && (
+        <section
+          className="action-center"
+          id="action-center"
+          aria-label={t("panels.your_move")}
+        >
+          {prompt && (
+            <LeadPromptCard
+              wishId={wish.id}
+              prompt={prompt}
+              onChoose={(index) =>
+                act(
+                  () =>
+                    clients.wishes.choose({
+                      wishId: wish.id,
+                      option: index + 1,
+                      title: prompt.title,
+                      lines: prompt.lines,
+                      options: prompt.options,
+                    }),
+                  [Change.WISH],
+                )
+              }
+            />
+          )}
+          {open.length > 0 && (
+            <section className="decisions-section">
+              <div className="section-heading">
+                <h3>
+                  {t("panels.decisions")}
+                  <span className="count">{open.length}</span>
+                </h3>
+              </div>
+              <AnimatePresence mode="popLayout">
+                {open.map(({ item: q, blocking }) => (
+                  <WishQuestion
+                    key={q.id}
+                    question={q}
+                    blocking={blocking}
+                    noLead={noLead(wish)}
+                    onAnswer={(choice, note) =>
+                      answer(wish.id, q.id, choice, note)
+                    }
+                    onMark={(kind, remove) => mark(wish.id, q.id, kind, remove)}
+                    onEnlighten={(note) => enlighten(wish.id, q.id, note)}
+                  />
+                ))}
+              </AnimatePresence>
+            </section>
+          )}
+          {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
+          {wish.ready && (
+            <GrantCard
+              wish={wish}
+              onGrant={() =>
+                quiet(
                   act(
-                    () =>
-                      clients.wishes.choose({
-                        wishId: wish.id,
-                        option: index + 1,
-                        title: prompt.title,
-                        lines: prompt.lines,
-                        options: prompt.options,
-                      }),
+                    () => clients.wishes.grant({ wishId: wish.id }),
                     [Change.WISH],
-                  )
-                }
-              />
-            )}
-            {open.length > 0 && (
-              <section className="decisions-section">
-                <div className="section-heading">
-                  <h3>
-                    {t("panels.decisions")}
-                    <span className="count">{open.length}</span>
-                  </h3>
-                </div>
-                <AnimatePresence mode="popLayout">
-                  {open.map(({ item: q, blocking }) => (
-                    <WishQuestion
-                      key={q.id}
-                      question={q}
-                      blocking={blocking}
-                      noLead={noLead(wish)}
-                      onAnswer={(choice, note) =>
-                        answer(wish.id, q.id, choice, note)
-                      }
-                      onMark={(kind, remove) =>
-                        mark(wish.id, q.id, kind, remove)
-                      }
-                      onEnlighten={(note) => enlighten(wish.id, q.id, note)}
-                    />
-                  ))}
-                </AnimatePresence>
-              </section>
-            )}
-            {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
-            {wish.ready && (
-              <GrantCard
-                wish={wish}
-                onGrant={() =>
-                  quiet(
-                    act(
-                      () => clients.wishes.grant({ wishId: wish.id }),
-                      [Change.WISH],
-                      t("wish.granted_toast"),
-                    ),
-                  )
-                }
-              />
-            )}
-          </section>
-        )}
-        {digging.length > 0 && (
-          <InvestigatingSection
-            questions={digging}
-            onAnswer={(q, choice, note) => answer(wish.id, q, choice, note)}
-            onMark={(q, kind, remove) => mark(wish.id, q, kind, remove)}
-          />
-        )}
-      </div>
-    ) : null;
+                    t("wish.granted_toast"),
+                  ),
+                )
+              }
+            />
+          )}
+        </section>
+      )}
+      {digging.length > 0 && (
+        <InvestigatingSection
+          questions={digging}
+          onAnswer={(q, choice, note) => answer(wish.id, q, choice, note)}
+          onMark={(q, kind, remove) => mark(wish.id, q, kind, remove)}
+        />
+      )}
+      {projects.length > 0 && (
+        <button
+          type="button"
+          className="workspace-permissions-link"
+          onClick={() => {
+            setGlobalActionsOpen(false);
+            show("rights");
+          }}
+        >
+          {t("workspace.permissions")}
+        </button>
+      )}
+    </div>
+  );
 
   const panels: WishWorkspacePanel[] = [
     summaryPanel,
@@ -818,6 +808,35 @@ export function WishView({
             onToast(t("provider.changed", { agent: providerName(provider) }));
           }}
         />
+      )}
+      <WishActionOverlay
+        open={globalActionsOpen}
+        title={t("panels.your_move")}
+        eyebrow={t("attention.label")}
+        onClose={() => setGlobalActionsOpen(false)}
+      >
+        {globalActionContent}
+      </WishActionOverlay>
+      {hasGlobalActions && (
+        <div className="workspace-global-top">
+          <button
+            type="button"
+            className="workspace-action-trigger"
+            aria-haspopup="dialog"
+            aria-expanded={globalActionsOpen}
+            onClick={() => setGlobalActionsOpen(true)}
+          >
+            <span className="workspace-action-drawer-label">
+              {t("panels.your_move")}
+              <span className="workspace-action-drawer-count">
+                {globalActionCount}
+              </span>
+            </span>
+            <span className="workspace-action-trigger-detail">
+              {globalActionDetail}
+            </span>
+          </button>
+        </div>
       )}
       <PageHeader
         actions={
@@ -914,31 +933,22 @@ export function WishView({
         />
       )}
       <div className="mission-scroll" ref={keepPlace}>
-        <AttentionBar items={attention} />
-        {threadHead}
-        {globalActions && (
-          <div className="workspace-global">{globalActions}</div>
-        )}
         <WishWorkspace
           wishId={wish.id}
+          head={threadHead}
           panels={panels}
           ready={detail.loaded}
           initialPanel={workspacePanel}
           initialPanelRequest={`${workspacePanel ?? "summary"}:${workspaceRequest}`}
           onPanelChange={(panelId) => {
+            setFocusSource("workspace");
+            setFocusTarget("");
             if (!panelId) {
               setView("main");
               setFocus("");
               return;
             }
-            if (
-              panelId === "tasks" ||
-              panelId === "decisions" ||
-              panelId === "tilasms" ||
-              panelId === "agents"
-            ) {
-              setView(panelId);
-            }
+            if (panelId !== "summary") setView(panelId as WorkspaceView);
           }}
         />
       </div>
@@ -971,6 +981,104 @@ export function GrantCard({
         {t("wish.grant")}
       </button>
     </article>
+  );
+}
+
+// WishActionOverlay keeps question and permission drafts mounted while its focused surface is closed. The hidden
+// backdrop removes it from the accessibility tree; focus trapping and Escape handling only run while it is open.
+function WishActionOverlay({
+  open,
+  title,
+  eyebrow,
+  children,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  eyebrow: string;
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const keepPlace = useKeepPlace(bodyRef);
+  const onCloseRef = useRef(onClose);
+  const previousFocus = useRef<HTMLElement | null>(null);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!open) return;
+    const el = ref.current;
+    previousFocus.current = document.activeElement as HTMLElement | null;
+    const focusable = () =>
+      Array.from(
+        el?.querySelectorAll<HTMLElement>(
+          'button,input,textarea,select,a[href],[tabindex]:not([tabindex="-1"])',
+        ) || [],
+      ).filter(
+        (node) =>
+          !node.matches(":disabled") && node.getClientRects().length > 0,
+      );
+    focusable()[0]?.focus({ preventScroll: true });
+    const handle = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const nodes = focusable();
+      if (!nodes.length) return;
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handle);
+    return () => {
+      document.removeEventListener("keydown", handle);
+      if (previousFocus.current?.isConnected)
+        previousFocus.current.focus({ preventScroll: true });
+    };
+  }, [open]);
+
+  return (
+    <div
+      className={`${open ? "modal-backdrop " : ""}workspace-global-overlay`}
+      hidden={!open}
+      aria-hidden={!open}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="modal wide"
+      >
+        <div className="modal-top">
+          <span className="eyebrow">{eyebrow}</span>
+          <button
+            className="icon-button"
+            onClick={onClose}
+            aria-label={t("app.close_window")}
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <h2>{title}</h2>
+        <div className="workspace-global-modal-body" ref={keepPlace}>
+          {children}
+        </div>
+      </div>
+    </div>
   );
 }
 

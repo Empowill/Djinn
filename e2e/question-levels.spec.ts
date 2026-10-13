@@ -9,6 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { portable } from "./portable";
+import { openWorkspaceActions, wishHeading } from "./workspace-selectors";
 
 portable();
 
@@ -97,10 +98,11 @@ test("open questions come blocking, then before X, then can wait, in the window,
   const order = ["Q01", "Q03", "Q02", "Q04"];
   await page.goto(process.env.DJINN_URL!);
   await page.locator(".wish-nav").filter({ hasText: title }).click();
-  await expect(page.locator(".workspace-thread-head h1")).toHaveText(title);
+  await expect(wishHeading(page)).toHaveText(title);
+  const actions = await openWorkspaceActions(page);
 
   // The cards: red with the task it blocks, orange under its words, grey "Can wait".
-  const cards = page.locator(".decisions-section .question-card");
+  const cards = actions.locator(".decisions-section .question-card");
   await expect(cards.locator(".question-id")).toHaveText(order);
   await expect(cards.nth(0)).toHaveClass(/is-blocking/);
   await expect(cards.nth(0).locator(".status-badge")).toHaveText("Blocks W1");
@@ -113,15 +115,8 @@ test("open questions come blocking, then before X, then can wait, in the window,
     await expect(cards.nth(i).locator(".status-badge")).toHaveText("Can wait");
   }
 
-  // The attention bar, in the same order, each line under its level's words.
-  const bar = page.locator(".attention-bar .attention-item");
-  await expect(bar.locator(".attention-code")).toHaveText(order);
-  await expect(bar.locator(".attention-level")).toHaveText([
-    "Blocking",
-    "before the first light",
-    "Can wait",
-    "Can wait",
-  ]);
+  // One compact global entry keeps the same ordered question detail available in its focused overlay.
+  await expect(page.locator(".workspace-action-trigger")).toContainText("4");
 
   // The page, rendered in Go, and the brief follow.
   const html = path.join(dir, "page.html");

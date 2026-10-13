@@ -6,6 +6,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { openTerminalPanel } from "./terminal-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -62,7 +63,7 @@ test("without a project, the terminal asks for one, then opens in it", async ({
   });
 
   await page.goto(url);
-  const terminal = page.getByRole("region", { name: "Terminal" });
+  const terminal = await openTerminalPanel(page);
   // No terminal opens by itself; one asked for has nowhere to start without a project.
   await expect(terminal.getByText("No terminal is open")).toBeVisible();
   await terminal

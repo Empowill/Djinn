@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { openWorkspaceActions, wishHeading } from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -67,14 +68,20 @@ test("a request routed to a new wish starts its lead there, at a rub of the lamp
     .locator(".wish-nav")
     .filter({ hasText: "Route from here" })
     .click();
-  const card = page
+  await expect(
+    page
+      .locator(".workspace-global-overlay .question-card")
+      .filter({ hasText: "Where does this request go?" }),
+  ).toHaveCount(1);
+  const actions = await openWorkspaceActions(page);
+  const card = actions
     .locator(".question-card")
     .filter({ hasText: "Where does this request go?" });
   await expect(card).toContainText(request);
   await card.getByRole("button", { name: "Rub the lamp" }).click();
 
   // The window goes to the new wish, its lead running in its own terminal, on the brief and the request.
-  await expect(page.locator(".workspace-thread-head h1")).toHaveText(title);
+  await expect(wishHeading(page)).toHaveText(title);
   const made = JSON.parse(djinn("wish", "list", "--json")).wishes.find(
     (w: { title: string }) => w.title === title,
   );

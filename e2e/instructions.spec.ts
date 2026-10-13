@@ -189,7 +189,11 @@ test("a card saves offline without navigation; drafts survive folding and openin
     await expect(
       page.getByRole("dialog", { name: "Indication for the lead" }),
     ).toHaveCount(0);
-    const history = await openWorkspaceSection(page, "instructions");
+    const instructionsPanel = await openWorkspaceSection(page, "instructions");
+    await expect(instructionsPanel).toBeVisible();
+    const history = instructionsPanel.getByRole("region", {
+      name: "Indications",
+    });
     await expect(history).toContainText("Offline indication\nFull detail");
     await expect(history.getByText("Pending", { exact: true })).toHaveCount(2);
     await expect(
@@ -211,7 +215,8 @@ test("a card saves offline without navigation; drafts survive folding and openin
     await page.evaluate(() => localStorage.setItem("djinn.language", "fr"));
     await page.reload();
     await page.locator(".wish-nav").filter({ hasText: sample.title }).click();
-    const french = await openWorkspaceSection(page, "instructions");
+    const frenchPanel = await openWorkspaceSection(page, "instructions");
+    const french = frenchPanel.getByRole("region", { name: "Indications" });
     await expect(
       french.getByText(fr["instruction.pending"], { exact: true }),
     ).toHaveCount(2);
@@ -229,12 +234,13 @@ test("a card saves offline without navigation; drafts survive folding and openin
     await page.locator(".wish-nav").filter({ hasText: sample.title }).click();
     // Processing remains processing after the simulated worker's successful result; only completion changes it.
     djinn("instruction", "complete", "I03", "--wish-id", sample.wishId);
-    const completed = await openWorkspaceSection(page, "instructions");
-    await expect(completed.getByText("Done", { exact: true })).toHaveCount(2);
+    await expect(history.getByText("Done", { exact: true })).toHaveCount(2);
     await page.reload();
     await page.locator(".wish-nav").filter({ hasText: sample.title }).click();
-    const finalHistory = await openWorkspaceSection(page, "instructions");
-    await expect(finalHistory).toContainText("Offline indication");
+    const finalPanel = await openWorkspaceSection(page, "instructions");
+    await expect(
+      finalPanel.getByRole("region", { name: "Indications" }),
+    ).toContainText("Offline indication");
   } finally {
     sample.cleanup();
   }

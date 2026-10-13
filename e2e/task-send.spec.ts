@@ -22,6 +22,12 @@ function djinn(...args: string[]): string {
   });
 }
 
+type Task = {
+  id: string;
+  status: string;
+  machine_wait?: boolean;
+};
+
 test("an instruction sent to a running worker is recorded, then acknowledged", async ({
   page,
 }) => {
@@ -31,21 +37,45 @@ test("an instruction sent to a running worker is recorded, then acknowledged", a
   const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
     .id as string;
   try {
-    djinn(
-      "task",
-      "spawn",
-      wishId,
-      "--title",
-      "Work a while",
-      "--provider",
-      "fake",
-      "--prompt",
-      "text working\nsleep 6s\ntext after\nsleep 8s",
-    );
+    const spawned = JSON.parse(
+      djinn(
+        "task",
+        "spawn",
+        wishId,
+        "--title",
+        "Work a while",
+        "--provider",
+        "fake",
+        "--prompt",
+        "text working\nsleep 6s\ntext after\nsleep 8s",
+        "--json",
+      ),
+    ).task as Task;
+    const taskState = () =>
+      JSON.parse(djinn("task", "get", spawned.id, "--json")).task as Task;
+    // The fake worker can be held by host memory. Starting a machine-wait task explicitly matches the Planned card
+    // action and leaves the assertions below focused on instruction delivery and acknowledgement.
+    await expect
+      .poll(
+        () => {
+          const current = taskState();
+          return current.status === "TASK_STATUS_RUNNING" ||
+            current.machine_wait
+            ? current.status
+            : "";
+        },
+        { timeout: 10_000 },
+      )
+      .not.toBe("");
+    if (taskState().machine_wait) djinn("task", "start", spawned.id);
+    await expect
+      .poll(() => taskState().status, { timeout: 10_000 })
+      .toBe("TASK_STATUS_RUNNING");
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    const tasksPanel = await openWorkspaceSection(page, "tasks");
-    await tasksPanel.getByRole("button", { name: /Work a while/ }).click();
+    await openWorkspaceSection(page, "tasks");
+    const task = page.locator(".wish-task").filter({ hasText: "Work a while" });
+    await task.getByRole("button", { name: /Work a while/ }).click();
     await expect(
       page.locator(".wish-event").getByText("working", { exact: true }),
     ).toBeVisible();

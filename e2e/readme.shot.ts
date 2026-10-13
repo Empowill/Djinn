@@ -6,7 +6,11 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { openWorkspaceSection, wishHeading } from "./workspace-selectors";
+import {
+  openWorkspaceActions,
+  openWorkspaceSection,
+  wishHeading,
+} from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -259,17 +263,20 @@ async function shoot(page: Page, name: string) {
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     await expect(wishHeading(page)).toHaveText(offline.wish.title);
-    for (const card of await page.locator(".question-card").all())
+    await expect(
+      page.locator(".workspace-global-overlay .question-card"),
+    ).toHaveCount(2);
+    const actions = await openWorkspaceActions(page);
+    const cards = actions.locator(".question-card");
+    for (const card of await cards.all())
       await expect(card).toHaveCSS("opacity", "1");
     // The question with options first: it shows the lamp's two buttons under its choices.
-    await expect(page.locator(".question-card").first()).toContainText(
-      "which version wins?",
-    );
+    await expect(cards.first()).toContainText("which version wins?");
     if (name === "tasks") {
-      // The Tasks panel: what moves or waits, then what is finished, and what it all cost.
-      const tasks = await openWorkspaceSection(page, "tasks");
+      // The Tasks tab: what moves or waits, then what is finished, and what it all cost.
+      await openWorkspaceSection(page, "tasks");
       await expect(
-        tasks.locator(".tasks-moving .wish-task").first(),
+        page.locator(".tasks-moving .wish-task").first(),
       ).toBeVisible();
     }
     await page.screenshot({

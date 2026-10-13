@@ -17,10 +17,7 @@ export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
 export { WishSidebar } from "@/src/wish-sidebar.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
-export {
-  WishWorkspace,
-  WorkspaceSectionCard,
-} from "@/src/wish-workspace.tsx";
+export { WishWorkspace } from "@/src/wish-workspace.tsx";
 export { WishTask } from "@/src/wish-task.tsx";
 export { FlightPlan } from "@/src/flight-plan.tsx";
 export { InstructionList } from "@/src/instruction-list.tsx";
@@ -58,12 +55,6 @@ export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
-
-function hasClassToken(html, token) {
-  return [...html.matchAll(/class="([^"]*)"/g)].some(([, value]) =>
-    value.split(/\s+/).includes(token),
-  );
-}
 
 // live renders a component whose state lives between renders, so that a test types and clicks with no DOM: it calls
 // the component with a dispatcher that keeps its useState, as React does, and walks the elements it returns. The
@@ -165,15 +156,19 @@ test("the wish workspace starts with one summary and concise section cards", () 
   );
   assert.match(
     html,
-    /class="workspace-global"><button[^>]*>Answer the question/,
+    /class="workspace-inline-global"><button[^>]*>Answer the question/,
   );
   assert.match(html, /class="wish-workspace"/);
-  assert.equal((html.match(/data-wish-panel=/g) ?? []).length, 1);
+  // All content frames stay mounted as hidden siblings so opening or composing a section preserves its draft.
+  assert.equal((html.match(/data-wish-panel=/g) ?? []).length, 3);
+  assert.match(html, /data-wish-panel="tasks" hidden=""/);
+  assert.match(html, /data-wish-panel="journal" hidden=""/);
   assert.match(html, /data-wish-section="tasks"/);
   assert.match(html, /data-wish-section="journal"/);
   assert.match(html, /aria-label="Open Tasks"/);
   assert.match(html, /aria-label="Open Journal"/);
-  assert.doesNotMatch(html, /Trim the wick|Kick-off/);
+  assert.match(html, /2 tasks/);
+  assert.match(html, /Trim the wick|Kick-off/);
 });
 
 test("the side panel ranks the active wishes, counts the three places, and folds the granted ones", () => {
@@ -720,57 +715,38 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
   const html = s.renderToStaticMarkup(
     h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: ready, onToast() {} })),
   );
-  assert.match(html, /My wish is granted/);
-  // The default view keeps the actionable grant and investigation global, while detail stays behind concise cards.
+  // The default view keeps the actionable grant and investigation behind one compact, focused top affordance.
   assert.match(html, /data-wish-panel="summary"/);
   assert.match(html, /data-wish-section="tasks"/);
   assert.match(html, /aria-label="Open Tasks"/);
-  assert.match(html, /<strong>Tasks<\/strong><span class="count">2<\/span>/);
   assert.match(html, /data-wish-section="decisions"/);
-  assert.match(
-    html,
-    /<strong>Decisions<\/strong><span class="count">2<\/span>/,
-  );
   assert.match(html, /data-wish-section="agents"/);
-  assert.match(
-    html,
-    /<strong>For agents<\/strong><span class="count">1<\/span>/,
-  );
   assert.match(html, /data-wish-section="journal"/);
-  assert.match(html, /<strong>Journal<\/strong><span class="count">1<\/span>/);
   assert.match(html, /data-wish-section="instructions"/);
-  assert.match(
-    html,
-    /<strong>Indications<\/strong><span class="count">1<\/span>/,
-  );
-  // The latest instruction is a useful summary-card preview, while the instruction list itself stays lazy.
+  // The latest instruction is a useful summary-card preview and the hidden frame stays mounted for later opening.
   assert.match(html, /Durable request below notes/);
-  assert.doesNotMatch(html, /class="instruction-list"/);
-  // Detail bodies are lazy: their task, decision and instruction lists are not mounted until their cards open.
-  assert.equal(hasClassToken(html, "wish-task"), false);
-  assert.equal(hasClassToken(html, "decision-log"), false);
-  assert.equal(hasClassToken(html, "agent-block"), false);
-  assert.equal(hasClassToken(html, "wish-block-body"), false);
+  assert.match(html, /data-wish-panel="instructions" hidden=""/);
+  assert.match(html, /class="instruction-list"/);
+  // Content panels remain mounted while closed; only their frames are hidden from the reading area.
+  assert.match(html, /data-wish-panel="tasks" hidden=""/);
+  assert.match(html, /data-wish-panel="agents" hidden=""/);
   // Nothing waits for an answer: no yes/no card waiting.
   assert.doesNotMatch(html, /placeholder="Your answer"/);
-  // The bar at the top lists what waits for you: here, the grant, which it links to.
   assert.match(
     html,
-    /<nav class="attention-bar" aria-label="What waits for you">/,
+    /class="workspace-action-trigger"[^>]*aria-haspopup="dialog"/,
   );
-  assert.match(html, /1 thing waits for you/);
-  assert.match(html, /id="grant-01a11833/);
-  // The status language, in words: the wish waits, one task of two is done, a question is being investigated, apart.
-  assert.match(html, /count-pill tone-done" title="1 of 2 tasks done"/);
+  const globalTop = html.indexOf('class="workspace-global-top"');
+  const pageHeader = html.indexOf('class="topbar page-header"');
+  assert.ok(globalTop >= 0 && globalTop < pageHeader);
+  assert.match(html, /aria-expanded="false"/);
   assert.match(
     html,
-    /<h2>Being investigated<span class="count">1<\/span><\/h2>/,
+    /class="workspace-global-overlay" hidden="" aria-hidden="true"/,
   );
+  // The status language keeps investigation visible without repeating task or azima progress in the hero.
   assert.match(html, /1 question being investigated by the lead/);
-  // Folded to one line, what you asked with it.
-  assert.match(html, /question-card investigating {2}folded/);
-  assert.match(html, /You asked: Burn time\?/);
-  // No mark on what the wish shows, nor on the folded question; the journal is lazy behind its card.
+  // No mark on what the wish shows; the journal is lazy behind its card.
   assert.doesNotMatch(html, /Approve as it is|Mark read/);
   assert.match(html, /data-wish-section="journal"/);
 });
@@ -1877,7 +1853,7 @@ test("a wish's workspace has a Tilasms section card beside Tasks, with its count
   assert.match(html, /data-wish-section="tasks"/);
   assert.match(html, /data-wish-section="tilasms"/);
   assert.match(html, /aria-label="Open Tilasms"/);
-  assert.doesNotMatch(html, /data-wish-panel="tilasms"/);
+  assert.match(html, /data-wish-panel="tilasms" hidden=""/);
 });
 
 test("a folder dropped on the Tilasms tab is read with its files by their paths in it, hidden files left out", async () => {
@@ -2028,7 +2004,7 @@ test("a djinn:// link in Markdown stays a link that opens what it names in place
   assert.match(view, /data-wish-panel="summary"/);
   assert.match(view, /data-wish-section="tilasms"/);
   assert.match(view, /aria-label="Open Tilasms"/);
-  assert.doesNotMatch(view, /data-wish-panel="tilasms"/);
+  assert.match(view, /data-wish-panel="tilasms" hidden=""/);
 });
 
 test("the Tasks tab says where each task's work stands on its way into the wish's branch", () => {
@@ -2270,14 +2246,11 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
   const close = djinn.store.open(wishId);
   await djinn.store.changed(wishId, [s.Change.WISH]);
   close();
-  // The wish's head counts the azimas awaiting their proof apart from the done ones.
+  // The workspace keeps the azima proof detail in Tasks; the wish head stays focused on direct actions.
   const page = s.renderToStaticMarkup(
     h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: lamp, onToast() {} })),
   );
-  assert.match(
-    page,
-    /title="1 of 4 azimas done, 2 to validate"[^>]*>.*?<b>1<\/b>done · <b class="tone-proof">2<\/b> to validate \/ 4 azimas<\/span>/,
-  );
+  assert.doesNotMatch(page, /1 of 4 azimas done, 2 to validate/);
   // The flight plan lists the proof a person can give among what waits for them, never as work; a Mac's is not.
   const plan = s.renderToStaticMarkup(
     h(

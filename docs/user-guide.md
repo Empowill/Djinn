@@ -67,9 +67,10 @@ skill of app without a copy.
 
 ## A wish
 
-**New wish** (top of the side panel) opens **Make a wish**: what you wish, in a sentence, and the projects it works
-on. Or from a terminal, or from your lead: `djinn wish make "…"`. Under the wish's title, a click gives it the few
-lines it opens with: what it is for, its scope, where it goes (`djinn wish describe <wish-id> --text "…"`).
+**New wish** (top of the side panel) opens the wish creation page headed **What would you like to make happen?**:
+what you wish, in a sentence, and the projects it works on. Or from a terminal, or from your lead: `djinn wish make
+"…"`. Under the wish's title, a click gives it the few lines it opens with: what it is for, its scope, where it goes
+(`djinn wish describe <wish-id> --text "…"`).
 
 **Three wishes are active at most.** That guards your attention; the machine decides how many workers run. You may
 have as many wishes as you like: with three active already, a new one is made paused (**Make it paused**). The side
@@ -130,9 +131,9 @@ tab and a **Decisions** tab, with the tasks and decisions of every active wish. 
 
 ## A wish's view
 
-The **Wish** tab: what waits for you (**Your move**), the questions being investigated, the journal (**Show the
-commands**), and the **Rights** of its workers in each project. Beside it, the **Tasks**, **Decisions** and
-**Tilasms** tabs, and last, discreet, **For agents**.
+Opening a wish shows its heading beside a fixed **Wish sections** navigator and a **Wish content** reading area. The
+navigator opens persistent panels for **Tasks**, **Decisions**, **Tilasms**, the journal, instructions, rights, and,
+last, discreet, **For agents**. What waits for you stays available under **Your move** above the workspace.
 
 **Rights** says what the wish's workers may do in a project, for every task to come: **The project decides** (its
 own configuration), **Edit the files**, or **Edit, in auto mode**. A worker in a folder outside Git with no rule

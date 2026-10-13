@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { portable } from "./portable";
+import { openWorkspaceActions } from "./workspace-selectors";
 
 portable();
 
@@ -59,7 +60,15 @@ test("a note typed on a question keeps its diagram mounted and every key fast", 
     ].join("\n"),
   );
   await page.locator(".wish-nav").filter({ hasText: title }).click();
-  const card = page
+  // The persistent action dialog mounts its question while hidden. Wait for the live detail to arrive before opening
+  // it; otherwise the first click can race the detail refresh and the overlay closes immediately.
+  await expect(
+    page
+      .locator(".workspace-global-overlay .question-card")
+      .filter({ hasText: "Which flow first?" }),
+  ).toHaveCount(1);
+  const actions = await openWorkspaceActions(page);
+  const card = actions
     .locator(".question-card")
     .filter({ hasText: "Which flow first?" });
   await expect(card).toBeVisible();

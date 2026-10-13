@@ -8,7 +8,10 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { portable } from "./portable";
-import { openWorkspaceSection } from "./workspace-selectors";
+import {
+  openWorkspaceActions,
+  openWorkspaceSection,
+} from "./workspace-selectors";
 
 portable();
 
@@ -63,7 +66,8 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
     await page.locator(".wish-nav").filter({ hasText: title }).click();
 
     // The developer answers in the window.
-    const card = page
+    const actions = await openWorkspaceActions(page);
+    const card = actions
       .locator(".question-card")
       .filter({ hasText: "Which oil for the wick?" });
     await card.getByRole("button", { name: /Paraffin/ }).click();
@@ -85,10 +89,13 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
       "Q01",
     );
 
+    const tab = page.locator('[data-wish-section="decisions"]');
+    await expect(tab.locator("strong")).toHaveText("Decisions");
+    await expect(tab.locator(":scope > .count")).toHaveText("2");
     const log = await openWorkspaceSection(page, "decisions");
-    await expect(log.locator(".decision-log").getByRole("button")).toHaveCount(
-      0,
-    );
+    await expect(
+      log.locator(".workspace-panel-content").getByRole("button"),
+    ).toHaveCount(0);
     const rows = log.locator(".decision-row");
     // The latest first: the answer came after the block.
     await expect(rows.first()).toContainText("Which oil for the wick?");
@@ -106,7 +113,9 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
 
     // The decision opens its task in the Tasks tab, and the task leads back.
     await answered.getByRole("link", { name: "W1" }).click();
-    await expect(page.locator('[data-wish-panel="tasks"]')).toHaveCount(1);
+    await expect(page.locator('[data-wish-section="tasks"]')).toHaveClass(
+      /is-open/,
+    );
     const task = page
       .locator(".wish-task")
       .filter({ hasText: "Fill with paraffin" });
@@ -114,7 +123,9 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
     await expect(task).toBeInViewport();
     await expect(task.locator(".wish-task-heading")).toBeFocused();
     await task.getByRole("link", { name: /From Q01/ }).click();
-    await expect(page.locator('[data-wish-panel="decisions"]')).toHaveCount(1);
+    await expect(page.locator('[data-wish-section="decisions"]')).toHaveClass(
+      /is-open/,
+    );
     await expect(
       page.locator(".decision-row.focused").filter({
         hasText: "Which oil for the wick?",

@@ -7,6 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { portable } from "./portable";
+import { openWorkspaceActions, wishHeading } from "./workspace-selectors";
 
 portable();
 
@@ -64,10 +65,11 @@ for (const engine of ["native", "script"] as const)
     await (await chooser).setFiles(file);
 
     // The window shows the wish imported, not the flight plan it opened on: both list questions.
-    await expect(page.locator(".workspace-thread-head h1")).toHaveText(
+    await expect(wishHeading(page)).toHaveText(
       `Keep my place ${wishId.slice(0, 8)}`,
     );
-    const scroller = page.locator(".mission-scroll");
+    const dialog = await openWorkspaceActions(page);
+    const scroller = dialog.locator(".workspace-global-modal-body");
     // The list's order is the interface's: the seventh card is read, the first one is answered.
     const cards = scroller.locator(".question-card");
     await expect(cards).toHaveCount(20);

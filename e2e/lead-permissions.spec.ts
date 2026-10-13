@@ -4,6 +4,11 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { mergeVisual } from "./merge-visuals";
+import {
+  closeWorkspaceActions,
+  openWorkspaceActions,
+  openWorkspaceSection,
+} from "./workspace-selectors";
 
 const binary = path.resolve(__dirname, "../bin/djinn-e2e");
 const session = "7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
@@ -82,6 +87,8 @@ test("the approval card checks the command and sends the user's answer", async (
     await page.goto(process.env.DJINN_URL!);
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
     await page.locator(".wish-nav").filter({ hasText: title }).click();
+    await expect(page.locator(`#lead-prompt-${wishId}`)).toHaveCount(1);
+    await openWorkspaceActions(page);
     const card = page.locator(`#lead-prompt-${wishId}`);
     await expect(card).toContainText("$ djinn wish brief");
     await expect(
@@ -98,24 +105,23 @@ test("the approval card checks the command and sends the user's answer", async (
       expect(duplicates).toEqual([]);
     };
     await assertUniqueIds();
-    // The permission prompt is global: it remains the same actionable card when a detail panel is composed or
-    // maximized, including the lazy task panel added solely to exercise the layout.
-    await stage
-      .locator('[data-wish-section="tasks"] .workspace-section-card')
-      .click();
+    // The approval stays global while a content panel is opened and maximized.
+    const tasks = await openWorkspaceSection(page, "tasks");
     await expect(stage.locator('[data-wish-panel="tasks"]')).toHaveCount(1);
-    await expect(card).toBeVisible();
+    await expect(card).toBeHidden();
     await assertUniqueIds();
-    await stage
-      .locator('[data-wish-panel="tasks"]')
-      .getByRole("button", { name: "Maximize Tasks" })
-      .click();
     await expect(stage).toHaveAttribute("data-wish-maximized", "tasks");
+    await expect(
+      tasks.getByRole("button", { name: "Restore Tasks" }),
+    ).toBeVisible();
+    await openWorkspaceActions(page);
     await expect(card).toBeVisible();
     await assertUniqueIds();
+    await page.screenshot({
+      path: mergeVisual("light/codex-approval.png"),
+      fullPage: true,
+    });
 
-    // Exercise the real Choose transport while the task panel is maximized. A stale request is rejected first, then
-    // the visible prompt still accepts the current answer in this layout.
     const url = new URL(process.env.DJINN_URL!);
     const stale = await page.request.post(
       new URL("/plan.v1.WishService/Choose", url).toString(),
@@ -133,14 +139,15 @@ test("the approval card checks the command and sends the user's answer", async (
     expect(stale.status()).toBe(400);
     await expect(card).toBeVisible();
 
-    // The approval remains actionable on the flight-plan overview as well as on the wish workspace.
+    // The request remains visible from the overview even when the terminal is folded away.
+    await closeWorkspaceActions(page);
     await page.locator(".plan-nav").click();
     await expect(card).toContainText("$ djinn wish brief");
-
     // Return to the wish with its Tasks panel maximized before exercising the real Choose transport.
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await expect(stage).toHaveAttribute("data-wish-maximized", "tasks");
     await expect(stage.locator('[data-wish-panel="tasks"]')).toHaveCount(1);
+    await openWorkspaceActions(page);
     await expect(card).toBeVisible();
     await assertUniqueIds();
     await page.screenshot({
@@ -153,6 +160,7 @@ test("the approval card checks the command and sends the user's answer", async (
       .locator('[data-wish-panel="tasks"]')
       .getByRole("button", { name: "Restore Tasks" })
       .click();
+    await expect(stage).not.toHaveAttribute("data-wish-maximized", "tasks");
 
     // The lead terminal is retained while the overview is navigated. Reopen its folded view before inspecting the
     // approval marker emitted by the real transport.
@@ -207,11 +215,7 @@ test("the approval card checks the command and sends the user's answer", async (
 
     await page.reload();
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    await page
-      .locator(
-        '.wish-workspace[data-wish-workspace="stage"] [data-wish-section="instructions"] .workspace-section-card',
-      )
-      .click();
+    await openWorkspaceSection(page, "instructions");
     const entry = page.locator(`#instruction-${instruction.id}`);
     await expect(entry).toContainText(text);
     await expect(entry.getByText("Pending", { exact: true })).toBeVisible();

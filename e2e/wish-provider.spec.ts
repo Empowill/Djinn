@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { Provider } from "../gen/ts/plan/v1/plan_pb";
+import { openTerminalPanel } from "./terminal-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -40,7 +41,16 @@ test("changing the agent stops the lead and starts the new one from the brief", 
   const folder = fs.realpathSync(
     fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "lead-")),
   );
-  const made = djinn("wish", "make", "Switch the agent", "--json");
+  const project = JSON.parse(djinn("project", "add", folder, "--json")).project
+    .id as string;
+  const made = djinn(
+    "wish",
+    "make",
+    "Switch the agent",
+    "--project-ids",
+    project,
+    "--json",
+  );
   const wishId = JSON.parse(made).wish.id as string;
   djinn("wish", "set-lead", wishId, session, "--directory", folder);
   djinn("wish", "resume", wishId);
@@ -48,7 +58,8 @@ test("changing the agent stops the lead and starts the new one from the brief", 
   const url = new URL(process.env.DJINN_URL!);
   url.pathname = "/";
   await page.goto(url.toString());
-  const rows = page.locator(".lead-terminal .xterm-rows > div");
+  const terminal = await openTerminalPanel(page);
+  const rows = terminal.locator(".xterm-rows > div");
   await expect(
     rows.filter({ hasText: `fake-claude --resume ${session}` }),
   ).toHaveCount(1);
