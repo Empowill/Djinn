@@ -2016,7 +2016,9 @@ test("a task card offers Start anyway from machine_wait, not from its reason's t
   );
 });
 
-test("a task card warns of the calls its permissions refused, and which on hover with the command that grants them", () => {
+// Q273: the calls a worker's permissions refused are the lead's to handle (its ended event names them); the window
+// shows no warning of them on the task's card.
+test("a task card shows no warning of the calls its permissions refused: they go to the lead", () => {
   const card = (task) =>
     s.renderToStaticMarkup(
       h(s.WishTask, {
@@ -2034,11 +2036,8 @@ test("a task card warns of the calls its permissions refused, and which on hover
   const refused = card({
     refused: { count: 6, names: ["djinn", "ls", "git", "task", "gcloud"] },
   });
-  assert.match(
-    refused,
-    /<span class="task-refused" title="6 calls refused by its permissions in its last run, with nobody to approve them: djinn, ls, git, task, gcloud. djinn wish allow w1 --mode auto lets the agent judge them.">/,
-  );
-  assert.doesNotMatch(card({}), /task-refused/);
+  assert.doesNotMatch(refused, /refused|wish allow|gcloud|with problems/);
+  assert.equal(refused, card({}));
 });
 
 test("a task row reads on two lines: status, code and long title on the first, details on the second", () => {
@@ -5121,9 +5120,9 @@ test("a line of the attention bar takes you to its target in another tab, a fold
 
 // W507: the lead made a wish with no project and one research task; its worker ended done while its permissions
 // refused 6 calls. The window showed no task, read the wish's rank as 3 questions, and proposed the grant.
-test("regression W507: a wish without a project shows its task done with problems, its rank as a rank, and no grant", async () => {
+test("regression W507: a wish without a project shows its task, its rank as a rank, and no grant", async () => {
   const wishId = "01a1317d-4d8c-7de3-b351-e54f2a70840f";
-  // The lamp proposes no grant while a task is done with problems (internal/plan.Ready).
+  // The lamp proposes no grant while the lead has not decided about a task's refused calls (internal/plan.Ready).
   const wispr = wish(
     wishId,
     "Install Wispr Flow on Linux",
@@ -5166,16 +5165,12 @@ test("regression W507: a wish without a project shows its task done with problem
   // (b) The rank reads as a rank, and nothing counts questions: there are none.
   assert.match(html, /<span>Active · rank 3<\/span>/);
   assert.doesNotMatch(html, /questions? wait|to decide/);
-  // (c) No grant, and the task done with problems is what waits for you, named, in the bar and in the action center.
+  // (c) No grant until the lead decides about the refused calls, and nothing waits for you: they are the lead's
+  // (Q273), never a warning in the window.
   assert.doesNotMatch(html, /My wish is granted|id="grant-/);
-  assert.match(html, /1 thing waits for you/);
-  assert.match(
+  assert.doesNotMatch(
     html,
-    /<b class="attention-code">W1<\/b>.*done with problems: its permissions refused 6 calls/,
-  );
-  assert.match(
-    html,
-    /id="waiting-01a1317d-4e22[^"]*"><span class="status-badge tone-interrupted"[^>]*>.*?<span>Done with problems<\/span><\/span><span><button type="button" class="text-button agent-code task-link">W1<\/button> Find a safe, real way to run Wispr Flow on this Linux machine · done with problems: its permissions refused 6 calls \(Read, Glob\), so it may not have done its job\./,
+    /waits? for you|with problems|refused|id="waiting-|tone-interrupted/,
   );
   // (a) The Tasks tab counts it.
   assert.match(
@@ -5183,8 +5178,8 @@ test("regression W507: a wish without a project shows its task done with problem
     /id="view-tab-tasks" aria-selected="false" class="">Tasks<span class="count">1<\/span>/,
   );
 
-  // (a) In the Tasks tab, a task part of no azima shows: done with problems, it waits in sight, amber, with Mark
-  // done; a clean done one folds under Finished.
+  // (a) In the Tasks tab, a task part of no azima shows, folded under Finished once done, a clean Done whether its
+  // calls were refused or not.
   const clean = {
     ...research,
     id: "t2",
@@ -5208,18 +5203,12 @@ test("regression W507: a wish without a project shows its task done with problem
       render: card,
     }),
   );
-  assert.match(tab, /Moving or waiting<span class="count">1<\/span>/);
+  assert.match(tab, /Moving or waiting<span class="count">0<\/span>/);
   assert.match(
     tab,
-    /class="wish-task tone-interrupted[^"]*".*<span>Done with problems<\/span>.*<span class="agent-code">W1</,
+    /<section class="wish-section tasks-finished" aria-label="Finished"><div class="section-title"><h2>Finished<span class="count">2<\/span><\/h2><\/div><button type="button" class="fold-line" aria-expanded="false">.*Show the 2 finished<\/button><\/section>/,
   );
-  assert.match(tab, /aria-label="Mark done"/);
-  assert.ok(tab.indexOf("Done with problems") < tab.indexOf("tasks-finished"));
-  assert.match(
-    tab,
-    /<section class="wish-section tasks-finished" aria-label="Finished"><div class="section-title"><h2>Finished<span class="count">1<\/span><\/h2><\/div><button type="button" class="fold-line" aria-expanded="false">.*Show 1 finished<\/button><\/section>/,
-  );
-  // A link brings it into sight: unfolded, a clean Done.
+  // A link brings them into sight: unfolded, both a clean Done, neither to mark done.
   const shown = s.renderToStaticMarkup(
     h(s.TaskSections, {
       moving: s.movingTasks(tasks),
@@ -5230,22 +5219,9 @@ test("regression W507: a wish without a project shows its task done with problem
   );
   assert.match(
     shown,
-    /tasks-finished.*class="wish-task tone-done[^"]*".*<span>Done<\/span>.*<span class="agent-code">W2</,
+    /tasks-finished.*class="wish-task tone-done[^"]*".*<span>Done<\/span>.*<span class="agent-code">W1<.*class="wish-task tone-done[^"]*".*<span>Done<\/span>.*<span class="agent-code">W2</,
   );
-  // Marked done since, it is seen: a clean done, settled with the finished, and nothing waits.
-  const seen = {
-    ...research,
-    closed: { actor: s.Closer.DEVELOPER, createTime: at(40), note: "" },
-  };
-  assert.deepEqual(s.movingTasks([seen]), []);
-  assert.deepEqual(
-    s.finishedTasks([seen]).map((x) => x.code),
-    ["W1"],
-  );
-  assert.doesNotMatch(
-    s.renderToStaticMarkup(card(seen)),
-    /Done with problems|aria-label="Mark done"/,
-  );
+  assert.doesNotMatch(shown, /Done with problems|aria-label="Mark done"/);
 
   // (b) The side panel shows the rank as #3, beside no pill.
   const side = s.renderToStaticMarkup(

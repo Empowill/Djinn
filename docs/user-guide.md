@@ -230,14 +230,17 @@ diffs, its worker's last word, where its work stands, its events, and folded ter
   None on Windows yet.
 - **Stop the worker** ends it.
 - **Mark done** closes a task no worker runs (planned, cut short, failed, stopped, imported) once its work is done,
-  with why, in a few words. On a task **Done with problems**, it closes it as seen.
-
-A task whose worker ended done while its permissions refused some of its calls, with nobody to approve them, is
-**Done with problems**, amber, not a clean Done: it may not have done its job. It stays with what moves or waits, and
-waits for you in the attention bar, until it runs again or is marked done.
+  with why, in a few words.
 - A task that comes from a decision links to it in the Decisions tab.
 
-The status is one colour, one icon and one word: Running, Waits for your answer, Planned, Done, Done with problems, Failed,
+The calls a worker's permissions refused, with nobody to approve them, never show in the window (Decision Q273): they
+go to the Djinn, in the event that tells it the task ended, with the commands and the right that would allow them. The
+Djinn decides: it continues the task otherwise, starts it again where a right the wish or project already grants
+covers them, or closes it as seen. Rights stay explicit: when the Djinn concludes a new one is needed (auto mode on a
+project, a permission line), it asks you in a question to act on that names exactly that right, the command that
+grants it, and why.
+
+The status is one colour, one icon and one word: Running, Waits for your answer, Planned, Done, Failed,
 Interrupted, Stopped, Paused, Waiting for the limit, Resuming, Resumed as another task, Watching.
 
 ### Usage and cost estimates
@@ -417,7 +420,8 @@ report's title, which opens it in place.
 
 ## Grant a wish
 
-When every task is finished, none done with problems, and no question is open, Djinn proposes to grant the wish:
+When every task is finished, none done with refused calls the Djinn has not decided about yet, and no question is
+open, Djinn proposes to grant the wish:
 **My wish is granted**. Only
 you grant a wish; you may grant it earlier. From a terminal: `djinn wish grant <wish-id>`.
 

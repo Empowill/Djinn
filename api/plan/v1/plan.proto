@@ -1008,8 +1008,8 @@ message TaskBabysit {
   string opened_by = 5;
 }
 
-// TaskRefusals are the calls a worker's permissions refused in a run: what the lead hears when it ends, and the
-// window's warning on its task.
+// TaskRefusals are the calls a worker's permissions refused in a run: what the lead hears when it ends, to decide
+// (Q273). The window never shows them: a new right is asked of the developer by the lead, explicitly.
 message TaskRefusals {
   // How many calls were refused.
   int32 count = 1;

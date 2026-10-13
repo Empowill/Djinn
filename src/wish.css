@@ -255,13 +255,6 @@
 .task-turns.warning {
   color: var(--st-waiting);
 }
-.task-refused {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-variant-numeric: tabular-nums;
-  color: var(--st-waiting);
-}
 .task-model {
   flex-shrink: 0;
   color: var(--st-investigating);
