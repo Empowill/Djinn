@@ -532,6 +532,7 @@
   "question.investigating": "Being investigated",
   "question.investigating_asked": "You asked: {note}",
   "question.investigating_detail": "You asked to find out more: the Djinn investigates, then revises this question.",
+  "question.investigating_for": "Being investigated for {time}",
   "question.investigating_note": "You asked to find out more: {note}",
   "question.investigating_section": "You asked for more before deciding: they come back here once the Djinn has revised them. You can still decide now.",
   "question.investigating_title": "Being investigated",
