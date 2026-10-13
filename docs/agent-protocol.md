@@ -78,9 +78,16 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   run is never asked of the developer. A worker does it itself when it can, or says in its final note what remains to
   verify; the Djinn then spawns a task that runs it and investigates, or lets a watcher report it (a CI result comes
   from the PR's or MR's babysit watcher). A question to the developer is only for a decision or a move only a person
-  can make (a right, a merge, a release, a machine Djinn does not have); then the exact command goes in a code block
-  at the top of its `--context`, never mid-sentence. Every worker that edits a worktree reads the rule at the end of
-  its first prompt (`internal/harness/harness.go`, `workerRules`); the Djinn in its brief.
+  can make (a right, a merge, a release, a machine Djinn does not have); then the exact command goes in the code
+  block at the top of its `--context`, never in a sentence. Every worker that edits a worktree reads the rule at the
+  end of its first prompt (`internal/harness/harness.go`, `workerRules`); the Djinn in its brief.
+- **A question reads at a glance (W575).** Its context keeps one shape: every command the developer must run in one
+  fenced code block at the top, in run order, a `# …` comment on what each prints; then a one-line why, a few bullets
+  of facts (verified or not), the decision with its options; no command, flag, path or hash inside a sentence, no wall
+  of text. The Djinn reads it in its brief, a worker at the end of its first prompt, an investigator in its own: one
+  text, `plan.QuestionShape`. `djinn question ask` and `djinn question revise` store the context as given and print a
+  `warning:` line for each break they spot (`plan.ContextWarnings`). The lead note `readable-questions` shows a
+  context rewritten in this shape.
 - **Operational decisions are the Djinn's (Decision Q196).** Djinn's operational questions (a merge still failing after its
   corrections, a held push, a conflict, a main merge that fails, uncommitted review failures) go to the Djinn as an event,
   never as a question to the developer. Obvious cases (work already in the integration branch, a task dropped or cancelled,

@@ -47,7 +47,8 @@ func TestRounds(t *testing.T) {
 	}
 	text := brief.Text()
 	if !strings.Contains(text, "## To investigate") || !strings.Contains(text, "**Q01** Which oil? (asked ") ||
-		!strings.Contains(text, "): How long does each burn?") {
+		!strings.Contains(text, "): How long does each burn?") ||
+		!strings.Contains(text, "the context in the shape every question keeps: the commands in one code block at the top") {
 		t.Errorf("the brief lacks the question to investigate:\n%s", text)
 	}
 	if strings.Contains(text, "## Open questions") {

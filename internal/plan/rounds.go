@@ -70,7 +70,9 @@ func (q *Questions) Revise(
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&planv1.QuestionServiceReviseResponse{Question: question}), nil
+	return connect.NewResponse(&planv1.QuestionServiceReviseResponse{
+		Question: question, Warnings: ContextWarnings(question.GetContext()),
+	}), nil
 }
 
 // round adds a round to an open question, set by fn, in one journaled transaction.

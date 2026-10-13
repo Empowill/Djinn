@@ -157,7 +157,8 @@ func TestInvestigator(t *testing.T) {
 	e.release(t, inv.GetId())
 	e.ended(t, inv.GetId())
 	prompt := e.prompt(t, inv.GetId())
-	for _, want := range []string{"What the developer wants to know:\n\n" + note + "\n\n", "djinn question revise Q01 --wish-id " + wishID, "Recommended: A: one file"} {
+	for _, want := range []string{"What the developer wants to know:\n\n" + note + "\n\n", "djinn question revise Q01 --wish-id " + wishID, "Recommended: A: one file",
+		"## The shape of the context\n\n" + plan.QuestionShape} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the prompt misses %q:\n%s", want, prompt)
 		}

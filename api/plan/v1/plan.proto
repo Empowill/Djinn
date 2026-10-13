@@ -1708,7 +1708,7 @@ message QuestionServiceEnlightenResponse {
 message QuestionServiceReviseRequest {
   // The question: its code, like Q03, or its identifier.
   QuestionRef question = 1 [(buf.validate.field).required = true];
-  // What is at stake now, in Markdown; the former context when empty.
+  // What is at stake now, in Markdown, in the shape of an asked question's context; the former context when empty.
   string context = 2 [(buf.validate.field).string.max_len = 20000];
   // The options now, up to four; the former ones when none.
   repeated string options = 3 [
@@ -1736,6 +1736,9 @@ message QuestionServiceReviseRequest {
 message QuestionServiceReviseResponse {
   // The question, revised.
   Question question = 1;
+  // How its context breaks the shape a question reads in at a glance (every command in one code block at the top,
+  // short Markdown), a line each; none when it keeps it. The question is stored as given: revise it.
+  repeated string warnings = 2;
 }
 
 message QuestionServiceAskRequest {
@@ -1755,8 +1758,10 @@ message QuestionServiceAskRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.uuid = true
   ];
-  // What is at stake, in Markdown: what the answer changes, what each option costs. Naming a report of the wish (a
-  // block of kind report) by its title or its id links it on the card; an inline code gets a copy button.
+  // What is at stake, in Markdown read at a glance: every command the developer runs in one code block at the top,
+  // in run order, a # comment on what each prints; then a one-line why, a few bullets of facts, what each option
+  // changes and costs. No command, flag, path or hash in a sentence. Naming a report of the wish (a block of kind
+  // report) by its title or its id links it on the card.
   string context = 4 [(buf.validate.field).string.max_len = 20000];
   // The option you recommend, and why, in Markdown.
   string recommendation = 5 [(buf.validate.field).string.max_len = 20000];
@@ -1779,6 +1784,9 @@ message QuestionServiceAskRequest {
 message QuestionServiceAskResponse {
   // The question, with its code.
   Question question = 1;
+  // How its context breaks the shape a question reads in at a glance (every command in one code block at the top,
+  // short Markdown), a line each; none when it keeps it. The question is stored as given: revise it.
+  repeated string warnings = 2;
 }
 
 message QuestionServiceAnswerRequest {

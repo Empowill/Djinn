@@ -11,4 +11,5 @@ the context to a file with a quoted delimiter, `cat > f <<'EOF' ... EOF`, then p
 **Why:** a question is the developer's only channel ([[blockers-as-questions]]); a mangled one misleads them.
 
 **How to apply:** any Markdown with backticks or `$` goes through a quoted heredoc file. Fix a mangled question with
-`djinn question revise <code> --context "$(cat f)"`.
+`djinn question revise <code> --context "$(cat f)"`. Fence the code block of commands with `~~~` lines: they survive
+even a double-quoted context ([[readable-questions]]).
