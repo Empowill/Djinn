@@ -174,12 +174,14 @@ function reconcile<Desc extends DescMessage>(
 // merge puts the entities that changed in place of theirs in list, and takes out those deleted. The others keep their
 // place and their reference, and so does one that comes back equal: a screen that shows them draws them again only
 // when they changed. A new one goes where order puts it, as the service lists them. Nothing changed: list itself.
+// One that behind says was read before the one in list does not take its place.
 function merge<Desc extends DescMessage>(
   schema: Desc,
   list: readonly MessageShape<Desc>[],
   changed: readonly MessageShape<Desc>[],
   deleted: ReadonlySet<string>,
   order: (a: MessageShape<Desc>, b: MessageShape<Desc>) => number,
+  behind?: (old: MessageShape<Desc>, next: MessageShape<Desc>) => boolean,
 ): MessageShape<Desc>[] {
   const id = (m: MessageShape<Desc>) => (m as unknown as { id: string }).id;
   const incoming = new Map(changed.map((m) => [id(m), m]));
@@ -193,7 +195,8 @@ function merge<Desc extends DescMessage>(
     }
     const next = incoming.get(id(old));
     incoming.delete(id(old));
-    if (!next || equals(schema, old, next)) out.push(old);
+    if (!next || equals(schema, old, next) || behind?.(old, next))
+      out.push(old);
     else if (order(old, next) === 0) {
       out.push(next);
       touched = true;
@@ -216,6 +219,32 @@ const byID = (a: { id: string }, b: { id: string }) =>
   a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 const byPosition = (a: Block, b: Block) =>
   a.position < b.position ? -1 : a.position > b.position ? 1 : byID(a, b);
+
+// A question only moves on: each request to investigate and each revision adds a round, and an answer or a
+// withdrawal closes it for good. A copy with fewer rounds, or open where the one shown is closed, was read before
+// it: it never takes the card back, to "Being investigated" after its revision (incident Q274) or open after its
+// answer (incident Q253). A read that left before a write, a page loaded meanwhile, a watch message that crossed a
+// write's answer: each can bring such a copy.
+const stage = (q: Question) =>
+  (q.rounds?.length ?? 0) + (q.answer || q.withdrawal ? 1_000_000 : 0);
+const questionBehind = (old: Question, next: Question) =>
+  stage(next) < stage(old);
+
+// questionsAhead is list, but for the questions shown further along in shown, which stay.
+function questionsAhead(
+  shown: readonly Question[],
+  list: Question[],
+): Question[] {
+  const byId = new Map(shown.map((q) => [q.id, q]));
+  let out = list;
+  list.forEach((q, i) => {
+    const old = byId.get(q.id);
+    if (!old || old === q || !questionBehind(old, q)) return;
+    if (out === list) out = list.slice();
+    out[i] = old;
+  });
+  return out;
+}
 
 // adjustTotal updates total when incremental changes add or remove items.
 function adjustTotal<T extends { id: string }>(
@@ -260,6 +289,7 @@ function apply(
           changes.questions,
           deleted,
           byID,
+          questionBehind,
         );
   const blocks = !detail.loadedKinds.has(Change.BLOCK)
     ? detail.blocks
@@ -425,6 +455,22 @@ export function createStore(
         pending.details.set(id, kinds);
       }
     }
+  }
+
+  // reconnected follows a watch that answers again, after djinn restarted or the stream broke: what changed meanwhile
+  // came in no message. The watch's first message reads again what each wish shown holds; the kinds whose read failed
+  // while djinn was away are read again with them, at once, not after their wait: a question revised meanwhile shows
+  // revised (incident Q274).
+  function reconnected() {
+    lastReadAt.clear();
+    backoff.clear();
+    for (const [wishId, kinds] of stale) {
+      if (!opened.has(wishId) || !kinds.size) continue;
+      const pend = pending.details.get(wishId) ?? new Set<Change>();
+      for (const k of kinds) pend.add(k);
+      pending.details.set(wishId, pend);
+    }
+    set({ live: true });
   }
 
   function canRead(key: string, now: number): boolean {
@@ -612,9 +658,22 @@ export function createStore(
       if (kinds.has(Change.TASK))
         attemptKind(wishId, Change.TASK, async () => {
           const res = await clients.tasks.list({ wishId }, call);
-          into.tasks = reconcile(TaskSchema, prevDetail.tasks, res.tasks);
+          // The read goes as far as the tasks shown went, as for the questions: after a restart, an enlighten task
+          // ended meanwhile past the first page shows ended, not running as it was (incident Q274, W544).
+          const furthest = prevDetail.tasks.at(-1)?.id ?? "";
+          let allTasks = res.tasks;
+          let next = res.nextPageToken;
+          while (next && (allTasks.at(-1)?.id ?? "") < furthest) {
+            const page = await clients.tasks.list(
+              { wishId, pageSize: 200, pageToken: next },
+              call,
+            );
+            allTasks = allTasks.concat(page.tasks);
+            next = page.nextPageToken;
+          }
+          into.tasks = reconcile(TaskSchema, prevDetail.tasks, allTasks);
           into.tasksTotal = res.total;
-          into.tasksNextToken = res.nextPageToken;
+          into.tasksNextToken = next;
         });
       if (kinds.has(Change.QUESTION))
         attemptKind(wishId, Change.QUESTION, async () => {
@@ -684,7 +743,10 @@ export function createStore(
     for (const [wishId, got] of Object.entries(read)) {
       const prevDetail = next[wishId] ?? EMPTY_DETAIL;
       const tasks = got.tasks ?? prevDetail.tasks;
-      const questions = got.questions ?? prevDetail.questions;
+      // What the screens got meanwhile (a write's answer, a page loaded) and is further along stays.
+      const questions = got.questions
+        ? questionsAhead(prevDetail.questions, got.questions)
+        : prevDetail.questions;
       const blocks = got.blocks ?? prevDetail.blocks;
       const tilasms = got.tilasms ?? prevDetail.tilasms;
       const tasksTotal =
@@ -942,10 +1004,7 @@ export function createStore(
               {},
               { signal: abort.signal },
             )) {
-              if (!state.live) {
-                lastReadAt.clear();
-                set({ live: true });
-              }
+              if (!state.live) reconnected();
               mark(res.wishId, res.changes, res.changed);
               void flush();
             }
@@ -1016,6 +1075,7 @@ export function createStore(
             res.questions,
             new Set(),
             byID,
+            questionBehind,
           );
           set({
             details: {
