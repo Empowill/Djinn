@@ -17,6 +17,7 @@ const {
   InboxService,
   LeadService,
   TaskKind,
+  RoundKind,
   TaskStatus,
   AzimaState,
   azimaGroups,
@@ -1340,4 +1341,160 @@ test("a question an answer returned shows answered at once, without a read", asy
   stop();
   assert.equal(shown.answer?.note, "The hourglass.");
   assert.equal(reads.questions, before);
+});
+
+// Incident Q274: a question showed "Being investigated" after its investigator had revised it, until a reload.
+const enlightened = {
+  id: "q1",
+  wishId,
+  code: "Q01",
+  text: "Which wick?",
+  options: ["Cotton", "Linen"],
+  rounds: [{ kind: RoundKind.ENLIGHTEN, note: "Which lasts?" }],
+};
+const revisedQ01 = {
+  ...enlightened,
+  context: "Linen burns twice as long.",
+  recommendation: "B: it lasts.",
+  revision: 1,
+  rounds: [...enlightened.rounds, { kind: RoundKind.REVISE }],
+};
+const lastRound = (s) =>
+  s.details[wishId]?.questions.find((q) => q.id === "q1")?.rounds.at(-1)?.kind;
+
+// investigated starts a store on a wish whose question Q01 is being investigated, its questions read.
+async function investigated(data = sample()) {
+  data.questions = [enlightened];
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId);
+  await until(store, (s) => lastRound(s) === RoundKind.ENLIGHTEN);
+  return { data, store, stop, watch, reads };
+}
+
+test("a revision the watch brings takes the question out of investigation, without a read", async () => {
+  const { store, stop, watch, reads } = await investigated();
+  const before = reads.questions;
+  watch.push({
+    wishId,
+    changes: [Change.QUESTION, Change.WISH],
+    changed: carried({ questions: [revisedQ01] }),
+  });
+  const state = await until(store, (s) => lastRound(s) === RoundKind.REVISE);
+  stop();
+  const q = state.details[wishId].questions[0];
+  assert.equal(q.context, "Linen burns twice as long.");
+  assert.equal(q.recommendation, "B: it lasts.");
+  assert.equal(reads.questions, before);
+});
+
+test("a read that left before a revision does not take the question back under investigation", async () => {
+  const { data, store, stop } = await investigated();
+  // A read leaves while the question is still under investigation, and answers late.
+  let answer;
+  data.listQuestions = () =>
+    new Promise((r) => (answer = r)).then(() => ({
+      questions: [enlightened],
+      total: 1,
+    }));
+  const reading = store.changed(wishId, [Change.QUESTION]);
+  await new Promise((r) => setTimeout(r, 20));
+  // Meanwhile the revision shows.
+  store.putQuestion(revisedQ01);
+  assert.equal(lastRound(store.getState()), RoundKind.REVISE);
+  answer();
+  await reading;
+  stop();
+  assert.equal(lastRound(store.getState()), RoundKind.REVISE);
+});
+
+test("a page loaded across a revision does not take the question back under investigation", async () => {
+  const data = sample();
+  // A first page, and a page after it.
+  data.listQuestions = (req) => ({
+    questions: [enlightened],
+    total: 2,
+    nextPageToken: req.open || req.pageToken ? "" : "page2",
+  });
+  const { store, stop, watch } = await investigated(data);
+  let answer;
+  data.listQuestions = () =>
+    new Promise((r) => (answer = r)).then(() => ({
+      questions: [enlightened],
+      total: 1,
+      nextPageToken: "",
+    }));
+  const loading = store.loadMore(wishId, Change.QUESTION);
+  await new Promise((r) => setTimeout(r, 20));
+  watch.push({
+    wishId,
+    changes: [Change.QUESTION],
+    changed: carried({ questions: [revisedQ01] }),
+  });
+  await until(store, (s) => lastRound(s) === RoundKind.REVISE);
+  answer();
+  await loading;
+  stop();
+  assert.equal(lastRound(store.getState()), RoundKind.REVISE);
+});
+
+test("a watch back after djinn restarted reads the open questions again: one revised meanwhile shows revised", async () => {
+  const { data, store, stop, watch, reads } = await investigated();
+  watch.push(new Error("djinn restarted"));
+  await until(store, (s) => !s.live);
+  // Revised while the window was cut from djinn: no message brings it.
+  data.questions = [revisedQ01];
+  const before = reads.questions;
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.live && lastRound(s) === RoundKind.REVISE);
+  stop();
+  assert.ok(reads.questions > before);
+});
+
+// Incident Q274, second case: after a restart the window kept W544, the enlighten task of Q254, running, and Q254
+// under investigation; W544 had ended, and Q254 was answered. W544 sat past the first page of the wish's tasks: the
+// read after the watch came back went no further than that page.
+test("an enlighten task that ended while djinn was away shows ended after the watch comes back, its question answered", async () => {
+  const data = sample();
+  const old = [
+    { id: "t1", wishId, code: "W1", title: "Old work", status: 4 },
+    { id: "t2", wishId, code: "W2", title: "Old work", status: 4 },
+  ];
+  const w544 = {
+    id: "t3",
+    wishId,
+    code: "W544",
+    title: "Q254: enlighten",
+    status: TaskStatus.RUNNING,
+  };
+  data.listTasks = (req) =>
+    req.pageToken
+      ? { tasks: [w544], total: 3, nextPageToken: "" }
+      : { tasks: old, total: 3, nextPageToken: "p2" };
+  const { store, stop, watch, reads } = await investigated(data);
+  await store.loadMore(wishId, Change.TASK);
+  const status = (s) =>
+    s.details[wishId]?.tasks.find((t) => t.code === "W544")?.status;
+  assert.equal(status(store.getState()), TaskStatus.RUNNING);
+
+  watch.push(new Error("djinn restarted"));
+  await until(store, (s) => !s.live);
+  // Meanwhile W544 ends, and the developer answers Q01 elsewhere.
+  w544.status = TaskStatus.DONE;
+  data.questions = [{ ...enlightened, answer: { choice: 1 } }];
+  const before = reads.tasks;
+  watch.push({ wishId: "", changes: everything });
+  const state = await until(
+    store,
+    (s) =>
+      s.live &&
+      status(s) === TaskStatus.DONE &&
+      !!s.details[wishId].questions[0].answer,
+  );
+  stop();
+  assert.ok(reads.tasks > before);
+  assert.equal(state.details[wishId].tasks.length, 3);
 });
