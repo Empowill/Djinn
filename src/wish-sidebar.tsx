@@ -23,6 +23,7 @@ import { WishState } from "../gen/ts/plan/v1/plan_pb";
 import { MAX_ACTIVE, isActive, wishTone } from "./data/format";
 import { t } from "./i18n";
 import { useOpenTerminal } from "./lead-terminal";
+import { CARPET_DIGIT, HOURGLASS_DIGIT, usePageShortcut } from "./page-keys";
 import { SyncLines } from "./project-sync";
 import { CountPill, ToneIcon } from "./status";
 
@@ -82,6 +83,9 @@ export function WishSidebar({
   // Where djinn serves the page, a project opens a terminal at its root, in a tab of its own.
   const openTerminal = useOpenTerminal();
   const [dragged, setDragged] = useState("");
+  // The pages' shortcuts, named in their entries' tooltips as this keyboard writes them (Ctrl & on AZERTY).
+  const carpetKey = usePageShortcut(CARPET_DIGIT);
+  const hourglassKey = usePageShortcut(HOURGLASS_DIGIT);
 
   const item = (wish: Wish, rank?: number) => {
     const count = counts[wish.id] ?? { questions: 0, running: 0, watching: 0 };
@@ -185,7 +189,11 @@ export function WishSidebar({
         <button
           className={`nav-item plan-nav ${planSelected ? "selected" : ""}`}
           onClick={onSelectPlan}
-          title={t("plan.title")}
+          title={t("sidebar.page_shortcut", {
+            page: t("plan.title"),
+            shortcut: carpetKey.label,
+          })}
+          aria-keyshortcuts={carpetKey.aria}
         >
           <Plane size={15} />
           {!collapsed && <span>{t("plan.title")}</span>}
@@ -210,7 +218,11 @@ export function WishSidebar({
         <button
           className={`nav-item hourglass-nav ${hourglassSelected ? "selected" : ""}`}
           onClick={onSelectHourglass}
-          title={t("hourglass.title")}
+          title={t("sidebar.page_shortcut", {
+            page: t("hourglass.title"),
+            shortcut: hourglassKey.label,
+          })}
+          aria-keyshortcuts={hourglassKey.aria}
         >
           <Hourglass size={15} />
           {!collapsed && <span>{t("hourglass.title")}</span>}

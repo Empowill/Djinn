@@ -170,7 +170,7 @@ one lead per wish keeps the lead of the first active wish as the one lead.
 
 ## The flying carpet
 
-**Flying carpet**, at the top of the side panel, shows every active wish together:
+**Flying carpet**, at the top of the side panel, or Ctrl+1 (Cmd+1 on macOS), shows every active wish together:
 
 - a bar at the top while something waits for you, the most blocking first; a click takes you there;
 - the [inbox](#the-inbox), when a source found something;
@@ -185,11 +185,16 @@ Under them, one line says the machine's load, with a link to the [Hourglass](#th
 
 ## The Hourglass
 
-**Hourglass**, below the flying carpet in the side panel, is where the live metrics are, as time goes by. First the
-machine: its CPU and memory over the time you pick (10 minutes to 7 days), with Djinn's share, the load limit and the
-gates held; each running worker, its facts and its own graphs (its eye opens the task in its wish); then where the
-time of the commands goes, by project and gate. The page reads them only while it shows: leave it, and its reads stop.
-A running task's card links to its worker's row (**Live in the Hourglass**).
+**Hourglass**, below the flying carpet in the side panel, or Ctrl+2 (Cmd+2 on macOS), is where the live metrics are, as
+time goes by. First the machine: its CPU and memory over the time you pick (10 minutes to 7 days), with Djinn's share,
+the load limit and the gates held; each running worker, its facts and its own graphs (its eye opens the task in its
+wish); then where the time of the commands goes, by project and gate. The page reads them only while it shows: leave it,
+and its reads stop. A running task's card links to its worker's row (**Live in the Hourglass**).
+
+Ctrl+1 and Ctrl+2 are the keys' places, not their characters: on a French AZERTY keyboard, Ctrl with the key of &
+and Ctrl with the key of the e acute next to it; the numpad's 1 and 2 work too. They work in a text field, never in
+the terminal, which keeps its own Ctrl and digit keys. Each entry's tooltip names its shortcut as your keyboard writes
+it, once the window knows your layout: at once in a Chromium browser, elsewhere once you typed on the digit row.
 
 ## A wish's view
 

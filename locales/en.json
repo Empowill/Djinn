@@ -653,6 +653,7 @@
   "sidebar.inbox_new.other": "{count} new items in the inbox",
   "sidebar.new_project": "Create a project",
   "sidebar.no_active": "No active wish.",
+  "sidebar.page_shortcut": "{page} ({shortcut})",
   "sidebar.paused": "Paused",
   "sidebar.project_terminal": "Open a terminal at the root of {project}",
   "sidebar.projects": "PROJECTS",
