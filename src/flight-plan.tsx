@@ -815,11 +815,7 @@ export function FlightPlan({
                         </section>
                       )}
                       {plan.waiting.length > 0 && (
-                        <WaitingTasks
-                          waiting={plan.waiting}
-                          origin
-                          onTask={handleTaskFocus}
-                        />
+                        <WaitingTasks waiting={plan.waiting} origin />
                       )}
                       {plan.proofs.length > 0 && (
                         <section className="plan-waiting">

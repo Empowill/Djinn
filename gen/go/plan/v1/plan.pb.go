@@ -5098,8 +5098,8 @@ func (x *TaskBabysit) GetOpenedBy() string {
 	return ""
 }
 
-// TaskRefusals are the calls a worker's permissions refused in a run: what the lead hears when it ends, and the
-// window's warning on its task.
+// TaskRefusals are the calls a worker's permissions refused in a run: what the lead hears when it ends, to decide
+// (Q273). The window never shows them: a new right is asked of the developer by the lead, explicitly.
 type TaskRefusals struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// How many calls were refused.

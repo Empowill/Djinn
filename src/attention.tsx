@@ -20,7 +20,7 @@ import {
 import { message } from "./data/client";
 import { useClients, useDjinn } from "./data/djinn";
 import type { OpenQuestion, Waiting } from "./data/flight";
-import { doneWithProblems, firstLine } from "./data/format";
+import { firstLine } from "./data/format";
 import { mainLink } from "./data/links";
 import { t } from "./i18n";
 import { MoveLink } from "./link";
@@ -111,11 +111,9 @@ export function attentionOf(
     // A worker that waits for an open question is already on that question's line.
     if (item.status === TaskStatus.WAITING && question) continue;
     const failed = item.status === TaskStatus.FAILED;
-    const text = doneWithProblems(item)
-      ? t("attention.worker_problems", { count: item.refused?.count ?? 0 })
-      : failed
-        ? firstLine(item.error) || t("attention.worker_failed")
-        : t("attention.worker_waits");
+    const text = failed
+      ? firstLine(item.error) || t("attention.worker_failed")
+      : t("attention.worker_waits");
     out.push({
       key: item.id,
       level: "action",

@@ -20,7 +20,9 @@ import (
 
 // A worker nobody approves anything for (incident W1 of wish Dew, 12/10/2026: access native in a project whose agent
 // settings allow few commands) has every other call refused, djinn's own included, and may still end done: the lead
-// hears how many calls were refused and which, and the window warns on its task. Granting stays the developer's move.
+// hears how many calls were refused and which, once, at the run's end, and decides (Q273): continue the task
+// otherwise, run it again with a right the wish or project grants already, or drop it. The window never shows them:
+// rights stay explicit, and a new one is the developer's to grant, asked by the lead in a --move question.
 
 // denials are the calls a run's permissions refused.
 type denials = planv1.TaskRefusals
@@ -88,8 +90,8 @@ func commandName(line string) string {
 }
 
 // refusedClause says the calls t's worker had refused in its last run, naming shown of them at most, and the
-// command that grants them, for the lead; "" when none was refused. An edit allowance adds no command (allowedBy):
-// only auto lets the agent judge them.
+// command that would grant them, for the lead; "" when none was refused. An edit allowance adds no command
+// (allowedBy): only auto lets the agent judge them. refusedRight ends the sentence.
 func refusedClause(t *planv1.Task, wish *planv1.Wish, shown int) string {
 	r := t.GetRefused()
 	if r.GetCount() == 0 {
@@ -112,6 +114,9 @@ func refusedClause(t *planv1.Task, wish *planv1.Wish, shown int) string {
 	}
 	return clause
 }
+
+// refusedRight ends the sentence of refusedClause: the command is a right, the developer's to grant.
+const refusedRight = " would let the agent judge them, a right only the developer grants."
 
 // tellsDone tells whether the lead hears of t's end as done from tellDone: a work worker, not a watcher, a question
 // worker, an azima, nor a correction or a review worker, whose end the integration tells.
@@ -150,7 +155,7 @@ func doneLine(t *planv1.Task, wish *planv1.Wish, note, why string) string {
 		}) {
 			shown--
 		}
-		line += ", " + refusedClause(t, wish, shown) + " lets the agent judge them."
+		line += ", " + refusedClause(t, wish, shown) + refusedRight
 	} else if why != "" {
 		line += ", " + why + "."
 	}

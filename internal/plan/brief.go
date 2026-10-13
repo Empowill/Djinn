@@ -129,6 +129,13 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"to the developer. A question to the developer is only for a decision or a move only a person can make (a " +
 		"right, a merge, a release, a machine Djinn does not have); then the exact command goes in a code block at the " +
 		"top of its `--context`, never mid-sentence.\n" +
+		"- **Refused calls are yours, rights stay explicit (Q273).** A worker's `ended` or `failed` event names the " +
+		"calls its permissions refused and the right that would allow them; the developer never sees them. Decide: " +
+		"continue the task otherwise (`djinn task continue`), or close it as seen (`djinn task done <task> --note " +
+		"\"…\"`) and, when its work is still needed, spawn it again where a right the wish or project grants already " +
+		"covers them; a done task left with refused calls holds its wish's grant. Never take a broad right by " +
+		"default: when a new one is needed (auto mode on a project, a permission line), ask for it in one `--move` " +
+		"question naming exactly that right, the command that grants it, and why.\n" +
 		"- **Delegate.** You lead; workers do the work. Code, investigations, fixes and checks go to tasks, even small " +
 		"ones, several side by side; keep for yourself what only the lead does: talk with the developer, plan, check " +
 		"what comes back.\n" +
