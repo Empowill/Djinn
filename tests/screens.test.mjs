@@ -687,8 +687,12 @@ test("a gesture presses its button and the card answers back in its colour", asy
   });
   assert.doesNotMatch(card.html(), /gesture-|is-pressed|question-wisp/);
 
-  // Enter on the card: the lamp is down, the card plays the rub, nothing has left yet.
-  card.one("question-card").onKeyDown({ key: "Enter", preventDefault() {} });
+  // Ctrl+Enter on the card: the lamp is down, the card plays the rub, nothing has left yet.
+  card.one("question-card").onKeyDown({
+    key: "Enter",
+    ctrlKey: true,
+    preventDefault() {},
+  });
   let html = card.html();
   assert.match(html, /class="question-card open can-wait gesture-rub"/);
   assert.match(html, /class="button accent lamp-rub is-pressed"/);
@@ -915,9 +919,10 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   assert.doesNotMatch(cardNoRec.html(), /option selected/);
   assert.doesNotMatch(cardNoRec.html(), /question-hint unpicked/);
 
-  // Pressing Enter on card warns
+  // Ctrl+Enter on card warns
   cardNoRec.one("question-card").onKeyDown({
     key: "Enter",
+    ctrlKey: true,
     preventDefault: () => {},
   });
   await cardNoRec.settle();
@@ -926,6 +931,24 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
     cardNoRec.html(),
     /<p class="question-hint unpicked" role="alert">.*Pick an option first<\/p>/,
   );
+
+  // Enter on a focused option picks it and answers nothing (W574), as a click does.
+  const optionB = {};
+  cardNoRec.all("option")[1].props.onKeyDown({
+    key: "Enter",
+    target: optionB,
+    currentTarget: optionB,
+    preventDefault: () => {},
+  });
+  await cardNoRec.settle();
+  assert.equal(unselectedAnswered.length, 0);
+  assert.match(
+    cardNoRec.html(),
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">B</,
+  );
+  cardNoRec.all("option")[0].props.onClick();
+  await cardNoRec.settle();
+  assert.equal(unselectedAnswered.length, 0);
 
   // Pressing 1 picks first option and clears unpicked warning
   cardNoRec.one("question-card").onKeyDown({
@@ -938,9 +961,19 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   );
   assert.doesNotMatch(cardNoRec.html(), /question-hint unpicked/);
 
-  // Now Enter answers
+  // Enter alone on the card answers nothing (W574): a click on its text leaves the focus there.
   cardNoRec.one("question-card").onKeyDown({
     key: "Enter",
+    preventDefault: () => {},
+  });
+  await cardNoRec.settle();
+  assert.equal(unselectedAnswered.length, 0);
+  assert.doesNotMatch(cardNoRec.html(), /gesture-/);
+
+  // Now Ctrl+Enter answers
+  cardNoRec.one("question-card").onKeyDown({
+    key: "Enter",
+    ctrlKey: true,
     preventDefault: () => {},
   });
   await cardNoRec.settle();
@@ -1269,14 +1302,31 @@ test("a copy button copies the exact command and says so, and never answers the 
   assert.equal(options()[0].props["aria-pressed"], true);
   await card.settle();
   assert.deepEqual(answered, []);
-  // Elsewhere on the card, Enter still rubs the lamp.
+  // Enter on a focused option picks it too, and answers nothing (W574).
+  options()[1].props.onKeyDown({
+    key: "Enter",
+    target: "self",
+    currentTarget: "self",
+    preventDefault: () => {},
+  });
+  assert.equal(options()[1].props["aria-pressed"], true);
+  // Elsewhere on the card, Enter alone answers nothing; Ctrl+Enter rubs the lamp.
+  const article = { tagName: "ARTICLE", closest: () => null };
   card.one("question-card").onKeyDown({
     key: "Enter",
-    target: { tagName: "ARTICLE", closest: () => null },
+    target: article,
     preventDefault: () => {},
   });
   await card.settle();
-  assert.deepEqual(answered, [s.Choice.A]);
+  assert.deepEqual(answered, []);
+  card.one("question-card").onKeyDown({
+    key: "Enter",
+    ctrlKey: true,
+    target: article,
+    preventDefault: () => {},
+  });
+  await card.settle();
+  assert.deepEqual(answered, [s.Choice.B]);
 });
 
 test("a wish's reports are notes for agents, with no section nor count of their own, and its question links the one it names", async () => {

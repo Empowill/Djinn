@@ -6,7 +6,8 @@
 // Two gestures, one note field for both: "Enlighten me",
 // on the left, asks the lead to find out more first (QuestionService.Enlighten), the note saying what to look into;
 // "Rub the lamp", in the lamp's yellow, answers with the option selected, the recommended one until you pick another,
-// and the note with it. Open, it says how much it holds up: red when a task waits for it, orange under its before
+// and the note with it. An option only picks: nothing but the lamp's button, Enter in the note or Ctrl+Enter on the
+// card answers (W574). Open, it says how much it holds up: red when a task waits for it, orange under its before
 // words ("before the merge"), grey when it can wait. Being investigated, it folds to one line out of the way, and
 // opens on a click; revised, it waits for you again, open. Answered, it is a decision: no mark asks to read or
 // approve it again, and the decision log shows it. Djinn types each answer in the lead's terminal; a wish without a
@@ -204,21 +205,13 @@ export const WishQuestion = memo(function WishQuestion({
     if (isComposing(e)) return;
 
     if (e.key === "Enter") {
-      // Enter on a control of its own (Enlighten me, a copy button, Read more, a mark) presses it; only Enter
-      // elsewhere on the card rubs the lamp.
-      const control = !!(e.target as HTMLElement)?.closest?.(
-        "button:not(.lamp-rub), a, summary",
-      );
-      if (control && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
-        e.preventDefault();
-        triggerEnlighten();
-      } else if (!e.shiftKey) {
-        e.preventDefault();
-        triggerRub();
-      }
+      // Enter alone answers nothing on the card: a click on an option or on the card's text leaves the focus there,
+      // and a stray Enter sent the option just looked at (W574). A focused control (an option, a gesture's button,
+      // a copy button, Read more, a mark) presses itself. Ctrl+Enter rubs the lamp, Ctrl+Shift+Enter enlightens.
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      if (e.shiftKey) triggerEnlighten();
+      else triggerRub();
       return;
     }
 
@@ -456,7 +449,8 @@ export const WishQuestion = memo(function WishQuestion({
                       setPicked(choiceOf(index));
                       setUnpicked(false);
                     };
-                    // Not a <button>: its text is selectable, and a command in it has a copy button of its own.
+                    // Not a <button>: its text is selectable, and a command in it has a copy button of its own. A
+                    // click, Enter or Space picks it, never answers.
                     return (
                       <div
                         key={index}
@@ -470,7 +464,14 @@ export const WishQuestion = memo(function WishQuestion({
                           pick();
                         }}
                         onKeyDown={(e) => {
-                          if (e.key !== " " || e.target !== e.currentTarget)
+                          if (
+                            (e.key !== " " && e.key !== "Enter") ||
+                            e.ctrlKey ||
+                            e.metaKey ||
+                            e.shiftKey ||
+                            e.altKey ||
+                            e.target !== e.currentTarget
+                          )
                             return;
                           e.preventDefault();
                           pick();

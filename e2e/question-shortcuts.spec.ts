@@ -1,10 +1,10 @@
 // Keyboard shortcuts on a question card:
 // - Arrows or 1–4 pick an option when focus is on the card and not in the note.
 // - Shift+Enter inserts a new line in the note field.
-// - Enter in the note (or on the card) rubs the lamp and answers.
-// - Ctrl+Enter (Cmd+Enter on macOS) rubs the lamp.
+// - Enter in the note rubs the lamp and answers; Enter alone elsewhere on the card answers nothing (W574).
+// - Ctrl+Enter (Cmd+Enter on macOS) rubs the lamp from anywhere on the card.
 // - Ctrl+Shift+Enter triggers Enlighten me from anywhere on the card.
-// - Enter without an option selected shows an alert and selects nothing.
+// - Ctrl+Enter without an option selected shows an alert and selects nothing.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -151,7 +151,7 @@ test("question card keyboard shortcuts: arrows, 1-4, Shift+Enter, Enter, Ctrl+Sh
     const brief = djinn("wish", "brief", wishId);
     expect(brief).toContain("Check seismic activity first");
 
-    // 3. Question without recommendation: pressing Enter shows unpicked alert; picking clears it and Ctrl+Enter submits.
+    // 3. Question without recommendation: Ctrl+Enter shows unpicked alert; picking clears it and Ctrl+Enter submits.
     djinn(
       "question",
       "ask",
@@ -169,7 +169,7 @@ test("question card keyboard shortcuts: arrows, 1-4, Shift+Enter, Enter, Ctrl+Sh
     await expect(card3).toBeVisible();
 
     await card3.focus();
-    await page.keyboard.press("Enter");
+    await page.keyboard.press("Control+Enter");
     await expect(card3.locator(".question-hint.unpicked")).toBeVisible();
 
     // Press 2 to pick Blue: clears unpicked alert.

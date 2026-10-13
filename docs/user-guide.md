@@ -367,10 +367,11 @@ of its context. A check, a measure, a log or a CI result is never asked of you: 
   click opens it, and you may still decide now. Revised, it opens again and waits for your answer. Its rounds fold
   below the card.
 - **Keyboard shortcuts.** Focus on the card, or in its note field, drives it from the keys:
-  - Enter rubs the lamp: answers with the option selected, everywhere on the card, the note field included. An
-    input method composing does not answer, nor does Enter answer before an option is selected.
+  - Enter in the note field rubs the lamp: answers with the option selected. An input method composing does not
+    answer, nor does Enter answer before an option is selected.
+  - Enter or Space on an option, like a click, only picks it: elsewhere on the card, Enter alone answers nothing.
   - Shift+Enter makes a new line in the note field.
-  - Ctrl+Enter (Cmd+Enter on macOS) also answers, never a new line.
+  - Ctrl+Enter (Cmd+Enter on macOS) answers from anywhere on the card, never a new line.
   - Ctrl+Shift+Enter (Cmd+Shift+Enter on macOS) triggers Enlighten me from anywhere on the card, the note included,
     sending what the note asks.
   - Arrows (Up/Down/Left/Right) or 1–4 pick an option when focus is on the card and not in the note.
