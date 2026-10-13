@@ -518,6 +518,31 @@ test("a question shows its options by letter and its recommendation; answered, w
     /<button class="question-heading question-fold" aria-expanded="false"><svg[^>]*lucide-lightbulb[^]*?<span class="question-id">Q01<\/span><span class="question-fold-text">Which oil\?<\/span>.*Being investigated.*<span class="question-fold-note">You asked: And the price\?<\/span>/,
   );
   assert.doesNotMatch(folded, /question-inner|Olive|<textarea/);
+  // A request no one took on shows its age, to the minute (W557).
+  const old = live(s.WishQuestion, {
+    question: {
+      id: "q2",
+      code: "Q02",
+      text: "Which wick?",
+      options: ["Cotton", "Hemp"],
+      recommendation: "A: it burns even.",
+      rounds: [
+        {
+          kind: s.RoundKind.ENLIGHTEN,
+          note: "Burn time?",
+          createTime: {
+            seconds: BigInt(
+              Math.floor(Date.now() / 1000) - (4 * 3600 + 12 * 60 + 20),
+            ),
+            nanos: 0,
+          },
+        },
+      ],
+    },
+    onAnswer: async () => {},
+    onEnlighten: async () => {},
+  });
+  assert.match(old.html(), /Being investigated for 4h12m/);
   card.one("question-fold").onClick();
   const digging = card.html();
   assert.doesNotMatch(digging, /folded/);

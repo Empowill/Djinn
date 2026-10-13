@@ -534,6 +534,7 @@
   "question.investigating": "En investigation",
   "question.investigating_asked": "Vous avez demandé : {note}",
   "question.investigating_detail": "Vous avez demandé à en savoir plus : le Djinn investigue, puis révise cette question.",
+  "question.investigating_for": "En investigation depuis {time}",
   "question.investigating_note": "Vous avez demandé à en savoir plus : {note}",
   "question.investigating_section": "Vous avez demandé à en savoir plus avant de décider : elles reviennent ici une fois révisées par le Djinn. Vous pouvez encore décider maintenant.",
   "question.investigating_title": "En investigation",

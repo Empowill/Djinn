@@ -71,9 +71,10 @@ type Harness struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup // one per run
 
-	answering        sync.Mutex // one answer to an edit question at a time
-	questioning      sync.Mutex // one question worker decided at a time (question.go)
-	enlightenWorkers *bool      // enlighten workers start (WithEnlightenWorkers); nil: follows project settings
+	answering        sync.Mutex    // one answer to an edit question at a time
+	questioning      sync.Mutex    // one question worker decided at a time (question.go)
+	enlightenWorkers *bool         // enlighten workers start (WithEnlightenWorkers); nil: follows project settings
+	enlightenWait    time.Duration // how long an investigator may take to start (WithEnlightenWait); 0: the default
 
 	scopes *machine.Scopes // the systemd scopes the workers run in, one each (WithScopes); nil: none
 	// children records the processes Djinn starts, so that none outlives it (orphans.go); nil without a data folder.

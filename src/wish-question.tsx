@@ -26,6 +26,7 @@ import {
   Lightbulb,
   MoreVertical,
 } from "lucide-react";
+import { timestampMs } from "@bufbuild/protobuf/wkt";
 import { motion } from "motion/react";
 import { type ReactNode, memo, useEffect, useRef, useState } from "react";
 
@@ -44,6 +45,8 @@ import {
   isWithdrawn,
   letter,
   recommendedChoice,
+  span,
+  useNow,
   when,
 } from "./data/format";
 import { mainLink } from "./data/links";
@@ -105,6 +108,12 @@ export const WishQuestion = memo(function WishQuestion({
   const digging = investigating(q);
   // What you asked to look into, while it is being investigated.
   const asked = digging ? rounds.at(-1)?.note : undefined;
+  // How long it has waited for its revision, to the minute: a request no one took on shows as old (W557).
+  const since = digging ? rounds.at(-1)?.createTime : undefined;
+  const now = useNow(!!since, 30_000);
+  const waited = since
+    ? Math.floor((now - timestampMs(since)) / 60_000) * 60_000
+    : 0;
   const recommended = answered || withdrawn ? undefined : recommendedChoice(q);
   const [expanded, setExpanded] = useState(open);
   // Being investigated, it is one line until you open it.
@@ -251,7 +260,14 @@ export const WishQuestion = memo(function WishQuestion({
   ) : withdrawn ? (
     <StatusBadge tone="withdrawn" label={t("question.withdrawn")} />
   ) : digging ? (
-    <StatusBadge tone="investigating" label={t("question.investigating")} />
+    <StatusBadge
+      tone="investigating"
+      label={
+        waited > 0
+          ? t("question.investigating_for", { time: span(waited) })
+          : t("question.investigating")
+      }
+    />
   ) : blocking.length ? (
     <StatusBadge
       tone="failed"

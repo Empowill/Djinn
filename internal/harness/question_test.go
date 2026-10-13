@@ -476,3 +476,104 @@ func TestEnlightenWithoutProject(t *testing.T) {
 		}
 	})
 }
+
+// TestEnlightenSurvivesARestart replays W557: the developer pressed "Enlighten me" on three questions of a wish of a
+// project; the first start of an investigator hung in a deadlock (W549), the next two waited behind it, the lead was
+// never told, and djinn up was made to quit and started again. The questions showed as under investigation for
+// hours, with no investigator and no event. A request stored, then djinn up stopped before its investigator started:
+// at the next start an investigator runs, or else, investigators off, one lead event is queued. A start that hangs
+// tells the lead within the wait, without waiting for the start.
+func TestEnlightenSurvivesARestart(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	queue := func(e *env) {
+		e.h.NotifyLead(func(ctx context.Context, ev *planv1.LeadEvent) error {
+			return plan.QueueLeadEvent(ctx, e.db, ev, time.Now())
+		})
+	}
+	// lost stores a request to investigate a new question of a wish of a project, then stops djinn up before its
+	// investigator starts.
+	lost := func(t *testing.T, home string) (wishID string, asked *planv1.Question) {
+		t.Helper()
+		e := up(t, home, WithEnlightenWorkers())
+		wishID, _ = e.wish(t, fakeProject(t, ""))
+		asked = e.asker(wishID).ask(t, "wait") // Its investigator works until the test lets it go.
+		e.enlightenLost(t, wishID, asked.GetCode(), "which are the impacts?")
+		e.down()
+		return wishID, asked
+	}
+
+	t.Run("investigator", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		wishID, asked := lost(t, home)
+		e := up(t, home, WithEnlightenWorkers())
+		queue(e)
+		e.h.ResumeInvestigations() // As djinn up does once the lead's events go out.
+		var invs []*planv1.Task
+		waitFor(t, "an investigator", func() bool {
+			invs = e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+			return len(invs) > 0
+		})
+		inv := e.until(t, invs[0].GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+		if inv.GetQuestion() != asked.GetCode() || inv.GetProjectId() == "" {
+			t.Errorf("investigator: %v, want one on %s in its project", inv, asked.GetCode())
+		}
+		if !strings.Contains(e.prompt(t, inv.GetId()), "which are the impacts?") {
+			t.Error("the investigator was not given the developer's note")
+		}
+		if events := e.leadEvents(t, wishID); slices.ContainsFunc(events, func(ev *planv1.LeadEvent) bool {
+			return ev.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN
+		}) {
+			t.Errorf("lead events: %v, want none to investigate: the investigator does", events)
+		}
+		e.release(t, inv.GetId())
+		e.ended(t, inv.GetId())
+	})
+
+	t.Run("lead", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		wishID, asked := lost(t, home)
+		e := up(t, home, WithEnlightenWorkers(false))
+		queue(e)
+		e.h.resumeInvestigations(t.Context())
+		e.h.resumeInvestigations(t.Context()) // Told once: another start tells it no more.
+		events := e.leadEvents(t, wishID)
+		if len(events) != 1 || events[0].GetKind() != planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN ||
+			events[0].GetCode() != asked.GetCode() {
+			t.Fatalf("lead events: %v, want one to investigate %s", events, asked.GetCode())
+		}
+		if invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR); len(invs) != 0 {
+			t.Errorf("%d investigators, want none: the lead investigates", len(invs))
+		}
+	})
+
+	t.Run("start_hangs", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		wishID, asked := lost(t, home)
+		e := up(t, home, WithEnlightenWorkers(), WithEnlightenWait(50*time.Millisecond))
+		queue(e)
+		e.h.questioning.Lock() // Held, as the start that hung in a deadlock held it.
+		start := time.Now()
+		e.h.resumeInvestigations(t.Context())
+		if took := time.Since(start); took > 5*time.Second {
+			t.Errorf("the pass took %s behind a start that hangs", took)
+		}
+		events := e.leadEvents(t, wishID)
+		if len(events) != 1 || events[0].GetKind() != planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN ||
+			events[0].GetCode() != asked.GetCode() {
+			t.Errorf("lead events: %v, want one to investigate %s", events, asked.GetCode())
+		}
+		// The start goes on once what held it lets go: the investigator works beside the lead.
+		e.h.questioning.Unlock()
+		var invs []*planv1.Task
+		waitFor(t, "the late investigator", func() bool {
+			invs = e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+			return len(invs) > 0
+		})
+		e.release(t, invs[0].GetId())
+		e.ended(t, invs[0].GetId())
+	})
+}

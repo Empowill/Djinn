@@ -43,10 +43,54 @@ func questionWorker(t *planv1.Task) bool { return dispatch.QuestionWorker(t) }
 // light tells whether the task takes no slot: a watcher, or a question worker.
 func light(t *planv1.Task) bool { return dispatch.Light(t) }
 
+// WithEnlightenWait sets how long a request to investigate waits for its investigator to start before the lead is
+// told instead: tests set a shorter one.
+func WithEnlightenWait(d time.Duration) Option { return func(h *Harness) { h.enlightenWait = d } }
+
+// defaultEnlightenWait is how long a request to investigate waits for its investigator to start: one starts in under
+// a second.
+const defaultEnlightenWait = 20 * time.Second
+
+// errStartHangs says that an investigator did not start in time: what starts it hangs.
+var errStartHangs = errors.New("the investigator did not start in time")
+
 // Enlightened starts an investigator on q, which the developer wants to know more about before answering, with
-// their note. The plan services call it once the request is stored.
+// their note. The plan services call it once the request is stored; the lead is told next, when no investigator
+// works on q (plan.Wishes.Enlightened). A start that hangs leaves q to the lead.
 func (h *Harness) Enlightened(ctx context.Context, q *planv1.Question, note string) {
-	h.askWorker(ctx, q, planv1.TaskRole_TASK_ROLE_INVESTIGATOR, note)
+	if _, err := h.startInvestigator(ctx, q, note); err != nil {
+		logx.L().Error("start an investigator", "loop", "question", "question", q.GetCode(), "err", err)
+	}
+}
+
+// startInvestigator starts an investigator on q, with the developer's note, and returns it; nil when none starts. It
+// waits for the start h.enlightenWait at most, then gives up with errStartHangs: the start of Q259 and Q262 waited
+// behind one that a deadlock held (W549), and the lead never heard of them. The start goes on in the background: an
+// investigator that starts late works beside the lead, which was told; Close waits for it.
+func (h *Harness) startInvestigator(ctx context.Context, q *planv1.Question, note string) (*planv1.Task, error) {
+	type started struct {
+		task *planv1.Task
+		err  error
+	}
+	done := make(chan started, 1)
+	h.wg.Add(1)
+	go func() {
+		defer logx.Crash("question", "question", q.GetCode())
+		defer h.wg.Done()
+		h.questioning.Lock()
+		defer h.questioning.Unlock()
+		t, err := h.startQuestionWorker(ctx, q, planv1.TaskRole_TASK_ROLE_INVESTIGATOR, note, nil)
+		done <- started{t, err}
+	}()
+	wait := cmp.Or(h.enlightenWait, defaultEnlightenWait)
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case s := <-done:
+		return s.task, s.err
+	case <-timer.C:
+		return nil, fmt.Errorf("%w (%s)", errStartHangs, wait)
+	}
 }
 
 // ResumeInvestigations follows up each request to investigate that was left without one: djinn up stopped, or hung
@@ -93,9 +137,7 @@ func (h *Harness) resumeInvestigation(ctx context.Context, q *planv1.Question) e
 	if followed, err := h.investigationFollowed(ctx, q, asked); err != nil || followed {
 		return err
 	}
-	h.questioning.Lock()
-	t, err := h.startQuestionWorker(ctx, q, planv1.TaskRole_TASK_ROLE_INVESTIGATOR, asked.GetNote(), nil)
-	h.questioning.Unlock()
+	t, err := h.startInvestigator(ctx, q, asked.GetNote())
 	if t != nil {
 		return nil
 	}
@@ -135,16 +177,6 @@ func (h *Harness) investigationFollowed(ctx context.Context, q *planv1.Question,
 		return e.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN && e.GetCode() == q.GetCode() &&
 			!e.GetCreateTime().AsTime().Before(since)
 	}), nil
-}
-
-// askWorker starts a question worker of role on q, unless the project's settings turn them off, the wish is granted,
-// or one of that role still works on q: that one is sent the new answer or note instead.
-func (h *Harness) askWorker(ctx context.Context, q *planv1.Question, role planv1.TaskRole, note string) {
-	h.questioning.Lock()
-	defer h.questioning.Unlock()
-	if _, err := h.startQuestionWorker(ctx, q, role, note, nil); err != nil {
-		logx.L().Error("start a question worker", "loop", "question", "question", q.GetCode(), "err", err)
-	}
 }
 
 // startQuestionWorker starts a question worker of role on q, and returns it; nil when none starts. before is the
