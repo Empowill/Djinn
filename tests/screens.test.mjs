@@ -6251,6 +6251,47 @@ test("an azima's description is Markdown, rendered: opened, and as a draft", () 
   );
 });
 
+test("an azima's title renames in place from its card, open or draft: a pencil, then a field in its heading", () => {
+  const azima = {
+    id: "T36",
+    code: "T36",
+    title: "feat/x reaches main",
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    dependsOn: [],
+    azima: { state: s.AzimaState.OPEN, ready: true },
+  };
+  const draft = {
+    ...azima,
+    draft: true,
+    azima: { state: s.AzimaState.DRAFT },
+  };
+  const card = (Card, props) =>
+    s.renderToStaticMarkup(
+      h(Card, { tasks: new Map(), parts: [], render: () => null, ...props }),
+    );
+  for (const [Card, a] of [
+    [s.AzimaCard, azima],
+    [s.DraftAzimaCard, draft],
+  ]) {
+    // Without a way to save it, no pencil.
+    assert.doesNotMatch(card(Card, { azima: a }), /azima-rename/);
+    const shown = card(Card, { azima: a, onRename() {} });
+    assert.match(
+      shown,
+      /<button type="button" class="icon-button azima-rename" title="Rename this azima" aria-label="Rename this azima">/,
+    );
+    assert.match(shown, /<strong[^>]*>feat\/x reaches main<\/strong>/);
+    const editing = card(Card, { azima: a, onRename() {}, renaming: true });
+    assert.match(
+      editing,
+      /<span class="agent-code">T36<\/span><input type="text" class="azima-title-edit" aria-label="Title of the azima" maxLength="500" autofocus="" value="feat\/x reaches main"\/>/,
+    );
+    // The field takes the heading's place, and the pencil's.
+    assert.doesNotMatch(editing, /azima-rename|aria-expanded/);
+  }
+});
+
 test("an opened azima: its description, then its proof, on the left; its parts on the right, one per row", () => {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
   const part = (code, status) => ({

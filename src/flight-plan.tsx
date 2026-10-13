@@ -359,6 +359,20 @@ export function FlightPlan({
     [act, clients.tasks],
   );
 
+  // An azima renamed from its card: djinn task update --title, written to its plan file too.
+  const handleRenameAzima = useCallback(
+    (azima: Task, title: string) => {
+      quiet(
+        act(
+          azima.wishId,
+          () => clients.tasks.update({ taskId: azima.id, title }),
+          [Change.TASK],
+        ),
+      );
+    },
+    [quiet, act, clients.tasks],
+  );
+
   const activeAzimas = useMemo(
     () => plan.azimas.filter((x) => !azimaFinished(x.item.azima)),
     [plan.azimas],
@@ -400,9 +414,17 @@ export function FlightPlan({
         focus={focus}
         nest={nestOf(wish.id)}
         onValidate={handleValidateAzima}
+        onRename={handleRenameAzima}
       />
     ),
-    [tasksOf, nestOf, renderTask, focus, handleValidateAzima],
+    [
+      tasksOf,
+      nestOf,
+      renderTask,
+      focus,
+      handleValidateAzima,
+      handleRenameAzima,
+    ],
   );
 
   const renderMovingItem = useCallback(
@@ -443,9 +465,10 @@ export function FlightPlan({
         focus={focus}
         onOpen={() => handleOpenDraft(wish, item)}
         onMove={() => handleMoveDraft(wish, item)}
+        onRename={handleRenameAzima}
       />
     ),
-    [tasksOf, focus, handleOpenDraft, handleMoveDraft],
+    [tasksOf, focus, handleOpenDraft, handleMoveDraft, handleRenameAzima],
   );
 
   const handleQuestionAnswer = useCallback(

@@ -202,8 +202,11 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   once finished (done, failed, stopped, cut short), title, provider, model, prompt (for its next continue),
   azima, and integration (`--integration none` clears it, refused while merging; `--integration pending` puts a done
   task's work without one back in line); never its dependencies once it ran.
-  An azima changes only its own branch: `djinn task update <azima> --branch <name>` names it, adopting a branch that
-  exists as it is, or cutting one from main under that name (refused on a work task and while a merge runs into it).
+  An azima changes only its title or its own branch. `djinn task update <azima> --title "…"` renames it, whatever its
+  state, and writes the title into its plan file's heading when it has one (`djinn plan sync` reads it back); the
+  developer renames it from its card in the window too. `djinn task update <azima> --branch <name>` names its branch,
+  adopting a branch that exists as it is, or cutting one from main under that name (refused on a work task and while a
+  merge runs into it).
   When writing a worker's prompt, ask for the commit checks and the targeted tests, never "run the whole test suite"; the push checks are Djinn's.
 - **The plan is a graph of azimas.** An azima (Arabic ʿazīma, the incantation that binds and commands a djinn) is a
   part of the plan, coded `T07`: a task of kind `AZIMA` that no worker runs, the scheduler never starts, and that never
