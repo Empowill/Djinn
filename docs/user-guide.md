@@ -13,8 +13,8 @@ Antigravity) splits it into tasks; workers do them; you answer the questions and
 
 ## Install
 
-The one-line install is in the [README](../README.md#install); it works once the first release is out. Until then,
-build Djinn from this repository: [`CONTRIBUTING.md`](../CONTRIBUTING.md#getting-set-up).
+The one-line install is in the [README](../README.md#install), with how to build Djinn from this repository
+([`CONTRIBUTING.md`](../CONTRIBUTING.md#getting-set-up) has the details).
 
 Workers and leads run the agents you already have, as you installed and signed in to them:
 
