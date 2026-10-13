@@ -96,13 +96,14 @@ func (h *Harness) measure(r *run, m *meter) {
 		CpuPercent:  cpu,
 		MemoryBytes: g.Memory,
 	}
-	h.mu.Lock()
+	// Under useMu, not mu: a pass or a spawn that holds mu long never holds up a pump, nor the machine's readers.
+	h.useMu.Lock()
 	if r.samples == nil {
 		r.samples = newWorkerRing(maxWorkerSamples)
 	}
 	r.samples.Add(point)
 	pct := r.samples.MemoryPercentiles()
-	h.mu.Unlock()
+	h.useMu.Unlock()
 	if h.history != nil {
 		h.history.Worker(r.task.GetId(), point)
 	}
@@ -115,13 +116,16 @@ func (h *Harness) measure(r *run, m *meter) {
 		ReadTime:        timestamppb.New(now),
 	}
 	pct.set(res)
-	t.Resources = res // Replaced at each reading, never changed: Uses shares it.
 	use := &machinev1.WorkerUse{
 		TaskId: t.GetId(), WishId: t.GetWishId(), Code: t.GetCode(), Title: t.GetTitle(), Resources: res,
 	}
-	h.mu.Lock()
-	r.use = use
-	h.mu.Unlock()
+	h.useMu.Lock()
+	t.Resources = res // Replaced at each reading, never changed: Uses shares it. Under useMu: lowestWorkTask copies t.
+	r.use, r.resources = use, res
+	if !r.watcher { // Set as the run is made, never changed.
+		h.resident[r.id] = g.Memory
+	}
+	h.useMu.Unlock()
 	// The turns the worker took since the last write go with the reading: an event writes the task seldom.
 	if !worth(m.written, res) && t.GetTurns() == m.turns {
 		return
@@ -138,6 +142,13 @@ func (h *Harness) measure(r *run, m *meter) {
 		return
 	}
 	m.written, m.turns = res, t.GetTurns()
+}
+
+// copyRunning copies the task of a run, whose pump sets its resources at each reading: under useMu, as measure does.
+func (h *Harness) copyRunning(t *planv1.Task) *planv1.Task {
+	h.useMu.Lock()
+	defer h.useMu.Unlock()
+	return proto.CloneOf(t)
 }
 
 // worth says whether a reading moved enough from the one written to be written: a process more or less,
@@ -188,6 +199,7 @@ func fresh(t *planv1.Task) {
 // the most memory.
 func (h *Harness) Uses() []*machinev1.WorkerUse {
 	h.mu.Lock()
+	h.useMu.Lock()
 	var out []*machinev1.WorkerUse
 	for _, r := range h.runs {
 		if r.use != nil {
@@ -196,6 +208,7 @@ func (h *Harness) Uses() []*machinev1.WorkerUse {
 			out = append(out, u)
 		}
 	}
+	h.useMu.Unlock()
 	h.mu.Unlock()
 	slices.SortFunc(out, func(a, b *machinev1.WorkerUse) int {
 		return cmp.Or(
@@ -216,6 +229,7 @@ func (h *Harness) WorkerMemory(ctx context.Context, p machine.Policy) (engaged, 
 	}
 	// Overlay live resource readings from in-flight runs, excluding lost processes.
 	h.mu.Lock()
+	h.useMu.Lock()
 	activeTasks := make([]*planv1.Task, 0, len(tasks))
 	for _, t := range tasks {
 		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
@@ -225,12 +239,13 @@ func (h *Harness) WorkerMemory(ctx context.Context, p machine.Policy) (engaged, 
 			}
 			if r.use != nil && r.use.GetResources() != nil {
 				t.Resources = r.use.GetResources()
-			} else if r.task != nil && r.task.GetResources() != nil {
-				t.Resources = r.task.GetResources()
+			} else if r.resources != nil {
+				t.Resources = r.resources
 			}
 		}
 		activeTasks = append(activeTasks, t)
 	}
+	h.useMu.Unlock()
 	h.mu.Unlock()
 	engaged, actual = dispatch.WorkerMemory(activeTasks, p, h.now())
 	return engaged, actual, nil
@@ -238,14 +253,13 @@ func (h *Harness) WorkerMemory(ctx context.Context, p machine.Policy) (engaged, 
 
 // Resident returns the resident memory of the workers running or paused, as last read, watchers left out: what the
 // memory available already leaves out, which the memory Djinn may commit counts back in (machine.Monitor.SetWorkerMemory).
+// It never waits for mu: every machine snapshot reads it, and 60 of them piled up behind W549's freeze.
 func (h *Harness) Resident() uint64 {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.useMu.Lock()
+	defer h.useMu.Unlock()
 	var sum uint64
-	for _, r := range h.runs {
-		if !r.watcher && r.use != nil {
-			sum += r.use.GetResources().GetMemoryBytes()
-		}
+	for _, m := range h.resident {
+		sum += m
 	}
 	return sum
 }
@@ -386,6 +400,8 @@ func (w *workerRing) MemoryPercentiles() memoryPercentiles {
 func (h *Harness) RunsSeries(cutoff time.Time, gateIntervals []*machinev1.GateInterval) []*machinev1.WorkerSeries {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.useMu.Lock()
+	defer h.useMu.Unlock()
 
 	intervalsByTask := make(map[string][]*machinev1.GateInterval)
 	for _, iv := range gateIntervals {
@@ -410,10 +426,10 @@ func (h *Harness) RunsSeries(cutoff time.Time, gateIntervals []*machinev1.GateIn
 		var peakMem uint64
 		var peakCPU float64
 		var p95Mem uint64
-		if t.GetResources() != nil {
-			peakMem = t.GetResources().GetPeakMemoryBytes()
-			peakCPU = t.GetResources().GetPeakCpuPercent()
-			p95Mem = t.GetResources().GetP95MemoryBytes()
+		if res := r.resources; res != nil { // Not t's: the pump writes it without a lock.
+			peakMem = res.GetPeakMemoryBytes()
+			peakCPU = res.GetPeakCpuPercent()
+			p95Mem = res.GetP95MemoryBytes()
 		}
 		for _, p := range pts {
 			if p.GetMemoryBytes() > peakMem {
@@ -458,6 +474,8 @@ func (h *Harness) RunsSeries(cutoff time.Time, gateIntervals []*machinev1.GateIn
 func (h *Harness) AddWorkerSample(taskID string, p *machinev1.WorkerPoint) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.useMu.Lock()
+	defer h.useMu.Unlock()
 	if r, ok := h.runs[taskID]; ok {
 		if r.samples == nil {
 			r.samples = newWorkerRing(maxWorkerSamples)
@@ -470,6 +488,8 @@ func (h *Harness) AddWorkerSample(taskID string, p *machinev1.WorkerPoint) {
 func (h *Harness) WorkerP95Memory(taskID string) uint64 {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.useMu.Lock()
+	defer h.useMu.Unlock()
 	if r, ok := h.runs[taskID]; ok && r.samples != nil {
 		return r.samples.P95Memory()
 	}
