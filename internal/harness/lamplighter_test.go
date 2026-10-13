@@ -46,9 +46,7 @@ func TestLamplighterSilentWorkerResumes(t *testing.T) {
 	task := e.spawn(t, wishID, "text start\nwait")
 	id := task.GetId()
 
-	e.until(t, id, func(tk *planv1.Task) bool {
-		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
-	})
+	e.follow(t, id)("its worker said start", said("start"))
 
 	// Advance time by 15 minutes so silence limit is exceeded.
 	clock.set(clock.now().Add(15 * time.Minute))
@@ -132,9 +130,7 @@ func TestLamplighterBusyWorkerNotStopped(t *testing.T) {
 	}
 	id := res.Msg.GetTask().GetId()
 
-	e.until(t, id, func(tk *planv1.Task) bool {
-		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
-	})
+	e.follow(t, id)("its worker said its usage", saidUsage)
 
 	// Advance time past silence limit.
 	clock.set(clock.now().Add(15 * time.Minute))
@@ -164,9 +160,7 @@ func TestLamplighterGatedWorkerNotStopped(t *testing.T) {
 	task := e.spawn(t, wishID, "text start\nwait")
 	id := task.GetId()
 
-	e.until(t, id, func(tk *planv1.Task) bool {
-		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
-	})
+	e.follow(t, id)("its worker said start", said("start"))
 
 	// Worker holds a gate.
 	e.h.HeldGates(func(taskID string) []string {
@@ -210,9 +204,7 @@ func TestLamplighterLostProcessResumesAndStopSucceeds(t *testing.T) {
 	wishID, _ := e.wish(t, gitRepo(t))
 
 	task1 := e.spawn(t, wishID, "wait")
-	e.until(t, task1.GetId(), func(tk *planv1.Task) bool {
-		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
-	})
+	e.follow(t, task1.GetId())("its worker said its session", saidSession(task1.GetId()))
 	// Simulate lost process by deleting from active runs map.
 	e.h.mu.Lock()
 	delete(e.h.runs, task1.GetId())
@@ -228,9 +220,7 @@ func TestLamplighterLostProcessResumesAndStopSucceeds(t *testing.T) {
 	}
 
 	task2 := e.spawn(t, wishID, "wait")
-	e.until(t, task2.GetId(), func(tk *planv1.Task) bool {
-		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
-	})
+	e.follow(t, task2.GetId())("its worker said its session", saidSession(task2.GetId()))
 	// Simulate lost process by deleting from active runs map.
 	e.h.mu.Lock()
 	delete(e.h.runs, task2.GetId())
@@ -462,9 +452,7 @@ func TestLamplighterDeadProcessEnds(t *testing.T) {
 	}
 	id := res.Msg.GetTask().GetId()
 
-	e.until(t, id, func(tk *planv1.Task) bool {
-		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && tk.GetSessionId() != ""
-	})
+	e.follow(t, id)("its worker said its usage", saidUsage)
 
 	// Before resumption, set the next run to finish successfully.
 	sw.play(successEnv)
@@ -699,9 +687,10 @@ func TestLamplighterWakesAfterUsageLimitResumes(t *testing.T) {
 	wishID, _ := e.wish(t, gitRepo(t))
 	task := e.spawn(t, wishID, "wait")
 	id := task.GetId()
-	running := e.until(t, id, func(tk *planv1.Task) bool {
-		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
-	})
+	running := e.follow(t, id)("its worker said its session", saidSession(id))
+	if running.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || running.GetSessionId() == "" {
+		t.Fatalf("its worker said its session, stored %v", running)
+	}
 	running.Resumes = maxResumes
 	putTaskInDB(t, e.db, running)
 	e.h.mu.Lock()
@@ -717,6 +706,52 @@ func TestLamplighterWakesAfterUsageLimitResumes(t *testing.T) {
 	if runs := done.GetRuns(); len(runs) != 2 || runs[0].GetReason() != runWoken {
 		t.Errorf("runs = %v, want the first woken", runs)
 	}
+}
+
+// follow watches the events of the task as they are written, and gives what waits for the next one ok says: the
+// task as stored when it was written, since an event and the task it changes are written in one transaction. A test
+// that changes a worker's task or the clock waits so for what its worker says, never for its status alone: read when
+// the task runs, before its worker said its session, the task put back erases the session (W547, macOS); the clock
+// moved before the worker said all it says, its last words make it active again, and it is never silent.
+func (e *env) follow(t *testing.T, id string) func(what string, ok func(*planv1.TaskEvent) bool) *planv1.Task {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	s, err := e.tasks.Watch(ctx, connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: id}))
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cancel()
+		s.Close()
+	})
+	return func(what string, ok func(*planv1.TaskEvent) bool) *planv1.Task {
+		t.Helper()
+		for s.Receive() {
+			if ok(s.Msg().GetEvent()) {
+				return e.get(t, id)
+			}
+		}
+		t.Fatalf("task %s: its stream ended before %s: %v", id, what, s.Err())
+		return nil
+	}
+}
+
+// saidSession is the event where the fake worker of the task says its session.
+func saidSession(id string) func(*planv1.TaskEvent) bool {
+	return func(ev *planv1.TaskEvent) bool { return strings.HasPrefix(ev.GetText(), "fake session "+id) }
+}
+
+// said is the text event where a fake worker says text.
+func said(text string) func(*planv1.TaskEvent) bool {
+	return func(ev *planv1.TaskEvent) bool {
+		return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_TEXT && ev.GetText() == text
+	}
+}
+
+// saidUsage is the usage event of a claude turn: the last line of its fixture.
+func saidUsage(ev *planv1.TaskEvent) bool {
+	return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_USAGE
 }
 
 // TestLamplighterGivesUpAfterWakes: a worker silent run after run is woken maxWakes times in a row; silent once more,
@@ -753,10 +788,13 @@ func TestLamplighterGivesUpAfterWakes(t *testing.T) {
 	}
 	id := res.Msg.GetTask().GetId()
 
+	next := e.follow(t, id)
 	for run := 1; run <= maxWakes+1; run++ {
-		e.until(t, id, func(tk *planv1.Task) bool {
-			return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && len(tk.GetRuns()) == run && tk.GetSessionId() != ""
-		})
+		// Each run plays the whole fixture, its usage last, then waits: silent from then on.
+		tk := next("its run said its usage", saidUsage)
+		if tk.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || len(tk.GetRuns()) != run || tk.GetSessionId() == "" {
+			t.Fatalf("run %d said its usage, stored %v", run, tk)
+		}
 		clock.set(clock.now().Add(15 * time.Minute))
 		e.h.Wake()
 	}
