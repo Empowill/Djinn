@@ -1158,12 +1158,12 @@ func (h *Harness) launch(
 	text := "started " + short(task.GetProvider()) + " " + where + ", " + accessText(task, prep.question) +
 		skillsText(spec.Skills)
 	if r.watcher {
-		perms, how, err := h.watchPermissions(ctx, task, project, spec.Permissions, spec.Prompt)
+		command, perms, how, err := h.watchPermissions(ctx, task, project, spec.Permissions, spec.Prompt)
 		if err != nil {
 			h.finish(r, Result{ExitCode: -1, Err: err})
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
 		}
-		spec.Permissions = perms
+		spec.Prompt, spec.Permissions = command, perms
 		text = "started watch " + where + watchText(task) + how
 	}
 	if r.light {
@@ -1267,7 +1267,11 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		"DJINN_WORKER_TOKEN=" + r.token,
 	}, guard...)
 	if r.watcher {
-		// Its state folder, DJINN_HOME/watchers/<task>, outlives each run of its command (watcherLife).
+		// Its state folder, DJINN_HOME/watchers/<task>, outlives each run of its command (watcherLife); made before
+		// it starts, as a lead's command expects when it names a file there (W7 of wish Dew).
+		if err := os.MkdirAll(watcherDir(h.home, t.GetId()), 0o700); err != nil {
+			return fmt.Errorf("make the watcher's folder: %w", err)
+		}
 		spec.Env = append(spec.Env, "DJINN_HOME="+h.home)
 		spec.LastLine = t.GetLastLine()
 	}

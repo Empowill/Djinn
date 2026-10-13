@@ -185,7 +185,12 @@ func (h *Harness) babysitState(id, skill string, number int) string {
 
 // babysitStatePath is the file babysitState gives, without making its folder.
 func babysitStatePath(home, id, skill string, number int) string {
-	return filepath.Join(home, "watchers", id, fmt.Sprintf("%s-%d", skill, number))
+	return filepath.Join(watcherDir(home, id), fmt.Sprintf("%s-%d", skill, number))
+}
+
+// watcherDir is the state folder of the watcher of task id: $DJINN_HOME/watchers/<task>.
+func watcherDir(home, id string) string {
+	return filepath.Join(home, "watchers", id)
 }
 
 // methodBabysit journals a watcher Djinn found babysitting a request already, the request recorded on it; the request

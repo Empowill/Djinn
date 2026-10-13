@@ -340,11 +340,11 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	case r.watcher:
 		// In its project's folder, on its command: it has no session to resume, and nothing to be told.
 		readOnly, perms := accessSpec(t.GetAccess(), prep.declared)
-		perms, how, err := h.watchPermissions(h.ctx, t, project, perms, prompt)
+		command, perms, how, err := h.watchPermissions(h.ctx, t, project, perms, prompt)
 		if err != nil {
 			return err
 		}
-		spec := Spec{TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Restart: t.GetRestart()}
+		spec := Spec{TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: command, Restart: t.GetRestart()}
 		r.base = t.GetUsage()
 		text := fmt.Sprintf("resumed %s: started watch in %s%s%s", by, dir, watchText(t), how)
 		return h.start(r, provider, spec, text)

@@ -22,15 +22,19 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// watchPermissions are perms with the command of the watcher t allowed, when a skill of the project declares it or the
-// developer allows it, and how, for its start event; perms as they are when they let it run already. An error says
-// why it cannot run, and how to let it.
+// watchPermissions are the command line the watcher t runs, its own with Djinn's variables expanded (watchCommand),
+// and perms with that command allowed, when a skill of the project declares it or the developer allows it, and how,
+// for its start event; perms as they are when they let it run already. What is judged is the command that runs. An
+// error says why it cannot run, and how to let it.
 func (h *Harness) watchPermissions(
 	ctx context.Context, t *planv1.Task, project *planv1.Project, perms *djinnv1.Permissions, command string,
-) (*djinnv1.Permissions, string, error) {
-	command = strings.TrimSpace(command)
+) (string, *djinnv1.Permissions, string, error) {
+	command, err := h.watchCommand(t, command)
+	if err != nil {
+		return "", nil, "", err
+	}
 	if perms == nil || project == nil || commandAllowed(perms, command) {
-		return perms, "", nil
+		return command, perms, "", nil
 	}
 	if !matchesPrefix(command, perms.GetDeniedCommands()) {
 		how := ""
@@ -42,33 +46,38 @@ func (h *Harness) watchPermissions(
 		if how != "" {
 			perms = proto.CloneOf(perms)
 			perms.Commands = append(perms.Commands, command)
-			return perms, how, nil
+			return command, perms, how, nil
 		}
 	}
-	return nil, "", watchRefusal(project, command, perms)
+	return "", nil, "", watchRefusal(project, command, perms)
 }
 
 // declaredWatch is the skill of the project that declares the command of the watcher t, as Djinn builds it from the
-// declaration; empty when none does. A babysit's: Djinn started t on a request (Task.babysit), and its command is the
-// skill's watch with {pr} and {mr} that request's number and {state} t's own file. A template's: t watches for the
-// wish made from it in the project, its command is the one the wish holds, and the skill's watch makes it.
+// declaration then expands it (watchCommand); empty when none does. A babysit's: Djinn started t on a request
+// (Task.babysit), and its command is the skill's watch with {pr} and {mr} that request's number and {state} t's own
+// file. A template's: t watches for the wish made from it in the project, its command is the one the wish holds, and
+// the skill's watch makes it.
 func (h *Harness) declaredWatch(ctx context.Context, t *planv1.Task, project *planv1.Project, command string) string {
 	if b := t.GetBabysit(); b.GetNumber() > 0 {
 		if s, err := plan.FindSkill(project.GetDirectory(), b.GetSkill()); err == nil {
 			n := int(b.GetNumber())
-			if decl, err := plan.ReadBabysit(s.Dir); err == nil && decl != nil &&
-				command == decl.Fill(n, babysitStatePath(h.home, t.GetId(), decl.Skill, n)) {
-				return decl.Skill
+			if decl, err := plan.ReadBabysit(s.Dir); err == nil && decl != nil {
+				if built, err := h.watchCommand(t, decl.Fill(n, babysitStatePath(h.home, t.GetId(), decl.Skill, n))); err == nil && command == built {
+					return decl.Skill
+				}
 			}
 		}
 	}
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId())
 	tmpl := wish.GetTemplate()
-	if err != nil || tmpl.GetProjectId() != project.GetId() || command != strings.TrimSpace(tmpl.GetWatch()) {
+	if err != nil || tmpl.GetProjectId() != project.GetId() {
+		return ""
+	}
+	if built, err := h.watchCommand(t, tmpl.GetWatch()); err != nil || command != built {
 		return ""
 	}
 	if s, err := plan.FindSkill(project.GetDirectory(), tmpl.GetSkill()); err == nil {
-		if decl, err := plan.ReadTemplate(s.Dir); err == nil && decl != nil && decl.Builds(command) {
+		if decl, err := plan.ReadTemplate(s.Dir); err == nil && decl != nil && decl.Builds(tmpl.GetWatch()) {
 			return decl.Skill
 		}
 	}

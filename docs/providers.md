@@ -371,7 +371,18 @@ When the operating load notch changes, Djinn immediately adjusts running workers
 ## Watch: a command, no agent
 
 `djinn task spawn <wish> --title "Watch !41" --provider watch --prompt "mrwatch -watch 41" --restart` runs the command
-in the project's folder: no agent, no model, no token. Each paragraph it prints (output, then a second of silence,
+in the project's folder: no agent, no model, no token. It runs without a shell: quotes group words as in a shell, and Djinn
+expands `$DJINN_HOME`, `$DJINN_TASK_ID` and `$DJINN_WISH_ID` (or `${…}`) outside single quotes, so that a file of the
+watcher's own state folder reads as a lead writes it in a terminal:
+
+```
+djinn task spawn <wish> --title "Watch !2855" --provider watch --restart \
+  --prompt 'mrwatch -mr 2855 -watch -state "$DJINN_HOME/watchers/$DJINN_TASK_ID/mr-2855"'
+```
+
+Any other variable (`$HOME`) is refused at spawn: nothing would expand it. Write its value, or put it in single quotes
+for the command to read it as it is. What the project's permissions and the developer's `--watch` allowances judge is
+the command once expanded, the one that runs ([what a watcher may run](wish-templates.md#what-a-watcher-may-run)). Each paragraph it prints (output, then a second of silence,
 or its exit; 200 lines at most) is a `TEXT` event, its raw line kept with its colours, and its first line wakes the
 wish's lead, typed in the lead's terminal as an answer is:
 
@@ -383,7 +394,8 @@ Djinn: W70's watcher says: New thread on !41. mrwatch -watch 41 is still watchin
   apart, as long as its wish needs it. No silence limit, no wall-time budget and no turn budget apply to it; what counts is that its command lives
   while its task runs. A command that dies (an error, an exit code other than 0, a kill) starts again, in the same
   task: one second later, doubling up to five minutes, the backoff starting over after a run that lived a minute.
-  Its state folder, `$DJINN_HOME/watchers/<task>` (Djinn sets `DJINN_HOME` for it), stays as the command left it,
+  Its state folder, `$DJINN_HOME/watchers/<task>` (Djinn sets `DJINN_HOME` for it, and makes the folder before
+  the command starts), stays as the command left it,
   so that it does not say again what it said. After five deaths in a row, the task fails, and the lead is told once
   why, with the command's last error lines: "Djinn: W70's watcher failed: its command died 5 times in a row; the
   last time: exit code 4; its error output: gh: not logged in". A watcher whose process is lost (its task running
