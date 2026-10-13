@@ -950,5 +950,14 @@
   "work.pending_why": "Attend d’être commitée : {reason}",
   "work.red": "Tests rouges, non commitée : {reason}",
   "work.reviewed_by": "revue par {task}",
-  "work.uncommitted": "Modifications non commitées, non fusionnée"
+  "work.uncommitted": "Modifications non commitées, non fusionnée",
+  "update.auto": "Installation automatique :",
+  "update.auto_waiting": "S’installera tout seul dès que possible — {why}",
+  "update.install_failed": "Le build {sha} ne s’est pas installé : {message}",
+  "update.no_answer": "Djinn n’a pas répondu en {seconds} s : réessayez",
+  "update.no_restart": "Djinn n’a pas redémarré en {seconds} s",
+  "update.ready_version": "Djinn {version} est prêt",
+  "update.ready_version_build": "Djinn {version} est prêt :",
+  "update.restart": "Redémarrer",
+  "update.retry": "Réessayer"
 }

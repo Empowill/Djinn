@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -97,6 +98,9 @@ type Built struct {
 	// Djinn was built from (compare.go). The branch that one was built from, or its short commit; empty for a build of
 	// that branch (Running) and for a parallel one.
 	Continues string
+	// Djinn installs it by itself (installsItself): a build of the running Djinn's line, the push checks passed, in a
+	// project whose install_builds is on. Other builds are only offered.
+	Auto bool
 }
 
 // WithBuilt calls built after each push of an integration branch in a project whose settings name an install command.
@@ -1427,24 +1431,54 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 			waits("") // Taken: it runs.
 		}
 	}
+	run, _ := ctx.Value(installRunKey{}).(installRun)
 	if h.commands != nil {
-		return h.commands(ctx, dir, args)
+		out, code, err := h.commands(ctx, dir, args)
+		if run.output != nil {
+			for line := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
+				run.output(line)
+			}
+		}
+		return out, code, err
 	}
-	return runTracked(ctx, dir, args, h.children.tracker("", name+" check"))
+	low := false
+	if run.low {
+		prog, rest, started := lowCommand(args[0], args[1:])
+		args, low = append([]string{prog}, rest...), !started // Not started at its level: set once started.
+	}
+	return runTracked(ctx, dir, args, h.children.tracker("", name+" check"), run.output, low)
 }
 
 // gateWaitKey is the context key of a function told why a command waits for its gate ("gate install: held by …"), and
 // "" once it is taken: Install says it to the window.
 type gateWaitKey struct{}
 
+// installRunKey is the context key of how Install's commands run (InstallWith).
+type installRunKey struct{}
+
+type installRun struct {
+	output func(line string) // told each line a command writes; nil: none
+	low    bool              // at a low-priority worker's CPU priority
+}
+
+// InstallWith returns ctx for Install: each line its commands write (the setup's, the install command's) told to
+// output as it comes (nil: none), and, when low, those commands run at a low-priority worker's CPU priority: an
+// install Djinn starts by itself.
+func InstallWith(ctx context.Context, output func(line string), low bool) context.Context {
+	return context.WithValue(ctx, installRunKey{}, installRun{output: output, low: low})
+}
+
 // runCommand runs args in dir, and returns the end of what it wrote and its exit code.
 func runCommand(ctx context.Context, dir string, args []string) (string, int, error) {
-	return runTracked(ctx, dir, args, nil)
+	return runTracked(ctx, dir, args, nil, nil, false)
 }
 
 // runTracked is runCommand; track, when set, is told of the command as it starts, and what it returns is called once
-// it ended.
-func runTracked(ctx context.Context, dir string, args []string, track func(pid int, cgroup string) func()) (string, int, error) {
+// it ended; lines, when set, each line the command writes, as it writes it. low sets a low-priority worker's CPU
+// priority on the command once started.
+func runTracked(
+	ctx context.Context, dir string, args []string, track func(pid int, cgroup string) func(), lines func(string), low bool,
+) (string, int, error) {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
 	// At ctx's end (Djinn stops), what the command started dies with it: a check's test runner, left alone, would
@@ -1456,10 +1490,19 @@ func runTracked(ctx context.Context, dir string, args []string, track func(pid i
 	}
 	cmd.WaitDelay = gitx.WaitDelay
 	out := &tailBuffer{max: 16 << 10}
-	cmd.Stdout, cmd.Stderr = out, out
+	var w io.Writer = out
+	if lines != nil {
+		lw := &lineWriter{line: lines}
+		defer lw.flush()
+		w = io.MultiWriter(out, lw)
+	}
+	cmd.Stdout, cmd.Stderr = w, w
 	start := time.Now()
 	err := cmd.Start()
 	if err == nil {
+		if low {
+			applyPriority(cmd, true)
+		}
 		if track != nil {
 			defer track(cmd.Process.Pid, "")()
 		}
@@ -1474,6 +1517,36 @@ func runTracked(ctx context.Context, dir string, args []string, track func(pid i
 		return out.String(), -1, err
 	}
 	return out.String(), 0, nil
+}
+
+// lineWriter tells line each line written to it, without its end of line, once the line is whole.
+type lineWriter struct {
+	line func(string)
+	rest []byte
+}
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	w.rest = append(w.rest, p...)
+	for {
+		i := bytes.IndexByte(w.rest, '\n')
+		if i < 0 {
+			break
+		}
+		w.line(strings.TrimRight(string(w.rest[:i]), "\r"))
+		w.rest = w.rest[i+1:]
+	}
+	if len(w.rest) > 4<<10 { // A line that never ends is told in pieces.
+		w.flush()
+	}
+	return len(p), nil
+}
+
+// flush tells what is left of a line not ended.
+func (w *lineWriter) flush() {
+	if len(w.rest) > 0 {
+		w.line(string(w.rest))
+		w.rest = nil
+	}
 }
 
 // tailBuffer keeps the last max bytes written to it.

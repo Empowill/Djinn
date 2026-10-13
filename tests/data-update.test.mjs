@@ -86,10 +86,20 @@ test("a build committed is proposed, and installs only on update(sha)", async ()
               changesCount: 1,
               lacks: ["Work of W4"],
               lacksCount: 1,
+              auto: true,
             },
             { branch: "feat/clement-port", sha: "e60" },
           ],
           readyBuild: { branch: "feat/clement-port", sha: "e60" },
+          installed: true,
+          installing: {
+            sha: "abc",
+            step: 5,
+            doing: "install: go build",
+            auto: true,
+            error: "go tool task install exited 1",
+            log: ["# github.com/empowill/djinn", "undefined: x"],
+          },
         };
         await new Promise(() => {});
       },
@@ -118,6 +128,18 @@ test("a build committed is proposed, and installs only on update(sha)", async ()
     changesCount: 1,
     lacks: ["Work of W4"],
     lacksCount: 1,
+    auto: true,
+  });
+  // The newer Djinn is at the path already; the build's install failed by itself, saying why and its last lines.
+  assert.equal(state.installed, true);
+  assert.deepEqual(state.installing, {
+    sha: "abc",
+    step: 5,
+    waiting: "",
+    doing: "install: go build",
+    auto: true,
+    error: "go tool task install exited 1",
+    log: ["# github.com/empowill/djinn", "undefined: x"],
   });
   assert.deepEqual(
     state.builds.map((b) => b.branch),

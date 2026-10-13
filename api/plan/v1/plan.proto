@@ -255,6 +255,11 @@ message ProjectSettings {
   // Djinn babysits the pull or merge request a task of a wish opens, in that wish, with the watcher a skill of the
   // project declares (metadata.djinn.babysit): false turns it off. Not set: on. djinn task spawn --babysit still works.
   optional bool babysit = 26;
+  // For the project a Djinn built from a checkout (go tool task install) comes from: each build Djinn pushes of the
+  // running Djinn's line (its branch, or one that carries it on), the push checks passed, installs by itself, at low
+  // priority, once no gate runs and the machine is not under pressure; the restart is left to the person's click.
+  // Other branches' builds are only offered. Not set: on.
+  optional bool install_builds = 27;
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.

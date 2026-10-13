@@ -1,6 +1,7 @@
 // Whether a newer Djinn waits at the path of the running one (UiService.WatchUpdate), or a build
 // committed waits to be installed, and the click that installs it and restarts on it
-// (UiService.Update). Nothing installs nor restarts without that click.
+// (UiService.Update). A build of the running Djinn's line installs by itself (W554); nothing
+// restarts without that click.
 import { type Transport, createClient } from "@connectrpc/connect";
 
 import {
@@ -17,6 +18,8 @@ export interface UpdateState {
   current: string;
   // Version of the newer Djinn waiting; empty for none.
   ready: string;
+  // It is at the path of the running one already: the update only restarts on it.
+  installed: boolean;
   // The newer Djinn waiting, named as a build: where it comes from, what it holds against the running one; undefined
   // when Djinn cannot tell.
   readyBuild?: BuildProposal;
@@ -26,15 +29,22 @@ export interface UpdateState {
   notesUrl: string;
   // The last build pushed of each integration branch and not installed, the running Djinn's branch first.
   builds: BuildProposal[];
-  // The install of a build that runs now, and where it stands; undefined for none.
+  // The install of a build that runs now, and where it stands, or the last one when it failed; undefined for
+  // neither.
   installing?: Installing;
 }
 
-// An install that runs now: the commit, its step, and what it waits for while it waits.
+// An install that runs now: the commit, its step, what it waits for while it waits, and the step of its command
+// that runs; or one that failed, why and the last lines its command wrote.
 export interface Installing {
   sha: string;
   step: InstallStep;
   waiting: string;
+  doing: string;
+  // Djinn installs it by itself: a build of the running Djinn's line.
+  auto: boolean;
+  error: string;
+  log: string[];
 }
 
 // A task's summary in a build proposal.
@@ -68,6 +78,8 @@ export interface BuildProposal {
   // The commits the running Djinn holds and it does not, the latest first, and how many.
   lacks: string[];
   lacksCount: number;
+  // Djinn installs it by itself: a build of the running Djinn's line, the push checks passed.
+  auto: boolean;
 }
 
 // buildProposal reads a build as the server sends it.
@@ -90,6 +102,7 @@ export function buildProposal(b: Build): BuildProposal {
     changesCount: b.changesCount,
     lacks: [...b.lacks],
     lacksCount: b.lacksCount,
+    auto: b.auto,
   };
 }
 
@@ -98,6 +111,7 @@ export function updateState(res: UiServiceWatchUpdateResponse): UpdateState {
   return {
     current: res.current,
     ready: res.ready,
+    installed: res.installed,
     readyBuild: res.readyBuild && buildProposal(res.readyBuild),
     notResumed: [...res.notResumed],
     notesUrl: res.notesUrl,
@@ -106,6 +120,10 @@ export function updateState(res: UiServiceWatchUpdateResponse): UpdateState {
       sha: res.installing.sha,
       step: res.installing.step,
       waiting: res.installing.waiting,
+      doing: res.installing.doing,
+      auto: res.installing.auto,
+      error: res.installing.error,
+      log: [...res.installing.log],
     },
   };
 }

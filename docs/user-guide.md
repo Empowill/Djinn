@@ -483,7 +483,13 @@ on one line, its commit, the branch and wish it comes from, and against the runn
 than the running Djinn on 3 commits" when the running Djinn holds commits it lacks; **Details** unfolds the tasks merged
 since, each with its title and folded summary, and the commits' titles, folded. The build of the branch the running
 Djinn was built from comes first; the other branches' builds are folded under one line that names them, each with its
-own **Install and restart** and ×. Nothing installs before your click; × hides that build until a newer one comes. With `install_questions: when_needed`,
+own **Install and restart** and ×. Nothing of another branch installs before your click; × hides that build until a
+newer one comes. A build of the running Djinn's own line (its branch, or one that carries it on), pushed past the
+push checks, installs by itself, at low priority, once no gate runs and the machine is not under pressure: the banner
+then says "Djinn local-abc1234 is ready" with what it adds, and **Restart** stays your click (the project setting
+`install_builds: false` turns it off). While an install runs, the banner says what it waits for, then which step of
+the install command runs; an install that fails, or works past its deadline (20 minutes), says why with the last lines
+its command wrote, and **Try again**. With `install_questions: when_needed`,
 Djinn raises no routine install question: the banner and post-push install are enough, and it asks only when necessary
 (e.g. a build carries a fix for a task you are waiting on, a change that takes effect after restart and matters now, or
 the running build is broken), saying why in the question; with `install_questions: never` (set in Djinn itself), no

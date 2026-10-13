@@ -50,6 +50,7 @@ install: "go tool task install"
 | `merge_main`     | When Djinn merges it: `MERGE_MAIN_RELEASE` (once main holds a release the branch lacks), `MERGE_MAIN_COMMIT` (once it holds any commit the branch lacks), `MERGE_MAIN_OFF`. | at each release |
 | `merge_main_minutes` | How often, in minutes, Djinn fetches main to look at it, at most. A release the running Djinn finds makes it look at once. | `60` |
 | `install_releases` | For the project a Djinn built from a checkout comes from: a newer release installs by itself while that checkout is on main. `false`: it is only offered. | on |
+| `install_builds` | For the project a Djinn built from a checkout comes from: a build Djinn pushes of the running Djinn's line, past the push checks, installs by itself; the restart stays your click: see [integration](#integration). `false`: it is only offered. | on |
 | `push`           | When Djinn pushes the integration branch: `PROJECT_PUSH_STANDARD` (today's cadence: at an azima's end or 3 tasks and an hour), `PROJECT_PUSH_ON_DEMAND` (never pushes by itself, only the developer's push does). | `PROJECT_PUSH_STANDARD` |
 | `push_strategy`  | The branch strategy for integration and push: `PUSH_STRATEGY_WISH` (today's behavior: one integration branch per wish and project), `PUSH_STRATEGY_AZIMA` (one branch per azima, `djinn/<code>-<slug>`, cut from main and landing in main). | `PUSH_STRATEGY_WISH` |
 | `babysit`        | `false`: a pull or merge request a task opens is not watched by itself: see [babysitting](wish-templates.md#babysitting-what-a-task-opens). `djinn task spawn --babysit` still works. | on, when a skill of the project declares one |
@@ -371,12 +372,30 @@ the wish's integration branch, work of no azima goes there too.
 
 Once Djinn has pushed in a project whose settings name an `install` command, the window proposes, as for a new
 version, to install it and restart on it, with what changed (each task with the last paragraph its worker wrote folded
-under it, and the titles of the commits pushed folded at the end). Nothing installs before your click. The command runs under the
+under it, and the titles of the commits pushed folded at the end). The command runs under the
 gate `install`, at that commit, in the project's install worktree (set up as the integration's is), never in your
 checkout nor in an integration worktree: an install never waits for an integration to end. While it runs, the banner
-says what it waits for (another install, a gate and who holds it, the machine under pressure), then that it builds, then
-that Djinn restarts; when it installed a newer Djinn at the path of the running one, Djinn restarts on it, as the update
-button does; otherwise it says the build is installed.
+says what it waits for (another install, a gate and who holds it, the machine under pressure), then that it builds and
+which step of the command runs (go-task's `task: [ui] npm run build` reads "ui: npm run build"), then that Djinn
+restarts; when it installed a newer Djinn at the path of the running one, Djinn restarts on it, as the update button
+does; otherwise it says the build is installed.
+
+**What installs by itself.** A build of the running Djinn's own line (the branch it was built from, or one that carries
+it on, W527), pushed past the push checks, installs without a click when `install_builds` is on, the default: one at a
+time, at a low-priority worker's CPU priority, once no gate is held and the machine is not under pressure (the banner
+says what it waits for meanwhile); a newer push of the line replaces one that waits. A build that does not hold the
+build installed last, when that one is newer than the running Djinn (another branch's, installed by your click), is
+only offered, and so is every other branch's build, a push made without its checks, and a project with no push check.
+Once it is installed, the banner says "Djinn local-abc1234 is ready" with what it adds: **Restart** stays your click,
+never automatic. Your click on another build stops an install Djinn started by itself; a click on the build it
+installs joins it.
+
+**An install never spins forever.** It runs within Djinn, not within the window's call: a call whose answer is lost, or
+a window that reloads, leaves it running, and the banner learns from Djinn how it ends. It may work 20 minutes, its
+waits aside; past that, Djinn stops it. A failure, the deadline's included, shows on the build's line with why, the
+step it was at, the last lines its command wrote under **Details**, and **Try again**. A click Djinn says nothing of
+within 30 seconds, or a restart that does not come within 3 minutes, is said to have failed. `djinn.log` notes each
+install asked, started and ended.
 
 By default (`install_questions: always`), Djinn raises an "Install and restart" question for uninstalled builds. With
 `install_questions: when_needed`, Djinn raises no routine question: the update banner and post-push install are enough.
