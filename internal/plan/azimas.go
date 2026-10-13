@@ -462,7 +462,7 @@ func HasUnfinishedParts(id string, tasks []*planv1.Task) bool {
 // DoneWithProblems tells a task whose worker ended done while its permissions refused some of its calls, with nobody
 // to approve them (Task.refused): it may not have done its job. Nobody looked at it yet: a run again sets Task.refused
 // anew, and marking it done (djinn task done, the developer or the lead) closes it as seen. Djinn proposes no grant
-// while one is left, and the window shows it as done with problems.
+// while one is left: the lead heard of its refused calls and decides (Q273); the window shows a plain done.
 func DoneWithProblems(t *planv1.Task) bool {
 	return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && t.GetRefused().GetCount() > 0 && t.GetClosed() == nil
 }

@@ -811,6 +811,26 @@ func TestBriefCancelRule(t *testing.T) {
 	}
 }
 
+// TestBriefRefusedCallsRule (Q273): a worker's refused calls reach the lead alone, who decides; a new right is asked
+// of the developer explicitly, in a --move question.
+func TestBriefRefusedCallsRule(t *testing.T) {
+	rules := briefRules(nil, "")
+	for _, want := range []string{
+		"**Refused calls are yours, rights stay explicit (Q273).**",
+		"names the calls its permissions refused and the right that would allow them; the developer never sees them",
+		"continue the task otherwise (`djinn task continue`)",
+		"close it as seen (`djinn task done <task> --note \"…\"`)",
+		"spawn it again where a right the wish or project grants already covers them",
+		"a done task left with refused calls holds its wish's grant",
+		"Never take a broad right by default",
+		"ask for it in one `--move` question naming exactly that right, the command that grants it, and why",
+	} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("briefRules lacks %q:\n%s", want, rules)
+		}
+	}
+}
+
 func TestGlobalBrief(t *testing.T) {
 	ctx := t.Context()
 	c := serve(t)

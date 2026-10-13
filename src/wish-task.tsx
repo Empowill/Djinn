@@ -52,7 +52,6 @@ import {
 import { isMerge } from "./data/flight";
 import {
   cancelledText,
-  doneWithProblems,
   gitReason,
   taskActivity,
   taskFinished,
@@ -74,7 +73,6 @@ import {
   costTitle,
   resourcesDetail,
   resourcesNow,
-  TaskRefused,
   TaskTurns,
   TaskUsage,
   usageDetail,
@@ -345,7 +343,6 @@ export const WishTask = memo(function WishTask({
                 </span>
               )}
               <TaskTurns task={task} />
-              <TaskRefused task={task} />
               {origin}
               <TaskUsage task={task} />
               {task.status === TaskStatus.RUNNING &&
@@ -650,16 +647,14 @@ function TaskLink({
   );
 }
 
-// closable tells a task a person may mark done by hand: one no worker runs now, not done or cancelled already; or
-// one done with problems, which marked done is closed as seen.
+// closable tells a task a person may mark done by hand: one no worker runs now, not done or cancelled already.
 export function closable(task: Task): boolean {
   const status = task.status;
   return (
-    doneWithProblems(task) ||
-    (status !== TaskStatus.RUNNING &&
-      status !== TaskStatus.PAUSED &&
-      status !== TaskStatus.DONE &&
-      status !== TaskStatus.CANCELLED)
+    status !== TaskStatus.RUNNING &&
+    status !== TaskStatus.PAUSED &&
+    status !== TaskStatus.DONE &&
+    status !== TaskStatus.CANCELLED
   );
 }
 

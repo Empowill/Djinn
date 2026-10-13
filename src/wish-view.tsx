@@ -75,7 +75,6 @@ import {
 import {
   allowanceOf,
   deletedText,
-  doneWithProblems,
   firstLine,
   MAX_ACTIVE,
   isActive,
@@ -1211,12 +1210,7 @@ export function WishView({
                           </AnimatePresence>
                         </section>
                       )}
-                      {waiting.length > 0 && (
-                        <WaitingTasks
-                          waiting={waiting}
-                          onTask={handleTaskFocus}
-                        />
-                      )}
+                      {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
                       {wish.ready && (
                         <GrantCard wish={wish} onGrant={handleGrant} />
                       )}
@@ -1390,13 +1384,10 @@ export const WishOrigin = memo(function WishOrigin({ wish }: { wish: Wish }) {
 export function WaitingTasks({
   waiting,
   origin = false,
-  onTask,
 }: {
   waiting: { item: Task; question: string; wish: Wish }[];
   // Each line shows its wish.
   origin?: boolean;
-  // Shows a task's card in the Tasks tab: the line of a task done with problems names it so.
-  onTask?: (id: string) => void;
 }) {
   return (
     <section className="plan-waiting">
@@ -1410,34 +1401,13 @@ export function WaitingTasks({
         <p className="plan-line" key={item.id} id={`waiting-${item.id}`}>
           <StatusBadge tone={taskTone(item)} label={taskStatusText(item)} />
           {origin && wishOrigin(wish)}
-          {doneWithProblems(item) ? (
-            <span>
-              {onTask ? (
-                <button
-                  type="button"
-                  className="text-button agent-code task-link"
-                  onClick={() => onTask(item.id)}
-                >
-                  {item.code}
-                </button>
-              ) : (
-                <span className="agent-code">{item.code}</span>
-              )}{" "}
-              {item.title} ·{" "}
-              {t("page.action_problems", {
-                count: item.refused?.count ?? 0,
-                names: (item.refused?.names ?? []).join(", "),
-              })}
-            </span>
-          ) : (
-            <span>
-              {item.status === TaskStatus.FAILED
-                ? firstLine(item.error) || t("attention.worker_failed")
-                : question
-                  ? t("page.action_waiting", { task: item.code, question })
-                  : t("page.action_waiting_unknown", { task: item.code })}
-            </span>
-          )}
+          <span>
+            {item.status === TaskStatus.FAILED
+              ? firstLine(item.error) || t("attention.worker_failed")
+              : question
+                ? t("page.action_waiting", { task: item.code, question })
+                : t("page.action_waiting_unknown", { task: item.code })}
+          </span>
         </p>
       ))}
     </section>

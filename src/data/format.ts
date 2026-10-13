@@ -372,7 +372,7 @@ const taskStatusKeys: Record<TaskStatus, TextKey> = {
 // limit; one cut short and resumed as another task (forkedAs) says which; a running watcher watches.
 export function taskStatusText(
   task: Pick<Task, "status" | "resumeAfter"> &
-    Partial<Pick<Task, "provider" | "integration" | "refused" | "closed">>,
+    Partial<Pick<Task, "provider" | "integration">>,
   forkedAs = "",
 ): string {
   if (watcherRuns(task)) return t("task.status_watching");
@@ -391,25 +391,10 @@ export function taskStatusText(
       case IntegrationState.UNCOMMITTED:
         return t("task.status_to_review");
       default:
-        return doneWithProblems(task)
-          ? t("task.status_done_problems")
-          : t("task.status_done");
+        return t("task.status_done");
     }
   }
   return t(taskStatusKeys[task.status]);
-}
-
-// doneWithProblems tells a task its worker ended done while its permissions refused some of its calls, with nobody to
-// approve them: it may not have done its job, and nobody looked at it yet. A run again sets Task.refused anew; marked
-// done, it is closed as seen (internal/plan.DoneWithProblems). It is no clean done: amber, and it waits for you.
-export function doneWithProblems(
-  task: Pick<Task, "status"> & Partial<Pick<Task, "refused" | "closed">>,
-): boolean {
-  return (
-    task.status === TaskStatus.DONE &&
-    (task.refused?.count ?? 0) > 0 &&
-    !task.closed
-  );
 }
 
 // cancelledText is what a cancelled task's badge says on hover, compact: who cancelled it, and why.
@@ -450,11 +435,10 @@ export type Tone =
 
 // taskTone is a task's state in that language. A task Djinn resumes runs; one waiting for its provider's limit to
 // reset holds still, as a paused one; one cut short and resumed as another task (forkedAs) is stopped, no alarm.
-// None of them is the person's move. A running watcher has its own tone: it sleeps until its command prints. A task
-// done with problems (doneWithProblems) takes the amber of a warning, never the green of a clean done.
+// None of them is the person's move. A running watcher has its own tone: it sleeps until its command prints.
 export function taskTone(
   task: Pick<Task, "status" | "resumeAfter"> &
-    Partial<Pick<Task, "provider" | "integration" | "refused" | "closed">>,
+    Partial<Pick<Task, "provider" | "integration">>,
   forkedAs = "",
 ): Tone {
   const status = task.status;
@@ -476,7 +460,7 @@ export function taskTone(
         case IntegrationState.UNCOMMITTED:
           return "waiting";
         default:
-          return doneWithProblems(task) ? "interrupted" : "done";
+          return "done";
       }
     case TaskStatus.FAILED:
       return "failed";

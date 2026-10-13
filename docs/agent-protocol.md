@@ -123,11 +123,15 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
     `ended` event says it, with the first line of its final note (`W1 done: …`, incident W1 of wish Dew,
     12/10/2026);
   - the calls a worker's permissions refused in its run (its `permission denied: …` events, counted on the task's
-    `refused`), in its `ended` or `failed` event, with the command that grants them, whole in the digest:
-    `W1 done, 6 commands refused (permission): djinn, ls, git, …; djinn wish allow <wish> --mode auto lets the agent
-    judge them.` Only auto mode lets the agent judge a command (an edit allowance adds none), and granting stays the
-    developer's move. A claude worker started with its own settings (`TASK_ACCESS_NATIVE`) that allow no djinn
-    command cannot report: its spawn answers a `note` saying so;
+    `refused`), in its `ended` or `failed` event, with the command that would grant them, whole in the digest:
+    `W1 done, 6 commands refused (permission): djinn, ls, git, …; djinn wish allow <wish> --mode auto would let the
+    agent judge them, a right only the developer grants.` They go to the lead alone, never to the window (Decision
+    Q273): the lead decides, continuing the task otherwise, closing it as seen (`djinn task done`; until then its wish
+    is not proposed for the grant) and spawning it again where a right the wish or project already grants covers
+    them. Only auto mode lets the agent judge a command (an edit allowance adds none). Rights stay explicit: no broad
+    right by default, and a new one is asked of the developer in a `--move` question naming exactly that right, the
+    command that grants it, and why. A claude worker started with its own settings (`TASK_ACCESS_NATIVE`) that allow
+    no djinn command cannot report: its spawn answers a `note` saying so;
   - a watcher waking the lead;
   - Djinn restarted: `Djinn: restarted on version v1.4.0: 2 workers interrupted (W12, W14), resumed by Djinn: W12; not
     resumed, the move is yours: W14.`
