@@ -391,30 +391,40 @@ export function resourcesDetail(r: Resources, running: boolean): string {
   return out.join(" · ");
 }
 
-// TaskTurns is how many model turns the task's worker took against the limit its seal sets a run (TaskMaxTurns),
-// past which the Lamplighter stops it: its tone warns past 80% of it. The hover says what it counts, and the total
-// over its runs when it ran more than once.
+// TaskTurns is how many model turns the task's worker took over its whole life, the figure that reads first, and
+// beside it those of its current or last run against the limit its seal sets a run (TaskMaxTurns), past which the
+// Lamplighter stops it: its tone warns past 80% of that limit, as the limit stays a run's. A task that ran once
+// shows its run alone, and the hover says what each figure counts.
 export function TaskTurns({ task }: { task: Task }) {
   const turns = task.turns;
   if (!turns || turns.limit <= 0) return null;
+  const total = Math.max(turns.total, turns.run);
   const warn = turns.run * 5 > turns.limit * 4;
-  const title = [
-    t(
-      task.status === TaskStatus.RUNNING
-        ? "task.turns_run"
-        : "task.turns_last_run",
-      { run: turns.run, limit: turns.limit },
-    ),
-  ];
-  if (turns.total > turns.run)
-    title.push(t("task.turns_total", { total: turns.total }));
+  const run = t(
+    task.status === TaskStatus.RUNNING
+      ? "task.turns_run"
+      : "task.turns_last_run",
+    { run: turns.run, limit: turns.limit },
+  );
+  const budget = `${turns.run}/${turns.limit}`;
   return (
     <span
       className={warn ? "task-turns warning" : "task-turns"}
-      title={title.join(" · ")}
+      title={
+        total > turns.run
+          ? [t("task.turns_total", { total }), run].join(" · ")
+          : run
+      }
     >
       <Footprints size={12} aria-label={t("task.turns")} />
-      {`${turns.run}/${turns.limit}`}
+      {total > turns.run ? (
+        <>
+          {total}
+          <span className="task-turns-run">{budget}</span>
+        </>
+      ) : (
+        budget
+      )}
     </span>
   );
 }
