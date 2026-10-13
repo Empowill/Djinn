@@ -11,6 +11,9 @@
 // opens on a click; revised, it waits for you again, open. Answered, it is a decision: no mark asks to read or
 // approve it again, and the decision log shows it. Djinn types each answer in the lead's terminal; a wish without a
 // lead session has no lead to tell, and the card says so. Its rounds, each request and each revision, fold below.
+// A gesture shows, by key or by click: its button stays pressed a moment and the answer leaves as it comes back up,
+// while the card glows in the colour of the gesture, the lamp's brass or a cool light, and a wisp of smoke rises
+// from the button (review.css). Reduced motion keeps the colour, without the movement.
 import {
   ArrowRightLeft,
   Check,
@@ -114,13 +117,28 @@ export const WishQuestion = memo(function WishQuestion({
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
   const [unpicked, setUnpicked] = useState(false);
-  const busy = async (run: () => Promise<void>) => {
+  // The gesture the card plays, and whether its button is still down. It lasts while its answer leaves, the chosen
+  // button bright beside the other one disabled, and its glow ends after.
+  const [gesture, setGesture] = useState<Gesture>();
+  const [pressed, setPressed] = useState(false);
+  useEffect(() => {
+    if (!gesture || sending) return;
+    const timer = setTimeout(() => setGesture(undefined), GESTURE_MS);
+    return () => clearTimeout(timer);
+  }, [gesture, sending]);
+  const play = async (kind: Gesture, run: () => Promise<void>) => {
+    setGesture(kind);
+    setPressed(true);
     setSending(true);
     try {
+      await press();
+      setPressed(false);
       await run();
     } catch {
       // The toast says why; the card stays as it was.
+      setGesture(undefined);
     } finally {
+      setPressed(false);
       setSending(false);
     }
   };
@@ -140,12 +158,12 @@ export const WishQuestion = memo(function WishQuestion({
       setUnpicked(true);
       return;
     }
-    void busy(() => onAnswer(choice, note.trim(), q));
+    void play("rub", () => onAnswer(choice, note.trim(), q));
   };
 
   const triggerEnlighten = () => {
     if (sending || !onEnlighten || digging) return;
-    void busy(async () => {
+    void play("enlighten", async () => {
       await onEnlighten(note.trim(), q);
       setNote("");
     });
@@ -291,7 +309,7 @@ export const WishQuestion = memo(function WishQuestion({
   return (
     <motion.article
       id={`question-${q.id}`}
-      className={`question-card ${answered ? "answered" : withdrawn ? "withdrawn" : digging ? "investigating" : "open"} ${level}${folded ? " folded" : ""}`}
+      className={`question-card ${answered ? "answered" : withdrawn ? "withdrawn" : digging ? "investigating" : "open"} ${level}${folded ? " folded" : ""}${gesture === "rub" ? " gesture-rub" : gesture === "enlighten" ? " gesture-enlighten" : ""}`}
       tabIndex={answered || withdrawn || folded ? undefined : 0}
       onKeyDown={
         answered || withdrawn || folded ? undefined : handleCardKeyDown
@@ -461,7 +479,7 @@ export const WishQuestion = memo(function WishQuestion({
               <div className="question-actions">
                 {onEnlighten && !digging && (
                   <button
-                    className="button secondary lamp-enlighten"
+                    className={`button secondary lamp-enlighten${gesture === "enlighten" && pressed ? " is-pressed" : ""}`}
                     title={`${t("question.enlighten_detail")} (${mod}⇧↵)`}
                     disabled={sending}
                     onClick={triggerEnlighten}
@@ -471,11 +489,12 @@ export const WishQuestion = memo(function WishQuestion({
                     <kbd className="key-hint" aria-hidden="true">
                       {mod}⇧↵
                     </kbd>
+                    {gesture === "enlighten" && <Wisp />}
                   </button>
                 )}
                 <span className="spacer" />
                 <button
-                  className="button accent lamp-rub"
+                  className={`button accent lamp-rub${gesture === "rub" && pressed ? " is-pressed" : ""}`}
                   title={
                     choice === undefined
                       ? t("question.rub_pick")
@@ -489,6 +508,7 @@ export const WishQuestion = memo(function WishQuestion({
                   <kbd className="key-hint" aria-hidden="true">
                     ↵
                   </kbd>
+                  {gesture === "rub" && <Wisp />}
                 </button>
               </div>
               <textarea
@@ -525,6 +545,25 @@ export const WishQuestion = memo(function WishQuestion({
     </motion.article>
   );
 });
+
+// A gesture on a question: rub the lamp, or enlighten me.
+type Gesture = "rub" | "enlighten";
+
+// How long a gesture's button stays down before its answer leaves, and how long the card plays it: under 600 ms.
+const PRESS_MS = 150;
+const GESTURE_MS = 560;
+
+// press waits while the button is down. Rendered with no document (the screens tests), there is nothing to see: the
+// answer leaves at once.
+function press(): Promise<void> {
+  if (typeof document === "undefined") return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, PRESS_MS));
+}
+
+// Wisp is the puff of smoke that rises from a gesture's button.
+function Wisp() {
+  return <span className="question-wisp" aria-hidden="true" />;
+}
 
 // QuestionReport is the report a question names, as a line that unfolds it in place: what was found, beside the
 // question it leads to.

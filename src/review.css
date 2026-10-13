@@ -748,6 +748,153 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
   border-color: color-mix(in srgb, var(--st-investigating) 55%, transparent);
   background: color-mix(in srgb, var(--st-investigating) 8%, var(--surface));
 }
+
+/* A gesture, by key or by click (wish-question.tsx): its button goes down for 150 ms, the answer leaves as it comes
+   back up; the card glows in the gesture's colour, the lamp's brass or a cool light, and a wisp of smoke rises from
+   the button. Under 600 ms, by transform and opacity only: a box-shadow that moves repaints the whole card in WebKit
+   (W513). The chosen button keeps its colour while the answer leaves; the other one fades as disabled. */
+.review .question-card.gesture-rub {
+  --gesture: var(--lamp);
+  --gesture-x: 100%;
+}
+html[data-theme="light"] .review .question-card.gesture-rub {
+  --gesture: #c99a2e;
+}
+.review .question-card.gesture-enlighten {
+  --gesture: var(--st-investigating);
+  --gesture-x: 0%;
+}
+.review .question-card.gesture-rub,
+.review .question-card.gesture-enlighten {
+  position: relative;
+}
+.review .question-card.gesture-rub::after,
+.review .question-card.gesture-enlighten::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1px solid var(--gesture);
+  border-radius: inherit;
+  background: radial-gradient(
+    120% 90% at var(--gesture-x) 100%,
+    color-mix(in srgb, var(--gesture) 22%, transparent),
+    transparent 70%
+  );
+  pointer-events: none;
+  animation: question-glow 520ms ease-out both;
+}
+.review .lamp-rub,
+.review .lamp-enlighten {
+  position: relative;
+  transition: transform 90ms ease-out;
+}
+.review .question-card.gesture-rub .lamp-rub:disabled,
+.review .question-card.gesture-enlighten .lamp-enlighten:disabled {
+  opacity: 1;
+}
+.review .lamp-rub.is-pressed,
+.review .lamp-enlighten.is-pressed {
+  transform: translateY(1px) scale(0.96);
+}
+.review .button.accent.lamp-rub.is-pressed,
+html[data-theme="light"] .review .button.accent.lamp-rub.is-pressed {
+  background: linear-gradient(#cf9f36, #e2b54b);
+  box-shadow: inset 0 2px 4px
+    color-mix(in srgb, var(--lamp-ink) 40%, transparent);
+}
+.review .button.secondary.lamp-enlighten.is-pressed,
+html[data-theme="light"] .review .button.secondary.lamp-enlighten.is-pressed {
+  background: color-mix(in srgb, var(--st-investigating) 22%, var(--surface));
+}
+.question-wisp,
+.question-wisp::after {
+  position: absolute;
+  left: 50%;
+  bottom: 50%;
+  width: 28px;
+  height: 46px;
+  margin-left: -14px;
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--gesture) 65%, transparent),
+    transparent
+  );
+  pointer-events: none;
+  animation: question-wisp 440ms ease-out 60ms both;
+}
+.question-wisp::after {
+  content: "";
+  left: 0;
+  bottom: 0;
+  margin-left: -6px;
+  animation-name: question-wisp-curl;
+  animation-delay: 140ms;
+}
+@keyframes question-glow {
+  0% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes question-wisp {
+  0% {
+    opacity: 0;
+    transform: translate(0, 6px) rotate(0) scale(0.4);
+  }
+  30% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(8px, -40px) rotate(14deg) scale(1.4);
+  }
+}
+@keyframes question-wisp-curl {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(0) scale(0.5);
+  }
+  35% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-12px, -24px) rotate(-18deg) scale(1.2);
+  }
+}
+/* Reduced motion: the glow is a plain flash of colour while the gesture plays, the button and the smoke stay still. */
+@media (prefers-reduced-motion: reduce) {
+  .review .question-card.gesture-rub::after,
+  .review .question-card.gesture-enlighten::after {
+    animation: none;
+    opacity: 1;
+  }
+  .review .lamp-rub.is-pressed,
+  .review .lamp-enlighten.is-pressed {
+    transform: none;
+  }
+  .question-wisp {
+    display: none;
+  }
+}
+html[data-motion="reduced"] .review .question-card.gesture-rub::after,
+html[data-motion="reduced"] .review .question-card.gesture-enlighten::after {
+  animation: none;
+  opacity: 1;
+}
+html[data-motion="reduced"] .review .lamp-rub.is-pressed,
+html[data-motion="reduced"] .review .lamp-enlighten.is-pressed {
+  transform: none;
+}
+html[data-motion="reduced"] .question-wisp {
+  display: none;
+}
 .investigating-note {
   display: flex;
   gap: 8px;
