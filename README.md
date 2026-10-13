@@ -78,11 +78,11 @@ next release, [v0.1.2](docs/releases/v0.1.2.md); the rest ships in v0.1.1.
 - **Wishes and azimas.** A wish is what you ask for, across one or more projects. The Djinn splits it into _azimas_
   (parts of the plan, coded `T01`, `T02`…) and tasks; each task is one worker in its own worktree. Azimas can wait
   as drafts and move between wishes. [Guide](docs/user-guide.md#a-wish)
-- **One lead for every wish.** A single agent session sees every active wish, so it spots duplicate or conflicting
+- **One Djinn for every wish.** A single agent session sees every active wish, so it spots duplicate or conflicting
   work. It starts from `djinn brief`, a summary Djinn writes without a model. **Talk to the Djinn** opens it in the
   window's terminal, and the pill **Write to the Djinn** (Cmd/Ctrl+I) sends it a word _(next: v0.1.1 calls them
   **Lead** and **Write to the lead**)_.
-  [Guide](docs/user-guide.md#the-lead)
+  [Guide](docs/user-guide.md#the-djinn)
 - **Questions with a clear call to action.** The Djinn says nothing for you in its terminal: a report, a doubt, a
   "done" is a question in its wish, with options and a recommendation. **Rub the lamp** takes it in one click or one
   key; **Enlighten me** sends a worker to dig first. A move only you can make (push a tag, merge a pull request,
