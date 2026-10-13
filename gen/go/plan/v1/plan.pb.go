@@ -2665,6 +2665,11 @@ type ProjectSettings struct {
 	// from their own file only (djinn project allow --watch): the repository's is ignored, since it lists its commands in
 	// .agents/permissions.txtpb. Its denied_commands still win. Not set: none.
 	WatchCommands []string `protobuf:"bytes,27,rep,name=watch_commands,json=watchCommands,proto3" json:"watch_commands,omitempty"`
+	// For the project a Djinn built from a checkout (go tool task install) comes from: each build Djinn pushes of the
+	// running Djinn's line (its branch, or one that carries it on), the push checks passed, installs by itself, at low
+	// priority, once no gate runs and the machine is not under pressure; the restart is left to the person's click.
+	// Other branches' builds are only offered. Not set: on.
+	InstallBuilds *bool `protobuf:"varint,28,opt,name=install_builds,json=installBuilds,proto3,oneof" json:"install_builds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2872,6 +2877,13 @@ func (x *ProjectSettings) GetWatchCommands() []string {
 		return x.WatchCommands
 	}
 	return nil
+}
+
+func (x *ProjectSettings) GetInstallBuilds() bool {
+	if x != nil && x.InstallBuilds != nil {
+		return *x.InstallBuilds
+	}
+	return false
 }
 
 // ProjectCheck is a command Djinn runs on a project's work: checks { name: "lint" command: "go tool task lint" when:
@@ -19034,7 +19046,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x14\n" +
 	"\x05skill\x18\x02 \x01(\tR\x05skill\x12;\n" +
 	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\"\xb4\x0f\n" +
+	"createTime\"\xf3\x0f\n" +
 	"\x0fProjectSettings\x12@\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x11.plan.v1.ProviderB\f\xbaH\t\x82\x01\x06\x10\x01 \x00 \x05H\x00R\bprovider\x88\x01\x01\x12=\n" +
 	"\x05model\x18\x02 \x01(\tB\"\xbaH\x1fr\x1d\x18\xc8\x012\x18^[A-Za-z0-9._:@/\\[\\]-]*$H\x01R\x05model\x88\x01\x01\x12B\n" +
@@ -19069,7 +19081,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x11install_questions\x18\x19 \x01(\x0e2\x19.plan.v1.InstallQuestionsB\n" +
 	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x14R\x10installQuestions\x88\x01\x01\x12\x1d\n" +
 	"\ababysit\x18\x1a \x01(\bH\x15R\ababysit\x88\x01\x01\x128\n" +
-	"\x0ewatch_commands\x18\x1b \x03(\tB\x11\xbaH\x0e\x92\x01\v\x102\"\ar\x05\x10\x01\x18\xf4\x03R\rwatchCommandsB\v\n" +
+	"\x0ewatch_commands\x18\x1b \x03(\tB\x11\xbaH\x0e\x92\x01\v\x102\"\ar\x05\x10\x01\x18\xf4\x03R\rwatchCommands\x12*\n" +
+	"\x0einstall_builds\x18\x1c \x01(\bH\x16R\rinstallBuilds\x88\x01\x01B\v\n" +
 	"\t_providerB\b\n" +
 	"\x06_modelB\x11\n" +
 	"\x0f_max_budget_usdB\t\n" +
@@ -19093,7 +19106,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\t_test_oneB\x14\n" +
 	"\x12_install_questionsB\n" +
 	"\n" +
-	"\b_babysitJ\x04\b\n" +
+	"\b_babysitB\x11\n" +
+	"\x0f_install_buildsJ\x04\b\n" +
 	"\x10\vJ\x04\b\x15\x10\x16R\x10question_workersR\x0eanswer_workers\"\xad\x01\n" +
 	"\fProjectCheck\x12:\n" +
 	"\x04name\x18\x01 \x01(\tB&\xbaH#r!\x10\x01\x18(2\x1b^[A-Za-z0-9][A-Za-z0-9_-]*$R\x04name\x12$\n" +

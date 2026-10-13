@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -274,6 +275,8 @@ func TestResolveSettings(t *testing.T) {
 		got.Babysit, got.BabysitFrom = false, 0
 		// Watch commands are TestWatchCommandsSettings'.
 		got.WatchCommands, got.WatchCommandsFrom = nil, 0
+		// Install builds is TestInstallBuildsSettings'.
+		got.InstallBuilds, got.InstallBuildsFrom = false, 0
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
 		}
@@ -395,6 +398,42 @@ func TestWatchCommandsSettings(t *testing.T) {
 	if err != nil || !slices.ContainsFunc(show.Msg.GetWarnings(), func(w string) bool { return strings.Contains(w, "watch_commands is ignored") }) ||
 		slices.Contains(show.Msg.GetWatchCommands(), "rm -rf") {
 		t.Errorf("the repository's watch_commands: %v, %v", show.Msg, err)
+	}
+}
+
+// TestInstallBuildsSettings: a build of the running Djinn's line installs by itself by default; either file turns it
+// off, the developer's winning, read from a settings file as install_builds: false, and its row says so.
+func TestInstallBuildsSettings(t *testing.T) {
+	t.Parallel()
+	const (
+		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
+		repo = planv1.SettingSource_SETTING_SOURCE_REPOSITORY
+		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
+	)
+	for _, c := range []struct {
+		name      string
+		repo, dev *planv1.ProjectSettings
+		want      bool
+		from      planv1.SettingSource
+	}{
+		{"neither file", nil, nil, true, def},
+		{"the repository turns it off", &planv1.ProjectSettings{InstallBuilds: proto.Bool(false)}, nil, false, repo},
+		{"the developer turns it on again", &planv1.ProjectSettings{InstallBuilds: proto.Bool(false)},
+			&planv1.ProjectSettings{InstallBuilds: proto.Bool(true)}, true, dev},
+	} {
+		s := ResolveSettings(c.repo, c.dev)
+		if s.InstallBuilds != c.want || s.InstallBuildsFrom != c.from {
+			t.Errorf("%s: install_builds %v from %v, want %v from %v", c.name, s.InstallBuilds, s.InstallBuildsFrom, c.want, c.from)
+		}
+		i := slices.IndexFunc(s.Rows(), func(r *planv1.ProjectSetting) bool { return r.GetName() == "install_builds" })
+		if i < 0 || s.Rows()[i].GetValue() != strconv.FormatBool(c.want) || s.Rows()[i].GetSource() != c.from {
+			t.Errorf("%s: no row says install_builds=%v", c.name, c.want)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "settings.txtpb")
+	writeSettings(t, path, "install_builds: false\n")
+	if s, err := ReadSettings(path); err != nil || s.InstallBuilds == nil || s.GetInstallBuilds() {
+		t.Errorf("install_builds: false read as %v (%v)", s.InstallBuilds, err)
 	}
 }
 
@@ -564,7 +603,7 @@ func TestProjectShow(t *testing.T) {
 		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetProblems(), repoFile, devFile)
 	}
 	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT, "+
-		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, install_questions=always DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
+		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
 		t.Errorf("no file: %s; want %s", got, want)
 	}
 	var question []string
@@ -583,7 +622,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY, "+
 		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/schema.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
 		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
 	}
 
@@ -593,7 +632,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=djinn/{code}-{uuid8} REPOSITORY, generated=gen/**,docs/schema.json REPOSITORY, "+
 		"generate=go tool task gen REPOSITORY, setup= DEFAULT, checks=test: go tool task test (commit) REPOSITORY, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)
 	}
 	if len(res.GetProblems()) != 1 || !strings.Contains(res.GetProblems()[0], devFile) {

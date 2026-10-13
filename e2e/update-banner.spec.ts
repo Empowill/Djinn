@@ -9,6 +9,7 @@ import path from "node:path";
 
 import {
   BuildSchema,
+  InstallStep,
   UiServiceWatchResponseSchema,
 } from "../gen/ts/ui/v1/ui_pb";
 
@@ -160,5 +161,162 @@ test("the update banner names each build, unfolds what it holds, and its × dism
   await page.evaluate(() => {
     localStorage.removeItem("djinn.update.dismissed");
     localStorage.removeItem("djinn.theme");
+  });
+});
+
+// W554: the banner holds no spinner of its own. The window's call to install never answers (a Djinn frozen, a lost
+// link): Djinn's stream says the install builds, then that it passed its deadline, with its last lines; the banner
+// says so, and offers to try again.
+test("an install that never answers ends at its deadline, as Djinn says it", async ({
+  page,
+}) => {
+  const line = build({
+    wishTitle: "Robustness",
+    branch: "feat/robustness",
+    sha: "bbbb2222cccc3333",
+    running: true,
+    changes: ["ui: the banner"],
+    changesCount: 1,
+  });
+  const states = [
+    { builds: [line] },
+    {
+      builds: [line],
+      installing: {
+        sha: line.sha,
+        step: InstallStep.BUILDING,
+        doing: "install: go build ./cmd/djinn",
+      },
+    },
+    {
+      builds: [line],
+      installing: {
+        sha: line.sha,
+        step: InstallStep.FAILED,
+        doing: "install: go build ./cmd/djinn",
+        error:
+          "it did not end within 20m0s, at install: go build ./cmd/djinn: Djinn stopped it",
+        log: [
+          "task: [ui] npm run build",
+          "task: [install] go build ./cmd/djinn",
+        ],
+      },
+    },
+  ];
+  let now = 0;
+  await page.route("**/ui.v1.UiService/Watch", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/connect+proto",
+      body: connectStream(
+        toBinary(
+          UiServiceWatchResponseSchema,
+          create(UiServiceWatchResponseSchema, {
+            update: { current: "local-abcdef0", ...states[now] },
+          }),
+        ),
+      ),
+    }),
+  );
+  // The call to install is never answered.
+  let asked = 0;
+  await page.route("**/ui.v1.UiService/Update", () => {
+    asked++;
+  });
+  await page.goto(process.env.DJINN_URL!);
+  await page.evaluate(() => localStorage.removeItem("djinn.update.dismissed"));
+  const part = page.locator(".update-banner > .update-banner-part").first();
+  await part.getByRole("button", { name: "Install and restart" }).click();
+  await expect(part.locator(".update-banner-actions")).toContainText(
+    "Installing…",
+  );
+  expect(asked).toBe(1);
+  // Djinn says it builds, and which step runs.
+  now = 1;
+  await expect(part.locator(".update-banner-actions")).toContainText(
+    "Building… (install: go build ./cmd/djinn)",
+  );
+  // Past the deadline: the failure, its last lines, Try again; no spinner, though the call still waits.
+  now = 2;
+  await expect(part.locator(".update-banner-text")).toHaveText(
+    "Build bbbb2222 did not install: it did not end within 20m0s, at install: go build ./cmd/djinn: Djinn stopped it",
+  );
+  await expect(part.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(part).not.toContainText("Building…");
+  await part.getByRole("button", { name: "Details" }).click();
+  await expect(part.locator(".update-banner-log")).toHaveText(
+    "task: [ui] npm run build\ntask: [install] go build ./cmd/djinn",
+  );
+  await part.screenshot({
+    path: path.join(shots, "update-banner-failed.png"),
+  });
+});
+
+// W554: a green push of the running line installed by itself: the banner only offers the restart, with what the
+// newer Djinn adds; another branch's build stays offered, to install by a click.
+test("a build of the running line installed by itself is offered as a restart, another branch's as an install", async ({
+  page,
+}) => {
+  const line = build({
+    wishTitle: "Robustness",
+    branch: "feat/robustness",
+    sha: "dddd4444eeee5555",
+    running: true,
+    tasks: ["W554"],
+    summaries: [
+      { code: "W554", title: "Builds of our own branch install by themselves" },
+    ],
+    changes: ["ui: the banner offers the restart"],
+    changesCount: 1,
+  });
+  const other = build({
+    wishTitle: "Side",
+    branch: "feat/side",
+    sha: "ffff6666aaaa7777",
+    changes: ["side: work"],
+    changesCount: 1,
+  });
+  await page.route("**/ui.v1.UiService/Watch", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/connect+proto",
+      body: connectStream(
+        toBinary(
+          UiServiceWatchResponseSchema,
+          create(UiServiceWatchResponseSchema, {
+            update: {
+              current: "local-abcdef0",
+              ready: "local-dddd444",
+              installed: true,
+              readyBuild: line,
+              builds: [other],
+            },
+          }),
+        ),
+      ),
+    }),
+  );
+  await page.goto(process.env.DJINN_URL!);
+  await page.evaluate(() => localStorage.removeItem("djinn.update.dismissed"));
+  await page.reload();
+  const parts = page.locator(".update-banner > .update-banner-part");
+  await expect(parts).toHaveCount(2);
+  await expect(parts.nth(0).locator(".update-banner-text")).toHaveText(
+    "Djinn local-dddd444 is ready: dddd4444 of feat/robustness · Robustness — adds 1 task",
+  );
+  await expect(
+    parts.nth(0).getByRole("button", { name: "Restart" }),
+  ).toBeVisible();
+  await expect(parts.nth(1).locator(".update-banner-text")).toHaveText(
+    "A build of another branch: feat/side",
+  );
+  await parts.nth(1).getByRole("button", { name: "Details" }).click();
+  await expect(
+    page
+      .locator(".update-banner-others")
+      .getByRole("button", { name: "Install and restart" }),
+  ).toBeVisible();
+  await page.locator(".update-banner").screenshot({
+    path: path.join(shots, "update-banner-restart.png"),
   });
 });

@@ -339,17 +339,32 @@ func runUp(args []string) (restart bool, err error) {
 		}
 		go updates.run(ctx)
 	}
-	uiSvc.Install = func(ctx context.Context, b *uiv1.Build, progress func(uiv1.InstallStep, string)) (bool, error) {
+	uiSvc.Install = func(ctx context.Context, b *uiv1.Build, run ui.InstallRun) (bool, string, error) {
 		steps := map[harness.InstallStep]uiv1.InstallStep{
 			harness.InstallWaiting:   uiv1.InstallStep_INSTALL_STEP_WAITING,
 			harness.InstallPreparing: uiv1.InstallStep_INSTALL_STEP_PREPARING,
 			harness.InstallBuilding:  uiv1.InstallStep_INSTALL_STEP_BUILDING,
 		}
-		report := func(step harness.InstallStep, waiting string) { progress(steps[step], waiting) }
-		if _, err := workers.Install(ctx, b.GetWishId(), b.GetProjectId(), b.GetSha(), report); err != nil {
-			return false, err
+		report := func(step harness.InstallStep, waiting string) { run.Progress(steps[step], waiting) }
+		out, err := workers.Install(harness.InstallWith(ctx, run.Output, run.Low), b.GetWishId(), b.GetProjectId(), b.GetSha(), report)
+		if err != nil {
+			return false, out, err
 		}
-		return updates != nil && updates.check(ctx) != "", nil
+		return updates != nil && updates.check(ctx) != "", out, nil
+	}
+	// An install runs until djinn up stops, whatever becomes of the window's call; a build of the running line
+	// installs by itself once no gate is held and the machine is not under pressure.
+	uiSvc.Life = ctx
+	uiSvc.Busy = func() string {
+		if pressure := monitor.Policy().Pressure(monitor.Snapshot()); pressure != "" {
+			return "the machine is under pressure: " + pressure
+		}
+		for _, g := range gates.List() {
+			if g.Holder != "" {
+				return "gate " + g.Name + ": held by " + g.Holder
+			}
+		}
+		return ""
 	}
 	workers.Integrate()
 	raise := make(chan struct{}, 1)
