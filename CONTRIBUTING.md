@@ -49,6 +49,9 @@ Each one is a decision. Changing one is a discussion first.
 - **Cross-agent first.** A project behaves the same whatever the agent. `AGENTS.md` holds the
   instructions, `.agents/` the rules; Djinn translates them for each agent at launch. A file of
   one agent's own (`.claude/settings.json`) follows from `.agents/`, and a test checks it.
+- **The lead's memory lives in Djinn.** How to lead, learnt from past wishes, is kept in [`lead/notes/`](lead/README.md),
+  one note per file, built into the binary and read only at run time, for any lead whatever its agent. The brief
+  lists them; `djinn lead notes <name>` prints one. A note changes by pull request, like any doc.
 - **Auto mode by default.** Agents run in their own auto mode, trusted as their providers
   document it.
 - **A worker's rights come from where it runs.** Outside any project: read only. In a project:

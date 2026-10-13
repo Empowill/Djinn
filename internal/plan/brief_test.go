@@ -18,6 +18,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/lead/notes"
 )
 
 func TestBrief(t *testing.T) {
@@ -1017,5 +1018,42 @@ func TestBriefComments(t *testing.T) {
 	}
 	if !strings.Contains(brief.Moving, "- Comment on src/utils.go, lines 20-25 (resolved): Refactored helper function") {
 		t.Errorf("brief lacks resolved comment:\n%s", brief.Moving)
+	}
+}
+
+// TestBriefListsNotes (Q260): every brief gives the lead's notes as an index, a line per note with its name and
+// description, never a note's text; the rule says to open one before acting in its area, and to change them by a task
+// that edits lead/notes, never at run time.
+func TestBriefListsNotes(t *testing.T) {
+	all, err := notes.Notes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := serve(t)
+	res, err := c.lead.Brief(t.Context(), connect.NewRequest(&planv1.LeadServiceBriefRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	brief := res.Msg.GetText()
+	for _, want := range []string{
+		"**Read the lead's notes before you act in their area.**",
+		"open it: `djinn lead notes <name>`",
+		"spawns a task there that edits `lead/notes/`",
+		"nothing writes them at run time",
+		"\n## The lead's notes\n\n",
+	} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("the brief lacks %q:\n%s", want, brief)
+		}
+	}
+	for _, n := range all {
+		if line := "- `" + n.Name + "`: " + n.Description + "\n"; !strings.Contains(brief, line) {
+			t.Errorf("the brief lacks the index line %q", line)
+		}
+		for para := range strings.SplitSeq(n.Body, "\n\n") {
+			if strings.Contains(brief, strings.TrimSpace(para)) {
+				t.Errorf("the brief holds the text of note %s: %q", n.Name, para)
+			}
+		}
 	}
 }

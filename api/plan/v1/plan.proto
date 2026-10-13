@@ -3103,6 +3103,14 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // The lead's notes: how to lead, learnt from past wishes, one note per file of lead/notes in Djinn's repository,
+  // built into djinn and read only. Without a name, the index: a line per note, its name and what it is about (the
+  // brief holds the same); with one, that note whole. A lead reads a note before it acts in its area; to add or fix
+  // one, a lead that may change Djinn spawns a task that edits lead/notes.
+  rpc Notes(LeadServiceNotesRequest) returns (LeadServiceNotesResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
   // few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
   // an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
@@ -3275,6 +3283,19 @@ message LeadServiceBriefRequest {}
 
 message LeadServiceBriefResponse {
   // The brief, in Markdown.
+  string text = 1;
+}
+
+message LeadServiceNotesRequest {
+  // A note's name, as the index lists it: that note whole. Empty: the index.
+  string name = 1 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+}
+
+message LeadServiceNotesResponse {
+  // The index, or the note, in Markdown.
   string text = 1;
 }
 
