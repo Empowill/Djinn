@@ -146,7 +146,11 @@ func TestDependsOn(t *testing.T) {
 	if got := e.ended(t, failing.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
 		t.Fatalf("failing = %v", got)
 	}
-	if got := e.get(t, child.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING ||
+	// The end lets the watchers go before it wakes the scheduler: the child says why it waits now in the next pass.
+	held := "waiting: waits while its dependency " + failing.GetCode() + " is failed"
+	if got := e.follow(t, child.GetId())(held, func(ev *planv1.TaskEvent) bool {
+		return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && ev.GetText() == held
+	}); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING ||
 		got.GetWaitReason() != "waits while its dependency "+failing.GetCode()+" is failed" || got.GetStartTime() != nil {
 		t.Errorf("child = %v", got)
 	}
