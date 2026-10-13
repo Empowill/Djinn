@@ -210,6 +210,65 @@ go tool task build && export DJINN_HOME=$(mktemp -d) L=$DJINN_HOME/logs && ./bin
    `goroutines-<time>.txt` at 10 s, `msg="shutdown hangs: exiting" … code=3` at 30 s, and `echo $?` (Windows:
    `$LASTEXITCODE`) prints `3`; send both files.
 
+### V1 to V6: the azimas awaiting proof, on the published v0.1.1 (W567)
+
+**Proves** on a Mac what the developer validated on Linux on 13/10/2026: these run on the **published release
+v0.1.1**, not on a branch. Each starts from a fresh data folder (`export DJINN_HOME=$(mktemp -d)`), never your own,
+but V2: the Finder gives Djinn.app no `DJINN_HOME`, so it opens your usual data folder.
+Report each as **pass** or **fail** with its number (V1 to V6), as in [section 7](#7-how-to-report).
+
+**V1 · T04, T19: a new user installs v0.1.1.** In a macOS account without administrator rights, or a fresh `HOME`:
+
+```sh
+time (curl -fsSL https://github.com/Empowill/Djinn/releases/latest/download/install.sh | sh)
+~/.local/bin/djinn version && ~/.local/bin/djinn up
+```
+
+**Look at**: `installed djinn v0.1.1 in …/.local/bin`, no password asked; `djinn v0.1.1`; the window opens and its
+status bar reads **Live**. Send the time of the install and of the window (on Linux: 6 s, then under 1 s).
+
+**V2 · T19: Djinn.app of v0.1.1, from the Finder.** Download `djinn_darwin_universal_app.zip` from the
+[v0.1.1 release](https://github.com/Empowill/Djinn/releases/tag/v0.1.1), unzip it, put `Djinn.app` in `/Applications`
+and open it from the Finder (right-click, **Open**, the first time). **Look at**: the window; the icon in the Dock and
+in Launchpad; with the window in the background, a notification for, in a new Terminal,
+`/Applications/Djinn.app/Contents/MacOS/djinn question ask "Mac check" <wish>` (a wish made with **New wish**); a
+click on it lands on the question.
+
+**V3 · T14, T33: each worker's CPU and memory on macOS** (its process group: no cgroup there). While a task with an
+agent runs:
+
+```sh
+djinn machine show
+```
+
+**Look at**: `worker_uses` lists the task with `cpu_percent` and `memory_bytes` above zero, and the Hourglass in the
+window draws its graphs.
+
+**V4 · T35: no worker outlives Djinn on macOS** (no `PR_SET_PDEATHSIG` there: the sentinel stops the children). While
+a task's worker runs:
+
+```sh
+pgrep -fl 'claude|codex'   # the worker's pid
+pkill -9 -x djinn          # Djinn dies without its shutdown
+sleep 5; pgrep -fl 'claude|codex'
+```
+
+**Look at**: the worker is gone after the kill; started again, Djinn resumes the task once, with one agent process per
+running task, never two.
+
+**V5 · T20: a backup restores on macOS.** With the test Djinn of V1 running and a wish made in it:
+
+```sh
+djinn backup --file /tmp/djinn-v5.tar.gz
+```
+
+Quit Djinn, then `DJINN_HOME=$(mktemp -d) djinn backup restore /tmp/djinn-v5.tar.gz` and `djinn up` with that same
+`DJINN_HOME`. **Look at**: the wish is there (on Linux, W567 restored a wish and a project this way).
+
+**V6 · T20: a shared wish page, seen by a second person** (any system). When the developer sends you the link of a
+wish's published page, open it. **Look at**: the wish as it is (its questions, tasks and decisions); say what was
+missing or wrong.
+
 ## 6. New since PR #1 worth trying in passing
 
 - **Operating load cursor with five notches and Overclock**: A slider in the status bar (`minimal`, `light`, `medium`, `high`, `max`, and `overclock` / auto) dynamically controlling worker slots, pressure stall thresholds, gate margins, and committable memory (`djinn load get/set`).
