@@ -27,17 +27,17 @@ export {
 
 const ids = (state) => w.workspacePanelIds(state.root);
 
-test("a default layout keeps the summary open and every other panel closed", () => {
+test("the default content tree is empty while every section stays closed", () => {
   const state = w.workspaceDefaultLayout(
     ["summary", "tasks", "decisions", "tasks", "rights"],
     "summary",
   );
-  assert.deepEqual(ids(state), ["summary"]);
+  assert.deepEqual(ids(state), []);
   assert.deepEqual(state.closed, ["tasks", "decisions", "rights"]);
   assert.equal(state.version, 1);
 });
 
-test("normalizing storage drops unknown and duplicate panels while preserving valid splits", () => {
+test("normalizing storage removes the old summary leaf and keeps valid content splits", () => {
   const state = w.normalizeWorkspaceLayout(
     {
       version: 1,
@@ -57,90 +57,48 @@ test("normalizing storage drops unknown and duplicate panels while preserving va
           },
         ],
       },
-      closed: ["rights", "rights", "missing"],
+      closed: ["rights", "rights", "missing", "summary"],
       maximized: "missing",
     },
     ["summary", "tasks", "decisions", "rights"],
   );
-  assert.deepEqual(ids(state), ["summary", "tasks"]);
+  assert.deepEqual(ids(state), ["tasks"]);
   assert.deepEqual(state.closed, ["rights", "decisions"]);
   assert.equal(state.maximized, undefined);
+  assert.equal(JSON.stringify(state).includes('"summary"'), false);
 });
 
-test("normalizing a valid tree without the pinned summary restores summary access", () => {
-  const state = w.normalizeWorkspaceLayout(
-    {
-      version: 1,
-      root: { type: "panel", id: "tasks" },
-      closed: ["summary", "decisions"],
-    },
-    ["summary", "tasks", "decisions"],
-  );
-  assert.ok(ids(state).includes("summary"));
-  assert.ok(!state.closed.includes("summary"));
-  assert.deepEqual(ids(state), ["summary", "tasks"]);
-});
-
-test("composing a panel makes the requested horizontal or vertical split and reopens it", () => {
-  let state = w.workspaceDefaultLayout([
-    "summary",
-    "tasks",
-    "decisions",
-    "rights",
-  ]);
-  state = w.openWorkspacePanel(state, "tasks");
-  assert.deepEqual(ids(state), ["summary", "tasks"]);
-  assert.equal(state.maximized, "tasks");
-
-  state = w.composeWorkspace(state, "tasks", "summary", "bottom");
-  assert.deepEqual(ids(state), ["summary", "tasks"]);
-  assert.deepEqual(state.root, {
-    type: "split",
-    direction: "vertical",
-    children: [
-      { type: "panel", id: "summary" },
-      { type: "panel", id: "tasks" },
-    ],
-  });
-  assert.equal(state.maximized, undefined);
-  assert.deepEqual(state.closed, ["decisions", "rights"]);
-
-  state = w.composeWorkspace(state, "decisions", "tasks", "left");
-  assert.deepEqual(ids(state), ["summary", "decisions", "tasks"]);
-  assert.deepEqual(state.root, {
-    type: "split",
-    direction: "vertical",
-    children: [
-      { type: "panel", id: "summary" },
-      {
-        type: "split",
-        direction: "horizontal",
-        children: [
-          { type: "panel", id: "decisions" },
-          { type: "panel", id: "tasks" },
-        ],
-      },
-    ],
-  });
-});
-
-test("closing, maximizing and restoring keep closed panels isolated from the tree", () => {
+test("opening a section maximizes it while preserving the prior content tree for restore", () => {
   let state = w.workspaceDefaultLayout(["summary", "tasks", "decisions"]);
   state = w.openWorkspacePanel(state, "tasks");
-  state = w.openWorkspacePanel(state, "decisions");
-  state = w.maximizeWorkspacePanel(state, "tasks");
+  assert.deepEqual(ids(state), ["tasks"]);
   assert.equal(state.maximized, "tasks");
 
-  state = w.closeWorkspacePanel(state, "tasks");
-  assert.deepEqual(ids(state), ["summary", "decisions"]);
-  assert.deepEqual(state.closed, ["tasks"]);
+  state = w.restoreWorkspace(state);
+  state = w.composeWorkspace(state, "decisions", "tasks", "right");
+  assert.deepEqual(ids(state), ["tasks", "decisions"]);
+  assert.deepEqual(state.root, {
+    type: "split",
+    direction: "horizontal",
+    children: [
+      { type: "panel", id: "tasks" },
+      { type: "panel", id: "decisions" },
+    ],
+  });
   assert.equal(state.maximized, undefined);
 
-  state = w.restoreWorkspace(state);
+  state = w.openWorkspacePanel(state, "decisions");
+  assert.equal(state.maximized, "decisions");
+  assert.deepEqual(ids(state), ["tasks", "decisions"]);
+});
+
+test("closing panels returns the tree to an empty content root", () => {
+  let state = w.workspaceDefaultLayout(["summary", "tasks", "decisions"]);
+  state = w.openWorkspacePanel(state, "tasks");
+  state = w.closeWorkspacePanel(state, "tasks");
+  assert.deepEqual(ids(state), []);
+  assert.deepEqual(state.closed, ["decisions", "tasks"]);
   assert.equal(state.maximized, undefined);
-  state = w.closeWorkspacePanel(state, "summary");
-  assert.deepEqual(ids(state), ["summary", "decisions"]);
-  assert.deepEqual(state.closed, ["tasks"]);
 });
 
 test("keyboard movement handles all four sides and refuses an edge move", () => {
@@ -150,9 +108,9 @@ test("keyboard movement handles all four sides and refuses an edge move", () => 
       type: "split",
       direction: "horizontal",
       children: [
-        { type: "panel", id: "summary" },
         { type: "panel", id: "tasks" },
         { type: "panel", id: "decisions" },
+        { type: "panel", id: "rights" },
       ],
     },
     closed: [],
@@ -160,21 +118,21 @@ test("keyboard movement handles all four sides and refuses an edge move", () => 
 
   const before = w.serializeWorkspaceLayout(state);
   assert.equal(
-    w.serializeWorkspaceLayout(w.moveWorkspacePanel(state, "summary", "left")),
+    w.serializeWorkspaceLayout(w.moveWorkspacePanel(state, "tasks", "left")),
     before,
   );
 
-  state = w.moveWorkspacePanel(state, "summary", "right");
-  assert.deepEqual(ids(state), ["tasks", "summary", "decisions"]);
-  state = w.moveWorkspacePanel(state, "summary", "bottom");
-  assert.deepEqual(ids(state), ["tasks", "decisions", "summary"]);
-  state = w.moveWorkspacePanel(state, "summary", "top");
-  assert.deepEqual(ids(state), ["tasks", "summary", "decisions"]);
-  state = w.moveWorkspacePanel(state, "summary", "left");
-  assert.deepEqual(ids(state), ["summary", "tasks", "decisions"]);
+  state = w.moveWorkspacePanel(state, "tasks", "right");
+  assert.deepEqual(ids(state), ["decisions", "tasks", "rights"]);
+  state = w.moveWorkspacePanel(state, "tasks", "bottom");
+  assert.deepEqual(ids(state), ["decisions", "rights", "tasks"]);
+  state = w.moveWorkspacePanel(state, "tasks", "top");
+  assert.deepEqual(ids(state), ["decisions", "tasks", "rights"]);
+  state = w.moveWorkspacePanel(state, "tasks", "left");
+  assert.deepEqual(ids(state), ["tasks", "decisions", "rights"]);
 });
 
-test("parsing malformed or old storage falls back to a safe default", () => {
+test("parsing malformed, old and empty storage falls back to a content-only default", () => {
   for (const raw of ["{", JSON.stringify({ version: 99 }), "null", ""])
     assert.deepEqual(
       w.parseWorkspaceLayout(raw, ["summary", "tasks"]),

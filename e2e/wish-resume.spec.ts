@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { openTerminalPanel } from "./terminal-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -52,7 +53,7 @@ test("wish resume shows the wish and runs its lead in the lead's terminal", asyn
   const url = new URL(process.env.DJINN_URL!);
   url.pathname = "/";
   await page.goto(url.toString());
-  const terminal = page.getByRole("region", { name: "Terminal" });
+  const terminal = await openTerminalPanel(page);
   await expect(
     terminal.locator(".lead-terminal-command").first(),
   ).toContainText(`claude --resume ${session}`);

@@ -5,6 +5,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { openTerminalPanel } from "./terminal-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -84,7 +85,7 @@ test("switching the wish switches the terminal to its own lead", async ({
   const url = new URL(process.env.DJINN_URL!);
   url.pathname = "/";
   await page.goto(url.toString());
-  const terminal = page.getByRole("region", { name: "Terminal" });
+  const terminal = await openTerminalPanel(page);
   const command = terminal.locator(".lead-terminal-command").first();
   const brassLine = `fake-claude --resume ${sessions.brass} in ${brass.folder}`;
   const glassLine = `fake-claude --resume ${sessions.glass} in ${glass.folder}`;

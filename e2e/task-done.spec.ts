@@ -68,6 +68,9 @@ test("a task marked done leaves what moves and tops the finished tasks", async (
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await openWorkspaceSection(page, "tasks");
+    const tasksSection = page.locator('[data-wish-section="tasks"]');
+    await expect(tasksSection.locator("strong")).toHaveText("Tasks");
+    await expect(tasksSection.locator(":scope > .count")).toHaveText("3");
     const moving = page.locator(".tasks-moving");
     const finished = page.locator(".tasks-finished");
     await expect(moving.locator("h2")).toHaveText("Moving or waiting2");

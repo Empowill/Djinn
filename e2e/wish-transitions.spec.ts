@@ -395,7 +395,7 @@ test("successful make exits content before smoke dissipation and reveal", async 
     .evaluate((entry) => {
       const rootStyle = getComputedStyle(entry);
       const sections = Array.from(
-        entry.querySelectorAll<HTMLElement>("[data-wish-section]"),
+        entry.querySelectorAll<HTMLElement>("[data-wish-reveal-section]"),
       );
       const timeMs = (value: string) => {
         const match = value.trim().match(/^([0-9.]+)(ms|s)$/);
@@ -406,25 +406,21 @@ test("successful make exits content before smoke dissipation and reveal", async 
         distance: rootStyle.getPropertyValue("--wish-motion-distance").trim(),
         duration: timeMs(rootStyle.getPropertyValue("--wish-motion-duration")),
         stagger: timeMs(rootStyle.getPropertyValue("--wish-motion-stagger")),
-        sectionDurations: sections.map((section) =>
-          timeMs(getComputedStyle(section).animationDuration),
-        ),
-        sectionDelays: sections.map((section) =>
-          timeMs(getComputedStyle(section).animationDelay),
-        ),
+        sections: sections.map((section) => ({
+          marker: section.getAttribute("data-wish-reveal-section"),
+          duration: timeMs(getComputedStyle(section).animationDuration),
+          delay: timeMs(getComputedStyle(section).animationDelay),
+        })),
       };
     });
   expect(revealContract.distance).toBe("28px");
   expect(revealContract.duration).toBe(520);
   expect(revealContract.stagger).toBe(82);
-  if (revealContract.sectionDurations.length) {
-    expect(
-      revealContract.sectionDurations.every((duration) => duration === 520),
-    ).toBe(true);
-    expect(revealContract.sectionDelays[0]).toBe(0);
-    if (revealContract.sectionDelays.length > 1)
-      expect(revealContract.sectionDelays[1]).toBe(82);
-  }
+  expect(revealContract.sections).toEqual([
+    { marker: "head", duration: 520, delay: 0 },
+    { marker: "content", duration: 520, delay: 82 },
+    { marker: "summary", duration: 520, delay: 164 },
+  ]);
   await settleWishFocus(page);
   await page.clock.runFor(900);
   await expect(page.locator('[data-wish-entry="wish"]')).toHaveAttribute(

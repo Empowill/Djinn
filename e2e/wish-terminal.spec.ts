@@ -4,6 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { openTerminalPanel } from "./terminal-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -53,9 +54,9 @@ test("the terminal shows the lead of the wish shown, and follows the wish", asyn
   wishWithLead("Follow me second", second);
   djinn("wish", "make", "No lead here", "--paused");
   await page.goto(process.env.DJINN_URL!);
+  const terminal = await openTerminalPanel(page);
   const nav = (title: string) =>
     page.locator(".wish-nav").filter({ hasText: title });
-  const terminal = page.getByRole("region", { name: "Terminal" });
   const bar = terminal.locator(".lead-terminal-bar");
 
   // The running lead of the wish appears without a separate terminal action.

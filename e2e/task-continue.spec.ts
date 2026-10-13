@@ -123,6 +123,18 @@ test("an interrupted task continued from the command line stays one task", async
     ).task as Task;
     expect(continued.id).toBe(id);
     expect(continued.code).toBe("W1");
+    // A resumed fake worker can be held by host memory too. Starting it explicitly is the same action exposed by its
+    // Planned card; the completion assertion below still proves the continuation ran to the end.
+    await expect
+      .poll(
+        () => {
+          const current = task(id);
+          return current.machine_wait ? "machine-wait" : current.status;
+        },
+        { timeout: 10_000 },
+      )
+      .toMatch(/^(machine-wait|TASK_STATUS_(RUNNING|DONE))$/);
+    if (task(id).machine_wait) djinn("task", "start", id);
     await expect
       .poll(() => task(id).status, { timeout: 10_000 })
       .toBe("TASK_STATUS_DONE");
@@ -130,6 +142,9 @@ test("an interrupted task continued from the command line stays one task", async
     await page.goto(running.url);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await openWorkspaceSection(page, "tasks");
+    const tasksSection = page.locator('[data-wish-section="tasks"]');
+    await expect(tasksSection.locator("strong")).toHaveText("Tasks");
+    await expect(tasksSection.locator(":scope > .count")).toHaveText("1");
     await expect(page.locator(".tasks-moving h2")).toHaveText(
       "Moving or waiting0",
     );

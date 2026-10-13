@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { openTerminalPanel } from "./terminal-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -78,7 +79,8 @@ test("an answer is typed in the terminal of the wish's lead, reopened", async ({
   const url = new URL(process.env.DJINN_URL!);
   url.pathname = "/";
   await page.goto(url.toString());
-  const rows = page.locator(".lead-terminal .xterm-rows > div");
+  const terminal = await openTerminalPanel(page);
+  const rows = terminal.locator(".xterm-rows > div");
   await expect(
     rows.filter({ hasText: `fake-claude --resume ${session} in ${folder}` }),
   ).toHaveCount(1);

@@ -144,7 +144,11 @@ test("the flight plan merges two wishes, and a question is answered from it", as
 
   const pageHeader = page.locator(".page-header");
   const appToolbar = page.locator(".app-toolbar");
-  const assertHeaderChrome = async (left: number, size = 32) => {
+  const assertHeaderChrome = async (
+    left: number,
+    size = 32,
+    alignWithAppToolbar = true,
+  ) => {
     const headerBox = await pageHeader.boundingBox();
     const breadcrumbsBox = await pageHeader
       .locator(".breadcrumbs")
@@ -162,12 +166,22 @@ test("the flight plan merges two wishes, and a question is answered from it", as
     expect(backBox).toMatchObject({ width: size, height: size });
     expect(toggleBox).toMatchObject({ width: size, height: size });
     const headerCenter = headerBox!.y + headerBox!.height / 2;
-    expect(
-      Math.abs(headerCenter - (backBox!.y + backBox!.height / 2)),
-    ).toBeLessThan(1);
-    expect(
-      Math.abs(headerCenter - (toggleBox!.y + toggleBox!.height / 2)),
-    ).toBeLessThan(1);
+    if (alignWithAppToolbar) {
+      expect(
+        Math.abs(headerCenter - (backBox!.y + backBox!.height / 2)),
+      ).toBeLessThan(1);
+      expect(
+        Math.abs(headerCenter - (toggleBox!.y + toggleBox!.height / 2)),
+      ).toBeLessThan(1);
+    } else {
+      const globalTopBox = await page
+        .locator(".workspace-global-top")
+        .boundingBox();
+      expect(globalTopBox).not.toBeNull();
+      expect(headerBox!.y).toBeGreaterThanOrEqual(
+        globalTopBox!.y + globalTopBox!.height,
+      );
+    }
     const actions = pageHeader.locator(".topbar-actions");
     if (await actions.count()) {
       const actionsBox = await actions.boundingBox();
@@ -274,17 +288,19 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   const leadAction = wishHeader.locator(".split-button > button").first();
   await leadAction.focus();
   await expect(leadAction).toHaveAttribute("title", /lead/);
-  await assertHeaderChrome(248);
+  // The wish view keeps the global action strip between the app toolbar and its own header, so its header no longer
+  // shares the toolbar's vertical center. Its own controls remain checked below.
+  await assertHeaderChrome(248, 32, false);
   await expect(wishHeader.locator(".topbar-actions")).toBeVisible();
   await page.setViewportSize({ width: 760, height: 1000 });
-  await assertHeaderChrome(100);
+  await assertHeaderChrome(100, 32, false);
   await page.evaluate(() =>
     document.documentElement.classList.add("native-mac"),
   );
-  await assertHeaderChrome(166, 20);
+  await assertHeaderChrome(166, 20, false);
   await page.locator(".sidebar-toggle").click();
   await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
-  await assertHeaderChrome(166, 20);
+  await assertHeaderChrome(166, 20, false);
   await page.locator(".sidebar-toggle").click();
   await expect(page.locator(".wish-app")).not.toHaveClass(/sidebar-collapsed/);
   await page.evaluate(() =>
@@ -296,7 +312,6 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await expect(w2.locator(".task-usage")).toHaveText(/^6\.5\s?K tokens$/);
   await openWorkspaceSection(page, "agents");
   await expect(page.locator(".wish-block")).toContainText("About W1");
-  // Opening the Journal workspace panel shows its entries immediately.
   await openWorkspaceSection(page, "journal");
   await expect(page.locator(".journal-list")).toContainText("Kick-off");
   await openWorkspaceSection(page, "tasks");

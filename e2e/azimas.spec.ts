@@ -89,11 +89,15 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     // Nothing waits for you: no azima is your move.
     await expect(page.locator("#action-center")).toHaveCount(0);
-    const tasksPanel = await openWorkspaceSection(page, "tasks");
+    const tasksTab = await openWorkspaceSection(page, "tasks");
+    await expect(tasksTab).toBeVisible();
     // The work only: an azima is the plan.
-    await expect(tasksPanel.locator(".workspace-panel-heading")).toContainText(
-      "Tasks3",
+    await expect(tasksTab.locator(".workspace-panel-heading h2")).toHaveText(
+      "Tasks",
     );
+    await expect(
+      tasksTab.locator(".workspace-panel-heading .count"),
+    ).toHaveText("3");
 
     await expect(page.locator(".tasks-moving h2")).toHaveText(
       "Moving or waiting1",
@@ -125,12 +129,16 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
       "T3",
       "T1",
     ]);
-    // Closing and reopening the panel preserves the expanded fold, without duplicating task ids.
-    await tasksPanel.getByRole("button", { name: "Close Tasks" }).click();
-    const reopenedTasks = await openWorkspaceSection(page, "tasks");
-    await expect(
-      reopenedTasks.locator(".azima-heading .agent-code"),
-    ).toHaveText(["T2", "T3", "T1"]);
+    // What a click unfolded stays so, the Tasks panel left and back. This fixture has no decisions, so Journal is
+    // the always-visible panel used to leave the work panel.
+    await openWorkspaceSection(page, "journal");
+    await openWorkspaceSection(page, "tasks");
+    await expect(azimas.locator(".azima-heading .agent-code")).toHaveText([
+      "T2",
+      "T3",
+      "T1",
+    ]);
+    await expect(t2.locator(".wish-task .agent-code")).toHaveText(["W2", "W1"]);
     const duplicateIds = await page.evaluate(() => {
       const seen = new Map<string, number>();
       for (const element of document.querySelectorAll("[id]"))

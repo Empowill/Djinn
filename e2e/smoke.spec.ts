@@ -381,6 +381,27 @@ test("native mac drag protocol ignores controls and handles the empty titlebar",
   await page.setViewportSize({ width: 1100, height: 760 });
   await page.goto(djinnURL());
   await expect(page.locator("html")).toHaveClass(/native-mac/);
+  await expect(page.locator(".app-toolbar")).toBeVisible();
+  await expect(
+    page.locator(".app-statusbar").getByText("Live", { exact: true }),
+  ).toBeVisible();
+
+  const emptyTitlebar = await page.evaluate(() => {
+    const interactive =
+      ".app-toolbar, button, a, input, select, textarea, [role='button'], [contenteditable='true'], [data-no-window-drag]";
+    const candidates = [
+      { x: window.innerWidth - 12, y: 20 },
+      { x: 32, y: 20 },
+      { x: window.innerWidth / 2, y: 2 },
+    ];
+    const point = candidates.find(({ x, y }) => {
+      const target = document.elementFromPoint(x, y);
+      return target instanceof Element && !target.closest(interactive);
+    });
+    if (!point) throw new Error("No empty native titlebar point is available");
+    return point;
+  });
+  const dragEnd = { x: emptyTitlebar.x + 10, y: emptyTitlebar.y };
 
   const messages = () =>
     page.evaluate(
@@ -395,15 +416,15 @@ test("native mac drag protocol ignores controls and handles the empty titlebar",
       ).__djinnNativeDragMessages.length = 0;
     });
 
-  await page.mouse.move(500, 20);
+  await page.mouse.move(emptyTitlebar.x, emptyTitlebar.y);
   await page.mouse.down();
-  await page.mouse.move(510, 20);
+  await page.mouse.move(dragEnd.x, dragEnd.y);
   await page.mouse.up();
-  expect(await messages()).toEqual(["wails:drag"]);
+  await expect.poll(messages).toEqual(["wails:drag"]);
 
   await clearMessages();
-  await page.mouse.dblclick(500, 20);
-  expect(await messages()).toEqual(["wails:drag:doubleclick"]);
+  await page.mouse.dblclick(emptyTitlebar.x, emptyTitlebar.y);
+  await expect.poll(messages).toEqual(["wails:drag:doubleclick"]);
 
   await clearMessages();
   await page.mouse.move(510, 48);

@@ -1,5 +1,5 @@
 // The wish workspace is a small, serialisable tree. The tree deliberately knows nothing about React or a wish's
-// data: panels can be composed, closed and restored without coupling layout to the content they show.
+// data: content panels can be composed, closed and restored without coupling layout to what they show.
 
 export const WORKSPACE_LAYOUT_VERSION = 1;
 
@@ -21,12 +21,18 @@ export type WorkspaceNode = WorkspacePanelNode | WorkspaceSplitNode;
 
 export interface WorkspaceLayoutState {
   version: typeof WORKSPACE_LAYOUT_VERSION;
+  /** The composable content tree. The fixed summary navigation card is intentionally absent. */
   root: WorkspaceNode;
   closed: string[];
   maximized?: string;
 }
 
 const panel = (id: string): WorkspacePanelNode => ({ type: "panel", id });
+const emptyRoot = (): WorkspaceSplitNode => ({
+  type: "split",
+  direction: "horizontal",
+  children: [],
+});
 
 const directionFor = (placement: WorkspacePlacement): WorkspaceDirection =>
   placement === "left" || placement === "right" ? "horizontal" : "vertical";
@@ -49,6 +55,9 @@ const unique = (values: readonly string[]): string[] => {
   });
 };
 
+const contentIds = (panelIds: readonly string[], summaryId: string): string[] =>
+  unique(panelIds).filter((id) => id !== summaryId);
+
 export function workspacePanel(id: string): WorkspacePanelNode {
   return panel(id);
 }
@@ -64,12 +73,11 @@ export function workspaceDefaultLayout(
   panelIds: readonly string[],
   summaryId = "summary",
 ): WorkspaceLayoutState {
-  const ids = unique(panelIds);
-  const summary = ids.includes(summaryId) ? summaryId : (ids[0] ?? summaryId);
+  const ids = contentIds(panelIds, summaryId);
   return {
     version: WORKSPACE_LAYOUT_VERSION,
-    root: panel(summary),
-    closed: ids.filter((id) => id !== summary),
+    root: emptyRoot(),
+    closed: ids,
   };
 }
 
@@ -110,21 +118,22 @@ function normalizedNode(
   const children = candidate.children
     .map((child) => normalizedNode(child, allowed, seen))
     .filter((child): child is WorkspaceNode => !!child);
-  if (children.length === 0) return undefined;
+  if (children.length === 0)
+    return { type: "split", direction: candidate.direction, children: [] };
   if (children.length === 1) return children[0];
   return { type: "split", direction: candidate.direction, children };
 }
 
 /**
- * Sanitize data read from storage. Unknown panel IDs and duplicate leaves are dropped, while every known panel not
- * present in the tree is kept closed. This lets old layouts survive when a panel is renamed or a wish has no data.
+ * Sanitize data read from storage. The fixed summary ID is deliberately excluded from the content tree, so layouts
+ * written by the previous workspace version migrate to a safe content-only tree on their next read.
  */
 export function normalizeWorkspaceLayout(
   value: unknown,
   panelIds: readonly string[],
   summaryId = "summary",
 ): WorkspaceLayoutState {
-  const ids = unique(panelIds);
+  const ids = contentIds(panelIds, summaryId);
   const allowed = new Set(ids);
   const fallback = workspaceDefaultLayout(ids, summaryId);
   if (!value || typeof value !== "object") return fallback;
@@ -140,12 +149,7 @@ export function normalizeWorkspaceLayout(
   const seen = new Set<string>();
   const parsedRoot = normalizedNode(candidate.root, allowed, seen);
   if (!parsedRoot) return fallback;
-  const pinnedId = ids.includes(summaryId) ? summaryId : (ids[0] ?? summaryId);
-  let root = parsedRoot;
-  if (!seen.has(pinnedId)) {
-    seen.add(pinnedId);
-    root = workspaceSplit("horizontal", [panel(pinnedId), parsedRoot]);
-  }
+
   const closed = unique(
     Array.isArray(candidate.closed)
       ? candidate.closed.filter((id): id is string => typeof id === "string")
@@ -158,7 +162,7 @@ export function normalizeWorkspaceLayout(
       : undefined;
   return {
     version: WORKSPACE_LAYOUT_VERSION,
-    root,
+    root: parsedRoot,
     closed: [...closed, ...missing],
     ...(maximized ? { maximized } : {}),
   };
@@ -182,7 +186,7 @@ function removeNode(
     if (result.node) children.push(result.node);
   }
   if (!removed) return { node, removed: false };
-  if (children.length === 0) return { removed: true };
+  if (children.length === 0) return { node: emptyRoot(), removed: true };
   if (children.length === 1) return { node: children[0], removed: true };
   return {
     node: { type: "split", direction: node.direction, children },
@@ -252,19 +256,24 @@ export function composeWorkspace(
   };
 }
 
-/** Open a closed panel beside the summary and maximize it for immediate feedback. */
+/** Open a closed panel in the main area and maximize it for immediate reading. */
 export function openWorkspacePanel(
   state: WorkspaceLayoutState,
   id: string,
-  summaryId = "summary",
+  _summaryId = "summary",
 ): WorkspaceLayoutState {
-  if (!id || workspaceHasPanel(state.root, id))
-    return { ...state, maximized: id || state.maximized };
-  const target = workspaceHasPanel(state.root, summaryId)
-    ? summaryId
-    : workspacePanelIds(state.root)[0];
-  if (!target) return state;
-  const inserted = insertNode(state.root, id, target, "right");
+  if (!id) return state;
+  if (workspaceHasPanel(state.root, id)) return { ...state, maximized: id };
+  const ids = workspacePanelIds(state.root);
+  if (ids.length === 0) {
+    return {
+      ...state,
+      root: panel(id),
+      closed: state.closed.filter((panelId) => panelId !== id),
+      maximized: id,
+    };
+  }
+  const inserted = insertNode(state.root, id, ids[0], "right");
   if (!inserted.inserted) return state;
   return {
     ...state,
@@ -277,14 +286,13 @@ export function openWorkspacePanel(
 export function closeWorkspacePanel(
   state: WorkspaceLayoutState,
   id: string,
-  summaryId = "summary",
+  _summaryId = "summary",
 ): WorkspaceLayoutState {
-  if (id === summaryId) return { ...state, maximized: undefined };
   const removed = removeNode(state.root, id);
-  if (!removed.removed || !removed.node) return state;
+  if (!removed.removed) return state;
   return {
     ...state,
-    root: removed.node,
+    root: removed.node ?? emptyRoot(),
     closed: state.closed.includes(id) ? state.closed : [...state.closed, id],
     maximized: state.maximized === id ? undefined : state.maximized,
   };

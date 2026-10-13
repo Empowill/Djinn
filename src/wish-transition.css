@@ -137,8 +137,9 @@
   pointer-events: auto;
 }
 
-/* WishView can opt into the same four sections. Until its workspace is mounted, the parent itself supplies a quiet
-   reveal so there is still one continuous handoff for the initial page. */
+/* WishView reveals its workspace head, content, and summary through dedicated markers. Legacy four-section markers
+   remain supported. Until its workspace is mounted, the parent itself supplies a quiet reveal so there is still one
+   continuous handoff for the initial page. */
 .wish-entry[data-wish-entry="wish"][data-wish-transition="preparing"] {
   position: absolute;
   inset: 0;
@@ -147,10 +148,36 @@
   transform: none;
 }
 .wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]:not(
-    :has([data-wish-section])
+    :has(
+      [data-wish-reveal-section],
+      [data-wish-section="title"],
+      [data-wish-section="options"],
+      [data-wish-section="editor"],
+      [data-wish-section="action"]
+    )
   ) {
   animation: wish-entry-up-fade var(--wish-motion-duration)
     var(--wish-motion-ease) both;
+}
+.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
+  [data-wish-reveal-section] {
+  animation-name: wish-entry-up-fade;
+  animation-duration: var(--wish-motion-duration);
+  animation-timing-function: var(--wish-motion-ease);
+  animation-fill-mode: both;
+  will-change: transform, opacity;
+}
+.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
+  [data-wish-reveal-section="head"] {
+  animation-delay: 0ms;
+}
+.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
+  [data-wish-reveal-section="content"] {
+  animation-delay: var(--wish-motion-stagger);
+}
+.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
+  [data-wish-reveal-section="summary"] {
+  animation-delay: calc(var(--wish-motion-stagger) * 2);
 }
 .wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
   [data-wish-section="title"],
@@ -187,7 +214,8 @@
   .wish-creation[data-wish-transition="entering"] [data-wish-section],
   .wish-creation[data-wish-transition="entering"] .wish-composer,
   .wish-entry[data-wish-entry="wish"],
-  .wish-entry[data-wish-entry="wish"] [data-wish-section] {
+  .wish-entry[data-wish-entry="wish"] [data-wish-section],
+  .wish-entry[data-wish-entry="wish"] [data-wish-reveal-section] {
     animation: none !important;
     opacity: 1;
     transform: none;
@@ -220,7 +248,10 @@ html[data-motion="reduced"]
 html[data-motion="reduced"] .wish-entry[data-wish-entry="wish"],
 html[data-motion="reduced"]
   .wish-entry[data-wish-entry="wish"]
-  [data-wish-section] {
+  [data-wish-section],
+html[data-motion="reduced"]
+  .wish-entry[data-wish-entry="wish"]
+  [data-wish-reveal-section] {
   animation: none !important;
   opacity: 1;
   transform: none;
