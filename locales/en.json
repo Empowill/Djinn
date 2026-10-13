@@ -959,5 +959,14 @@
   "work.pending_why": "Waiting to be committed: {reason}",
   "work.red": "Red tests, not committed: {reason}",
   "work.reviewed_by": "reviewed by {task}",
-  "work.uncommitted": "Changes not committed, not merged"
+  "work.uncommitted": "Changes not committed, not merged",
+  "update.auto": "Installing by itself:",
+  "update.auto_waiting": "Installs by itself once free — {why}",
+  "update.install_failed": "Build {sha} did not install: {message}",
+  "update.no_answer": "Djinn did not answer within {seconds} s: try again",
+  "update.no_restart": "Djinn did not restart within {seconds} s",
+  "update.ready_version": "Djinn {version} is ready",
+  "update.ready_version_build": "Djinn {version} is ready:",
+  "update.restart": "Restart",
+  "update.retry": "Try again"
 }

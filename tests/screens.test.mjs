@@ -4364,6 +4364,118 @@ test("the update banner shows a build of the wish's moved branch as the update, 
   assert.equal(html.match(/<img/g).length, 1);
 });
 
+test("the update banner says how an install failed, with its last lines, what installs by itself, and offers the restart of the newer Djinn it installed (W554)", () => {
+  const line = {
+    wishTitle: "Robustness",
+    project: "djinn",
+    branch: "feat/robustness",
+    sha: "aaaa1111bbbb",
+    tasks: [],
+    changes: ["ui: the banner"],
+    summaries: [],
+    base: "abcdef0123",
+    running: true,
+    continues: "",
+    changesCount: 1,
+    lacks: [],
+    lacksCount: 0,
+    auto: true,
+  };
+  const banner = (state, phase = { kind: "idle" }, open = []) =>
+    s.renderToStaticMarkup(
+      h(s.UpdateBannerView, {
+        state: {
+          current: "local-abcdef0",
+          ready: "",
+          installed: false,
+          notResumed: [],
+          notesUrl: "",
+          builds: [],
+          ...state,
+        },
+        phase,
+        dismissed: false,
+        open,
+        onInstall() {},
+        onDismiss() {},
+        onNotes() {},
+      }),
+    );
+  const installing = (extra) => ({
+    sha: line.sha,
+    step: s.InstallStep.BUILDING,
+    waiting: "",
+    doing: "",
+    auto: false,
+    error: "",
+    log: [],
+    ...extra,
+  });
+  // Past its deadline: why, Try again in place of the spinner, the last lines its command wrote in its details; even
+  // while the window still waits for its call's answer.
+  const failed = installing({
+    step: s.InstallStep.FAILED,
+    error:
+      "it did not end within 20m0s, at install: go build ./cmd/djinn: Djinn stopped it",
+    log: ["task: [ui] npm run build", "task: [install] go build ./cmd/djinn"],
+  });
+  for (const phase of [
+    { kind: "idle" },
+    { kind: "installing", sha: line.sha, seen: true },
+  ]) {
+    const html = banner({ builds: [line], installing: failed }, phase, [
+      line.sha,
+    ]);
+    assert.match(
+      html,
+      /Build aaaa1111 did not install: it did not end within 20m0s, at install: go build \.\/cmd\/djinn: Djinn stopped it<\/span>/,
+    );
+    assert.match(
+      html,
+      /<button type="button" class="update-banner-primary">Try again<\/button>/,
+    );
+    assert.doesNotMatch(html, /Installing…|Building…/);
+    assert.match(
+      html,
+      /<pre class="update-banner-log">task: \[ui\] npm run build\ntask: \[install\] go build \.\/cmd\/djinn<\/pre>/,
+    );
+  }
+  // A build of the running line installs by itself: it says so, and the step of its command that runs; it waits for
+  // a free machine, saying why.
+  assert.match(
+    banner({
+      builds: [line],
+      installing: installing({ auto: true, doing: "ui: npm run build" }),
+    }),
+    /<span>Installing by itself: Building… \(ui: npm run build\)<\/span>/,
+  );
+  assert.match(
+    banner({
+      builds: [line],
+      installing: installing({
+        auto: true,
+        step: s.InstallStep.WAITING,
+        waiting: "gate test: held by W5",
+      }),
+    }),
+    /<span>Installs by itself once free — gate test: held by W5<\/span>/,
+  );
+  // Installed: the newer Djinn is ready, with what it adds, and the click only restarts.
+  const ready = banner({
+    ready: "local-aaaa111",
+    installed: true,
+    readyBuild: { ...line, auto: false },
+  });
+  assert.match(
+    ready,
+    /Djinn local-aaaa111 is ready: <code>aaaa1111<\/code> of feat\/robustness<span class="update-banner-quiet"> · Robustness<\/span><span class="update-banner-quiet"> — adds 1 commit<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Restart<\/button>/,
+  );
+  assert.match(
+    banner({ ready: "local-aaaa111", installed: true }),
+    /Djinn local-aaaa111 is ready<\/span>.*>Restart<\/button>/,
+  );
+});
+
 test("an azima whose work is done awaits its proof: its own label and tone, what it needs, the pill apart, and the flying carpet lists what a person can give", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da71";
   const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);

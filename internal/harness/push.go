@@ -411,9 +411,31 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		commitsText(count, nil), why))
 	h.notify()
 	if settings, err := plan.LoadSettings(h.home, project); err == nil && settings.Install != "" && h.built != nil {
-		h.built(h.build(ctx, wish, project, settings.Install, record, committed))
+		b := h.build(ctx, wish, project, settings.Install, record, committed)
+		b.Auto = !unchecked && h.installsItself(ctx, project, settings, b)
+		h.built(b)
 	}
 	return record, nil
+}
+
+// installsItself tells whether Djinn installs b, a build it pushed past the project's push checks, by itself (W554):
+// a build of the running Djinn's line (its branch, or one that carries it on) in a project whose install_builds is on,
+// that holds the build installed last when that one is newer than the running Djinn: another line's install is not
+// overwritten by itself, nor is a build installed twice. A project with no push check has passed none: offered only.
+func (h *Harness) installsItself(ctx context.Context, project *planv1.Project, settings plan.Settings, b Built) bool {
+	if !settings.InstallBuilds || b.Base == "" || !b.Running && b.Continues == "" ||
+		len(settings.ChecksAt(planv1.CheckWhen_CHECK_WHEN_PUSH)) == 0 {
+		return false
+	}
+	last := h.installedSha(ctx, project.GetId())
+	switch last {
+	case "", b.Base:
+		return true
+	case b.Sha:
+		return false
+	}
+	repo := project.GetDirectory()
+	return isAncestor(ctx, repo, last, b.Sha) || isAncestor(ctx, repo, last, b.Base)
 }
 
 // pushedByHand records the push of branch, at sha, that its remote holds already, pushed by someone else than Djinn

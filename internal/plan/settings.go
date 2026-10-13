@@ -198,6 +198,8 @@ type Settings struct {
 	// WatchCommands are the commands, or their starts, the developer lets a watcher run in the project besides those
 	// its .agents/permissions.txtpb lists: from their own file only.
 	WatchCommands []string
+	// InstallBuilds says whether a build of the running Djinn's line, once pushed, installs by itself (W554).
+	InstallBuilds bool
 	Warnings      []string
 
 	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom            planv1.SettingSource
@@ -205,7 +207,7 @@ type Settings struct {
 	EnlightenWorkersFrom                                                                               planv1.SettingSource
 	QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                                        planv1.SettingSource
 	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom, PushStrategyFrom planv1.SettingSource
-	InstallQuestionsFrom, BabysitFrom, WatchCommandsFrom                                               planv1.SettingSource
+	InstallQuestionsFrom, BabysitFrom, WatchCommandsFrom, InstallBuildsFrom                            planv1.SettingSource
 }
 
 // CanReadOnly tells whether a provider can run a question worker (read-only).
@@ -256,7 +258,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		PushStrategy:     planv1.PushStrategy_PUSH_STRATEGY_WISH,
 		InstallQuestions: DefaultInstallQuestions,
 		MainBranchFrom:   def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def, PushStrategyFrom: def,
-		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def, WatchCommandsFrom: def,
+		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def, WatchCommandsFrom: def, InstallBuilds: true, InstallBuildsFrom: def,
 	}
 	questionModel := false // a file set it
 	for _, f := range []struct {
@@ -322,6 +324,9 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		}
 		if f.settings.InstallReleases != nil {
 			s.InstallReleases, s.InstallReleasesFrom = f.settings.GetInstallReleases(), f.from
+		}
+		if f.settings.InstallBuilds != nil {
+			s.InstallBuilds, s.InstallBuildsFrom = f.settings.GetInstallBuilds(), f.from
 		}
 		if f.settings.Push != nil {
 			s.Push, s.PushFrom = f.settings.GetPush(), f.from
@@ -436,6 +441,7 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "correction_attempts", Value: strconv.Itoa(s.CorrectionAttempts), Source: s.AttemptsFrom},
 		{Name: "install", Value: s.Install, Source: s.InstallFrom},
 		{Name: "install_questions", Value: InstallQuestionsWord(s.InstallQuestions), Source: s.InstallQuestionsFrom},
+		{Name: "install_builds", Value: strconv.FormatBool(s.InstallBuilds), Source: s.InstallBuildsFrom},
 		{Name: "enlighten_workers", Value: strconv.FormatBool(s.EnlightenWorkers), Source: s.EnlightenWorkersFrom},
 		{Name: "question_provider", Value: questionProviderName(s.QuestionProvider), Source: s.QuestionProviderFrom},
 		{Name: "question_model", Value: s.QuestionModel, Source: s.QuestionModelFrom},

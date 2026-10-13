@@ -175,7 +175,7 @@ func (u *updater) publish() {
 	if ready == "" && u.offer != nil {
 		ready, notes = u.offer.Version, u.offer.Notes
 	}
-	u.ui.SetReady(ready, notes)
+	u.ui.SetReady(ready, notes, ready == u.local)
 	if ready != u.named {
 		u.named = ready
 		if ready != "" && u.describe != nil {

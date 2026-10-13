@@ -100,8 +100,10 @@ type UiServiceClient interface {
 	Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchResponse], error)
 	// Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
 	// as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
-	// sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
-	// newer Djinn, nothing restarts. Only the update button and `djinn update` call it.
+	// sessions. Fails when no newer Djinn waits. With a build, its install command runs first, within a deadline, its
+	// steps and its failure told by WatchUpdate (Installing) whether or not the call's answer arrives; when it installed
+	// no newer Djinn, nothing restarts. The install runs on even when the call ends first. Only the update button and
+	// `djinn update` call it.
 	Update(context.Context, *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error)
 	// Whether the system lets Djinn show notifications.
 	GetNotifications(context.Context, *connect.Request[v1.UiServiceGetNotificationsRequest]) (*connect.Response[v1.UiServiceGetNotificationsResponse], error)
@@ -332,8 +334,10 @@ type UiServiceHandler interface {
 	Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest], *connect.ServerStream[v1.UiServiceWatchResponse]) error
 	// Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
 	// as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
-	// sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
-	// newer Djinn, nothing restarts. Only the update button and `djinn update` call it.
+	// sessions. Fails when no newer Djinn waits. With a build, its install command runs first, within a deadline, its
+	// steps and its failure told by WatchUpdate (Installing) whether or not the call's answer arrives; when it installed
+	// no newer Djinn, nothing restarts. The install runs on even when the call ends first. Only the update button and
+	// `djinn update` call it.
 	Update(context.Context, *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error)
 	// Whether the system lets Djinn show notifications.
 	GetNotifications(context.Context, *connect.Request[v1.UiServiceGetNotificationsRequest]) (*connect.Response[v1.UiServiceGetNotificationsResponse], error)
