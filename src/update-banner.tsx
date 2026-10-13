@@ -4,11 +4,19 @@
 // when djinn serves the page (a DjinnProvider). A release links its notes, which the system's browser opens. Once a
 // batch of finished work is pushed to an integration branch, in a project that names an install command, it proposes
 // to install that build and restart on it; while it installs, it says what the install waits for, then that it builds,
-// then that Djinn restarts.
+// and which step of its command runs, then that Djinn restarts. A build of the running Djinn's line installs by itself
+// (W554): the banner then says the newer Djinn is ready, and its Restart is the person's click.
+//
+// What Djinn says of an install is the truth, not the call that asked for it (W554): a call whose answer never comes
+// (a Djinn frozen, a lost link) leaves no spinner. Once Djinn says the install runs, its end comes from Djinn: installed,
+// or failed with why and the last lines its command wrote, a Try again beside it. A click Djinn says nothing of within
+// ANSWER fails, saying so; a restart that does not come within RESTART too.
 //
 // Each part holds one line: what waits, named by its commit, the branch and wish it comes from, and what it adds to the
 // running Djinn or lacks of it, its actions beside it; the tasks and commits unfold on demand (W468). Each branch keeps
-// its build: the branch the running Djinn was built from shows first, the other branches' folded under one line. A
+// its build: the branch the running Djinn was built from shows first, with any branch that carries its line on (its
+// build holds the running commit: a wish moved its integration branch, W527), the other branches' folded under one
+// line. A
 // build, or the newer Djinn ready, dismissed with its ×, stays hidden, in this window's storage, until another comes.
 import { type ReactNode, useEffect, useState } from "react";
 
@@ -26,9 +34,14 @@ import "./update-banner.css";
 export type Phase =
   | { kind: "idle" }
   | { kind: "restarting" }
-  | { kind: "installing"; sha?: string }
+  // seen: Djinn said it runs the install; its end comes from Djinn from then on.
+  | { kind: "installing"; sha?: string; seen?: boolean }
   | { kind: "installed"; sha: string }
   | { kind: "failed"; message: string; sha?: string };
+
+// How long a click waits for Djinn to say it installs, and for the restart to come, before the banner says it failed.
+export const ANSWER = 30_000;
+export const RESTART = 180_000;
 
 // What the window dismissed, kept across reloads and restarts: a build by its commit, the newer Djinn ready by its
 // version (readyKey).
@@ -65,6 +78,41 @@ export function UpdateBanner() {
   useEffect(() => {
     if (state?.ready === "") setPhase({ kind: "idle" });
   }, [state?.ready]);
+  // Once Djinn says it installs the build clicked, how the install ends is Djinn's to say, answer or not.
+  const running = state?.installing;
+  useEffect(() => {
+    if (phase.kind !== "installing" || !phase.sha) return;
+    if (running?.sha === phase.sha && running.step !== InstallStep.FAILED) {
+      if (!phase.seen) setPhase({ ...phase, seen: true });
+    } else if (phase.seen || running?.sha === phase.sha) {
+      setPhase({ kind: "idle" });
+    }
+  }, [running, phase]);
+  // A click Djinn says nothing of, a restart that does not come: said, never an endless spinner.
+  useEffect(() => {
+    const wait =
+      phase.kind === "installing" && !phase.seen
+        ? ANSWER
+        : phase.kind === "restarting"
+          ? RESTART
+          : 0;
+    if (!wait) return;
+    const timer = setTimeout(
+      () =>
+        setPhase({
+          kind: "failed",
+          message: t(
+            phase.kind === "restarting"
+              ? "update.no_restart"
+              : "update.no_answer",
+            { seconds: Math.round(wait / 1000) },
+          ),
+          sha: phase.kind === "installing" ? phase.sha : undefined,
+        }),
+      wait,
+    );
+    return () => clearTimeout(timer);
+  }, [phase]);
 
   if (!api || !state) return null;
 
@@ -156,8 +204,12 @@ export function UpdateBannerView({
   const builds = (state.builds ?? []).filter(
     (b) => !dismissedBuilds.includes(b.sha),
   );
-  const running = builds.filter((b) => b.running);
-  const others = builds.filter((b) => !b.running);
+  // An install that failed, as Djinn says it: why, and the last lines its command wrote.
+  const failed =
+    installing?.step === InstallStep.FAILED ? installing : undefined;
+  // The running line: its branch, and those that carry it on.
+  const running = builds.filter((b) => b.running || b.continues);
+  const others = builds.filter((b) => !b.running && !b.continues);
   if (
     !ready &&
     !notResumed.length &&
@@ -180,9 +232,12 @@ export function UpdateBannerView({
   const readyBuild = ready ? state.readyBuild : undefined;
 
   const buildPart = (build: BuildProposal) => {
+    const told = installing?.sha === build.sha ? installing : undefined;
+    const fail = failed?.sha === build.sha ? failed : undefined;
     const busy =
-      installing?.sha === build.sha ||
+      (told && !fail) ||
       (phase.kind === "installing" &&
+        !phase.seen &&
         (!phase.sha || phase.sha === build.sha)) ||
       phase.kind === "restarting";
     return (
@@ -192,7 +247,12 @@ export function UpdateBannerView({
         open={open.includes(build.sha)}
         hover={origin(build)}
         title={
-          phase.kind === "failed" && phase.sha === build.sha ? (
+          fail ? (
+            t("update.install_failed", {
+              sha: build.sha.slice(0, 8),
+              message: fail.error,
+            })
+          ) : phase.kind === "failed" && phase.sha === build.sha ? (
             t("update.failed", { message: phase.message })
           ) : (
             <>
@@ -203,8 +263,8 @@ export function UpdateBannerView({
         actions={
           busy ? (
             <span>
-              {installing?.sha === build.sha
-                ? installStep(installing)
+              {told
+                ? installStep(told)
                 : t(
                     phase.kind === "restarting"
                       ? "update.restarting"
@@ -217,11 +277,24 @@ export function UpdateBannerView({
               className="update-banner-primary"
               onClick={() => onInstallBuild(build.sha)}
             >
-              {t("update.build_install")}
+              {t(
+                fail || (phase.kind === "failed" && phase.sha === build.sha)
+                  ? "update.retry"
+                  : "update.build_install",
+              )}
             </button>
           )
         }
-        details={hasDetails(build) && <BuildDetails build={build} />}
+        details={
+          (fail?.log.length || hasDetails(build)) && (
+            <>
+              {fail && fail.log.length > 0 && (
+                <pre className="update-banner-log">{fail.log.join("\n")}</pre>
+              )}
+              {hasDetails(build) && <BuildDetails build={build} />}
+            </>
+          )
+        }
         onDismiss={busy ? undefined : () => onDismissBuild(build.sha)}
       />
     );
@@ -244,6 +317,15 @@ export function UpdateBannerView({
               t("update.failed", { message: phase.message })
             ) : phase.kind === "restarting" ? (
               t("update.restarting")
+            ) : state.installed ? (
+              readyBuild ? (
+                <>
+                  {t("update.ready_version_build", { version: ready })}{" "}
+                  <Named build={readyBuild} />
+                </>
+              ) : (
+                t("update.ready_version", { version: ready })
+              )
             ) : readyBuild ? (
               <>
                 {t("update.ready_build")} <Named build={readyBuild} />
@@ -260,7 +342,7 @@ export function UpdateBannerView({
                   className="update-banner-primary"
                   onClick={onInstall}
                 >
-                  {t("update.install")}
+                  {t(state.installed ? "update.restart" : "update.install")}
                 </button>
               )}
               {notes && (
@@ -369,7 +451,17 @@ function Named({ build }: { build: BuildProposal }) {
   return (
     <>
       <code>{build.sha.slice(0, 8)}</code>
-      {build.branch && <> {t("update.from", { branch: build.branch })}</>}
+      {build.branch && (
+        <>
+          {" "}
+          {build.continues
+            ? t("update.from_continuing", {
+                branch: build.branch,
+                line: build.continues,
+              })
+            : t("update.from", { branch: build.branch })}
+        </>
+      )}
       {build.wishTitle && (
         <span className="update-banner-quiet"> · {build.wishTitle}</span>
       )}
@@ -468,20 +560,32 @@ function TaskLine({ code, title }: { code: string; title: string }) {
   );
 }
 
-// installStep says where an install stands: what it waits for, then that it prepares and builds, then that Djinn
-// restarts.
+// installStep says where an install stands: what it waits for, then that it prepares and builds, and the step of its
+// command that runs, then that Djinn restarts. One Djinn installs by itself says so.
 function installStep(installing: Installing): string {
-  switch (installing.step) {
-    case InstallStep.WAITING:
-      return t("update.build_waiting", { why: installing.waiting });
-    case InstallStep.PREPARING:
-      return t("update.build_preparing");
-    case InstallStep.BUILDING:
-      return t("update.build_building");
-    case InstallStep.RESTARTING:
-      return t("update.restarting");
-  }
-  return t("update.build_installing");
+  const step = (() => {
+    switch (installing.step) {
+      case InstallStep.WAITING:
+        return t(
+          installing.auto ? "update.auto_waiting" : "update.build_waiting",
+          { why: installing.waiting },
+        );
+      case InstallStep.PREPARING:
+        return t("update.build_preparing");
+      case InstallStep.BUILDING:
+        return t("update.build_building");
+      case InstallStep.RESTARTING:
+        return t("update.restarting");
+    }
+    return t("update.build_installing");
+  })();
+  const doing =
+    installing.doing && installing.step !== InstallStep.WAITING
+      ? ` (${installing.doing})`
+      : "";
+  return installing.auto && installing.step !== InstallStep.WAITING
+    ? `${t("update.auto")} ${step}${doing}`
+    : `${step}${doing}`;
 }
 
 // A part of the banner: one line, its title cut short when it does not fit (the hover tells it whole), its actions

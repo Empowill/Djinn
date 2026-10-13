@@ -1,9 +1,12 @@
-// The flight plan of the active wishes, merged (T13): a bar at the top while something waits for you, then each
+// The flying carpet was called the flight plan: this file, FlightPlan and the flight-plan class keep that name.
+// The flying carpet of the active wishes, merged (T13): a bar at the top while something waits for you, then each
 // wish at a glance, then what waits for you (the open questions of every wish, the blocking ones first, the workers
 // that wait, the wishes Djinn proposes to grant, the proofs you can give of the azimas whose work is done), and the
 // questions you asked to investigate. The tasks of every wish
 // have a tab of their own (task-tabs.tsx), and so have their decisions (decision-log.tsx). Every line shows the wish
 // it comes from, and an answer, a stop or a grant goes back to it. Each wish keeps its own view; an empty section is hidden.
+// The Djinn, the one lead, is at hand as on a wish: Talk to the Djinn in the header opens its terminal, the pill at the
+// bottom writes to it.
 import {
   type CSSProperties,
   type ReactNode,
@@ -18,6 +21,7 @@ import {
   type Choice,
   Closer,
   type MarkKind,
+  type Provider,
   type Question,
   type Task,
   TaskStatus,
@@ -45,6 +49,7 @@ import {
 import { DecisionLog } from "./decision-log";
 import { t } from "./i18n";
 import { Inbox } from "./inbox";
+import { LeadMessage } from "./lead-message";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
 import { CountPill, StatusBadge } from "./status";
@@ -63,8 +68,9 @@ import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
 import { WishTask } from "./wish-task";
-import { ConsumptionPanel } from "./consumption-panel";
+import { HourglassLine } from "./hourglass";
 import { PageHeader } from "./page-header";
+import { LeadButton, leadTrouble, recordedAgent } from "./wish-head";
 import {
   GrantCard,
   InvestigatingSection,
@@ -78,14 +84,18 @@ export function FlightPlan({
   wishes,
   onOpen,
   onToast,
+  onSetupAgents,
 }: {
   // The active wishes, by rank.
   wishes: Wish[];
   onOpen: (wishId: string) => void;
   onToast: (text: string) => void;
+  onSetupAgents?: () => void;
 }) {
   const projects = useData((s) => s.projects);
   const lead = useData((s) => s.lead);
+  const leadExit = useData((s) => s.leadExit);
+  const leadStartError = useData((s) => s.leadStartError);
   const leadPrompt = useData((s) => s.leadPrompt);
   const allWishes = useData((s) => s.wishes);
   const projectById = useMemo(
@@ -101,19 +111,6 @@ export function FlightPlan({
     [wishes, details],
   );
   const flightPlanSpent = useMemo(() => spent(allTasks), [allTasks]);
-  // The resources panel: the tasks of the active wishes, and their projects, whose commands alone it shows.
-  const taskById = useMemo(
-    () => new Map(allTasks.map((task) => [task.id, task])),
-    [allTasks],
-  );
-  const activeProjectIds = useMemo(
-    () =>
-      new Set([
-        ...wishes.flatMap((w) => w.projectIds),
-        ...allTasks.map((task) => task.projectId).filter(Boolean),
-      ]),
-    [wishes, allTasks],
-  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
   useStickyRoom(scrollRef, false);
@@ -362,6 +359,20 @@ export function FlightPlan({
     [act, clients.tasks],
   );
 
+  // An azima renamed from its card: djinn task update --title, written to its plan file too.
+  const handleRenameAzima = useCallback(
+    (azima: Task, title: string) => {
+      quiet(
+        act(
+          azima.wishId,
+          () => clients.tasks.update({ taskId: azima.id, title }),
+          [Change.TASK],
+        ),
+      );
+    },
+    [quiet, act, clients.tasks],
+  );
+
   const activeAzimas = useMemo(
     () => plan.azimas.filter((x) => !azimaFinished(x.item.azima)),
     [plan.azimas],
@@ -403,9 +414,17 @@ export function FlightPlan({
         focus={focus}
         nest={nestOf(wish.id)}
         onValidate={handleValidateAzima}
+        onRename={handleRenameAzima}
       />
     ),
-    [tasksOf, nestOf, renderTask, focus, handleValidateAzima],
+    [
+      tasksOf,
+      nestOf,
+      renderTask,
+      focus,
+      handleValidateAzima,
+      handleRenameAzima,
+    ],
   );
 
   const renderMovingItem = useCallback(
@@ -446,9 +465,10 @@ export function FlightPlan({
         focus={focus}
         onOpen={() => handleOpenDraft(wish, item)}
         onMove={() => handleMoveDraft(wish, item)}
+        onRename={handleRenameAzima}
       />
     ),
-    [tasksOf, focus, handleOpenDraft, handleMoveDraft],
+    [tasksOf, focus, handleOpenDraft, handleMoveDraft, handleRenameAzima],
   );
 
   const handleQuestionAnswer = useCallback(
@@ -495,6 +515,19 @@ export function FlightPlan({
     [],
   );
   const checkDecisionNoLead = useCallback(() => noLead(lead), [lead]);
+  // resumeLead resumes the Djinn, or starts one of another agent, on no wish; what Djinn says of it shows as a toast.
+  const resumeLead = (provider?: Provider) => {
+    let note = "";
+    return act(
+      "",
+      async () => {
+        ({ note } = await clients.lead.resume({ provider }));
+      },
+      [Change.WISH],
+      () => note,
+    );
+  };
+  const trouble = leadTrouble(leadExit, leadStartError);
   const handleTaskFocus = useCallback(
     (id: string) => show("tasks", id),
     [show],
@@ -502,7 +535,22 @@ export function FlightPlan({
 
   return (
     <div className="wish-view flight-plan review">
-      <PageHeader middle={<OperatingLoad />}>
+      <PageHeader
+        middle={<OperatingLoad />}
+        actions={
+          <LeadButton
+            focused={false}
+            recorded={recordedAgent(lead)}
+            trouble={trouble}
+            loadAgents={async () =>
+              (await clients.ui.getEnvironment({})).providers
+            }
+            onLead={() => quiet(resumeLead())}
+            onPick={(provider) => quiet(resumeLead(provider))}
+            onSetup={onSetupAgents}
+          />
+        }
+      >
         <strong>{t("plan.title")}</strong>
       </PageHeader>
       <div className="mission-scroll" ref={keepPlace}>
@@ -520,6 +568,11 @@ export function FlightPlan({
           <div className="hero-visual">
             <Machine
               active={plan.running.some(({ item }) => !watcherRuns(item))}
+              pulse={plan.running
+                .filter(({ item }) => !watcherRuns(item))
+                .map(({ item }) => item.id)
+                .sort()
+                .join(",")}
             />
           </div>
         </div>
@@ -762,11 +815,7 @@ export function FlightPlan({
                         </section>
                       )}
                       {plan.waiting.length > 0 && (
-                        <WaitingTasks
-                          waiting={plan.waiting}
-                          origin
-                          onTask={handleTaskFocus}
-                        />
+                        <WaitingTasks waiting={plan.waiting} origin />
                       )}
                       {plan.proofs.length > 0 && (
                         <section className="plan-waiting">
@@ -842,11 +891,8 @@ export function FlightPlan({
                 waits + plan.running.length + plan.investigating.length ===
                   0 && <p className="muted-text">{t("plan.calm")}</p>}
 
-              <ConsumptionPanel
-                tasks={taskById}
-                projects={projects}
-                projectIds={activeProjectIds}
-              />
+              {/* The machine's live graphs are in the Hourglass (hourglass.tsx): here, its load in a line. */}
+              <HourglassLine />
             </>
           )}
         </div>
@@ -892,6 +938,7 @@ export function FlightPlan({
           onWithdraw={withdraw}
         />
       )}
+      <LeadMessage stopped={!lead || !!trouble} onResume={() => resumeLead()} />
     </div>
   );
 }

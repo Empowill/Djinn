@@ -3,8 +3,14 @@
 // and its progress; the rest is on hover. Opened, its description and what its proof needs, box by box, on the left,
 // its parts on the right, as the Tasks tab shows any task: under work that still moves, the finished parts fold behind
 // "show the N finished" (src/task-tabs.tsx).
-// An azima never waits for the person as work: its proof is no task.
-import { BadgeCheck, ChevronDown, ExternalLink, GitBranch } from "lucide-react";
+// An azima never waits for the person as work: its proof is no task. The pencil beside its heading renames it in place.
+import {
+  BadgeCheck,
+  ChevronDown,
+  ExternalLink,
+  GitBranch,
+  Pencil,
+} from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -153,6 +159,55 @@ export function useStickyRoom(
 
 const noNest = mergeNest([]);
 
+// AzimaTitle is an azima's title edited in place, in its heading: saved when the field is left (djinn task update
+// --title, which writes it to its plan file too), Enter leaves it, Escape leaves it as it was.
+function AzimaTitle({
+  title,
+  onDone,
+}: {
+  title: string;
+  // The new title, or none when it is left as it was.
+  onDone: (title?: string) => void;
+}) {
+  return (
+    <input
+      type="text"
+      className="azima-title-edit"
+      aria-label={t("azima.title")}
+      defaultValue={title}
+      maxLength={500}
+      autoFocus
+      onBlur={(event) => {
+        const text = event.currentTarget.value.trim();
+        onDone(text && text !== title.trim() ? text : undefined);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          // Left as it was: the blur that follows saves nothing.
+          event.currentTarget.value = title;
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+function RenameButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="icon-button azima-rename"
+      title={t("azima.rename")}
+      aria-label={t("azima.rename")}
+      onClick={onClick}
+    >
+      <Pencil size={13} aria-hidden="true" />
+    </button>
+  );
+}
+
 export const AzimaCard = memo(function AzimaCard({
   azima,
   parts,
@@ -165,6 +220,8 @@ export const AzimaCard = memo(function AzimaCard({
   onPush,
   onOpenPr,
   onValidate,
+  onRename,
+  renaming: startRenaming = false,
   nest = noNest,
 }: {
   azima: Task;
@@ -172,7 +229,7 @@ export const AzimaCard = memo(function AzimaCard({
   parts: readonly Task[];
   // The tasks of its wish, by id: what it waits for.
   tasks: ReadonlyMap<string, Task>;
-  // Where it comes from, in the flight plan of several wishes: its wish.
+  // Where it comes from, in the flying carpet of several wishes: its wish.
   origin?: ReactNode;
   render: (task: Task) => ReactNode;
   // What a link brings into sight: the azima, or one of its parts, opens on it.
@@ -187,6 +244,10 @@ export const AzimaCard = memo(function AzimaCard({
   onOpenPr?: (url: string) => void;
   // Validates the azima once its work is done: it is marked done, by you.
   onValidate?: (azima: Task) => void;
+  // Renames it: its title, edited in place in its heading.
+  onRename?: (azima: Task, title: string) => void;
+  // Its title shows edited from the start.
+  renaming?: boolean;
   // Where the merges of its wish show: a part whose merge still runs moves with it.
   nest?: MergeNest;
 }) {
@@ -198,6 +259,7 @@ export const AzimaCard = memo(function AzimaCard({
   const [open, setOpen] = useState(
     holds || (state !== AzimaState.DONE && parts.some((x) => !settled(x))),
   );
+  const [renaming, setRenaming] = useState(startRenaming);
   useEffect(() => {
     if (holds) setOpen(true);
   }, [holds]);
@@ -331,49 +393,69 @@ export const AzimaCard = memo(function AzimaCard({
       aria-label={`${azima.code} ${azima.title}`}
     >
       <div className="azima-row">
-        <button
-          type="button"
-          className="azima-heading"
-          onClick={() => setOpen(!open)}
-          aria-expanded={open}
-        >
-          <StatusBadge
-            tone={azimaTone(azima, parts)}
-            label={t(labels[state])}
-            title={needs}
-          />
-          <span className="agent-code">{azima.code}</span>
-          <strong title={facts}>{azima.title}</strong>
-          <span className="azima-meta">
-            {origin}
-            {state !== AzimaState.DONE && waits.length > 0 && (
-              <span
-                className="azima-waits"
-                title={t("page.after", { tasks: after.join(", ") })}
-              >
-                {t("azima.waits", { tasks: waits.join(", ") })}
-              </span>
-            )}
-            {total > 0 && (
-              <span className="azima-progress" title={progress}>
-                <span className="azima-bar" aria-hidden="true">
-                  <span
-                    className="azima-bar-done"
-                    style={{ width: `${(100 * done) / total}%` }}
-                  />
-                  <span
-                    className="azima-bar-running"
-                    style={{ width: `${(100 * running) / total}%` }}
-                  />
+        {renaming ? (
+          <div className="azima-heading">
+            <StatusBadge
+              tone={azimaTone(azima, parts)}
+              label={t(labels[state])}
+            />
+            <span className="agent-code">{azima.code}</span>
+            <AzimaTitle
+              title={azima.title}
+              onDone={(title) => {
+                setRenaming(false);
+                if (title) onRename?.(azima, title);
+              }}
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="azima-heading"
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+          >
+            <StatusBadge
+              tone={azimaTone(azima, parts)}
+              label={t(labels[state])}
+              title={needs}
+            />
+            <span className="agent-code">{azima.code}</span>
+            <strong title={facts}>{azima.title}</strong>
+            <span className="azima-meta">
+              {origin}
+              {state !== AzimaState.DONE && waits.length > 0 && (
+                <span
+                  className="azima-waits"
+                  title={t("page.after", { tasks: after.join(", ") })}
+                >
+                  {t("azima.waits", { tasks: waits.join(", ") })}
                 </span>
-                <span className="azima-progress-counts">
-                  {done}/{total}
+              )}
+              {total > 0 && (
+                <span className="azima-progress" title={progress}>
+                  <span className="azima-bar" aria-hidden="true">
+                    <span
+                      className="azima-bar-done"
+                      style={{ width: `${(100 * done) / total}%` }}
+                    />
+                    <span
+                      className="azima-bar-running"
+                      style={{ width: `${(100 * running) / total}%` }}
+                    />
+                  </span>
+                  <span className="azima-progress-counts">
+                    {done}/{total}
+                  </span>
                 </span>
-              </span>
-            )}
-          </span>
-          <ChevronDown size={14} className={open ? "rotated" : ""} />
-        </button>
+              )}
+            </span>
+            <ChevronDown size={14} className={open ? "rotated" : ""} />
+          </button>
+        )}
+        {onRename && !renaming && (
+          <RenameButton onClick={() => setRenaming(true)} />
+        )}
         {isPerAzima && hasActions && (
           <div className="azima-actions">
             {outOfSync && (
@@ -499,6 +581,8 @@ export function DraftAzimaCard({
   focus = "",
   onOpen,
   onMove,
+  onRename,
+  renaming: startRenaming = false,
 }: {
   azima: Task;
   tasks?: ReadonlyMap<string, Task>;
@@ -506,9 +590,12 @@ export function DraftAzimaCard({
   focus?: string;
   onOpen?: () => void;
   onMove?: () => void;
+  onRename?: (azima: Task, title: string) => void;
+  renaming?: boolean;
 }) {
   const holds = focus === azima.id;
   const [open, setOpen] = useState(holds);
+  const [renaming, setRenaming] = useState(startRenaming);
   useEffect(() => {
     if (holds) setOpen(true);
   }, [holds]);
@@ -529,37 +616,57 @@ export function DraftAzimaCard({
       id={`task-${azima.id}`}
       aria-label={`${azima.code} ${azima.title}`}
     >
-      <button
-        type="button"
-        className="azima-heading"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-      >
-        <StatusBadge tone="later" label={t("azima.state_draft")} />
-        <span className="agent-code">{azima.code}</span>
-        <strong
-          title={[
-            azima.title,
-            after.length > 0 && t("page.after", { tasks: after.join(", ") }),
-          ]
-            .filter(Boolean)
-            .join("\n")}
-        >
-          {azima.title}
-        </strong>
-        <span className="azima-meta">
-          {origin}
-          {waits.length > 0 && (
-            <span
-              className="azima-waits"
-              title={t("page.after", { tasks: after.join(", ") })}
+      <div className="azima-row">
+        {renaming ? (
+          <div className="azima-heading">
+            <StatusBadge tone="later" label={t("azima.state_draft")} />
+            <span className="agent-code">{azima.code}</span>
+            <AzimaTitle
+              title={azima.title}
+              onDone={(title) => {
+                setRenaming(false);
+                if (title) onRename?.(azima, title);
+              }}
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="azima-heading"
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+          >
+            <StatusBadge tone="later" label={t("azima.state_draft")} />
+            <span className="agent-code">{azima.code}</span>
+            <strong
+              title={[
+                azima.title,
+                after.length > 0 &&
+                  t("page.after", { tasks: after.join(", ") }),
+              ]
+                .filter(Boolean)
+                .join("\n")}
             >
-              {t("azima.waits", { tasks: waits.join(", ") })}
+              {azima.title}
+            </strong>
+            <span className="azima-meta">
+              {origin}
+              {waits.length > 0 && (
+                <span
+                  className="azima-waits"
+                  title={t("page.after", { tasks: after.join(", ") })}
+                >
+                  {t("azima.waits", { tasks: waits.join(", ") })}
+                </span>
+              )}
             </span>
-          )}
-        </span>
-        <ChevronDown size={14} className={open ? "rotated" : ""} />
-      </button>
+            <ChevronDown size={14} className={open ? "rotated" : ""} />
+          </button>
+        )}
+        {onRename && !renaming && (
+          <RenameButton onClick={() => setRenaming(true)} />
+        )}
+      </div>
       {open && (
         <div className="azima-parts draft-azima-body">
           <div className="draft-azima-content">

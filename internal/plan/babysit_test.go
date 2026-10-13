@@ -75,3 +75,32 @@ func TestFillBabysit(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
+
+// TestBabysitWatches: a command babysits request n when it is the declaration's command, {pr} or {mr} filled with n,
+// {state} any one word, trimmed; another number, word or extra argument does not.
+func TestBabysitWatches(t *testing.T) {
+	t.Parallel()
+	pr := &Babysit{Watch: "sh .agents/skills/babysit-pr/watch.sh {pr}"}
+	mr := &Babysit{Watch: "go run ./mrwatch -mr {mr} -watch -state {state}"}
+	for _, c := range []struct {
+		b       *Babysit
+		command string
+		number  int
+		want    bool
+	}{
+		{pr, "sh .agents/skills/babysit-pr/watch.sh 3", 3, true},
+		{pr, "  sh .agents/skills/babysit-pr/watch.sh 3\n", 3, true},
+		{pr, "sh .agents/skills/babysit-pr/watch.sh 33", 3, false},
+		{pr, "sh .agents/skills/babysit-pr/watch.sh 3 --once", 3, false},
+		{pr, "sh .agents/skills/babysit-pr/inbox.sh 3", 3, false},
+		{pr, "sh xagents/skills/babysit-pr/watch.sh 3", 3, false},
+		{mr, "go run ./mrwatch -mr 7 -watch -state /home/me/.djinn/watchers/x/babysit-it-7", 7, true},
+		{mr, "go run ./mrwatch -mr 7 -watch -state " + FillBabysit("{state}", 0, "/a b/it's"), 7, true},
+		{mr, "go run ./mrwatch -mr 7 -watch -state", 7, false},
+		{mr, "go run ./mrwatch -mr 8 -watch -state s", 7, false},
+	} {
+		if got := c.b.Watches(c.command, c.number); got != c.want {
+			t.Errorf("%q watches %q: %v, want %v", c.b.Watch, c.command, got, c.want)
+		}
+	}
+}

@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/gitx"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -62,7 +62,7 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 	}
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, wishID)
 	if err != nil {
-		log.Printf("djinn: push: %v", err)
+		logx.L().Error("read the wish", "loop", "push", "wish", wishID, "project", project.GetId(), "err", err)
 		return
 	}
 	h.releaseClosedQuestion(ctx, wish, project.GetId())
@@ -88,16 +88,19 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 		if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
 			return // The correction worker is running; push checks run after it is committed.
 		}
-		_ = h.store.Tx(ctx, func(tx *store.Tx) error {
+		err := h.store.Tx(ctx, func(tx *store.Tx) error {
 			return editPush(ctx, tx, wishID, project.GetId(), func(p *planv1.WishPush) {
 				p.CorrectedBy = ""
 			})
 		})
+		if err != nil {
+			logx.L().Error("forget the push correction", "loop", "push", "wish", wishID, "project", project.GetId(), "err", err)
+		}
 		state.CorrectedBy = ""
 	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wishID})
 	if err != nil {
-		log.Printf("djinn: push: %v", err)
+		logx.L().Error("read the tasks", "loop", "push", "wish", wishID, "project", project.GetId(), "err", err)
 		return
 	}
 	since := lastPush(wish, state)
@@ -113,9 +116,8 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 		}
 	}
 	if why != "" {
-		if _, err := h.push(ctx, wish, project, committed, why, false); err != nil {
-			log.Printf("djinn: push %s: %v", project.GetId(), err)
-		}
+		_, err := h.push(ctx, wish, project, committed, why, false)
+		logPush(err, "wish", wishID, "project", project.GetId())
 	}
 }
 
@@ -129,7 +131,7 @@ func movedSince(ctx context.Context, repo, branch, sha string) bool {
 func (h *Harness) pushApproved(ctx context.Context) {
 	wishes, err := store.List[*planv1.Wish](ctx, h.store, nil)
 	if err != nil {
-		log.Printf("djinn: push: %v", err)
+		logx.L().Error("read the wishes", "loop", "push", "err", err)
 		return
 	}
 	for _, wish := range wishes {
@@ -140,7 +142,7 @@ func (h *Harness) pushApproved(ctx context.Context) {
 			project, err1 := store.Get[*planv1.Project](ctx, h.store, p.GetProjectId())
 			tasks, err2 := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
 			if err := errors.Join(err1, err2); err != nil {
-				log.Printf("djinn: push: %v", err)
+				logx.L().Error("read the project and the tasks", "loop", "push", "wish", wish.GetId(), "project", p.GetProjectId(), "err", err)
 				continue
 			}
 			settings, _ := plan.LoadSettings(h.home, project)
@@ -149,9 +151,8 @@ func (h *Harness) pushApproved(ctx context.Context) {
 				h.pushAzimaApproved(ctx, wish, project, p)
 				continue
 			}
-			if _, err := h.push(ctx, wish, project, committedSince(tasks, p.GetProjectId(), lastPush(wish, p)), "you said to push it", true); err != nil {
-				log.Printf("djinn: push %s: %v", p.GetProjectId(), err)
-			}
+			_, err := h.push(ctx, wish, project, committedSince(tasks, p.GetProjectId(), lastPush(wish, p)), "you said to push it", true)
+			logPush(err, "wish", wish.GetId(), "project", p.GetProjectId())
 		}
 	}
 }
@@ -160,7 +161,7 @@ func (h *Harness) pushApproved(ctx context.Context) {
 func (h *Harness) pushPass(ctx context.Context) {
 	wishes, err := store.List[*planv1.Wish](ctx, h.store, nil)
 	if err != nil {
-		log.Printf("djinn: push: %v", err)
+		logx.L().Error("read the wishes", "loop", "push", "err", err)
 		return
 	}
 	for _, wish := range wishes {
@@ -302,7 +303,6 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 	}
 	titles, count, ahead, err := unpushed(ctx, repo, branch, remote)
 	if err != nil {
-		log.Printf("djinn: push %s: %v", branch, err)
 		return nil, err
 	}
 	state := pushState(wish, project.GetId())
@@ -315,7 +315,6 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 	}
 	sha, err := git(ctx, repo, "rev-parse", "refs/heads/"+branch)
 	if err != nil {
-		log.Printf("djinn: push %s: %v", branch, err)
 		return nil, err
 	}
 	if !unchecked {
@@ -342,7 +341,8 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 				})
 			})
 			if err != nil {
-				log.Printf("djinn: push %s: %v", branch, err)
+				logx.L().Error("lift the push hold", "loop", "push", "wish", wish.GetId(), "project", project.GetId(),
+					"branch", branch, "err", err)
 			}
 		}
 	}
@@ -402,7 +402,6 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		})
 	})
 	if err != nil {
-		log.Printf("djinn: push %s: %v", branch, err)
 		return nil, err
 	}
 	if unchecked {
@@ -412,9 +411,31 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		commitsText(count, nil), why))
 	h.notify()
 	if settings, err := plan.LoadSettings(h.home, project); err == nil && settings.Install != "" && h.built != nil {
-		h.built(h.build(ctx, wish, project, settings.Install, record, committed))
+		b := h.build(ctx, wish, project, settings.Install, record, committed)
+		b.Auto = !unchecked && h.installsItself(ctx, project, settings, b)
+		h.built(b)
 	}
 	return record, nil
+}
+
+// installsItself tells whether Djinn installs b, a build it pushed past the project's push checks, by itself (W554):
+// a build of the running Djinn's line (its branch, or one that carries it on) in a project whose install_builds is on,
+// that holds the build installed last when that one is newer than the running Djinn: another line's install is not
+// overwritten by itself, nor is a build installed twice. A project with no push check has passed none: offered only.
+func (h *Harness) installsItself(ctx context.Context, project *planv1.Project, settings plan.Settings, b Built) bool {
+	if !settings.InstallBuilds || b.Base == "" || !b.Running && b.Continues == "" ||
+		len(settings.ChecksAt(planv1.CheckWhen_CHECK_WHEN_PUSH)) == 0 {
+		return false
+	}
+	last := h.installedSha(ctx, project.GetId())
+	switch last {
+	case "", b.Base:
+		return true
+	case b.Sha:
+		return false
+	}
+	repo := project.GetDirectory()
+	return isAncestor(ctx, repo, last, b.Sha) || isAncestor(ctx, repo, last, b.Base)
 }
 
 // pushedByHand records the push of branch, at sha, that its remote holds already, pushed by someone else than Djinn
@@ -449,7 +470,6 @@ func (h *Harness) pushedByHand(
 		})
 	})
 	if err != nil {
-		log.Printf("djinn: push %s: %v", branch, err)
 		return nil, err
 	}
 	h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push checks of %s pass at %s, which %s holds already (pushed by hand): the push is no longer held",
@@ -594,16 +614,19 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 		if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
 			return
 		}
-		_ = h.store.Tx(ctx, func(tx *store.Tx) error {
+		err := h.store.Tx(ctx, func(tx *store.Tx) error {
 			return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
 				p.CorrectedBy = ""
 			})
 		})
+		if err != nil {
+			logx.L().Error("forget the push correction", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "err", err)
+		}
 		state.CorrectedBy = ""
 	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
 	if err != nil {
-		log.Printf("djinn: push: %v", err)
+		logx.L().Error("read the tasks", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "err", err)
 		return
 	}
 	repo := project.GetDirectory()
@@ -627,9 +650,8 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 			why = "push checks corrected"
 		}
 		if why != "" {
-			if _, err := h.pushBranch(ctx, wish, project, branch, committed, why, false); err != nil {
-				log.Printf("djinn: push %s (%s): %v", project.GetId(), branch, err)
-			}
+			_, err := h.pushBranch(ctx, wish, project, branch, committed, why, false)
+			logPush(err, "wish", wish.GetId(), "project", project.GetId(), "branch", branch)
 		}
 	}
 
@@ -646,9 +668,8 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 			why = "push checks corrected"
 		}
 		if why != "" {
-			if _, err := h.pushBranch(ctx, wish, project, wishBranch, committed, why, false); err != nil {
-				log.Printf("djinn: push %s (%s): %v", project.GetId(), wishBranch, err)
-			}
+			_, err := h.pushBranch(ctx, wish, project, wishBranch, committed, why, false)
+			logPush(err, "wish", wish.GetId(), "project", project.GetId(), "branch", wishBranch)
 		}
 	}
 }
@@ -657,7 +678,7 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 func (h *Harness) pushAzimaApproved(ctx context.Context, wish *planv1.Wish, project *planv1.Project, p *planv1.WishPush) {
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
 	if err != nil {
-		log.Printf("djinn: push: %v", err)
+		logx.L().Error("read the tasks", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "err", err)
 		return
 	}
 	repo := project.GetDirectory()
@@ -669,17 +690,15 @@ func (h *Harness) pushAzimaApproved(ctx context.Context, wish *planv1.Wish, proj
 		}
 		since := h.lastBranchPush(ctx, repo, wish, p, branch)
 		committed := h.committedBranchTasks(ctx, repo, tasks, project.GetId(), branch, since)
-		if _, err := h.pushBranch(ctx, wish, project, branch, committed, "you said to push it", true); err != nil {
-			log.Printf("djinn: push %s (%s): %v", project.GetId(), branch, err)
-		}
+		_, err := h.pushBranch(ctx, wish, project, branch, committed, "you said to push it", true)
+		logPush(err, "wish", wish.GetId(), "project", project.GetId(), "branch", branch)
 	}
 	wishBranch := plan.IntegrationBranchOf(wish, project.GetId())
 	if commitOf(ctx, repo, "refs/heads/"+wishBranch) != "" && azimaOwning(azimas, wishBranch) == nil {
 		since := h.lastBranchPush(ctx, repo, wish, p, wishBranch)
 		committed := h.committedBranchTasks(ctx, repo, tasks, project.GetId(), wishBranch, since)
-		if _, err := h.pushBranch(ctx, wish, project, wishBranch, committed, "you said to push it", true); err != nil {
-			log.Printf("djinn: push %s (%s): %v", project.GetId(), wishBranch, err)
-		}
+		_, err := h.pushBranch(ctx, wish, project, wishBranch, committed, "you said to push it", true)
+		logPush(err, "wish", wish.GetId(), "project", project.GetId(), "branch", wishBranch)
 	}
 }
 
@@ -850,8 +869,18 @@ func (h *Harness) clearApproved(ctx context.Context, wishID, projectID string, a
 		return editPush(ctx, tx, wishID, projectID, func(p *planv1.WishPush) { p.Approved = false })
 	})
 	if err != nil {
-		log.Printf("djinn: push: %v", err)
+		logx.L().Error("forget the push approval", "loop", "push", "wish", wishID, "project", projectID, "err", err)
 	}
+}
+
+// logPush logs at warn why a push the integration started did not happen (the remote refused it, its checks hold it,
+// git or the store failed): Djinn tries again when the next push is due. Nothing to push, or djinn up stopping, is no
+// failure.
+func logPush(err error, args ...any) {
+	if err == nil || errors.Is(err, plan.ErrUpToDate) || errors.Is(err, context.Canceled) {
+		return
+	}
+	logx.L().Warn("push failed", append(append([]any{"loop", "push"}, args...), "err", err)...)
 }
 
 // pushSteps adds an event saying text to each task of tasks.
@@ -887,7 +916,7 @@ func (h *Harness) askPush(ctx context.Context, wishID, projectID string, q *plan
 		})
 	})
 	if err != nil {
-		log.Printf("djinn: push: ask: %v", err)
+		logx.L().Error("ask about the push", "loop", "push", "wish", wishID, "project", projectID, "err", err)
 		return err
 	}
 	h.notify()
@@ -917,7 +946,8 @@ func (h *Harness) releaseClosedQuestion(ctx context.Context, wish *planv1.Wish, 
 		})
 	})
 	if err != nil {
-		log.Printf("djinn: push: %v", err)
+		logx.L().Error("let go of the closed push question", "loop", "push", "wish", wish.GetId(), "project", projectID,
+			"question", cmp.Or(q.GetCode(), id), "err", err)
 		return
 	}
 	state.QuestionId, state.Approved = "", false
@@ -981,13 +1011,14 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 			project, err1 := store.Get[*planv1.Project](ctx, h.store, projectID)
 			settings, err2 := plan.LoadSettings(h.home, project)
 			if err := errors.Join(err1, err2); err != nil {
-				log.Printf("djinn: question %s: %v", q.GetCode(), err)
+				logx.L().Error("read the project", "loop", "push", "question", q.GetCode(), "wish", wish.GetId(), "project", projectID, "err", err)
 				return "Djinn could not try again: " + err.Error(), true
 			}
 			settings.CorrectionAttempts = max(settings.CorrectionAttempts, 1)
 			c, err := h.spawnPushCorrection(ctx, wish, project, settings, branch, f, 1, committed)
 			if err != nil {
-				log.Printf("djinn: question %s: %v", q.GetCode(), err)
+				logx.L().Error("start a push correction", "loop", "push", "question", q.GetCode(), "wish", wish.GetId(), "project", projectID,
+					"branch", branch, "err", err)
 				return "Djinn could not start a correction worker: " + err.Error(), true
 			}
 			err = h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
@@ -998,7 +1029,7 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 				})
 			})
 			if err != nil {
-				log.Printf("djinn: question %s: %v", q.GetCode(), err)
+				logx.L().Error("record the push answer", "loop", "push", "question", q.GetCode(), "wish", wish.GetId(), "project", projectID, "err", err)
 				return "Djinn could not take the answer: " + err.Error(), true
 			}
 			h.pushSteps(ctx, committed, fmt.Sprintf("integration: you said to try again (%s); Djinn started %s", q.GetCode(), c.GetCode()))
@@ -1011,7 +1042,7 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 				})
 			})
 			if err != nil {
-				log.Printf("djinn: question %s: %v", q.GetCode(), err)
+				logx.L().Error("record the push answer", "loop", "push", "question", q.GetCode(), "wish", wish.GetId(), "project", projectID, "err", err)
 				return "Djinn could not take the answer: " + err.Error(), true
 			}
 			h.pushSteps(ctx, committed, fmt.Sprintf("integration: you take it (%s); the push of %s stays held until you make its checks pass", q.GetCode(), branch))
@@ -1024,7 +1055,7 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 				})
 			})
 			if err != nil {
-				log.Printf("djinn: question %s: %v", q.GetCode(), err)
+				logx.L().Error("record the push answer", "loop", "push", "question", q.GetCode(), "wish", wish.GetId(), "project", projectID, "err", err)
 				return "Djinn could not take the answer: " + err.Error(), true
 			}
 			h.pushSteps(ctx, committed, fmt.Sprintf("integration: you chose to push %s without push checks (%s)", branch, q.GetCode()))
@@ -1042,7 +1073,7 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 		})
 	})
 	if err != nil {
-		log.Printf("djinn: question %s: %v", q.GetCode(), err)
+		logx.L().Error("record the push answer", "loop", "push", "question", q.GetCode(), "wish", wish.GetId(), "project", p.GetProjectId(), "err", err)
 		return "Djinn could not take the answer: " + err.Error(), true
 	}
 	h.notify()
@@ -1059,25 +1090,55 @@ func pushTarget(ctx context.Context, repo, branch string) (remote, target string
 	if branch == "" {
 		return "", ""
 	}
-	target = branch
-	if merge, err := git(ctx, repo, "config", "--get", "branch."+branch+".merge"); err == nil {
-		target = cmp.Or(strings.TrimPrefix(merge, "refs/heads/"), branch)
-	}
-	if r, err := git(ctx, repo, "config", "--get", "branch."+branch+".remote"); err == nil && r != "" && r != "." {
+	c := readRemotes(ctx, repo)
+	target = cmp.Or(strings.TrimPrefix(c.merge[branch], "refs/heads/"), branch)
+	if r := c.remote[branch]; r != "" && r != "." {
 		return r, target
 	}
-	out, err := git(ctx, repo, "remote")
-	if err != nil || out == "" {
-		return "", ""
-	}
-	remotes := strings.Fields(out)
 	switch {
-	case slices.Contains(remotes, "origin"):
+	case slices.Contains(c.remotes, "origin"):
 		return "origin", target
-	case len(remotes) == 1:
-		return remotes[0], target
+	case len(c.remotes) == 1:
+		return c.remotes[0], target
 	}
 	return "", ""
+}
+
+// remoteConfig is what pushTarget reads of a repository's configuration: the upstream of each branch, its remote and
+// its name there, and the names of the remotes, as git remote lists them.
+type remoteConfig struct {
+	merge, remote map[string]string
+	remotes       []string
+}
+
+// readRemotes reads the remoteConfig of repo in one git, or takes it from ctx's pass memo.
+func readRemotes(ctx context.Context, repo string) remoteConfig {
+	memo := passMemoOf(ctx)
+	if c, ok := memo.remotesOf(repo); ok {
+		return c
+	}
+	c := remoteConfig{merge: map[string]string{}, remote: map[string]string{}}
+	// git exits 1 when no key matches: a repository with no remote and no upstream.
+	out, _ := gitRaw(ctx, repo, "config", "--null", "--get-regexp", `^(branch|remote)\.`)
+	for entry := range strings.SplitSeq(out, "\x00") {
+		key, value, _ := strings.Cut(entry, "\n")
+		section, rest, ok := strings.Cut(key, ".")
+		dot := strings.LastIndex(rest, ".")
+		if !ok || dot < 0 {
+			continue // remote.pushDefault: no remote named
+		}
+		name, variable := rest[:dot], rest[dot+1:]
+		switch {
+		case section == "remote" && !slices.Contains(c.remotes, name):
+			c.remotes = append(c.remotes, name)
+		case section == "branch" && variable == "merge":
+			c.merge[name] = value
+		case section == "branch" && variable == "remote":
+			c.remote[name] = value
+		}
+	}
+	memo.keepRemotes(repo, c)
+	return c
 }
 
 // unpushed are the commits of branch that no branch of remote holds, as this repository last saw it: the titles of

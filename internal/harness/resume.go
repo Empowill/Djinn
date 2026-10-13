@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
@@ -106,7 +107,9 @@ func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) (r
 				Text: fmt.Sprintf("resuming: %s (%d of 2); Djinn starts it again by itself", byEnvReplay, t.GetEnvReplays()),
 			}
 			h.writeAlone(ctx, actorHarness, methodResume, t, t.GetId(), t, ev)
-			_ = h.unblockDependencyFailed(ctx, t.GetCode())
+			if err := h.unblockDependencyFailed(ctx, t.GetCode()); err != nil {
+				logx.L().Error("unblock the tasks a dependency failed", "task", t.GetCode(), "err", err)
+			}
 			continue
 		}
 		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
@@ -263,18 +266,13 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		h.failPlanned(ctx, t, err.Error())
 		return nil
 	}
-	seq, err := lastSeq(ctx, h.store, t.GetId())
-	if err != nil {
-		return err
-	}
-	r, err := h.newRun(t, seq)
+	r, err := h.newRun(t)
 	if err != nil {
 		return err
 	}
 	var preEv *planv1.TaskEvent
 	if len(preemptedCode) > 0 && preemptedCode[0] != "" {
-		r.seq++
-		preEv = newEvent(t.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode[0] + " to make room"})
+		preEv = newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode[0] + " to make room"})
 	}
 	var prep prepared
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -311,7 +309,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 			return err
 		}
 		if preEv != nil {
-			if err := tx.Put(preEv); err != nil {
+			if err := putEvents(ctx, tx, preEv); err != nil {
 				return err
 			}
 		}
@@ -342,9 +340,13 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	case r.watcher:
 		// In its project's folder, on its command: it has no session to resume, and nothing to be told.
 		readOnly, perms := accessSpec(t.GetAccess(), prep.declared)
-		spec := Spec{TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Restart: t.GetRestart()}
+		command, perms, how, err := h.watchPermissions(h.ctx, t, project, perms, prompt)
+		if err != nil {
+			return err
+		}
+		spec := Spec{TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: command, Restart: t.GetRestart()}
 		r.base = t.GetUsage()
-		text := fmt.Sprintf("resumed %s: started watch in %s%s", by, dir, watchText(t))
+		text := fmt.Sprintf("resumed %s: started watch in %s%s%s", by, dir, watchText(t), how)
 		return h.start(r, provider, spec, text)
 	case t.GetWorktree() != "":
 		prefix, err := git(h.ctx, project.GetDirectory(), "rev-parse", "--show-prefix")
@@ -507,7 +509,9 @@ func (h *Harness) replayEnvFailures(ctx context.Context, provider planv1.Provide
 				Text: fmt.Sprintf("resuming: %s (%d of 2); Djinn starts it again by itself", byEnvReplay, t.GetEnvReplays()),
 			}
 			h.writeAlone(ctx, actorHarness, methodResume, t, t.GetId(), t, ev)
-			_ = h.unblockDependencyFailed(ctx, t.GetCode())
+			if err := h.unblockDependencyFailed(ctx, t.GetCode()); err != nil {
+				logx.L().Error("unblock the tasks a dependency failed", "task", t.GetCode(), "err", err)
+			}
 		}
 	}
 	h.wake()

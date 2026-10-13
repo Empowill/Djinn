@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -125,11 +124,7 @@ func reopenAzima(ctx context.Context, tx *store.Tx, id, reason string) error {
 			if err := tx.Put(a); err != nil {
 				return err
 			}
-			seq, err := lastSeq(ctx, tx, a.GetId())
-			if err != nil {
-				return err
-			}
-			if err := tx.Put(newEvent(a.GetId(), seq+1, Event{
+			if err := putEvents(ctx, tx, newEvent(a.GetId(), Event{
 				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
 				Text: "reopened: " + reason,
 			})); err != nil {
@@ -189,7 +184,7 @@ func (h *Harness) ungroupOrphans(ctx context.Context, tasks []*planv1.Task) erro
 		}
 		t.PartOf = ""
 		text := "part of no azima: its azima " + short8(id) + " is no longer one of the wish's"
-		log.Printf("djinn: task %s: %s", t.GetCode(), text)
+		logx.L().Info("task ungrouped: its azima is no longer one of the wish's", "task", t.GetCode(), "azima", short8(id))
 		err := h.store.Tx(ctx, func(tx *store.Tx) error {
 			if err := tx.Journal(actorHarness, methodUngroup, t); err != nil {
 				return err
@@ -200,11 +195,7 @@ func (h *Harness) ungroupOrphans(ctx context.Context, tasks []*planv1.Task) erro
 			if plan.IsAzima(t) {
 				return nil // An azima has no events.
 			}
-			seq, err := lastSeq(ctx, tx, t.GetId())
-			if err != nil {
-				return err
-			}
-			return tx.Put(newEvent(t.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
+			return putEvents(ctx, tx, newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
 		})
 		if err != nil {
 			return fmt.Errorf("take %s out of its azima: %w", t.GetCode(), err)
@@ -232,14 +223,10 @@ func (h *Harness) recoverAzimas(ctx context.Context, tasks []*planv1.Task) error
 				if err := tx.Journal(actorHarness, methodRecover, t); err != nil {
 					return err
 				}
-				seq, err := lastSeq(ctx, tx, t.GetId())
-				if err != nil {
-					return err
-				}
 				if err := tx.Put(t); err != nil {
 					return err
 				}
-				return tx.Put(newEvent(t.GetId(), seq+1, Event{
+				return putEvents(ctx, tx, newEvent(t.GetId(), Event{
 					Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
 					Text: "reopened: parts not finished",
 				}))
@@ -505,11 +492,7 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 			}
 		}
 		for _, re := range reopenedEvents {
-			seq, err := lastSeq(ctx, tx, re.id)
-			if err != nil {
-				return err
-			}
-			if err := tx.Put(newEvent(re.id, seq+1, Event{
+			if err := putEvents(ctx, tx, newEvent(re.id, Event{
 				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
 				Text: "reopened: " + re.reason,
 			})); err != nil {
@@ -724,8 +707,10 @@ func (h *Harness) Open(ctx context.Context, procedure string, req *planv1.TaskSe
 	}
 	h.notify()
 	h.wake()
-	_ = h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_REQUEST, task.GetWishId(), task.GetCode(),
-		fmt.Sprintf("Djinn: azima %s opened: plan its tasks", task.GetCode()))
+	if err := h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_REQUEST, task.GetWishId(), task.GetCode(),
+		fmt.Sprintf("Djinn: azima %s opened: plan its tasks", task.GetCode())); err != nil && !errors.Is(err, plan.ErrNoLead) {
+		logx.L().Warn("tell the lead", "wish", task.GetWishId(), "task", task.GetCode(), "err", err)
+	}
 	return task, nil
 }
 

@@ -194,15 +194,20 @@ type Settings struct {
 	PushStrategy     planv1.PushStrategy
 	InstallQuestions planv1.InstallQuestions
 	// Babysit says whether Djinn babysits the pull or merge request a task opens, with the project's babysit skill.
-	Babysit  bool
-	Warnings []string
+	Babysit bool
+	// WatchCommands are the commands, or their starts, the developer lets a watcher run in the project besides those
+	// its .agents/permissions.txtpb lists: from their own file only.
+	WatchCommands []string
+	// InstallBuilds says whether a build of the running Djinn's line, once pushed, installs by itself (W554).
+	InstallBuilds bool
+	Warnings      []string
 
 	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom            planv1.SettingSource
 	ChecksFrom, AttemptsFrom, InstallFrom, TestOneFrom                                                 planv1.SettingSource
 	EnlightenWorkersFrom                                                                               planv1.SettingSource
 	QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                                        planv1.SettingSource
 	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom, PushStrategyFrom planv1.SettingSource
-	InstallQuestionsFrom, BabysitFrom                                                                  planv1.SettingSource
+	InstallQuestionsFrom, BabysitFrom, WatchCommandsFrom, InstallBuildsFrom                            planv1.SettingSource
 }
 
 // CanReadOnly tells whether a provider can run a question worker (read-only).
@@ -253,7 +258,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		PushStrategy:     planv1.PushStrategy_PUSH_STRATEGY_WISH,
 		InstallQuestions: DefaultInstallQuestions,
 		MainBranchFrom:   def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def, PushStrategyFrom: def,
-		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def,
+		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def, WatchCommandsFrom: def, InstallBuilds: true, InstallBuildsFrom: def,
 	}
 	questionModel := false // a file set it
 	for _, f := range []struct {
@@ -320,6 +325,9 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		if f.settings.InstallReleases != nil {
 			s.InstallReleases, s.InstallReleasesFrom = f.settings.GetInstallReleases(), f.from
 		}
+		if f.settings.InstallBuilds != nil {
+			s.InstallBuilds, s.InstallBuildsFrom = f.settings.GetInstallBuilds(), f.from
+		}
 		if f.settings.Push != nil {
 			s.Push, s.PushFrom = f.settings.GetPush(), f.from
 		}
@@ -334,6 +342,10 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		}
 		if f.settings.Babysit != nil {
 			s.Babysit, s.BabysitFrom = f.settings.GetBabysit(), f.from
+		}
+		// A repository never allows its own watchers: it lists its commands in .agents/permissions.txtpb.
+		if len(f.settings.GetWatchCommands()) > 0 && f.from == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+			s.WatchCommands, s.WatchCommandsFrom = f.settings.GetWatchCommands(), f.from
 		}
 	}
 	effective := s.QuestionProvider
@@ -383,6 +395,10 @@ func loadSettings(home string, project *planv1.Project) (repo, dev *planv1.Proje
 		if repo, w, err = ReadSettingsWithWarnings(repoFile); err != nil {
 			problems = append(problems, err)
 		} else {
+			if len(repo.GetWatchCommands()) > 0 {
+				w = append(w, repoFile+": watch_commands is ignored: a developer allows a watcher command in their own "+
+					"file (djinn project allow --watch), the repository lists its commands in .agents/permissions.txtpb")
+			}
 			for _, warn := range w {
 				if !slices.Contains(warnings, warn) {
 					warnings = append(warnings, warn)
@@ -425,6 +441,7 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "correction_attempts", Value: strconv.Itoa(s.CorrectionAttempts), Source: s.AttemptsFrom},
 		{Name: "install", Value: s.Install, Source: s.InstallFrom},
 		{Name: "install_questions", Value: InstallQuestionsWord(s.InstallQuestions), Source: s.InstallQuestionsFrom},
+		{Name: "install_builds", Value: strconv.FormatBool(s.InstallBuilds), Source: s.InstallBuildsFrom},
 		{Name: "enlighten_workers", Value: strconv.FormatBool(s.EnlightenWorkers), Source: s.EnlightenWorkersFrom},
 		{Name: "question_provider", Value: questionProviderName(s.QuestionProvider), Source: s.QuestionProviderFrom},
 		{Name: "question_model", Value: s.QuestionModel, Source: s.QuestionModelFrom},
@@ -436,6 +453,7 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "push", Value: ProjectPushWord(s.Push), Source: s.PushFrom},
 		{Name: "push_strategy", Value: PushStrategyWord(s.PushStrategy), Source: s.PushStrategyFrom},
 		{Name: "babysit", Value: strconv.FormatBool(s.Babysit), Source: s.BabysitFrom},
+		{Name: "watch_commands", Value: strings.Join(s.WatchCommands, "; "), Source: s.WatchCommandsFrom},
 	}
 }
 
@@ -503,56 +521,76 @@ func InstallQuestionsWord(q planv1.InstallQuestions) string {
 
 // SaveDeveloperInstallQuestions writes the developer's install questions setting into their settings file in home.
 func SaveDeveloperInstallQuestions(home, projectID string, questions planv1.InstallQuestions) error {
-	if home == "" || projectID == "" {
-		return errors.New("cannot save developer settings: home or project ID is missing")
-	}
-	path := DeveloperSettingsFile(home, projectID)
-	s, err := ReadSettings(path)
-	if err != nil {
-		return err
-	}
-	if s == nil {
-		s = &planv1.ProjectSettings{}
-	}
-	s.InstallQuestions = questions.Enum()
-	if err := protovalidate.Validate(s); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
-	}
-	b, err := prototext.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(s)
-	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, b, 0o600)
+	_, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
+		s.InstallQuestions = questions.Enum()
+		return nil
+	})
+	return err
 }
 
 // SaveDeveloperPush writes the developer's push setting into their settings file in home.
 func SaveDeveloperPush(home, projectID string, push planv1.ProjectPush) error {
+	_, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
+		s.Push = push.Enum()
+		return nil
+	})
+	return err
+}
+
+// saveDeveloper changes the developer's settings file of the project in home with change, and writes it: the
+// settings written.
+func saveDeveloper(home, projectID string, change func(*planv1.ProjectSettings) error) (*planv1.ProjectSettings, error) {
 	if home == "" || projectID == "" {
-		return errors.New("cannot save developer settings: home or project ID is missing")
+		return nil, errors.New("cannot save developer settings: home or project ID is missing")
 	}
 	path := DeveloperSettingsFile(home, projectID)
 	s, err := ReadSettings(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if s == nil {
 		s = &planv1.ProjectSettings{}
 	}
-	s.Push = push.Enum()
+	if err := change(s); err != nil {
+		return nil, err
+	}
 	if err := protovalidate.Validate(s); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	b, err := prototext.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(s)
 	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if line, why := secretIn(b); line > 0 {
+		// Djinn would refuse the whole file at its next read.
+		return nil, fmt.Errorf("%s: what would be written at line %d %s; this file holds no secret", path, line, why)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+		return nil, err
 	}
-	return os.WriteFile(path, b, 0o600)
+	return s, os.WriteFile(path, b, 0o600)
+}
+
+// AllowWatch adds command to the watcher commands the developer allows in the project, in their settings file in
+// home, or takes it back with revoke: the commands allowed then. Its words are joined by single spaces, as a
+// watcher's command is compared.
+func AllowWatch(home, projectID, command string, revoke bool) ([]string, error) {
+	command = strings.Join(strings.Fields(command), " ")
+	s, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
+		at := slices.Index(s.GetWatchCommands(), command)
+		switch {
+		case command == "":
+			return errors.New("a watcher command has words")
+		case revoke && at < 0:
+			return fmt.Errorf("%q is not a watcher command you allow", command)
+		case revoke:
+			s.WatchCommands = slices.Delete(s.WatchCommands, at, at+1)
+		case at < 0:
+			s.WatchCommands = append(s.WatchCommands, command)
+		}
+		return nil
+	})
+	return s.GetWatchCommands(), err
 }
 
 // PushStrategyWord is how a wish integrates its work, as the settings say it: wish, azima.
@@ -567,29 +605,11 @@ func PushStrategyWord(p planv1.PushStrategy) string {
 
 // SaveDeveloperPushStrategy writes the developer's push strategy setting into their settings file in home.
 func SaveDeveloperPushStrategy(home, projectID string, strategy planv1.PushStrategy) error {
-	if home == "" || projectID == "" {
-		return errors.New("cannot save developer settings: home or project ID is missing")
-	}
-	path := DeveloperSettingsFile(home, projectID)
-	s, err := ReadSettings(path)
-	if err != nil {
-		return err
-	}
-	if s == nil {
-		s = &planv1.ProjectSettings{}
-	}
-	s.PushStrategy = strategy.Enum()
-	if err := protovalidate.Validate(s); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
-	}
-	b, err := prototext.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(s)
-	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, b, 0o600)
+	_, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
+		s.PushStrategy = strategy.Enum()
+		return nil
+	})
+	return err
 }
 
 // ResolveWishPushStrategy resolves the push strategy and its source for a wish, falling back to the project settings.

@@ -75,7 +75,6 @@ import {
 import {
   allowanceOf,
   deletedText,
-  doneWithProblems,
   firstLine,
   MAX_ACTIVE,
   isActive,
@@ -580,6 +579,20 @@ export function WishView({
     [quiet, write, clients.tasks],
   );
 
+  // An azima renamed from its card: djinn task update --title, written to its plan file too.
+  const handleRenameAzima = useCallback(
+    (azima: Task, title: string) => {
+      quiet(
+        write(
+          azima.wishId,
+          () => clients.tasks.update({ taskId: azima.id, title }),
+          [Change.TASK],
+        ),
+      );
+    },
+    [quiet, write, clients.tasks],
+  );
+
   const renderAzima = useCallback(
     ({ azima, parts }: { azima: Task; parts: readonly Task[] }) => (
       <AzimaCard
@@ -591,6 +604,7 @@ export function WishView({
         focus={focus}
         nest={nest}
         onValidate={handleValidateAzima}
+        onRename={handleRenameAzima}
         isPerAzima={isPerAzima}
         sync={azimaSyncs.get(azima.id)}
         onPush={handlePushAzima}
@@ -603,6 +617,7 @@ export function WishView({
       renderTask,
       focus,
       handleValidateAzima,
+      handleRenameAzima,
       isPerAzima,
       azimaSyncs,
       handlePushAzima,
@@ -636,9 +651,10 @@ export function WishView({
         focus={focus}
         onOpen={() => handleOpenDraft(draft)}
         onMove={() => handleMoveDraft(draft)}
+        onRename={handleRenameAzima}
       />
     ),
-    [byId, focus, handleOpenDraft, handleMoveDraft],
+    [byId, focus, handleOpenDraft, handleMoveDraft, handleRenameAzima],
   );
 
   const handleQuestionAnswer = useCallback(
@@ -1194,12 +1210,7 @@ export function WishView({
                           </AnimatePresence>
                         </section>
                       )}
-                      {waiting.length > 0 && (
-                        <WaitingTasks
-                          waiting={waiting}
-                          onTask={handleTaskFocus}
-                        />
-                      )}
+                      {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
                       {wish.ready && (
                         <GrantCard wish={wish} onGrant={handleGrant} />
                       )}
@@ -1253,7 +1264,7 @@ export function WishView({
         </div>
       </div>
       <LeadMessage
-        wish={wish}
+        wishId={wish.id}
         stopped={!leadRecord || !!leadTrouble(leadExit, leadStartError)}
         onResume={() => resumeLead()}
       />
@@ -1359,7 +1370,7 @@ export function wishOrigin(wish: Wish): ReactNode {
   return node;
 }
 
-// WishOrigin marks a line with its wish, in the flight plan of several wishes: its rank and its title.
+// WishOrigin marks a line with its wish, in the flying carpet of several wishes: its rank and its title.
 export const WishOrigin = memo(function WishOrigin({ wish }: { wish: Wish }) {
   return (
     <span className="wish-origin" title={wish.title}>
@@ -1373,13 +1384,10 @@ export const WishOrigin = memo(function WishOrigin({ wish }: { wish: Wish }) {
 export function WaitingTasks({
   waiting,
   origin = false,
-  onTask,
 }: {
   waiting: { item: Task; question: string; wish: Wish }[];
   // Each line shows its wish.
   origin?: boolean;
-  // Shows a task's card in the Tasks tab: the line of a task done with problems names it so.
-  onTask?: (id: string) => void;
 }) {
   return (
     <section className="plan-waiting">
@@ -1393,34 +1401,13 @@ export function WaitingTasks({
         <p className="plan-line" key={item.id} id={`waiting-${item.id}`}>
           <StatusBadge tone={taskTone(item)} label={taskStatusText(item)} />
           {origin && wishOrigin(wish)}
-          {doneWithProblems(item) ? (
-            <span>
-              {onTask ? (
-                <button
-                  type="button"
-                  className="text-button agent-code task-link"
-                  onClick={() => onTask(item.id)}
-                >
-                  {item.code}
-                </button>
-              ) : (
-                <span className="agent-code">{item.code}</span>
-              )}{" "}
-              {item.title} ·{" "}
-              {t("page.action_problems", {
-                count: item.refused?.count ?? 0,
-                names: (item.refused?.names ?? []).join(", "),
-              })}
-            </span>
-          ) : (
-            <span>
-              {item.status === TaskStatus.FAILED
-                ? firstLine(item.error) || t("attention.worker_failed")
-                : question
-                  ? t("page.action_waiting", { task: item.code, question })
-                  : t("page.action_waiting_unknown", { task: item.code })}
-            </span>
-          )}
+          <span>
+            {item.status === TaskStatus.FAILED
+              ? firstLine(item.error) || t("attention.worker_failed")
+              : question
+                ? t("page.action_waiting", { task: item.code, question })
+                : t("page.action_waiting_unknown", { task: item.code })}
+          </span>
         </p>
       ))}
     </section>

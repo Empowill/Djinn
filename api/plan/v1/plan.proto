@@ -255,6 +255,24 @@ message ProjectSettings {
   // Djinn babysits the pull or merge request a task of a wish opens, in that wish, with the watcher a skill of the
   // project declares (metadata.djinn.babysit): false turns it off. Not set: on. djinn task spawn --babysit still works.
   optional bool babysit = 26;
+  // Commands a watcher may run in the project, or the start of each on a word boundary, besides those
+  // .agents/permissions.txtpb lists: "go run ./.agents/skills/babysit-mr/mrwatch". A developer's own allowance, read
+  // from their own file only (djinn project allow --watch): the repository's is ignored, since it lists its commands in
+  // .agents/permissions.txtpb. Its denied_commands still win. Not set: none.
+  repeated string watch_commands = 27 [(buf.validate.field).repeated = {
+    max_items: 50
+    items: {
+      string: {
+        min_len: 1
+        max_len: 500
+      }
+    }
+  }];
+  // For the project a Djinn built from a checkout (go tool task install) comes from: each build Djinn pushes of the
+  // running Djinn's line (its branch, or one that carries it on), the push checks passed, installs by itself, at low
+  // priority, once no gate runs and the machine is not under pressure; the restart is left to the person's click.
+  // Other branches' builds are only offered. Not set: on.
+  optional bool install_builds = 28;
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.
@@ -804,7 +822,7 @@ message Usage {
   int64 thinking_tokens = 6;
 }
 
-// A task is one item of a wish's flight plan, done in one project.
+// A task is one item of a wish's flying carpet, done in one project.
 message Task {
   option (djinn.v1.unique) = {fields: ["wish_id", "code"]};
 
@@ -990,8 +1008,8 @@ message TaskBabysit {
   string opened_by = 5;
 }
 
-// TaskRefusals are the calls a worker's permissions refused in a run: what the lead hears when it ends, and the
-// window's warning on its task.
+// TaskRefusals are the calls a worker's permissions refused in a run: what the lead hears when it ends, to decide
+// (Q273). The window never shows them: a new right is asked of the developer by the lead, explicitly.
 message TaskRefusals {
   // How many calls were refused.
   int32 count = 1;
@@ -1914,6 +1932,12 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Show or change the watcher commands you allow in a project for yourself, besides those its
+  // .agents/permissions.txtpb lists: kept in your own settings file, never in the repository.
+  rpc Allow(ProjectServiceAllowRequest) returns (ProjectServiceAllowResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // List the local branches of a project's repository a wish's work may land in, the latest commit first: those
   // Djinn made for its tasks' worktrees left out.
   rpc Branches(ProjectServiceBranchesRequest) returns (ProjectServiceBranchesResponse) {
@@ -1970,6 +1994,8 @@ message ProjectServiceShowResponse {
   repeated ProjectCheck checks = 7;
   // Warnings when reading the settings, e.g. unknown fields that a newer Djinn knows.
   repeated string warnings = 8;
+  // The watcher commands you allow in the project for yourself (djinn project allow --watch), from your own file.
+  repeated string watch_commands = 9;
 }
 
 message ProjectServicePushRequest {
@@ -2029,6 +2055,29 @@ message ProjectServicePushStrategyResponse {
   PushStrategy strategy = 1;
   // Where the setting comes from: default, repository, or developer.
   SettingSource source = 2;
+}
+
+message ProjectServiceAllowRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // A command a watcher may run in the project, or its start: a command that is it, or starts with it before a space,
+  // runs. Not set: show the commands you allow.
+  optional string watch = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 500
+  ];
+  // Take the command back instead of allowing it.
+  bool revoke = 3;
+}
+
+message ProjectServiceAllowResponse {
+  // The watcher commands you allow in the project, from your own settings file.
+  repeated string watch_commands = 1;
+  // Your settings file, in Djinn's data folder.
+  string developer_file = 2;
 }
 
 message ProjectServiceBranchesRequest {
@@ -3059,6 +3108,14 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // The lead's notes: how to lead, learnt from past wishes, one note per file of lead/notes in Djinn's repository,
+  // built into djinn and read only. Without a name, the index: a line per note, its name and what it is about (the
+  // brief holds the same); with one, that note whole. A lead reads a note before it acts in its area; to add or fix
+  // one, a lead that may change Djinn spawns a task that edits lead/notes.
+  rpc Notes(LeadServiceNotesRequest) returns (LeadServiceNotesResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
   // few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
   // an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
@@ -3231,6 +3288,19 @@ message LeadServiceBriefRequest {}
 
 message LeadServiceBriefResponse {
   // The brief, in Markdown.
+  string text = 1;
+}
+
+message LeadServiceNotesRequest {
+  // A note's name, as the index lists it: that note whole. Empty: the index.
+  string name = 1 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+}
+
+message LeadServiceNotesResponse {
+  // The index, or the note, in Markdown.
   string text = 1;
 }
 
@@ -3562,7 +3632,8 @@ service TaskService {
   // Update a task: only the fields given change. A task not started (planned, waiting) may change everything; a running
   // or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
   // provider, model, prompt (for its next continue), azima, and integration (none clears it, pending puts its work back in
-  // line), never its dependencies once it ran.
+  // line), never its dependencies once it ran. An azima changes its title, whatever its state, written back to its plan
+  // file's heading when it has one; or its branch, alone.
   rpc Update(TaskServiceUpdateRequest) returns (TaskServiceUpdateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;

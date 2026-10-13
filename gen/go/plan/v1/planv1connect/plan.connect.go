@@ -82,6 +82,8 @@ const (
 	// ProjectServicePushStrategyProcedure is the fully-qualified name of the ProjectService's
 	// PushStrategy RPC.
 	ProjectServicePushStrategyProcedure = "/plan.v1.ProjectService/PushStrategy"
+	// ProjectServiceAllowProcedure is the fully-qualified name of the ProjectService's Allow RPC.
+	ProjectServiceAllowProcedure = "/plan.v1.ProjectService/Allow"
 	// ProjectServiceBranchesProcedure is the fully-qualified name of the ProjectService's Branches RPC.
 	ProjectServiceBranchesProcedure = "/plan.v1.ProjectService/Branches"
 	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
@@ -156,6 +158,8 @@ const (
 	LeadServiceGetProcedure = "/plan.v1.LeadService/Get"
 	// LeadServiceBriefProcedure is the fully-qualified name of the LeadService's Brief RPC.
 	LeadServiceBriefProcedure = "/plan.v1.LeadService/Brief"
+	// LeadServiceNotesProcedure is the fully-qualified name of the LeadService's Notes RPC.
+	LeadServiceNotesProcedure = "/plan.v1.LeadService/Notes"
 	// LeadServiceWatchProcedure is the fully-qualified name of the LeadService's Watch RPC.
 	LeadServiceWatchProcedure = "/plan.v1.LeadService/Watch"
 	// LeadServiceTellProcedure is the fully-qualified name of the LeadService's Tell RPC.
@@ -482,6 +486,9 @@ type ProjectServiceClient interface {
 	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
 	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
 	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
+	// Show or change the watcher commands you allow in a project for yourself, besides those its
+	// .agents/permissions.txtpb lists: kept in your own settings file, never in the repository.
+	Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error)
 	// List the local branches of a project's repository a wish's work may land in, the latest commit first: those
 	// Djinn made for its tasks' worktrees left out.
 	Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error)
@@ -536,6 +543,12 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(projectServiceMethods.ByName("PushStrategy")),
 			connect.WithClientOptions(opts...),
 		),
+		allow: connect.NewClient[v1.ProjectServiceAllowRequest, v1.ProjectServiceAllowResponse](
+			httpClient,
+			baseURL+ProjectServiceAllowProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Allow")),
+			connect.WithClientOptions(opts...),
+		),
 		branches: connect.NewClient[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse](
 			httpClient,
 			baseURL+ProjectServiceBranchesProcedure,
@@ -554,6 +567,7 @@ type projectServiceClient struct {
 	push         *connect.Client[v1.ProjectServicePushRequest, v1.ProjectServicePushResponse]
 	setPush      *connect.Client[v1.ProjectServiceSetPushRequest, v1.ProjectServiceSetPushResponse]
 	pushStrategy *connect.Client[v1.ProjectServicePushStrategyRequest, v1.ProjectServicePushStrategyResponse]
+	allow        *connect.Client[v1.ProjectServiceAllowRequest, v1.ProjectServiceAllowResponse]
 	branches     *connect.Client[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse]
 }
 
@@ -587,6 +601,11 @@ func (c *projectServiceClient) PushStrategy(ctx context.Context, req *connect.Re
 	return c.pushStrategy.CallUnary(ctx, req)
 }
 
+// Allow calls plan.v1.ProjectService.Allow.
+func (c *projectServiceClient) Allow(ctx context.Context, req *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error) {
+	return c.allow.CallUnary(ctx, req)
+}
+
 // Branches calls plan.v1.ProjectService.Branches.
 func (c *projectServiceClient) Branches(ctx context.Context, req *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error) {
 	return c.branches.CallUnary(ctx, req)
@@ -607,6 +626,9 @@ type ProjectServiceHandler interface {
 	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
 	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
 	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
+	// Show or change the watcher commands you allow in a project for yourself, besides those its
+	// .agents/permissions.txtpb lists: kept in your own settings file, never in the repository.
+	Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error)
 	// List the local branches of a project's repository a wish's work may land in, the latest commit first: those
 	// Djinn made for its tasks' worktrees left out.
 	Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error)
@@ -657,6 +679,12 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithSchema(projectServiceMethods.ByName("PushStrategy")),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServiceAllowHandler := connect.NewUnaryHandler(
+		ProjectServiceAllowProcedure,
+		svc.Allow,
+		connect.WithSchema(projectServiceMethods.ByName("Allow")),
+		connect.WithHandlerOptions(opts...),
+	)
 	projectServiceBranchesHandler := connect.NewUnaryHandler(
 		ProjectServiceBranchesProcedure,
 		svc.Branches,
@@ -678,6 +706,8 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServiceSetPushHandler.ServeHTTP(w, r)
 		case ProjectServicePushStrategyProcedure:
 			projectServicePushStrategyHandler.ServeHTTP(w, r)
+		case ProjectServiceAllowProcedure:
+			projectServiceAllowHandler.ServeHTTP(w, r)
 		case ProjectServiceBranchesProcedure:
 			projectServiceBranchesHandler.ServeHTTP(w, r)
 		default:
@@ -711,6 +741,10 @@ func (UnimplementedProjectServiceHandler) SetPush(context.Context, *connect.Requ
 
 func (UnimplementedProjectServiceHandler) PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.PushStrategy is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Allow is not implemented"))
 }
 
 func (UnimplementedProjectServiceHandler) Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error) {
@@ -1814,6 +1848,11 @@ type LeadServiceClient interface {
 	Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error)
 	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
 	Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error)
+	// The lead's notes: how to lead, learnt from past wishes, one note per file of lead/notes in Djinn's repository,
+	// built into djinn and read only. Without a name, the index: a line per note, its name and what it is about (the
+	// brief holds the same); with one, that note whole. A lead reads a note before it acts in its area; to add or fix
+	// one, a lead that may change Djinn spawns a task that edits lead/notes.
+	Notes(context.Context, *connect.Request[v1.LeadServiceNotesRequest]) (*connect.Response[v1.LeadServiceNotesResponse], error)
 	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
 	// few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
 	// an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
@@ -1872,6 +1911,13 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		notes: connect.NewClient[v1.LeadServiceNotesRequest, v1.LeadServiceNotesResponse](
+			httpClient,
+			baseURL+LeadServiceNotesProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Notes")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		watch: connect.NewClient[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse](
 			httpClient,
 			baseURL+LeadServiceWatchProcedure,
@@ -1899,6 +1945,7 @@ type leadServiceClient struct {
 	resume *connect.Client[v1.LeadServiceResumeRequest, v1.LeadServiceResumeResponse]
 	get    *connect.Client[v1.LeadServiceGetRequest, v1.LeadServiceGetResponse]
 	brief  *connect.Client[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse]
+	notes  *connect.Client[v1.LeadServiceNotesRequest, v1.LeadServiceNotesResponse]
 	watch  *connect.Client[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse]
 	tell   *connect.Client[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse]
 	choose *connect.Client[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse]
@@ -1922,6 +1969,11 @@ func (c *leadServiceClient) Get(ctx context.Context, req *connect.Request[v1.Lea
 // Brief calls plan.v1.LeadService.Brief.
 func (c *leadServiceClient) Brief(ctx context.Context, req *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error) {
 	return c.brief.CallUnary(ctx, req)
+}
+
+// Notes calls plan.v1.LeadService.Notes.
+func (c *leadServiceClient) Notes(ctx context.Context, req *connect.Request[v1.LeadServiceNotesRequest]) (*connect.Response[v1.LeadServiceNotesResponse], error) {
+	return c.notes.CallUnary(ctx, req)
 }
 
 // Watch calls plan.v1.LeadService.Watch.
@@ -1956,6 +2008,11 @@ type LeadServiceHandler interface {
 	Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error)
 	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
 	Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error)
+	// The lead's notes: how to lead, learnt from past wishes, one note per file of lead/notes in Djinn's repository,
+	// built into djinn and read only. Without a name, the index: a line per note, its name and what it is about (the
+	// brief holds the same); with one, that note whole. A lead reads a note before it acts in its area; to add or fix
+	// one, a lead that may change Djinn spawns a task that edits lead/notes.
+	Notes(context.Context, *connect.Request[v1.LeadServiceNotesRequest]) (*connect.Response[v1.LeadServiceNotesResponse], error)
 	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
 	// few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
 	// an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
@@ -2010,6 +2067,13 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceNotesHandler := connect.NewUnaryHandler(
+		LeadServiceNotesProcedure,
+		svc.Notes,
+		connect.WithSchema(leadServiceMethods.ByName("Notes")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	leadServiceWatchHandler := connect.NewUnaryHandler(
 		LeadServiceWatchProcedure,
 		svc.Watch,
@@ -2038,6 +2102,8 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceGetHandler.ServeHTTP(w, r)
 		case LeadServiceBriefProcedure:
 			leadServiceBriefHandler.ServeHTTP(w, r)
+		case LeadServiceNotesProcedure:
+			leadServiceNotesHandler.ServeHTTP(w, r)
 		case LeadServiceWatchProcedure:
 			leadServiceWatchHandler.ServeHTTP(w, r)
 		case LeadServiceTellProcedure:
@@ -2067,6 +2133,10 @@ func (UnimplementedLeadServiceHandler) Get(context.Context, *connect.Request[v1.
 
 func (UnimplementedLeadServiceHandler) Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Brief is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Notes(context.Context, *connect.Request[v1.LeadServiceNotesRequest]) (*connect.Response[v1.LeadServiceNotesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Notes is not implemented"))
 }
 
 func (UnimplementedLeadServiceHandler) Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error) {
@@ -2382,7 +2452,8 @@ type TaskServiceClient interface {
 	// Update a task: only the fields given change. A task not started (planned, waiting) may change everything; a running
 	// or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
 	// provider, model, prompt (for its next continue), azima, and integration (none clears it, pending puts its work back in
-	// line), never its dependencies once it ran.
+	// line), never its dependencies once it ran. An azima changes its title, whatever its state, written back to its plan
+	// file's heading when it has one; or its branch, alone.
 	Update(context.Context, *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error)
 	// Edit the description of an azima.
 	Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error)
@@ -2762,7 +2833,8 @@ type TaskServiceHandler interface {
 	// Update a task: only the fields given change. A task not started (planned, waiting) may change everything; a running
 	// or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
 	// provider, model, prompt (for its next continue), azima, and integration (none clears it, pending puts its work back in
-	// line), never its dependencies once it ran.
+	// line), never its dependencies once it ran. An azima changes its title, whatever its state, written back to its plan
+	// file's heading when it has one; or its branch, alone.
 	Update(context.Context, *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error)
 	// Edit the description of an azima.
 	Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error)

@@ -245,7 +245,8 @@
 .task-time {
   font-variant-numeric: tabular-nums;
 }
-/* The model turns of its run against the limit Djinn stops it at: warns as it nears it. */
+/* The model turns of its whole life, then those of its run against the limit Djinn stops it at: warns as the run
+   nears it. */
 .task-turns {
   display: inline-flex;
   align-items: center;
@@ -255,12 +256,11 @@
 .task-turns.warning {
   color: var(--st-waiting);
 }
-.task-refused {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-variant-numeric: tabular-nums;
-  color: var(--st-waiting);
+.task-turns-run {
+  opacity: 0.7;
+}
+.task-turns-run::before {
+  content: "· ";
 }
 .task-model {
   flex-shrink: 0;
@@ -498,9 +498,11 @@
   color: var(--muted-dim);
 }
 
-/* The flight plan of the active wishes: each line shows its wish. */
+/* The flying carpet of the active wishes: each line shows its wish. The Hourglass, below it, is selected alike. */
 .plan-nav.selected,
-.plan-nav.selected:hover {
+.plan-nav.selected:hover,
+.hourglass-nav.selected,
+.hourglass-nav.selected:hover {
   background: var(--n-28);
   color: var(--n-e7);
 }
@@ -658,6 +660,27 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
+}
+/* Its title, renamed in place: the pencil shows on hover of the heading, the field takes the title's room. */
+.azima-rename {
+  flex-shrink: 0;
+  opacity: 0;
+}
+.azima-row:hover .azima-rename,
+.azima-rename:focus-visible {
+  opacity: 1;
+}
+.azima-title-edit {
+  flex: 1;
+  min-width: 0;
+  margin: -3px 0;
+  padding: 2px 6px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
 }
 /* On a narrow card, what follows the title goes to a second line rather than squeezing it out. */
 @container azima (max-width: 560px) {

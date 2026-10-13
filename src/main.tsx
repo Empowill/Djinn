@@ -10,6 +10,7 @@ import { DjinnProvider, createDjinn } from "./data/djinn";
 import { language } from "./i18n";
 import { LeadTerminalFrame } from "./lead-terminal";
 import { installNativeWindowDrag } from "./native-window";
+import { followStillness } from "./stillness";
 import "./theme.css";
 import "./styles.css";
 import { applyTheme, followSystem } from "./theme";
@@ -27,12 +28,16 @@ document.documentElement.lang = language;
 const nativeWindowDragCleanup = nativeMac
   ? installNativeWindowDrag()
   : undefined;
+const stillnessCleanup = followStillness();
 const hotModule = (
   import.meta as ImportMeta & {
     hot?: { dispose: (callback: () => void) => void };
   }
 ).hot;
-hotModule?.dispose(() => nativeWindowDragCleanup?.());
+hotModule?.dispose(() => {
+  nativeWindowDragCleanup?.();
+  stillnessCleanup();
+});
 applyTheme();
 followSystem();
 // djinn serves the page and its API on the same origin, over http:// in a browser or wails:// in the window; fetch

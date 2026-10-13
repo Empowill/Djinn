@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 
@@ -50,12 +49,12 @@ func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"edit_question_id": q.GetId()})
 	if err != nil {
-		log.Printf("djinn: question %s: find its task: %v", q.GetCode(), err)
+		logx.L().Error("find a question's task", "question", q.GetCode(), "err", err)
 		return strings.Join(did, "; ")
 	}
 	for _, t := range tasks {
 		if err := h.answer(t.GetId(), q); err != nil {
-			log.Printf("djinn: task %s: answer %s: %v", t.GetCode(), q.GetCode(), err)
+			logx.L().Error("give a task its answer", "task", t.GetCode(), "question", q.GetCode(), "err", err)
 			did = append(did, fmt.Sprintf("Djinn could not give the answer to %s: %v", t.GetCode(), err))
 			continue
 		}
@@ -177,14 +176,10 @@ func (h *Harness) answer(id string, q *planv1.Question) error {
 	if err != nil || task.GetAccess() != planv1.TaskAccess_TASK_ACCESS_ASKING {
 		return err
 	}
-	seq, err := lastSeq(context.Background(), h.store, id)
-	if err != nil {
-		return err
-	}
 	if !yes(q) || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_CANCELLED || task.GetClosed() != nil || task.GetCancelled() != nil || !task.GetScheduled() {
 		// Nothing starts: the answer is recorded with the task, a task waiting for it is done. A task imported from
 		// another Djinn is not this one's to start.
-		r := &run{id: id, task: task, seq: seq}
+		r := &run{id: id, task: task}
 		h.applyAnswer(r, q)
 		return nil
 	}
@@ -229,18 +224,14 @@ func (h *Harness) grant(ctx context.Context, id string, q *planv1.Question) erro
 		events = append(events, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + t.GetWaitReason()})
 	}
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		seq, err := lastSeq(ctx, tx, id)
-		if err != nil {
-			return err
-		}
 		if err := tx.Journal(actorHarness, methodAnswer, t); err != nil {
 			return err
 		}
 		if err := tx.Put(t); err != nil {
 			return err
 		}
-		for i, ev := range events {
-			if err := tx.Put(newEvent(id, seq+1+int64(i), ev)); err != nil {
+		for _, ev := range events {
+			if err := putEvents(ctx, tx, newEvent(id, ev)); err != nil {
 				return err
 			}
 		}

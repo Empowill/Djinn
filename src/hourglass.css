@@ -1,0 +1,24 @@
+/* The Hourglass (hourglass.tsx): its sections, one under the other, and the ways to it from other pages. */
+.hourglass-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+}
+
+.hourglass-section {
+  scroll-margin-top: 16px;
+}
+
+/* A link that is a button: the text's own look, underlined (.text-link), without a button's frame. */
+.hourglass-line-open,
+.task-hourglass-open {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.hourglass-line {
+  margin: var(--space-4, 16px) 0;
+}

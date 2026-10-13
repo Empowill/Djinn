@@ -66,10 +66,10 @@ test.describe("wish render performance @render", () => {
 
     const runs = 3;
 
-    // 1. Measure opening the wish (from flight plan to wish view)
+    // 1. Measure opening the wish (from flying carpet to wish view)
     const openMeasures: number[] = [];
     for (let i = 0; i < runs; i++) {
-      // Return to flight plan first
+      // Return to flying carpet first
       const planBtn = page.locator(".plan-nav");
       if (await planBtn.isVisible()) {
         await planBtn.click();

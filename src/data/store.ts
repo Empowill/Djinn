@@ -3,6 +3,7 @@
 // keeping the others as they were, and reads the rest again, a few reads at a time, and tells the screens. Nothing
 // here is computed from the data: what the lamp computes (a wish's rank, whether it is ready) comes from the lamp.
 import {
+  create,
   type DescMessage,
   equals,
   type MessageShape,
@@ -32,6 +33,7 @@ import {
   type Wish,
   WishSchema,
   type WishChanges,
+  WishChangesSchema,
 } from "../../gen/ts/plan/v1/plan_pb";
 import { type Tilasm, TilasmSchema } from "../../gen/ts/plan/v1/tilasm_pb";
 import { type Clients, message, notFound, unimplemented } from "./client";
@@ -99,15 +101,22 @@ export interface Store {
   loadKinds(wishId: string, kinds: readonly Change[]): Promise<void>;
   // Loads the next page for a kind; of that many items at most, the server's default when none.
   loadMore(wishId: string, kind: Change, pageSize?: number): Promise<void>;
-  // Follows a task's events until the returned function is called, or the task ends.
+  // Follows a task's events until the returned function is called, or the task ends. Once no screen follows it, its
+  // events are dropped after a while: a task card closed frees them.
   follow(taskId: string): () => void;
   // Reads a task's prompt alone, without loading its other events.
   readPrompt(taskId: string): Promise<string>;
   // Reads again what changed, as a write the page made says it: the watch says it too, a moment later.
   changed(wishId: string, changes: Change[]): Promise<void>;
+  // Puts a question a write returned in place of the one shown, at once: the screens show what djinn stored without
+  // waiting for a read, which a slow call may hold.
+  putQuestion(question: Question): void;
   // Reads the machine and its gates.
   readMachine(): Promise<void>;
 }
+
+// How long a read of the store waits for djinn's answer before it fails, and is made again.
+const READ_TIMEOUT = 30_000;
 
 // The most events kept for a task: the oldest go first.
 const MAX_EVENTS = 2000;
@@ -165,12 +174,14 @@ function reconcile<Desc extends DescMessage>(
 // merge puts the entities that changed in place of theirs in list, and takes out those deleted. The others keep their
 // place and their reference, and so does one that comes back equal: a screen that shows them draws them again only
 // when they changed. A new one goes where order puts it, as the service lists them. Nothing changed: list itself.
+// One that behind says was read before the one in list does not take its place.
 function merge<Desc extends DescMessage>(
   schema: Desc,
   list: readonly MessageShape<Desc>[],
   changed: readonly MessageShape<Desc>[],
   deleted: ReadonlySet<string>,
   order: (a: MessageShape<Desc>, b: MessageShape<Desc>) => number,
+  behind?: (old: MessageShape<Desc>, next: MessageShape<Desc>) => boolean,
 ): MessageShape<Desc>[] {
   const id = (m: MessageShape<Desc>) => (m as unknown as { id: string }).id;
   const incoming = new Map(changed.map((m) => [id(m), m]));
@@ -184,7 +195,8 @@ function merge<Desc extends DescMessage>(
     }
     const next = incoming.get(id(old));
     incoming.delete(id(old));
-    if (!next || equals(schema, old, next)) out.push(old);
+    if (!next || equals(schema, old, next) || behind?.(old, next))
+      out.push(old);
     else if (order(old, next) === 0) {
       out.push(next);
       touched = true;
@@ -207,6 +219,32 @@ const byID = (a: { id: string }, b: { id: string }) =>
   a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 const byPosition = (a: Block, b: Block) =>
   a.position < b.position ? -1 : a.position > b.position ? 1 : byID(a, b);
+
+// A question only moves on: each request to investigate and each revision adds a round, and an answer or a
+// withdrawal closes it for good. A copy with fewer rounds, or open where the one shown is closed, was read before
+// it: it never takes the card back, to "Being investigated" after its revision (incident Q274) or open after its
+// answer (incident Q253). A read that left before a write, a page loaded meanwhile, a watch message that crossed a
+// write's answer: each can bring such a copy.
+const stage = (q: Question) =>
+  (q.rounds?.length ?? 0) + (q.answer || q.withdrawal ? 1_000_000 : 0);
+const questionBehind = (old: Question, next: Question) =>
+  stage(next) < stage(old);
+
+// questionsAhead is list, but for the questions shown further along in shown, which stay.
+function questionsAhead(
+  shown: readonly Question[],
+  list: Question[],
+): Question[] {
+  const byId = new Map(shown.map((q) => [q.id, q]));
+  let out = list;
+  list.forEach((q, i) => {
+    const old = byId.get(q.id);
+    if (!old || old === q || !questionBehind(old, q)) return;
+    if (out === list) out = list.slice();
+    out[i] = old;
+  });
+  return out;
+}
 
 // adjustTotal updates total when incremental changes add or remove items.
 function adjustTotal<T extends { id: string }>(
@@ -251,6 +289,7 @@ function apply(
           changes.questions,
           deleted,
           byID,
+          questionBehind,
         );
   const blocks = !detail.loadedKinds.has(Change.BLOCK)
     ? detail.blocks
@@ -308,7 +347,13 @@ export function createStore(
   clients: Clients,
   retry = 1000,
   throttle = Math.min(retry, 200),
+  // How long the events of a task no screen shows stay kept.
+  forget = 5_000,
+  timeout = READ_TIMEOUT,
 ): Store {
+  // A read that gets no answer fails after timeout, and is made again: one call that never ends would hold every
+  // read after it, and the screens would show what they had, an answered question still open (incident Q253).
+  const call = { timeoutMs: timeout };
   let state: State = {
     live: false,
     loaded: false,
@@ -410,6 +455,22 @@ export function createStore(
         pending.details.set(id, kinds);
       }
     }
+  }
+
+  // reconnected follows a watch that answers again, after djinn restarted or the stream broke: what changed meanwhile
+  // came in no message. The watch's first message reads again what each wish shown holds; the kinds whose read failed
+  // while djinn was away are read again with them, at once, not after their wait: a question revised meanwhile shows
+  // revised (incident Q274).
+  function reconnected() {
+    lastReadAt.clear();
+    backoff.clear();
+    for (const [wishId, kinds] of stale) {
+      if (!opened.has(wishId) || !kinds.size) continue;
+      const pend = pending.details.get(wishId) ?? new Set<Change>();
+      for (const k of kinds) pend.add(k);
+      pending.details.set(wishId, pend);
+    }
+    set({ live: true });
   }
 
   function canRead(key: string, now: number): boolean {
@@ -547,10 +608,13 @@ export function createStore(
     if (wishes)
       attempt(
         async () => {
-          const list = (await clients.wishes.list({})).wishes;
+          const list = (await clients.wishes.list({}, call)).wishes;
           const reconciled = reconcile(WishSchema, state.wishes, list);
           if (reconciled !== state.wishes) patch.wishes = reconciled;
-          const { lead, prompt, exit, startError } = await clients.lead.get({});
+          const { lead, prompt, exit, startError } = await clients.lead.get(
+            {},
+            call,
+          );
           const sameLead =
             (!state.lead && !lead) ||
             (state.lead && lead ? equals(LeadSchema, state.lead, lead) : false);
@@ -571,19 +635,19 @@ export function createStore(
       );
     if (projects)
       attempt(async () => {
-        const list = (await clients.projects.list({})).projects;
+        const list = (await clients.projects.list({}, call)).projects;
         const reconciled = reconcile(ProjectSchema, state.projects, list);
         if (reconciled !== state.projects) patch.projects = reconciled;
       });
     if (inbox)
       attempt(async () => {
-        const list = (await clients.inbox.list({})).items;
+        const list = (await clients.inbox.list({}, call)).items;
         const reconciled = reconcile(InboxItemSchema, state.inbox, list);
         if (reconciled !== state.inbox) patch.inbox = reconciled;
       });
     if (inbox)
       attempt(async () => {
-        const list = (await clients.inbox.sources({})).sources;
+        const list = (await clients.inbox.sources({}, call)).sources;
         const reconciled = reconcile(InboxSourceSchema, state.sources, list);
         if (reconciled !== state.sources) patch.sources = reconciled;
       });
@@ -593,31 +657,59 @@ export function createStore(
       const into: Partial<WishDetail> = (read[wishId] = {});
       if (kinds.has(Change.TASK))
         attemptKind(wishId, Change.TASK, async () => {
-          const res = await clients.tasks.list({ wishId });
-          into.tasks = reconcile(TaskSchema, prevDetail.tasks, res.tasks);
+          const res = await clients.tasks.list({ wishId }, call);
+          // The read goes as far as the tasks shown went, as for the questions: after a restart, an enlighten task
+          // ended meanwhile past the first page shows ended, not running as it was (incident Q274, W544).
+          const furthest = prevDetail.tasks.at(-1)?.id ?? "";
+          let allTasks = res.tasks;
+          let next = res.nextPageToken;
+          while (next && (allTasks.at(-1)?.id ?? "") < furthest) {
+            const page = await clients.tasks.list(
+              { wishId, pageSize: 200, pageToken: next },
+              call,
+            );
+            allTasks = allTasks.concat(page.tasks);
+            next = page.nextPageToken;
+          }
+          into.tasks = reconcile(TaskSchema, prevDetail.tasks, allTasks);
           into.tasksTotal = res.total;
-          into.tasksNextToken = res.nextPageToken;
+          into.tasksNextToken = next;
         });
       if (kinds.has(Change.QUESTION))
         attemptKind(wishId, Change.QUESTION, async () => {
-          const res = await clients.questions.list({ wishId });
+          const res = await clients.questions.list({ wishId }, call);
+          // The read goes as far as the questions shown went: one answered past the first page stays, answered,
+          // instead of leaving the screens with the open ones (incident Q253).
+          const furthest = prevDetail.questions.at(-1)?.id ?? "";
           let allQuestions = res.questions;
-          if (res.nextPageToken) {
+          let next = res.nextPageToken;
+          while (next && (allQuestions.at(-1)?.id ?? "") < furthest) {
+            const page = await clients.questions.list(
+              { wishId, pageSize: 200, pageToken: next },
+              call,
+            );
+            allQuestions = allQuestions.concat(page.questions);
+            next = page.nextPageToken;
+          }
+          if (next) {
             let openList: Question[] = [];
             let token: string | undefined;
             do {
-              const page = await clients.questions.list({
-                wishId,
-                open: true,
-                pageSize: 200,
-                pageToken: token,
-              });
+              const page = await clients.questions.list(
+                {
+                  wishId,
+                  open: true,
+                  pageSize: 200,
+                  pageToken: token,
+                },
+                call,
+              );
               openList = openList.concat(page.questions);
               token = page.nextPageToken;
             } while (token);
             allQuestions = merge(
               QuestionSchema,
-              res.questions,
+              allQuestions,
               openList,
               new Set(),
               byID,
@@ -629,18 +721,19 @@ export function createStore(
             allQuestions,
           );
           into.questionsTotal = res.total;
-          into.questionsNextToken = res.nextPageToken;
+          into.questionsNextToken = next;
         });
       if (kinds.has(Change.BLOCK))
         attemptKind(wishId, Change.BLOCK, async () => {
-          const res = await clients.blocks.list({ wishId });
+          const res = await clients.blocks.list({ wishId }, call);
           into.blocks = reconcile(BlockSchema, prevDetail.blocks, res.blocks);
           into.blocksTotal = res.total;
           into.blocksNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.TILASM))
         attemptKind(wishId, Change.TILASM, async () => {
-          const list = (await clients.tilasms.list({ wish: wishId })).tilasms;
+          const list = (await clients.tilasms.list({ wish: wishId }, call))
+            .tilasms;
           into.tilasms = reconcile(TilasmSchema, prevDetail.tilasms, list);
         });
     }
@@ -650,7 +743,10 @@ export function createStore(
     for (const [wishId, got] of Object.entries(read)) {
       const prevDetail = next[wishId] ?? EMPTY_DETAIL;
       const tasks = got.tasks ?? prevDetail.tasks;
-      const questions = got.questions ?? prevDetail.questions;
+      // What the screens got meanwhile (a write's answer, a page loaded) and is further along stays.
+      const questions = got.questions
+        ? questionsAhead(prevDetail.questions, got.questions)
+        : prevDetail.questions;
       const blocks = got.blocks ?? prevDetail.blocks;
       const tilasms = got.tilasms ?? prevDetail.tilasms;
       const tasksTotal =
@@ -836,10 +932,10 @@ export function createStore(
     return active;
   }
 
-  const following = new Map<
-    string,
-    { count: number; abort: AbortController }
-  >();
+  // How many screens show each task's events; its stream runs while one does.
+  const shown = new Map<string, number>();
+  const following = new Map<string, AbortController>();
+  const forgetting = new Map<string, ReturnType<typeof setTimeout>>();
 
   async function followEvents(taskId: string, abort: AbortController) {
     let buffer: TaskEvent[] = [];
@@ -908,10 +1004,7 @@ export function createStore(
               {},
               { signal: abort.signal },
             )) {
-              if (!state.live) {
-                lastReadAt.clear();
-                set({ live: true });
-              }
+              if (!state.live) reconnected();
               mark(res.wishId, res.changes, res.changed);
               void flush();
             }
@@ -970,10 +1063,10 @@ export function createStore(
       loadingMore.add(key);
       try {
         if (kind === Change.QUESTION && detail.questionsNextToken) {
-          const res = await clients.questions.list({
-            wishId,
-            pageToken: detail.questionsNextToken,
-          });
+          const res = await clients.questions.list(
+            { wishId, pageToken: detail.questionsNextToken },
+            call,
+          );
           const cur = state.details[wishId];
           if (!cur) return;
           const questions = merge(
@@ -982,6 +1075,7 @@ export function createStore(
             res.questions,
             new Set(),
             byID,
+            questionBehind,
           );
           set({
             details: {
@@ -995,11 +1089,10 @@ export function createStore(
             },
           });
         } else if (kind === Change.TASK && detail.tasksNextToken) {
-          const res = await clients.tasks.list({
-            wishId,
-            pageToken: detail.tasksNextToken,
-            pageSize,
-          });
+          const res = await clients.tasks.list(
+            { wishId, pageToken: detail.tasksNextToken, pageSize },
+            call,
+          );
           const cur = state.details[wishId];
           if (!cur) return;
           const tasks = merge(
@@ -1021,10 +1114,10 @@ export function createStore(
             },
           });
         } else if (kind === Change.BLOCK && detail.blocksNextToken) {
-          const res = await clients.blocks.list({
-            wishId,
-            pageToken: detail.blocksNextToken,
-          });
+          const res = await clients.blocks.list(
+            { wishId, pageToken: detail.blocksNextToken },
+            call,
+          );
           const cur = state.details[wishId];
           if (!cur) return;
           const blocks = merge(
@@ -1053,21 +1146,40 @@ export function createStore(
       }
     },
     follow(taskId) {
-      const current = following.get(taskId);
-      if (current) current.count++;
-      else {
-        const entry = { count: 1, abort: new AbortController() };
-        following.set(taskId, entry);
-        void followEvents(taskId, entry.abort).finally(() => {
-          if (following.get(taskId) === entry) following.delete(taskId);
+      shown.set(taskId, (shown.get(taskId) ?? 0) + 1);
+      clearTimeout(forgetting.get(taskId));
+      forgetting.delete(taskId);
+      if (!following.has(taskId)) {
+        const abort = new AbortController();
+        following.set(taskId, abort);
+        void followEvents(taskId, abort).finally(() => {
+          if (following.get(taskId) === abort) following.delete(taskId);
         });
       }
+      let released = false;
       return () => {
-        const entry = following.get(taskId);
-        if (!entry) return;
-        if (--entry.count > 0) return;
-        entry.abort.abort();
+        if (released) return;
+        released = true;
+        const count = (shown.get(taskId) ?? 1) - 1;
+        if (count > 0) {
+          shown.set(taskId, count);
+          return;
+        }
+        shown.delete(taskId);
+        following.get(taskId)?.abort();
         following.delete(taskId);
+        // No screen shows the task's events any more: they leave the window's memory after a while, and are read
+        // again if it shows them again. A status that follows the task again at once keeps them.
+        forgetting.set(
+          taskId,
+          setTimeout(() => {
+            forgetting.delete(taskId);
+            if (shown.has(taskId) || !(taskId in state.events)) return;
+            const events = { ...state.events };
+            delete events[taskId];
+            set({ events });
+          }, forget),
+        );
       };
     },
     async readPrompt(taskId) {
@@ -1088,6 +1200,14 @@ export function createStore(
       })();
       pendingPrompts.set(taskId, read);
       return read;
+    },
+    putQuestion(question) {
+      const detail = state.details[question.wishId];
+      if (!detail?.loadedKinds.has(Change.QUESTION)) return;
+      const changes = create(WishChangesSchema, { questions: [question] });
+      const next = apply(detail, changes, {});
+      if (next !== detail)
+        set({ details: { ...state.details, [question.wishId]: next } });
     },
     changed(wishId, changes) {
       for (const change of changes) {

@@ -1,7 +1,8 @@
-// The resources panel under the flight plan: the machine's CPU and memory over time with Djinn's share and the load
-// limit, then each running worker (its title line, the facts of its job, its CPU and memory over time, a link to
-// its task in its wish), then where the time of the commands goes, by project and gate. The series are kept in the
-// store (internal/machine/history.go): the panel reads the range once, then every 5 s only what came since.
+// The resources panel, the Hourglass's machine (hourglass.tsx): the machine's CPU and memory over time with Djinn's
+// share and the load limit, then each running worker (its title line, the facts of its job, its CPU and memory over
+// time, a link to its task in its wish; a link reaches its row by worker-<task id>), then where the time of the
+// commands goes, by project and gate. The series are kept in the store (internal/machine/history.go): the panel reads
+// the range once, then every 5 s only what came since.
 import {
   Fragment,
   type ReactNode,
@@ -46,6 +47,7 @@ import {
   ResourceChart,
   formatValue,
 } from "./resource-chart";
+import { onStillness, still } from "./stillness";
 import { TooltipButton } from "./tooltip";
 import { TaskTurns, TaskUsage } from "./usage";
 import "./consumption-panel.css";
@@ -452,6 +454,7 @@ export const WorkerRow = memo(function WorkerRow({
   const open = t("consumption.open_task", { code: worker.code });
   return (
     <article
+      id={worker.taskId ? `worker-${worker.taskId}` : undefined}
       className={`resource-worker ${worker.paused ? "is-paused" : ""}`}
       aria-label={`${worker.code} ${worker.title}`}
     >
@@ -750,11 +753,17 @@ export function ConsumptionPanel({
           : res;
       setData(current);
     };
+    // A window at rest (stillness.ts) draws no new graph: it reads them again as it wakes.
+    const poll = () => {
+      if (!still()) void read();
+    };
     void read();
-    const timer = setInterval(read, SERIES_EVERY);
+    const timer = setInterval(poll, SERIES_EVERY);
+    const stop = onStillness(poll);
     return () => {
       active = false;
       clearInterval(timer);
+      stop();
     };
   }, [djinn, folded, minutes]);
 
@@ -765,11 +774,16 @@ export function ConsumptionPanel({
       const res = await djinn.clients.commands.list({}).catch(() => null);
       if (active && res) setCommands(res.costs);
     };
+    const poll = () => {
+      if (!still()) void read();
+    };
     void read();
-    const timer = setInterval(read, COMMANDS_EVERY);
+    const timer = setInterval(poll, COMMANDS_EVERY);
+    const stop = onStillness(poll);
     return () => {
       active = false;
       clearInterval(timer);
+      stop();
     };
   }, [djinn, folded]);
 

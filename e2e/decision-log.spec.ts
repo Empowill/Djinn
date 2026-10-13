@@ -115,7 +115,7 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
     await expect(answered).toContainText("→ B · Paraffin");
     const block = rows.filter({ hasText: "Ship on Friday" });
     await expect(block.locator(".decision-icon")).toHaveText("🧱");
-    await expect(block.locator(".decision-by")).toHaveText("By the lead");
+    await expect(block.locator(".decision-by")).toHaveText("By the Djinn");
     await page.screenshot({ path: path.join(shots, "decision-log-dark.png") });
 
     // The decision opens its task in the Tasks tab, and the task leads back.

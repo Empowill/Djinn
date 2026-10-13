@@ -54,9 +54,10 @@ func TestNotchRuntimePriorityAndPause(t *testing.T) {
 		t.Fatal("expected standard priority on running workers under High notch")
 	}
 
-	// Lower notch to Minimal and reduce slots to 1.
-	lim.set(1, "")
+	// Lower notch to Minimal, then reduce slots to 1: the other way round, a scheduler pass between the two
+	// would pause W2 under High, and its event would name High.
 	e.h.SetPolicy(machine.Policy{Notch: djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL})
+	lim.set(1, "")
 
 	// 1. Priorities updated at once.
 	if !isWorkerLowPriority(e.h, w1.GetId()) {
@@ -235,20 +236,18 @@ func TestNotchRuntimeMemoryInterrupt(t *testing.T) {
 		t.Errorf("resumes = %d, want 0", resumingW2.GetResumes())
 	}
 
-	// Investigator is running.
-	runningInv := e.until(t, inv.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
-	if runningInv == nil {
-		t.Fatal("investigator did not start running")
+	// The investigator runs in the room made for it, memory still short. Its fake worker ends within
+	// milliseconds: polling for RUNNING may only ever see DONE, so wait for its end.
+	if doneInv := e.ended(t, inv.GetId()); doneInv.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("investigator = %v, want DONE", doneInv)
 	}
 
-	// Free memory and restore High notch so investigator and tasks finish.
+	// Free memory and restore High notch so the tasks finish.
 	mu.Lock()
 	free = 5 * machine.GiB
 	mu.Unlock()
 	lim.set(2, "")
 	e.h.SetPolicy(machine.DefaultPolicy())
-
-	e.ended(t, inv.GetId())
 
 	// Wish 2 task resumes and finishes with 0 resumes spent.
 	doneW2 := e.until(t, w2Task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))

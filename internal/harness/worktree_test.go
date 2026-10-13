@@ -31,6 +31,12 @@ func TestBranchName(t *testing.T) {
 // sets its own identity, which its worktrees share: the test process has none (testx.HideGitIdentity).
 func gitRepo(t *testing.T) string {
 	t.Helper()
+	return gitRepoWith(t, nil)
+}
+
+// gitRepoWith is gitRepo, its one commit holding files too, by slash-separated path.
+func gitRepoWith(t *testing.T, files map[string]string) string {
+	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -44,13 +50,16 @@ func gitRepo(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(dir, "app", "README.md"), []byte("# App\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{
-		{"init", "--quiet"},
-		{"config", "user.name", "Test"},
-		{"config", "user.email", "test@example.com"},
-		{"add", "."},
-		{"commit", "--quiet", "-m", "First"},
-	} {
+	for name, content := range files {
+		writeFile(t, dir, name, content)
+	}
+	if _, err := git(t.Context(), dir, "init", "--quiet"); err != nil {
+		t.Fatal(err)
+	}
+	// Written, not set with git config: each git costs 0.1 s on Windows. No maintenance after each of Djinn's commits.
+	appendFile(t, filepath.Join(dir, ".git", "config"),
+		"[user]\n\tname = Test\n\temail = test@example.com\n[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n")
+	for _, args := range [][]string{{"add", "."}, {"commit", "--quiet", "-m", "First"}} {
 		if _, err := git(t.Context(), dir, args...); err != nil {
 			t.Fatal(err)
 		}

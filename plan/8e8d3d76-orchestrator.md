@@ -290,8 +290,8 @@ Decide who does what, run each worker safely, and protect the machine.
 - **The lead plans with them**: the brief shows the azimas as a graph, the ready ones first (under way before open),
   then the blocked ones with what they wait for, the done ones on one line (`TestBriefAzimas`), and its rules say to
   spawn work `--part-of` its azima and `--after` only what it needs. The Tasks tab groups work under its azima,
-  which shows what it waits for and its progress (`screens.test.mjs`, `e2e/azimas.spec.ts`); the page and the flight
-  plan never list an azima as work or as waiting for the person.
+  which shows what it waits for and its progress (`screens.test.mjs`, `e2e/azimas.spec.ts`); the page and the flying
+  carpet never list an azima as work or as waiting for the person.
 - **An azima whose work is done awaits its proof** (W124: T01, T03, T04… read "in progress" with nothing left for
   Djinn to do). `AzimaState` `AWAITING_PROOF`, between in progress and done: under way, every work task part of it
   finished (done, stopped, or cut short for good, `plan.Finished`), every azima part of it done or awaiting too, and
@@ -306,8 +306,8 @@ Decide who does what, run each worker safely, and protect the machine.
   reports it (`all_checked`, T17's case; `TestSyncPlan`). The brief lists these azimas apart, "Work done, waiting for
   its proof: T11 needs a Windows machine, Clément's review" (`TestBriefAzimas`), and tells the lead to spawn no work
   for them. The window gives them their own tone and label ("Proof awaited", "Preuve attendue"), what they need on
-  hover and in their card; the wish's head counts them apart ("3 done · 18 awaiting proof / 30 azimas"); the flight
-  plan lists the proofs a person can give (needs that name a person or a review) under "Proofs you can give", among
+  hover and in their card; the wish's head counts them apart ("3 done · 18 awaiting proof / 30 azimas"); the flying
+  carpet lists the proofs a person can give (needs that name a person or a review) under "Proofs you can give", among
   what waits for you, never as work (`screens.test.mjs`, `data-flight.test.mjs`).
 - **A follow-up continues the task, it does not copy it** (W83: every resume through a fork left a duplicate):
   `djinn task continue <task> --prompt "…"` (`TaskService.Continue`) makes a done, failed, stopped or interrupted task

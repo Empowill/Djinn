@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +13,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
@@ -84,7 +84,7 @@ var choices = map[string]planv1.Choice{
 // Notices tells the user, by a system notification, of what waits for them in an active wish: a question asked
 // (the edit question of a task included), a task that waits for an answer or failed, or a wish that became ready to
 // review. A click brings the window forward on the wish, there; a button answers the question. It tells of each new
-// inbox item too, and of the choice the lead shows: a click brings the window forward, where the flight plan shows
+// inbox item too, and of the choice the lead shows: a click brings the window forward, where the flying carpet shows
 // the inbox and the attention bar the lead's choice. Each event shows once, and none of a wish while the window is in
 // front on it. Without a notifier (a headless build, the browser) it shows nothing.
 type Notices struct {
@@ -122,7 +122,7 @@ func (n *Notices) Use(notifier Notifier) {
 	if n.Store != nil {
 		// What is ready already is not news: only a wish that becomes ready from now on is notified.
 		if err := n.prime(context.Background()); err != nil {
-			log.Printf("djinn: notices: %v", err)
+			logx.L().Error("read the wishes ready to review", "loop", "notices", "err", err)
 		}
 	}
 	n.replayLeadPrompt()
@@ -176,7 +176,7 @@ func (n *Notices) access(ask func(Permission) (bool, error)) uiv1.NotificationAc
 	}
 	allowed, err := ask(p)
 	if err != nil {
-		log.Printf("djinn: permission to notify: %v", err)
+		logx.L().Warn("ask permission to notify", "err", err)
 	}
 	if allowed {
 		return uiv1.NotificationAccess_NOTIFICATION_ACCESS_ALLOWED
@@ -186,6 +186,7 @@ func (n *Notices) access(ask func(Permission) (bool, error)) uiv1.NotificationAc
 
 // Run follows the questions, tasks and inbox items stored, and notifies what is new, until ctx ends.
 func (n *Notices) Run(ctx context.Context) {
+	defer logx.Crash("notices")
 	changes := make(chan proto.Message, 256)
 	n.mu.Lock()
 	n.changes = changes
@@ -198,12 +199,12 @@ func (n *Notices) Run(ctx context.Context) {
 		case m := <-changes:
 			if p, ok := m.(*planv1.LeadPrompt); ok {
 				if err := n.notifyLeadPrompt(p); err != nil {
-					log.Printf("djinn: notify the lead's choice: %v", err)
+					logx.L().Warn("notify the lead's choice", "loop", "notices", "err", err)
 				}
 				continue
 			}
 			if err := n.follow(ctx, m); err != nil && ctx.Err() == nil {
-				log.Printf("djinn: notify: %v", err)
+				logx.L().Error("notify a change", "loop", "notices", "err", err)
 			}
 		}
 	}
@@ -561,7 +562,7 @@ func (n *Notices) Respond(ctx context.Context, r Response) {
 		if err == nil {
 			return
 		}
-		log.Printf("djinn: answer from a notification: %v", err)
+		logx.L().Warn("answer from a notification", "wish", r.WishID, "question", r.QuestionID, "err", err)
 	}
 	if n.Show != nil {
 		n.Show(r.WishID, r.Target)

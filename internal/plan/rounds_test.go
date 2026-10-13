@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -168,5 +169,40 @@ func TestWorkerAttribution(t *testing.T) {
 		Text: "Which wick?", WishId: wish, TaskId: stranger.GetId(),
 	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("a question by another wish's task: %v, want invalid_argument", err)
+	}
+}
+
+// TestEnlightenOutlivesItsCall (W536): a request to investigate, once stored, is followed up even when its caller
+// hangs up first, as the window's call did while djinn up hung: the harness's hook and the lead's event run on.
+func TestEnlightenOutlivesItsCall(t *testing.T) {
+	c := serve(t)
+	wish := c.wish(t) // Of no project, as the incident's.
+	asked := c.ask(t, wish, "Ask first", "Install anyway")
+	ctx, hangUp := context.WithCancel(t.Context())
+	defer hangUp()
+	wishes := &Wishes{Store: c.store, Leads: &fakeLeads{}}
+	var hookErr error
+	questions := &Questions{Store: c.store, Enlightened: []func(context.Context, *planv1.Question, string){
+		func(ctx context.Context, _ *planv1.Question, _ string) {
+			hangUp() // The caller leaves while the harness tries to start the investigator, and fails to.
+			hookErr = ctx.Err()
+		},
+		wishes.Enlightened,
+	}}
+	if _, err := questions.Enlighten(ctx, connect.NewRequest(&planv1.QuestionServiceEnlightenRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: asked.GetCode()}}, WishId: wish,
+		Note: "are my specs enough first?",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if hookErr != nil {
+		t.Errorf("the harness's hook ran on a context ended with its call: %v", hookErr)
+	}
+	events, err := store.List[*planv1.LeadEvent](t.Context(), c.store, store.Where{"wish_id": wish})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].GetKind() != planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN {
+		t.Fatalf("lead events: %v, want one to investigate", events)
 	}
 }

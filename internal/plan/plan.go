@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,6 +23,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
@@ -171,6 +171,9 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 		o.enlight = append(o.enlight, wishes.Enlightened) // The lead learns each request to investigate, after the harness.
 	}
 	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle, Workers: o.workers}
+	if o.leads != nil {
+		questions.NoteEdited = wishes.NoteEdited // The lead learns an answer's new note, once.
+	}
 	p, h = planv1connect.NewQuestionServiceHandler(questions, opt)
 	out[p] = h
 	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
@@ -385,6 +388,7 @@ func (p *Projects) Show(
 	settings := ResolveSettings(repo, dev)
 	out := &planv1.ProjectServiceShowResponse{
 		Project: project, Settings: settings.Rows(), Setup: settings.Setup, Checks: settings.Checks,
+		WatchCommands: settings.WatchCommands,
 	}
 	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
 	for _, err := range problems {
@@ -481,6 +485,41 @@ func (p *Projects) PushStrategy(
 		Strategy: settings.PushStrategy,
 		Source:   settings.PushStrategyFrom,
 	}), nil
+}
+
+// Allow shows the watcher commands the developer allows in a project for themselves, or allows one, or takes one
+// back: in their own settings file, never in the repository.
+func (p *Projects) Allow(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceAllowRequest],
+) (*connect.Response[planv1.ProjectServiceAllowResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	out := &planv1.ProjectServiceAllowResponse{DeveloperFile: DeveloperSettingsFile(p.Home, project.GetId())}
+	if req.Msg.Watch == nil {
+		if req.Msg.GetRevoke() {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--revoke takes back the command --watch names"))
+		}
+		dev, err := ReadSettings(out.DeveloperFile)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		out.WatchCommands = dev.GetWatchCommands()
+		return connect.NewResponse(out), nil
+	}
+	err = write(ctx, p.Store, req.Spec(), req.Msg, func(*store.Tx) error {
+		commands, err := AllowWatch(p.Home, project.GetId(), req.Msg.GetWatch(), req.Msg.GetRevoke())
+		if err != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		out.WatchCommands = commands
+		return nil
+	})
+	if err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(out), nil
 }
 
 // Branches lists the local branches of a project's repository, the latest commit first, without the branches of
@@ -659,7 +698,7 @@ func (w *Wishes) Make(
 			Text: MadeLine(wish, req.Msg.GetTitle() == ""),
 		}
 		if err := w.Notify(ctx, e); err != nil {
-			log.Printf("djinn: wish %s: tell the lead about a wish made from a request: %v", wish.GetId(), err)
+			logx.L().Error("tell the lead about a wish made from a request", "wish", wish.GetId(), "err", err)
 		}
 	}
 	return connect.NewResponse(&planv1.WishServiceMakeResponse{Wish: wish}), nil
@@ -856,6 +895,9 @@ type Questions struct {
 	Answered []AnswerHook
 	// Told, when set, is called next, with what they did.
 	Told Told
+	// NoteEdited, when set, is called with a question whose answer kept its choice and changed its note only, with
+	// the note it had: the hooks do not run again, the lead hears of the note.
+	NoteEdited func(ctx context.Context, q *planv1.Question, was string)
 	// Enlightened are called with a question once a request to investigate it is stored, with its note.
 	Enlightened []func(ctx context.Context, q *planv1.Question, note string)
 	// Settle, when set, acts on an answer in the transaction that stores it, and returns what follows once it is
@@ -869,11 +911,13 @@ type Questions struct {
 // wish's lead: "Djinn started W12: …"; "" when the answer is the lead's to act on.
 type AnswerHook func(ctx context.Context, q *planv1.Question) string
 
-// Told tells the wish's lead that q was answered, did saying what the hooks did with the answer.
-type Told func(ctx context.Context, q *planv1.Question, did string)
+// Told tells the wish's lead that q was answered, did saying what the hooks did with the answer; was is the answer it
+// replaced, when the developer changed their choice, or nil.
+type Told func(ctx context.Context, q *planv1.Question, was *planv1.Answer, did string)
 
-// afterAnswer calls hooks with q, its answer stored, then told, when set, with what they did.
-func afterAnswer(ctx context.Context, hooks []AnswerHook, told Told, q *planv1.Question) {
+// afterAnswer calls hooks with q, its answer stored, then told, when set, with what they did; was is the answer it
+// replaced, or nil.
+func afterAnswer(ctx context.Context, hooks []AnswerHook, told Told, q *planv1.Question, was *planv1.Answer) {
 	var did []string
 	for _, f := range hooks {
 		if d := f(ctx, proto.CloneOf(q)); d != "" {
@@ -881,7 +925,10 @@ func afterAnswer(ctx context.Context, hooks []AnswerHook, told Told, q *planv1.Q
 		}
 	}
 	if told != nil {
-		told(ctx, proto.CloneOf(q), strings.Join(did, "; "))
+		if was != nil {
+			was = proto.CloneOf(was)
+		}
+		told(ctx, proto.CloneOf(q), was, strings.Join(did, "; "))
 	}
 }
 
@@ -983,6 +1030,10 @@ func (q *Questions) Answer(
 ) (*connect.Response[planv1.QuestionServiceAnswerResponse], error) {
 	var question *planv1.Question
 	var then func(context.Context)
+	// was is the answer this one replaces; same, an answer it repeats, changes nothing; edited, one that changes its
+	// note only (incident Q253: a window that kept the card open sent the same answer 37 times, the lead got each).
+	var was *planv1.Answer
+	var same, edited bool
 	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
 		if question, err = find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId()); err != nil {
@@ -1019,6 +1070,17 @@ func (q *Questions) Answer(
 				actor = planv1.Closer_CLOSER_DEVELOPER
 			}
 		}
+		was = question.GetAnswer()
+		if was.GetChoice() == choice && was.GetActor() == actor && was.GetTaskId() == taskID {
+			if was.GetNote() == req.Msg.GetNote() {
+				same = true
+				return errSameAnswer // Nothing to store, not even the command.
+			}
+			edited = true
+			question.Answer = proto.CloneOf(was)
+			question.Answer.Note = req.Msg.GetNote()
+			return tx.Put(question)
+		}
 		question.Answer = &planv1.Answer{
 			Choice:     choice,
 			Note:       req.Msg.GetNote(),
@@ -1031,15 +1093,26 @@ func (q *Questions) Answer(
 		}
 		return tx.Put(question)
 	})
-	if err != nil {
+	switch {
+	case same:
+		return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
+	case err != nil:
 		return nil, err
+	case edited:
+		if q.NoteEdited != nil {
+			q.NoteEdited(ctx, proto.CloneOf(question), was.GetNote())
+		}
+		return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
 	}
 	if then != nil {
 		then(ctx)
 	}
-	afterAnswer(ctx, q.Answered, q.Told, question)
+	afterAnswer(ctx, q.Answered, q.Told, question, was)
 	return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
 }
+
+// errSameAnswer rolls back an answer that repeats the one a question has.
+var errSameAnswer = errors.New("the question has this answer already")
 
 // find resolves a reference to a question: its id, or its code within wishID, or within every wish when the code
 // is used by one only.

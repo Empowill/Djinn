@@ -12,6 +12,7 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // Codex runs OpenAI's Codex through its app-server: `codex app-server --listen stdio://`, JSON-RPC 2.0 with one
@@ -122,13 +123,16 @@ func (c Codex) Start(ctx context.Context, spec Spec) (Worker, error) {
 	if grace == 0 {
 		grace = Grace
 	}
-	p, err := startProcess(spec.Dir, command, c.args(), spec.Env, spec.Scope, grace, spec.LowPriority)
+	p, err := startProcess(spec.Dir, command, c.args(), spec.Env, spec.Scope, grace, spec.LowPriority, spec.Track)
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}
 	w := &codexWorker{c: c, spec: spec, p: p, grace: grace, events: make(chan Event, 64), done: make(chan struct{}),
 		calls: map[int64]string{}, queue: []string{spec.Prompt}}
-	go w.read()
+	go func() {
+		defer logx.Crash("codex read", "agent", command)
+		w.read()
+	}()
 	w.mu.Lock()
 	err = w.call("initialize", map[string]any{
 		"clientInfo": map[string]any{"name": "djinn", "title": "Djinn", "version": codexVersion},
@@ -137,6 +141,7 @@ func (c Codex) Start(ctx context.Context, spec Spec) (Worker, error) {
 	if err != nil {
 		w.Stop()
 		go func() {
+			defer logx.Crash("codex drain", "agent", command)
 			for range w.events { // Drained so that the worker ends.
 			}
 		}()
@@ -144,6 +149,7 @@ func (c Codex) Start(ctx context.Context, spec Spec) (Worker, error) {
 		return nil, err
 	}
 	go func() {
+		defer logx.Crash("codex stop", "agent", command)
 		select {
 		case <-ctx.Done():
 			w.Stop()
@@ -259,6 +265,7 @@ func (w *codexWorker) finish() {
 	w.closed = true
 	w.p.stdin.Close()
 	go func() {
+		defer logx.Crash("codex finish", "pid", w.p.cmd.Process.Pid)
 		select {
 		case <-w.p.done:
 		case <-time.After(w.grace):

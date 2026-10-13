@@ -16,6 +16,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	"github.com/empowill/djinn/gen/go/machine/v1/machinev1connect"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -97,7 +98,7 @@ func (p *Peaks) Ask(ctx context.Context, gate, taskID, dir, command string) {
 	if err != nil || projectID == "" {
 		return
 	}
-	_ = p.db.Tx(ctx, func(tx *store.Tx) error {
+	if err := p.db.Tx(ctx, func(tx *store.Tx) error {
 		all, err := store.List[*machinev1.CommandCost](ctx, tx, store.Where{"project_id": projectID})
 		if err != nil {
 			return err
@@ -112,7 +113,9 @@ func (p *Peaks) Ask(ctx context.Context, gate, taskID, dir, command string) {
 			return err
 		}
 		return tx.Put(out)
-	})
+	}); err != nil {
+		logx.L().Warn("journal a gate hold", "gate", gate, "task", taskID, "command", logx.Cut(command, 80), "err", err)
+	}
 }
 
 // percentile calculates the p-th percentile (0.0 to 1.0) using linear interpolation.

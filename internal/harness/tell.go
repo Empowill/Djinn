@@ -5,12 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -93,6 +93,7 @@ func (b *tellBatcher) queue(wishID, line string) {
 		return
 	}
 	b.timers[wishID] = time.AfterFunc(delay, func() {
+		defer logx.Crash("tell", "wish", wishID)
 		b.flushWish(wishID)
 	})
 }
@@ -178,7 +179,7 @@ func (h *Harness) tellWish(wishID, paragraph string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := tell(ctx, wishID, paragraph); err != nil && !errors.Is(err, plan.ErrNoLead) {
-		log.Printf("djinn: wish %s: tell the lead: %v", wishID, err)
+		logx.L().Warn("tell the lead", "wish", wishID, "err", err)
 	}
 }
 
@@ -196,7 +197,7 @@ func (h *Harness) tellWorkerFailed(t *planv1.Task) {
 	if queued {
 		// The lead's queue batches by itself, in its watch.
 		if err := h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_FAILED, t.GetWishId(), t.GetCode(), line); err != nil {
-			log.Printf("djinn: wish %s: tell the lead: %v", t.GetWishId(), err)
+			logx.L().Warn("tell the lead", "wish", t.GetWishId(), "task", t.GetCode(), "err", err)
 		}
 		return
 	}
@@ -278,7 +279,7 @@ func (h *Harness) workerFailedLine(ctx context.Context, t *planv1.Task) string {
 	}
 
 	if wish, _ := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId()); t.GetRefused().GetCount() > 0 {
-		action += " " + refusedClause(t, wish, refusedShown) + " lets the agent judge them."
+		action += " " + refusedClause(t, wish, refusedShown) + refusedRight
 	}
 	if role != "" {
 		return fmt.Sprintf("Djinn: %s (%s)%s failed (%s): %s. %s", code, title, role, agent, errLine, action)

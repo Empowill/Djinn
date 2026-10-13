@@ -176,6 +176,7 @@ export function LeadButton({
   recorded,
   agents: given,
   open: startOpen = false,
+  focused = true,
   trouble,
   loadAgents,
   onLead,
@@ -185,6 +186,8 @@ export function LeadButton({
   recorded?: Provider;
   agents?: Agent[];
   open?: boolean;
+  // On a wish, the lead resumes focused on it; on the flying carpet, on no wish: the tooltips say which.
+  focused?: boolean;
   // The lead could not start, or ended: a dot on Lead, its tooltip saying why (leadTrouble).
   trouble?: { text: string; failed: boolean };
   loadAgents: () => Promise<Agent[]>;
@@ -223,7 +226,10 @@ export function LeadButton({
     <div className="split-button" ref={root}>
       <button
         className="button secondary small"
-        title={trouble?.text ?? t("wish.resume_detail")}
+        title={
+          trouble?.text ??
+          (focused ? t("wish.resume_detail") : t("plan.talk_detail"))
+        }
         onClick={onLead}
       >
         <Terminal size={14} />
@@ -249,6 +255,7 @@ export function LeadButton({
         <LeadMenu
           agents={found}
           recorded={recorded}
+          focused={focused}
           onPick={(provider) => {
             setOpen(false);
             onPick(provider);
@@ -271,11 +278,13 @@ export function LeadButton({
 export function LeadMenu({
   agents: found,
   recorded,
+  focused = true,
   onPick,
   onSetup,
 }: {
   agents?: Agent[];
   recorded?: Provider;
+  focused?: boolean;
   onPick: (provider: Provider) => void;
   onSetup?: () => void;
 }) {
@@ -308,7 +317,9 @@ export function LeadMenu({
               {!agent.available
                 ? t("wish.lead_missing", { command: agent.command })
                 : current
-                  ? t("wish.lead_recorded")
+                  ? focused
+                    ? t("wish.lead_recorded")
+                    : t("plan.lead_recorded")
                   : t("wish.lead_new")}
             </span>
           </button>

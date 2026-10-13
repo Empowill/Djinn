@@ -1,5 +1,5 @@
 // An approval the lead's agent asks for in its terminal is answered in the window, against the real djinn up --browser
-// (see global-setup.ts): the attention bar shows it as a blocking line, its options as buttons, in the flight plan as
+// (see global-setup.ts): the attention bar shows it as a blocking line, its options as buttons, in the flying carpet as
 // in every wish; a click goes to the lead's terminal as its keys would, only while it shows that very choice. The lead
 // is a fake codex, a POSIX script: it draws Codex's approval of a command, reads one key, then draws its prompt. No
 // model runs.
@@ -81,7 +81,7 @@ test("the lead's approval shows in the attention bar, checks the command and sen
     url.pathname = "/";
     await page.goto(url.toString());
     const item = page.locator("#lead-prompt");
-    await expect(item).toContainText("Lead approval");
+    await expect(item).toContainText("Approval for the Djinn");
     await expect(item).toContainText(title);
     await expect(item).toContainText("$ djinn wish brief");
     await expect(

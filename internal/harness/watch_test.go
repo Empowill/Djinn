@@ -33,6 +33,8 @@ import (
 //	exit:2         it exits with this code
 //	keep:<name>    it counts its runs in its state folder, DJINN_HOME/watchers/$DJINN_TASK_ID/<name>, silently
 //	die-before:3   while the last keep counted fewer runs, it says so on its error output and exits with code 1
+//	remember:<file> it writes to file, its folder not made, and prints "remembered <file>"; or, as mrwatch -state
+//	               does, says it cannot on its error output and exits with code 1
 //	from:2         while the last keep counted fewer runs, it waits until it is stopped
 //	wait           it waits until it is stopped
 //
@@ -53,6 +55,12 @@ func fakeWatch(steps []string) int {
 			kept, _ = strconv.Atoi(strings.TrimSpace(string(b)))
 			kept++
 			_ = os.WriteFile(filepath.Join(dir, arg), []byte(strconv.Itoa(kept)), 0o600)
+		case "remember":
+			if err := os.WriteFile(arg, []byte("reported\n"), 0o600); err != nil {
+				fmt.Fprintf(os.Stderr, "mrwatch: cannot remember what was reported: %v\n", err)
+				return 1
+			}
+			fmt.Printf("remembered %s\n", arg)
 		case "die-before":
 			if n, _ := strconv.Atoi(arg); kept < n {
 				fmt.Fprintf(os.Stderr, "died at run %d\n", kept)

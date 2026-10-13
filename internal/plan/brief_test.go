@@ -18,6 +18,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/lead/notes"
 )
 
 func TestBrief(t *testing.T) {
@@ -118,7 +119,7 @@ func TestBrief(t *testing.T) {
 		"`--restart` starts again", "`metadata.djinn.wish`", "`djinn skill list`",
 		// The decisions say who took them, and what they led to.
 		"- 💬 **Q01** Which store? → A: SQLite", ", by the developer; led to W2\n", "- 📌 **No CGO** (block ", "), by the lead\n",
-		"`--decision Q03`", "--icon 🔒",
+		"`--decision Q03`", "--icon 🔐",
 		// Everything for the developer is a question; a resolved one is resolved; blocks are for agents.
 		"Everything for the developer is a question", "with none when you really do not know what to think",
 		"goes in its `--context`", "ask again, a new question, only on a real doubt", "**Blocks are for agents**",
@@ -722,27 +723,69 @@ func TestBriefOperationalDecisionsRule(t *testing.T) {
 	}
 }
 
-// TestBriefSilentTerminalRule: a lead writes nothing for the developer in its terminal; every word, statements
-// included, is a question in the window, withdrawn once a task or Djinn does what it asked. Its first message says so.
+// TestBriefDjinnRule (Q259 C): the lead is the Djinn, first among the rules; workers never bear the name.
+func TestBriefDjinnRule(t *testing.T) {
+	rules := briefRules(nil, "")
+	want := "- **You are the Djinn.** In Djinn, the lead is called the Djinn, and you alone bear that name: the one of " +
+		"your kind who lives in the lamp, the developer's single voice for every wish. Workers are your hands, never " +
+		"Djinns; the app is \"Djinn\", you are \"the Djinn\". Speak of yourself that way in questions and blocks " +
+		"(\"the Djinn recommends…\")."
+	if i := strings.Index(rules, "\n- "); i < 0 || !strings.HasPrefix(rules[i+1:], want) {
+		t.Errorf("briefRules does not start its rules with %q:\n%s", want, rules)
+	}
+}
+
+// TestBriefSilentTerminalRule: a lead writes nothing at all in its terminal, second among the rules, and says why;
+// every word, statements included, is a question in the window, withdrawn once a task or Djinn does what it asked.
+// Its first message says so.
 func TestBriefSilentTerminalRule(t *testing.T) {
 	rules := briefRules(nil, "")
+	bullets := strings.Split(rules, "\n- ")
+	if len(bullets) < 3 || !strings.HasPrefix(bullets[2], "**Say nothing in your terminal, ever.**") {
+		t.Errorf("the second rule is not the terminal's:\n%s", rules)
+	}
 	for _, want := range []string{
-		"**Say nothing in your terminal.**",
-		"End your turns with no text, or at most one line naming the questions you asked (Q12)",
+		"The developer never reads your terminal",
+		"costs output tokens for nothing",
+		"A turn ends with no text at all: no recap, no summary, no question codes, no \"done\"",
+		"Everything for the developer goes through questions in the window",
 		"statements included",
 		"\"OK, nothing to do\" as an option",
 		"A real wait on the developer is a `--move` question that says so plainly",
 		"Never two questions for one gesture",
 		"withdraw a question (`djinn question withdraw`) the moment a task or Djinn does what it asked",
-		"A line the developer types in your terminal is a request like any other: answer it in the window",
+		"A line the developer types in your terminal is a request like any other: answer it in the window, never in the terminal",
 		"Withdraw the open questions its work made needless",
 	} {
 		if !strings.Contains(rules, want) {
 			t.Errorf("briefRules lacks %q:\n%s", want, rules)
 		}
 	}
+	for _, gone := range []string{"at most one line", "naming the questions you asked"} {
+		if strings.Contains(rules, gone) {
+			t.Errorf("briefRules still allows a line in the terminal, %q:\n%s", gone, rules)
+		}
+	}
 	if want := "write nothing in this terminal"; !strings.Contains(StartLine(), want) {
 		t.Errorf("StartLine lacks %q: %s", want, StartLine())
+	}
+}
+
+// TestBriefQuestionEmojiRule: every question's title starts with the emoji of its subject, the same as its --icon.
+func TestBriefQuestionEmojiRule(t *testing.T) {
+	rules := briefRules(nil, "")
+	for _, want := range []string{
+		"**Every question's title starts with its emoji.** One emoji that tells its subject at a glance, then a space and the title",
+		"🚀 a merge or a release, 🔎 a review, 🔐 a right or a permission, 🧪 a check or a test, 📦 a build, " +
+			"🌿 a branch, 🧭 an organisation choice, 🪵 logs, ⚠️ an incident",
+		"The same emoji goes in `--icon`",
+		"`djinn question ask \"🔐 <question>\" <wish>",
+		"--icon 🔐` (the emoji its title starts with)",
+		"its verb first after its emoji (\"🔎 Review MR !123",
+	} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("briefRules lacks %q:\n%s", want, rules)
+		}
 	}
 }
 
@@ -752,7 +795,7 @@ func TestBriefMovesRule(t *testing.T) {
 	rules := briefRules(nil, "")
 	for _, want := range []string{
 		"**You keep the developer's moves.**",
-		"Each such move is one `--move` question whose title is a call to action, its verb first",
+		"Each such move is one `--move` question whose title is a call to action, its verb first after its emoji",
 		"clickable links to where they act: the PR or MR, the CI run, the ticket, the file and line",
 		"every command to run in a code block, to copy as it is",
 		"When a task opens a pull or merge request, ask \"Review it and take it out of draft\" with its link at once",
@@ -766,7 +809,27 @@ func TestBriefMovesRule(t *testing.T) {
 	}
 }
 
-// TestBriefUnderstandAnswerRule: a lead starts no work from an answer it does not fully understand; it asks again.
+// TestBriefNoCheckAskedRule (Q246): a check is never asked of the developer: a task or a watcher runs it; a question
+// is for a decision or a person's move only, its command in a code block at the top of the context.
+func TestBriefNoCheckAskedRule(t *testing.T) {
+	rules := briefRules(nil, "")
+	for _, want := range []string{
+		"**Never ask the developer to check (Q246).**",
+		"A check, a measure, a log to read, a CI result to look at, a command to run is never asked of the developer",
+		"Spawn a task that runs it and investigates what it finds, or let a watcher report it",
+		"a CI result comes from the PR's or MR's babysit watcher",
+		"When a worker's final note says what remains to verify, spawn that task or watcher",
+		"A question to the developer is only for a decision or a move only a person can make",
+		"the exact command goes in a code block at the top of its `--context`, never mid-sentence",
+		"what it leaves to verify (something it did not verify, a failing test it calls unrelated) goes to a task",
+	} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("briefRules lacks %q:\n%s", want, rules)
+		}
+	}
+}
+
+// TestBriefUnderstandAnswerRule:a lead starts no work from an answer it does not fully understand; it asks again.
 func TestBriefUnderstandAnswerRule(t *testing.T) {
 	rules := briefRules(nil, "")
 	for _, want := range []string{
@@ -787,6 +850,26 @@ func TestBriefCancelRule(t *testing.T) {
 		"stops its worker, removes its worktree (its branch stays) and drops its work from integration"
 	if !strings.Contains(rules, want) {
 		t.Errorf("briefRules lacks %q:\n%s", want, rules)
+	}
+}
+
+// TestBriefRefusedCallsRule (Q273): a worker's refused calls reach the lead alone, who decides; a new right is asked
+// of the developer explicitly, in a --move question.
+func TestBriefRefusedCallsRule(t *testing.T) {
+	rules := briefRules(nil, "")
+	for _, want := range []string{
+		"**Refused calls are yours, rights stay explicit (Q273).**",
+		"names the calls its permissions refused and the right that would allow them; the developer never sees them",
+		"continue the task otherwise (`djinn task continue`)",
+		"close it as seen (`djinn task done <task> --note \"…\"`)",
+		"spawn it again where a right the wish or project grants already covers them",
+		"a done task left with refused calls holds its wish's grant",
+		"Never take a broad right by default",
+		"ask for it in one `--move` question naming exactly that right, the command that grants it, and why",
+	} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("briefRules lacks %q:\n%s", want, rules)
+		}
 	}
 }
 
@@ -997,5 +1080,45 @@ func TestBriefComments(t *testing.T) {
 	}
 	if !strings.Contains(brief.Moving, "- Comment on src/utils.go, lines 20-25 (resolved): Refactored helper function") {
 		t.Errorf("brief lacks resolved comment:\n%s", brief.Moving)
+	}
+}
+
+// TestBriefListsNotes (Q260): every brief gives the lead's notes as an index, a line per note with its name and
+// description, never a note's text; the rule says to open one before acting in its area, and to change them by a task
+// that edits lead/notes, never at run time, and (Q262 B) to update or remove a note in the same breath as the task
+// that fixes what it describes.
+func TestBriefListsNotes(t *testing.T) {
+	all, err := notes.Notes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := serve(t)
+	res, err := c.lead.Brief(t.Context(), connect.NewRequest(&planv1.LeadServiceBriefRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	brief := res.Msg.GetText()
+	for _, want := range []string{
+		"**Read the lead's notes before you act in their area.**",
+		"open it: `djinn lead notes <name>`",
+		"spawns a task there that edits `lead/notes/`",
+		"nothing writes them at run time",
+		"When a task fixes what a note describes, update or remove that note in the same breath",
+		"that task, or one spawned with it, edits `lead/notes/`; no cleanup waits for later",
+		"\n## The lead's notes\n\n",
+	} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("the brief lacks %q:\n%s", want, brief)
+		}
+	}
+	for _, n := range all {
+		if line := "- `" + n.Name + "`: " + n.Description + "\n"; !strings.Contains(brief, line) {
+			t.Errorf("the brief lacks the index line %q", line)
+		}
+		for para := range strings.SplitSeq(n.Body, "\n\n") {
+			if strings.Contains(brief, strings.TrimSpace(para)) {
+				t.Errorf("the brief holds the text of note %s: %q", n.Name, para)
+			}
+		}
 	}
 }

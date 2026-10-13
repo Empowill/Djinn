@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -94,6 +94,13 @@ type Built struct {
 	// The titles of the commits the running Djinn holds and the build does not, the latest first, and how many.
 	Lacks      []string
 	LacksCount int
+	// The line of the running Djinn this build carries on from another branch: Sha holds the commit the running
+	// Djinn was built from (compare.go). The branch that one was built from, or its short commit; empty for a build of
+	// that branch (Running) and for a parallel one.
+	Continues string
+	// Djinn installs it by itself (installsItself): a build of the running Djinn's line, the push checks passed, in a
+	// project whose install_builds is on. Other builds are only offered.
+	Auto bool
 }
 
 // WithBuilt calls built after each push of an integration branch in a project whose settings name an install command.
@@ -110,6 +117,7 @@ func (h *Harness) Integrate() {
 	h.integrating.Do(func() {
 		h.integrateDone = make(chan struct{})
 		go func() {
+			defer logx.Crash("integrate")
 			defer close(h.integrateDone)
 			tick := time.NewTicker(cmp.Or(h.integrateTick, time.Minute))
 			defer tick.Stop()
@@ -228,12 +236,13 @@ func (h *Harness) recoverIntegrations(ctx context.Context, tasks []*planv1.Task)
 // branches whose push is due after each commit, and the pushes the person approved; then it merges main into the
 // integration branches where it is due (main.go).
 func (h *Harness) integratePass(ctx context.Context) {
+	ctx = withPassMemo(ctx)
 	start := time.Now()
 	logx.L().Debug("integration pass begins")
 	defer func() { logx.Took(slog.LevelDebug, "integration pass ended", start) }()
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
-		log.Printf("djinn: integrate: %v", err)
+		logx.L().Error("read the tasks", "loop", "integrate", "err", err)
 		return
 	}
 	h.correctionsEnded(ctx, tasks)
@@ -258,7 +267,8 @@ func (h *Harness) integratePass(ctx context.Context) {
 		wish, err1 := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId())
 		project, err2 := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
 		if err := errors.Join(err1, err2); err != nil {
-			log.Printf("djinn: integrate: %v", err)
+			logx.L().Error("read the wish and the project", "loop", "integrate", "task", t.GetCode(), "wish", t.GetWishId(),
+				"project", t.GetProjectId(), "err", err)
 			continue
 		}
 		committed, mb := h.integrateBatch(ctx, wish, project, []*planv1.Task{t})
@@ -505,14 +515,10 @@ func (h *Harness) dropWorktree(ctx context.Context, project *planv1.Project, t *
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		seq, err := lastSeq(ctx, tx, task.GetId())
-		if err != nil {
-			return err
-		}
-		return tx.Put(newEvent(task.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
+		return putEvents(ctx, tx, newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
 	})
 	if err != nil {
-		log.Printf("djinn: integrate %s: %v", t.GetCode(), err)
+		logx.L().Error("record the worktree", "loop", "integrate", "task", t.GetCode(), "err", err)
 	}
 	h.notify()
 }
@@ -654,8 +660,10 @@ func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string, pr
 	h.mu.Lock()
 	h.installed[projectID] = sha
 	h.mu.Unlock()
-	_ = os.MkdirAll(filepath.Dir(installedFile(h.home, projectID)), 0o755)
-	_ = os.WriteFile(installedFile(h.home, projectID), []byte(sha+"\n"), 0o600)
+	_ = os.MkdirAll(filepath.Dir(installedFile(h.home, projectID)), 0o755) // The write below fails too.
+	if err := os.WriteFile(installedFile(h.home, projectID), []byte(sha+"\n"), 0o600); err != nil {
+		logx.L().Warn("record the installed build", "project", projectID, "sha", short8(sha), "err", err)
+	}
 	h.closeInstallQuestions(ctx, projectID, sha)
 	return out, nil
 }
@@ -913,7 +921,7 @@ func (h *Harness) closeMove(ctx context.Context, q *planv1.Question, choice plan
 		return tx.Put(cur)
 	})
 	if err != nil {
-		log.Printf("djinn: move: close: %v", err)
+		logx.L().Error("close the move question", "loop", "move", "question", q.GetCode(), "wish", q.GetWishId(), "err", err)
 		return err
 	}
 	q.Answer = &planv1.Answer{
@@ -1036,7 +1044,7 @@ func moveBranch(ctx context.Context, repo, branch, old, sha, message string) (ho
 		// the way is not tracked.
 		if _, err := git(ctx, holder, "read-tree", "-m", "-u", old, sha); err != nil {
 			if _, back := git(ctx, repo, "update-ref", "refs/heads/"+branch, old, sha); back != nil {
-				log.Printf("djinn: integrate: put %s back at %s: %v", branch, old, back)
+				logx.L().Error("put the branch back", "loop", "integrate", "branch", branch, "at", short8(old), "err", back)
 			}
 			return "", fmt.Sprintf("tested green as %s; %s stays at %s: your checkout of it, %s, cannot follow: %v",
 				short8(sha), branch, short8(old), holder, err), false
@@ -1239,23 +1247,21 @@ func (h *Harness) settleIntegration(
 			if err := tx.Put(t); err != nil {
 				return err
 			}
-			seq, err := lastSeq(ctx, tx, t.GetId())
-			if err != nil {
-				return err
-			}
-			if err := tx.Put(newEvent(t.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})); err != nil {
+			if err := putEvents(ctx, tx, newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		log.Printf("djinn: integrate %s: %v", codes(batch), err)
+		logx.L().Error("record the integration", "loop", "integrate", "task", codes(batch), "err", err)
 	}
 	h.notify()
 	for _, b := range batch {
 		if len(b.GetComments()) > 0 {
-			_, _ = h.checkCommentsResolution(ctx, b)
+			if _, err := h.checkCommentsResolution(ctx, b); err != nil {
+				logx.L().Warn("check the comments resolved", "loop", "integrate", "task", b.GetCode(), "err", err)
+			}
 		}
 	}
 }
@@ -1425,19 +1431,54 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 			waits("") // Taken: it runs.
 		}
 	}
-	run := h.commands
-	if run == nil {
-		run = runCommand
+	run, _ := ctx.Value(installRunKey{}).(installRun)
+	if h.commands != nil {
+		out, code, err := h.commands(ctx, dir, args)
+		if run.output != nil {
+			for line := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
+				run.output(line)
+			}
+		}
+		return out, code, err
 	}
-	return run(ctx, dir, args)
+	low := false
+	if run.low {
+		prog, rest, started := lowCommand(args[0], args[1:])
+		args, low = append([]string{prog}, rest...), !started // Not started at its level: set once started.
+	}
+	return runTracked(ctx, dir, args, h.children.tracker("", name+" check"), run.output, low)
 }
 
 // gateWaitKey is the context key of a function told why a command waits for its gate ("gate install: held by …"), and
 // "" once it is taken: Install says it to the window.
 type gateWaitKey struct{}
 
+// installRunKey is the context key of how Install's commands run (InstallWith).
+type installRunKey struct{}
+
+type installRun struct {
+	output func(line string) // told each line a command writes; nil: none
+	low    bool              // at a low-priority worker's CPU priority
+}
+
+// InstallWith returns ctx for Install: each line its commands write (the setup's, the install command's) told to
+// output as it comes (nil: none), and, when low, those commands run at a low-priority worker's CPU priority: an
+// install Djinn starts by itself.
+func InstallWith(ctx context.Context, output func(line string), low bool) context.Context {
+	return context.WithValue(ctx, installRunKey{}, installRun{output: output, low: low})
+}
+
 // runCommand runs args in dir, and returns the end of what it wrote and its exit code.
 func runCommand(ctx context.Context, dir string, args []string) (string, int, error) {
+	return runTracked(ctx, dir, args, nil, nil, false)
+}
+
+// runTracked is runCommand; track, when set, is told of the command as it starts, and what it returns is called once
+// it ended; lines, when set, each line the command writes, as it writes it. low sets a low-priority worker's CPU
+// priority on the command once started.
+func runTracked(
+	ctx context.Context, dir string, args []string, track func(pid int, cgroup string) func(), lines func(string), low bool,
+) (string, int, error) {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
 	// At ctx's end (Djinn stops), what the command started dies with it: a check's test runner, left alone, would
@@ -1449,9 +1490,24 @@ func runCommand(ctx context.Context, dir string, args []string) (string, int, er
 	}
 	cmd.WaitDelay = gitx.WaitDelay
 	out := &tailBuffer{max: 16 << 10}
-	cmd.Stdout, cmd.Stderr = out, out
+	var w io.Writer = out
+	if lines != nil {
+		lw := &lineWriter{line: lines}
+		defer lw.flush()
+		w = io.MultiWriter(out, lw)
+	}
+	cmd.Stdout, cmd.Stderr = w, w
 	start := time.Now()
-	err := cmd.Run()
+	err := cmd.Start()
+	if err == nil {
+		if low {
+			applyPriority(cmd, true)
+		}
+		if track != nil {
+			defer track(cmd.Process.Pid, "")()
+		}
+		err = cmd.Wait()
+	}
 	logx.Ran(ctx, cmd, start, err)
 	var exit *exec.ExitError
 	switch {
@@ -1461,6 +1517,36 @@ func runCommand(ctx context.Context, dir string, args []string) (string, int, er
 		return out.String(), -1, err
 	}
 	return out.String(), 0, nil
+}
+
+// lineWriter tells line each line written to it, without its end of line, once the line is whole.
+type lineWriter struct {
+	line func(string)
+	rest []byte
+}
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	w.rest = append(w.rest, p...)
+	for {
+		i := bytes.IndexByte(w.rest, '\n')
+		if i < 0 {
+			break
+		}
+		w.line(strings.TrimRight(string(w.rest[:i]), "\r"))
+		w.rest = w.rest[i+1:]
+	}
+	if len(w.rest) > 4<<10 { // A line that never ends is told in pieces.
+		w.flush()
+	}
+	return len(p), nil
+}
+
+// flush tells what is left of a line not ended.
+func (w *lineWriter) flush() {
+	if len(w.rest) > 0 {
+		w.line(string(w.rest))
+		w.rest = nil
+	}
 }
 
 // tailBuffer keeps the last max bytes written to it.
@@ -1493,7 +1579,7 @@ func (h *Harness) tellLead(ctx context.Context, kind planv1.LeadEventKind, wishI
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := h.toLead(ctx, kind, wishID, code, line); err != nil && !errors.Is(err, plan.ErrNoLead) {
-		log.Printf("djinn: tell lead %s: %v", wishID, err)
+		logx.L().Error("tell the lead", "wish", wishID, "task", code, "kind", kind.String(), "err", err)
 	}
 }
 
@@ -1510,7 +1596,7 @@ func (h *Harness) askMove(ctx context.Context, q *planv1.Question) error {
 		return plan.Ask(ctx, tx, q)
 	})
 	if err != nil {
-		log.Printf("djinn: move: ask: %v", err)
+		logx.L().Error("ask a move", "loop", "move", "wish", q.GetWishId(), "err", err)
 		return err
 	}
 	h.notify()
@@ -2120,7 +2206,7 @@ func (h *Harness) workerStartBranch(ctx context.Context, wish *planv1.Wish, proj
 	}
 	branch, err := h.azimaBranch(ctx, project, settings, azima)
 	if err != nil {
-		log.Printf("djinn: task %s: %v", t.GetCode(), err)
+		logx.L().Warn("cut the azima branch", "task", t.GetCode(), "azima", azima.GetCode(), "project", project.GetId(), "err", err)
 		return plan.IntegrationBranchOf(wish, project.GetId())
 	}
 	return branch
@@ -2460,11 +2546,14 @@ func (h *Harness) azimaPRPass(
 		case "MERGED":
 			h.recordAzimaPR(ctx, azima, &planv1.AzimaPr{Url: pr.URL, State: planv1.AzimaPrState_AZIMA_PR_STATE_MERGED})
 			if azima.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-				_, _ = h.Done(ctx, "/plan.v1.TaskService/Done", &planv1.TaskServiceDoneRequest{
+				_, err := h.Done(ctx, "/plan.v1.TaskService/Done", &planv1.TaskServiceDoneRequest{
 					TaskId: azima.GetId(),
 					By:     planv1.Closer_CLOSER_LEAD,
 					Note:   fmt.Sprintf("merged in pull request #%d", pr.Number),
 				})
+				if err != nil {
+					logx.L().Warn("close the merged azima", "azima", azima.GetCode(), "wish", azima.GetWishId(), "pr", pr.URL, "err", err)
+				}
 				azima.Status = planv1.TaskStatus_TASK_STATUS_DONE
 			}
 		}

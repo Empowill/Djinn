@@ -63,7 +63,7 @@ for (const engine of ["native", "script"] as const)
       .click();
     await (await chooser).setFiles(file);
 
-    // The window shows the wish imported, not the flight plan it opened on: both list questions.
+    // The window shows the wish imported, not the flying carpet it opened on: both list questions.
     await expect(page.locator(".hero h1")).toHaveText(
       `Keep my place ${wishId.slice(0, 8)}`,
     );

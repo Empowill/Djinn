@@ -25,11 +25,11 @@ function wish(title: string) {
   return JSON.parse(djinn("wish", "make", title, "--json")).wish.id as string;
 }
 
-// lead clicks Lead at the top of the wish shown.
+// lead clicks Talk to the Djinn at the top of the wish shown.
 async function lead(page: Page) {
   await page
     .locator(".topbar-actions")
-    .getByRole("button", { name: "Lead", exact: true })
+    .getByRole("button", { name: "Talk to the Djinn", exact: true })
     .click();
 }
 
@@ -107,7 +107,7 @@ test("Lead on each wish focuses the one lead on it, whatever wish is shown", asy
     ).session_id,
   ).toBe(session);
 
-  // The flight plan shows no wish: the lead stays shown.
+  // The flying carpet shows no wish: the lead stays shown.
   await page.locator(".plan-nav").click();
   await expect(command).toContainText(`claude --resume ${session}`);
 });

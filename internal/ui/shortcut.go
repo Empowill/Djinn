@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,6 +16,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/fsx"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -25,8 +25,8 @@ const settingsFile = "settings.json"
 // errChord marks a chord Djinn does not take.
 var errChord = errors.New("invalid chord")
 
-// FlightPlan is the wish id that shows the flight plan of the active wishes: PLAN in src/wish-app.tsx. A wish's id is
-// a UUID, never this.
+// FlightPlan is the wish id that shows the flying carpet of the active wishes: PLAN in src/wish-app.tsx. A wish's id is
+// a UUID, never this. The flying carpet was called the flight plan, hence the name.
 const FlightPlan = "plan"
 
 // Registrar takes global shortcuts from the system: the window's (Wails), or a fake in tests. Register calls pressed
@@ -37,7 +37,7 @@ type Registrar interface {
 }
 
 // Shortcuts holds the global shortcut that brings the window forward: on the wish with the newest open question,
-// else on the flight plan. The chord is a setting, kept in settings.json; it is taken from the system while a
+// else on the flying carpet. The chord is a setting, kept in settings.json; it is taken from the system while a
 // registrar is set, that is while the native window runs.
 type Shortcuts struct {
 	// Home is the data directory.
@@ -85,7 +85,7 @@ func (s *Shortcuts) Use(r Registrar) {
 	s.registrar = r
 	chord, err := s.load()
 	if err != nil {
-		log.Printf("djinn: global shortcut: %v", err)
+		logx.L().Warn("load the global shortcut", "err", err)
 	}
 	s.take(chord)
 }
@@ -115,7 +115,7 @@ func (s *Shortcuts) Set(chord string) (*uiv1.Shortcut, error) {
 	defer s.mu.Unlock()
 	settings, err := s.read()
 	if err != nil {
-		log.Printf("djinn: %v; written again", err)
+		logx.L().Warn("settings unreadable: written again", "path", filepath.Join(s.Home, settingsFile), "err", err)
 		settings = &uiv1.Settings{}
 	}
 	settings.Shortcut = &chord
@@ -177,7 +177,7 @@ func (s *Shortcuts) take(chord string) {
 	}
 	if err := s.registrar.Register(chord, s.pressed); err != nil {
 		s.problem = err.Error()
-		log.Printf("djinn: global shortcut %s: %v", chord, err)
+		logx.L().Warn("take the global shortcut", "chord", chord, "err", err)
 		return
 	}
 	s.taken = chord
@@ -190,7 +190,7 @@ func (s *Shortcuts) release() {
 	}
 	if s.registrar != nil {
 		if err := s.registrar.Unregister(s.taken); err != nil {
-			log.Printf("djinn: global shortcut %s: %v", s.taken, err)
+			logx.L().Warn("give back the global shortcut", "chord", s.taken, "err", err)
 		}
 	}
 	s.taken = ""
@@ -203,13 +203,13 @@ func (s *Shortcuts) pressed() {
 	}
 	target, err := Summoned(context.Background(), s.Store)
 	if err != nil {
-		log.Printf("djinn: global shortcut: %v", err)
+		logx.L().Error("find what the global shortcut shows", "err", err)
 	}
 	s.Show(target)
 }
 
 // Summoned is what the global shortcut shows: the active wish with the newest question that waits for the developer,
-// else the flight plan. A question being investigated waits for the lead, not for the developer.
+// else the flying carpet. A question being investigated waits for the lead, not for the developer.
 func Summoned(ctx context.Context, db *store.Store) (string, error) {
 	if db == nil {
 		return FlightPlan, nil

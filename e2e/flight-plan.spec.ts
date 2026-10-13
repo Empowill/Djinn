@@ -1,4 +1,4 @@
-// The flight plan of the active wishes, against the real djinn up --browser (see global-setup.ts): two wishes, a
+// The flying carpet of the active wishes, against the real djinn up --browser (see global-setup.ts): two wishes, a
 // question each, merged in one view; a question answered there reads as answered by the command line. A wish's
 // tasks show what they spent: tokens, and one price.
 import { expect, test } from "@playwright/test";
@@ -117,7 +117,7 @@ const lampOf = (wishId: string, title: string) => {
   };
 };
 
-test("the flight plan merges two wishes, and a question is answered from it", async ({
+test("the flying carpet merges two wishes, and a question is answered from it", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -148,8 +148,8 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   // Tall enough for the screenshots to hold the whole plan: the page scrolls inside the window.
   await page.setViewportSize({ width: 1440, height: 1900 });
   await page.goto(process.env.DJINN_URL!);
-  // With wishes active, the window opens on their flight plan.
-  await expect(page.locator(".hero h1")).toHaveText("Flight plan");
+  // With wishes active, the window opens on their flying carpet.
+  await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
 
   // The page header's row is the window's toolbar's, its breadcrumbs where the page's content starts, past the
   // sidebar or its rail, past the traffic lights in the macOS window, where the row is the lights' and the gauge
@@ -182,16 +182,17 @@ test("the flight plan merges two wishes, and a question is answered from it", as
     const actions = pageHeader.locator(".topbar-actions");
     if (await actions.count()) {
       const actionsBox = await actions.boundingBox();
-      const iconActionBox = await actions
-        .locator(".page-header-action")
-        .first()
-        .boundingBox();
       expect(actionsBox).not.toBeNull();
-      expect(iconActionBox).toMatchObject({ width: size, height: size });
-      expect(
-        Math.abs(rowCenter - (iconActionBox!.y + iconActionBox!.height / 2)),
-      ).toBeLessThan(1);
-      // The labelled actions too: Pause, Lead and its arrow.
+      // The icon actions of a wish (the flying carpet has only Talk to the Djinn and its arrow).
+      const iconAction = actions.locator(".page-header-action").first();
+      if (await iconAction.count()) {
+        const iconActionBox = await iconAction.boundingBox();
+        expect(iconActionBox).toMatchObject({ width: size, height: size });
+        expect(
+          Math.abs(rowCenter - (iconActionBox!.y + iconActionBox!.height / 2)),
+        ).toBeLessThan(1);
+      }
+      // The labelled actions too: Pause, Talk to the Djinn and its arrow.
       for (const box of await actions
         .locator("button:visible")
         .evaluateAll((els) => els.map((el) => el.getBoundingClientRect())))
@@ -216,7 +217,7 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await assertHeaderChrome(248);
 
   await expect(
-    page.locator(".plan-nav").filter({ hasText: "Flight plan" }),
+    page.locator(".plan-nav").filter({ hasText: "Flying carpet" }),
   ).toHaveClass(/selected/);
 
   // Both questions, each marked with its wish.
@@ -283,7 +284,7 @@ test("the flight plan merges two wishes, and a question is answered from it", as
     .filter({ hasText: "May the worker pour the oil?" });
   await expect(decided.locator(".wish-origin")).toHaveText(`2${oilTitle}`);
   await expect(decided.locator(".status-badge")).toHaveText("Decided by you");
-  await page.getByRole("tab", { name: /^Flight plan/ }).click();
+  await page.getByRole("tab", { name: /^Flying carpet/ }).click();
   const [answered] = JSON.parse(
     djinn("question", "list", "--wish-id", oilId, "--json"),
   ).questions;
@@ -304,7 +305,7 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   // its journal.
   await page.locator(".plan-wish").filter({ hasText: lampTitle }).click();
   await expect(page.locator(".hero h1")).toHaveText(lampTitle);
-  // Share and Delete are icons; Pause and Lead keep their words. The operating-load gauge sits between.
+  // Share and Delete are icons; Pause and Talk to the Djinn keep their words. The operating-load gauge sits between.
   await expect(pageHeader.locator(".page-header-action")).toHaveCount(2);
   await expect(
     pageHeader.getByRole("button", { name: "Pause", exact: true }),

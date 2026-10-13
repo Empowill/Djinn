@@ -371,7 +371,18 @@ When the operating load notch changes, Djinn immediately adjusts running workers
 ## Watch: a command, no agent
 
 `djinn task spawn <wish> --title "Watch !41" --provider watch --prompt "mrwatch -watch 41" --restart` runs the command
-in the project's folder: no agent, no model, no token. Each paragraph it prints (output, then a second of silence,
+in the project's folder: no agent, no model, no token. It runs without a shell: quotes group words as in a shell, and Djinn
+expands `$DJINN_HOME`, `$DJINN_TASK_ID` and `$DJINN_WISH_ID` (or `${…}`) outside single quotes, so that a file of the
+watcher's own state folder reads as a lead writes it in a terminal:
+
+```
+djinn task spawn <wish> --title "Watch !2855" --provider watch --restart \
+  --prompt 'mrwatch -mr 2855 -watch -state "$DJINN_HOME/watchers/$DJINN_TASK_ID/mr-2855"'
+```
+
+Any other variable (`$HOME`) is refused at spawn: nothing would expand it. Write its value, or put it in single quotes
+for the command to read it as it is. What the project's permissions and the developer's `--watch` allowances judge is
+the command once expanded, the one that runs ([what a watcher may run](wish-templates.md#what-a-watcher-may-run)). Each paragraph it prints (output, then a second of silence,
 or its exit; 200 lines at most) is a `TEXT` event, its raw line kept with its colours, and its first line wakes the
 wish's lead, typed in the lead's terminal as an answer is:
 
@@ -383,7 +394,8 @@ Djinn: W70's watcher says: New thread on !41. mrwatch -watch 41 is still watchin
   apart, as long as its wish needs it. No silence limit, no wall-time budget and no turn budget apply to it; what counts is that its command lives
   while its task runs. A command that dies (an error, an exit code other than 0, a kill) starts again, in the same
   task: one second later, doubling up to five minutes, the backoff starting over after a run that lived a minute.
-  Its state folder, `$DJINN_HOME/watchers/<task>` (Djinn sets `DJINN_HOME` for it), stays as the command left it,
+  Its state folder, `$DJINN_HOME/watchers/<task>` (Djinn sets `DJINN_HOME` for it, and makes the folder before
+  the command starts), stays as the command left it,
   so that it does not say again what it said. After five deaths in a row, the task fails, and the lead is told once
   why, with the command's last error lines: "Djinn: W70's watcher failed: its command died 5 times in a row; the
   last time: exit code 4; its error output: gh: not logged in". A watcher whose process is lost (its task running
@@ -401,9 +413,12 @@ Djinn: W70's watcher says: New thread on !41. mrwatch -watch 41 is still watchin
   the machine, starts under pressure, and holds no write scope. Its wish and its dependencies still hold it.
 - **No shell.** The command line is split into words: quotes group them, a backslash keeps a quote, a backslash or
   a space; a pipe or a `&&` is only a word. Run `sh -c "…"` for a shell, where the project allows it.
-- **What it may run.** A watcher needs a project. Where the project lists its commands
-  (`.agents/permissions.txtpb`), the command must be one of them, and not denied: a watcher has no reviewer to
-  approve it. A folder outside Git without agent configuration runs no watcher.
+- **What it may run.** A watcher needs a project. Where its permissions list commands (the project's
+  `.agents/permissions.txtpb`, a wish's allowance over it, which lists none without that file), the command must be
+  one of them, or the command Djinn builds from a skill of the project
+  ([declared](wish-templates.md#what-a-watcher-may-run)), or one you allow in the project for yourself (`djinn
+  project allow <project> --watch '<command>'`): a watcher has no reviewer to approve it. The project's denied
+  commands win over all three. A folder outside Git without agent configuration runs no watcher.
 - **Resumed.** A watcher `djinn up` cut short starts again at the next start, on its command, in its project's
   folder, however many times (the limit of 3 resumes is for agents). The lead's restart line counts the watchers
   apart from the workers: "Djinn: restarted on version v1.2.0: 1 watcher resumed: W9." It reads no message (`djinn task send`
@@ -737,7 +752,7 @@ use a personal or licensed account.
 
 ## Tokens and cost estimates across providers
 
-Every task, wish, and the flight plan show token counts (input, output, cache read, thinking) and an estimated cost computed from an embedded price table (`internal/usage/prices.yaml`), marked "estimated, prices of <table date>".
+Every task, wish, and the flying carpet show token counts (input, output, cache read, thinking) and an estimated cost computed from an embedded price table (`internal/usage/prices.yaml`), marked "estimated, prices of <table date>".
 
 | Provider | Stream tokens | Stream cost | Estimated cost |
 | -------- | ------------- | ----------- | -------------- |

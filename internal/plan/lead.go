@@ -13,6 +13,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/lead/notes"
 )
 
 // Leads runs the terminal of a wish's lead and shows it in the window: djinn up provides it, on its terminals and its
@@ -361,6 +362,26 @@ func (s *LeadService) Brief(
 		return nil, Status(err)
 	}
 	return connect.NewResponse(&planv1.LeadServiceBriefResponse{Text: brief}), nil
+}
+
+// Notes is the index of the lead's notes, or one note whole: they are built into djinn, read only.
+func (s *LeadService) Notes(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceNotesRequest],
+) (*connect.Response[planv1.LeadServiceNotesResponse], error) {
+	name := strings.TrimSpace(req.Msg.GetName())
+	if name == "" {
+		index, err := notes.Index()
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		return connect.NewResponse(&planv1.LeadServiceNotesResponse{Text: index}), nil
+	}
+	note, ok := notes.Find(name)
+	if !ok {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf(
+			"the lead has no note %q: djinn lead notes lists them", name))
+	}
+	return connect.NewResponse(&planv1.LeadServiceNotesResponse{Text: note.Text()}), nil
 }
 
 // sessionLine is the command line that resumes the session of the lead, and the folder it runs in.

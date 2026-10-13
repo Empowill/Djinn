@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/link"
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // Service implements uiv1connect.UiServiceHandler.
@@ -47,10 +49,20 @@ type Service struct {
 	// AgentPath is the PATH where GetEnvironment looks for the agents, and nowhere else. Nil: Djinn's own, brought
 	// up to date by machine.ExtendPath, which the workers and the leads get too. Tests replace it.
 	AgentPath func() string
-	// Install installs a build that SetBuild proposed: its project's install command, run on its commit, telling
-	// progress each step and what it waits for. It tells whether a newer Djinn waits at the path of the running one
-	// since, to restart on. Nil: no build installs.
-	Install func(ctx context.Context, build *uiv1.Build, progress func(step uiv1.InstallStep, waiting string)) (newer bool, err error)
+	// Install installs a build that SetBuild proposed: its project's install command, run on its commit, as run says.
+	// It tells whether a newer Djinn waits at the path of the running one since, to restart on, and returns the end of
+	// what its command wrote. Nil: no build installs.
+	Install func(ctx context.Context, build *uiv1.Build, run InstallRun) (newer bool, out string, err error)
+	// Life is djinn up's: an install runs within it, whatever becomes of the call that asked for it. Nil: it never ends.
+	Life context.Context
+	// Busy says why the machine cannot take an install Djinn starts by itself now: a gate held, the machine under
+	// pressure; "" when it can. Nil: it always can.
+	Busy func() string
+	// InstallLimit is how long an install may work, its waits aside, before Djinn stops it. Zero: DefaultInstallLimit.
+	InstallLimit time.Duration
+	// AutoRetry is how long an install Djinn starts by itself waits before it looks at a busy machine again. Zero:
+	// DefaultAutoRetry.
+	AutoRetry time.Duration
 	// ChooseFolder opens the system's folder dialog over the window, titled title and open in directory, and returns
 	// the folder chosen, or empty when the user cancelled. Nil: the page has no folder dialog (the browser).
 	ChooseFolder func(title, directory string) (string, error)
@@ -65,7 +77,7 @@ type Service struct {
 	// Shown is called when the window is asked to show a wish or a terminal.
 	Shown func(wishID, terminal string)
 	// Known tells whether a wish is still on this machine: a show of the last minute whose wish was deleted since is
-	// not replayed to a window that opens, which would leave the wish it shows for the flight plan. Nil: every wish is.
+	// not replayed to a window that opens, which would leave the wish it shows for the flying carpet. Nil: every wish is.
 	Known func(ctx context.Context, wishID string) bool
 	// Notices shows the system notifications, and knows whether the system lets it. Nil: none (a test).
 	Notices *Notices
@@ -79,12 +91,17 @@ type Service struct {
 
 	updates    sync.Mutex
 	ready      string           // version of the newer Djinn waiting; empty for none
+	installed  bool             // it is at the path of the running one already: Update only restarts
 	notesURL   string           // where its release notes are; empty for none
 	notResumed []string         // terminals the last restart could not run again
 	builds     []*uiv1.Build    // the last build pushed of each integration branch, not installed; the running one's first
 	readyBuild *uiv1.Build      // the newer Djinn waiting, named as a build; nil when not known
-	installing *uiv1.Installing // the install that runs now; nil for none
+	installing *uiv1.Installing // the install that runs now, or the last one when it failed; nil for none
 	updated    chan struct{}    // closed and replaced at each change
+	job        *job             // the install that runs now; nil for none
+	autoNext   *uiv1.Build      // the build of the running line to install by itself next; nil for none
+	autoRuns   bool             // autoLoop runs
+	autoWake   chan struct{}    // wakes autoLoop when a build of the running line comes
 }
 
 // replay is how long a request to show something waits for a window that opens after it: djinn lead resume may
@@ -459,18 +476,18 @@ func (s *Service) present(msg *uiv1.UiServiceWatchShowResponse) {
 	}
 }
 
-// SetReady says that a newer Djinn of version waits at the path of the running one, its release notes at notesURL
-// (empty for none); an empty version says none does.
-func (s *Service) SetReady(version, notesURL string) {
+// SetReady says that a newer Djinn of version waits, its release notes at notesURL (empty for none): installed at the
+// path of the running one already, or a release to download first. An empty version says none does.
+func (s *Service) SetReady(version, notesURL string, installed bool) {
 	s.updates.Lock()
 	defer s.updates.Unlock()
-	if s.ready == version && s.notesURL == notesURL {
+	if s.ready == version && s.notesURL == notesURL && s.installed == installed {
 		return
 	}
 	if s.ready != version {
 		s.readyBuild = nil
 	}
-	s.ready, s.notesURL = version, notesURL
+	s.ready, s.notesURL, s.installed = version, notesURL, installed && version != ""
 	s.notifyUpdate()
 }
 
@@ -488,28 +505,40 @@ func (s *Service) SetReadyBuild(version string, build *uiv1.Build) {
 
 // SetBuild proposes to install build, the last push of an integration branch, in place of the one proposed before
 // for the same branch of the same project: each branch keeps its own, the branch the running Djinn was built from
-// first.
+// first, then those that carry its line on (W527), then the parallel ones. A build to install by itself (Build.auto)
+// installs, once the machine is free; the others wait for the person's click.
 func (s *Service) SetBuild(build *uiv1.Build) {
 	if build == nil {
 		return
 	}
 	s.updates.Lock()
-	defer s.updates.Unlock()
 	if i := slices.IndexFunc(s.builds, func(b *uiv1.Build) bool { return sameBranch(b, build) }); i >= 0 {
 		s.builds[i] = build
 	} else {
 		s.builds = append(s.builds, build)
 	}
-	slices.SortStableFunc(s.builds, func(a, b *uiv1.Build) int {
-		switch {
-		case a.GetRunning() == b.GetRunning():
-			return 0
-		case a.GetRunning():
-			return -1
-		}
-		return 1
-	})
+	slices.SortStableFunc(s.builds, func(a, b *uiv1.Build) int { return cmp.Compare(lineRank(a), lineRank(b)) })
+	// A failed install whose build is proposed no more is forgotten: its branch's newer build replaced it.
+	if in := s.installing; in.GetStep() == uiv1.InstallStep_INSTALL_STEP_FAILED &&
+		!slices.ContainsFunc(s.builds, func(b *uiv1.Build) bool { return b.GetSha() == in.GetSha() }) {
+		s.installing = nil
+	}
 	s.notifyUpdate()
+	s.updates.Unlock()
+	if build.GetAuto() && s.Install != nil {
+		s.autoInstall(build)
+	}
+}
+
+// lineRank orders a build against the running Djinn: of its branch, then carrying its line on, then parallel.
+func lineRank(b *uiv1.Build) int {
+	switch {
+	case b.GetRunning():
+		return 0
+	case b.GetContinues() != "":
+		return 1
+	}
+	return 2
 }
 
 // sameBranch tells whether a and b are builds of the same integration branch of the same project.
@@ -525,11 +554,11 @@ func (s *Service) updateState() *uiv1.UiServiceWatchUpdateResponse {
 	}
 	return &uiv1.UiServiceWatchUpdateResponse{
 		Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed), NotesUrl: s.notesURL,
-		Builds: builds, Installing: proto.CloneOf(s.installing), ReadyBuild: proto.CloneOf(s.readyBuild),
+		Builds: builds, Installing: proto.CloneOf(s.installing), ReadyBuild: proto.CloneOf(s.readyBuild), Installed: s.installed,
 	}
 }
 
-// setInstalling says where the install that runs now stands; nil when none runs.
+// setInstalling says where the install that runs now stands, or how the last one failed; nil for neither.
 func (s *Service) setInstalling(in *uiv1.Installing) {
 	s.updates.Lock()
 	defer s.updates.Unlock()
@@ -610,23 +639,15 @@ func (s *Service) Update(
 		case s.Install == nil:
 			return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this djinn installs no build"))
 		}
-		newer, err := s.Install(ctx, build, func(step uiv1.InstallStep, waiting string) {
-			s.setInstalling(&uiv1.Installing{Sha: sha, Step: step, Waiting: waiting})
-		})
+		// Logged as it comes: a call that never ends leaves no line of its own (calls log at their end).
+		logx.L().Info("install asked", "sha", short(sha), "branch", build.GetBranch())
+		newer, err := s.install(ctx, build, false)
 		if err != nil {
-			s.setInstalling(nil)
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("install %s: %w", build.GetBranch(), err))
 		}
 		installed = sha
-		s.updates.Lock()
-		if i := slices.Index(s.builds, build); i >= 0 { // Proposed no more, unless a newer one came meanwhile.
-			s.builds = slices.Delete(s.builds, i, i+1)
-			s.notifyUpdate()
-		}
-		s.updates.Unlock()
 		if !newer || s.Restart == nil {
 			// The build installed no newer Djinn at this one's path: the project is not Djinn, nothing restarts.
-			s.setInstalling(nil)
 			return connect.NewResponse(&uiv1.UiServiceUpdateResponse{Installed: installed}), nil
 		}
 		s.setInstalling(&uiv1.Installing{Sha: sha, Step: uiv1.InstallStep_INSTALL_STEP_RESTARTING})
@@ -730,6 +751,7 @@ func (s *Service) Watch(
 		loadCtx, cancelLoad := context.WithCancel(ctx)
 		defer cancelLoad()
 		go func() {
+			defer logx.Crash("ui watch load")
 			_ = s.WatchLoad(loadCtx, func(resp *djinnv1.LoadServiceWatchResponse) error {
 				select {
 				case <-loadCtx.Done():

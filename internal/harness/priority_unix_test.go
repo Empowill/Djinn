@@ -195,24 +195,18 @@ func TestWorkerPriorityPolicyChangeUnix(t *testing.T) {
 		return pid
 	}
 
+	// Each notch's priority is machine.TestLowPriority's: here, a change of notch reaches the next worker, both ways.
+	// Three workers, not one per notch: each costs a worktree and a start of the test binary, slow on Windows.
 	// 1. Initial MEDIUM notch: low priority (nice 10).
 	spawnAndCheck("Worker 1 Medium", true)
 
-	// 2. Change policy to MINIMAL notch: low priority (nice 10).
-	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL))
-	spawnAndCheck("Worker 2 Minimal", true)
-
-	// 3. Change policy to HIGH notch: standard priority (Djinn's own nice level).
+	// 2. Change policy to HIGH notch: standard priority (Djinn's own nice level).
 	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_HIGH))
-	spawnAndCheck("Worker 3 High", false)
+	spawnAndCheck("Worker 2 High", false)
 
-	// 4. Change policy to MAX notch: standard priority (Djinn's own nice level).
-	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MAX))
-	spawnAndCheck("Worker 4 Max", false)
-
-	// 5. Change policy to OVERCLOCK notch: standard priority (Djinn's own nice level).
-	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK))
-	spawnAndCheck("Worker 5 Overclock", false)
+	// 3. Change policy to MINIMAL notch: low priority (nice 10) again.
+	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL))
+	spawnAndCheck("Worker 3 Minimal", true)
 }
 
 // TestWorkerChildPriorityInheritanceUnix verifies that a low-priority worker, and the commands it runs, start at the low
@@ -232,7 +226,7 @@ func TestWorkerChildPriorityInheritanceUnix(t *testing.T) {
 	}
 
 	// The worker prints its child's PID, then waits for it.
-	p, err := startProcess(t.TempDir(), "sh", []string{"-c", "sleep 10 & echo $!; wait"}, nil, nil, time.Second, true)
+	p, err := startProcess(t.TempDir(), "sh", []string{"-c", "sleep 10 & echo $!; wait"}, nil, nil, time.Second, true, nil)
 	if err != nil {
 		t.Fatalf("start the worker: %v", err)
 	}

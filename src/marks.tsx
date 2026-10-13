@@ -93,17 +93,20 @@ export function useWrites(onToast: (text: string) => void) {
     (wishId: string, id: string, choice: Choice, note: string) =>
       act(
         wishId,
-        () =>
-          clients.questions.answer({
+        async () => {
+          const res = await clients.questions.answer({
             question: { ref: { case: "id", value: id } },
             choice,
             note,
             wishId,
             by: Closer.DEVELOPER,
-          }),
+          });
+          // The card turns answered now, whatever the reads that follow take.
+          if (res.question) store.putQuestion(res.question);
+        },
         QUESTIONS_CHANGES,
       ),
-    [act, clients.questions],
+    [act, clients.questions, store],
   );
 
   const enlighten = useCallback(

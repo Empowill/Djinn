@@ -43,11 +43,15 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { jump } from "./attention";
 import { type Decision } from "./data/decisions";
-import { useOptionalData, useTaskEvents, useTaskPrompt } from "./data/djinn";
+import {
+  useDjinn,
+  useOptionalData,
+  useTaskEvents,
+  useTaskPrompt,
+} from "./data/djinn";
 import { isMerge } from "./data/flight";
 import {
   cancelledText,
-  doneWithProblems,
   gitReason,
   taskActivity,
   taskFinished,
@@ -60,6 +64,7 @@ import {
   when,
 } from "./data/format";
 import { DecisionLink } from "./decision-log";
+import { HOURGLASS } from "./hourglass";
 import { language, t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
@@ -68,7 +73,6 @@ import {
   costTitle,
   resourcesDetail,
   resourcesNow,
-  TaskRefused,
   TaskTurns,
   TaskUsage,
   usageDetail,
@@ -225,7 +229,7 @@ export const WishTask = memo(function WishTask({
   project?: Project;
   // The codes of the wish's tasks, by id: what this one waits for, what it was forked from.
   codes?: ReadonlyMap<string, string>;
-  // Where the task comes from, in the flight plan of several wishes: its wish.
+  // Where the task comes from, in the flying carpet of several wishes: its wish.
   origin?: ReactNode;
   // The task that took over this one, cut short: its code.
   forkedAs?: string;
@@ -339,7 +343,6 @@ export const WishTask = memo(function WishTask({
                 </span>
               )}
               <TaskTurns task={task} />
-              <TaskRefused task={task} />
               {origin}
               <TaskUsage task={task} />
               {task.status === TaskStatus.RUNNING &&
@@ -644,16 +647,14 @@ function TaskLink({
   );
 }
 
-// closable tells a task a person may mark done by hand: one no worker runs now, not done or cancelled already; or
-// one done with problems, which marked done is closed as seen.
+// closable tells a task a person may mark done by hand: one no worker runs now, not done or cancelled already.
 export function closable(task: Task): boolean {
   const status = task.status;
   return (
-    doneWithProblems(task) ||
-    (status !== TaskStatus.RUNNING &&
-      status !== TaskStatus.PAUSED &&
-      status !== TaskStatus.DONE &&
-      status !== TaskStatus.CANCELLED)
+    status !== TaskStatus.RUNNING &&
+    status !== TaskStatus.PAUSED &&
+    status !== TaskStatus.DONE &&
+    status !== TaskStatus.CANCELLED
   );
 }
 
@@ -729,6 +730,7 @@ function TaskBody({
   const spent = usageDetail(task.usage, task.model, task.provider);
   const running = task.status === TaskStatus.RUNNING;
   const used = task.resources ? resourcesDetail(task.resources, running) : "";
+  const djinn = useDjinn();
   // Where Djinn does not measure workers (Windows), a running worker says so.
   const unmeasured =
     useOptionalData((s) => !!s.machine?.workerMeasure, false) && running;
@@ -757,6 +759,18 @@ function TaskBody({
           </span>
         )}
         {used && <span>{used}</span>}
+        {/* A running worker's row in the Hourglass: its CPU and memory over time. */}
+        {used && running && djinn && (
+          <button
+            type="button"
+            className="text-link task-hourglass-open"
+            onClick={() =>
+              djinn.focus.show({ page: HOURGLASS, target: `worker-${task.id}` })
+            }
+          >
+            {t("hourglass.worker")}
+          </button>
+        )}
         {!used && unmeasured && <span>{t("resources.not_measured")}</span>}
       </div>
       <TaskPromptFold prompt={prompt} />
@@ -913,7 +927,8 @@ function SendBox({ onSend }: { onSend: (text: string) => Promise<unknown> }) {
   );
 }
 
-function EventLine({
+// An event never changes once kept: each push of new events draws only the new rows.
+const EventLine = memo(function EventLine({
   event,
   model,
   provider,
@@ -945,4 +960,4 @@ function EventLine({
       </td>
     </tr>
   );
-}
+});

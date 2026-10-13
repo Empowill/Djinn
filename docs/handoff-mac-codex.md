@@ -113,7 +113,7 @@ The following table lists all open plan boxes marked `(needs: a Mac)` across [`p
 | **T02** ([`plan/c30479be-api-and-cli.md`](../plan/c30479be-api-and-cli.md)) | `- [ ] macOS: the Dock shows the icon at run time; Finder and Launchpad need an .app bundle with build/icon.icns (T19). The release builds it: djinn_darwin_universal_app.zip, Djinn.app with Contents/Resources/djinn.icns (tools/macapp). (needs: a Mac, to open it from Finder)` | Launch `Djinn.app` from Finder or run `djinn up` from the terminal and check that the application icon is shown in the Dock while running. |
 | **T02** ([`plan/c30479be-api-and-cli.md`](../plan/c30479be-api-and-cli.md)) | `- [ ] macOS: needs the .app bundle and its identifier. T19 builds Djinn.app, identifier io.github.empowill.djinn; Wails asks for a signed app too, and the bundle is unsigned. (needs: a Mac, to see whether the ad hoc signature suffices)` | Test whether the ad hoc signature in the unsigned release bundle suffices for Wails native features (like desktop notifications) or whether macOS Gatekeeper restricts them. |
 | **T02** / **T25** ([`plan/4a699d0f-review-at-a-glance.md`](../plan/4a699d0f-review-at-a-glance.md)) | `- [ ] djinn://tilasm/<id> opens the app on the tilasm from outside, Djinn running or not, on Linux (a desktop entry for x-scheme-handler/djinn), macOS (CFBundleURLTypes in Djinn.app) and Windows (the registry, by the installer). (needs: a Mac, and a Windows machine)` | Click or open a `djinn://tilasm/<id>` link from outside (e.g. via Terminal `open djinn://tilasm/<id>` or from a browser). Verify that it starts Djinn.app or brings a running Djinn forward and opens the tilasm in its wish's Tilasms tab. |
-| **T02** ([`plan/c30479be-api-and-cli.md`](../plan/c30479be-api-and-cli.md)) | `- [ ] Pressed by hand on macOS and on Windows. (needs: a Mac, and a Windows machine)` | Press the macOS global shortcut (`Ctrl+Cmd+J` by default, or as configured in settings) anywhere on the desktop. Verify by hand that it brings the Djinn window forward to the active wish with the newest open question (or flight plan). |
+| **T02** ([`plan/c30479be-api-and-cli.md`](../plan/c30479be-api-and-cli.md)) | `- [ ] Pressed by hand on macOS and on Windows. (needs: a Mac, and a Windows machine)` | Press the macOS global shortcut (`Ctrl+Cmd+J` by default, or as configured in settings) anywhere on the desktop. Verify by hand that it brings the Djinn window forward to the active wish with the newest open question (or flying carpet). |
 
 ## 5. Runs on your Mac as your work is ported
 
@@ -210,11 +210,70 @@ go tool task build && export DJINN_HOME=$(mktemp -d) L=$DJINN_HOME/logs && ./bin
    `goroutines-<time>.txt` at 10 s, `msg="shutdown hangs: exiting" … code=3` at 30 s, and `echo $?` (Windows:
    `$LASTEXITCODE`) prints `3`; send both files.
 
+### V1 to V6: the azimas awaiting proof, on the published v0.1.1 (W567)
+
+**Proves** on a Mac what the developer validated on Linux on 13/10/2026: these run on the **published release
+v0.1.1**, not on a branch. Each starts from a fresh data folder (`export DJINN_HOME=$(mktemp -d)`), never your own,
+but V2: the Finder gives Djinn.app no `DJINN_HOME`, so it opens your usual data folder.
+Report each as **pass** or **fail** with its number (V1 to V6), as in [section 7](#7-how-to-report).
+
+**V1 · T04, T19: a new user installs v0.1.1.** In a macOS account without administrator rights, or a fresh `HOME`:
+
+```sh
+time (curl -fsSL https://github.com/Empowill/Djinn/releases/latest/download/install.sh | sh)
+~/.local/bin/djinn version && ~/.local/bin/djinn up
+```
+
+**Look at**: `installed djinn v0.1.1 in …/.local/bin`, no password asked; `djinn v0.1.1`; the window opens and its
+status bar reads **Live**. Send the time of the install and of the window (on Linux: 6 s, then under 1 s).
+
+**V2 · T19: Djinn.app of v0.1.1, from the Finder.** Download `djinn_darwin_universal_app.zip` from the
+[v0.1.1 release](https://github.com/Empowill/Djinn/releases/tag/v0.1.1), unzip it, put `Djinn.app` in `/Applications`
+and open it from the Finder (right-click, **Open**, the first time). **Look at**: the window; the icon in the Dock and
+in Launchpad; with the window in the background, a notification for, in a new Terminal,
+`/Applications/Djinn.app/Contents/MacOS/djinn question ask "Mac check" <wish>` (a wish made with **New wish**); a
+click on it lands on the question.
+
+**V3 · T14, T33: each worker's CPU and memory on macOS** (its process group: no cgroup there). While a task with an
+agent runs:
+
+```sh
+djinn machine show
+```
+
+**Look at**: `worker_uses` lists the task with `cpu_percent` and `memory_bytes` above zero, and the Hourglass in the
+window draws its graphs.
+
+**V4 · T35: no worker outlives Djinn on macOS** (no `PR_SET_PDEATHSIG` there: the sentinel stops the children). While
+a task's worker runs:
+
+```sh
+pgrep -fl 'claude|codex'   # the worker's pid
+pkill -9 -x djinn          # Djinn dies without its shutdown
+sleep 5; pgrep -fl 'claude|codex'
+```
+
+**Look at**: the worker is gone after the kill; started again, Djinn resumes the task once, with one agent process per
+running task, never two.
+
+**V5 · T20: a backup restores on macOS.** With the test Djinn of V1 running and a wish made in it:
+
+```sh
+djinn backup --file /tmp/djinn-v5.tar.gz
+```
+
+Quit Djinn, then `DJINN_HOME=$(mktemp -d) djinn backup restore /tmp/djinn-v5.tar.gz` and `djinn up` with that same
+`DJINN_HOME`. **Look at**: the wish is there (on Linux, W567 restored a wish and a project this way).
+
+**V6 · T20: a shared wish page, seen by a second person** (any system). When the developer sends you the link of a
+wish's published page, open it. **Look at**: the wish as it is (its questions, tasks and decisions); say what was
+missing or wrong.
+
 ## 6. New since PR #1 worth trying in passing
 
 - **Operating load cursor with five notches and Overclock**: A slider in the status bar (`minimal`, `light`, `medium`, `high`, `max`, and `overclock` / auto) dynamically controlling worker slots, pressure stall thresholds, gate margins, and committable memory (`djinn load get/set`).
 - **Memory engaged by each worker's 95th percentile**: The scheduler calculates engaged memory forecasts from workers' 95th percentile resident memory (`p95_memory_bytes`) sampled every 5 seconds instead of raw peak spikes, with an optional dynamic memory guardrail (`--worker-memory-guard`).
-- **The consumption panel**: A collapsible resource consumption panel under the flight plan showing real-time CPU and memory graphs, gate wait/held stats (p50, p95), sparklines, and active worker breakdown.
+- **The consumption panel**: A collapsible resource consumption panel under the flying carpet showing real-time CPU and memory graphs, gate wait/held stats (p50, p95), sparklines, and active worker breakdown.
 - **Finished tasks read Merging until committed**: When a worker finishes, its badge and azima display a distinct amber "Merging" state until Djinn completes integration checks and commits the work.
 - **Keyboard shortcuts on question cards**: Quick keyboard shortcuts on open question cards allow answering, asking for enlightenment, or rubbing the lamp without mouse clicks.
 - **Wishes renamed from the command line**: Rename any wish directly from the CLI with `djinn wish rename <wish> <new title>` or through the inline UI editor.

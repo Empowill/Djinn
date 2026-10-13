@@ -70,6 +70,7 @@ export {
   ProjectChecks,
   ProjectPanel,
   ShortcutField,
+  WatchCommands,
 } from "@/src/wish-dialogs.tsx";
 export {
   LastPushes,
@@ -86,6 +87,12 @@ export {
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView, readyKey } from "@/src/update-banner.tsx";
 export { platformShortcut } from "@/src/tooltip.tsx";
+export {
+  digitKey,
+  learnDigitKey,
+  pageDigit,
+  pageShortcut,
+} from "@/src/page-keys.ts";
 export { PageHeaderAction } from "@/src/page-header.tsx";
 export { InstallStep } from "@/gen/ts/ui/v1/ui_pb.ts";
 export {
@@ -108,7 +115,17 @@ export { readDrop } from "@/src/data/tilasms.ts";
 export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export { ConsumptionPanel, WorkerRow } from "@/src/consumption-panel.tsx";
 export { ResourceChart } from "@/src/resource-chart.tsx";
-export { MachineService, CommandService } from "@/gen/ts/machine/v1/machine_pb.ts";
+export {
+  MachineService,
+  CommandService,
+  GateService,
+} from "@/gen/ts/machine/v1/machine_pb.ts";
+export {
+  HOURGLASS,
+  Hourglass,
+  HourglassLine,
+  HourglassSections,
+} from "@/src/hourglass.tsx";
 export {
   TaskDiffView,
   UnifiedView,
@@ -332,7 +349,7 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   assert.match(html, />lamp</);
 });
 
-test("the side panel counts the new inbox items on the flight plan's entry, even with no active wish", () => {
+test("the side panel counts the new inbox items on the flying carpet's entry, even with no active wish", () => {
   const sidebar = (wishes, inbox) =>
     s.renderToStaticMarkup(
       h(s.WishSidebar, {
@@ -350,9 +367,9 @@ test("the side panel counts the new inbox items on the flight plan's entry, even
       }),
     );
   const paused = wish("w1", "Trim the wick", s.WishState.PAUSED, 0);
-  // Nothing active, nothing new: no flight plan.
+  // Nothing active, nothing new: no flying carpet.
   assert.doesNotMatch(sidebar([paused], 0), /plan-nav/);
-  // Two new items: the flight plan shows them, its entry counts them.
+  // Two new items: the flying carpet shows them, its entry counts them.
   const html = sidebar([paused], 2);
   assert.match(html, /plan-nav/);
   assert.match(
@@ -501,6 +518,31 @@ test("a question shows its options by letter and its recommendation; answered, w
     /<button class="question-heading question-fold" aria-expanded="false"><svg[^>]*lucide-lightbulb[^]*?<span class="question-id">Q01<\/span><span class="question-fold-text">Which oil\?<\/span>.*Being investigated.*<span class="question-fold-note">You asked: And the price\?<\/span>/,
   );
   assert.doesNotMatch(folded, /question-inner|Olive|<textarea/);
+  // A request no one took on shows its age, to the minute (W557).
+  const old = live(s.WishQuestion, {
+    question: {
+      id: "q2",
+      code: "Q02",
+      text: "Which wick?",
+      options: ["Cotton", "Hemp"],
+      recommendation: "A: it burns even.",
+      rounds: [
+        {
+          kind: s.RoundKind.ENLIGHTEN,
+          note: "Burn time?",
+          createTime: {
+            seconds: BigInt(
+              Math.floor(Date.now() / 1000) - (4 * 3600 + 12 * 60 + 20),
+            ),
+            nanos: 0,
+          },
+        },
+      ],
+    },
+    onAnswer: async () => {},
+    onEnlighten: async () => {},
+  });
+  assert.match(old.html(), /Being investigated for 4h12m/);
   card.one("question-fold").onClick();
   const digging = card.html();
   assert.doesNotMatch(digging, /folded/);
@@ -585,7 +627,7 @@ test("Enlighten me sends the answer's note in one click: no second field", async
   );
   assert.match(
     open,
-    /<button class="button secondary lamp-enlighten" title="Find out more before deciding: the lead looks into what your note asks, then revises the question \(⌃⇧↵\)">/,
+    /<button class="button secondary lamp-enlighten" title="Find out more before deciding: the Djinn looks into what your note asks, then revises the question \(⌃⇧↵\)">/,
   );
   assert.doesNotMatch(open, /aria-expanded|Ask the lead to investigate/);
 
@@ -621,6 +663,80 @@ test("Enlighten me sends the answer's note in one click: no second field", async
   kept.one("lamp-enlighten").onClick();
   await kept.settle();
   assert.match(kept.html(), /<textarea[^>]*>Cotton\?<\/textarea>/);
+});
+
+// A gesture shows on its card, by key as by click: its button is down while the answer waits, then the answer leaves
+// as it comes back up; the card keeps the gesture's colour, and a wisp rises from the chosen button only.
+test("a gesture presses its button and the card answers back in its colour", async () => {
+  const answered = [];
+  const enlightened = [];
+  const card = live(s.WishQuestion, {
+    question: {
+      id: "q1",
+      code: "Q01",
+      text: "Which oil?",
+      options: ["Olive", "Paraffin"],
+      recommendation: "A: it smells good.",
+    },
+    onAnswer: async (choice) => {
+      answered.push(choice);
+    },
+    onEnlighten: async (note) => {
+      enlightened.push(note);
+    },
+  });
+  assert.doesNotMatch(card.html(), /gesture-|is-pressed|question-wisp/);
+
+  // Enter on the card: the lamp is down, the card plays the rub, nothing has left yet.
+  card.one("question-card").onKeyDown({ key: "Enter", preventDefault() {} });
+  let html = card.html();
+  assert.match(html, /class="question-card open can-wait gesture-rub"/);
+  assert.match(html, /class="button accent lamp-rub is-pressed"/);
+  assert.match(
+    html,
+    /<span class="question-wisp" aria-hidden="true"><\/span><\/button>/,
+  );
+  assert.equal(html.match(/question-wisp/g).length, 1);
+  assert.match(html, /class="button secondary lamp-enlighten"/);
+  assert.equal(answered.length, 0);
+
+  // Back up: the answer left, the card still glows in the lamp's colour.
+  await card.settle();
+  assert.deepEqual(answered, [s.Choice.A]);
+  html = card.html();
+  assert.match(html, /class="button accent lamp-rub"/);
+  assert.match(html, /gesture-rub/);
+
+  // A click plays the same; Enlighten me plays its own, the wisp on its button.
+  const other = live(s.WishQuestion, {
+    question: { id: "q2", code: "Q02", text: "Which wick?", options: [] },
+    onAnswer: async () => {},
+    onEnlighten: async (note) => {
+      enlightened.push(note);
+    },
+  });
+  other.one("lamp-enlighten").onClick();
+  html = other.html();
+  assert.match(html, /class="question-card open can-wait gesture-enlighten"/);
+  assert.match(html, /class="button secondary lamp-enlighten is-pressed"/);
+  assert.match(
+    html,
+    /⇧↵<\/kbd><span class="question-wisp" aria-hidden="true">/,
+  );
+  await other.settle();
+  assert.deepEqual(enlightened, [""]);
+
+  // Refused: the card stops playing, as it was.
+  const refused = live(s.WishQuestion, {
+    question: { id: "q3", code: "Q03", text: "Which lamp?", options: [] },
+    onAnswer: async () => {
+      throw new Error("refused");
+    },
+  });
+  refused.one("lamp-rub").onClick();
+  assert.match(refused.html(), /gesture-rub/);
+  await refused.settle();
+  assert.doesNotMatch(refused.html(), /gesture-|is-pressed|question-wisp/);
 });
 
 test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enlighten, composing, arrows, 1-4, and macOS hints", async () => {
@@ -852,7 +968,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
     );
     assert.match(
       macMarkup,
-      /title="Find out more before deciding: the lead looks into what your note asks, then revises the question \(⌘⇧↵\)"/,
+      /title="Find out more before deciding: the Djinn looks into what your note asks, then revises the question \(⌘⇧↵\)"/,
     );
   } finally {
     delete globalThis.__DJINN_MAC__;
@@ -935,7 +1051,7 @@ test("a question reads top-down: its title, what is at stake folded, its report,
     "Enlighten me",
     "Rub the lamp",
     "<textarea",
-    "Your answer goes to the lead",
+    "Your answer goes to the Djinn",
   ].map(at);
   assert.deepEqual(
     order,
@@ -1263,19 +1379,19 @@ test("a question of a wish without a lead session says no lead is told: open, th
       }),
     );
   const told = props(false, {});
-  assert.match(told, /Your answer goes to the lead and the workers\./);
-  assert.doesNotMatch(told, /No lead to tell/);
+  assert.match(told, /Your answer goes to the Djinn and the workers\./);
+  assert.doesNotMatch(told, /The Djinn is not there to tell/);
   const open = props(true, {});
   assert.match(
     open,
-    /No lead to tell: your answer goes to the workers and waits in the wish&#x27;s brief\./,
+    /The Djinn is not there to tell: your answer goes to the workers and waits in the wish&#x27;s brief\./,
   );
-  assert.doesNotMatch(open, /goes to the lead/);
+  assert.doesNotMatch(open, /goes to the Djinn/);
   const answer = { answer: { choice: s.Choice.A, note: "" } };
-  assert.doesNotMatch(props(false, answer), /No lead to tell/);
+  assert.doesNotMatch(props(false, answer), /The Djinn is not there to tell/);
   assert.match(
     props(true, answer),
-    /<p class="no-lead">No lead to tell: the answer waits in the wish&#x27;s brief\.<\/p>/,
+    /<p class="no-lead">The Djinn is not there to tell: the answer waits in the wish&#x27;s brief\.<\/p>/,
   );
   const waitingLead = {
     answer: { choice: s.Choice.A, note: "" },
@@ -1284,11 +1400,11 @@ test("a question of a wish without a lead session says no lead is told: open, th
   const waitingHtml = props(false, waitingLead);
   assert.match(
     waitingHtml,
-    /<p class="no-lead">No lead runs to receive your answer: it waits for the next lead that starts\.<\/p>/,
+    /<p class="no-lead">The Djinn is not running to receive your answer: it gets it once it starts\.<\/p>/,
   );
   assert.match(
     waitingHtml,
-    /<span class="status-badge tone-waiting">.*Waiting for a lead<\/span>/,
+    /<span class="status-badge tone-waiting">.*Waiting for the Djinn<\/span>/,
   );
 });
 
@@ -1468,7 +1584,7 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
     html,
     /<h2>Being investigated<span class="count">1<\/span><\/h2>/,
   );
-  assert.match(html, /1 question being investigated by the lead/);
+  assert.match(html, /1 question being investigated by the Djinn/);
   // Folded to one line, what you asked with it.
   assert.match(html, /question-card investigating {2}folded/);
   assert.match(html, /You asked: Burn time\?/);
@@ -1900,7 +2016,9 @@ test("a task card offers Start anyway from machine_wait, not from its reason's t
   );
 });
 
-test("a task card warns of the calls its permissions refused, and which on hover with the command that grants them", () => {
+// Q273: the calls a worker's permissions refused are the lead's to handle (its ended event names them); the window
+// shows no warning of them on the task's card.
+test("a task card shows no warning of the calls its permissions refused: they go to the lead", () => {
   const card = (task) =>
     s.renderToStaticMarkup(
       h(s.WishTask, {
@@ -1918,11 +2036,8 @@ test("a task card warns of the calls its permissions refused, and which on hover
   const refused = card({
     refused: { count: 6, names: ["djinn", "ls", "git", "task", "gcloud"] },
   });
-  assert.match(
-    refused,
-    /<span class="task-refused" title="6 calls refused by its permissions in its last run, with nobody to approve them: djinn, ls, git, task, gcloud. djinn wish allow w1 --mode auto lets the agent judge them.">/,
-  );
-  assert.doesNotMatch(card({}), /task-refused/);
+  assert.doesNotMatch(refused, /refused|wish allow|gcloud|with problems/);
+  assert.equal(refused, card({}));
 });
 
 test("a task row reads on two lines: status, code and long title on the first, details on the second", () => {
@@ -2325,10 +2440,34 @@ test("a running task shows what its worker uses now; its facts, the peaks too", 
   );
   assert.doesNotMatch(card(s.TaskStatus.DONE), /CPU/);
   assert.equal(s.resourcesDetail(resources, false), "peak CPU 180% · 1.2 GB");
+  // Open, a running task links to its worker's row in the Hourglass, its CPU and memory over time.
+  const open = (status) =>
+    s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn: hourglassDjinn().djinn },
+        h(s.WishTask, {
+          task: {
+            id: "t1",
+            code: "W1",
+            title: "Trim the wick",
+            status,
+            resources,
+          },
+          focused: true,
+          onStop() {},
+        }),
+      ),
+    );
+  assert.match(
+    open(s.TaskStatus.RUNNING),
+    /<button type="button" class="text-link task-hourglass-open">Live in the Hourglass<\/button>/,
+  );
+  assert.doesNotMatch(open(s.TaskStatus.DONE), /task-hourglass-open/);
   assert.equal(s.memory(1536n), "1.5 kB");
 });
 
-test("a task card shows its model turns against the limit, its tone warning past 80%; hover says run, limit, total", () => {
+test("a task card shows its model turns over its whole life, its run against the limit beside it, its tone warning past 80% of the run's; hover says total, run, limit", () => {
   const card = (status, turns) =>
     s.renderToStaticMarkup(
       h(s.WishTask, {
@@ -2336,6 +2475,7 @@ test("a task card shows its model turns against the limit, its tone warning past
         onStop() {},
       }),
     );
+  // A first run: its turns are its whole life's, shown once.
   const running = card(s.TaskStatus.RUNNING, {
     run: 37,
     limit: 500,
@@ -2345,6 +2485,12 @@ test("a task card shows its model turns against the limit, its tone warning past
     running,
     /<span class="task-turns" title="37 model turns in this run, of the 500 its seal allows a run"><svg[^>]*aria-label="model turns"[^>]*>.*?<\/svg>37\/500<\/span>/,
   );
+  assert.doesNotMatch(running, /task-turns-run/);
+  // Resumed: the whole life's 412 read first, this run's 37 against its 500 beside them, the tone still the run's.
+  assert.match(
+    card(s.TaskStatus.RUNNING, { run: 37, limit: 500, total: 412 }),
+    /<span class="task-turns" title="412 model turns over its whole life · 37 model turns in this run, of the 500 its seal allows a run"><svg[^>]*aria-label="model turns"[^>]*>.*?<\/svg>412<span class="task-turns-run">37\/500<\/span><\/span>/,
+  );
   // 80% is not past it.
   assert.match(
     card(s.TaskStatus.RUNNING, { run: 400, limit: 500, total: 400 }),
@@ -2352,7 +2498,7 @@ test("a task card shows its model turns against the limit, its tone warning past
   );
   assert.match(
     card(s.TaskStatus.RUNNING, { run: 401, limit: 500, total: 450 }),
-    /<span class="task-turns warning" title="401 model turns in this run, of the 500 its seal allows a run · 450 over all its runs">.*?401\/500</,
+    /<span class="task-turns warning" title="450 model turns over its whole life · 401 model turns in this run, of the 500 its seal allows a run">.*?450<span class="task-turns-run">401\/500</,
   );
   assert.match(
     card(s.TaskStatus.DONE, { run: 12, limit: 500, total: 12 }),
@@ -2410,7 +2556,7 @@ test("a task no worker runs can be marked done; a task closed by hand says who c
       note: "",
     },
   });
-  assert.match(byLead, /wish-task-closed">Closed by the lead, [^<]+<\/p>/);
+  assert.match(byLead, /wish-task-closed">Closed by the Djinn, [^<]+<\/p>/);
 });
 
 test("a task a fork continues links to its fork; a code no card holds stays text", () => {
@@ -2436,7 +2582,7 @@ test("a task a fork continues links to its fork; a code no card holds stays text
     );
   assert.match(
     card(new Map([["t2", "W2"]])),
-    /Closed by the lead, [^<]+: continued in <button type="button" class="text-button agent-code task-link">W2<\/button><\/p>/,
+    /Closed by the Djinn, [^<]+: continued in <button type="button" class="text-button agent-code task-link">W2<\/button><\/p>/,
   );
   assert.match(
     card(new Map()),
@@ -2678,7 +2824,7 @@ test("the Tasks tab groups work under its azima, which says what it waits for an
   assert.doesNotMatch(html, /Waits for your answer/);
   assert.doesNotMatch(html, /tone-waiting/);
 
-  // Nor does the flight plan: an azima neither waits for you nor moves.
+  // Nor does the flying carpet: an azima neither waits for you nor moves.
   const wish = { id: "w1", title: "Lamp", state: s.WishState.ACTIVE, rank: 1 };
   const plan = s.flightPlan([wish], {
     w1: { tasks, questions: [], blocks: [], loaded: true },
@@ -2910,7 +3056,7 @@ test("a merge sits under the original task it serves, folded and marked Merge; t
   assert.equal(line.target, "waiting-W422");
 });
 
-test("the flight plan merges the active wishes: their questions, the blocking one first, each with its wish", async () => {
+test("the flying carpet merges the active wishes: their questions, the blocking one first, each with its wish", async () => {
   const { lamp, oil, djinn } = twoWishes();
   const closes = [djinn.store.open(lamp.id), djinn.store.open(oil.id)];
   await djinn.store.changed(lamp.id, [s.Change.WISH]);
@@ -2922,7 +3068,20 @@ test("the flight plan merges the active wishes: their questions, the blocking on
       h(s.FlightPlan, { wishes: [lamp, oil], onOpen() {}, onToast() {} }),
     ),
   );
-  assert.match(html, /<h1>Flight plan<\/h1>/);
+  assert.match(html, /<h1>Flying carpet<\/h1>/);
+  // Its live graphs are in the Hourglass (W542): none here.
+  assert.doesNotMatch(html, /consumption-panel|resource-chart/);
+  // W538: the Djinn is at hand as on a wish: Talk to the Djinn in the header opens its terminal, on no wish, and the
+  // pill at the bottom writes to it, Cmd/Ctrl+I.
+  assert.match(
+    html,
+    /<div class="topbar-actions"><div class="split-button"><button class="button secondary small" title="Opens the Djinn&#x27;s terminal"><svg[^]*?<span>Talk to the Djinn<\/span><\/button>/,
+  );
+  assert.doesNotMatch(html, /focused on this wish/);
+  assert.match(
+    html,
+    /<div class="lead-message">[^]*?aria-keyshortcuts="[^"]*I"[^]*?<span>Write to the Djinn<\/span><\/button>/,
+  );
   // The blocking question of the second wish comes before the free one of the first, each marked with its wish.
   const blocking = html.indexOf("May W2 pour?");
   const free = html.indexOf("Brass or glass?");
@@ -3028,7 +3187,7 @@ test("what a wish spent shows one price, ≈ when an estimate is in it; the hove
   }
 });
 
-test("the flight plan hides its empty sections", async () => {
+test("the flying carpet hides its empty sections", async () => {
   const lamp = wish(
     "01a11833-a440-7479-a067-52615c91da71",
     "Ship the lamp",
@@ -3890,7 +4049,7 @@ test("work that merges stays in sight, counts as running everywhere, then folds 
   assert.doesNotMatch(sidebar(committed, false), /running/);
   assert.doesNotMatch(sidebar(committed, true), /tone-running/);
 
-  // The head of the wish and the flight plan count it as running.
+  // The head of the wish and the flying carpet count it as running.
   const page = async (list) => {
     const transport = s.createRouterTransport(({ service }) => {
       service(s.WishService, { list: () => ({ wishes: [lamp] }) });
@@ -4180,7 +4339,175 @@ test("the update banner names the build against the running Djinn: what it adds,
   );
 });
 
-test("an azima whose work is done awaits its proof: its own label and tone, what it needs, the pill apart, and the flight plan lists what a person can give", async () => {
+test("the update banner shows a build of the wish's moved branch as the update, a parallel branch as another (W527)", () => {
+  const proposal = (branch, sha, wishTitle, extra = {}) => ({
+    wishTitle,
+    project: "djinn",
+    branch,
+    sha,
+    tasks: [],
+    changes: ["harness: no orphan"],
+    summaries: [],
+    base: "abcdef0123",
+    running: false,
+    continues: "",
+    changesCount: 1,
+    lacks: [],
+    lacksCount: 0,
+    ...extra,
+  });
+  // The wish moved its integration from feat/wails-go, which the running Djinn was built from, to feat/robustness,
+  // cut at its tip: that build holds the running commit. feat/clement-port's does not.
+  const moved = proposal("feat/robustness", "bbbb3333cccc", "Orchestrator", {
+    continues: "feat/wails-go",
+  });
+  const parallel = proposal(
+    "feat/clement-port",
+    "e60f8fc00000",
+    "Clément's branches",
+    { lacks: ["ui: the diff"], lacksCount: 1 },
+  );
+  const html = s.renderToStaticMarkup(
+    h(s.UpdateBannerView, {
+      state: {
+        current: "local-300b7fe",
+        ready: "",
+        notResumed: [],
+        notesUrl: "",
+        builds: [moved, parallel],
+      },
+      phase: { kind: "idle" },
+      dismissed: false,
+      onInstall() {},
+      onDismiss() {},
+      onNotes() {},
+    }),
+  );
+  // The moved branch's build heads the banner, with the djinn's mark, as the update of the running line.
+  assert.match(
+    html,
+    /<span class="brand small">.*<span class="update-banner-text">Build <code>bbbb3333<\/code> of feat\/robustness, continuing feat\/wails-go<span class="update-banner-quiet"> · Orchestrator<\/span><span class="update-banner-quiet"> — adds 1 commit<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Install and restart<\/button>/,
+  );
+  // Only the parallel branch is another branch, folded.
+  assert.match(html, /A build of another branch: feat\/clement-port<\/span>/);
+  assert.doesNotMatch(html, /another branch[^<]*feat\/robustness/);
+  assert.doesNotMatch(html, /e60f8fc0/);
+  assert.equal(html.match(/<img/g).length, 1);
+});
+
+test("the update banner says how an install failed, with its last lines, what installs by itself, and offers the restart of the newer Djinn it installed (W554)", () => {
+  const line = {
+    wishTitle: "Robustness",
+    project: "djinn",
+    branch: "feat/robustness",
+    sha: "aaaa1111bbbb",
+    tasks: [],
+    changes: ["ui: the banner"],
+    summaries: [],
+    base: "abcdef0123",
+    running: true,
+    continues: "",
+    changesCount: 1,
+    lacks: [],
+    lacksCount: 0,
+    auto: true,
+  };
+  const banner = (state, phase = { kind: "idle" }, open = []) =>
+    s.renderToStaticMarkup(
+      h(s.UpdateBannerView, {
+        state: {
+          current: "local-abcdef0",
+          ready: "",
+          installed: false,
+          notResumed: [],
+          notesUrl: "",
+          builds: [],
+          ...state,
+        },
+        phase,
+        dismissed: false,
+        open,
+        onInstall() {},
+        onDismiss() {},
+        onNotes() {},
+      }),
+    );
+  const installing = (extra) => ({
+    sha: line.sha,
+    step: s.InstallStep.BUILDING,
+    waiting: "",
+    doing: "",
+    auto: false,
+    error: "",
+    log: [],
+    ...extra,
+  });
+  // Past its deadline: why, Try again in place of the spinner, the last lines its command wrote in its details; even
+  // while the window still waits for its call's answer.
+  const failed = installing({
+    step: s.InstallStep.FAILED,
+    error:
+      "it did not end within 20m0s, at install: go build ./cmd/djinn: Djinn stopped it",
+    log: ["task: [ui] npm run build", "task: [install] go build ./cmd/djinn"],
+  });
+  for (const phase of [
+    { kind: "idle" },
+    { kind: "installing", sha: line.sha, seen: true },
+  ]) {
+    const html = banner({ builds: [line], installing: failed }, phase, [
+      line.sha,
+    ]);
+    assert.match(
+      html,
+      /Build aaaa1111 did not install: it did not end within 20m0s, at install: go build \.\/cmd\/djinn: Djinn stopped it<\/span>/,
+    );
+    assert.match(
+      html,
+      /<button type="button" class="update-banner-primary">Try again<\/button>/,
+    );
+    assert.doesNotMatch(html, /Installing…|Building…/);
+    assert.match(
+      html,
+      /<pre class="update-banner-log">task: \[ui\] npm run build\ntask: \[install\] go build \.\/cmd\/djinn<\/pre>/,
+    );
+  }
+  // A build of the running line installs by itself: it says so, and the step of its command that runs; it waits for
+  // a free machine, saying why.
+  assert.match(
+    banner({
+      builds: [line],
+      installing: installing({ auto: true, doing: "ui: npm run build" }),
+    }),
+    /<span>Installing by itself: Building… \(ui: npm run build\)<\/span>/,
+  );
+  assert.match(
+    banner({
+      builds: [line],
+      installing: installing({
+        auto: true,
+        step: s.InstallStep.WAITING,
+        waiting: "gate test: held by W5",
+      }),
+    }),
+    /<span>Installs by itself once free — gate test: held by W5<\/span>/,
+  );
+  // Installed: the newer Djinn is ready, with what it adds, and the click only restarts.
+  const ready = banner({
+    ready: "local-aaaa111",
+    installed: true,
+    readyBuild: { ...line, auto: false },
+  });
+  assert.match(
+    ready,
+    /Djinn local-aaaa111 is ready: <code>aaaa1111<\/code> of feat\/robustness<span class="update-banner-quiet"> · Robustness<\/span><span class="update-banner-quiet"> — adds 1 commit<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Restart<\/button>/,
+  );
+  assert.match(
+    banner({ ready: "local-aaaa111", installed: true }),
+    /Djinn local-aaaa111 is ready<\/span>.*>Restart<\/button>/,
+  );
+});
+
+test("an azima whose work is done awaits its proof: its own label and tone, what it needs, the pill apart, and the flying carpet lists what a person can give", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da71";
   const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
   const need = (box, needs, provers, reviewer = "") => ({
@@ -4274,7 +4601,7 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
     page,
     /title="1 of 4 azimas done, 2 to validate"[^>]*>.*?<b>1<\/b>done · <b class="tone-proof">2<\/b> to validate \/ 4 azimas<\/span>/,
   );
-  // The flight plan lists the proof a person can give among what waits for them, never as work; a Mac's is not.
+  // The flying carpet lists the proof a person can give among what waits for them, never as work; a Mac's is not.
   const plan = s.renderToStaticMarkup(
     h(
       s.DjinnProvider,
@@ -4418,7 +4745,7 @@ test("Lead is split: the button resumes the one lead, focused on the wish, the a
 
   // Closed: Lead, then the arrow, which says it opens a menu.
   const closed = s.renderToStaticMarkup(h(s.LeadButton, props));
-  assert.match(closed, /<span>Lead<\/span><\/button>/);
+  assert.match(closed, /<span>Talk to the Djinn<\/span><\/button>/);
   assert.match(
     closed,
     /aria-label="Choose the agent"[^>]*aria-haspopup="menu" aria-expanded="false"/,
@@ -4443,7 +4770,7 @@ test("Lead is split: the button resumes the one lead, focused on the wish, the a
   );
   assert.match(
     open,
-    /<button role="menuitem" class="lead-agent current" aria-current="true"><span class="lead-agent-name">Claude<svg[^]*?The lead: resumes it, focused on this wish/,
+    /<button role="menuitem" class="lead-agent current" aria-current="true"><span class="lead-agent-name">Claude<svg[^]*?The Djinn&#x27;s agent: resumes it, focused on this wish/,
   );
   assert.match(
     open,
@@ -4451,19 +4778,32 @@ test("Lead is split: the button resumes the one lead, focused on the wish, the a
   );
   assert.match(
     open,
-    /<button role="menuitem" class="lead-agent"><span class="lead-agent-name">Antigravity<\/span><span class="lead-agent-detail">Starts a new lead from the brief<\/span>/,
+    /<button role="menuitem" class="lead-agent"><span class="lead-agent-name">Antigravity<\/span><span class="lead-agent-detail">Starts the Djinn anew on this agent, from the brief<\/span>/,
   );
+  // On the flying carpet, on no wish: neither the button nor the menu speaks of a wish.
+  const carpet = s.renderToStaticMarkup(
+    h(s.LeadButton, { ...props, focused: false, open: true }),
+  );
+  assert.match(
+    carpet,
+    /<button class="button secondary small" title="Opens the Djinn&#x27;s terminal">/,
+  );
+  assert.match(
+    carpet,
+    /<span class="lead-agent-name">Claude<svg[^]*?<span class="lead-agent-detail">The Djinn&#x27;s agent: resumes it<\/span>/,
+  );
+  assert.doesNotMatch(carpet, /this wish/);
   // The lead could not start, or ended: a dot on Lead, its tooltip saying why, until Lead starts it again.
   assert.doesNotMatch(closed, /lead-dot/);
   assert.equal(s.leadTrouble(undefined, ""), undefined);
   const failed = s.leadTrouble(undefined, "no project yet");
   assert.deepEqual(failed, {
-    text: "The lead could not start: no project yet. Lead tries again",
+    text: "The Djinn could not start: no project yet. Talk to the Djinn tries again",
     failed: true,
   });
   assert.equal(
     s.leadTrouble({ code: 2 }, "").text,
-    "The lead ended (code 2): its tab keeps its last output. Lead starts it again",
+    "The Djinn ended (code 2): its tab keeps its last output. Talk to the Djinn starts it again",
   );
   assert.equal(s.leadTrouble({ code: 0 }, "").failed, false);
   const dotted = s.renderToStaticMarkup(
@@ -4471,7 +4811,7 @@ test("Lead is split: the button resumes the one lead, focused on the wish, the a
   );
   assert.match(
     dotted,
-    /<button class="button secondary small" title="The lead could not start: no project yet. Lead tries again">[^]*?<span>Lead<\/span><span class="lead-dot failed" aria-hidden="true"><\/span><\/button>/,
+    /<button class="button secondary small" title="The Djinn could not start: no project yet. Talk to the Djinn tries again">[^]*?<span>Talk to the Djinn<\/span><span class="lead-dot failed" aria-hidden="true"><\/span><\/button>/,
   );
   const quit = s.renderToStaticMarkup(
     h(s.LeadButton, { ...props, trouble: s.leadTrouble({ code: 0 }, "") }),
@@ -4585,7 +4925,7 @@ test("the attention bar says how much each question holds up: blocking, your mov
       ["q1", "blocking", undefined],
       ["q4", "move", undefined],
       ["q2", "question", "before the demo"],
-      ["q5", "question", "Waiting for a lead"],
+      ["q5", "question", "Waiting for the Djinn"],
       ["t9", "action", undefined],
       ["q3", "later", undefined],
       ["q6", "later", undefined],
@@ -4669,7 +5009,7 @@ test("the choice the lead's agent shows is the first, blocking line of the atten
   assert.deepEqual(
     items.map((i) => [i.key, i.level, i.label]),
     [
-      ["lead-prompt", "blocking", "Lead approval"],
+      ["lead-prompt", "blocking", "Approval for the Djinn"],
       ["q1", "blocking", undefined],
     ],
   );
@@ -4683,7 +5023,7 @@ test("the choice the lead's agent shows is the first, blocking line of the atten
   assert.match(markup, /2 things wait for you/);
   assert.match(
     markup,
-    /<li><div id="lead-prompt" class="attention-item attention-prompt level-blocking"><div class="attention-prompt-head"><span class="attention-level"><svg[^>]*>.*?<\/svg>Lead approval<\/span><span class="attention-text">Would you like to run the following command\?<\/span><\/div><pre class="attention-prompt-lines">Reason: read the wish\n\$ djinn wish brief<\/pre>/,
+    /<li><div id="lead-prompt" class="attention-item attention-prompt level-blocking"><div class="attention-prompt-head"><span class="attention-level"><svg[^>]*>.*?<\/svg>Approval for the Djinn<\/span><span class="attention-text">Would you like to run the following command\?<\/span><\/div><pre class="attention-prompt-lines">Reason: read the wish\n\$ djinn wish brief<\/pre>/,
   );
   assert.match(
     markup,
@@ -4744,7 +5084,7 @@ test("a line of the attention bar takes you to its target in another tab, a fold
   assert.deepEqual(s.wayTo(line("q2"), shown, "w1"), { tab: "decisions" });
   assert.deepEqual(s.wayTo(line("t9"), shown, "w1"), { tab: "main" });
   assert.deepEqual(s.wayTo(line("ready-w1"), shown, "w1"), { tab: "main" });
-  // In another wish: its wish opens, whatever this one shows; in the flight plan, every wish is here.
+  // In another wish: its wish opens, whatever this one shows; in the flying carpet, every wish is here.
   assert.deepEqual(s.wayTo(line("q3"), shown, "w1"), { wishId: "w2" });
   assert.equal(s.wayTo(line("q3"), shown), undefined);
   assert.deepEqual(s.wayTo(line("q3"), new Set(["question-q3"])), {
@@ -4787,9 +5127,9 @@ test("a line of the attention bar takes you to its target in another tab, a fold
 
 // W507: the lead made a wish with no project and one research task; its worker ended done while its permissions
 // refused 6 calls. The window showed no task, read the wish's rank as 3 questions, and proposed the grant.
-test("regression W507: a wish without a project shows its task done with problems, its rank as a rank, and no grant", async () => {
+test("regression W507: a wish without a project shows its task, its rank as a rank, and no grant", async () => {
   const wishId = "01a1317d-4d8c-7de3-b351-e54f2a70840f";
-  // The lamp proposes no grant while a task is done with problems (internal/plan.Ready).
+  // The lamp proposes no grant while the lead has not decided about a task's refused calls (internal/plan.Ready).
   const wispr = wish(
     wishId,
     "Install Wispr Flow on Linux",
@@ -4832,16 +5172,12 @@ test("regression W507: a wish without a project shows its task done with problem
   // (b) The rank reads as a rank, and nothing counts questions: there are none.
   assert.match(html, /<span>Active · rank 3<\/span>/);
   assert.doesNotMatch(html, /questions? wait|to decide/);
-  // (c) No grant, and the task done with problems is what waits for you, named, in the bar and in the action center.
+  // (c) No grant until the lead decides about the refused calls, and nothing waits for you: they are the lead's
+  // (Q273), never a warning in the window.
   assert.doesNotMatch(html, /My wish is granted|id="grant-/);
-  assert.match(html, /1 thing waits for you/);
-  assert.match(
+  assert.doesNotMatch(
     html,
-    /<b class="attention-code">W1<\/b>.*done with problems: its permissions refused 6 calls/,
-  );
-  assert.match(
-    html,
-    /id="waiting-01a1317d-4e22[^"]*"><span class="status-badge tone-interrupted"[^>]*>.*?<span>Done with problems<\/span><\/span><span><button type="button" class="text-button agent-code task-link">W1<\/button> Find a safe, real way to run Wispr Flow on this Linux machine · done with problems: its permissions refused 6 calls \(Read, Glob\), so it may not have done its job\./,
+    /waits? for you|with problems|refused|id="waiting-|tone-interrupted/,
   );
   // (a) The Tasks tab counts it.
   assert.match(
@@ -4849,8 +5185,8 @@ test("regression W507: a wish without a project shows its task done with problem
     /id="view-tab-tasks" aria-selected="false" class="">Tasks<span class="count">1<\/span>/,
   );
 
-  // (a) In the Tasks tab, a task part of no azima shows: done with problems, it waits in sight, amber, with Mark
-  // done; a clean done one folds under Finished.
+  // (a) In the Tasks tab, a task part of no azima shows, folded under Finished once done, a clean Done whether its
+  // calls were refused or not.
   const clean = {
     ...research,
     id: "t2",
@@ -4874,18 +5210,12 @@ test("regression W507: a wish without a project shows its task done with problem
       render: card,
     }),
   );
-  assert.match(tab, /Moving or waiting<span class="count">1<\/span>/);
+  assert.match(tab, /Moving or waiting<span class="count">0<\/span>/);
   assert.match(
     tab,
-    /class="wish-task tone-interrupted[^"]*".*<span>Done with problems<\/span>.*<span class="agent-code">W1</,
+    /<section class="wish-section tasks-finished" aria-label="Finished"><div class="section-title"><h2>Finished<span class="count">2<\/span><\/h2><\/div><button type="button" class="fold-line" aria-expanded="false">.*Show the 2 finished<\/button><\/section>/,
   );
-  assert.match(tab, /aria-label="Mark done"/);
-  assert.ok(tab.indexOf("Done with problems") < tab.indexOf("tasks-finished"));
-  assert.match(
-    tab,
-    /<section class="wish-section tasks-finished" aria-label="Finished"><div class="section-title"><h2>Finished<span class="count">1<\/span><\/h2><\/div><button type="button" class="fold-line" aria-expanded="false">.*Show 1 finished<\/button><\/section>/,
-  );
-  // A link brings it into sight: unfolded, a clean Done.
+  // A link brings them into sight: unfolded, both a clean Done, neither to mark done.
   const shown = s.renderToStaticMarkup(
     h(s.TaskSections, {
       moving: s.movingTasks(tasks),
@@ -4896,22 +5226,9 @@ test("regression W507: a wish without a project shows its task done with problem
   );
   assert.match(
     shown,
-    /tasks-finished.*class="wish-task tone-done[^"]*".*<span>Done<\/span>.*<span class="agent-code">W2</,
+    /tasks-finished.*class="wish-task tone-done[^"]*".*<span>Done<\/span>.*<span class="agent-code">W1<.*class="wish-task tone-done[^"]*".*<span>Done<\/span>.*<span class="agent-code">W2</,
   );
-  // Marked done since, it is seen: a clean done, settled with the finished, and nothing waits.
-  const seen = {
-    ...research,
-    closed: { actor: s.Closer.DEVELOPER, createTime: at(40), note: "" },
-  };
-  assert.deepEqual(s.movingTasks([seen]), []);
-  assert.deepEqual(
-    s.finishedTasks([seen]).map((x) => x.code),
-    ["W1"],
-  );
-  assert.doesNotMatch(
-    s.renderToStaticMarkup(card(seen)),
-    /Done with problems|aria-label="Mark done"/,
-  );
+  assert.doesNotMatch(shown, /Done with problems|aria-label="Mark done"/);
 
   // (b) The side panel shows the rank as #3, beside no pill.
   const side = s.renderToStaticMarkup(
@@ -5968,6 +6285,35 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
   );
 });
 
+// The watcher commands a developer allows in a project, in its panel: each with a button that takes it back, and a
+// field that allows one more, kept in their own settings.
+test("a project's panel lists the watcher commands you allow", () => {
+  const html = s.renderToStaticMarkup(
+    h(s.WatchCommands, {
+      commands: ["go run ./.agents/skills/babysit-mr-empowill/mrwatch"],
+      onAllow: async () => true,
+      onRevoke() {},
+    }),
+  );
+  assert.match(
+    html,
+    /<div class="setting-row"><div><code>go run \.\/\.agents\/skills\/babysit-mr-empowill\/mrwatch<\/code><\/div><button type="button" class="button secondary">Take back<\/button><\/div>/,
+  );
+  assert.match(html, /never in the repository/);
+  assert.match(
+    html,
+    /<form class="folder-field"><input aria-label="Watcher command to allow"[^>]*\/><button type="submit" class="button secondary" disabled="">Allow<\/button><\/form>/,
+  );
+  const none = s.renderToStaticMarkup(
+    h(s.WatchCommands, {
+      commands: [],
+      onAllow: async () => true,
+      onRevoke() {},
+    }),
+  );
+  assert.doesNotMatch(none, /Take back/);
+});
+
 // An opened azima, as the Tasks tab shows it: built from what the lamp sends, its parts as the tab renders any task.
 function openedAzima(extra = {}, parts = []) {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
@@ -6025,6 +6371,47 @@ test("an azima's description is Markdown, rendered: opened, and as a draft", () 
   );
 });
 
+test("an azima's title renames in place from its card, open or draft: a pencil, then a field in its heading", () => {
+  const azima = {
+    id: "T36",
+    code: "T36",
+    title: "feat/x reaches main",
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    dependsOn: [],
+    azima: { state: s.AzimaState.OPEN, ready: true },
+  };
+  const draft = {
+    ...azima,
+    draft: true,
+    azima: { state: s.AzimaState.DRAFT },
+  };
+  const card = (Card, props) =>
+    s.renderToStaticMarkup(
+      h(Card, { tasks: new Map(), parts: [], render: () => null, ...props }),
+    );
+  for (const [Card, a] of [
+    [s.AzimaCard, azima],
+    [s.DraftAzimaCard, draft],
+  ]) {
+    // Without a way to save it, no pencil.
+    assert.doesNotMatch(card(Card, { azima: a }), /azima-rename/);
+    const shown = card(Card, { azima: a, onRename() {} });
+    assert.match(
+      shown,
+      /<button type="button" class="icon-button azima-rename" title="Rename this azima" aria-label="Rename this azima">/,
+    );
+    assert.match(shown, /<strong[^>]*>feat\/x reaches main<\/strong>/);
+    const editing = card(Card, { azima: a, onRename() {}, renaming: true });
+    assert.match(
+      editing,
+      /<span class="agent-code">T36<\/span><input type="text" class="azima-title-edit" aria-label="Title of the azima" maxLength="500" autofocus="" value="feat\/x reaches main"\/>/,
+    );
+    // The field takes the heading's place, and the pencil's.
+    assert.doesNotMatch(editing, /azima-rename|aria-expanded/);
+  }
+});
+
 test("an opened azima: its description, then its proof, on the left; its parts on the right, one per row", () => {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
   const part = (code, status) => ({
@@ -6067,7 +6454,7 @@ test("an opened azima: its description, then its proof, on the left; its parts o
   assert.doesNotMatch(bare, /azima-side/);
 });
 
-test("draft azimas: fold, card with description, actions, and flight plan", () => {
+test("draft azimas: fold, card with description, actions, and flying carpet", () => {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
   const draft = (code, title, extra = {}) => ({
     id: code,
@@ -6113,7 +6500,7 @@ test("draft azimas: fold, card with description, actions, and flight plan", () =
   const allTasks = [d1, d2, openAzima, runningWork];
   const byId = new Map(allTasks.map((t) => [t.id, t]));
 
-  // 1. Flight plan: drafts are collected in drafts, NOT in moving, waiting, or azimas.
+  // 1. Flying carpet: drafts are collected in drafts, NOT in moving, waiting, or azimas.
   const myWish = wish("w1", "Multi-machine", s.WishState.ACTIVE, 1);
   const plan = s.flightPlan([myWish], {
     [myWish.id]: {
@@ -6408,7 +6795,7 @@ test("azimas are ordered in a stable 6-tier order and laid out in a single colum
     ["T30", "T31"],
   );
 
-  // 3. Flight plan azimas are sorted by azimaRank, then compareCodes
+  // 3. Flying carpet azimas are sorted by azimaRank, then compareCodes
   const testWish = wish("w_test", "Azima layout wish", s.WishState.ACTIVE, 1);
   const plan = s.flightPlan([testWish], {
     [testWish.id]: {
@@ -6983,7 +7370,7 @@ const t3 = 1700001800n; // end of the 30 min window
 const at = (seconds) => ({ seconds, nanos: 0 });
 const mib = 1024n * 1024n;
 const longTitle =
-  "Make the flight plan's resources read at a glance: one title line per worker with its code, its agent and this whole title, which wraps rather than being cut, then the facts of its job beside larger charts";
+  "Make the flying carpet's resources read at a glance: one title line per worker with its code, its agent and this whole title, which wraps rather than being cut, then the facts of its job beside larger charts";
 const lintGate = {
   gate: "lint",
   command: "go tool task lint",
@@ -7120,7 +7507,7 @@ const resourceTask = {
   startTime: at(t0),
   firstStartTime: at(t0),
   runs: [{ startTime: at(t0) }],
-  turns: { run: 12, limit: 500, total: 12 },
+  turns: { run: 37, limit: 500, total: 412 },
   usage: { inputTokens: 10n, outputTokens: 2000n, costUsd: 1.25 },
 };
 
@@ -7155,7 +7542,7 @@ test("the resources panel: the machine's charts, each worker's title line in ful
   // Djinn apart: with everything it started, dashed, and its own process alone, dotted, both named.
   assert.match(
     html,
-    /Dashed: Djinn with everything it started \(window, leads, workers, gates\)/,
+    /Dashed: Djinn with everything it started \(window, the Djinn&#x27;s agent, workers, gates\)/,
   );
   assert.match(html, /Dotted: Djinn&#x27;s own process alone \(djinn up\)/);
   assert.match(html, /<path class="resource-chart-extra dash" d="M/);
@@ -7184,7 +7571,7 @@ test("the resources panel: the machine's charts, each worker's title line in ful
   );
   assert.match(
     w1,
-    /<h4 class="resource-worker-title"><span class="agent-code">W1<\/span><span class="provider-badge provider-claude">claude<\/span><span class="resource-worker-name">Make the flight plan&#x27;s resources read at a glance: [^<]*larger charts<\/span>/,
+    /<h4 class="resource-worker-title"><span class="agent-code">W1<\/span><span class="provider-badge provider-claude">claude<\/span><span class="resource-worker-name">Make the flying carpet&#x27;s resources read at a glance: [^<]*larger charts<\/span>/,
   );
   assert.doesNotMatch(w1, /…<\/span>/);
   // Its link to the task in its wish: a small eye on the title line.
@@ -7195,7 +7582,8 @@ test("the resources panel: the machine's charts, each worker's title line in ful
   // The facts of its job, from its task.
   assert.match(w1, /<dt>Project<\/dt><dd>djinn<\/dd>/);
   assert.match(w1, /<dt>Turns<\/dt><dd><span class="task-turns"/);
-  assert.match(w1, /12\/500/);
+  // Its turns over its whole life first, its run against its limit beside them.
+  assert.match(w1, /<\/svg>412<span class="task-turns-run">37\/500<\/span>/);
   assert.match(w1, /<dt>Spent<\/dt>/);
   assert.match(w1, /<dt>Gate<\/dt><dd>held 13m20s, once<\/dd>/);
   assert.match(w1, /<dt>CPU<\/dt><dd>now 75\.4% · peak 85%<\/dd>/);
@@ -7356,6 +7744,225 @@ test("a worker's eye opens its task in its wish, through the window's focus", ()
   assert.deepEqual(opened, [["wish-1", "task-w1"]]);
   // The window's focus takes it to the Tasks tab, where the task's card shows.
   assert.equal(s.tabOf("task-task-w1"), "tasks");
+});
+
+test("the side panel's Hourglass comes right below the flying carpet, before the wishes, and stays with no active wish", (t) => {
+  globalThis.__DJINN_MAC__ = false;
+  t.after(() => delete globalThis.__DJINN_MAC__);
+  const sidebar = (wishes, selected) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes,
+        projects: [],
+        onSelectPlan() {},
+        hourglassSelected: selected,
+        onSelectHourglass() {},
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed: false,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  const html = sidebar(
+    [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
+    true,
+  );
+  const carpet = html.indexOf("plan-nav");
+  const glass = html.indexOf("hourglass-nav");
+  const wishes = html.indexOf("Ship the lamp");
+  assert.ok(carpet >= 0 && glass > carpet && wishes > glass, html);
+  assert.match(
+    html,
+    /<button class="nav-item hourglass-nav selected" title="Hourglass \(Ctrl 2\)" aria-keyshortcuts="Control\+2"><svg[^>]*lucide-hourglass[^>]*>[^]*?<\/svg><span>Hourglass<\/span><\/button>/,
+  );
+  assert.match(
+    html,
+    /class="nav-item plan-nav " title="Flying carpet \(Ctrl 1\)" aria-keyshortcuts="Control\+1"/,
+  );
+  // No active wish: no flying carpet, the Hourglass still.
+  const calm = sidebar(
+    [wish("w1", "Trim the wick", s.WishState.PAUSED, 0)],
+    false,
+  );
+  assert.doesNotMatch(calm, /plan-nav/);
+  assert.match(
+    calm,
+    /class="nav-item hourglass-nav " title="Hourglass \(Ctrl 2\)"/,
+  );
+});
+
+// Ctrl+1 and Ctrl+2 (Q254) are the key's place: the digit row, whatever it types (& and e acute on AZERTY), or the numpad;
+// the platform's modifier alone, never with Shift or Alt.
+test("a page's shortcut is the place of its digit key, on any layout, the numpad too", () => {
+  const press = (code, key, more = {}) => ({
+    code,
+    key,
+    ctrlKey: true,
+    metaKey: false,
+    altKey: false,
+    shiftKey: false,
+    ...more,
+  });
+  // AZERTY: Ctrl+& is Digit1, the flying carpet; Ctrl+(e acute) is Digit2, the Hourglass.
+  assert.equal(s.pageDigit(press("Digit1", "&"), false), 1);
+  assert.equal(s.pageDigit(press("Digit2", "\u00e9"), false), 2);
+  assert.equal(s.pageDigit(press("Digit1", "1"), false), 1);
+  assert.equal(s.pageDigit(press("Numpad2", "2"), false), 2);
+  // NumLock off, the numpad's 1 is End: still its place.
+  assert.equal(s.pageDigit(press("Numpad1", "End"), false), 1);
+  // Shift, Alt (AltGr is Ctrl+Alt on Windows), Ctrl with Meta: nothing.
+  assert.equal(s.pageDigit(press("Digit1", "1", { shiftKey: true }), false), 0);
+  assert.equal(s.pageDigit(press("Digit2", "~", { altKey: true }), false), 0);
+  assert.equal(s.pageDigit(press("Digit1", "&", { metaKey: true }), false), 0);
+  // No modifier, another key, the digit 0: nothing.
+  assert.equal(s.pageDigit(press("Digit1", "&", { ctrlKey: false }), false), 0);
+  assert.equal(s.pageDigit(press("KeyA", "1"), false), 0);
+  assert.equal(s.pageDigit(press("Digit0", "\u00e0"), false), 0);
+  // On a Mac, ⌘ and not Ctrl.
+  const cmd = { ctrlKey: false, metaKey: true };
+  assert.equal(s.pageDigit(press("Digit2", "\u00e9", cmd), true), 2);
+  assert.equal(s.pageDigit(press("Digit2", "\u00e9"), true), 0);
+});
+
+// The tooltips name the shortcut as the keyboard writes it: the digit until the layout is known, its character then.
+test("a page's shortcut is named for the keyboard's layout once it is known", () => {
+  globalThis.__DJINN_MAC__ = false;
+  try {
+    assert.deepEqual(s.pageShortcut(1, {}), {
+      label: "Ctrl 1",
+      aria: "Control+1",
+    });
+    const azerty = { Digit1: "&", Digit2: "\u00e9" };
+    assert.equal(s.pageShortcut(1, azerty).label, "Ctrl &");
+    assert.equal(s.pageShortcut(2, azerty).label, "Ctrl \u00e9");
+    assert.equal(s.pageShortcut(2, azerty).aria, "Control+2");
+    assert.equal(s.digitKey(3, azerty), "3");
+  } finally {
+    delete globalThis.__DJINN_MAC__;
+  }
+  globalThis.__DJINN_MAC__ = true;
+  try {
+    assert.equal(s.pageShortcut(2, { Digit2: "\u00e9" }).label, "⌘ \u00e9");
+  } finally {
+    delete globalThis.__DJINN_MAC__;
+  }
+  // A key typed teaches its character; with Shift, Caps Lock or AltGr it types another, and teaches nothing.
+  const typed = (code, key, more = {}) => ({
+    code,
+    key,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    shiftKey: false,
+    getModifierState: () => false,
+    ...more,
+  });
+  s.learnDigitKey(typed("Digit4", "1", { shiftKey: true }));
+  s.learnDigitKey(
+    typed("Digit4", "4", { getModifierState: (m) => m === "CapsLock" }),
+  );
+  s.learnDigitKey(typed("Digit4", "{", { altKey: true }));
+  s.learnDigitKey(typed("Numpad4", "4"));
+  assert.equal(s.digitKey(4), "4");
+  s.learnDigitKey(typed("Digit4", "'"));
+  assert.equal(s.digitKey(4), "'");
+  s.learnDigitKey(typed("Digit4", "4", { ctrlKey: true }));
+  assert.equal(s.digitKey(4), "4");
+});
+
+// A djinn whose machine services count their reads: the series, the commands, the machine the status bar reads.
+function hourglassDjinn() {
+  const reads = { series: 0, commands: 0 };
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.MachineService, {
+      series: () => {
+        reads.series++;
+        return resourceData();
+      },
+      show: () => ({
+        machine: {
+          cores: 8,
+          workers: 4,
+          running: 1,
+          memoryTotalBytes: 16n * 1024n ** 3n,
+          memoryAvailableBytes: 12n * 1024n ** 3n,
+        },
+      }),
+    });
+    service(s.GateService, { list: () => ({ gates: [] }) });
+    service(s.CommandService, {
+      list: () => {
+        reads.commands++;
+        return { costs: resourceCommands };
+      },
+    });
+  });
+  return { reads, djinn: s.createDjinn(transport, 10) };
+}
+
+test("the Hourglass: its sections, the machine first, and the flying carpet's line to it", async () => {
+  const { djinn } = hourglassDjinn();
+  const html = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.Hourglass, { wishes: [] })),
+  );
+  assert.match(
+    html,
+    /<div class="breadcrumbs"><strong>Hourglass<\/strong><\/div>/,
+  );
+  assert.match(html, /<h1>Hourglass<\/h1>/);
+  // One section per live metric, the machine first: the whole resources panel, with its range.
+  const sections = [...html.matchAll(/class="hourglass-section"/g)];
+  assert.equal(sections.length, 1);
+  assert.match(
+    html,
+    /<div id="hourglass-machine" class="hourglass-section"><section class="consumption-panel" aria-label="Resource consumption">/,
+  );
+  assert.match(html, /aria-pressed="true">30 min<\/button>/);
+
+  // The flying carpet keeps one line of the machine's load, read for the status bar, with a link to the Hourglass.
+  await djinn.store.readMachine();
+  const line = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.HourglassLine)),
+  );
+  assert.equal(
+    line.replace(/<[^>]+>/g, ""),
+    "1 of 4 workers running, memory 4 GB · 25% of the machine. See it live in the Hourglass",
+  );
+  assert.match(
+    line,
+    /<button type="button" class="text-link hourglass-line-open">See it live in the Hourglass<\/button>/,
+  );
+});
+
+test("leaving the Hourglass stops its reads and its timers", async () => {
+  const container = setupMockDom();
+  const { reads, djinn } = hourglassDjinn();
+  const timers = () =>
+    process.getActiveResourcesInfo().filter((r) => r === "Timeout").length;
+  const before = timers();
+  const root = s.createRoot(container);
+  await s.act(async () => {
+    root.render(
+      h(s.DjinnProvider, { djinn }, h(s.HourglassSections, { wishes: [] })),
+    );
+  });
+  await s.act(() => new Promise((resolve) => setImmediate(resolve)));
+  // Shown: the machine's series and the commands are read, and read again by timers.
+  const shown = timers();
+  s.act(() => root.unmount());
+  // The store's watch, stopped with the provider, ends its last wait of 10 ms.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const left = timers();
+  // React's scheduler keeps a port open: it holds the test's process no more.
+  for (const handle of process._getActiveHandles())
+    if (handle?.constructor?.name === "MessagePort") handle.unref();
+  assert.ok(reads.series >= 1 && reads.commands >= 1, JSON.stringify(reads));
+  assert.ok(shown > before, `timers while shown: ${shown}, before: ${before}`);
+  // Left: no timer stays.
+  assert.equal(left, before);
 });
 
 test("principal wish: rank 1 is principal by default, wish with principal: true overrides rank", () => {
@@ -8054,12 +8661,12 @@ test("the Review tab lists merged work, its merges under the task they serve, ch
     tabs,
     /id="view-tab-tasks".*id="view-tab-review" aria-selected="true" class="active">Review<span class="count">3<\/span>.*id="view-tab-decisions"/,
   );
-  // The flight plan has no Review tab.
+  // The flying carpet has no Review tab.
   assert.doesNotMatch(
     s.renderToStaticMarkup(
       h(s.ViewTabs, {
         view: "main",
-        main: "Flight plan",
+        main: "Flying carpet",
         tasks: 0,
         decisions: 0,
         onView() {},

@@ -46,13 +46,18 @@ type line struct {
 // stopping it stops what it started; in a scope, its cgroup holds even what left the group.
 // When lowPriority is true, the process starts at low CPU priority (under nice 10 on Unix, BELOW_NORMAL_PRIORITY_CLASS
 // on Windows); else at Djinn's own priority.
-func startProcess(dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, lowPriority bool) (*process, error) {
-	return startCommand(dir, name, args, env, scope, grace, false, lowPriority)
+// When track is set, it is told of the process as it starts, and what it returns is called once the process ended.
+func startProcess(
+	dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, lowPriority bool,
+	track func(pid int, cgroup string) func(),
+) (*process, error) {
+	return startCommand(dir, name, args, env, scope, grace, false, lowPriority, track)
 }
 
 // startCommand is startProcess; with blanks, the empty lines of the output are lines too.
 func startCommand(
 	dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, blanks bool, lowPriority bool,
+	track func(pid int, cgroup string) func(),
 ) (*process, error) {
 	var sc machine.Scope
 	if scope != nil {
@@ -97,20 +102,32 @@ func startCommand(
 		return nil, err
 	}
 	applyPriority(cmd, lowPriority && !atLevel)
+	ended := func() {}
+	if track != nil {
+		ended = track(cmd.Process.Pid, sc.Cgroup)
+	}
 	started := time.Now()
 	logx.L().Info("process started", "program", program, "pid", cmd.Process.Pid, "dir", dir)
 	p := &process{cmd: cmd, cgroup: sc.Cgroup, stdin: stdin, grace: grace, lines: make(chan line, 64), done: make(chan struct{}), blanks: blanks}
 	var read sync.WaitGroup
 	read.Add(2)
-	go p.scan(&read, outR, false)
-	go p.scan(&read, errR, true)
 	go func() {
+		defer logx.Crash("process output", "program", program, "pid", cmd.Process.Pid)
+		p.scan(&read, outR, false)
+	}()
+	go func() {
+		defer logx.Crash("process output", "program", program, "pid", cmd.Process.Pid)
+		p.scan(&read, errR, true)
+	}()
+	go func() {
+		defer logx.Crash("process wait", "program", program, "pid", cmd.Process.Pid)
 		err := cmd.Wait()
 		outW.Close()
 		errW.Close()
 		read.Wait()
 		close(p.lines)
 		p.res = exitResult(cmd, err)
+		ended()
 		logx.Took(slog.LevelInfo, "process ended", started, "program", program, "pid", cmd.Process.Pid,
 			"exit", cmd.ProcessState.ExitCode())
 		close(p.done)
@@ -141,6 +158,7 @@ func (p *process) Stop() {
 	p.stop.Do(func() {
 		terminate(p)
 		go func() {
+			defer logx.Crash("process stop", "pid", p.cmd.Process.Pid)
 			select {
 			case <-p.done:
 			case <-time.After(p.grace):

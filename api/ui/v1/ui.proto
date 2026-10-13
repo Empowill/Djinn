@@ -56,8 +56,10 @@ service UiService {
   }
   // Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
   // as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
-  // sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
-  // newer Djinn, nothing restarts. Only the update button and `djinn update` call it.
+  // sessions. Fails when no newer Djinn waits. With a build, its install command runs first, within a deadline, its
+  // steps and its failure told by WatchUpdate (Installing) whether or not the call's answer arrives; when it installed
+  // no newer Djinn, nothing restarts. The install runs on even when the call ends first. Only the update button and
+  // `djinn update` call it.
   rpc Update(UiServiceUpdateRequest) returns (UiServiceUpdateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
@@ -101,7 +103,7 @@ message UiServiceGetEnvironmentResponse {
 }
 
 // The global shortcut that brings the window forward from anywhere on the desktop, on the wish with the newest open
-// question, else on the flight plan.
+// question, else on the flying carpet.
 message Shortcut {
   // The chord in effect, such as Ctrl+Alt+Space; empty when off.
   string chord = 1;
@@ -248,8 +250,8 @@ message UiServiceWatchUpdateResponse {
   reserved 5;
   reserved "build";
   // The last push of each integration branch, in a project whose settings name an install command, and not installed
-  // since: one per branch, the branch the running Djinn was built from first. The window proposes to install each and
-  // restart on it, the other branches' folded.
+  // since: one per branch, the branch the running Djinn was built from first, then those that carry its line on
+  // (Build.continues). The window proposes to install each and restart on it, the other branches' folded.
   repeated Build builds = 7;
   // The install of a build that runs now (Update), and where it stands; unset for none. The window says it in place
   // of the build's buttons: what it waits for, then that it builds, then that Djinn restarts.
@@ -257,6 +259,9 @@ message UiServiceWatchUpdateResponse {
   // The newer Djinn of version ready, named as a build is: its commit, the branch and wish it comes from, and how it
   // compares with the running Djinn. Unset when no project holds its commit (a release no checkout knows yet).
   Build ready_build = 8;
+  // The newer Djinn of version ready is at the path of the running one already: Update only restarts on it. False for
+  // a release found, which Update downloads first.
+  bool installed = 9;
 }
 
 message UiServiceWatchRequest {}
@@ -270,7 +275,7 @@ message UiServiceWatchResponse {
   djinn.v1.LoadServiceWatchResponse load = 3;
 }
 
-// Installing is an install of a build that runs now, and where it stands.
+// Installing is an install of a build that runs now, and where it stands; or the last one, when it failed.
 message Installing {
   // The commit being installed.
   string sha = 1;
@@ -278,6 +283,15 @@ message Installing {
   // What it waits for, while its step is waiting: another install, a gate and who holds it, the machine under
   // pressure. Empty otherwise.
   string waiting = 3;
+  // The step of the install command that runs, as its output names it: go-task's "task: [ui] npm run build" is
+  // "ui: npm run build". Empty before the first, and for a command that names none.
+  string doing = 4;
+  // Djinn installs it by itself: a build of the running Djinn's line (Build.auto).
+  bool auto = 5;
+  // Why it failed (INSTALL_STEP_FAILED): its command's exit, or the deadline it passed.
+  string error = 6;
+  // The last lines its command wrote, when it failed.
+  repeated string log = 7;
 }
 
 // InstallStep is where an install stands.
@@ -291,6 +305,9 @@ enum InstallStep {
   INSTALL_STEP_BUILDING = 3;
   // Installed: Djinn restarts on it.
   INSTALL_STEP_RESTARTING = 4;
+  // It failed, or passed its deadline and Djinn stopped it: Installing.error says why, Installing.log what its command
+  // wrote last. Kept until another install starts, or the build is proposed no more.
+  INSTALL_STEP_FAILED = 5;
 }
 
 // TaskSummary is what a task of the build brought, and its worker's final words.
@@ -333,6 +350,16 @@ message Build {
   // are: the build is older than the running Djinn on them.
   repeated string lacks = 14;
   int32 lacks_count = 15;
+  // The line of the running Djinn this build carries on from another branch: its commit holds the running Djinn's,
+  // as when a wish moves its integration branch to one cut at the tip of the running one (W527). It names the
+  // branch the running Djinn was built from, or its short commit when no branch names it. Empty for a build of that
+  // branch itself (running), and for one that does not hold the running commit: a parallel branch.
+  string continues = 16;
+  // Djinn installs it by itself, at low priority, once no gate runs and the machine is not under pressure (W554): a
+  // build of the running Djinn's line (running or continues), the push checks passed, in a project whose
+  // install_builds is on, that holds the build installed last. The window then offers the restart. Other builds are
+  // only offered.
+  bool auto = 17;
 }
 
 message UiServiceUpdateRequest {
@@ -384,7 +411,7 @@ message UiServiceOpenNotificationSettingsRequest {}
 message UiServiceOpenNotificationSettingsResponse {}
 
 message UiServiceViewRequest {
-  // The wish the page shows; empty for none (the flight plan, a dialog of its own).
+  // The wish the page shows; empty for none (the flying carpet, a dialog of its own).
   string wish_id = 1 [(buf.validate.field).string.max_len = 64];
 }
 

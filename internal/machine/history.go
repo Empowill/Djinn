@@ -2,13 +2,13 @@ package machine
 
 import (
 	"context"
-	"log"
 	"sync"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -75,7 +75,7 @@ func (h *History) Flush(ctx context.Context) {
 	}
 	h.mu.Unlock()
 	if err := h.db.AddSamples(ctx, batch); err != nil {
-		log.Printf("djinn: keep the machine's series: %v", err)
+		logx.L().Error("keep the machine's series", "loop", "history", "err", err)
 		h.mu.Lock()
 		h.pending = append(batch, h.pending...)
 		if over := len(h.pending) - 720*8; over > 0 {
@@ -86,7 +86,7 @@ func (h *History) Flush(ctx context.Context) {
 	}
 	if prune {
 		if err := h.db.PruneSamples(ctx, time.Now(), HistoryRetention); err != nil {
-			log.Printf("djinn: prune the machine's series: %v", err)
+			logx.L().Error("prune the machine's series", "loop", "history", "err", err)
 		}
 	}
 }
@@ -95,7 +95,7 @@ func (h *History) Flush(ctx context.Context) {
 func (h *History) read(ctx context.Context, series string, from time.Time) []store.Sample {
 	out, err := h.db.Samples(ctx, series, from)
 	if err != nil {
-		log.Printf("djinn: read the machine's series: %v", err)
+		logx.L().Error("read the machine's series", "series", series, "err", err)
 	}
 	last := from
 	if len(out) > 0 {

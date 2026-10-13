@@ -1,6 +1,6 @@
-// The window, on the services: the side panel (the flight plan, the wishes by rank, the projects), the flight plan of
-// the active wishes or the wish shown, and the status bar (whether the page follows djinn, the machine). What stays on
-// this page is how it shows: what is shown and the side panel folded.
+// The window, on the services: the side panel (the flying carpet, the Hourglass, the wishes by rank, the projects), the
+// flying carpet of the active wishes, the Hourglass's live metrics or the wish shown, and the status bar (whether the
+// page follows djinn, the machine). What stays on this page is how it shows: what is shown and the side panel folded.
 import { ArrowLeft, PanelLeft, Plus, Settings2, Upload } from "lucide-react";
 import { AnimatePresence, LayoutGroup } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -20,6 +20,7 @@ import { isActive, runningOf, waitsForYou } from "./data/format";
 import { AgentSetup, needsSetup } from "./agent-setup";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
+import { HOURGLASS, Hourglass } from "./hourglass";
 import { t } from "./i18n";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
@@ -29,13 +30,20 @@ import { startWishSmokePrewarm } from "./wish-smoke";
 import { type Opening, type Reaching, WishView } from "./wish-view";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
+import { CARPET_DIGIT, HOURGLASS_DIGIT, pageDigit } from "./page-keys";
 import "./wish.css";
 import "./review.css";
 
 type Modal = "make" | "project" | "settings" | "docs" | "agents" | null;
 
-// What the window shows instead of a wish: the flight plan of the active wishes. A wish's id is a UUID: never this.
+// What the window shows instead of a wish: the flying carpet of the active wishes. A wish's id is a UUID: never this.
 export const PLAN = "plan";
+
+// The pages a shortcut shows, by its digit (page-keys.ts).
+const PAGES: Record<number, string> = {
+  [CARPET_DIGIT]: PLAN,
+  [HOURGLASS_DIGIT]: HOURGLASS,
+};
 
 function stored(key: string): string {
   try {
@@ -90,6 +98,12 @@ export function WishApp() {
     setGlide(true);
     setCollapsed((value) => !value);
   }, []);
+  // showPage shows a page of the window instead of a wish: the flying carpet (PLAN) or the Hourglass (HOURGLASS), by
+  // the side panel or by the keyboard (PAGES).
+  const showPage = useCallback((page: string) => {
+    setSelected(page);
+    setModal(null);
+  }, []);
 
   useEffect(() => store("djinn.wish", selected), [selected]);
   useEffect(() => {
@@ -106,10 +120,15 @@ export function WishApp() {
     () =>
       djinn.focus.subscribe((focus) => {
         if (focus.wishId) setSelected(focus.wishId);
+        // A page a link asks for (a worker's row in the Hourglass): its target is reached there as in a wish.
+        if (focus.page) setSelected(focus.page);
         if (focus.tilasmId)
           setOpening({ wishId: focus.wishId, tilasmId: focus.tilasmId });
         if (focus.target)
-          setReaching({ wishId: focus.wishId, target: focus.target });
+          setReaching({
+            wishId: focus.page || focus.wishId,
+            target: focus.target,
+          });
         if (focus.unknownLink)
           setToast(t("link.unknown", { link: focus.unknownLink }));
       }),
@@ -168,8 +187,32 @@ export function WishApp() {
     window.addEventListener("keydown", keys);
     return () => window.removeEventListener("keydown", keys);
   }, [making, modal, toggleSidebar]);
+  // Ctrl+1 (Cmd+1) shows the flying carpet, Ctrl+2 (Cmd+2) the Hourglass, by the key's place: on AZERTY, Ctrl+& and
+  // Ctrl with the key of e acute; the numpad's digits too. In a text field too: Ctrl and a digit type and edit nothing
+  // there. Never from a terminal, whose keys stay its own (Ctrl+3 to Ctrl+8 type Escape and other control codes
+  // there), nor over a dialog, as Ctrl+\.
+  useEffect(() => {
+    const keys = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        (modal !== null && modal !== "make") ||
+        making
+      )
+        return;
+      const page = PAGES[pageDigit(event)];
+      if (!page) return;
+      if (event.target instanceof HTMLElement && event.target.closest(".xterm"))
+        return;
+      event.preventDefault();
+      showPage(page);
+    };
+    window.addEventListener("keydown", keys);
+    return () => window.removeEventListener("keydown", keys);
+  }, [making, modal, showPage]);
 
-  // The active wishes are always read: the flight plan and the side panel count what waits in each.
+  // The active wishes are always read: the flying carpet and the side panel count what waits in each.
   const active = wishes.filter(isActive);
   const details = useWishDetails(active.map((w) => w.id));
   const counts = Object.fromEntries(
@@ -181,13 +224,18 @@ export function WishApp() {
       },
     ]),
   );
-  // What shows: the wish chosen, else the flight plan while a wish is active, else the first wish.
+  // What shows: the wish chosen, or the Hourglass, else the flying carpet while a wish is active, else the first wish.
   const chosen = wishes.find((w) => w.id === selected);
   const pendingWish = justMade?.id === selected ? justMade : undefined;
+  const hourglass = !chosen && !pendingWish && selected === HOURGLASS;
   const plan =
-    !chosen && !pendingWish && (selected === PLAN || active.length > 0);
-  const wish = plan ? undefined : (chosen ?? pendingWish ?? wishes[0]);
-  // Until the wishes are read, no page is chosen: the home page would show, then give way to the flight plan or a wish
+    !hourglass &&
+    !chosen &&
+    !pendingWish &&
+    (selected === PLAN || active.length > 0);
+  const wish =
+    plan || hourglass ? undefined : (chosen ?? pendingWish ?? wishes[0]);
+  // Until the wishes are read, no page is chosen: the home page would show, then give way to the flying carpet or a wish
   // with a header of its own, and a gauge focused or measured in between would be gone. A failed read shows home.
   const settling = !loaded && !error;
   const shownId = wish?.id ?? "";
@@ -314,10 +362,9 @@ export function WishApp() {
             counts={counts}
             inbox={inbox}
             planSelected={plan}
-            onSelectPlan={() => {
-              setSelected(PLAN);
-              setModal(null);
-            }}
+            onSelectPlan={() => showPage(PLAN)}
+            hourglassSelected={hourglass}
+            onSelectHourglass={() => showPage(HOURGLASS)}
             selectedWishId={wish?.id ?? ""}
             selectedProjectId={projectId}
             collapsed={collapsed}
@@ -379,11 +426,17 @@ export function WishApp() {
             />
           ) : settling ? (
             <div className="wish-view" aria-busy="true" />
+          ) : hourglass ? (
+            <Hourglass
+              wishes={active}
+              target={reaching?.wishId === HOURGLASS ? reaching : undefined}
+            />
           ) : plan ? (
             <FlightPlan
               wishes={active}
               onOpen={setSelected}
               onToast={setToast}
+              onSetupAgents={() => setModal("agents")}
             />
           ) : wish ? (
             <WishView

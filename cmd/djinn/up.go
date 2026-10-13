@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -131,11 +130,13 @@ func runUp(args []string) (restart bool, err error) {
 		return false, err
 	}
 	// One djinn per data directory: a second djinn up brings the first one's window to the front instead.
+	unclean := false
 	if addr, err := server.ReadAddr(home); err == nil {
 		if cli.Alive(addr) {
 			return false, showRunning(addr, flags)
 		}
 		fmt.Fprintln(os.Stderr, "djinn: the last djinn up did not stop cleanly; starting again")
+		unclean = true
 	}
 	// What djinn up does goes to logs/djinn.log, rolled over (W511); its stop is followed step by step there, and a
 	// stop that hangs dumps its goroutines, then exits.
@@ -146,6 +147,12 @@ func runUp(args []string) (restart bool, err error) {
 	defer stopLog() //nolint:errcheck // The last line is written; nothing to tell.
 	logx.L().Info("djinn up starts", "version", version, "pid", os.Getpid(), "os", runtime.GOOS, "arch", runtime.GOARCH,
 		"flags", flagNames(flags))
+	if unclean {
+		logx.L().Warn("the last djinn up did not stop cleanly", "addr", filepath.Join(home, server.AddrFile))
+	}
+	// A panic of djinn up's own goroutine ends it, its stack in the log first; each goroutine it starts does the same,
+	// or recovers where it can go on (a call to the server, a callback of the window).
+	defer logx.Crash("djinn up")
 	down := logx.NewShutdown(logx.Folder(home))
 	defer down.End()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -160,6 +167,8 @@ func runUp(args []string) (restart bool, err error) {
 		return false, fmt.Errorf("open the database: %w", err)
 	}
 	defer down.Step("database", func() { db.Close() })
+	// A transaction that holds the one connection past logx.HeldLong names itself in the log, with a dump (W549).
+	go db.Watch(ctx, logx.Folder(home))
 	// The workers stop before the database closes: deferred calls run last first.
 	savedNotch := machine.ReadNotch(home)
 	policy := machine.NotchPolicy(savedNotch)
@@ -217,6 +226,7 @@ func runUp(args []string) (restart bool, err error) {
 	workers.HeldGates(gates.Held, gates.Waiting)
 	workers.GatesOutside(gates.Outside)
 	gates.Freed(workers.Wake)
+	gates.Track(workers.TrackGate)
 	gates.ProjectResolver(func(taskID, dir string) string {
 		_, name, _ := machine.Project(ctx, db, taskID, dir)
 		return name
@@ -226,6 +236,7 @@ func runUp(args []string) (restart bool, err error) {
 	seriesRec.ReadSelf(machine.ReadSelf)
 	seriesRec.Sample()
 	go func() {
+		defer logx.Crash("series")
 		t := time.NewTicker(5 * time.Second)
 		defer t.Stop()
 		for n := 1; ; n++ {
@@ -328,17 +339,32 @@ func runUp(args []string) (restart bool, err error) {
 		}
 		go updates.run(ctx)
 	}
-	uiSvc.Install = func(ctx context.Context, b *uiv1.Build, progress func(uiv1.InstallStep, string)) (bool, error) {
+	uiSvc.Install = func(ctx context.Context, b *uiv1.Build, run ui.InstallRun) (bool, string, error) {
 		steps := map[harness.InstallStep]uiv1.InstallStep{
 			harness.InstallWaiting:   uiv1.InstallStep_INSTALL_STEP_WAITING,
 			harness.InstallPreparing: uiv1.InstallStep_INSTALL_STEP_PREPARING,
 			harness.InstallBuilding:  uiv1.InstallStep_INSTALL_STEP_BUILDING,
 		}
-		report := func(step harness.InstallStep, waiting string) { progress(steps[step], waiting) }
-		if _, err := workers.Install(ctx, b.GetWishId(), b.GetProjectId(), b.GetSha(), report); err != nil {
-			return false, err
+		report := func(step harness.InstallStep, waiting string) { run.Progress(steps[step], waiting) }
+		out, err := workers.Install(harness.InstallWith(ctx, run.Output, run.Low), b.GetWishId(), b.GetProjectId(), b.GetSha(), report)
+		if err != nil {
+			return false, out, err
 		}
-		return updates != nil && updates.check(ctx) != "", nil
+		return updates != nil && updates.check(ctx) != "", out, nil
+	}
+	// An install runs until djinn up stops, whatever becomes of the window's call; a build of the running line
+	// installs by itself once no gate is held and the machine is not under pressure.
+	uiSvc.Life = ctx
+	uiSvc.Busy = func() string {
+		if pressure := monitor.Policy().Pressure(monitor.Snapshot()); pressure != "" {
+			return "the machine is under pressure: " + pressure
+		}
+		for _, g := range gates.List() {
+			if g.Holder != "" {
+				return "gate " + g.Name + ": held by " + g.Holder
+			}
+		}
+		return ""
 	}
 	workers.Integrate()
 	raise := make(chan struct{}, 1)
@@ -452,7 +478,10 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	defer down.Step("address", remove)
 	served := make(chan error, 1)
-	go func() { served <- server.Serve(ctx, ln, h) }()
+	go func() {
+		defer logx.Crash("serve")
+		served <- server.Serve(ctx, ln, h)
+	}()
 	// Once asked to stop, the window and the server are waited for; a restart that hangs starts the newer djinn all
 	// the same before it exits.
 	down.BeforeExit = func() {
@@ -467,6 +496,7 @@ func runUp(args []string) (restart bool, err error) {
 	closed := make(chan struct{})
 	defer close(closed)
 	go func() {
+		defer logx.Crash("shutdown")
 		<-ctx.Done()
 		why := "quit or a signal"
 		if updates != nil && updates.Restarting() {
@@ -515,7 +545,7 @@ func runUp(args []string) (restart bool, err error) {
 	// A link macOS gives the app, clicked anywhere: the window shows it, or says it does not know it.
 	openLinks := func(raw string) {
 		if _, err := uiSvc.OpenLink(ctx, connect.NewRequest(&uiv1.UiServiceOpenLinkRequest{Url: raw})); err != nil {
-			log.Printf("djinn: open %s: %v", raw, err)
+			logx.L().Warn("open a link", "url", logx.Cut(raw, 200), "err", err)
 		}
 	}
 	switch {
@@ -557,6 +587,9 @@ func services(
 	// line says they wait.
 	h.NotifyLead(wishes.Notify)
 	wishes.RemindLead()
+	// A request to investigate the last djinn up stored but left without a follow-up gets its investigator, or the
+	// lead's event, now.
+	h.ResumeInvestigations()
 	h.OnWatched(wishes.Watched)
 	// The inbox sources of the projects' skills run until djinn up stops; what they print waits for a click.
 	h.RunSources((&plan.Inbox{Wishes: wishes}).Receive)
@@ -727,6 +760,7 @@ func registerLinks(w io.Writer) {
 	}
 	if err != nil {
 		fmt.Fprintf(w, "djinn: djinn:// links will not open Djinn: %v\n", err)
+		logx.L().Warn("register djinn:// links", "err", err)
 	}
 }
 
@@ -741,6 +775,7 @@ func workerScopes(ctx context.Context, w io.Writer, cpu int, memory uint64, guar
 			uncapped = ", uncapped"
 		}
 		fmt.Fprintf(w, "djinn: %v; workers run in their process group%s\n", err, uncapped)
+		logx.L().Warn("no systemd scope for the workers", "err", err)
 		return nil
 	}
 	if guard > 0 && !scopes.MemoryController && memory == 0 {
@@ -779,6 +814,7 @@ func buildOf(b harness.Built) *uiv1.Build {
 		WishId: b.WishID, WishTitle: b.WishTitle, ProjectId: b.ProjectID, Project: b.Project, Branch: b.Branch, Sha: b.Sha,
 		Tasks: b.Tasks, Changes: b.Changes, Summaries: summaries, Install: b.Install,
 		Base: b.Base, Running: b.Running, ChangesCount: int32(b.ChangesCount), Lacks: b.Lacks, LacksCount: int32(b.LacksCount),
+		Continues: b.Continues,
 	}
 }
 

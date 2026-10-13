@@ -2,6 +2,7 @@ package harness
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -308,7 +309,7 @@ func TestABuildIsProposed(t *testing.T) {
 		if err := tx.Journal("test", "said", w1); err != nil {
 			return err
 		}
-		return tx.Put(newEvent(w1.GetId(), 2, Event{
+		return putEvents(t.Context(), tx, newEvent(w1.GetId(), Event{
 			Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: "Done: a.txt holds a.\n\nTo check: the  window\nshows a.",
 		}))
 	}); err != nil {
@@ -692,5 +693,54 @@ func TestPushSyncs(t *testing.T) {
 		if _, err := in.h.Push(ctx, in.wishID, in.projectID, branch); err == nil || !strings.Contains(err.Error(), "no branch Djinn pushes") {
 			t.Errorf("Push of %s: %v, want refused", branch, err)
 		}
+	}
+}
+
+// TestPushTarget: one git reads the remote of each branch, its name there, and the remotes; an integration pass reads
+// it once per repository, though the remotes change under it.
+func TestPushTarget(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	if _, err := git(t.Context(), repo, "init", "--quiet"); err != nil {
+		t.Fatal(err)
+	}
+	setConfig := func(config string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repo, ".git", "config"), []byte(config), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		name, config, branch, remote, target string
+	}{
+		{"no remote", "", "main", "", ""},
+		{"the only remote", "[remote \"up\"]\n\turl = /a\n", "main", "up", "main"},
+		{"origin among others", "[remote \"up\"]\n\turl = /a\n[remote \"origin\"]\n\turl = /b\n[remote]\n\tpushDefault = up\n",
+			"main", "origin", "main"},
+		{"two remotes, none origin", "[remote \"up\"]\n\turl = /a\n[remote \"down\"]\n\turl = /b\n", "main", "", ""},
+		{"no branch", "[remote \"origin\"]\n\turl = /a\n", "", "", ""},
+		{"the upstream", "[remote \"origin\"]\n\turl = /a\n[remote \"up\"]\n\turl = /b\n" +
+			"[branch \"feat/x.y\"]\n\tremote = up\n\tmerge = refs/heads/x\n", "feat/x.y", "up", "x"},
+		{"a local upstream", "[remote \"origin\"]\n\turl = /a\n[branch \"Dev\"]\n\tremote = .\n\tmerge = refs/heads/main\n",
+			"Dev", "origin", "main"},
+		{"another branch's upstream", "[remote \"origin\"]\n\turl = /a\n[branch \"other\"]\n\tremote = up\n", "main", "origin", "main"},
+	} {
+		setConfig(c.config)
+		if remote, target := pushTarget(t.Context(), repo, c.branch); remote != c.remote || target != c.target {
+			t.Errorf("%s: pushTarget = %q, %q, want %q, %q", c.name, remote, target, c.remote, c.target)
+		}
+	}
+
+	setConfig("[remote \"origin\"]\n\turl = /a\n")
+	ctx := withPassMemo(t.Context())
+	if remote, _ := pushTarget(ctx, repo, "main"); remote != "origin" {
+		t.Fatalf("remote %q, want origin", remote)
+	}
+	setConfig("")
+	if remote, _ := pushTarget(ctx, repo, "main"); remote != "origin" {
+		t.Errorf("remote %q within the pass, want origin as it read it first", remote)
+	}
+	if remote, _ := pushTarget(t.Context(), repo, "main"); remote != "" {
+		t.Errorf("remote %q out of the pass, want none", remote)
 	}
 }

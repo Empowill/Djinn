@@ -1,7 +1,7 @@
-// The resources panel of the flight plan against the real djinn up --browser (see global-setup.ts), its series and
-// commands replaced by fixtures (W502): the charts say the value under the pointer and at the arrow keys, grow as new
-// samples come without losing the point shown, and a worker's eye opens its task in its wish, on the Tasks tab. The
-// commands of a project no active wish works on do not show.
+// The resources panel of the Hourglass (W542; under the flying carpet before) against the real djinn up --browser (see
+// global-setup.ts), its series and commands replaced by fixtures (W502): the charts say the value under the pointer and
+// at the arrow keys, grow as new samples come without losing the point shown, and a worker's eye opens its task in its
+// wish, on the Tasks tab. The commands of a project no active wish works on do not show.
 // Screenshots, dark and light, go to test-results/e2e/resources-*.png.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { timestampFromMs } from "@bufbuild/protobuf/wkt";
@@ -260,7 +260,9 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   await routeResources(page, w1, wishId, title, projectId);
   await page.setViewportSize({ width: 1440, height: 1400 });
   await page.goto(process.env.DJINN_URL!);
-  await expect(page.locator(".hero h1")).toHaveText("Flight plan");
+  await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
+  await page.locator(".sidebar .hourglass-nav").click();
+  await expect(page.locator(".hero h1")).toHaveText("Hourglass");
 
   const panel = page.locator(".consumption-panel");
   await panel.scrollIntoViewIfNeeded();
@@ -313,7 +315,7 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   // Djinn apart from what it started, both named.
   await expect(panel.locator(".resource-legend li")).toHaveText([
     "Solid: the whole machine",
-    "Dashed: Djinn with everything it started (window, leads, workers, gates)",
+    "Dashed: Djinn with everything it started (window, the Djinn's agent, workers, gates)",
     "Dotted: Djinn's own process alone (djinn up)",
   ]);
 

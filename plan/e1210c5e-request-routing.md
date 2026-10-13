@@ -191,10 +191,10 @@ request is: filed in a wish, or a new one, from a template when one matches (an 
   Routing acts as answering a route question (`Wishes.routeTo`, shared with T26's `settle`): a request block, the new
   wish with its template, its watcher, then its lead (`plan.InboxFirstLine`), or the lead of the wish it is filed in
   told (`plan.InboxFiledLine`). `Change.CHANGE_INBOX` tells the window.
-- **The window**: the inbox heads the flight plan (`src/inbox.tsx`), newest first, each card with its source, its
+- **The window**: the inbox heads the flying carpet (`src/inbox.tsx`), newest first, each card with its source, its
   options (the recommended first), "Rub the lamp" and "Dismiss". Without items, it lists the declared sources; without
   sources either, it is hidden.
-- **Outside the flight plan**: the side panel's flight plan entry counts the new items (an inbox icon beside the
+- **Outside the flying carpet**: the side panel's flying carpet entry counts the new items (an inbox icon beside the
   questions' count), and shows while one waits even with no active wish. A new item is a system notification
   (`ui.Notices`, as a question's): its source as title, its text as body, no button; a click brings the window
   forward. An item dismissed, routed or older than a minute is not news.
@@ -212,9 +212,9 @@ request is: filed in a wish, or a new one, from a template when one matches (an 
   a routed one, a link a wish's block holds; `TestItemKey`)
 - [x] E2e: a fake source prints an assigned merge request, the card proposes the babysit template, a click makes the
   wish with its watcher. (`e2e/inbox.spec.ts`)
-- [x] The inbox shows outside the flight plan: a count in the side panel, a notification for a new item.
+- [x] The inbox shows outside the flying carpet: a count in the side panel, a notification for a new item.
   (`TestNoticesShowNewInboxItems`: a new item is notified once, with its source and its text; a dismissed, routed or
-  old one is not; `tests/screens.test.mjs` "the side panel counts the new inbox items on the flight plan's entry,
+  old one is not; `tests/screens.test.mjs` "the side panel counts the new inbox items on the flying carpet's entry,
   even with no active wish")
 - [x] A source runs only once plugged in, per machine; an unplugged one never starts a command. (`TestSourceUnplugged`:
   no watcher and 0 commands before the plug, 1 after and no other over two more passes, its watcher stopped by the
@@ -233,5 +233,5 @@ request is: filed in a wish, or a new one, from a template when one matches (an 
 
 ### Next
 
-- A click on an item's notification raises the window as it is: showing the flight plan would need the window's show
+- A click on an item's notification raises the window as it is: showing the flying carpet would need the window's show
   request (`UiServiceWatchShowResponse`) to name it.

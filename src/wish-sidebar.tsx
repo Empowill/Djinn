@@ -1,15 +1,16 @@
-// The side panel's lists, read from the services: the flight plan's entry with what waits for you there (questions,
-// new inbox items), the wishes, the active ones by rank (drag one up or down, or Alt+Arrow) and how many of the three
-// places they take, then the paused ones and the granted ones; and the projects, each with its branches out of sync
-// with their remote (project-sync.tsx). The wishes' list shows three rows and scrolls under the pointer. A paused wish
-// dragged onto an active one, or sent first with its button, becomes active there: the wish pushed past the third
-// place is paused.
+// The side panel's lists, read from the services: the flying carpet's entry with what waits for you there (questions,
+// new inbox items), the Hourglass's entry below it (the live metrics, hourglass.tsx), the wishes, the active ones by
+// rank (drag one up or down, or Alt+Arrow) and how many of the three places they take, then the paused ones and the
+// granted ones; and the projects, each with its branches out of sync with their remote (project-sync.tsx). The wishes'
+// list shows three rows and scrolls under the pointer. A paused wish dragged onto an active one, or sent first with its
+// button, becomes active there: the wish pushed past the third place is paused.
 import {
   ArrowUpToLine,
   ChevronDown,
   ChevronRight,
   FolderOpen,
   GripVertical,
+  Hourglass,
   Inbox,
   Plane,
   Plus,
@@ -22,6 +23,7 @@ import { WishState } from "../gen/ts/plan/v1/plan_pb";
 import { MAX_ACTIVE, isActive, wishTone } from "./data/format";
 import { t } from "./i18n";
 import { useOpenTerminal } from "./lead-terminal";
+import { CARPET_DIGIT, HOURGLASS_DIGIT, usePageShortcut } from "./page-keys";
 import { SyncLines } from "./project-sync";
 import { CountPill, ToneIcon } from "./status";
 
@@ -40,6 +42,8 @@ export function WishSidebar({
   inbox = 0,
   planSelected = false,
   onSelectPlan,
+  hourglassSelected = false,
+  onSelectHourglass,
   selectedWishId,
   selectedProjectId,
   collapsed,
@@ -53,11 +57,14 @@ export function WishSidebar({
   projects: Project[];
   // What each active wish holds, by id: questions that wait for you, workers that run.
   counts?: Readonly<Record<string, WishCounts>>;
-  // How many inbox items wait for your answer: the flight plan shows them.
+  // How many inbox items wait for your answer: the flying carpet shows them.
   inbox?: number;
-  // The flight plan of the active wishes shows.
+  // The flying carpet of the active wishes shows.
   planSelected?: boolean;
   onSelectPlan?: () => void;
+  // The Hourglass, the live metrics, shows.
+  hourglassSelected?: boolean;
+  onSelectHourglass?: () => void;
   selectedWishId: string;
   selectedProjectId: string;
   collapsed: boolean;
@@ -76,6 +83,9 @@ export function WishSidebar({
   // Where djinn serves the page, a project opens a terminal at its root, in a tab of its own.
   const openTerminal = useOpenTerminal();
   const [dragged, setDragged] = useState("");
+  // The pages' shortcuts, named in their entries' tooltips as this keyboard writes them (Ctrl & on AZERTY).
+  const carpetKey = usePageShortcut(CARPET_DIGIT);
+  const hourglassKey = usePageShortcut(HOURGLASS_DIGIT);
 
   const item = (wish: Wish, rank?: number) => {
     const count = counts[wish.id] ?? { questions: 0, running: 0, watching: 0 };
@@ -179,7 +189,11 @@ export function WishSidebar({
         <button
           className={`nav-item plan-nav ${planSelected ? "selected" : ""}`}
           onClick={onSelectPlan}
-          title={t("plan.title")}
+          title={t("sidebar.page_shortcut", {
+            page: t("plan.title"),
+            shortcut: carpetKey.label,
+          })}
+          aria-keyshortcuts={carpetKey.aria}
         >
           <Plane size={15} />
           {!collapsed && <span>{t("plan.title")}</span>}
@@ -198,6 +212,20 @@ export function WishSidebar({
               label={t("sidebar.inbox_new", { count: inbox })}
             />
           )}
+        </button>
+      )}
+      {onSelectHourglass && (
+        <button
+          className={`nav-item hourglass-nav ${hourglassSelected ? "selected" : ""}`}
+          onClick={onSelectHourglass}
+          title={t("sidebar.page_shortcut", {
+            page: t("hourglass.title"),
+            shortcut: hourglassKey.label,
+          })}
+          aria-keyshortcuts={hourglassKey.aria}
+        >
+          <Hourglass size={15} />
+          {!collapsed && <span>{t("hourglass.title")}</span>}
         </button>
       )}
       <div className="sidebar-section-label">

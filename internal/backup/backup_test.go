@@ -142,6 +142,7 @@ func TestRoundTrip(t *testing.T) {
 			writeFile(t, home, "djinn-up.log", "log")
 			writeFile(t, home, "logs/djinn.log.1", "log")
 			writeFile(t, home, "logs/goroutines-20261012T000000.000000000Z.txt", "dump")
+			writeFile(t, home, "run/4242.json", `{"pid":4242}`)
 			writeFile(t, home, server.AddrFile, "http://127.0.0.1:1/?token=secret")
 
 			archive := filepath.Join(t.TempDir(), "backup"+ext)

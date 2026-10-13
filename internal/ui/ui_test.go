@@ -193,7 +193,7 @@ func TestShow(t *testing.T) {
 }
 
 // W501: a spec opened a wish, then deleted it; a reload within the minute got that show again, and the window left the
-// wish it showed for the flight plan. A show whose wish is gone is not replayed; one of a wish still here is.
+// wish it showed for the flying carpet. A show whose wish is gone is not replayed; one of a wish still here is.
 func TestReplayForgetsADeletedWish(t *testing.T) {
 	s, _ := newService(t)
 	deleted := map[string]bool{"gone": true}
@@ -473,14 +473,14 @@ func TestUpdateInstallsABuild(t *testing.T) {
 	var installed []string
 	newer, restarts := false, 0
 	proceed := make(chan struct{}) // the first install waits until the window has seen it wait
-	s.Install = func(_ context.Context, b *uiv1.Build, progress func(uiv1.InstallStep, string)) (bool, error) {
+	s.Install = func(_ context.Context, b *uiv1.Build, run InstallRun) (bool, string, error) {
 		if proceed != nil {
-			progress(uiv1.InstallStep_INSTALL_STEP_WAITING, "gate install: held by W1")
+			run.Progress(uiv1.InstallStep_INSTALL_STEP_WAITING, "gate install: held by W1")
 			<-proceed
 		}
-		progress(uiv1.InstallStep_INSTALL_STEP_BUILDING, "")
+		run.Progress(uiv1.InstallStep_INSTALL_STEP_BUILDING, "")
 		installed = append(installed, b.GetSha())
-		return newer, nil
+		return newer, "", nil
 	}
 	s.Restart = func() (string, int, error) { restarts++; return "v2", 1, nil }
 	s.SetBuild(&uiv1.Build{WishId: "w", ProjectId: "p", Branch: "feat/x", Sha: "abc", Changes: []string{"Work of W1"}})
@@ -518,7 +518,10 @@ func TestUpdateInstallsABuild(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() { res, err := update("abc"); done <- result{res, err} }()
-	if !watch.Receive() || watch.Msg().GetInstalling().GetStep() != uiv1.InstallStep_INSTALL_STEP_WAITING ||
+	// It prepares, maybe, then waits.
+	for watch.Receive() && watch.Msg().GetInstalling().GetStep() == uiv1.InstallStep_INSTALL_STEP_PREPARING {
+	}
+	if watch.Msg().GetInstalling().GetStep() != uiv1.InstallStep_INSTALL_STEP_WAITING ||
 		watch.Msg().GetInstalling().GetWaiting() != "gate install: held by W1" || watch.Msg().GetInstalling().GetSha() != "abc" {
 		t.Errorf("the window is not told what the install waits for: %v, %v", watch.Msg(), watch.Err())
 	}
@@ -530,7 +533,8 @@ func TestUpdateInstallsABuild(t *testing.T) {
 	}
 	// The window sees it build, maybe, then the install over: nothing proposed, nothing installing.
 	for watch.Receive() && (len(watch.Msg().GetBuilds()) > 0 || watch.Msg().GetInstalling() != nil) {
-		if step := watch.Msg().GetInstalling().GetStep(); step != uiv1.InstallStep_INSTALL_STEP_BUILDING {
+		if step := watch.Msg().GetInstalling().GetStep(); step != uiv1.InstallStep_INSTALL_STEP_BUILDING &&
+			step != uiv1.InstallStep_INSTALL_STEP_WAITING {
 			t.Errorf("installing: %v", watch.Msg())
 		}
 	}
@@ -556,7 +560,7 @@ func TestUpdateInstallsABuild(t *testing.T) {
 // ready is named once described, and forgotten when another version waits.
 func TestBuildsByBranch(t *testing.T) {
 	s, _ := newService(t)
-	s.Install = func(context.Context, *uiv1.Build, func(uiv1.InstallStep, string)) (bool, error) { return false, nil }
+	s.Install = func(context.Context, *uiv1.Build, InstallRun) (bool, string, error) { return false, "", nil }
 	shas := func() []string {
 		s.updates.Lock()
 		defer s.updates.Unlock()
@@ -572,21 +576,26 @@ func TestBuildsByBranch(t *testing.T) {
 	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/clement-port@e60f8fc", "feat/wails-go@ccc"}) {
 		t.Errorf("builds = %v, want the running branch first, one per branch and project", got)
 	}
+	// W527: a branch that carries the running line on comes after it, before the parallel ones.
+	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/robustness", Sha: "bbb", Continues: "feat/wails-go"})
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/robustness@bbb", "feat/clement-port@e60f8fc", "feat/wails-go@ccc"}) {
+		t.Errorf("builds = %v, want the line carried on second", got)
+	}
 	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/clement-port", Sha: "e70"})
-	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/clement-port@e70", "feat/wails-go@ccc"}) {
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/robustness@bbb", "feat/clement-port@e70", "feat/wails-go@ccc"}) {
 		t.Errorf("builds = %v, want the newer push of feat/clement-port in place of its last", got)
 	}
 	if _, err := s.Update(t.Context(), connect.NewRequest(&uiv1.UiServiceUpdateRequest{Build: "e70"})); err != nil {
 		t.Fatal(err)
 	}
-	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/wails-go@ccc"}) {
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/robustness@bbb", "feat/wails-go@ccc"}) {
 		t.Errorf("builds = %v, want the others kept once one is installed", got)
 	}
 	if _, err := s.Update(t.Context(), connect.NewRequest(&uiv1.UiServiceUpdateRequest{Build: "e60f8fc"})); code(err) != connect.CodeFailedPrecondition {
 		t.Errorf("a build replaced since installs: %v", err)
 	}
 
-	s.SetReady("local-g1", "")
+	s.SetReady("local-g1", "", true)
 	s.SetReadyBuild("local-g0", &uiv1.Build{Sha: "0"})
 	ready := func() *uiv1.Build {
 		s.updates.Lock()
@@ -600,7 +609,7 @@ func TestBuildsByBranch(t *testing.T) {
 	if ready().GetBranch() != "feat/clement-port" {
 		t.Errorf("ready build = %v", ready())
 	}
-	s.SetReady("local-g2", "")
+	s.SetReady("local-g2", "", true)
 	if ready() != nil {
 		t.Error("the name of the version before stays")
 	}
@@ -671,7 +680,7 @@ func TestWatchUnified(t *testing.T) {
 	}
 
 	// Trigger SetReady
-	s.SetReady("2.0.0", "https://notes")
+	s.SetReady("2.0.0", "https://notes", false)
 	if !stream.Receive() {
 		t.Fatalf("update message failed: %v", stream.Err())
 	}

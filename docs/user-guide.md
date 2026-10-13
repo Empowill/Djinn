@@ -1,22 +1,22 @@
 # Djinn user guide
 
-How to get going with Djinn, then use its flight plan day to day. Djinn is one command, `djinn`: a window, a local
-server, and a command line your agents use to drive a wish. You say what you wish; a lead (Claude Code, Codex or
-Antigravity) splits it into tasks; workers do them; you answer the questions and grant the wish.
+How to get going with Djinn, then use its flying carpet day to day. Djinn is one command, `djinn`: a window, a local
+server, and a command line your agents use to drive a wish. You say what you wish; its lead, the Djinn (Claude
+Code, Codex or Antigravity), splits it into tasks; workers do them; you answer the questions and grant the wish.
 
 > **Alpha.** Djinn is under development: see the warning at the top of the [README](../README.md).
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="screenshots/readme/questions-light.png">
-  <img alt="A wish in Djinn: what waits for you, and a question with the lead's recommendation" src="screenshots/readme/questions-dark.png">
+  <img alt="A wish in Djinn: what waits for you, and a question with the Djinn's recommendation" src="screenshots/readme/questions-dark.png">
 </picture>
 
 ## Install
 
-The one-line install is in the [README](../README.md#install); it works once the first release is out. Until then,
-build Djinn from this repository: [`CONTRIBUTING.md`](../CONTRIBUTING.md#getting-set-up).
+The one-line install is in the [README](../README.md#install), with how to build Djinn from this repository
+([`CONTRIBUTING.md`](../CONTRIBUTING.md#getting-set-up) has the details).
 
-Workers and leads run the agents you already have, as you installed and signed in to them:
+The Djinn and the workers run the agents you already have, as you installed and signed in to them:
 
 - Codex: `npm install -g @openai/codex`
 - Claude Code: `npm install -g @anthropic-ai/claude-code`
@@ -26,8 +26,8 @@ Workers and leads run the agents you already have, as you installed and signed i
 version, and whether it is signed in (`claude auth status`, `codex login status`; Antigravity has no such command, so
 its sign-in shows as unknown), with a button to install it or sign it in. The button runs the agent's own command in a
 terminal of the panel, where you answer if it asks; once it ends, Djinn checks again. The same panel opens from the
-arrow beside **Lead** (**Set up the agents**), and by itself when the window opens with no agent ready. Djinn looks
-where its workers and leads look: its PATH, your login shell's, and the installers' folders. Djinn asks for no API key,
+arrow beside **Talk to the Djinn** (**Set up the agents**), and by itself when the window opens with no agent ready. The agents are looked
+for where the Djinn and the workers find them: Djinn's PATH, your login shell's, and the installers' folders. Djinn asks for no API key,
 and stores none: the account each agent signs in with pays for it.
 
 ## Start Djinn: `djinn up`
@@ -40,7 +40,7 @@ djinn up --browser    # no window: prints the URL to open in your browser
 - **One Djinn per data folder.** A second `djinn up` brings the running window to the front.
 - **The data folder.** It is `djinn` in your system's configuration folder (`~/.config/djinn` on Linux,
   `~/Library/Application Support/djinn` on macOS, `%AppData%\djinn` on Windows). `DJINN_HOME` sets another one.
-- **Closing the window does not stop Djinn.** The lead and the workers go on. To quit: "Quit Djinn" in the tray menu,
+- **Closing the window does not stop Djinn.** The Djinn and the workers go on. To quit: "Quit Djinn" in the tray menu,
   Ctrl+Q (Cmd+Q on macOS), or stop `djinn up`.
 - **How many workers at once.** The machine decides: one per 2 cores and per 2 GiB of memory.
   `djinn up --workers 4` (1 to 16) sets it. The status bar shows `Workers 2/4`, and whether the page is `Live`.
@@ -77,10 +77,10 @@ never in your home folder: an agent started there would ask you to trust all of 
 asks you to create one. `djinn up --terminal-dir <folder>` picks another folder, and
 `djinn up --terminal "…" --terminal-dir <folder>` runs that command instead of your shell.
 
-It holds tabs. The window's own terminal is always there; while the lead runs, its tab, **Lead**, is there too. The + of the tab bar, or Ctrl+Shift+T anywhere in the window, opens a new shell
+It holds tabs. The window's own terminal is always there; while the Djinn runs, its tab, **The Djinn**, is there too. The + of the tab bar, or Ctrl+Shift+T anywhere in the window, opens a new shell
 (**Shell 1**, **Shell 2**…); the terminal icon next to a project in the side panel opens one at its root. Each tab you
 opened closes with its ×, and comes back after a reload. The terminal folds away; **Restart** starts one again once
-its program ended, and on the lead's tab it starts the lead again as **Lead** does. Ctrl+Shift+C and Ctrl+Shift+V copy and paste.
+its program ended, and on the Djinn's tab it starts the Djinn again as **Talk to the Djinn** does. Ctrl+Shift+C and Ctrl+Shift+V copy and paste.
 
 ## A project
 
@@ -97,11 +97,11 @@ skill of app without a copy.
 ## A wish
 
 **New wish** (top of the side panel) opens **Make a wish**: what you wish, in a sentence, and the projects it works
-on. Or from a terminal, or from your lead: `djinn wish make "…"`. Under the wish's title, a click gives it the few
+on. Or from a terminal, or from the Djinn: `djinn wish make "…"`. Under the wish's title, a click gives it the few
 lines it opens with: what it is for, its scope, where it goes (`djinn wish describe <wish-id> --text "…"`). Clicking
 the title allows you to rename it (`djinn wish rename <wish-id> --title "…"`). Beside the title, a star button marks
-it as the **Principal** wish (**Mark as principal**): its lead coordinates and receives answers from wishes without an active
-lead (`djinn wish principal <wish-id> --principal`). When unset, the active wish with the lowest rank is principal.
+it as the **Principal** wish (**Mark as principal**): the Djinn coordinates from it and receives there the answers of the other
+wishes (`djinn wish principal <wish-id> --principal`). When unset, the active wish with the lowest rank is principal.
 
 **Three wishes are active at most.** That guards your attention; the machine decides how many workers run. You may
 have as many wishes as you like: with three active already, a new one is made paused (**Make it paused**). The side
@@ -122,64 +122,79 @@ At the top of a wish:
 From a terminal: `djinn wish pause <wish-id>`, `djinn wish activate <wish-id>`, `djinn wish move <wish-id> --to 1`,
 `djinn wish rename <wish-id> --title "…"`, `djinn wish principal <wish-id> --principal`, `djinn wish delete <wish-id>`.
 
-## The lead
+## The Djinn
 
-Djinn has a single lead for all active wishes: an agent session that talks with you, splits wishes into tasks, asks
+Djinn has a single lead for all active wishes, the Djinn: an agent session that talks with you, splits wishes into tasks, asks
 the questions and keeps the plans true. It drives Djinn with the `djinn` command.
 
-**Lead**, at the top of a wish, opens the lead in the terminal of the window and focuses on that wish:
+The app is Djinn, its lead is the Djinn; the workers are its hands. **Talk to the Djinn**, at the top of a wish, opens
+the Djinn in the terminal of the window and focuses it on that wish; at the top of the flying carpet, it opens it on no wish:
 
-- the lead has a session: Djinn resumes it (`claude --resume …` or `codex resume …`) in the folder it was recorded
+- the Djinn has a session: Djinn resumes it (`claude --resume …` or `codex resume …`) in the folder it was recorded
   in, or shows it if it runs, and types a short line focusing on the wish;
-- it has none: a new Claude lead starts in your first project, never in your home folder. With no project at all,
+- it has none: the Djinn starts anew on Claude Code in your first project, never in your home folder. With no project at all,
   nothing starts: create one first.
 
-The arrow beside **Lead**, **Choose the agent**, starts a lead of another agent found on this machine: Claude Code,
+The arrow beside **Talk to the Djinn**, **Choose the agent**, starts the Djinn on another agent found on this machine: Claude Code,
 Codex or Antigravity. An agent that is not installed shows greyed, saying so; the recorded one is checked, and picking
-it resumes the lead, focused on this wish. Starting a lead of another provider replaces it.
+it resumes the Djinn, focused on this wish. Starting the Djinn on another provider replaces its session.
 
-Every new lead, of any agent, starts by running `djinn brief`: every active wish at once (each wish's title, description,
+Every new session of the Djinn, on any agent, starts by running `djinn brief`: every active wish at once (each wish's title, description,
 open questions, what runs and waits, its azimas), then Djinn's rules and the projects' (`AGENTS.md`, `CLAUDE.md`,
 `CONTRIBUTING.md`). `djinn wish brief <wish-id>` gives one wish's detail. No model writes it.
 
-The lead talks to you only in the window: everything it has to tell you, a report or "done as you asked" included,
+The Djinn talks to you only in the window: everything it has to tell you, a report or "done as you asked" included,
 is a question in the wish concerned, often a yes/no acknowledgement with "OK, nothing to do" as an option, and it
 withdraws one as soon as a task or Djinn does what it asked. When it does not fully understand an answer, it asks
 again before starting any work. It writes nothing for you in its terminal; a line you type there is answered in the
 window.
 
-From a terminal, `djinn lead resume` does what **Lead** does, and starts Djinn if it does not run;
+From a terminal, `djinn lead resume` does what **Talk to the Djinn** does, and starts Djinn if it does not run;
 `djinn lead resume --provider codex` picks the agent. `djinn lead set <session-id> --directory <folder>`
-records a session you started yourself. `djinn lead tell "…"` writes to the running lead as if you typed it in its
+records a session you started yourself. `djinn lead tell "…"` writes to the running Djinn as if you typed it in its
 terminal, line breaks kept (`--wish-id <wish-id>` says which wish it is about); it waits while you type there or a
-choice is on screen. In a wish, the pill **Write to the lead** at the bottom does the same about that wish
-(Cmd/Ctrl+I opens it; Enter sends, Shift+Enter breaks the line, Escape folds it and keeps the draft).
+choice is on screen. In a wish, the pill **Write to the Djinn** at the bottom does the same about that wish, and
+on the flying carpet about no wish (Cmd/Ctrl+I opens it; Enter sends, Shift+Enter breaks the line, Escape, a click or the focus elsewhere folds it and keeps the draft).
 
-When the lead's agent asks for your approval in its terminal (a command to run, a folder to trust), the bar of what
-waits for you shows it first, in the flight plan and in every wish, with its options as buttons, and a notification
+When the agent behind the Djinn asks for your approval in its terminal (a command to run, a folder to trust), the bar of what
+waits for you shows it first, in the flying carpet and in every wish, with its options as buttons, and a notification
 says so. A button answers in the terminal as its keys would, only while the terminal still shows that very choice: a
 different command needs a new click.
 
-When the lead could not start, from **Lead** or as Djinn starts, or its program ended (it failed at once, or you quit
-it), a small dot on **Lead** says so, in every wish: its tooltip gives the error or the exit code. The lead's tab keeps its last output, and
-reopening it starts nothing. Only **Lead**, or `djinn lead resume`, starts it again; the dot goes once it runs.
+When the Djinn could not start, from **Talk to the Djinn** or as the app starts, or its program ended (it failed at once, or you quit
+it), a small dot on **Talk to the Djinn** says so, in every wish and on the flying carpet: its tooltip gives the error or the exit code. The Djinn's tab keeps its last output, and
+reopening it starts nothing. Only **Talk to the Djinn**, or `djinn lead resume`, starts it again; the dot goes once it runs.
 
-Djinn takes the lead back at every start, in the lead's terminal. The first start after an update from a Djinn that had
-one lead per wish keeps the lead of the first active wish as the one lead.
+At every start, the Djinn comes back, in its terminal. The first start after an update from a version that had
+one lead per wish keeps the lead of the first active wish as the Djinn.
 
-## The flight plan
+## The flying carpet
 
-**Flight plan**, at the top of the side panel, shows every active wish together:
+**Flying carpet**, at the top of the side panel, or Ctrl+1 (Cmd+1 on macOS), shows every active wish together:
 
 - a bar at the top while something waits for you, the most blocking first; a click takes you there;
 - the [inbox](#the-inbox), when a source found something;
 - each wish at a glance: its questions, what runs, or `READY`;
 - what waits for you, in every wish: open questions, workers that wait, wishes Djinn proposes to grant, and the
   **Proofs you can give** (see [azimas](#azimas));
-- the questions you asked the lead to investigate.
+- the questions you asked the Djinn to investigate.
 
-Each line names its wish; an answer, a stop or a grant goes back to it. Like a wish, the flight plan has a **Tasks**
+Each line names its wish; an answer, a stop or a grant goes back to it. Like a wish, the flying carpet has a **Tasks**
 tab and a **Decisions** tab, with the tasks and decisions of every active wish. An empty section is hidden.
+Under them, one line says the machine's load, with a link to the [Hourglass](#the-hourglass).
+
+## The Hourglass
+
+**Hourglass**, below the flying carpet in the side panel, or Ctrl+2 (Cmd+2 on macOS), is where the live metrics are, as
+time goes by. First the machine: its CPU and memory over the time you pick (10 minutes to 7 days), with Djinn's share,
+the load limit and the gates held; each running worker, its facts and its own graphs (its eye opens the task in its
+wish); then where the time of the commands goes, by project and gate. The page reads them only while it shows: leave it,
+and its reads stop. A running task's card links to its worker's row (**Live in the Hourglass**).
+
+Ctrl+1 and Ctrl+2 are the keys' places, not their characters: on a French AZERTY keyboard, Ctrl with the key of &
+and Ctrl with the key of the e acute next to it; the numpad's 1 and 2 work too. They work in a text field, never in
+the terminal, which keeps its own Ctrl and digit keys. Each entry's tooltip names its shortcut as your keyboard writes
+it, once the window knows your layout: at once in a Chromium browser, elsewhere once you typed on the digit row.
 
 ## A wish's view
 
@@ -215,19 +230,22 @@ diffs, its worker's last word, where its work stands, its events, and folded ter
   None on Windows yet.
 - **Stop the worker** ends it.
 - **Mark done** closes a task no worker runs (planned, cut short, failed, stopped, imported) once its work is done,
-  with why, in a few words. On a task **Done with problems**, it closes it as seen.
-
-A task whose worker ended done while its permissions refused some of its calls, with nobody to approve them, is
-**Done with problems**, amber, not a clean Done: it may not have done its job. It stays with what moves or waits, and
-waits for you in the attention bar, until it runs again or is marked done.
+  with why, in a few words.
 - A task that comes from a decision links to it in the Decisions tab.
 
-The status is one colour, one icon and one word: Running, Waits for your answer, Planned, Done, Done with problems, Failed,
+The calls a worker's permissions refused, with nobody to approve them, never show in the window (Decision Q273): they
+go to the Djinn, in the event that tells it the task ended, with the commands and the right that would allow them. The
+Djinn decides: it continues the task otherwise, starts it again where a right the wish or project already grants
+covers them, or closes it as seen. Rights stay explicit: when the Djinn concludes a new one is needed (auto mode on a
+project, a permission line), it asks you in a question to act on that names exactly that right, the command that
+grants it, and why.
+
+The status is one colour, one icon and one word: Running, Waits for your answer, Planned, Done, Failed,
 Interrupted, Stopped, Paused, Waiting for the limit, Resuming, Resumed as another task, Watching.
 
 ### Usage and cost estimates
 
-Every task, wish, and the flight plan show token breakdowns (input, output, cache read, thinking) and an estimated cost computed from an embedded price table (`internal/usage/prices.yaml`), marked "estimated, prices of <table date>".
+Every task, wish, and the flying carpet show token breakdowns (input, output, cache read, thinking) and an estimated cost computed from an embedded price table (`internal/usage/prices.yaml`), marked "estimated, prices of <table date>".
 
 - **Estimated vs. reported**: Claude reports monetary cost directly in its stream, which Djinn preserves and shows labelled "reported" alongside the estimate. For providers without stream costs (Codex, Antigravity), Djinn converts tokens to cost using the price table.
 - **Comparable across providers**: A switch in usage views toggles between currency ($) and tokens, so comparisons across models and providers remain consistent without flattening when a model has no price.
@@ -246,7 +264,7 @@ _The two screenshots show a demonstration wish, with fictional data._
 
 ### Azimas
 
-The lead's plan is a graph of azimas, coded `T01`, `T02`…: parts of the plan that no worker runs, which work is part
+The Djinn's plan is a graph of azimas, coded `T01`, `T02`…: parts of the plan that no worker runs, which work is part
 of. The Tasks tab displays the azimas in a single column from top to bottom, each row taking the full width to show
 its code, goal, state, progress (parts done, running, and waiting), time, and dependencies, with the work part of it
 folded underneath. The tasks inside an azima may flow in columns on a wide screen, but the azimas themselves stay in
@@ -258,7 +276,7 @@ not started, then blocked ones, then drafts, and last the done ones folded at th
 the plan's code order, never an order by time or by counts that change every minute.
 
 An azima is **Draft**, **Open**, **In progress**, **To validate** or **Done**. A draft azima holds tasks planned for later:
-**Open this azima** (`djinn task open <azima>`) turns it open, ready for parts to be spawned, and notifies the wish's lead.
+**Open this azima** (`djinn task open <azima>`) turns it open, ready for parts to be spawned, and notifies the Djinn.
 **Move** (`djinn task move <azima> --wish <wish>`) moves an azima (a draft, or an azima no worker runs with parts that have
 not started) to another wish.
 
@@ -299,24 +317,24 @@ depended on, keeps working as it is: Djinn never cuts it again nor rewrites it.
 Once every task part of an azima is finished, it is **To validate**: nothing is left for Djinn. Its card says what
 validating it takes, box by box of its plan file (a person, a machine, a release or a real model gives each proof), and
 its **Validate** button marks it done. An azima whose plan file says done stays **In progress** while work part of it
-still runs or waits. The flight plan lists the proofs a person can give among the **Proofs you can give**.
+still runs or waits. The flying carpet lists the proofs a person can give among the **Proofs you can give**.
 
 ### The Review tab
 
 The wish's merged work, a line per task, the merges Djinn started under the task they serve; the tab counts what is
 left to review. A click on a line opens its diff, with the comments on its lines; its box marks it reviewed, kept with
-who checked it and when, and the lead reads it in its brief and with `djinn mark list`. What is reviewed folds at the
+who checked it and when, and the Djinn reads it in its brief and with `djinn mark list`. What is reviewed folds at the
 end. **See the diff** stays on each task's card in the Tasks tab.
 
 ### The Decisions tab
 
 Every decision, the latest first, read only: an answered question, or a block of kind `decision`. Each row says who
-took it (you, the lead, or a worker) and the tasks it led to.
+took it (you, the Djinn, or a worker) and the tasks it led to.
 
 ### The Tilasms tab
 
 A tilasm is the material that explains a wish: a folder with an `index.html` (a page, a diagram, a demonstration),
-coded `L01`, `L02`…, versioned, and kept in Djinn's data folder, never in a project. The lead makes them with
+coded `L01`, `L02`…, versioned, and kept in Djinn's data folder, never in a project. The Djinn makes them with
 `djinn tilasm put`; you may drop a folder or a `.zip` on the tab.
 
 **Open it here** shows one in a frame of its own: its scripts run, the network and Djinn stay out of its reach. The
@@ -331,19 +349,20 @@ question or the brief opens in place.
 
 ## Questions
 
-The lead asks you through Djinn, never by guessing. A question card, coded `Q01`, `Q02`…, gives the lead's
+The Djinn asks you rather than guessing. A question card, coded `Q01`, `Q02`…, gives the Djinn's
 recommendation first, then the options A to D, then what is at stake. Its colour says how much it holds up: red
-when a task waits for the answer, orange under the words the lead gave ("before the merge"), grey when it **Can wait**.
+when a task waits for the answer, orange under the words the Djinn gave ("before the merge"), grey when it **Can wait**.
 The cards, the bar of what waits for you and the brief list them in that order.
 
 When work leaves a move only the developer can make (push a tag, open or merge a PR, start a release, check on a Mac or
-Windows, install when needed), Djinn or the agent asks it as a question with the exact command.
+Windows, install when needed), Djinn or the agent asks it as a question, the exact command in a code block at the top
+of its context. A check, a measure, a log or a CI result is never asked of you: an agent runs it and reports.
 
 - **Rub the lamp** answers with the option selected and your note: the recommended one is selected first, so one
-  click takes it; pick another and the lamp sends that one. With no option recommended, pick one first. The lead
+  click takes it; pick another and the lamp sends that one. With no option recommended, pick one first. The Djinn
   turns your answer into tasks itself, in one pass, holding the plan's graph. A question without options takes a written answer, sent the same way.
 - **Enlighten me**, on its left, starts an investigator worker to dig first, in one click (`enlighten_workers: false`
-  lets the lead investigate itself): the note you typed says what to dig into (empty, it digs in general). The question
+  lets the Djinn investigate itself): the note you typed says what to dig into (empty, it digs in general). The question
   folds to one line, **Being investigated** with what you asked, out of the way of the questions that wait for you; a
   click opens it, and you may still decide now. Revised, it opens again and waits for your answer. Its rounds fold
   below the card.
@@ -357,14 +376,14 @@ Windows, install when needed), Djinn or the agent asks it as a question with the
   - Arrows (Up/Down/Left/Right) or 1–4 pick an option when focus is on the card and not in the note.
   The shortcuts stay on the card: they never intercept keys from the terminal or other inputs.
 
-Your answer goes to the lead and the workers. An answered question is a decision. From a terminal,
-`djinn question answer <question> <choice>` answers a question; Djinn marks the lead terminal with `$DJINN_LEAD`,
-so an answer typed by the lead is attributed to it without echoing back to its own terminal, whereas an answer
-typed in a plain shell is attributed to the developer and reaches the lead. When a question is answered in
-any wish, Djinn queues the answer for the one lead, which waits on `djinn lead watch`: nothing is typed in the lead's
+Your answer goes to the Djinn and the workers. An answered question is a decision. From a terminal,
+`djinn question answer <question> <choice>` answers a question; the Djinn's terminal is marked with `$DJINN_LEAD`,
+so an answer typed by the Djinn is attributed to it without echoing back to its own terminal, whereas an answer
+typed in a plain shell is attributed to the developer and reaches the Djinn. When a question is answered in
+any wish, the answer is queued for the Djinn, which waits on `djinn lead watch`: nothing is typed in its
 terminal while its watch runs, so nothing lands in your prompt box; without a watch, Djinn types one short line,
-"Djinn: N events waiting, run djinn lead watch". If no lead runs, Djinn marks the question as waiting for a lead until
-the lead acknowledges it, and the brief lists it under **Open answers without a lead.**
+"Djinn: N events waiting, run djinn lead watch". If the Djinn does not run, the question is marked as waiting for it until
+the Djinn acknowledges it, and the brief lists it under **Open answers without a lead.**
 
 An open question can be moved to another wish (`djinn question move <question> --wish <wish>`), with `--follow` to
 bring tasks following this decision along with it. A question no longer relevant can be withdrawn without an answer
@@ -375,22 +394,22 @@ shows the wish, a button answers it (one per option, or **Yes**). The browser sh
 the app bundle. The **Global shortcut**, in Connections & preferences, brings Djinn forward on the wish with the
 newest question (Ctrl+Alt+Space by default, Ctrl+Cmd+J on macOS; empty turns it off).
 
-**A request that belongs elsewhere.** When something unrelated comes up, the lead hands it to Djinn, which asks you
+**A request that belongs elsewhere.** When something unrelated comes up, the Djinn hands it on and the window asks you
 "Where does this request go?": file it in an existing wish, keep it where it is, or open a new one: the window opens it,
-and the one lead is told of it. Djinn ranks the wishes by their titles, projects and latest blocks, without a model.
+and the Djinn is told of it. Djinn ranks the wishes by their titles, projects and latest blocks, without a model.
 
 ## Everything for you is a question
 
-Whatever the lead needs from you comes as a question, even without options when it really does not know what to
-think: its analysis is in the card's context. A question you answered is resolved: the lead does not bring it back,
+Whatever the Djinn needs from you comes as a question, even without options when it really does not know what to
+think: its analysis is in the card's context. A question you answered is resolved: the Djinn does not bring it back,
 and asks a new one only on a real doubt.
 
-On an open question, **Mark read** tells the lead you have seen it, without a word; the lead reads it in its brief and
+On an open question, **Mark read** tells the Djinn you have seen it, without a word; it finds it in its brief and
 with `djinn mark list`.
 
 ### The For agents tab
 
-What the lead and the workers write down for one another is a block: a hand-off, a reference, a report. Blocks are
+What the Djinn and the workers write down for one another is a block: a hand-off, a reference, a report. Blocks are
 not for you: they wait in the last tab of the wish, **For agents**, with their count, each folded under its title. A
 click opens one: Markdown, shown as written, where a `mermaid` code block is drawn as a diagram, which **Expand**
 enlarges. A block of kind `decision` shows in the **Decisions** tab instead, the log blocks in the journal.
@@ -401,7 +420,8 @@ report's title, which opens it in place.
 
 ## Grant a wish
 
-When every task is finished, none done with problems, and no question is open, Djinn proposes to grant the wish:
+When every task is finished, none done with refused calls the Djinn has not decided about yet, and no question is
+open, Djinn proposes to grant the wish:
 **My wish is granted**. Only
 you grant a wish; you may grant it earlier. From a terminal: `djinn wish grant <wish-id>`.
 
@@ -421,29 +441,33 @@ stop).
 ## Watchers and wish templates
 
 A *watcher* is a task that runs a command, with no agent and no model: a pipeline, a merge request, a queue. Each
-new paragraph it prints wakes the lead. Its card shows the first line of its last paragraph; **Pause the worker**
-holds it, **Resume the worker** lets it go on. The project must allow the command.
+new paragraph it prints wakes the Djinn. Its card shows the first line of its last paragraph; **Pause the worker**
+holds it, **Resume the worker** lets it go on. Its command runs when the project lists it in
+`.agents/permissions.txtpb`, when a skill of the project declares it (a template's or a babysit's watcher, as Djinn
+builds it), or when you allow it for yourself in the project's panel ("Watcher commands you allow") or with `djinn
+project allow <project> --watch '<command>'`: [what a watcher may run](wish-templates.md#what-a-watcher-may-run).
 
 A *wish template* turns a request that comes back (babysit a pull request, a QA run) into a wish that already knows
 how to work: a skill declares it in its `SKILL.md`. When a routed request matches it, the new wish starts its watcher
-and its lead follows the skill. When the watcher prints its "done" line, Djinn asks whether to grant the wish; it never
+and the Djinn follows the skill. When the watcher prints its "done" line, Djinn asks whether to grant the wish; it never
 grants one itself. How to write one: [wish templates](wish-templates.md).
 
 ## Babysitting pull requests
 
 When a task opens a pull or merge request (`gh pr create`, `glab mr create`), Djinn watches it at once, in the same
-wish: once the task ends, a watcher task starts on it, part of the task's azima, and the lead hears `W5 opened MR
-!123: W7 babysits it`. Each change the watcher prints (a failed pipeline, a comment, a conflict) wakes the lead, which
+wish: once the task ends, a watcher task starts on it, part of the task's azima, and the Djinn hears `W5 opened MR
+!123: W7 babysits it`. Each change the watcher prints (a failed pipeline, a comment, a conflict) wakes the Djinn, which
 follows the project's babysit skill; the watcher ends when the request is merged. A request already babysat is not
-watched twice. The project names its watcher in one of its skills (`metadata.djinn.babysit`); without one, nothing
-starts. `babysit: false` in the project's settings turns it off. The lead can start one by hand: `djinn task spawn
+watched twice, even by a watcher the Djinn spawned by hand on the project's babysit command: it hears
+`W2 already babysits it`. The project names its watcher in one of its skills (`metadata.djinn.babysit`); without one, nothing
+starts. `babysit: false` in the project's settings turns it off. The Djinn can start one by hand: `djinn task spawn
 <wish> --title "Babysit W5's MR" --babysit --after W5`. How to declare it: [babysitting what a task
 opens](wish-templates.md#babysitting-what-a-task-opens).
 
 ## The inbox
 
 A skill may also declare a *source*: a command that prints what comes from outside, like the merge requests assigned
-to you. Each item becomes a card in the **Inbox**, at the top of the flight plan, with where Djinn proposes to send it:
+to you. Each item becomes a card in the **Inbox**, at the top of the flying carpet, with where Djinn proposes to send it:
 a wish to file it in, or a new one. The side panel counts the new items, and the window shows each one as a system
 notification. Nothing is made until you click; **Rub the lamp** takes the recommended route, **Dismiss** sets the item
 aside for good. Djinn only reads a source: it never comments, reacts or replies. `djinn inbox list` lists the items.
@@ -471,7 +495,13 @@ on one line, its commit, the branch and wish it comes from, and against the runn
 than the running Djinn on 3 commits" when the running Djinn holds commits it lacks; **Details** unfolds the tasks merged
 since, each with its title and folded summary, and the commits' titles, folded. The build of the branch the running
 Djinn was built from comes first; the other branches' builds are folded under one line that names them, each with its
-own **Install and restart** and ×. Nothing installs before your click; × hides that build until a newer one comes. With `install_questions: when_needed`,
+own **Install and restart** and ×. Nothing of another branch installs before your click; × hides that build until a
+newer one comes. A build of the running Djinn's own line (its branch, or one that carries it on), pushed past the
+push checks, installs by itself, at low priority, once no gate runs and the machine is not under pressure: the banner
+then says "Djinn local-abc1234 is ready" with what it adds, and **Restart** stays your click (the project setting
+`install_builds: false` turns it off). While an install runs, the banner says what it waits for, then which step of
+the install command runs; an install that fails, or works past its deadline (20 minutes), says why with the last lines
+its command wrote, and **Try again**. With `install_questions: when_needed`,
 Djinn raises no routine install question: the banner and post-push install are enough, and it asks only when necessary
 (e.g. a build carries a fix for a task you are waiting on, a change that takes effect after restart and matters now, or
 the running build is broken), saying why in the question; with `install_questions: never` (set in Djinn itself), no
@@ -507,17 +537,17 @@ A worker stopped by its provider's usage limit shows "Waiting for the limit", th
 
 The Lamplighter, Djinn's watchdog, wakes before it fails. A worker that prints nothing for 15 minutes, with no
 process busy and no gate held or awaited, a worker whose stream goes idle, or whose process is lost, is ended and
-continued on its session; only after three wakes in a row does its task fail, saying so, its lead told once. A
+continued on its session; only after three wakes in a row does its task fail, saying so, the Djinn told once. A
 watcher (`--provider watch`) is supervised apart, for as long as its wish needs it: never ended for its silence,
 which is its normal state, nor for a budget; a command of it that dies starts again in the same task, and only five
-deaths in a row fail it, its lead told why. A budget is no wake: a task is stopped, "budget exceeded", past 2 hours
+deaths in a row fail it, the Djinn told why. A budget is no wake: a task is stopped, "budget exceeded", past 2 hours
 of work in total across its runs, or a worker past 500 model turns in one run, and stays stopped; `djinn task
 continue` gives a stopped worker 500 turns again, not more time. These budgets are part of the task's
 [seal](providers.md#a-tasks-seal). A Claude worker's count grows as it works; Antigravity
 reports its own at the end of each answer, Codex none.
 
-At every start, the lead of the first active wish comes back on its session, in its folder. The lead terminals come
-back after an update or a crash too, on the same sessions; not after you quit. When a newer Djinn is installed, a
+At every start, the Djinn comes back on its session, in its folder. Its terminal comes
+back after an update or a crash too, on the same session; not after you quit. When a newer Djinn is installed, a
 banner offers **Update**, with its **Release notes** when it has some: nothing restarts without that click. A Djinn
 built from a checkout is named as a build is (its commit, branch and wish, what it adds and lacks); × hides it until
 another version is installed. After the
@@ -537,15 +567,22 @@ Djinn logs what it does in `logs/` of its data folder (`~/.config/djinn/logs` on
 `~/Library/Application Support/djinn/logs` on macOS, `%AppData%\djinn\logs` on Windows):
 
 - `djinn.log`: one line per event, with its level: each call to the server (its method, how long it took, its error;
-  over a second, a warning), each command Djinn runs (git, gh, glab, the projects' checks: the program and its
-  arguments, its folder, how long it took, its exit code, and whether it was killed at its deadline), each worker
+  over a second, a warning; an internal error, an error with its whole message), each command Djinn runs (git, gh,
+  glab, the projects' checks: the program and its arguments, its folder, how long it took, its exit code, and whether
+  it was killed at its deadline; one that succeeds within a second only at debug), each error of Djinn's loops (the
+  scheduler, the integration, the pushes, the watchers: which one, which task or wish), each panic with its stack, each worker
   started and ended, the Lamplighter's acts, waits for the database or a lock over a second, a restart asked, and
   each step of a stop. It never holds a prompt, a message you wrote, or a secret. It rolls over at 10 MB and keeps
   4 older files (`djinn.log.1`, the most recent, to `djinn.log.4`): 50 MB at most, on every system. `DJINN_LOG=debug`
   adds the scheduler's and the integration's passes and the window's streams; `warn` keeps only what went wrong.
 - `console.log`: what a Djinn started in the background prints (the window's toolkit, a crash), rolled over at a start
   past 10 MB.
+- `crash.txt`: what Djinn died of, written by Go itself when a panic or a fatal error ends it; empty while Djinn
+  runs. The next start renames it `crash-<time>.txt`, logs it in `djinn.log`, and keeps the last 5.
 - `goroutines-<time>.txt`: where each part of Djinn waits, written on demand; the last 5 are kept.
+
+A panic in a call to the server, or in the window, is logged with its stack and Djinn goes on (the call fails with an
+internal error). Elsewhere, Djinn logs it with its stack and that it stops, then exits; the crash file says the rest.
 
 When Djinn freezes, or does not quit, do not kill it first: run `djinn debug dump`. Djinn writes where each of its
 parts waits to a new `goroutines-<time>.txt` and the command prints its path. It asks Djinn's server; a server that
@@ -555,7 +592,16 @@ A stop that takes more than 10 seconds dumps its goroutines by itself and logs t
 workers, the terminals, the database, the window and the server); after 30 seconds Djinn logs them again and exits
 with code 3 instead of hanging. A restart that hangs starts the newer Djinn before it exits.
 
-To report it, send `logs/djinn.log` and the latest `goroutines-*.txt` (and `console.log` if Djinn crashed). They
+Killing Djinn leaves nothing running behind it: its workers, watchers and checks, and the commands a worker runs
+under a gate, die with it. On Linux the kernel kills each worker at once; a small shell of Djinn's, the sentinel,
+asks what they started to stop, and kills it 5 seconds later (on macOS, the workers too); on Windows a job object
+kills them all. Djinn records each of them in `run/` of its data folder while it runs. Should one survive all the
+same, the next start stops it before it resumes any task (its start time tells it from a later process with the
+same number: Djinn never touches a process it did not start), and the restart line tells the Djinn: "2 orphans
+stopped: W488's watcher ×2".
+
+To report it, send `logs/djinn.log` and the latest `goroutines-*.txt` (and the latest `crash-*.txt` and `console.log`
+if Djinn crashed). They
 name your projects' folders and branches and your tasks' codes; nothing else of yours.
 
 ## More

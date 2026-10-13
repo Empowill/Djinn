@@ -119,7 +119,7 @@ func TestRefusedCallsToldAndCarried(t *testing.T) {
 	}
 	command := "djinn wish allow " + wishID + " --mode auto --project-id " + projectID
 	want := "Djinn: " + task.GetCode() + " done, 6 commands refused (permission); " + command +
-		" lets the agent judge them. Its final note: Half of the study: djinn was refused, the questions are below."
+		" would let the agent judge them, a right only the developer grants. Its final note: Half of the study: djinn was refused, the questions are below."
 	if lines[0] != want {
 		t.Errorf("ended event\n got %s\nwant %s", lines[0], want)
 	}
@@ -143,10 +143,10 @@ func TestDoneLine(t *testing.T) {
 		wantDigest bool
 	}{
 		{task: task, note: "Feasible.", wantDigest: true, want: "Djinn: W1 done, 6 commands refused (permission): djinn, ls, git, …; djinn wish allow " +
-			wishID + " --mode auto lets the agent judge them. Its final note: Feasible."},
+			wishID + " --mode auto would let the agent judge them, a right only the developer grants. Its final note: Feasible."},
 		{task: &planv1.Task{Code: "W2", WishId: wishID, Refused: &planv1.TaskRefusals{Count: 1, Names: []string{"gcloud"}}},
 			wantDigest: true, want: "Djinn: W2 done, 1 command refused (permission): gcloud; djinn wish allow " + wishID +
-				" --mode auto lets the agent judge them. It left no final note."},
+				" --mode auto would let the agent judge them, a right only the developer grants. It left no final note."},
 		{task: &planv1.Task{Code: "W3"}, note: "Done.", why: "nothing to merge into djinn/dew",
 			want: "Djinn: W3 done, nothing to merge into djinn/dew. Its final note: Done."},
 		{task: &planv1.Task{Code: "W4"}, want: "Djinn: W4 done. It left no final note."},

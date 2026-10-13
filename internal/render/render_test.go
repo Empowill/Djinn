@@ -759,7 +759,7 @@ func TestRounds(t *testing.T) {
 		t.Errorf("%d questions shown investigated, want Q01 only", n)
 	}
 	for _, s := range []string{`class="q dig" id="q-Q01"`, "Revised ×1", `Rounds <span class="n">3</span>`,
-		"Asked to investigate: How long does it burn?", "Revised by the lead"} {
+		"Asked to investigate: How long does it burn?", "Revised by the Djinn"} {
 		if !strings.Contains(html, s) {
 			t.Errorf("the page lacks %q", s)
 		}
@@ -791,7 +791,7 @@ func TestFinishedNewestFirst(t *testing.T) {
 		}
 		last = i
 	}
-	for _, want := range []string{`<p class="closed">Closed by you: merged in Git</p>`, `<p class="closed">Closed by the lead</p>`} {
+	for _, want := range []string{`<p class="closed">Closed by you: merged in Git</p>`, `<p class="closed">Closed by the Djinn</p>`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("the page lacks %q", want)
 		}

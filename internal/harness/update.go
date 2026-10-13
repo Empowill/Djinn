@@ -20,7 +20,7 @@ import (
 // A task not started (planned, waiting) may change everything; a running or paused task may change its title only;
 // a finished task (done, failed, stopped, cut short) may change title, provider/model, prompt (for its next continue),
 // azima, and integration (none clears it, pending puts a done task's work back in line); never its dependencies once
-// it ran. An azima changes its branch only (nameAzimaBranch).
+// it ran. An azima changes its title (renameAzima) or its branch (nameAzimaBranch) only.
 func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.TaskServiceUpdateRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
 	h.answering.Lock()
@@ -44,7 +44,12 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		return h.nameAzimaBranch(ctx, procedure, req, task)
 	}
 	if task.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is an azima of the plan: no worker runs it", task.GetCode()))
+		if req.Title == nil || req.Prompt != nil || req.Provider != nil || req.Model != nil || req.PartOf != nil || req.After != nil ||
+			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"task %s is an azima of the plan: no worker runs it; only its title, or its branch, changes", task.GetCode()))
+		}
+		return h.renameAzima(ctx, procedure, req, task)
 	}
 
 	titleGiven := req.Title != nil
@@ -236,11 +241,7 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 			return err
 		}
 		if promptGiven {
-			seq, err := lastSeq(ctx, tx, id)
-			if err != nil {
-				return err
-			}
-			if err := tx.Put(newEvent(id, seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: *req.Prompt})); err != nil {
+			if err := putEvents(ctx, tx, newEvent(id, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: *req.Prompt})); err != nil {
 				return err
 			}
 		}
@@ -255,11 +256,7 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 			}
 		}
 		if integrationGiven && t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING {
-			seq, err := lastSeq(ctx, tx, id)
-			if err != nil {
-				return err
-			}
-			if err := tx.Put(newEvent(id, seq+1, Event{
+			if err := putEvents(ctx, tx, newEvent(id, Event{
 				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: pending, to be merged into the integration branch",
 			})); err != nil {
 				return err
@@ -311,4 +308,38 @@ func (h *Harness) pendAgain(task, t *planv1.Task) error {
 	}
 	return connect.NewError(connect.CodeFailedPrecondition,
 		fmt.Errorf("task %s's work: Djinn does not integrate it: its branch brings nothing, or its project is not in Git", task.GetCode()))
+}
+
+// renameAzima gives an azima a new title, whatever its state, and writes it back to its plan file's heading when it has
+// one: djinn plan sync then reads the same title again.
+func (h *Harness) renameAzima(ctx context.Context, procedure string, req *planv1.TaskServiceUpdateRequest, azima *planv1.Task) (*planv1.Task, error) {
+	title := strings.TrimSpace(req.GetTitle())
+	if title == "" || strings.ContainsAny(title, "\r\n") {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("azima %s: a title is one line, not empty", azima.GetCode()))
+	}
+	if title == azima.GetTitle() {
+		return h.withAzima(ctx, azima)
+	}
+	wish, err := store.Get[*planv1.Wish](ctx, h.store, azima.GetWishId())
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if file := resolvePlanFilePath(ctx, h.store, azima, wish); file != "" {
+		if _, err := plan.WriteTitle(file, azima.GetCode(), title); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("write the title of %s: %w", azima.GetCode(), err))
+		}
+	}
+	t := proto.CloneOf(azima)
+	t.Title = title
+	err = h.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal(plan.CallerActor(ctx), procedure, req); err != nil {
+			return err
+		}
+		return tx.Put(t)
+	})
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	h.notify()
+	return h.withAzima(ctx, t)
 }

@@ -1,4 +1,4 @@
-// The decision log, a tab of its own in a wish's view and in the flight plan: every decision taken, the latest first,
+// The decision log, a tab of its own in a wish's view and in the flying carpet: every decision taken, the latest first,
 // read only. No button: an answered question was answered, a decision block was written; nothing asks to be read or
 // approved again. Each row opens with its subject's emoji; who took it follows, in the status language: the developer
 // in the human tone, with an icon and a word, an agent in plain words. A row links to the tasks it led to, and a task
@@ -33,7 +33,7 @@ export function DecisionLog<T extends { item: Decision }>({
   items: readonly T[];
   // How many decisions there are in all, from the server; without it, items.length.
   total?: number;
-  // Where a decision comes from, in the flight plan of several wishes: its wish.
+  // Where a decision comes from, in the flying carpet of several wishes: its wish.
   origin?: (item: T) => ReactNode;
   // The decision's wish has no lead session: its answer told no lead.
   noLead?: (item: T) => boolean;

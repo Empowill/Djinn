@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -140,6 +140,38 @@ func (w *Wishes) Notify(ctx context.Context, e *planv1.LeadEvent) error {
 	return nil
 }
 
+// notifyInPlace queues e for the lead as Notify does, in place of the waiting events replaces picks among those that
+// wait, oldest first: they are dropped in the transaction that queues e. replaces may fill e from them.
+func (w *Wishes) notifyInPlace(
+	ctx context.Context, e *planv1.LeadEvent, replaces func(waiting []*planv1.LeadEvent) []*planv1.LeadEvent,
+) error {
+	err := w.Store.Tx(ctx, func(tx *store.Tx) error {
+		waiting, err := waitingEvents(ctx, tx)
+		if err != nil {
+			return err
+		}
+		gone := replaces(waiting)
+		e.Id, e.CreateTime = store.NewID(), timestamppb.New(w.now())
+		e.AckSessionId, e.AckTime = "", nil
+		if err := tx.Journal(actor, methodLeadEvent, e); err != nil {
+			return err
+		}
+		for _, o := range gone {
+			if err := tx.Delete(o); err != nil {
+				return err
+			}
+		}
+		return tx.Put(e)
+	})
+	if err != nil {
+		return err
+	}
+	l := w.leadWatch()
+	l.signal()
+	w.remindLead(l.timing.remind)
+	return nil
+}
+
 // RemindLead types the line that says events wait, after a grace for the lead's watch to come back, when events
 // wait and no watch does: djinn up calls it once it runs, so that a lead whose watch died with the last djinn up
 // hears of what happened meanwhile, the restart first.
@@ -170,7 +202,10 @@ func (w *Wishes) remindLead(after time.Duration) {
 		l.timer.Stop()
 	}
 	l.due = at
-	l.timer = time.AfterFunc(time.Until(at), w.checkLead)
+	l.timer = time.AfterFunc(time.Until(at), func() {
+		defer logx.Crash("leadwatch")
+		w.checkLead()
+	})
 }
 
 // checkLead types the line that says events wait, unless a watch waits for them, one returned within the grace,
@@ -180,7 +215,7 @@ func (w *Wishes) checkLead() {
 	defer cancel()
 	lead, err := store.Get[*planv1.Lead](ctx, w.Store, "lead")
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		log.Printf("djinn: remind the lead: %v", err)
+		logx.L().Error("remind the lead", "loop", "leadwatch", "err", err)
 		return
 	}
 	l := w.leadWatch()
@@ -201,7 +236,7 @@ func (w *Wishes) checkLead() {
 	}
 	events, err := waitingEvents(ctx, w.Store)
 	if err != nil {
-		log.Printf("djinn: remind the lead: %v", err)
+		logx.L().Error("remind the lead", "loop", "leadwatch", "err", err)
 		return
 	}
 	if len(events) == 0 {
@@ -209,7 +244,7 @@ func (w *Wishes) checkLead() {
 	}
 	if err := w.Tell(ctx, "", WaitingLine(len(events))); err != nil {
 		if !errors.Is(err, ErrNoLead) {
-			log.Printf("djinn: remind the lead: %v", err)
+			logx.L().Warn("remind the lead", "loop", "leadwatch", "err", err)
 		}
 		return
 	}

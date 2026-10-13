@@ -121,7 +121,10 @@ func TestLeadWatchBatches(t *testing.T) {
 	timing := quick
 	timing.quiet, timing.settleMax = 500*time.Millisecond, 10*time.Second
 	w.leadWatch().timing = timing
+	ended := make(chan struct{})
+	defer func() { <-ended }() // A watch that failed early leaves no notify to a test that ended.
 	go func() {
+		defer close(ended)
 		time.Sleep(30 * time.Millisecond)
 		notify(t, w, planv1.LeadEventKind_LEAD_EVENT_KIND_MERGED, "W1", "Djinn: W1 merged into main as 0123abcd")
 		time.Sleep(30 * time.Millisecond)
@@ -150,9 +153,12 @@ func TestLeadWatchBatches(t *testing.T) {
 // TestLeadWatchSettleIsCapped: events that never pause are returned after quick.settleMax anyway.
 func TestLeadWatchSettleIsCapped(t *testing.T) {
 	w, s, _ := leadWatchFixture(t, planv1.Provider_PROVIDER_CLAUDE)
-	stop := make(chan struct{})
-	defer close(stop)
+	// The ticks end before the test does: one notified after it ended, the store closed by its cleanup, failed a test
+	// that had completed, a panic that ended the package's test binary (W530, Windows CI).
+	stop, ended := make(chan struct{}), make(chan struct{})
+	defer func() { close(stop); <-ended }()
 	go func() {
+		defer close(ended)
 		for i := 0; ; i++ {
 			select {
 			case <-stop:

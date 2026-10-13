@@ -49,6 +49,9 @@ Each one is a decision. Changing one is a discussion first.
 - **Cross-agent first.** A project behaves the same whatever the agent. `AGENTS.md` holds the
   instructions, `.agents/` the rules; Djinn translates them for each agent at launch. A file of
   one agent's own (`.claude/settings.json`) follows from `.agents/`, and a test checks it.
+- **The lead's memory lives in Djinn.** How to lead, learnt from past wishes, is kept in [`lead/notes/`](lead/README.md),
+  one note per file, built into the binary and read only at run time, for any lead whatever its agent. The brief
+  lists them; `djinn lead notes <name>` prints one. A note changes by pull request, like any doc.
 - **Auto mode by default.** Agents run in their own auto mode, trusted as their providers
   document it.
 - **A worker's rights come from where it runs.** Outside any project: read only. In a project:
@@ -109,7 +112,8 @@ gets switched off.
 
 ## Getting set up
 
-To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`docs/handoff-mac-codex.md`](docs/handoff-mac-codex.md). To work on it:
+To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`docs/handoff-mac-codex.md`](docs/handoff-mac-codex.md). The traps the code
+has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). To work on it:
 
 **Prerequisites**
 - [Go](https://go.dev/dl/) 1.25+, with CGO for the native window.
@@ -283,9 +287,9 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
   ([T07](plan/8e8d3d76-orchestrator.md)).
 - `djinn backup [--file <archive>]` copies the data folder, even while Djinn runs; `djinn backup restore <archive>`
   puts it back, Djinn stopped ([`docs/backup.md`](docs/backup.md)).
-- One lead leads every wish, in the window's terminal "lead". `djinn lead set <session-id> [--provider <agent>]
+- One lead, the Djinn, leads every wish, in the window's terminal tab "The Djinn". `djinn lead set <session-id> [--provider <agent>]
   [--directory <folder>]` records its session; `djinn lead get` shows it; `djinn lead resume` resumes it, starting
-  Djinn if needed, and `--wish-id <wish-id>` shows the wish and focuses the lead on it (the wish's Lead button does the
+  Djinn if needed, and `--wish-id <wish-id>` shows the wish and focuses the lead on it (the wish's Talk to the Djinn button does the
   same). A second `djinn up` brings the window to the front. `djinn lead tell "…" [--wish-id <wish-id>]` writes to the
   lead in its terminal as if you typed it there, line breaks kept: it waits while you type there or a choice is on
   screen; about a wish, it starts with "About wish <title> (<id>):". It never starts the lead, nor types into a shell.
@@ -298,7 +302,7 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
 - `djinn lead brief` (or `djinn brief`): every active wish at once and how to lead them, computed from the store; every
   new lead, of any agent, starts by running it. `djinn wish brief <wish-id>`: where one wish stands, which the lead
   reads when focused on it. `djinn wish describe <wish-id> --text "…"` gives the wish the few lines it opens with
-  (also edited under the wish's title). `djinn lead resume --provider antigravity` (or the arrow beside Lead) starts a
+  (also edited under the wish's title). `djinn lead resume --provider antigravity` (or the arrow beside Talk to the Djinn) starts a
   lead of another agent than the recorded one's.
   `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `go tool task
   bench-workers` (paid, refuses without consent) compares the ways Djinn starts a worker ([T14](plan/8ce817da-cost.md)).
@@ -319,7 +323,7 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
 - With the window, what waits for you in an active wish shows as a system notification: a question (a button
   answers it), a task that waits or failed, a wish ready to review; a click shows the wish there. None for the wish
   the window shows while it is in front. A new inbox item shows as one too, and the side panel counts the new ones on
-  the flight plan. On macOS it needs the `.app` bundle (T19) and your permission: Djinn asks at its first start, and
+  the flying carpet. On macOS it needs the `.app` bundle (T19) and your permission: Djinn asks at its first start, and
   the settings show the state. A headless build and `--browser` show none.
 - `go tool task check-window`: open a window a few seconds and check that a stream reaches it
   value by value. PASS or FAIL.
@@ -332,7 +336,11 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
 - **Tasks live in [`plan/`](plan/README.md)**, one file each. The README checklist is the only
   tracker.
 - **Every change is reviewed** by a maintainer.
-- **How to release**: create the release on GitHub's page, from main (or push a tag `vX.Y.Z`).
+- **How to release**: write the notes first, `docs/releases/vX.Y.Z.md`, with the
+  [`release-notes`](.agents/skills/release-notes/SKILL.md) skill, which also gives the commands. From main, `go tool
+  task release VERSION=vX.Y.Z` then `git push origin vX.Y.Z` opens a draft with every binary, published once read
+  (`gh release edit vX.Y.Z --draft=false`); `gh release create vX.Y.Z --target main --notes-file …` is quicker but
+  its tag has no `dist/`, so `go install …@vX.Y.Z` fails, and its binaries come some minutes after it is public.
   Before tagging or publishing, run the dry run from your branch:
   `gh workflow run release.yml --ref <branch> -f version=v0.0.0-dryrun`
   It builds every target (each Linux variant, Windows amd64 and arm64, macOS universal and `Djinn.app`), verifies

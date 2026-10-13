@@ -71,11 +71,30 @@ export function Orb({
     </span>
   );
 }
-export function Machine({ active = true }: { active?: boolean }) {
+// How long the machine moves once the plan moved. Its animations repaint the whole drawing on each frame: WebKit
+// cannot compose the parts of an SVG, and a machine moving all the time took a third of a core at 4K (W513).
+const MACHINE_MOVES_MS = 8_000;
+
+// Machine is the plan's drawing. Active, workers run; it moves for a while each time pulse changes (a worker started or
+// ended), then rests.
+export function Machine({
+  active = true,
+  pulse = "",
+}: {
+  active?: boolean;
+  pulse?: string;
+}) {
   const id = useId().replace(/:/g, "");
+  const [moving, setMoving] = useState(active);
+  useEffect(() => {
+    setMoving(active);
+    if (!active) return;
+    const timer = setTimeout(() => setMoving(false), MACHINE_MOVES_MS);
+    return () => clearTimeout(timer);
+  }, [active, pulse]);
   return (
     <svg
-      className={`machine ${active ? "active" : ""}`}
+      className={`machine ${active ? "active" : ""} ${moving ? "moving" : ""}`}
       viewBox="0 0 560 340"
       fill="none"
       aria-label={t("visuals.team_illustration")}

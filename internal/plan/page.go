@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,6 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -266,9 +266,11 @@ func (p *Pages) changed(ms []proto.Message) {
 // Run keeps the synced pages up to date until ctx ends. It first takes back the pages of the data directory, and
 // renders them again.
 func (p *Pages) Run(ctx context.Context) {
-	entries, err := os.ReadDir(filepath.Join(p.Home, PagesDir))
+	defer logx.Crash("pages")
+	dir := filepath.Join(p.Home, PagesDir)
+	entries, err := os.ReadDir(dir)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		log.Printf("djinn: pages: %v", err)
+		logx.L().Error("read the synced pages", "loop", "pages", "path", dir, "err", err)
 	}
 	p.mu.Lock()
 	for _, e := range entries {
@@ -306,6 +308,9 @@ func (p *Pages) flush(ctx context.Context) {
 	for id := range tasks {
 		t, err := store.Get[*planv1.Task](ctx, p.store, id)
 		if err != nil {
+			if !errors.Is(err, store.ErrNotFound) && ctx.Err() == nil {
+				logx.L().Error("read a task for its page", "loop", "pages", "task", id, "err", err)
+			}
 			continue
 		}
 		p.changed([]proto.Message{t})
@@ -316,7 +321,7 @@ func (p *Pages) flush(ctx context.Context) {
 	p.mu.Unlock()
 	for id := range dirty {
 		if err := p.render(ctx, id, false); err != nil && ctx.Err() == nil {
-			log.Printf("djinn: render the page of wish %s: %v", id, err)
+			logx.L().Error("render a page", "loop", "pages", "wish", id, "err", err)
 		}
 	}
 }

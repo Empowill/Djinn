@@ -100,7 +100,7 @@ func (m *Marks) Put(
 		then(ctx)
 	}
 	if answered != nil {
-		afterAnswer(ctx, m.Answered, m.Told, answered)
+		afterAnswer(ctx, m.Answered, m.Told, answered, nil)
 	}
 	if endorsed != nil && m.Approved != nil {
 		m.Approved(ctx, proto.CloneOf(endorsed))

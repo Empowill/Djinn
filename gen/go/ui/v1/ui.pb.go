@@ -99,6 +99,9 @@ const (
 	InstallStep_INSTALL_STEP_BUILDING InstallStep = 3
 	// Installed: Djinn restarts on it.
 	InstallStep_INSTALL_STEP_RESTARTING InstallStep = 4
+	// It failed, or passed its deadline and Djinn stopped it: Installing.error says why, Installing.log what its command
+	// wrote last. Kept until another install starts, or the build is proposed no more.
+	InstallStep_INSTALL_STEP_FAILED InstallStep = 5
 )
 
 // Enum value maps for InstallStep.
@@ -109,6 +112,7 @@ var (
 		2: "INSTALL_STEP_PREPARING",
 		3: "INSTALL_STEP_BUILDING",
 		4: "INSTALL_STEP_RESTARTING",
+		5: "INSTALL_STEP_FAILED",
 	}
 	InstallStep_value = map[string]int32{
 		"INSTALL_STEP_UNSPECIFIED": 0,
@@ -116,6 +120,7 @@ var (
 		"INSTALL_STEP_PREPARING":   2,
 		"INSTALL_STEP_BUILDING":    3,
 		"INSTALL_STEP_RESTARTING":  4,
+		"INSTALL_STEP_FAILED":      5,
 	}
 )
 
@@ -332,7 +337,7 @@ func (x *UiServiceGetEnvironmentResponse) GetShortcut() *Shortcut {
 }
 
 // The global shortcut that brings the window forward from anywhere on the desktop, on the wish with the newest open
-// question, else on the flight plan.
+// question, else on the flying carpet.
 type Shortcut struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The chord in effect, such as Ctrl+Alt+Space; empty when off.
@@ -1225,15 +1230,18 @@ type UiServiceWatchUpdateResponse struct {
 	// local install, which has none.
 	NotesUrl string `protobuf:"bytes,4,opt,name=notes_url,json=notesUrl,proto3" json:"notes_url,omitempty"`
 	// The last push of each integration branch, in a project whose settings name an install command, and not installed
-	// since: one per branch, the branch the running Djinn was built from first. The window proposes to install each and
-	// restart on it, the other branches' folded.
+	// since: one per branch, the branch the running Djinn was built from first, then those that carry its line on
+	// (Build.continues). The window proposes to install each and restart on it, the other branches' folded.
 	Builds []*Build `protobuf:"bytes,7,rep,name=builds,proto3" json:"builds,omitempty"`
 	// The install of a build that runs now (Update), and where it stands; unset for none. The window says it in place
 	// of the build's buttons: what it waits for, then that it builds, then that Djinn restarts.
 	Installing *Installing `protobuf:"bytes,6,opt,name=installing,proto3" json:"installing,omitempty"`
 	// The newer Djinn of version ready, named as a build is: its commit, the branch and wish it comes from, and how it
 	// compares with the running Djinn. Unset when no project holds its commit (a release no checkout knows yet).
-	ReadyBuild    *Build `protobuf:"bytes,8,opt,name=ready_build,json=readyBuild,proto3" json:"ready_build,omitempty"`
+	ReadyBuild *Build `protobuf:"bytes,8,opt,name=ready_build,json=readyBuild,proto3" json:"ready_build,omitempty"`
+	// The newer Djinn of version ready is at the path of the running one already: Update only restarts on it. False for
+	// a release found, which Update downloads first.
+	Installed     bool `protobuf:"varint,9,opt,name=installed,proto3" json:"installed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1315,6 +1323,13 @@ func (x *UiServiceWatchUpdateResponse) GetReadyBuild() *Build {
 		return x.ReadyBuild
 	}
 	return nil
+}
+
+func (x *UiServiceWatchUpdateResponse) GetInstalled() bool {
+	if x != nil {
+		return x.Installed
+	}
+	return false
 }
 
 type UiServiceWatchRequest struct {
@@ -1416,7 +1431,7 @@ func (x *UiServiceWatchResponse) GetLoad() *v1.LoadServiceWatchResponse {
 	return nil
 }
 
-// Installing is an install of a build that runs now, and where it stands.
+// Installing is an install of a build that runs now, and where it stands; or the last one, when it failed.
 type Installing struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The commit being installed.
@@ -1424,7 +1439,16 @@ type Installing struct {
 	Step InstallStep `protobuf:"varint,2,opt,name=step,proto3,enum=ui.v1.InstallStep" json:"step,omitempty"`
 	// What it waits for, while its step is waiting: another install, a gate and who holds it, the machine under
 	// pressure. Empty otherwise.
-	Waiting       string `protobuf:"bytes,3,opt,name=waiting,proto3" json:"waiting,omitempty"`
+	Waiting string `protobuf:"bytes,3,opt,name=waiting,proto3" json:"waiting,omitempty"`
+	// The step of the install command that runs, as its output names it: go-task's "task: [ui] npm run build" is
+	// "ui: npm run build". Empty before the first, and for a command that names none.
+	Doing string `protobuf:"bytes,4,opt,name=doing,proto3" json:"doing,omitempty"`
+	// Djinn installs it by itself: a build of the running Djinn's line (Build.auto).
+	Auto bool `protobuf:"varint,5,opt,name=auto,proto3" json:"auto,omitempty"`
+	// Why it failed (INSTALL_STEP_FAILED): its command's exit, or the deadline it passed.
+	Error string `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
+	// The last lines its command wrote, when it failed.
+	Log           []string `protobuf:"bytes,7,rep,name=log,proto3" json:"log,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1478,6 +1502,34 @@ func (x *Installing) GetWaiting() string {
 		return x.Waiting
 	}
 	return ""
+}
+
+func (x *Installing) GetDoing() string {
+	if x != nil {
+		return x.Doing
+	}
+	return ""
+}
+
+func (x *Installing) GetAuto() bool {
+	if x != nil {
+		return x.Auto
+	}
+	return false
+}
+
+func (x *Installing) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *Installing) GetLog() []string {
+	if x != nil {
+		return x.Log
+	}
+	return nil
 }
 
 // TaskSummary is what a task of the build brought, and its worker's final words.
@@ -1573,8 +1625,18 @@ type Build struct {
 	ChangesCount int32 `protobuf:"varint,13,opt,name=changes_count,json=changesCount,proto3" json:"changes_count,omitempty"`
 	// The titles of the commits the running Djinn holds and the build does not, the latest first, and how many there
 	// are: the build is older than the running Djinn on them.
-	Lacks         []string `protobuf:"bytes,14,rep,name=lacks,proto3" json:"lacks,omitempty"`
-	LacksCount    int32    `protobuf:"varint,15,opt,name=lacks_count,json=lacksCount,proto3" json:"lacks_count,omitempty"`
+	Lacks      []string `protobuf:"bytes,14,rep,name=lacks,proto3" json:"lacks,omitempty"`
+	LacksCount int32    `protobuf:"varint,15,opt,name=lacks_count,json=lacksCount,proto3" json:"lacks_count,omitempty"`
+	// The line of the running Djinn this build carries on from another branch: its commit holds the running Djinn's,
+	// as when a wish moves its integration branch to one cut at the tip of the running one (W527). It names the
+	// branch the running Djinn was built from, or its short commit when no branch names it. Empty for a build of that
+	// branch itself (running), and for one that does not hold the running commit: a parallel branch.
+	Continues string `protobuf:"bytes,16,opt,name=continues,proto3" json:"continues,omitempty"`
+	// Djinn installs it by itself, at low priority, once no gate runs and the machine is not under pressure (W554): a
+	// build of the running Djinn's line (running or continues), the push checks passed, in a project whose
+	// install_builds is on, that holds the build installed last. The window then offers the restart. Other builds are
+	// only offered.
+	Auto          bool `protobuf:"varint,17,opt,name=auto,proto3" json:"auto,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1712,6 +1774,20 @@ func (x *Build) GetLacksCount() int32 {
 		return x.LacksCount
 	}
 	return 0
+}
+
+func (x *Build) GetContinues() string {
+	if x != nil {
+		return x.Continues
+	}
+	return ""
+}
+
+func (x *Build) GetAuto() bool {
+	if x != nil {
+		return x.Auto
+	}
+	return false
 }
 
 type UiServiceUpdateRequest struct {
@@ -2075,7 +2151,7 @@ func (*UiServiceOpenNotificationSettingsResponse) Descriptor() ([]byte, []int) {
 
 type UiServiceViewRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The wish the page shows; empty for none (the flight plan, a dialog of its own).
+	// The wish the page shows; empty for none (the flying carpet, a dialog of its own).
 	WishId        string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2217,7 +2293,7 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\ttilasm_id\x18\x03 \x01(\tR\btilasmId\x12!\n" +
 	"\funknown_link\x18\x04 \x01(\tR\vunknownLink\x12\x16\n" +
 	"\x06target\x18\x05 \x01(\tR\x06target\"\x1d\n" +
-	"\x1bUiServiceWatchUpdateRequest\"\xa1\x02\n" +
+	"\x1bUiServiceWatchUpdateRequest\"\xbf\x02\n" +
 	"\x1cUiServiceWatchUpdateResponse\x12\x18\n" +
 	"\acurrent\x18\x01 \x01(\tR\acurrent\x12\x14\n" +
 	"\x05ready\x18\x02 \x01(\tR\x05ready\x12\x1f\n" +
@@ -2229,21 +2305,26 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"installing\x18\x06 \x01(\v2\x11.ui.v1.InstallingR\n" +
 	"installing\x12-\n" +
 	"\vready_build\x18\b \x01(\v2\f.ui.v1.BuildR\n" +
-	"readyBuildJ\x04\b\x05\x10\x06R\x05build\"\x17\n" +
+	"readyBuild\x12\x1c\n" +
+	"\tinstalled\x18\t \x01(\bR\tinstalledJ\x04\b\x05\x10\x06R\x05build\"\x17\n" +
 	"\x15UiServiceWatchRequest\"\xc4\x01\n" +
 	"\x16UiServiceWatchResponse\x125\n" +
 	"\x04show\x18\x01 \x01(\v2!.ui.v1.UiServiceWatchShowResponseR\x04show\x12;\n" +
 	"\x06update\x18\x02 \x01(\v2#.ui.v1.UiServiceWatchUpdateResponseR\x06update\x126\n" +
-	"\x04load\x18\x03 \x01(\v2\".djinn.v1.LoadServiceWatchResponseR\x04load\"`\n" +
+	"\x04load\x18\x03 \x01(\v2\".djinn.v1.LoadServiceWatchResponseR\x04load\"\xb2\x01\n" +
 	"\n" +
 	"Installing\x12\x10\n" +
 	"\x03sha\x18\x01 \x01(\tR\x03sha\x12&\n" +
 	"\x04step\x18\x02 \x01(\x0e2\x12.ui.v1.InstallStepR\x04step\x12\x18\n" +
-	"\awaiting\x18\x03 \x01(\tR\awaiting\"Q\n" +
+	"\awaiting\x18\x03 \x01(\tR\awaiting\x12\x14\n" +
+	"\x05doing\x18\x04 \x01(\tR\x05doing\x12\x12\n" +
+	"\x04auto\x18\x05 \x01(\bR\x04auto\x12\x14\n" +
+	"\x05error\x18\x06 \x01(\tR\x05error\x12\x10\n" +
+	"\x03log\x18\a \x03(\tR\x03log\"Q\n" +
 	"\vTaskSummary\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x18\n" +
-	"\asummary\x18\x03 \x01(\tR\asummary\"\xa8\x03\n" +
+	"\asummary\x18\x03 \x01(\tR\asummary\"\xda\x03\n" +
 	"\x05Build\x12\x17\n" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1d\n" +
 	"\n" +
@@ -2263,7 +2344,9 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\rchanges_count\x18\r \x01(\x05R\fchangesCount\x12\x14\n" +
 	"\x05lacks\x18\x0e \x03(\tR\x05lacks\x12\x1f\n" +
 	"\vlacks_count\x18\x0f \x01(\x05R\n" +
-	"lacksCount\"7\n" +
+	"lacksCount\x12\x1c\n" +
+	"\tcontinues\x18\x10 \x01(\tR\tcontinues\x12\x12\n" +
+	"\x04auto\x18\x11 \x01(\bR\x04auto\"7\n" +
 	"\x16UiServiceUpdateRequest\x12\x1d\n" +
 	"\x05build\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x18@R\x05build\"o\n" +
 	"\x17UiServiceUpdateResponse\x12\x18\n" +
@@ -2288,13 +2371,14 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x16PROVIDER_STATE_MISSING\x10\x01\x12\x1d\n" +
 	"\x19PROVIDER_STATE_SIGNED_OUT\x10\x02\x12\x18\n" +
 	"\x14PROVIDER_STATE_READY\x10\x03\x12\x1a\n" +
-	"\x16PROVIDER_STATE_UNKNOWN\x10\x04*\x99\x01\n" +
+	"\x16PROVIDER_STATE_UNKNOWN\x10\x04*\xb2\x01\n" +
 	"\vInstallStep\x12\x1c\n" +
 	"\x18INSTALL_STEP_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14INSTALL_STEP_WAITING\x10\x01\x12\x1a\n" +
 	"\x16INSTALL_STEP_PREPARING\x10\x02\x12\x19\n" +
 	"\x15INSTALL_STEP_BUILDING\x10\x03\x12\x1b\n" +
-	"\x17INSTALL_STEP_RESTARTING\x10\x04*\x9f\x01\n" +
+	"\x17INSTALL_STEP_RESTARTING\x10\x04\x12\x17\n" +
+	"\x13INSTALL_STEP_FAILED\x10\x05*\x9f\x01\n" +
 	"\x12NotificationAccess\x12#\n" +
 	"\x1fNOTIFICATION_ACCESS_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fNOTIFICATION_ACCESS_UNAVAILABLE\x10\x01\x12\x1f\n" +

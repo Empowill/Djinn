@@ -228,7 +228,7 @@ func TestShortcutsSettingsFile(t *testing.T) {
 	}
 }
 
-// A press shows the active wish with the newest question that waits for you; with none, the flight plan.
+// A press shows the active wish with the newest question that waits for you; with none, the flying carpet.
 func TestShortcutShowsWhatWaits(t *testing.T) {
 	db, err := store.Open(t.Context(), "", plan.Entities()...)
 	if err != nil {

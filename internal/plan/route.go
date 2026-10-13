@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"maps"
 	"regexp"
 	"slices"
@@ -18,6 +17,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
 )
@@ -658,7 +658,7 @@ func (w *Wishes) routeTo(
 		return func(ctx context.Context) {
 			e := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_REQUEST, WishId: wish.GetId(), Text: line}
 			if err := w.Notify(ctx, e); err != nil {
-				log.Printf("djinn: wish %s: tell the lead about a request filed: %v", wish.GetId(), err)
+				logx.L().Error("tell the lead about a request filed", "wish", wish.GetId(), "err", err)
 			}
 		}, nil
 	case planv1.RouteKind_ROUTE_KIND_NEW, planv1.RouteKind_ROUTE_KIND_QUEUE, planv1.RouteKind_ROUTE_KIND_SWAP:

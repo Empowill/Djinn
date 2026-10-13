@@ -2,7 +2,7 @@
   "name": "djinn-desktop",
   "version": "0.2.1",
   "private": true,
-  "description": "A visual flight plan for agentic work",
+  "description": "A visual flying carpet for agentic work",
   "license": "Apache-2.0",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 4317",

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +15,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -43,20 +43,140 @@ func questionWorker(t *planv1.Task) bool { return dispatch.QuestionWorker(t) }
 // light tells whether the task takes no slot: a watcher, or a question worker.
 func light(t *planv1.Task) bool { return dispatch.Light(t) }
 
+// WithEnlightenWait sets how long a request to investigate waits for its investigator to start before the lead is
+// told instead: tests set a shorter one.
+func WithEnlightenWait(d time.Duration) Option { return func(h *Harness) { h.enlightenWait = d } }
+
+// defaultEnlightenWait is how long a request to investigate waits for its investigator to start: one starts in under
+// a second.
+const defaultEnlightenWait = 20 * time.Second
+
+// errStartHangs says that an investigator did not start in time: what starts it hangs.
+var errStartHangs = errors.New("the investigator did not start in time")
+
 // Enlightened starts an investigator on q, which the developer wants to know more about before answering, with
-// their note. The plan services call it once the request is stored.
+// their note. The plan services call it once the request is stored; the lead is told next, when no investigator
+// works on q (plan.Wishes.Enlightened). A start that hangs leaves q to the lead.
 func (h *Harness) Enlightened(ctx context.Context, q *planv1.Question, note string) {
-	h.askWorker(ctx, q, planv1.TaskRole_TASK_ROLE_INVESTIGATOR, note)
+	if _, err := h.startInvestigator(ctx, q, note); err != nil {
+		logx.L().Error("start an investigator", "loop", "question", "question", q.GetCode(), "err", err)
+	}
 }
 
-// askWorker starts a question worker of role on q, unless the project's settings turn them off, the wish is granted,
-// or one of that role still works on q: that one is sent the new answer or note instead.
-func (h *Harness) askWorker(ctx context.Context, q *planv1.Question, role planv1.TaskRole, note string) {
-	h.questioning.Lock()
-	defer h.questioning.Unlock()
-	if _, err := h.startQuestionWorker(ctx, q, role, note, nil); err != nil {
-		log.Printf("djinn: question %s: start its worker: %v", q.GetCode(), err)
+// startInvestigator starts an investigator on q, with the developer's note, and returns it; nil when none starts. It
+// waits for the start h.enlightenWait at most, then gives up with errStartHangs: the start of Q259 and Q262 waited
+// behind one that a deadlock held (W549), and the lead never heard of them. The start goes on in the background: an
+// investigator that starts late works beside the lead, which was told; Close waits for it.
+func (h *Harness) startInvestigator(ctx context.Context, q *planv1.Question, note string) (*planv1.Task, error) {
+	type started struct {
+		task *planv1.Task
+		err  error
 	}
+	done := make(chan started, 1)
+	h.wg.Add(1)
+	go func() {
+		defer logx.Crash("question", "question", q.GetCode())
+		defer h.wg.Done()
+		h.questioning.Lock()
+		defer h.questioning.Unlock()
+		t, err := h.startQuestionWorker(ctx, q, planv1.TaskRole_TASK_ROLE_INVESTIGATOR, note, nil)
+		done <- started{t, err}
+	}()
+	wait := cmp.Or(h.enlightenWait, defaultEnlightenWait)
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case s := <-done:
+		return s.task, s.err
+	case <-timer.C:
+		return nil, fmt.Errorf("%w (%s)", errStartHangs, wait)
+	}
+}
+
+// ResumeInvestigations follows up each request to investigate that was left without one: djinn up stopped, or hung
+// until it was made to quit, between storing the request and starting its investigator or telling the lead, and the
+// question stayed under investigation with no one on it (W536). Each one gets its investigator now, or else the
+// lead's event, once: a request that an investigator took on, or the lead heard of, is followed up already. djinn
+// up calls it once the lead's events go out; it works in the background, and Close waits for it.
+func (h *Harness) ResumeInvestigations() {
+	h.wg.Add(1)
+	go func() {
+		defer logx.Crash("question")
+		defer h.wg.Done()
+		h.resumeInvestigations(h.ctx)
+	}()
+}
+
+// resumeInvestigations is ResumeInvestigations, done now.
+func (h *Harness) resumeInvestigations(ctx context.Context) {
+	questions, err := store.List[*planv1.Question](ctx, h.store, nil)
+	if err != nil {
+		logx.L().Error("list the questions under investigation", "loop", "question", "err", err)
+		return
+	}
+	for _, q := range questions {
+		if !plan.Investigating(q) {
+			continue
+		}
+		if err := h.resumeInvestigation(ctx, q); err != nil {
+			logx.L().Error("follow up a request to investigate", "loop", "question", "wish", q.GetWishId(),
+				"question", q.GetCode(), "err", err)
+		}
+	}
+}
+
+// resumeInvestigation follows up the last request to investigate q, unless it was: its investigator, or else the
+// lead, is told.
+func (h *Harness) resumeInvestigation(ctx context.Context, q *planv1.Question) error {
+	rounds := q.GetRounds()
+	asked := rounds[len(rounds)-1]
+	wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
+	if err != nil || wish.GetState() == planv1.WishState_WISH_STATE_GRANTED {
+		return err
+	}
+	if followed, err := h.investigationFollowed(ctx, q, asked); err != nil || followed {
+		return err
+	}
+	t, err := h.startInvestigator(ctx, q, asked.GetNote())
+	if t != nil {
+		return nil
+	}
+	if err != nil {
+		logx.L().Error("start an investigator", "loop", "question", "question", q.GetCode(), "err", err)
+	}
+	err = h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN, q.GetWishId(), q.GetCode(),
+		plan.EnlightenLine(q, asked.GetNote(), ""))
+	if errors.Is(err, plan.ErrNoLead) {
+		return nil
+	}
+	return err
+}
+
+// investigationFollowed tells whether the request to investigate q, asked, was followed up: an investigator still
+// works on q, or one was made since, or the lead was told of q since.
+func (h *Harness) investigationFollowed(ctx context.Context, q *planv1.Question, asked *planv1.Round) (bool, error) {
+	if t, err := plan.QuestionWorkerOf(ctx, h.store, q, planv1.TaskRole_TASK_ROLE_INVESTIGATOR); err != nil || t != nil {
+		return t != nil, err
+	}
+	since := asked.GetCreateTime().AsTime()
+	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": q.GetWishId()})
+	if err != nil {
+		return false, err
+	}
+	if slices.ContainsFunc(tasks, func(t *planv1.Task) bool {
+		return t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && t.GetQuestion() == q.GetCode() &&
+			!t.GetCreateTime().AsTime().Before(since)
+	}) {
+		return true, nil
+	}
+	events, err := store.List[*planv1.LeadEvent](ctx, h.store, store.Where{"wish_id": q.GetWishId()})
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(events, func(e *planv1.LeadEvent) bool {
+		return e.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN && e.GetCode() == q.GetCode() &&
+			!e.GetCreateTime().AsTime().Before(since)
+	}), nil
 }
 
 // startQuestionWorker starts a question worker of role on q, and returns it; nil when none starts. before is the
@@ -248,6 +368,7 @@ func (h *Harness) questionEnded(t *planv1.Task) {
 	t = proto.CloneOf(t)
 	h.wg.Add(1)
 	go func() {
+		defer logx.Crash("question", "task", t.GetCode())
 		defer h.wg.Done()
 		h.tellEnd(t, h.retryRefused(t))
 	}()
@@ -301,7 +422,7 @@ func (h *Harness) questionDid(t *planv1.Task) bool {
 	defer cancel()
 	tasks, questions, err := h.wishWork(ctx, t.GetWishId())
 	if err != nil {
-		log.Printf("djinn: task %s: read what it did: %v", t.GetCode(), err)
+		logx.L().Error("read what a question worker did", "loop", "question", "task", t.GetCode(), "err", err)
 		return true
 	}
 	spawned, asked, revised := questionOutcome(t, tasks, questions)
@@ -316,7 +437,7 @@ func (h *Harness) retryRefused(t *planv1.Task) string {
 	defer cancel()
 	tasks, questions, err := h.wishWork(ctx, t.GetWishId())
 	if err != nil {
-		log.Printf("djinn: task %s: start it again: %v", t.GetCode(), err)
+		logx.L().Error("start a question worker again", "loop", "question", "task", t.GetCode(), "err", err)
 		return ""
 	}
 	if slices.ContainsFunc(tasks, func(o *planv1.Task) bool {
@@ -340,7 +461,7 @@ func (h *Harness) retryRefused(t *planv1.Task) string {
 	defer h.questioning.Unlock()
 	again, err := h.startQuestionWorker(ctx, q, t.GetRole(), note, t)
 	if err != nil {
-		log.Printf("djinn: task %s: start it again: %v", t.GetCode(), err)
+		logx.L().Error("start a question worker again", "loop", "question", "task", t.GetCode(), "err", err)
 	}
 	return again.GetCode()
 }
@@ -425,7 +546,7 @@ func questionEndLine(t *planv1.Task, tasks []*planv1.Task, questions []*planv1.Q
 	case t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE:
 		line += fmt.Sprintf(" Check what is left of %s: djinn wish brief %s has the context.", code, wish)
 	case len(spawned) > 0:
-		line += " Check every task that ends: read its final note (djinn task watch <task>, or the line Djinn types): when it leaves an uncertainty (a choice it made in the developer's place, something it did not verify, a partial result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too. Withdraw the open questions its work made needless."
+		line += " Check every task that ends: read its final note (djinn task watch <task>, or the line Djinn types): what it leaves to verify (something it did not verify, a failing test it calls unrelated) goes to a task or a watcher that verifies it, never to the developer; when it leaves an uncertainty (a choice it made in the developer's place, a partial result, a step it skipped, 'to validate'), ask the developer a question about it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too. Withdraw the open questions its work made needless."
 	}
 	return line
 }

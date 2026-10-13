@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,11 +71,14 @@ type Harness struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup // one per run
 
-	answering        sync.Mutex // one answer to an edit question at a time
-	questioning      sync.Mutex // one question worker decided at a time (question.go)
-	enlightenWorkers *bool      // enlighten workers start (WithEnlightenWorkers); nil: follows project settings
+	answering        sync.Mutex    // one answer to an edit question at a time
+	questioning      sync.Mutex    // one question worker decided at a time (question.go)
+	enlightenWorkers *bool         // enlighten workers start (WithEnlightenWorkers); nil: follows project settings
+	enlightenWait    time.Duration // how long an investigator may take to start (WithEnlightenWait); 0: the default
 
 	scopes *machine.Scopes // the systemd scopes the workers run in, one each (WithScopes); nil: none
+	// children records the processes Djinn starts, so that none outlives it (orphans.go); nil without a data folder.
+	children *children
 
 	beforeStart func() // runs before a worker's process starts (WithBeforeStart); nil: nothing
 
@@ -127,7 +129,10 @@ type Harness struct {
 	babysitting sync.WaitGroup // one per look for what a task opened; Close waits for them
 	babysitMu   sync.Mutex     // one watcher decided at a time
 
-	mu           sync.Mutex
+	// mu guards the runs and the fields marked "guarded by mu". Never send on a channel, run a command or call out (a func
+	// given by an option: gates, tell, watched) while holding it: a callee that calls the harness back locks it again
+	// (W549's freeze). It logs a holder that keeps it past logx.HeldLong (New).
+	mu           logx.Mutex
 	closed       bool
 	held         func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
 	waiting      func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
@@ -143,6 +148,11 @@ type Harness struct {
 	goos         func() string                // runtime.GOOS; nil: runtime.GOOS
 	aliasesMu    sync.RWMutex
 	aliases      map[string]string // alias -> model ID
+
+	// What the workers use (measure.go), apart from mu: a pump measures its worker, and the machine reads the memory
+	// they hold (Resident), without waiting for a pass or a spawn that holds mu. Taken after mu, never before it.
+	useMu    sync.Mutex
+	resident map[string]uint64 // by task ID: the resident memory of a worker, as last read, watchers left out
 }
 
 // run is a task at work: its worker, or the workers it runs one after the other when the task starts again.
@@ -157,6 +167,7 @@ type run struct {
 
 	// Guarded by Harness.mu.
 	worker             Worker
+	code               string // the task's code, once its worker starts (TrackGate)
 	pid                int    // process ID of the running worker (0 if none)
 	cgroup             string // cgroup of the running worker
 	token              string // secret per-run token passed in DJINN_WORKER_TOKEN
@@ -171,8 +182,9 @@ type run struct {
 	light              bool                 // a question worker reads and runs djinn's commands: it takes no slot
 	final              bool                 // the task is getting its final status: an answer waits for done instead
 	answers            []*planv1.Question   // answers to the task's edit question, for the pump to apply
-	use                *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one
-	samples            *workerRing          // recent measurement samples (measure.go)
+	use                *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one; guarded by Harness.useMu
+	samples            *workerRing          // recent measurement samples (measure.go); guarded by Harness.useMu
+	resources          *planv1.Resources    // the task's resources as its pump last set them, for the readers apart from the pump; guarded by Harness.useMu
 	subs               map[chan *planv1.TaskEvent]struct{}
 	startTime          time.Time     // when the current run started
 	turns              int           // model turns of the current worker (lamplighter.go), kept on the task by setTurns
@@ -183,7 +195,6 @@ type run struct {
 
 	// Owned by whoever writes the task: Spawn, then the pump.
 	task           *planv1.Task
-	seq            int64         // last event written
 	base           *planv1.Usage // what the task had spent before this worker
 	turnsBefore    int           // the task's model turns before this worker
 	restart        bool          // the worker stops to start again, allowed to edit
@@ -206,11 +217,11 @@ type run struct {
 	requestedModel string        // model as requested before stream events
 }
 
-// newRun is the run of task, its next event after seq, registered so that a watcher never misses its first events.
+// newRun is the run of task, registered so that a watcher never misses its first events.
 // It fails when Djinn is stopping, or when the task already runs.
-func (h *Harness) newRun(task *planv1.Task, seq int64) (*run, error) {
+func (h *Harness) newRun(task *planv1.Task) (*run, error) {
 	r := &run{
-		id: task.GetId(), wish: task.GetWishId(), task: task, seq: seq, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
+		id: task.GetId(), wish: task.GetWishId(), task: task, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
 		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}),
 		subs: map[chan *planv1.TaskEvent]struct{}{}, watcher: watching(task),
 		light: questionWorker(task), requestedModel: task.GetModel(),
@@ -240,6 +251,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
 		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{},
 		installed: map[string]string{}, preempted: map[string]string{}, aliases: map[string]string{},
+		resident: map[string]uint64{},
 	}
 	def := machine.DefaultPolicy()
 	h.policy.Store(&def)
@@ -247,6 +259,14 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 		o(h)
 	}
 	h.batcher = newTellBatcher(h)
+	dumps := ""
+	if home != "" {
+		dumps = logx.Folder(home)
+	}
+	go h.mu.Watch(ctx, "harness", dumps)
+	if home != "" && h.children == nil {
+		h.children = newChildren(filepath.Join(home, runDir), Grace)
+	}
 	return h
 }
 
@@ -288,6 +308,7 @@ func (h *Harness) Close() {
 	}
 	h.wg.Wait()
 	h.babysitting.Wait()
+	h.children.close() // What the workers left running stops with them.
 }
 
 // Recover marks as interrupted the tasks a previous djinn up left running: their workers died with it. They keep
@@ -295,8 +316,10 @@ func (h *Harness) Close() {
 // scheduler to resume it (queueInterrupted). The lead's restart event names the workers the last djinn up left
 // running, and those it stopped as it ended, interrupted since it started (lastStart). First, the azimas stored as
 // work before tasks had kinds become azimas (migrateAzimas), and a task part of an azima that is gone becomes part of
-// none (ungroupOrphans).
+// none (ungroupOrphans). Before all, the processes the last djinn up started and left running are stopped
+// (children.sweep), so that no task resumes beside its old worker: the restart event names them.
 func (h *Harness) Recover(ctx context.Context) error {
+	orphans := h.children.sweep()
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
@@ -359,14 +382,10 @@ func (h *Harness) Recover(ctx context.Context) error {
 			if err := tx.Journal(actorHarness, methodRecover, t); err != nil {
 				return err
 			}
-			seq, err := lastSeq(ctx, tx, t.GetId())
-			if err != nil {
-				return err
-			}
 			if err := tx.Put(t); err != nil {
 				return err
 			}
-			return tx.Put(h.newEvent(t.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "interrupted: " + t.GetError()}))
+			return putEvents(ctx, tx, h.newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "interrupted: " + t.GetError()}))
 		})
 		if err != nil {
 			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
@@ -378,7 +397,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 	}
 	// The lead hears of the restart from its queue, whether its watch died with the last djinn up or not.
 	restart := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART,
-		Text: restartLine(h.version, interrupted, resumed, watchers)}
+		Text: restartLine(h.version, interrupted, resumed, watchers, orphans)}
 	if err := plan.QueueLeadEvent(ctx, h.store, restart, h.now()); err != nil {
 		return fmt.Errorf("tell the lead of the restart: %w", err)
 	}
@@ -402,9 +421,10 @@ func (h *Harness) lastStart(ctx context.Context) (time.Time, error) {
 }
 
 // restartLine is what the lead's restart event says: the version Djinn started on, the workers the last djinn up
-// left running and Djinn interrupted (or that it stopped, and Djinn resumes), those of them it resumes by itself, and
-// apart the watchers it resumes: a watcher is no worker.
-func restartLine(version string, interrupted, resumed, watchers []string) string {
+// left running and Djinn interrupted (or that it stopped, and Djinn resumes), those of them it resumes by itself,
+// apart the watchers it resumes: a watcher is no worker, and the processes the last djinn up left running that Djinn
+// stopped, by their labels (orphansPart).
+func restartLine(version string, interrupted, resumed, watchers, orphans []string) string {
 	if version == "" {
 		version = "unknown"
 	}
@@ -435,6 +455,9 @@ func restartLine(version string, interrupted, resumed, watchers []string) string
 	if len(watchers) > 0 {
 		parts = append(parts, fmt.Sprintf("%d %s resumed: %s", len(watchers), plural(len(watchers), "watcher"),
 			strings.Join(watchers, ", ")))
+	}
+	if part := orphansPart(orphans); part != "" {
+		parts = append(parts, part)
 	}
 	if len(parts) == 0 {
 		return line + ": no worker was running."
@@ -641,10 +664,10 @@ func (h *Harness) cleanWarmLeftovers(ctx context.Context) {
 			case strings.HasPrefix(line, "branch refs/heads/"+warmBranchPrefix) && strings.HasPrefix(path+string(filepath.Separator), root):
 				branch := strings.TrimPrefix(line, "branch refs/heads/")
 				if err := removeWorktree(ctx, p.GetDirectory(), path, true); err != nil {
-					log.Printf("djinn: remove leftover warm worktree: %v", err)
+					logx.L().Warn("remove a leftover warm worktree", "project", p.GetId(), "path", path, "err", err)
 				}
 				if _, err := git(ctx, p.GetDirectory(), "branch", "-D", branch); err != nil {
-					log.Printf("djinn: remove leftover warm branch: %v", err)
+					logx.L().Warn("remove a leftover warm branch", "project", p.GetId(), "branch", branch, "err", err)
 				}
 			}
 		}
@@ -875,7 +898,7 @@ func (h *Harness) spawn(
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("--babysit: %w", err))
 		}
 	}
-	r, err := h.newRun(task, 1)
+	r, err := h.newRun(task)
 	if err != nil {
 		return nil, err
 	}
@@ -888,11 +911,10 @@ func (h *Harness) spawn(
 		}
 	}
 	var prep prepared
-	prompted := h.newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
+	prompted := h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	var preEv *planv1.TaskEvent
 	if preemptedCode != "" {
-		r.seq++
-		preEv = h.newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
+		preEv = h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
 	}
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal(actor, procedure, req); err != nil {
@@ -920,13 +942,11 @@ func (h *Harness) spawn(
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		if err := tx.Put(prompted); err != nil {
+		if err := putEvents(ctx, tx, prompted); err != nil {
 			return err
 		}
 		if preEv != nil {
-			if err := tx.Put(preEv); err != nil {
-				return err
-			}
+			return putEvents(ctx, tx, preEv)
 		}
 		return nil
 	})
@@ -988,10 +1008,10 @@ func (h *Harness) plan(
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		if err := tx.Put(h.newEvent(task.GetId(), 1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})); err != nil {
+		if err := putEvents(ctx, tx, h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})); err != nil {
 			return err
 		}
-		return tx.Put(h.newEvent(task.GetId(), 2, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why}))
+		return putEvents(ctx, tx, h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why}))
 	})
 	if err != nil {
 		return nil, plan.Status(err)
@@ -1038,12 +1058,15 @@ func prepare(ctx context.Context, tx *store.Tx, task *planv1.Task, wish *planv1.
 }
 
 const workerHandRule = "To try a command by hand, start a Djinn of your own with its own data folder; never create a wish, a question or a task in the person's Djinn to test."
-const workerMoveRule = "When your work leaves a move only the developer can make (push a tag, open or merge a PR, start a release, check on a Mac or Windows, install), ask it with `djinn question ask` before you end, with the exact command."
-const workerRules = workerHandRule + " " + workerMoveRule
+
+// workerCheckRule (Q246): what an agent can check, it checks; the developer runs no command to verify a worker's work.
+const workerCheckRule = "Never ask the developer for a check, a measure, a log to read, a CI result to look at or a command to run: do it yourself when you can; otherwise say in your final note what remains to verify, and the lead spawns a task for it or lets a watcher report it (a CI result comes from the PR's babysit watcher)."
+const workerMoveRule = "A question to the developer is only for a decision or a move only a person can make (grant a right, push a tag, open or merge a PR, start a release, check on a Mac or Windows Djinn does not have, install): ask it with `djinn question ask` before you end, the exact command in a code block at the top of its `--context`, never mid-sentence."
+const workerRules = workerHandRule + " " + workerCheckRule + " " + workerMoveRule
 
 // briefed is the first prompt of the run's task as its worker reads it, at launch and on a resume that gives it again:
 // a worker that edits a worktree learns which checks its work meets (run.checks), to run the commit checks before it
-// ends, and to ask every move only the developer can make.
+// ends, to run what it can check itself, and to ask only a decision or a move only the developer can make.
 func briefed(r *run, prompt string, readOnly bool) string {
 	if r.task.GetBranch() != "" && !readOnly {
 		if r.checks != "" {
@@ -1095,7 +1118,7 @@ func (h *Harness) launch(
 		default:
 			if sha, from, err = startPoint(ctx, project.GetDirectory(), r.from); err == nil {
 				if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), task, sha, r.from); depWhy != "" {
-					log.Printf("djinn: task %s: worktree not created: %s", task.GetCode(), depWhy)
+					logx.L().Info("worktree not created: a dependency is not merged", "task", task.GetCode(), "why", depWhy)
 					_ = os.RemoveAll(skillsDir)
 					task.Branch, task.Worktree = "", ""
 					h.forget(r)
@@ -1135,7 +1158,13 @@ func (h *Harness) launch(
 	text := "started " + short(task.GetProvider()) + " " + where + ", " + accessText(task, prep.question) +
 		skillsText(spec.Skills)
 	if r.watcher {
-		text = "started watch " + where + watchText(task)
+		command, perms, how, err := h.watchPermissions(ctx, task, project, spec.Permissions, spec.Prompt)
+		if err != nil {
+			h.finish(r, Result{ExitCode: -1, Err: err})
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
+		}
+		spec.Prompt, spec.Permissions = command, perms
+		text = "started watch " + where + watchText(task) + how
 	}
 	if r.light {
 		how := ""
@@ -1193,6 +1222,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	h.mu.Lock()
 	r.startTime = now
 	r.lastActivity = now
+	r.code = t.GetCode()
 	h.mu.Unlock()
 	r.turnsBefore = int(t.GetTurns().GetTotal())
 	h.setTurns(r, func(int) int { return 1 })
@@ -1237,11 +1267,20 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		"DJINN_WORKER_TOKEN=" + r.token,
 	}, guard...)
 	if r.watcher {
-		// Its state folder, DJINN_HOME/watchers/<task>, outlives each run of its command (watcherLife).
+		// Its state folder, DJINN_HOME/watchers/<task>, outlives each run of its command (watcherLife); made before
+		// it starts, as a lead's command expects when it names a file there (W7 of wish Dew).
+		if err := os.MkdirAll(watcherDir(h.home, t.GetId()), 0o700); err != nil {
+			return fmt.Errorf("make the watcher's folder: %w", err)
+		}
 		spec.Env = append(spec.Env, "DJINN_HOME="+h.home)
 		spec.LastLine = t.GetLastLine()
 	}
 	spec.Scope = h.scopeFor(t)
+	kind := "worker"
+	if r.watcher {
+		kind = "watcher"
+	}
+	spec.Track = h.children.tracker(t.GetCode(), kind)
 	spec.LowPriority = h.lowPriority()
 	spec.StartHead = r.startHead
 	spec.Branch = t.GetBranch()
@@ -1258,7 +1297,11 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		return err
 	}
 	h.mu.Lock()
-	r.worker, r.use = w, nil
+	r.worker = w
+	h.useMu.Lock()
+	r.use = nil
+	delete(h.resident, r.id)
+	h.useMu.Unlock()
 	if proc, ok := w.(Process); ok {
 		r.pid = proc.PID()
 		r.cgroup = proc.Cgroup()
@@ -1346,6 +1389,7 @@ func nextNumber(ctx context.Context, r store.Reader, wishID, letter string) (str
 // pump records the worker's events until the task ends for good: a worker stopped to start again, allowed to
 // edit, is followed by the next one.
 func (h *Harness) pump(r *run) {
+	defer logx.Crash("pump", "task", r.id, "wish", r.wish) // It only ever runs as a goroutine.
 	for !h.settle(r, h.drain(r)) {
 	}
 }
@@ -1353,6 +1397,9 @@ func (h *Harness) pump(r *run) {
 // drain records the worker's events, and applies the answers to the task's edit question, until the worker ends.
 func (h *Harness) drain(r *run) Result {
 	events := r.worker.Events()
+	h.useMu.Lock()
+	r.resources = r.task.GetResources()
+	h.useMu.Unlock()
 	var measuring <-chan time.Time
 	m := h.newMeter(r)
 	if m != nil {
@@ -1467,7 +1514,9 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	if !r.envReplayed && (ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL || ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT) {
 		r.envReplayed = true
-		_ = h.replayEnvFailures(context.Background(), r.task.GetProvider())
+		if err := h.replayEnvFailures(context.Background(), r.task.GetProvider()); err != nil {
+			logx.L().Error("start again the tasks failed for their environment", "task", r.id, "err", err)
+		}
 	}
 }
 
@@ -1664,6 +1713,12 @@ func (h *Harness) end(r *run, res Result) {
 	now := h.now()
 	nowPb := timestamppb.New(now)
 	t.EndTime, t.ExitCode = nowPb, int32(res.ExitCode)
+	// Under useMu, as measure sets them (lowestWorkTask copies the task). A copy: the reading is shared with what the
+	// workers use (Uses, RunsSeries), which never changes it.
+	h.useMu.Lock()
+	if t.Resources != nil {
+		t.Resources = proto.CloneOf(t.Resources)
+	}
 	if r.samples != nil {
 		if pct := r.samples.MemoryPercentiles(); pct.p95 > 0 {
 			if t.Resources == nil {
@@ -1675,6 +1730,7 @@ func (h *Harness) end(r *run, res Result) {
 	if t.Resources != nil && t.Resources.P95MemoryBytes == 0 && t.Resources.PeakMemoryBytes > 0 {
 		t.Resources.P95MemoryBytes = t.Resources.PeakMemoryBytes
 	}
+	h.useMu.Unlock()
 	switch {
 	case preemptedWhy != "":
 		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy
@@ -1745,8 +1801,12 @@ func (h *Harness) end(r *run, res Result) {
 		}
 	}
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
-		_ = h.replayEnvFailures(context.Background(), t.GetProvider())
-		_ = h.unblockDependencyFailed(context.Background(), t.GetCode())
+		if err := h.replayEnvFailures(context.Background(), t.GetProvider()); err != nil {
+			logx.L().Error("start again the tasks failed for their environment", "task", t.GetCode(), "err", err)
+		}
+		if err := h.unblockDependencyFailed(context.Background(), t.GetCode()); err != nil {
+			logx.L().Error("unblock the tasks a dependency failed", "task", t.GetCode(), "err", err)
+		}
 	}
 	reason := runReason(t, r)
 	if len(t.Runs) > 0 {
@@ -1866,6 +1926,9 @@ func (h *Harness) workerEnded(t *planv1.Task) {
 func (h *Harness) forget(r *run) {
 	h.mu.Lock()
 	delete(h.runs, r.id)
+	h.useMu.Lock()
+	delete(h.resident, r.id)
+	h.useMu.Unlock()
 	for ch := range r.subs {
 		close(ch)
 	}
@@ -1886,13 +1949,13 @@ func (h *Harness) write(r *run, actor, method string, task proto.Message, ev Eve
 	}
 	if _, err := h.writeAs(r, actor, method, req, task, ev); err != nil {
 		// The worker goes on: losing one event is better than losing the worker.
-		log.Printf("djinn: task %s: record an event: %v", r.id, err)
+		logx.L().Error("record an event", "task", r.id, "err", err)
 	}
 }
 
 // writeAs is write, journaling req; nil journals the event.
 func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message, ev Event) (*planv1.TaskEvent, error) {
-	te := h.newEvent(r.id, r.seq+1, ev)
+	te := h.newEvent(r.id, ev)
 	if req == nil {
 		req = te
 	}
@@ -1921,12 +1984,11 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 				}
 			}
 		}
-		return tx.Put(te)
+		return putEvents(context.Background(), tx, te)
 	})
 	if err != nil {
 		return nil, err
 	}
-	r.seq++
 	h.mu.Lock()
 	r.lastActivity = h.now()
 	if r.task != nil {
@@ -1938,28 +2000,50 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 }
 
 // carry copies onto the run's copy of its task, before it is written, what is stored on the task from outside the
-// run while it runs: the comments on its diff, and the developer's marks.
+// run while it runs: the comments on its diff, the developer's marks, and the babysit Djinn found it does
+// (adoptBabysit).
 func carry(tx *store.Tx, t *planv1.Task) {
 	if stored, err := store.Get[*planv1.Task](context.Background(), tx, t.GetId()); err == nil {
 		t.Comments = stored.GetComments()
 		t.Marks = stored.GetMarks()
+		if t.GetBabysit().GetUrl() == "" && stored.GetBabysit().GetUrl() != "" {
+			t.Babysit = stored.GetBabysit()
+		}
 	}
 }
 
-// newEvent builds a stored event, its text and raw line cut to maxText.
-func (h *Harness) newEvent(taskID string, seq int64, ev Event) *planv1.TaskEvent {
-	return newEventAt(taskID, seq, ev, h.now())
+// newEvent builds an event to store, its text and raw line cut to maxText; putEvents gives it its position.
+func (h *Harness) newEvent(taskID string, ev Event) *planv1.TaskEvent {
+	return newEventAt(taskID, ev, h.now())
 }
 
-func newEventAt(taskID string, seq int64, ev Event, at time.Time) *planv1.TaskEvent {
+func newEventAt(taskID string, ev Event, at time.Time) *planv1.TaskEvent {
 	return &planv1.TaskEvent{
-		Id: store.NewID(), TaskId: taskID, Seq: seq, Kind: ev.Kind, Text: clip(ev.Text), Usage: ev.Usage,
+		Id: store.NewID(), TaskId: taskID, Kind: ev.Kind, Text: clip(ev.Text), Usage: ev.Usage,
 		Raw: clip(ev.Raw), CreateTime: timestamppb.New(at),
 	}
 }
 
-func newEvent(taskID string, seq int64, ev Event) *planv1.TaskEvent {
-	return newEventAt(taskID, seq, ev, time.Now())
+func newEvent(taskID string, ev Event) *planv1.TaskEvent {
+	return newEventAt(taskID, ev, time.Now())
+}
+
+// putEvents writes the events in tx, each at the position after its task's last event. It is the one place that
+// numbers a task's events: the store has one connection, so a transaction reads the last position no other writer
+// can take before it commits. A run that counted its events apart gave one position to two events when a gate's note
+// or an integration step was written beside it, and the second was lost (W534).
+func putEvents(ctx context.Context, tx *store.Tx, events ...*planv1.TaskEvent) error {
+	for _, e := range events {
+		seq, err := lastSeq(ctx, tx, e.GetTaskId())
+		if err != nil {
+			return err
+		}
+		e.Seq = seq + 1
+		if err := tx.Put(e); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func clip(s string) string {
@@ -2393,14 +2477,10 @@ func (h *Harness) Clean(ctx context.Context, procedure string, req *planv1.TaskS
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err
 		}
-		seq, err := lastSeq(ctx, tx, id)
-		if err != nil {
-			return err
-		}
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		return tx.Put(h.newEvent(id, seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
+		return putEvents(ctx, tx, h.newEvent(id, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
 	})
 	if err != nil {
 		return nil, plan.Status(err)

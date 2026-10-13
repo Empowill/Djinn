@@ -1,7 +1,7 @@
 // What workers spent: tokens (input, output, cache read and written, thinking) and the price, one total.
 // Codex and Antigravity report tokens only; the page estimates their cost from prices.yaml, and keeps Claude's reported
 // cost: the price is the reported cost where there is one, else the estimate; its hover tells the two apart.
-import { Footprints, ShieldAlert } from "lucide-react";
+import { Footprints } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import {
   Provider,
@@ -391,51 +391,40 @@ export function resourcesDetail(r: Resources, running: boolean): string {
   return out.join(" · ");
 }
 
-// TaskTurns is how many model turns the task's worker took against the limit its seal sets a run (TaskMaxTurns),
-// past which the Lamplighter stops it: its tone warns past 80% of it. The hover says what it counts, and the total
-// over its runs when it ran more than once.
+// TaskTurns is how many model turns the task's worker took over its whole life, the figure that reads first, and
+// beside it those of its current or last run against the limit its seal sets a run (TaskMaxTurns), past which the
+// Lamplighter stops it: its tone warns past 80% of that limit, as the limit stays a run's. A task that ran once
+// shows its run alone, and the hover says what each figure counts.
 export function TaskTurns({ task }: { task: Task }) {
   const turns = task.turns;
   if (!turns || turns.limit <= 0) return null;
+  const total = Math.max(turns.total, turns.run);
   const warn = turns.run * 5 > turns.limit * 4;
-  const title = [
-    t(
-      task.status === TaskStatus.RUNNING
-        ? "task.turns_run"
-        : "task.turns_last_run",
-      { run: turns.run, limit: turns.limit },
-    ),
-  ];
-  if (turns.total > turns.run)
-    title.push(t("task.turns_total", { total: turns.total }));
+  const run = t(
+    task.status === TaskStatus.RUNNING
+      ? "task.turns_run"
+      : "task.turns_last_run",
+    { run: turns.run, limit: turns.limit },
+  );
+  const budget = `${turns.run}/${turns.limit}`;
   return (
     <span
       className={warn ? "task-turns warning" : "task-turns"}
-      title={title.join(" · ")}
+      title={
+        total > turns.run
+          ? [t("task.turns_total", { total }), run].join(" · ")
+          : run
+      }
     >
       <Footprints size={12} aria-label={t("task.turns")} />
-      {`${turns.run}/${turns.limit}`}
-    </span>
-  );
-}
-
-// TaskRefused warns that its permissions refused calls of the task's worker in its last run, which nobody approves
-// headless: how many, and on hover which, with the command that lets its agent judge them. Granting stays the
-// developer's move.
-export function TaskRefused({ task }: { task: Task }) {
-  const refused = task.refused;
-  if (!refused || refused.count <= 0) return null;
-  return (
-    <span
-      className="task-refused"
-      title={t("task.refused_detail", {
-        count: refused.count,
-        names: refused.names.join(", "),
-        wish: task.wishId,
-      })}
-    >
-      <ShieldAlert size={12} aria-label={t("task.refused")} />
-      {refused.count}
+      {total > turns.run ? (
+        <>
+          {total}
+          <span className="task-turns-run">{budget}</span>
+        </>
+      ) : (
+        budget
+      )}
     </span>
   );
 }
