@@ -71,7 +71,9 @@ allowance, which lists none without that file), its command runs when it is one 
    (`watch_commands`, [team settings](team-settings.md)), never into the repository; `--revoke` takes it back, and
    `djinn project allow <project>` lists them.
 
-The project's `denied_commands` win over all three. The start event says which one let the command run. A refused
+The project's `denied_commands` win over all three. Each judges the command that runs: `$DJINN_HOME`,
+`$DJINN_TASK_ID` and `$DJINN_WISH_ID` expanded ([watch](providers.md#watch-a-command-no-agent)). The start event says
+which one let the command run. A refused
 watcher fails at start, and its error says what the project lacks, the commands its skills declare, and the exact
 `djinn project allow` command that would let it run:
 

@@ -3,6 +3,7 @@ package harness
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -376,4 +377,104 @@ func TestW6BabysitWatcherInDolmen(t *testing.T) {
 		t.Errorf("the developer's file: %v, %v; want none", dev, err)
 	}
 	stopTask(t, e, got[0].GetId())
+}
+
+// TestExpandWatch: Djinn's variables in a watcher's command line are expanded as a shell would, outside single
+// quotes, each value one word whatever it holds; any other variable is refused, and the rest is kept as it is.
+func TestExpandWatch(t *testing.T) {
+	t.Parallel()
+	vars := func(home string) map[string]string {
+		return map[string]string{"DJINN_HOME": home, "DJINN_TASK_ID": "01a1", "DJINN_WISH_ID": "01b2"}
+	}
+	const linux, mac, windows = "/home/u/.config/djinn", "/Users/u/Library/Application Support/djinn", `C:\Users\u\AppData\Roaming\djinn`
+	for _, c := range []struct {
+		home, line, want string
+		words            []string
+	}{
+		{linux, w6Command,
+			`go run ./.agents/skills/babysit-mr-empowill/mrwatch -mr 2855 -watch -state "/home/u/.config/djinn/watchers/01a1/mr-2855"`,
+			[]string{"go", "run", "./.agents/skills/babysit-mr-empowill/mrwatch", "-mr", "2855", "-watch", "-state",
+				"/home/u/.config/djinn/watchers/01a1/mr-2855"}},
+		{linux, `w ${DJINN_TASK_ID}-x $DJINN_WISH_ID '$DJINN_HOME' \$DJINN_HOME $ $1 "a$" "${DJINN_HOME"`,
+			`w 01a1-x 01b2 '$DJINN_HOME' \$DJINN_HOME $ $1 "a$" "${DJINN_HOME"`,
+			[]string{"w", "01a1-x", "01b2", "$DJINN_HOME", `\$DJINN_HOME`, "$", "$1", "a$", "${DJINN_HOME"}},
+		{mac, `w "$DJINN_HOME/w" $DJINN_HOME/w`,
+			`w "/Users/u/Library/Application Support/djinn/w" '/Users/u/Library/Application Support/djinn'/w`,
+			[]string{"w", mac + "/w", mac + "/w"}},
+		{windows, `w "$DJINN_HOME\w" $DJINN_HOME\w`, `w "C:\Users\u\AppData\Roaming\djinn\w" C:\Users\u\AppData\Roaming\djinn\w`,
+			[]string{"w", windows + `\w`, windows + `\w`}},
+		{`C:\it's "x"\`, `w "$DJINN_HOME" $DJINN_HOME`, `w ""'C:\it'\''s "x"\'"" 'C:\it'\''s "x"\'`,
+			[]string{"w", `C:\it's "x"\`, `C:\it's "x"\`}},
+	} {
+		got, err := expandWatch(c.line, vars(c.home))
+		if err != nil || got != c.want {
+			t.Errorf("expandWatch(%s) = %s, %v\nwant %s", c.line, got, err, c.want)
+			continue
+		}
+		if words, err := splitCommand(got); err != nil || !slices.Equal(words, c.words) {
+			t.Errorf("splitCommand(%s) = %q, %v\nwant %q", got, words, err, c.words)
+		}
+	}
+	for _, line := range []string{`mrwatch -state "$HOME/x"`, `mrwatch -state ${HOME}/x`, `w $DJINN_TASK`} {
+		_, err := expandWatch(line, vars(linux))
+		if err == nil || !strings.Contains(err.Error(), "without a shell") ||
+			!strings.Contains(err.Error(), "$DJINN_HOME, $DJINN_TASK_ID, $DJINN_WISH_ID") ||
+			!strings.Contains(err.Error(), "single quotes") {
+			t.Errorf("expandWatch(%s): %v, want refused", line, err)
+		}
+	}
+}
+
+// TestW7WatcherCommandAsALeadWritesIt replays W7 of wish Dew (13/10/2026): the lead spawned a watcher on mrwatch with
+// -state "$DJINN_HOME/watchers/$DJINN_TASK_ID/mr-2855", as W5 was told to; without a shell, the variables reached
+// mrwatch literally, it could not open its state file, and it died at each start. Now Djinn expands them, the
+// watcher's folder is made before its command starts, and the command that runs is the one its allowance judges:
+// the developer's watch_commands, then the project's denied_commands. Any other variable is refused at spawn.
+func TestW7WatcherCommandAsALeadWritesIt(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	e := up(t, t.TempDir())
+	repo := gitRepo(t)
+	wishID, projectID := e.wish(t, repo)
+	allowAuto(t, e, wishID)
+	program := "'" + os.Args[0] + "' " + fakeWatchArg
+	command := program + ` "remember:$DJINN_HOME/watchers/$DJINN_TASK_ID/mr-2855" wait`
+
+	_, err := spawnWatchIn(t, e, wishID, projectID, command)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || strings.Contains(err.Error(), "$DJINN_HOME") {
+		t.Fatalf("before the allowance: %v, want refused on the command that runs", err)
+	}
+	if _, err := plan.AllowWatch(e.home, projectID, program, false); err != nil {
+		t.Fatal(err)
+	}
+	w, err := spawnWatchIn(t, e, wishID, projectID, command)
+	if err != nil {
+		t.Fatalf("W7 once allowed: %v", err)
+	}
+	state := e.home + "/watchers/" + w.GetId() + "/mr-2855"
+	got := e.until(t, w.GetId(), func(t *planv1.Task) bool {
+		return t.GetLastLine() != "" || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING
+	})
+	if got.GetLastLine() != "remembered "+state {
+		t.Fatalf("W7: %s %q, last line %q; want %q", got.GetStatus(), got.GetError(), got.GetLastLine(), "remembered "+state)
+	}
+	if _, err := os.Stat(state); err != nil {
+		t.Errorf("the state file: %v", err)
+	}
+	stopTask(t, e, w.GetId())
+	if prompt, _ := lastPrompt(t.Context(), e.db, w.GetId()); prompt != command {
+		t.Errorf("the task's prompt %q, want the lead's %q", prompt, command)
+	}
+
+	_, err = spawnWatchIn(t, e, wishID, projectID, program+` "remember:$HOME/mr-2855" wait`)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "holds $HOME") {
+		t.Errorf("another variable: %v, want refused", err)
+	}
+
+	// The project lists mrwatch, and denies it on this wish once expanded: the variable does not hide it.
+	writeFile(t, repo, ".agents/permissions.txtpb", "commands: \"mrwatch\"\ndenied_commands: \"mrwatch -wish "+wishID+"\"\n")
+	_, err = spawnWatchIn(t, e, wishID, projectID, "mrwatch -wish $DJINN_WISH_ID -watch")
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "denies") {
+		t.Errorf("denied once expanded: %v, want refused", err)
+	}
 }

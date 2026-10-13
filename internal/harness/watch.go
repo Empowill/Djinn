@@ -37,7 +37,8 @@ const (
 )
 
 // Watch runs a command instead of an agent: the task's prompt is its command line. It runs without a shell, in the
-// worker's folder, under the worker's environment and prefix; quotes group words, as in a shell. Where the worker's
+// worker's folder, under the worker's environment and prefix; quotes group words, as in a shell, and the harness
+// expanded Djinn's variables in it before (watchCommand). Where the worker's
 // permissions list the commands it may run, the command must be one of them, and not denied: a watcher has no
 // reviewer. The harness adds the command a skill of the project declares, or the developer allows (watch_allow.go).
 // It cannot run read-only.
@@ -406,7 +407,7 @@ func cleanLine(s string) string {
 // splitCommand splits a command line into words, as a shell does without running anything: spaces separate them,
 // single quotes keep what they hold as it is, double quotes keep spaces, and outside single quotes a backslash
 // keeps a quote, a backslash or a space that follows it; any other backslash stays, as in a Windows path. No pipe,
-// redirection nor variable: run a shell for them.
+// redirection nor variable (but Djinn's own, which expandWatch expanded before): run a shell for them.
 func splitCommand(line string) ([]string, error) {
 	var out []string
 	var word strings.Builder
@@ -445,6 +446,117 @@ func splitCommand(line string) ([]string, error) {
 		out = append(out, word.String())
 	}
 	return out, nil
+}
+
+// watchVars are the variables Djinn expands in a watcher's command line (expandWatch), in the order a refusal names
+// them.
+var watchVars = []string{"DJINN_HOME", "DJINN_TASK_ID", "DJINN_WISH_ID"}
+
+// watchCommand is the command line the watcher t runs: its own, $DJINN_HOME, $DJINN_TASK_ID and $DJINN_WISH_ID
+// expanded as a shell would (expandWatch). What its allowance judges, and what Watch.Start splits.
+func (h *Harness) watchCommand(t *planv1.Task, command string) (string, error) {
+	return expandWatch(strings.TrimSpace(command), map[string]string{
+		"DJINN_HOME": h.home, "DJINN_TASK_ID": t.GetId(), "DJINN_WISH_ID": t.GetWishId(),
+	})
+}
+
+// expandWatch expands in line the variables of vars, $NAME or ${NAME}, as a shell does, outside single quotes: a
+// lead writes "$DJINN_HOME/watchers/$DJINN_TASK_ID/x" as it would in a terminal, and a watcher runs its command
+// without a shell (W7 of wish Dew). Each value stays one word as splitCommand reads it, quoted when it must be;
+// the rest of the line is kept as it is. Any other variable is refused, with how to write the command instead: no
+// shell would expand it, and the command would read it literally. A $ before anything but a name, or after a
+// backslash, stays as it is.
+func expandWatch(line string, vars map[string]string) (string, error) {
+	var out strings.Builder
+	quote := rune(0)
+	runes := []rune(line)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		switch {
+		case r == '\\' && quote != '\'' && i+1 < len(runes):
+			out.WriteRune(r)
+			out.WriteRune(runes[i+1])
+			i++
+			continue
+		case quote != 0 && r == quote:
+			quote = 0
+		case quote == 0 && (r == '\'' || r == '"'):
+			quote = r
+		case r == '$' && quote != '\'':
+			name, n := varName(runes[i+1:])
+			if n == 0 {
+				break
+			}
+			value, ok := vars[name]
+			if !ok {
+				return "", unknownWatchVar(line, name)
+			}
+			out.WriteString(watchWord(value, quote == '"'))
+			i += n
+			continue
+		}
+		out.WriteRune(r)
+	}
+	return out.String(), nil
+}
+
+// varName is the name of the variable rest starts with, after its $: NAME or {NAME}, and how many runes it takes;
+// 0 when rest starts with no name.
+func varName(rest []rune) (string, int) {
+	braced := len(rest) > 0 && rest[0] == '{'
+	start := 0
+	if braced {
+		start = 1
+	}
+	end := start
+	for end < len(rest) && (rest[end] == '_' || rest[end] < unicode.MaxASCII &&
+		(unicode.IsLetter(rest[end]) || end > start && unicode.IsDigit(rest[end]))) {
+		end++
+	}
+	switch {
+	case end == start:
+		return "", 0
+	case !braced:
+		return string(rest[start:end]), end
+	case end < len(rest) && rest[end] == '}':
+		return string(rest[start:end]), end + 1
+	}
+	return "", 0
+}
+
+// watchWord writes value so that splitCommand reads it as it is, inside double quotes or outside any: as it is when
+// nothing in it would be read otherwise, single-quoted when something would (a space outside quotes, on macOS's
+// Application Support; a backslash before a quote, a space or another backslash, on Windows).
+func watchWord(value string, double bool) string {
+	runes := []rune(value)
+	plain := true
+	for i, r := range runes {
+		switch {
+		case r == '"', !double && (r == '\'' || unicode.IsSpace(r)):
+			plain = false
+		case r == '\\' && (i+1 == len(runes) || strings.ContainsRune(`"'\ `, runes[i+1])):
+			plain = false
+		}
+	}
+	if plain {
+		return value
+	}
+	quoted := "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
+	if double {
+		return `"` + quoted + `"`
+	}
+	return quoted
+}
+
+// unknownWatchVar refuses the command line of a watcher that holds $name, a variable Djinn does not expand.
+func unknownWatchVar(line, name string) error {
+	known := make([]string, len(watchVars))
+	for i, v := range watchVars {
+		known[i] = "$" + v
+	}
+	return fmt.Errorf("the watcher's command %q holds $%s, which nothing would expand: a watcher runs its command "+
+		"without a shell, and Djinn expands only %s in it. Write the value of $%s instead, or put it in single quotes "+
+		"for the command to read it as it is", line, name, strings.Join(known, ", "), name)
 }
 
 // watching tells whether the task is a watcher.
