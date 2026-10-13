@@ -255,6 +255,19 @@ message ProjectSettings {
   // Djinn babysits the pull or merge request a task of a wish opens, in that wish, with the watcher a skill of the
   // project declares (metadata.djinn.babysit): false turns it off. Not set: on. djinn task spawn --babysit still works.
   optional bool babysit = 26;
+  // Commands a watcher may run in the project, or the start of each on a word boundary, besides those
+  // .agents/permissions.txtpb lists: "go run ./.agents/skills/babysit-mr/mrwatch". A developer's own allowance, read
+  // from their own file only (djinn project allow --watch): the repository's is ignored, since it lists its commands in
+  // .agents/permissions.txtpb. Its denied_commands still win. Not set: none.
+  repeated string watch_commands = 27 [(buf.validate.field).repeated = {
+    max_items: 50
+    items: {
+      string: {
+        min_len: 1
+        max_len: 500
+      }
+    }
+  }];
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.
@@ -1914,6 +1927,12 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Show or change the watcher commands you allow in a project for yourself, besides those its
+  // .agents/permissions.txtpb lists: kept in your own settings file, never in the repository.
+  rpc Allow(ProjectServiceAllowRequest) returns (ProjectServiceAllowResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // List the local branches of a project's repository a wish's work may land in, the latest commit first: those
   // Djinn made for its tasks' worktrees left out.
   rpc Branches(ProjectServiceBranchesRequest) returns (ProjectServiceBranchesResponse) {
@@ -1970,6 +1989,8 @@ message ProjectServiceShowResponse {
   repeated ProjectCheck checks = 7;
   // Warnings when reading the settings, e.g. unknown fields that a newer Djinn knows.
   repeated string warnings = 8;
+  // The watcher commands you allow in the project for yourself (djinn project allow --watch), from your own file.
+  repeated string watch_commands = 9;
 }
 
 message ProjectServicePushRequest {
@@ -2029,6 +2050,29 @@ message ProjectServicePushStrategyResponse {
   PushStrategy strategy = 1;
   // Where the setting comes from: default, repository, or developer.
   SettingSource source = 2;
+}
+
+message ProjectServiceAllowRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // A command a watcher may run in the project, or its start: a command that is it, or starts with it before a space,
+  // runs. Not set: show the commands you allow.
+  optional string watch = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 500
+  ];
+  // Take the command back instead of allowing it.
+  bool revoke = 3;
+}
+
+message ProjectServiceAllowResponse {
+  // The watcher commands you allow in the project, from your own settings file.
+  repeated string watch_commands = 1;
+  // Your settings file, in Djinn's data folder.
+  string developer_file = 2;
 }
 
 message ProjectServiceBranchesRequest {

@@ -70,6 +70,7 @@ export {
   ProjectChecks,
   ProjectPanel,
   ShortcutField,
+  WatchCommands,
 } from "@/src/wish-dialogs.tsx";
 export {
   LastPushes,
@@ -6082,6 +6083,35 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
     htmlOnDemand,
     /<button type="button" class="">Standard<\/button><button type="button" class="active">On demand<\/button>/,
   );
+});
+
+// The watcher commands a developer allows in a project, in its panel: each with a button that takes it back, and a
+// field that allows one more, kept in their own settings.
+test("a project's panel lists the watcher commands you allow", () => {
+  const html = s.renderToStaticMarkup(
+    h(s.WatchCommands, {
+      commands: ["go run ./.agents/skills/babysit-mr-empowill/mrwatch"],
+      onAllow: async () => true,
+      onRevoke() {},
+    }),
+  );
+  assert.match(
+    html,
+    /<div class="setting-row"><div><code>go run \.\/\.agents\/skills\/babysit-mr-empowill\/mrwatch<\/code><\/div><button type="button" class="button secondary">Take back<\/button><\/div>/,
+  );
+  assert.match(html, /never in the repository/);
+  assert.match(
+    html,
+    /<form class="folder-field"><input aria-label="Watcher command to allow"[^>]*\/><button type="submit" class="button secondary" disabled="">Allow<\/button><\/form>/,
+  );
+  const none = s.renderToStaticMarkup(
+    h(s.WatchCommands, {
+      commands: [],
+      onAllow: async () => true,
+      onRevoke() {},
+    }),
+  );
+  assert.doesNotMatch(none, /Take back/);
 });
 
 // An opened azima, as the Tasks tab shows it: built from what the lamp sends, its parts as the tab renders any task.

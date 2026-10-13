@@ -635,6 +635,26 @@ export function ProjectPanel({
           .catch(() => undefined),
       );
 
+  // A watcher command allowed or taken back: the commands the answer lists replace the shown ones.
+  const handleAllow = async (watch: string, revoke: boolean) => {
+    try {
+      const res = await clients.projects.allow({
+        project: project.id,
+        watch,
+        revoke,
+      });
+      setShown((prev) =>
+        prev ? { ...prev, watchCommands: res.watchCommands } : prev,
+      );
+      return true;
+    } catch (err) {
+      const msg = message(err);
+      setError(msg);
+      onToast?.(msg);
+      return false;
+    }
+  };
+
   const handleSetPush = async (nextPush: ProjectPush) => {
     try {
       const res = await clients.projects.setPush({
@@ -739,6 +759,13 @@ export function ProjectPanel({
         />
       )}
       <div className="settings-divider" />
+      <h3>{t("project.watch_commands")}</h3>
+      <WatchCommands
+        commands={shown?.watchCommands ?? []}
+        onAllow={(watch) => handleAllow(watch, false)}
+        onRevoke={(watch) => handleAllow(watch, true)}
+      />
+      <div className="settings-divider" />
       <h3>{t("project.skills")}</h3>
       {error && <p className="login-message">{error}</p>}
       {skills === undefined && !error && (
@@ -761,6 +788,59 @@ export function ProjectPanel({
         </div>
       ))}
     </ModalFrame>
+  );
+}
+
+// WatchCommands lists the watcher commands the developer allows in a project for themselves, each with a button that
+// takes it back, and a field that allows one more: their own settings, never the repository's.
+export function WatchCommands({
+  commands,
+  onAllow,
+  onRevoke,
+}: {
+  commands: string[];
+  onAllow: (watch: string) => Promise<boolean>;
+  onRevoke: (watch: string) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (draft.trim() && (await onAllow(draft.trim()))) setDraft("");
+  };
+  return (
+    <>
+      <p className="muted-text">{t("project.watch_commands_detail")}</p>
+      {commands.map((command) => (
+        <div className="setting-row" key={command}>
+          <div>
+            <code>{command}</code>
+          </div>
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => onRevoke(command)}
+          >
+            {t("project.watch_revoke")}
+          </button>
+        </div>
+      ))}
+      <form className="folder-field" onSubmit={submit}>
+        <input
+          aria-label={t("project.watch_command")}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={t("project.watch_placeholder")}
+          spellCheck={false}
+        />
+        <button
+          type="submit"
+          className="button secondary"
+          disabled={!draft.trim()}
+        >
+          {t("project.watch_allow")}
+        </button>
+      </form>
+    </>
   );
 }
 

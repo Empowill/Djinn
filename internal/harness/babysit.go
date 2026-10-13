@@ -176,11 +176,16 @@ func (h *Harness) findRequest(
 // babysitState is the file the watcher of task id keeps what it said in, for the request number of skill: under
 // $DJINN_HOME/watchers/<task>, its folder made.
 func (h *Harness) babysitState(id, skill string, number int) string {
-	dir := filepath.Join(h.home, "watchers", id)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	path := babysitStatePath(h.home, id, skill, number)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		logx.L().Warn("make a watcher's folder", "loop", "babysit", "task", id, "err", err)
 	}
-	return filepath.Join(dir, fmt.Sprintf("%s-%d", skill, number))
+	return path
+}
+
+// babysitStatePath is the file babysitState gives, without making its folder.
+func babysitStatePath(home, id, skill string, number int) string {
+	return filepath.Join(home, "watchers", id, fmt.Sprintf("%s-%d", skill, number))
 }
 
 // methodBabysit journals a watcher Djinn found babysitting a request already, the request recorded on it; the request

@@ -1142,7 +1142,13 @@ func (h *Harness) launch(
 	text := "started " + short(task.GetProvider()) + " " + where + ", " + accessText(task, prep.question) +
 		skillsText(spec.Skills)
 	if r.watcher {
-		text = "started watch " + where + watchText(task)
+		perms, how, err := h.watchPermissions(ctx, task, project, spec.Permissions, spec.Prompt)
+		if err != nil {
+			h.finish(r, Result{ExitCode: -1, Err: err})
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
+		}
+		spec.Permissions = perms
+		text = "started watch " + where + watchText(task) + how
 	}
 	if r.light {
 		how := ""

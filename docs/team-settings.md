@@ -54,7 +54,13 @@ install: "go tool task install"
 | `push_strategy`  | The branch strategy for integration and push: `PUSH_STRATEGY_WISH` (today's behavior: one integration branch per wish and project), `PUSH_STRATEGY_AZIMA` (one branch per azima, `djinn/<code>-<slug>`, cut from main and landing in main). | `PUSH_STRATEGY_WISH` |
 | `babysit`        | `false`: a pull or merge request a task opens is not watched by itself: see [babysitting](wish-templates.md#babysitting-what-a-task-opens). `djinn task spawn --babysit` still works. | on, when a skill of the project declares one |
 
-A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
+A watcher (`--provider watch`) runs a command: no setting above applies to it, and none can make one. One more is
+read from **your own file only**, never from the repository's (which lists its commands in
+`.agents/permissions.txtpb`, and is warned of a `watch_commands` it sets):
+
+| Setting          | What it sets                                                            | Not set |
+| ---------------- | ----------------------------------------------------------------------- | ------- |
+| `watch_commands` | The commands a watcher may run in the project besides those `.agents/permissions.txtpb` lists, each a command or its start on a word boundary, repeated: see [what a watcher may run](wish-templates.md#what-a-watcher-may-run). The project's `denied_commands` still win. `djinn project allow <project> --watch '<command>'` adds one (`--revoke` takes it back), as does the project's panel in the window; `djinn project show` lists them, from `DEVELOPER`. | none |
 
 Four more set the *investigators*, the small tasks Djinn starts by itself on a question of a wish after
 "Enlighten me": `Q03: enlighten` investigates and revises the question (see [agent protocol](agent-protocol.md)).
