@@ -1,7 +1,8 @@
 // Writing to the lead, the Djinn in the window: the pill at the bottom centre of a wish, or of the flying carpet,
 // unfolds into a box whose text goes to the one lead's terminal (LeadService.Tell), about the wish if there is one, as
 // if the developer typed it there. Enter sends, Shift+Enter breaks the line, Escape folds the pill and returns focus
-// to it, Cmd/Ctrl+I opens it. The draft stays with the wish, the flying carpet's with it.
+// to it, Cmd/Ctrl+I opens it. A click or the focus going anywhere else folds it too, so the shortcut always opens it
+// focused. The draft stays with the wish, the flying carpet's with it.
 import { Check, Clock, MessageSquare, Send, Terminal, X } from "lucide-react";
 import {
   type KeyboardEvent,
@@ -36,10 +37,13 @@ export function LeadMessage({
   const { draft, state } = useInstructionDraft(store, wishId);
   const [open, setOpen] = useState(false);
   const [resuming, setResuming] = useState(false);
+  // A resume may focus the lead's terminal on its way; the box takes the focus back after it, so it stays open.
+  const resumingNow = useRef(false);
   // The last text was refused, the lead not running in its terminal: the pill offers to start it too.
   const [refused, setRefused] = useState(false);
   const offline = stopped || refused;
   const box = useRef<HTMLTextAreaElement>(null);
+  const root = useRef<HTMLDivElement>(null);
   const restoreFocus = useRef(false);
   const id = useId();
   const mounted = useRef(true);
@@ -112,10 +116,28 @@ export function LeadMessage({
       }
       event.preventDefault();
       setOpen(true);
+      box.current?.focus({ preventScroll: true });
     };
     window.addEventListener("keydown", keys);
     return () => window.removeEventListener("keydown", keys);
   }, []);
+  // Focus out folds the box, the focus left where it went: a press or a focus outside the pill, not the window losing
+  // the focus to another application.
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: Event) => {
+      if (resumingNow.current) return;
+      const target = event.target;
+      if (target instanceof Node && root.current?.contains(target)) return;
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", away, true);
+    document.addEventListener("focusin", away, true);
+    return () => {
+      document.removeEventListener("pointerdown", away, true);
+      document.removeEventListener("focusin", away, true);
+    };
+  }, [open]);
   useEffect(() => {
     if (!state.notice) return;
     const notice = state.notice;
@@ -149,6 +171,7 @@ export function LeadMessage({
   const resume = async () => {
     if (resuming) return;
     setResuming(true);
+    resumingNow.current = true;
     try {
       await onResume();
       draft.set({ error: "" });
@@ -156,6 +179,7 @@ export function LeadMessage({
     } catch {
       // Lead's own toast says why it could not start, as from the header's Lead.
     } finally {
+      resumingNow.current = false;
       if (mounted.current) {
         setResuming(false);
         box.current?.focus();
@@ -177,7 +201,7 @@ export function LeadMessage({
     }
   };
   return (
-    <div className="lead-message">
+    <div className="lead-message" ref={root}>
       <WorkspaceAction
         tone="secondary"
         expanded={open}
