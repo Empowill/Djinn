@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -806,8 +807,9 @@ func TestUpdateWatcher(t *testing.T) {
 	}
 }
 
-// TestUpdateAzimaRefused: calling update on an azima task is refused.
-func TestUpdateAzimaRefused(t *testing.T) {
+// TestUpdateRenamesAnAzima: djinn task update --title renames an azima without a plan file; any other field of an
+// azima is still refused.
+func TestUpdateRenamesAnAzima(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
@@ -823,17 +825,91 @@ func TestUpdateAzimaRefused(t *testing.T) {
 	}
 	azima := res.Msg.GetTask()
 
-	newTitle := "New Azima Title"
+	var out, errs bytes.Buffer
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	code := cli.Run(ctx, []string{"task", "update", azima.GetId(), "--title", "Phase 1 reaches main: PR #3 merged"},
+		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+	if code != 0 || !strings.Contains(out.String(), "title: Phase 1 reaches main: PR #3 merged") {
+		t.Errorf("djinn task update --title on an azima: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
+	}
+	if got := e.get(t, azima.GetId()); got.GetTitle() != "Phase 1 reaches main: PR #3 merged" || !plan.IsAzima(got) {
+		t.Errorf("stored azima: title %q, kind %v", got.GetTitle(), got.GetKind())
+	}
+
+	prompt := "text do it"
+	newTitle := "Renamed with a prompt"
 	_, err = e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
 		TaskId: azima.GetId(),
 		Title:  &newTitle,
+		Prompt: &prompt,
 	}))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("update azima err: %v, want FailedPrecondition", err)
+		t.Fatalf("update azima prompt err: %v, want FailedPrecondition", err)
 	}
-	wantAzimaErr := "task " + azima.GetCode() + " is an azima of the plan: no worker runs it"
+	wantAzimaErr := "task " + azima.GetCode() + " is an azima of the plan: no worker runs it; only its title, or its branch, changes"
 	if !strings.Contains(err.Error(), wantAzimaErr) {
 		t.Errorf("err: %q, want %q", err.Error(), wantAzimaErr)
+	}
+	if got := e.get(t, azima.GetId()).GetTitle(); got != "Phase 1 reaches main: PR #3 merged" {
+		t.Errorf("title after a refused update: %q", got)
+	}
+
+	twoLines := "One\ntwo"
+	_, err = e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{TaskId: azima.GetId(), Title: &twoLines}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("update azima with a title of two lines err: %v, want InvalidArgument", err)
+	}
+}
+
+// TestUpdateRenamesAnAzimaInItsPlanFile: djinn task update --title on an azima with a plan file writes the title into
+// the file's heading, its code kept; djinn plan sync then keeps the new title.
+func TestUpdateRenamesAnAzimaInItsPlanFile(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	dir := t.TempDir()
+	file := filepath.Join(dir, plan.PlanDir, "t1.md")
+	writeFile(t, dir, filepath.Join(plan.PlanDir, "t1.md"),
+		"---\ncode: T1\nstatus: in-progress\n---\n\n# T1 · Old title\n\nThe goal.\n\n## Done when\n\n- [ ] it ships\n")
+	e := up(t, t.TempDir())
+	wishID, _ := e.wish(t, dir)
+	sync := func() {
+		t.Helper()
+		if _, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wishID})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sync()
+	var t1 *planv1.Task
+	for _, task := range e.list(t, wishID) {
+		if task.GetCode() == "T1" {
+			t1 = task
+		}
+	}
+	if t1 == nil || t1.GetTitle() != "Old title" {
+		t.Fatalf("T1 after sync: %v", t1)
+	}
+
+	var out, errs bytes.Buffer
+	code := cli.Run(ctx, []string{"task", "update", t1.GetId(), "--title", "feat/x reaches main: PR #3 merged"},
+		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+	if code != 0 || !strings.Contains(out.String(), "title: feat/x reaches main: PR #3 merged") {
+		t.Errorf("djinn task update --title: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "---\ncode: T1\nstatus: in-progress\n---\n\n# T1 · feat/x reaches main: PR #3 merged\n\nThe goal.\n\n## Done when\n\n- [ ] it ships\n"
+	if string(data) != want {
+		t.Errorf("plan file:\n%s\nwant:\n%s", data, want)
+	}
+
+	sync()
+	if got := e.get(t, t1.GetId()); got.GetTitle() != "feat/x reaches main: PR #3 merged" || got.GetDescription() != "The goal.\n\n## Done when\n\n- [ ] it ships" {
+		t.Errorf("T1 after a sync: title %q, description %q", got.GetTitle(), got.GetDescription())
 	}
 }
 

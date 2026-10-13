@@ -725,6 +725,53 @@ Description here.
 	}
 }
 
+// TestWriteTitle: the title goes into the heading, its code and separator kept; a heading without the code is the
+// title alone; a file without a heading gets one; line endings stay; the title reads back as it was written.
+func TestWriteTitle(t *testing.T) {
+	cases := []struct{ name, before, after string }{
+		{"code and separator kept",
+			"---\ncode: T36\n---\n\n# T36: Old\n\nGoal.\n",
+			"---\ncode: T36\n---\n\n# T36: feat/x reaches main: PR #3 merged\n\nGoal.\n"},
+		{"heading without the code",
+			"---\ncode: T36\n---\n# Old\nGoal.\n",
+			"---\ncode: T36\n---\n# feat/x reaches main: PR #3 merged\nGoal.\n"},
+		{"heading of the code alone",
+			"---\ncode: T36\n---\n# T36\n",
+			"---\ncode: T36\n---\n# T36 · feat/x reaches main: PR #3 merged\n"},
+		{"no heading",
+			"---\ncode: T36\n---\n\nGoal.\n",
+			"---\ncode: T36\n---\n\n# T36 · feat/x reaches main: PR #3 merged\n\nGoal.\n"},
+		{"CRLF",
+			"---\r\ncode: T36\r\n---\r\n\r\n# T36 · Old\r\n\r\nGoal.\r\n",
+			"---\r\ncode: T36\r\n---\r\n\r\n# T36 · feat/x reaches main: PR #3 merged\r\n\r\nGoal.\r\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "t36.md")
+			if err := os.WriteFile(path, []byte(c.before), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			changed, err := WriteTitle(path, "T36", " feat/x reaches main: PR #3 merged ")
+			if err != nil || !changed {
+				t.Fatalf("WriteTitle: changed %v, err %v", changed, err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != c.after {
+				t.Errorf("file:\n%q\nwant:\n%q", data, c.after)
+			}
+			if f, ok := parseAzimaFile(data); !ok || f.Title != "feat/x reaches main: PR #3 merged" {
+				t.Errorf("title read back: %q", f.Title)
+			}
+			if changed, err := WriteTitle(path, "T36", "feat/x reaches main: PR #3 merged"); err != nil || changed {
+				t.Errorf("WriteTitle again: changed %v, err %v", changed, err)
+			}
+		})
+	}
+}
+
 func TestReadAzimaFilesSubdirectories(t *testing.T) {
 	dir := t.TempDir()
 	planDir := filepath.Join(dir, PlanDir)

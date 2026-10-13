@@ -661,6 +661,27 @@
   white-space: nowrap;
   font-weight: 600;
 }
+/* Its title, renamed in place: the pencil shows on hover of the heading, the field takes the title's room. */
+.azima-rename {
+  flex-shrink: 0;
+  opacity: 0;
+}
+.azima-row:hover .azima-rename,
+.azima-rename:focus-visible {
+  opacity: 1;
+}
+.azima-title-edit {
+  flex: 1;
+  min-width: 0;
+  margin: -3px 0;
+  padding: 2px 6px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+}
 /* On a narrow card, what follows the title goes to a second line rather than squeezing it out. */
 @container azima (max-width: 560px) {
   .azima-heading {

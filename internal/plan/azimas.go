@@ -983,3 +983,57 @@ func WriteCode(file string, code string) (bool, error) {
 	}
 	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
 }
+
+// WriteTitle writes an azima's title into its plan file's heading, the first "# " line after its front matter: its
+// code and the separator after it stay ("# T07 · The orchestrator"); a file without a heading gets one, code first.
+// It tells whether the file changed.
+func WriteTitle(file string, code string, title string) (bool, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return false, err
+	}
+	_, body, ok := splitFrontMatter(data)
+	if !ok {
+		return false, nil
+	}
+	nl := "\n"
+	if bytes.HasPrefix(data, []byte("---\r\n")) {
+		nl = "\r\n"
+	}
+	head := data[:len(data)-len(body)]
+	title = strings.TrimSpace(title)
+	var newBody []byte
+	sc := bufio.NewScanner(bytes.NewReader(body))
+	for sc.Scan() {
+		line := sc.Text()
+		heading, ok := strings.CutPrefix(line, "# ")
+		if !ok {
+			continue
+		}
+		newHeading := title
+		if rest, ok := strings.CutPrefix(heading, code); ok && code != "" && (rest == "" || strings.ContainsAny(rest[:1], " ·:-—")) {
+			sep := rest[:len(rest)-len(strings.TrimLeft(rest, " ·:-—"))]
+			if strings.TrimLeft(rest, " ·:-—") == "" {
+				sep = " · "
+			}
+			newHeading = code + sep + title
+		}
+		newBody = bytes.Replace(body, []byte(line), []byte("# "+newHeading), 1)
+		break
+	}
+	if newBody == nil {
+		heading := "# " + title
+		if code != "" {
+			heading = "# " + code + " · " + title
+		}
+		newBody = append([]byte(nl+heading+nl), body...)
+	}
+	if bytes.Equal(newBody, body) {
+		return false, nil
+	}
+	info, err := os.Stat(file)
+	if err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(file, append(slices.Clip(head), newBody...), info.Mode().Perm())
+}

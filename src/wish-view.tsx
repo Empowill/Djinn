@@ -580,6 +580,20 @@ export function WishView({
     [quiet, write, clients.tasks],
   );
 
+  // An azima renamed from its card: djinn task update --title, written to its plan file too.
+  const handleRenameAzima = useCallback(
+    (azima: Task, title: string) => {
+      quiet(
+        write(
+          azima.wishId,
+          () => clients.tasks.update({ taskId: azima.id, title }),
+          [Change.TASK],
+        ),
+      );
+    },
+    [quiet, write, clients.tasks],
+  );
+
   const renderAzima = useCallback(
     ({ azima, parts }: { azima: Task; parts: readonly Task[] }) => (
       <AzimaCard
@@ -591,6 +605,7 @@ export function WishView({
         focus={focus}
         nest={nest}
         onValidate={handleValidateAzima}
+        onRename={handleRenameAzima}
         isPerAzima={isPerAzima}
         sync={azimaSyncs.get(azima.id)}
         onPush={handlePushAzima}
@@ -603,6 +618,7 @@ export function WishView({
       renderTask,
       focus,
       handleValidateAzima,
+      handleRenameAzima,
       isPerAzima,
       azimaSyncs,
       handlePushAzima,
@@ -636,9 +652,10 @@ export function WishView({
         focus={focus}
         onOpen={() => handleOpenDraft(draft)}
         onMove={() => handleMoveDraft(draft)}
+        onRename={handleRenameAzima}
       />
     ),
-    [byId, focus, handleOpenDraft, handleMoveDraft],
+    [byId, focus, handleOpenDraft, handleMoveDraft, handleRenameAzima],
   );
 
   const handleQuestionAnswer = useCallback(
