@@ -340,6 +340,11 @@ what it read before its input closed (as when stream-json messages are piped fro
 (`djinn up --warm-workers`) is the same command started before its task: it waits for its first message, which is
 the task's prompt.
 
+**Images.** A supported Claude worker resolves an instruction's stored attachment through its UUID and sends a
+`content` block with `type: "image"` and a base64 `source` (`media_type` and `data`), alongside its text block. Djinn
+accepts PNG, JPEG and GIF only, at most 5 MiB per image, and validates the decoded dimensions before encoding. An
+image sent through the text-only lead PTY is unsupported; a path string is never used as a fallback.
+
 **Finding claude.** An app started from the Finder or a desktop menu gets a bare PATH: the shell's startup files
 that add `~/.local/bin` (where Claude Code's installer puts `claude`) are never read, not even by the login shell
 that runs a lead (`zsh -l -c` reads `.zprofile`, not `.zshrc`). One resolver, `machine.ExtendPath`, appends to
@@ -422,6 +427,11 @@ worker's permissions (`accept` what they cover, `permission granted: …`), and 
 (`{"decision":"decline"}`, `permission denied: …`); it refuses any other request (JSON-RPC error -32601). Dropped on purpose: deltas
 (their item comes whole once completed), `turn/started`, `thread/started`, and the user's message item.
 
+**Images.** A supported Codex worker resolves the same attachment metadata and sends an `input` item with
+`type: "image"` and a `url` data URI (`data:image/<type>;base64,…`) next to the text item. The same Djinn bounds and
+MIME validation apply before the request reaches Codex. Recorded provider fixtures must capture the complete JSON-RPC
+`turn/start` request and assert the image item; a filename-only input does not prove support.
+
 **Usage.** Tokens only, no cost: `thread/tokenUsage/updated` gives the thread's total. Djinn counts the cached
 input apart (`input = inputTokens − cachedInputTokens`), which supposes that `inputTokens` includes the cached
 ones, as in the OpenAI API.
@@ -490,6 +500,11 @@ denial notice, fails: "agy stopped: it cannot run commands headless (<the comman
 codex." A tool step that ends in `ERROR` does not end the turn: refused by a deny grant (its `tool_info.error` says
 "… Matches user-configured deny rule."), it is a `permission denied: <the command>` status, as Claude's; else its
 error is the tool's result.
+
+**Images.** The recorded Antigravity stream contract accepts text content only; no typed image block has been
+proven. A stored image indication therefore returns an explicit `UNSUPPORTED` delivery state for this provider. Djinn never
+puts an attachment filename in the prompt or silently drops the image. A recorded stream fixture is required before
+Antigravity can claim image support.
 
 **Real case, 2026-10-08, agy 1.3.0 headless.** Three workers (W35, W36, W38) ran in a project with
 `.agents/permissions.txtpb` (so `--mode accept-edits`). Each read a few files, then stopped at a shell command:

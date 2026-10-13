@@ -459,6 +459,9 @@ func writeServiceHelp(w io.Writer, sd protoreflect.ServiceDescriptor) {
 // writeText prints a response for a human: one "name: value" line per field set, nested messages indented, and
 // the content of the response directly when it holds a single field.
 func writeText(w io.Writer, m protoreflect.Message) {
+	if payload, ok := emptyImageDeliveryPayload(m); ok {
+		m = payload
+	}
 	if fields := m.Descriptor().Fields(); fields.Len() == 1 && fields.Get(0).Kind() == protoreflect.MessageKind {
 		fd := fields.Get(0)
 		switch {
@@ -470,6 +473,32 @@ func writeText(w io.Writer, m protoreflect.Message) {
 		}
 	}
 	writeFields(w, m, "")
+}
+
+// emptyImageDeliveryPayload preserves the historical human output of text-only instruction send/assign commands.
+// Those public responses gained delivery fields for image paths; when both are unset, print their sole payload as
+// before. A nonempty delivery state keeps the response wrapper so the CLI exposes the image outcome.
+func emptyImageDeliveryPayload(m protoreflect.Message) (protoreflect.Message, bool) {
+	fields := m.Descriptor().Fields()
+	if fields.Len() != 3 {
+		return nil, false
+	}
+	var payload, delivery, note protoreflect.FieldDescriptor
+	for i := range fields.Len() {
+		fd := fields.Get(i)
+		switch string(fd.Name()) {
+		case "instruction":
+			payload = fd
+		case "image_delivery":
+			delivery = fd
+		case "image_delivery_note":
+			note = fd
+		}
+	}
+	if payload == nil || payload.Kind() != protoreflect.MessageKind || delivery == nil || note == nil || !m.Has(payload) || m.Has(delivery) || m.Has(note) {
+		return nil, false
+	}
+	return m.Get(payload).Message(), true
 }
 
 func writeFields(w io.Writer, m protoreflect.Message, indent string) {

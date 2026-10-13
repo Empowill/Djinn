@@ -10,6 +10,7 @@ import (
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
+	"github.com/empowill/djinn/internal/plan"
 )
 
 // Provider starts the workers of one kind of agent.
@@ -34,6 +35,9 @@ type Spec struct {
 	Permissions *djinnv1.Permissions
 	// Prompt is the first message to the agent.
 	Prompt string
+	// Attachments are the validated images delivered with the first message. They stay typed until the provider
+	// encoder builds its native input blocks; they are never added to Prompt.
+	Attachments []plan.AttachmentData
 	// Model is the agent's model; empty for the provider's default.
 	Model string
 	// MaxBudgetUSD caps what the worker may spend, when the provider can enforce it; 0 for no cap.
@@ -86,6 +90,18 @@ type Worker interface {
 	Wait() Result
 }
 
+// ImageWorker is the typed input path for providers that can carry image blocks. Send remains text-only for the
+// public Worker contract so existing task messages and providers keep their lifecycle behavior. Images must pass
+// through this interface; callers must never turn an attachment into a filename or a textual data URI.
+type ImageWorker interface {
+	Worker
+	SendWithAttachments(text string, attachments []plan.AttachmentData) error
+}
+
+// ErrImageInputUnsupported identifies a provider that cannot carry an image input block. The harness returns this
+// before starting a process, so an indication is never silently reduced to text.
+var ErrImageInputUnsupported = errors.New("the provider cannot carry image input blocks")
+
 // Pauser is a worker that can hold still without losing anything: its agent stops where it is until it is resumed.
 // A worker that is not one cannot be paused.
 type Pauser interface {
@@ -116,6 +132,9 @@ type Event struct {
 	Kind planv1.TaskEventKind
 	// Text is the event for a reader.
 	Text string
+	// Attachments are durable image references owned by this task event. Provider input bytes never enter the
+	// event or journal; Tasks.SendData stages them and supplies only these validated metadata records here.
+	Attachments []*planv1.Attachment
 	// Raw is the provider's line as it came, on the first event made from it.
 	Raw string
 	// Usage is what the worker spent so far in this run, on a usage event.

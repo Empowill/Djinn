@@ -133,7 +133,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
 	out[p] = h
-	p, h = planv1connect.NewInstructionServiceHandler(&Instructions{Store: s, Leads: o.leads}, opt)
+	p, h = planv1connect.NewInstructionServiceHandler(&Instructions{Store: s, Leads: o.leads, Workers: o.workers, Home: o.home}, opt)
 	out[p] = h
 	p, h = planv1connect.NewMarkServiceHandler(&Marks{Store: s, Answered: o.answered, Approved: o.approved, Told: told, Settle: wishes.settle}, opt)
 	out[p] = h

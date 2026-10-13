@@ -62,6 +62,18 @@ func TestConvention(t *testing.T) {
 		parseOnly bool // the arguments are a variant format does not produce
 	}{
 		{name: "durable instruction send", args: []string{wishID, "Full\ntext", "--request-id", questionID}, want: &planv1.InstructionServiceSendRequest{WishId: wishID, Text: "Full\ntext", RequestId: questionID}},
+		{
+			name:      "repeated attachment paths start from the caller's current directory",
+			args:      []string{wishID, "--attachment-paths", "screen.png", "--attachment-paths", "other.png"},
+			want:      &planv1.InstructionServiceSendRequest{WishId: wishID, AttachmentPaths: []string{filepath.Join(filepath.Dir(dir), "screen.png"), filepath.Join(filepath.Dir(dir), "other.png")}},
+			parseOnly: true,
+		},
+		{
+			name:      "task image paths also start from the caller's current directory",
+			args:      []string{taskID, "--attachment-paths", "screen.png", "--attachment-paths", "other.png"},
+			want:      &planv1.TaskServiceSendRequest{TaskId: taskID, AttachmentPaths: []string{filepath.Join(filepath.Dir(dir), "screen.png"), filepath.Join(filepath.Dir(dir), "other.png")}},
+			parseOnly: true,
+		},
 		{name: "durable instruction list", args: []string{wishID}, want: &planv1.InstructionServiceListRequest{WishId: wishID}},
 		{name: "durable instruction reflect", args: []string{"I01", "--wish-id", wishID}, want: &planv1.InstructionServiceReflectRequest{Instruction: "I01", WishId: wishID}},
 		{name: "durable instruction assign", args: []string{"I01", "W1", "--wish-id", wishID}, want: &planv1.InstructionServiceAssignRequest{Instruction: "I01", Task: "W1", WishId: wishID}},
@@ -209,6 +221,21 @@ func TestConvention(t *testing.T) {
 				t.Errorf("format(%v) = %q, want %q", tt.want, args, tt.args)
 			}
 		})
+	}
+}
+
+func TestWriteTextKeepsTextOnlyInstructionResponseShape(t *testing.T) {
+	response := &planv1.InstructionServiceSendResponse{Instruction: &planv1.Instruction{Id: questionID}}
+	var out bytes.Buffer
+	writeText(&out, response.ProtoReflect())
+	if got := out.String(); strings.Contains(got, "instruction:") || !strings.Contains(got, "id: "+questionID) {
+		t.Fatalf("text-only instruction response = %q, want the historical unwrapped fields", got)
+	}
+	response.ImageDelivery = planv1.InstructionImageDelivery_INSTRUCTION_IMAGE_DELIVERY_QUEUED
+	out.Reset()
+	writeText(&out, response.ProtoReflect())
+	if got := out.String(); !strings.Contains(got, "instruction:") || !strings.Contains(got, "image_delivery:") {
+		t.Fatalf("image instruction response = %q, want delivery wrapper", got)
 	}
 }
 

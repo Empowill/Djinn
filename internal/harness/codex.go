@@ -12,6 +12,7 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 )
 
 // Codex runs OpenAI's Codex through its app-server: `codex app-server --listen stdio://`, JSON-RPC 2.0 with one
@@ -97,9 +98,27 @@ func (c Codex) threadRequest(spec Spec) (string, map[string]any) {
 
 // turnParams are the parameters of turn/start for a message.
 func (c Codex) turnParams(spec Spec, thread, text string) map[string]any {
+	params, _ := c.turnParamsInput(spec, thread, text, nil)
+	return params
+}
+
+func (c Codex) turnParamsInput(spec Spec, thread, text string, attachments []plan.AttachmentData) (map[string]any, error) {
+	input := make([]any, 0, 1+len(attachments))
+	// Keep the text-only input shape stable. For an image message, an empty prompt is represented by the image
+	// block alone so the provider receives no filename or data URI as model text.
+	if text != "" || len(attachments) == 0 {
+		input = append(input, map[string]any{"type": "text", "text": text, "text_elements": []any{}})
+	}
+	for n, attachment := range attachments {
+		url, err := imageDataURI(attachment, n)
+		if err != nil {
+			return nil, err
+		}
+		input = append(input, map[string]any{"type": "image", "url": url})
+	}
 	params := map[string]any{
 		"threadId": thread,
-		"input":    []any{map[string]any{"type": "text", "text": text, "text_elements": []any{}}},
+		"input":    input,
 		"cwd":      spec.Dir,
 	}
 	if _, reviewer, approval, policy, ok := codexAccess(spec); ok {
@@ -111,10 +130,13 @@ func (c Codex) turnParams(spec Spec, thread, text string) map[string]any {
 	if spec.Model != "" {
 		params["model"] = spec.Model
 	}
-	return params
+	return params, nil
 }
 
 func (c Codex) Start(ctx context.Context, spec Spec) (Worker, error) {
+	if err := validateImageInputs(spec.Attachments); err != nil {
+		return nil, err
+	}
 	command, grace := c.Command, c.Grace
 	if command == "" {
 		command = "codex"
@@ -127,7 +149,7 @@ func (c Codex) Start(ctx context.Context, spec Spec) (Worker, error) {
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}
 	w := &codexWorker{c: c, spec: spec, p: p, grace: grace, events: make(chan Event, 64), done: make(chan struct{}),
-		calls: map[int64]string{}, queue: []string{spec.Prompt}}
+		calls: map[int64]string{}, queue: []codexInput{{text: spec.Prompt, attachments: cloneImageInputs(spec.Attachments)}}}
 	go w.read()
 	w.mu.Lock()
 	err = w.call("initialize", map[string]any{
@@ -166,7 +188,7 @@ type codexWorker struct {
 	calls   map[int64]string // requests waiting for their answer: their method
 	thread  string           // the thread, once open
 	turn    string           // the turn under way, if any
-	queue   []string         // messages waiting for their turn
+	queue   []codexInput     // messages waiting for their turn
 	closed  bool             // input closed: no more messages
 	failure string
 	lastErr string // the last error reported in the turn under way
@@ -174,6 +196,11 @@ type codexWorker struct {
 	stopped atomic.Bool // asked to stop
 	reaped  atomic.Bool // stopped by Djinn after its last turn, the app-server not ending by itself
 	tools   map[string]bool
+}
+
+type codexInput struct {
+	text        string
+	attachments []plan.AttachmentData
 }
 
 func (w *codexWorker) Events() <-chan Event { return w.events }
@@ -208,12 +235,23 @@ func (w *codexWorker) Wait() Result {
 
 // Send queues a message: it runs as a turn of its own once the turns before it have completed.
 func (w *codexWorker) Send(text string) error {
+	return w.sendInput(text, nil)
+}
+
+func (w *codexWorker) SendWithAttachments(text string, attachments []plan.AttachmentData) error {
+	if err := validateImageInputs(attachments); err != nil {
+		return err
+	}
+	return w.sendInput(text, attachments)
+}
+
+func (w *codexWorker) sendInput(text string, attachments []plan.AttachmentData) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
 		return ErrClosed
 	}
-	w.queue = append(w.queue, text)
+	w.queue = append(w.queue, codexInput{text: text, attachments: cloneImageInputs(attachments)})
 	if w.thread != "" && w.turn == "" && len(w.queue) == 1 {
 		return w.startTurn()
 	}
@@ -246,7 +284,12 @@ func (w *codexWorker) call(method string, params any) error {
 func (w *codexWorker) startTurn() error {
 	w.turn = "starting"
 	w.lastErr = ""
-	return w.call("turn/start", w.c.turnParams(w.spec, w.thread, w.queue[0]))
+	params, err := w.c.turnParamsInput(w.spec, w.thread, w.queue[0].text, w.queue[0].attachments)
+	if err != nil {
+		w.turn = ""
+		return err
+	}
+	return w.call("turn/start", params)
 }
 
 // finish closes the input, so that the app-server ends; it is stopped if it has not after the grace delay. The

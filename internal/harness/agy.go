@@ -81,6 +81,9 @@ func (a Antigravity) args(spec Spec) ([]string, error) {
 }
 
 func (a Antigravity) Start(ctx context.Context, spec Spec) (Worker, error) {
+	if len(spec.Attachments) > 0 {
+		return nil, fmt.Errorf("%w: antigravity stream-json has no supported image block", ErrImageInputUnsupported)
+	}
 	command, grace := a.Command, a.Grace
 	if command == "" {
 		command = "agy"

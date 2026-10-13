@@ -21,6 +21,7 @@ import (
 func (h *Harness) Delete(ctx context.Context, procedure string, req *planv1.TaskServiceDeleteRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
 	var task *planv1.Task
+	var attachmentIDs []string
 	h.sched.Lock() // Serialize deletion with scheduler passes and graph edits (Spawn, Depend, Group).
 	defer h.sched.Unlock()
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -51,6 +52,7 @@ func (h *Harness) Delete(ctx context.Context, procedure string, req *planv1.Task
 		if err != nil {
 			return err
 		}
+		attachmentIDs = plan.AttachmentIDsForEvents(events)
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err
 		}
@@ -74,6 +76,7 @@ func (h *Harness) Delete(ctx context.Context, procedure string, req *planv1.Task
 	if err != nil {
 		return nil, plan.Status(err)
 	}
+	plan.RemoveStoredAttachments(h.home, attachmentIDs)
 	return task, nil
 }
 

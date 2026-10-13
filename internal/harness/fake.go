@@ -14,6 +14,7 @@ import (
 	"time"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 )
 
 // Fake is an agent that plays a script, to try Djinn and test it without a paid model. Each line of the prompt is
@@ -36,23 +37,33 @@ import (
 type Fake struct{}
 
 func (Fake) Start(ctx context.Context, spec Spec) (Worker, error) {
+	if err := validateImageInputs(spec.Attachments); err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithCancel(ctx)
-	w := &fakeWorker{events: make(chan Event), cancel: cancel, done: make(chan struct{}), sent: make(chan struct{}, 1)}
+	w := &fakeWorker{events: make(chan Event), cancel: cancel, done: make(chan struct{}), sent: make(chan struct{}, 1),
+		initial: cloneImageInputs(spec.Attachments)}
 	go w.play(ctx, spec)
 	return w, nil
 }
 
 type fakeWorker struct {
-	events chan Event
-	cancel context.CancelFunc
-	done   chan struct{}
-	res    Result
+	events  chan Event
+	cancel  context.CancelFunc
+	done    chan struct{}
+	res     Result
+	initial []plan.AttachmentData // first message images, retained for bounded wire-capture tests
 
 	sent chan struct{} // a message came (wait)
 
 	mu    sync.Mutex
-	inbox []string
+	inbox []fakeInput
 	held  chan struct{} // while paused; closed when resumed
+}
+
+type fakeInput struct {
+	text        string
+	attachments []plan.AttachmentData
 }
 
 func (w *fakeWorker) Events() <-chan Event { return w.events }
@@ -61,6 +72,17 @@ func (w *fakeWorker) Wait() Result         { <-w.done; return w.res }
 
 // Send queues a message: the fake says it back once its script is played.
 func (w *fakeWorker) Send(text string) error {
+	return w.sendInput(text, nil)
+}
+
+func (w *fakeWorker) SendWithAttachments(text string, attachments []plan.AttachmentData) error {
+	if err := validateImageInputs(attachments); err != nil {
+		return err
+	}
+	return w.sendInput(text, attachments)
+}
+
+func (w *fakeWorker) sendInput(text string, attachments []plan.AttachmentData) error {
 	select {
 	case <-w.done:
 		return ErrClosed
@@ -68,7 +90,7 @@ func (w *fakeWorker) Send(text string) error {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.inbox = append(w.inbox, text)
+	w.inbox = append(w.inbox, fakeInput{text: text, attachments: cloneImageInputs(attachments)})
 	select {
 	case w.sent <- struct{}{}:
 	default:
@@ -227,8 +249,8 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 	inbox := w.inbox
 	w.inbox = nil
 	w.mu.Unlock()
-	for _, text := range inbox {
-		if !emit(Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: "received: " + text}) {
+	for _, input := range inbox {
+		if !emit(Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: "received: " + input.text}) {
 			w.res = stopped
 			return
 		}

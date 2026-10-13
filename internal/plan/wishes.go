@@ -330,6 +330,7 @@ func (w *Wishes) Delete(
 	res := &planv1.WishServiceDeleteResponse{}
 	var tasks []*planv1.Task
 	var tilasms []*planv1.Tilasm
+	var removedAttachments []string
 	err = write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		where := store.Where{"wish_id": id}
 		var err error
@@ -341,6 +342,7 @@ func (w *Wishes) Delete(
 			if err != nil {
 				return err
 			}
+			removedAttachments = append(removedAttachments, AttachmentIDsForEvents(events)...)
 			for _, ev := range events {
 				if err := tx.Delete(ev); err != nil {
 					return err
@@ -372,6 +374,7 @@ func (w *Wishes) Delete(
 		if err != nil {
 			return err
 		}
+		removedAttachments = append(removedAttachments, attachmentIDs(instructions)...)
 		for _, instruction := range instructions {
 			if err := tx.Delete(instruction); err != nil {
 				return err
@@ -410,6 +413,7 @@ func (w *Wishes) Delete(
 	if w.Leads != nil {
 		w.Leads.Close(LeadTerminal(id))
 	}
+	removeAttachmentFiles(w.Home, removedAttachments)
 	for _, t := range tilasms {
 		if w.Home != "" {
 			os.RemoveAll(TilasmDir(w.Home, t.GetId()))
