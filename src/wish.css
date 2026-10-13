@@ -245,7 +245,8 @@
 .task-time {
   font-variant-numeric: tabular-nums;
 }
-/* The model turns of its run against the limit Djinn stops it at: warns as it nears it. */
+/* The model turns of its whole life, then those of its run against the limit Djinn stops it at: warns as the run
+   nears it. */
 .task-turns {
   display: inline-flex;
   align-items: center;
@@ -254,6 +255,12 @@
 }
 .task-turns.warning {
   color: var(--st-waiting);
+}
+.task-turns-run {
+  opacity: 0.7;
+}
+.task-turns-run::before {
+  content: "· ";
 }
 .task-model {
   flex-shrink: 0;

@@ -738,7 +738,7 @@
   "task.turns": "model turns",
   "task.turns_last_run": "{run} model turns in its last run, of the {limit} its seal allows a run",
   "task.turns_run": "{run} model turns in this run, of the {limit} its seal allows a run",
-  "task.turns_total": "{total} over all its runs",
+  "task.turns_total": "{total} model turns over its whole life",
   "task.waits_for_memory": "waits for memory",
   "tasks.all": "All the tasks, oldest at the bottom",
   "tasks.azimas": "Azimas",
