@@ -80,9 +80,9 @@ func TestReadmeInstallLines(t *testing.T) {
 // sections that each say what is not checked yet, what was fixed, how to upgrade, the credits, and the changelog.
 // A release page resolves no relative link, and a task or question code means nothing outside the developer's Djinn.
 func TestReleaseNotes(t *testing.T) {
-	notes := read(t, "docs/releases/v0.1.1.md")
-	if !strings.HasPrefix(notes, "# Djinn v0.1.1\n") {
-		t.Errorf("v0.1.1.md does not start with # Djinn v0.1.1")
+	notes := read(t, "docs/releases/v0.1.2.md")
+	if !strings.HasPrefix(notes, "# Djinn v0.1.2\n") {
+		t.Errorf("v0.1.2.md does not start with # Djinn v0.1.2")
 	}
 	workflow := read(t, ".github/workflows/release.yml")
 	if !strings.Contains(workflow, `docs/releases/$GITHUB_REF_NAME.md`) || !strings.Contains(workflow, `--notes-file`) {
@@ -92,25 +92,25 @@ func TestReleaseNotes(t *testing.T) {
 		"## Install",
 		"**Still needs:**",
 		"## Fixed",
-		"## Upgrading from v0.1.0",
+		"## Upgrading from v0.1.1",
 		"## Credits",
 		"## License",
-		"**Full changelog**: https://github.com/Empowill/Djinn/compare/v0.1.0...v0.1.1",
+		"**Full changelog**: https://github.com/Empowill/Djinn/compare/v0.1.1...v0.1.2",
 	} {
 		if !strings.Contains(notes, section) {
-			t.Errorf("v0.1.1.md missing: %s", section)
+			t.Errorf("v0.1.2.md missing: %s", section)
 		}
 	}
 	if strings.Index(notes, "## Install") > strings.Index(notes, "\n## Djinn") {
-		t.Errorf("v0.1.1.md: the install does not come first")
+		t.Errorf("v0.1.2.md: the install does not come first")
 	}
 	for _, link := range regexp.MustCompile(`\]\(([^)]*)\)`).FindAllStringSubmatch(notes, -1) {
 		if !strings.HasPrefix(link[1], "https://") {
-			t.Errorf("v0.1.1.md: link %q is not absolute", link[1])
+			t.Errorf("v0.1.2.md: link %q is not absolute", link[1])
 		}
 	}
 	if code := regexp.MustCompile(`\b[WQ][0-9]+\b`).FindString(notes); code != "" {
-		t.Errorf("v0.1.1.md names the task or question %s", code)
+		t.Errorf("v0.1.2.md names the task or question %s", code)
 	}
 }
 
