@@ -303,13 +303,18 @@ func questionText(b *strings.Builder, q *planv1.Question) {
 // call that joins anything to a djinn command, since every part of a compound command must be allowed, and reads
 // files with its own tools. Workers that took a refused form for a refused Bash gave up without doing anything.
 const questionAccess = "## How to work within your access\n\n" +
-	"You read files, and run djinn's commands (and `git log`, `git show`, `git diff`, `git status`): nothing else.\n\n" +
+	"You read files, search the web and fetch pages, and run djinn's commands (and `git log`, `git show`, " +
+	"`git diff`, `git status`): nothing else.\n\n" +
 	"- Run each `djinn …` command alone, in a Bash call of its own: no pipe (`|`), no `;`, no `&&` nor `||`, no " +
-	"redirection (`>`, `2>`), no `$(…)`, no `cd` before it. A call that joins anything to a djinn command is refused " +
-	"whole. Read a command's whole output rather than filtering it.\n" +
-	"- Read files with your Read, Grep and Glob tools, never with cat, grep, sed, head or find in Bash.\n" +
-	"- Write the values of `--title`, `--prompt`, `--context`… between double quotes, with no backtick nor `$` inside: " +
-	"there they would run a command, and the call is refused. Write an inner double quote `\\\"`.\n" +
+	"redirection (`>`, `2>`, `<<`), no `$(…)`, no `cd` before it. A call that joins anything to a djinn command is " +
+	"refused whole. Read a command's whole output rather than filtering it.\n" +
+	"- Read files with your Read, Grep and Glob tools, and search or fetch the web with your web tools (WebSearch " +
+	"and WebFetch, or search_web and read_url_content), never with cat, grep, sed, head, find or curl in Bash.\n" +
+	"- Write the values of `--title`, `--prompt`, `--context`, `--recommendation`, `--options`… between double quotes, " +
+	"with no backtick nor `$` inside: there they would run a command, and the call is refused. Never start a line " +
+	"inside a quoted argument with `#` at column zero (indent `#` comments inside a `~~~` block with a leading space, " +
+	"` # …`, or keep lines plain), as a newline followed immediately by `#` inside quotes is refused by the shell " +
+	"filter. Write an inner double quote `\\\"`.\n" +
 	"- A refused call means that this form of the command is refused, not that Bash is: run the djinn command again, " +
 	"alone and plain. Never end on a refusal: a question worker that did nothing after one has failed.\n\n"
 
@@ -331,15 +336,17 @@ func investigatorPrompt(q *planv1.Question, note, retry, brief string) (title, p
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are a question worker of Djinn. Before answering %s in wish %s, the developer wants to know "+
 		"more. Your one job: find out, then revise the question so that it waits for the developer again. You write "+
-		"no code, edit no file and run no gate: you read. The wish's lead is told what you did when you end.\n\n",
+		"no code, edit no file and run no gate: you read the codebase and search the web. The wish's lead is told "+
+		"what you did when you end.\n\n",
 		code, wish)
 	questionText(&b, q)
 	if n := strings.TrimSpace(note); n != "" {
 		b.WriteString("What the developer wants to know:\n\n" + n + "\n\n")
 	}
 	fmt.Fprintf(&b, "## What to do\n\n"+
-		"1. Read the code (with Read, Grep and Glob), the brief below and `djinn task list --wish-id %[2]s`, to "+
-		"answer what the developer asks.\n"+
+		"1. Read the code (with Read, Grep and Glob), search the web and fetch external documentation or references "+
+		"(with WebSearch and WebFetch, or search_web and read_url_content) when helpful, and read the brief below "+
+		"and `djinn task list --wish-id %[2]s`, to answer what the developer asks.\n"+
 		"2. Revise the question: `djinn question revise %[1]s --wish-id %[2]s --context \"…\" --recommendation \"…\"`, "+
 		"and `--options \"…\"` (each one, up to four) when the options change. The context says what you found and "+
 		"what each option costs, in the shape below; the recommendation starts with its option's letter (`B: …`).\n"+

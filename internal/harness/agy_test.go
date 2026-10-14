@@ -66,6 +66,8 @@ func TestAgyProject(t *testing.T) {
 			[]string{"command(rm -rf)", "command(git push)"}},
 		// LISTED: only what is listed, Git's folders all the same.
 		{Spec{Dir: wt, Permissions: listed}, []string{"write_file(" + wt + ")", "write_file(" + common + ")", "command(go tool task lint)"}, nil},
+		// Question worker (djinnOnly): web reads and djinn commands in LISTED mode, no write_file.
+		{Spec{Dir: wt, Permissions: djinnOnly()}, []string{"read_url(*)", "command(djinn question revise)"}, nil},
 	}
 	for _, tt := range projects {
 		f := agyProject(tt.spec)

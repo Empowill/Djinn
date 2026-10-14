@@ -75,9 +75,9 @@ var djinnCommands = []string{
 // follows, as the agent names it.
 const permissionDenied = "permission denied: "
 
-// djinnOnly is what a question worker gets (TASK_ACCESS_DJINN): reading, and djinnCommands; no edit, no network.
+// djinnOnly is what a question worker gets (TASK_ACCESS_DJINN): reading, the web, and djinnCommands; no edit.
 func djinnOnly() *djinnv1.Permissions {
-	return &djinnv1.Permissions{Commands: djinnCommands, Mode: djinnv1.Mode_MODE_LISTED}
+	return &djinnv1.Permissions{Commands: djinnCommands, Network: true, Mode: djinnv1.Mode_MODE_LISTED}
 }
 
 // LeadPermissions are the permissions pre-authorized for a lead session: reading and plan.LeadCommands; no edit.
