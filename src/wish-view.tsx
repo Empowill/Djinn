@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Clock3,
   Download,
+  GitMerge,
   Pause,
   Play,
   ScrollText,
@@ -224,7 +225,7 @@ export function WishView({
     detail.blocks,
     decisionItems.length,
   ]);
-  const { running, watching } = runningOf(detail.tasks);
+  const { running, watching, merging } = runningOf(detail.tasks);
   const done = workDoneCount(detail.tasks);
   // The azimas' progress, then the work's: the azimas are not counted as tasks.
   const azimaProgress = azimasDone(detail.tasks);
@@ -740,7 +741,7 @@ export function WishView({
     if (reaching) to(reaching.target);
   }, [reaching, to]);
   useStickyRoom(scrollRef, attention.length > 0);
-  const tone = wishTone(wish, open.length, running, watching);
+  const tone = wishTone(wish, open.length, running + merging, watching);
 
   return (
     <div className="wish-view review">
@@ -975,6 +976,16 @@ export function WishView({
                     label={t("plan.running", { count: running })}
                   >
                     {t("pill.running")}
+                  </CountPill>
+                )}
+                {merging > 0 && (
+                  <CountPill
+                    tone="running"
+                    icon={GitMerge}
+                    count={merging}
+                    label={t("plan.merging_detail", { count: merging })}
+                  >
+                    {t("pill.merging")}
                   </CountPill>
                 )}
                 {watching > 0 && (

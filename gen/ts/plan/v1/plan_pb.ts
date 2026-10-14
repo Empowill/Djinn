@@ -1833,7 +1833,7 @@ export type Task = Message<"plan.v1.Task"> & {
 
   /**
    * What Djinn started the task for, on a question of the wish; none for a task the lead or the developer spawned. A
-   * question worker takes no slot of the machine and runs in its project's folder, reading.
+   * question worker takes a slot of the machine like any agent and runs in its project's folder, reading.
    *
    * @generated from field: plan.v1.TaskRole role = 44;
    */
@@ -11989,7 +11989,8 @@ export const TaskService: GenService<{
   },
   /**
    * Start a planned task that waits for the machine (no slot free, or the machine under pressure) now, anyway. A
-   * task that waits for anything else (its wish, a dependency, a write scope) keeps waiting.
+   * task that waits for anything else (its wish, a dependency, a write scope) keeps waiting. Its worker takes a slot
+   * all the same, beyond what the load bar lets run: the bar counts it among the workers started by hand.
    *
    * @generated from rpc plan.v1.TaskService.Start
    */

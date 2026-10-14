@@ -368,7 +368,7 @@ test("work that merges counts as running: a worker at work, not a watcher", () =
       done(I.CONFLICT),
       { status: S.DONE },
     ]),
-    { running: 3, watching: 1 },
+    { running: 1, watching: 1, merging: 2 },
   );
 });
 

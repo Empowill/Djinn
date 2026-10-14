@@ -349,8 +349,18 @@
     "expect": { "W2": "wait" }
   },
   {
-    "name": "investigator worker skips slot and starts before planned work task",
+    "name": "an investigator takes a slot: on a full machine it waits, the harness pauses a work task for it",
     "machine": { "slots": 1, "running": 1 },
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "planned" },
+      { "code": "Q1", "wish": "A", "status": "planned", "role": "investigator" }
+    ],
+    "expect": { "Q1": "wait", "W1": "wait" }
+  },
+  {
+    "name": "an investigator takes the free slot before a planned work task",
+    "machine": { "slots": 2, "running": 1 },
     "wishes": [{ "id": "A" }],
     "tasks": [
       { "code": "W1", "wish": "A", "status": "planned" },

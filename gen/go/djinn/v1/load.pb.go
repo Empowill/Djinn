@@ -167,8 +167,19 @@ type LoadServiceGetResponse struct {
 	WorkerPercentile int32 `protobuf:"varint,13,opt,name=worker_percentile,json=workerPercentile,proto3" json:"worker_percentile,omitempty"`
 	// The same in words, like "engaged at p50 (overclock)".
 	WorkerEngagedAt string `protobuf:"bytes,14,opt,name=worker_engaged_at,json=workerEngagedAt,proto3" json:"worker_engaged_at,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The most workers the scheduler lets run now at the notch in effect, every agent counted (a watcher takes no
+	// slot): the window's count of what a notch runs is this.
+	Slots int32 `protobuf:"varint,15,opt,name=slots,proto3" json:"slots,omitempty"`
+	// The most workers each manual notch lets run now, as the scheduler weighs them.
+	NotchSlots []*LoadNotchSlots `protobuf:"bytes,16,rep,name=notch_slots,json=notchSlots,proto3" json:"notch_slots,omitempty"`
+	// Workers among running_workers that the developer started or resumed by hand, whatever the slots (djinn task
+	// start, djinn task resume): the ones that may run beyond slots.
+	ForcedWorkers int32 `protobuf:"varint,17,opt,name=forced_workers,json=forcedWorkers,proto3" json:"forced_workers,omitempty"`
+	// Whether lowering the notch pauses the newest workers above what it lets run: not in auto mode, nor on Windows,
+	// where they finish their run. Investigators, corrections, reviews and workers started by hand always finish theirs.
+	LowerPauses   bool `protobuf:"varint,18,opt,name=lower_pauses,json=lowerPauses,proto3" json:"lower_pauses,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *LoadServiceGetResponse) Reset() {
@@ -297,6 +308,34 @@ func (x *LoadServiceGetResponse) GetWorkerEngagedAt() string {
 		return x.WorkerEngagedAt
 	}
 	return ""
+}
+
+func (x *LoadServiceGetResponse) GetSlots() int32 {
+	if x != nil {
+		return x.Slots
+	}
+	return 0
+}
+
+func (x *LoadServiceGetResponse) GetNotchSlots() []*LoadNotchSlots {
+	if x != nil {
+		return x.NotchSlots
+	}
+	return nil
+}
+
+func (x *LoadServiceGetResponse) GetForcedWorkers() int32 {
+	if x != nil {
+		return x.ForcedWorkers
+	}
+	return 0
+}
+
+func (x *LoadServiceGetResponse) GetLowerPauses() bool {
+	if x != nil {
+		return x.LowerPauses
+	}
+	return false
 }
 
 type LoadServiceSetRequest struct {
@@ -478,8 +517,16 @@ type LoadServiceWatchResponse struct {
 	WorkerPercentile int32 `protobuf:"varint,15,opt,name=worker_percentile,json=workerPercentile,proto3" json:"worker_percentile,omitempty"`
 	// The same in words, like "engaged at p50 (overclock)".
 	WorkerEngagedAt string `protobuf:"bytes,16,opt,name=worker_engaged_at,json=workerEngagedAt,proto3" json:"worker_engaged_at,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The most workers the scheduler lets run now at the notch in effect (LoadServiceGetResponse.slots).
+	Slots int32 `protobuf:"varint,17,opt,name=slots,proto3" json:"slots,omitempty"`
+	// The most workers each manual notch lets run now, as the scheduler weighs them.
+	NotchSlots []*LoadNotchSlots `protobuf:"bytes,18,rep,name=notch_slots,json=notchSlots,proto3" json:"notch_slots,omitempty"`
+	// Workers among running_workers started or resumed by hand, whatever the slots.
+	ForcedWorkers int32 `protobuf:"varint,19,opt,name=forced_workers,json=forcedWorkers,proto3" json:"forced_workers,omitempty"`
+	// Whether lowering the notch pauses the newest workers above what it lets run (LoadServiceGetResponse.lower_pauses).
+	LowerPauses   bool `protobuf:"varint,20,opt,name=lower_pauses,json=lowerPauses,proto3" json:"lower_pauses,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *LoadServiceWatchResponse) Reset() {
@@ -624,12 +671,95 @@ func (x *LoadServiceWatchResponse) GetWorkerEngagedAt() string {
 	return ""
 }
 
+func (x *LoadServiceWatchResponse) GetSlots() int32 {
+	if x != nil {
+		return x.Slots
+	}
+	return 0
+}
+
+func (x *LoadServiceWatchResponse) GetNotchSlots() []*LoadNotchSlots {
+	if x != nil {
+		return x.NotchSlots
+	}
+	return nil
+}
+
+func (x *LoadServiceWatchResponse) GetForcedWorkers() int32 {
+	if x != nil {
+		return x.ForcedWorkers
+	}
+	return 0
+}
+
+func (x *LoadServiceWatchResponse) GetLowerPauses() bool {
+	if x != nil {
+		return x.LowerPauses
+	}
+	return false
+}
+
+// LoadNotchSlots is the most workers a notch lets run on the machine now.
+type LoadNotchSlots struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The notch.
+	Notch LoadNotch `protobuf:"varint,1,opt,name=notch,proto3,enum=djinn.v1.LoadNotch" json:"notch,omitempty"`
+	// The most workers it lets run.
+	Slots         int32 `protobuf:"varint,2,opt,name=slots,proto3" json:"slots,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoadNotchSlots) Reset() {
+	*x = LoadNotchSlots{}
+	mi := &file_djinn_v1_load_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoadNotchSlots) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoadNotchSlots) ProtoMessage() {}
+
+func (x *LoadNotchSlots) ProtoReflect() protoreflect.Message {
+	mi := &file_djinn_v1_load_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoadNotchSlots.ProtoReflect.Descriptor instead.
+func (*LoadNotchSlots) Descriptor() ([]byte, []int) {
+	return file_djinn_v1_load_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *LoadNotchSlots) GetNotch() LoadNotch {
+	if x != nil {
+		return x.Notch
+	}
+	return LoadNotch_LOAD_NOTCH_UNSPECIFIED
+}
+
+func (x *LoadNotchSlots) GetSlots() int32 {
+	if x != nil {
+		return x.Slots
+	}
+	return 0
+}
+
 var File_djinn_v1_load_proto protoreflect.FileDescriptor
 
 const file_djinn_v1_load_proto_rawDesc = "" +
 	"\n" +
 	"\x13djinn/v1/load.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\"\x17\n" +
-	"\x15LoadServiceGetRequest\"\xda\x04\n" +
+	"\x15LoadServiceGetRequest\"\xf5\x05\n" +
 	"\x16LoadServiceGetResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
 	"\x04auto\x18\x02 \x01(\bR\x04auto\x12\x1d\n" +
@@ -646,7 +776,12 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\fmemory_slots\x18\v \x01(\x05R\vmemorySlots\x12%\n" +
 	"\x0epaused_workers\x18\f \x01(\x05R\rpausedWorkers\x12+\n" +
 	"\x11worker_percentile\x18\r \x01(\x05R\x10workerPercentile\x12*\n" +
-	"\x11worker_engaged_at\x18\x0e \x01(\tR\x0fworkerEngagedAt\"Q\n" +
+	"\x11worker_engaged_at\x18\x0e \x01(\tR\x0fworkerEngagedAt\x12\x14\n" +
+	"\x05slots\x18\x0f \x01(\x05R\x05slots\x129\n" +
+	"\vnotch_slots\x18\x10 \x03(\v2\x18.djinn.v1.LoadNotchSlotsR\n" +
+	"notchSlots\x12%\n" +
+	"\x0eforced_workers\x18\x11 \x01(\x05R\rforcedWorkers\x12!\n" +
+	"\flower_pauses\x18\x12 \x01(\bR\vlowerPauses\"Q\n" +
 	"\x15LoadServiceSetRequest\x128\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x05notch\"\x8f\x01\n" +
@@ -654,7 +789,7 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
 	"\x04auto\x18\x02 \x01(\bR\x04auto\x126\n" +
 	"\fchosen_notch\x18\x03 \x01(\x0e2\x13.djinn.v1.LoadNotchR\vchosenNotch\"\x19\n" +
-	"\x17LoadServiceWatchRequest\"\xbe\x05\n" +
+	"\x17LoadServiceWatchRequest\"\xd9\x06\n" +
 	"\x18LoadServiceWatchResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x120\n" +
 	"\x14engaged_memory_bytes\x18\x02 \x01(\x04R\x12engagedMemoryBytes\x12.\n" +
@@ -673,7 +808,15 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\fmemory_slots\x18\r \x01(\x05R\vmemorySlots\x12%\n" +
 	"\x0epaused_workers\x18\x0e \x01(\x05R\rpausedWorkers\x12+\n" +
 	"\x11worker_percentile\x18\x0f \x01(\x05R\x10workerPercentile\x12*\n" +
-	"\x11worker_engaged_at\x18\x10 \x01(\tR\x0fworkerEngagedAt*\xc8\x01\n" +
+	"\x11worker_engaged_at\x18\x10 \x01(\tR\x0fworkerEngagedAt\x12\x14\n" +
+	"\x05slots\x18\x11 \x01(\x05R\x05slots\x129\n" +
+	"\vnotch_slots\x18\x12 \x03(\v2\x18.djinn.v1.LoadNotchSlotsR\n" +
+	"notchSlots\x12%\n" +
+	"\x0eforced_workers\x18\x13 \x01(\x05R\rforcedWorkers\x12!\n" +
+	"\flower_pauses\x18\x14 \x01(\bR\vlowerPauses\"Q\n" +
+	"\x0eLoadNotchSlots\x12)\n" +
+	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x14\n" +
+	"\x05slots\x18\x02 \x01(\x05R\x05slots*\xc8\x01\n" +
 	"\tLoadNotch\x12\x1a\n" +
 	"\x16LOAD_NOTCH_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12LOAD_NOTCH_MINIMAL\x10\x01\x12\x18\n" +
@@ -702,7 +845,7 @@ func file_djinn_v1_load_proto_rawDescGZIP() []byte {
 }
 
 var file_djinn_v1_load_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_djinn_v1_load_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_djinn_v1_load_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_djinn_v1_load_proto_goTypes = []any{
 	(LoadNotch)(0),                   // 0: djinn.v1.LoadNotch
 	(*LoadServiceGetRequest)(nil),    // 1: djinn.v1.LoadServiceGetRequest
@@ -711,26 +854,30 @@ var file_djinn_v1_load_proto_goTypes = []any{
 	(*LoadServiceSetResponse)(nil),   // 4: djinn.v1.LoadServiceSetResponse
 	(*LoadServiceWatchRequest)(nil),  // 5: djinn.v1.LoadServiceWatchRequest
 	(*LoadServiceWatchResponse)(nil), // 6: djinn.v1.LoadServiceWatchResponse
+	(*LoadNotchSlots)(nil),           // 7: djinn.v1.LoadNotchSlots
 }
 var file_djinn_v1_load_proto_depIdxs = []int32{
 	0,  // 0: djinn.v1.LoadServiceGetResponse.notch:type_name -> djinn.v1.LoadNotch
 	0,  // 1: djinn.v1.LoadServiceGetResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
-	0,  // 2: djinn.v1.LoadServiceSetRequest.notch:type_name -> djinn.v1.LoadNotch
-	0,  // 3: djinn.v1.LoadServiceSetResponse.notch:type_name -> djinn.v1.LoadNotch
-	0,  // 4: djinn.v1.LoadServiceSetResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
-	0,  // 5: djinn.v1.LoadServiceWatchResponse.notch:type_name -> djinn.v1.LoadNotch
-	0,  // 6: djinn.v1.LoadServiceWatchResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
-	1,  // 7: djinn.v1.LoadService.Get:input_type -> djinn.v1.LoadServiceGetRequest
-	3,  // 8: djinn.v1.LoadService.Set:input_type -> djinn.v1.LoadServiceSetRequest
-	5,  // 9: djinn.v1.LoadService.Watch:input_type -> djinn.v1.LoadServiceWatchRequest
-	2,  // 10: djinn.v1.LoadService.Get:output_type -> djinn.v1.LoadServiceGetResponse
-	4,  // 11: djinn.v1.LoadService.Set:output_type -> djinn.v1.LoadServiceSetResponse
-	6,  // 12: djinn.v1.LoadService.Watch:output_type -> djinn.v1.LoadServiceWatchResponse
-	10, // [10:13] is the sub-list for method output_type
-	7,  // [7:10] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	7,  // 2: djinn.v1.LoadServiceGetResponse.notch_slots:type_name -> djinn.v1.LoadNotchSlots
+	0,  // 3: djinn.v1.LoadServiceSetRequest.notch:type_name -> djinn.v1.LoadNotch
+	0,  // 4: djinn.v1.LoadServiceSetResponse.notch:type_name -> djinn.v1.LoadNotch
+	0,  // 5: djinn.v1.LoadServiceSetResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
+	0,  // 6: djinn.v1.LoadServiceWatchResponse.notch:type_name -> djinn.v1.LoadNotch
+	0,  // 7: djinn.v1.LoadServiceWatchResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
+	7,  // 8: djinn.v1.LoadServiceWatchResponse.notch_slots:type_name -> djinn.v1.LoadNotchSlots
+	0,  // 9: djinn.v1.LoadNotchSlots.notch:type_name -> djinn.v1.LoadNotch
+	1,  // 10: djinn.v1.LoadService.Get:input_type -> djinn.v1.LoadServiceGetRequest
+	3,  // 11: djinn.v1.LoadService.Set:input_type -> djinn.v1.LoadServiceSetRequest
+	5,  // 12: djinn.v1.LoadService.Watch:input_type -> djinn.v1.LoadServiceWatchRequest
+	2,  // 13: djinn.v1.LoadService.Get:output_type -> djinn.v1.LoadServiceGetResponse
+	4,  // 14: djinn.v1.LoadService.Set:output_type -> djinn.v1.LoadServiceSetResponse
+	6,  // 15: djinn.v1.LoadService.Watch:output_type -> djinn.v1.LoadServiceWatchResponse
+	13, // [13:16] is the sub-list for method output_type
+	10, // [10:13] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_djinn_v1_load_proto_init() }
@@ -745,7 +892,7 @@ func file_djinn_v1_load_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_djinn_v1_load_proto_rawDesc), len(file_djinn_v1_load_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   6,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

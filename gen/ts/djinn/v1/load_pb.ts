@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/load.proto.
  */
 export const file_djinn_v1_load: GenFile = /*@__PURE__*/
-  fileDesc("ChNkamlubi92MS9sb2FkLnByb3RvEghkamlubi52MSIXChVMb2FkU2VydmljZUdldFJlcXVlc3QijgMKFkxvYWRTZXJ2aWNlR2V0UmVzcG9uc2USIgoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2gSDAoEYXV0bxgCIAEoCBISCgpiYXNlX3Nsb3RzGAMgASgFEhcKD3J1bm5pbmdfd29ya2VycxgEIAEoBRIaChJtZW1vcnlfdG90YWxfYnl0ZXMYBSABKAQSKQoMY2hvc2VuX25vdGNoGAYgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYByABKAQSHQoVd29ya2VyX2ZvcmVjYXN0X2J5dGVzGAggASgEEhgKEGJpbmRpbmdfcmVzb3VyY2UYCSABKAkSEQoJY3B1X3Nsb3RzGAogASgFEhQKDG1lbW9yeV9zbG90cxgLIAEoBRIWCg5wYXVzZWRfd29ya2VycxgMIAEoBRIZChF3b3JrZXJfcGVyY2VudGlsZRgNIAEoBRIZChF3b3JrZXJfZW5nYWdlZF9hdBgOIAEoCSJKChVMb2FkU2VydmljZVNldFJlcXVlc3QSMQoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2hCDbpICsgBAYIBBBABIAAidQoWTG9hZFNlcnZpY2VTZXRSZXNwb25zZRIiCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBIMCgRhdXRvGAIgASgIEikKDGNob3Nlbl9ub3RjaBgDIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaCIZChdMb2FkU2VydmljZVdhdGNoUmVxdWVzdCLLAwoYTG9hZFNlcnZpY2VXYXRjaFJlc3BvbnNlEiIKBW5vdGNoGAEgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEhwKFGVuZ2FnZWRfbWVtb3J5X2J5dGVzGAIgASgEEhsKE3dvcmtlcl9tZW1vcnlfYnl0ZXMYAyABKAQSGgoSbWVtb3J5X3RvdGFsX2J5dGVzGAQgASgEEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYBSABKAQSDAoEYXV0bxgGIAEoCBISCgpiYXNlX3Nsb3RzGAcgASgFEhcKD3J1bm5pbmdfd29ya2VycxgIIAEoBRIpCgxjaG9zZW5fbm90Y2gYCSABKA4yEy5kamlubi52MS5Mb2FkTm90Y2gSHQoVd29ya2VyX2ZvcmVjYXN0X2J5dGVzGAogASgEEhgKEGJpbmRpbmdfcmVzb3VyY2UYCyABKAkSEQoJY3B1X3Nsb3RzGAwgASgFEhQKDG1lbW9yeV9zbG90cxgNIAEoBRIWCg5wYXVzZWRfd29ya2VycxgOIAEoBRIZChF3b3JrZXJfcGVyY2VudGlsZRgPIAEoBRIZChF3b3JrZXJfZW5nYWdlZF9hdBgQIAEoCSrIAQoJTG9hZE5vdGNoEhoKFkxPQURfTk9UQ0hfVU5TUEVDSUZJRUQQABIWChJMT0FEX05PVENIX01JTklNQUwQARIYChBMT0FEX05PVENIX0xJR0hUEAIaAggBEhUKEUxPQURfTk9UQ0hfTUVESVVNEAMSEwoPTE9BRF9OT1RDSF9ISUdIEAQSEgoOTE9BRF9OT1RDSF9NQVgQBRITCg9MT0FEX05PVENIX0FVVE8QBhIYChRMT0FEX05PVENIX09WRVJDTE9DSxAHMowCCgtMb2FkU2VydmljZRJRCgNHZXQSHy5kamlubi52MS5Mb2FkU2VydmljZUdldFJlcXVlc3QaIC5kamlubi52MS5Mb2FkU2VydmljZUdldFJlc3BvbnNlIgeQAgHI8xgBElIKA1NldBIfLmRqaW5uLnYxLkxvYWRTZXJ2aWNlU2V0UmVxdWVzdBogLmRqaW5uLnYxLkxvYWRTZXJ2aWNlU2V0UmVzcG9uc2UiCMjzGAHg8xgBElYKBVdhdGNoEiEuZGppbm4udjEuTG9hZFNlcnZpY2VXYXRjaFJlcXVlc3QaIi5kamlubi52MS5Mb2FkU2VydmljZVdhdGNoUmVzcG9uc2UiBMjzGAEwAUKNAQoMY29tLmRqaW5uLnYxQglMb2FkUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_options]);
+  fileDesc("ChNkamlubi92MS9sb2FkLnByb3RvEghkamlubi52MSIXChVMb2FkU2VydmljZUdldFJlcXVlc3Qi+gMKFkxvYWRTZXJ2aWNlR2V0UmVzcG9uc2USIgoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2gSDAoEYXV0bxgCIAEoCBISCgpiYXNlX3Nsb3RzGAMgASgFEhcKD3J1bm5pbmdfd29ya2VycxgEIAEoBRIaChJtZW1vcnlfdG90YWxfYnl0ZXMYBSABKAQSKQoMY2hvc2VuX25vdGNoGAYgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYByABKAQSHQoVd29ya2VyX2ZvcmVjYXN0X2J5dGVzGAggASgEEhgKEGJpbmRpbmdfcmVzb3VyY2UYCSABKAkSEQoJY3B1X3Nsb3RzGAogASgFEhQKDG1lbW9yeV9zbG90cxgLIAEoBRIWCg5wYXVzZWRfd29ya2VycxgMIAEoBRIZChF3b3JrZXJfcGVyY2VudGlsZRgNIAEoBRIZChF3b3JrZXJfZW5nYWdlZF9hdBgOIAEoCRINCgVzbG90cxgPIAEoBRItCgtub3RjaF9zbG90cxgQIAMoCzIYLmRqaW5uLnYxLkxvYWROb3RjaFNsb3RzEhYKDmZvcmNlZF93b3JrZXJzGBEgASgFEhQKDGxvd2VyX3BhdXNlcxgSIAEoCCJKChVMb2FkU2VydmljZVNldFJlcXVlc3QSMQoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2hCDbpICsgBAYIBBBABIAAidQoWTG9hZFNlcnZpY2VTZXRSZXNwb25zZRIiCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBIMCgRhdXRvGAIgASgIEikKDGNob3Nlbl9ub3RjaBgDIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaCIZChdMb2FkU2VydmljZVdhdGNoUmVxdWVzdCK3BAoYTG9hZFNlcnZpY2VXYXRjaFJlc3BvbnNlEiIKBW5vdGNoGAEgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEhwKFGVuZ2FnZWRfbWVtb3J5X2J5dGVzGAIgASgEEhsKE3dvcmtlcl9tZW1vcnlfYnl0ZXMYAyABKAQSGgoSbWVtb3J5X3RvdGFsX2J5dGVzGAQgASgEEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYBSABKAQSDAoEYXV0bxgGIAEoCBISCgpiYXNlX3Nsb3RzGAcgASgFEhcKD3J1bm5pbmdfd29ya2VycxgIIAEoBRIpCgxjaG9zZW5fbm90Y2gYCSABKA4yEy5kamlubi52MS5Mb2FkTm90Y2gSHQoVd29ya2VyX2ZvcmVjYXN0X2J5dGVzGAogASgEEhgKEGJpbmRpbmdfcmVzb3VyY2UYCyABKAkSEQoJY3B1X3Nsb3RzGAwgASgFEhQKDG1lbW9yeV9zbG90cxgNIAEoBRIWCg5wYXVzZWRfd29ya2VycxgOIAEoBRIZChF3b3JrZXJfcGVyY2VudGlsZRgPIAEoBRIZChF3b3JrZXJfZW5nYWdlZF9hdBgQIAEoCRINCgVzbG90cxgRIAEoBRItCgtub3RjaF9zbG90cxgSIAMoCzIYLmRqaW5uLnYxLkxvYWROb3RjaFNsb3RzEhYKDmZvcmNlZF93b3JrZXJzGBMgASgFEhQKDGxvd2VyX3BhdXNlcxgUIAEoCCJDCg5Mb2FkTm90Y2hTbG90cxIiCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBINCgVzbG90cxgCIAEoBSrIAQoJTG9hZE5vdGNoEhoKFkxPQURfTk9UQ0hfVU5TUEVDSUZJRUQQABIWChJMT0FEX05PVENIX01JTklNQUwQARIYChBMT0FEX05PVENIX0xJR0hUEAIaAggBEhUKEUxPQURfTk9UQ0hfTUVESVVNEAMSEwoPTE9BRF9OT1RDSF9ISUdIEAQSEgoOTE9BRF9OT1RDSF9NQVgQBRITCg9MT0FEX05PVENIX0FVVE8QBhIYChRMT0FEX05PVENIX09WRVJDTE9DSxAHMowCCgtMb2FkU2VydmljZRJRCgNHZXQSHy5kamlubi52MS5Mb2FkU2VydmljZUdldFJlcXVlc3QaIC5kamlubi52MS5Mb2FkU2VydmljZUdldFJlc3BvbnNlIgeQAgHI8xgBElIKA1NldBIfLmRqaW5uLnYxLkxvYWRTZXJ2aWNlU2V0UmVxdWVzdBogLmRqaW5uLnYxLkxvYWRTZXJ2aWNlU2V0UmVzcG9uc2UiCMjzGAHg8xgBElYKBVdhdGNoEiEuZGppbm4udjEuTG9hZFNlcnZpY2VXYXRjaFJlcXVlc3QaIi5kamlubi52MS5Mb2FkU2VydmljZVdhdGNoUmVzcG9uc2UiBMjzGAEwAUKNAQoMY29tLmRqaW5uLnYxQglMb2FkUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_options]);
 
 /**
  * @generated from message djinn.v1.LoadServiceGetRequest
@@ -132,6 +132,37 @@ export type LoadServiceGetResponse = Message<"djinn.v1.LoadServiceGetResponse"> 
    * @generated from field: string worker_engaged_at = 14;
    */
   workerEngagedAt: string;
+
+  /**
+   * The most workers the scheduler lets run now at the notch in effect, every agent counted (a watcher takes no
+   * slot): the window's count of what a notch runs is this.
+   *
+   * @generated from field: int32 slots = 15;
+   */
+  slots: number;
+
+  /**
+   * The most workers each manual notch lets run now, as the scheduler weighs them.
+   *
+   * @generated from field: repeated djinn.v1.LoadNotchSlots notch_slots = 16;
+   */
+  notchSlots: LoadNotchSlots[];
+
+  /**
+   * Workers among running_workers that the developer started or resumed by hand, whatever the slots (djinn task
+   * start, djinn task resume): the ones that may run beyond slots.
+   *
+   * @generated from field: int32 forced_workers = 17;
+   */
+  forcedWorkers: number;
+
+  /**
+   * Whether lowering the notch pauses the newest workers above what it lets run: not in auto mode, nor on Windows,
+   * where they finish their run. Investigators, corrections, reviews and workers started by hand always finish theirs.
+   *
+   * @generated from field: bool lower_pauses = 18;
+   */
+  lowerPauses: boolean;
 };
 
 /**
@@ -322,6 +353,34 @@ export type LoadServiceWatchResponse = Message<"djinn.v1.LoadServiceWatchRespons
    * @generated from field: string worker_engaged_at = 16;
    */
   workerEngagedAt: string;
+
+  /**
+   * The most workers the scheduler lets run now at the notch in effect (LoadServiceGetResponse.slots).
+   *
+   * @generated from field: int32 slots = 17;
+   */
+  slots: number;
+
+  /**
+   * The most workers each manual notch lets run now, as the scheduler weighs them.
+   *
+   * @generated from field: repeated djinn.v1.LoadNotchSlots notch_slots = 18;
+   */
+  notchSlots: LoadNotchSlots[];
+
+  /**
+   * Workers among running_workers started or resumed by hand, whatever the slots.
+   *
+   * @generated from field: int32 forced_workers = 19;
+   */
+  forcedWorkers: number;
+
+  /**
+   * Whether lowering the notch pauses the newest workers above what it lets run (LoadServiceGetResponse.lower_pauses).
+   *
+   * @generated from field: bool lower_pauses = 20;
+   */
+  lowerPauses: boolean;
 };
 
 /**
@@ -330,6 +389,34 @@ export type LoadServiceWatchResponse = Message<"djinn.v1.LoadServiceWatchRespons
  */
 export const LoadServiceWatchResponseSchema: GenMessage<LoadServiceWatchResponse> = /*@__PURE__*/
   messageDesc(file_djinn_v1_load, 5);
+
+/**
+ * LoadNotchSlots is the most workers a notch lets run on the machine now.
+ *
+ * @generated from message djinn.v1.LoadNotchSlots
+ */
+export type LoadNotchSlots = Message<"djinn.v1.LoadNotchSlots"> & {
+  /**
+   * The notch.
+   *
+   * @generated from field: djinn.v1.LoadNotch notch = 1;
+   */
+  notch: LoadNotch;
+
+  /**
+   * The most workers it lets run.
+   *
+   * @generated from field: int32 slots = 2;
+   */
+  slots: number;
+};
+
+/**
+ * Describes the message djinn.v1.LoadNotchSlots.
+ * Use `create(LoadNotchSlotsSchema)` to create a new message.
+ */
+export const LoadNotchSlotsSchema: GenMessage<LoadNotchSlots> = /*@__PURE__*/
+  messageDesc(file_djinn_v1_load, 6);
 
 /**
  * LoadNotch is the operating load slider notch that controls how much of the machine Djinn uses.

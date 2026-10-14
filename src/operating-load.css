@@ -352,6 +352,10 @@ html[data-theme="light"] .operating-load-notch[data-notch="overclock"].active {
   color: var(--n-79);
 }
 
+.operating-load-forecast-over {
+  color: var(--notch-color);
+}
+
 /* Mini progress bars showing current use against new limit */
 .operating-load-bar {
   position: relative;

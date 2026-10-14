@@ -143,7 +143,7 @@ func TestNotchRuntimeResumeFirst(t *testing.T) {
 	w2Events := e.storedEvents(t, w2.GetId())
 	if !slices.ContainsFunc(w2Events, func(ev *planv1.TaskEvent) bool {
 		return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS &&
-			strings.Contains(ev.GetText(), "resumed: operating load raised to High")
+			strings.Contains(ev.GetText(), "resumed: a slot is free again")
 	}) {
 		t.Errorf("w2 missing resumed event: %v", eventTexts(w2Events))
 	}

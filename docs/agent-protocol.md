@@ -120,8 +120,9 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   (recorded in the journal and the window); the Djinn is told when it ends.
   An investigator writes no code and runs no gate: Djinn gives it `TASK_ACCESS_DJINN`, reading plus a short list of
   `djinn` and read-only `git` commands (`internal/harness/permissions.go`), in its project's folder, without a worktree.
-  It takes no slot of the machine, like a watcher, but waits while the machine is under pressure or its memory would not
-  hold it, like any agent. Its model and budget are project settings, `question_model` (default `sonnet` for claude,
+  It takes a slot like any agent (the load bar counts every agent that runs, W577): on a full machine it takes the slot
+  of the newest work task, which it pauses until it ends, or waits for a slot when none can be paused; it waits while
+  the machine is under pressure or its memory would not hold it, like any agent. Its model and budget are project settings, `question_model` (default `sonnet` for claude,
   the provider's own default otherwise) and `question_budget_usd` (default $2). In settings, `enlighten_workers`
   (default `true`) controls them (`docs/team-settings.md`).
 - **What reaches the Djinn (Decision Q173).** Djinn tells its lead, the Djinn, only what changes something:

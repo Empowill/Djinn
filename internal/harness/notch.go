@@ -4,9 +4,11 @@ import (
 	"cmp"
 	"context"
 	"math"
+	"runtime"
 	"slices"
 	"time"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
@@ -46,19 +48,24 @@ func (h *Harness) updatePriorities(low bool) {
 	}
 }
 
-// enforceNotchCapacity pauses extra workers when the operating load notch allows fewer workers than run.
-// It follows Q121: Q117's order reversed, never an investigator, correction, review, or worker holding/waiting for a gate.
+// enforceNotchCapacity pauses extra workers when the operating load notch allows fewer workers than run: the newest
+// first (Q121: Q117's order reversed), never an investigator, a correction, a review, a worker holding or waiting for
+// a gate (it pauses once it lets the gate go), one started by hand, nor any on Windows, where a worker cannot pause:
+// those finish their run, new tasks waiting meanwhile. It weighs the workers running against what the notch itself
+// allows (barSlots), not against the memory's share of the slots: pausing a worker frees no memory, and the memory
+// available moves every second (W577: W39 was paused and resumed every 2 s at Medium, its notch unchanged).
 // In Auto mode, it never pauses (Q124 C).
 func (h *Harness) enforceNotchCapacity(ctx context.Context, p machine.Policy) {
 	if p.Auto || h.capacity == nil {
 		return
 	}
-	slots, _, _ := h.capacity()
+	slots := h.barSlotsAt(p.Notch)
 	if slots <= 0 {
 		return
 	}
 	why := "operating load lowered to " + machine.NotchTitle(p.Notch)
-	for h.Running() > slots {
+	// A worker started by hand stays beyond the limit (Forced): it pushes no other worker out.
+	for h.Running()-h.Forced() > slots {
 		cand, r := h.lowestWorkTask(ctx, true)
 		if cand == nil || r == nil {
 			break
@@ -70,14 +77,31 @@ func (h *Harness) enforceNotchCapacity(ctx context.Context, p machine.Policy) {
 	}
 }
 
-// resumeNotchPaused resumes workers paused by the notch when the operating load allows more workers again.
-// It follows Q123: paused workers first, in Q117's order, before new tasks.
+// barSlotsAt is the most workers the notch itself lets run (WithBarSlots), or the machine's slots without it.
+func (h *Harness) barSlotsAt(n djinnv1.LoadNotch) int {
+	if h.barSlots != nil {
+		return h.barSlots(n)
+	}
+	slots, _, _ := h.capacity()
+	return slots
+}
+
+// LowerPauses tells whether lowering the operating load pauses the workers above what it lets run, as the window
+// says: not in Auto mode (Q124 C), nor on Windows, where a worker cannot pause; they finish their run then.
+func (h *Harness) LowerPauses() bool {
+	goos := runtime.GOOS
+	if h.goos != nil {
+		goos = h.goos()
+	}
+	return !h.Policy().Auto && goos != "windows"
+}
+
+// resumeNotchPaused resumes the workers paused by the notch, or to give their slot to an investigator, when a slot is
+// free again: before any new task (Q123), in Q117's order. One paused for an investigator resumes even under pressure:
+// it ran before the investigator took its slot.
 func (h *Harness) resumeNotchPaused(ctx context.Context) {
 	if h.capacity != nil {
-		slots, _, pressure := h.capacity()
-		if pressure != "" {
-			return
-		}
+		slots, _, _ := h.capacity()
 		if slots > 0 && h.Running() >= slots {
 			return
 		}
@@ -87,7 +111,7 @@ func (h *Harness) resumeNotchPaused(ctx context.Context) {
 	var candidates []candidate
 	var ids []string
 	for _, r := range h.runs {
-		if !r.paused || !r.notchPaused || r.stopping || r.final || r.worker == nil {
+		if !r.paused || !r.notchPaused && !r.slotPaused || r.stopping || r.final || r.worker == nil {
 			continue
 		}
 		t := r.task
@@ -145,17 +169,21 @@ func (h *Harness) resumeNotchPaused(ctx context.Context) {
 	})
 
 	for _, cand := range candidates {
+		h.mu.Lock()
+		forSlot := cand.r.slotPaused
+		h.mu.Unlock()
 		if h.capacity != nil {
 			slots, _, pressure := h.capacity()
-			if pressure != "" {
-				break
-			}
 			if slots > 0 && h.Running() >= slots {
 				break
 			}
+			if pressure != "" && !forSlot {
+				continue
+			}
 		}
-		p := h.Policy()
-		why := "operating load raised to " + machine.NotchTitle(p.Notch)
+		// Not "raised to" a notch: the monitor's slots change before the harness's notch (applyNotch), and a pass
+		// between the two would name the notch left.
+		why := "a slot is free again"
 		req := &planv1.TaskServiceResumeRequest{TaskId: cand.t.GetId()}
 		if _, err := h.hold(ctx, methodNotch, req, cand.t.GetId(), false, why); err != nil {
 			break

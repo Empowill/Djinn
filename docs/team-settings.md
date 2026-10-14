@@ -66,7 +66,7 @@ read from **your own file only**, never from the repository's (which lists its c
 Four more set the *investigators*, the small tasks Djinn starts by itself on a question of a wish after
 "Enlighten me": `Q03: enlighten` investigates and revises the question (see [agent protocol](agent-protocol.md)).
 Answers are turned into tasks by the lead only: answer workers are removed.
-They run read-only and take no slot: on the project's `provider` when that provider can run them read-only (claude,
+They run read-only and take a slot like any agent, the newest work task's when the machine is full: on the project's `provider` when that provider can run them read-only (claude,
 codex), falling back to claude otherwise; or on `question_provider`.
 
 | Setting               | What it sets                                                                                 | Not set                    |

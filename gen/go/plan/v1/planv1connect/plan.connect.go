@@ -2411,7 +2411,8 @@ type TaskServiceClient interface {
 	// Let a paused worker go on where it was.
 	Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error)
 	// Start a planned task that waits for the machine (no slot free, or the machine under pressure) now, anyway. A
-	// task that waits for anything else (its wish, a dependency, a write scope) keeps waiting.
+	// task that waits for anything else (its wish, a dependency, a write scope) keeps waiting. Its worker takes a slot
+	// all the same, beyond what the load bar lets run: the bar counts it among the workers started by hand.
 	Start(context.Context, *connect.Request[v1.TaskServiceStartRequest]) (*connect.Response[v1.TaskServiceStartResponse], error)
 	// Follow a task's events as they come, from the first one or after a position; ends with the task.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest]) (*connect.ServerStreamForClient[v1.TaskServiceWatchResponse], error)
@@ -2792,7 +2793,8 @@ type TaskServiceHandler interface {
 	// Let a paused worker go on where it was.
 	Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error)
 	// Start a planned task that waits for the machine (no slot free, or the machine under pressure) now, anyway. A
-	// task that waits for anything else (its wish, a dependency, a write scope) keeps waiting.
+	// task that waits for anything else (its wish, a dependency, a write scope) keeps waiting. Its worker takes a slot
+	// all the same, beyond what the load bar lets run: the bar counts it among the workers started by hand.
 	Start(context.Context, *connect.Request[v1.TaskServiceStartRequest]) (*connect.Response[v1.TaskServiceStartResponse], error)
 	// Follow a task's events as they come, from the first one or after a position; ends with the task.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error

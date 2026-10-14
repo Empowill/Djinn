@@ -49,7 +49,9 @@ djinn up --browser    # no window: prints the URL to open in your browser
   or an adaptive guardrail based on observed provider peaks (`--worker-memory-guard 2.5`): [worker memory](worker-memory.md).
 - **Operating load slider.** Controls how much of the machine Djinn uses: five manual notches (**Minimal**,
   **Medium**, **High**, **Max**, **Overclock**), or **Auto** (`light` is accepted as an alias for `medium`).
-  The UI displays a dual gauge forecast: CPU (target workers and standard versus low CPU priority) and Memory
+  The UI displays a dual gauge forecast: CPU (how many workers run of the most the notch lets run, exactly what the
+  scheduler allows there, every agent counted and watchers not, with the workers started by hand and those finishing
+  their run above the limit; standard versus low CPU priority) and Memory
   (peak memory Djinn may engage against current usage and total machine RAM). The **Overclock** notch pushes up to
   150 % of standard memory capacity with an amber visual pulse. In Auto mode, Djinn dynamically follows developer
   activity: keyboard and mouse inactivity from the desktop session, combined with the CPU and memory load of programs
