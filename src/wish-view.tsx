@@ -34,7 +34,6 @@ import {
   type Choice,
   Closer,
   type KeptWorktree,
-  type MarkKind,
   type Project,
   type Provider,
   type Question,
@@ -332,7 +331,6 @@ export function WishView({
     quiet,
     answer,
     enlighten,
-    mark,
     review: markReviewed,
     move,
     withdraw,
@@ -667,14 +665,6 @@ export function WishView({
       return Promise.resolve();
     },
     [answer],
-  );
-
-  const handleQuestionMark = useCallback(
-    (kind: MarkKind, remove: boolean, q?: Question) => {
-      if (q) return mark(q.wishId, q.id, kind, remove);
-      return Promise.resolve();
-    },
-    [mark],
   );
 
   const handleQuestionEnlighten = useCallback(
@@ -1225,7 +1215,6 @@ export function WishView({
                                 report={report}
                                 noLead={noLead(leadRecord)}
                                 onAnswer={handleQuestionAnswer}
-                                onMark={handleQuestionMark}
                                 onEnlighten={handleQuestionEnlighten}
                                 onMove={setMovingQuestion}
                                 onWithdraw={setWithdrawingQuestion}
@@ -1245,7 +1234,6 @@ export function WishView({
                     <InvestigatingSection
                       questions={digging}
                       onAnswer={handleQuestionAnswer}
-                      onMark={handleQuestionMark}
                       onMove={setMovingQuestion}
                       onWithdraw={setWithdrawingQuestion}
                     />
@@ -1333,7 +1321,6 @@ export const InvestigatingSection = memo(function InvestigatingSection({
   questions,
   origin = false,
   onAnswer,
-  onMark,
   onMove,
   onWithdraw,
 }: {
@@ -1342,11 +1329,6 @@ export const InvestigatingSection = memo(function InvestigatingSection({
   onAnswer: (
     choice: Choice,
     note: string,
-    question?: Question,
-  ) => Promise<void>;
-  onMark: (
-    kind: MarkKind,
-    remove: boolean,
     question?: Question,
   ) => Promise<void>;
   onMove?: (question: Question) => void;
@@ -1374,7 +1356,6 @@ export const InvestigatingSection = memo(function InvestigatingSection({
           noLead={noLead(lead)}
           origin={origin ? wishOrigin(wish) : undefined}
           onAnswer={onAnswer}
-          onMark={onMark}
           onMove={onMove}
           onWithdraw={onWithdraw}
         />

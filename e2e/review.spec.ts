@@ -277,9 +277,7 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await block.locator(".fold-heading").click();
   await expect(block.locator("strong")).toHaveText("on Friday");
   await expect(block.locator("table td").first()).toHaveText("Fri");
-  await expect(
-    block.getByRole("button", { name: /Mark read|Approve/ }),
-  ).toHaveCount(0);
+  await expect(block.getByRole("button", { name: /Approve/ })).toHaveCount(0);
 
   djinn("wish", "pause", wishId);
   fs.rmSync(dir, { recursive: true, force: true });

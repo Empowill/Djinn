@@ -1,59 +1,16 @@
-// The read mark, the click that says "I saw it" on an open question without a word: it goes to the lamp
-// (MarkService.Put), where the lead reads it in the brief and with djinn mark list. A block takes no mark: it is for
-// agents (src/agent-blocks.tsx). And the writes the screens share: an answer, a mark, a request to investigate, each
-// read again once djinn has it. A task takes another mark, reviewed (src/review-tab.tsx).
-import { Check, Eye } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+// The writes the screens share: an answer, a request to investigate, a task reviewed (src/review-tab.tsx), a move or
+// a withdrawal, each read again once djinn has it.
+import { useCallback, useMemo } from "react";
 
 import {
   Change,
   type Choice,
   Closer,
-  type Mark,
   MarkKind,
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import { useClients, useStore } from "./data/djinn";
-import { markOf } from "./data/format";
 import { t } from "./i18n";
-
-export type OnMark<T = unknown> = (
-  kind: MarkKind,
-  remove: boolean,
-  item?: T,
-) => Promise<void>;
-
-// MarkButtons are an open question's read mark, a toggle. A decision has none: it was taken (the decision log).
-export function MarkButtons<T extends { marks?: Mark[] }>({
-  item,
-  onMark,
-}: {
-  item: T;
-  onMark: (kind: MarkKind, remove: boolean, item?: T) => Promise<void>;
-}) {
-  const [sending, setSending] = useState(false);
-  const toggle = (kind: MarkKind) => {
-    setSending(true);
-    void onMark(kind, !!markOf(item, kind), item)
-      .catch(() => {})
-      .finally(() => setSending(false));
-  };
-  const read = !!markOf(item, MarkKind.READ);
-  return (
-    <span className="mark-buttons">
-      <button
-        className={`mark-toggle ${read ? "on" : ""}`}
-        aria-pressed={read}
-        disabled={sending}
-        title={read ? t("mark.read_undo") : t("mark.read_detail")}
-        onClick={() => toggle(MarkKind.READ)}
-      >
-        {read ? <Check size={13} /> : <Eye size={13} />}
-        {read ? t("mark.read_done") : t("mark.read")}
-      </button>
-    </span>
-  );
-}
 
 const QUESTIONS_CHANGES = [Change.QUESTION, Change.WISH];
 
@@ -125,23 +82,6 @@ export function useWrites(onToast: (text: string) => void) {
     [act, clients.questions],
   );
 
-  // mark marks a question, by its id.
-  const mark = useCallback(
-    (wishId: string, id: string, kind: MarkKind, remove: boolean) =>
-      act(
-        wishId,
-        () =>
-          clients.marks.put({
-            target: { ref: { case: "id", value: id } },
-            kind,
-            remove,
-            wishId,
-          }),
-        QUESTIONS_CHANGES,
-      ),
-    [act, clients.marks],
-  );
-
   // review checks a task reviewed, by its id, or takes the mark off.
   const review = useCallback(
     (wishId: string, id: string, remove: boolean) =>
@@ -209,11 +149,10 @@ export function useWrites(onToast: (text: string) => void) {
       quiet,
       answer,
       enlighten,
-      mark,
       review,
       move,
       withdraw,
     }),
-    [clients, act, quiet, answer, enlighten, mark, review, move, withdraw],
+    [clients, act, quiet, answer, enlighten, review, move, withdraw],
   );
 }
