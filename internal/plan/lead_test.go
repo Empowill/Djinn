@@ -220,10 +220,12 @@ func TestResume(t *testing.T) {
 	}
 	delete(leads.running, LeadTerminal)
 	res := resume()
-	if res.GetAttached() || res.GetNote() != "" || strings.Join(res.GetCommand(), " ") != "/bin/sh -c claude --resume "+session {
+	tools, _ := quoteArg(runtime.GOOS, claudeLeadTools)
+	wantLine := "claude --resume " + session + " --allowedTools " + tools
+	if res.GetAttached() || res.GetNote() != "" || strings.Join(res.GetCommand(), " ") != "/bin/sh -c "+wantLine {
 		t.Errorf("resume = %v", res)
 	}
-	if want := "claude --resume " + session + " in " + folder; len(leads.opened) != 1 || leads.opened[0] != want {
+	if want := wantLine + " in " + folder; len(leads.opened) != 1 || leads.opened[0] != want {
 		t.Errorf("opened %q, want %q", leads.opened, want)
 	}
 	if res = resume(); !res.GetAttached() || res.GetNote() != "" || len(leads.opened) != 1 {
@@ -436,7 +438,7 @@ func TestResumeAnotherAgent(t *testing.T) {
 
 	// Antigravity on a claude-led djinn: agy -i on the start line, in the project; becomes the lead.
 	res := resume(planv1.Provider_PROVIDER_ANTIGRAVITY)
-	if want := "agy -i '" + StartLine() + "' in " + folder; len(leads.opened) != 1 || leads.opened[0] != want {
+	if want := "agy -i '" + StartLine() + "' --project " + LeadAgyProjectID + " in " + folder; len(leads.opened) != 1 || leads.opened[0] != want {
 		t.Fatalf("opened %q, want %q", leads.opened, want)
 	}
 	if res.GetAttached() || res.GetTerminal() != terminal || !agyKept(res) ||
@@ -451,9 +453,9 @@ func TestResumeAnotherAgent(t *testing.T) {
 			t.Errorf("%s over a running agy = %v, opened %q", p, res, leads.opened)
 		}
 	}
-	// Once it exits, the recorded agent resumes its own session with agy --continue.
+	// Once it exits, the recorded agent resumes its own session with agy --continue --project djinn-lead.
 	delete(leads.running, terminal)
-	if res = resume(planv1.Provider_PROVIDER_UNSPECIFIED); len(leads.opened) != 2 || leads.opened[1] != "agy --continue in "+folder || !agyKept(res) {
+	if res = resume(planv1.Provider_PROVIDER_UNSPECIFIED); len(leads.opened) != 2 || leads.opened[1] != "agy --continue --project "+LeadAgyProjectID+" in "+folder || !agyKept(res) {
 		t.Errorf("resumed agy = %v, opened %q", res, leads.opened)
 	}
 	// Codex: its session is not known, the antigravity record stays until set-lead gives it.
@@ -473,7 +475,7 @@ func TestResumeAnotherAgent(t *testing.T) {
 	res = resume(planv1.Provider_PROVIDER_CLAUDE)
 	lead := res.GetLead()
 	if lead.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || lead.GetSessionId() == "thread-1" ||
-		len(leads.opened) != 4 || leads.opened[3] != "claude --session-id "+lead.GetSessionId()+" '"+StartLine()+"' in "+folder {
+		len(leads.opened) != 4 || leads.opened[3] != "claude --session-id "+lead.GetSessionId()+" --allowedTools '"+claudeLeadTools+"' '"+StartLine()+"' in "+folder {
 		t.Errorf("claude over codex = %v, opened %q", res, leads.opened)
 	}
 }
@@ -646,5 +648,38 @@ func TestLeadChoose(t *testing.T) {
 	}
 	if err := choose(c, &planv1.LeadServiceChooseRequest{Option: 0}); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("option 0: %v, want invalid argument", err)
+	}
+}
+
+func TestLeadAgyProject(t *testing.T) {
+	projectsDir := t.TempDir()
+	prev := AgyProjectsDir
+	AgyProjectsDir = func() (string, error) { return projectsDir, nil }
+	t.Cleanup(func() { AgyProjectsDir = prev })
+
+	dir := t.TempDir()
+	djinnHome := t.TempDir()
+	if err := writeLeadAgyProject(dir, djinnHome); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(projectsDir, LeadAgyProjectID+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(b)
+	for _, want := range []string{
+		`"id": "djinn-lead"`,
+		`"read_file(` + filepath.Clean(dir) + `)"`,
+		`"read_file(` + filepath.Clean(djinnHome) + `)"`,
+		`"command(djinn)"`,
+		`"command(git status)"`,
+		`"command(git log)"`,
+		`"command(git diff)"`,
+		`"command(git show)"`,
+		`"command(git branch)"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("djinn-lead.json lacks %s:\n%s", want, text)
+		}
 	}
 }

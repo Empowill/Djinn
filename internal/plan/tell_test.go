@@ -100,7 +100,8 @@ func TestAnswerReachesTheLead(t *testing.T) {
 	if _, err := c.lead.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{})); err != nil {
 		t.Fatal(err)
 	}
-	if want := "claude --resume " + session + " in " + folder; len(leads.opened) != 1 || leads.opened[0] != want {
+	wantLine, _ := resumeLine(&planv1.Lead{Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: session})
+	if want := wantLine + " in " + folder; len(leads.opened) != 1 || leads.opened[0] != want {
 		t.Errorf("opened %q, want %q", leads.opened, want)
 	}
 	leads.shown = nil
