@@ -7,6 +7,7 @@
 // it comes from, and an answer, a stop or a grant goes back to it. Each wish keeps its own view; an empty section is hidden.
 // The Djinn, the one lead, is at hand as on a wish: Talk to the Djinn in the header opens its terminal, the pill at the
 // bottom writes to it.
+import { GitMerge } from "lucide-react";
 import {
   type CSSProperties,
   type ReactNode,
@@ -631,9 +632,11 @@ export function FlightPlan({
                           detail?.questions.filter(waitsForYou).length ?? 0;
                         const digging =
                           detail?.questions.filter(investigating).length ?? 0;
-                        const { running, watching } = runningOf(
+                        const { running, watching, merging } = runningOf(
                           detail?.tasks ?? [],
                         );
+                        // Work merging is Djinn at work on the wish: its tone, not its count of workers (W577).
+                        const busy = running + merging;
                         const done =
                           detail?.tasks.filter(
                             (x) => x.status === TaskStatus.DONE && !isAzima(x),
@@ -653,7 +656,7 @@ export function FlightPlan({
                         return (
                           <button
                             key={wish.id}
-                            className={`plan-wish tone-${wishTone(wish, open, running, watching)}`}
+                            className={`plan-wish tone-${wishTone(wish, open, busy, watching)}`}
                             onClick={() => onOpen(wish.id)}
                             title={t("plan.open_wish")}
                           >
@@ -665,7 +668,7 @@ export function FlightPlan({
                             </span>
                             <span className="plan-wish-counts">
                               <StatusBadge
-                                tone={wishTone(wish, open, running, watching)}
+                                tone={wishTone(wish, open, busy, watching)}
                                 label={
                                   open
                                     ? t("plan.questions", { count: open })
@@ -673,11 +676,15 @@ export function FlightPlan({
                                       ? t("wish.ready")
                                       : running
                                         ? t("plan.running", { count: running })
-                                        : watching
-                                          ? t("plan.watching", {
-                                              count: watching,
+                                        : merging
+                                          ? t("plan.merging", {
+                                              count: merging,
                                             })
-                                          : t("pill.calm")
+                                          : watching
+                                            ? t("plan.watching", {
+                                                count: watching,
+                                              })
+                                            : t("pill.calm")
                                 }
                               />
                               {digging > 0 && (
@@ -694,6 +701,16 @@ export function FlightPlan({
                                   tone="running"
                                   count={running}
                                   label={t("plan.running", { count: running })}
+                                />
+                              )}
+                              {merging > 0 && (open > 0 || running > 0) && (
+                                <CountPill
+                                  tone="running"
+                                  icon={GitMerge}
+                                  count={merging}
+                                  label={t("plan.merging_detail", {
+                                    count: merging,
+                                  })}
                                 />
                               )}
                               {(open > 0 || running > 0) && watching > 0 && (

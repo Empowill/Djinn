@@ -498,10 +498,13 @@ export function isTaskMerging(
 
 // Running counts a wish's tasks whose process runs, apart: workers at work, and watchers that wait for their command to
 // print. A watcher is not work in progress: "1 running" for a PR watched alone said a worker ran. Work that merges
-// (isTaskMerging) counts as running: Djinn is at work on it.
+// (isTaskMerging) is counted apart: no worker runs for it, and the load bar's count of workers never had it (W577:
+// 6 workers and 2 merges waiting read as "8 running" at a level that runs 6). Djinn is at work on it all the same: a
+// wish's tone counts it as running.
 export interface Running {
   running: number;
   watching: number;
+  merging: number;
 }
 
 export function runningOf(
@@ -511,7 +514,7 @@ export function runningOf(
   const live = tasks.filter((task) => task.status === TaskStatus.RUNNING);
   const watching = live.filter(watcherRuns).length;
   const merging = tasks.filter(isTaskMerging).length;
-  return { running: live.length - watching + merging, watching };
+  return { running: live.length - watching, watching, merging };
 }
 
 export function taskFinished(status: TaskStatus): boolean {

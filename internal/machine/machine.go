@@ -610,28 +610,47 @@ func (p Policy) Slots(s Snapshot, peaks ...uint64) (int, string) {
 		return p.Workers, fmt.Sprintf("%d, set by djinn up --workers", p.Workers)
 	}
 	base, rule := p.BaseSlots(s, peaks...)
-	share := p.Share
-	if share <= 0 {
-		if p.Notch != 0 {
-			share = NotchPolicy(p.Notch).Share
-		} else {
-			share = 0.50
-		}
-	}
-	cpuAllowed := max(1, int(math.Round(share*float64(p.CPUSlots(s)))))
-	workers := cpuAllowed
+	share := p.share()
+	workers := p.BarSlots(s)
 	avail := p.CommitMemory(s)
 	if avail > 0 {
 		memEngaged := p.CommittableLimit(avail)
 		forecast := p.WorkerForecast(peaks...)
 		memAllowed := max(1, int(memEngaged/forecast))
-		workers = min(cpuAllowed, memAllowed)
+		workers = min(workers, memAllowed)
 	}
 	if share == 1.0 {
 		return workers, rule
 	}
 	pct := int(math.Round(share * 100))
 	return workers, fmt.Sprintf("%d: %d%% of %d (%s)", workers, pct, base, rule)
+}
+
+// BarSlots is the most workers the notch itself lets run, before the memory's share of Slots: its share of the CPU
+// rule's slots, at least 1; djinn up --workers when set. It changes only with the notch: lowering the notch pauses the
+// workers above it, never a dip of the memory available, which pausing would not free.
+func (p Policy) BarSlots(s Snapshot) int {
+	if p.Workers > 0 {
+		return p.Workers
+	}
+	return max(1, int(math.Round(p.share()*float64(p.CPUSlots(s)))))
+}
+
+// share is the policy's Share, or its notch's, or Medium's.
+func (p Policy) share() float64 {
+	switch {
+	case p.Share > 0:
+		return p.Share
+	case p.Notch != 0:
+		return NotchPolicy(p.Notch).Share
+	}
+	return 0.50
+}
+
+// NotchSlots is the most workers a notch lets run on the machine as it is now.
+type NotchSlots struct {
+	Notch djinnv1.LoadNotch
+	Slots int
 }
 
 // Pressure says why the machine is under pressure, or "" when it is not. Under pressure, no worker starts and no
@@ -897,6 +916,29 @@ func (m *Monitor) Capacity() (slots int, rule, pressure string) {
 	p := m.Policy()
 	slots, rule = p.Slots(s)
 	return slots, rule, p.Pressure(s)
+}
+
+// BarSlots is the most workers the notch n itself lets run now (Policy.BarSlots), djinn up --workers holding.
+func (m *Monitor) BarSlots(n djinnv1.LoadNotch) int {
+	p := NotchPolicy(n)
+	p.Workers = m.Policy().Workers
+	return p.BarSlots(m.Snapshot())
+}
+
+// NotchSlots is the most workers each manual notch lets run now, as the scheduler weighs them (Capacity): the load
+// bar shows these, so that what it says a notch runs is what the scheduler lets run there (W577). djinn up --workers
+// holds for every notch.
+func (m *Monitor) NotchSlots() []NotchSlots {
+	s := m.Snapshot()
+	current := m.Policy()
+	out := make([]NotchSlots, 0, len(ManualNotches))
+	for _, n := range ManualNotches {
+		p := NotchPolicy(n)
+		p.Workers, p.WorkerMemory = current.Workers, current.WorkerMemory
+		slots, _ := p.Slots(s)
+		out = append(out, NotchSlots{Notch: n, Slots: slots})
+	}
+	return out
 }
 
 // Available is the memory available to new programs now, in bytes; 0 when unknown.

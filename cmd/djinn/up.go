@@ -186,6 +186,7 @@ func runUp(args []string) (restart bool, err error) {
 	opts := []harness.Option{
 		harness.WithHistory(history),
 		harness.WithCapacity(monitor.Capacity),
+		harness.WithBarSlots(monitor.BarSlots),
 		harness.WithMemory(monitor.Available, policy),
 		harness.WithTotal(monitor.Total),
 		// Started from the Finder or a desktop menu, Djinn has a bare PATH (fromLauncher): before each start, its PATH
@@ -421,6 +422,8 @@ func runUp(args []string) (restart bool, err error) {
 		}
 	}, workers.WorkerMemory, machine.WithLoadRunningWorkers(workers.Running),
 		machine.WithLoadPausedWorkers(workers.Paused),
+		machine.WithLoadForcedWorkers(workers.Forced),
+		machine.WithLoadLowerPauses(workers.LowerPauses),
 		machine.WithLoadWorkerForecast(workers.WorkerForecast),
 		machine.WithLoadStreamer(func(stream func(context.Context, func(*djinnv1.LoadServiceWatchResponse) error) error) {
 			uiSvc.WatchLoad = stream

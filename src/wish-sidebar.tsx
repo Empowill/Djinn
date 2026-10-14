@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronRight,
   FolderOpen,
+  GitMerge,
   GripVertical,
   Hourglass,
   Inbox,
@@ -30,9 +31,10 @@ import { CountPill, ToneIcon } from "./status";
 // What the side panel counts in a wish.
 export interface WishCounts {
   questions: number;
-  // Workers at work, and watchers waiting for their command apart (runningOf).
+  // Workers at work, watchers waiting for their command, and finished work waiting to merge, apart (runningOf).
   running: number;
   watching: number;
+  merging: number;
 }
 
 export function WishSidebar({
@@ -88,8 +90,18 @@ export function WishSidebar({
   const hourglassKey = usePageShortcut(HOURGLASS_DIGIT);
 
   const item = (wish: Wish, rank?: number) => {
-    const count = counts[wish.id] ?? { questions: 0, running: 0, watching: 0 };
-    const tone = wishTone(wish, count.questions, count.running, count.watching);
+    const count = counts[wish.id] ?? {
+      questions: 0,
+      running: 0,
+      watching: 0,
+      merging: 0,
+    };
+    const tone = wishTone(
+      wish,
+      count.questions,
+      count.running + count.merging,
+      count.watching,
+    );
     const keys = (event: KeyboardEvent) => {
       if (!rank || !event.altKey) return;
       if (event.key === "ArrowUp" && rank > 1) onMove(wish.id, rank - 1);
@@ -144,6 +156,14 @@ export function WishSidebar({
                 tone="running"
                 count={count.running}
                 label={t("plan.running", { count: count.running })}
+              />
+            )}
+            {count.merging > 0 && (
+              <CountPill
+                tone="running"
+                icon={GitMerge}
+                count={count.merging}
+                label={t("plan.merging_detail", { count: count.merging })}
               />
             )}
             {count.watching > 0 && (

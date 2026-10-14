@@ -4450,7 +4450,7 @@ type Task struct {
 	// without a Done-when section.
 	ProofNeeds []*ProofNeed `protobuf:"bytes,43,rep,name=proof_needs,json=proofNeeds,proto3" json:"proof_needs,omitempty"`
 	// What Djinn started the task for, on a question of the wish; none for a task the lead or the developer spawned. A
-	// question worker takes no slot of the machine and runs in its project's folder, reading.
+	// question worker takes a slot of the machine like any agent and runs in its project's folder, reading.
 	Role TaskRole `protobuf:"varint,44,opt,name=role,proto3,enum=plan.v1.TaskRole" json:"role,omitempty"`
 	// The code of the question a question worker works on (Q52); empty for any other task.
 	Question string `protobuf:"bytes,45,opt,name=question,proto3" json:"question,omitempty"`

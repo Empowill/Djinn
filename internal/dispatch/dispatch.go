@@ -28,6 +28,9 @@ type Machine struct {
 	Running int
 	// Gates is the number of gates held outside the running workers: each takes a slot.
 	Gates int
+	// Resuming is the number of workers paused by the load bar or for an investigator, which resume before any new
+	// task (Q123): each keeps its slot from a new work task. An investigator goes before them.
+	Resuming int
 	// Available is the memory available to new programs, in bytes; 0 when unknown, and then the memory holds no
 	// worker back. Policy weighs it against what a worker of the task's provider typically takes
 	// (machine.Policy.WorkerRoom).
@@ -46,8 +49,7 @@ type Situation struct {
 	rank    map[string]int // position of each active wish
 	git     map[string]bool
 	machine *Machine
-	started map[string]bool
-	reading map[string]bool // the question workers started in this pass: they take memory, no slot
+	started map[string]bool // the workers started in this pass: each takes a slot and memory
 	now     time.Time
 	// The first task the memory held in this pass, and why: the tasks after it wait for it.
 	short      *planv1.Task
@@ -97,7 +99,7 @@ func New(tasks []*planv1.Task, wishes []*planv1.Wish, git map[string]bool, machi
 	plan.FillAzimas(tasks)
 	s := &Situation{
 		tasks: tasks, byID: make(map[string]*planv1.Task, len(tasks)), wishes: make(map[string]*planv1.Wish, len(wishes)),
-		rank: map[string]int{}, git: git, machine: machine, started: map[string]bool{}, reading: map[string]bool{},
+		rank: map[string]int{}, git: git, machine: machine, started: map[string]bool{},
 		ancestry: make(map[[2]string]bool), now: time.Now(),
 	}
 	for _, t := range tasks {
@@ -131,6 +133,9 @@ type Decision struct {
 	// It waits for the machine alone: no slot free, the machine under pressure, or its memory short. Forced
 	// (djinn task start), it may start. A task that waits for one going first before it does not.
 	Machine bool
+	// It waits for a slot alone: the machine is not under pressure and its memory holds it. An investigator pauses
+	// a work task for it (the harness's preemptForSlot): it takes that task's slot, never one more.
+	Slot bool
 }
 
 // Planned tells whether Djinn starts the task by itself, once it is ready: a task planned on this machine, or one
@@ -154,11 +159,13 @@ func Planned(t *planv1.Task) bool {
 func Watcher(t *planv1.Task) bool { return t.GetProvider() == planv1.Provider_PROVIDER_WATCH }
 
 // QuestionWorker tells whether Djinn started the task on a question (Task.role): it reads and runs djinn's commands,
-// no build nor gate, so it takes no slot and holds no write scope; an agent all the same, it waits while the machine is
-// under pressure or its memory would not hold it.
+// no build nor gate, so it holds no write scope; an agent all the same, it takes a slot like any worker (W577: the
+// load bar's count is every agent that runs), and waits while the machine is under pressure or its memory would not
+// hold it. On a full machine, an investigator takes the slot of a work task it pauses (Decision.Slot).
 func QuestionWorker(t *planv1.Task) bool { return t.GetRole() != planv1.TaskRole_TASK_ROLE_UNSPECIFIED }
 
-// Light tells whether the task takes no slot of the machine: a watcher, or a question worker.
+// Light tells whether the task writes nothing in its project's folder: a watcher, or a question worker. Only a watcher
+// takes no slot.
 func Light(t *planv1.Task) bool { return Watcher(t) || QuestionWorker(t) }
 
 // Resuming tells whether the task is one Djinn resumes.
@@ -170,16 +177,16 @@ func (s *Situation) Pass() []Decision {
 	var out []Decision
 	for _, t := range s.Order() {
 		why, failed := s.Held(t)
-		machine := false
+		machine, slot := false, false
 		if why == "" && failed == "" {
 			var first bool
-			if why, first = s.full(t); why == "" {
+			if why, first, slot = s.full(t); why == "" {
 				s.Start(t)
 			}
 			machine = why != "" && !first
 		}
 		out = append(out, Decision{Task: t, Why: why, Failed: failed, Commit: why != "" && s.awaitsCommit(t),
-			Machine: machine})
+			Machine: machine, Slot: slot})
 	}
 	return out
 }
@@ -291,13 +298,10 @@ func (s *Situation) dependentCounts() map[string]int {
 	return counts
 }
 
-// Start counts the task as started: it writes in its project, takes a slot and memory. A question worker only takes
-// memory; a watcher, nothing.
+// Start counts the task as started: it takes a slot and memory, and writes in its project unless it is a question
+// worker; a watcher takes nothing.
 func (s *Situation) Start(t *planv1.Task) {
-	switch {
-	case QuestionWorker(t):
-		s.reading[t.GetId()] = true
-	case !Watcher(t):
+	if !Watcher(t) {
 		s.started[t.GetId()] = true
 	}
 }
@@ -326,7 +330,7 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 	if why, failed = s.Held(t); why != "" || failed != "" {
 		return why, failed
 	}
-	why, _ = s.full(t)
+	why, _, _ = s.full(t)
 	return why, ""
 }
 
@@ -596,19 +600,25 @@ func Provider(t *planv1.Task) string {
 
 func provider(t *planv1.Task) string { return Provider(t) }
 
-// full says why the task's worker may not start now, or "" when it may: a slot is free (a question worker takes none),
-// and the memory holds a worker of its provider. Once the memory holds a task, the ones after it wait for it: they keep their order.
+// full says why the task's worker may not start now, or "" when it may: a slot is free, and the memory holds a worker
+// of its provider. Once the memory holds a task, the ones after it wait for it: they keep their order.
 // first tells that the task waits for one before it in that order, not for the machine: djinn task start never jumps it.
-func (s *Situation) full(t *planv1.Task) (why string, first bool) {
+// slot tells that it waits for a slot alone, its memory holding it: an investigator may take a paused task's slot.
+func (s *Situation) full(t *planv1.Task) (why string, first, slot bool) {
 	m := s.machine
 	if m == nil || Watcher(t) { // A watcher sleeps until its command prints: no slot.
-		return "", false
+		return "", false, false
 	}
 	if m.Pressure != "" {
-		return "the machine is under pressure: " + m.Pressure, false
+		return "the machine is under pressure: " + m.Pressure, false, false
 	}
-	// A slot each for the workers running and the gates held outside them.
-	if running := m.Running + len(s.started); running+m.Gates >= m.Slots && !QuestionWorker(t) {
+	// A slot each for the workers running, the ones this pass started, the gates held outside them, and the paused
+	// workers that resume first.
+	resuming := m.Resuming
+	if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+		resuming = 0
+	}
+	if running := m.Running + len(s.started); running+m.Gates+resuming >= m.Slots {
 		workers := "1 worker runs"
 		if running != 1 {
 			workers = fmt.Sprintf("%d workers run", running)
@@ -620,9 +630,31 @@ func (s *Situation) full(t *planv1.Task) (why string, first bool) {
 		default:
 			workers += fmt.Sprintf(" and %d gates are held outside the workers", m.Gates)
 		}
-		return workers + ", the most this machine holds (" + m.Rule + ")", false
+		switch resuming {
+		case 0:
+		case 1:
+			workers += ", 1 paused worker resumes first"
+		default:
+			workers += fmt.Sprintf(", %d paused workers resume first", resuming)
+		}
+		why = workers + ", the most this machine holds (" + m.Rule + ")"
+		if t.GetRole() != planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+			return why, false, false
+		}
+		// An investigator may take the slot of a work task it pauses: only where the memory holds it.
+		if room, first := s.room(t); room != "" {
+			return room, first, false
+		}
+		return why, false, true
 	}
-	// Then the memory: it must hold what a worker of the task's provider typically takes.
+	room, first := s.room(t)
+	return room, first, false
+}
+
+// room says why the memory does not hold the task's worker now, or "" when it does: what a worker of the task's
+// provider typically takes. Once the memory holds a task, the ones after it wait for it: first says so.
+func (s *Situation) room(t *planv1.Task) (why string, first bool) {
+	m := s.machine
 	if m.Available == 0 {
 		return "", false
 	}
@@ -852,7 +884,7 @@ func (s *Situation) growing() uint64 {
 	now := cmp.Or(s.now, time.Now())
 	for _, t := range s.tasks {
 		alive := (s.taskRunning(t) || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED) && !Watcher(t)
-		if !alive && !s.started[t.GetId()] && !s.reading[t.GetId()] {
+		if !alive && !s.started[t.GetId()] {
 			continue
 		}
 		peak, _ := s.typical(provider(t))
@@ -896,7 +928,7 @@ func (s *Situation) engaged() uint64 {
 	}
 	for _, t := range s.tasks {
 		alive := (s.taskRunning(t) || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED) && !Watcher(t)
-		if !alive && !s.started[t.GetId()] && !s.reading[t.GetId()] {
+		if !alive && !s.started[t.GetId()] {
 			continue
 		}
 		peak, _ := s.typical(provider(t))

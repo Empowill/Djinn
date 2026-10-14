@@ -23,6 +23,36 @@ interface LoadData {
   baseSlots: number;
   runningWorkers: number;
   pausedWorkers: number;
+  // What the scheduler lets run now at the notch in effect, and at each notch (W577): the counts the bar shows.
+  slots: number;
+  notchSlots: Partial<Record<LoadNotch, number>>;
+  // Workers among runningWorkers started or resumed by hand, beyond the slots.
+  forcedWorkers: number;
+  // Whether lowering the notch pauses the newest workers above it, or lets them finish their run.
+  lowerPauses: boolean;
+}
+
+// The fields the server's Get and Watch both send about the workers.
+interface WorkerFields {
+  slots: number;
+  notchSlots: { notch: LoadNotch; slots: number }[];
+  forcedWorkers: number;
+  lowerPauses: boolean;
+}
+
+// workerFields reads them, keeping what the page knew when the server sends no slot (an older one).
+function workerFields(
+  res: WorkerFields,
+  data: LoadData,
+): Pick<LoadData, "slots" | "notchSlots" | "forcedWorkers" | "lowerPauses"> {
+  const notchSlots: Partial<Record<LoadNotch, number>> = {};
+  for (const n of res.notchSlots) notchSlots[n.notch] = n.slots;
+  return {
+    slots: res.slots || data.slots,
+    notchSlots: res.notchSlots.length ? notchSlots : data.notchSlots,
+    forcedWorkers: res.forcedWorkers,
+    lowerPauses: res.lowerPauses,
+  };
 }
 
 class LoadManager {
@@ -41,6 +71,10 @@ class LoadManager {
     baseSlots: 1,
     runningWorkers: 0,
     pausedWorkers: 0,
+    slots: 0,
+    notchSlots: {},
+    forcedWorkers: 0,
+    lowerPauses: true,
   };
   private previewNotch: LoadNotch | null = null;
   private listeners = new Set<() => void>();
@@ -157,6 +191,7 @@ class LoadManager {
             bindingResource,
             cpuSlots,
             memorySlots,
+            ...workerFields(res, this.data),
           };
           this.notify();
         })
@@ -182,6 +217,7 @@ class LoadManager {
           baseSlots: res.baseSlots || this.data.baseSlots,
           runningWorkers: res.runningWorkers ?? this.data.runningWorkers,
           pausedWorkers: res.pausedWorkers ?? this.data.pausedWorkers,
+          ...workerFields(res, this.data),
         };
         this.notify();
       });
@@ -210,6 +246,7 @@ class LoadManager {
               baseSlots: res.baseSlots || this.data.baseSlots,
               runningWorkers: res.runningWorkers ?? this.data.runningWorkers,
               pausedWorkers: res.pausedWorkers ?? this.data.pausedWorkers,
+              ...workerFields(res, this.data),
             };
             this.notify();
           }
@@ -342,6 +379,29 @@ function computeWorkers(notch: LoadNotch, baseSlots: number): number {
   return Math.max(1, Math.round(share * (baseSlots || 1)));
 }
 
+// workersAt is the most workers a notch lets run, as the scheduler weighs it (the server's notch slots): the window
+// never computes it apart (W577). Before the server says, an estimate from the base slots.
+function workersAt(
+  data: Pick<LoadData, "notchSlots" | "baseSlots">,
+  notch: LoadNotch,
+): number {
+  return data.notchSlots[notch] ?? computeWorkers(notch, data.baseSlots);
+}
+
+// overLimit says how many workers run beyond what a notch lets run, and why: started by hand (they stay), the rest
+// finishing their run, or pausing when the bar moves there and lowering pauses (previewed).
+function overLimit(
+  data: Pick<
+    LoadData,
+    "runningWorkers" | "forcedWorkers" | "notchSlots" | "baseSlots"
+  >,
+  notch: LoadNotch,
+): { byHand: number; others: number } {
+  const over = Math.max(0, data.runningWorkers - workersAt(data, notch));
+  const byHand = Math.min(data.forcedWorkers, over);
+  return { byHand, others: over - byHand };
+}
+
 const MEMORY_RESERVE = 2n * 1024n * 1024n * 1024n; // 2 GiB
 
 function computeEngagedLimit(
@@ -362,30 +422,20 @@ function computeEngagedLimit(
 
 function notchTooltip(
   notch: LoadNotch,
-  baseSlots: number,
+  data: Pick<LoadData, "notchSlots" | "baseSlots">,
   chosenNotch: LoadNotch,
 ): string {
   switch (notch) {
     case LoadNotch.MINIMAL:
-      return t("load.tooltip.minimal", {
-        workers: computeWorkers(LoadNotch.MINIMAL, baseSlots),
-      });
+      return t("load.tooltip.minimal", { workers: workersAt(data, notch) });
     case LoadNotch.MEDIUM:
-      return t("load.tooltip.medium", {
-        workers: computeWorkers(LoadNotch.MEDIUM, baseSlots),
-      });
+      return t("load.tooltip.medium", { workers: workersAt(data, notch) });
     case LoadNotch.HIGH:
-      return t("load.tooltip.high", {
-        workers: computeWorkers(LoadNotch.HIGH, baseSlots),
-      });
+      return t("load.tooltip.high", { workers: workersAt(data, notch) });
     case LoadNotch.MAX:
-      return t("load.tooltip.max", {
-        workers: computeWorkers(LoadNotch.MAX, baseSlots),
-      });
+      return t("load.tooltip.max", { workers: workersAt(data, notch) });
     case LoadNotch.OVERCLOCK:
-      return t("load.tooltip.overclock", {
-        workers: computeWorkers(LoadNotch.OVERCLOCK, baseSlots),
-      });
+      return t("load.tooltip.overclock", { workers: workersAt(data, notch) });
     case LoadNotch.AUTO:
       return t("load.tooltip.auto", { chosen: notchLabel(chosenNotch) });
     default:
@@ -475,7 +525,7 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
   const displayNotch = preview ?? activeNotch;
   const sliderIndex = Math.max(0, NOTCHES.indexOf(displayNotch));
   const chosen = data.chosenNotch || LoadNotch.MEDIUM;
-  const allowedWorkers = computeWorkers(displayNotch, data.baseSlots);
+  const allowedWorkers = workersAt(data, displayNotch);
 
   const valuetext = data.auto
     ? t("load.aria_valuetext", {
@@ -490,8 +540,8 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
       });
 
   const baseTooltip = data.auto
-    ? notchTooltip(LoadNotch.AUTO, data.baseSlots, chosen)
-    : notchTooltip(displayNotch, data.baseSlots, chosen);
+    ? notchTooltip(LoadNotch.AUTO, data, chosen)
+    : notchTooltip(displayNotch, data, chosen);
   const sliderTooltip =
     data.memoryTotalBytes > 0n || data.memoryAvailableBytes > 0n
       ? t("load.tooltip_detail", {
@@ -593,7 +643,7 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
               loadManager.setPreviewNotch(null);
               void loadManager.setNotch(n);
             }}
-            title={notchTooltip(n, data.baseSlots, chosen)}
+            title={notchTooltip(n, data, chosen)}
           >
             {notchLabel(n)}
           </button>
@@ -619,7 +669,7 @@ const OperatingLoadAuto = React.memo(function OperatingLoadAuto() {
         data-notch="auto"
         className={`operating-load-notch ${data.auto ? "active" : ""}`}
         onClick={() => void loadManager.setNotch(LoadNotch.AUTO)}
-        title={notchTooltip(LoadNotch.AUTO, data.baseSlots, chosen)}
+        title={notchTooltip(LoadNotch.AUTO, data, chosen)}
       >
         {t("load.notch.auto")}
       </button>
@@ -627,7 +677,7 @@ const OperatingLoadAuto = React.memo(function OperatingLoadAuto() {
         <span
           className="operating-load-effective"
           data-effective={notchSlug(data.notch)}
-          title={notchTooltip(LoadNotch.AUTO, data.baseSlots, chosen)}
+          title={notchTooltip(LoadNotch.AUTO, data, chosen)}
         >
           ({notchLabel(data.notch)})
         </span>
@@ -649,7 +699,14 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
   );
 
   const displayNotch = preview ?? data.notch;
-  const allowedWorkers = computeWorkers(displayNotch, data.baseSlots);
+  const allowedWorkers = workersAt(data, displayNotch);
+  const over = overLimit(data, displayNotch);
+  // Previewing a notch below the one in effect: what moving there does to the workers above its limit.
+  const previewing =
+    preview !== null && workersAt(data, preview) < workersAt(data, data.notch);
+  const lowerText = data.lowerPauses
+    ? t("load.lower_pauses")
+    : t("load.lower_finishes");
   const limitMemory = computeEngagedLimit(
     displayNotch,
     data.memoryAvailableBytes,
@@ -666,10 +723,7 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
     ? t("load.priority_low")
     : t("load.priority_standard");
 
-  const maxPossibleWorkers = Math.max(
-    1,
-    Math.round((data.baseSlots || 1) * 1.5),
-  );
+  const maxPossibleWorkers = Math.max(1, workersAt(data, LoadNotch.OVERCLOCK));
   const cpuLimitPct = Math.min(
     100,
     Math.max(0, Math.round((allowedWorkers / maxPossibleWorkers) * 100)),
@@ -722,8 +776,9 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
         })}
       </div>
       <div className="operating-load-forecast-row">
-        <span className="operating-load-forecast-label">
-          {t("load.forecast_cpu", {
+        <span className="operating-load-forecast-label" title={lowerText}>
+          {t("load.forecast_cpu_running", {
+            running: data.runningWorkers,
             workers: Math.round(animatedWorkers),
             priority: priorityText,
           })}
@@ -731,6 +786,23 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
             <span className="operating-load-forecast-paused">
               {" · "}
               {t("load.forecast_paused", { count: data.pausedWorkers })}
+            </span>
+          )}
+          {over.byHand > 0 && (
+            <span className="operating-load-forecast-over" data-over="hand">
+              {" · "}
+              {t("load.forecast_by_hand", { count: over.byHand })}
+            </span>
+          )}
+          {over.others > 0 && (
+            <span
+              className="operating-load-forecast-over"
+              data-over={previewing && data.lowerPauses ? "pause" : "finish"}
+            >
+              {" · "}
+              {previewing && data.lowerPauses
+                ? t("load.forecast_will_pause", { count: over.others })
+                : t("load.forecast_finishing", { count: over.others })}
             </span>
           )}
         </span>
@@ -806,5 +878,7 @@ export {
   notchSlug,
   notchShare,
   computeWorkers,
+  workersAt,
+  overLimit,
   computeEngagedLimit,
 };

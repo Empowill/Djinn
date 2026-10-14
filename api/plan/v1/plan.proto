@@ -936,7 +936,7 @@ message Task {
   // without a Done-when section.
   repeated ProofNeed proof_needs = 43;
   // What Djinn started the task for, on a question of the wish; none for a task the lead or the developer spawned. A
-  // question worker takes no slot of the machine and runs in its project's folder, reading.
+  // question worker takes a slot of the machine like any agent and runs in its project's folder, reading.
   TaskRole role = 44;
   // The code of the question a question worker works on (Q52); empty for any other task.
   string question = 45 [(buf.validate.field).string.max_len = 64];
@@ -3562,7 +3562,8 @@ service TaskService {
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Start a planned task that waits for the machine (no slot free, or the machine under pressure) now, anyway. A
-  // task that waits for anything else (its wish, a dependency, a write scope) keeps waiting.
+  // task that waits for anything else (its wish, a dependency, a write scope) keeps waiting. Its worker takes a slot
+  // all the same, beyond what the load bar lets run: the bar counts it among the workers started by hand.
   rpc Start(TaskServiceStartRequest) returns (TaskServiceStartResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
