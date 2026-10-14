@@ -1692,6 +1692,7 @@ html[data-still] .operating-load * {
   .sidebar .nav-item > span,
   .mission-nav > span:nth-child(2),
   .mission-nav > small,
+  .mission-nav > .wish-counts,
   .profile > span:nth-child(2),
   .profile > svg {
     display: none;

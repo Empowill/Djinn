@@ -669,6 +669,7 @@
   "sidebar.paused": "En pause",
   "sidebar.project_terminal": "Ouvrir un terminal à la racine de {project}",
   "sidebar.projects": "PROJETS",
+  "sidebar.ready": "prêt à exaucer",
   "sidebar.to_first": "En faire le premier vœu actif",
   "sidebar.wish_rank": "{rank}. {title} (glissez, ou Alt+Flèche, pour changer son rang)",
   "sidebar.wishes": "SOUHAITS",

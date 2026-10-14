@@ -669,6 +669,7 @@
   "sidebar.paused": "Paused",
   "sidebar.project_terminal": "Open a terminal at the root of {project}",
   "sidebar.projects": "PROJECTS",
+  "sidebar.ready": "ready to grant",
   "sidebar.to_first": "Make it the first active wish",
   "sidebar.wish_rank": "{rank}. {title} (drag, or Alt+Arrow, to change its rank)",
   "sidebar.wishes": "WISHES",
