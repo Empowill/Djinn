@@ -276,11 +276,13 @@ html[data-theme="light"] .wordmark-period {
 .sidebar-section-label {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  font: var(--font-size-body, 12px) var(--mono);
-  letter-spacing: 1px;
-  color: var(--n-6f);
-  padding: 18px 10px 11px;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 10px;
+  color: var(--n-9c);
+  font-size: var(--font-size-body, 12px);
+  text-align: left;
+  white-space: nowrap;
 }
 
 .nav-item {
@@ -305,11 +307,13 @@ html[data-theme="light"] .wordmark-period {
 }
 .nav-counter {
   margin-left: auto;
+  margin-block: -3px;
   font: var(--font-size-body, 12px) var(--mono);
-  background: var(--n-3d);
+  background: transparent;
+  border: 1px solid var(--n-33);
   padding: 2px 5px;
   border-radius: 3px;
-  color: var(--n-e7);
+  color: var(--n-9c);
 }
 
 .mission-list {
@@ -352,7 +356,6 @@ html[data-theme="light"] .wordmark-period {
 .import-nav {
   font-size: var(--font-size-body, 12px);
   color: var(--n-6f);
-  padding-bottom: 16px;
 }
 .sidebar-bottom {
   border-top: 1px solid var(--line);
@@ -1964,10 +1967,12 @@ html[data-motion="reduced"] *::after {
 }
 
 /* Projects own persistent context; missions stay nested in their project. */
-.project-section-label {
-  display: flex;
+.project-section-label button {
+  margin-left: auto;
+  margin-block: -5px;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
 }
 .project-section-label button,
 .project-nav-main > button {
@@ -2126,6 +2131,12 @@ html[data-motion="reduced"] *::after {
   cursor: pointer;
 }
 
+.sidebar-collapsed .project-section-label {
+  justify-content: center;
+}
+.sidebar-collapsed .project-section-label button {
+  margin-left: 0;
+}
 .sidebar-collapsed .project-nav {
   justify-content: center;
 }

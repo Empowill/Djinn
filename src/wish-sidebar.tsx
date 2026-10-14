@@ -1,15 +1,17 @@
 // The side panel's lists, read from the services: the flying carpet's entry with what waits for you there (questions,
-// new inbox items), the Hourglass's entry below it (the live metrics, hourglass.tsx), the wishes, the active ones by
-// rank and how many of the three places they take, then the paused ones and the granted ones, each list in its own
-// order; and the projects, each with its branches out of sync with their remote (project-sync.tsx). The wishes' list
-// shows the active ones, each with its counts on a second line, and three rows more; it scrolls under the pointer.
-// Every wish is dragged by its grip, on its left, or moved with Alt+Arrow, within its list; while it is dragged, a thin
-// line shows where it would land. A paused or granted wish dropped among the active ones, or sent first with its
-// button, becomes active there (Q01): three being active, the last one is paused, first among the paused ones.
+// new inbox items), the wishes, the active ones by rank and how many of the three places they take, then the paused
+// ones and the granted ones, each list in its own order; the projects, each with its branches out of sync with their
+// remote (project-sync.tsx); and the Hourglass's entry at the bottom before the profile (the live metrics,
+// hourglass.tsx). The wishes' list shows the active ones, each with its counts on a second line, and three rows more;
+// it scrolls under the pointer. Every wish is dragged by its grip, on its left, or moved with Alt+Arrow, within its
+// list; while it is dragged, a thin line shows where it would land. A paused or granted wish dropped among the active
+// ones, or sent first with its button, becomes active there (Q01): three being active, the last one is paused, first
+// among the paused ones.
 import {
   ArrowUpToLine,
   ChevronDown,
   ChevronRight,
+  Folder,
   FolderOpen,
   GitMerge,
   GripVertical,
@@ -18,7 +20,9 @@ import {
   MessageCircleQuestion,
   Plane,
   Plus,
+  Sparkles,
   SquareTerminal,
+  Upload,
   Wrench,
 } from "lucide-react";
 import { type DragEvent, type KeyboardEvent, useRef, useState } from "react";
@@ -80,6 +84,8 @@ export function WishSidebar({
   onReorder,
   onNewProject,
   onPush,
+  onImportWish,
+  importDisabled = false,
 }: {
   wishes: Wish[];
   projects: Project[];
@@ -105,6 +111,8 @@ export function WishSidebar({
   onNewProject: () => void;
   // Pushes one branch of the project, out of sync with its remote.
   onPush?: (projectId: string, sync: ProjectSync) => Promise<unknown> | void;
+  onImportWish?: () => void;
+  importDisabled?: boolean;
 }) {
   const active = wishes.filter(isActive);
   const paused = wishes.filter((w) => w.state === WishState.PAUSED);
@@ -372,21 +380,8 @@ export function WishSidebar({
           )}
         </button>
       )}
-      {onSelectHourglass && (
-        <button
-          className={`nav-item hourglass-nav ${hourglassSelected ? "selected" : ""}`}
-          onClick={onSelectHourglass}
-          title={t("sidebar.page_shortcut", {
-            page: t("hourglass.title"),
-            shortcut: hourglassKey.label,
-          })}
-          aria-keyshortcuts={hourglassKey.aria}
-        >
-          <Hourglass size={15} />
-          {!collapsed && <span>{t("hourglass.title")}</span>}
-        </button>
-      )}
       <div className="sidebar-section-label">
+        {!collapsed && <Sparkles size={15} />}
         {!collapsed && <span>{t("sidebar.wishes")}</span>}
         {!collapsed && (
           <span
@@ -459,6 +454,7 @@ export function WishSidebar({
         )}
       </div>
       <div className="sidebar-section-label project-section-label">
+        {!collapsed && <Folder size={15} />}
         {!collapsed && <span>{t("sidebar.projects")}</span>}
         <button
           onClick={onNewProject}
@@ -507,6 +503,31 @@ export function WishSidebar({
           </div>
         ))}
       </div>
+      {onImportWish && (
+        <button
+          className="nav-item import-nav"
+          onClick={onImportWish}
+          title={t("app.import_wish")}
+          disabled={importDisabled}
+        >
+          <Upload size={15} />
+          {!collapsed && <span>{t("app.import_wish")}</span>}
+        </button>
+      )}
+      {onSelectHourglass && (
+        <button
+          className={`nav-item hourglass-nav ${hourglassSelected ? "selected" : ""}`}
+          onClick={onSelectHourglass}
+          title={t("sidebar.page_shortcut", {
+            page: t("hourglass.title"),
+            shortcut: hourglassKey.label,
+          })}
+          aria-keyshortcuts={hourglassKey.aria}
+        >
+          <Hourglass size={15} />
+          {!collapsed && <span>{t("hourglass.title")}</span>}
+        </button>
+      )}
     </>
   );
 }

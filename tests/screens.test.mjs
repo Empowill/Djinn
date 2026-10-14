@@ -297,6 +297,14 @@ test("the side panel ranks the active wishes, counts the three places, and folds
       onNewProject() {},
     }),
   );
+  assert.match(
+    html,
+    /<div class="sidebar-section-label"><svg[^>]*lucide-sparkles[^>]*>[^]*?<\/svg><span>Wishes<\/span><span class="nav-counter "/,
+  );
+  assert.match(
+    html,
+    /<div class="sidebar-section-label project-section-label"><svg[^>]*lucide-folder[^>]*>[^]*?<\/svg><span>Projects<\/span><button title="Create a project"/,
+  );
   assert.match(html, />2\/3</);
   assert.ok(html.indexOf("Ship the lamp") < html.indexOf("Polish the brass"));
   assert.match(html, /Paused/);
@@ -7994,14 +8002,14 @@ test("a worker's eye opens its task in its wish, through the window's focus", ()
   assert.equal(s.tabOf("task-task-w1"), "tasks");
 });
 
-test("the side panel's Hourglass comes right below the flying carpet, before the wishes, and stays with no active wish", (t) => {
+test("the side panel's Hourglass sits at the bottom of the menu, after the wishes, projects and import, and stays with no active wish", (t) => {
   globalThis.__DJINN_MAC__ = false;
   t.after(() => delete globalThis.__DJINN_MAC__);
   const sidebar = (wishes, selected) =>
     s.renderToStaticMarkup(
       h(s.WishSidebar, {
         wishes,
-        projects: [],
+        projects: [{ id: "p1", name: "lamp", directory: "/tmp/lamp" }],
         onSelectPlan() {},
         hourglassSelected: selected,
         onSelectHourglass() {},
@@ -8012,6 +8020,7 @@ test("the side panel's Hourglass comes right below the flying carpet, before the
         onSelectProject() {},
         onMove() {},
         onNewProject() {},
+        onImportWish() {},
       }),
     );
   const html = sidebar(
@@ -8019,9 +8028,18 @@ test("the side panel's Hourglass comes right below the flying carpet, before the
     true,
   );
   const carpet = html.indexOf("plan-nav");
-  const glass = html.indexOf("hourglass-nav");
   const wishes = html.indexOf("Ship the lamp");
-  assert.ok(carpet >= 0 && glass > carpet && wishes > glass, html);
+  const projects = html.indexOf("project-list");
+  const importBtn = html.indexOf("import-nav");
+  const glass = html.indexOf("hourglass-nav");
+  assert.ok(
+    carpet >= 0 &&
+      wishes > carpet &&
+      projects > wishes &&
+      importBtn > projects &&
+      glass > importBtn,
+    html,
+  );
   assert.match(
     html,
     /<button class="nav-item hourglass-nav selected" title="Hourglass \(Ctrl 2\)" aria-keyshortcuts="Control\+2"><svg[^>]*lucide-hourglass[^>]*>[^]*?<\/svg><span>Hourglass<\/span><\/button>/,

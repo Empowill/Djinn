@@ -88,7 +88,7 @@ its program ended, and on the Djinn's tab it starts the Djinn again as **Talk to
 
 A project is a folder Djinn's workers work in. Git or not: a folder outside Git works too.
 
-- In the window: **Create a project** (the + next to PROJECTS), then the folder (**Choose a folder…** in the window;
+- In the window: **Create a project** (the + next to Projects), then the folder (**Choose a folder…** in the window;
   type the path in the browser) and, optionally, a name.
 - From a terminal: `djinn project add <folder>`.
 
