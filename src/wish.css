@@ -69,8 +69,9 @@
   color: var(--muted-dim);
 }
 .nav-counter.full {
-  background: var(--accent);
-  color: var(--bg);
+  background: transparent;
+  border-color: var(--n-47);
+  color: var(--n-e7);
 }
 .sidebar-section-label.sub {
   width: 100%;

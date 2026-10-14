@@ -1308,8 +1308,7 @@ html[data-theme="light"] textarea {
 }
 html[data-theme="light"] .count,
 html[data-theme="light"] .badge,
-html[data-theme="light"] .mission-nav small,
-html[data-theme="light"] .nav-counter {
+html[data-theme="light"] .mission-nav small {
   color: var(--muted);
   border-color: var(--line-strong);
   background: var(--surface-soft);

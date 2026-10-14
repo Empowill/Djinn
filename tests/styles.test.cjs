@@ -386,3 +386,36 @@ test("the price of what a wish spent reads in the dark and the light theme", () 
       assert.ok(r >= 4.5, `${name}: ${colour} on ${ground} reads at ${r}:1`);
     }
 });
+
+// Wishes and Projects headers in the sidebar share the layout of Flying carpet and Hourglass (.nav-item), and the
+// active wish counter (.nav-counter, .nav-counter.full) stays on a transparent ground without a white fill.
+test("the sidebar section labels align with nav-item and the wish counter stays without a white background", () => {
+  const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+  const wish = fs.readFileSync(path.join(root, "wish.css"), "utf8");
+  const review = fs.readFileSync(path.join(root, "review.css"), "utf8");
+  const rule = (css, selector) => {
+    const from = css.indexOf(selector + " {");
+    assert.ok(from >= 0, `${selector} has its rule`);
+    return css.slice(from, css.indexOf("}", from));
+  };
+  const label = rule(styles, ".sidebar-section-label");
+  const nav = rule(styles, ".nav-item");
+  for (const decl of [
+    "display: flex;",
+    "align-items: center;",
+    "gap: 10px;",
+    "width: 100%;",
+    "padding: 11px 10px;",
+    "color: var(--n-9c);",
+    "font-size: var(--font-size-body, 12px);",
+  ]) {
+    assert.ok(label.includes(decl), `.sidebar-section-label has ${decl}`);
+    assert.ok(nav.includes(decl), `.nav-item has ${decl}`);
+  }
+  const counter = rule(styles, ".nav-counter");
+  const full = rule(wish, ".nav-counter.full");
+  assert.match(counter, /background:\s*transparent;/);
+  assert.match(full, /background:\s*transparent;/);
+  assert.doesNotMatch(full, /background:\s*var\(--accent\)/);
+  assert.doesNotMatch(review, /html\[data-theme="light"\]\s*\.nav-counter/);
+});

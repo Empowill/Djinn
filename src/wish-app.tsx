@@ -1,7 +1,7 @@
-// The window, on the services: the side panel (the flying carpet, the Hourglass, the wishes by rank, the projects), the
+// The window, on the services: the side panel (the flying carpet, the wishes by rank, the projects, the Hourglass), the
 // flying carpet of the active wishes, the Hourglass's live metrics or the wish shown, and the status bar (whether the
 // page follows djinn, the machine). What stays on this page is how it shows: what is shown and the side panel folded.
-import { ArrowLeft, PanelLeft, Plus, Settings2, Upload } from "lucide-react";
+import { ArrowLeft, PanelLeft, Plus, Settings2 } from "lucide-react";
 import { AnimatePresence, LayoutGroup } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -382,16 +382,9 @@ export function WishApp() {
             onReorder={reorder}
             onNewProject={() => setModal("project")}
             onPush={pushProject}
+            onImportWish={() => importRef.current?.click()}
+            importDisabled={!loaded}
           />
-          <button
-            className="nav-item import-nav"
-            onClick={() => importRef.current?.click()}
-            title={t("app.import_wish")}
-            disabled={!loaded}
-          >
-            <Upload size={15} />
-            {!collapsed && <span>{t("app.import_wish")}</span>}
-          </button>
           <div className="sidebar-bottom">
             <button
               className="profile"
