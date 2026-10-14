@@ -47,7 +47,7 @@ func TestWorkerPromptMoveRule(t *testing.T) {
 		"the lead spawns a task for it or lets a watcher report it",
 		"a CI result comes from the PR's babysit watcher",
 		"A question to the developer is only for a decision or a move only a person can make",
-		"the exact command in a code block at the top of its `--context`, never mid-sentence",
+		"ask it with `djinn question ask` before you end. " + plan.QuestionShape,
 	} {
 		if !strings.Contains(got1, want) {
 			t.Errorf("worker prompt lacks %q:\n%s", want, got1)
@@ -256,7 +256,7 @@ func TestComputedQuestionLevels(t *testing.T) {
 		t.Errorf("releaseMoveQuestion: move=%v, before=%q; want move=true, before='before the release'", relQ.GetMove(), relQ.GetBefore())
 	}
 
-	prQ := prMoveQuestion("w1", "main", "Feature", "Body")
+	prQ := prMoveQuestion("w1", "p1", "main", "djinn/w1", "Feature", "Body")
 	if !prQ.GetMove() || prQ.GetBefore() != "before the merge" {
 		t.Errorf("prMoveQuestion: move=%v, before=%q; want move=true, before='before the merge'", prQ.GetMove(), prQ.GetBefore())
 	}
@@ -727,10 +727,10 @@ func TestComputedMoveOpenPR(t *testing.T) {
 		t.Errorf("context lacks drafted PR title/body: %q", prQ.GetContext())
 	}
 
-	// Answering Choice A notes opening the PR
+	// A yes opens it; gh fails here: the lead hears the developer must open it, never a yes noted and nothing opened.
 	did := in.answer(t, prQ, planv1.Choice_CHOICE_A)
-	if did != "Djinn noted: open pull request" {
-		t.Errorf("what Djinn did: %q", did)
+	if want := "Djinn could not open the PR of " + in.branch + " (no gh configured in test): the developer must open it"; did != want {
+		t.Errorf("what Djinn did: %q, want %q", did, want)
 	}
 }
 
@@ -1059,8 +1059,8 @@ func TestMoveTemplatesNoUnfilledFormatVerbs(t *testing.T) {
 	assertNoVerb("prMoveName", prMoveName("main"))
 	assertNoVerb("prGrowsMoveName", prGrowsMoveName("2"))
 	assertNoVerb("prGrowsMoveName.empty", prGrowsMoveName(""))
-	assertQuestion("prMoveQuestion", prMoveQuestion("wish1", "main", "Title", "Body text"))
-	assertQuestion("prMoveQuestion.percentInBody", prMoveQuestion("wish1", "main", "Title 100%", "Coverage at 99%"))
+	assertQuestion("prMoveQuestion", prMoveQuestion("wish1", "p1", "main", "djinn/w1", "Title", "Body text"))
+	assertQuestion("prMoveQuestion.percentInBody", prMoveQuestion("wish1", "p1", "main", "djinn/w1", "Title 100%", "Coverage at 99%"))
 
 	// installMoveQuestion
 	assertQuestion("installMoveQuestion", installMoveQuestion("wish1", "p1", "1234567890abcdef", "feat/branch", 10*time.Minute))

@@ -17,37 +17,13 @@ import (
 const methodPreempt = "harness/preempt"
 
 // isMemoryShort reports whether why says the task cannot start because memory is short.
-// It is false for pressure reasons, and true for room forecasts and committed limits.
+// It is false for pressure reasons and full slots (whose rule may name the memory), and true for room forecasts and
+// committed limits.
 func isMemoryShort(why string) bool {
-	if strings.HasPrefix(why, "the machine is under pressure") {
+	if strings.HasPrefix(why, "the machine is under pressure") || strings.Contains(why, "the most this machine holds") {
 		return false
 	}
 	return strings.Contains(why, "peaks at") || strings.Contains(why, "commits up to") || strings.Contains(why, "memory")
-}
-
-// slotsFull reports whether all worker slots are taken by running workers or outside gates.
-func (h *Harness) slotsFull() bool {
-	if h.capacity == nil {
-		return false
-	}
-	slots, _, _ := h.capacity()
-	if slots <= 0 {
-		return false
-	}
-	h.mu.Lock()
-	running := 0
-	for _, r := range h.runs {
-		if !r.paused && !r.watcher && !r.light {
-			running++
-		}
-	}
-	outside := h.outside
-	h.mu.Unlock()
-	// The gates ask the harness whether each holder works (Works): called under h.mu, it froze Djinn (W549).
-	if outside != nil {
-		running += outside()
-	}
-	return running >= slots
 }
 
 type candidate struct {
@@ -59,6 +35,7 @@ type candidate struct {
 // the last wish by rank, then the most recently started.
 // It never returns:
 // - an investigator or question worker;
+// - a worker the developer started or resumed by hand (Forced);
 // - a correction or review worker;
 // - a task holding or waiting for a gate;
 // - on Windows when forSlot is true;
@@ -83,7 +60,7 @@ func (h *Harness) lowestWorkTask(ctx context.Context, forSlot bool) (*planv1.Tas
 		if t == nil || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 			continue
 		}
-		if questionWorker(t) {
+		if questionWorker(t) || r.forced {
 			continue
 		}
 		if t.GetCorrection() != nil || t.GetReview() != nil {
@@ -206,24 +183,17 @@ func (h *Harness) preemptForMemory(ctx context.Context, inv *planv1.Task) (strin
 	return cand.GetCode(), nil
 }
 
-// unpausePreempted resumes a task that was paused to make room for investigator t.
+// unpausePreempted lets the task paused to make room for investigator t resume, now that t ended: the scheduler's
+// next pass resumes it before any new task (resumeNotchPaused), once t's slot is free. Resumed here, at once, it ran
+// beside t while t was still counted, one worker more than the load bar lets run.
 func (h *Harness) unpausePreempted(t *planv1.Task) {
 	h.mu.Lock()
-	if h.preempted == nil {
-		h.mu.Unlock()
-		return
-	}
-	targetID, ok := h.preempted[t.GetId()]
-	if ok {
-		delete(h.preempted, t.GetId())
-	}
+	_, ok := h.preempted[t.GetId()]
+	delete(h.preempted, t.GetId())
 	h.mu.Unlock()
-	if !ok {
-		return
+	if ok {
+		h.wake()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_, _ = h.Resume(ctx, methodPreempt, &planv1.TaskServiceResumeRequest{TaskId: targetID})
 }
 
 // preemptedWaitReason is the wait reason of a task interrupted to make room for an investigator, as the scheduler

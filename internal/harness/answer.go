@@ -72,7 +72,8 @@ func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 
 // answerMove takes the person's answer to a move question. Djinn acts on a yes only for the moves it asked itself,
 // as its question records them (DjinnMove), never by the words of the question: it installs the build it named,
-// pushes the tag it named, or marks the azima whose proof it asked for done. A move question a worker or the lead
+// pushes the tag it named, opens the pull request it proposed (openRequest), or marks the azima whose proof it asked
+// for done. A move question a worker or the lead
 // asked is only noted, whatever its words: an installer in its context installs nothing.
 func (h *Harness) answerMove(ctx context.Context, q *planv1.Question) (string, bool) {
 	if !q.GetMove() {
@@ -125,7 +126,7 @@ func (h *Harness) answerMove(ctx context.Context, q *planv1.Question) (string, b
 	case planv1.MoveKind_MOVE_KIND_READY_TO_MERGE:
 		return "Djinn noted: ready to merge", true
 	case planv1.MoveKind_MOVE_KIND_PULL_REQUEST:
-		return "Djinn noted: open pull request", true
+		return h.openRequest(ctx, q), true
 	case planv1.MoveKind_MOVE_KIND_RELEASE:
 		return "Djinn noted: start release dry run", true
 	}

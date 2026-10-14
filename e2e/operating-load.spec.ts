@@ -376,8 +376,8 @@ test.describe("operating load slider", () => {
       forecastEl.locator(".operating-load-forecast-binding"),
     ).toContainText(/limited by (memory|CPU): \d+ workers? of ~[\d.]+ \w+/i);
 
-    // CPU line: "CPU: up to X workers, (low|standard) priority"
-    await expect(forecastEl).toContainText(/CPU:\s*up to \d+ workers/i);
+    // CPU line: "CPU: X of Y workers run, (low|standard) priority"
+    await expect(forecastEl).toContainText(/CPU:\s*\d+ of \d+ workers run/i);
     await expect(forecastEl).toContainText(/(low|standard) priority/i);
 
     // Memory line: "Memory: X of Y may be engaged; Z used now"
@@ -391,6 +391,52 @@ test.describe("operating load slider", () => {
     );
     await expect(forecastEl.locator(".operating-load-bar-used")).toHaveCount(2);
 
+    expect(errors).toEqual([]);
+  });
+
+  // W577: what the bar says a notch runs is what the scheduler lets run there, as the server counts it; moving the bar
+  // changes the count at once, and the window says what lowering does to the workers above the limit.
+  test("each notch shows the workers the scheduler lets run there", async ({
+    page,
+  }) => {
+    const errors = collectErrors(page);
+    await page.goto(djinnURL());
+    await expect(
+      page.locator(".app-statusbar").getByText("Live"),
+    ).toBeVisible();
+    const load = JSON.parse(djinn("load", "get", "--json")) as {
+      notch_slots: { notch: string; slots?: number }[];
+    };
+    const slots = Object.fromEntries(
+      load.notch_slots.map((n) => [
+        n.notch.replace("LOAD_NOTCH_", "").toLowerCase(),
+        n.slots ?? 0,
+      ]),
+    );
+    const notches = ["minimal", "medium", "high", "max", "overclock"] as const;
+    for (const notch of notches) {
+      expect(slots[notch]).toBeGreaterThan(0);
+      await expect(
+        page.locator(`.operating-load-notch[data-notch="${notch}"]`),
+      ).toHaveAttribute(
+        "title",
+        new RegExp(`up to ${slots[notch]} workers?\\b`),
+      );
+    }
+    const forecast = page.locator(".operating-load-forecast");
+    const label = forecast.locator(".operating-load-forecast-label").first();
+    for (const notch of ["high", "minimal", "max"] as const) {
+      djinn("load", "set", notch);
+      await expect(forecast).toHaveAttribute("data-notch", notch);
+      await expect(label).toContainText(
+        new RegExp(`CPU: \\d+ of ${slots[notch]} workers run`),
+      );
+    }
+    // What lowering does, said on the CPU line.
+    await expect(label).toHaveAttribute(
+      "title",
+      /Lowering the load (pauses the newest workers|lets the workers above its limit finish)/,
+    );
     expect(errors).toEqual([]);
   });
 
@@ -514,7 +560,7 @@ test.describe("in French", () => {
 
     const forecastEl = page.locator(".operating-load-forecast");
     await expect(forecastEl).toBeVisible();
-    const cpuPrefix = fr["load.forecast_cpu"].split("{")[0];
+    const cpuPrefix = fr["load.forecast_cpu_running"].split("{")[0];
     const memPrefix = fr["load.forecast_memory"].split("{")[0];
     await expect(forecastEl).toContainText(cpuPrefix);
     await expect(forecastEl).toContainText(memPrefix);

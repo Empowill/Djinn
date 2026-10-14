@@ -176,9 +176,10 @@ func TestWatcherTakesNoSlot(t *testing.T) {
 	}
 }
 
-// TestQuestionWorkerTakesNoSlot: a question worker starts on a full machine and beside a writer of its folder, but
-// waits while the machine is under pressure or its memory would not hold it; started, its memory counts for the next.
-func TestQuestionWorkerTakesNoSlot(t *testing.T) {
+// TestQuestionWorkerTakesASlot: a question worker starts beside a writer of its folder, takes a slot like any worker
+// (W577), and waits while the machine is under pressure or its memory would not hold it; started, its slot and its
+// memory count for the next.
+func TestQuestionWorkerTakesASlot(t *testing.T) {
 	at := time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC)
 	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
 	task := func(id string, s planv1.TaskStatus, role planv1.TaskRole, minute int) *planv1.Task {
@@ -195,11 +196,21 @@ func TestQuestionWorkerTakesNoSlot(t *testing.T) {
 		}
 		return got
 	}
-	full := &Machine{Slots: 1, Rule: "test", Running: 1}
-	if got, want := pass([]*planv1.Task{writer, investigator, agent}, full), map[string]string{
+	two := &Machine{Slots: 2, Rule: "test", Running: 1}
+	if got, want := pass([]*planv1.Task{writer, investigator, agent}, two), map[string]string{
 		"investigator": "", "agent": "writer writes the whole folder, which overlaps the whole folder",
 	}; !maps.Equal(got, want) {
-		t.Errorf("full: %v, want %v", got, want)
+		t.Errorf("one slot free: %v, want %v", got, want)
+	}
+	other := task("other", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskRole_TASK_ROLE_UNSPECIFIED, 3)
+	other.ProjectId = "elsewhere"
+	if got := pass([]*planv1.Task{investigator, other}, two); got["investigator"] != "" ||
+		got["other"] != "2 workers run, the most this machine holds (test)" {
+		t.Errorf("the investigator's slot: %v, want it taken from the task after it", got)
+	}
+	full := &Machine{Slots: 1, Rule: "test", Running: 1}
+	if got := pass([]*planv1.Task{investigator}, full); got["investigator"] != "1 worker runs, the most this machine holds (test)" {
+		t.Errorf("full: %v, want the investigator to wait for a slot", got)
 	}
 	full.Pressure = "simulated"
 	if got := pass([]*planv1.Task{investigator}, full); got["investigator"] != "the machine is under pressure: simulated" {
@@ -779,7 +790,8 @@ func TestInvestigatorPriorityAndMemory(t *testing.T) {
 		CreateTime: timestamppb.New(at), // created after W1
 	}
 
-	// 1. Investigator skips slot: starts when all slots are full
+	// 1. An investigator takes a slot (W577): on a full machine it waits for one alone (Slot), the harness pausing a
+	// work task for it; with one free, it takes it before the older work task.
 	mFull := &Machine{Slots: 1, Running: 1, Rule: "test"}
 	pass := func(tasks []*planv1.Task, mach *Machine) map[string]string {
 		got := map[string]string{}
@@ -789,12 +801,17 @@ func TestInvestigatorPriorityAndMemory(t *testing.T) {
 		return got
 	}
 
-	got := pass([]*planv1.Task{workTask, invTask}, mFull)
-	if got["q1"] != "" {
-		t.Errorf("investigator should start without slot, got why: %q", got["q1"])
+	for _, d := range New([]*planv1.Task{workTask, invTask}, []*planv1.Wish{wish}, nil, mFull).At(at).Pass() {
+		switch {
+		case d.Task == invTask && (d.Why == "" || !d.Slot || !d.Machine):
+			t.Errorf("investigator on a full machine: %+v, want a wait for a slot alone", d)
+		case d.Task == workTask && (d.Why == "" || d.Slot):
+			t.Errorf("work task on a full machine: %+v, want a wait, not for a slot it may take", d)
+		}
 	}
-	if got["w1"] == "" {
-		t.Error("work task should wait for slot")
+	got := pass([]*planv1.Task{workTask, invTask}, &Machine{Slots: 2, Running: 1, Rule: "test"})
+	if got["q1"] != "" || got["w1"] == "" {
+		t.Errorf("one free slot: %v, want the investigator to take it", got)
 	}
 
 	// 2. Machine under pressure: investigator still waits, saying why

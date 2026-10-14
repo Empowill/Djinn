@@ -62,22 +62,31 @@ func editOnly() *djinnv1.Permissions {
 	return &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_LISTED}
 }
 
+// gitRead are the read-only Git commands a question worker may run across branches.
+var gitRead = []string{
+	"git log", "git show", "git diff", "git status", "git branch", "git rev-parse", "git ls-tree",
+}
+
 // djinnCommands are the commands a question worker may run: djinn's, to read the wish and to plan from a question,
-// and Git's to read the history. No gate, no build, no task stopped or continued.
-var djinnCommands = []string{
+// and Git's to read the history across branches. No gate, no build, no task stopped or continued.
+var djinnCommands = append([]string{
 	"djinn wish brief", "djinn task list", "djinn task get", "djinn question list", "djinn block list",
 	"djinn mark list", "djinn tilasm list", "djinn tilasm get", "djinn task spawn", "djinn question ask",
 	"djinn question revise", "djinn block put",
-	"git log", "git show", "git diff", "git status",
-}
+}, gitRead...)
 
 // permissionDenied starts the status event of a call the worker's permissions refused, whatever its agent: the call
 // follows, as the agent names it.
 const permissionDenied = "permission denied: "
 
-// djinnOnly is what a question worker gets (TASK_ACCESS_DJINN): reading, and djinnCommands; no edit, no network.
+// djinnOnly is what a question worker gets (TASK_ACCESS_DJINN): reading, the web, and djinnCommands; no edit.
 func djinnOnly() *djinnv1.Permissions {
-	return &djinnv1.Permissions{Commands: djinnCommands, Mode: djinnv1.Mode_MODE_LISTED}
+	return &djinnv1.Permissions{Commands: djinnCommands, Network: true, Mode: djinnv1.Mode_MODE_LISTED}
+}
+
+// LeadPermissions are the permissions pre-authorized for a lead session: reading and plan.LeadCommands; no edit.
+func LeadPermissions() *djinnv1.Permissions {
+	return &djinnv1.Permissions{Commands: plan.LeadCommands, Mode: djinnv1.Mode_MODE_LISTED}
 }
 
 // commitCommands are what a worker Djinn starts to commit work, a correction or a review worker, may run besides what

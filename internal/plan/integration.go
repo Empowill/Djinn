@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -158,9 +159,9 @@ func AzimaMergeRunning(azima *planv1.Task, tasks []*planv1.Task, branch string) 
 	return ""
 }
 
-// createIntegrationBranch makes branch in the repository of the project projectID, at the tip of wish's integration
-// branch there (the branch its checkout is on, for a wish that records none); a branch of that name already there is
-// left as it is.
+// createIntegrationBranch makes branch in the repository of the project projectID: from the remote's branch of that
+// name when the remote holds one, else at the tip of wish's integration branch there (the branch its checkout is on, for
+// a wish that records none); a branch of that name already there is left as it is.
 func createIntegrationBranch(ctx context.Context, tx store.Reader, wish *planv1.Wish, projectID, branch string) error {
 	project, err := store.Get[*planv1.Project](ctx, tx, projectID)
 	if err != nil {
@@ -172,6 +173,22 @@ func createIntegrationBranch(ctx context.Context, tx store.Reader, wish *planv1.
 	}
 	if _, err := gitOut(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
 		return nil
+	}
+	// A branch the remote holds, an open pull request's, is made from the remote's: work merged into one made from
+	// main could never be pushed there (wish Dew, 13/10/2026). Its upstream is left unset: the push goes to the remote's
+	// branch of that name, never to main.
+	if remote := pushRemote(ctx, dir); remote != "" {
+		sha, err := gitx.FetchBranch(ctx, dir, remote, branch)
+		if err != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"cannot tell whether %s holds %s: %w; make it again once the remote answers", remote, branch, err))
+		}
+		if sha != "" {
+			if _, err := gitOut(ctx, dir, "branch", "--no-track", branch, sha); err != nil {
+				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("make %s from %s/%s: %w", branch, remote, branch, err))
+			}
+			return nil
+		}
 	}
 	from := IntegrationBranchOf(wish, projectID)
 	if from == "" {
@@ -185,6 +202,23 @@ func createIntegrationBranch(ctx context.Context, tx store.Reader, wish *planv1.
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("make %s from %s: %w", branch, from, err))
 	}
 	return nil
+}
+
+// pushRemote is the remote Djinn pushes a branch with no upstream to, from the repository holding dir: origin, else
+// the only one; "" when there is none to choose.
+func pushRemote(ctx context.Context, dir string) string {
+	out, err := gitOut(ctx, dir, "remote")
+	if err != nil || out == "" {
+		return ""
+	}
+	remotes := strings.Fields(out)
+	switch {
+	case slices.Contains(remotes, "origin"):
+		return "origin"
+	case len(remotes) == 1:
+		return remotes[0]
+	}
+	return ""
 }
 
 // integrationChange is the project of wish whose integration branch req names, and whether the branch changes; an

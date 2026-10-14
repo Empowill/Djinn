@@ -189,6 +189,10 @@ func TestBrief(t *testing.T) {
 // serveLeads serves the plan with fake terminals and pages in home, as djinn up does.
 func serveLeads(t *testing.T, home string, opts ...Option) (clients, *fakeLeads) {
 	t.Helper()
+	projectsDir := filepath.Join(home, "agy-projects")
+	prev := AgyProjectsDir
+	AgyProjectsDir = func() (string, error) { return projectsDir, nil }
+	t.Cleanup(func() { AgyProjectsDir = prev })
 	s, err := store.Open(t.Context(), "", Entities()...)
 	if err != nil {
 		t.Fatal(err)
@@ -260,7 +264,7 @@ func TestResumeFromBrief(t *testing.T) {
 	if err != nil || string(first) != StartLine() || !strings.Contains(string(first), "djinn brief") {
 		t.Fatalf("first message %q, %v", first, err)
 	}
-	want := "claude --session-id " + lead.GetSessionId() + " '" + StartLine() + "'"
+	want := "claude --session-id " + lead.GetSessionId() + " --allowedTools '" + claudeLeadTools + "' '" + StartLine() + "'"
 	if len(leads.opened) != 1 || leads.opened[0] != want+" in "+folder {
 		t.Fatalf("opened %q\nwant %q", leads.opened, want+" in "+folder)
 	}
@@ -282,7 +286,7 @@ func TestResumeFromBrief(t *testing.T) {
 	}
 	// Once it has exited, the recorded session is resumed.
 	delete(leads.running, LeadTerminal)
-	if res = resume(planv1.Provider_PROVIDER_UNSPECIFIED); leads.opened[1] != "claude --resume "+lead.GetSessionId()+" in "+folder {
+	if res = resume(planv1.Provider_PROVIDER_UNSPECIFIED); leads.opened[1] != "claude --resume "+lead.GetSessionId()+" --allowedTools '"+claudeLeadTools+"' in "+folder {
 		t.Errorf("resume after exit = %v, opened %q", res, leads.opened)
 	}
 
@@ -301,7 +305,7 @@ func TestResumeFromBrief(t *testing.T) {
 		res := resume(planv1.Provider_PROVIDER_ANTIGRAVITY)
 		got := leads.opened[len(leads.opened)-1]
 		lead := res.GetLead()
-		if got != "agy -i '"+StartLine()+"' in "+folder || lead.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY ||
+		if got != "agy -i '"+StartLine()+"' --project "+LeadAgyProjectID+" in "+folder || lead.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY ||
 			lead.GetSessionId() != "" || lead.GetDirectory() != folder || res.GetNote() == "" {
 			t.Errorf("antigravity: opened %q, resume %v", got, res)
 		}
@@ -322,8 +326,9 @@ func TestLeadLine(t *testing.T) {
 
 	// Every agent gets the same message, as one argument.
 	for p, want := range map[planv1.Provider]string{
-		planv1.Provider_PROVIDER_CLAUDE: `claude --session-id s1 "` + start + `"`,
-		planv1.Provider_PROVIDER_CODEX:  `codex "` + start + `"`, planv1.Provider_PROVIDER_ANTIGRAVITY: `agy -i "` + start + `"`,
+		planv1.Provider_PROVIDER_CLAUDE:      `claude --session-id s1 --allowedTools "` + claudeLeadTools + `" "` + start + `"`,
+		planv1.Provider_PROVIDER_CODEX:       `codex "` + start + `"`,
+		planv1.Provider_PROVIDER_ANTIGRAVITY: `agy -i "` + start + `" --project ` + LeadAgyProjectID,
 	} {
 		lead := &planv1.Lead{Provider: p, SessionId: claude.GetSessionId()}
 		if line, err := leadLine("windows", lead, data, start); err != nil || line != want {
@@ -333,7 +338,7 @@ func TestLeadLine(t *testing.T) {
 	// cmd.exe carries no line break: a routed request first, the message names its file, and the folder is allowed.
 	routed := "The developer's request: babysit !41\n\n" + start
 	line, err := leadLine("windows", claude, data, routed)
-	want := `claude --session-id s1 --add-dir "` + data + `" "Read ` + file + `, written by Djinn, and do what it says."`
+	want := `claude --session-id s1 --allowedTools "` + claudeLeadTools + `" --add-dir "` + data + `" "Read ` + file + `, written by Djinn, and do what it says."`
 	if err != nil || line != want {
 		t.Errorf("windows line\n%s\nwant\n%s", line, want)
 	}
@@ -696,6 +701,8 @@ func TestBriefConflictsRule(t *testing.T) {
 		"**Keep the graph free of conflicts.**",
 		"keep the graph of tasks and azimas so that workers do not collide, along an iterative and de-risked path",
 		"Tasks that touch the same files, protos, generated files or the same tests go one after the other (`--after`, or `--write-scopes` when the project uses them), never side by side",
+		"never chain tasks in a naive sequential line (`W1 -> W2 -> W3 -> W4`) just to be safe",
+		"maximize parallelism in the DAG so multiple workers run concurrently",
 		"Large work is cut into small steps, each merged and green before the next starts",
 		"A task starts from the integrated branch: never spawn while the wish's integration points at another branch (a quarantine)",
 		"W399 brought the replay sink's node_modules link into feat/wails-go on 11/10",
@@ -809,6 +816,22 @@ func TestBriefMovesRule(t *testing.T) {
 	}
 }
 
+// TestBriefQuestionShapeRule (W575): the lead reads the shape a question's context keeps, and where its example is.
+func TestBriefQuestionShapeRule(t *testing.T) {
+	rules := briefRules(nil, "")
+	for _, want := range []string{
+		"- **A question reads at a glance (W575).** " + QuestionShape,
+		"every command the developer must run, in one fenced code block, in run order",
+		"No command, flag, path or hash inside a sentence",
+		"`djinn lead notes readable-questions`",
+		"- `readable-questions`: ",
+	} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("briefRules lacks %q:\n%s", want, rules)
+		}
+	}
+}
+
 // TestBriefNoCheckAskedRule (Q246): a check is never asked of the developer: a task or a watcher runs it; a question
 // is for a decision or a person's move only, its command in a code block at the top of the context.
 func TestBriefNoCheckAskedRule(t *testing.T) {
@@ -820,7 +843,7 @@ func TestBriefNoCheckAskedRule(t *testing.T) {
 		"a CI result comes from the PR's or MR's babysit watcher",
 		"When a worker's final note says what remains to verify, spawn that task or watcher",
 		"A question to the developer is only for a decision or a move only a person can make",
-		"the exact command goes in a code block at the top of its `--context`, never mid-sentence",
+		"the exact command goes in the code block at the top of its `--context`, never in a sentence",
 		"what it leaves to verify (something it did not verify, a failing test it calls unrelated) goes to a task",
 	} {
 		if !strings.Contains(rules, want) {
@@ -1100,6 +1123,12 @@ func TestBriefListsNotes(t *testing.T) {
 	brief := res.Msg.GetText()
 	for _, want := range []string{
 		"**Read the lead's notes before you act in their area.**",
+		"**Run direct `djinn` commands and native file tools.**",
+		"single direct command, without shell chaining (`&&`, `||`, `;`), redirections, pipes (`|`), or backtick command substitutions in double quotes",
+		"(`Read`, `Write`, `view_file`, `write_to_file`)",
+		"**Delegate.**",
+		"Never read or search source code yourself (no `Read`, `Grep`, `Glob`, or `view_file` in the lead session to inspect code before spawning a task)",
+		"even finding out where a feature lives or how a flag works goes immediately to a Djinn task",
 		"open it: `djinn lead notes <name>`",
 		"spawns a task there that edits `lead/notes/`",
 		"nothing writes them at run time",

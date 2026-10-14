@@ -98,6 +98,20 @@ func WithLoadPausedWorkers(paused func() int) LoadOption {
 	}
 }
 
+// WithLoadForcedWorkers sets a function returning how many running workers were started or resumed by hand.
+func WithLoadForcedWorkers(forced func() int) LoadOption {
+	return func(s *loadService) {
+		s.forcedWorkers = forced
+	}
+}
+
+// WithLoadLowerPauses sets a function telling whether lowering the notch pauses the workers above it.
+func WithLoadLowerPauses(pauses func() bool) LoadOption {
+	return func(s *loadService) {
+		s.lowerPauses = pauses
+	}
+}
+
 // WithLoadWorkerForecast sets a function returning the measured forecast per worker in bytes.
 func WithLoadWorkerForecast(forecast func() uint64) LoadOption {
 	return func(s *loadService) {
@@ -231,6 +245,8 @@ type loadService struct {
 	workerMemory   WorkerMemoryFunc
 	runningWorkers func() int
 	pausedWorkers  func() int
+	forcedWorkers  func() int
+	lowerPauses    func() bool
 	workerForecast func() uint64
 
 	auto         *AutoController
@@ -345,13 +361,43 @@ func (s *loadService) snapshot(ctx context.Context) *djinnv1.LoadServiceWatchRes
 			resp.WorkerMemoryBytes = actual
 		}
 	}
+	w := s.workers()
+	resp.RunningWorkers, resp.PausedWorkers, resp.ForcedWorkers = w.running, w.paused, w.forced
+	resp.Slots, resp.NotchSlots, resp.LowerPauses = w.slots, w.notchSlots, w.lowerPauses
+	return resp
+}
+
+// workerCounts is what the load bar says of the workers: how many run, are paused or were started by hand, and how
+// many the scheduler lets run, now and at each notch.
+type workerCounts struct {
+	running, paused, forced, slots int32
+	notchSlots                     []*djinnv1.LoadNotchSlots
+	lowerPauses                    bool
+}
+
+// workers counts the workers as the scheduler does: the slots are the monitor's Capacity, the same reading.
+func (s *loadService) workers() workerCounts {
+	var w workerCounts
 	if s.runningWorkers != nil {
-		resp.RunningWorkers = int32(s.runningWorkers())
+		w.running = int32(s.runningWorkers())
 	}
 	if s.pausedWorkers != nil {
-		resp.PausedWorkers = int32(s.pausedWorkers())
+		w.paused = int32(s.pausedWorkers())
 	}
-	return resp
+	if s.forcedWorkers != nil {
+		w.forced = int32(s.forcedWorkers())
+	}
+	if s.lowerPauses != nil {
+		w.lowerPauses = s.lowerPauses()
+	}
+	if s.monitor != nil {
+		slots, _, _ := s.monitor.Capacity()
+		w.slots = int32(slots)
+		for _, n := range s.monitor.NotchSlots() {
+			w.notchSlots = append(w.notchSlots, &djinnv1.LoadNotchSlots{Notch: n.Notch, Slots: int32(n.Slots)})
+		}
+	}
+	return w
 }
 
 func (s *loadService) Get(
@@ -399,12 +445,9 @@ func (s *loadService) Get(
 		resp.WorkerPercentile = int32(policy.MemoryPercentile())
 		resp.WorkerEngagedAt = policy.EngagedAt()
 	}
-	if s.runningWorkers != nil {
-		resp.RunningWorkers = int32(s.runningWorkers())
-	}
-	if s.pausedWorkers != nil {
-		resp.PausedWorkers = int32(s.pausedWorkers())
-	}
+	w := s.workers()
+	resp.RunningWorkers, resp.PausedWorkers, resp.ForcedWorkers = w.running, w.paused, w.forced
+	resp.Slots, resp.NotchSlots, resp.LowerPauses = w.slots, w.notchSlots, w.lowerPauses
 	return connect.NewResponse(resp), nil
 }
 

@@ -2,9 +2,12 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -12,6 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -210,5 +214,158 @@ func TestAzimaBranchNamedIsCutFromMain(t *testing.T) {
 	}
 	if _, err := git(t.Context(), in.repo, "rev-parse", "--verify", "--quiet", "refs/heads/ET-1-two"); err == nil {
 		t.Error("ET-1-two cut by a refused naming")
+	}
+}
+
+// requests is an integration per azima whose project has a remote, origin, a bare repository, where teammates push
+// the branches of their merge requests; main is at fork.
+type requests struct {
+	*integration
+	bare, fork string
+}
+
+// withRequests makes requests.
+func withRequests(t *testing.T) *requests {
+	t.Helper()
+	in := integrating(t)
+	r := &requests{integration: in, bare: in.remote(t)}
+	for _, dir := range []string{in.repo, r.bare} {
+		in.git(t, dir, "config", "maintenance.auto", "false")
+		in.git(t, dir, "config", "gc.auto", "0")
+	}
+	in.setAzimaStrategy(t)
+	r.fork = in.tip(t)
+	return r
+}
+
+// onRemote commits name on branch from the commit from, pushes it to origin as a teammate does, leaves this
+// repository without it, and returns the commit.
+func (r *requests) onRemote(t *testing.T, from, branch, name string) string {
+	t.Helper()
+	r.git(t, r.repo, "switch", "--quiet", "--detach", from)
+	writeFile(t, r.repo, "app/src/"+name, name+"\n")
+	commitAll(t, r.repo, "Request: "+name)
+	r.git(t, r.repo, "push", "--quiet", "origin", "HEAD:refs/heads/"+branch)
+	sha := r.git(t, r.repo, "rev-parse", "HEAD")
+	r.git(t, r.repo, "switch", "--quiet", r.branch)
+	return sha
+}
+
+// mainMoves commits on main and pushes it, and returns the commit.
+func (r *requests) mainMoves(t *testing.T) string {
+	t.Helper()
+	writeFile(t, r.repo, "app/src/main.txt", "main\n")
+	commitAll(t, r.repo, "Main moves")
+	r.git(t, r.repo, "push", "--quiet", "origin", r.branch)
+	return r.tip(t)
+}
+
+// TestAzimaBranchNamedFromTheRemote replays wish Dew (13-14/10/2026): in dolmen, per azima, azimas were named after
+// the branches of open merge requests, which origin held and the repository did not. Djinn made each from main: it
+// held main's commits and lacked the request's own (ahead 22, behind 1), and nothing could be pushed there. A branch
+// the remote holds is made from the remote's, no upstream set, though the azima's branch so far holds a newer main;
+// its work merges into it and is pushed there.
+func TestAzimaBranchNamedFromTheRemote(t *testing.T) {
+	testx.Portable(t)
+	r := withRequests(t)
+	const mr = "ET-4283-jest-sans-sentry"
+	request := r.onRemote(t, r.fork, mr, "jest.txt")
+	r.mainMoves(t)
+
+	t1 := r.azima(t, r.wishID, "Jest") // Its branch cut from main as it moved.
+	named, err := r.nameBranch(t, t1.GetId(), mr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.git(t, r.repo, "rev-parse", "refs/heads/"+mr); got != request {
+		t.Errorf("%s made at %s, want origin's %s", mr, got, request)
+	}
+	if a := named.GetAzima(); a.GetBranch() != mr || a.GetCutFrom() != r.fork || !a.GetNamed() {
+		t.Errorf("T1 named %v, want %s cut from %s, its merge base with main", a, mr, r.fork)
+	}
+	if out, err := git(t.Context(), r.repo, "config", "branch."+mr+".merge"); err == nil {
+		t.Errorf("%s tracks %s, want no upstream", mr, out)
+	}
+
+	w1 := r.finished(t, "W1", map[string]string{"app/src/w1.txt": "w1\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+	r.pass(t, 0)
+	if got := r.get(t, w1.GetId()).GetIntegration(); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || got.GetBranch() != mr {
+		t.Fatalf("W1's integration %v, want committed into %s", got, mr)
+	}
+	if _, err := r.h.Push(t.Context(), r.wishID, r.projectID, mr); err != nil && !errors.Is(err, plan.ErrUpToDate) {
+		t.Fatalf("push of %s: %v", mr, err)
+	}
+	if got, want := r.git(t, r.bare, "rev-parse", "refs/heads/"+mr), r.git(t, r.repo, "rev-parse", "refs/heads/"+mr); got != want {
+		t.Errorf("origin's %s at %s, want %s pushed", mr, got, want)
+	}
+}
+
+// TestAzimaBranchApartFromTheRemote: an azima's branch named that is here behind the remote's is brought up to it; one
+// that diverged from it, as Djinn made them from main for wish Dew (13/10/2026), is refused, left as it is. One that
+// falls behind later, a teammate pushing to it, takes no more work and is not pushed, the lead told once, until a
+// person aligns them.
+func TestAzimaBranchApartFromTheRemote(t *testing.T) {
+	testx.Portable(t)
+	r := withRequests(t)
+	var mu sync.Mutex
+	var told []string
+	r.h.NotifyLead(func(_ context.Context, ev *planv1.LeadEvent) error {
+		mu.Lock()
+		defer mu.Unlock()
+		told = append(told, ev.GetText())
+		return nil
+	})
+	const apart, behind = "ET-3063-collab-signes", "hotfix-company-tenant-isolation"
+	r.onRemote(t, r.fork, apart, "collab.txt")
+	behindRemote := r.onRemote(t, r.fork, behind, "tenant.txt")
+	main := r.mainMoves(t)
+	r.git(t, r.repo, "branch", apart, main) // As Djinn made it.
+	r.git(t, r.repo, "branch", behind, r.fork)
+
+	t1 := r.azima(t, r.wishID, "Tenant")
+	if _, err := r.nameBranch(t, t1.GetId(), apart); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+		!strings.Contains(err.Error(), apart+" has diverged from origin/"+apart+" (ahead 1, behind 1)") {
+		t.Errorf("naming a diverged branch: %v, want refused saying it diverged", err)
+	}
+	if got := r.git(t, r.repo, "rev-parse", "refs/heads/"+apart); got != main {
+		t.Errorf("%s moved to %s by a refused naming, want %s", apart, got, main)
+	}
+	if _, err := r.nameBranch(t, t1.GetId(), behind); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.git(t, r.repo, "rev-parse", "refs/heads/"+behind); got != behindRemote {
+		t.Errorf("%s at %s, want brought up to origin's %s", behind, got, behindRemote)
+	}
+
+	teammate := r.onRemote(t, behindRemote, behind, "mate.txt")
+	r.git(t, r.repo, "fetch", "--quiet", "origin")
+	w1 := r.finished(t, "W1", map[string]string{"app/src/w1.txt": "w1\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+	r.pass(t, 0)
+	r.pass(t, 0)
+	want := behind + " has diverged from origin/" + behind + " (ahead 0, behind 1)"
+	if got := r.get(t, w1.GetId()).GetIntegration(); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING ||
+		!strings.Contains(got.GetReason(), want) {
+		t.Fatalf("W1's integration %v, want pending: %s", got, want)
+	}
+	if got := r.git(t, r.repo, "rev-parse", "refs/heads/"+behind); got != behindRemote {
+		t.Errorf("%s moved to %s, want left at %s", behind, got, behindRemote)
+	}
+	if _, err := r.h.Push(t.Context(), r.wishID, r.projectID, behind); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("push of %s: %v, want refused: %s", behind, err, want)
+	}
+	mu.Lock()
+	if n := len(slices.DeleteFunc(slices.Clone(told), func(s string) bool { return !strings.Contains(s, want) })); n != 1 {
+		t.Errorf("the lead was told %d times that %s: %q, want once", n, want, told)
+	}
+	mu.Unlock()
+
+	// The lead aligns them by hand: the work merges.
+	r.git(t, r.repo, "fetch", "--quiet", "origin", "+refs/heads/"+behind+":refs/heads/"+behind)
+	r.pass(t, 0)
+	if got := r.get(t, w1.GetId()).GetIntegration(); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || got.GetBranch() != behind {
+		t.Fatalf("W1's integration %v once aligned, want committed into %s", got, behind)
+	}
+	if !isAncestor(t.Context(), r.repo, teammate, "refs/heads/"+behind) {
+		t.Errorf("%s lacks the teammate's %s", behind, teammate)
 	}
 }

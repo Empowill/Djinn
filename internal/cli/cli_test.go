@@ -334,7 +334,11 @@ func (f questions) Answer(_ context.Context, req *connect.Request[planv1.Questio
 
 func (f questions) Ask(_ context.Context, req *connect.Request[planv1.QuestionServiceAskRequest]) (*connect.Response[planv1.QuestionServiceAskResponse], error) {
 	f.record(req.Msg)
-	return connect.NewResponse(&planv1.QuestionServiceAskResponse{Question: question()}), nil
+	res := &planv1.QuestionServiceAskResponse{Question: question()}
+	if req.Msg.GetContext() != "" {
+		res.Warnings = []string{"line 1: a command in the text"}
+	}
+	return connect.NewResponse(res), nil
 }
 
 func (f questions) List(_ context.Context, req *connect.Request[planv1.QuestionServiceListRequest]) (*connect.Response[planv1.QuestionServiceListResponse], error) {
@@ -456,6 +460,8 @@ func TestRun(t *testing.T) {
 		wantCalled bool
 	}{
 		{name: "prefixes", args: []string{"q", "ans", "Q03", "b"}, wantOut: "code: Q03", wantCalled: true},
+		{name: "warnings after the question", args: []string{"q", "ask", "Which?", wishID, "--context", "Run git log."}, wantOut: "\ncode: Q03\n", wantCalled: true},
+		{name: "a warning line each", args: []string{"q", "ask", "Which?", wishID, "--context", "Run git log."}, wantOut: "\nwarning: line 1: a command in the text\n", wantCalled: true},
 		{name: "text output", args: []string{"question", "answer", "Q03", "B", "--note", "ok"}, wantOut: "answer:\n  choice: b\n  note: ok\n", wantCalled: true},
 		{name: "json output", args: []string{"--json", "q", "answer", questionID, "a"}, wantOut: `"CHOICE_A"`, wantCalled: true},
 		{name: "where a task's work stands", args: []string{"task", "get", wishID}, wantOut: "status: done\n" +

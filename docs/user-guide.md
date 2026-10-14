@@ -49,7 +49,9 @@ djinn up --browser    # no window: prints the URL to open in your browser
   or an adaptive guardrail based on observed provider peaks (`--worker-memory-guard 2.5`): [worker memory](worker-memory.md).
 - **Operating load slider.** Controls how much of the machine Djinn uses: five manual notches (**Minimal**,
   **Medium**, **High**, **Max**, **Overclock**), or **Auto** (`light` is accepted as an alias for `medium`).
-  The UI displays a dual gauge forecast: CPU (target workers and standard versus low CPU priority) and Memory
+  The UI displays a dual gauge forecast: CPU (how many workers run of the most the notch lets run, exactly what the
+  scheduler allows there, every agent counted and watchers not, with the workers started by hand and those finishing
+  their run above the limit; standard versus low CPU priority) and Memory
   (peak memory Djinn may engage against current usage and total machine RAM). The **Overclock** notch pushes up to
   150 % of standard memory capacity with an amber visual pulse. In Auto mode, Djinn dynamically follows developer
   activity: keyboard and mouse inactivity from the desktop session, combined with the CPU and memory load of programs
@@ -298,11 +300,12 @@ An azima's branch works like a wish's integration branch. Djinn cuts it from mai
 before its wish was switched gets its branch when its first part starts), and records it on the azima: its card, opened,
 shows the branch, the commit of main it was cut from, and that it lands in main. The azima's work merges into it, and Djinn keeps it up with
 main by the same rules as a wish's branch ([keeping up with main](team-settings.md#keeping-up-with-main)). It lands in
-main: its pull request, opened when you say so after Djinn proposes it, targets main and follows each push of the
-branch; Djinn never re-targets it.
+main: its pull request, opened as a draft when you say yes to Djinn's proposal, targets main and follows each push of
+the branch; Djinn never re-targets it.
 
 A project whose branches follow a convention (a ticket's key) names an azima's branch with `djinn task update <azima>
---branch <name>`: a branch that exists is adopted as it is, one that does not is cut from main under that name. A wish
+--branch <name>`: a branch that exists is adopted as it is; one only the remote holds (an open pull request's) is made
+from the remote's; one that does not exist is cut from main under that name. A wish
 whose work already lives on its integration branch switches to per azima once the azima carrying it adopts that branch;
 before, Djinn refuses the switch, which would strand that work, and says how
 ([naming an azima's branch](team-settings.md#pushing)).
@@ -367,10 +370,11 @@ of its context. A check, a measure, a log or a CI result is never asked of you: 
   click opens it, and you may still decide now. Revised, it opens again and waits for your answer. Its rounds fold
   below the card.
 - **Keyboard shortcuts.** Focus on the card, or in its note field, drives it from the keys:
-  - Enter rubs the lamp: answers with the option selected, everywhere on the card, the note field included. An
-    input method composing does not answer, nor does Enter answer before an option is selected.
+  - Enter in the note field rubs the lamp: answers with the option selected. An input method composing does not
+    answer, nor does Enter answer before an option is selected.
+  - Enter or Space on an option, like a click, only picks it: elsewhere on the card, Enter alone answers nothing.
   - Shift+Enter makes a new line in the note field.
-  - Ctrl+Enter (Cmd+Enter on macOS) also answers, never a new line.
+  - Ctrl+Enter (Cmd+Enter on macOS) answers from anywhere on the card, never a new line.
   - Ctrl+Shift+Enter (Cmd+Shift+Enter on macOS) triggers Enlighten me from anywhere on the card, the note included,
     sending what the note asks.
   - Arrows (Up/Down/Left/Right) or 1–4 pick an option when focus is on the card and not in the note.

@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/logx"
@@ -40,6 +41,12 @@ type Option func(*Harness)
 
 // WithCapacity limits the workers that run at once, and stops new ones while the machine is under pressure.
 func WithCapacity(c Capacity) Option { return func(h *Harness) { h.capacity = c } }
+
+// WithBarSlots gives the most workers a notch itself lets run, before the memory's share (machine.Policy.BarSlots):
+// lowering the notch pauses the workers above it, never a dip of the memory available. It is asked of the harness's
+// own notch, so that a pass between the monitor's change and SetPolicy weighs the notch it names. Without it, the
+// capacity's slots.
+func WithBarSlots(n func(djinnv1.LoadNotch) int) Option { return func(h *Harness) { h.barSlots = n } }
 
 // WithMemory holds a new worker until the memory available (0 when unknown) holds the typical peak of a worker of
 // its provider, as p weighs it (machine.Policy.WorkerRoom). djinn up gives the machine's; without it, the memory
@@ -195,27 +202,45 @@ func (h *Harness) generation() <-chan struct{} {
 	return h.changed
 }
 
-// Running is the number of workers that run now. A paused worker does not count: it takes no slot; nor does a
-// watcher, which sleeps until its command prints, nor a question worker, which reads and runs djinn's commands.
+// Running is the number of workers that run now, each in a slot: every agent, a question worker's included (W577:
+// the load bar's count is the agents that run). A paused worker does not count: it takes no slot; nor does a
+// watcher, which sleeps until its command prints.
 func (h *Harness) Running() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	n := 0
 	for _, r := range h.runs {
-		if !r.paused && !r.watcher && !r.light {
+		if r.slotted() {
 			n++
 		}
 	}
 	return n
 }
 
+// Forced is the number of the workers running (Running) that the developer started or resumed by hand, whatever the
+// slots (djinn task start, djinn task resume): the ones the load bar shows beyond what it lets run.
+func (h *Harness) Forced() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := 0
+	for _, r := range h.runs {
+		if r.slotted() && r.forced {
+			n++
+		}
+	}
+	return n
+}
+
+// slotted tells whether the run's worker takes a slot now: it runs, and is not a watcher. The caller holds h.mu.
+func (r *run) slotted() bool { return !r.paused && !r.watcher }
+
 // Works tells whether a worker of the task runs now and takes a slot: what it runs, a gate's command included, is in
-// that slot. A paused worker, a watcher or a question worker takes none.
+// that slot. A paused worker or a watcher takes none.
 func (h *Harness) Works(taskID string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	r, ok := h.runs[taskID]
-	return ok && !r.paused && !r.watcher && !r.light
+	return ok && r.slotted()
 }
 
 // planned tells whether Djinn starts the task by itself, once it is ready.
@@ -270,6 +295,15 @@ func (h *Harness) schedule(ctx context.Context) {
 		switch t := d.Task; {
 		case d.Failed != "":
 			h.failPlanned(ctx, t, d.Failed)
+		case d.Slot && t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
+			// An investigator takes the slot of the work task it pauses, never one more: none to pause, it waits.
+			if code, err := h.preemptForSlot(ctx, t); err == nil && code != "" {
+				if err := h.launchPlannedWithPreemption(ctx, t, code); err != nil {
+					logx.L().Error("start a planned task", "loop", "schedule", "task", t.GetCode(), "err", err)
+				}
+				continue
+			}
+			h.setWaiting(ctx, t, d.Why, d.Machine)
 		case d.Why != "":
 			if isMemoryShort(d.Why) {
 				if code, err := h.interruptPausedForMemory(ctx, t); err == nil && code != "" {
@@ -289,13 +323,7 @@ func (h *Harness) schedule(ctx context.Context) {
 			}
 			h.setWaiting(ctx, t, d.Why, d.Machine)
 		default:
-			var preemptedCode string
-			if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && h.slotsFull() {
-				if code, err := h.preemptForSlot(ctx, t); err == nil && code != "" {
-					preemptedCode = code
-				}
-			}
-			if err := h.launchPlannedWithPreemption(ctx, t, preemptedCode); err != nil {
+			if err := h.launchPlanned(ctx, t); err != nil {
 				logx.L().Error("start a planned task", "loop", "schedule", "task", t.GetCode(), "err", err)
 			}
 		}
@@ -325,6 +353,11 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 		m.Slots, m.Rule, m.Pressure = h.capacity()
 		h.mu.Lock()
 		outside := h.outside
+		for _, r := range h.runs {
+			if r.paused && (r.notchPaused || r.slotPaused) && !r.stopping && !r.final {
+				m.Resuming++
+			}
+		}
 		h.mu.Unlock()
 		if outside != nil {
 			m.Gates = outside()
@@ -603,7 +636,8 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 }
 
 // Start starts a planned task that waits for the machine alone, now: the developer asked for it, whatever the slots,
-// the pressure and the memory. A task held by anything else (its wish, a dependency, a push hold, its provider's usage
+// the pressure and the memory. Its worker takes a slot all the same: the next tasks wait for it, and the load bar
+// counts it among the workers started by hand (Forced). A task held by anything else (its wish, a dependency, a push hold, its provider's usage
 // limit, a write scope) is refused, with why, and so is one that waits for a task going first: Start frees the
 // machine, never the priority order. The scheduler's pass decides, as it would now.
 func (h *Harness) Start(ctx context.Context, procedure string, req *planv1.TaskServiceStartRequest) (*planv1.Task, error) {
@@ -632,7 +666,15 @@ func (h *Harness) Start(ctx context.Context, procedure string, req *planv1.TaskS
 	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Journal(actorLocal, procedure, req) }); err != nil {
 		return nil, plan.Status(err)
 	}
-	if err := h.launchPlanned(ctx, task); err != nil {
+	// It takes a slot whatever the others: the load bar shows it beyond what it lets run (Forced).
+	h.mu.Lock()
+	h.forcing = task.GetId()
+	h.mu.Unlock()
+	err = h.launchPlanned(ctx, task)
+	h.mu.Lock()
+	h.forcing = ""
+	h.mu.Unlock()
+	if err != nil {
 		return nil, plan.Status(err)
 	}
 	task, err = store.Get[*planv1.Task](ctx, h.store, task.GetId())

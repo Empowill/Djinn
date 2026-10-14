@@ -122,13 +122,15 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"- **Every question's title starts with its emoji.** One emoji that tells its subject at a glance, then a " +
 		"space and the title: 🚀 a merge or a release, 🔎 a review, 🔐 a right or a permission, 🧪 a check or a test, " +
 		"📦 a build, 🌿 a branch, 🧭 an organisation choice, 🪵 logs, ⚠️ an incident. The same emoji goes in `--icon`.\n" +
+		"- **A question reads at a glance (W575).** " + QuestionShape + " Check what an investigator revised against " +
+		"it too; `djinn lead notes readable-questions` shows a context in this shape.\n" +
 		"- **Never ask the developer to check (Q246).** A check, a measure, a log to read, a CI result to look at, a " +
 		"command to run is never asked of the developer: that is what agents are good at. Spawn a task that runs it and " +
 		"investigates what it finds, or let a watcher report it: a CI result comes from the PR's or MR's babysit " +
 		"watcher. When a worker's final note says what remains to verify, spawn that task or watcher; never pass it on " +
 		"to the developer. A question to the developer is only for a decision or a move only a person can make (a " +
-		"right, a merge, a release, a machine Djinn does not have); then the exact command goes in a code block at the " +
-		"top of its `--context`, never mid-sentence.\n" +
+		"right, a merge, a release, a machine Djinn does not have); then the exact command goes in the code block at " +
+		"the top of its `--context`, never in a sentence.\n" +
 		"- **Refused calls are yours, rights stay explicit (Q273).** A worker's `ended` or `failed` event names the " +
 		"calls its permissions refused and the right that would allow them; the developer never sees them. Decide: " +
 		"continue the task otherwise (`djinn task continue`), or close it as seen (`djinn task done <task> --note " +
@@ -136,9 +138,16 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"covers them; a done task left with refused calls holds its wish's grant. Never take a broad right by " +
 		"default: when a new one is needed (auto mode on a project, a permission line), ask for it in one `--move` " +
 		"question naming exactly that right, the command that grants it, and why.\n" +
+		"- **Run direct `djinn` commands and native file tools.** Run each `djinn` command as a single direct command, " +
+		"without shell chaining (`&&`, `||`, `;`), redirections, pipes (`|`), or backtick command substitutions in " +
+		"double quotes, so pre-authorized commands run without prompting the developer. Use native file tools " +
+		"(`Read`, `Write`, `view_file`, `write_to_file`) instead of shell commands (`cat`, `sed`, `echo`, heredocs) " +
+		"for plan files.\n" +
 		"- **Delegate.** You lead; workers do the work. Code, investigations, fixes and checks go to tasks, even small " +
-		"ones, several side by side; keep for yourself what only the lead does: talk with the developer, plan, check " +
-		"what comes back.\n" +
+		"ones, several side by side. Never read or search source code yourself (no `Read`, `Grep`, `Glob`, or `view_file` " +
+		"in the lead session to inspect code before spawning a task): even finding out where a feature lives or how a flag " +
+		"works goes immediately to a Djinn task. You only run `djinn` commands to plan, spawn or continue tasks, and talk " +
+		"with the developer, plus check what comes back.\n" +
 		"- **Workers start from a short prompt.** Say what to do, in which project, and how to check it. " +
 		"When writing a worker's prompt, ask for the commit checks and the targeted tests, never \"run the whole test suite\"; the push checks are Djinn's. " +
 		"`--fork <task>` or `--from-lead` start a worker from a copy of a conversation instead: it reads that context " +
@@ -175,7 +184,11 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"- **Keep the graph free of conflicts.** Your role is to keep the graph of tasks and azimas so that workers " +
 		"do not collide, along an iterative and de-risked path. Tasks that touch the same files, protos, generated files " +
 		"or the same tests go one after the other (`--after`, or `--write-scopes` when the project uses them), never side " +
-		"by side. Large work is cut into small steps, each merged and green before the next starts. A task starts from " +
+		"by side, but never chain tasks in a naive sequential line (`W1 -> W2 -> W3 -> W4`) just to be safe: estimate " +
+		"impacted packages and files at a high level (without reading code) and maximize parallelism in the DAG so " +
+		"multiple workers run concurrently, adding `--after` only between tasks that directly target the same file or " +
+		"proto (Djinn already has merge conflict resolution for minor overlaps). Large work is cut into small steps, each " +
+		"merged and green before the next starts. A task starts from " +
 		"the integrated branch: never spawn while the wish's integration points at another branch (a quarantine), since " +
 		"a task started there carries that branch into the next merge (W399 brought the replay sink's node_modules link into " +
 		"feat/wails-go on 11/10). A conflict or a red merge is a signal to re-sequence, not only to correct.\n" +
@@ -630,7 +643,8 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool, strategy planv1
 	if len(investigate) > 0 {
 		b.WriteString("\n## To investigate\n\n")
 		b.WriteString("The developer asked to find out more before deciding. Dig, then `djinn question revise <question> " +
-			"--wish-id <wish>` with what you found (`--context`, `--options`, `--recommendation`, `--before`).\n\n")
+			"--wish-id <wish>` with what you found (`--context`, `--options`, `--recommendation`, `--before`), the " +
+			"context in the shape every question keeps: the commands in one code block at the top, then short Markdown.\n\n")
 		for _, q := range investigate {
 			last := q.GetRounds()[len(q.GetRounds())-1]
 			fmt.Fprintf(&b, "- **%s** %s (asked %s)", q.GetCode(), clipLine(q.GetText()), when(last.GetCreateTime().AsTime()))
@@ -1339,7 +1353,8 @@ func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, rea
 	if len(investigate) > 0 {
 		b.WriteString("\n## To investigate\n\n")
 		b.WriteString("The developer asked to find out more before deciding. Dig, then `djinn question revise <question> " +
-			"--wish-id <wish>` with what you found (`--context`, `--options`, `--recommendation`, `--before`).\n\n")
+			"--wish-id <wish>` with what you found (`--context`, `--options`, `--recommendation`, `--before`), the " +
+			"context in the shape every question keeps: the commands in one code block at the top, then short Markdown.\n\n")
 		for _, q := range investigate {
 			last := q.GetRounds()[len(q.GetRounds())-1]
 			fmt.Fprintf(b, "- **%s** %s (asked %s)", q.GetCode(), clipLine(q.GetText()), when(last.GetCreateTime().AsTime()))

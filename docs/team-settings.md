@@ -66,7 +66,7 @@ read from **your own file only**, never from the repository's (which lists its c
 Four more set the *investigators*, the small tasks Djinn starts by itself on a question of a wish after
 "Enlighten me": `Q03: enlighten` investigates and revises the question (see [agent protocol](agent-protocol.md)).
 Answers are turned into tasks by the lead only: answer workers are removed.
-They run read-only and take no slot: on the project's `provider` when that provider can run them read-only (claude,
+They run read-only and take a slot like any agent, the newest work task's when the machine is full: on the project's `provider` when that provider can run them read-only (claude,
 codex), falling back to claude otherwise; or on `question_provider`.
 
 | Setting               | What it sets                                                                                 | Not set                    |
@@ -341,8 +341,11 @@ which works like a wish's integration branch:
 - **It keeps up with main** by the same `merge_main` rules ([keeping up with main](#keeping-up-with-main)), where it
   stands recorded on the azima (`azima.main`).
 - **It lands in main.** Once its parts are committed and its branch pushed, Djinn proposes its pull request to main;
-  you open it. It targets main from the start and is never re-targeted; each push of the branch updates it. Its card
-  shows it proposed, open or merged; merged, the azima is done.
+  your yes opens it, as a draft: a worker follows the project's own skill for opening one (a skill whose name says
+  open or create, and mr, pr or request, like `open-mr-empowill`), else Djinn runs `gh pr create` or `glab mr create`
+  itself. When it cannot, the lead reads why, and that you must open it. It targets main from the start and is never
+  re-targeted; each push of the branch updates it. Its card shows it proposed, open or merged; merged, the azima is
+  done.
 - **No azima waits for another**, each branch holding main and its own work: Djinn refuses an azima after another,
   directly or through their work (`djinn task spawn --after`, `djinn task depend`, `djinn task update`,
   `djinn task group`, a plan file's `after:` line at `djinn plan sync`), and refuses switching a wish, or a project's
@@ -354,13 +357,24 @@ it, main is merged into it, and nothing of it is rewritten.
 
 **Naming an azima's branch.** A project whose branches must follow a convention (a ticket's key, `ET-1234-<slug>`, that
 its forge or its sync tools require) names each azima's branch: `djinn task update <azima> --branch ET-1234-the-fix`.
-A branch that exists is adopted as it is, never cut again nor moved: Djinn records it with the main it lands in and the
-commit of main it was cut from, their merge base. One that does not exist is cut from main under that name. It is
-refused on a work task, for main itself, for another azima's branch, while a merge runs into the azima's branch (or into
-the wish's, when it adopts it), and when the azima's branch so far holds commits the named one lacks. Where the branch
-stands against main and its pull request follow the branch: Djinn finds an open one by the branch, and the azima's
-card and the lead's brief show the branch and its pull request. In a project whose settings name no check, Djinn merges
-the azima's work into a branch named this way untested, as into a wish's own branch; never into a branch it named.
+A branch that exists is adopted, never cut again nor rewritten: Djinn records it with the main it lands in and the
+commit of main it was cut from, their merge base. Djinn fetches it first from the remote it pushes to: one only the
+remote holds, an open pull request's, is made from the remote's, with no upstream set, never from main; one here behind
+the remote's is brought up to it. One that does not exist anywhere is cut from main under that name. It is refused on a
+work task, for main itself, for another azima's branch, while a merge runs into the azima's branch (or into the wish's,
+when it adopts it), when the azima's branch so far holds commits the named one lacks (main's own commits excepted), when
+the remote does not answer for a branch not here, and when the branch here has diverged from the remote's: align them by
+hand (merge the remote's into it, or reset it there if its own commits are not wanted), then name it again. Where the
+branch stands against main and its pull request follow the branch: Djinn finds an open one by the branch, and the
+azima's card and the lead's brief show the branch and its pull request. In a project whose settings name no check,
+Djinn merges the azima's work into a branch named this way untested, as into a wish's own branch; never into a branch
+it named.
+
+**A branch apart from its remote's.** A wish's or an azima's branch whose remote holds commits it lacks, as the
+repository last fetched it (a teammate pushed to the pull request's branch), takes no more work and is not pushed: Djinn
+would push nothing there without forcing, and never forces. The work waits, saying why; the lead hears it once; once a
+person aligns the branches, the work merges. The project's main branch is kept up by its own rules
+([keeping up with main](#keeping-up-with-main)).
 
 **Switching a wish to per azima when its work already lives on the wish's branch.** A wish that pushed per wish, one
 azima carrying its subject, has that azima's work merged into the wish's integration branch, `ET-1234-the-fix`, perhaps
@@ -413,7 +427,8 @@ workers, naming them), or when the running build is broken (a crash or failed ch
 The commands' words are split on spaces, without a shell. The integration branch of a wish is, in each project, the
 branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it, or
 the chip that names it in the wish's head, to a local branch (`djinn project branches <project>` lists them, Djinn's
-task branches left out) or to a new one made from it (`--create-branch`). A change is refused while a merge into the
+task branches left out) or to a new one made from it (`--create-branch`; from the remote's branch of that name when the
+remote holds one, an open pull request's). A change is refused while a merge into the
 branch runs (a batch merged and tested, a correction or review worker, main's merge settled), Djinn naming it. Per wish,
 a wish's work lands in that branch; per azima, an azima's work lands in main through its own branch and pull request.
 

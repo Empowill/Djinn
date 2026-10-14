@@ -1532,7 +1532,9 @@ const (
 	MoveKind_MOVE_KIND_TAG MoveKind = 2
 	// Start a release dry run: noted.
 	MoveKind_MOVE_KIND_RELEASE MoveKind = 3
-	// Open a pull request: noted.
+	// Open a pull request: a yes opens it as a draft, from the branch named by ref, through a worker that follows the
+	// project's own skill for opening one when it has such a skill; the lead reads that the developer must when Djinn
+	// cannot.
 	MoveKind_MOVE_KIND_PULL_REQUEST MoveKind = 4
 	// Merge a pull request whose checks are green: noted.
 	MoveKind_MOVE_KIND_READY_TO_MERGE MoveKind = 5
@@ -4450,7 +4452,7 @@ type Task struct {
 	// without a Done-when section.
 	ProofNeeds []*ProofNeed `protobuf:"bytes,43,rep,name=proof_needs,json=proofNeeds,proto3" json:"proof_needs,omitempty"`
 	// What Djinn started the task for, on a question of the wish; none for a task the lead or the developer spawned. A
-	// question worker takes no slot of the machine and runs in its project's folder, reading.
+	// question worker takes a slot of the machine like any agent and runs in its project's folder, reading.
 	Role TaskRole `protobuf:"varint,44,opt,name=role,proto3,enum=plan.v1.TaskRole" json:"role,omitempty"`
 	// The code of the question a question worker works on (Q52); empty for any other task.
 	Question string `protobuf:"bytes,45,opt,name=question,proto3" json:"question,omitempty"`
@@ -6789,11 +6791,12 @@ type DjinnMove struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Which move.
 	Kind MoveKind `protobuf:"varint,1,opt,name=kind,proto3,enum=plan.v1.MoveKind" json:"kind,omitempty"`
-	// What the move acts on: the full sha of the build to install, or the tag to push.
+	// What the move acts on: the full sha of the build to install, the tag to push, or the branch a pull request is
+	// opened from.
 	Ref string `protobuf:"bytes,2,opt,name=ref,proto3" json:"ref,omitempty"`
 	// The remote a tag is pushed to.
 	Remote string `protobuf:"bytes,3,opt,name=remote,proto3" json:"remote,omitempty"`
-	// The project the build is installed from, or the tag pushed in.
+	// The project the build is installed from, the tag pushed in, or the pull request opened in.
 	ProjectId     string `protobuf:"bytes,4,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -7559,7 +7562,7 @@ type QuestionServiceReviseRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The question: its code, like Q03, or its identifier.
 	Question *QuestionRef `protobuf:"bytes,1,opt,name=question,proto3" json:"question,omitempty"`
-	// What is at stake now, in Markdown; the former context when empty.
+	// What is at stake now, in Markdown, in the shape of an asked question's context; the former context when empty.
 	Context string `protobuf:"bytes,2,opt,name=context,proto3" json:"context,omitempty"`
 	// The options now, up to four; the former ones when none.
 	Options []string `protobuf:"bytes,3,rep,name=options,proto3" json:"options,omitempty"`
@@ -7571,7 +7574,10 @@ type QuestionServiceReviseRequest struct {
 	TaskId string `protobuf:"bytes,6,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	// What the answer is needed before now, like "before the merge"; the former words when not given, none when given
 	// empty (--before ""): the question can wait.
-	Before        *string `protobuf:"bytes,7,opt,name=before,proto3,oneof" json:"before,omitempty"`
+	Before *string `protobuf:"bytes,7,opt,name=before,proto3,oneof" json:"before,omitempty"`
+	// File holding what is at stake now, in Markdown, read in place of context; a relative path starts from the current
+	// directory.
+	ContextFile   string `protobuf:"bytes,8,opt,name=context_file,json=contextFile,proto3" json:"context_file,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7655,10 +7661,20 @@ func (x *QuestionServiceReviseRequest) GetBefore() string {
 	return ""
 }
 
+func (x *QuestionServiceReviseRequest) GetContextFile() string {
+	if x != nil {
+		return x.ContextFile
+	}
+	return ""
+}
+
 type QuestionServiceReviseResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The question, revised.
-	Question      *Question `protobuf:"bytes,1,opt,name=question,proto3" json:"question,omitempty"`
+	Question *Question `protobuf:"bytes,1,opt,name=question,proto3" json:"question,omitempty"`
+	// How its context breaks the shape a question reads in at a glance (every command in one code block at the top,
+	// short Markdown), a line each; none when it keeps it. The question is stored as given: revise it.
+	Warnings      []string `protobuf:"bytes,2,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7700,6 +7716,13 @@ func (x *QuestionServiceReviseResponse) GetQuestion() *Question {
 	return nil
 }
 
+func (x *QuestionServiceReviseResponse) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
 type QuestionServiceAskRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The question, in one or two sentences.
@@ -7709,8 +7732,10 @@ type QuestionServiceAskRequest struct {
 	Options []string `protobuf:"bytes,2,rep,name=options,proto3" json:"options,omitempty"`
 	// Wish the question belongs to.
 	WishId string `protobuf:"bytes,3,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
-	// What is at stake, in Markdown: what the answer changes, what each option costs. Naming a report of the wish (a
-	// block of kind report) by its title or its id links it on the card; an inline code gets a copy button.
+	// What is at stake, in Markdown read at a glance: every command the developer runs in one code block at the top,
+	// in run order, a # comment on what each prints; then a one-line why, a few bullets of facts, what each option
+	// changes and costs. No command, flag, path or hash in a sentence. Naming a report of the wish (a block of kind
+	// report) by its title or its id links it on the card.
 	Context string `protobuf:"bytes,4,opt,name=context,proto3" json:"context,omitempty"`
 	// The option you recommend, and why, in Markdown.
 	Recommendation string `protobuf:"bytes,5,opt,name=recommendation,proto3" json:"recommendation,omitempty"`
@@ -7824,7 +7849,10 @@ func (x *QuestionServiceAskRequest) GetMove() bool {
 type QuestionServiceAskResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The question, with its code.
-	Question      *Question `protobuf:"bytes,1,opt,name=question,proto3" json:"question,omitempty"`
+	Question *Question `protobuf:"bytes,1,opt,name=question,proto3" json:"question,omitempty"`
+	// How its context breaks the shape a question reads in at a glance (every command in one code block at the top,
+	// short Markdown), a line each; none when it keeps it. The question is stored as given: revise it.
+	Warnings      []string `protobuf:"bytes,2,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7862,6 +7890,13 @@ func (*QuestionServiceAskResponse) Descriptor() ([]byte, []int) {
 func (x *QuestionServiceAskResponse) GetQuestion() *Question {
 	if x != nil {
 		return x.Question
+	}
+	return nil
+}
+
+func (x *QuestionServiceAskResponse) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
 	}
 	return nil
 }
@@ -18126,8 +18161,9 @@ type TaskServiceUpdateRequest struct {
 	Force *bool `protobuf:"varint,12,opt,name=force,proto3,oneof" json:"force,omitempty"`
 	// An azima's own branch under the per-azima push strategy, named as the project's convention requires
 	// (ET-1234-<slug>): a branch that exists is adopted as it is, recorded with the main it lands in and the commit of
-	// main it was cut from (their merge base); one that does not is cut from main under that name. Refused on a work
-	// task, and while a merge runs into the azima's branch.
+	// main it was cut from (their merge base); one only the remote holds is made from the remote's; one that does not
+	// exist is cut from main under that name. Refused on a work task, while a merge runs into the azima's branch, and
+	// when the branch here has diverged from the remote's.
 	Branch        *string `protobuf:"bytes,13,opt,name=branch,proto3,oneof" json:"branch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -19556,7 +19592,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04note\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x04note\x12$\n" +
 	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"Q\n" +
 	" QuestionServiceEnlightenResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xe8\x02\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\x95\x03\n" +
 	"\x1cQuestionServiceReviseRequest\x128\n" +
 	"\bquestion\x18\x01 \x01(\v2\x14.plan.v1.QuestionRefB\x06\xbaH\x03\xc8\x01\x01R\bquestion\x12#\n" +
 	"\acontext\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\acontext\x12(\n" +
@@ -19564,10 +19600,12 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0erecommendation\x18\x04 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\x0erecommendation\x12$\n" +
 	"\awish_id\x18\x05 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x125\n" +
 	"\atask_id\x18\x06 \x01(\tB\x1c\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01\xf2\xf3\x18\rDJINN_TASK_IDR\x06taskId\x12$\n" +
-	"\x06before\x18\a \x01(\tB\a\xbaH\x04r\x02\x18dH\x00R\x06before\x88\x01\x01B\t\n" +
-	"\a_before\"N\n" +
+	"\x06before\x18\a \x01(\tB\a\xbaH\x04r\x02\x18dH\x00R\x06before\x88\x01\x01\x12+\n" +
+	"\fcontext_file\x18\b \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\vcontextFileB\t\n" +
+	"\a_before\"j\n" +
 	"\x1dQuestionServiceReviseResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xed\x02\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\x12\x1a\n" +
+	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xed\x02\n" +
 	"\x19QuestionServiceAskRequest\x12\x1f\n" +
 	"\x04text\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\xd0\x0fR\x04text\x12(\n" +
 	"\aoptions\x18\x02 \x03(\tB\x0e\xbaH\v\x92\x01\b\x10\x04\"\x04r\x02\x10\x01R\aoptions\x12$\n" +
@@ -19577,9 +19615,10 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04icon\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon\x125\n" +
 	"\atask_id\x18\a \x01(\tB\x1c\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01\xf2\xf3\x18\rDJINN_TASK_IDR\x06taskId\x12\x1f\n" +
 	"\x06before\x18\b \x01(\tB\a\xbaH\x04r\x02\x18dR\x06before\x12\x12\n" +
-	"\x04move\x18\t \x01(\bR\x04move\"K\n" +
+	"\x04move\x18\t \x01(\bR\x04move\"g\n" +
 	"\x1aQuestionServiceAskResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xde\x02\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\x12\x1a\n" +
+	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xde\x02\n" +
 	"\x1cQuestionServiceAnswerRequest\x128\n" +
 	"\bquestion\x18\x01 \x01(\v2\x14.plan.v1.QuestionRefB\x06\xbaH\x03\xc8\x01\x01R\bquestion\x124\n" +
 	"\x06choice\x18\x02 \x01(\x0e2\x0f.plan.v1.ChoiceB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\x06choice\x12\x1c\n" +

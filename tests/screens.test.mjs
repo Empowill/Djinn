@@ -687,8 +687,12 @@ test("a gesture presses its button and the card answers back in its colour", asy
   });
   assert.doesNotMatch(card.html(), /gesture-|is-pressed|question-wisp/);
 
-  // Enter on the card: the lamp is down, the card plays the rub, nothing has left yet.
-  card.one("question-card").onKeyDown({ key: "Enter", preventDefault() {} });
+  // Ctrl+Enter on the card: the lamp is down, the card plays the rub, nothing has left yet.
+  card.one("question-card").onKeyDown({
+    key: "Enter",
+    ctrlKey: true,
+    preventDefault() {},
+  });
   let html = card.html();
   assert.match(html, /class="question-card open can-wait gesture-rub"/);
   assert.match(html, /class="button accent lamp-rub is-pressed"/);
@@ -915,9 +919,10 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   assert.doesNotMatch(cardNoRec.html(), /option selected/);
   assert.doesNotMatch(cardNoRec.html(), /question-hint unpicked/);
 
-  // Pressing Enter on card warns
+  // Ctrl+Enter on card warns
   cardNoRec.one("question-card").onKeyDown({
     key: "Enter",
+    ctrlKey: true,
     preventDefault: () => {},
   });
   await cardNoRec.settle();
@@ -926,6 +931,24 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
     cardNoRec.html(),
     /<p class="question-hint unpicked" role="alert">.*Pick an option first<\/p>/,
   );
+
+  // Enter on a focused option picks it and answers nothing (W574), as a click does.
+  const optionB = {};
+  cardNoRec.all("option")[1].props.onKeyDown({
+    key: "Enter",
+    target: optionB,
+    currentTarget: optionB,
+    preventDefault: () => {},
+  });
+  await cardNoRec.settle();
+  assert.equal(unselectedAnswered.length, 0);
+  assert.match(
+    cardNoRec.html(),
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">B</,
+  );
+  cardNoRec.all("option")[0].props.onClick();
+  await cardNoRec.settle();
+  assert.equal(unselectedAnswered.length, 0);
 
   // Pressing 1 picks first option and clears unpicked warning
   cardNoRec.one("question-card").onKeyDown({
@@ -938,9 +961,19 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   );
   assert.doesNotMatch(cardNoRec.html(), /question-hint unpicked/);
 
-  // Now Enter answers
+  // Enter alone on the card answers nothing (W574): a click on its text leaves the focus there.
   cardNoRec.one("question-card").onKeyDown({
     key: "Enter",
+    preventDefault: () => {},
+  });
+  await cardNoRec.settle();
+  assert.equal(unselectedAnswered.length, 0);
+  assert.doesNotMatch(cardNoRec.html(), /gesture-/);
+
+  // Now Ctrl+Enter answers
+  cardNoRec.one("question-card").onKeyDown({
+    key: "Enter",
+    ctrlKey: true,
     preventDefault: () => {},
   });
   await cardNoRec.settle();
@@ -1269,14 +1302,31 @@ test("a copy button copies the exact command and says so, and never answers the 
   assert.equal(options()[0].props["aria-pressed"], true);
   await card.settle();
   assert.deepEqual(answered, []);
-  // Elsewhere on the card, Enter still rubs the lamp.
+  // Enter on a focused option picks it too, and answers nothing (W574).
+  options()[1].props.onKeyDown({
+    key: "Enter",
+    target: "self",
+    currentTarget: "self",
+    preventDefault: () => {},
+  });
+  assert.equal(options()[1].props["aria-pressed"], true);
+  // Elsewhere on the card, Enter alone answers nothing; Ctrl+Enter rubs the lamp.
+  const article = { tagName: "ARTICLE", closest: () => null };
   card.one("question-card").onKeyDown({
     key: "Enter",
-    target: { tagName: "ARTICLE", closest: () => null },
+    target: article,
     preventDefault: () => {},
   });
   await card.settle();
-  assert.deepEqual(answered, [s.Choice.A]);
+  assert.deepEqual(answered, []);
+  card.one("question-card").onKeyDown({
+    key: "Enter",
+    ctrlKey: true,
+    target: article,
+    preventDefault: () => {},
+  });
+  await card.settle();
+  assert.deepEqual(answered, [s.Choice.B]);
 });
 
 test("a wish's reports are notes for agents, with no section nor count of their own, and its question links the one it names", async () => {
@@ -3930,7 +3980,7 @@ test("the Tasks tab says where each task's work stands on its way into the wish'
   );
 });
 
-test("work that merges stays in sight, counts as running everywhere, then folds once committed", async () => {
+test("work that merges stays in sight, shows as merging apart from the workers everywhere, then folds once committed", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da72";
   const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
@@ -4025,7 +4075,8 @@ test("work that merges stays in sight, counts as running everywhere, then folds 
   assert.match(after, />Show the 2 finished</);
   assert.match(after, /2 done, 0 running, 1 waiting/);
 
-  // The side panel and its icon rail count it as running: the wish is blue, even folded to its icons.
+  // The side panel and its icon rail show it merging, apart from the workers that run (W577: a merge waiting is no
+  // worker, and the load bar never counted it); the wish is blue all the same, even folded to its icons.
   const sidebar = (list, collapsed) =>
     s.renderToStaticMarkup(
       h(s.WishSidebar, {
@@ -4044,7 +4095,11 @@ test("work that merges stays in sight, counts as running everywhere, then folds 
         onNewProject() {},
       }),
     );
-  assert.match(sidebar(merging, false), /aria-label="1 running"/);
+  assert.match(
+    sidebar(merging, false),
+    /aria-label="1 merging: its work waits to merge, no worker runs"/,
+  );
+  assert.doesNotMatch(sidebar(merging, false), /aria-label="1 running"/);
   assert.match(sidebar(merging, true), /wish-tone tone-running/);
   assert.doesNotMatch(sidebar(committed, false), /running/);
   assert.doesNotMatch(sidebar(committed, true), /tone-running/);
@@ -4077,10 +4132,16 @@ test("work that merges stays in sight, counts as running everywhere, then folds 
     );
     return { view, plan };
   };
+  // Merging, no worker runs for it (W577): its own pill, the wish blue all the same.
   const now = await page(merging);
-  assert.match(now.view, /count-pill tone-running" title="1 running"/);
+  assert.match(
+    now.view,
+    /count-pill tone-running" title="1 merging: its work waits to merge, no worker runs"/,
+  );
+  assert.doesNotMatch(now.view, /title="1 running"/);
   assert.match(now.plan, /plan-wish tone-running/);
-  assert.match(now.plan, /<span>1 running<\/span>/);
+  assert.match(now.plan, /<span>1 merging<\/span>/);
+  assert.doesNotMatch(now.plan, /<span>1 running<\/span>/);
   const later = await page(committed);
   assert.doesNotMatch(later.view, /count-pill tone-running/);
   assert.doesNotMatch(later.plan, /plan-wish tone-running/);
@@ -8191,7 +8252,7 @@ test("operating load forecast: binding resource (memory-bound vs cpu-bound) and 
   assert.equal(rows.length, 2);
   let cpuText = s.renderToStaticMarkup(rows[0].props.children);
   let memText = s.renderToStaticMarkup(rows[1].props.children);
-  assert.match(cpuText, /CPU: up to 2 workers/);
+  assert.match(cpuText, /CPU: 2 of 2 workers run/);
   assert.match(memText, /Memory: 11 GB of 24 GB/); // (24 - 2) * 0.5 = 11 GB engaged
 
   // Case B: CPU-bound machine (e.g. 4 cpu slots, 16 memory slots)
@@ -8223,8 +8284,116 @@ test("operating load forecast: binding resource (memory-bound vs cpu-bound) and 
   assert.equal(rows.length, 2);
   cpuText = s.renderToStaticMarkup(rows[0].props.children);
   memText = s.renderToStaticMarkup(rows[1].props.children);
-  assert.match(cpuText, /CPU: up to 3 workers/);
+  assert.match(cpuText, /CPU: 1 of 3 workers run/);
   assert.match(memText, /Memory: 37 GB of 48 GB/); // (48 - 2) * 0.8 = 36.8 GB rounded to 37 GB
+});
+
+test("operating load: each notch shows what the scheduler lets run there, and what moving the bar does (W577)", async () => {
+  const N = s.LoadNotch;
+  // The server's slots per notch: at Medium the scheduler runs 3, where the old estimate (50 % of 8) said 4.
+  const notchSlots = {
+    [N.MINIMAL]: 2,
+    [N.MEDIUM]: 3,
+    [N.HIGH]: 6,
+    [N.MAX]: 8,
+    [N.OVERCLOCK]: 12,
+  };
+  const base = {
+    notch: N.HIGH,
+    auto: false,
+    chosenNotch: N.HIGH,
+    engagedMemoryBytes: 8n * 1024n * 1024n * 1024n,
+    workerMemoryBytes: 6n * 1024n * 1024n * 1024n,
+    memoryTotalBytes: 31n * 1024n * 1024n * 1024n,
+    memoryAvailableBytes: 14n * 1024n * 1024n * 1024n,
+    workerForecastBytes: 1536n * 1024n * 1024n,
+    bindingResource: "cpu",
+    cpuSlots: 8,
+    memorySlots: 10,
+    baseSlots: 8,
+    slots: 6,
+    notchSlots,
+    runningWorkers: 6,
+    pausedWorkers: 0,
+    forcedWorkers: 0,
+    lowerPauses: true,
+  };
+  const cpuRow = () => {
+    const screen = live(s.OperatingLoadForecast, {});
+    const row = screen.all("operating-load-forecast-row")[0];
+    return {
+      text: s.renderToStaticMarkup(row.props.children),
+      title:
+        s
+          .renderToStaticMarkup(row.props.children)
+          .match(/title="([^"]*)"/)?.[1] ?? "",
+    };
+  };
+  const notchTitle = (slug) =>
+    live(s.OperatingLoadSlider, {})
+      .all("operating-load-notch")
+      .find((b) => b.props["data-notch"] === slug).props.title;
+
+  s.loadManager.setPreviewNotch(null);
+  s.loadManager.setSnapshot(base);
+  // Each notch's tooltip names the server's count, never an estimate of its own.
+  for (const [slug, n] of [
+    ["minimal", N.MINIMAL],
+    ["medium", N.MEDIUM],
+    ["high", N.HIGH],
+    ["max", N.MAX],
+    ["overclock", N.OVERCLOCK],
+  ])
+    assert.match(
+      notchTitle(slug),
+      new RegExp(`up to ${notchSlots[n]} workers`),
+      slug,
+    );
+  // At High, 6 of 6 run; no worker beyond; the label says what lowering does.
+  let row = cpuRow();
+  assert.match(row.text, /CPU: 6 of 6 workers run/);
+  assert.doesNotMatch(row.text, /operating-load-forecast-over/);
+  assert.match(
+    row.title,
+    /Lowering the load pauses the newest workers above its limit/,
+  );
+
+  // Previewing Medium: 3 run there, the 3 newest pause.
+  s.loadManager.setPreviewNotch(N.MEDIUM);
+  row = cpuRow();
+  assert.match(row.text, /CPU: 6 of 3 workers run/);
+  assert.match(row.text, /data-over="pause"[^>]*> · here the 3 newest pause/);
+  // Where lowering lets them finish (Auto, Windows), it says so.
+  s.loadManager.setSnapshot({ lowerPauses: false });
+  row = cpuRow();
+  assert.match(
+    row.text,
+    /data-over="finish"[^>]*> · 3 above the limit finish their run/,
+  );
+  assert.match(row.title, /lets the workers above its limit finish their run/);
+  s.loadManager.setPreviewNotch(null);
+
+  // At Medium, 4 run: 1 started by hand, the other above the limit finishing its run (a gate, a correction).
+  s.loadManager.setSnapshot({
+    ...base,
+    notch: N.MEDIUM,
+    chosenNotch: N.MEDIUM,
+    slots: 3,
+    runningWorkers: 5,
+    forcedWorkers: 1,
+  });
+  row = cpuRow();
+  assert.match(row.text, /CPU: 5 of 3 workers run/);
+  assert.match(row.text, /data-over="hand"[^>]*> · 1 started by hand/);
+  assert.match(
+    row.text,
+    /data-over="finish"[^>]*> · 1 above the limit finishes its run/,
+  );
+
+  // Before the server says, the estimate stands in.
+  s.loadManager.setSnapshot({ ...base, notchSlots: {}, runningWorkers: 0 });
+  assert.match(notchTitle("medium"), /up to 4 workers/);
+  s.loadManager.setSnapshot(base);
 });
 
 test("azima counters and states in the window are right before any azima is opened on a wish with more tasks than one page", async () => {

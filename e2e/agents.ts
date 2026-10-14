@@ -18,7 +18,7 @@ export function fakeAgents(bin: string) {
     else
       fs.writeFileSync(
         path.join(bin, agent),
-        `#!/bin/sh\necho "fake-${agent} $* in $(pwd)"\nexec cat\n`,
+        `#!/bin/sh\nargs=""\nwhile [ $# -gt 0 ]; do\n  case "$1" in\n    --allowedTools|--project) shift 2 ;;\n    *) args="\${args:+$args }$1"; shift ;;\n  esac\ndone\necho "fake-${agent} $args in $(pwd)"\nexec cat\n`,
         { mode: 0o755 },
       );
 }

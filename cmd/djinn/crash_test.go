@@ -109,7 +109,7 @@ func TestCrashReopensTheLeads(t *testing.T) {
 		t.Fatal(err)
 	}
 	if note.Version != "" || len(note.Terminals) != 1 || note.Terminals[0].Name != lead ||
-		note.Terminals[0].Directory != folder || !strings.HasSuffix(strings.Join(note.Terminals[0].Command, " "), "claude --resume "+session) {
+		note.Terminals[0].Directory != folder || !strings.Contains(strings.Join(note.Terminals[0].Command, " "), "claude --resume "+session) {
 		t.Fatalf("the note of the leads: %+v", note)
 	}
 

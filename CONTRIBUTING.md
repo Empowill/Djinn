@@ -314,7 +314,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   who took each one (you, the lead, a worker) and the tasks it led to; the page and the brief follow.
 - An answer goes to the wish's lead (or to the principal lead), which turns the decision into tasks itself (`--decision Q43`),
   placing them in the graph; "Enlighten me" starts an investigator, "Q43: enlighten", which revises the question. Investigators read,
-  take no slot (only memory), and tell the lead what they did. `enlighten_workers: false` in a project's settings ([`docs/team-settings.md`](docs/team-settings.md))
+  take a slot like any agent (on a full machine, the newest work task's, paused until they end), and tell the lead what they did. `enlighten_workers: false` in a project's settings ([`docs/team-settings.md`](docs/team-settings.md))
   or `djinn up --enlighten-workers=false` turns them off. A worker's `djinn block put`, `question ask` and `revise` name its task from
   `$DJINN_TASK_ID`: the decision log says "By W12".
 - An open question is blocking when a task waits for its answer, red; `djinn question ask … --before "before the merge"`

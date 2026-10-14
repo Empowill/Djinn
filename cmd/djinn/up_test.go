@@ -285,7 +285,7 @@ func fakeClaude(t *testing.T) (bin, count string) {
 	t.Helper()
 	bin = t.TempDir()
 	count = filepath.Join(t.TempDir(), "starts")
-	script := "#!/bin/sh\necho \"fake-claude $* in $(pwd)\"\necho start >> \"$DJINN_TEST_COUNT\"\nexec cat\n"
+	script := "#!/bin/sh\nargs=\"\"\nwhile [ $# -gt 0 ]; do\n  case \"$1\" in\n    --allowedTools|--project) shift 2 ;;\n    *) args=\"${args:+$args }$1\"; shift ;;\n  esac\ndone\necho \"fake-claude $args in $(pwd)\"\necho start >> \"$DJINN_TEST_COUNT\"\nexec cat\n"
 	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

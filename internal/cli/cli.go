@@ -546,22 +546,36 @@ func writeServiceHelp(w io.Writer, sd protoreflect.ServiceDescriptor) {
 }
 
 // writeText prints a response for a human: one "name: value" line per field set, nested messages indented, and
-// the content of the response directly when it holds a single field.
+// the content of the response directly when it holds a single field, its warnings after it, a "warning:" line each.
 func writeText(w io.Writer, m protoreflect.Message) {
 	if fd := singleContentField(m.Descriptor().Fields()); fd != nil && fd.Kind() == protoreflect.MessageKind {
 		switch {
 		case fd.IsList():
 			writeList(w, fd, m.Get(fd).List(), "")
+			writeWarnings(w, m)
 			return
 		case !fd.IsMap() && fd.Message().FullName() != timestampName && fd.Message().FullName() != durationName:
+			defer writeWarnings(w, m)
 			m = m.Get(fd).Message()
 		}
 	}
 	writeFields(w, m, "")
 }
 
+// writeWarnings prints the warnings of the response m, if it has some: what Djinn stored as given but would have
+// liked otherwise.
+func writeWarnings(w io.Writer, m protoreflect.Message) {
+	fd := m.Descriptor().Fields().ByName("warnings")
+	if fd == nil || !fd.IsList() || fd.Kind() != protoreflect.StringKind {
+		return
+	}
+	for i, list := 0, m.Get(fd).List(); i < list.Len(); i++ {
+		fmt.Fprintln(w, "warning:", list.Get(i).String())
+	}
+}
+
 // singleContentField returns the single content field of fields, ignoring pagination metadata
-// (next_page_token and total) if present.
+// (next_page_token and total) and warnings if present.
 func singleContentField(fields protoreflect.FieldDescriptors) protoreflect.FieldDescriptor {
 	if fields.Len() == 1 {
 		return fields.Get(0)
@@ -570,7 +584,7 @@ func singleContentField(fields protoreflect.FieldDescriptors) protoreflect.Field
 	for i := range fields.Len() {
 		fd := fields.Get(i)
 		name := string(fd.Name())
-		if name == "next_page_token" || name == "total" {
+		if name == "next_page_token" || name == "total" || name == "warnings" {
 			continue
 		}
 		nonPagination = append(nonPagination, fd)

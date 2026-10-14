@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -77,12 +76,83 @@ func TestCommandAllowed(t *testing.T) {
 			t.Errorf("commandAllowed(%q) = %v, want %v", command, got, want)
 		}
 	}
+
+	djinnPerms := djinnOnly()
+	for command, want := range map[string]bool{
+		`djinn question revise Q01 --wish-id w1 --context "SQLite is free"`:     true,
+		`djinn question revise Q01 --wish-id w1 --context-file /tmp/context.md`: true,
+		"djinn question revise Q01 --wish-id w1 --options \"A: Keep SQLite\" --options \"B: Move to Postgres\" " +
+			"--recommendation \"A: Keep SQLite\" --context \"One-line why.\n\n~~~sh\n # check version\nsqlite3 --version\n~~~\n\n- Verified in go.mod.\"": true,
+		"djinn question list --wish-id w1":         true,
+		"djinn task get t1":                        true,
+		"djinn task list --wish-id w1":             true,
+		"djinn wish brief w1":                      true,
+		"djinn block list w1":                      true,
+		"djinn tilasm list w1":                     true,
+		"djinn tilasm get w1 notes":                true,
+		"git log -n 5 main..HEAD":                  true,
+		"git show HEAD:internal/plan/rounds.go":    true,
+		"git diff main...HEAD":                     true,
+		"git status --short":                       true,
+		"git branch -a":                            true,
+		"git rev-parse HEAD":                       true,
+		"git ls-tree -r main":                      true,
+		"git checkout -b other":                    false,
+		"git push origin main":                     false,
+		"djinn gate run lint -- go tool task lint": false,
+	} {
+		if got := commandAllowed(djinnPerms, command); got != want {
+			t.Errorf("commandAllowed(djinnOnly, %q) = %v, want %v", command, got, want)
+		}
+	}
+}
+
+// splitUnquoted splits command on shell operators (||, &&, |, ;, &, newline) outside single or double quotes.
+func splitUnquoted(command string) []string {
+	var parts []string
+	var cur strings.Builder
+	var quote byte
+	for i := 0; i < len(command); i++ {
+		c := command[i]
+		if quote != 0 {
+			if c == '\\' && quote == '"' && i+1 < len(command) {
+				cur.WriteByte(c)
+				i++
+				cur.WriteByte(command[i])
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			cur.WriteByte(c)
+			continue
+		}
+		if c == '"' || c == '\'' {
+			quote = c
+			cur.WriteByte(c)
+			continue
+		}
+		if (c == '|' || c == '&') && i+1 < len(command) && command[i+1] == c {
+			parts = append(parts, cur.String())
+			cur.Reset()
+			i++
+			continue
+		}
+		if c == '|' || c == ';' || c == '&' || c == '\n' {
+			parts = append(parts, cur.String())
+			cur.Reset()
+			continue
+		}
+		cur.WriteByte(c)
+	}
+	return append(parts, cur.String())
 }
 
 // TestQuestionWorkerClaudeRules: what Claude gets for a question worker (TASK_ACCESS_DJINN), as its permission
 // syntax reads it (code.claude.com/docs/en/permissions, read 2026-10-10): dontAsk, which still runs file reads in
-// its working folder, the project's, with Read, Grep and Glob, none of them denied nor taken away; each djinn command
-// allowed with its arguments by Bash(<command> *), the same as Bash(<command>:*); no edit, no web.
+// its working folder, the project's, with Read, Grep and Glob, and searches the web with WebFetch and WebSearch,
+// none of them denied nor taken away; each djinn command allowed with its arguments by Bash(<command> *), the same
+// as Bash(<command>:*); no edit.
 func TestQuestionWorkerClaudeRules(t *testing.T) {
 	t.Parallel()
 	readOnly, perms := accessSpec(planv1.TaskAccess_TASK_ACCESS_DJINN, nil)
@@ -99,25 +169,33 @@ func TestQuestionWorkerClaudeRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	allow, deny := settings.Permissions.Allow, settings.Permissions.Deny
-	for _, c := range djinnCommands {
+	for _, c := range slices.Concat(djinnCommands, gitRead) {
 		if !slices.Contains(allow, "Bash("+c+" *)") {
 			t.Errorf("%s is not allowed with its arguments: %v", c, allow)
 		}
 	}
+	for _, w := range []string{"WebFetch", "WebSearch"} {
+		if !slices.Contains(allow, w) {
+			t.Errorf("%s is not allowed: %v", w, allow)
+		}
+	}
 	for _, d := range deny {
-		if tool, _, _ := strings.Cut(d, "("); slices.Contains([]string{"Read", "Grep", "Glob", "Bash"}, tool) {
+		if tool, _, _ := strings.Cut(d, "("); slices.Contains([]string{"Read", "Grep", "Glob", "Bash", "WebFetch", "WebSearch"}, tool) {
 			t.Errorf("%s denies what a question worker needs", d)
 		}
 	}
-	for _, d := range []string{"Edit", "Write", "WebFetch"} {
+	for _, d := range []string{"Edit", "Write", "NotebookEdit"} {
 		if !slices.Contains(deny, d) {
 			t.Errorf("%s is not denied: %v", d, deny)
 		}
 	}
-	// Claude splits a command on its operators, and allows it only when a rule matches every part.
+	// Claude splits a command on its operators outside quotes, and allows it only when a rule matches every part.
 	allowed := func(command string) bool {
-		for _, part := range regexp.MustCompile(`\|\||&&|[|;&\n]`).Split(command, -1) {
+		for _, part := range splitUnquoted(command) {
 			part = strings.TrimSpace(part)
+			if strings.Contains(part, " > ") || strings.Contains(part, " >> ") {
+				return false
+			}
 			if !slices.ContainsFunc(allow, func(rule string) bool {
 				p, ok := strings.CutSuffix(strings.TrimPrefix(rule, "Bash("), " *)")
 				return ok && strings.HasPrefix(rule, "Bash(") && (part == p || strings.HasPrefix(part, p+" "))
@@ -131,9 +209,11 @@ func TestQuestionWorkerClaudeRules(t *testing.T) {
 		`djinn task spawn w1 --title "Move the store" --prompt "In internal/store." --decision Q01`: true,
 		"djinn task list --wish-id w1":                                      true,
 		`djinn question revise Q01 --wish-id w1 --context "SQLite is free"`: true,
-		"djinn task list --wish-id w1 | grep Q01; sed -n 1,40p x.go":        false,
-		"djinn task list --wish-id w1 > tasks.txt && cat tasks.txt":         false,
-		"djinn gate run test -- go tool task test":                          false,
+		"djinn question revise Q01 --wish-id w1 --options \"A: First\" --options \"B: Second\" " +
+			"--recommendation \"B: Second\" --context \"One-line why.\n\n- Fact one (verified).\n- Fact two (verified).\"": true,
+		"djinn task list --wish-id w1 | grep Q01; sed -n 1,40p x.go": false,
+		"djinn task list --wish-id w1 > tasks.txt && cat tasks.txt":  false,
+		"djinn gate run test -- go tool task test":                   false,
 	} {
 		if got := allowed(command); got != want {
 			t.Errorf("allowed(%q) = %v, want %v", command, got, want)

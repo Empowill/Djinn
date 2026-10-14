@@ -95,9 +95,11 @@ type Harness struct {
 	batcher    *tellBatcher  // batches worker lines to the lead (tell.go)
 
 	// The scheduler (schedule.go).
-	capacity   Capacity      // nil: no limit
-	available  func() uint64 // the memory available; nil: the memory holds no worker back
-	total      func() uint64 // the machine's total memory; nil: total RAM is unknown
+	capacity   Capacity                    // nil: no limit
+	barSlots   func(djinnv1.LoadNotch) int // the workers a notch itself lets run (WithBarSlots); nil: the capacity's slots
+	forcing    string                      // the task Start launches now, by hand; guarded by mu
+	available  func() uint64               // the memory available; nil: the memory holds no worker back
+	total      func() uint64               // the machine's total memory; nil: total RAM is unknown
 	policy     atomic.Pointer[machine.Policy]
 	tick       time.Duration // a pass at least this often
 	sched      sync.Mutex    // one scheduling decision at a time: a spawn, a pass, a planned task stopped
@@ -124,6 +126,7 @@ type Harness struct {
 	built            func(Built)           // nil: no build is proposed
 	mainTested       map[string]mainTested // by mainLine.key; owned by the integration's pass
 	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
+	toldApart        map[string]bool       // by wish and what was told the lead of a branch apart from its remote's (remote_branch.go), guarded by mu
 
 	// Babysitting what tasks open (babysit.go).
 	babysitting sync.WaitGroup // one per look for what a task opened; Close waits for them
@@ -176,6 +179,8 @@ type run struct {
 	shelved            bool                 // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
 	paused             bool                 // the worker holds still: it takes no slot
 	notchPaused        bool                 // paused by the operating load notch
+	slotPaused         bool                 // paused to give its slot to an investigator: resumed first when a slot frees
+	forced             bool                 // started or resumed by hand, whatever the slots (Harness.Forced)
 	holdWhy            string               // why the worker holds still (preemption or pause reason)
 	preemptedWhy       string               // if set, stopping to make room for an investigator
 	watcher            bool                 // a watcher runs a command, and takes no slot
@@ -236,6 +241,7 @@ func (h *Harness) newRun(task *planv1.Task) (*run, error) {
 	case h.runs[r.id] != nil:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is running", task.GetCode()))
 	}
+	r.forced = h.forcing == r.id // Started by hand (Start): counted so from its first instant.
 	h.runs[r.id] = r
 	h.wg.Add(1)
 	h.notifyLocked() // A watcher of the planned task follows its worker now.
@@ -249,7 +255,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	h := &Harness{
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
-		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{},
+		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, toldApart: map[string]bool{},
 		installed: map[string]string{}, preempted: map[string]string{}, aliases: map[string]string{},
 		resident: map[string]uint64{},
 	}
@@ -821,10 +827,10 @@ func (h *Harness) spawn(
 		return nil, plan.Status(err)
 	}
 	var why, failed string
-	var machine bool
+	var machine, slot bool
 	for _, d := range sit.Pass() {
 		if d.Task == task {
-			why, failed, machine = d.Why, d.Failed, d.Machine
+			why, failed, machine, slot = d.Why, d.Failed, d.Machine, d.Slot
 		}
 	}
 	var preemptedCode string
@@ -858,9 +864,10 @@ func (h *Harness) spawn(
 					}
 				}
 			}
-		} else if why == "" && h.slotsFull() {
+		} else if slot {
+			// It takes the slot of the work task it pauses, never one more: none to pause, it waits for a slot.
 			if code, err := h.preemptForSlot(ctx, task); err == nil && code != "" {
-				preemptedCode = code
+				preemptedCode, why, machine = code, "", false
 			}
 		}
 	} else if why != "" && isMemoryShort(why) {
@@ -1061,7 +1068,7 @@ const workerHandRule = "To try a command by hand, start a Djinn of your own with
 
 // workerCheckRule (Q246): what an agent can check, it checks; the developer runs no command to verify a worker's work.
 const workerCheckRule = "Never ask the developer for a check, a measure, a log to read, a CI result to look at or a command to run: do it yourself when you can; otherwise say in your final note what remains to verify, and the lead spawns a task for it or lets a watcher report it (a CI result comes from the PR's babysit watcher)."
-const workerMoveRule = "A question to the developer is only for a decision or a move only a person can make (grant a right, push a tag, open or merge a PR, start a release, check on a Mac or Windows Djinn does not have, install): ask it with `djinn question ask` before you end, the exact command in a code block at the top of its `--context`, never mid-sentence."
+const workerMoveRule = "A question to the developer is only for a decision or a move only a person can make (grant a right, push a tag, open or merge a PR, start a release, check on a Mac or Windows Djinn does not have, install): ask it with `djinn question ask` before you end. " + plan.QuestionShape
 const workerRules = workerHandRule + " " + workerCheckRule + " " + workerMoveRule
 
 // briefed is the first prompt of the run's task as its worker reads it, at launch and on a resume that gives it again:
@@ -2163,7 +2170,8 @@ func (h *Harness) Pause(ctx context.Context, procedure string, req *planv1.TaskS
 	return h.hold(ctx, procedure, req, req.GetTaskId(), true)
 }
 
-// Resume lets a paused worker go on. It does not wait for a slot: the developer asked for it.
+// Resume lets a paused worker go on. It does not wait for a slot: the developer asked for it, and the load bar shows
+// it beyond what it lets run (Forced).
 func (h *Harness) Resume(ctx context.Context, procedure string, req *planv1.TaskServiceResumeRequest) (*planv1.Task, error) {
 	return h.hold(ctx, procedure, req, req.GetTaskId(), false)
 }
@@ -2221,23 +2229,23 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
 	}
 	r.paused = pause
+	byHarness := procedure == methodNotch || procedure == methodPreempt
 	if pause {
 		r.notchPaused = (procedure == methodNotch)
-		if len(why) > 0 {
-			r.holdWhy = why[0]
-		}
+		r.slotPaused = (procedure == methodPreempt)
 	} else {
-		r.notchPaused = false
-		if len(why) > 0 {
-			r.holdWhy = why[0]
-		}
+		// Resumed by hand, it takes a slot whatever the others: the load bar shows it (Forced).
+		r.notchPaused, r.slotPaused, r.forced = false, false, !byHarness
+	}
+	if len(why) > 0 {
+		r.holdWhy = why[0]
 	}
 	h.mu.Unlock()
 	if pause {
 		h.wake() // Its slot is free.
 	}
 	actor := actorLocal
-	if procedure == methodPreempt || procedure == methodNotch {
+	if byHarness {
 		actor = actorHarness
 	}
 	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Journal(actor, procedure, req) }); err != nil {

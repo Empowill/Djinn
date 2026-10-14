@@ -118,10 +118,10 @@ test("a gesture presses its button and the card answers back; reduced motion fla
     await expect(oil).toBeVisible();
     await expect(wick).toBeVisible();
 
-    // Enter rubs the lamp: the button is down a moment, the card glows in brass and a wisp rises.
+    // Ctrl+Enter rubs the lamp: the button is down a moment, the card glows in brass and a wisp rises.
     await watch(page, "Which oil?");
     await oil.focus();
-    await page.keyboard.press("Enter");
+    await page.keyboard.press("Control+Enter");
     await expect(oil).not.toBeVisible();
     const rub = await seen(page);
     expect(rub.gesture).toBe("rub");

@@ -79,6 +79,17 @@ message LoadServiceGetResponse {
   int32 worker_percentile = 13;
   // The same in words, like "engaged at p50 (overclock)".
   string worker_engaged_at = 14;
+  // The most workers the scheduler lets run now at the notch in effect, every agent counted (a watcher takes no
+  // slot): the window's count of what a notch runs is this.
+  int32 slots = 15;
+  // The most workers each manual notch lets run now, as the scheduler weighs them.
+  repeated LoadNotchSlots notch_slots = 16;
+  // Workers among running_workers that the developer started or resumed by hand, whatever the slots (djinn task
+  // start, djinn task resume): the ones that may run beyond slots.
+  int32 forced_workers = 17;
+  // Whether lowering the notch pauses the newest workers above what it lets run: not in auto mode, nor on Windows,
+  // where they finish their run. Investigators, corrections, reviews and workers started by hand always finish theirs.
+  bool lower_pauses = 18;
 }
 
 message LoadServiceSetRequest {
@@ -134,4 +145,20 @@ message LoadServiceWatchResponse {
   int32 worker_percentile = 15;
   // The same in words, like "engaged at p50 (overclock)".
   string worker_engaged_at = 16;
+  // The most workers the scheduler lets run now at the notch in effect (LoadServiceGetResponse.slots).
+  int32 slots = 17;
+  // The most workers each manual notch lets run now, as the scheduler weighs them.
+  repeated LoadNotchSlots notch_slots = 18;
+  // Workers among running_workers started or resumed by hand, whatever the slots.
+  int32 forced_workers = 19;
+  // Whether lowering the notch pauses the newest workers above what it lets run (LoadServiceGetResponse.lower_pauses).
+  bool lower_pauses = 20;
+}
+
+// LoadNotchSlots is the most workers a notch lets run on the machine now.
+message LoadNotchSlots {
+  // The notch.
+  LoadNotch notch = 1;
+  // The most workers it lets run.
+  int32 slots = 2;
 }
