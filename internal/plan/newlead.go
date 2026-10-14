@@ -64,6 +64,11 @@ func (w *Wishes) newLead(
 	if provider == planv1.Provider_PROVIDER_CLAUDE {
 		lead.SessionId = store.NewID()
 	}
+	if provider == planv1.Provider_PROVIDER_ANTIGRAVITY {
+		if err := writeLeadAgyProject(dir, home); err != nil {
+			return "", "", nil, "", connect.NewError(connect.CodeInternal, err)
+		}
+	}
 	if line, err = leadLine(runtime.GOOS, lead, own, msg); err != nil {
 		return "", "", nil, "", err
 	}
@@ -130,7 +135,11 @@ func leadLine(goos string, lead *planv1.Lead, folder, msg string) (string, error
 	}
 	switch lead.GetProvider() {
 	case planv1.Provider_PROVIDER_CLAUDE:
-		line := "claude --session-id " + lead.GetSessionId()
+		tools, err := quote(claudeLeadTools)
+		if err != nil {
+			return "", err
+		}
+		line := "claude --session-id " + lead.GetSessionId() + " --allowedTools " + tools
 		if byFile {
 			dir, err := quote(folder)
 			if err != nil {
@@ -142,7 +151,7 @@ func leadLine(goos string, lead *planv1.Lead, folder, msg string) (string, error
 	case planv1.Provider_PROVIDER_CODEX:
 		return "codex " + arg, nil
 	case planv1.Provider_PROVIDER_ANTIGRAVITY:
-		return "agy -i " + arg, nil
+		return "agy -i " + arg + " --project " + LeadAgyProjectID, nil
 	}
 	return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
 		"a lead runs claude, codex or antigravity, not %s", providerName(lead.GetProvider())))

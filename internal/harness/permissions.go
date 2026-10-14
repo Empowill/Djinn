@@ -80,6 +80,11 @@ func djinnOnly() *djinnv1.Permissions {
 	return &djinnv1.Permissions{Commands: djinnCommands, Mode: djinnv1.Mode_MODE_LISTED}
 }
 
+// LeadPermissions are the permissions pre-authorized for a lead session: reading and plan.LeadCommands; no edit.
+func LeadPermissions() *djinnv1.Permissions {
+	return &djinnv1.Permissions{Commands: plan.LeadCommands, Mode: djinnv1.Mode_MODE_LISTED}
+}
+
 // commitCommands are what a worker Djinn starts to commit work, a correction or a review worker, may run besides what
 // the project lists: it commits what belongs to the task in its worktree, and drops the rest. Other workers never
 // commit. The project's denied_commands still win.

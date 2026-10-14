@@ -2,10 +2,13 @@ package plan
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -55,6 +58,24 @@ var ErrNoChoice = errors.New("the lead no longer shows this choice")
 // LeadTerminal is the name of the terminal of the lead.
 const LeadTerminal = "lead"
 
+// LeadCommands are the safe commands a lead session is pre-authorized to run without prompting the developer:
+// Djinn's own CLI and read-only Git commands.
+var LeadCommands = []string{
+	"djinn",
+	"git status",
+	"git log",
+	"git diff",
+	"git show",
+	"git branch",
+}
+
+// claudeLeadTools is the --allowedTools value passed to claude when launching or resuming a lead session:
+// safe file reads and LeadCommands.
+const claudeLeadTools = "Read,Glob,Grep,Bash(djinn *),Bash(git status *),Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git branch *)"
+
+// LeadAgyProjectID is the id of the Antigravity project Djinn writes for the lead session.
+const LeadAgyProjectID = "djinn-lead"
+
 // runsLead tells whether command, the command line of the lead's terminal, runs lead and not something else, a
 // shell perhaps, where a line typed to the lead would run as a command.
 func runsLead(command []string, lead *planv1.Lead) bool {
@@ -89,7 +110,8 @@ func resumeLine(lead *planv1.Lead) (string, error) {
 		if lead.GetSessionId() == "" {
 			return "", errors.New("a claude lead needs a session id")
 		}
-		return "claude --resume " + lead.GetSessionId(), nil
+		tools, _ := quoteArg(runtime.GOOS, claudeLeadTools)
+		return "claude --resume " + lead.GetSessionId() + " --allowedTools " + tools, nil
 	case planv1.Provider_PROVIDER_CODEX:
 		if lead.GetSessionId() == "" {
 			return "", errors.New("a codex lead needs a session id")
@@ -97,9 +119,9 @@ func resumeLine(lead *planv1.Lead) (string, error) {
 		return "codex resume " + lead.GetSessionId(), nil
 	case planv1.Provider_PROVIDER_ANTIGRAVITY:
 		if id := lead.GetSessionId(); id != "" {
-			return "agy --conversation " + id, nil
+			return "agy --conversation " + id + " --project " + LeadAgyProjectID, nil
 		}
-		return "agy --continue", nil
+		return "agy --continue --project " + LeadAgyProjectID, nil
 	}
 	return "", fmt.Errorf("a %s lead cannot be resumed in a terminal: only claude, codex and antigravity",
 		strings.ToLower(strings.TrimPrefix(lead.GetProvider().String(), "PROVIDER_")))
@@ -216,6 +238,11 @@ func (s *LeadService) resume(
 	if hasLead(lead) && !atHome && !other {
 		if line, dir, err = sessionLine(lead); err != nil {
 			return nil, err
+		}
+		if leadProvider(lead) == planv1.Provider_PROVIDER_ANTIGRAVITY {
+			if err := writeLeadAgyProject(dir, s.Wishes.home()); err != nil {
+				return nil, connect.NewError(connect.CodeInternal, err)
+			}
 		}
 		exclusive = lead.GetSessionId()
 	} else {
@@ -487,4 +514,109 @@ func localFolder(dir string, folders map[string]string) string {
 		return ""
 	}
 	return filepath.Join(base, filepath.FromSlash(rest))
+}
+
+// AgyProjectsDir is the folder of Antigravity's projects, ~/.gemini/config/projects; tests override it.
+var AgyProjectsDir = func() (string, error) {
+	if os.Getenv("DJINN_TEST") == "1" {
+		if h := os.Getenv("DJINN_HOME"); h != "" {
+			return filepath.Join(h, "agy-projects"), nil
+		}
+		return filepath.Join(os.TempDir(), "djinn-test-agy-projects"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".gemini", "config", "projects"), nil
+}
+
+type leadAgyProjectFile struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	PermissionGrants struct {
+		PermissionGrants leadAgyGrants `json:"permissionGrants"`
+	} `json:"permissionGrants"`
+}
+
+type leadAgyGrants struct {
+	Allow []string `json:"allow"`
+	Deny  []string `json:"deny,omitempty"`
+}
+
+// leadAgyProject builds the Antigravity project configuration for a lead session in dir: pre-authorizing safe
+// file reads and LeadCommands while denying secret folders in the user's home.
+func leadAgyProject(dir, djinnHome string) leadAgyProjectFile {
+	f := leadAgyProjectFile{ID: LeadAgyProjectID, Name: "Djinn lead"}
+	g := leadAgyGrants{Allow: []string{}}
+	addAllow := func(items ...string) {
+		for _, item := range items {
+			if item != "" && !slices.Contains(g.Allow, item) {
+				g.Allow = append(g.Allow, item)
+			}
+		}
+	}
+	cleanDir := ""
+	if dir != "" {
+		cleanDir = filepath.Clean(dir)
+		addAllow("read_file(" + cleanDir + ")")
+	}
+	if djinnHome != "" {
+		addAllow("read_file(" + filepath.Clean(djinnHome) + ")")
+	}
+	if runtime.GOOS != "windows" {
+		addAllow("read_file(/usr)", "read_file(/etc)")
+	}
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		cleanHome := filepath.Clean(home)
+		addAllow("read_file(" + cleanHome + ")")
+		secretNames := []string{
+			".ssh",
+			".gnupg",
+			filepath.Join(".config", "gh"),
+			filepath.Join(".config", "gcloud"),
+			".aws",
+			".netrc",
+			".git-credentials",
+		}
+		for _, s := range secretNames {
+			p := filepath.Join(cleanHome, s)
+			if cleanDir != "" && (cleanDir == p || strings.HasPrefix(cleanDir, p+string(filepath.Separator))) {
+				continue
+			}
+			g.Deny = append(g.Deny, "read_file("+p+")")
+		}
+	}
+	for _, c := range LeadCommands {
+		addAllow("command(" + c + ")")
+	}
+	f.PermissionGrants.PermissionGrants = g
+	return f
+}
+
+// writeLeadAgyProject writes the Antigravity project file for the lead session (djinn-lead.json) in AgyProjectsDir.
+func writeLeadAgyProject(dir, djinnHome string) error {
+	projectsDir, err := AgyProjectsDir()
+	if err != nil {
+		return fmt.Errorf("agy's projects folder: %w", err)
+	}
+	f := leadAgyProject(dir, djinnHome)
+	b, err := json.MarshalIndent(f, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(projectsDir, 0o700); err != nil {
+		return fmt.Errorf("agy's projects folder: %w", err)
+	}
+	path := filepath.Join(projectsDir, f.ID+".json")
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
+		return fmt.Errorf("write agy's lead project: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("write agy's lead project: %w", err)
+	}
+	return nil
 }

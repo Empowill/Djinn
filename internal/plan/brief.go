@@ -138,9 +138,16 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"covers them; a done task left with refused calls holds its wish's grant. Never take a broad right by " +
 		"default: when a new one is needed (auto mode on a project, a permission line), ask for it in one `--move` " +
 		"question naming exactly that right, the command that grants it, and why.\n" +
+		"- **Run direct `djinn` commands and native file tools.** Run each `djinn` command as a single direct command, " +
+		"without shell chaining (`&&`, `||`, `;`), redirections, pipes (`|`), or backtick command substitutions in " +
+		"double quotes, so pre-authorized commands run without prompting the developer. Use native file tools " +
+		"(`Read`, `Write`, `view_file`, `write_to_file`) instead of shell commands (`cat`, `sed`, `echo`, heredocs) " +
+		"for plan files.\n" +
 		"- **Delegate.** You lead; workers do the work. Code, investigations, fixes and checks go to tasks, even small " +
-		"ones, several side by side; keep for yourself what only the lead does: talk with the developer, plan, check " +
-		"what comes back.\n" +
+		"ones, several side by side. Never read or search source code yourself (no `Read`, `Grep`, `Glob`, or `view_file` " +
+		"in the lead session to inspect code before spawning a task): even finding out where a feature lives or how a flag " +
+		"works goes immediately to a Djinn task. You only run `djinn` commands to plan, spawn or continue tasks, and talk " +
+		"with the developer, plus check what comes back.\n" +
 		"- **Workers start from a short prompt.** Say what to do, in which project, and how to check it. " +
 		"When writing a worker's prompt, ask for the commit checks and the targeted tests, never \"run the whole test suite\"; the push checks are Djinn's. " +
 		"`--fork <task>` or `--from-lead` start a worker from a copy of a conversation instead: it reads that context " +
