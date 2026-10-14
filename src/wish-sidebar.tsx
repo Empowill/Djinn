@@ -192,6 +192,8 @@ export function WishSidebar({
     // Unfolded, an active wish takes a second line under its title: what waits for you, then what works, then what
     // watches, a count at zero left out, and its rank at the end. Its icon then says what it does: the questions have
     // their count, and no raised hand repeats it (Q01). Folded to the rail, the icon is all that shows: it keeps the hand.
+    // A narrow window folds the bar by its width alone (styles.css, 820px), the second line hidden: the row carries the
+    // hand, which shows only then, in place of the icon.
     const counted = !!rank && !collapsed;
     const shown =
       tone === "waiting" && counted
@@ -247,8 +249,15 @@ export function WishSidebar({
             <GripVertical size={12} />
           </span>
         )}
-        <span className={`wish-tone tone-${shown}`}>
+        <span
+          className={`wish-tone tone-${shown} ${shown !== tone ? "asks" : ""}`}
+        >
           <ToneIcon tone={shown} size={12} />
+          {shown !== tone && (
+            <span className={`wish-hand tone-${tone}`}>
+              <ToneIcon tone={tone} size={12} />
+            </span>
+          )}
         </span>
         {!collapsed && (
           <>

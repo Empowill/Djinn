@@ -110,6 +110,20 @@
   border: 0;
   background: none;
 }
+/* Under 820px wide the bar narrows to its icons by CSS alone, unfolded (styles.css): the second line hides, so the
+   hand takes the icon's place, as on the folded rail, to keep the questions in sight. */
+.wish-hand {
+  display: none;
+}
+@media (max-width: 820px) {
+  .wish-tone.asks > :not(.wish-hand) {
+    display: none;
+  }
+  .wish-tone > .wish-hand {
+    display: inline-flex;
+    color: var(--tone);
+  }
+}
 .wish-ready {
   color: var(--tone);
   font: var(--font-size-body) var(--mono);
