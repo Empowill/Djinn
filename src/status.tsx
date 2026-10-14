@@ -1,8 +1,9 @@
 // The window's status language: one colour, one icon and one word per state, never the colour alone. Done is green,
-// running blue with a live dot, waiting for you orange, investigating violet, planned grey, failed red, interrupted
-// amber, stopped and paused muted, cancelled a muted stone with a ban sign, watching teal with an eye; a decision the developer took is human, rose with a person;
-// an azima whose work is done and that awaits its proof is olive, with a clipboard to check; a question that can wait
-// is grey, with a clock.
+// running blue with a live dot, waiting for you orange, a failed merge an agent fixes orange with a wrench (Djinn's
+// move, not yours), investigating violet, planned grey, failed red, interrupted amber, stopped and paused muted,
+// cancelled a muted stone with a ban sign, watching teal with an eye; a decision the developer took is human, rose with
+// a person; an azima whose work is done and that awaits its proof is olive, with a clipboard to check; a question that
+// can wait is grey, with a clock.
 // The colours are tokens of review.css, checked for contrast in both themes.
 import {
   Ban,
@@ -20,6 +21,7 @@ import {
   Search,
   Star,
   TriangleAlert,
+  Wrench,
   XCircle,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -33,6 +35,7 @@ const icons: Record<Tone, LucideIcon | null> = {
   investigating: Search,
   planned: CircleDashed,
   failed: XCircle,
+  fixing: Wrench,
   interrupted: TriangleAlert,
   stopped: CircleStop,
   cancelled: Ban,

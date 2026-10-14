@@ -370,10 +370,13 @@ const taskStatusKeys: Record<TaskStatus, TextKey> = {
 
 // taskStatusText names where a task stands: a task Djinn resumes once its provider's limit resets waits for the
 // limit; one cut short and resumed as another task (forkedAs) says which; a running watcher watches.
+// fixedBy is the code of the correction task that fixes its failed merge while it works (fixerOf): the merge shows
+// being fixed, not failed.
 export function taskStatusText(
   task: Pick<Task, "status" | "resumeAfter"> &
     Partial<Pick<Task, "provider" | "integration">>,
   forkedAs = "",
+  fixedBy = "",
 ): string {
   if (watcherRuns(task)) return t("task.status_watching");
   if (task.status === TaskStatus.RESUMING && task.resumeAfter)
@@ -387,7 +390,9 @@ export function taskStatusText(
         return t("task.status_merging");
       case IntegrationState.CONFLICT:
       case IntegrationState.RED:
-        return t("task.status_merge_failed");
+        return fixedBy
+          ? t("task.status_fixing", { task: fixedBy })
+          : t("task.status_merge_failed");
       case IntegrationState.UNCOMMITTED:
         return t("task.status_to_review");
       default:
@@ -420,6 +425,8 @@ export type Tone =
   | "investigating"
   | "planned"
   | "failed"
+  // A merge that failed and that a correction task fixes: Djinn handles it, nothing to do (fixerOf).
+  | "fixing"
   | "interrupted"
   | "stopped"
   // Cancelled: its work was discarded on purpose, never done.
@@ -435,11 +442,13 @@ export type Tone =
 
 // taskTone is a task's state in that language. A task Djinn resumes runs; one waiting for its provider's limit to
 // reset holds still, as a paused one; one cut short and resumed as another task (forkedAs) is stopped, no alarm.
-// None of them is the person's move. A running watcher has its own tone: it sleeps until its command prints.
+// None of them is the person's move. A running watcher has its own tone: it sleeps until its command prints. A merge
+// that failed is red, unless a correction task fixes it while it works (fixedBy, fixerOf): orange, Djinn handles it.
 export function taskTone(
   task: Pick<Task, "status" | "resumeAfter"> &
     Partial<Pick<Task, "provider" | "integration">>,
   forkedAs = "",
+  fixedBy = "",
 ): Tone {
   const status = task.status;
   if (watcherRuns(task)) return "watching";
@@ -456,7 +465,7 @@ export function taskTone(
           return "running";
         case IntegrationState.CONFLICT:
         case IntegrationState.RED:
-          return "failed";
+          return fixedBy ? "fixing" : "failed";
         case IntegrationState.UNCOMMITTED:
           return "waiting";
         default:
@@ -496,25 +505,77 @@ export function isTaskMerging(
   return s === IntegrationState.PENDING || s === IntegrationState.INTEGRATING;
 }
 
+// mergeFailed tells a done task whose work failed to merge into its wish's integration branch: a conflict, or red
+// checks.
+function mergeFailed(
+  task: Pick<Task, "status"> & Partial<Pick<Task, "integration">>,
+): boolean {
+  const s = task.integration?.state;
+  return (
+    task.status === TaskStatus.DONE &&
+    (s === IntegrationState.CONFLICT || s === IntegrationState.RED)
+  );
+}
+
+// fixerOf is the correction task that fixes a done task's failed merge while it works, among the wish's tasks: Djinn
+// handles the failure, the window shows it orange. None, and the failure stays red, when no correction is under way:
+// none was started, it failed, was stopped, cancelled or dropped, or the attempts were spent and Djinn asked the
+// person (questionId). A correction done whose own merge failed in turn fixes it while a correction fixes that one.
+type Fixable = Pick<Task, "status"> & Partial<Pick<Task, "id" | "integration">>;
+
+export function fixerOf<T extends Fixable>(
+  task: Fixable,
+  tasks: readonly T[],
+): T | undefined {
+  const seen = new Set<string>();
+  const of = (x: Fixable): T | undefined => {
+    if (!mergeFailed(x)) return undefined;
+    const id = x.integration?.correctedBy ?? "";
+    if (!id || x.integration?.questionId || seen.has(id)) return undefined;
+    seen.add(id);
+    const fixer = tasks.find((other) => other.id === id);
+    switch (fixer?.status) {
+      case undefined:
+      case TaskStatus.FAILED:
+      case TaskStatus.STOPPED:
+      case TaskStatus.CANCELLED:
+      case TaskStatus.INTERRUPTED:
+        return undefined;
+      case TaskStatus.DONE:
+        // Done with no work recorded, Djinn drops it as a correction; done with its merge failed, it waits for its own.
+        if (!fixer.integration) return undefined;
+        return !mergeFailed(fixer) || of(fixer) ? fixer : undefined;
+      default:
+        return fixer;
+    }
+  };
+  return of(task);
+}
+
 // Running counts a wish's tasks whose process runs, apart: workers at work, and watchers that wait for their command to
 // print. A watcher is not work in progress: "1 running" for a PR watched alone said a worker ran. Work that merges
 // (isTaskMerging) is counted apart: no worker runs for it, and the load bar's count of workers never had it (W577:
 // 6 workers and 2 merges waiting read as "8 running" at a level that runs 6). Djinn is at work on it all the same: a
-// wish's tone counts it as running.
+// wish's tone counts it as running. Work whose merge failed and that a correction fixes (fixerOf) is counted apart too:
+// its correction runs, and counts with the running.
 export interface Running {
   running: number;
   watching: number;
   merging: number;
+  fixing: number;
 }
 
 export function runningOf(
   tasks: (Pick<Task, "status"> &
-    Partial<Pick<Task, "provider" | "integration">>)[],
+    Partial<Pick<Task, "id" | "provider" | "integration">>)[],
 ): Running {
   const live = tasks.filter((task) => task.status === TaskStatus.RUNNING);
   const watching = live.filter(watcherRuns).length;
   const merging = tasks.filter(isTaskMerging).length;
-  return { running: live.length - watching, watching, merging };
+  const fixing = tasks.filter(
+    (task) => mergeFailed(task) && fixerOf(task, tasks),
+  ).length;
+  return { running: live.length - watching, watching, merging, fixing };
 }
 
 export function taskFinished(status: TaskStatus): boolean {

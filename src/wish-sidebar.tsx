@@ -19,6 +19,7 @@ import {
   Plane,
   Plus,
   SquareTerminal,
+  Wrench,
 } from "lucide-react";
 import { type DragEvent, type KeyboardEvent, useRef, useState } from "react";
 
@@ -57,6 +58,8 @@ export interface WishCounts {
   running: number;
   watching: number;
   merging: number;
+  // Failed merges a correction task fixes (runningOf): Djinn's move, shown orange.
+  fixing?: number;
 }
 
 export function WishSidebar({
@@ -285,6 +288,14 @@ export function WishSidebar({
                     icon={GitMerge}
                     count={count.merging}
                     label={t("plan.merging_detail", { count: count.merging })}
+                  />
+                )}
+                {!!count.fixing && (
+                  <CountPill
+                    tone="fixing"
+                    icon={Wrench}
+                    count={count.fixing}
+                    label={t("plan.fixing_detail", { count: count.fixing })}
                   />
                 )}
                 {count.watching > 0 && (

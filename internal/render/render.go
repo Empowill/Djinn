@@ -95,6 +95,7 @@ const maxLastWord, maxEvent = 600, 280
 var icons = map[string]string{
 	"ok": "✓", "run": "", "wait": "?", "idle": "○", "bad": "!", "fail": "✕", "amber": "↺", "pause": "‖", "stop": "■", "dig": "⌕",
 	"human": "✋\ufe0e",
+	"fix":   "⚒\ufe0e", // A failed merge a correction fixes: orange as what waits, Djinn's move.
 	"later": "◷",
 }
 
@@ -534,7 +535,7 @@ func build(in Input) (*view, error) {
 			}
 		}
 		ct.Status, ct.StatusClass = status(t.GetStatus(), tr)
-		forked := ""
+		forked, fixing := "", false
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_RESUMING:
 			if t.GetResumeAfter() != nil {
@@ -550,6 +551,9 @@ func build(in Input) (*view, error) {
 				ct.Status, ct.StatusClass = tr("page.status_merging"), "run"
 			case planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, planv1.IntegrationState_INTEGRATION_STATE_RED:
 				ct.Status, ct.StatusClass = tr("page.status_merge_failed"), "fail"
+				if f := Fixer(t, exp.GetTasks()); f != nil {
+					ct.Status, ct.StatusClass, fixing = tr("page.status_fixing", "task", f.GetCode()), "fix", true
+				}
 			case planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
 				ct.Status, ct.StatusClass = tr("page.status_to_review"), "wait"
 			}
@@ -565,6 +569,9 @@ func build(in Input) (*view, error) {
 		}
 		ct.Wait = t.GetWaitReason()
 		ct.Work, ct.WorkClass = Work(t, func(id string) string { return tasks[id].GetCode() }, tr)
+		if fixing {
+			ct.WorkClass = "fix"
+		}
 		ct.Agent = strings.ToLower(strings.TrimPrefix(t.GetProvider().String(), "PROVIDER_"))
 		if t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED {
 			ct.Agent = "claude"
@@ -943,6 +950,49 @@ func ForkedAs(t *planv1.Task, tasks []*planv1.Task) string {
 		}
 	}
 	return ""
+}
+
+// mergeFailed tells a done task whose work failed to merge into its wish's integration branch: a conflict, or red
+// checks.
+func mergeFailed(t *planv1.Task) bool {
+	s := t.GetIntegration().GetState()
+	return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE &&
+		(s == planv1.IntegrationState_INTEGRATION_STATE_CONFLICT || s == planv1.IntegrationState_INTEGRATION_STATE_RED)
+}
+
+// Fixer is the correction task that fixes t's failed merge while it works, among tasks: Djinn handles the failure,
+// the page shows it being fixed, not failed. nil when no correction is under way: none was started, it failed, was
+// stopped, cancelled or dropped, or the attempts were spent and Djinn asked the person. A correction done whose own
+// merge failed in turn fixes it while a correction fixes that one. The window says the same (src/data/format.ts
+// fixerOf).
+func Fixer(t *planv1.Task, tasks []*planv1.Task) *planv1.Task {
+	seen := map[string]bool{}
+	var of func(x *planv1.Task) *planv1.Task
+	of = func(x *planv1.Task) *planv1.Task {
+		in := x.GetIntegration()
+		id := in.GetCorrectedBy()
+		if !mergeFailed(x) || id == "" || in.GetQuestionId() != "" || seen[id] {
+			return nil
+		}
+		seen[id] = true
+		i := slices.IndexFunc(tasks, func(o *planv1.Task) bool { return o.GetId() == id })
+		if i < 0 {
+			return nil
+		}
+		fixer := tasks[i]
+		switch fixer.GetStatus() {
+		case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED,
+			planv1.TaskStatus_TASK_STATUS_CANCELLED, planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			return nil
+		case planv1.TaskStatus_TASK_STATUS_DONE:
+			// Done with no work recorded, Djinn drops it as a correction; done with its merge failed, it waits for its own.
+			if fixer.GetIntegration() == nil || mergeFailed(fixer) && of(fixer) == nil {
+				return nil
+			}
+		}
+		return fixer
+	}
+	return of(t)
 }
 
 // TaskDealtWith tells whether a failed worker has been addressed: marked done, continued (or forked),

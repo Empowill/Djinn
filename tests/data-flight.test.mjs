@@ -12,6 +12,7 @@ export * from "@/src/data/journal.ts";
 export {
   cancelledText,
   deletedText,
+  fixerOf,
   isTaskMerging,
   runningOf,
   span,
@@ -368,7 +369,104 @@ test("work that merges counts as running: a worker at work, not a watcher", () =
       done(I.CONFLICT),
       { status: S.DONE },
     ]),
-    { running: 1, watching: 1, merging: 2 },
+    { running: 1, watching: 1, merging: 2, fixing: 0 },
+  );
+});
+
+test("a failed merge is being fixed while its correction works, failed when none does", () => {
+  const I = f.IntegrationState;
+  const S = f.TaskStatus;
+  // W1's merge failed; its correction is task c, in the state given.
+  const failed = (by, extra = {}) => ({
+    id: "t1",
+    code: "W1",
+    status: S.DONE,
+    integration: { state: I.CONFLICT, correctedBy: by, ...extra },
+  });
+  const correction = (status, integration) => ({
+    id: "c",
+    code: "W9",
+    status,
+    integration,
+  });
+  const fixer = (task, c) => f.fixerOf(task, [task, c])?.code ?? "";
+  for (const status of [S.PENDING, S.RUNNING, S.WAITING, S.PAUSED, S.RESUMING])
+    assert.equal(
+      fixer(failed("c"), correction(status)),
+      "W9",
+      `status ${status}`,
+    );
+  for (const status of [S.FAILED, S.STOPPED, S.CANCELLED, S.INTERRUPTED])
+    assert.equal(
+      fixer(failed("c"), correction(status)),
+      "",
+      `status ${status}`,
+    );
+  // Red checks too; not a merge that merges, nor one committed.
+  assert.equal(
+    fixer(
+      { ...failed("c"), integration: { state: I.RED, correctedBy: "c" } },
+      correction(S.RUNNING),
+    ),
+    "W9",
+  );
+  for (const state of [I.PENDING, I.INTEGRATING, I.COMMITTED, I.UNCOMMITTED])
+    assert.equal(
+      fixer(
+        { ...failed("c"), integration: { state, correctedBy: "c" } },
+        correction(S.RUNNING),
+      ),
+      "",
+      `state ${state}`,
+    );
+  // No correction, one not among the tasks, attempts spent (Djinn asked the person).
+  assert.equal(fixer(failed(""), correction(S.RUNNING)), "");
+  assert.equal(fixer(failed("gone"), correction(S.RUNNING)), "");
+  assert.equal(
+    fixer(failed("c", { questionId: "q1" }), correction(S.RUNNING)),
+    "",
+  );
+  // A correction done: its work merges, it fixes until it is in; its own merge failed, it fixes while its own
+  // correction does; with no work recorded, Djinn drops it.
+  assert.equal(
+    fixer(failed("c"), correction(S.DONE, { state: I.PENDING })),
+    "W9",
+  );
+  assert.equal(fixer(failed("c"), correction(S.DONE, { state: I.RED })), "");
+  assert.equal(fixer(failed("c"), correction(S.DONE)), "");
+  const own = { id: "c2", code: "W10", status: S.RUNNING };
+  const red = correction(S.DONE, { state: I.RED, correctedBy: "c2" });
+  assert.equal(f.fixerOf(failed("c"), [failed("c"), red, own])?.code, "W9");
+  // Corrections that point at each other fix nothing.
+  const loop = correction(S.DONE, { state: I.RED, correctedBy: "c" });
+  assert.equal(fixer(failed("c"), loop), "");
+
+  // The badge: orange, its words name the correction; red without one.
+  assert.equal(f.taskTone(failed("c"), "", "W9"), "fixing");
+  assert.equal(
+    f.taskStatusText(failed("c"), "", "W9"),
+    "Merge being fixed by W9",
+  );
+  assert.equal(f.taskTone(failed("c")), "failed");
+  assert.equal(f.taskStatusText(failed("c")), "Merge failed");
+  // A task that is not done keeps its state whatever its integration says.
+  assert.equal(
+    f.taskTone(
+      { status: S.FAILED, integration: { state: I.CONFLICT } },
+      "",
+      "W9",
+    ),
+    "failed",
+  );
+
+  // The counts: fixing apart from merging, the correction running with the running.
+  assert.deepEqual(
+    f.runningOf([
+      failed("c"),
+      correction(S.RUNNING),
+      { id: "t2", status: S.DONE, integration: { state: I.RED } },
+    ]),
+    { running: 1, watching: 0, merging: 0, fixing: 1 },
   );
 });
 

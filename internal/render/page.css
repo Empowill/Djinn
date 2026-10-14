@@ -92,7 +92,7 @@
 /* A class names a state; what carries it takes its colours. */
 .ok { --c: var(--ok); --c-soft: var(--ok-soft); }
 .run { --c: var(--run); --c-soft: var(--run-soft); }
-.wait { --c: var(--wait); --c-soft: var(--wait-soft); }
+.wait, .fix { --c: var(--wait); --c-soft: var(--wait-soft); }
 .amber { --c: var(--amber); --c-soft: var(--amber-soft); }
 .bad, .fail { --c: var(--bad); --c-soft: var(--bad-soft); }
 .idle, .stop, .later { --c: var(--idle); --c-soft: var(--idle-soft); }

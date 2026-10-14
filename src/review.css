@@ -69,6 +69,10 @@ html[data-theme="light"] {
 .tone-failed {
   --tone: var(--st-failed);
 }
+/* A failed merge an agent fixes: orange as what waits, a wrench and its words say no one waits for you. */
+.tone-fixing {
+  --tone: var(--st-waiting);
+}
 .tone-interrupted {
   --tone: var(--st-interrupted);
 }
@@ -1131,12 +1135,17 @@ html[data-motion="reduced"] .question-wisp {
 .review .wish-task-work.work-failed {
   color: var(--st-failed);
 }
-.review .wish-task-closed .task-link {
+.review .wish-task-work.work-fixing {
+  color: var(--st-waiting);
+}
+.review .wish-task-closed .task-link,
+.review .wish-task-work .task-link {
   padding: 0;
   color: inherit;
   text-decoration: underline;
 }
-.review .wish-task-closed .task-link:hover {
+.review .wish-task-closed .task-link:hover,
+.review .wish-task-work .task-link:hover {
   color: var(--accent);
 }
 .wish-task-done {

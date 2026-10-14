@@ -14,6 +14,7 @@ import {
   ScrollText,
   Sparkles,
   Trash2,
+  Wrench,
 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import {
@@ -77,6 +78,7 @@ import {
   allowanceOf,
   deletedText,
   firstLine,
+  fixerOf,
   MAX_ACTIVE,
   isActive,
   isPrincipal,
@@ -225,7 +227,7 @@ export function WishView({
     detail.blocks,
     decisionItems.length,
   ]);
-  const { running, watching, merging } = runningOf(detail.tasks);
+  const { running, watching, merging, fixing } = runningOf(detail.tasks);
   const done = workDoneCount(detail.tasks);
   // The azimas' progress, then the work's: the azimas are not counted as tasks.
   const azimaProgress = azimasDone(detail.tasks);
@@ -445,6 +447,7 @@ export function WishView({
           task={task}
           codes={codes}
           forkedAs={forkedAs(task, detail.tasks)}
+          fixedBy={fixerOf(task, detail.tasks)?.code}
           decision={decisionOf(task, decisions)}
           focused={focus === task.id}
           onDecision={handleDecision}
@@ -986,6 +989,16 @@ export function WishView({
                     label={t("plan.merging_detail", { count: merging })}
                   >
                     {t("pill.merging")}
+                  </CountPill>
+                )}
+                {fixing > 0 && (
+                  <CountPill
+                    tone="fixing"
+                    icon={Wrench}
+                    count={fixing}
+                    label={t("plan.fixing_detail", { count: fixing })}
+                  >
+                    {t("pill.fixing")}
                   </CountPill>
                 )}
                 {watching > 0 && (
