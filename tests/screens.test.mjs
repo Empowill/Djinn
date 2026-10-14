@@ -307,27 +307,53 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   // A paused wish goes first with its button.
   assert.equal(html.match(/Make it the first active wish/g).length / 2, 1);
   assert.match(html, /mission-nav wish-nav selected/);
-  // Each wish says at a glance what waits and what runs: an icon and a count, with their words.
-  const counted = s.renderToStaticMarkup(
-    h(s.WishSidebar, {
-      wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
-      projects: [],
-      counts: { w1: { questions: 2, running: 1, watching: 1 } },
-      onSelectPlan() {},
-      selectedWishId: "",
-      selectedProjectId: "",
-      collapsed: false,
-      onSelectWish() {},
-      onSelectProject() {},
-      onMove() {},
-      onNewProject() {},
-    }),
+  // An active wish takes a second line under its title, its rank at the end; a paused one keeps a single line.
+  assert.equal(html.match(/class="wish-counts"/g).length, 2);
+  assert.match(
+    html,
+    /<span>Polish the brass<\/span><span class="wish-counts">/,
   );
-  assert.match(counted, /wish-tone tone-waiting/);
-  assert.match(counted, /aria-label="2 questions wait for your answer."/);
-  assert.match(counted, /aria-label="1 running"[^>]*><span class="live-dot"/);
+  assert.match(html, /<span>Trim the wick<\/span><\/button>/);
+  // A wish ready to grant says it there, its icon the clipboard to check, not a raised hand.
+  assert.match(html, /wish-tone tone-proof/);
+  assert.match(html, />ready to grant<\/span><small class="wish-rank">/);
+  // Each wish says at a glance what waits and what runs: an icon and a count, with their words, on its second line.
+  const sidebar = (collapsed) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
+        projects: [],
+        counts: { w1: { questions: 2, running: 1, watching: 1, merging: 0 } },
+        onSelectPlan() {},
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  const counted = sidebar(false);
+  const row = counted.slice(counted.indexOf("wish-nav"));
+  assert.match(row, /aria-label="2 questions wait for your answer."/);
+  assert.match(row, /aria-label="1 running"[^>]*><span class="live-dot"/);
   // A watcher is counted apart: it waits for its command to print, it does not work.
-  assert.match(counted, /count-pill tone-watching" title="1 watching"/);
+  assert.match(row, /count-pill tone-watching" title="1 watching"/);
+  // What waits for you first, then what works, then what watches, then the rank.
+  const at = (text) => row.indexOf(text);
+  assert.ok(at('title="2 questions') < at('title="1 running"'));
+  assert.ok(at('title="1 running"') < at('title="1 watching"'));
+  assert.ok(at('title="1 watching"') < at("wish-rank"));
+  // The questions have their count: no raised hand repeats it beside the title, nor on the count (Q01). The icon
+  // says what the wish does.
+  assert.match(row, /wish-tone tone-running/);
+  assert.match(row, /lucide-message-circle-question/);
+  assert.doesNotMatch(row, /lucide-hand/);
+  // Folded to the rail, the icon is all that shows: it keeps the hand, and no count.
+  const rail = sidebar(true);
+  assert.match(rail, /wish-tone tone-waiting/);
+  assert.doesNotMatch(rail, /wish-counts/);
   // A wish whose only process is a watcher is watching, not running.
   const watched = s.renderToStaticMarkup(
     h(s.WishSidebar, {

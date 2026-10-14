@@ -2,8 +2,9 @@
 // new inbox items), the Hourglass's entry below it (the live metrics, hourglass.tsx), the wishes, the active ones by
 // rank (drag one up or down, or Alt+Arrow) and how many of the three places they take, then the paused ones and the
 // granted ones; and the projects, each with its branches out of sync with their remote (project-sync.tsx). The wishes'
-// list shows three rows and scrolls under the pointer. A paused wish dragged onto an active one, or sent first with its
-// button, becomes active there: the wish pushed past the third place is paused.
+// list shows the active ones, each with its counts on a second line, and three rows more; it scrolls under the pointer.
+// A paused wish dragged onto an active one, or sent first with its button, becomes active there: the wish pushed past
+// the third place is paused.
 import {
   ArrowUpToLine,
   ChevronDown,
@@ -13,6 +14,7 @@ import {
   GripVertical,
   Hourglass,
   Inbox,
+  MessageCircleQuestion,
   Plane,
   Plus,
   SquareTerminal,
@@ -102,6 +104,16 @@ export function WishSidebar({
       count.running + count.merging,
       count.watching,
     );
+    // Unfolded, an active wish takes a second line under its title: what waits for you, then what works, then what
+    // watches, a count at zero left out, and its rank at the end. Its icon then says what it does: the questions have
+    // their count, and no raised hand repeats it (Q01). Folded to the rail, the icon is all that shows: it keeps the hand.
+    const counted = !!rank && !collapsed;
+    const shown =
+      tone === "waiting" && counted
+        ? wish.ready
+          ? "proof"
+          : wishTone(wish, 0, count.running + count.merging, count.watching)
+        : tone;
     const keys = (event: KeyboardEvent) => {
       if (!rank || !event.altKey) return;
       if (event.key === "ArrowUp" && rank > 1) onMove(wish.id, rank - 1);
@@ -113,7 +125,7 @@ export function WishSidebar({
     const row = (
       <button
         key={wish.id}
-        className={`mission-nav wish-nav ${wish.id === selectedWishId ? "selected" : ""} ${dragged === wish.id ? "dragged" : ""}`}
+        className={`mission-nav wish-nav ${wish.id === selectedWishId ? "selected" : ""} ${dragged === wish.id ? "dragged" : ""} ${counted ? "counted" : ""}`}
         onClick={() => onSelectWish(wish.id)}
         onKeyDown={keys}
         title={
@@ -138,47 +150,58 @@ export function WishSidebar({
           if (rank && id && id !== wish.id) onMove(id, rank);
         }}
       >
-        <span className={`wish-tone tone-${tone}`}>
-          <ToneIcon tone={tone} size={12} />
+        <span className={`wish-tone tone-${shown}`}>
+          <ToneIcon tone={shown} size={12} />
         </span>
         {!collapsed && (
           <>
             <span>{wish.title}</span>
-            {count.questions > 0 && (
-              <CountPill
-                tone="waiting"
-                count={count.questions}
-                label={t("wish.questions_wait", { count: count.questions })}
-              />
+            {counted && (
+              <span className="wish-counts">
+                {count.questions > 0 && (
+                  <CountPill
+                    tone="waiting"
+                    icon={MessageCircleQuestion}
+                    count={count.questions}
+                    label={t("wish.questions_wait", { count: count.questions })}
+                  />
+                )}
+                {count.running > 0 && (
+                  <CountPill
+                    tone="running"
+                    count={count.running}
+                    label={t("plan.running", { count: count.running })}
+                  />
+                )}
+                {count.merging > 0 && (
+                  <CountPill
+                    tone="running"
+                    icon={GitMerge}
+                    count={count.merging}
+                    label={t("plan.merging_detail", { count: count.merging })}
+                  />
+                )}
+                {count.watching > 0 && (
+                  <CountPill
+                    tone="watching"
+                    count={count.watching}
+                    label={t("plan.watching", { count: count.watching })}
+                  />
+                )}
+                {wish.ready && (
+                  <span
+                    className="wish-ready tone-proof"
+                    title={t("wish.ready_title")}
+                  >
+                    {t("sidebar.ready")}
+                  </span>
+                )}
+                {/* A rank, never a count: "#3" after the pills, which count (W507). */}
+                <small className="wish-rank">
+                  <GripVertical size={11} aria-hidden="true" />#{rank}
+                </small>
+              </span>
             )}
-            {count.running > 0 && (
-              <CountPill
-                tone="running"
-                count={count.running}
-                label={t("plan.running", { count: count.running })}
-              />
-            )}
-            {count.merging > 0 && (
-              <CountPill
-                tone="running"
-                icon={GitMerge}
-                count={count.merging}
-                label={t("plan.merging_detail", { count: count.merging })}
-              />
-            )}
-            {count.watching > 0 && (
-              <CountPill
-                tone="watching"
-                count={count.watching}
-                label={t("plan.watching", { count: count.watching })}
-              />
-            )}
-            {/* A rank, never a count: "#3" beside the pills, which count (W507). */}
-            {rank ? (
-              <small className="wish-rank">
-                <GripVertical size={11} aria-hidden="true" />#{rank}
-              </small>
-            ) : null}
           </>
         )}
       </button>

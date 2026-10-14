@@ -36,6 +36,7 @@
 }
 .wish-rank {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 2px;
   margin-left: auto;
@@ -55,10 +56,45 @@
   letter-spacing: 0.5px;
   color: var(--muted-dim);
 }
-/* Three rows show; the others scroll under the pointer. */
+/* An active wish takes a second line: its counts and its rank, under the title, past the icon (14px and the 9px gap).
+   Four counts at once wrap rather than hide the rank. */
+.wish-nav.counted {
+  flex-wrap: wrap;
+  row-gap: 5px;
+}
+.wish-counts {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+  min-height: 18px;
+  padding-left: 23px;
+}
+/* On that line a count is its icon and its number in its state's colour, with no pill around it: four fit beside the
+   rank. The rank, light, closes the line. */
+.mission-nav .wish-counts .count-pill {
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.mission-nav .wish-counts .wish-rank {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.wish-ready {
+  color: var(--tone);
+  font: var(--font-size-body) var(--mono);
+  white-space: nowrap;
+}
+/* The three active wishes with their counts, the paused ones' label and three more rows show; the others scroll under
+   the pointer. A short window takes from the bar before the projects go under 65px (.mission-list). */
 .wish-list {
-  flex: 0 0 auto;
-  max-height: calc(3 * 36px + 14px);
+  flex: 0 1 auto;
+  max-height: calc(3 * 62px + 33px + 3 * 39px);
   overflow-y: hidden;
   scrollbar-gutter: stable;
 }
