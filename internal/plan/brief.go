@@ -1096,18 +1096,14 @@ func BuildGlobalBrief(ctx context.Context, r store.Reader, home string) (string,
 		return "", err
 	}
 	actives := Ranked(allWishes)
-	var paused, granted []*planv1.Wish
+	// The paused wishes in the person's order, as the window lists them.
+	paused := Shelf(allWishes, planv1.WishState_WISH_STATE_PAUSED)
+	var granted []*planv1.Wish
 	for _, w := range allWishes {
-		switch w.GetState() {
-		case planv1.WishState_WISH_STATE_PAUSED:
-			paused = append(paused, w)
-		case planv1.WishState_WISH_STATE_GRANTED:
+		if w.GetState() == planv1.WishState_WISH_STATE_GRANTED {
 			granted = append(granted, w)
 		}
 	}
-	slices.SortStableFunc(paused, func(a, b *planv1.Wish) int {
-		return cmp.Compare(a.GetRank(), b.GetRank())
-	})
 	slices.SortStableFunc(granted, func(a, b *planv1.Wish) int {
 		at, bt := time.Time{}, time.Time{}
 		if a.GetGrantTime() != nil {

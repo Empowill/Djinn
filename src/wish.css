@@ -27,12 +27,37 @@
   letter-spacing: 0.02em;
 }
 
-/* The side panel: ranks, the three places, the sub-lists. */
+/* The side panel: ranks, the three places, the sub-lists. Each wish is dragged by its grip, on its left: dim until the
+   pointer is on the row; 12px of icon in 8px, as its dots are narrow, close to the wish's icon. */
 .wish-nav[draggable="true"] {
   cursor: grab;
 }
 .wish-nav.dragged {
   opacity: 0.4;
+}
+.wish-grip {
+  display: inline-flex;
+  flex-shrink: 0;
+  justify-content: center;
+  width: 8px;
+  margin: 0 -4px;
+  color: var(--muted-dim);
+  opacity: 0.5;
+}
+.wish-nav:hover .wish-grip,
+.wish-nav:focus-visible .wish-grip {
+  opacity: 1;
+}
+/* Where a dragged wish would land: a thin line between two wishes, over the edge they share. */
+.wish-drop-line {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
 }
 .wish-rank {
   display: inline-flex;
@@ -56,8 +81,8 @@
   letter-spacing: 0.5px;
   color: var(--muted-dim);
 }
-/* An active wish takes a second line: its counts and its rank, under the title, past the icon (14px and the 9px gap).
-   Four counts at once wrap rather than hide the rank. */
+/* An active wish takes a second line: its counts and its rank, under the title, past the grip (8px, less 8px of margins,
+   and the 9px gap) and the icon (14px and the 9px gap). Four counts at once wrap rather than hide the rank. */
 .wish-nav.counted {
   flex-wrap: wrap;
   row-gap: 5px;
@@ -70,7 +95,7 @@
   gap: 4px 10px;
   min-width: 0;
   min-height: 18px;
-  padding-left: 23px;
+  padding-left: 32px;
 }
 /* On that line a count is its icon and its number in its state's colour, with no pill around it: four fit beside the
    rank. The rank, light, closes the line. */
@@ -93,6 +118,7 @@
 /* The three active wishes with their counts, the paused ones' label and three more rows show; the others scroll under
    the pointer. A short window takes from the bar before the projects go under 65px (.mission-list). */
 .wish-list {
+  position: relative;
   flex: 0 1 auto;
   max-height: calc(3 * 62px + 33px + 3 * 39px);
   overflow-y: hidden;

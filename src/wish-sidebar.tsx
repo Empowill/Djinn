@@ -1,10 +1,11 @@
 // The side panel's lists, read from the services: the flying carpet's entry with what waits for you there (questions,
 // new inbox items), the Hourglass's entry below it (the live metrics, hourglass.tsx), the wishes, the active ones by
-// rank (drag one up or down, or Alt+Arrow) and how many of the three places they take, then the paused ones and the
-// granted ones; and the projects, each with its branches out of sync with their remote (project-sync.tsx). The wishes'
-// list shows the active ones, each with its counts on a second line, and three rows more; it scrolls under the pointer.
-// A paused wish dragged onto an active one, or sent first with its button, becomes active there: the wish pushed past
-// the third place is paused.
+// rank and how many of the three places they take, then the paused ones and the granted ones, each list in its own
+// order; and the projects, each with its branches out of sync with their remote (project-sync.tsx). The wishes' list
+// shows the active ones, each with its counts on a second line, and three rows more; it scrolls under the pointer.
+// Every wish is dragged by its grip, on its left, or moved with Alt+Arrow, within its list; while it is dragged, a thin
+// line shows where it would land. A paused or granted wish dropped among the active ones, or sent first with its
+// button, becomes active there (Q01): three being active, the last one is paused, first among the paused ones.
 import {
   ArrowUpToLine,
   ChevronDown,
@@ -19,7 +20,7 @@ import {
   Plus,
   SquareTerminal,
 } from "lucide-react";
-import { type KeyboardEvent, useState } from "react";
+import { type DragEvent, type KeyboardEvent, useRef, useState } from "react";
 
 import type { Project, ProjectSync, Wish } from "../gen/ts/plan/v1/plan_pb";
 import { WishState } from "../gen/ts/plan/v1/plan_pb";
@@ -29,6 +30,25 @@ import { useOpenTerminal } from "./lead-terminal";
 import { CARPET_DIGIT, HOURGLASS_DIGIT, usePageShortcut } from "./page-keys";
 import { SyncLines } from "./project-sync";
 import { CountPill, ToneIcon } from "./status";
+
+// The wishes' lists: a wish is dragged within its own, and from any into the active one.
+type Zone = "active" | "paused" | "granted";
+
+const zoneOf = (wish: Wish): Zone =>
+  isActive(wish)
+    ? "active"
+    : wish.state === WishState.GRANTED
+      ? "granted"
+      : "paused";
+
+// Where the dragged wish would land: its list, the gap it falls into (0 before the first wish, the list's length after
+// the last), its rank or place once there, and the height of the line that shows it in the wishes' list.
+interface Landing {
+  zone: Zone;
+  gap: number;
+  to: number;
+  top: number;
+}
 
 // What the side panel counts in a wish.
 export interface WishCounts {
@@ -54,6 +74,7 @@ export function WishSidebar({
   onSelectWish,
   onSelectProject,
   onMove,
+  onReorder,
   onNewProject,
   onPush,
 }: {
@@ -74,8 +95,10 @@ export function WishSidebar({
   collapsed: boolean;
   onSelectWish: (id: string) => void;
   onSelectProject: (id: string) => void;
-  // Moves a wish to a rank, from 1: a paused one becomes active there.
+  // Moves a wish to a rank, from 1: a paused or granted one becomes active there.
   onMove: (wishId: string, to: number) => void;
+  // Moves a paused or granted wish to a place in its own list, from 1.
+  onReorder: (wishId: string, to: number) => void;
   onNewProject: () => void;
   // Pushes one branch of the project, out of sync with its remote.
   onPush?: (projectId: string, sync: ProjectSync) => Promise<unknown> | void;
@@ -86,12 +109,74 @@ export function WishSidebar({
   const [showGranted, setShowGranted] = useState(false);
   // Where djinn serves the page, a project opens a terminal at its root, in a tab of its own.
   const openTerminal = useOpenTerminal();
+  const lists: Record<Zone, Wish[]> = { active, paused, granted };
   const [dragged, setDragged] = useState("");
+  const [landing, setLanding] = useState<Landing>();
+  // Each row of a wish by its id, and the line that says no wish is active: where a drop line goes.
+  const rows = useRef(new Map<string, HTMLElement>());
+  const noActive = useRef<HTMLParagraphElement>(null);
   // The pages' shortcuts, named in their entries' tooltips as this keyboard writes them (Ctrl & on AZERTY).
   const carpetKey = usePageShortcut(CARPET_DIGIT);
   const hourglassKey = usePageShortcut(HOURGLASS_DIGIT);
 
+  // Where the dragged wish lands in the gap of zone, or nothing when it cannot go there or would not move: a wish goes
+  // into the active list or within its own, at the third place at most among the active ones.
+  const land = (zone: Zone, gap: number): Landing | undefined => {
+    const from = wishes.find((w) => w.id === dragged);
+    if (!from || (zone !== "active" && zone !== zoneOf(from))) return;
+    const list = lists[zone];
+    const at = list.findIndex((w) => w.id === dragged);
+    gap = Math.min(gap, list.length);
+    if (at < 0 && zone === "active") gap = Math.min(gap, MAX_ACTIVE - 1);
+    if (at >= 0 && (gap === at || gap === at + 1)) return;
+    // The line sits on the edge between two rows: the top of the row after the gap, or the bottom of the last one; never
+    // above the list's top, which would cut it.
+    const after = list[gap] && rows.current.get(list[gap].id);
+    const before = gap > 0 ? rows.current.get(list[gap - 1].id) : undefined;
+    const top = after
+      ? after.offsetTop
+      : before
+        ? before.offsetTop + before.offsetHeight
+        : (noActive.current?.offsetTop ?? 0);
+    return {
+      zone,
+      gap,
+      to: at >= 0 && gap > at ? gap : gap + 1,
+      top: Math.max(top, 1),
+    };
+  };
+  // Over a row, the pointer's half says which gap it points at: above the row, or below it.
+  const over = (event: DragEvent<HTMLElement>, zone: Zone, index: number) => {
+    if (!dragged) return;
+    event.stopPropagation();
+    const box = event.currentTarget.getBoundingClientRect();
+    const next = land(
+      zone,
+      index + (event.clientY > box.top + box.height / 2 ? 1 : 0),
+    );
+    if (
+      next?.zone !== landing?.zone ||
+      next?.gap !== landing?.gap ||
+      next?.top !== landing?.top
+    )
+      setLanding(next);
+    if (!next) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  };
+  const drop = (event: DragEvent) => {
+    event.preventDefault();
+    if (dragged && landing) {
+      if (landing.zone === "active") onMove(dragged, landing.to);
+      else onReorder(dragged, landing.to);
+    }
+    setDragged("");
+    setLanding(undefined);
+  };
+
   const item = (wish: Wish, rank?: number) => {
+    const zone = zoneOf(wish);
+    const index = lists[zone].indexOf(wish);
     const count = counts[wish.id] ?? {
       questions: 0,
       running: 0,
@@ -114,48 +199,60 @@ export function WishSidebar({
           ? "proof"
           : wishTone(wish, 0, count.running + count.merging, count.watching)
         : tone;
+    // Alt+Arrow moves a wish one step within its list: its rank, or its place among the paused or granted ones.
     const keys = (event: KeyboardEvent) => {
-      if (!rank || !event.altKey) return;
-      if (event.key === "ArrowUp" && rank > 1) onMove(wish.id, rank - 1);
-      else if (event.key === "ArrowDown" && rank < active.length)
-        onMove(wish.id, rank + 1);
+      if (!event.altKey) return;
+      const move = rank ? onMove : onReorder;
+      const length = lists[zone].length;
+      if (event.key === "ArrowUp" && index > 0) move(wish.id, index);
+      else if (event.key === "ArrowDown" && index < length - 1)
+        move(wish.id, index + 2);
       else return;
       event.preventDefault();
     };
+    // The row that takes the drag: the paused wish's, with its button, or the wish's own.
+    const target = {
+      ref: (el: HTMLElement | null) => {
+        if (el) rows.current.set(wish.id, el);
+        else rows.current.delete(wish.id);
+      },
+      onDragOver: (event: DragEvent<HTMLElement>) => over(event, zone, index),
+    };
+    const wrapped = wish.state === WishState.PAUSED && !collapsed;
     const row = (
       <button
         key={wish.id}
+        {...(wrapped ? {} : target)}
         className={`mission-nav wish-nav ${wish.id === selectedWishId ? "selected" : ""} ${dragged === wish.id ? "dragged" : ""} ${counted ? "counted" : ""}`}
         onClick={() => onSelectWish(wish.id)}
         onKeyDown={keys}
         title={
           rank
             ? t("sidebar.wish_rank", { rank, title: wish.title })
-            : wish.title
+            : t("sidebar.wish_place", { title: wish.title })
         }
-        draggable={!!rank || wish.state === WishState.PAUSED}
+        draggable
         onDragStart={(event) => {
           event.dataTransfer.setData("text/plain", wish.id);
           event.dataTransfer.effectAllowed = "move";
           setDragged(wish.id);
         }}
-        onDragEnd={() => setDragged("")}
-        onDragOver={(event) => {
-          if (rank && dragged) event.preventDefault();
-        }}
-        onDrop={(event) => {
-          event.preventDefault();
-          const id = event.dataTransfer.getData("text/plain");
+        onDragEnd={() => {
           setDragged("");
-          if (rank && id && id !== wish.id) onMove(id, rank);
+          setLanding(undefined);
         }}
       >
+        {!collapsed && (
+          <span className="wish-grip" aria-hidden="true">
+            <GripVertical size={12} />
+          </span>
+        )}
         <span className={`wish-tone tone-${shown}`}>
           <ToneIcon tone={shown} size={12} />
         </span>
         {!collapsed && (
           <>
-            <span>{wish.title}</span>
+            <span className="wish-title">{wish.title}</span>
             {counted && (
               <span className="wish-counts">
                 {count.questions > 0 && (
@@ -197,18 +294,16 @@ export function WishSidebar({
                   </span>
                 )}
                 {/* A rank, never a count: "#3" after the pills, which count (W507). */}
-                <small className="wish-rank">
-                  <GripVertical size={11} aria-hidden="true" />#{rank}
-                </small>
+                <small className="wish-rank">#{rank}</small>
               </span>
             )}
           </>
         )}
       </button>
     );
-    if (wish.state !== WishState.PAUSED || collapsed) return row;
+    if (!wrapped) return row;
     return (
-      <div key={wish.id} className="wish-row">
+      <div key={wish.id} className="wish-row" {...target}>
         {row}
         <button
           className="icon-button wish-first"
@@ -285,10 +380,26 @@ export function WishSidebar({
           </span>
         )}
       </div>
-      <div className="mission-list wish-list">
+      <div
+        className="mission-list wish-list"
+        onDragOver={(event) => {
+          if (dragged && landing) event.preventDefault();
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node))
+            setLanding(undefined);
+        }}
+        onDrop={drop}
+      >
         {active.map((wish, i) => item(wish, wish.rank || i + 1))}
         {!active.length && !collapsed && (
-          <p className="project-empty">{t("sidebar.no_active")}</p>
+          <p
+            ref={noActive}
+            className="project-empty"
+            onDragOver={(event) => over(event, "active", 0)}
+          >
+            {t("sidebar.no_active")}
+          </p>
         )}
         {paused.length > 0 && (
           <>
@@ -318,6 +429,13 @@ export function WishSidebar({
             )}
             {showGranted && granted.map((wish) => item(wish))}
           </>
+        )}
+        {landing && (
+          <div
+            className="wish-drop-line"
+            style={{ top: landing.top }}
+            aria-hidden="true"
+          />
         )}
       </div>
       <div className="sidebar-section-label project-section-label">

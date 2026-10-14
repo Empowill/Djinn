@@ -167,7 +167,8 @@ func TestThreeWishes(t *testing.T) {
 	if err != nil || a.Msg.GetWish().GetGrantTime() != nil || a.Msg.GetWish().GetRank() != 3 {
 		t.Errorf("activate a granted wish: %v, %v", a, err)
 	}
-	if got := order(c.list(t)); got != "D:ACTIVE1 C:ACTIVE2 A:ACTIVE3 B:PAUSED E:PAUSED" {
+	// E, pushed past the third place, comes first among the paused wishes.
+	if got := order(c.list(t)); got != "D:ACTIVE1 C:ACTIVE2 A:ACTIVE3 E:PAUSED B:PAUSED" {
 		t.Errorf("list = %s", got)
 	}
 }

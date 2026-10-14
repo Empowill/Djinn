@@ -142,6 +142,8 @@ const (
 	WishServiceDeleteProcedure = "/plan.v1.WishService/Delete"
 	// WishServiceMoveProcedure is the fully-qualified name of the WishService's Move RPC.
 	WishServiceMoveProcedure = "/plan.v1.WishService/Move"
+	// WishServiceReorderProcedure is the fully-qualified name of the WishService's Reorder RPC.
+	WishServiceReorderProcedure = "/plan.v1.WishService/Reorder"
 	// WishServiceRenderProcedure is the fully-qualified name of the WishService's Render RPC.
 	WishServiceRenderProcedure = "/plan.v1.WishService/Render"
 	// WishServiceSyncProcedure is the fully-qualified name of the WishService's Sync RPC.
@@ -1106,7 +1108,7 @@ type WishServiceClient interface {
 	// Make a wish.
 	Make(context.Context, *connect.Request[v1.WishServiceMakeRequest]) (*connect.Response[v1.WishServiceMakeResponse], error)
 	// List the wishes: the active ones by rank, the first has priority; then the paused ones and the granted ones,
-	// the most recent last.
+	// each in its own order (djinn wish reorder), the one paused or granted last first.
 	List(context.Context, *connect.Request[v1.WishServiceListRequest]) (*connect.Response[v1.WishServiceListResponse], error)
 	// Export a wish to a file, to open it on another machine: its plan, questions, decisions, blocks and journal.
 	// Never code, which travels through Git, never a secret, never a local path: projects are named by their name
@@ -1159,6 +1161,9 @@ type WishServiceClient interface {
 	// Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
 	// there, the third place at most, and the wish it pushes past the third place is paused.
 	Move(context.Context, *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error)
+	// Move a paused or granted wish to another place in the list of the wishes of its state: --to 1 puts it first. It
+	// stays paused or granted: djinn wish move makes it active.
+	Reorder(context.Context, *connect.Request[v1.WishServiceReorderRequest]) (*connect.Response[v1.WishServiceReorderResponse], error)
 	// Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
 	// for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no
 	// local path.
@@ -1303,6 +1308,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Move")),
 			connect.WithClientOptions(opts...),
 		),
+		reorder: connect.NewClient[v1.WishServiceReorderRequest, v1.WishServiceReorderResponse](
+			httpClient,
+			baseURL+WishServiceReorderProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Reorder")),
+			connect.WithClientOptions(opts...),
+		),
 		render: connect.NewClient[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse](
 			httpClient,
 			baseURL+WishServiceRenderProcedure,
@@ -1350,6 +1361,7 @@ type wishServiceClient struct {
 	activate       *connect.Client[v1.WishServiceActivateRequest, v1.WishServiceActivateResponse]
 	delete         *connect.Client[v1.WishServiceDeleteRequest, v1.WishServiceDeleteResponse]
 	move           *connect.Client[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse]
+	reorder        *connect.Client[v1.WishServiceReorderRequest, v1.WishServiceReorderResponse]
 	render         *connect.Client[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse]
 	sync           *connect.Client[v1.WishServiceSyncRequest, v1.WishServiceSyncResponse]
 	route          *connect.Client[v1.WishServiceRouteRequest, v1.WishServiceRouteResponse]
@@ -1446,6 +1458,11 @@ func (c *wishServiceClient) Move(ctx context.Context, req *connect.Request[v1.Wi
 	return c.move.CallUnary(ctx, req)
 }
 
+// Reorder calls plan.v1.WishService.Reorder.
+func (c *wishServiceClient) Reorder(ctx context.Context, req *connect.Request[v1.WishServiceReorderRequest]) (*connect.Response[v1.WishServiceReorderResponse], error) {
+	return c.reorder.CallUnary(ctx, req)
+}
+
 // Render calls plan.v1.WishService.Render.
 func (c *wishServiceClient) Render(ctx context.Context, req *connect.Request[v1.WishServiceRenderRequest]) (*connect.Response[v1.WishServiceRenderResponse], error) {
 	return c.render.CallUnary(ctx, req)
@@ -1471,7 +1488,7 @@ type WishServiceHandler interface {
 	// Make a wish.
 	Make(context.Context, *connect.Request[v1.WishServiceMakeRequest]) (*connect.Response[v1.WishServiceMakeResponse], error)
 	// List the wishes: the active ones by rank, the first has priority; then the paused ones and the granted ones,
-	// the most recent last.
+	// each in its own order (djinn wish reorder), the one paused or granted last first.
 	List(context.Context, *connect.Request[v1.WishServiceListRequest]) (*connect.Response[v1.WishServiceListResponse], error)
 	// Export a wish to a file, to open it on another machine: its plan, questions, decisions, blocks and journal.
 	// Never code, which travels through Git, never a secret, never a local path: projects are named by their name
@@ -1524,6 +1541,9 @@ type WishServiceHandler interface {
 	// Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
 	// there, the third place at most, and the wish it pushes past the third place is paused.
 	Move(context.Context, *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error)
+	// Move a paused or granted wish to another place in the list of the wishes of its state: --to 1 puts it first. It
+	// stays paused or granted: djinn wish move makes it active.
+	Reorder(context.Context, *connect.Request[v1.WishServiceReorderRequest]) (*connect.Response[v1.WishServiceReorderResponse], error)
 	// Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
 	// for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no
 	// local path.
@@ -1664,6 +1684,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Move")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceReorderHandler := connect.NewUnaryHandler(
+		WishServiceReorderProcedure,
+		svc.Reorder,
+		connect.WithSchema(wishServiceMethods.ByName("Reorder")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceRenderHandler := connect.NewUnaryHandler(
 		WishServiceRenderProcedure,
 		svc.Render,
@@ -1726,6 +1752,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceDeleteHandler.ServeHTTP(w, r)
 		case WishServiceMoveProcedure:
 			wishServiceMoveHandler.ServeHTTP(w, r)
+		case WishServiceReorderProcedure:
+			wishServiceReorderHandler.ServeHTTP(w, r)
 		case WishServiceRenderProcedure:
 			wishServiceRenderHandler.ServeHTTP(w, r)
 		case WishServiceSyncProcedure:
@@ -1813,6 +1841,10 @@ func (UnimplementedWishServiceHandler) Delete(context.Context, *connect.Request[
 
 func (UnimplementedWishServiceHandler) Move(context.Context, *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Move is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Reorder(context.Context, *connect.Request[v1.WishServiceReorderRequest]) (*connect.Response[v1.WishServiceReorderResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Reorder is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Render(context.Context, *connect.Request[v1.WishServiceRenderRequest]) (*connect.Response[v1.WishServiceRenderResponse], error) {

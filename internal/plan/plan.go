@@ -715,8 +715,8 @@ func MadeLine(wish *planv1.Wish, provisional bool) string {
 		"request whole.", wish.GetId())
 }
 
-// makeWish stores the wish req asks for in tx: last by rank among the active ones, or paused, with its request in a
-// creation block. Its texts are in language. The caller journals the command, whose identifier the wish takes.
+// makeWish stores the wish req asks for in tx: last by rank among the active ones, or first among the paused ones,
+// with its request in a creation block. Its texts are in language. The caller journals the command, whose identifier the wish takes.
 func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest, language string) (*planv1.Wish, error) {
 	title := req.GetTitle()
 	if title == "" {
@@ -753,9 +753,16 @@ func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequ
 	if err := integrationBranches(ctx, tx, wish); err != nil {
 		return nil, err
 	}
-	if req.GetPaused() {
+	// A wish made paused comes first among the paused ones.
+	paused := func() (*planv1.Wish, error) {
 		wish.State = planv1.WishState_WISH_STATE_PAUSED
+		if err := setAside(ctx, tx, wish); err != nil {
+			return nil, err
+		}
 		return wish, put()
+	}
+	if req.GetPaused() {
+		return paused()
 	}
 	actives, err := ActiveWishes(ctx, tx)
 	if err != nil {
@@ -763,8 +770,7 @@ func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequ
 	}
 	if len(actives) >= MaxActive {
 		// Three wishes are active: the new one waits, paused, until you make it active.
-		wish.State = planv1.WishState_WISH_STATE_PAUSED
-		return wish, put()
+		return paused()
 	}
 	if err := renumber(tx, actives); err != nil {
 		return nil, err

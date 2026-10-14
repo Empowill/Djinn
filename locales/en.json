@@ -671,6 +671,7 @@
   "sidebar.projects": "PROJECTS",
   "sidebar.ready": "ready to grant",
   "sidebar.to_first": "Make it the first active wish",
+  "sidebar.wish_place": "{title} (drag, or Alt+Arrow, to change its place; drop it among the active wishes to make it active)",
   "sidebar.wish_rank": "{rank}. {title} (drag, or Alt+Arrow, to change its rank)",
   "sidebar.wishes": "WISHES",
   "status.gates.one": "{count} gate held",

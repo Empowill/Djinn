@@ -583,8 +583,9 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			return err
 		}
 		wish := exp.GetWish()
-		// A wish replaced keeps its place among the active ones; another goes last.
-		place := MaxActive
+		// A wish replaced keeps its place among the active ones, or in its list set aside; another goes last among
+		// the active ones, first in its list set aside.
+		place, before := MaxActive, (*planv1.Wish)(nil)
 		if old, err := store.Get[*planv1.Wish](ctx, tx, wish.GetId()); err == nil {
 			if !replace {
 				return connect.NewError(connect.CodeAlreadyExists, fmt.Errorf(
@@ -593,6 +594,7 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			if Active(old) && old.GetRank() > 0 {
 				place = int(old.GetRank()) - 1
 			}
+			before = old
 			tilasms, err := store.List[*planv1.Tilasm](ctx, tx, store.Where{"wish_id": old.GetId()})
 			if err != nil {
 				return err
@@ -629,7 +631,7 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 		if t := wish.GetTemplate(); t != nil {
 			t.ProjectId = local[t.GetProjectId()]
 		}
-		wish.Rank, wish.Ready = 0, false
+		wish.Rank, wish.Ready, wish.Place = 0, false, 0
 		if Active(wish) {
 			actives, err := ActiveWishes(ctx, tx)
 			if err != nil {
@@ -647,6 +649,15 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			}
 		}
 		res.Wish = wish
+		switch {
+		case Active(wish):
+		case before.GetState() == wish.GetState() && before.GetPlace() > 0:
+			wish.Place = before.GetPlace()
+		default:
+			if err := setAside(ctx, tx, wish); err != nil {
+				return err
+			}
+		}
 		if err := tx.Put(wish); err != nil {
 			return err
 		}

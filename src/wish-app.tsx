@@ -252,6 +252,11 @@ export function WishApp() {
       .move({ wishId, to })
       .catch((err) => setToast(message(err)))
       .finally(() => void data.changed(wishId, [Change.WISH]));
+  const reorder = (wishId: string, to: number) =>
+    void clients.wishes
+      .reorder({ wishId, to })
+      .catch((err) => setToast(message(err)))
+      .finally(() => void data.changed(wishId, [Change.WISH]));
 
   const importFile = async (file: File) => {
     try {
@@ -374,6 +379,7 @@ export function WishApp() {
             }}
             onSelectProject={setProjectId}
             onMove={move}
+            onReorder={reorder}
             onNewProject={() => setModal("project")}
             onPush={pushProject}
           />
