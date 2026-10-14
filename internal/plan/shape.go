@@ -47,6 +47,7 @@ var (
 // ContextWarnings says how context, a question's Markdown, breaks QuestionShape, a line per fault; none when it
 // keeps it. Cheap guesses, not a parser: Djinn stores a context as given, and its author revises it.
 func ContextWarnings(context string) []string {
+	context = CleanContext(context)
 	var (
 		commands, mentions, commandBlocks []int
 		walls                             [][2]int // line, characters

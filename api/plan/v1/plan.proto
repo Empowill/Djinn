@@ -1734,6 +1734,9 @@ message QuestionServiceReviseRequest {
   // What the answer is needed before now, like "before the merge"; the former words when not given, none when given
   // empty (--before ""): the question can wait.
   optional string before = 7 [(buf.validate.field).string.max_len = 100];
+  // File holding what is at stake now, in Markdown, read in place of context; a relative path starts from the current
+  // directory.
+  string context_file = 8 [(buf.validate.field).string.max_len = 4096];
 }
 
 message QuestionServiceReviseResponse {

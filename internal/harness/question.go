@@ -222,7 +222,11 @@ func (h *Harness) startQuestionWorker(
 	if err != nil {
 		return nil, err
 	}
-	title, prompt := investigatorPrompt(q, note, retryText(before), brief.Moving)
+	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
+	if err != nil {
+		return nil, err
+	}
+	title, prompt := investigatorPrompt(q, note, retryText(before), brief.Moving, tasks...)
 	provider, model, _ := questionProvider(settings)
 	task := &planv1.Task{Role: role, Question: q.GetCode()}
 	return h.spawn(ctx, methodQuestion, &planv1.TaskServiceSpawnRequest{
@@ -237,13 +241,16 @@ func questionProvider(s plan.Settings) (provider planv1.Provider, model, fallbac
 	provider = s.QuestionProvider
 	model = s.QuestionModel
 	if provider != planv1.Provider_PROVIDER_UNSPECIFIED {
+		if provider == s.Provider && model == "" {
+			model = s.Model
+		}
 		if provider == planv1.Provider_PROVIDER_CLAUDE && model == "" {
 			model = plan.DefaultQuestionModel
 		}
 		return provider, model, ""
 	}
 	if plan.CanReadOnly(s.Provider) {
-		return s.Provider, s.QuestionModel, ""
+		return s.Provider, cmp.Or(s.QuestionModel, s.Model), ""
 	}
 	return planv1.Provider_PROVIDER_CLAUDE, cmp.Or(s.QuestionModel, plan.DefaultQuestionModel),
 		fmt.Sprintf("%s cannot run read-only: %s", short(s.Provider), short(planv1.Provider_PROVIDER_CLAUDE))
@@ -281,9 +288,9 @@ func answerText(q *planv1.Question) string {
 	return letter
 }
 
-// questionText writes q as a worker reads it: the question, its options, context and recommendation. The context
-// keeps its lines as they are.
-func questionText(b *strings.Builder, q *planv1.Question) {
+// questionText writes q as a worker reads it: the question, its options, clean context, recommendation, linked/blocked
+// tasks, and the full chronological history from Tour 0 through all rounds.
+func questionText(b *strings.Builder, q *planv1.Question, tasks ...*planv1.Task) {
 	fmt.Fprintf(b, "## The question\n\n%s: %s\n\n", q.GetCode(), q.GetText())
 	for i, o := range q.GetOptions() {
 		fmt.Fprintf(b, "- %c: %s\n", 'A'+i, o)
@@ -291,11 +298,114 @@ func questionText(b *strings.Builder, q *planv1.Question) {
 	if len(q.GetOptions()) > 0 {
 		b.WriteString("\n")
 	}
-	if c := strings.TrimSpace(q.GetContext()); c != "" {
+	if c := strings.TrimSpace(plan.CleanContext(q.GetContext())); c != "" {
 		b.WriteString("Context:\n\n" + c + "\n\n")
 	}
 	if r := strings.TrimSpace(q.GetRecommendation()); r != "" {
 		b.WriteString("Recommended: " + r + "\n\n")
+	}
+	if before := strings.TrimSpace(q.GetBefore()); before != "" {
+		b.WriteString("Before (--before): " + before + "\n\n")
+	}
+	writeLinkedTasks(b, q, tasks)
+	writeQuestionHistory(b, q)
+}
+
+func writeLinkedTasks(b *strings.Builder, q *planv1.Question, tasks []*planv1.Task) {
+	code, id, taskID, before := q.GetCode(), q.GetId(), q.GetTaskId(), q.GetBefore()
+	var lines []string
+	for _, t := range tasks {
+		if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+			continue
+		}
+		var reasons []string
+		if taskID != "" && t.GetId() == taskID {
+			reasons = append(reasons, "asked "+code)
+		}
+		if code != "" && strings.EqualFold(t.GetDecision(), code) {
+			reasons = append(reasons, "waiting on decision "+code)
+		}
+		if id != "" && t.GetEditQuestionId() == id {
+			reasons = append(reasons, "waiting on edit question "+code)
+		}
+		if id != "" && t.GetIntegration().GetQuestionId() == id {
+			reasons = append(reasons, "waiting on integration question "+code)
+		}
+		if len(reasons) == 0 && before != "" && t.GetCode() != "" && strings.Contains(before, t.GetCode()) {
+			reasons = append(reasons, "named in --before")
+		}
+		if len(reasons) == 0 {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("- %s (%s) [%s]: %s",
+			t.GetCode(), t.GetTitle(), short(t.GetStatus()), strings.Join(reasons, ", ")))
+	}
+	if len(lines) > 0 {
+		b.WriteString("## Linked and blocked tasks\n\n" + strings.Join(lines, "\n") + "\n\n")
+	}
+}
+
+func tourZero(q *planv1.Question) (options []string, context, recommendation string) {
+	for _, r := range q.GetRounds() {
+		if len(r.GetOptions()) > 0 || r.GetContext() != "" || r.GetRecommendation() != "" {
+			return r.GetOptions(), plan.CleanContext(r.GetContext()), r.GetRecommendation()
+		}
+	}
+	return q.GetOptions(), plan.CleanContext(q.GetContext()), q.GetRecommendation()
+}
+
+func revisionAfter(q *planv1.Question, rounds []*planv1.Round, idx int) (options []string, context, recommendation string) {
+	for _, r := range rounds[idx+1:] {
+		if r.GetKind() == planv1.RoundKind_ROUND_KIND_REVISE {
+			return r.GetOptions(), plan.CleanContext(r.GetContext()), r.GetRecommendation()
+		}
+	}
+	return q.GetOptions(), plan.CleanContext(q.GetContext()), q.GetRecommendation()
+}
+
+func writeStateLines(b *strings.Builder, options []string, context, recommendation string) {
+	if len(options) > 0 {
+		var formatted []string
+		for i, o := range options {
+			formatted = append(formatted, fmt.Sprintf("%c: %s", 'A'+i, o))
+		}
+		fmt.Fprintf(b, "- Options: %s\n", strings.Join(formatted, " | "))
+	}
+	if r := strings.TrimSpace(recommendation); r != "" {
+		fmt.Fprintf(b, "- Recommendation: %s\n", r)
+	}
+	if c := strings.TrimSpace(context); c != "" {
+		fmt.Fprintf(b, "- Context:\n\n%s\n", c)
+	}
+}
+
+func writeQuestionHistory(b *strings.Builder, q *planv1.Question) {
+	rounds := q.GetRounds()
+	initOpts, initCtx, initRec := tourZero(q)
+	b.WriteString("## Question history (from Tour 0)\n\n")
+	fmt.Fprintf(b, "### Tour 0 (initial question state)\n- Subject: %s: %s\n", q.GetCode(), q.GetText())
+	writeStateLines(b, initOpts, initCtx, initRec)
+	b.WriteString("\n")
+	revNum := 0
+	for i, r := range rounds {
+		switch r.GetKind() {
+		case planv1.RoundKind_ROUND_KIND_ENLIGHTEN:
+			note := strings.TrimSpace(r.GetNote())
+			if note == "" {
+				note = "(no note)"
+			}
+			fmt.Fprintf(b, "### Round %d — Enlighten request (Tour %d)\n- Note: %s\n\n", i+1, revNum, note)
+		case planv1.RoundKind_ROUND_KIND_REVISE:
+			revNum++
+			opts, ctx, rec := revisionAfter(q, rounds, i)
+			by := ""
+			if r.GetTaskId() != "" {
+				by = " (task " + r.GetTaskId() + ")"
+			}
+			fmt.Fprintf(b, "### Round %d — Revision %d (Tour %d)%s\n", i+1, revNum, revNum, by)
+			writeStateLines(b, opts, ctx, rec)
+			b.WriteString("\n")
+		}
 	}
 }
 
@@ -303,10 +413,12 @@ func questionText(b *strings.Builder, q *planv1.Question) {
 // call that joins anything to a djinn command, since every part of a compound command must be allowed, and reads
 // files with its own tools. Workers that took a refused form for a refused Bash gave up without doing anything.
 const questionAccess = "## How to work within your access\n\n" +
-	"You read files, search the web and fetch pages, and run djinn's commands (and `git log`, `git show`, " +
-	"`git diff`, `git status`): nothing else.\n\n" +
-	"- Run each `djinn …` command alone, in a Bash call of its own: no pipe (`|`), no `;`, no `&&` nor `||`, no " +
-	"redirection (`>`, `2>`, `<<`), no `$(…)`, no `cd` before it. A call that joins anything to a djinn command is " +
+	"You read files, search the web and fetch pages, and run djinn's inspection/revision commands (`djinn wish brief`, " +
+	"`djinn task list`, `djinn task get`, `djinn question list`, `djinn block list`, `djinn tilasm list`, " +
+	"`djinn tilasm get`, `djinn question revise`) and read-only git inspection commands (`git log`, `git show`, " +
+	"`git diff`, `git status`, `git branch`, `git rev-parse`, `git ls-tree`): nothing else.\n\n" +
+	"- Run each `djinn …` or `git …` command alone, in a Bash call of its own: no pipe (`|`), no `;`, no `&&` nor `||`, no " +
+	"redirection (`>`, `2>`, `<<`), no `$(…)`, no `cd` before it. A call that joins anything to a command is " +
 	"refused whole. Read a command's whole output rather than filtering it.\n" +
 	"- Read files with your Read, Grep and Glob tools, and search or fetch the web with your web tools (WebSearch " +
 	"and WebFetch, or search_web and read_url_content), never with cat, grep, sed, head, find or curl in Bash.\n" +
@@ -314,7 +426,8 @@ const questionAccess = "## How to work within your access\n\n" +
 	"with no backtick nor `$` inside: there they would run a command, and the call is refused. Never start a line " +
 	"inside a quoted argument with `#` at column zero (indent `#` comments inside a `~~~` block with a leading space, " +
 	"` # …`, or keep lines plain), as a newline followed immediately by `#` inside quotes is refused by the shell " +
-	"filter. Write an inner double quote `\\\"`.\n" +
+	"filter; or pass `--context-file <path>` to read the context from a file when Markdown headers (`#`), arrows " +
+	"(`->`) or parentheses would be rejected by shell static filters. Write an inner double quote `\\\"`.\n" +
 	"- A refused call means that this form of the command is refused, not that Bash is: run the djinn command again, " +
 	"alone and plain. Never end on a refusal: a question worker that did nothing after one has failed.\n\n"
 
@@ -331,7 +444,7 @@ func retryText(before *planv1.Task) string {
 
 // investigatorPrompt is the title and the prompt of the investigator of q, which the developer wants to know more
 // about, with their note; retry says why it starts again, if it does.
-func investigatorPrompt(q *planv1.Question, note, retry, brief string) (title, prompt string) {
+func investigatorPrompt(q *planv1.Question, note, retry, brief string, tasks ...*planv1.Task) (title, prompt string) {
 	code, wish := q.GetCode(), q.GetWishId()
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are a question worker of Djinn. Before answering %s in wish %s, the developer wants to know "+
@@ -339,19 +452,26 @@ func investigatorPrompt(q *planv1.Question, note, retry, brief string) (title, p
 		"no code, edit no file and run no gate: you read the codebase and search the web. The wish's lead is told "+
 		"what you did when you end.\n\n",
 		code, wish)
-	questionText(&b, q)
+	questionText(&b, q, tasks...)
 	if n := strings.TrimSpace(note); n != "" {
 		b.WriteString("What the developer wants to know:\n\n" + n + "\n\n")
 	}
 	fmt.Fprintf(&b, "## What to do\n\n"+
-		"1. Read the code (with Read, Grep and Glob), search the web and fetch external documentation or references "+
-		"(with WebSearch and WebFetch, or search_web and read_url_content) when helpful, and read the brief below "+
-		"and `djinn task list --wish-id %[2]s`, to answer what the developer asks.\n"+
-		"2. Revise the question: `djinn question revise %[1]s --wish-id %[2]s --context \"…\" --recommendation \"…\"`, "+
-		"and `--options \"…\"` (each one, up to four) when the options change. The context says what you found and "+
-		"what each option costs, in the shape below; the recommendation starts with its option's letter (`B: …`).\n"+
-		"3. Revise it once, at the end, even if you found little: the question waits for you until you do.\n"+
-		"4. End with one line: what you found.\n\n", code, wish)
+		"1. Stay anchored to the original subject from Tour 0 (`%[1]s: %[3]s`): follow-up enlighten notes ask to "+
+		"dig deeper into this question, never to replace its subject with an unrelated topic.\n"+
+		"2. Read the code (with Read, Grep and Glob), inspect git history across branches when needed (`git log`, "+
+		"`git show`, `git diff`, `git status`, `git branch`, `git rev-parse`, `git ls-tree`), search the web and "+
+		"fetch external documentation or references (with WebSearch and WebFetch, or search_web and read_url_content) "+
+		"when helpful, and read the brief below and Djinn's state (`djinn wish brief %[2]s`, "+
+		"`djinn task list --wish-id %[2]s`, `djinn task get <task>`, `djinn question list --wish-id %[2]s`, "+
+		"`djinn block list %[2]s`, `djinn tilasm list %[2]s`, `djinn tilasm get %[2]s <name>`), to answer what "+
+		"the developer asks.\n"+
+		"3. Revise the question: `djinn question revise %[1]s --wish-id %[2]s --context \"…\" --recommendation \"…\"` "+
+		"(or `--context-file <path>`), and `--options \"…\"` (each one, up to four) when the options change. The "+
+		"context says what you found and what each option costs, in the shape below; Djinn automatically preserves "+
+		"prior versions under `%[4]s`, so write only the current revised context.\n"+
+		"4. Revise it once, at the end, even if you found little: the question waits for you until you do.\n"+
+		"5. End with one line: what you found.\n\n", code, wish, q.GetText(), plan.HistoryHeader)
 	b.WriteString("## The shape of the context\n\n" + plan.QuestionShape + " Rewrite the former context into this " +
 		"shape even where you found nothing new.\n\n")
 	b.WriteString(questionAccess + retry + "## Where the wish stands\n\n" + brief)

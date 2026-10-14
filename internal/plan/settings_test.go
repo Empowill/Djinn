@@ -493,6 +493,10 @@ func TestQuestionSettings(t *testing.T) {
 			&planv1.ProjectSettings{Provider: &codex}, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "", DefaultQuestionBudgetUSD}},
 		{"a question_provider resets the model", &planv1.ProjectSettings{QuestionModel: proto.String("haiku")},
 			&planv1.ProjectSettings{QuestionProvider: &codex}, q{true, codex, "", DefaultQuestionBudgetUSD}},
+		{"inherits configured strong model", &planv1.ProjectSettings{Model: proto.String("opus")},
+			nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "opus", DefaultQuestionBudgetUSD}},
+		{"inherits configured codex model", &planv1.ProjectSettings{Provider: &codex, Model: proto.String("gpt-5.1-codex")},
+			nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "gpt-5.1-codex", DefaultQuestionBudgetUSD}},
 	} {
 		s := ResolveSettings(c.repo, c.dev)
 		if got := (q{s.EnlightenWorkers, s.QuestionProvider, s.QuestionModel, s.QuestionBudgetUSD}); got != c.want {

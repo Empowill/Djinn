@@ -263,11 +263,14 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
     name of `--after`, still read.
 - **Keep the graph free of conflicts.** The Djinn keeps the graph of tasks and azimas so that workers do not collide,
   along an iterative and de-risked path. Tasks that touch the same files, protos, generated files or the same tests go
-  one after the other (`--after`, or `--write-scopes` when the project uses them), never side by side. Large work is cut
-  into small steps, each merged and green before the next starts. A task starts from the integrated branch: never spawn
-  while the wish's integration points at another branch (a quarantine), since a task started there carries that branch
-  into the next merge (W399 brought the replay sink's node_modules link into feat/wails-go on 11/10). A conflict or a
-  red merge is a signal to re-sequence, not only to correct.
+  one after the other (`--after`, or `--write-scopes` when the project uses them), never side by side, but never chain
+  tasks in a naive sequential line (`W1 -> W2 -> W3 -> W4`) just to be safe: estimate impacted packages and files at a
+  high level (without reading code) and maximize parallelism in the DAG so multiple workers run concurrently, adding
+  `--after` only between tasks that directly target the same file or proto (Djinn already has merge conflict resolution
+  for minor overlaps). Large work is cut into small steps, each merged and green before the next starts. A task starts
+  from the integrated branch: never spawn while the wish's integration points at another branch (a quarantine), since a
+  task started there carries that branch into the next merge (W399 brought the replay sink's node_modules link into
+  feat/wails-go on 11/10). A conflict or a red merge is a signal to re-sequence, not only to correct.
 - **Watchers.** To wait on something outside, the Djinn spawns a watcher instead of polling:
   `djinn task spawn <wish> --title … --provider watch --prompt "<command>"` runs the command, with no agent, no model
   and no slot, and each new paragraph it prints wakes the Djinn. `--restart` starts again a command that exits on each

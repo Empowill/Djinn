@@ -701,6 +701,8 @@ func TestBriefConflictsRule(t *testing.T) {
 		"**Keep the graph free of conflicts.**",
 		"keep the graph of tasks and azimas so that workers do not collide, along an iterative and de-risked path",
 		"Tasks that touch the same files, protos, generated files or the same tests go one after the other (`--after`, or `--write-scopes` when the project uses them), never side by side",
+		"never chain tasks in a naive sequential line (`W1 -> W2 -> W3 -> W4`) just to be safe",
+		"maximize parallelism in the DAG so multiple workers run concurrently",
 		"Large work is cut into small steps, each merged and green before the next starts",
 		"A task starts from the integrated branch: never spawn while the wish's integration points at another branch (a quarantine)",
 		"W399 brought the replay sink's node_modules link into feat/wails-go on 11/10",
