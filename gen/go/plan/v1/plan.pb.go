@@ -18126,8 +18126,9 @@ type TaskServiceUpdateRequest struct {
 	Force *bool `protobuf:"varint,12,opt,name=force,proto3,oneof" json:"force,omitempty"`
 	// An azima's own branch under the per-azima push strategy, named as the project's convention requires
 	// (ET-1234-<slug>): a branch that exists is adopted as it is, recorded with the main it lands in and the commit of
-	// main it was cut from (their merge base); one that does not is cut from main under that name. Refused on a work
-	// task, and while a merge runs into the azima's branch.
+	// main it was cut from (their merge base); one only the remote holds is made from the remote's; one that does not
+	// exist is cut from main under that name. Refused on a work task, while a merge runs into the azima's branch, and
+	// when the branch here has diverged from the remote's.
 	Branch        *string `protobuf:"bytes,13,opt,name=branch,proto3,oneof" json:"branch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

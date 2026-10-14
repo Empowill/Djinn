@@ -56,13 +56,29 @@ func (h *Harness) refuseAzimaDependencies(ctx context.Context, r store.Reader, w
 }
 
 // azimaBranch is the branch of azima in project under the per-azima push strategy, cut from main's commit as Djinn
-// knows it (resolveMainSha) when it does not exist yet, and recorded on the azima when project is the azima's own. A
-// branch that exists stays as it is: never cut again, never rebased.
+// knows it (resolveMainSha) when it does not exist yet, and recorded on the azima when project is the azima's own; a
+// branch the developer named is made from the remote's when the remote holds it. A branch that exists stays as it is:
+// never cut again, never rebased.
 func (h *Harness) azimaBranch(ctx context.Context, project *planv1.Project, settings plan.Settings, azima *planv1.Task) (string, error) {
 	branch := azimaBranchName(azima)
 	repo := project.GetDirectory()
 	if commitOf(ctx, repo, "refs/heads/"+branch) != "" {
 		return branch, nil
+	}
+	if azima.GetAzima().GetNamed() {
+		// A branch the developer named, gone from here since, may live on the remote: made from it again, never cut
+		// from main (remote_branch.go).
+		shown, theirs, err := fetchBranch(ctx, repo, branch)
+		if err != nil {
+			return "", fmt.Errorf("%s is not in the repository, and Djinn cannot tell whether the remote holds it: %w", branch, err)
+		}
+		if theirs != "" {
+			if _, err := git(ctx, repo, "branch", "--no-track", branch, theirs); err != nil && commitOf(ctx, repo, "refs/heads/"+branch) == "" {
+				return "", fmt.Errorf("make %s from %s: %w", branch, shown, err)
+			}
+			logx.L().Info("azima branch made from the remote's", "azima", azima.GetCode(), "branch", branch, "from", shown, "at", short8(theirs))
+			return branch, nil
+		}
 	}
 	main, sha, err := resolveMainSha(ctx, repo, settings)
 	if err != nil {
@@ -147,9 +163,11 @@ func editAzima(ctx context.Context, tx *store.Tx, id string, edit func(*planv1.A
 
 // nameAzimaBranch names the own branch of azima, under the per-azima push strategy, as the developer asks
 // (djinn task update <azima> --branch): a branch that exists is adopted as it is, recorded with the main it lands in
-// and the commit of main it was cut from, their merge base; one that does not is cut from main as Djinn cuts an
-// azima's, under that name. Nothing is cut again or moved. Refused while a merge runs into the azima's branch, for main
-// itself, for another azima's branch, and when the azima's branch so far holds commits the named one lacks.
+// and the commit of main it was cut from, their merge base; one only the remote holds is made from the remote's, one
+// here behind the remote's brought up to it; one that does not exist is cut from main as Djinn cuts an azima's, under
+// that name. Nothing is cut again or rewritten. Refused while a merge runs into the azima's branch, for main itself, for
+// another azima's branch, when the azima's branch so far holds commits the named one lacks, and when the named one has
+// diverged from the remote's.
 func (h *Harness) nameAzimaBranch(ctx context.Context, procedure string, req *planv1.TaskServiceUpdateRequest, azima *planv1.Task) (*planv1.Task, error) {
 	refuse := func(format string, a ...any) error {
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(format, a...))
@@ -213,8 +231,22 @@ func (h *Harness) nameAzimaBranch(ctx context.Context, procedure string, req *pl
 		}
 	}
 	tip := commitOf(ctx, repo, "refs/heads/"+branch)
-	// What the azima's branch so far holds stays reachable: from the branch adopted, or from main it is cut from.
-	if old := commitOf(ctx, repo, "refs/heads/"+current); old != "" && current != branch && !isAncestor(ctx, repo, old, cmp.Or(tip, mainSha)) {
+	// A branch the remote holds, an open pull request's, is made from the remote's, never from main; one here behind
+	// it is brought up to it; one that diverged from it is refused (remote_branch.go).
+	shown, theirs, err := fetchBranch(ctx, repo, branch)
+	if err != nil && tip == "" {
+		return nil, refuse("cannot tell whether the remote holds %s: %v; name it again once the remote answers", branch, err)
+	}
+	ours := tip
+	if theirs != "" && theirs != tip && (tip == "" || isAncestor(ctx, repo, tip, theirs)) {
+		tip = theirs
+	} else if theirs != "" && !isAncestor(ctx, repo, theirs, tip) {
+		return nil, refuse("%s: align them first (%s), then name it again", apartText(ctx, repo, branch, shown, tip, theirs), alignText(shown))
+	}
+	// What the azima's branch so far holds stays reachable: from the branch adopted, or from main it is cut from. One
+	// that holds only main's commits, no work of its own, leaves nothing behind.
+	if old := commitOf(ctx, repo, "refs/heads/"+current); old != "" && current != branch &&
+		!isAncestor(ctx, repo, old, cmp.Or(tip, mainSha)) && !isAncestor(ctx, repo, old, mainSha) {
 		into := main
 		if tip != "" {
 			into = branch
@@ -227,8 +259,21 @@ func (h *Harness) nameAzimaBranch(ctx context.Context, procedure string, req *pl
 		if cut, err = git(ctx, repo, "merge-base", mainSha, tip); err != nil || cut == "" {
 			return nil, refuse("%s shares no history with %s: an azima's branch lands in main", branch, main)
 		}
-	} else if _, err := git(ctx, repo, "branch", "--no-track", branch, mainSha); err != nil {
-		return nil, refuse("cut %s from %s: %v", branch, main, err)
+	}
+	switch {
+	case tip == "":
+		if _, err := git(ctx, repo, "branch", "--no-track", branch, mainSha); err != nil {
+			return nil, refuse("cut %s from %s: %v", branch, main, err)
+		}
+	case ours == "":
+		// Its upstream is left unset: the push goes to the remote's branch of that name, never to main.
+		if _, err := git(ctx, repo, "branch", "--no-track", branch, tip); err != nil {
+			return nil, refuse("make %s from %s: %v", branch, shown, err)
+		}
+	case ours != tip:
+		if _, why, _ := moveBranch(ctx, repo, branch, ours, tip, "djinn: brought up to "+shown); why != "" {
+			return nil, refuse("%s is behind %s and cannot be brought up to it: %s", branch, shown, why)
+		}
 	}
 	base := main
 	if base == "HEAD" {
@@ -252,7 +297,8 @@ func (h *Harness) nameAzimaBranch(ctx context.Context, procedure string, req *pl
 		return nil, plan.Status(err)
 	}
 	if tip != "" {
-		logx.L().Info("azima branch adopted", "azima", azima.GetCode(), "branch", branch, "from", main, "at", short8(cut))
+		logx.L().Info("azima branch adopted", "azima", azima.GetCode(), "branch", branch, "from", main, "at", short8(cut),
+			"remote", shown, "made from it", ours != tip)
 	} else {
 		logx.L().Info("azima branch cut", "azima", azima.GetCode(), "branch", branch, "from", main, "at", short8(cut))
 	}

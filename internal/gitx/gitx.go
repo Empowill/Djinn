@@ -3,9 +3,12 @@
 package gitx
 
 import (
+	"cmp"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/empowill/djinn/internal/logx"
@@ -40,4 +43,28 @@ func Command(ctx context.Context, dir string, args ...string) (cmd *exec.Cmd, ca
 		logx.Ran(ctx, cmd, start, nil)
 		stop()
 	}
+}
+
+// FetchBranch fetches branch from remote into its remote-tracking ref, refs/remotes/<remote>/<branch>, with the
+// person's own credentials: what the remote holds of it now. It returns that commit; "" when the remote has no such
+// branch, its remote-tracking ref then left as it was; an error when the remote did not answer.
+func FetchBranch(ctx context.Context, dir, remote, branch string) (string, error) {
+	ref := "refs/remotes/" + remote + "/" + branch
+	cmd, cancel := Command(ctx, dir, "fetch", "--no-tags", remote, "+refs/heads/"+branch+":"+ref)
+	cmd.Env = append(cmd.Env, "LC_ALL=C")
+	out, err := cmd.CombinedOutput()
+	cancel()
+	if err != nil {
+		if strings.Contains(string(out), "couldn't find remote ref") {
+			return "", nil
+		}
+		return "", fmt.Errorf("fetch %s from %s: %s", branch, remote, cmp.Or(strings.TrimSpace(string(out)), err.Error()))
+	}
+	read, cancel := Command(ctx, dir, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+	sha, err := read.Output()
+	cancel()
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", ref, err)
+	}
+	return strings.TrimSpace(string(sha)), nil
 }

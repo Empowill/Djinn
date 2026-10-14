@@ -9110,8 +9110,9 @@ export type TaskServiceUpdateRequest = Message<"plan.v1.TaskServiceUpdateRequest
   /**
    * An azima's own branch under the per-azima push strategy, named as the project's convention requires
    * (ET-1234-<slug>): a branch that exists is adopted as it is, recorded with the main it lands in and the commit of
-   * main it was cut from (their merge base); one that does not is cut from main under that name. Refused on a work
-   * task, and while a merge runs into the azima's branch.
+   * main it was cut from (their merge base); one only the remote holds is made from the remote's; one that does not
+   * exist is cut from main under that name. Refused on a work task, while a merge runs into the azima's branch, and
+   * when the branch here has diverged from the remote's.
    *
    * @generated from field: optional string branch = 13;
    */
