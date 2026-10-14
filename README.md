@@ -76,24 +76,28 @@ What is below is merged and covered by tests. Items marked _(next)_ are on the d
 next release, [v0.1.2](docs/releases/v0.1.2.md); the rest ships in v0.1.1.
 
 - **Wishes and azimas.** A wish is what you ask for, across one or more projects. The Djinn splits it into _azimas_
-  (parts of the plan, coded `T01`, `T02`…) and tasks; each task is one worker in its own worktree. Azimas can wait
-  as drafts and move between wishes. [Guide](docs/user-guide.md#a-wish)
+  (parts of the plan, coded `T01`, `T02`…) and tasks in a conflict-free parallel graph; each task is one worker in its
+  own worktree. Azimas can be renamed, wait as drafts, and move between wishes. [Guide](docs/user-guide.md#a-wish)
 - **One Djinn for every wish.** A single agent session sees every active wish, so it spots duplicate or conflicting
-  work. It starts from `djinn brief`, a summary Djinn writes without a model. **Talk to the Djinn** opens it in the
-  window's terminal, and the pill **Write to the Djinn** (Cmd/Ctrl+I) sends it a word _(next: v0.1.1 calls them
+  work. It starts from `djinn brief`, a summary Djinn writes without a model, with its safe read, Git and `djinn`
+  commands pre-authorized and its notes built into the binary (`djinn lead notes`). **Talk to the Djinn** opens it in
+  the window's terminal, and the pill **Write to the Djinn** (Cmd/Ctrl+I) sends it a word _(next: v0.1.1 calls them
   **Lead** and **Write to the lead**)_.
   [Guide](docs/user-guide.md#the-djinn)
 - **Questions with a clear call to action.** The Djinn says nothing for you in its terminal: a report, a doubt, a
   "done" is a question in its wish, with options and a recommendation. **Rub the lamp** takes it in one click or one
-  key; **Enlighten me** sends a worker to dig first. A move only you can make (push a tag, merge a pull request,
-  check on a Mac) comes with its exact command; a check or a CI result is never asked of you _(next)_.
+  key; **Enlighten me** sends an investigator worker (with web search, expanded read access, and the project's model)
+  to dig first and revise the question (`--context-file`), keeping the initial question and earlier revisions at the
+  bottom. A move only you can make (push a tag, merge a pull request, check on a Mac) comes with its exact command in
+  a code block at the top; a check or a CI result is never asked of you _(next)_.
   [Guide](docs/user-guide.md#questions)
-- **The flying carpet** _(next; the overview in v0.1.1)_: every active wish at once, with what waits for you first.
-  **The Hourglass** _(next)_: the machine's CPU and memory over time, each running worker's own graphs, and where the
-  time of the commands goes. [Guide](docs/user-guide.md#the-flying-carpet)
+- **The flying carpet** _(next; the overview in v0.1.1)_: every active wish at once, with what waits for you first
+  (Ctrl+1 / Cmd+1). **The Hourglass** _(next; Ctrl+2 / Cmd+2)_: the machine's CPU and memory over time, each running
+  worker's own graphs, and where the time of the commands goes. [Guide](docs/user-guide.md#the-flying-carpet)
 - **Your work lands where you choose.** Per wish, one integration branch; per azima, one branch cut from main with
-  its own pull request. Djinn merges each task's work, runs the project's checks, starts a correction worker when
-  they fail, and pushes on a standard cadence or on demand. [Guide](docs/user-guide.md#team-settings-and-integration)
+  its own pull request (naming a branch after a remote one fetches it first, and answering yes to Djinn's pull request
+  question opens it as a draft). Djinn merges each task's work, runs the project's checks, starts a correction worker
+  when they fail, and pushes on a standard cadence or on demand. [Guide](docs/user-guide.md#team-settings-and-integration)
 - **Pull requests babysat.** When a task opens a pull or merge request (`gh pr create`, `glab mr create`) in a
   project that names a babysit skill, a watcher follows it in the same wish: each failed pipeline, comment or
   conflict wakes the Djinn, until it merges.
@@ -101,10 +105,11 @@ next release, [v0.1.2](docs/releases/v0.1.2.md); the rest ships in v0.1.1.
 - **Review.** Each task shows its whole diff; a comment on a line reaches its worker or becomes a correction task. A
   **Review** tab lists the merged work to tick off. [Guide](docs/user-guide.md#the-review-tab)
 - **The Lamplighter.** A watchdog wakes a worker gone silent and continues it on its own session; each task has a
-  _seal_ (2 hours of work, 500 turns per run, a spending cap, what it may edit and run). Stopping Djinn never loses
-  a worker: the next start resumes it. [Guide](docs/user-guide.md#when-djinn-stops-and-starts-again)
+  _seal_ (2 hours of work, 500 turns per run shown beside its lifetime turns, a spending cap, what it may edit and
+  run). Stopping Djinn never loses a worker: the next start resumes it. [Guide](docs/user-guide.md#when-djinn-stops-and-starts-again)
 - **Your machine stays yours.** An operating load slider, from **Minimal** to **Overclock** or **Auto**, sets how
-  much of the machine the workers take; heavy commands share it through gates.
+  much of the machine the workers take and shows the exact worker count for each notch; heavy commands share it
+  through gates.
 - **Nothing outlives Djinn** _(next)_. Killing Djinn stops every worker, watcher and check it started; a survivor is
   stopped at the next start.
 - **Logs and a debug dump.** `logs/djinn.log` in the data folder records each call, command, error and panic (with
@@ -143,26 +148,26 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 
 **Phase 1 · Native app**
 
-- [ ] [T01 · The native window: the same interface as in the browser, where you talk to the lead, by voice too](plan/fe63ed30-native-window.md) (in progress)
+- [x] [T01 · The native window: the same interface as in the browser, where you talk to the lead, by voice too](plan/fe63ed30-native-window.md)
 - [x] [T02 · The foundation: the protos, minimal data, a generated command line, in English, clean code](plan/c30479be-api-and-cli.md)
-- [ ] [T04 · Install and stay up to date: in a few minutes, updates from inside the app](plan/929d6a88-getting-started.md) (in progress)
-- [ ] [T05 · Tested end to end: fast tests, and an agent that checks its work up to the real window](plan/b6a680bf-testing.md) (in progress)
-- [ ] [T11 · Windows](plan/a586b68b-windows.md) (in progress)
+- [x] [T04 · Install and stay up to date: in a few minutes, updates from inside the app](plan/929d6a88-getting-started.md)
+- [x] [T05 · Tested end to end: fast tests, and an agent that checks its work up to the real window](plan/b6a680bf-testing.md)
+- [x] [T11 · Windows](plan/a586b68b-windows.md)
 
 **Phase 2 · Orchestration and data**, after which Djinn runs on itself
 
-- [ ] [T07 · The orchestrator: Djinn decides, starts, resumes, integrates and pushes the work by itself](plan/8e8d3d76-orchestrator.md) (in progress)
-- [ ] [T13 · Work across projects: a wish spanning several projects, a project's skills in another](plan/58ae4a59-cross-project-sessions.md) (in progress)
+- [x] [T07 · The orchestrator: Djinn decides, starts, resumes, integrates and pushes the work by itself](plan/8e8d3d76-orchestrator.md)
+- [x] [T13 · Work across projects: a wish spanning several projects, a project's skills in another](plan/58ae4a59-cross-project-sessions.md)
 - [x] [T14 · Fast, economical workers: the right context and model, sized to the machine](plan/8ce817da-cost.md)
 - [x] [T18 · Antigravity as a worker provider](plan/a72eb1f8-antigravity-provider.md)
-- [ ] [T25 · Understand and decide at a glance: what waits for you first, clear questions, tilasms](plan/4a699d0f-review-at-a-glance.md) (in progress)
-- [ ] [T26 · Every request finds its wish: routing, wish templates, an inbox](plan/e1210c5e-request-routing.md) (in progress)
-- [ ] [T27 · Djinn stays fast, whatever the size of a wish: the window, djinn up and its start](plan/9ac1c08b-djinn-stays-fast.md) (in progress)
+- [x] [T25 · Understand and decide at a glance: what waits for you first, clear questions, tilasms](plan/4a699d0f-review-at-a-glance.md)
+- [x] [T26 · Every request finds its wish: routing, wish templates, an inbox](plan/e1210c5e-request-routing.md)
+- [x] [T27 · Djinn stays fast, whatever the size of a wish: the window, djinn up and its start](plan/9ac1c08b-djinn-stays-fast.md)
 
 **Phase 3 · Comfort**
 
-- [ ] [T19 · Releases: binaries for every target](plan/71f9c331-releases.md) (in progress)
-- [ ] [T20 · Your wishes follow you: backups, a wish online, later your other machines](plan/9b71f059-backup.md) (in progress)
+- [x] [T19 · Releases: binaries for every target](plan/71f9c331-releases.md)
+- [x] [T20 · Your wishes follow you: backups, a wish online, later your other machines](plan/9b71f059-backup.md)
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/readme/tasks-light.png">
