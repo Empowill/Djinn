@@ -1532,7 +1532,9 @@ const (
 	MoveKind_MOVE_KIND_TAG MoveKind = 2
 	// Start a release dry run: noted.
 	MoveKind_MOVE_KIND_RELEASE MoveKind = 3
-	// Open a pull request: noted.
+	// Open a pull request: a yes opens it as a draft, from the branch named by ref, through a worker that follows the
+	// project's own skill for opening one when it has such a skill; the lead reads that the developer must when Djinn
+	// cannot.
 	MoveKind_MOVE_KIND_PULL_REQUEST MoveKind = 4
 	// Merge a pull request whose checks are green: noted.
 	MoveKind_MOVE_KIND_READY_TO_MERGE MoveKind = 5
@@ -6789,11 +6791,12 @@ type DjinnMove struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Which move.
 	Kind MoveKind `protobuf:"varint,1,opt,name=kind,proto3,enum=plan.v1.MoveKind" json:"kind,omitempty"`
-	// What the move acts on: the full sha of the build to install, or the tag to push.
+	// What the move acts on: the full sha of the build to install, the tag to push, or the branch a pull request is
+	// opened from.
 	Ref string `protobuf:"bytes,2,opt,name=ref,proto3" json:"ref,omitempty"`
 	// The remote a tag is pushed to.
 	Remote string `protobuf:"bytes,3,opt,name=remote,proto3" json:"remote,omitempty"`
-	// The project the build is installed from, or the tag pushed in.
+	// The project the build is installed from, the tag pushed in, or the pull request opened in.
 	ProjectId     string `protobuf:"bytes,4,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -69,6 +69,10 @@ case $cmd in
 	printf '%s\n' "$all_args" >> "$GH_DATA/edits"
 	exit 0
 	;;
+"pr create")
+	printf '%s\n' "$all_args" >> "$GH_DATA/creates"
+	echo "https://github.com/acme/app/pull/41"
+	;;
 "pr list")
 	file="$GH_DATA/list.json"
 	if [ ! -f "$file" ]; then
@@ -278,7 +282,7 @@ func TestAzimaPRProposalFlow(t *testing.T) {
 	in := integrating(t)
 	in.setAzimaStrategy(t)
 	in.remote(t)
-	setupFakeGh(t)
+	_, dataDir := setupFakeGh(t)
 
 	t1 := in.azima(t, in.wishID, "One Alpha")
 	t1.Description = "## Goal\nImplement feature alpha.\n"
@@ -343,10 +347,21 @@ func TestAzimaPRProposalFlow(t *testing.T) {
 		t.Errorf("PR state = %v, want proposed", got)
 	}
 
-	// Answering Choice A notes opening the PR.
+	// Answering Choice A opens it as a draft, from the azima's branch into its base, with the drafted title and body.
 	did := in.answer(t, prQ, planv1.Choice_CHOICE_A)
-	if did != "Djinn noted: open pull request" {
-		t.Errorf("what Djinn did: %q", did)
+	if want := "Djinn opened draft PR #41: https://github.com/acme/app/pull/41"; did != want {
+		t.Errorf("what Djinn did: %q, want %q", did, want)
+	}
+	created, err := os.ReadFile(filepath.Join(dataDir, "creates"))
+	if err != nil {
+		t.Fatalf("gh pr create never ran: %v", err)
+	}
+	if want := "pr create --draft --head " + b1 + " --base " + in.branch + " --title Implement feature alpha."; !strings.HasPrefix(string(created), want) {
+		t.Errorf("gh ran %q, want it to begin with %q", created, want)
+	}
+	if got := in.get(t, t1.GetId()).GetAzima().GetPr(); got.GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_OPEN ||
+		got.GetUrl() != "https://github.com/acme/app/pull/41" {
+		t.Errorf("PR recorded %v, want open at its address", got)
 	}
 }
 

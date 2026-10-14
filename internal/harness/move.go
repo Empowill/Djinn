@@ -128,8 +128,8 @@ func prMoveName(main string) string {
 	return fmt.Sprintf("open a pull request to %s", main)
 }
 
-// prMoveQuestion builds the question for opening a pull request to main.
-func prMoveQuestion(wishID, main, title, body string) *planv1.Question {
+// prMoveQuestion builds the question for opening a pull request of branch in the project to main.
+func prMoveQuestion(wishID, projectID, main, branch, title, body string) *planv1.Question {
 	return &planv1.Question{
 		WishId:    wishID,
 		Text:      fmt.Sprintf("Open a pull request to %s?", main),
@@ -137,7 +137,7 @@ func prMoveQuestion(wishID, main, title, body string) *planv1.Question {
 		Options:   []string{"Open pull request", "Not yet"},
 		Move:      true,
 		Before:    "before the merge",
-		DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_PULL_REQUEST},
+		DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_PULL_REQUEST, Ref: branch, ProjectId: projectID},
 	}
 }
 

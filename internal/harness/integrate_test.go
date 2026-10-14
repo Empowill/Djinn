@@ -37,6 +37,7 @@ type integration struct {
 	afterTest func()         // run once by the next test command, then forgotten
 	testWait  chan struct{}  // the test command waits until it closes, the clock free meanwhile
 	exits     map[string]int // what the other commands exit with, by their first word: setup, lint
+	forge     *fakeForge     // answers gh and glab when set
 }
 
 // integrating starts djinn up on a repository with app/README.md, app/gen/index.txt and app/src, a wish on it whose
@@ -83,6 +84,9 @@ func (in *integration) run(ctx context.Context, dir string, args []string) (stri
 	in.runs = append(in.runs, strings.Join(args, " ")+" in "+dir)
 	if code, ok := in.exits[args[0]]; ok {
 		return args[0] + " ran", code, nil
+	}
+	if in.forge != nil && (args[0] == "gh" || args[0] == "glab") {
+		return in.forge.run(ctx, dir, args)
 	}
 	switch args[0] {
 	case "gen":

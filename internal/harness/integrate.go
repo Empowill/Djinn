@@ -1832,7 +1832,7 @@ func (h *Harness) handleMergeMoves(
 				moveName := prMoveName(main)
 				if !slices.Contains(moves, moveName) {
 					title, body := h.draftPR(ctx, wish, project, ref, branch)
-					q := prMoveQuestion(wish.GetId(), main, title, body)
+					q := prMoveQuestion(wish.GetId(), project.GetId(), main, branch, title, body)
 					if err := h.askMove(ctx, q); err == nil {
 						existing = append(existing, q)
 						moves = append(moves, moveName)
@@ -1996,7 +1996,7 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 				if prNum, hasPR := openPRFromBranch(ctx, repo, branch); !hasPR {
 					if !h.hasPRQuestion(ctx, projectID, allQuestions, wishesByID) {
 						title, body := h.draftPR(ctx, wish, project, ref, branch)
-						q := prMoveQuestion(wish.GetId(), main, title, body)
+						q := prMoveQuestion(wish.GetId(), project.GetId(), main, branch, title, body)
 						if err := h.askMove(ctx, q); err == nil {
 							allQuestions = append(allQuestions, q)
 						}
@@ -2508,7 +2508,7 @@ func (h *Harness) azimaPRPass(
 					Options:   []string{"Open pull request", "Not yet"},
 					Move:      true,
 					Before:    "before the merge",
-					DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_PULL_REQUEST},
+					DjinnMove: &planv1.DjinnMove{Kind: planv1.MoveKind_MOVE_KIND_PULL_REQUEST, Ref: branch, ProjectId: project.GetId()},
 				}
 				if err := h.askMove(ctx, q); err == nil {
 					allQuestions = append(allQuestions, q)

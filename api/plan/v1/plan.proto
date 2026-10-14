@@ -1483,11 +1483,12 @@ message Question {
 message DjinnMove {
   // Which move.
   MoveKind kind = 1;
-  // What the move acts on: the full sha of the build to install, or the tag to push.
+  // What the move acts on: the full sha of the build to install, the tag to push, or the branch a pull request is
+  // opened from.
   string ref = 2;
   // The remote a tag is pushed to.
   string remote = 3;
-  // The project the build is installed from, or the tag pushed in.
+  // The project the build is installed from, the tag pushed in, or the pull request opened in.
   string project_id = 4;
 }
 
@@ -1501,7 +1502,9 @@ enum MoveKind {
   MOVE_KIND_TAG = 2;
   // Start a release dry run: noted.
   MOVE_KIND_RELEASE = 3;
-  // Open a pull request: noted.
+  // Open a pull request: a yes opens it as a draft, from the branch named by ref, through a worker that follows the
+  // project's own skill for opening one when it has such a skill; the lead reads that the developer must when Djinn
+  // cannot.
   MOVE_KIND_PULL_REQUEST = 4;
   // Merge a pull request whose checks are green: noted.
   MOVE_KIND_READY_TO_MERGE = 5;
