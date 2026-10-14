@@ -1,6 +1,7 @@
 ---
 id: 01a126be-b111-75c6-864c-605f3be2c459
 code: T32
+wish: Djinn QoL
 phase: 3
 status: draft
 ---
