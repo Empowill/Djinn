@@ -332,12 +332,15 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   assert.match(html, /wish-tone tone-proof/);
   assert.match(html, />ready to grant<\/span><small class="wish-rank">/);
   // Each wish says at a glance what waits and what runs: an icon and a count, with their words, on its second line.
-  const sidebar = (collapsed) =>
+  const sidebar = (
+    collapsed,
+    count = { questions: 2, running: 1, watching: 1, merging: 0 },
+  ) =>
     s.renderToStaticMarkup(
       h(s.WishSidebar, {
         wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
         projects: [],
-        counts: { w1: { questions: 2, running: 1, watching: 1, merging: 0 } },
+        counts: { w1: count },
         onSelectPlan() {},
         selectedWishId: "",
         selectedProjectId: "",
@@ -361,12 +364,23 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   assert.ok(at('title="1 watching"') < at("wish-rank"));
   // The questions have their count: no raised hand repeats it beside the title, nor on the count (Q01). The icon
   // says what the wish does.
-  assert.match(row, /wish-tone tone-running/);
+  assert.match(row, /wish-tone tone-running asks/);
   assert.match(row, /lucide-message-circle-question/);
-  assert.doesNotMatch(row, /lucide-hand/);
+  // The hand only waits for a window under 820px wide, whose CSS hides the second line: it takes the icon's place.
+  assert.equal(row.match(/lucide-hand/g).length, 1);
+  assert.match(
+    row,
+    /<span class="wish-hand tone-waiting"><svg[^>]*lucide-hand[^>]*>.*?<\/svg><\/span><\/span>/,
+  );
+  // A wish with no question carries no hand.
+  assert.doesNotMatch(
+    sidebar(false, { questions: 0, running: 1, watching: 0, merging: 0 }),
+    /wish-hand|lucide-hand/,
+  );
   // Folded to the rail, the icon is all that shows: it keeps the hand, and no count.
   const rail = sidebar(true);
-  assert.match(rail, /wish-tone tone-waiting/);
+  assert.match(rail, /wish-tone tone-waiting /);
+  assert.doesNotMatch(rail, /wish-hand/);
   assert.doesNotMatch(rail, /wish-counts/);
   assert.doesNotMatch(rail, /wish-grip/);
   // A wish whose only process is a watcher is watching, not running.
