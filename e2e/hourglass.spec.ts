@@ -142,10 +142,10 @@ test("the Hourglass reads its measures while it shows, and leaving it stops them
     });
     // The menu: the Hourglass at the bottom of the side panel, right above the profile.
     const entries = page.locator(
-      ".sidebar .plan-nav, .sidebar .wish-nav, .sidebar .project-list, .sidebar .import-nav, .sidebar .hourglass-nav, .sidebar .sidebar-bottom",
+      ".sidebar .plan-nav, .sidebar .wish-list, .sidebar .project-list, .sidebar .import-nav, .sidebar .hourglass-nav, .sidebar .sidebar-bottom",
     );
     await expect(entries.nth(0)).toHaveClass(/plan-nav/);
-    await expect(entries.nth(1)).toHaveClass(/wish-nav/);
+    await expect(entries.nth(1)).toHaveClass(/wish-list/);
     await expect(entries.nth(2)).toHaveClass(/project-list/);
     await expect(entries.nth(3)).toHaveClass(/import-nav/);
     await expect(entries.nth(4)).toHaveClass(/hourglass-nav/);
