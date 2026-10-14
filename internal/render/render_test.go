@@ -883,6 +883,50 @@ func TestWorkStands(t *testing.T) {
 	}
 }
 
+// TestMergeBeingFixed: a failed merge shows being fixed, orange, while its correction works; red when no correction
+// runs for it: none, failed or stopped, attempts spent (a question asked), or one done whose own merge failed alone.
+func TestMergeBeingFixed(t *testing.T) {
+	done := planv1.TaskStatus_TASK_STATUS_DONE
+	conflict := func(by, question string) *planv1.TaskIntegration {
+		return &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, Branch: "feat/x",
+			Reason: "a.go conflicts", CorrectedBy: by, QuestionId: question}
+	}
+	red := &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_RED, Branch: "feat/x", Reason: "test exited 1"}
+	pending := &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_PENDING, Branch: "feat/x"}
+	exp := &planv1.WishExport{Wish: &planv1.Wish{Id: "w", Title: "Fixes"}, Tasks: []*planv1.Task{
+		{Id: "t1", WishId: "w", Code: "W1", Title: "Fixed", Status: done, Integration: conflict("c1", "")},
+		{Id: "c1", WishId: "w", Code: "W2", Title: "Correction", Status: planv1.TaskStatus_TASK_STATUS_RUNNING},
+		{Id: "t3", WishId: "w", Code: "W3", Title: "Lost", Status: done, Integration: conflict("c3", "")},
+		{Id: "c3", WishId: "w", Code: "W4", Title: "Correction failed", Status: planv1.TaskStatus_TASK_STATUS_FAILED},
+		{Id: "t5", WishId: "w", Code: "W5", Title: "Asked", Status: done, Integration: conflict("c5", "q1")},
+		{Id: "c5", WishId: "w", Code: "W6", Title: "Correction", Status: planv1.TaskStatus_TASK_STATUS_PENDING},
+		{Id: "t7", WishId: "w", Code: "W7", Title: "Merges", Status: done, Integration: conflict("c7", "")},
+		{Id: "c7", WishId: "w", Code: "W8", Title: "Correction merging", Status: done, Integration: pending},
+		{Id: "t9", WishId: "w", Code: "W9", Title: "Stuck", Status: done, Integration: conflict("c9", "")},
+		{Id: "c9", WishId: "w", Code: "W10", Title: "Correction red", Status: done, Integration: red},
+		{Id: "t11", WishId: "w", Code: "W11", Title: "Alone", Status: done, Integration: conflict("", "")},
+	}}
+	html := page(t, Input{Export: exp, Language: "en"})
+	fixing := func(by string) string {
+		return `<span class="st fix"><i aria-hidden="true">⚒` + "\ufe0e" + `</i>Merge being fixed by ` + by + `</span>`
+	}
+	failed := `<span class="st fail"><i aria-hidden="true">✕</i>Merge failed</span>`
+	for code, want := range map[string]string{
+		"W1": fixing("W2"), "W7": fixing("W8"),
+		"W3": failed, "W5": failed, "W9": failed, "W11": failed,
+	} {
+		if row := between(html, `<tr id="t-`+code+`">`, "</tr>"); !strings.Contains(row, want) {
+			t.Errorf("%s's row lacks status %s:\n%s", code, want, row)
+		}
+	}
+	if row := between(html, `<tr id="t-W1">`, "</tr>"); !strings.Contains(row, `<p class="work fix">Conflict, not committed: a.go conflicts, corrected by W2</p>`) {
+		t.Errorf("W1's work does not show being fixed:\n%s", row)
+	}
+	if fr := page(t, Input{Export: exp, Language: "fr"}); !strings.Contains(fr, french(t, "page.status_fixing", map[string]string{"task": "W2"})) {
+		t.Error("the French page does not say the merge is being fixed")
+	}
+}
+
 // TestSVG ensures SVG blocks and fenced SVG markdown render inside dia-frame and strip unsafe elements.
 func TestSVG(t *testing.T) {
 	exp := &planv1.WishExport{

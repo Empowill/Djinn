@@ -211,6 +211,7 @@ export const WishTask = memo(function WishTask({
   codes,
   origin,
   forkedAs = "",
+  fixedBy = "",
   decision,
   focused = false,
   onStop,
@@ -233,6 +234,8 @@ export const WishTask = memo(function WishTask({
   origin?: ReactNode;
   // The task that took over this one, cut short: its code.
   forkedAs?: string;
+  // The correction task that fixes its failed merge while it works (fixerOf): its code.
+  fixedBy?: string;
   // The decision the task comes from, which onDecision shows.
   decision?: Decision;
   // Brought into sight and opened, from its decision.
@@ -282,12 +285,12 @@ export const WishTask = memo(function WishTask({
     : (task.dependsOn ?? [])
         .map((id) => codes?.get(id))
         .filter((code): code is string => !!code);
-  const tone = taskTone(task, forkedAs);
+  const tone = taskTone(task, forkedAs, fixedBy);
   // The main counter ticks while it runs, and freezes while paused or done.
   const now = useNow(task.status === TaskStatus.RUNNING && !!task.startTime);
   const time = taskTime(task, now);
   const activity = taskActivity(task, now);
-  const work = taskWork(task, codes);
+  const work = taskWork(task, codes, fixedBy);
   const hasActions = holdable || stoppable || (!!onDone && closable(task));
   const machineWait = task.status === TaskStatus.PENDING && task.machineWait;
   return (
@@ -304,7 +307,7 @@ export const WishTask = memo(function WishTask({
           <span className="wish-task-first-line">
             <StatusBadge
               tone={tone}
-              label={taskStatusText(task, forkedAs)}
+              label={taskStatusText(task, forkedAs, fixedBy)}
               title={cancelledText(task) ?? activity ?? undefined}
             />
             {isMerge(task) && <MergeLabel task={task} codes={codes} />}
@@ -426,6 +429,12 @@ export const WishTask = memo(function WishTask({
       {work && (
         <p className={`wish-task-note wish-task-work work-${work.tone}`}>
           {work.text}
+          {work.fixedBy && (
+            <>
+              {`, ${t("work.fixing_by")} `}
+              <TaskLink code={work.fixedBy} codes={codes} />
+            </>
+          )}
         </p>
       )}
       {machineWait ? (
@@ -572,17 +581,24 @@ function MergeFold({
   );
 }
 
+type Work = {
+  text: string;
+  tone: "waiting" | "running" | "done" | "failed" | "fixing";
+  // The correction task that fixes the failed merge while it works, by its code: the page links to it after the text.
+  fixedBy?: string;
+};
+
 // taskWork says where the finished work of a task stands on its way into its wish's integration branch (T07), as the
-// page says it, and its tone: undefined for work Djinn does not integrate. codes name the correction worker's task.
+// page says it, and its tone: undefined for work Djinn does not integrate. codes name the correction worker's task;
+// fixedBy is that task's code while it fixes a failed merge (fixerOf): the failure is then being fixed, not red.
 export function taskWork(
   task: Task,
   codes?: ReadonlyMap<string, string>,
-):
-  | { text: string; tone: "waiting" | "running" | "done" | "failed" }
-  | undefined {
+  fixedBy = "",
+): Work | undefined {
   const work = task.integration;
   const sha = (work?.sha ?? "").slice(0, 8);
-  let out: { text: string; tone: "waiting" | "running" | "done" | "failed" };
+  let out: Work;
   switch (work?.state) {
     case IntegrationState.PENDING:
       out = {
@@ -619,7 +635,9 @@ export function taskWork(
     default:
       return undefined;
   }
-  if (work.correctedBy)
+  if (out.tone === "failed" && fixedBy)
+    out = { ...out, tone: "fixing", fixedBy };
+  else if (work.correctedBy)
     out.text += `, ${t("work.corrected_by", { task: codes?.get(work.correctedBy) ?? work.correctedBy })}`;
   if (work.reviewedBy)
     out.text += `, ${t("work.reviewed_by", { task: codes?.get(work.reviewedBy) ?? work.reviewedBy })}`;

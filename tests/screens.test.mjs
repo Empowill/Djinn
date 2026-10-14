@@ -38,6 +38,7 @@ export {
   isPrincipal,
   principalWish,
   runningOf,
+  fixerOf,
 } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
 export {
@@ -4200,6 +4201,140 @@ test("work that merges stays in sight, shows as merging apart from the workers e
   const later = await page(committed);
   assert.doesNotMatch(later.view, /count-pill tone-running/);
   assert.doesNotMatch(later.plan, /plan-wish tone-running/);
+});
+
+test("a failed merge an agent fixes shows orange, naming its correction, everywhere; red once no correction runs", async () => {
+  const wishId = "01a13c45-f3a8-7295-855a-73c0445d7c88";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  // W1's merge conflicted; W2 corrects it, in the state given.
+  const tasks = (status) => [
+    {
+      id: "w1",
+      wishId,
+      code: "W1",
+      title: "Pour",
+      status: s.TaskStatus.DONE,
+      dependsOn: [],
+      createTime: at(1),
+      endTime: at(10),
+      integration: {
+        state: s.IntegrationState.CONFLICT,
+        branch: "feat/x",
+        reason: "a.go conflicts",
+        correctedBy: "w2",
+        attempts: 1,
+      },
+    },
+    {
+      id: "w2",
+      wishId,
+      code: "W2",
+      title: "Correct the merge of W1",
+      status,
+      dependsOn: [],
+      createTime: at(11),
+      correction: { attempt: 1, failure: { taskIds: ["w1"] } },
+    },
+  ];
+  const fixing = tasks(s.TaskStatus.RUNNING);
+  const failed = tasks(s.TaskStatus.FAILED);
+  const card = (list) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: list[0],
+        codes: new Map(list.map((x) => [x.id, x.code])),
+        fixedBy: s.fixerOf(list[0], list)?.code,
+        onStop() {},
+        async onSend() {},
+      }),
+    );
+  // The card: orange with a wrench, its words and its work line naming W2, a link to its card.
+  const now = card(fixing);
+  assert.match(now, /wish-task tone-fixing/);
+  assert.match(
+    now,
+    /<span class="status-badge tone-fixing">[\s\S]*?<span>Merge being fixed by W2<\/span><\/span>/,
+  );
+  assert.match(
+    now,
+    /work-fixing">Conflict, not committed: a\.go conflicts, being fixed by <button type="button" class="text-button agent-code task-link">W2<\/button><\/p>/,
+  );
+  assert.doesNotMatch(now, /tone-failed|Merge failed/);
+  // W2 failed: no correction runs, red as before.
+  const red = card(failed);
+  assert.match(red, /wish-task tone-failed/);
+  assert.match(red, /<span>Merge failed<\/span>/);
+  assert.match(
+    red,
+    /work-failed">Conflict, not committed: a\.go conflicts, corrected by W2</,
+  );
+
+  // The side panel counts it apart, orange.
+  const sidebar = (list) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [lamp],
+        projects: [],
+        counts: { [wishId]: { questions: 0, ...s.runningOf(list) } },
+        onSelectPlan() {},
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed: false,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  const detail = "1 merge being fixed: an agent corrects it, nothing to do";
+  assert.match(
+    sidebar(fixing),
+    new RegExp(`count-pill tone-fixing" title="${detail}"`),
+  );
+  assert.doesNotMatch(sidebar(failed), /tone-fixing/);
+
+  // The head of the wish and the flying carpet.
+  const page = async (list) => {
+    const transport = s.createRouterTransport(({ service }) => {
+      service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+      service(s.TaskService, { list: () => ({ tasks: list }) });
+      service(s.QuestionService, { list: () => ({ questions: [] }) });
+      service(s.BlockService, { list: () => ({ blocks: [] }) });
+    });
+    const djinn = s.createDjinn(transport, 10);
+    const close = djinn.store.open(wishId);
+    await djinn.store.changed(wishId, [s.Change.WISH]);
+    close();
+    const view = s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishView, { wish: lamp, onToast() {} }),
+      ),
+    );
+    const plan = s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.FlightPlan, { wishes: [lamp], onOpen() {}, onToast() {} }),
+      ),
+    );
+    return { view, plan };
+  };
+  const live = await page(fixing);
+  assert.match(
+    live.view,
+    new RegExp(`count-pill tone-fixing" title="${detail}"`),
+  );
+  assert.match(live.view, /<b>1<\/b>being fixed<\/span>/);
+  assert.match(
+    live.plan,
+    new RegExp(`count-pill tone-fixing" title="${detail}"`),
+  );
+  const dead = await page(failed);
+  assert.doesNotMatch(dead.view, /tone-fixing/);
+  assert.doesNotMatch(dead.plan, /tone-fixing/);
 });
 
 test("the update banner proposes to install a build committed, on one line, what changed unfolded on demand", () => {

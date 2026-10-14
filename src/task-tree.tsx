@@ -21,6 +21,7 @@ import { useTaskPrompt } from "./data/djinn";
 import { isMerge } from "./data/flight";
 import {
   cancelledText,
+  fixerOf,
   taskModelDisplay,
   taskStatusText,
   taskTime,
@@ -167,12 +168,27 @@ export function TaskTree({
     [tasks],
   );
   const byId = useMemo(() => new Map(tasks.map((x) => [x.id, x])), [tasks]);
+  // The correction task that fixes a task's failed merge while it works, by the id of the task (fixerOf).
+  const fixed = useMemo(
+    () =>
+      new Map(
+        tasks.flatMap((x) => {
+          const fixer = fixerOf(x, tasks);
+          return fixer ? [[x.id, fixer.code] as const] : [];
+        }),
+      ),
+    [tasks],
+  );
   const tones = useMemo(
     () =>
       layout.nodes.map((node) =>
-        taskTone(node.task, forked.get(node.task.code) ?? ""),
+        taskTone(
+          node.task,
+          forked.get(node.task.code) ?? "",
+          fixed.get(node.task.id) ?? "",
+        ),
       ),
-    [layout, forked],
+    [layout, forked, fixed],
   );
   const drawn = useMemo(() => pieces(layout, tones), [layout, tones]);
   const width = PAD * 2 + (layout.lanes - 1) * LANE;
@@ -291,6 +307,7 @@ export function TaskTree({
                 n={n}
                 tone={tones[node.row]}
                 forkedAs={forked.get(node.task.code) ?? ""}
+                fixedBy={fixed.get(node.task.id) ?? ""}
                 codes={codes}
                 focused={node.row === focusRow}
                 kin={!!kin && node.group === kin && node.row !== hover}
@@ -303,6 +320,7 @@ export function TaskTree({
                 node={hovered}
                 n={n}
                 forkedAs={forked.get(hovered.task.code) ?? ""}
+                fixedBy={fixed.get(hovered.task.id) ?? ""}
                 project={projects.get(hovered.task.projectId)}
                 azima={byId.get(hovered.group)}
               />
@@ -334,6 +352,7 @@ const TreeRow = memo(function TreeRow({
   n,
   tone,
   forkedAs,
+  fixedBy,
   codes,
   focused,
   kin,
@@ -344,6 +363,7 @@ const TreeRow = memo(function TreeRow({
   n: number;
   tone: Tone;
   forkedAs: string;
+  fixedBy: string;
   codes: ReadonlyMap<string, string>;
   focused: boolean;
   // Part of the same azima as the row hovered.
@@ -358,7 +378,7 @@ const TreeRow = memo(function TreeRow({
       className={`tree-row tone-${tone}${focused ? " focused" : ""}${kin ? " kin" : ""}`}
       style={{ top: (n - 1 - node.row) * ROW }}
       data-task={task.code}
-      aria-label={`${task.code} ${task.title}: ${taskStatusText(task, forkedAs)}`}
+      aria-label={`${task.code} ${task.title}: ${taskStatusText(task, forkedAs, fixedBy)}`}
       onClick={() => onOpen(task.id)}
       onMouseEnter={() => onHover(node.row)}
       onMouseLeave={() => onHover(-1)}
@@ -382,12 +402,14 @@ function TreeTip({
   node,
   n,
   forkedAs,
+  fixedBy,
   project,
   azima,
 }: {
   node: TreeNode;
   n: number;
   forkedAs: string;
+  fixedBy: string;
   project?: Project;
   // The azima it is part of.
   azima?: Task;
@@ -410,7 +432,7 @@ function TreeTip({
         </span>
       )}
       <span className="task-tooltip-activity">
-        {[taskStatusText(task, forkedAs), why, model?.label, time.text]
+        {[taskStatusText(task, forkedAs, fixedBy), why, model?.label, time.text]
           .filter(Boolean)
           .join(" · ")}
         {task.usage && (

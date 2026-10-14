@@ -7,7 +7,7 @@
 // it comes from, and an answer, a stop or a grant goes back to it. Each wish keeps its own view; an empty section is hidden.
 // The Djinn, the one lead, is at hand as on a wish: Talk to the Djinn in the header opens its terminal, the pill at the
 // bottom writes to it.
-import { GitMerge } from "lucide-react";
+import { GitMerge, Wrench } from "lucide-react";
 import {
   type CSSProperties,
   type ReactNode,
@@ -40,6 +40,7 @@ import {
   taskMapOf,
 } from "./data/flight";
 import {
+  fixerOf,
   investigating,
   noLead,
   runningOf,
@@ -304,6 +305,7 @@ export function FlightPlan({
           key={item.id}
           task={item}
           origin={wish ? wishOrigin(wish) : undefined}
+          fixedBy={fixerOf(item, details[item.wishId]?.tasks ?? noTasks)?.code}
           decision={wish ? decisionOfTask(item, wish) : undefined}
           focused={focus === item.id}
           onDecision={handleDecision}
@@ -323,6 +325,7 @@ export function FlightPlan({
     },
     [
       nestOf,
+      details,
       wishById,
       decisionOfTask,
       focus,
@@ -632,9 +635,8 @@ export function FlightPlan({
                           detail?.questions.filter(waitsForYou).length ?? 0;
                         const digging =
                           detail?.questions.filter(investigating).length ?? 0;
-                        const { running, watching, merging } = runningOf(
-                          detail?.tasks ?? [],
-                        );
+                        const { running, watching, merging, fixing } =
+                          runningOf(detail?.tasks ?? []);
                         // Work merging is Djinn at work on the wish: its tone, not its count of workers (W577).
                         const busy = running + merging;
                         const done =
@@ -710,6 +712,16 @@ export function FlightPlan({
                                   count={merging}
                                   label={t("plan.merging_detail", {
                                     count: merging,
+                                  })}
+                                />
+                              )}
+                              {fixing > 0 && (
+                                <CountPill
+                                  tone="fixing"
+                                  icon={Wrench}
+                                  count={fixing}
+                                  label={t("plan.fixing_detail", {
+                                    count: fixing,
                                   })}
                                 />
                               )}
