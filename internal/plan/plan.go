@@ -971,7 +971,9 @@ func (q *Questions) Ask(
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&planv1.QuestionServiceAskResponse{Question: question}), nil
+	return connect.NewResponse(&planv1.QuestionServiceAskResponse{
+		Question: question, Warnings: ContextWarnings(question.GetContext()),
+	}), nil
 }
 
 func (q *Questions) taskRuns(t *planv1.Task) bool {

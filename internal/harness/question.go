@@ -342,9 +342,11 @@ func investigatorPrompt(q *planv1.Question, note, retry, brief string) (title, p
 		"answer what the developer asks.\n"+
 		"2. Revise the question: `djinn question revise %[1]s --wish-id %[2]s --context \"…\" --recommendation \"…\"`, "+
 		"and `--options \"…\"` (each one, up to four) when the options change. The context says what you found and "+
-		"what each option costs, in a few lines; the recommendation starts with its option's letter (`B: …`).\n"+
+		"what each option costs, in the shape below; the recommendation starts with its option's letter (`B: …`).\n"+
 		"3. Revise it once, at the end, even if you found little: the question waits for you until you do.\n"+
 		"4. End with one line: what you found.\n\n", code, wish)
+	b.WriteString("## The shape of the context\n\n" + plan.QuestionShape + " Rewrite the former context into this " +
+		"shape even where you found nothing new.\n\n")
 	b.WriteString(questionAccess + retry + "## Where the wish stands\n\n" + brief)
 	return code + ": enlighten", b.String()
 }

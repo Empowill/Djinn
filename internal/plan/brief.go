@@ -122,13 +122,15 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"- **Every question's title starts with its emoji.** One emoji that tells its subject at a glance, then a " +
 		"space and the title: 🚀 a merge or a release, 🔎 a review, 🔐 a right or a permission, 🧪 a check or a test, " +
 		"📦 a build, 🌿 a branch, 🧭 an organisation choice, 🪵 logs, ⚠️ an incident. The same emoji goes in `--icon`.\n" +
+		"- **A question reads at a glance (W575).** " + QuestionShape + " Check what an investigator revised against " +
+		"it too; `djinn lead notes readable-questions` shows a context in this shape.\n" +
 		"- **Never ask the developer to check (Q246).** A check, a measure, a log to read, a CI result to look at, a " +
 		"command to run is never asked of the developer: that is what agents are good at. Spawn a task that runs it and " +
 		"investigates what it finds, or let a watcher report it: a CI result comes from the PR's or MR's babysit " +
 		"watcher. When a worker's final note says what remains to verify, spawn that task or watcher; never pass it on " +
 		"to the developer. A question to the developer is only for a decision or a move only a person can make (a " +
-		"right, a merge, a release, a machine Djinn does not have); then the exact command goes in a code block at the " +
-		"top of its `--context`, never mid-sentence.\n" +
+		"right, a merge, a release, a machine Djinn does not have); then the exact command goes in the code block at " +
+		"the top of its `--context`, never in a sentence.\n" +
 		"- **Refused calls are yours, rights stay explicit (Q273).** A worker's `ended` or `failed` event names the " +
 		"calls its permissions refused and the right that would allow them; the developer never sees them. Decide: " +
 		"continue the task otherwise (`djinn task continue`), or close it as seen (`djinn task done <task> --note " +
@@ -630,7 +632,8 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool, strategy planv1
 	if len(investigate) > 0 {
 		b.WriteString("\n## To investigate\n\n")
 		b.WriteString("The developer asked to find out more before deciding. Dig, then `djinn question revise <question> " +
-			"--wish-id <wish>` with what you found (`--context`, `--options`, `--recommendation`, `--before`).\n\n")
+			"--wish-id <wish>` with what you found (`--context`, `--options`, `--recommendation`, `--before`), the " +
+			"context in the shape every question keeps: the commands in one code block at the top, then short Markdown.\n\n")
 		for _, q := range investigate {
 			last := q.GetRounds()[len(q.GetRounds())-1]
 			fmt.Fprintf(&b, "- **%s** %s (asked %s)", q.GetCode(), clipLine(q.GetText()), when(last.GetCreateTime().AsTime()))
@@ -1339,7 +1342,8 @@ func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, rea
 	if len(investigate) > 0 {
 		b.WriteString("\n## To investigate\n\n")
 		b.WriteString("The developer asked to find out more before deciding. Dig, then `djinn question revise <question> " +
-			"--wish-id <wish>` with what you found (`--context`, `--options`, `--recommendation`, `--before`).\n\n")
+			"--wish-id <wish>` with what you found (`--context`, `--options`, `--recommendation`, `--before`), the " +
+			"context in the shape every question keeps: the commands in one code block at the top, then short Markdown.\n\n")
 		for _, q := range investigate {
 			last := q.GetRounds()[len(q.GetRounds())-1]
 			fmt.Fprintf(b, "- **%s** %s (asked %s)", q.GetCode(), clipLine(q.GetText()), when(last.GetCreateTime().AsTime()))

@@ -809,6 +809,22 @@ func TestBriefMovesRule(t *testing.T) {
 	}
 }
 
+// TestBriefQuestionShapeRule (W575): the lead reads the shape a question's context keeps, and where its example is.
+func TestBriefQuestionShapeRule(t *testing.T) {
+	rules := briefRules(nil, "")
+	for _, want := range []string{
+		"- **A question reads at a glance (W575).** " + QuestionShape,
+		"every command the developer must run, in one fenced code block, in run order",
+		"No command, flag, path or hash inside a sentence",
+		"`djinn lead notes readable-questions`",
+		"- `readable-questions`: ",
+	} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("briefRules lacks %q:\n%s", want, rules)
+		}
+	}
+}
+
 // TestBriefNoCheckAskedRule (Q246): a check is never asked of the developer: a task or a watcher runs it; a question
 // is for a decision or a person's move only, its command in a code block at the top of the context.
 func TestBriefNoCheckAskedRule(t *testing.T) {
@@ -820,7 +836,7 @@ func TestBriefNoCheckAskedRule(t *testing.T) {
 		"a CI result comes from the PR's or MR's babysit watcher",
 		"When a worker's final note says what remains to verify, spawn that task or watcher",
 		"A question to the developer is only for a decision or a move only a person can make",
-		"the exact command goes in a code block at the top of its `--context`, never mid-sentence",
+		"the exact command goes in the code block at the top of its `--context`, never in a sentence",
 		"what it leaves to verify (something it did not verify, a failing test it calls unrelated) goes to a task",
 	} {
 		if !strings.Contains(rules, want) {

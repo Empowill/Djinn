@@ -47,7 +47,7 @@ func TestWorkerPromptMoveRule(t *testing.T) {
 		"the lead spawns a task for it or lets a watcher report it",
 		"a CI result comes from the PR's babysit watcher",
 		"A question to the developer is only for a decision or a move only a person can make",
-		"the exact command in a code block at the top of its `--context`, never mid-sentence",
+		"ask it with `djinn question ask` before you end. " + plan.QuestionShape,
 	} {
 		if !strings.Contains(got1, want) {
 			t.Errorf("worker prompt lacks %q:\n%s", want, got1)
