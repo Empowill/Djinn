@@ -424,6 +424,10 @@ message Wish {
   // Whether the developer explicitly marked this wish as the principal wish. When unset, the active wish with the
   // lowest rank (rank 1) is the principal wish.
   bool principal = 21;
+  // Place in the list of the paused wishes, or of the granted ones, from 1 for the first: you order each by hand
+  // (djinn wish reorder). A wish paused or granted comes first in its list; one set aside before Djinn recorded places
+  // has none, and comes after the others, the oldest first. 0 for an active wish.
+  int32 place = 22;
 }
 
 // PushMode is how Djinn pushes a wish's integration branch to its remote once a push is due.
@@ -2411,7 +2415,7 @@ service WishService {
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // List the wishes: the active ones by rank, the first has priority; then the paused ones and the granted ones,
-  // the most recent last.
+  // each in its own order (djinn wish reorder), the one paused or granted last first.
   rpc List(WishServiceListRequest) returns (WishServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -2510,6 +2514,12 @@ service WishService {
   // Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
   // there, the third place at most, and the wish it pushes past the third place is paused.
   rpc Move(WishServiceMoveRequest) returns (WishServiceMoveResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Move a paused or granted wish to another place in the list of the wishes of its state: --to 1 puts it first. It
+  // stays paused or granted: djinn wish move makes it active.
+  rpc Reorder(WishServiceReorderRequest) returns (WishServiceReorderResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
@@ -2863,6 +2873,21 @@ message WishServiceMoveResponse {
   repeated Wish wishes = 1;
   // The wish pushed past the third place, paused.
   repeated Wish paused = 2;
+}
+
+message WishServiceReorderRequest {
+  // The wish, paused or granted.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Its new place in the list of the wishes of its state, from 1 for the first; beyond the last, it goes last.
+  int32 to = 2 [(buf.validate.field).int32.gte = 1];
+}
+
+message WishServiceReorderResponse {
+  // The wishes of its state, paused or granted, in their new order.
+  repeated Wish wishes = 1;
 }
 
 message WishServiceMakeRequest {

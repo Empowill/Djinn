@@ -671,6 +671,7 @@
   "sidebar.projects": "PROJETS",
   "sidebar.ready": "prêt à exaucer",
   "sidebar.to_first": "En faire le premier vœu actif",
+  "sidebar.wish_place": "{title} (glissez, ou Alt+Flèche, pour changer sa place ; déposé parmi les vœux actifs, il devient actif)",
   "sidebar.wish_rank": "{rank}. {title} (glissez, ou Alt+Flèche, pour changer son rang)",
   "sidebar.wishes": "SOUHAITS",
   "status.gates.one": "{count} porte tenue",

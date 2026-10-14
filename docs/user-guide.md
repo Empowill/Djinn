@@ -107,21 +107,25 @@ wishes (`djinn wish principal <wish-id> --principal`). When unset, the active wi
 
 **Three wishes are active at most.** That guards your attention; the machine decides how many workers run. You may
 have as many wishes as you like: with three active already, a new one is made paused (**Make it paused**). The side
-panel lists the active wishes by rank, the first has priority: drag one, or Alt+Arrow, to change its rank. The paused
-wishes follow, then the granted ones.
+panel lists the active wishes by rank, the first has priority: drag one by its grip, on its left, or Alt+Arrow, to change
+its rank. The paused wishes follow, then the granted ones, each list in its own order, which every window shows and a
+restart keeps: drag one within its list, or Alt+Arrow, to change its place. A wish paused or granted comes first in its
+list. While you drag, a thin line shows where the wish will land.
 
 At the top of a wish:
 
 - **Pause** sets it aside: its workers stop, each on its own session, and its place frees up.
 - **Resume** makes it active again: its workers start again where they were, without counting as a resume. With three
-  active already, it takes the last place, and the last active wish is paused. Dragging a paused wish onto an active
-  one makes it active at that rank; **Make it the first active wish**, next to it in the side panel, puts it first.
+  active already, it takes the last place, and the last active wish is paused. Dropping a paused or granted wish among
+  the active ones makes it active at that rank, the last active one paused when three are; **Make it the first active
+  wish**, next to a paused one in the side panel, puts it first.
 - **Reopen** brings back a granted wish.
 - The bin, **Delete this wish**, deletes it for good after you confirm: its tasks and their events, its questions and
   its blocks. Its running workers stop first. A worktree with no work of its own goes;
   one with commits or changes not committed stays, and every branch stays.
 
 From a terminal: `djinn wish pause <wish-id>`, `djinn wish activate <wish-id>`, `djinn wish move <wish-id> --to 1`,
+`djinn wish reorder <wish-id> --to 1` (a paused or granted wish, first in its list),
 `djinn wish rename <wish-id> --title "…"`, `djinn wish principal <wish-id> --principal`, `djinn wish delete <wish-id>`.
 
 ## The Djinn

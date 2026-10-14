@@ -302,8 +302,19 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   assert.match(html, /1 granted/);
   // Granted wishes stay folded until asked.
   assert.doesNotMatch(html, /Light it/);
-  // The active ones are dragged to a new rank, and a paused one among them; a granted one is not.
+  // Every wish shown is dragged by its grip, on the left of its row: the active ones to a new rank, a paused one among
+  // them or among the paused ones (Q01).
   assert.equal(html.match(/draggable="true"/g).length, 3);
+  assert.equal(
+    html.match(
+      /draggable="true"><span class="wish-grip" aria-hidden="true"><svg[^>]*lucide-grip-vertical/g,
+    ).length,
+    3,
+  );
+  assert.match(
+    html,
+    /title="Trim the wick \(drag, or Alt\+Arrow, to change its place/,
+  );
   // A paused wish goes first with its button.
   assert.equal(html.match(/Make it the first active wish/g).length / 2, 1);
   assert.match(html, /mission-nav wish-nav selected/);
@@ -311,9 +322,12 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   assert.equal(html.match(/class="wish-counts"/g).length, 2);
   assert.match(
     html,
-    /<span>Polish the brass<\/span><span class="wish-counts">/,
+    /<span class="wish-title">Polish the brass<\/span><span class="wish-counts">/,
   );
-  assert.match(html, /<span>Trim the wick<\/span><\/button>/);
+  assert.match(
+    html,
+    /<span class="wish-title">Trim the wick<\/span><\/button>/,
+  );
   // A wish ready to grant says it there, its icon the clipboard to check, not a raised hand.
   assert.match(html, /wish-tone tone-proof/);
   assert.match(html, />ready to grant<\/span><small class="wish-rank">/);
@@ -354,6 +368,7 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   const rail = sidebar(true);
   assert.match(rail, /wish-tone tone-waiting/);
   assert.doesNotMatch(rail, /wish-counts/);
+  assert.doesNotMatch(rail, /wish-grip/);
   // A wish whose only process is a watcher is watching, not running.
   const watched = s.renderToStaticMarkup(
     h(s.WishSidebar, {
@@ -5332,10 +5347,7 @@ test("regression W507: a wish without a project shows its task, its rank as a ra
       onNewProject() {},
     }),
   );
-  assert.match(
-    side,
-    /<small class="wish-rank"><svg[^>]*>.*?<\/svg>#3<\/small>/,
-  );
+  assert.match(side, /<small class="wish-rank">#3<\/small>/);
   assert.doesNotMatch(side, /count-pill/);
 });
 

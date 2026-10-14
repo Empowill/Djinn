@@ -106,6 +106,7 @@ function summary(command: Command, exp: WishExport): string {
       return `${modes[Number(r.mode)] ?? ""} ${project}`.trim();
     }
     case "plan.v1.WishServiceMoveRequest":
+    case "plan.v1.WishServiceReorderRequest":
       return String(r.to ?? "");
   }
   if (typeof r.taskId === "string") return task(r.taskId);

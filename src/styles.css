@@ -328,7 +328,7 @@ html[data-theme="light"] .wordmark-period {
   text-align: left;
   border-radius: 5px;
 }
-.mission-nav > span:nth-child(2) {
+.mission-nav > .wish-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1690,7 +1690,8 @@ html[data-still] .operating-load * {
   .sidebar .new-mission kbd,
   .sidebar-section-label,
   .sidebar .nav-item > span,
-  .mission-nav > span:nth-child(2),
+  .mission-nav > .wish-title,
+  .mission-nav > .wish-grip,
   .mission-nav > small,
   .mission-nav > .wish-counts,
   .profile > span:nth-child(2),
