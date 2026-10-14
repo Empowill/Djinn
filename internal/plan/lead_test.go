@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -666,20 +667,26 @@ func TestLeadAgyProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(b)
+	var got leadAgyProjectFile
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != LeadAgyProjectID {
+		t.Errorf("djinn-lead.json id = %q, want %q", got.ID, LeadAgyProjectID)
+	}
+	allow := got.PermissionGrants.PermissionGrants.Allow
 	for _, want := range []string{
-		`"id": "djinn-lead"`,
-		`"read_file(` + filepath.Clean(dir) + `)"`,
-		`"read_file(` + filepath.Clean(djinnHome) + `)"`,
-		`"command(djinn)"`,
-		`"command(git status)"`,
-		`"command(git log)"`,
-		`"command(git diff)"`,
-		`"command(git show)"`,
-		`"command(git branch)"`,
+		"read_file(" + filepath.Clean(dir) + ")",
+		"read_file(" + filepath.Clean(djinnHome) + ")",
+		"command(djinn)",
+		"command(git status)",
+		"command(git log)",
+		"command(git diff)",
+		"command(git show)",
+		"command(git branch)",
 	} {
-		if !strings.Contains(text, want) {
-			t.Errorf("djinn-lead.json lacks %s:\n%s", want, text)
+		if !slices.Contains(allow, want) {
+			t.Errorf("djinn-lead.json lacks %q:\n%s", want, b)
 		}
 	}
 }
