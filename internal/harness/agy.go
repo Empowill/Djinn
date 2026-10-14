@@ -352,6 +352,9 @@ func agyProject(spec Spec) agyProjectFile {
 			}
 		}
 	} else {
+		if p.GetNetwork() {
+			g.Allow = appendUnique(g.Allow, agyEveryURL)
+		}
 		for _, c := range p.GetCommands() {
 			g.Allow = appendUnique(g.Allow, "command("+c+")")
 		}

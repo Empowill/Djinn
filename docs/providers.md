@@ -94,16 +94,18 @@ Djinn decides when it spawns a task, and records the outcome in the task's `acce
 
 **A question worker** (`Task.role`, the investigator Djinn starts on a question, see the [agent
 protocol](agent-protocol.md)) skips these rules: its access is `DJINN`, the same everywhere. It reads, in its
-project's folder without a worktree (or an empty folder of its own outside any project), and runs only djinn's
+project's folder without a worktree (or an empty folder of its own outside any project), searches the web and fetches
+pages (`WebFetch` and `WebSearch`, `read_url(*)` and `search_web`, `networkAccess`), and runs only djinn's
 commands to read the wish and plan from the question (`wish brief`, `task list`, `task get`, `question list`, `block
 list`, `mark list`, `tilasm list`, `tilasm get`, `task spawn`, `question ask`, `question revise`, `block put`) and
-Git's to read the history; no edit, no gate, no network, in the listed mode (Claude's `dontAsk`). Djinn translates
+Git's to read the history; no edit, no gate, in the listed mode (Claude's `dontAsk`). Djinn translates
 this list as it does a project's file. Claude allows each command with its arguments (`Bash(djinn task spawn *)`, the
 same as `Bash(djinn task spawn:*)`), and `dontAsk` still runs file reads in the working folder, the project's, so
 Read, Grep and Glob read it (`code.claude.com/docs/en/permissions`, read 2026-10-10). But every part of a compound
 command must be allowed: `djinn task list … | grep …` is refused whole. Its prompt says so: each `djinn` command alone
-in its own Bash call, files read with Read, Grep and Glob, and a refusal is of that form, not of Bash. One that ends
-without doing anything after a refusal fails, and Djinn starts it again once (`internal/harness/question.go`).
+in its own Bash call, files read with Read, Grep and Glob, the web searched with its web tools, and a refusal is of
+that form, not of Bash. One that ends without doing anything after a refusal fails, and Djinn starts it again once
+(`internal/harness/question.go`).
 
 **What counts as agent configuration** (rule 4), at the root of the project's folder, file names compared without
 regard to case: for every agent, `AGENTS.md` and an `.agents` folder; for Claude, `CLAUDE.md`, `CLAUDE.local.md`,
