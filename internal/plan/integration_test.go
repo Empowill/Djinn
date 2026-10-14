@@ -15,11 +15,16 @@ import (
 )
 
 // TestChangeIntegrationBranch: a wish's integration branch changes to an existing local branch, or to a new name made
-// from the current one, through SetIntegration; Branches lists where it may land, the branches of Djinn's tasks left
-// out; and while a merge runs into the branch, the change is refused with what runs, the branch kept.
+// from the current one, or from the remote's branch of that name, through SetIntegration; Branches lists where it may
+// land, the branches of Djinn's tasks left out; and while a merge runs into the branch, the change is refused with what
+// runs, the branch kept.
 func TestChangeIntegrationBranch(t *testing.T) {
 	ctx := t.Context()
-	repo := gitRepo(t, "app", "https://example.com/acme/app.git")
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	if out, err := exec.Command("git", "init", "-q", "--bare", origin).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	repo := gitRepo(t, "app", origin)
 	git := func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"-C", repo, "-c", "user.name=Test", "-c", "user.email=test@example.com",
@@ -101,6 +106,30 @@ func TestChangeIntegrationBranch(t *testing.T) {
 	}
 	if got, want := git("rev-parse", "feat/landing"), git("rev-parse", "release"); got != want {
 		t.Errorf("feat/landing made at %s, want release's tip %s", got, want)
+	}
+	// A name the remote holds, an open merge request's branch: made from the remote's, its own commits kept, no
+	// upstream set (wish Dew, 13/10/2026: made from the integration branch, it lacked them, and nothing could be pushed).
+	git("switch", "-q", "-c", "ET-1-mr", "main")
+	if err := os.WriteFile(filepath.Join(repo, "MR.md"), []byte("mr\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git("add", ".")
+	git("commit", "-q", "-m", "On the merge request")
+	git("push", "-q", "origin", "ET-1-mr")
+	mr := git("rev-parse", "HEAD")
+	git("switch", "-q", "main")
+	git("branch", "-D", "ET-1-mr")
+	if _, err := set("ET-1-mr", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := git("rev-parse", "refs/heads/ET-1-mr"); got != mr {
+		t.Errorf("ET-1-mr made at %s, want the remote's %s", got, mr)
+	}
+	if out, err := exec.Command("git", "-C", repo, "config", "branch.ET-1-mr.merge").CombinedOutput(); err == nil {
+		t.Errorf("ET-1-mr tracks %s, want no upstream", out)
+	}
+	if _, err = set("feat/landing", false); err != nil {
+		t.Fatal(err)
 	}
 
 	// A batch merging into it: refused, naming it, the branch kept.

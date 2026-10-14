@@ -304,7 +304,8 @@ main: its pull request, opened as a draft when you say yes to Djinn's proposal, 
 the branch; Djinn never re-targets it.
 
 A project whose branches follow a convention (a ticket's key) names an azima's branch with `djinn task update <azima>
---branch <name>`: a branch that exists is adopted as it is, one that does not is cut from main under that name. A wish
+--branch <name>`: a branch that exists is adopted as it is; one only the remote holds (an open pull request's) is made
+from the remote's; one that does not exist is cut from main under that name. A wish
 whose work already lives on its integration branch switches to per azima once the azima carrying it adopts that branch;
 before, Djinn refuses the switch, which would strand that work, and says how
 ([naming an azima's branch](team-settings.md#pushing)).
