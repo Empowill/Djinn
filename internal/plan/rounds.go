@@ -3,6 +3,7 @@ package plan
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
@@ -13,6 +14,65 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
 )
+
+// HistoryHeader introduces the prior-versions section appended to a revised question's context.
+const HistoryHeader = "## Historique des versions pr\u00e9c\u00e9dentes"
+
+// CleanContext strips any auto-appended HistoryHeader section from a question's context so revisions never nest or
+// duplicate prior history.
+func CleanContext(context string) string {
+	if i := strings.Index(context, "\n\n"+HistoryHeader); i >= 0 {
+		return strings.TrimRight(context[:i], "\r\n ")
+	}
+	if i := strings.Index(context, "\n"+HistoryHeader); i >= 0 {
+		return strings.TrimRight(context[:i], "\r\n ")
+	}
+	if strings.HasPrefix(context, HistoryHeader) {
+		return ""
+	}
+	return context
+}
+
+// formatHistory formats the chronological history from Tour 0 through prior revisions so the question context
+// preserves every prior version without nesting or duplicating.
+func formatHistory(rounds []*planv1.Round) string {
+	var b strings.Builder
+	tour := 0
+	for _, r := range rounds {
+		switch r.GetKind() {
+		case planv1.RoundKind_ROUND_KIND_ENLIGHTEN:
+			if note := strings.TrimSpace(r.GetNote()); note != "" {
+				fmt.Fprintf(&b, "- Enlighten (Tour %d): %s\n", tour, note)
+			}
+		case planv1.RoundKind_ROUND_KIND_REVISE:
+			label := fmt.Sprintf("Tour %d", tour)
+			if tour == 0 {
+				label = "Tour 0 (initial)"
+			}
+			fmt.Fprintf(&b, "### %s\n", label)
+			if opts := r.GetOptions(); len(opts) > 0 {
+				var formatted []string
+				for i, o := range opts {
+					formatted = append(formatted, fmt.Sprintf("%c: %s", 'A'+i, o))
+				}
+				fmt.Fprintf(&b, "- Options: %s\n", strings.Join(formatted, " | "))
+			}
+			if rec := strings.TrimSpace(r.GetRecommendation()); rec != "" {
+				fmt.Fprintf(&b, "- Recommendation: %s\n", rec)
+			}
+			if ctx := strings.TrimSpace(CleanContext(r.GetContext())); ctx != "" {
+				fmt.Fprintf(&b, "\n%s\n", ctx)
+			}
+			b.WriteString("\n")
+			tour++
+		}
+	}
+	body := strings.TrimSpace(b.String())
+	if body == "" {
+		return ""
+	}
+	return HistoryHeader + "\n\n" + body
+}
 
 // Investigating tells an open question whose last round is a request to investigate: it waits for the lead's
 // revision, not for the developer.
@@ -29,6 +89,8 @@ func (q *Questions) Enlighten(
 	question, err := q.round(ctx, req.Spec(), req.Msg, req.Msg.GetQuestion(), req.Msg.GetWishId(),
 		func(question *planv1.Question, round *planv1.Round) {
 			round.Kind, round.Note = planv1.RoundKind_ROUND_KIND_ENLIGHTEN, req.Msg.GetNote()
+			round.Context, round.Options, round.Recommendation =
+				CleanContext(question.GetContext()), slices.Clone(question.GetOptions()), question.GetRecommendation()
 		})
 	if err != nil {
 		return nil, err
@@ -48,13 +110,32 @@ func (q *Questions) Revise(
 	ctx context.Context, req *connect.Request[planv1.QuestionServiceReviseRequest],
 ) (*connect.Response[planv1.QuestionServiceReviseResponse], error) {
 	m := req.Msg
+	if path := m.GetContextFile(); path != "" {
+		if m.GetContext() != "" {
+			return nil, connect.NewError(connect.CodeInvalidArgument,
+				fmt.Errorf("give context or context_file, not both"))
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("read context_file: %w", err))
+		}
+		text := strings.TrimRight(string(data), "\r\n")
+		if len(text) > 20000 {
+			return nil, connect.NewError(connect.CodeInvalidArgument,
+				fmt.Errorf("context_file exceeds 20000 bytes (%d)", len(text)))
+		}
+		m = proto.CloneOf(m)
+		m.Context, m.ContextFile = text, ""
+	}
 	question, err := q.round(ctx, req.Spec(), m, m.GetQuestion(), m.GetWishId(),
 		func(question *planv1.Question, round *planv1.Round) {
+			prevContext := CleanContext(question.GetContext())
 			round.Kind, round.TaskId = planv1.RoundKind_ROUND_KIND_REVISE, m.GetTaskId()
 			round.Context, round.Options, round.Recommendation =
-				question.GetContext(), slices.Clone(question.GetOptions()), question.GetRecommendation()
+				prevContext, slices.Clone(question.GetOptions()), question.GetRecommendation()
+			baseContext := prevContext
 			if m.GetContext() != "" {
-				question.Context = m.GetContext()
+				baseContext = CleanContext(m.GetContext())
 			}
 			if len(m.GetOptions()) > 0 {
 				question.Options = m.GetOptions()
@@ -64,6 +145,15 @@ func (q *Questions) Revise(
 			}
 			if m.Before != nil {
 				question.Before = strings.TrimSpace(m.GetBefore())
+			}
+			history := formatHistory(append(slices.Clone(question.GetRounds()), round))
+			switch {
+			case baseContext != "" && history != "":
+				question.Context = baseContext + "\n\n" + history
+			case history != "":
+				question.Context = history
+			default:
+				question.Context = baseContext
 			}
 			question.Revision++
 		})

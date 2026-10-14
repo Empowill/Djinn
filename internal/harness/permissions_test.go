@@ -79,9 +79,26 @@ func TestCommandAllowed(t *testing.T) {
 
 	djinnPerms := djinnOnly()
 	for command, want := range map[string]bool{
-		`djinn question revise Q01 --wish-id w1 --context "SQLite is free"`: true,
+		`djinn question revise Q01 --wish-id w1 --context "SQLite is free"`:     true,
+		`djinn question revise Q01 --wish-id w1 --context-file /tmp/context.md`: true,
 		"djinn question revise Q01 --wish-id w1 --options \"A: Keep SQLite\" --options \"B: Move to Postgres\" " +
 			"--recommendation \"A: Keep SQLite\" --context \"One-line why.\n\n~~~sh\n # check version\nsqlite3 --version\n~~~\n\n- Verified in go.mod.\"": true,
+		"djinn question list --wish-id w1":         true,
+		"djinn task get t1":                        true,
+		"djinn task list --wish-id w1":             true,
+		"djinn wish brief w1":                      true,
+		"djinn block list w1":                      true,
+		"djinn tilasm list w1":                     true,
+		"djinn tilasm get w1 notes":                true,
+		"git log -n 5 main..HEAD":                  true,
+		"git show HEAD:internal/plan/rounds.go":    true,
+		"git diff main...HEAD":                     true,
+		"git status --short":                       true,
+		"git branch -a":                            true,
+		"git rev-parse HEAD":                       true,
+		"git ls-tree -r main":                      true,
+		"git checkout -b other":                    false,
+		"git push origin main":                     false,
 		"djinn gate run lint -- go tool task lint": false,
 	} {
 		if got := commandAllowed(djinnPerms, command); got != want {
@@ -152,7 +169,7 @@ func TestQuestionWorkerClaudeRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	allow, deny := settings.Permissions.Allow, settings.Permissions.Deny
-	for _, c := range djinnCommands {
+	for _, c := range slices.Concat(djinnCommands, gitRead) {
 		if !slices.Contains(allow, "Bash("+c+" *)") {
 			t.Errorf("%s is not allowed with its arguments: %v", c, allow)
 		}

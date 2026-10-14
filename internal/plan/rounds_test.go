@@ -2,6 +2,8 @@ package plan
 
 import (
 	"context"
+	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -11,6 +13,10 @@ import (
 	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 )
+
+func writeTestFile(path, content string) error {
+	return os.WriteFile(path, []byte(content), 0o600)
+}
 
 // TestRounds: the developer asks to investigate, the lead revises, twice; each round keeps what the question said
 // before it. A decided question takes no round. The brief lists what to investigate, with its note.
@@ -63,7 +69,8 @@ func TestRounds(t *testing.T) {
 	}
 	q = rev.Msg.GetQuestion()
 	last := q.GetRounds()[1]
-	if Investigating(q) || q.GetRevision() != 1 || q.GetContext() != "Olive: 6 h. Paraffin: 9 h." ||
+	if Investigating(q) || q.GetRevision() != 1 || CleanContext(q.GetContext()) != "Olive: 6 h. Paraffin: 9 h." ||
+		!strings.Contains(q.GetContext(), HistoryHeader) ||
 		q.GetRecommendation() != "B: it lasts." || len(q.GetOptions()) != 2 {
 		t.Errorf("after revise = %v", q)
 	}
@@ -170,6 +177,103 @@ func TestWorkerAttribution(t *testing.T) {
 		Text: "Which wick?", WishId: wish, TaskId: stranger.GetId(),
 	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("a question by another wish's task: %v, want invalid_argument", err)
+	}
+}
+
+// TestRevisionHistoryAndContextFile verifies:
+// - Enlighten preserves Tour 0 (initial context, options, recommendation) on rounds[0] before any revision.
+// - Multi-round revisions preserve a clean, non-duplicating HistoryHeader section from Tour 0 through prior revisions.
+// - Revise supports ContextFile (--context-file) with markdown headers (#), arrows (->), and parentheses.
+func TestRevisionHistoryAndContextFile(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	wish := c.wish(t)
+	asked, err := c.questions.Ask(ctx, connect.NewRequest(&planv1.QuestionServiceAskRequest{
+		Text: "Which transport?", Options: []string{"gRPC", "Connect"}, WishId: wish,
+		Context: "Tour 0 initial context.", Recommendation: "B: Connect works over HTTP/1.1.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: asked.Msg.GetQuestion().GetCode()}}
+
+	// Enlighten 1 records Tour 0 on rounds[0].
+	enl1, err := c.questions.Enlighten(ctx, connect.NewRequest(&planv1.QuestionServiceEnlightenRequest{
+		Question: ref, WishId: wish, Note: "Check browser streaming.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r0 := enl1.Msg.GetQuestion().GetRounds()[0]
+	if r0.GetContext() != "Tour 0 initial context." || r0.GetRecommendation() != "B: Connect works over HTTP/1.1." ||
+		!slices.Equal(r0.GetOptions(), []string{"gRPC", "Postgres"}[:1]) && !slices.Equal(r0.GetOptions(), []string{"gRPC", "Connect"}) {
+		t.Fatalf("Tour 0 not preserved on enlighten round: %v", r0)
+	}
+
+	// Revise 1 via ContextFile containing #, ->, and parentheses.
+	ctxFile := t.TempDir() + "/rev1.md"
+	rev1Body := "~~~\n# check streaming\ncurl https://example.com\n~~~\n\nWhy: browser -> server streaming (verified)."
+	if err := writeTestFile(ctxFile, rev1Body+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	rev1, err := c.questions.Revise(ctx, connect.NewRequest(&planv1.QuestionServiceReviseRequest{
+		Question: ref, WishId: wish, ContextFile: ctxFile, Recommendation: "B: Connect streams cleanly.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	q1 := rev1.Msg.GetQuestion()
+	if CleanContext(q1.GetContext()) != rev1Body {
+		t.Errorf("CleanContext after rev1 = %q, want %q", CleanContext(q1.GetContext()), rev1Body)
+	}
+	if strings.Count(q1.GetContext(), HistoryHeader) != 1 ||
+		!strings.Contains(q1.GetContext(), "### Tour 0 (initial)") ||
+		!strings.Contains(q1.GetContext(), "Tour 0 initial context.") ||
+		!strings.Contains(q1.GetContext(), "Check browser streaming.") {
+		t.Errorf("history after rev1:\n%s", q1.GetContext())
+	}
+
+	// Enlighten 2 + Revise 2 (even when caller passes context containing old HistoryHeader, it never duplicates).
+	if _, err := c.questions.Enlighten(ctx, connect.NewRequest(&planv1.QuestionServiceEnlightenRequest{
+		Question: ref, WishId: wish, Note: "What about trailers?",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	rev2, err := c.questions.Revise(ctx, connect.NewRequest(&planv1.QuestionServiceReviseRequest{
+		Question: ref, WishId: wish,
+		Context:        "Tour 2 context.\n\n" + HistoryHeader + "\n\nstale copy",
+		Recommendation: "B: trailers framed in body.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	q2 := rev2.Msg.GetQuestion()
+	if CleanContext(q2.GetContext()) != "Tour 2 context." {
+		t.Errorf("CleanContext after rev2 = %q", CleanContext(q2.GetContext()))
+	}
+	if count := strings.Count(q2.GetContext(), HistoryHeader); count != 1 {
+		t.Errorf("HistoryHeader count = %d, want 1:\n%s", count, q2.GetContext())
+	}
+	for _, want := range []string{
+		"### Tour 0 (initial)",
+		"Tour 0 initial context.",
+		"### Tour 1",
+		"browser -> server streaming (verified).",
+		"What about trailers?",
+	} {
+		if !strings.Contains(q2.GetContext(), want) {
+			t.Errorf("q2 context missing %q:\n%s", want, q2.GetContext())
+		}
+	}
+	if strings.Contains(q2.GetContext(), "stale copy") {
+		t.Errorf("q2 context kept stale HistoryHeader section:\n%s", q2.GetContext())
+	}
+
+	// Passing both context and context_file is rejected.
+	if _, err := c.questions.Revise(ctx, connect.NewRequest(&planv1.QuestionServiceReviseRequest{
+		Question: ref, WishId: wish, Context: "x", ContextFile: ctxFile,
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("both context and context_file: %v, want invalid_argument", err)
 	}
 }
 

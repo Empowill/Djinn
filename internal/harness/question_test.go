@@ -366,6 +366,121 @@ func TestQuestionWorkerProvider(t *testing.T) {
 	}) {
 		t.Errorf("start event for explicit provider: %v", eventsExplicit)
 	}
+
+	// Strong model configured on project is inherited by investigator when question_model is not set.
+	dirStrong := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dirStrong, ".agents"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirStrong, plan.SettingsFile), []byte("provider: PROVIDER_FAKE\nmodel: \"strong-opus\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wishIDStrong, _ := e.wish(t, dirStrong)
+	qStrong := e.asker(wishIDStrong)
+	askedStrong := qStrong.ask(t, "")
+	qStrong.enlighten(t, askedStrong.GetCode(), "check with strong model")
+	invsStrong := e.roles(t, wishIDStrong, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+	if len(invsStrong) != 1 {
+		t.Fatalf("%d investigators, want 1", len(invsStrong))
+	}
+	if invsStrong[0].GetProvider() != planv1.Provider_PROVIDER_FAKE || invsStrong[0].GetModel() != "strong-opus" {
+		t.Errorf("investigator provider = %s, model = %q; want fake, strong-opus", invsStrong[0].GetProvider(), invsStrong[0].GetModel())
+	}
+	e.ended(t, invsStrong[0].GetId())
+}
+
+// TestInvestigatorPromptFullHistory verifies that investigatorPrompt injects Tour 0, the full chronological sequence
+// of rounds (Enlighten notes and Revisions), --before, and linked/blocked tasks, while anchoring the worker to the
+// original subject from Tour 0.
+func TestInvestigatorPromptFullHistory(t *testing.T) {
+	t.Parallel()
+	q := &planv1.Question{
+		Id:             "q-id-1",
+		Code:           "Q45",
+		WishId:         "w-id-1",
+		TaskId:         "t-asker",
+		Text:           "How should investigator workers inspect git and history?",
+		Options:        []string{"Expand djinnOnly + history", "Keep minimal"},
+		Context:        "Tour 2 revised context.\n\n" + plan.HistoryHeader + "\n\nold history",
+		Recommendation: "A: full history and git read",
+		Before:         "W12, W13",
+		Revision:       2,
+		Rounds: []*planv1.Round{
+			{
+				Kind:           planv1.RoundKind_ROUND_KIND_ENLIGHTEN,
+				Note:           "First enlighten note: check permissions.",
+				Options:        []string{"Option A0", "Option B0"},
+				Context:        "Tour 0 initial context before any revision.",
+				Recommendation: "A: initial rec",
+			},
+			{
+				Kind:           planv1.RoundKind_ROUND_KIND_REVISE,
+				TaskId:         "t-inv-1",
+				Options:        []string{"Option A0", "Option B0"},
+				Context:        "Tour 0 initial context before any revision.",
+				Recommendation: "A: initial rec",
+			},
+			{
+				Kind:           planv1.RoundKind_ROUND_KIND_ENLIGHTEN,
+				Note:           "Second enlighten note: what about Tour 0 in prompt?",
+				Options:        []string{"Option A1", "Option B1"},
+				Context:        "Tour 1 context after first revision.",
+				Recommendation: "B: first rev rec",
+			},
+			{
+				Kind:           planv1.RoundKind_ROUND_KIND_REVISE,
+				TaskId:         "t-inv-2",
+				Options:        []string{"Option A1", "Option B1"},
+				Context:        "Tour 1 context after first revision.",
+				Recommendation: "B: first rev rec",
+			},
+			{
+				Kind: planv1.RoundKind_ROUND_KIND_ENLIGHTEN,
+				Note: "Third enlighten note: verify blocked tasks too.",
+			},
+		},
+	}
+	tasks := []*planv1.Task{
+		{Id: "t-asker", Code: "W10", Title: "Ask architecture question", Status: planv1.TaskStatus_TASK_STATUS_DONE},
+		{Id: "t-wait", Code: "W12", Title: "Implement investigator fix", Status: planv1.TaskStatus_TASK_STATUS_WAITING, Decision: "Q45"},
+		{Id: "t-edit", Code: "W13", Title: "Paused on edit", Status: planv1.TaskStatus_TASK_STATUS_PAUSED, EditQuestionId: "q-id-1"},
+	}
+	title, prompt := investigatorPrompt(q, "Third enlighten note: verify blocked tasks too.", "", "Moving brief.", tasks...)
+	if title != "Q45: enlighten" {
+		t.Errorf("title = %q, want Q45: enlighten", title)
+	}
+	for _, want := range []string{
+		"Before (--before): W12, W13",
+		"## Linked and blocked tasks",
+		"- W10 (Ask architecture question) [done]: asked Q45",
+		"- W12 (Implement investigator fix) [waiting]: waiting on decision Q45",
+		"- W13 (Paused on edit) [paused]: waiting on edit question Q45",
+		"## Question history (from Tour 0)",
+		"### Tour 0 (initial question state)",
+		"- Subject: Q45: How should investigator workers inspect git and history?",
+		"- Options: A: Option A0 | B: Option B0",
+		"- Recommendation: A: initial rec",
+		"Tour 0 initial context before any revision.",
+		"### Round 1 — Enlighten request (Tour 0)\n- Note: First enlighten note: check permissions.",
+		"### Round 2 — Revision 1 (Tour 1) (task t-inv-1)",
+		"Tour 1 context after first revision.",
+		"### Round 3 — Enlighten request (Tour 1)\n- Note: Second enlighten note: what about Tour 0 in prompt?",
+		"### Round 4 — Revision 2 (Tour 2) (task t-inv-2)",
+		"Tour 2 revised context.",
+		"### Round 5 — Enlighten request (Tour 2)\n- Note: Third enlighten note: verify blocked tasks too.",
+		"Stay anchored to the original subject from Tour 0 (`Q45: How should investigator workers inspect git and history?`)",
+		"--context-file <path>",
+		"git branch",
+		"git rev-parse",
+		"git ls-tree",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "old history") {
+		t.Errorf("prompt did not strip auto-appended HistoryHeader from current context:\n%s", prompt)
+	}
 }
 
 // projectless makes a wish of no project, as the developer's "Install Wispr Flow on Linux" was, and returns it.

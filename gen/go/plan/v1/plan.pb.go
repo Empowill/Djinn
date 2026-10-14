@@ -7574,7 +7574,10 @@ type QuestionServiceReviseRequest struct {
 	TaskId string `protobuf:"bytes,6,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	// What the answer is needed before now, like "before the merge"; the former words when not given, none when given
 	// empty (--before ""): the question can wait.
-	Before        *string `protobuf:"bytes,7,opt,name=before,proto3,oneof" json:"before,omitempty"`
+	Before *string `protobuf:"bytes,7,opt,name=before,proto3,oneof" json:"before,omitempty"`
+	// File holding what is at stake now, in Markdown, read in place of context; a relative path starts from the current
+	// directory.
+	ContextFile   string `protobuf:"bytes,8,opt,name=context_file,json=contextFile,proto3" json:"context_file,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7654,6 +7657,13 @@ func (x *QuestionServiceReviseRequest) GetTaskId() string {
 func (x *QuestionServiceReviseRequest) GetBefore() string {
 	if x != nil && x.Before != nil {
 		return *x.Before
+	}
+	return ""
+}
+
+func (x *QuestionServiceReviseRequest) GetContextFile() string {
+	if x != nil {
+		return x.ContextFile
 	}
 	return ""
 }
@@ -19582,7 +19592,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04note\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x04note\x12$\n" +
 	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"Q\n" +
 	" QuestionServiceEnlightenResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xe8\x02\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\x95\x03\n" +
 	"\x1cQuestionServiceReviseRequest\x128\n" +
 	"\bquestion\x18\x01 \x01(\v2\x14.plan.v1.QuestionRefB\x06\xbaH\x03\xc8\x01\x01R\bquestion\x12#\n" +
 	"\acontext\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\acontext\x12(\n" +
@@ -19590,7 +19600,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0erecommendation\x18\x04 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\x0erecommendation\x12$\n" +
 	"\awish_id\x18\x05 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x125\n" +
 	"\atask_id\x18\x06 \x01(\tB\x1c\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01\xf2\xf3\x18\rDJINN_TASK_IDR\x06taskId\x12$\n" +
-	"\x06before\x18\a \x01(\tB\a\xbaH\x04r\x02\x18dH\x00R\x06before\x88\x01\x01B\t\n" +
+	"\x06before\x18\a \x01(\tB\a\xbaH\x04r\x02\x18dH\x00R\x06before\x88\x01\x01\x12+\n" +
+	"\fcontext_file\x18\b \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\vcontextFileB\t\n" +
 	"\a_before\"j\n" +
 	"\x1dQuestionServiceReviseResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\x12\x1a\n" +

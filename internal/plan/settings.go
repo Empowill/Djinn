@@ -356,8 +356,12 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 			effective = planv1.Provider_PROVIDER_CLAUDE
 		}
 	}
-	if !questionModel && effective == planv1.Provider_PROVIDER_CLAUDE {
-		s.QuestionModel = DefaultQuestionModel
+	if !questionModel {
+		if effective == s.Provider && s.Model != "" {
+			s.QuestionModel, s.QuestionModelFrom = s.Model, s.ModelFrom
+		} else if effective == planv1.Provider_PROVIDER_CLAUDE {
+			s.QuestionModel = DefaultQuestionModel
+		}
 	}
 	return s
 }
