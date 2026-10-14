@@ -298,8 +298,8 @@ An azima's branch works like a wish's integration branch. Djinn cuts it from mai
 before its wish was switched gets its branch when its first part starts), and records it on the azima: its card, opened,
 shows the branch, the commit of main it was cut from, and that it lands in main. The azima's work merges into it, and Djinn keeps it up with
 main by the same rules as a wish's branch ([keeping up with main](team-settings.md#keeping-up-with-main)). It lands in
-main: its pull request, opened when you say so after Djinn proposes it, targets main and follows each push of the
-branch; Djinn never re-targets it.
+main: its pull request, opened as a draft when you say yes to Djinn's proposal, targets main and follows each push of
+the branch; Djinn never re-targets it.
 
 A project whose branches follow a convention (a ticket's key) names an azima's branch with `djinn task update <azima>
 --branch <name>`: a branch that exists is adopted as it is, one that does not is cut from main under that name. A wish

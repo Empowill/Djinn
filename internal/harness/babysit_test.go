@@ -17,7 +17,7 @@ import (
 )
 
 // fakeForge is a gh and a glab for the tests, without network nor jq: it answers pr view, pr list, mr view and mr
-// list from its maps, records each call, and runs any other command for real.
+// list from its maps, pr create and mr create with created, records each call, and runs any other command for real.
 type fakeForge struct {
 	mu    sync.Mutex
 	calls []string
@@ -25,6 +25,8 @@ type fakeForge struct {
 	// and glab mr list --source-branch <branch>, by the branch's prefix.
 	views map[string]string
 	lists map[string]string
+	// created is what gh pr create and glab mr create print; empty, they fail with it.
+	created string
 }
 
 func (f *fakeForge) run(ctx context.Context, dir string, args []string) (string, int, error) {
@@ -47,6 +49,11 @@ func (f *fakeForge) run(ctx context.Context, dir string, args []string) (string,
 			}
 		}
 		return "[]", 0, nil
+	case "pr create", "mr create":
+		if f.created == "" {
+			return "fake forge: 401 Unauthorized", 1, nil
+		}
+		return f.created, 0, nil
 	}
 	return "fake forge: no " + strings.Join(args[:3], " "), 1, nil
 }

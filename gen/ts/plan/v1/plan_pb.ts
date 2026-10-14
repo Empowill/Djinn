@@ -3145,7 +3145,8 @@ export type DjinnMove = Message<"plan.v1.DjinnMove"> & {
   kind: MoveKind;
 
   /**
-   * What the move acts on: the full sha of the build to install, or the tag to push.
+   * What the move acts on: the full sha of the build to install, the tag to push, or the branch a pull request is
+   * opened from.
    *
    * @generated from field: string ref = 2;
    */
@@ -3159,7 +3160,7 @@ export type DjinnMove = Message<"plan.v1.DjinnMove"> & {
   remote: string;
 
   /**
-   * The project the build is installed from, or the tag pushed in.
+   * The project the build is installed from, the tag pushed in, or the pull request opened in.
    *
    * @generated from field: string project_id = 4;
    */
@@ -10753,7 +10754,9 @@ export enum MoveKind {
   RELEASE = 3,
 
   /**
-   * Open a pull request: noted.
+   * Open a pull request: a yes opens it as a draft, from the branch named by ref, through a worker that follows the
+   * project's own skill for opening one when it has such a skill; the lead reads that the developer must when Djinn
+   * cannot.
    *
    * @generated from enum value: MOVE_KIND_PULL_REQUEST = 4;
    */

@@ -341,8 +341,11 @@ which works like a wish's integration branch:
 - **It keeps up with main** by the same `merge_main` rules ([keeping up with main](#keeping-up-with-main)), where it
   stands recorded on the azima (`azima.main`).
 - **It lands in main.** Once its parts are committed and its branch pushed, Djinn proposes its pull request to main;
-  you open it. It targets main from the start and is never re-targeted; each push of the branch updates it. Its card
-  shows it proposed, open or merged; merged, the azima is done.
+  your yes opens it, as a draft: a worker follows the project's own skill for opening one (a skill whose name says
+  open or create, and mr, pr or request, like `open-mr-empowill`), else Djinn runs `gh pr create` or `glab mr create`
+  itself. When it cannot, the lead reads why, and that you must open it. It targets main from the start and is never
+  re-targeted; each push of the branch updates it. Its card shows it proposed, open or merged; merged, the azima is
+  done.
 - **No azima waits for another**, each branch holding main and its own work: Djinn refuses an azima after another,
   directly or through their work (`djinn task spawn --after`, `djinn task depend`, `djinn task update`,
   `djinn task group`, a plan file's `after:` line at `djinn plan sync`), and refuses switching a wish, or a project's
