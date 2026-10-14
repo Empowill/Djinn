@@ -21,7 +21,6 @@ import {
   Change,
   type Choice,
   Closer,
-  type MarkKind,
   type Provider,
   type Question,
   type Task,
@@ -116,7 +115,7 @@ export function FlightPlan({
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
   useStickyRoom(scrollRef, false);
-  const { clients, act, quiet, answer, enlighten, mark, move, withdraw } =
+  const { clients, act, quiet, answer, enlighten, move, withdraw } =
     useWrites(onToast);
   const waits =
     plan.questions.length +
@@ -483,14 +482,6 @@ export function FlightPlan({
     [answer],
   );
 
-  const handleQuestionMark = useCallback(
-    (kind: MarkKind, remove: boolean, q?: Question) => {
-      if (q) return mark(q.wishId, q.id, kind, remove);
-      return Promise.resolve();
-    },
-    [mark],
-  );
-
   const handleQuestionEnlighten = useCallback(
     (note: string, q?: Question) => {
       if (q) return enlighten(q.wishId, q.id, note);
@@ -824,7 +815,6 @@ export function FlightPlan({
                                 report={report}
                                 noLead={noLead(lead)}
                                 onAnswer={handleQuestionAnswer}
-                                onMark={handleQuestionMark}
                                 onEnlighten={handleQuestionEnlighten}
                                 onMove={(q) =>
                                   setMovingQuestion({
@@ -897,7 +887,6 @@ export function FlightPlan({
                       questions={plan.investigating}
                       origin
                       onAnswer={handleQuestionAnswer}
-                      onMark={handleQuestionMark}
                       onMove={(q) =>
                         setMovingQuestion({
                           wishId: q.wishId,

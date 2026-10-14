@@ -99,7 +99,7 @@ test("a long question reads top-down, its commands copy without answering, and t
     const card = page.locator(".question-card").filter({ hasText: QUESTION });
     await expect(card).toBeVisible();
 
-    // Top-down: the explanation, its report and the recommendation before the options, the gestures, then the note.
+    // Top-down: the explanation, its report and the recommendation before the options, the note, then the gestures.
     const top = async (locator: ReturnType<typeof card.locator>) =>
       (await locator.boundingBox())!.y;
     const optionA = card.getByRole("button", { name: /Done: I ran/ });
@@ -110,8 +110,8 @@ test("a long question reads top-down, its commands copy without answering, and t
       await top(card.locator(".question-report-link")),
       await top(card.locator(".recommendation")),
       await top(optionA),
-      await top(card.locator(".lamp-rub")),
       await top(card.getByLabel("Note with the answer")),
+      await top(card.locator(".lamp-rub")),
     ];
     expect(ys).toEqual([...ys].sort((x, y) => x - y));
 

@@ -497,7 +497,7 @@ test("a question shows its options by letter and its recommendation; answered, w
   );
   assert.doesNotMatch(before, /can-wait|is-blocking/);
 
-  // With the lamp's writes: rub, enlighten, and a read mark already put.
+  // With the lamp's writes: Move at the top, then Withdraw on the left, Enlighten in the middle, and the lamp on the right.
   const lamp = s.renderToStaticMarkup(
     h(s.WishQuestion, {
       question: {
@@ -507,23 +507,33 @@ test("a question shows its options by letter and its recommendation; answered, w
         options: ["Olive", "Paraffin"],
         recommendation: "B: brighter.",
         context: "## Cost\n\nOlive is dearer.",
-        marks: [{ kind: s.MarkKind.READ }],
         rounds: [],
         revision: 0,
       },
       blocking: ["W2"],
       onAnswer: async () => {},
-      onMark: async () => {},
       onEnlighten: async () => {},
+      onMove: () => {},
+      onWithdraw: () => {},
     }),
   );
-  // Enlighten on the left, then the lamp; B, recommended, is the one rubbed.
-  assert.ok(lamp.indexOf("Enlighten me") < lamp.indexOf("Rub the lamp"));
+  // Move at the top; Withdraw on the left, Enlighten in the middle, then the lamp; B, recommended, is the one rubbed.
+  assert.match(
+    lamp,
+    /<button type="button" class="button secondary small question-move"><svg[^>]*>.*?<\/svg>Move to another wish…<\/button>/,
+  );
+  assert.ok(
+    lamp.indexOf("Withdraw question…") < lamp.indexOf(">Enlighten me<kbd"),
+  );
+  assert.ok(lamp.indexOf(">Enlighten me<kbd") < lamp.indexOf("Rub the lamp"));
   assert.match(
     lamp,
     /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">B</,
   );
-  assert.match(lamp, /aria-pressed="true"[^>]*>.*Read<\/button>/);
+  assert.doesNotMatch(
+    lamp,
+    /mark-toggle|question-menu|Your answer goes to the Djinn/,
+  );
   assert.match(lamp, /Blocks W2/);
   assert.match(lamp, /What is at stake<\/h4>.*<h2>Cost<\/h2>/);
   assert.match(lamp, /question-card open is-blocking/);
@@ -539,7 +549,6 @@ test("a question shows its options by letter and its recommendation; answered, w
         rounds: [],
       },
       onAnswer: async () => {},
-      onMark: async () => {},
     }),
   );
   assert.doesNotMatch(vague, /option selected/);
@@ -799,9 +808,11 @@ test("a gesture presses its button and the card answers back in its colour", asy
   assert.doesNotMatch(refused.html(), /gesture-|is-pressed|question-wisp/);
 });
 
-test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enlighten, composing, arrows, 1-4, and macOS hints", async () => {
+test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enlighten, Withdraw, Move, composing, arrows, 1-4, and macOS hints", async () => {
   const answered = [];
   const enlightened = [];
+  const moved = [];
+  const withdrawn = [];
   const card = live(s.WishQuestion, {
     question: {
       id: "q1",
@@ -815,6 +826,12 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
     },
     onEnlighten: async (note) => {
       enlightened.push(note);
+    },
+    onMove: (q) => {
+      moved.push(q.code);
+    },
+    onWithdraw: (q) => {
+      withdrawn.push(q.code);
     },
   });
 
@@ -958,6 +975,47 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   await card.settle();
   assert.deepEqual(enlightened, ["Pure and filtered", "From card"]);
 
+  // Move button at the top, Withdraw button at the bottom, and Mod+Shift+Backspace on the card and in the textarea
+  card.one("question-move").onClick();
+  assert.deepEqual(moved, ["Q01"]);
+  card.one("lamp-withdraw").onClick();
+  assert.deepEqual(withdrawn, ["Q01"]);
+  let withdrawPrevented = false;
+  card.one("question-card").onKeyDown({
+    key: "Backspace",
+    ctrlKey: true,
+    shiftKey: true,
+    preventDefault: () => {
+      withdrawPrevented = true;
+    },
+  });
+  assert.ok(withdrawPrevented);
+  assert.deepEqual(withdrawn, ["Q01", "Q01"]);
+  let textareaWithdrawPrevented = false;
+  card.one("textarea").onKeyDown({
+    key: "Backspace",
+    metaKey: true,
+    shiftKey: true,
+    preventDefault: () => {
+      textareaWithdrawPrevented = true;
+    },
+  });
+  assert.ok(textareaWithdrawPrevented);
+  assert.deepEqual(withdrawn, ["Q01", "Q01", "Q01"]);
+  // Plain Backspace or Ctrl+Alt+Backspace does not withdraw
+  card.one("question-card").onKeyDown({
+    key: "Backspace",
+    preventDefault: () => {},
+  });
+  card.one("question-card").onKeyDown({
+    key: "Backspace",
+    ctrlKey: true,
+    shiftKey: true,
+    altKey: true,
+    preventDefault: () => {},
+  });
+  assert.equal(withdrawn.length, 3);
+
   // Question with no recommendation: Enter without option selected does not answer and shows alert
   const unselectedAnswered = [];
   const cardNoRec = live(s.WishQuestion, {
@@ -1049,7 +1107,16 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
         },
         onAnswer: async () => {},
         onEnlighten: async () => {},
+        onWithdraw: () => {},
       }),
+    );
+    assert.match(
+      macMarkup,
+      /<kbd class="key-hint" aria-hidden="true">⌘⇧⌫<\/kbd>/,
+    );
+    assert.match(
+      macMarkup,
+      /title="Close this question without an answer \(⌘⇧⌫\)"/,
     );
     assert.match(
       macMarkup,
@@ -1094,7 +1161,7 @@ test("shortcuts follow the platform, and header actions carry tooltips, not titl
   assert.doesNotMatch(action, /role="tooltip"/);
 });
 
-test("a question reads top-down: its title, what is at stake folded, its report, the recommendation, the options, the gestures, then the note", () => {
+test("a question reads top-down: its title, what is at stake folded, its report, the recommendation, the options, the note, then the gestures", () => {
   const wishId = "01a130b1-398a-7072-be60-ce928cb7241e";
   const report = {
     id: "01a130d9-0000-7000-8000-000000000001",
@@ -1120,9 +1187,11 @@ test("a question reads top-down: its title, what is at stake folded, its report,
       report,
       onAnswer: async () => {},
       onEnlighten: async () => {},
+      onMove: () => {},
+      onWithdraw: () => {},
     }),
   );
-  // The explanation comes before the call to act, the note last.
+  // The explanation comes before the call to act, the note above the gestures at the bottom.
   const at = (text) => {
     const i = html.indexOf(text);
     assert.ok(i >= 0, `the card shows ${text}`);
@@ -1130,6 +1199,7 @@ test("a question reads top-down: its title, what is at stake folded, its report,
   };
   const order = [
     "Will you run the command?",
+    "Move to another wish…",
     "What is at stake</h4>",
     s.dew.CONTEXT_FIRST,
     "Read more",
@@ -1137,15 +1207,16 @@ test("a question reads top-down: its title, what is at stake folded, its report,
     "Recommendation · A",
     '<strong class="option-letter">A</strong>',
     '<strong class="option-letter">B</strong>',
-    "Enlighten me",
-    "Rub the lamp",
     "<textarea",
-    "Your answer goes to the Djinn",
+    "Withdraw question…",
+    ">Enlighten me<kbd",
+    "Rub the lamp",
   ].map(at);
   assert.deepEqual(
     order,
     [...order].sort((a, b) => a - b),
   );
+  assert.doesNotMatch(html, /Your answer goes to the Djinn/);
   // Its before words stay on its badge.
   assert.match(
     html,
@@ -1485,14 +1556,15 @@ test("a question of a wish without a lead session says no lead is told: open, th
       }),
     );
   const told = props(false, {});
-  assert.match(told, /Your answer goes to the Djinn and the workers\./);
-  assert.doesNotMatch(told, /The Djinn is not there to tell/);
+  assert.doesNotMatch(
+    told,
+    /goes to the Djinn|The Djinn is not there to tell|question-hint/,
+  );
   const open = props(true, {});
   assert.match(
     open,
     /The Djinn is not there to tell: your answer goes to the workers and waits in the wish&#x27;s brief\./,
   );
-  assert.doesNotMatch(open, /goes to the Djinn/);
   const answer = { answer: { choice: s.Choice.A, note: "" } };
   assert.doesNotMatch(props(false, answer), /The Djinn is not there to tell/);
   assert.match(

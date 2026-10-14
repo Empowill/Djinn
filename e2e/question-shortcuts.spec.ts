@@ -4,6 +4,7 @@
 // - Enter in the note rubs the lamp and answers; Enter alone elsewhere on the card answers nothing (W574).
 // - Ctrl+Enter (Cmd+Enter on macOS) rubs the lamp from anywhere on the card.
 // - Ctrl+Shift+Enter triggers Enlighten me from anywhere on the card.
+// - Ctrl+Shift+Backspace (Cmd+Shift+Delete on macOS) opens the Withdraw confirmation from anywhere on the card.
 // - Ctrl+Enter without an option selected shows an alert and selects nothing.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
@@ -25,7 +26,7 @@ function djinn(...args: string[]): string {
   });
 }
 
-test("question card keyboard shortcuts: arrows, 1-4, Shift+Enter, Enter, Ctrl+Shift+Enter, unpicked warning", async ({
+test("question card keyboard shortcuts: arrows, 1-4, Shift+Enter, Enter, Ctrl+Shift+Enter, Ctrl+Shift+Backspace, unpicked warning", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -192,6 +193,34 @@ test("question card keyboard shortcuts: arrows, 1-4, Shift+Enter, Enter, Ctrl+Sh
     }>;
     const q3Answered = list.find((q) => q.text === "Choose a color");
     expect(q3Answered?.answer?.choice).toBe("CHOICE_B");
+
+    // 4. Question testing Ctrl+Shift+Backspace for Withdraw confirmation (and Move button at top).
+    djinn(
+      "question",
+      "ask",
+      "Keep or withdraw?",
+      wishId,
+      "--options",
+      "Keep",
+      "--options",
+      "Drop",
+    );
+
+    const card4 = page
+      .locator(".question-card")
+      .filter({ hasText: "Keep or withdraw?" });
+    await expect(card4).toBeVisible();
+    await expect(card4.locator(".question-top .question-move")).toBeVisible();
+
+    await card4.getByLabel("Note with the answer").focus();
+    await page.keyboard.press("Control+Shift+Backspace");
+
+    const dialog = page.getByRole("dialog", { name: /^Withdraw Q/ });
+    await expect(dialog).toBeVisible();
+    await dialog
+      .getByRole("button", { name: "Withdraw question", exact: true })
+      .click();
+    await expect(card4).not.toBeVisible();
 
     expect(errors).toEqual([]);
   } finally {

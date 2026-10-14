@@ -723,6 +723,7 @@ button.attention-item:hover {
 .review .question-card textarea {
   width: 100%;
   max-width: var(--measure);
+  margin-top: 0;
   background: var(--surface-raised);
   border-color: var(--line-strong);
 }
@@ -766,7 +767,7 @@ html[data-theme="light"] .review .question-card.gesture-rub {
 }
 .review .question-card.gesture-enlighten {
   --gesture: var(--st-investigating);
-  --gesture-x: 0%;
+  --gesture-x: 50%;
 }
 .review .question-card.gesture-rub,
 .review .question-card.gesture-enlighten {
@@ -1024,83 +1025,9 @@ html[data-motion="reduced"] .question-wisp {
   color: var(--muted);
 }
 
-/* The read mark of an open question. */
-.mark-buttons {
-  display: inline-flex;
-  gap: 6px;
-  padding-top: 16px;
+.question-move {
+  margin-top: 16px;
   flex-shrink: 0;
-}
-.mark-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--line-strong);
-  color: var(--muted);
-  font-size: var(--font-size-body);
-}
-.mark-toggle:hover {
-  color: var(--text);
-  border-color: var(--muted);
-}
-.mark-toggle.on {
-  color: var(--st-running);
-  border-color: color-mix(in srgb, var(--st-running) 45%, transparent);
-  background: color-mix(in srgb, var(--st-running) 10%, transparent);
-}
-.question-menu-wrap {
-  position: relative;
-  display: inline-flex;
-  padding-top: 16px;
-  flex-shrink: 0;
-}
-.question-menu-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  color: var(--muted);
-  background: transparent;
-}
-.question-menu-trigger:hover,
-.question-menu-trigger[aria-expanded="true"] {
-  color: var(--text);
-  border-color: var(--line-strong);
-  background: var(--n-28);
-}
-.question-dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 60;
-  min-width: 180px;
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  box-shadow: 0 10px 30px color-mix(in srgb, black 35%, transparent);
-}
-.question-dropdown button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 5px;
-  text-align: left;
-  color: var(--text);
-  font-size: var(--font-size-body);
-}
-.question-dropdown button:hover,
-.question-dropdown button:focus-visible {
-  background: var(--n-28);
 }
 
 /* Tasks: one row each, its state first. */
