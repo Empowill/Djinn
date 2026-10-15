@@ -124,6 +124,14 @@ func runUp(args []string) (restart bool, err error) {
 	// The workers and the leads bring it up to date before they start (WithBeforeStart, BeforeStart), as the agents'
 	// panel does; this first pass, which asks the login shell, does not hold the start.
 	go machine.ExtendPath()
+	// The workers and the leads run djinn: the one found first on their PATH is this one, in its data folder, never
+	// another Djinn (the developer's own) nor none (a development build is bin/djinn-dev). Djinn's own PATH is left as
+	// it is.
+	selfDir, err := machine.LinkSelf(home)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "djinn:", err)
+		selfDir = ""
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	db, err := store.Open(ctx, filepath.Join(home, store.File), plan.Entities()...)
@@ -140,7 +148,7 @@ func runUp(args []string) (restart bool, err error) {
 		read = machine.Reader(home)
 	}
 	monitor := machine.NewMonitor(policy, read)
-	opts := []harness.Option{harness.WithCapacity(monitor.Capacity), harness.WithMemory(monitor.Available, policy), harness.WithBeforeStart(machine.ExtendPath)}
+	opts := []harness.Option{harness.WithCapacity(monitor.Capacity), harness.WithMemory(monitor.Available, policy), harness.WithBeforeStart(machine.ExtendPath), harness.WithSelfDir(selfDir)}
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
 	}
@@ -191,7 +199,7 @@ func runUp(args []string) (restart bool, err error) {
 	var leadsMoved atomic.Pointer[func()]                                      // what follows the leads that run (plan.Leads.Watch)
 	var leadPrompted atomic.Pointer[func(wishID string, p *planv1.LeadPrompt)] // the notices, once they run
 	terminals := terminal.NewManager(terminal.Config{
-		Command: terminal.ShellCommand(term), Dir: termDir, Folder: func() (string, error) { return plan.FirstProjectFolder(ctx, db) }, BeforeStart: machine.ExtendPath, Changed: func() {
+		Command: terminal.ShellCommand(term), Dir: termDir, Folder: func() (string, error) { return plan.FirstProjectFolder(ctx, db) }, BeforeStart: machine.ExtendPath, SelfDir: selfDir, Changed: func() {
 			leadNotes.update()
 			if f := leadsMoved.Load(); f != nil {
 				(*f)()

@@ -58,6 +58,19 @@ func WithPrefix(prefix []string) Option { return func(h *Harness) { h.prefix = s
 // date there (machine.ExtendPath), so that a worker finds the agent the window's panel found.
 func WithBeforeStart(f func()) Option { return func(h *Harness) { h.beforeStart = f } }
 
+// WithSelfDir puts dir first on the PATH of each worker, warm, question and document ones included: djinn up
+// gives the folder of the djinn command that runs itself (machine.LinkSelf), so that a worker's djinn reaches this
+// Djinn, never another one found on the PATH.
+func WithSelfDir(dir string) Option { return func(h *Harness) { h.selfDir = dir } }
+
+// withSelf is env with WithSelfDir's folder first on the PATH, after Djinn's own PATH as prepare left it.
+func (h *Harness) withSelf(env []string) []string {
+	if h.selfDir == "" {
+		return env
+	}
+	return append(slices.Clone(env), machine.PathFirst(h.selfDir))
+}
+
 // scope gives each process of the worker name (a task's code) a scope of its own; nil without scopes.
 func (h *Harness) scope(name string) func() machine.Scope {
 	if h.scopes == nil {

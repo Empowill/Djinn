@@ -357,6 +357,15 @@ checks them, which looks on that PATH alone: what the panel finds is what they r
 panel, in a folder created meanwhile, is found without a restart (`TestExtendPathAfterAnInstall`,
 `TestPanelAndLaunchAgree`). Gates inherit it from the worker that runs them.
 
+**Finding djinn.** Workers, question workers, document agents and leads run `djinn` (`djinn doc context`, `djinn task
+done`): it must be the Djinn that started them. A development build is `bin/djinn-dev`, on no PATH, and a `djinn` on
+the PATH may be the developer's own, with another data folder. At each start, `djinn up` puts in its data folder a
+`bin/djinn` that runs its own executable (`machine.LinkSelf`): a symbolic link on macOS and Linux; on Windows, where
+one needs a privilege, a hard link, or a copy across volumes, written beside and renamed into place. Each worker's
+environment, and each terminal's, gets that folder first on its PATH, then Djinn's own PATH (`machine.PathFirst`);
+Djinn's own PATH does not change, and `DJINN_HOME` passes as it is (`TestWorkerFindsThisDjinnFirst`). A lead's login
+shell may still put its own folders first: macOS's `path_helper` does.
+
 **Installing from the panel on Windows.** A terminal's line runs as `cmd.exe /s /c "<line>"`, the line passed as
 typed: cmd.exe does not read the C runtime's `\"`. Claude Code and Antigravity install from PowerShell
 (`irm … | iex`), so their Windows install line names it: `powershell -NoProfile -Command "irm … | iex"`.

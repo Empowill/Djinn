@@ -198,6 +198,7 @@ func (h *Harness) startWarm(ctx context.Context, ww wantWarm) {
 		Env: []string{"DJINN_TASK_ID=" + id, "DJINN_WISH_ID=" + ww.wishID}, Scope: h.scope("warm"),
 	}
 	h.prepare()
+	w.spec.Env = h.withSelf(w.spec.Env)
 	worker, err := h.warmer().Warm(h.ctx, w.spec)
 	if err != nil {
 		log.Printf("djinn: warm worker for %s: %v", ww.project.GetName(), err)

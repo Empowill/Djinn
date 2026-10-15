@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/empowill/djinn/internal/machine"
 )
 
 const (
@@ -55,6 +57,10 @@ type Config struct {
 	// BeforeStart, when set, runs before a program starts, outside the manager's lock: djinn up brings its PATH up
 	// to date there (machine.ExtendPath), so that a lead finds the agent the window's panel found.
 	BeforeStart func()
+	// SelfDir, when set, comes first on the PATH of each program (machine.PathFirst): djinn up gives the folder of
+	// the djinn command that runs itself (machine.LinkSelf), so that a lead's djinn reaches this Djinn. A login
+	// shell may still put its own folders before it (macOS's path_helper does).
+	SelfDir string
 	// Prompted, when set, runs when the choice a program shows (Terminal.Prompt) appears, changes or goes, outside
 	// the terminal's lock.
 	Prompted func(t *Terminal)
@@ -189,6 +195,9 @@ func (m *Manager) OpenExclusive(
 	}
 	// The program gets Djinn's environment as it is, which Djinn never reads, and says what terminal it talks to.
 	env := append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
+	if m.cfg.SelfDir != "" {
+		env = append(env, machine.PathFirst(m.cfg.SelfDir))
+	}
 	p, err := start(command, dir, env, cols, rows)
 	if err != nil {
 		return nil, false, fmt.Errorf("start %s: %w", command[0], err)

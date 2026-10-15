@@ -87,6 +87,7 @@ type Harness struct {
 
 	prefix      []string // compatibility prefix for workers when no scoped prefix is configured
 	beforeStart func()   // runs before a worker process starts
+	selfDir     string   // first on a worker's PATH: the folder of the djinn command that runs this djinn (WithSelfDir)
 
 	// The scheduler (schedule.go).
 	capacity   Capacity      // nil: no limit
@@ -726,6 +727,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		}
 	}
 	h.prepare()
+	spec.Env = h.withSelf(spec.Env)
 	w, err := provider.Start(h.ctx, spec)
 	if err != nil {
 		return err
