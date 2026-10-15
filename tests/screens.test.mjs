@@ -68,6 +68,7 @@ export {
 export { AzimaCard, azimaFinished, DraftAzimaCard } from "@/src/azima.tsx";
 export {
   FolderField,
+  MakeWish,
   ProjectChecks,
   ProjectPanel,
   ShortcutField,
@@ -9120,4 +9121,103 @@ test("the Review tab lists merged work, its merges under the task they serve, ch
     ),
     /view-tab-review/,
   );
+});
+
+test("MakeWish requires an active lead before a wish can be created", async () => {
+  let resumed = 0;
+  const page = live(s.MakeWish, {
+    projects: [],
+    active: 0,
+    lead: undefined,
+    onMade() {},
+    onClose() {},
+    onResumeLead: async () => {
+      resumed++;
+    },
+  });
+
+  // With no active lead, the creation screen shows the lead onboarding step and command.
+  const withoutLeadHtml = page.html();
+  assert.match(
+    withoutLeadHtml,
+    /No Djinn is running to receive this wish: start the Djinn first, or run djinn lead resume\./,
+  );
+  assert.match(withoutLeadHtml, /djinn lead resume/);
+  assert.match(withoutLeadHtml, />Start the Djinn</);
+
+  // Typing a wish keeps submission disabled until a lead is running.
+  const findByProp = (pred) => {
+    const found = [];
+    const walk = (node) => {
+      if (Array.isArray(node)) node.forEach(walk);
+      else if (node && typeof node === "object" && node.props) {
+        if (pred(node)) found.push(node);
+        walk(node.props.children);
+      }
+    };
+    walk(page.all("section")[0]);
+    return found;
+  };
+  const composerNode = findByProp(
+    (n) => typeof n.props.onChange === "function" && "invalid" in n.props,
+  )[0];
+  assert.ok(composerNode, "WishComposer mounted");
+  composerNode.props.onChange("Build a flying carpet.", true);
+
+  const submitButton = () =>
+    findByProp((n) => n.props.type === "submit")[0].props;
+  assert.equal(
+    submitButton().disabled,
+    true,
+    "submit stays disabled while no lead is active",
+  );
+
+  // Starting the lead from New Wish runs the resume action, clears the warning, and unlocks submission.
+  const resumeButton = page
+    .all("button")
+    .find((b) => b.props.children === "Start the Djinn");
+  assert.ok(resumeButton, "Start the Djinn button rendered");
+  resumeButton.props.onClick();
+  await page.settle();
+  assert.equal(resumed, 1);
+  assert.doesNotMatch(page.html(), /No Djinn is running to receive this wish/);
+  assert.equal(
+    submitButton().disabled,
+    false,
+    "submit is enabled once the lead is started",
+  );
+
+  // When a lead is already active, no lead warning is shown and submission is enabled as soon as a prompt is typed.
+  const activePage = live(s.MakeWish, {
+    projects: [],
+    active: 0,
+    lead: {
+      provider: s.Provider.CLAUDE_CODE,
+      sessionId: "lead-session",
+      directory: "/workspace/lamp",
+    },
+    onMade() {},
+    onClose() {},
+  });
+  assert.doesNotMatch(
+    activePage.html(),
+    /No Djinn is running to receive this wish/,
+  );
+  assert.doesNotMatch(activePage.html(), /djinn lead resume/);
+
+  // When the lead has exited with an error, MakeWish surfaces the exit trouble and blocks submission.
+  const exitedPage = live(s.MakeWish, {
+    projects: [],
+    active: 0,
+    lead: {
+      provider: s.Provider.CLAUDE_CODE,
+      sessionId: "lead-session",
+      directory: "/workspace/lamp",
+    },
+    leadExit: { code: 1 },
+    onMade() {},
+    onClose() {},
+  });
+  assert.match(exitedPage.html(), /The Djinn ended \(code 1\)/);
+  assert.match(exitedPage.html(), /djinn lead resume/);
 });

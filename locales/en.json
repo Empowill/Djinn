@@ -283,6 +283,8 @@
   "make.placeholder_plan": "Plan the next release, including risks, owners, and a clear definition of done.",
   "make.placeholder_research": "Research the options, compare the trade-offs, and recommend the best path.",
   "make.no_agent": "No agent is ready to work on this wish yet.",
+  "make.no_lead": "No Djinn is running to receive this wish: start the Djinn first, or run djinn lead resume.",
+  "make.starting_lead": "Starting…",
   "markdown.code": "Code",
   "markdown.copied": "Copied",
   "markdown.copy": "Copy",
