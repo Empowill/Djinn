@@ -1869,3 +1869,26 @@ html[data-theme="light"]
     }
   }
 }
+
+/* Under the navigation card while no panel is open: arrows up to its rows, and what a click does. */
+.workspace-open-hint {
+  margin: var(--space-3) var(--space-3) 0;
+  color: var(--n-79);
+  font: 11px / 1.5 var(--mono);
+  white-space: pre;
+}
+.workspace-open-hint-arrows {
+  display: block;
+  color: var(--n-6f);
+  animation: workspace-open-hint-blink 2.4s steps(1, end) infinite;
+}
+@keyframes workspace-open-hint-blink {
+  50% {
+    color: var(--n-a9);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-open-hint-arrows {
+    animation: none;
+  }
+}

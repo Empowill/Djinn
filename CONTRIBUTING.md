@@ -15,7 +15,8 @@ Typed in the protos, enforced by code, tested. No model decides here.
 diagram, a chart, research notes, a hand-off. Blocks the model writes, shown as written, exported
 whole.
 
-- **Empty means hidden.** No "To decide" without a question.
+- **Empty means hidden.** No "To decide" without a question. Except a wish's Tasks, Activity and Documents panels:
+  always reachable, with an empty state.
 - **The model chooses the smoke.** A new section is a block, never a code change.
 - **Smoke hardens only when code needs it.** Then it becomes a proto field, with tests.
 

@@ -68,6 +68,8 @@ export interface WishWorkspaceProps {
   /** Changes when navigation requests the same panel again. */
   initialPanelRequest?: string;
   onPanelChange?: (panelId?: string) => void;
+  /** What the content stage shows while no panel is open. */
+  idle?: ReactNode;
 }
 
 const SUMMARY_ID = "summary";
@@ -181,6 +183,7 @@ export function WishWorkspace({
   initialPanel,
   initialPanelRequest,
   onPanelChange,
+  idle,
 }: WishWorkspaceProps) {
   const panelDefinitions = useMemo(() => {
     const byId = new Map<string, WishWorkspacePanel>();
@@ -764,11 +767,23 @@ export function WishWorkspace({
           data-wish-active={activePanelId}
           aria-label={t("workspace.main_content")}
         >
+          {!hasActivePanel && idle}
           {panelDefinitions
             .filter((definition) => definition.id !== summary?.id)
             .map((definition) => renderPanel(definition.id))}
         </main>
-        <div className="workspace-summary-slot">{renderSummary()}</div>
+        <div className="workspace-summary-slot">
+          {renderSummary()}
+          {summary && !hasActivePanel && !navCompact && (
+            <p className="workspace-open-hint">
+              <span className="workspace-open-hint-arrows" aria-hidden="true">
+                {"  ↑   ↑   ↑"}
+              </span>
+              <span aria-hidden="true">{"  └─ "}</span>
+              {t("workspace.hint_open")}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

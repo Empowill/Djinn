@@ -1,0 +1,61 @@
+/* An empty workspace panel: a small data field, its line and its actions, on the panel's own ground. No card, no
+   border: the tones come from the neutral ramp, so the field reads in both themes. */
+.empty-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 28px var(--space-4) 32px;
+  text-align: center;
+}
+.empty-field-grid {
+  display: grid;
+}
+.empty-field-layer {
+  grid-area: 1 / 1;
+  margin: 0;
+  font: 10.5px / 1.45 var(--mono);
+  letter-spacing: 0.04em;
+  white-space: pre;
+  user-select: none;
+  pointer-events: none;
+}
+.empty-field-layer.is-rest {
+  color: var(--n-4c);
+}
+.empty-field-layer.is-live {
+  color: var(--n-6f);
+}
+.empty-field-layer.is-hot {
+  color: var(--n-a9);
+}
+.empty-field-message {
+  margin: 0;
+  color: var(--n-9c);
+  font-size: var(--font-size-body, 12px);
+  line-height: 1.6;
+}
+.empty-field-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* The workspace's stage while no panel is open: the wish's pulse, larger, and its caption in the same mono. */
+.wish-pulse {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 56px var(--space-4) 40px;
+}
+.wish-pulse .empty-field-layer {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.wish-pulse-caption {
+  margin: 0;
+  color: var(--n-79);
+  font: 11px / 1.5 var(--mono);
+  letter-spacing: 0.04em;
+}

@@ -43,6 +43,7 @@ import { type Clients, message } from "./data/client";
 import { useClients, useStore } from "./data/djinn";
 import { when } from "./data/format";
 import { type DropEntry, TooLarge, entriesOf, readDrop } from "./data/tilasms";
+import { EmptyField } from "./empty-field";
 import { t } from "./i18n";
 import { TilasmDiscussions } from "./tilasm-discussions";
 import { TilasmEditor, useTilasmEditor } from "./tilasm-editor";
@@ -549,7 +550,20 @@ export function TilasmPanel({
       </div>
       {actionsSlot && createPortal(actions, actionsSlot)}
       {count === 0 ? (
-        <p className="tilasm-strip-note">{t("tilasms.none")}</p>
+        <EmptyField pattern="page" message={t("tilasms.none")}>
+          <button type="button" className="button accent small" onClick={onNew}>
+            <Plus size={14} aria-hidden="true" />
+            {t("tilasms.new")}
+          </button>
+          <button
+            type="button"
+            className="text-button"
+            disabled={busy}
+            onClick={() => file.current?.click()}
+          >
+            {t("tilasms.import_md")}
+          </button>
+        </EmptyField>
       ) : (
         <StripSlotContext value={stripSlot}>{children}</StripSlotContext>
       )}

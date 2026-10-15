@@ -101,6 +101,7 @@ import { MarkdownBody } from "./markdown-body";
 import { OlderLine, useRecent } from "./older";
 import { useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
+import { EmptyField, WishPulse, pulseStateOf } from "./empty-field";
 import { StatusBadge } from "./status";
 import { AzimaCard, azimaFinished } from "./azima";
 import { TaskSections } from "./task-tabs";
@@ -131,6 +132,10 @@ export interface Opening {
   tilasmId: string;
   focus?: boolean;
 }
+
+// A panel's count shows only when there is something to count: an empty panel shows no "0".
+const positive = (count: number | undefined) =>
+  count === undefined || count === 0 ? undefined : count;
 
 function contentKey(value: string): string {
   let hash = 2166136261;
@@ -230,8 +235,7 @@ export function WishView({
   };
   // The tilasm a link opened: the Documents workspace panel shows it, again at each new request.
   const [opened, setOpened] = useState(opening);
-  // A new document, the developer's: the panel opens on it, its title ready to be typed in. The panel shows once the
-  // list holds it.
+  // A new document, the developer's: the panel opens on it, its title ready to be typed in.
   const newTilasm = () =>
     void createTilasm(clients, wish.id)
       .then(async (tilasmId) => {
@@ -625,7 +629,6 @@ export function WishView({
     </div>
   );
 
-  const pendingTaskFocus = view === "tasks" && !!focus;
   const summaryPanel: WishWorkspacePanel = {
     id: "summary",
     title: t("workspace.sections"),
@@ -635,8 +638,7 @@ export function WishView({
   const taskPanel: WishWorkspacePanel = {
     id: "tasks",
     title: t("wish.tasks"),
-    count: detail.loaded ? workCount(detail.tasks) : undefined,
-    hidden: detail.loaded && detail.tasks.length === 0 && !pendingTaskFocus,
+    count: positive(detail.loaded ? workCount(detail.tasks) : undefined),
     preview: taskPreview,
     icon: <Play size={14} aria-hidden="true" />,
     children: (
@@ -645,9 +647,18 @@ export function WishView({
           {t("wish.tasks")}
         </span>
         {detail.tasks.length === 0 ? (
-          <p className="muted-text" role="tabpanel">
-            {detail.loaded ? t("wish.no_tasks") : t("common.loading")}
-          </p>
+          detail.loaded ? (
+            <div role="tabpanel">
+              <EmptyField
+                pattern="queue"
+                message={t("workspace.empty_tasks")}
+              />
+            </div>
+          ) : (
+            <p className="muted-text" role="tabpanel">
+              {t("common.loading")}
+            </p>
+          )
         ) : (
           <TaskSections
             moving={moving}
@@ -693,8 +704,7 @@ export function WishView({
   const tilasmsPanel: WishWorkspacePanel = {
     id: "tilasms",
     title: t("tabs.tilasms"),
-    count: detail.loaded ? detail.tilasms.length : undefined,
-    hidden: detail.loaded && detail.tilasms.length === 0,
+    count: positive(detail.loaded ? detail.tilasms.length : undefined),
     preview: tilasmPreview,
     icon: <Sparkles size={14} aria-hidden="true" />,
     headerActions: (
@@ -836,8 +846,7 @@ export function WishView({
   const activityPanel: WishWorkspacePanel = {
     id: "activity",
     title: t("workspace.activity"),
-    count: detail.loaded ? activityCount : undefined,
-    hidden: detail.loaded && activityCount === 0,
+    count: positive(detail.loaded ? activityCount : undefined),
     preview: decisionPreview ?? instructionPreview ?? journalPreview,
     icon: <Activity size={14} aria-hidden="true" />,
     headerActions: (
@@ -849,15 +858,21 @@ export function WishView({
         iconsOnly
       />
     ),
-    children: (
-      <WishActivity
-        label={t("workspace.activity")}
-        activeTab={effectiveActivityTab}
-        onTabChange={onActivityTabChange}
-        tabs={activityTabs}
-        hideTabs
-      />
-    ),
+    children:
+      detail.loaded && activityCount === 0 ? (
+        <EmptyField
+          pattern="timeline"
+          message={t("workspace.empty_activity")}
+        />
+      ) : (
+        <WishActivity
+          label={t("workspace.activity")}
+          activeTab={effectiveActivityTab}
+          onTabChange={onActivityTabChange}
+          tabs={activityTabs}
+          hideTabs
+        />
+      ),
   };
 
   const promptSignature = prompt
@@ -978,46 +993,27 @@ export function WishView({
     tilasmsPanel,
     activityPanel,
   ];
-  useEffect(() => {
-    if (!detail.loaded) return;
-    const panelVisible = {
-      tasks: detail.tasks.length > 0,
-      tilasms: detail.tilasms.length > 0,
-      activity: activityCount > 0,
-    };
-    const requestedPanel =
-      view === "tasks" || view === "tilasms" || view === "activity"
-        ? view
-        : undefined;
-    if (requestedPanel === "tasks" && focus && detail.tasks.length === 0) {
-      const timer = setTimeout(() => {
-        setView((current) => (current === "tasks" ? "main" : current));
-        setFocus((current) => (current === focus ? "" : current));
-      }, 5_000);
-      return () => clearTimeout(timer);
-    }
-    if (requestedPanel && !panelVisible[requestedPanel]) {
-      setView("main");
-      setFocus("");
-    }
-    if (
-      workspaceVisiblePanel &&
-      (workspaceVisiblePanel === "tasks" ||
-        workspaceVisiblePanel === "tilasms" ||
-        workspaceVisiblePanel === "activity") &&
-      !panelVisible[workspaceVisiblePanel]
-    ) {
-      setWorkspaceVisiblePanel("");
-    }
-  }, [
-    activityCount,
-    detail.loaded,
-    detail.tasks.length,
-    detail.tilasms.length,
-    focus,
-    view,
-    workspaceVisiblePanel,
-  ]);
+  // The stage while no panel is open: what the wish is doing now, from the signals the window already holds.
+  const active = isActive(wish) && !granted;
+  const pulseState = pulseStateOf({
+    active,
+    leadRunning: wish.leadRunning,
+    workers: activeWorkCount,
+    waiting: globalActionCount,
+  });
+  const pulseCaption = [
+    !active && lifecycleLabel,
+    activeWorkCount > 0
+      ? t("workspace.pulse_workers", { count: activeWorkCount })
+      : t("workspace.pulse_workers_none"),
+    t(
+      wish.leadRunning ? "workspace.pulse_lead_on" : "workspace.pulse_lead_off",
+    ),
+    globalActionCount > 0 &&
+      t("workspace.pulse_waiting", { count: globalActionCount }),
+  ]
+    .filter((part): part is string => !!part)
+    .join(" · ");
   const workspacePanel =
     view === "main" || view === "rights" || view === "agents"
       ? undefined
@@ -1079,6 +1075,13 @@ export function WishView({
           head={threadHead}
           panels={panels}
           ready={detail.loaded}
+          idle={
+            <WishPulse
+              state={pulseState}
+              workers={activeWorkCount}
+              caption={pulseCaption}
+            />
+          }
           initialPanel={workspacePanel}
           initialPanelRequest={`${workspacePanel ?? "summary"}:${workspaceRequest}`}
           onPanelChange={(panelId) => {

@@ -1852,10 +1852,13 @@ test("the Documents panel shows its documents as tabs, the open one marked, its 
   const empty = s.renderToStaticMarkup(
     h(s.TilasmPanel, { ...props, tilasms: [], count: 0, open: undefined }),
   );
+  assert.match(empty, /data-empty-field="page"/);
+  assert.match(empty, /class="empty-field-message">No document yet</);
   assert.match(
     empty,
-    /No document yet: create one, or import or drop a Markdown file here./,
+    /class="button accent small"[^>]*>.*New document<\/button>/s,
   );
+  assert.match(empty, /class="text-button"[^>]*>Import a .md<\/button>/);
   assert.match(empty, /aria-label="New document"/);
   assert.match(empty, /aria-label="More actions"/);
 });
@@ -1930,7 +1933,7 @@ test("an HTML tilasm shows read only in a sandboxed frame Djinn serves, never on
   assert.match(frame, /title="L01 · The objects in the database"/);
 });
 
-test("a wish's workspace has a Documents section card beside Tasks, with its count, and a new document in its header", async () => {
+test("a wish's workspace lists Tasks and Activity empty, beside Documents with its count, and a new document in its header", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da71";
   const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
   const transport = s.createRouterTransport(({ service }) => {
@@ -1952,10 +1955,16 @@ test("a wish's workspace has a Documents section card beside Tasks, with its cou
   const html = s.renderToStaticMarkup(
     h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: lamp, onToast() {} })),
   );
-  // Empty sections are not navigable, while the mounted task panel remains
-  // available if task data arrives later.
-  assert.doesNotMatch(html, /data-wish-section="tasks"/);
+  // Empty sections stay listed, without a "0", each with its empty state mounted behind it.
+  assert.match(html, /data-wish-section="tasks"/);
+  assert.match(html, /aria-label="Tasks"/);
   assert.match(html, /data-wish-panel="tasks" hidden=""/);
+  assert.match(html, /data-empty-field="queue"/);
+  assert.match(html, /No task yet/);
+  assert.match(html, /data-wish-section="activity"/);
+  assert.match(html, /aria-label="Activity"/);
+  assert.match(html, /data-empty-field="timeline"/);
+  assert.match(html, /No activity yet/);
   assert.match(html, /data-wish-section="tilasms"/);
   assert.match(html, /aria-label="Documents \(1\)"/);
   assert.match(html, /aria-label="New document"/);

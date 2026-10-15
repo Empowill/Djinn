@@ -78,8 +78,9 @@ test("a document made from the wish's header is written in place, saved, and fou
   const title = `Write the lamp ${randomUUID().slice(0, 8)}`;
   const wishId = await openWish(page, title);
   try {
-    // No document yet: no panel; the header makes one, and the panel opens on it, its title ready to be typed over.
-    await expect(page.locator('[data-wish-section="tilasms"]')).toHaveCount(0);
+    // No document yet: the panel is listed, without a count; the header makes one, and the panel opens on it, its
+    // title ready to be typed over.
+    await expect(page.locator('[data-wish-section="tilasms"]')).toBeVisible();
     await page.getByRole("button", { name: "New document" }).click();
     const panel = workspacePanel(page, "tilasms");
     await expect(panel).toBeVisible();
@@ -261,6 +262,77 @@ test("a document made from the wish's header is written in place, saved, and fou
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+    expect(errors).toEqual([]);
+  } finally {
+    djinn("wish", "pause", wishId);
+  }
+});
+
+test("a fresh wish lists Tasks, Activity and Documents, each empty with its field; the empty Documents panel makes one", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const wishId = await openWish(page, `Empty lamp ${randomUUID().slice(0, 8)}`);
+  try {
+    const empties = [
+      ["tasks", "Tasks", "queue", "No task yet"],
+      ["activity", "Activity", "timeline", "No activity yet"],
+      ["tilasms", "Documents", "page", "No document yet"],
+    ] as const;
+    for (const [id, name] of empties) {
+      const row = page.locator(`[data-wish-section="${id}"]`);
+      await expect(row).toBeVisible();
+      // No "0": an empty panel shows no count.
+      await expect(row.locator(".count")).toHaveCount(0);
+      await expect(row.locator(".workspace-section-toggle")).toHaveAttribute(
+        "aria-label",
+        name,
+      );
+    }
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      for (const [id, , pattern, line] of empties) {
+        const panel = await openWorkspaceSection(page, id);
+        const field = panel.locator(`[data-empty-field="${pattern}"]`);
+        await expect(field).toBeVisible();
+        await expect(field.locator(".empty-field-message")).toHaveText(line);
+        await expect(field.locator(".empty-field-grid")).toHaveAttribute(
+          "aria-hidden",
+          "true",
+        );
+        await page.waitForTimeout(400);
+        await panel.screenshot({
+          path: path.join(shots, `empty-${pattern}-${scheme}.png`),
+        });
+      }
+    }
+    // Reduced motion holds one still frame.
+    await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+    const quiet = await openWorkspaceSection(page, "tilasms");
+    const live = quiet.locator(".empty-field-layer.is-live");
+    const first = await live.textContent();
+    await page.waitForTimeout(600);
+    expect(await live.textContent()).toBe(first);
+    await quiet.screenshot({
+      path: path.join(shots, "empty-page-reduced-motion.png"),
+    });
+    await page.emulateMedia({ colorScheme: null, reducedMotion: null });
+
+    // Its first action makes an untitled document, opens its tab and puts the caret in its title.
+    const panel = workspacePanel(page, "tilasms");
+    await panel
+      .locator(".empty-field-actions")
+      .getByRole("button", { name: "New document" })
+      .click();
+    const tab = panel.getByRole("tab");
+    await expect(tab).toHaveText("Untitled");
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+    await expect(panel.getByRole("textbox", { name: "Title" })).toBeFocused();
+    await expect(panel.locator("[data-empty-field]")).toHaveCount(0);
+    await expect(
+      page.locator('[data-wish-section="tilasms"] .count'),
+    ).toHaveText("1");
     expect(errors).toEqual([]);
   } finally {
     djinn("wish", "pause", wishId);

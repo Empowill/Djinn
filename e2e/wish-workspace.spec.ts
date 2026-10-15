@@ -770,6 +770,96 @@ test("WatchShow focuses a ready wish's grant control", async ({ page }) => {
   }
 });
 
+test("the stage shows the wish's pulse and a hint under the card while no panel is open", async ({
+  page,
+}) => {
+  const sample = fixture();
+  const viewport = page.viewportSize()!;
+  try {
+    // Wide enough for the full navigation card: the compact rail leaves the hint out.
+    await page.setViewportSize({ width: 1800, height: 1100 });
+    await openWish(page, sample.title);
+    const pulse = stage(page).locator(".wish-pulse");
+    const hint = stage(page).locator(".workspace-open-hint");
+    // The fixture's open question waits for the developer: the pulse blinks for it, and its caption says so.
+    await expect(pulse).toHaveAttribute("data-wish-pulse", "waiting");
+    await expect(pulse.locator(".wish-pulse-caption")).toContainText(
+      /waiting for you|attend/,
+    );
+    await expect(pulse.locator(".empty-field-grid")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    await expect(hint).toBeVisible();
+    await expect(hint).toContainText(
+      /click a block to open it|cliquez sur un bloc pour l'afficher/,
+    );
+    // A panel open takes the stage: no pulse, no hint; closing it brings both back.
+    await openSection(page, "tasks");
+    await expect(pulse).toHaveCount(0);
+    await expect(hint).toHaveCount(0);
+    await panel(page, "tasks")
+      .getByRole("button", {
+        name: workspaceLocalePrefixPattern("workspace.close"),
+      })
+      .first()
+      .click();
+    await expect(pulse).toBeVisible();
+    await expect(hint).toBeVisible();
+
+    // Each state's frame, light and dark, in the real stage: the server's markup of the pulse put in its place.
+    const states = [
+      ["still", 0, "Paused · no worker running · lead stopped"],
+      ["lead", 0, "no worker running · lead running"],
+      ["workers", 3, "3 workers running · lead running"],
+      ["waiting", 0, "no worker running · lead running · 1 waiting for you"],
+    ] as const;
+    // The server's markup of each state, rendered by Node with the unit tests' bundler (Playwright's own loader
+    // cannot run it).
+    const markups = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `import { bundle } from ${JSON.stringify(path.resolve(__dirname, "../tests/bundle.mjs"))};
+const f = await bundle("wish-pulse", 'export { createElement } from "react"; export { renderToStaticMarkup } from "react-dom/server"; export { WishPulse } from "@/src/empty-field.tsx";');
+const states = JSON.parse(process.argv[1]);
+console.log(JSON.stringify(states.map(([state, workers, caption]) => f.renderToStaticMarkup(f.createElement(f.WishPulse, { state, workers, caption })))));`,
+          JSON.stringify(states),
+        ],
+        { encoding: "utf8" },
+      ),
+    ) as string[];
+    const area = stage(page);
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expect(page.locator("html")).toHaveAttribute("data-theme", scheme);
+      for (const [index, [state]] of states.entries()) {
+        const html = markups[index];
+        await stage(page)
+          .locator(".wish-pulse")
+          .evaluate((element, markup) => {
+            element.outerHTML = markup;
+          }, html);
+        await expect(stage(page).locator(".wish-pulse")).toHaveAttribute(
+          "data-wish-pulse",
+          state,
+        );
+        await page.mouse.move(0, 0);
+        await page.waitForTimeout(150);
+        await area.screenshot({
+          path: path.join(shots, `wish-pulse-${state}-${scheme}.png`),
+        });
+      }
+    }
+    await page.emulateMedia({ colorScheme: null });
+  } finally {
+    await page.setViewportSize(viewport);
+    cleanup(sample);
+  }
+});
+
 test("the summary switches one detail panel while global actions and settings stay usable", async ({
   page,
 }) => {
