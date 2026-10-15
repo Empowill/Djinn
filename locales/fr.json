@@ -283,6 +283,8 @@
   "make.placeholder_plan": "Planifiez la prochaine version avec les risques, les responsables et le résultat attendu.",
   "make.placeholder_research": "Étudiez les options, comparez les compromis et recommandez la meilleure voie.",
   "make.no_agent": "Aucun agent n’est encore prêt à travailler sur ce souhait.",
+  "make.no_lead": "Aucun Djinn ne tourne pour recevoir ce souhait : démarrez d’abord le Djinn, ou lancez djinn lead resume.",
+  "make.starting_lead": "Démarrage…",
   "markdown.code": "Code",
   "markdown.copied": "Copié",
   "markdown.copy": "Copier",

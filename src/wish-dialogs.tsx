@@ -21,8 +21,11 @@ import {
 
 import {
   Allowance,
+  Change,
   type CheckRun,
   CheckWhen,
+  type Lead,
+  type LeadExit,
   type Project,
   type ProjectCheck,
   ProjectPush,
@@ -38,9 +41,10 @@ import {
   type UiServiceGetEnvironmentResponse,
 } from "../gen/ts/ui/v1/ui_pb";
 import { AgentSetupPanel, needsSetup, useAgents } from "./agent-setup";
+import { CommandText } from "./copy-command";
 import { message } from "./data/client";
-import { useClients } from "./data/djinn";
-import { MAX_ACTIVE, span, when } from "./data/format";
+import { useClients, useDjinn, useOptionalData } from "./data/djinn";
+import { MAX_ACTIVE, noLead, span, when } from "./data/format";
 import { Brand, ModalFrame } from "./frame";
 import { SyncLines } from "./project-sync";
 import {
@@ -55,6 +59,7 @@ import {
 import { type Theme, chosenTheme, setTheme as applyTheme } from "./theme";
 import { WishComposer } from "./wish-composer";
 import { WishDropdown } from "./wish-dropdown";
+import { leadTrouble } from "./wish-head";
 import { WishSmoke } from "./wish-smoke";
 import { MAX_PROMPT_CHARACTERS, promptTooLong } from "./wish-composer-markdown";
 import { platformShortcut, TooltipButton } from "./tooltip";
@@ -66,21 +71,35 @@ import { WorkspaceAction } from "./workspace-action";
 export function MakeWish({
   projects,
   active,
+  lead,
+  leadExit: leadExitProp,
+  leadStartError: leadStartErrorProp,
   onMade,
   onClose,
+  onResumeLead,
   onBusyChange,
   backActionRef,
   onBackSetupChange,
 }: {
   projects: Project[];
   active: number;
+  lead?: Lead;
+  leadExit?: LeadExit;
+  leadStartError?: string;
   onMade: (wish: Wish, warning?: string) => void;
   onClose: () => void;
+  onResumeLead?: () => Promise<unknown>;
   onBusyChange?: (busy: boolean) => void;
   backActionRef?: { current: (() => void) | null };
   onBackSetupChange?: (setup: boolean) => void;
 }) {
-  const clients = useClients();
+  const djinn = useDjinn();
+  const clients = djinn?.clients;
+  const store = djinn?.store;
+  const storeLead = useOptionalData((s) => s.lead, undefined);
+  const storeLeadExit = useOptionalData((s) => s.leadExit, undefined);
+  const storeLeadStartError = useOptionalData((s) => s.leadStartError, "");
+  const storeLoaded = useOptionalData((s) => s.loaded, true);
   const full = active >= MAX_ACTIVE;
   const [prompt, setPrompt] = useState("");
   const [hasText, setHasText] = useState(false);
@@ -89,6 +108,8 @@ export function MakeWish({
   const [chosen, setChosen] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [startingLead, setStartingLead] = useState(false);
+  const [leadStarted, setLeadStarted] = useState(false);
   const submitting = useRef(false);
   const submissionFocus = useRef<HTMLElement | null>(null);
   const [search, setSearch] = useState("");
@@ -102,8 +123,19 @@ export function MakeWish({
   const [setup, setSetup] = useState(false);
   const noAgent =
     !!agents.env?.providers.length && agents.env.providers.every(needsSetup);
+  const effectiveLead = lead ?? storeLead;
+  const effectiveLeadExit = leadExitProp ?? storeLeadExit;
+  const effectiveLeadStartError = leadStartErrorProp ?? storeLeadStartError;
+  const trouble = leadTrouble(effectiveLeadExit, effectiveLeadStartError);
+  const leadStopped =
+    !leadStarted && storeLoaded && (noLead(effectiveLead) || !!trouble);
+  useEffect(() => {
+    setLeadStarted(false);
+  }, [effectiveLead, effectiveLeadExit, effectiveLeadStartError]);
   const previousFocus = useRef<HTMLElement | null>(
-    document.activeElement as HTMLElement | null,
+    typeof document !== "undefined"
+      ? (document.activeElement as HTMLElement | null)
+      : null,
   );
   useEffect(() => {
     const focus = previousFocus.current;
@@ -154,16 +186,41 @@ export function MakeWish({
     : full
       ? t("make.submit_paused")
       : t("make.submit");
+  const startLead = async () => {
+    if (startingLead || busy) return;
+    setStartingLead(true);
+    setError("");
+    try {
+      if (onResumeLead) await onResumeLead();
+      else await clients!.lead.resume({});
+      setLeadStarted(true);
+      void store?.changed("", [Change.WISH]);
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setStartingLead(false);
+    }
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (submitting.current || !hasText || !prompt.trim() || overLimit) return;
+    if (
+      submitting.current ||
+      leadStopped ||
+      !hasText ||
+      !prompt.trim() ||
+      overLimit
+    )
+      return;
     submitting.current = true;
-    submissionFocus.current = document.activeElement as HTMLElement | null;
+    submissionFocus.current =
+      typeof document !== "undefined"
+        ? (document.activeElement as HTMLElement | null)
+        : null;
     setBusy(true);
     onBusyChange?.(true);
     setError("");
     try {
-      const res = await clients.wishes.make({
+      const res = await clients!.wishes.make({
         prompt: prompt.trim(),
         projectIds: selected,
         paused: full,
@@ -174,7 +231,7 @@ export function MakeWish({
       if (allowance !== Allowance.NONE)
         for (const projectId of selected)
           try {
-            await clients.wishes.allow({
+            await clients!.wishes.allow({
               wishId: made.id,
               projectId,
               mode: allowance,
@@ -382,6 +439,22 @@ export function MakeWish({
                       </button>
                     </div>
                   )}
+                  {!noAgent && leadStopped && (
+                    <div className="agent-warning" role="status">
+                      <span>{trouble ? trouble.text : t("make.no_lead")}</span>
+                      <CommandText text="djinn lead resume" />
+                      <button
+                        type="button"
+                        className="button secondary small"
+                        disabled={busy || startingLead}
+                        onClick={() => void startLead()}
+                      >
+                        {startingLead
+                          ? t("make.starting_lead")
+                          : t("lead_message.resume")}
+                      </button>
+                    </div>
+                  )}
                   {agents.error && (
                     <span className="wish-creation-inline-status" role="alert">
                       {agents.error}
@@ -433,7 +506,13 @@ export function MakeWish({
                 <TooltipButton
                   type="submit"
                   className="button accent workspace-action-control"
-                  disabled={busy || !hasText || !prompt.trim() || overLimit}
+                  disabled={
+                    busy ||
+                    leadStopped ||
+                    !hasText ||
+                    !prompt.trim() ||
+                    overLimit
+                  }
                   label={submitLabel}
                   tooltip={submitLabel}
                   shortcut={submitShortcut.label}

@@ -11,7 +11,7 @@ import {
   type UiServiceGetEnvironmentResponse,
 } from "../gen/ts/ui/v1/ui_pb";
 import { message } from "./data/client";
-import { useClients, useDjinn } from "./data/djinn";
+import { useDjinn } from "./data/djinn";
 import { ModalFrame } from "./frame";
 import { type TextKey, t } from "./i18n";
 import { type TerminalStatus, fitSafely, mountTerminal } from "./lead-terminal";
@@ -36,12 +36,13 @@ export interface Agents {
 // useAgents checks the agents once mounted, and again on check. A check runs each agent's status command: it takes
 // up to a few seconds.
 export function useAgents(): Agents {
-  const clients = useClients();
+  const clients = useDjinn()?.clients;
   const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState("");
   const asked = useRef(0);
   const check = useCallback(() => {
+    if (!clients) return;
     const n = ++asked.current;
     setChecking(true);
     setError("");
