@@ -1,7 +1,8 @@
 // A task of a wish: its code, what it does, where it stands, what it spent, and, opened, its facts, its worker's
 // last word and its events as they come (TaskService.Watch), with a box to send the running worker an instruction
 // (TaskService.Send). A running worker pauses, and a paused one goes on (TaskService.Pause and Resume). A watcher (a
-// command, no agent) shows the first line of its last paragraph. A task that comes from a decision links back to it.
+// command, no agent) shows the first line of its last paragraph. A task that comes from a decision links back to it; a
+// document agent is named in the page's language and links to its document.
 import {
   Activity,
   AlertCircle,
@@ -37,15 +38,17 @@ import {
   type Task,
   type TaskEvent,
   TaskEventKind,
+  TaskRole,
   TaskStatus,
 } from "../gen/ts/plan/v1/plan_pb";
 import { jump } from "./attention";
 import { type Decision } from "./data/decisions";
-import { useData, useTaskEvents } from "./data/djinn";
+import { useData, useDjinn, useTaskEvents } from "./data/djinn";
 import {
   taskFinished,
   taskStatusText,
   taskTime,
+  taskTitle,
   taskTone,
   usd,
   useNow,
@@ -167,6 +170,16 @@ export function WishTask({
   const now = useNow(!taskFinished(task.status) && !!task.startTime);
   const time = taskTime(task, now);
   const work = taskWork(task, codes);
+  // A document agent links to its document: a click opens its tab.
+  const djinn = useDjinn();
+  const documentAgent = task.role === TaskRole.DOCUMENT && !!task.tilasmId;
+  const documentCode = documentAgent
+    ? (djinn?.store
+        .getState()
+        .details[task.wishId]?.tilasms.find((x) => x.id === task.tilasmId)
+        ?.code ?? "")
+    : "";
+  const title = taskTitle(task, documentCode);
   const closeDrawer = () => {
     pendingDrawerAction.current = null;
     setDrawerOpen(false);
@@ -187,6 +200,7 @@ export function WishTask({
     setDoneDraft("");
   };
   const hasSummary =
+    documentAgent ||
     !!decision ||
     !!task.closed ||
     !!work ||
@@ -197,6 +211,28 @@ export function WishTask({
     (watcher && !!task.lastLine);
   const summary = hasSummary ? (
     <>
+      {documentAgent && djinn && (
+        <p className="wish-task-note wish-task-decision">
+          <a
+            className="decision-link"
+            href={`#tilasm-${task.tilasmId}`}
+            onClick={(event) => {
+              event.preventDefault();
+              closeDrawerFor(() =>
+                djinn.focus.show({
+                  wishId: task.wishId,
+                  tilasmId: task.tilasmId,
+                }),
+              );
+            }}
+          >
+            <FileText size={13} aria-hidden="true" />
+            {t("task.document_agent_open", {
+              code: documentCode || task.title.split(":")[0]!.trim(),
+            })}
+          </a>
+        </p>
+      )}
       {decision && onDecision && (
         <p className="wish-task-note wish-task-decision">
           <DecisionLink
@@ -297,7 +333,7 @@ export function WishTask({
             {project?.name ?? ""}
           </span>
           {/* Cut to the room left: the whole title shows on hover. */}
-          <strong title={task.title}>{task.title}</strong>
+          <strong title={title}>{title}</strong>
           <span className="wish-task-meta">
             <span className="task-metric task-metric-time task-time">
               {origin}

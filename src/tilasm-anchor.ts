@@ -367,6 +367,13 @@ export function anchorOf(r: Rendered, from: number, to: number): Anchor | null {
     }
   }
   if (at >= 0) return anchorAt(r.text, at, end);
+  // A caret right after a character (the end of a word, of a paragraph): the place after it, in its block.
+  if (from === to)
+    for (let i = r.text.length - 1; i >= 0; i--) {
+      if (r.text[i] === " " || r.from[i]! < 0) continue;
+      if (r.to[i] === from) return anchorAt(r.text, i + 1, i + 1);
+      if (r.to[i]! < from) break;
+    }
   // No text in the range: the place before the first character after it.
   let next = r.text.length;
   for (let i = 0; i < r.text.length; i++) {

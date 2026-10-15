@@ -1,0 +1,27 @@
+[
+  {
+    "name": "live HTML block",
+    "markdown": "Text\n\n```html live\n<b>chart</b>\n```\n\nMore",
+    "text": "Text More"
+  },
+  {
+    "name": "live HTML block, tildes and any case",
+    "markdown": "Text\n\n~~~ HTML  Live\n<p>chart</p>\n~~~\n\nMore",
+    "text": "Text More"
+  },
+  {
+    "name": "live HTML block, a longer fence",
+    "markdown": "Text\n\n````html live\n<pre>```</pre>\n````\n\nMore",
+    "text": "Text More"
+  },
+  {
+    "name": "HTML example code keeps its text",
+    "markdown": "Example\n\n```html\n<b>shown</b>\n```\n\nEnd",
+    "text": "Example <b>shown</b> End"
+  },
+  {
+    "name": "code block keeps its text",
+    "markdown": "```js\nlet  x =\n  1;\n```",
+    "text": "let x = 1;"
+  }
+]

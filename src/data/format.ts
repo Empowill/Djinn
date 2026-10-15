@@ -12,6 +12,7 @@ import {
   type Question,
   RoundKind,
   type Task,
+  TaskRole,
   TaskStatus,
   type Wish,
   WishState,
@@ -110,6 +111,15 @@ const taskStatusKeys: Record<TaskStatus, TextKey> = {
   [TaskStatus.PAUSED]: "task.status_paused",
   [TaskStatus.RESUMING]: "task.status_resuming",
 };
+
+// taskTitle is a task's title as the window shows it: a document agent is named in the page's language, with its
+// document's code (code, else the one Djinn's title starts with: "L01: document agent").
+export function taskTitle(task: Task, code = ""): string {
+  if (task.role !== TaskRole.DOCUMENT) return task.title;
+  return t("task.document_agent", {
+    code: code || task.title.split(":")[0]!.trim(),
+  });
+}
 
 // taskStatusText names where a task stands: a task Djinn resumes once its provider's limit resets waits for the
 // limit; one cut short and resumed as another task (forkedAs) says which; a running watcher watches.

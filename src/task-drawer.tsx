@@ -16,7 +16,7 @@ import {
 } from "react";
 
 import type { Project, Task } from "../gen/ts/plan/v1/plan_pb";
-import type { Tone } from "./data/format";
+import { type Tone, taskTitle } from "./data/format";
 import { t } from "./i18n";
 import { StatusBadge } from "./status";
 
@@ -172,8 +172,8 @@ export function TaskDrawer({
                 <span className="task-drawer-project">{project.name}</span>
               )}
             </div>
-            <h2 id={titleId} title={task.title}>
-              {task.title}
+            <h2 id={titleId} title={taskTitle(task)}>
+              {taskTitle(task)}
             </h2>
           </div>
           <div className="task-drawer-header-actions">

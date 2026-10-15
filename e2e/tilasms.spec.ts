@@ -4,7 +4,7 @@
 // search folded behind an icon and its versions restorable; a djinn link opens the document's tab. Every run makes a
 // fresh wish, so --repeat-each works on the same djinn. Screenshots of the panel go to test-results/e2e/.
 import { expect, type Page, test } from "@playwright/test";
-import { execFileSync } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -400,8 +400,13 @@ test("a djinn link to a document opens its wish's Documents panel on its tab", a
 // The discussions of a document, as the agents read them.
 const discussionsOf = (code: string, wishId: string) =>
   JSON.parse(djinn("doc", "discussions", code, "--wish", wishId, "--json")) as {
-    threads?: { id: string; anchor?: { quote?: string } }[];
-    proposals?: { id: string; status?: string }[];
+    threads?: {
+      id: string;
+      kind?: string;
+      agent_pending?: boolean;
+      anchor?: { quote?: string; prefix?: string; suffix?: string };
+    }[];
+    proposals?: { id: string; status?: string; thread_id?: string }[];
   };
 
 test("a passage is discussed in a small window that folds into a dot; a proposal shows as a diff, accepted or rejected; a block's menu deletes, undone", async ({
@@ -599,5 +604,337 @@ test("a passage is discussed in a small window that folds into a dot; a proposal
     expect(errors).toEqual([]);
   } finally {
     djinn("wish", "pause", wishId);
+  }
+});
+
+// Selects words in the paragraph that holds them, with the keyboard, from its end.
+async function selectWords(
+  page: Page,
+  paragraph: ReturnType<Page["locator"]>,
+  words: string,
+  fromEnd: number,
+) {
+  await paragraph.click();
+  await page.keyboard.press("End");
+  for (let i = 0; i < fromEnd; i++) await page.keyboard.press("ArrowLeft");
+  for (let i = 0; i < words.length; i++)
+    await page.keyboard.press("Shift+ArrowLeft");
+  await expect
+    .poll(() => page.evaluate(() => String(getSelection())))
+    .toBe(words);
+}
+
+test("the agent is asked for a change at a selection or at the caret: a request discussion, answered by a proposal accepted in it", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const wishId = await openWish(
+    page,
+    `Ask the lamp ${randomUUID().slice(0, 8)}`,
+  );
+  try {
+    djinn(
+      "tilasm",
+      "create",
+      "Lamp",
+      "--wish",
+      wishId,
+      "--markdown",
+      "The wick carries the oil.\n\nThe flame needs air.\n\nThe glass keeps the wind out.",
+    );
+    await expect(page.locator('[data-wish-section="tilasms"]')).toBeVisible();
+    djinn("tilasm", "open", "L01", "--wish", wishId);
+    const panel = workspacePanel(page, "tilasms");
+    const body = panel.locator(".tilasm-prose");
+    await expect(body).toContainText("The flame needs air.");
+
+    // The bar asks the agent at a selection: a small input by the passage, which stays marked.
+    await selectWords(
+      page,
+      body.locator("p", { hasText: "The flame needs air." }),
+      "needs air",
+      1,
+    );
+    await page
+      .getByRole("toolbar", { name: "Formatting" })
+      .getByRole("button", { name: "Ask the agent" })
+      .click();
+    const ask = page.getByRole("dialog", { name: "Ask the agent" });
+    const field = ask.getByRole("textbox", {
+      name: "Your request to the agent",
+    });
+    await expect(field).toBeFocused();
+    await expect(body.locator(".tilasm-mark")).toHaveText("needs air");
+    // Shift+Enter starts a new line; Escape folds the input into a dot, its draft kept.
+    await field.pressSequentially("Say why");
+    await page.keyboard.press("Shift+Enter");
+    await field.pressSequentially("in a few words");
+    await expect(field).toHaveValue("Say why\nin a few words");
+    await page.screenshot({
+      path: path.join(shots, "documents-request-input.png"),
+    });
+    await page.keyboard.press("Escape");
+    await expect(ask).toHaveCount(0);
+    const draftDot = panel.locator(".tilasm-dot.is-draft");
+    await expect(draftDot).toHaveAttribute(
+      "aria-label",
+      "Request not sent yet",
+    );
+    await draftDot.click();
+    await expect(field).toHaveValue("Say why\nin a few words");
+    // Enter sends: a discussion marked as a request, on the passage.
+    await field.press("Enter");
+    const thread = page.getByRole("dialog", { name: "Request to the agent" });
+    await expect(thread).toBeVisible();
+    await expect(thread.locator(".tilasm-thread-kind")).toHaveText("Request");
+    await expect(thread).toContainText("in a few words");
+    await expect(body.locator(".tilasm-mark")).toHaveText("needs air");
+    const opened = discussionsOf("L01", wishId).threads ?? [];
+    expect(opened).toHaveLength(1);
+    expect(opened[0]!.kind).toBe("TILASM_THREAD_KIND_REQUEST");
+    expect(opened[0]!.anchor?.quote).toBe("needs air");
+    const threadId = opened[0]!.id;
+
+    // The document agent answers with a proposal linked to the request: its diff shows in the text, and the request
+    // accepts it.
+    djinn(
+      "doc",
+      "propose",
+      "L01",
+      "--wish",
+      wishId,
+      "--thread",
+      threadId,
+      "--replacement",
+      "needs oxygen to burn",
+      "--note",
+      "Fire burns oxygen",
+      "--author",
+      "document",
+    );
+    await expect(body.locator(".tilasm-old")).toHaveText("needs air");
+    await expect(body.locator(".tilasm-new")).toContainText(
+      "needs oxygen to burn",
+    );
+    const nested = thread.locator(".tilasm-proposal");
+    await expect(nested).toContainText("Fire burns oxygen");
+    await expect(nested).toContainText("Document agent");
+    await nested.getByRole("button", { name: "Accept" }).click();
+    await expect
+      .poll(() => markdownOf("L01", wishId))
+      .toContain("The flame needs oxygen to burn.");
+    await expect(body).toContainText("The flame needs oxygen to burn.");
+    await expect(body.locator(".tilasm-new")).toHaveCount(0);
+
+    // At the caret, the "/" menu asks the agent: a request at a place, with no quote.
+    await page.keyboard.press("Escape");
+    await body.locator("p", { hasText: "The wick carries the oil." }).click();
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("/ask");
+    const slash = page.getByRole("listbox", { name: "Blocks" });
+    await expect(slash.getByRole("option")).toHaveText(["Ask the agent"]);
+    await page.keyboard.press("Enter");
+    await expect(ask).toBeVisible();
+    await expect(body).not.toContainText("/ask");
+    await expect(body.locator(".tilasm-point.is-active")).toHaveCount(1);
+    await field.pressSequentially("Add a sentence on the wick's cotton");
+    await field.press("Enter");
+    await expect(thread).toContainText("Request at this place");
+    await expect
+      .poll(() => (discussionsOf("L01", wishId).threads ?? []).length)
+      .toBe(2);
+    const atCaret = (discussionsOf("L01", wishId).threads ?? []).find(
+      (x) => x.id !== threadId,
+    )!;
+    expect(atCaret.kind).toBe("TILASM_THREAD_KIND_REQUEST");
+    expect(atCaret.anchor?.quote ?? "").toBe("");
+    expect(
+      (atCaret.anchor?.prefix ?? "") + (atCaret.anchor?.suffix ?? ""),
+    ).toContain("The flame");
+
+    // Cmd+J (Ctrl+J) opens the same input at the caret; Escape with nothing written leaves nothing behind.
+    await page.keyboard.press("Escape");
+    await body
+      .locator("p", { hasText: "The glass keeps the wind out." })
+      .click();
+    await page.keyboard.press("ControlOrMeta+j");
+    await expect(field).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(ask).toHaveCount(0);
+    await expect(panel.locator(".tilasm-dot.is-draft")).toHaveCount(0);
+    expect(errors).toEqual([]);
+  } finally {
+    djinn("wish", "pause", wishId);
+  }
+});
+
+// A djinn of its own with question workers on, which wakes a document agent: the project's settings run it on the
+// fake provider, which plays its prompt; the request's text, "wait", has it wait for a message, so that it works on the
+// request while the test looks. The test answers as the agent would, with the command line.
+test("while the document agent works on a request, its discussion and its dot say so; its answer shows in place", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-e2e-doc-"));
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-e2e-docp-"));
+  fs.mkdirSync(path.join(project, ".agents"));
+  fs.writeFileSync(
+    path.join(project, ".agents", "settings.txtpb"),
+    "provider: PROVIDER_FAKE\n",
+  );
+  // No real agent can run: a fake one for each, first on the PATH.
+  const bin = path.join(home, "bin");
+  fs.mkdirSync(bin);
+  if (process.platform !== "win32")
+    for (const agent of ["claude", "codex", "agy"])
+      fs.writeFileSync(path.join(bin, agent), "#!/bin/sh\nexec cat\n", {
+        mode: 0o755,
+      });
+  const env = {
+    ...process.env,
+    DJINN_HOME: home,
+    DJINN_QUESTION_WORKERS: "on",
+    PATH: bin + path.delimiter + process.env.PATH,
+  };
+  const own = (...args: string[]) =>
+    execFileSync(binary, args, { env, encoding: "utf8" });
+  const proc: ChildProcess = spawn(binary, ["up", "--browser"], {
+    stdio: ["ignore", "pipe", "inherit"],
+    env,
+  });
+  const exited = new Promise((resolve) => proc.once("exit", resolve));
+  try {
+    const url = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("djinn printed no URL")),
+        10_000,
+      );
+      let out = "";
+      proc.stdout!.on("data", (chunk: Buffer) => {
+        out += chunk.toString();
+        const match = out.match(/http:\/\/127\.0\.0\.1:\d+\/\?token=[0-9a-f]+/);
+        if (match) {
+          clearTimeout(timer);
+          resolve(match[0]);
+        }
+      });
+      proc.once("exit", (code) => reject(new Error(`djinn exited: ${code}`)));
+    });
+    const projectId = JSON.parse(own("project", "add", project, "--json"))
+      .project.id as string;
+    const title = `Agent at work ${randomUUID().slice(0, 8)}`;
+    const wishId = JSON.parse(
+      own("wish", "make", title, "--project-ids", projectId, "--json"),
+    ).wish.id as string;
+    own(
+      "tilasm",
+      "create",
+      "Lamp",
+      "--wish",
+      wishId,
+      "--markdown",
+      "The wick carries the oil.\n\nThe flame needs air.",
+    );
+    await page.goto(url);
+    await page.locator(".wish-nav").filter({ hasText: title }).click();
+    await expect(page.locator('[data-wish-section="tilasms"]')).toBeVisible();
+    own("tilasm", "open", "L01", "--wish", wishId);
+    const panel = workspacePanel(page, "tilasms");
+    const body = panel.locator(".tilasm-prose");
+    await expect(body).toContainText("The flame needs air.");
+
+    await selectWords(
+      page,
+      body.locator("p", { hasText: "The flame needs air." }),
+      "needs air",
+      1,
+    );
+    await page.keyboard.press("ControlOrMeta+j");
+    const field = page
+      .getByRole("dialog", { name: "Ask the agent" })
+      .getByRole("textbox", { name: "Your request to the agent" });
+    await field.fill("wait");
+    await field.press("Enter");
+    const thread = page.getByRole("dialog", { name: "Request to the agent" });
+    const writing = thread.getByRole("status");
+    await expect(writing).toHaveText("Document agent is writing…", {
+      timeout: 20_000,
+    });
+    const asked = (JSON.parse(
+      own("doc", "discussions", "L01", "--wish", wishId, "--json"),
+    ).threads ?? [])[0] as { id: string; anchor?: { quote?: string } };
+    expect(asked.anchor?.quote).toBe("needs air");
+    const threadId = asked.id;
+    await page.screenshot({
+      path: path.join(shots, "documents-agent-writing.png"),
+    });
+
+    // Folded, its dot says so too; the answer marks it, without opening it.
+    await body.locator("p").first().click();
+    await expect(thread).toHaveCount(0);
+    const dot = panel.locator(".tilasm-dot");
+    await expect(dot).toHaveClass(/is-working/);
+    await expect(dot).toHaveAttribute(
+      "aria-label",
+      /Document agent is writing…/,
+    );
+    own(
+      "doc",
+      "propose",
+      "L01",
+      "--wish",
+      wishId,
+      "--thread",
+      threadId,
+      "--replacement",
+      "needs oxygen",
+      "--author",
+      "document",
+    );
+    own(
+      "doc",
+      "reply",
+      threadId,
+      "--text",
+      "Proposed: oxygen.",
+      "--author",
+      "document",
+    );
+    await expect(body.locator(".tilasm-new")).toContainText("needs oxygen");
+    await expect(dot).not.toHaveClass(/is-working/);
+    await expect(dot).toHaveClass(/is-unread/);
+    await expect(thread).toHaveCount(0);
+    await dot.click();
+    await expect(thread).toContainText("Proposed: oxygen.");
+    await expect(writing).toHaveCount(0);
+    // The request points to its proposal in the text.
+    await thread.getByRole("button", { name: "Show in the text" }).click();
+    await expect(
+      page.getByRole("dialog", { name: "Proposed change" }),
+    ).toBeVisible();
+
+    // The agent's task is named as the document agent, and opens its document.
+    const card = page
+      .locator(".wish-task")
+      .filter({ hasText: "Document agent of L01" });
+    await openWorkspaceSection(page, "tasks");
+    await expect(card).toHaveCount(1);
+    expect(errors).toEqual([]);
+  } finally {
+    if (proc.exitCode === null) {
+      proc.kill(process.platform === "win32" ? undefined : "SIGINT");
+      await exited;
+    }
+    for (const dir of [home, project])
+      fs.rmSync(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 250,
+      });
   }
 });

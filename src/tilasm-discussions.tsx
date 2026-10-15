@@ -2,6 +2,10 @@
 // (internal/plan/tilasm_discussions.go), each naming its passage by an anchor of the document's rendered text
 // (src/tilasm-anchor.ts); the window finds that passage again in the editor and marks it, never in the Markdown.
 //
+// A request to the document agent opens the same way, or at the caret (the "/" menu, Cmd+J), in a smaller window: one
+// field, Enter sends; it becomes a discussion marked as a request, which the agent answers with a proposal. While the
+// agent works on a discussion, its window and its dot say so.
+//
 // A discussion opens from a selection, or a block's menu, in a small window to the right of its passage; clicked away
 // or left, it folds into a dot in the margin by the passage, its draft kept, and a message that arrives meanwhile marks
 // the dot. A pending proposal shows in the text as a diff: the passage it replaces struck in red, its text in green
@@ -13,7 +17,14 @@ import { type Editor } from "@tiptap/core";
 import { DOMSerializer, Node as PMNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { Check, CornerDownLeft, MessageSquare, Unlink, X } from "lucide-react";
+import {
+  Check,
+  CornerDownLeft,
+  MessageSquare,
+  Sparkles,
+  Unlink,
+  X,
+} from "lucide-react";
 import {
   type ReactNode,
   type RefObject,
@@ -33,6 +44,7 @@ import {
   TilasmAnchorState,
   TilasmProposalStatus,
   type TilasmThread,
+  TilasmThreadKind,
 } from "../gen/ts/plan/v1/tilasm_pb";
 import { message } from "./data/client";
 import { useClients } from "./data/djinn";
@@ -48,14 +60,16 @@ import {
   resolve,
 } from "./tilasm-anchor";
 
-// A passage marked in the editor: a discussion's, a proposal's, or the one a new comment is being written on. lost:
-// its text was deleted in the editor since it was found.
+// A passage marked in the editor: a discussion's, a proposal's, or the one a new comment or request is being written
+// on (ask: a request to the agent). lost: its text was deleted in the editor since it was found. A passage with no
+// text (from equals to) is a place, marked by a thin caret.
 export interface Placed {
   id: string;
   kind: "thread" | "proposal" | "draft";
   from: number;
   to: number;
   lost?: boolean;
+  ask?: boolean;
 }
 
 // How a proposal's new text shows after its passage: in the line, or as blocks of its own.
@@ -73,8 +87,18 @@ interface Marks {
 
 const marksKey = new PluginKey<Marks>("tilasm-discussions");
 
-// The id of the passage a new comment is written on.
+// The id of the passage a new comment or request is written on, and the draft of a new comment.
 const NEW = "new";
+// The draft of a new request to the agent.
+const ASK = "ask";
+
+const isRequest = (thread: TilasmThread) =>
+  thread.kind === TilasmThreadKind.REQUEST;
+
+// What the developer has seen of a discussion: its messages, and the proposals linked to it.
+const sizeOf = (thread: TilasmThread, proposals: TilasmProposal[]) =>
+  thread.messages.length +
+  proposals.filter((p) => p.threadId === thread.id).length;
 
 function mapPlaced(p: Placed, tr: Transaction): Placed {
   if (p.lost) return p;
@@ -92,6 +116,15 @@ function srOnly(text: string): HTMLElement {
   const span = document.createElement("span");
   span.className = "tilasm-sr";
   span.textContent = text;
+  return span;
+}
+
+// pointMark marks a place with no text, where a request inserts: a thin caret that takes no room.
+function pointMark(id: string, active: string): HTMLElement {
+  const span = document.createElement("span");
+  span.className = `tilasm-point${active}`;
+  span.dataset.thread = id;
+  span.setAttribute("aria-hidden", "true");
   return span;
 }
 
@@ -128,6 +161,14 @@ function marksPlugin(): Plugin<Marks> {
                 Decoration.inline(p.from, p.to, {
                   class: `tilasm-mark${active}`,
                   "data-thread": p.id,
+                }),
+              );
+            else
+              decorations.push(
+                Decoration.widget(p.from, () => pointMark(p.id, active), {
+                  side: -1,
+                  key: `point-${p.id}${active}`,
+                  ignoreSelection: true,
                 }),
               );
             continue;
@@ -292,7 +333,7 @@ interface Data {
 // What floats over the document: a discussion, a new comment, or a proposal's card.
 type Opened =
   | { kind: "thread"; id: string }
-  | { kind: "new" }
+  | { kind: "new"; ask: boolean }
   | { kind: "proposal"; id: string };
 
 export interface DiscussionsProps {
@@ -309,8 +350,10 @@ export interface DiscussionsProps {
   reload: (after: number) => Promise<void>;
   // Where the indicator of what is apart goes, in the strip of tabs.
   strip: HTMLElement | null;
-  // Set to what opens a comment on a range of the editor.
-  commentRef: RefObject<((from: number, to: number) => void) | null>;
+  // Set to what opens a comment, or a request to the agent (ask), on a range of the editor: a place when from is to.
+  commentRef: RefObject<
+    ((from: number, to: number, ask?: boolean) => void) | null
+  >;
 }
 
 // TilasmDiscussions marks the passages of a document's discussions and proposals, and shows their windows.
@@ -374,7 +417,7 @@ export function TilasmDiscussions({
     const now = live.current.opened;
     const fresh = new Set<string>();
     for (const thread of data.threads) {
-      const count = thread.messages.length;
+      const count = sizeOf(thread, data.proposals);
       if (now?.kind === "thread" && now.id === thread.id) {
         seen.current.set(thread.id, count);
         continue;
@@ -466,6 +509,7 @@ export function TilasmDiscussions({
 
   // The active passage stands out.
   const activeId = opened?.kind === "new" ? NEW : opened ? opened.id : "";
+  const openedNewAsk = opened?.kind === "new" && opened.ask;
   useEffect(() => {
     if (editor.isDestroyed) return;
     const marks = marksKey.getState(editor.state);
@@ -478,7 +522,7 @@ export function TilasmDiscussions({
   }, [editor, activeId]);
 
   const setDraftItem = useCallback(
-    (range: { from: number; to: number } | null) => {
+    (range: { from: number; to: number; ask: boolean } | null) => {
       const marks = marksKey.getState(editor.state);
       if (!marks) return;
       const placed = marks.placed.filter((p) => p.kind !== "draft");
@@ -492,11 +536,12 @@ export function TilasmDiscussions({
     [editor],
   );
 
-  // A comment asked on a range: its window opens on it, a draft started before kept.
+  // A comment or a request asked on a range: its window opens on it, a draft started before kept. The passage is
+  // marked, and moves with the text, while the window has the focus.
   useLayoutEffect(() => {
-    commentRef.current = (from, to) => {
-      setDraftItem({ from, to });
-      setOpened({ kind: "new" });
+    commentRef.current = (from, to, ask = false) => {
+      setDraftItem({ from, to, ask });
+      setOpened({ kind: "new", ask });
     };
     return () => {
       commentRef.current = null;
@@ -545,11 +590,14 @@ export function TilasmDiscussions({
   const fail = (key: string, text: string) =>
     setErrors((before) => ({ ...before, [key]: text }));
 
-  // close folds the window open: a new comment with nothing written goes, its passage unmarked.
+  // close folds the window open: a new comment or request with nothing written goes, its passage unmarked.
   const close = useCallback(
     (focusEditor: boolean) => {
       const now = live.current.opened;
-      if (now?.kind === "new" && !drafts.current.get(NEW)?.text.trim())
+      if (
+        now?.kind === "new" &&
+        !drafts.current.get(now.ask ? ASK : NEW)?.text.trim()
+      )
         setDraftItem(null);
       setOpened(null);
       if (focusEditor) editor.commands.focus();
@@ -557,24 +605,27 @@ export function TilasmDiscussions({
     [editor, setDraftItem],
   );
 
-  const sendNew = async (text: string) => {
+  // sendNew opens the discussion, or the request (ask), written in the new window: what the developer typed is saved
+  // first, so that Djinn anchors it on the text the editor shows.
+  const sendNew = async (text: string, asking: boolean) => {
+    const key = asking ? ASK : NEW;
     const draft = marksKey
       .getState(editor.state)
       ?.placed.find((p) => p.kind === "draft");
-    if (!draft || draft.lost) return fail(NEW, t("tilasms.thread.gone"));
-    setBusy(NEW);
-    fail(NEW, "");
+    if (!draft || draft.lost) return fail(key, t("tilasms.thread.gone"));
+    setBusy(key);
+    fail(key, "");
     try {
-      if (!(await settle())) return fail(NEW, t("tilasms.thread.save_first"));
+      if (!(await settle())) return fail(key, t("tilasms.thread.save_first"));
       const r = renderDoc(editor.state.doc, titleText());
       const anchor = anchorOf(r, draft.from, draft.to);
-      if (!anchor) return fail(NEW, t("tilasms.thread.gone"));
-      const kept = draftOf(NEW);
+      if (!anchor) return fail(key, t("tilasms.thread.gone"));
+      const kept = draftOf(key);
       const requestId =
         kept.sentText === text && kept.requestId
           ? kept.requestId
           : crypto.randomUUID();
-      drafts.current.set(NEW, { text, requestId, sentText: text });
+      drafts.current.set(key, { text, requestId, sentText: text });
       const ask = (a: Anchor) =>
         clients.tilasms.comment({
           tilasm: ref,
@@ -584,6 +635,7 @@ export function TilasmDiscussions({
           text,
           author: "developer",
           requestId,
+          kind: asking ? TilasmThreadKind.REQUEST : TilasmThreadKind.COMMENT,
         });
       let res;
       try {
@@ -600,7 +652,7 @@ export function TilasmDiscussions({
         else throw error;
       }
       const thread = res.thread;
-      dropDraft(NEW);
+      dropDraft(key);
       setDraftItem(null);
       if (thread) {
         seen.current.set(thread.id, thread.messages.length);
@@ -613,7 +665,7 @@ export function TilasmDiscussions({
       }
       void refetch();
     } catch (error) {
-      fail(NEW, refusal(error));
+      fail(key, refusal(error));
     } finally {
       setBusy("");
     }
@@ -638,7 +690,10 @@ export function TilasmDiscussions({
       dropDraft(thread.id);
       const next = res.thread;
       if (next) {
-        seen.current.set(next.id, next.messages.length);
+        seen.current.set(
+          next.id,
+          sizeOf(next, live.current.data?.proposals ?? []),
+        );
         setData((before) =>
           before
             ? {
@@ -754,6 +809,12 @@ export function TilasmDiscussions({
       onReject={(proposal) => void reject(proposal)}
       canAccept={(proposal) => shown.has(proposal.id)}
       onClose={onClose}
+      onShow={(proposal) => {
+        const at = shown.get(proposal.id);
+        if (!at) return;
+        scrollTo(editor, at.from);
+        setOpened({ kind: "proposal", id: proposal.id });
+      }}
     />
   );
 
@@ -772,22 +833,35 @@ export function TilasmDiscussions({
     if (at && (opened.kind === "new" || thread || proposal))
       floating = (
         <FloatingWindow
-          key={opened.kind === "new" ? NEW : opened.id}
+          key={opened.kind === "new" ? (opened.ask ? ASK : NEW) : opened.id}
           at={at}
+          compact={openedNewAsk}
           label={
             opened.kind === "proposal"
               ? t("tilasms.proposal.title")
-              : t("tilasms.thread.title")
+              : openedNewAsk
+                ? t("tilasms.ask.title")
+                : thread && isRequest(thread)
+                  ? t("tilasms.request.title")
+                  : t("tilasms.thread.title")
           }
           onClose={close}
         >
-          {opened.kind === "new" ? (
+          {opened.kind === "new" && opened.ask ? (
+            <AskAgent
+              draft={draftOf(ASK).text}
+              onDraft={(text) => saveDraft(ASK, text)}
+              busy={busy === ASK}
+              error={errors[ASK] ?? ""}
+              onSend={(text) => void sendNew(text, true)}
+            />
+          ) : opened.kind === "new" ? (
             <NewComment
               draft={draftOf(NEW).text}
               onDraft={(text) => saveDraft(NEW, text)}
               busy={busy === NEW}
               error={errors[NEW] ?? ""}
-              onSend={(text) => void sendNew(text)}
+              onSend={(text) => void sendNew(text, false)}
               onCancel={() => {
                 dropDraft(NEW);
                 setDraftItem(null);
@@ -811,8 +885,15 @@ export function TilasmDiscussions({
       );
   }
 
-  // A dot by each discussion's passage, and by a new comment's folded draft.
-  const dots: { id: string; count: number; draft: boolean; top: number }[] = [];
+  // A dot by each discussion's passage, and by a new comment's or request's folded draft.
+  const dots: {
+    id: string;
+    count: number;
+    draft: boolean;
+    ask: boolean;
+    working: boolean;
+    top: number;
+  }[] = [];
   if (view) {
     for (const p of shown.values()) {
       if (p.kind === "proposal") continue;
@@ -825,6 +906,8 @@ export function TilasmDiscussions({
         id: p.id,
         count: thread?.messages.length ?? 0,
         draft: p.kind === "draft",
+        ask: p.kind === "draft" ? !!p.ask : !!thread && isRequest(thread),
+        working: !!thread?.agentPending,
         top,
       });
     }
@@ -837,44 +920,61 @@ export function TilasmDiscussions({
   return (
     <>
       {view &&
-        dots.map((dot) => (
-          <button
-            key={dot.id}
-            type="button"
-            className={`tilasm-dot${unread.has(dot.id) ? " is-unread" : ""}${dot.draft ? " is-draft" : ""}`}
-            style={{ top: dot.top, left: view.dotLeft }}
-            data-dot={dot.id}
-            title={
-              dot.draft
-                ? t("tilasms.thread.draft")
-                : t("tilasms.thread.open", { count: dot.count })
-            }
-            aria-label={
-              dot.draft
-                ? t("tilasms.thread.draft")
-                : unread.has(dot.id)
-                  ? t("tilasms.thread.open_unread", { count: dot.count })
-                  : t("tilasms.thread.open", { count: dot.count })
-            }
-            onClick={() => {
-              close(false);
-              if (dot.draft) setOpened({ kind: "new" });
-              else {
-                const thread = threads.find((x) => x.id === dot.id);
-                if (thread) seen.current.set(thread.id, thread.messages.length);
-                setUnread((before) => {
-                  const next = new Set(before);
-                  next.delete(dot.id);
-                  return next;
-                });
-                setOpened({ kind: "thread", id: dot.id });
-              }
-            }}
-          >
-            <MessageSquare size={12} aria-hidden="true" />
-            {!dot.draft && <span>{dot.count}</span>}
-          </button>
-        ))}
+        dots.map((dot) => {
+          const label = dot.draft
+            ? dot.ask
+              ? t("tilasms.ask.draft")
+              : t("tilasms.thread.draft")
+            : t(
+                dot.ask
+                  ? unread.has(dot.id)
+                    ? "tilasms.request.open_unread"
+                    : "tilasms.request.open"
+                  : unread.has(dot.id)
+                    ? "tilasms.thread.open_unread"
+                    : "tilasms.thread.open",
+                { count: dot.count },
+              );
+          const said = dot.working
+            ? `${label} · ${t("tilasms.agent.writing")}`
+            : label;
+          return (
+            <button
+              key={dot.id}
+              type="button"
+              className={`tilasm-dot${unread.has(dot.id) ? " is-unread" : ""}${dot.draft ? " is-draft" : ""}${dot.ask ? " is-request" : ""}${dot.working ? " is-working" : ""}`}
+              style={{ top: dot.top, left: view.dotLeft }}
+              data-dot={dot.id}
+              title={said}
+              aria-label={said}
+              onClick={() => {
+                close(false);
+                if (dot.draft) setOpened({ kind: "new", ask: dot.ask });
+                else {
+                  const thread = threads.find((x) => x.id === dot.id);
+                  if (thread)
+                    seen.current.set(thread.id, sizeOf(thread, proposals));
+                  setUnread((before) => {
+                    const next = new Set(before);
+                    next.delete(dot.id);
+                    return next;
+                  });
+                  setOpened({ kind: "thread", id: dot.id });
+                }
+              }}
+            >
+              {dot.ask ? (
+                <Sparkles size={12} aria-hidden="true" />
+              ) : (
+                <MessageSquare size={12} aria-hidden="true" />
+              )}
+              {!dot.draft && <span>{dot.count}</span>}
+              {dot.working && (
+                <span className="tilasm-working-dot" aria-hidden="true" />
+              )}
+            </button>
+          );
+        })}
       {floating}
       {strip &&
         (apartCount > 0 || resolvedThreads.length > 0) &&
@@ -952,6 +1052,18 @@ function layoutOf(editor: Editor, box: RefObject<HTMLDivElement | null>) {
   };
 }
 
+// scrollTo brings a place of the editor into sight, the caret left where it is.
+function scrollTo(editor: Editor, pos: number) {
+  try {
+    const { node } = editor.view.domAtPos(pos);
+    const element =
+      node instanceof HTMLElement ? node : (node.parentElement ?? null);
+    element?.scrollIntoView({ block: "nearest" });
+  } catch {
+    // A place no longer in the document: nothing to show.
+  }
+}
+
 function scrollBox(element: HTMLElement): HTMLElement | null {
   for (let at = element.parentElement; at; at = at.parentElement) {
     const { overflowY } = getComputedStyle(at);
@@ -965,11 +1077,14 @@ function scrollBox(element: HTMLElement): HTMLElement | null {
 function FloatingWindow({
   at,
   label,
+  compact = false,
   onClose,
   children,
 }: {
   at: { top: number; left: number; width: number };
   label: string;
+  // A request's input: the field alone, no heading.
+  compact?: boolean;
   onClose: (focusEditor: boolean) => void;
   children: ReactNode;
 }) {
@@ -992,7 +1107,7 @@ function FloatingWindow({
   return (
     <div
       ref={panel}
-      className="tilasm-float"
+      className={`tilasm-float${compact ? " is-compact" : ""}`}
       role="dialog"
       aria-label={label}
       style={{ top: at.top, left: at.left, width: at.width }}
@@ -1012,7 +1127,8 @@ function FloatingWindow({
   );
 }
 
-// Composer is the field of a message, with its send button: Enter with Cmd or Ctrl sends.
+// Composer is the field of a message, with its send button: Enter with Cmd or Ctrl sends; with enterSends, Enter
+// alone sends and Shift+Enter starts a new line.
 function Composer({
   draft,
   onDraft,
@@ -1021,6 +1137,8 @@ function Composer({
   placeholder,
   onSend,
   autoFocus,
+  enterSends = false,
+  rows = 2,
   children,
 }: {
   draft: string;
@@ -1031,6 +1149,8 @@ function Composer({
   // Says, when it can, whether the message went: the field empties then.
   onSend: (text: string) => Promise<boolean> | void;
   autoFocus?: boolean;
+  enterSends?: boolean;
+  rows?: number;
   children?: ReactNode;
 }) {
   const [text, setText] = useState(draft);
@@ -1048,7 +1168,7 @@ function Composer({
     >
       <textarea
         value={text}
-        rows={2}
+        rows={rows}
         aria-label={label}
         placeholder={placeholder}
         autoFocus={autoFocus}
@@ -1057,7 +1177,12 @@ function Composer({
           onDraft(event.target.value);
         }}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+          if (
+            event.metaKey ||
+            event.ctrlKey ||
+            (enterSends && !event.shiftKey && !event.altKey)
+          ) {
             event.preventDefault();
             void send();
           }
@@ -1119,6 +1244,53 @@ function NewComment({
   );
 }
 
+// AskAgent is the input of a request to the document agent, by its passage or its place: one field, Enter sends,
+// Shift+Enter starts a new line, Escape folds it, its draft kept.
+function AskAgent({
+  draft,
+  onDraft,
+  busy,
+  error,
+  onSend,
+}: {
+  draft: string;
+  onDraft: (text: string) => void;
+  busy: boolean;
+  error: string;
+  onSend: (text: string) => void;
+}) {
+  return (
+    <div className="tilasm-ask">
+      <Composer
+        draft={draft}
+        onDraft={onDraft}
+        busy={busy}
+        label={t("tilasms.ask.field")}
+        placeholder={t("tilasms.ask.placeholder")}
+        onSend={onSend}
+        autoFocus
+        enterSends
+        rows={1}
+      />
+      {error && (
+        <p className="tilasm-float-error" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// AgentWriting says, quietly, that the document agent works on a discussion now.
+function AgentWriting() {
+  return (
+    <p className="tilasm-agent-writing" role="status">
+      <span className="tilasm-working-dot" aria-hidden="true" />
+      {t("tilasms.agent.writing")}
+    </p>
+  );
+}
+
 // ThreadBody is a discussion: its passage, its messages, its proposals, and the field to answer.
 function ThreadBody({
   thread,
@@ -1133,6 +1305,7 @@ function ThreadBody({
   onReject,
   canAccept,
   onClose,
+  onShow,
 }: {
   thread: TilasmThread;
   proposals: TilasmProposal[];
@@ -1146,10 +1319,19 @@ function ThreadBody({
   onReject: (proposal: TilasmProposal) => void;
   canAccept: (proposal: TilasmProposal) => boolean;
   onClose?: () => void;
+  // Shows a proposal of the discussion where it stands in the text, its card open.
+  onShow?: (proposal: TilasmProposal) => void;
 }) {
   const quote = thread.current || thread.anchor?.quote || "";
+  const request = isRequest(thread);
   return (
-    <div className="tilasm-thread">
+    <div className={`tilasm-thread${request ? " is-request" : ""}`}>
+      {request && (
+        <p className="tilasm-thread-kind">
+          <Sparkles size={12} aria-hidden="true" />
+          {quote ? t("tilasms.request.label") : t("tilasms.request.at_place")}
+        </p>
+      )}
       {quote && <p className="tilasm-thread-quote">{clip(quote, 160)}</p>}
       <ol className="tilasm-thread-messages">
         {thread.messages.map((m) => (
@@ -1171,9 +1353,15 @@ function ThreadBody({
           canAccept={canAccept(proposal)}
           onAccept={() => onAccept(proposal)}
           onReject={() => onReject(proposal)}
+          onShow={
+            onShow && pending(proposal) && canAccept(proposal)
+              ? () => onShow(proposal)
+              : undefined
+          }
           nested
         />
       ))}
+      {thread.agentPending && <AgentWriting />}
       {!thread.resolved && (
         <Composer
           draft={draft}
@@ -1215,6 +1403,7 @@ function ProposalCard({
   canAccept,
   onAccept,
   onReject,
+  onShow,
   nested = false,
 }: {
   proposal: TilasmProposal;
@@ -1223,6 +1412,8 @@ function ProposalCard({
   canAccept: boolean;
   onAccept: () => void;
   onReject: () => void;
+  // Shows the proposal in the text, where its diff stands.
+  onShow?: () => void;
   nested?: boolean;
 }) {
   const decided = !pending(proposal);
@@ -1257,6 +1448,15 @@ function ProposalCard({
       )}
       {!decided && (
         <div className="tilasm-float-actions">
+          {onShow && (
+            <button
+              type="button"
+              className="text-button tilasm-show"
+              onClick={onShow}
+            >
+              {t("tilasms.proposal.show")}
+            </button>
+          )}
           <button
             type="button"
             className="text-button"

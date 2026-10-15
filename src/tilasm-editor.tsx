@@ -1,10 +1,11 @@
 // The editor of a Markdown tilasm (src/tilasms.tsx): Tiptap on the panel's surface, with what a document editor
 // needs and no chrome of its own. A bar near the selection formats it, links it and changes its block; "/" at a block's
 // start or after a space opens a menu of blocks by the caret; a handle in the left gutter moves a whole block, the
-// drop shown by a line, in one step that undo takes back. What it reads and writes is Markdown
+// drop shown by a line, in one step that undo takes back. The bar, the "/" menu, a block's menu and Cmd+J (Ctrl+J) ask
+// the document agent for a change at the selection, the block or the caret. What it reads and writes is Markdown
 // (src/tilasm-markdown.ts).
 import { type Editor } from "@tiptap/core";
-import { NodeSelection, TextSelection } from "@tiptap/pm/state";
+import { NodeSelection, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import {
@@ -26,6 +27,7 @@ import {
   Minus,
   Pilcrow,
   Quote,
+  Sparkles,
   SquareCode,
   Strikethrough,
   Table,
@@ -49,6 +51,7 @@ import { t } from "./i18n";
 import { HTML_LIVE } from "./tilasm-html";
 import { htmlLiveView, openNextBlock } from "./tilasm-html-view";
 import { tilasmExtensions } from "./tilasm-markdown";
+import { platformShortcut } from "./tooltip";
 
 // useTilasmEditor makes the editor of a document, read only until told otherwise. onEdit hears each edit the
 // developer makes, never the content the page sets.
@@ -185,7 +188,10 @@ const plain = (text: string) =>
   text.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase();
 
 // The blocks a "/" query finds, by their label or their words.
-function matching(items: BlockItem[], query: string): BlockItem[] {
+function matching<T extends { label: string; words: string }>(
+  items: T[],
+  query: string,
+): T[] {
   const q = plain(query);
   if (!q) return items;
   return items.filter((item) =>
@@ -240,6 +246,32 @@ function run(chain: Chain, id: BlockId) {
   chain.run();
 }
 
+// selected is the range the developer selected: the page's selection when it is in the text, which the editor may not
+// have read yet right after a key moved it, else the editor's.
+function selected(editor: Editor): { from: number; to: number } {
+  const view = editor.view;
+  const sel = (view.root as Document).getSelection?.();
+  if (
+    sel?.anchorNode &&
+    sel.focusNode &&
+    view.dom.contains(sel.anchorNode) &&
+    view.dom.contains(sel.focusNode)
+  ) {
+    try {
+      const anchor = view.posAtDOM(sel.anchorNode, sel.anchorOffset);
+      const head = view.posAtDOM(sel.focusNode, sel.focusOffset);
+      return { from: Math.min(anchor, head), to: Math.max(anchor, head) };
+    } catch {
+      // A node of the page the editor does not map: its own selection.
+    }
+  }
+  const { from, to } = editor.state.selection;
+  return { from, to };
+}
+
+// The bar's own key, to fold it once it opened a window.
+const barKey = new PluginKey("tilasm-bar");
+
 // scrollParent is the nearest box that scrolls the editor: the bar and the menu follow its scroll.
 function scrollParent(element: HTMLElement | null): HTMLElement | Window {
   for (let at = element?.parentElement; at; at = at.parentElement) {
@@ -255,12 +287,16 @@ export function TilasmEditor({
   editor,
   editable,
   onComment,
+  onAsk,
   overlay,
 }: {
   editor: Editor | null;
   editable: boolean;
   // Opens a comment on a range of the document: the bar's Comment, a block's.
   onComment?: (from: number, to: number) => void;
+  // Opens a request to the document agent on a range, or at a place when from is to: the bar's, the "/" menu's, a
+  // block's, Cmd+J's.
+  onAsk?: (from: number, to: number) => void;
   // What stands over the text, in the editor's box: the discussions (src/tilasm-discussions.tsx).
   overlay?: (
     editor: Editor,
@@ -270,6 +306,31 @@ export function TilasmEditor({
   const box = useRef<HTMLDivElement>(null);
   const [scroller, setScroller] = useState<HTMLElement | Window>();
   useEffect(() => setScroller(scrollParent(box.current)), []);
+  // Cmd+J (Ctrl+J) asks the agent at the selection, or at the caret.
+  const asking = useRef(onAsk);
+  useLayoutEffect(() => {
+    asking.current = onAsk;
+  });
+  useEffect(() => {
+    if (!editor || !editable) return;
+    const dom = editor.view.dom;
+    const keys = (event: KeyboardEvent) => {
+      if (
+        !asking.current ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.shiftKey ||
+        event.altKey ||
+        event.key.toLowerCase() !== "j"
+      )
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      const { from, to } = selected(editor);
+      asking.current(from, to);
+    };
+    dom.addEventListener("keydown", keys);
+    return () => dom.removeEventListener("keydown", keys);
+  }, [editor, editable]);
   return (
     <div className="tilasm-editor" ref={box}>
       <EditorContent editor={editor} />
@@ -279,9 +340,15 @@ export function TilasmEditor({
             editor={editor}
             scroller={scroller}
             onComment={onComment}
+            onAsk={onAsk}
           />
-          <SlashMenu editor={editor} />
-          <BlockHandle editor={editor} box={box} onComment={onComment} />
+          <SlashMenu editor={editor} onAsk={onAsk} />
+          <BlockHandle
+            editor={editor}
+            box={box}
+            onComment={onComment}
+            onAsk={onAsk}
+          />
         </>
       )}
       {editor && overlay?.(editor, box)}
@@ -353,12 +420,14 @@ function BlockMenu({
   index,
   top,
   onComment,
+  onAsk,
   onClose,
 }: {
   editor: Editor;
   index: number;
   top: number;
   onComment?: (from: number, to: number) => void;
+  onAsk?: (from: number, to: number) => void;
   onClose: (refocus: boolean) => void;
 }) {
   const menu = useRef<HTMLDivElement>(null);
@@ -469,6 +538,17 @@ function BlockMenu({
           <span>{t("tilasms.comment")}</span>
         </button>
       )}
+      {onAsk && words && (
+        <button
+          type="button"
+          role="menuitem"
+          className="tilasm-menu-item"
+          onClick={() => act(() => onAsk(from, to), false)}
+        >
+          <Sparkles size={14} aria-hidden="true" />
+          <span>{t("tilasms.ask.action")}</span>
+        </button>
+      )}
       {textual(node.type.name) && (
         <>
           <p className="tilasm-menu-label">{t("tilasms.turn_into")}</p>
@@ -510,10 +590,12 @@ function BlockHandle({
   editor,
   box,
   onComment,
+  onAsk,
 }: {
   editor: Editor;
   box: RefObject<HTMLDivElement | null>;
   onComment?: (from: number, to: number) => void;
+  onAsk?: (from: number, to: number) => void;
 }) {
   // The block the handle stands by, and where the drag would drop it: a boundary between blocks.
   const [hover, setHover] = useState<{ index: number; top: number }>();
@@ -664,6 +746,7 @@ function BlockHandle({
           index={menu}
           top={hover.top}
           onComment={onComment}
+          onAsk={onAsk}
           onClose={closeMenu}
         />
       )}
@@ -684,10 +767,12 @@ function SelectionBar({
   editor,
   scroller,
   onComment,
+  onAsk,
 }: {
   editor: Editor;
   scroller: HTMLElement | Window;
   onComment?: (from: number, to: number) => void;
+  onAsk?: (from: number, to: number) => void;
 }) {
   const [link, setLink] = useState<string | null>(null);
   const [blocks, setBlocks] = useState(false);
@@ -768,6 +853,7 @@ function SelectionBar({
   return (
     <BubbleMenu
       editor={editor}
+      pluginKey={barKey}
       className="tilasm-bar"
       role="toolbar"
       aria-label={t("tilasms.formatting")}
@@ -864,21 +950,47 @@ function SelectionBar({
               <Link size={14} aria-hidden="true" />
             </button>
           </span>
-          {onComment && (
+          {(onComment || onAsk) && (
             <span className="tilasm-bar-group">
-              <button
-                type="button"
-                className="text-button tilasm-bar-block"
-                title={t("tilasms.comment")}
-                onClick={() => {
-                  const { from, to } = editor.state.selection;
-                  setBlocks(false);
-                  onComment(from, to);
-                }}
-              >
-                <MessageSquarePlus size={14} aria-hidden="true" />
-                {t("tilasms.comment")}
-              </button>
+              {onComment && (
+                <button
+                  type="button"
+                  className="text-button tilasm-bar-block"
+                  title={t("tilasms.comment")}
+                  onClick={() => {
+                    const { from, to } = selected(editor);
+                    setBlocks(false);
+                    editor.view.dispatch(
+                      editor.state.tr.setMeta(barKey, "hide"),
+                    );
+                    onComment(from, to);
+                  }}
+                >
+                  <MessageSquarePlus size={14} aria-hidden="true" />
+                  {t("tilasms.comment")}
+                </button>
+              )}
+              {onAsk && (
+                <button
+                  type="button"
+                  className="text-button tilasm-bar-block"
+                  title={t("tilasms.ask.hint", {
+                    shortcut: platformShortcut("J").label,
+                  })}
+                  aria-keyshortcuts={platformShortcut("J").aria}
+                  onClick={() => {
+                    const { from, to } = selected(editor);
+                    setBlocks(false);
+                    editor.view.dispatch(
+                      editor.state.tr.setMeta(barKey, "hide"),
+                    );
+                    onAsk(from, to);
+                  }}
+                >
+                  <Sparkles size={14} aria-hidden="true" />
+                  {t("tilasms.ask.action")}
+                </button>
+              )}
             </span>
           )}
           {blocks && (
@@ -918,6 +1030,10 @@ function SelectionBar({
   );
 }
 
+// The "/" menu's entries: the blocks, and asking the agent at the caret.
+type SlashItem =
+  BlockItem | { id: "ask"; label: string; words: string; icon: ReactNode };
+
 interface Slash {
   // The "/" and the query after it, in the document.
   from: number;
@@ -946,28 +1062,60 @@ function slashAt(editor: Editor): Slash | null {
 
 // SlashMenu is the menu of blocks a "/" opens by the caret, filtered as one types after it; the arrows, Enter and
 // Escape drive it, and so does the mouse. Picking one replaces the command typed with the block.
-function SlashMenu({ editor }: { editor: Editor }) {
+function SlashMenu({
+  editor,
+  onAsk,
+}: {
+  editor: Editor;
+  onAsk?: (from: number, to: number) => void;
+}) {
   const [slash, setSlash] = useState<Slash | null>(null);
   const [index, setIndex] = useState(0);
   const [place, setPlace] = useState<{ left: number; top: number }>();
   // The "/" Escape closed: the menu stays closed until it is typed again.
   const dismissed = useRef(-1);
   const menu = useRef<HTMLDivElement>(null);
-  const items = useMemo(blockItems, []);
+  const asks = !!onAsk;
+  const items = useMemo<SlashItem[]>(
+    () => [
+      ...blockItems(),
+      ...(asks
+        ? [
+            {
+              id: "ask" as const,
+              label: t("tilasms.ask.action"),
+              words: "ask agent ai write request",
+              icon: <Sparkles size={14} aria-hidden="true" />,
+            },
+          ]
+        : []),
+    ],
+    [asks],
+  );
   const found = useMemo(
     () => (slash ? matching(items, slash.query) : []),
     [items, slash],
   );
+  const asking = useRef(onAsk);
+  useLayoutEffect(() => {
+    asking.current = onAsk;
+  });
   const live = useRef({ slash, found, index });
   useLayoutEffect(() => {
     live.current = { slash, found, index };
   });
 
   const pick = useCallback(
-    (item: BlockItem) => {
+    (item: SlashItem) => {
       const at = live.current.slash;
       if (!at) return;
       setSlash(null);
+      // Asking the agent takes the "/" away and opens the request at its place.
+      if (item.id === "ask") {
+        editor.chain().deleteRange({ from: at.from, to: at.to }).run();
+        asking.current?.(at.from, at.from);
+        return;
+      }
       // A live HTML block opens on its source, to be written at once.
       if (item.id === "htmlLive") openNextBlock(editor);
       run(

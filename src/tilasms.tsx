@@ -855,9 +855,15 @@ function MarkdownTilasm({
     [],
   );
   const strip = use(StripSlotContext);
-  const comment = useRef<((from: number, to: number) => void) | null>(null);
+  const comment = useRef<
+    ((from: number, to: number, ask?: boolean) => void) | null
+  >(null);
   const onComment = useCallback(
     (from: number, to: number) => comment.current?.(from, to),
+    [],
+  );
+  const onAsk = useCallback(
+    (from: number, to: number) => comment.current?.(from, to, true),
     [],
   );
 
@@ -974,6 +980,7 @@ function MarkdownTilasm({
         editor={editor}
         editable={editable}
         onComment={onComment}
+        onAsk={onAsk}
         overlay={(current, box) =>
           phase === "ready" && (
             <TilasmDiscussions

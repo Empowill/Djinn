@@ -70,6 +70,10 @@ func (b *renderer) block(n ast.Node) {
 		case ast.KindParagraph, ast.KindTextBlock, ast.KindHeading, east.KindTableCell:
 			b.textBlock(c, func() { b.inline(c) })
 		case ast.KindFencedCodeBlock, ast.KindCodeBlock:
+			if isLiveHTML(c, b.r.source) {
+				// A live HTML block runs as a page between the paragraphs: like raw HTML, no text a reader sees.
+				continue
+			}
 			b.textBlock(c, func() {
 				lines := c.Lines()
 				for i := range lines.Len() {
@@ -83,6 +87,18 @@ func (b *renderer) block(n ast.Node) {
 			b.block(c)
 		}
 	}
+}
+
+// liveInfo is the info string of a live HTML block's fence (src/tilasm-html.ts): `html live`, in any case.
+var liveInfo = regexp.MustCompile(`(?i)^html[ \t]+live$`)
+
+// isLiveHTML tells a fenced code block that the window runs as live HTML.
+func isLiveHTML(n ast.Node, source []byte) bool {
+	fenced, ok := n.(*ast.FencedCodeBlock)
+	if !ok || fenced.Info == nil {
+		return false
+	}
+	return liveInfo.Match(bytes.TrimSpace(fenced.Info.Segment.Value(source)))
 }
 
 // textBlock writes a block's text, between two blank ends.

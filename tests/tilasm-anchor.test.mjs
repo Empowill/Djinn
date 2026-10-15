@@ -3,6 +3,7 @@
 // the editor, and the range an anchor finds again, identical passages never confused.
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import { bundle } from "./bundle.mjs";
 
@@ -72,6 +73,21 @@ test("the rendered text drops the markup, squeezes white space and leaves out wh
   ];
   for (const [markdown, text] of cases)
     assert.equal(s.renderDoc(docOf(markdown)).text, text, markdown);
+});
+
+// The cases Djinn's rendered text must match too (internal/plan/tilasm_anchor_test.go reads the same file).
+test("the rendered text agrees with Djinn's: a live HTML block gives none, any other code its text", () => {
+  const cases = JSON.parse(
+    fs.readFileSync(
+      new URL(
+        "../internal/plan/testdata/tilasm_rendered_text.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  for (const c of cases)
+    assert.equal(s.renderDoc(docOf(c.markdown)).text, c.text, c.name);
 });
 
 test("the title, a heading of the Markdown, starts the rendered text but maps to no place of the editor", () => {
@@ -152,6 +168,16 @@ test("a range without text anchors the place where the next text starts", () => 
   const got = find(doc, anchor);
   assert.equal(got.state, "anchored");
   assert.deepEqual(got.range, { from: two.from, to: two.from });
+});
+
+test("a caret at the end of a paragraph anchors the place after its last word, not the next paragraph's start", () => {
+  const doc = docOf("The flame needs air.\n\nThe glass keeps the wind out.");
+  const words = rangeOfWords(doc, "needs air.");
+  const anchor = s.anchorOf(s.renderDoc(doc), words.to, words.to);
+  assert.equal(anchor.quote, "");
+  assert.equal(anchor.prefix, "The flame needs air.");
+  assert.ok(anchor.suffix.startsWith(" The glass"), anchor.suffix);
+  assert.deepEqual(find(doc, anchor).range, { from: words.to, to: words.to });
 });
 
 test("a passage edited, deleted or repeated is never placed elsewhere", () => {

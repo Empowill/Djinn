@@ -755,6 +755,95 @@ html[data-theme="light"] .tilasms {
 .text-button.tilasm-accept {
   color: var(--tilasm-add);
 }
+.text-button.tilasm-show {
+  margin-right: auto;
+}
+/* A place a request inserts at: a thin caret in the text, taking no room. */
+.tilasm-prose .tilasm-point {
+  display: inline-block;
+  width: 0;
+  height: 1.1em;
+  margin: 0 -1px;
+  border-left: 2px solid color-mix(in srgb, var(--sand) 55%, transparent);
+  vertical-align: text-bottom;
+  pointer-events: none;
+}
+.tilasm-prose .tilasm-point.is-active {
+  border-left-color: var(--sand);
+}
+/* A request's input: one field and its send button, on a line. */
+.tilasm-float.is-compact {
+  padding: 6px;
+}
+.tilasm-ask .tilasm-composer {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+.tilasm-ask .tilasm-composer textarea {
+  min-height: 32px;
+  max-height: 160px;
+  resize: none;
+  field-sizing: content;
+}
+.tilasm-ask .tilasm-float-actions {
+  padding-bottom: 3px;
+}
+/* A discussion opened as a request to the agent. */
+.tilasm-thread-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  color: var(--sand);
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.tilasm-dot.is-request {
+  color: var(--sand);
+}
+/* The document agent at work: a dot that breathes, still when motion is reduced. */
+.tilasm-agent-writing {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.tilasm-working-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--sand);
+  animation: tilasm-breathe 1.4s ease-in-out infinite;
+}
+.tilasm-dot .tilasm-working-dot {
+  width: 5px;
+  height: 5px;
+}
+.tilasm-dot.is-working {
+  border-color: color-mix(in srgb, var(--sand) 60%, var(--line));
+}
+@keyframes tilasm-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tilasm-working-dot {
+    animation: none;
+    opacity: 0.8;
+  }
+}
 /* What stands apart from the text: an indicator by the tabs, its list in a small window. */
 .tilasm-apart-button {
   width: auto;

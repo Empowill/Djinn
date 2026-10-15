@@ -1,6 +1,8 @@
 package plan
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -38,6 +40,26 @@ func TestRenderedText(t *testing.T) {
 			}
 			if len(r.start) != len(r.text) || len(r.end) != len(r.text) {
 				t.Fatalf("%d bytes of text, %d starts, %d ends", len(r.text), len(r.start), len(r.end))
+			}
+		})
+	}
+}
+
+// TestRenderedTextParity: the cases the window's rendered text must match too (tests/tilasm-anchor.test.mjs reads the
+// same file): a live HTML block gives no text, any other code block its literal text.
+func TestRenderedTextParity(t *testing.T) {
+	data, err := os.ReadFile("testdata/tilasm_rendered_text.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct{ Name, Markdown, Text string }
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cases {
+		t.Run(c.Name, func(t *testing.T) {
+			if got := renderMarkdown([]byte(c.Markdown)).text; got != c.Text {
+				t.Errorf("text = %q, want %q", got, c.Text)
 			}
 		})
 	}
