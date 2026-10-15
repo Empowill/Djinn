@@ -66,6 +66,8 @@ enum TilasmOrigin {
   TILASM_ORIGIN_RESTORE = 4;
   // An export imported, or files dropped on the window.
   TILASM_ORIGIN_IMPORT = 5;
+  // A proposal the developer accepted.
+  TILASM_ORIGIN_PROPOSAL = 6;
 }
 
 // TilasmVersion is one put of a tilasm: its files stay in tilasms/<id>/v<number>/.
@@ -111,6 +113,138 @@ message TilasmExport {
   repeated string cite_codes = 2;
   // Its files, version by version; a tilasm exported alone carries its files beside tilasm.json instead.
   repeated TilasmFile files = 3;
+  // Its discussions, the first made first.
+  repeated TilasmThread threads = 4;
+  // Its proposals, the first made first.
+  repeated TilasmProposal proposals = 5;
+}
+
+// TilasmAnchor points to a passage of a Markdown tilasm by its text, as a reader sees it, never by an offset: an edit
+// elsewhere leaves it in place, and two identical sentences stay apart by what surrounds them.
+//
+// The text is the document's rendered text: the Markdown without its markup (no #, *, `, link targets, list markers,
+// table pipes, images, raw HTML), its blocks (paragraphs, headings, list items' paragraphs, table cells, code blocks)
+// in order, every run of white space, a block's end included, one space. Djinn compares anchors in that form, so a
+// line break, a hard break or an empty paragraph between two blocks counts as one space.
+message TilasmAnchor {
+  // The passage itself, in that text. Empty: a place to insert at, between prefix and suffix.
+  string quote = 1 [(buf.validate.field).string.max_len = 100000];
+  // The text just before it, some 32 characters; empty at the document's start.
+  string prefix = 2 [(buf.validate.field).string.max_len = 1000];
+  // The text just after it, some 32 characters; empty at the document's end.
+  string suffix = 3 [(buf.validate.field).string.max_len = 1000];
+  // The tilasm's revision it was taken at.
+  int64 revision = 4;
+}
+
+// TilasmAnchorState is where an anchor stands in the tilasm's latest text. Djinn computes it at each read, never
+// stores it.
+enum TilasmAnchorState {
+  // Not computed: the record as stored.
+  TILASM_ANCHOR_STATE_UNSPECIFIED = 0;
+  // The passage is there, once, unchanged.
+  TILASM_ANCHOR_STATE_ANCHORED = 1;
+  // What surrounds it still points to one place, but its text changed there: a proposal can no longer be accepted.
+  TILASM_ANCHOR_STATE_CHANGED = 2;
+  // The passage is gone: deleted, or rewritten beyond recognition.
+  TILASM_ANCHOR_STATE_MISSING = 3;
+  // The passage is there several times, and what surrounds it does not say which.
+  TILASM_ANCHOR_STATE_AMBIGUOUS = 4;
+}
+
+// TilasmMessage is a message of a discussion.
+message TilasmMessage {
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // Who wrote it: the developer, the lead, a task's code (W12).
+  string author = 2 [(buf.validate.field).string.max_len = 100];
+  // Its text, in Markdown.
+  string text = 3 [(buf.validate.field).string.max_len = 20000];
+  // When it was written.
+  google.protobuf.Timestamp create_time = 4;
+  // The request that wrote it: the same request again returns it rather than writing it twice.
+  string request_id = 5 [(buf.validate.field).string.max_len = 200];
+}
+
+// TilasmThread is a discussion on a passage of a Markdown tilasm. It never changes the document: a change is a
+// proposal, which the developer accepts or rejects.
+message TilasmThread {
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // Wish of its tilasm.
+  string wish_id = 2;
+  // The tilasm discussed.
+  string tilasm_id = 3;
+  // The passage discussed.
+  TilasmAnchor anchor = 4;
+  // Its messages, the first first.
+  repeated TilasmMessage messages = 5;
+  // Closed by the developer: kept, shown apart.
+  bool resolved = 6;
+  // When it was opened.
+  google.protobuf.Timestamp create_time = 7;
+  // When it last changed: a message, or its resolution.
+  google.protobuf.Timestamp update_time = 8;
+  // The request that opened it: the same request again returns it rather than opening another.
+  string request_id = 9 [(buf.validate.field).string.max_len = 200];
+  // Where its anchor stands in the latest text; computed at each read.
+  TilasmAnchorState anchor_state = 10;
+  // The rendered text at its place now, when the anchor is anchored or changed; computed at each read.
+  string current = 11;
+}
+
+// TilasmProposalStatus is where a proposal stands.
+enum TilasmProposalStatus {
+  // Not set.
+  TILASM_PROPOSAL_STATUS_UNSPECIFIED = 0;
+  // Waiting for the developer.
+  TILASM_PROPOSAL_STATUS_PENDING = 1;
+  // Accepted: the document holds it.
+  TILASM_PROPOSAL_STATUS_ACCEPTED = 2;
+  // Rejected: the document never held it.
+  TILASM_PROPOSAL_STATUS_REJECTED = 3;
+}
+
+// TilasmProposal is a change to a passage of a Markdown tilasm, waiting for the developer: the document holds it only
+// once accepted, which Djinn does, never an agent.
+message TilasmProposal {
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // Wish of its tilasm.
+  string wish_id = 2;
+  // The tilasm it changes.
+  string tilasm_id = 3;
+  // The discussion it answers, if any.
+  string thread_id = 4;
+  // The passage it replaces, or with an empty quote the place it inserts at.
+  TilasmAnchor anchor = 5;
+  // The Markdown that replaces the passage's source, markup included; empty: the passage is deleted.
+  string replacement = 6 [(buf.validate.field).string.max_len = 52428800];
+  // Who proposes it: the lead, a task's code (W12).
+  string author = 7 [(buf.validate.field).string.max_len = 100];
+  // Why, in a few words.
+  string note = 8 [(buf.validate.field).string.max_len = 20000];
+  // Where it stands.
+  TilasmProposalStatus status = 9;
+  // Who accepted or rejected it.
+  string decided_by = 10 [(buf.validate.field).string.max_len = 100];
+  // When it was accepted or rejected.
+  google.protobuf.Timestamp decide_time = 11;
+  // The tilasm's revision it was proposed on.
+  int64 base_revision = 12;
+  // The tilasm's revision its acceptance wrote.
+  int64 accepted_revision = 13;
+  // When it was proposed.
+  google.protobuf.Timestamp create_time = 14;
+  // The request that proposed it: the same request again returns it rather than proposing it twice.
+  string request_id = 15 [(buf.validate.field).string.max_len = 200];
+  // Where its anchor stands in the latest text; computed at each read.
+  TilasmAnchorState anchor_state = 16;
+  // The Markdown source it would replace now, markup included, when its anchor is anchored or changed; computed at
+  // each read.
+  string original = 17;
+  // The rendered text at its place now, when its anchor is anchored or changed; computed at each read.
+  string current = 18;
 }
 
 // TilasmFile is a file of a tilasm's version.
@@ -190,6 +324,56 @@ service TilasmService {
   rpc Save(TilasmServiceSaveRequest) returns (TilasmServiceSaveResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Open a discussion on a passage of a Markdown tilasm: --quote names it, as the document reads, without its markup.
+  // When the quote is in the document several times, --prefix or --suffix (the text just before or after it) say
+  // which. A discussion never changes the document: propose a change for that.
+  rpc Comment(TilasmServiceCommentRequest) returns (TilasmServiceCommentResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Reply in a discussion.
+  rpc Reply(TilasmServiceReplyRequest) returns (TilasmServiceReplyResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Close a discussion, or open it again: the developer's, in the window.
+  rpc Resolve(TilasmServiceResolveRequest) returns (TilasmServiceResolveResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Propose a change to a passage of a Markdown tilasm, rather than rewriting a document the developer edits: the
+  // passage by --quote, or the passage of a discussion by --thread; its new Markdown by --replacement or
+  // --replacement-file, or --delete. With an empty quote and --prefix or --suffix, it inserts there. The document
+  // changes only once the developer accepts it.
+  rpc Propose(TilasmServiceProposeRequest) returns (TilasmServiceProposeResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Accept a proposal: Djinn writes it into the document, as a new revision, when its passage is there unchanged;
+  // refused with FAILED_PRECONDITION when the passage changed, is gone or is ambiguous. The developer's, in the window:
+  // an agent never accepts.
+  rpc Accept(TilasmServiceAcceptRequest) returns (TilasmServiceAcceptResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Reject a proposal: the document never holds it. The developer's, in the window.
+  rpc Reject(TilasmServiceRejectRequest) returns (TilasmServiceRejectResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // The discussions and proposals of a Markdown tilasm, in the order of the document, each with where its passage
+  // stands in the latest text.
+  rpc Discussions(TilasmServiceDiscussionsRequest) returns (TilasmServiceDiscussionsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // What an agent needs to answer on a passage: the document's Markdown (a window around the passage when it is too
+  // large), the passage and its paragraphs, the discussion's messages and its proposals. The passage by --thread,
+  // --proposal or --quote.
+  rpc Context(TilasmServiceContextRequest) returns (TilasmServiceContextResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 }
 
@@ -438,4 +622,226 @@ message TilasmServiceSaveRequest {
 message TilasmServiceSaveResponse {
   // The tilasm, at its new revision, the version saved last.
   Tilasm tilasm = 1;
+}
+
+message TilasmServiceCommentRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The passage discussed, as the document reads, without its markup; empty with --prefix or --suffix for a place.
+  string quote = 3 [(buf.validate.field).string.max_len = 100000];
+  // The text just before the passage, when the quote alone does not say which.
+  string prefix = 4 [(buf.validate.field).string.max_len = 1000];
+  // The text just after the passage, when the quote alone does not say which.
+  string suffix = 5 [(buf.validate.field).string.max_len = 1000];
+  // The message, in Markdown.
+  string text = 6 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 20000
+  ];
+  // Who writes it: your task's code (W12) for a worker; lead by default.
+  string author = 7 [(buf.validate.field).string.max_len = 100];
+  // An identifier of your own for this request: sent again, after an interruption, it returns the discussion opened
+  // the first time rather than opening another.
+  string request_id = 8 [(buf.validate.field).string.max_len = 200];
+}
+
+message TilasmServiceCommentResponse {
+  // The discussion.
+  TilasmThread thread = 1;
+}
+
+message TilasmServiceReplyRequest {
+  // The discussion, by its identifier.
+  string thread = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The message, in Markdown.
+  string text = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 20000
+  ];
+  // Who writes it: your task's code (W12) for a worker; lead by default.
+  string author = 3 [(buf.validate.field).string.max_len = 100];
+  // An identifier of your own for this request: sent again, it returns the discussion with the message written the
+  // first time rather than writing it twice.
+  string request_id = 4 [(buf.validate.field).string.max_len = 200];
+}
+
+message TilasmServiceReplyResponse {
+  // The discussion, the message last.
+  TilasmThread thread = 1;
+}
+
+message TilasmServiceResolveRequest {
+  // The discussion, by its identifier.
+  string thread = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Closed; false opens it again.
+  bool resolved = 2;
+}
+
+message TilasmServiceResolveResponse {
+  // The discussion.
+  TilasmThread thread = 1;
+}
+
+message TilasmServiceProposeRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The discussion it answers: its passage, unless --quote names another.
+  string thread = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The passage to replace, as the document reads, without its markup; empty with --prefix or --suffix to insert there.
+  string quote = 4 [(buf.validate.field).string.max_len = 100000];
+  // The text just before the passage, when the quote alone does not say which.
+  string prefix = 5 [(buf.validate.field).string.max_len = 1000];
+  // The text just after the passage, when the quote alone does not say which.
+  string suffix = 6 [(buf.validate.field).string.max_len = 1000];
+  // The Markdown that replaces the passage's source, markup included (djinn doc context shows that source).
+  string replacement = 7 [(buf.validate.field).string.max_len = 52428800];
+  // A file that holds the replacement, instead of --replacement; a relative path starts from the current directory.
+  string replacement_file = 8 [(buf.validate.field).string.max_len = 4096];
+  // The passage is to be deleted: no replacement.
+  bool delete = 9;
+  // Why, in a few words, for the developer.
+  string note = 10 [(buf.validate.field).string.max_len = 20000];
+  // Who proposes it: your task's code (W12) for a worker; lead by default.
+  string author = 11 [(buf.validate.field).string.max_len = 100];
+  // An identifier of your own for this request: sent again, it returns the proposal made the first time rather than
+  // proposing it twice.
+  string request_id = 12 [(buf.validate.field).string.max_len = 200];
+}
+
+message TilasmServiceProposeResponse {
+  // The proposal, pending.
+  TilasmProposal proposal = 1;
+}
+
+message TilasmServiceAcceptRequest {
+  // The proposal, by its identifier.
+  string proposal = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Who accepts it; the developer by default.
+  string author = 2 [(buf.validate.field).string.max_len = 100];
+}
+
+message TilasmServiceAcceptResponse {
+  // The proposal, accepted.
+  TilasmProposal proposal = 1;
+  // The tilasm, at the revision that holds it.
+  Tilasm tilasm = 2;
+}
+
+message TilasmServiceRejectRequest {
+  // The proposal, by its identifier.
+  string proposal = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Who rejects it; the developer by default.
+  string author = 2 [(buf.validate.field).string.max_len = 100];
+}
+
+message TilasmServiceRejectResponse {
+  // The proposal, rejected.
+  TilasmProposal proposal = 1;
+}
+
+message TilasmServiceDiscussionsRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TilasmServiceDiscussionsResponse {
+  // The tilasm's identifier.
+  string tilasm_id = 1;
+  // Its revision, which the states were computed on.
+  int64 revision = 2;
+  // Its discussions, in the order of their passages in the document, then by time; those whose passage is gone or
+  // ambiguous last.
+  repeated TilasmThread threads = 3;
+  // Its proposals, in the same order.
+  repeated TilasmProposal proposals = 4;
+}
+
+message TilasmServiceContextRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The discussion whose passage to read.
+  string thread = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The proposal whose passage to read.
+  string proposal = 4 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // A passage to read, as the document reads, without its markup.
+  string quote = 5 [(buf.validate.field).string.max_len = 100000];
+  // The text just before the passage, when the quote alone does not say which.
+  string prefix = 6 [(buf.validate.field).string.max_len = 1000];
+  // The text just after the passage, when the quote alone does not say which.
+  string suffix = 7 [(buf.validate.field).string.max_len = 1000];
+}
+
+message TilasmServiceContextResponse {
+  // The tilasm's identifier.
+  string tilasm_id = 1;
+  // Its code, like L01.
+  string code = 2;
+  // Its title.
+  string title = 3;
+  // The revision read.
+  int64 revision = 4;
+  // The document's Markdown: all of it, or when it is larger than a context holds, a window around the passage.
+  string markdown = 5;
+  // The document is larger than a context holds: markdown is a window of it, from byte window_start; djinn doc get
+  // gives the rest.
+  bool truncated = 6;
+  // Where the window starts in the document, in bytes.
+  int64 window_start = 7;
+  // The document's size, in bytes.
+  int64 total_bytes = 8;
+  // Where the passage stands in the document.
+  TilasmAnchorState anchor_state = 9;
+  // The passage's Markdown source, markup included: what a proposal's replacement replaces.
+  string original = 10;
+  // The passage as the document reads, without its markup.
+  string current = 11;
+  // The Markdown of the paragraphs around the passage.
+  string paragraphs = 12;
+  // The passage, as it was taken.
+  TilasmAnchor anchor = 13;
+  // The discussion, with its messages, when one was named or the proposal answers one.
+  TilasmThread thread = 14;
+  // The proposals on that discussion, or the proposal named.
+  repeated TilasmProposal proposals = 15;
 }

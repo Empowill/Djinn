@@ -55,6 +55,23 @@ const (
 	TilasmServiceCreateProcedure = "/plan.v1.TilasmService/Create"
 	// TilasmServiceSaveProcedure is the fully-qualified name of the TilasmService's Save RPC.
 	TilasmServiceSaveProcedure = "/plan.v1.TilasmService/Save"
+	// TilasmServiceCommentProcedure is the fully-qualified name of the TilasmService's Comment RPC.
+	TilasmServiceCommentProcedure = "/plan.v1.TilasmService/Comment"
+	// TilasmServiceReplyProcedure is the fully-qualified name of the TilasmService's Reply RPC.
+	TilasmServiceReplyProcedure = "/plan.v1.TilasmService/Reply"
+	// TilasmServiceResolveProcedure is the fully-qualified name of the TilasmService's Resolve RPC.
+	TilasmServiceResolveProcedure = "/plan.v1.TilasmService/Resolve"
+	// TilasmServiceProposeProcedure is the fully-qualified name of the TilasmService's Propose RPC.
+	TilasmServiceProposeProcedure = "/plan.v1.TilasmService/Propose"
+	// TilasmServiceAcceptProcedure is the fully-qualified name of the TilasmService's Accept RPC.
+	TilasmServiceAcceptProcedure = "/plan.v1.TilasmService/Accept"
+	// TilasmServiceRejectProcedure is the fully-qualified name of the TilasmService's Reject RPC.
+	TilasmServiceRejectProcedure = "/plan.v1.TilasmService/Reject"
+	// TilasmServiceDiscussionsProcedure is the fully-qualified name of the TilasmService's Discussions
+	// RPC.
+	TilasmServiceDiscussionsProcedure = "/plan.v1.TilasmService/Discussions"
+	// TilasmServiceContextProcedure is the fully-qualified name of the TilasmService's Context RPC.
+	TilasmServiceContextProcedure = "/plan.v1.TilasmService/Context"
 )
 
 // TilasmServiceClient is a client for the plan.v1.TilasmService service.
@@ -87,6 +104,32 @@ type TilasmServiceClient interface {
 	// ABORTED when the tilasm has moved on since: the window reads it again. A save by the latest version's author,
 	// within minutes of it, rewrites that version; any other adds one.
 	Save(context.Context, *connect.Request[v1.TilasmServiceSaveRequest]) (*connect.Response[v1.TilasmServiceSaveResponse], error)
+	// Open a discussion on a passage of a Markdown tilasm: --quote names it, as the document reads, without its markup.
+	// When the quote is in the document several times, --prefix or --suffix (the text just before or after it) say
+	// which. A discussion never changes the document: propose a change for that.
+	Comment(context.Context, *connect.Request[v1.TilasmServiceCommentRequest]) (*connect.Response[v1.TilasmServiceCommentResponse], error)
+	// Reply in a discussion.
+	Reply(context.Context, *connect.Request[v1.TilasmServiceReplyRequest]) (*connect.Response[v1.TilasmServiceReplyResponse], error)
+	// Close a discussion, or open it again: the developer's, in the window.
+	Resolve(context.Context, *connect.Request[v1.TilasmServiceResolveRequest]) (*connect.Response[v1.TilasmServiceResolveResponse], error)
+	// Propose a change to a passage of a Markdown tilasm, rather than rewriting a document the developer edits: the
+	// passage by --quote, or the passage of a discussion by --thread; its new Markdown by --replacement or
+	// --replacement-file, or --delete. With an empty quote and --prefix or --suffix, it inserts there. The document
+	// changes only once the developer accepts it.
+	Propose(context.Context, *connect.Request[v1.TilasmServiceProposeRequest]) (*connect.Response[v1.TilasmServiceProposeResponse], error)
+	// Accept a proposal: Djinn writes it into the document, as a new revision, when its passage is there unchanged;
+	// refused with FAILED_PRECONDITION when the passage changed, is gone or is ambiguous. The developer's, in the window:
+	// an agent never accepts.
+	Accept(context.Context, *connect.Request[v1.TilasmServiceAcceptRequest]) (*connect.Response[v1.TilasmServiceAcceptResponse], error)
+	// Reject a proposal: the document never holds it. The developer's, in the window.
+	Reject(context.Context, *connect.Request[v1.TilasmServiceRejectRequest]) (*connect.Response[v1.TilasmServiceRejectResponse], error)
+	// The discussions and proposals of a Markdown tilasm, in the order of the document, each with where its passage
+	// stands in the latest text.
+	Discussions(context.Context, *connect.Request[v1.TilasmServiceDiscussionsRequest]) (*connect.Response[v1.TilasmServiceDiscussionsResponse], error)
+	// What an agent needs to answer on a passage: the document's Markdown (a window around the passage when it is too
+	// large), the passage and its paragraphs, the discussion's messages and its proposals. The passage by --thread,
+	// --proposal or --quote.
+	Context(context.Context, *connect.Request[v1.TilasmServiceContextRequest]) (*connect.Response[v1.TilasmServiceContextResponse], error)
 }
 
 // NewTilasmServiceClient constructs a client for the plan.v1.TilasmService service. By default, it
@@ -169,22 +212,80 @@ func NewTilasmServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(tilasmServiceMethods.ByName("Save")),
 			connect.WithClientOptions(opts...),
 		),
+		comment: connect.NewClient[v1.TilasmServiceCommentRequest, v1.TilasmServiceCommentResponse](
+			httpClient,
+			baseURL+TilasmServiceCommentProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Comment")),
+			connect.WithClientOptions(opts...),
+		),
+		reply: connect.NewClient[v1.TilasmServiceReplyRequest, v1.TilasmServiceReplyResponse](
+			httpClient,
+			baseURL+TilasmServiceReplyProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Reply")),
+			connect.WithClientOptions(opts...),
+		),
+		resolve: connect.NewClient[v1.TilasmServiceResolveRequest, v1.TilasmServiceResolveResponse](
+			httpClient,
+			baseURL+TilasmServiceResolveProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Resolve")),
+			connect.WithClientOptions(opts...),
+		),
+		propose: connect.NewClient[v1.TilasmServiceProposeRequest, v1.TilasmServiceProposeResponse](
+			httpClient,
+			baseURL+TilasmServiceProposeProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Propose")),
+			connect.WithClientOptions(opts...),
+		),
+		accept: connect.NewClient[v1.TilasmServiceAcceptRequest, v1.TilasmServiceAcceptResponse](
+			httpClient,
+			baseURL+TilasmServiceAcceptProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Accept")),
+			connect.WithClientOptions(opts...),
+		),
+		reject: connect.NewClient[v1.TilasmServiceRejectRequest, v1.TilasmServiceRejectResponse](
+			httpClient,
+			baseURL+TilasmServiceRejectProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Reject")),
+			connect.WithClientOptions(opts...),
+		),
+		discussions: connect.NewClient[v1.TilasmServiceDiscussionsRequest, v1.TilasmServiceDiscussionsResponse](
+			httpClient,
+			baseURL+TilasmServiceDiscussionsProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Discussions")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		context: connect.NewClient[v1.TilasmServiceContextRequest, v1.TilasmServiceContextResponse](
+			httpClient,
+			baseURL+TilasmServiceContextProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Context")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // tilasmServiceClient implements TilasmServiceClient.
 type tilasmServiceClient struct {
-	put     *connect.Client[v1.TilasmServicePutRequest, v1.TilasmServicePutResponse]
-	list    *connect.Client[v1.TilasmServiceListRequest, v1.TilasmServiceListResponse]
-	get     *connect.Client[v1.TilasmServiceGetRequest, v1.TilasmServiceGetResponse]
-	open    *connect.Client[v1.TilasmServiceOpenRequest, v1.TilasmServiceOpenResponse]
-	history *connect.Client[v1.TilasmServiceHistoryRequest, v1.TilasmServiceHistoryResponse]
-	restore *connect.Client[v1.TilasmServiceRestoreRequest, v1.TilasmServiceRestoreResponse]
-	export  *connect.Client[v1.TilasmServiceExportRequest, v1.TilasmServiceExportResponse]
-	_import *connect.Client[v1.TilasmServiceImportRequest, v1.TilasmServiceImportResponse]
-	putData *connect.Client[v1.TilasmServicePutDataRequest, v1.TilasmServicePutDataResponse]
-	create  *connect.Client[v1.TilasmServiceCreateRequest, v1.TilasmServiceCreateResponse]
-	save    *connect.Client[v1.TilasmServiceSaveRequest, v1.TilasmServiceSaveResponse]
+	put         *connect.Client[v1.TilasmServicePutRequest, v1.TilasmServicePutResponse]
+	list        *connect.Client[v1.TilasmServiceListRequest, v1.TilasmServiceListResponse]
+	get         *connect.Client[v1.TilasmServiceGetRequest, v1.TilasmServiceGetResponse]
+	open        *connect.Client[v1.TilasmServiceOpenRequest, v1.TilasmServiceOpenResponse]
+	history     *connect.Client[v1.TilasmServiceHistoryRequest, v1.TilasmServiceHistoryResponse]
+	restore     *connect.Client[v1.TilasmServiceRestoreRequest, v1.TilasmServiceRestoreResponse]
+	export      *connect.Client[v1.TilasmServiceExportRequest, v1.TilasmServiceExportResponse]
+	_import     *connect.Client[v1.TilasmServiceImportRequest, v1.TilasmServiceImportResponse]
+	putData     *connect.Client[v1.TilasmServicePutDataRequest, v1.TilasmServicePutDataResponse]
+	create      *connect.Client[v1.TilasmServiceCreateRequest, v1.TilasmServiceCreateResponse]
+	save        *connect.Client[v1.TilasmServiceSaveRequest, v1.TilasmServiceSaveResponse]
+	comment     *connect.Client[v1.TilasmServiceCommentRequest, v1.TilasmServiceCommentResponse]
+	reply       *connect.Client[v1.TilasmServiceReplyRequest, v1.TilasmServiceReplyResponse]
+	resolve     *connect.Client[v1.TilasmServiceResolveRequest, v1.TilasmServiceResolveResponse]
+	propose     *connect.Client[v1.TilasmServiceProposeRequest, v1.TilasmServiceProposeResponse]
+	accept      *connect.Client[v1.TilasmServiceAcceptRequest, v1.TilasmServiceAcceptResponse]
+	reject      *connect.Client[v1.TilasmServiceRejectRequest, v1.TilasmServiceRejectResponse]
+	discussions *connect.Client[v1.TilasmServiceDiscussionsRequest, v1.TilasmServiceDiscussionsResponse]
+	context     *connect.Client[v1.TilasmServiceContextRequest, v1.TilasmServiceContextResponse]
 }
 
 // Put calls plan.v1.TilasmService.Put.
@@ -242,6 +343,46 @@ func (c *tilasmServiceClient) Save(ctx context.Context, req *connect.Request[v1.
 	return c.save.CallUnary(ctx, req)
 }
 
+// Comment calls plan.v1.TilasmService.Comment.
+func (c *tilasmServiceClient) Comment(ctx context.Context, req *connect.Request[v1.TilasmServiceCommentRequest]) (*connect.Response[v1.TilasmServiceCommentResponse], error) {
+	return c.comment.CallUnary(ctx, req)
+}
+
+// Reply calls plan.v1.TilasmService.Reply.
+func (c *tilasmServiceClient) Reply(ctx context.Context, req *connect.Request[v1.TilasmServiceReplyRequest]) (*connect.Response[v1.TilasmServiceReplyResponse], error) {
+	return c.reply.CallUnary(ctx, req)
+}
+
+// Resolve calls plan.v1.TilasmService.Resolve.
+func (c *tilasmServiceClient) Resolve(ctx context.Context, req *connect.Request[v1.TilasmServiceResolveRequest]) (*connect.Response[v1.TilasmServiceResolveResponse], error) {
+	return c.resolve.CallUnary(ctx, req)
+}
+
+// Propose calls plan.v1.TilasmService.Propose.
+func (c *tilasmServiceClient) Propose(ctx context.Context, req *connect.Request[v1.TilasmServiceProposeRequest]) (*connect.Response[v1.TilasmServiceProposeResponse], error) {
+	return c.propose.CallUnary(ctx, req)
+}
+
+// Accept calls plan.v1.TilasmService.Accept.
+func (c *tilasmServiceClient) Accept(ctx context.Context, req *connect.Request[v1.TilasmServiceAcceptRequest]) (*connect.Response[v1.TilasmServiceAcceptResponse], error) {
+	return c.accept.CallUnary(ctx, req)
+}
+
+// Reject calls plan.v1.TilasmService.Reject.
+func (c *tilasmServiceClient) Reject(ctx context.Context, req *connect.Request[v1.TilasmServiceRejectRequest]) (*connect.Response[v1.TilasmServiceRejectResponse], error) {
+	return c.reject.CallUnary(ctx, req)
+}
+
+// Discussions calls plan.v1.TilasmService.Discussions.
+func (c *tilasmServiceClient) Discussions(ctx context.Context, req *connect.Request[v1.TilasmServiceDiscussionsRequest]) (*connect.Response[v1.TilasmServiceDiscussionsResponse], error) {
+	return c.discussions.CallUnary(ctx, req)
+}
+
+// Context calls plan.v1.TilasmService.Context.
+func (c *tilasmServiceClient) Context(ctx context.Context, req *connect.Request[v1.TilasmServiceContextRequest]) (*connect.Response[v1.TilasmServiceContextResponse], error) {
+	return c.context.CallUnary(ctx, req)
+}
+
 // TilasmServiceHandler is an implementation of the plan.v1.TilasmService service.
 type TilasmServiceHandler interface {
 	// Put a Markdown document, a .md file or a folder with an index.md, as a tilasm of the wish; or, for an HTML page
@@ -272,6 +413,32 @@ type TilasmServiceHandler interface {
 	// ABORTED when the tilasm has moved on since: the window reads it again. A save by the latest version's author,
 	// within minutes of it, rewrites that version; any other adds one.
 	Save(context.Context, *connect.Request[v1.TilasmServiceSaveRequest]) (*connect.Response[v1.TilasmServiceSaveResponse], error)
+	// Open a discussion on a passage of a Markdown tilasm: --quote names it, as the document reads, without its markup.
+	// When the quote is in the document several times, --prefix or --suffix (the text just before or after it) say
+	// which. A discussion never changes the document: propose a change for that.
+	Comment(context.Context, *connect.Request[v1.TilasmServiceCommentRequest]) (*connect.Response[v1.TilasmServiceCommentResponse], error)
+	// Reply in a discussion.
+	Reply(context.Context, *connect.Request[v1.TilasmServiceReplyRequest]) (*connect.Response[v1.TilasmServiceReplyResponse], error)
+	// Close a discussion, or open it again: the developer's, in the window.
+	Resolve(context.Context, *connect.Request[v1.TilasmServiceResolveRequest]) (*connect.Response[v1.TilasmServiceResolveResponse], error)
+	// Propose a change to a passage of a Markdown tilasm, rather than rewriting a document the developer edits: the
+	// passage by --quote, or the passage of a discussion by --thread; its new Markdown by --replacement or
+	// --replacement-file, or --delete. With an empty quote and --prefix or --suffix, it inserts there. The document
+	// changes only once the developer accepts it.
+	Propose(context.Context, *connect.Request[v1.TilasmServiceProposeRequest]) (*connect.Response[v1.TilasmServiceProposeResponse], error)
+	// Accept a proposal: Djinn writes it into the document, as a new revision, when its passage is there unchanged;
+	// refused with FAILED_PRECONDITION when the passage changed, is gone or is ambiguous. The developer's, in the window:
+	// an agent never accepts.
+	Accept(context.Context, *connect.Request[v1.TilasmServiceAcceptRequest]) (*connect.Response[v1.TilasmServiceAcceptResponse], error)
+	// Reject a proposal: the document never holds it. The developer's, in the window.
+	Reject(context.Context, *connect.Request[v1.TilasmServiceRejectRequest]) (*connect.Response[v1.TilasmServiceRejectResponse], error)
+	// The discussions and proposals of a Markdown tilasm, in the order of the document, each with where its passage
+	// stands in the latest text.
+	Discussions(context.Context, *connect.Request[v1.TilasmServiceDiscussionsRequest]) (*connect.Response[v1.TilasmServiceDiscussionsResponse], error)
+	// What an agent needs to answer on a passage: the document's Markdown (a window around the passage when it is too
+	// large), the passage and its paragraphs, the discussion's messages and its proposals. The passage by --thread,
+	// --proposal or --quote.
+	Context(context.Context, *connect.Request[v1.TilasmServiceContextRequest]) (*connect.Response[v1.TilasmServiceContextResponse], error)
 }
 
 // NewTilasmServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -350,6 +517,56 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(tilasmServiceMethods.ByName("Save")),
 		connect.WithHandlerOptions(opts...),
 	)
+	tilasmServiceCommentHandler := connect.NewUnaryHandler(
+		TilasmServiceCommentProcedure,
+		svc.Comment,
+		connect.WithSchema(tilasmServiceMethods.ByName("Comment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceReplyHandler := connect.NewUnaryHandler(
+		TilasmServiceReplyProcedure,
+		svc.Reply,
+		connect.WithSchema(tilasmServiceMethods.ByName("Reply")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceResolveHandler := connect.NewUnaryHandler(
+		TilasmServiceResolveProcedure,
+		svc.Resolve,
+		connect.WithSchema(tilasmServiceMethods.ByName("Resolve")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceProposeHandler := connect.NewUnaryHandler(
+		TilasmServiceProposeProcedure,
+		svc.Propose,
+		connect.WithSchema(tilasmServiceMethods.ByName("Propose")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceAcceptHandler := connect.NewUnaryHandler(
+		TilasmServiceAcceptProcedure,
+		svc.Accept,
+		connect.WithSchema(tilasmServiceMethods.ByName("Accept")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceRejectHandler := connect.NewUnaryHandler(
+		TilasmServiceRejectProcedure,
+		svc.Reject,
+		connect.WithSchema(tilasmServiceMethods.ByName("Reject")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceDiscussionsHandler := connect.NewUnaryHandler(
+		TilasmServiceDiscussionsProcedure,
+		svc.Discussions,
+		connect.WithSchema(tilasmServiceMethods.ByName("Discussions")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceContextHandler := connect.NewUnaryHandler(
+		TilasmServiceContextProcedure,
+		svc.Context,
+		connect.WithSchema(tilasmServiceMethods.ByName("Context")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TilasmService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TilasmServicePutProcedure:
@@ -374,6 +591,22 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 			tilasmServiceCreateHandler.ServeHTTP(w, r)
 		case TilasmServiceSaveProcedure:
 			tilasmServiceSaveHandler.ServeHTTP(w, r)
+		case TilasmServiceCommentProcedure:
+			tilasmServiceCommentHandler.ServeHTTP(w, r)
+		case TilasmServiceReplyProcedure:
+			tilasmServiceReplyHandler.ServeHTTP(w, r)
+		case TilasmServiceResolveProcedure:
+			tilasmServiceResolveHandler.ServeHTTP(w, r)
+		case TilasmServiceProposeProcedure:
+			tilasmServiceProposeHandler.ServeHTTP(w, r)
+		case TilasmServiceAcceptProcedure:
+			tilasmServiceAcceptHandler.ServeHTTP(w, r)
+		case TilasmServiceRejectProcedure:
+			tilasmServiceRejectHandler.ServeHTTP(w, r)
+		case TilasmServiceDiscussionsProcedure:
+			tilasmServiceDiscussionsHandler.ServeHTTP(w, r)
+		case TilasmServiceContextProcedure:
+			tilasmServiceContextHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -425,4 +658,36 @@ func (UnimplementedTilasmServiceHandler) Create(context.Context, *connect.Reques
 
 func (UnimplementedTilasmServiceHandler) Save(context.Context, *connect.Request[v1.TilasmServiceSaveRequest]) (*connect.Response[v1.TilasmServiceSaveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Save is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Comment(context.Context, *connect.Request[v1.TilasmServiceCommentRequest]) (*connect.Response[v1.TilasmServiceCommentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Comment is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Reply(context.Context, *connect.Request[v1.TilasmServiceReplyRequest]) (*connect.Response[v1.TilasmServiceReplyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Reply is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Resolve(context.Context, *connect.Request[v1.TilasmServiceResolveRequest]) (*connect.Response[v1.TilasmServiceResolveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Resolve is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Propose(context.Context, *connect.Request[v1.TilasmServiceProposeRequest]) (*connect.Response[v1.TilasmServiceProposeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Propose is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Accept(context.Context, *connect.Request[v1.TilasmServiceAcceptRequest]) (*connect.Response[v1.TilasmServiceAcceptResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Accept is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Reject(context.Context, *connect.Request[v1.TilasmServiceRejectRequest]) (*connect.Response[v1.TilasmServiceRejectResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Reject is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Discussions(context.Context, *connect.Request[v1.TilasmServiceDiscussionsRequest]) (*connect.Response[v1.TilasmServiceDiscussionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Discussions is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Context(context.Context, *connect.Request[v1.TilasmServiceContextRequest]) (*connect.Response[v1.TilasmServiceContextResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Context is not implemented"))
 }

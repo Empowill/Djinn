@@ -855,8 +855,12 @@ func (t *Tilasms) Export(
 	if err != nil {
 		return nil, Status(err)
 	}
+	threads, proposals, err := discussionsOf(ctx, t.Store, tilasm.GetId())
+	if err != nil {
+		return nil, Status(err)
+	}
 	manifest, err := protojson.MarshalOptions{Multiline: true, Indent: "  ", UseProtoNames: true}.Marshal(
-		&planv1.TilasmExport{Tilasm: tilasm, CiteCodes: codes})
+		&planv1.TilasmExport{Tilasm: tilasm, CiteCodes: codes, Threads: threads, Proposals: proposals})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -1012,7 +1016,10 @@ func (t *Tilasms) importZip(
 		if err != nil {
 			return err
 		}
-		return tx.Put(tilasm)
+		if err := tx.Put(tilasm); err != nil {
+			return err
+		}
+		return importDiscussions(ctx, tx, tilasm, exp)
 	})
 	if err != nil {
 		removeIf(placed)
@@ -1032,7 +1039,7 @@ func readManifest(zr *zip.Reader) (*planv1.TilasmExport, error) {
 		if err != nil {
 			return nil, err
 		}
-		data, err := io.ReadAll(io.LimitReader(rc, 1<<20))
+		data, err := io.ReadAll(io.LimitReader(rc, 64<<20)) // Its proposals may hold large replacements.
 		rc.Close()
 		if err != nil {
 			return nil, err
@@ -1289,7 +1296,11 @@ func tilasmsOf(ctx context.Context, r store.Reader, wishID string) ([]*planv1.Ti
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, &planv1.TilasmExport{Tilasm: t, CiteCodes: codes})
+		threads, proposals, err := discussionsOf(ctx, r, t.GetId())
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, &planv1.TilasmExport{Tilasm: t, CiteCodes: codes, Threads: threads, Proposals: proposals})
 	}
 	return out, nil
 }
@@ -1318,6 +1329,9 @@ func checkTilasms(exp *planv1.WishExport, tasks map[string]bool, valid func(stri
 			if !tasks[id] {
 				return fmt.Errorf("tilasm %s cites %s, which the export does not hold", t.GetCode(), id)
 			}
+		}
+		if err := checkDiscussions(te, valid); err != nil {
+			return err
 		}
 		versions := map[int32]bool{}
 		for _, v := range t.GetVersions() {

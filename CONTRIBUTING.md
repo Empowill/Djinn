@@ -232,6 +232,16 @@ To use Djinn, see the [README](README.md). To work on it:
   HTML one read only. `djinn tilasm get L01` gives an agent its text (the Markdown, or the page without its tags) and
   the folder of its files; `history`, `restore <version>`, `export` (a `.zip` with `tilasm.json`) and
   `import <zip> --wish <wish-id>` follow, and `djinn wish export` carries them. A tilasm holds 50 MiB at most.
+  A Markdown tilasm has discussions and proposals, records of the store beside it (`TilasmThread`, `TilasmProposal`),
+  exported with it and deleted with its wish. Each names its passage by a `TilasmAnchor`: the quote in the document's
+  rendered text (its Markdown without markup, white space squeezed), with some 32 characters of context on each side,
+  never an offset; Djinn resolves it with goldmark on every read (`anchored`, `changed`, `missing`, `ambiguous`), never
+  stores the result, and fills the context of a quote given alone, refusing one found twice.
+  `djinn doc comment L01 --quote "…" --text "…"`, `reply <thread>`, `propose L01 --thread <thread> --replacement
+  "…"` (or `--replacement-file`, `--delete`), `discussions L01` and `context L01 --thread <thread>` are the agents';
+  `Accept`, `Reject` and `Resolve` are internal, the window's: Djinn writes an accepted proposal into the source, only
+  when its passage is anchored, as a new revision by the proposal's author, in the transaction that marks it accepted.
+  A `--request-id` sent again returns what the first request made.
   `djinn talisman …` and `djinn doc …` are the same command ([T25](plan/4a699d0f-review-at-a-glance.md)). Djinn serves each one's latest version at
   `/tilasm/<id>/`, with a content security policy of its own: its scripts and files run, the network and Djinn stay
   out of reach. The wish's *Tilasms* tab lists them, opens one in a sandboxed frame, searches their titles and text,

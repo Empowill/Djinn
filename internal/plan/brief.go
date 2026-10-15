@@ -113,6 +113,11 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"`djinn doc put <folder>` with an `index.html` and its sources; draw its diagrams as inline SVG laid out by hand " +
 	"(boxes, labelled arrows, a legend), in colours that read in light and dark, never Mermaid. A tilasm reaches no " +
 	"network: everything it needs, fonts and scripts, is in its folder.\n" +
+	"- **The developer discusses a support in it**: read its discussions with `djinn doc discussions L01`, and answer " +
+	"in the thread (`djinn doc reply <thread> --text \"…\"`) with what `djinn doc context L01 --thread <thread>` gives. " +
+	"To change a document the developer works on, propose rather than rewrite it: `djinn doc propose L01 --thread " +
+	"<thread> --replacement \"…\"` (or `--quote \"…\"` for another passage) waits for the developer, who accepts or " +
+	"rejects it in the window; you never accept a proposal, and a discussion alone never changes the document.\n" +
 	"- **No secret, no local path** in the plan: name the project.\n" +
 	"- **Every request finds its wish.** A request that is not about this wish goes through " +
 	"`djinn wish route \"<request>\" --wish-id <wish> --ask`: Djinn asks the developer, on a card, to open a new wish " +
@@ -159,6 +164,13 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- `djinn doc put brief.md --wish <wish> --cites T07 --code L01`; `djinn doc create \"<title>\" --wish <wish> " +
 	"--markdown \"…\"`; `djinn doc list --wish <wish> --search \"…\"`; `djinn doc get <code>` (its Markdown, the " +
 	"folder of its files); `djinn doc history <code>`, `djinn doc restore <code> <version>`.\n" +
+	"- `djinn doc discussions <code>`: its discussions and proposals, each passage's state (anchored, changed, missing, " +
+	"ambiguous); `djinn doc context <code> --thread <thread>` (or `--proposal <id>`, `--quote \"…\"`): the passage, " +
+	"its Markdown source, its paragraphs, the messages and the document; `djinn doc comment <code> --quote \"…\" " +
+	"--text \"…\"` (`--prefix`/`--suffix` when the quote is there twice); `djinn doc reply <thread> --text \"…\"`; " +
+	"`djinn doc propose <code> --thread <thread> --replacement \"…\"` (or `--quote \"…\"`, `--replacement-file x.md`, " +
+	"`--delete`; an empty quote with `--prefix`/`--suffix` inserts there): the replacement replaces the passage's Markdown " +
+	"source, markup included. Give `--request-id` to a write you may retry: sent again, it does nothing twice.\n" +
 	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for a " +
 	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, by its question worker or by you.\n" +
 	"- `djinn mark list <wish>`: the open questions the developer marked read in the window, without a word. Start a " +
@@ -726,11 +738,45 @@ func tilasmsBrief(b *strings.Builder, tilasms []*planv1.TilasmExport) {
 		if codes := t.GetCiteCodes(); len(codes) > 0 {
 			b.WriteString(", explains " + strings.Join(codes, ", "))
 		}
+		b.WriteString(discussionsLine(t))
 		b.WriteString("\n")
 	}
 	if n := len(tilasms) - briefTilasms; n > 0 {
 		fmt.Fprintf(b, "- And %d more: `djinn doc list --wish <wish>`.\n", n)
 	}
+}
+
+// discussionsLine says what of a tilasm's discussions and proposals waits: its open discussions and pending proposals.
+func discussionsLine(t *planv1.TilasmExport) string {
+	open, pending := 0, 0
+	for _, thread := range t.GetThreads() {
+		if !thread.GetResolved() {
+			open++
+		}
+	}
+	for _, p := range t.GetProposals() {
+		if p.GetStatus() == planv1.TilasmProposalStatus_TILASM_PROPOSAL_STATUS_PENDING {
+			pending++
+		}
+	}
+	var parts []string
+	if open > 0 {
+		parts = append(parts, fmt.Sprintf("%d open discussion%s", open, plural(open)))
+	}
+	if pending > 0 {
+		parts = append(parts, fmt.Sprintf("%d proposal%s waiting for the developer", pending, plural(pending)))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "; " + strings.Join(parts, ", ")
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 func b2i(v bool) int {

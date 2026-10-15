@@ -377,6 +377,12 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 	}
 	for _, t := range exp.GetTilasms() {
 		ids[strings.ToLower(t.GetTilasm().GetId())] = true
+		for _, thread := range t.GetThreads() {
+			ids[strings.ToLower(thread.GetId())] = true
+		}
+		for _, proposal := range t.GetProposals() {
+			ids[strings.ToLower(proposal.GetId())] = true
+		}
 	}
 	var out []*planv1.Command
 	var failed error
@@ -970,6 +976,12 @@ func entities(exp *planv1.WishExport) []proto.Message {
 	}
 	for _, t := range exp.GetTilasms() {
 		out = append(out, t.GetTilasm())
+		for _, thread := range t.GetThreads() {
+			out = append(out, thread)
+		}
+		for _, proposal := range t.GetProposals() {
+			out = append(out, proposal)
+		}
 	}
 	return out
 }
@@ -1215,6 +1227,18 @@ func free(ctx context.Context, tx *store.Tx, exp *planv1.WishExport) error {
 	for _, t := range exp.GetTilasms() {
 		id := t.GetTilasm().GetId()
 		errs = append(errs, check("tilasm", id, func() error { _, err := store.Get[*planv1.Tilasm](ctx, tx, id); return err }))
+		for _, thread := range t.GetThreads() {
+			errs = append(errs, check("discussion", thread.GetId(), func() error {
+				_, err := store.Get[*planv1.TilasmThread](ctx, tx, thread.GetId())
+				return err
+			}))
+		}
+		for _, proposal := range t.GetProposals() {
+			errs = append(errs, check("proposal", proposal.GetId(), func() error {
+				_, err := store.Get[*planv1.TilasmProposal](ctx, tx, proposal.GetId())
+				return err
+			}))
+		}
 	}
 	for _, err := range errs {
 		if err != nil {
@@ -1270,6 +1294,9 @@ func forget(ctx context.Context, tx *store.Tx, wishID string) error {
 	}
 	for _, t := range tilasms {
 		all = append(all, t)
+	}
+	if err := forgetDiscussions(ctx, tx, wishID); err != nil {
+		return err
 	}
 	all = append(all, &planv1.Wish{Id: wishID})
 	for _, m := range all {

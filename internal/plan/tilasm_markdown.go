@@ -130,7 +130,47 @@ func (t *Tilasms) Save(
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"tilasm %s is an HTML page, read only: only a Markdown tilasm is saved", found.GetCode()))
 	}
-	if err := stale(found, m.GetBaseRevision()); err != nil {
+	journaled := proto.CloneOf(m)
+	journaled.Markdown = ""
+	tilasm, err := t.writeMarkdown(ctx, req.Spec(), journaled, found, markdownWrite{
+		base: m.GetBaseRevision(), text: m.GetMarkdown(), title: m.GetTitle(),
+		author: cmp.Or(m.GetAuthor(), developerAuthor), origin: planv1.TilasmOrigin_TILASM_ORIGIN_SAVE,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TilasmServiceSaveResponse{Tilasm: tilasm}), nil
+}
+
+// markdownWrite is a write of a Markdown tilasm's whole text: a save, or a proposal accepted.
+type markdownWrite struct {
+	base        int64 // the revision the text was made from
+	text, title string
+	author      string
+	origin      planv1.TilasmOrigin // of a version it adds
+	also        func(tx *store.Tx, tilasm *planv1.Tilasm) error
+}
+
+// commit stores the tilasm written, and what else the write records, in its transaction.
+func (w markdownWrite) commit(tx *store.Tx, tilasm *planv1.Tilasm) error {
+	if err := tx.Put(tilasm); err != nil {
+		return err
+	}
+	if w.also != nil {
+		return w.also(tx, tilasm)
+	}
+	return nil
+}
+
+// writeMarkdown writes the text of a Markdown tilasm from the revision it was made from, refused with ABORTED when the
+// tilasm moved on, journaling journaled under spec. A write that rewrites the latest version (rewrites) replaces its
+// index.md: the new text is written beside it, and renamed over it in the transaction that records it, the old one kept
+// aside to put back if that transaction fails. Any other write adds a version, a copy of the latest with the new
+// index.md.
+func (t *Tilasms) writeMarkdown(
+	ctx context.Context, spec connect.Spec, journaled proto.Message, found *planv1.Tilasm, w markdownWrite,
+) (*planv1.Tilasm, error) {
+	if err := stale(found, w.base); err != nil {
 		return nil, err
 	}
 	n, err := pickVersion(found, 0)
@@ -138,8 +178,7 @@ func (t *Tilasms) Save(
 		return nil, err
 	}
 	latest := found.GetVersions()[len(found.GetVersions())-1]
-	author := cmp.Or(m.GetAuthor(), developerAuthor)
-	text := m.GetMarkdown()
+	author, text := w.author, w.text
 	inPlace := rewrites(latest, author, t)
 	var files *staged
 	if inPlace {
@@ -163,34 +202,32 @@ func (t *Tilasms) Save(
 		files.size += int64(len(text))
 	}
 	defer files.clean()
-	journaled := proto.CloneOf(m)
-	journaled.Markdown = ""
 	dir := versionDir(t.Home, found.GetId(), n)
 	aside := ""  // the index.md a rewrite replaced, until the transaction commits
 	placed := "" // the folder of a version added
 	swapped := false
 	var tilasm *planv1.Tilasm
-	err = write(ctx, t.Store, req.Spec(), journaled, func(tx *store.Tx) error {
+	err = write(ctx, t.Store, spec, journaled, func(tx *store.Tx) error {
 		var err error
 		if tilasm, err = store.Get[*planv1.Tilasm](ctx, tx, found.GetId()); err != nil {
 			return err
 		}
-		if err := stale(tilasm, m.GetBaseRevision()); err != nil {
+		if err := stale(tilasm, w.base); err != nil {
 			return err
 		}
 		now := t.now()
-		if m.GetTitle() != "" {
-			tilasm.Title = m.GetTitle()
+		if w.title != "" {
+			tilasm.Title = w.title
 		}
 		if !inPlace {
 			if err := files.fits(tilasm, t.ceiling(tilasm)); err != nil {
 				return err
 			}
-			placed, err = t.addVersion(tilasm, files, author, 0, planv1.TilasmOrigin_TILASM_ORIGIN_SAVE, now)
+			placed, err = t.addVersion(tilasm, files, author, 0, w.origin, now)
 			if err != nil {
 				return err
 			}
-			return tx.Put(tilasm)
+			return w.commit(tx, tilasm)
 		}
 		v := tilasm.GetVersions()[len(tilasm.GetVersions())-1]
 		index := filepath.Join(dir, tilasmMarkdown)
@@ -218,7 +255,7 @@ func (t *Tilasms) Save(
 		tilasm.Revision++
 		v.Size, v.Revision, v.UpdateTime = total.size, tilasm.GetRevision(), now
 		tilasm.UpdateTime = now
-		return tx.Put(tilasm)
+		return w.commit(tx, tilasm)
 	})
 	if err != nil {
 		removeIf(placed)
@@ -230,5 +267,5 @@ func (t *Tilasms) Save(
 		}
 		return nil, err
 	}
-	return connect.NewResponse(&planv1.TilasmServiceSaveResponse{Tilasm: tilasm}), nil
+	return tilasm, nil
 }

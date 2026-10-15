@@ -33,6 +33,7 @@ func Entities() []proto.Message {
 	return []proto.Message{
 		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{},
 		&planv1.Instruction{}, &planv1.InboxItem{}, &planv1.PluggedSource{}, &machinev1.CommandCost{}, &planv1.Tilasm{},
+		&planv1.TilasmThread{}, &planv1.TilasmProposal{},
 	}
 }
 

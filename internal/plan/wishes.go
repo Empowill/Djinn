@@ -388,6 +388,9 @@ func (w *Wishes) Delete(
 				return err
 			}
 		}
+		if err := forgetDiscussions(ctx, tx, id); err != nil {
+			return err
+		}
 		items, err := store.List[*planv1.InboxItem](ctx, tx, where)
 		if err != nil {
 			return err

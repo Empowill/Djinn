@@ -201,6 +201,13 @@ the latest again), and **Export as a .zip** writes one to your Downloads folder.
 the azimas and tasks it cites. Its agents draw its diagrams by hand, in SVG, and keep in its folder all it needs, its
 fonts and scripts: it reaches no network.
 
+On a Markdown document, a passage can carry a discussion or a proposal. A discussion never changes the text. An
+agent that wants to change a document you work on proposes the change instead of rewriting it: the text stays as it is
+until you accept it, which only you can do, from the window; rejecting it leaves it untouched. Djinn keeps each
+passage by its words and what surrounds them, not by its position, so your edits elsewhere never move a proposal onto
+another passage. When the passage changed, went, or now appears twice, the discussion says so, and such a proposal can
+no longer be accepted, only rejected. Discussions and proposals travel with the tilasm's and the wish's exports.
+
 A tilasm's link, `djinn://tilasm/<id>`, opens Djinn on it from a browser, a chat, a terminal or a Markdown file, and
 starts Djinn if it does not run; so does `djinn://wish/<id>` for a wish. Inside the window, such a link in a block, a
 question or the brief opens in place.
