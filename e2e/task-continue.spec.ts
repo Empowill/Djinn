@@ -144,23 +144,25 @@ test("an interrupted task continued from the command line stays one task", async
     await openWorkspaceSection(page, "tasks");
     const tasksSection = page.locator('[data-wish-section="tasks"]');
     await expect(tasksSection.locator("strong")).toHaveText("Tasks");
-    await expect(tasksSection.locator(":scope > .count")).toHaveText("1");
-    await expect(page.locator(".tasks-moving h2")).toHaveText(
-      "Moving or waiting0",
-    );
-    const finished = page.locator(".tasks-finished .wish-task");
+    await expect(tasksSection.locator(".count")).toHaveText("1");
+    // Empty workspace subgroups are omitted; the finished subgroup still
+    // carries the single continued task below.
+    await expect(page.locator(".tasks-free-moving")).toHaveCount(0);
+    const finished = page.locator(".tasks-free-finished .wish-task");
     await expect(finished).toHaveCount(1);
     await expect(finished).toContainText("Work cut short");
     await finished.getByRole("button", { name: /Work cut short/ }).click();
     // A finished task folds its events.
-    await finished.locator(".wish-task-events-fold summary").click();
+    const drawer = page.locator("dialog.task-drawer-shell");
+    await expect(drawer).toBeVisible();
+    await drawer.locator(".wish-task-events-fold summary").click();
     await expect(
-      page
+      drawer
         .locator(".wish-event")
         .getByText(/continued by the lead, was interrupted .*: text continued/),
     ).toBeVisible();
     await expect(
-      page.locator(".wish-event").getByText("continued", { exact: true }),
+      drawer.locator(".wish-event").getByText("continued", { exact: true }),
     ).toBeVisible();
     const listed = JSON.parse(
       djinn("task", "list", "--wish-id", wishId, "--json"),

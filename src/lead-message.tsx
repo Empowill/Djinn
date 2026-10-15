@@ -4,6 +4,7 @@ import { Check, MessageSquare, Send, Terminal, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   type KeyboardEvent,
+  type ReactNode,
   useEffect,
   useId,
   useLayoutEffect,
@@ -22,11 +23,21 @@ import "./instruction.css";
 
 export function LeadMessage({
   wish,
+  attention,
+  attentionCount = 0,
+  attentionCollapsed = false,
+  attentionRequest = 0,
+  onAttentionOpen,
   onResume,
   onToast,
   variant = "floating",
 }: {
   wish: Wish;
+  attention?: ReactNode;
+  attentionCount?: number;
+  attentionCollapsed?: boolean;
+  attentionRequest?: number;
+  onAttentionOpen?: () => void;
   onResume: () => Promise<unknown>;
   onToast: (text: string) => void;
   variant?: "floating" | "card";
@@ -42,6 +53,7 @@ export function LeadMessage({
   const id = useId();
   const mounted = useRef(true);
   const indicationShortcut = platformShortcut("I");
+  const hasAttention = !!attention;
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -60,6 +72,13 @@ export function LeadMessage({
     );
     return () => window.cancelAnimationFrame(frame);
   }, [open, wish.id]);
+  useEffect(() => {
+    if (open || !hasAttention || !attentionCollapsed) return;
+    const frame = window.requestAnimationFrame(() =>
+      toggle.current?.focus({ preventScroll: true }),
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [attentionCollapsed, hasAttention, open]);
   useLayoutEffect(() => {
     if (variant !== "floating" || !open) return;
     const textarea = box.current;
@@ -120,6 +139,10 @@ export function LeadMessage({
     }, 4000);
     return () => clearTimeout(timer);
   }, [draft, state.notice]);
+  useEffect(() => {
+    if (!attentionRequest || !hasAttention) return;
+    setOpen(false);
+  }, [attentionRequest, hasAttention]);
 
   const close = () => {
     restoreFocus.current = true;
@@ -177,9 +200,55 @@ export function LeadMessage({
       <div className="lead-message lead-message-floating">
         <WorkspaceAction
           tone="secondary"
-          expanded={open}
-          className="workspace-action-lead"
+          expanded={open || (hasAttention && !attentionCollapsed)}
+          // Keep the floating lead's wrapper stable while attention arrives or leaves. The creation submit owns the
+          // shared layout identity; this wrapper keeps the editor draft mounted without joining that projection.
+          sharedMotion={false}
+          localMotion
+          radius={hasAttention && !attentionCollapsed && !open ? 10 : 999}
+          className={`workspace-action-lead${hasAttention && !open && !attentionCollapsed ? " workspace-action-dock-host" : ""}${hasAttention && !open && attentionCollapsed ? " workspace-action-dock-collapsed" : ""}`}
         >
+          {hasAttention && (
+            <div
+              className={`workspace-action-attention-shell${open ? " is-editor-open" : ""}`}
+            >
+              <div
+                className="workspace-action-attention-slot"
+                hidden={open || attentionCollapsed}
+                aria-hidden={open || attentionCollapsed}
+              >
+                {attention}
+              </div>
+              {!open && attentionCollapsed && (
+                <div className="workspace-action-attention-stable">
+                  <button
+                    ref={toggle}
+                    type="button"
+                    className="workspace-action-control workspace-action-attention-label"
+                    onClick={() => setOpen(true)}
+                    title={t("lead_message.open")}
+                    aria-label={t("lead_message.open")}
+                    aria-expanded={false}
+                  >
+                    <MessageSquare size={15} aria-hidden="true" />
+                    <span>{t("lead_message.open")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="workspace-action-control workspace-action-attention-pending"
+                    onClick={() => onAttentionOpen?.()}
+                    title={t("lead_message.pending", { count: attentionCount })}
+                    aria-label={t("lead_message.pending", {
+                      count: attentionCount,
+                    })}
+                  >
+                    <span className="live-dot" aria-hidden="true" />
+                    <span aria-hidden="true">{attentionCount}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           {open ? (
             <div
               id={`${id}-panel`}
@@ -282,7 +351,7 @@ export function LeadMessage({
                 </button>
               </form>
             </div>
-          ) : (
+          ) : !hasAttention ? (
             <button
               ref={toggle}
               type="button"
@@ -297,7 +366,7 @@ export function LeadMessage({
               <MessageSquare size={15} aria-hidden="true" />
               <span>{t("lead_message.open")}</span>
             </button>
-          )}
+          ) : null}
         </WorkspaceAction>
       </div>
     );

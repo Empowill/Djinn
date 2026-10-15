@@ -1,5 +1,5 @@
 // What workers spent: tokens (input, output, cache read and written) and the cost when their agent gives one.
-// Codex and Antigravity give tokens only: the page shows what exists, and says what it cannot add up.
+// Codex and Antigravity give tokens only: the page shows what exists, while costs remain partial.
 import type { Resources, Usage } from "../gen/ts/plan/v1/plan_pb";
 import { type Spent, tokensOf } from "./data/flight";
 import { usd } from "./data/format";
@@ -65,10 +65,7 @@ export function SpentLine({ spent }: { spent: Spent }) {
   return (
     <span className="wish-spent">
       <span className="eyebrow">{t("usage.spent")}</span>
-      <span>{items.join(" · ")}</span>
-      {spent.withoutCost > 0 && (
-        <small>{t("usage.without_cost", { count: spent.withoutCost })}</small>
-      )}
+      <span title={items.join(" · ")}>{items.join(" · ")}</span>
     </span>
   );
 }

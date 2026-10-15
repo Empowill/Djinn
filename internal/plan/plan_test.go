@@ -217,6 +217,58 @@ func TestAnswerYesNo(t *testing.T) {
 	}
 }
 
+func TestAnswerCustom(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	w := c.wish(t)
+	q := c.ask(t, w, "Olive", "Paraffin")
+	res, err := c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}},
+		Choice:   planv1.Choice_CHOICE_UNSPECIFIED,
+		Note:     "the custom path",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Msg.GetQuestion().GetAnswer(); got.GetChoice() != planv1.Choice_CHOICE_UNSPECIFIED || got.GetNote() != "the custom path" {
+		t.Fatalf("custom answer = %v, want unspecified choice and note", got)
+	}
+
+	bare := c.ask(t, w, "Olive", "Paraffin")
+	if _, err := c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: bare.GetId()}},
+		Choice:   planv1.Choice_CHOICE_UNSPECIFIED,
+	})); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("bare custom answer: %v, want invalid_argument", err)
+	}
+
+	for _, tt := range []struct {
+		name     string
+		question *planv1.Question
+		note     string
+	}{
+		{
+			name:     "whitespace note",
+			question: &planv1.Question{Code: "Q03", Options: []string{"Olive", "Paraffin"}},
+			note:     "  \n",
+		},
+		{
+			name:     "grant question",
+			question: &planv1.Question{Code: "Q04", Options: []string{"Grant", "Keep open"}, Grant: true},
+			note:     "custom grant",
+		},
+		{
+			name:     "route question",
+			question: &planv1.Question{Code: "Q05", Options: []string{"Project A", "Project B"}, Route: &planv1.Route{}},
+			note:     "custom route",
+		},
+	} {
+		if _, err := resolve(tt.question, planv1.Choice_CHOICE_UNSPECIFIED, tt.note); err == nil {
+			t.Errorf("%s: custom answer accepted, want invalid_argument", tt.name)
+		}
+	}
+}
+
 func TestProjectAdd(t *testing.T) {
 	ctx := t.Context()
 	c := serve(t)

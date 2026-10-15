@@ -66,6 +66,29 @@ export function StatusBadge({
   );
 }
 
+// StatusIndicator keeps dense task rows scannable without repeating each state's
+// label in a pill. The native title still gives the full state on hover.
+export function StatusIndicator({
+  tone,
+  label,
+  title,
+}: {
+  tone: Tone;
+  label: string;
+  title?: string;
+}) {
+  return (
+    <span
+      className={`status-indicator tone-${tone}`}
+      title={title ?? label}
+      aria-label={label}
+      role="img"
+    >
+      <ToneIcon tone={tone} size={14} />
+    </span>
+  );
+}
+
 // CountPill is a count in a state's colour: its icon, the number, and its words for whoever cannot see the colour.
 export function CountPill({
   tone,

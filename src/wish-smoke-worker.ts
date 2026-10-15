@@ -22,7 +22,6 @@ type FloatTextureFormat = {
 
 type PendingGrid = {
   now: number;
-  dissolveGeneration: number;
   computeStarted: number;
   sampleStarted: number;
   sampleWidth: number;
@@ -112,7 +111,6 @@ type WorkerMessage =
   | WorkerPointer
   | { type: "visibility"; visible: boolean }
   | { type: "motion"; reducedMotion: boolean }
-  | { type: "dissolve"; progress: number }
   | { type: "palette"; palette: SmokePalette }
   | { type: "ack"; sequence: number }
   | { type: "request-full" };
@@ -136,7 +134,6 @@ type WorkerOutput =
     }
   | { type: "activated" }
   | { type: "prepared"; startupSteps: number }
-  | { type: "dissolved" }
   | { type: "error"; message: string };
 
 type TimingSummary = {
@@ -315,12 +312,6 @@ class SmokeRuntime {
   private activated = false;
   private readonly prewarm: boolean;
   private palette: SmokePalette;
-  private dissolveProgress = 0;
-  private dissolveGeneration = 0;
-  private dissolveFrameSent = false;
-  private terminalDissolveDrawn = false;
-  private terminalGridSequence: number | undefined;
-  private terminalGridApplied = false;
   private animationFrame: ReturnType<typeof requestFrame> | undefined;
   private disposed = false;
   private visible = true;
@@ -682,18 +673,8 @@ class SmokeRuntime {
       float r=texture(pressure,uv+vec2(texel.x,0)).x;float b=texture(pressure,uv-vec2(0,texel.y)).x;
       float t=texture(pressure,uv+vec2(0,texel.y)).x;color=vec4(texture(velocity,uv).xy-.5*vec2(r-l,t-b),0,1);}`);
     const smokeField = `${bilinear}
-      uniform vec2 resolution;uniform float zoom;uniform float cameraScale;uniform float dissolveProgress;
+      uniform vec2 resolution;uniform float zoom;uniform float cameraScale;
       float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-      float valueNoise(vec2 p){
-        vec2 cell=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);
-        return mix(mix(hash(cell),hash(cell+vec2(1.,0.)),f.x),mix(hash(cell+vec2(0.,1.)),hash(cell+vec2(1.,1.)),f.x),f.y);
-      }
-      float dissolveMask(vec2 pixel){
-        if(dissolveProgress<=.001)return 1.;
-        if(dissolveProgress>=.999)return 0.;
-        float noise=mix(valueNoise(pixel*vec2(.018,.024)),valueNoise(pixel*vec2(.07,.09)),.32);
-        return smoothstep(dissolveProgress-.12,dissolveProgress+.12,noise);
-      }
       vec2 domain(vec2 p){vec2 q=vec2((.5-p.x)*cameraScale+.5,(p.y-.038)/1.16);
         vec2 focus=vec2(.565,.18);return focus+(q-focus)/zoom;}
       float smoke(vec2 p){vec2 q=domain(p);if(q.x<0.||q.x>1.||q.y<0.||q.y>1.)return 0.;
@@ -702,12 +683,12 @@ class SmokeRuntime {
         float light=.80+.20*tanh(dx*4.);return clamp((1.-exp(-d*6.5))*light,0.,1.);}`;
     this.display =
       makeProgram(`${smokeField}uniform float asciiOn; uniform vec3 smokeBackground; uniform vec3 smokeTintLow; uniform vec3 smokeTintHigh;
-      void main(){vec2 pixel=uv*resolution;float raw=smoke(uv)*dissolveMask(pixel);float value=asciiOn>.5?raw*.025:raw;
+      void main(){vec2 pixel=uv*resolution;float raw=smoke(uv);float value=asciiOn>.5?raw*.025:raw;
         float grain=(hash(pixel+floor(time*20.))-.5)*.007;float vignette=1.-.24*length((uv-.5)*vec2(1.,.7));
         vec3 tint=mix(smokeTintLow,smokeTintHigh,smoothstep(.08,.75,raw));
         color=vec4(mix(smokeBackground,tint,value*vignette)+vec3(grain),1.);}`);
     this.sampleAscii = makeProgram(`${smokeField}uniform vec2 coverage;
-      void main(){vec2 sampleUv=uv*coverage+vec2(1.-coverage.x,0.);float d=smoke(sampleUv)*dissolveMask(uv*resolution);color=vec4(d,d,d,1.);}`);
+      void main(){vec2 sampleUv=uv*coverage+vec2(1.-coverage.x,0.);float d=smoke(sampleUv);color=vec4(d,d,d,1.);}`);
     this.trimDensity = makeProgram(`uniform float cutoff;uniform float edge;
       void main(){float inkValue=texture(density,uv).x;
       float above=smoothstep(cutoff-edge,cutoff+edge,uv.y);
@@ -1051,10 +1032,6 @@ class SmokeRuntime {
     this.initialFrameSent = false;
     this.visibleAscii = false;
     this.readbackValidated = false;
-    this.dissolveFrameSent = false;
-    this.terminalDissolveDrawn = false;
-    this.terminalGridSequence = undefined;
-    this.terminalGridApplied = false;
     if (this.visible && !this.animationFrame) this.start();
   }
 
@@ -1102,11 +1079,7 @@ class SmokeRuntime {
       this.textPointer.points.length = 0;
     } else if (
       !this.animationFrame &&
-      !(
-        this.reducedMotion &&
-        this.staticFrameSent &&
-        (this.dissolveProgress < 1 || this.dissolveFrameSent)
-      )
+      !(this.reducedMotion && this.staticFrameSent)
     )
       this.start();
   }
@@ -1130,22 +1103,6 @@ class SmokeRuntime {
     this.palette = palette;
   }
 
-  setDissolveProgress(progress: number) {
-    const next = Math.max(0, Math.min(1, progress));
-    const wasTerminal = this.dissolveProgress >= 1;
-    if (next !== this.dissolveProgress) this.dissolveGeneration++;
-    this.dissolveProgress = next;
-    if (next < 1 || !wasTerminal) {
-      this.dissolveFrameSent = false;
-      this.terminalDissolveDrawn = false;
-      this.terminalGridSequence = undefined;
-      this.terminalGridApplied = false;
-    }
-    // Reduced motion intentionally stops after its static frame. Restart the worker for a terminal dissolve so
-    // the final uniform is painted and acknowledged instead of leaving the opening overlay mounted forever.
-    if (!this.disposed && this.visible && !this.animationFrame) this.start();
-  }
-
   activate(mountEpoch: number, reducedMotion: boolean) {
     this.mountEpoch = mountEpoch;
     this.visible = true;
@@ -1167,10 +1124,6 @@ class SmokeRuntime {
     this.textPointer.last = 0;
     this.resetReadbackRing();
     this.readbackValidated = false;
-    this.dissolveFrameSent = false;
-    this.terminalDissolveDrawn = false;
-    this.terminalGridSequence = undefined;
-    this.terminalGridApplied = false;
     if (!reducedMotion) this.trimInkAboveViewport();
     scope.postMessage({ type: "activated" });
     this.start();
@@ -1181,15 +1134,6 @@ class SmokeRuntime {
       this.appliedSequence = sequence;
       this.inFlight = false;
       this.finishCompletedGrid();
-      if (
-        this.terminalGridSequence !== undefined &&
-        sequence >= this.terminalGridSequence &&
-        !this.inFlight &&
-        !this.pendingGrid &&
-        !this.completedGrid
-      )
-        this.terminalGridApplied = true;
-      this.sendDissolvedIfReady();
     }
   }
 
@@ -1429,10 +1373,6 @@ class SmokeRuntime {
   }
 
   private finishGrid(pending: PendingGrid): boolean {
-    const isTerminalGrid =
-      pending.dissolveGeneration === this.dissolveGeneration &&
-      this.dissolveProgress >= 1 &&
-      this.terminalDissolveDrawn;
     const gridStarted = performance.now();
     const frame = this.grid.render(this.pixels, this.trail, pending.now, {
       appliedSequence: this.appliedSequence,
@@ -1441,23 +1381,8 @@ class SmokeRuntime {
     if (this.perfEnabled) this.gridTimings.add(performance.now() - gridStarted);
     this.forceFull = false;
     this.lastGridSample = pending.now;
-    if (!frame.changed) {
-      if (
-        isTerminalGrid &&
-        !this.inFlight &&
-        !this.pendingGrid &&
-        !this.completedGrid
-      ) {
-        this.terminalGridSequence = this.appliedSequence;
-        this.terminalGridApplied = true;
-      }
-      return false;
-    }
+    if (!frame.changed) return false;
     this.inFlight = true;
-    if (isTerminalGrid) {
-      this.terminalGridSequence = frame.sequence;
-      this.terminalGridApplied = false;
-    }
     if (frame.full && frame.fullStrings)
       this.visibleAscii = frame.fullStrings.some((text) => /\S/.test(text));
     else if (!this.visibleAscii)
@@ -1504,9 +1429,6 @@ class SmokeRuntime {
       this.pendingGrid ||
       this.completedGrid ||
       !this.visible ||
-      // Once the terminal sample has been queued, let its readback and frame ACK drain. PBO mode otherwise keeps
-      // issuing another terminal sample every frame, leaving pendingGrid set and blocking the dissolved message.
-      (this.dissolveProgress >= 1 && this.terminalGridSequence !== undefined) ||
       (this.inFlight && !this.pboReadbackEnabled)
     )
       return false;
@@ -1553,7 +1475,6 @@ class SmokeRuntime {
       }
     }
     this.textPointer.points.length = 0;
-    if (this.dissolveProgress >= 1) this.trail.fill(0);
     const sampleStarted = this.perfEnabled ? performance.now() : 0;
     this.draw(
       this.sampleAscii,
@@ -1563,7 +1484,6 @@ class SmokeRuntime {
         coverage: this.coverage,
         zoom: this.state.zoom,
         cameraScale: this.cameraScale,
-        dissolveProgress: this.dissolveProgress,
       },
       { density: this.ink.read },
     );
@@ -1573,7 +1493,6 @@ class SmokeRuntime {
     );
     const pending: PendingGrid = {
       now,
-      dissolveGeneration: this.dissolveGeneration,
       computeStarted,
       sampleStarted,
       sampleWidth: gridWidth,
@@ -1588,22 +1507,6 @@ class SmokeRuntime {
       return false;
     }
     return this.finishGrid(pending);
-  }
-
-  private sendDissolvedIfReady() {
-    if (
-      this.dissolveProgress < 1 ||
-      this.dissolveFrameSent ||
-      !this.visible ||
-      !this.terminalDissolveDrawn ||
-      !this.terminalGridApplied ||
-      this.inFlight ||
-      this.pendingGrid ||
-      this.completedGrid
-    )
-      return;
-    this.dissolveFrameSent = true;
-    scope.postMessage({ type: "dissolved" });
   }
 
   private trail: Float32Array;
@@ -1649,14 +1552,12 @@ class SmokeRuntime {
           zoom: this.state.zoom,
           cameraScale: this.cameraScale,
           asciiOn: 1,
-          dissolveProgress: this.dissolveProgress,
           smokeBackground: this.palette.background,
           smokeTintLow: this.palette.tintLow,
           smokeTintHigh: this.palette.tintHigh,
         },
         { density: this.ink.read },
       );
-      if (this.dissolveProgress >= 1) this.terminalDissolveDrawn = true;
       if (this.perfEnabled) this.stepCountTimings.add(this.stepsThisFrame);
       if (
         this.startupSteps >= 8 &&
@@ -1665,7 +1566,6 @@ class SmokeRuntime {
         const sent = this.prepareGrid(now);
         if (sent && this.visibleAscii) this.initialFrameSent = true;
         if (sent) this.sendReadyIfNeeded();
-        this.sendDissolvedIfReady();
       }
       if (
         this.startupSteps >= 72 &&
@@ -1679,12 +1579,7 @@ class SmokeRuntime {
           startupSteps: this.startupSteps,
         });
       } else {
-        if (
-          this.reducedMotion &&
-          this.staticFrameSent &&
-          this.visibleAscii &&
-          (this.dissolveProgress < 1 || this.dissolveFrameSent)
-        )
+        if (this.reducedMotion && this.staticFrameSent && this.visibleAscii)
           return;
         this.animationFrame = requestFrame((next) => this.frame(next));
         return;
@@ -1712,14 +1607,12 @@ class SmokeRuntime {
         zoom: this.state.zoom,
         cameraScale: this.cameraScale,
         asciiOn: 1,
-        dissolveProgress: this.dissolveProgress,
         smokeBackground: this.palette.background,
         smokeTintLow: this.palette.tintLow,
         smokeTintHigh: this.palette.tintHigh,
       },
       { density: this.ink.read },
     );
-    if (this.dissolveProgress >= 1) this.terminalDissolveDrawn = true;
     if (
       this.pboReadbackEnabled ||
       !this.inFlight ||
@@ -1728,13 +1621,7 @@ class SmokeRuntime {
       const sent = this.prepareGrid(now);
       if (sent) this.sendReadyIfNeeded();
     }
-    this.sendDissolvedIfReady();
-    if (
-      this.reducedMotion &&
-      this.staticFrameSent &&
-      (this.dissolveProgress < 1 || this.dissolveFrameSent)
-    )
-      return;
+    if (this.reducedMotion && this.staticFrameSent && this.visibleAscii) return;
     this.animationFrame = requestFrame((next) => this.frame(next));
   }
 
@@ -1774,8 +1661,6 @@ scope.onmessage = (event) => {
     else if (message.type === "visibility") runtime.visibility(message.visible);
     else if (message.type === "motion") runtime.motion(message.reducedMotion);
     else if (message.type === "palette") runtime.setPalette(message.palette);
-    else if (message.type === "dissolve")
-      runtime.setDissolveProgress(message.progress);
     else if (message.type === "ack") runtime.acknowledge(message.sequence);
     else if (message.type === "request-full") runtime.requestFull();
   } catch (error) {

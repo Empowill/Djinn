@@ -5,20 +5,33 @@
 // last (agent-blocks.tsx): what is for you is a question.
 // Djinn proposes; only the user grants.
 import {
+  Activity,
   Bot,
+  Check,
+  ChevronDown,
   ChevronRight,
   Clock3,
-  Download,
+  LoaderCircle,
   FileText,
+  MessageSquare,
   Pause,
   Play,
+  RotateCcw,
+  Share2,
   ScrollText,
   Sparkles,
+  Terminal,
   Trash2,
-  X,
+  TriangleAlert,
 } from "lucide-react";
-import { AnimatePresence } from "motion/react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   Allowance,
@@ -29,12 +42,15 @@ import {
   type KeptWorktree,
   type MarkKind,
   type Project,
-  type Provider,
+  Provider,
   type Task,
+  TaskKind,
+  TaskStatus,
   type Wish,
   type WishExport,
   WishState,
 } from "../gen/ts/plan/v1/plan_pb";
+import { type Provider as AgentProvider } from "../gen/ts/ui/v1/ui_pb";
 import { message } from "./data/client";
 import { decisionOf, decisionsOf } from "./data/decisions";
 import {
@@ -48,6 +64,7 @@ import {
 import {
   type OpenQuestion,
   azimaGroups,
+  awaitedProofs,
   forkedAs,
   finishedTasks,
   investigatingQuestions,
@@ -69,46 +86,56 @@ import {
   when,
   wishStateText,
   runningOf,
-  wishTone,
 } from "./data/format";
 import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
 import { AgentBlocks, agentBlocks } from "./agent-blocks";
-import { jump } from "./attention";
 import { ModalFrame } from "./frame";
 import { useWrites } from "./marks";
 import { InstructionList } from "./instruction-list";
 import { LeadMessage } from "./lead-message";
 import { LeadPromptCard } from "./lead-prompt";
 import { leadTerminal } from "./lead-terminal";
-import { LeadStatus } from "./lead-status";
 import { MarkdownBody } from "./markdown-body";
 import { OlderLine, useRecent } from "./older";
 import { useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
-import { CountPill, StatusBadge } from "./status";
+import { StatusBadge } from "./status";
 import { AzimaCard, azimaFinished } from "./azima";
-import { TaskSections, type View } from "./task-tabs";
+import { TaskSections } from "./task-tabs";
 import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
 import { WishQuestion } from "./wish-question";
-import { ChangeProvider } from "./wish-dialogs";
 import { WishTask } from "./wish-task";
 import { WishWorkspace, type WishWorkspacePanel } from "./wish-workspace";
-import { PageHeader, PageHeaderAction } from "./page-header";
 import {
-  LastPushes,
-  LeadButton,
-  MainMerges,
-  WishDescription,
-  recordedAgent,
-} from "./wish-head";
+  WishActivity,
+  WishActivityTabs,
+  type ActivityTab,
+  type WishActivityTab,
+  visibleActivityTabs,
+} from "./wish-activity";
+import { SettingsDrawer, WishSettingsMenu } from "./wish-settings";
+import { PageHeader, PageHeaderAction } from "./page-header";
+import { WishDescription } from "./wish-head";
 import { providerName } from "./provider";
+import { ActionDock, type ActionDockItem } from "./action-dock";
+
+import "./wish-prototype-header.css";
 
 // Opening is a tilasm to show in a wish's Tilasms workspace panel, as a djinn:// link asks: a new object at each request.
 export interface Opening {
   wishId: string;
   tilasmId: string;
+}
+
+function contentKey(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${value.length}-${(hash >>> 0).toString(36)}`;
 }
 
 export function WishView({
@@ -147,24 +174,52 @@ export function WishView({
   );
   const { running, watching } = runningOf(detail.tasks);
   const granted = wish.state === WishState.GRANTED;
-  const [changing, setChanging] = useState(false);
-  type WorkspaceView = View | "rights" | "journal" | "instructions";
+  type WorkspaceView =
+    | "main"
+    | "tasks"
+    | "tilasms"
+    | "activity"
+    | ActivityTab
+    | "rights"
+    | "agents";
   const [view, setView] = useState<WorkspaceView>(opening ? "tilasms" : "main");
+  const [activityTab, setActivityTab] = useState<ActivityTab>("journal");
+  const [settingsDrawer, setSettingsDrawer] = useState<"rights" | "agents">();
   const [workspaceRequest, setWorkspaceRequest] = useState(0);
-  const [globalActionsOpen, setGlobalActionsOpen] = useState(false);
+  const [workspaceVisiblePanel, setWorkspaceVisiblePanel] = useState("");
+  const [topbarWishVisible, setTopbarWishVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [focusTarget, setFocusTarget] = useState("");
-  const [focusSource, setFocusSource] = useState<"workspace" | "notification">(
-    "workspace",
-  );
+  const [attentionCollapsed, setAttentionCollapsed] = useState(false);
+  const [attentionFocusRequest, setAttentionFocusRequest] = useState(0);
+  const [attentionFocusTarget, setAttentionFocusTarget] = useState("");
   // What a link between a decision and a task brings into sight in the other workspace panel: its id.
   const [focus, setFocus] = useState("");
+  useEffect(() => {
+    setWorkspaceVisiblePanel("");
+  }, [wish.id]);
   const show = (to: WorkspaceView, id = "") => {
-    setView(to);
+    if (to === "rights" || to === "agents") {
+      setSettingsDrawer(to);
+      return;
+    }
+    setSettingsDrawer(undefined);
+    if (to === "decisions" || to === "journal" || to === "instructions") {
+      setActivityTab(to);
+      setView("activity");
+    } else {
+      setView(to);
+    }
     setFocus(id);
-    setFocusSource("workspace");
-    setFocusTarget("");
     setWorkspaceRequest((request) => request + 1);
+  };
+  const focusAttention = (target = "") => {
+    setAttentionFocusTarget(target);
+    if (!target && !attentionRef.current) {
+      show("tasks");
+      return;
+    }
+    setAttentionCollapsed(false);
+    setAttentionFocusRequest((request) => request + 1);
   };
   // The tilasm a link opened: the Tilasms workspace panel shows it, again at each new request.
   const [opened, setOpened] = useState(opening);
@@ -183,75 +238,74 @@ export function WishView({
       if (
         target.startsWith("question-") ||
         target.startsWith("grant-") ||
-        target.startsWith("waiting-") ||
         target.startsWith("lead-prompt-")
       ) {
-        setFocusSource("notification");
-        setFocusTarget(target);
-        setGlobalActionsOpen(true);
+        setAttentionFocusTarget(target);
+        setAttentionCollapsed(false);
+        setAttentionFocusRequest((value) => value + 1);
         return;
       }
-      if (target.startsWith("task-")) {
-        setGlobalActionsOpen(false);
-        setFocusSource("notification");
-        setFocusTarget(target);
+      if (target.startsWith("task-") || target.startsWith("waiting-")) {
+        setSettingsDrawer(undefined);
         setView("tasks");
-        setFocus(target.slice("task-".length));
-        setWorkspaceRequest((requestId) => requestId + 1);
+        setFocus(
+          target.startsWith("waiting-")
+            ? target.slice("waiting-".length)
+            : target.slice("task-".length),
+        );
+        setWorkspaceRequest((value) => value + 1);
       }
     });
     return off;
   }, [djinn, wish.id]);
   useEffect(() => {
-    if (!focusTarget) return;
-    const globalTarget =
-      focusTarget.startsWith("question-") ||
-      focusTarget.startsWith("grant-") ||
-      focusTarget.startsWith("waiting-") ||
-      focusTarget.startsWith("lead-prompt-");
     if (
-      (globalTarget && !globalActionsOpen) ||
-      (!globalTarget && view !== "tasks")
+      view !== "tasks" ||
+      !focus ||
+      workspaceVisiblePanel !== "tasks" ||
+      !detail.loaded
     )
       return;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
     const deadline = Date.now() + 5_000;
     const reveal = () => {
-      const element = document.getElementById(focusTarget);
-      if (element?.getClientRects().length) {
-        jump(focusTarget);
-        setFocusTarget("");
+      if (stopped) return;
+      const row = document.getElementById(`task-${focus}`);
+      const heading =
+        row?.querySelector<HTMLButtonElement>(".wish-task-heading");
+      if (heading) {
+        heading.focus({ preventScroll: true });
         return;
       }
-      if (Date.now() < deadline) timer = setTimeout(reveal, 50);
-      else setFocusTarget("");
+      if (Date.now() < deadline) {
+        timer = setTimeout(reveal, 50);
+      } else {
+        setView((current) => (current === "tasks" ? "main" : current));
+        setFocus((current) => (current === focus ? "" : current));
+      }
     };
     timer = setTimeout(reveal, 0);
     return () => {
-      if (timer) clearTimeout(timer);
+      stopped = true;
+      if (timer !== undefined) clearTimeout(timer);
     };
-  }, [detail.loaded, focusTarget, globalActionsOpen, view, workspaceRequest]);
-  useEffect(() => {
-    if (view !== "tasks" || !focus || focusSource === "notification") return;
-    const timer = setTimeout(() => {
-      document
-        .querySelector<HTMLButtonElement>(`#task-${focus} .wish-task-heading`)
-        ?.focus({ preventScroll: true });
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [view, focus, focusSource, workspaceRequest]);
+  }, [
+    detail.loaded,
+    detail.tasks,
+    focus,
+    view,
+    workspaceRequest,
+    workspaceVisiblePanel,
+  ]);
   const moving = movingTasks(detail.tasks);
   const finished = finishedTasks(detail.tasks);
-  // The done azimas fold, apart (src/task-tabs.tsx); a link to one, or to one of its parts, shows them.
+  // Done azima parts remain individually collapsible; links focus the matching card.
   const azimas = azimaGroups(detail.tasks);
   const doneAzimas = azimas.filter((x) => azimaFinished(x.azima));
-  const showDone = doneAzimas.some(
-    (x) => x.azima.id === focus || x.parts.some((p) => p.id === focus),
-  );
   const latestTask = moving[0] ?? finished[0];
   const latestDecision = decisions[0];
   const latestTilasm = detail.tilasms.at(-1);
-  const latestAgent = forAgents.at(-1);
   const latestInstruction = detail.instructions.at(-1);
   const latestJournal = journalEntries[0];
   const previewText = (text: string | undefined) => {
@@ -269,7 +323,6 @@ export function WishView({
     latestDecision?.question?.text || latestDecision?.block?.title,
   );
   const tilasmPreview = previewText(latestTilasm?.title);
-  const agentPreview = previewText(latestAgent?.title);
   const instructionPreview = previewText(latestInstruction?.text);
   const journalPreview = previewText(
     latestJournal?.summary || latestJournal?.note,
@@ -277,7 +330,49 @@ export function WishView({
   const byId = new Map(detail.tasks.map((task) => [task.id, task]));
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
+  const threadHeadRef = useRef<HTMLDivElement>(null);
+  const attentionRef = useRef<HTMLElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
+
+  useEffect(() => {
+    setTopbarWishVisible(false);
+    const header = threadHeadRef.current;
+    const title = header?.querySelector("h1");
+    const scroller = header?.closest(".mission-scroll");
+    if (!title || !(scroller instanceof HTMLElement)) return;
+
+    const update = () => {
+      const currentHeader = threadHeadRef.current;
+      const currentTitle = currentHeader?.querySelector("h1");
+      const currentScroller = currentHeader?.closest(".mission-scroll");
+      if (!currentTitle || !(currentScroller instanceof HTMLElement)) return;
+      const rootTop = currentScroller.getBoundingClientRect().top;
+      const titleBottom = currentTitle.getBoundingClientRect().bottom;
+      const next = titleBottom <= rootTop;
+      setTopbarWishVisible((current) => (current === next ? current : next));
+    };
+
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        update();
+      });
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    const observer = new IntersectionObserver(() => update(), {
+      root: scroller,
+      threshold: [0, 1],
+    });
+    observer.observe(title);
+    update();
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      if (frame) window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [wish.id]);
   const {
     clients,
     act: write,
@@ -298,7 +393,8 @@ export function WishView({
       codes={codes}
       forkedAs={forkedAs(task, detail.tasks)}
       decision={decisionOf(task, decisions)}
-      focused={focus === task.id}
+      focused={focus === task.id && workspaceVisiblePanel === "tasks"}
+      compact
       onDecision={() => show("decisions", decisionOf(task, decisions)?.id)}
       project={allProjects.find((p) => p.id === task.projectId)}
       onStop={() =>
@@ -340,23 +436,6 @@ export function WishView({
       }
     />
   );
-  // lead resumes the wish's lead, or starts one of another agent; what Djinn says of it shows as a toast: a terminal
-  // that runs a program already, a session Djinn does not know.
-  const lead = (provider?: Provider) => {
-    let note = "";
-    quiet(
-      act(
-        async () => {
-          ({ note } = await clients.wishes.resume({
-            wishId: wish.id,
-            provider,
-          }));
-        },
-        [Change.WISH],
-        () => note,
-      ),
-    );
-  };
   const viewLead = async () => {
     await clients.ui.show({
       wishId: wish.id,
@@ -376,8 +455,51 @@ export function WishView({
       throw error;
     }
   };
+  const speakLead = async () => {
+    if (!wish.leadRunning) {
+      await startLead();
+      return;
+    }
+    await viewLead();
+  };
+  const changeProvider = (provider: Provider) =>
+    act(
+      () => clients.wishes.setProvider({ wishId: wish.id, provider }),
+      [Change.WISH],
+      () => t("provider.changed", { agent: providerName(provider) }),
+    );
   const prompt = wish.leadRunning ? wish.leadPrompt : undefined;
-  const tone = wishTone(wish, open.length, running, watching);
+  const workTasks = detail.tasks.filter((task) => task.kind !== TaskKind.AZIMA);
+  const doneWork = workTasks.filter(
+    (task) => task.status === TaskStatus.DONE,
+  ).length;
+  const failedWork = workTasks.filter(
+    (task) => task.status === TaskStatus.FAILED,
+  ).length;
+  const proofCount = awaitedProofs(detail.tasks).length;
+  const totalWork = workCount(detail.tasks);
+  const waitingWithoutQuestion = waiting.filter((item) => !item.question);
+  const contextParts = [
+    open.length > 0 && t("wish.context_decisions", { count: open.length }),
+    digging.length > 0 &&
+      t("wish.context_investigating", { count: digging.length }),
+    waitingWithoutQuestion.length > 0 &&
+      t("wish.context_waiting", { count: waitingWithoutQuestion.length }),
+    failedWork > 0 && t("wish.context_failures", { count: failedWork }),
+    proofCount > 0 && t("wish.context_proofs", { count: proofCount }),
+    wish.ready && t("wish.context_ready"),
+    prompt && t("wish.context_lead"),
+  ].filter((part): part is string => !!part);
+  const contextSummary = contextParts.length
+    ? contextParts.join(" · ")
+    : t("wish.context_none");
+  const globalActionCount =
+    open.length +
+    waitingWithoutQuestion.length +
+    (wish.ready ? 1 : 0) +
+    (prompt ? 1 : 0) +
+    digging.length;
+  const activeWorkCount = running + watching;
 
   const saveDescription = (text: string) =>
     quiet(
@@ -386,117 +508,106 @@ export function WishView({
         [Change.WISH],
       ),
     );
+  const lifecycleLabel = isActive(wish)
+    ? t("page.state_active")
+    : wishStateText(wish);
+  const renderWishPage = () =>
+    quiet(
+      (async () => {
+        const res = await clients.wishes.render({ wishId: wish.id });
+        onToast(t("wish.page_written", { file: res.file }));
+      })().catch((error) => onToast(message(error))),
+    );
+  const exportWish = () =>
+    quiet(
+      (async () => {
+        const res = await clients.wishes.export({ wishId: wish.id });
+        onToast(t("wish.exported", { file: res.file }));
+      })().catch((error) => onToast(message(error))),
+    );
 
   // The wish opens as one concise card. Detail panels are real children of the workspace, so a panel is mounted only
   // once; this matters for task, question, grant and tilasm IDs used by focus links and system notifications.
   const threadHead = (
-    <div className="workspace-thread-head">
+    <div className="workspace-thread-head" ref={threadHeadRef}>
       <div className="workspace-summary-head">
-        <span className="eyebrow">
-          {projects.map((p) => p.name).join(" · ") || t("wish.no_project")}
-        </span>
         <h1>{wish.title}</h1>
-        <details className="workspace-thread-description">
-          <summary>{t("wish.description")}</summary>
+        <div className="workspace-thread-description">
           <WishDescription
             key={wish.id + wish.description}
             title={wish.title}
             description={wish.description}
             onSave={saveDescription}
           />
-        </details>
+        </div>
         <div className="review-facts workspace-facts">
           <div className="review-pills">
-            {!isActive(wish) && (
-              <StatusBadge tone={tone} label={wishStateText(wish)} />
-            )}
-            {open.length > 0 && (
-              <CountPill
-                tone="waiting"
-                count={open.length}
-                label={t("wish.questions_wait", { count: open.length })}
-              >
-                {t("pill.to_decide")}
-              </CountPill>
-            )}
-            {digging.length > 0 && (
-              <CountPill
-                tone="investigating"
-                count={digging.length}
-                label={t("pill.investigating_detail", {
-                  count: digging.length,
+            <LeadLifecycleMenu
+              wish={wish}
+              lifecycleLabel={lifecycleLabel}
+              onToggle={() =>
+                quiet(
+                  act(
+                    () =>
+                      granted || !isActive(wish)
+                        ? clients.wishes.activate({ wishId: wish.id })
+                        : clients.wishes.pause({ wishId: wish.id }),
+                    [Change.WISH],
+                  ),
+                )
+              }
+              onSpeak={speakLead}
+              onResume={startLead}
+            />
+            <button
+              type="button"
+              className={`wish-work-summary${activeWorkCount > 0 ? " is-running" : ""}`}
+              onClick={() => show("tasks")}
+              title={t("wish.work_progress", {
+                done: doneWork,
+                total: totalWork,
+              })}
+              aria-label={t("wish.work_summary", {
+                running: running + watching,
+                done: doneWork,
+                total: totalWork,
+              })}
+            >
+              <span>
+                {t("wish.work_summary", {
+                  running: running + watching,
+                  done: doneWork,
+                  total: totalWork,
                 })}
-              >
-                {t("pill.investigating")}
-              </CountPill>
-            )}
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`wish-context-indicator${globalActionCount > 0 ? " is-actionable" : ""}`}
+              onClick={() => focusAttention()}
+              title={contextSummary}
+            >
+              <span>{contextSummary}</span>
+            </button>
           </div>
           <div className="hero-meta workspace-meta">
             <span>
               <Clock3 size={13} aria-hidden="true" />
               {when(wish.createTime)}
             </span>
-            {granted ? (
-              <button
-                className="text-button"
-                onClick={() =>
-                  quiet(
-                    act(
-                      () => clients.wishes.activate({ wishId: wish.id }),
-                      [Change.WISH],
-                    ),
-                  )
-                }
-              >
-                <Play size={13} aria-hidden="true" />
-                {t("wish.reopen")}
-              </button>
-            ) : isActive(wish) ? (
-              <button
-                className="text-button"
-                title={t("wish.pause_detail")}
-                onClick={() =>
-                  quiet(
-                    act(
-                      () => clients.wishes.pause({ wishId: wish.id }),
-                      [Change.WISH],
-                    ),
-                  )
-                }
-              >
-                <Pause size={13} aria-hidden="true" />
-                {t("wish.pause")}
-              </button>
-            ) : (
-              <button
-                className="text-button"
-                title={t("wish.activate_detail", { max: MAX_ACTIVE })}
-                onClick={() =>
-                  quiet(
-                    act(
-                      () => clients.wishes.activate({ wishId: wish.id }),
-                      [Change.WISH],
-                    ),
-                  )
-                }
-              >
-                <Play size={13} aria-hidden="true" />
-                {t("wish.activate")}
-              </button>
-            )}
-            <LastPushes pushes={wish.pushes} projects={projects} />
-            <MainMerges mains={wish.mains} projects={projects} />
+            <WishSettingsMenu
+              rightsCount={projects.length}
+              agentsCount={forAgents.length}
+              onOpenRights={() => show("rights")}
+              onOpenAgents={() => show("agents")}
+            />
           </div>
         </div>
       </div>
-      <LeadStatus
-        wish={wish}
-        onView={() => void viewLead()}
-        onStart={startLead}
-      />
     </div>
   );
 
+  const pendingTaskFocus = view === "tasks" && !!focus;
   const summaryPanel: WishWorkspacePanel = {
     id: "summary",
     title: t("workspace.sections"),
@@ -506,7 +617,8 @@ export function WishView({
   const taskPanel: WishWorkspacePanel = {
     id: "tasks",
     title: t("wish.tasks"),
-    count: workCount(detail.tasks),
+    count: detail.loaded ? workCount(detail.tasks) : undefined,
+    hidden: detail.loaded && detail.tasks.length === 0 && !pendingTaskFocus,
     preview: taskPreview,
     icon: <Play size={14} aria-hidden="true" />,
     children: (
@@ -525,7 +637,7 @@ export function WishView({
             azimas={azimas.filter((x) => !azimaFinished(x.azima))}
             doneAzimas={doneAzimas}
             fold={wish.id}
-            showDone={showDone}
+            workspaceHierarchy
             renderAzima={({ azima, parts }) => (
               <AzimaCard
                 key={azima.id}
@@ -534,6 +646,8 @@ export function WishView({
                 tasks={byId}
                 render={renderTask}
                 focus={focus}
+                compact
+                workspace
                 onValidate={() =>
                   quiet(
                     act(
@@ -558,32 +672,11 @@ export function WishView({
     ),
   };
 
-  const decisionsPanel: WishWorkspacePanel = {
-    id: "decisions",
-    title: t("tabs.decisions"),
-    count: decisions.length,
-    preview: decisionPreview,
-    icon: <FileText size={14} aria-hidden="true" />,
-    hidden: decisions.length === 0,
-    children: (
-      <>
-        <span id="view-tab-decisions" className="workspace-a11y-label">
-          {t("tabs.decisions")}
-        </span>
-        <DecisionLog
-          items={decisionItems}
-          noLead={() => noLead(wish)}
-          focus={focus}
-          onTask={(id) => show("tasks", id)}
-        />
-      </>
-    ),
-  };
-
   const tilasmsPanel: WishWorkspacePanel = {
     id: "tilasms",
     title: t("tabs.tilasms"),
-    count: detail.tilasms.length,
+    count: detail.loaded ? detail.tilasms.length : undefined,
+    hidden: detail.loaded && detail.tilasms.length === 0,
     preview: tilasmPreview,
     icon: <Sparkles size={14} aria-hidden="true" />,
     children: (
@@ -598,297 +691,327 @@ export function WishView({
           tilasms={detail.tilasms}
           tasks={detail.tasks}
           onToast={onToast}
+          workspace
+          active={workspaceVisiblePanel === "tilasms"}
         />
       </>
     ),
   };
 
-  const agentsPanel: WishWorkspacePanel = {
-    id: "agents",
-    title: t("tabs.agents"),
-    count: forAgents.length,
-    preview: agentPreview,
-    icon: <Bot size={14} aria-hidden="true" />,
-    hidden: forAgents.length === 0,
-    children: (
-      <>
-        <span id="view-tab-agents" className="workspace-a11y-label">
-          {t("tabs.agents")}
-        </span>
-        <AgentBlocks blocks={forAgents} codes={codes} />
-      </>
-    ),
-  };
+  const allowProject = (projectId: string, mode: Allowance) =>
+    quiet(
+      act(
+        () =>
+          clients.wishes.allow({
+            wishId: wish.id,
+            projectId,
+            mode,
+          }),
+        [Change.WISH],
+      ),
+    );
 
-  const journalPanel: WishWorkspacePanel = {
-    id: "journal",
-    title: t("page.journal"),
-    count: journalEntries.length,
-    preview: journalPreview,
-    icon: <ScrollText size={14} aria-hidden="true" />,
-    children: <Journal wish={wish} blocks={detail.blocks} initiallyShown />,
+  const onActivityTabChange = (tab: ActivityTab) => {
+    setActivityTab(tab);
+    setFocus("");
   };
-
-  const rightsPanel: WishWorkspacePanel = {
-    id: "rights",
-    title: t("rights.title"),
-    count: projects.length,
-    preview: previewText(projects[0]?.name),
-    icon: <Pause size={14} aria-hidden="true" />,
-    hidden: projects.length === 0,
-    children: (
-      <Rights
-        wish={wish}
-        projects={projects}
-        onAllow={(projectId, mode) =>
-          quiet(
-            act(
-              () =>
-                clients.wishes.allow({
-                  wishId: wish.id,
-                  projectId,
-                  mode,
-                }),
-              [Change.WISH],
-            ),
-          )
-        }
-      />
-    ),
+  const activityTabVisible: Record<ActivityTab, boolean> = {
+    journal: !detail.loaded || journalEntries.length > 0,
+    decisions: !detail.loaded || decisions.length > 0,
+    instructions: !detail.loaded || detail.instructions.length > 0,
   };
+  const firstActivityTab = (
+    ["journal", "decisions", "instructions"] as const
+  ).find((tab) => activityTabVisible[tab]);
+  const effectiveActivityTab = activityTabVisible[activityTab]
+    ? activityTab
+    : (firstActivityTab ?? activityTab);
+  const activityTabs: WishActivityTab[] = [
+    {
+      id: "journal",
+      label: t("page.journal"),
+      ariaLabel: t("page.journal"),
+      icon: <ScrollText size={14} aria-hidden="true" />,
+      count: detail.loaded ? journalEntries.length : undefined,
+      content: (
+        <Journal
+          wish={wish}
+          blocks={detail.blocks}
+          initiallyShown
+          embedded
+          workspace
+          compact
+          visible={
+            workspaceVisiblePanel === "activity" &&
+            effectiveActivityTab === "journal"
+          }
+        />
+      ),
+    },
+    {
+      id: "decisions",
+      label: t("tabs.decisions"),
+      ariaLabel: t("tabs.decisions"),
+      icon: <FileText size={14} aria-hidden="true" />,
+      count: detail.loaded ? decisions.length : undefined,
+      content: (
+        <>
+          <span id="view-tab-decisions" className="workspace-a11y-label">
+            {t("tabs.decisions")}
+          </span>
+          <DecisionLog
+            items={decisionItems}
+            noLead={() => noLead(wish)}
+            focus={
+              workspaceVisiblePanel === "activity" &&
+              effectiveActivityTab === "decisions"
+                ? focus
+                : ""
+            }
+            workspace
+            compact
+            visible={
+              workspaceVisiblePanel === "activity" &&
+              effectiveActivityTab === "decisions"
+            }
+            onTask={(id) => show("tasks", id)}
+          />
+        </>
+      ),
+    },
+    {
+      id: "instructions",
+      label: t("instruction.title"),
+      ariaLabel: t("instruction.title"),
+      icon: <MessageSquare size={14} aria-hidden="true" />,
+      count: detail.loaded ? detail.instructions.length : undefined,
+      content: (
+        <InstructionList
+          instructions={detail.instructions}
+          tasks={detail.tasks}
+          onTask={(id) => show("tasks", id)}
+          workspace
+          compact
+          visible={
+            workspaceVisiblePanel === "activity" &&
+            effectiveActivityTab === "instructions"
+          }
+        />
+      ),
+    },
+  ];
 
-  const instructionsPanel: WishWorkspacePanel = {
-    id: "instructions",
-    title: t("instruction.title"),
-    count: detail.instructions.length,
-    preview: instructionPreview,
-    icon: <FileText size={14} aria-hidden="true" />,
-    hidden: detail.instructions.length === 0,
-    children: (
-      <InstructionList
-        instructions={detail.instructions}
-        tasks={detail.tasks}
-        onTask={(id) => show("tasks", id)}
-      />
-    ),
-  };
-
-  const globalActionCount =
-    open.length +
-    waiting.length +
-    (wish.ready ? 1 : 0) +
-    (prompt ? 1 : 0) +
-    digging.length;
-  const hasGlobalActions = globalActionCount > 0;
+  const availableActivityTabs = visibleActivityTabs(activityTabs);
+  const activityCount =
+    decisions.length + journalEntries.length + detail.instructions.length;
   useEffect(() => {
-    // A notification can open the overlay before its detail read completes. Keep it mounted while the target is
-    // still being revealed; once the bounded lookup ends, the empty overlay may close as usual.
-    if (detail.loaded && !hasGlobalActions && globalActionsOpen && !focusTarget)
-      setGlobalActionsOpen(false);
-  }, [detail.loaded, focusTarget, globalActionsOpen, hasGlobalActions]);
-  const globalActionDetail = prompt
-    ? t("lead_prompt.waits")
-    : open.length
-      ? t("wish.questions_wait", { count: open.length })
-      : wish.ready
-        ? t("wish.ready_detail")
-        : t("panels.your_move_detail");
-  const globalActionContent = (
-    <div className="workspace-global-modal-content">
-      <p className="workspace-action-drawer-detail">{globalActionDetail}</p>
-      {(open.length > 0 || waiting.length > 0 || wish.ready || prompt) && (
-        <section
-          className="action-center"
-          id="action-center"
-          aria-label={t("panels.your_move")}
-        >
-          {prompt && (
-            <LeadPromptCard
-              wishId={wish.id}
-              prompt={prompt}
-              onChoose={(index) =>
-                act(
-                  () =>
-                    clients.wishes.choose({
-                      wishId: wish.id,
-                      option: index + 1,
-                      title: prompt.title,
-                      lines: prompt.lines,
-                      options: prompt.options,
-                    }),
-                  [Change.WISH],
-                )
-              }
-            />
-          )}
-          {open.length > 0 && (
-            <section className="decisions-section">
-              <div className="section-heading">
-                <h3>
-                  {t("panels.decisions")}
-                  <span className="count">{open.length}</span>
-                </h3>
-              </div>
-              <AnimatePresence mode="popLayout">
-                {open.map(({ item: q, blocking }) => (
-                  <WishQuestion
-                    key={q.id}
-                    question={q}
-                    blocking={blocking}
-                    noLead={noLead(wish)}
-                    onAnswer={(choice, note) =>
-                      answer(wish.id, q.id, choice, note)
-                    }
-                    onMark={(kind, remove) => mark(wish.id, q.id, kind, remove)}
-                    onEnlighten={(note) => enlighten(wish.id, q.id, note)}
-                  />
-                ))}
-              </AnimatePresence>
-            </section>
-          )}
-          {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
-          {wish.ready && (
-            <GrantCard
-              wish={wish}
-              onGrant={() =>
-                quiet(
+    if (
+      availableActivityTabs.length > 0 &&
+      !availableActivityTabs.some((tab) => tab.id === activityTab)
+    ) {
+      setActivityTab(availableActivityTabs[0].id);
+    }
+  }, [activityTab, availableActivityTabs]);
+
+  const activityPanel: WishWorkspacePanel = {
+    id: "activity",
+    title: t("workspace.activity"),
+    count: detail.loaded ? activityCount : undefined,
+    hidden: detail.loaded && activityCount === 0,
+    preview: decisionPreview ?? instructionPreview ?? journalPreview,
+    icon: <Activity size={14} aria-hidden="true" />,
+    headerActions: (
+      <WishActivityTabs
+        label={t("workspace.activity")}
+        tabs={activityTabs}
+        activeTab={effectiveActivityTab}
+        onTabChange={onActivityTabChange}
+        iconsOnly
+      />
+    ),
+    children: (
+      <WishActivity
+        label={t("workspace.activity")}
+        activeTab={effectiveActivityTab}
+        onTabChange={onActivityTabChange}
+        tabs={activityTabs}
+        hideTabs
+      />
+    ),
+  };
+
+  const promptSignature = prompt
+    ? [prompt.title, ...prompt.lines, ...prompt.options].join("\u0001")
+    : "";
+  const promptActionId = prompt
+    ? `lead-prompt-${wish.id}:${contentKey(promptSignature)}`
+    : "";
+  const promptDomId = prompt
+    ? `lead-prompt-${wish.id}-${contentKey(promptSignature)}`
+    : "";
+  const actionDockItems: ActionDockItem[] = [
+    ...(prompt
+      ? [
+          {
+            id: promptActionId,
+            targetId: `lead-prompt-${wish.id}`,
+            summary: prompt.title || t("lead_prompt.title"),
+            content: (
+              <LeadPromptCard
+                wishId={wish.id}
+                domId={promptDomId}
+                prompt={prompt}
+                compact
+                dockMode
+                onChoose={(index) =>
                   act(
-                    () => clients.wishes.grant({ wishId: wish.id }),
+                    () =>
+                      clients.wishes.choose({
+                        wishId: wish.id,
+                        option: index + 1,
+                        title: prompt.title,
+                        lines: prompt.lines,
+                        options: prompt.options,
+                      }),
                     [Change.WISH],
-                    t("wish.granted_toast"),
-                  ),
-                )
-              }
-            />
-          )}
-        </section>
-      )}
-      {digging.length > 0 && (
-        <InvestigatingSection
-          questions={digging}
-          onAnswer={(q, choice, note) => answer(wish.id, q, choice, note)}
-          onMark={(q, kind, remove) => mark(wish.id, q, kind, remove)}
+                  )
+                }
+              />
+            ),
+          },
+        ]
+      : []),
+    ...open.map(({ item: q, blocking }) => ({
+      id: `question-${q.id}:${q.revision}`,
+      targetId: `question-${q.id}`,
+      summary: `${q.code} · ${q.text}`,
+      content: (
+        <WishQuestion
+          question={q}
+          domId={`question-${q.id}-${q.revision}`}
+          compact
+          dockMode
+          blocking={blocking}
+          noLead={noLead(wish)}
+          onAnswer={(choice, note) => answer(wish.id, q.id, choice, note)}
+          onMark={(kind, remove) => mark(wish.id, q.id, kind, remove)}
+          onEnlighten={(note) => enlighten(wish.id, q.id, note)}
         />
-      )}
-      {projects.length > 0 && (
-        <button
-          type="button"
-          className="workspace-permissions-link"
-          onClick={() => {
-            setGlobalActionsOpen(false);
-            show("rights");
-          }}
-        >
-          {t("workspace.permissions")}
-        </button>
-      )}
-    </div>
-  );
+      ),
+    })),
+    ...digging.map(({ item: q, blocking }) => ({
+      id: `question-${q.id}:${q.revision}:investigating`,
+      targetId: `question-${q.id}`,
+      summary: `${q.code} · ${q.text}`,
+      content: (
+        <WishQuestion
+          question={q}
+          domId={`question-${q.id}-${q.revision}-investigating`}
+          compact
+          dockMode
+          blocking={blocking}
+          noLead={noLead(wish)}
+          onAnswer={(choice, note) => answer(wish.id, q.id, choice, note)}
+          onMark={(kind, remove) => mark(wish.id, q.id, kind, remove)}
+        />
+      ),
+    })),
+    ...(wish.ready
+      ? [
+          {
+            id: `grant-${wish.id}`,
+            targetId: `grant-${wish.id}`,
+            summary: t("wish.ready_title"),
+            content: (
+              <GrantCard
+                wish={wish}
+                onGrant={() =>
+                  quiet(
+                    act(
+                      () => clients.wishes.grant({ wishId: wish.id }),
+                      [Change.WISH],
+                      t("wish.granted_toast"),
+                    ),
+                  )
+                }
+              />
+            ),
+          },
+        ]
+      : []),
+  ];
+  const actionDock =
+    actionDockItems.length > 0 ? (
+      <ActionDock
+        ref={attentionRef}
+        items={actionDockItems}
+        collapsed={attentionCollapsed}
+        onCollapsedChange={setAttentionCollapsed}
+        focusRequest={attentionFocusRequest}
+        focusTarget={attentionFocusTarget}
+      />
+    ) : undefined;
 
   const panels: WishWorkspacePanel[] = [
     summaryPanel,
     taskPanel,
-    decisionsPanel,
     tilasmsPanel,
-    agentsPanel,
-    journalPanel,
-    rightsPanel,
-    instructionsPanel,
+    activityPanel,
   ];
-  const workspacePanel = view === "main" ? undefined : view;
+  useEffect(() => {
+    if (!detail.loaded) return;
+    const panelVisible = {
+      tasks: detail.tasks.length > 0,
+      tilasms: detail.tilasms.length > 0,
+      activity: activityCount > 0,
+    };
+    const requestedPanel =
+      view === "tasks" || view === "tilasms" || view === "activity"
+        ? view
+        : undefined;
+    if (requestedPanel === "tasks" && focus && detail.tasks.length === 0) {
+      const timer = setTimeout(() => {
+        setView((current) => (current === "tasks" ? "main" : current));
+        setFocus((current) => (current === focus ? "" : current));
+      }, 5_000);
+      return () => clearTimeout(timer);
+    }
+    if (requestedPanel && !panelVisible[requestedPanel]) {
+      setView("main");
+      setFocus("");
+    }
+    if (
+      workspaceVisiblePanel &&
+      (workspaceVisiblePanel === "tasks" ||
+        workspaceVisiblePanel === "tilasms" ||
+        workspaceVisiblePanel === "activity") &&
+      !panelVisible[workspaceVisiblePanel]
+    ) {
+      setWorkspaceVisiblePanel("");
+    }
+  }, [
+    activityCount,
+    detail.loaded,
+    detail.tasks.length,
+    detail.tilasms.length,
+    focus,
+    view,
+    workspaceVisiblePanel,
+  ]);
+  const workspacePanel =
+    view === "main" || view === "rights" || view === "agents"
+      ? undefined
+      : view === "decisions" || view === "journal" || view === "instructions"
+        ? "activity"
+        : view;
 
   return (
     <div className="wish-view review">
-      {changing && (
-        <ChangeProvider
-          wish={wish}
-          onClose={() => setChanging(false)}
-          onChanged={(provider) => {
-            setChanging(false);
-            onToast(t("provider.changed", { agent: providerName(provider) }));
-          }}
-        />
-      )}
-      <WishActionOverlay
-        open={globalActionsOpen}
-        title={t("panels.your_move")}
-        eyebrow={t("attention.label")}
-        onClose={() => setGlobalActionsOpen(false)}
-      >
-        {globalActionContent}
-      </WishActionOverlay>
-      {hasGlobalActions && (
-        <div className="workspace-global-top">
-          <button
-            type="button"
-            className="workspace-action-trigger"
-            aria-haspopup="dialog"
-            aria-expanded={globalActionsOpen}
-            onClick={() => setGlobalActionsOpen(true)}
-          >
-            <span className="workspace-action-drawer-label">
-              {t("panels.your_move")}
-              <span className="workspace-action-drawer-count">
-                {globalActionCount}
-              </span>
-            </span>
-            <span className="workspace-action-trigger-detail">
-              {globalActionDetail}
-            </span>
-          </button>
-        </div>
-      )}
       <PageHeader
         actions={
           <>
-            <PageHeaderAction
-              className="wish-provider"
-              label={`${t("wish.provider_detail")} (${providerName(wish.provider)})`}
-              title={`${t("provider.title")} (${providerName(wish.provider)})`}
-              onClick={() => setChanging(true)}
-            >
-              <Bot size={16} aria-hidden="true" />
-              <span>{providerName(wish.provider)}</span>
-            </PageHeaderAction>
-            <LeadButton
-              recorded={recordedAgent(wish.lead)}
-              loadAgents={async () =>
-                (await clients.ui.getEnvironment({})).providers
-              }
-              onLead={() => lead()}
-              onPick={(provider) => lead(provider)}
-            />
-            <PageHeaderAction
-              label={t("wish.page")}
-              title={t("wish.page_detail")}
-              onClick={() =>
-                quiet(
-                  (async () => {
-                    const res = await clients.wishes.render({
-                      wishId: wish.id,
-                    });
-                    onToast(t("wish.page_written", { file: res.file }));
-                  })().catch((error) => onToast(message(error))),
-                )
-              }
-            >
-              <FileText size={16} aria-hidden="true" />
-            </PageHeaderAction>
-            <PageHeaderAction
-              label={t("app.share")}
-              onClick={() =>
-                quiet(
-                  (async () => {
-                    const res = await clients.wishes.export({
-                      wishId: wish.id,
-                    });
-                    onToast(t("wish.exported", { file: res.file }));
-                  })().catch((error) => onToast(message(error))),
-                )
-              }
-            >
-              <Download size={16} aria-hidden="true" />
-            </PageHeaderAction>
+            <HeaderAgentMenu wish={wish} onPick={changeProvider} />
+            <HeaderShareMenu onRender={renderWishPage} onExport={exportWish} />
             <PageHeaderAction
               className="danger"
               label={t("wish.delete")}
@@ -899,17 +1022,12 @@ export function WishView({
           </>
         }
       >
-        {projects.map((project) => (
-          <span
-            className="header-project"
-            key={project.id}
-            title={project.directory || t("project.no_folder")}
-          >
-            {project.name}
-            <ChevronRight size={12} aria-hidden="true" />
-          </span>
-        ))}
-        <strong>{wish.title}</strong>
+        <strong
+          className={`topbar-wish-title${topbarWishVisible ? " is-visible" : ""}`}
+          aria-hidden={!topbarWishVisible}
+        >
+          {wish.title}
+        </strong>
       </PageHeader>
       {deleting && (
         <DeleteWish
@@ -941,18 +1059,445 @@ export function WishView({
           initialPanel={workspacePanel}
           initialPanelRequest={`${workspacePanel ?? "summary"}:${workspaceRequest}`}
           onPanelChange={(panelId) => {
-            setFocusSource("workspace");
-            setFocusTarget("");
+            setWorkspaceVisiblePanel(panelId ?? "");
             if (!panelId) {
               setView("main");
               setFocus("");
               return;
             }
-            if (panelId !== "summary") setView(panelId as WorkspaceView);
+            if (panelId === "activity") setView("activity");
+            else if (panelId !== "summary")
+              setView(panelId as "tasks" | "tilasms");
           }}
         />
       </div>
-      <LeadMessage wish={wish} onResume={startLead} onToast={onToast} />
+      {settingsDrawer === "rights" && (
+        <SettingsDrawer
+          title={t("rights.title")}
+          onClose={() => setSettingsDrawer(undefined)}
+        >
+          <Rights wish={wish} projects={projects} onAllow={allowProject} />
+        </SettingsDrawer>
+      )}
+      {settingsDrawer === "agents" && (
+        <SettingsDrawer
+          title={t("tabs.agents")}
+          onClose={() => setSettingsDrawer(undefined)}
+        >
+          <>
+            <span id="view-tab-agents" className="workspace-a11y-label">
+              {t("tabs.agents")}
+            </span>
+            <AgentBlocks blocks={forAgents} codes={codes} />
+          </>
+        </SettingsDrawer>
+      )}
+      <LeadMessage
+        wish={wish}
+        attention={actionDock}
+        attentionCount={actionDockItems.length}
+        attentionCollapsed={attentionCollapsed}
+        attentionRequest={attentionFocusRequest}
+        onAttentionOpen={focusAttention}
+        onResume={startLead}
+        onToast={onToast}
+      />
+    </div>
+  );
+}
+
+function LeadLifecycleMenu({
+  wish,
+  lifecycleLabel,
+  onToggle,
+  onSpeak,
+  onResume,
+}: {
+  wish: Wish;
+  lifecycleLabel: string;
+  onToggle: () => void;
+  onSpeak: () => Promise<void>;
+  onResume: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const running = wish.leadRunning;
+  const ended = !running && !!wish.leadExit;
+  const error = actionError || wish.leadError;
+  const code = wish.leadExit?.code ?? 0;
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointer = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("mousedown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    const firstItem =
+      rootRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]');
+    firstItem?.focus();
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  const run = async (action: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    setActionError("");
+    try {
+      await action();
+      setOpen(false);
+    } catch (startFailure) {
+      setActionError(message(startFailure));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="wish-lifecycle-split" ref={rootRef}>
+      <button
+        type="button"
+        className="wish-lifecycle-badge"
+        onClick={onToggle}
+        title={
+          wish.state === WishState.GRANTED
+            ? t("wish.reopen")
+            : isActive(wish)
+              ? t("wish.pause_detail")
+              : t("wish.activate_detail", { max: MAX_ACTIVE })
+        }
+        aria-label={`${lifecycleLabel} · ${isActive(wish) ? t("wish.pause") : t("wish.activate")}`}
+      >
+        {isActive(wish) ? (
+          <Pause size={12} aria-hidden="true" />
+        ) : (
+          <Play size={12} aria-hidden="true" />
+        )}
+        <span>{lifecycleLabel}</span>
+      </button>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="wish-lifecycle-menu-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={t("lead_menu.open")}
+        title={t("lead_menu.open")}
+        onClick={() => setOpen((isOpen) => !isOpen)}
+      >
+        <ChevronDown size={11} aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          className="wish-lead-menu"
+          role="menu"
+          aria-label={t("lead_menu.open")}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            disabled={busy}
+            onClick={() => void run(onSpeak)}
+          >
+            {busy ? (
+              <LoaderCircle
+                size={14}
+                className="wish-lead-spinner"
+                aria-hidden="true"
+              />
+            ) : (
+              <MessageSquare size={14} aria-hidden="true" />
+            )}
+            {t("lead_menu.speak")}
+          </button>
+          {!running && (ended || !!error) && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={busy}
+              onClick={() => void run(onResume)}
+            >
+              <RotateCcw size={14} aria-hidden="true" />
+              {t("lead_menu.resume")}
+            </button>
+          )}
+          {error && (
+            <p className="wish-lead-menu-error" role="alert">
+              <TriangleAlert size={13} aria-hidden="true" />
+              {error}
+            </p>
+          )}
+          {ended && !error && (
+            <p className="wish-lead-menu-status" role="status">
+              {t("lead_menu.ended", { code })}
+            </p>
+          )}
+          {running && (
+            <p className="wish-lead-menu-status" role="status">
+              <Terminal size={13} aria-hidden="true" />
+              {t("lead_menu.terminal_hint")}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function providerForAgent(id: string): Provider | undefined {
+  if (id === "claude") return Provider.CLAUDE;
+  if (id === "codex") return Provider.CODEX;
+  if (id === "antigravity" || id === "agy") return Provider.ANTIGRAVITY;
+  return undefined;
+}
+
+function agentIdForProvider(provider: Provider): string {
+  if (provider === Provider.CODEX) return "codex";
+  if (provider === Provider.ANTIGRAVITY) return "antigravity";
+  return "claude";
+}
+
+function HeaderAgentMenu({
+  wish,
+  onPick,
+}: {
+  wish: Wish;
+  onPick: (provider: Provider) => Promise<unknown>;
+}) {
+  const clients = useClients();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [providers, setProviders] = useState<AgentProvider[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const currentId = agentIdForProvider(wish.provider);
+
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    setLoading(true);
+    setError("");
+    clients.ui
+      .getEnvironment({ agents: true })
+      .then((response) => {
+        if (live) setProviders(response.providers);
+      })
+      .catch((failure) => {
+        if (live) setError(message(failure));
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [clients, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointer = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("mousedown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || providers.length === 0) return;
+    rootRef.current
+      ?.querySelector<HTMLButtonElement>('[role="menuitemradio"]')
+      ?.focus();
+  }, [open, providers.length]);
+
+  const choose = async (agent: AgentProvider) => {
+    const provider = providerForAgent(agent.id);
+    if (!provider || !agent.available || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onPick(provider);
+      setOpen(false);
+    } catch (failure) {
+      setError(message(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="wish-agent-menu" ref={rootRef}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="button secondary page-header-action wish-provider wish-agent-trigger"
+        aria-label={t("wish.change_provider")}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={t("wish.change_provider")}
+        onClick={() => setOpen((isOpen) => !isOpen)}
+      >
+        <Bot size={15} aria-hidden="true" />
+        <span>{providerName(wish.provider)}</span>
+        <ChevronDown size={12} aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          className="wish-agent-options"
+          role="menu"
+          aria-label={t("wish.change_provider")}
+        >
+          {loading && (
+            <span className="wish-agent-loading">
+              {t("wish.agent_loading")}
+            </span>
+          )}
+          {!loading && providers.length === 0 && (
+            <span className="wish-agent-loading">{t("wish.agent_none")}</span>
+          )}
+          {!loading &&
+            providers.map((agent) => {
+              const provider = providerForAgent(agent.id);
+              const current =
+                agent.id === currentId ||
+                (currentId === "antigravity" && agent.id === "agy");
+              return (
+                <button
+                  key={agent.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={current}
+                  className={`wish-agent-option${current ? " is-current" : ""}`}
+                  disabled={busy || !agent.available || !provider}
+                  onClick={() => void choose(agent)}
+                >
+                  <span className="wish-agent-option-mark">
+                    {current && <Check size={13} aria-hidden="true" />}
+                  </span>
+                  <span className="wish-agent-option-copy">
+                    <strong>
+                      {agent.name || providerName(provider ?? Provider.CLAUDE)}
+                    </strong>
+                    <small>
+                      {current
+                        ? t("wish.agent_current")
+                        : agent.available
+                          ? agent.version || t("wish.agent_available")
+                          : t("wish.agent_unavailable")}
+                    </small>
+                  </span>
+                </button>
+              );
+            })}
+          {error && (
+            <p className="wish-agent-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HeaderShareMenu({
+  onRender,
+  onExport,
+}: {
+  onRender: () => void;
+  onExport: () => void;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointer = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("mousedown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    const firstItem =
+      rootRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]');
+    firstItem?.focus();
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  const choose = (action: () => void) => {
+    setOpen(false);
+    action();
+  };
+
+  return (
+    <div className="wish-share-menu" ref={rootRef}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="button secondary page-header-action wish-share-trigger"
+        aria-label={t("app.share")}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={t("wish.share_menu")}
+        onClick={() => setOpen((isOpen) => !isOpen)}
+      >
+        <Share2 size={16} aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          className="wish-share-options"
+          role="menu"
+          aria-label={t("wish.share_menu")}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => choose(onRender)}
+          >
+            <FileText size={14} aria-hidden="true" />
+            {t("wish.share_page")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => choose(onExport)}
+          >
+            <Share2 size={14} aria-hidden="true" />
+            {t("wish.share_export")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -981,104 +1526,6 @@ export function GrantCard({
         {t("wish.grant")}
       </button>
     </article>
-  );
-}
-
-// WishActionOverlay keeps question and permission drafts mounted while its focused surface is closed. The hidden
-// backdrop removes it from the accessibility tree; focus trapping and Escape handling only run while it is open.
-function WishActionOverlay({
-  open,
-  title,
-  eyebrow,
-  children,
-  onClose,
-}: {
-  open: boolean;
-  title: string;
-  eyebrow: string;
-  children: ReactNode;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const keepPlace = useKeepPlace(bodyRef);
-  const onCloseRef = useRef(onClose);
-  const previousFocus = useRef<HTMLElement | null>(null);
-  onCloseRef.current = onClose;
-
-  useEffect(() => {
-    if (!open) return;
-    const el = ref.current;
-    previousFocus.current = document.activeElement as HTMLElement | null;
-    const focusable = () =>
-      Array.from(
-        el?.querySelectorAll<HTMLElement>(
-          'button,input,textarea,select,a[href],[tabindex]:not([tabindex="-1"])',
-        ) || [],
-      ).filter(
-        (node) =>
-          !node.matches(":disabled") && node.getClientRects().length > 0,
-      );
-    focusable()[0]?.focus({ preventScroll: true });
-    const handle = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCloseRef.current();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const nodes = focusable();
-      if (!nodes.length) return;
-      const first = nodes[0];
-      const last = nodes[nodes.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", handle);
-    return () => {
-      document.removeEventListener("keydown", handle);
-      if (previousFocus.current?.isConnected)
-        previousFocus.current.focus({ preventScroll: true });
-    };
-  }, [open]);
-
-  return (
-    <div
-      className={`${open ? "modal-backdrop " : ""}workspace-global-overlay`}
-      hidden={!open}
-      aria-hidden={!open}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="modal wide"
-      >
-        <div className="modal-top">
-          <span className="eyebrow">{eyebrow}</span>
-          <button
-            className="icon-button"
-            onClick={onClose}
-            aria-label={t("app.close_window")}
-          >
-            <X size={18} />
-          </button>
-        </div>
-        <h2>{title}</h2>
-        <div className="workspace-global-modal-body" ref={keepPlace}>
-          {children}
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1171,18 +1618,30 @@ function Journal({
   wish,
   blocks,
   initiallyShown = false,
+  embedded = false,
+  workspace = false,
+  compact = false,
+  visible = true,
 }: {
   wish: Wish;
   blocks: Block[];
   initiallyShown?: boolean;
+  embedded?: boolean;
+  workspace?: boolean;
+  compact?: boolean;
+  visible?: boolean;
 }) {
   const clients = useClients();
-  const [shown, setShown] = useState(initiallyShown);
+  const [shown, setShown] = useState(embedded || initiallyShown);
   const [commands, setCommands] = useState(false);
   const [exp, setExp] = useState<WishExport>();
   const [error, setError] = useState("");
+  const [journalDetail, setJournalDetail] = useState<Entry>();
   // What the store read of the wish: a new one means the wish changed.
   const detail = useData((s) => s.details[wish.id]);
+  useEffect(() => {
+    if (workspace && !visible) setJournalDetail(undefined);
+  }, [visible, workspace]);
   useEffect(() => {
     if (!commands || !shown) return;
     let current = true;
@@ -1207,23 +1666,25 @@ function Journal({
   const { shown: recent, more } = useRecent(entries.length);
   return (
     <section
-      className="wish-section wish-journal"
+      className={`wish-section wish-journal${embedded ? " is-embedded" : ""}${workspace ? " is-workspace" : ""}${compact ? " is-compact" : ""}`}
       aria-label={t("page.journal")}
     >
       <div className="section-heading">
-        <button
-          className="fold-heading"
-          onClick={() => setShown(!shown)}
-          aria-expanded={shown}
-        >
-          <ChevronRight size={14} className={shown ? "rotated-90" : ""} />
-          <h3>
-            {t("page.journal")}
-            {entries.length > 0 && (
-              <span className="count">{entries.length}</span>
-            )}
-          </h3>
-        </button>
+        {!embedded && (
+          <button
+            className="fold-heading"
+            onClick={() => setShown(!shown)}
+            aria-expanded={shown}
+          >
+            <ChevronRight size={14} className={shown ? "rotated-90" : ""} />
+            <h3>
+              {t("page.journal")}
+              {entries.length > 0 && (
+                <span className="count">{entries.length}</span>
+              )}
+            </h3>
+          </button>
+        )}
         {shown && (
           <button
             className="text-button"
@@ -1240,7 +1701,12 @@ function Journal({
         <table className="compact-table journal-list">
           <tbody>
             {entries.slice(0, recent).map((entry) => (
-              <JournalEntry key={entry.id} entry={entry} />
+              <JournalEntry
+                key={entry.id}
+                entry={entry}
+                workspace={workspace}
+                onOpen={workspace ? () => setJournalDetail(entry) : undefined}
+              />
             ))}
           </tbody>
         </table>
@@ -1256,20 +1722,69 @@ function Journal({
           onShow={more}
         />
       )}
+      {journalDetail && workspace && visible && (
+        <SettingsDrawer
+          title={
+            journalDetail.command || journalDetail.summary || t("page.journal")
+          }
+          onClose={() => setJournalDetail(undefined)}
+        >
+          <div className="workspace-activity-detail journal-detail">
+            <time>{when(journalDetail.at)}</time>
+            {journalDetail.command && <code>{journalDetail.command}</code>}
+            {journalDetail.summary && <p>{journalDetail.summary}</p>}
+            {journalDetail.note && (
+              <div className="prose">
+                <MarkdownBody text={journalDetail.note} />
+              </div>
+            )}
+          </div>
+        </SettingsDrawer>
+      )}
     </section>
   );
 }
 
-function JournalEntry({ entry }: { entry: Entry }) {
+function JournalEntry({
+  entry,
+  workspace = false,
+  onOpen,
+}: {
+  entry: Entry;
+  workspace?: boolean;
+  onOpen?: () => void;
+}) {
+  const openFromKeyboard = (event: ReactKeyboardEvent<HTMLTableRowElement>) => {
+    if (!workspace || !onOpen || (event.key !== "Enter" && event.key !== " "))
+      return;
+    event.preventDefault();
+    onOpen();
+  };
+  const preview = entry.note
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
   return (
-    <tr className={entry.command ? "command" : "log"}>
+    <tr
+      className={`${entry.command ? "command" : "log"}${workspace ? " workspace-journal-entry" : ""}`}
+      role={workspace ? "button" : undefined}
+      tabIndex={workspace ? 0 : undefined}
+      aria-label={workspace ? t("page.details") : undefined}
+      onClick={workspace ? onOpen : undefined}
+      onKeyDown={openFromKeyboard}
+    >
       <td>
         <time>{when(entry.at)}</time>
       </td>
       <td>{entry.command && <code>{entry.command}</code>}</td>
       <td>
         {entry.summary && <span>{entry.summary}</span>}
-        {entry.note && <MarkdownBody text={entry.note} />}
+        {entry.note &&
+          (workspace ? (
+            <span className="journal-preview">{preview}</span>
+          ) : (
+            <MarkdownBody text={entry.note} />
+          ))}
       </td>
     </tr>
   );

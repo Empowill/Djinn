@@ -27,6 +27,24 @@ export interface WorkspaceLayoutState {
   maximized?: string;
 }
 
+/**
+ * The serialised tree is rendered as one flat CSS grid. Keeping leaves as direct children of that grid is
+ * deliberate: moving a panel changes its grid placement without reparenting the panel component and its local draft
+ * state. A split can still contain arbitrary nested splits; this plan turns those splits into row/column spans.
+ */
+export interface WorkspaceGridPlacement {
+  row: number;
+  column: number;
+  rowSpan: number;
+  columnSpan: number;
+}
+
+export interface WorkspaceGridPlan {
+  rows: number;
+  columns: number;
+  placements: ReadonlyMap<string, WorkspaceGridPlacement>;
+}
+
 const panel = (id: string): WorkspacePanelNode => ({ type: "panel", id });
 const emptyRoot = (): WorkspaceSplitNode => ({
   type: "split",
@@ -90,10 +108,77 @@ export function workspaceHasPanel(node: WorkspaceNode, id: string): boolean {
   return workspacePanelIds(node).includes(id);
 }
 
+type GridMetrics = {
+  rows: number;
+  columns: number;
+  placements: Map<string, WorkspaceGridPlacement>;
+};
+
+const emptyGridMetrics = (): GridMetrics => ({
+  rows: 0,
+  columns: 0,
+  placements: new Map(),
+});
+
+/** Compute intrinsic grid coordinates for every leaf in a workspace tree. */
+function gridMetrics(node: WorkspaceNode): GridMetrics {
+  if (node.type === "panel") {
+    return {
+      rows: 1,
+      columns: 1,
+      placements: new Map([
+        [node.id, { row: 0, column: 0, rowSpan: 1, columnSpan: 1 }],
+      ]),
+    };
+  }
+  if (!node.children.length) return emptyGridMetrics();
+
+  const children = node.children.map(gridMetrics);
+  if (node.direction === "horizontal") {
+    const rows = Math.max(...children.map((child) => child.rows), 0);
+    const columns = children.reduce((total, child) => total + child.columns, 0);
+    const placements = new Map<string, WorkspaceGridPlacement>();
+    let column = 0;
+    for (const child of children) {
+      for (const [id, placement] of child.placements) {
+        placements.set(id, {
+          ...placement,
+          column: placement.column + column,
+          rowSpan: Math.max(placement.rowSpan, rows - placement.row),
+        });
+      }
+      column += child.columns;
+    }
+    return { rows, columns, placements };
+  }
+
+  const rows = children.reduce((total, child) => total + child.rows, 0);
+  const columns = Math.max(...children.map((child) => child.columns), 0);
+  const placements = new Map<string, WorkspaceGridPlacement>();
+  let row = 0;
+  for (const child of children) {
+    for (const [id, placement] of child.placements) {
+      placements.set(id, {
+        ...placement,
+        row: placement.row + row,
+        columnSpan: Math.max(placement.columnSpan, columns - placement.column),
+      });
+    }
+    row += child.rows;
+  }
+  return { rows, columns, placements };
+}
+
+export function workspaceGridPlan(node: WorkspaceNode): WorkspaceGridPlan {
+  const metrics = gridMetrics(node);
+  return metrics;
+}
+
 function normalizedNode(
   value: unknown,
   allowed: ReadonlySet<string>,
   seen: Set<string>,
+  migrateId: (id: string) => string = (id) => id,
 ): WorkspaceNode | undefined {
   if (!value || typeof value !== "object") return undefined;
   const candidate = value as {
@@ -103,11 +188,12 @@ function normalizedNode(
     children?: unknown;
   };
   if (candidate.type === "panel") {
-    if (typeof candidate.id !== "string" || !allowed.has(candidate.id))
-      return undefined;
-    if (seen.has(candidate.id)) return undefined;
-    seen.add(candidate.id);
-    return panel(candidate.id);
+    if (typeof candidate.id !== "string") return undefined;
+    const id = migrateId(candidate.id);
+    if (!allowed.has(id)) return undefined;
+    if (seen.has(id)) return undefined;
+    seen.add(id);
+    return panel(id);
   }
   if (
     candidate.type !== "split" ||
@@ -116,7 +202,7 @@ function normalizedNode(
   )
     return undefined;
   const children = candidate.children
-    .map((child) => normalizedNode(child, allowed, seen))
+    .map((child) => normalizedNode(child, allowed, seen, migrateId))
     .filter((child): child is WorkspaceNode => !!child);
   if (children.length === 0)
     return { type: "split", direction: candidate.direction, children: [] };
@@ -135,6 +221,12 @@ export function normalizeWorkspaceLayout(
 ): WorkspaceLayoutState {
   const ids = contentIds(panelIds, summaryId);
   const allowed = new Set(ids);
+  const migrateId = ids.includes("activity")
+    ? (id: string) =>
+        id === "decisions" || id === "journal" || id === "instructions"
+          ? "activity"
+          : id
+    : (id: string) => id;
   const fallback = workspaceDefaultLayout(ids, summaryId);
   if (!value || typeof value !== "object") return fallback;
 
@@ -147,18 +239,24 @@ export function normalizeWorkspaceLayout(
   if (candidate.version !== WORKSPACE_LAYOUT_VERSION) return fallback;
 
   const seen = new Set<string>();
-  const parsedRoot = normalizedNode(candidate.root, allowed, seen);
+  const parsedRoot = normalizedNode(candidate.root, allowed, seen, migrateId);
   if (!parsedRoot) return fallback;
 
   const closed = unique(
     Array.isArray(candidate.closed)
-      ? candidate.closed.filter((id): id is string => typeof id === "string")
+      ? candidate.closed
+          .filter((id): id is string => typeof id === "string")
+          .map(migrateId)
       : [],
   ).filter((id) => allowed.has(id) && !seen.has(id));
   const missing = ids.filter((id) => !seen.has(id) && !closed.includes(id));
+  const migratedMaximized =
+    typeof candidate.maximized === "string"
+      ? migrateId(candidate.maximized)
+      : undefined;
   const maximized =
-    typeof candidate.maximized === "string" && seen.has(candidate.maximized)
-      ? candidate.maximized
+    migratedMaximized && seen.has(migratedMaximized)
+      ? migratedMaximized
       : undefined;
   return {
     version: WORKSPACE_LAYOUT_VERSION,

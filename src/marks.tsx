@@ -15,6 +15,7 @@ import { message } from "./data/client";
 import { useClients, useStore } from "./data/djinn";
 import { markOf } from "./data/format";
 import { t } from "./i18n";
+import { TooltipButton } from "./tooltip";
 
 export type OnMark = (kind: MarkKind, remove: boolean) => Promise<void>;
 
@@ -22,9 +23,11 @@ export type OnMark = (kind: MarkKind, remove: boolean) => Promise<void>;
 export function MarkButtons({
   item,
   onMark,
+  iconOnly = false,
 }: {
   item: { marks?: Mark[] };
   onMark: OnMark;
+  iconOnly?: boolean;
 }) {
   const [sending, setSending] = useState(false);
   const toggle = (kind: MarkKind) => {
@@ -34,16 +37,39 @@ export function MarkButtons({
       .finally(() => setSending(false));
   };
   const read = !!markOf(item, MarkKind.READ);
+  const label = read ? t("mark.read_undo") : t("mark.read_detail");
+  if (iconOnly) {
+    return (
+      <TooltipButton
+        className={`mark-toggle mark-toggle-icon ${read ? "on" : ""}`}
+        aria-pressed={read}
+        disabled={sending}
+        label={read ? t("mark.read_done") : t("mark.read")}
+        tooltip={label}
+        onClick={() => toggle(MarkKind.READ)}
+      >
+        {read ? (
+          <Check size={13} aria-hidden="true" />
+        ) : (
+          <Eye size={13} aria-hidden="true" />
+        )}
+      </TooltipButton>
+    );
+  }
   return (
     <span className="mark-buttons">
       <button
         className={`mark-toggle ${read ? "on" : ""}`}
         aria-pressed={read}
         disabled={sending}
-        title={read ? t("mark.read_undo") : t("mark.read_detail")}
+        title={label}
         onClick={() => toggle(MarkKind.READ)}
       >
-        {read ? <Check size={13} /> : <Eye size={13} />}
+        {read ? (
+          <Check size={13} aria-hidden="true" />
+        ) : (
+          <Eye size={13} aria-hidden="true" />
+        )}
         {read ? t("mark.read_done") : t("mark.read")}
       </button>
     </span>

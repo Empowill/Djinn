@@ -7,7 +7,6 @@ import {
   AlertCircle,
   CheckCheck,
   CheckCircle2,
-  ChevronDown,
   CirclePause,
   CirclePlay,
   CircleStop,
@@ -25,6 +24,7 @@ import {
   type FormEvent,
   type ReactNode,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -54,7 +54,8 @@ import {
 import { DecisionLink } from "./decision-log";
 import { language, t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
-import { StatusBadge } from "./status";
+import { StatusBadge, StatusIndicator } from "./status";
+import { TaskDrawer } from "./task-drawer";
 import { resourcesDetail, resourcesNow, TaskUsage, usageDetail } from "./usage";
 
 const eventIcons: Partial<Record<TaskEventKind, typeof FileText>> = {
@@ -95,6 +96,7 @@ export function WishTask({
   forkedAs = "",
   decision,
   focused = false,
+  compact = false,
   onStop,
   onStart,
   onSend,
@@ -114,6 +116,8 @@ export function WishTask({
   decision?: Decision;
   // Brought into sight and opened, from its decision.
   focused?: boolean;
+  // The wish workspace uses a compact, icon-only state column; other task lists keep the full badge.
+  compact?: boolean;
   onStop: () => void;
   // Starts a task that waits for the machine alone, anyway.
   onStart?: () => void;
@@ -124,15 +128,23 @@ export function WishTask({
   // Marks the task done by hand, with a note; none where the task cannot be closed from here.
   onDone?: (note: string) => Promise<unknown>;
 }) {
-  const [open, setOpen] = useState(focused);
+  const [drawerOpen, setDrawerOpen] = useState(focused);
   const [closing, setClosing] = useState(false);
+  const [messageDraft, setMessageDraft] = useState("");
+  const [doneDraft, setDoneDraft] = useState("");
+  const rowRef = useRef<HTMLButtonElement>(null);
+  const pendingDrawerAction = useRef<(() => void) | null>(null);
+  const drawerId = useId();
   useEffect(() => {
     if (!focused) return;
-    setOpen(true);
+    setDrawerOpen(true);
     document
       .getElementById(`task-${task.id}`)
       ?.scrollIntoView({ block: "center" });
   }, [focused, task.id]);
+  useEffect(() => {
+    if (!closable(task.status)) setClosing(false);
+  }, [task.status]);
   const watcher = task.provider === Provider.WATCH;
   const holdable =
     !!onHold &&
@@ -150,86 +162,48 @@ export function WishTask({
         .map((id) => codes?.get(id))
         .filter((code): code is string => !!code);
   const tone = taskTone(task, forkedAs);
+  const statusLabel = taskStatusText(task, forkedAs);
   // How long it runs comes first: ticking while it runs, how long it ran once ended.
   const now = useNow(!taskFinished(task.status) && !!task.startTime);
   const time = taskTime(task, now);
   const work = taskWork(task, codes);
-  return (
-    <article
-      className={`wish-task tone-${tone} ${open ? "open" : ""} ${focused ? "focused" : ""}`}
-      id={`task-${task.id}`}
-    >
-      <div className="wish-task-row">
-        <button
-          className="wish-task-heading"
-          onClick={() => setOpen(!open)}
-          aria-expanded={open}
-        >
-          <StatusBadge tone={tone} label={taskStatusText(task, forkedAs)} />
-          <span className="agent-code">{task.code}</span>
-          {project?.name && (
-            <span className="task-project">{project.name}</span>
-          )}
-          {/* Cut to the room left: the whole title shows on hover. */}
-          <strong title={task.title}>{task.title}</strong>
-          <span className="wish-task-meta">
-            {origin}
-            {time.text && (
-              <span className="task-time" title={time.title}>
-                {time.text}
-              </span>
-            )}
-            <TaskUsage usage={task.usage} />
-            {task.status === TaskStatus.RUNNING && task.resources?.readTime && (
-              <span
-                className="task-usage"
-                title={resourcesDetail(task.resources, true)}
-              >
-                {resourcesNow(task.resources)}
-              </span>
-            )}
-          </span>
-          <ChevronDown size={14} className={open ? "rotated" : ""} />
-        </button>
-        {holdable && (
-          <button
-            className="icon-button"
-            onClick={() => onHold?.(!paused)}
-            title={t(paused ? "task.resume_detail" : "task.pause_detail")}
-            aria-label={t(paused ? "task.resume" : "task.pause")}
-          >
-            {paused ? <CirclePlay size={14} /> : <CirclePause size={14} />}
-          </button>
-        )}
-        {stoppable && (
-          <button
-            className="icon-button"
-            onClick={onStop}
-            title={t("task.stop")}
-            aria-label={t("task.stop")}
-          >
-            <CircleStop size={14} />
-          </button>
-        )}
-        {onDone && closable(task.status) && (
-          <button
-            className="icon-button"
-            onClick={() => setClosing(!closing)}
-            title={t("task.mark_done_detail")}
-            aria-label={t("task.mark_done")}
-            aria-expanded={closing}
-          >
-            <CheckCircle2 size={14} />
-          </button>
-        )}
-      </div>
+  const closeDrawer = () => {
+    pendingDrawerAction.current = null;
+    setDrawerOpen(false);
+    setClosing(false);
+  };
+  const closeDrawerFor = (action: () => void) => {
+    if (!drawerOpen) {
+      action();
+      return;
+    }
+    pendingDrawerAction.current = action;
+    setDrawerOpen(false);
+    setClosing(false);
+  };
+  const completeDone = async (note: string) => {
+    if (!onDone) return;
+    await onDone(note);
+    setDoneDraft("");
+  };
+  const hasSummary =
+    !!decision ||
+    !!task.closed ||
+    !!work ||
+    !!machineWait ||
+    !!task.waitReason ||
+    !!task.error ||
+    after.length > 0 ||
+    (watcher && !!task.lastLine);
+  const summary = hasSummary ? (
+    <>
       {decision && onDecision && (
         <p className="wish-task-note wish-task-decision">
-          <DecisionLink decision={decision} onOpen={onDecision} />
+          <DecisionLink
+            decision={decision}
+            onOpen={() => closeDrawerFor(onDecision)}
+          />
         </p>
-      )}
-      {closing && onDone && closable(task.status) && (
-        <DoneBox onDone={onDone} onCancel={() => setClosing(false)} />
       )}
       {task.closed && (
         <p className="wish-task-note wish-task-closed">
@@ -243,7 +217,13 @@ export function WishTask({
             <>
               {": "}
               {t("task.continued_in")}{" "}
-              <TaskLink code={task.closed.continuedIn} codes={codes} />
+              <TaskLink
+                code={task.closed.continuedIn}
+                codes={codes}
+                onOpen={() =>
+                  closeDrawerFor(() => jump(`task-${task.closed?.continuedIn}`))
+                }
+              />
             </>
           ) : (
             task.closed.note && `: ${task.closed.note}`
@@ -262,6 +242,7 @@ export function WishTask({
           {onStart && (
             <button
               className="button secondary small"
+              type="button"
               onClick={onStart}
               title={t("task.start_anyway_detail")}
             >
@@ -285,12 +266,158 @@ export function WishTask({
           </p>
         )
       )}
-      {open && (
-        <TaskBody task={task} forkOf={codes?.get(task.forkOf ?? "") ?? ""} />
-      )}
-      {open && task.status === TaskStatus.RUNNING && !watcher && (
-        <SendBox onSend={onSend} />
-      )}
+    </>
+  ) : undefined;
+  return (
+    <article
+      className={`wish-task tone-${tone} ${compact ? "compact" : ""} ${focused ? "focused" : ""}`}
+      id={`task-${task.id}`}
+    >
+      <div className="wish-task-row">
+        <button
+          ref={rowRef}
+          className="wish-task-heading"
+          type="button"
+          onClick={() => setDrawerOpen(true)}
+          aria-haspopup="dialog"
+          aria-controls={drawerOpen ? drawerId : undefined}
+          aria-expanded={drawerOpen}
+        >
+          {compact ? (
+            <StatusIndicator tone={tone} label={statusLabel} />
+          ) : (
+            <StatusBadge tone={tone} label={statusLabel} />
+          )}
+          <span className="agent-code">{task.code}</span>
+          <span
+            className="task-project"
+            title={project?.name}
+            aria-hidden={project?.name ? undefined : true}
+          >
+            {project?.name ?? ""}
+          </span>
+          {/* Cut to the room left: the whole title shows on hover. */}
+          <strong title={task.title}>{task.title}</strong>
+          <span className="wish-task-meta">
+            <span className="task-metric task-metric-time task-time">
+              {origin}
+              {time.text && <span title={time.title}>{time.text}</span>}
+            </span>
+            <span
+              className="task-metric task-metric-usage"
+              title={usageDetail(task.usage)}
+            >
+              <TaskUsage usage={task.usage} />
+            </span>
+            <span
+              className="task-metric task-metric-resource"
+              title={
+                task.status === TaskStatus.RUNNING && task.resources?.readTime
+                  ? resourcesDetail(task.resources, true)
+                  : undefined
+              }
+            >
+              {task.status === TaskStatus.RUNNING &&
+                task.resources?.readTime && (
+                  <span
+                    className="task-usage"
+                    title={resourcesDetail(task.resources, true)}
+                  >
+                    {resourcesNow(task.resources)}
+                  </span>
+                )}
+            </span>
+          </span>
+        </button>
+        <div className="wish-task-actions">
+          {holdable && (
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => onHold?.(!paused)}
+              title={t(paused ? "task.resume_detail" : "task.pause_detail")}
+              aria-label={t(paused ? "task.resume" : "task.pause")}
+            >
+              {paused ? <CirclePlay size={14} /> : <CirclePause size={14} />}
+            </button>
+          )}
+          {stoppable && (
+            <button
+              className="icon-button"
+              type="button"
+              onClick={onStop}
+              title={t("task.stop")}
+              aria-label={t("task.stop")}
+            >
+              <CircleStop size={14} />
+            </button>
+          )}
+          {onDone && closable(task.status) && (
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => {
+                setDrawerOpen(true);
+                setClosing(true);
+              }}
+              title={t("task.mark_done_detail")}
+              aria-label={t("task.mark_done")}
+              aria-expanded={drawerOpen && closing}
+            >
+              <CheckCircle2 size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+      <TaskDrawer
+        id={drawerId}
+        open={drawerOpen}
+        task={task}
+        project={project}
+        tone={tone}
+        statusLabel={statusLabel}
+        summary={summary}
+        body={
+          <TaskBody task={task} forkOf={codes?.get(task.forkOf ?? "") ?? ""} />
+        }
+        doneForm={
+          closing && onDone && closable(task.status) ? (
+            <DoneBox
+              note={doneDraft}
+              onNoteChange={setDoneDraft}
+              onDone={completeDone}
+              onCancel={() => setClosing(false)}
+            />
+          ) : undefined
+        }
+        sendBox={
+          task.status === TaskStatus.RUNNING && !watcher ? (
+            <SendBox
+              draft={messageDraft}
+              onDraftChange={setMessageDraft}
+              onSend={onSend}
+            />
+          ) : undefined
+        }
+        returnFocusRef={rowRef}
+        holdable={holdable}
+        paused={paused}
+        stoppable={stoppable}
+        canDone={!!onDone && closable(task.status)}
+        onClose={() => {
+          closeDrawer();
+        }}
+        onClosed={() => {
+          const action = pendingDrawerAction.current;
+          pendingDrawerAction.current = null;
+          if (!action) return;
+          action();
+          return false;
+        }}
+        onHold={onHold}
+        onStop={onStop}
+        onRequestDone={() => setClosing(true)}
+      />
     </article>
   );
 }
@@ -353,9 +480,11 @@ export function taskWork(
 function TaskLink({
   code,
   codes,
+  onOpen,
 }: {
   code: string;
   codes?: ReadonlyMap<string, string>;
+  onOpen?: () => void;
 }) {
   const id = [...(codes ?? [])].find(([, c]) => c === code)?.[0];
   if (!id) return <span className="agent-code">{code}</span>;
@@ -363,7 +492,10 @@ function TaskLink({
     <button
       type="button"
       className="text-button agent-code task-link"
-      onClick={() => jump(`task-${id}`)}
+      onClick={() => {
+        if (onOpen) onOpen();
+        else jump(`task-${id}`);
+      }}
     >
       {code}
     </button>
@@ -381,13 +513,16 @@ export function closable(status: TaskStatus): boolean {
 
 // DoneBox marks the task done, with an optional note; djinn's refusal shows as a toast, and the box stays.
 function DoneBox({
+  note,
+  onNoteChange,
   onDone,
   onCancel,
 }: {
+  note: string;
+  onNoteChange: (note: string) => void;
   onDone: (note: string) => Promise<unknown>;
   onCancel: () => void;
 }) {
-  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -404,7 +539,7 @@ function DoneBox({
     <form className="wish-task-send wish-task-done" onSubmit={submit}>
       <input
         value={note}
-        onChange={(event) => setNote(event.target.value)}
+        onChange={(event) => onNoteChange(event.target.value)}
         placeholder={t("task.done_note")}
         aria-label={t("task.done_note")}
         disabled={busy}
@@ -515,8 +650,16 @@ function clock(event: TaskEvent): string {
 }
 
 // SendBox sends the running worker an instruction; djinn's refusal shows as a toast, and the text stays.
-function SendBox({ onSend }: { onSend: (text: string) => Promise<unknown> }) {
-  const [text, setText] = useState("");
+function SendBox({
+  onSend,
+  draft = "",
+  onDraftChange,
+}: {
+  onSend: (text: string) => Promise<unknown>;
+  draft?: string;
+  onDraftChange?: (text: string) => void;
+}) {
+  const [text, setText] = useState(draft);
   const [busy, setBusy] = useState(false);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -526,6 +669,7 @@ function SendBox({ onSend }: { onSend: (text: string) => Promise<unknown> }) {
     try {
       await onSend(message);
       setText("");
+      onDraftChange?.("");
     } catch {
       // The toast says why.
     } finally {
@@ -536,7 +680,10 @@ function SendBox({ onSend }: { onSend: (text: string) => Promise<unknown> }) {
     <form className="wish-task-send" onSubmit={submit}>
       <input
         value={text}
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => {
+          setText(event.target.value);
+          onDraftChange?.(event.target.value);
+        }}
         placeholder={t("task.message_placeholder")}
         aria-label={t("task.message_placeholder")}
         disabled={busy}

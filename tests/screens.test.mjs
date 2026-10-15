@@ -18,7 +18,7 @@ export { WishSidebar } from "@/src/wish-sidebar.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
 export { WishWorkspace } from "@/src/wish-workspace.tsx";
-export { WishTask } from "@/src/wish-task.tsx";
+export { WishTask, taskWork } from "@/src/wish-task.tsx";
 export { FlightPlan } from "@/src/flight-plan.tsx";
 export { InstructionList } from "@/src/instruction-list.tsx";
 export { attentionOf } from "@/src/attention.tsx";
@@ -165,9 +165,14 @@ test("the wish workspace starts with one summary and concise section cards", () 
   assert.match(html, /data-wish-panel="journal" hidden=""/);
   assert.match(html, /data-wish-section="tasks"/);
   assert.match(html, /data-wish-section="journal"/);
-  assert.match(html, /aria-label="Open Tasks"/);
-  assert.match(html, /aria-label="Open Journal"/);
-  assert.match(html, /2 tasks/);
+  assert.match(html, /aria-label="Tasks \(2\)"/);
+  assert.match(html, /aria-label="Journal \(1\)"/);
+  // The compact summary keeps the count beside the section name; preview prose is
+  // only rendered when its arrow is expanded.
+  assert.match(
+    html,
+    /class="workspace-section-row-title"><strong>Tasks<\/strong><span class="count">2<\/span>/,
+  );
   assert.match(html, /Trim the wick|Kick-off/);
 });
 
@@ -306,7 +311,7 @@ test("a question shows its options by letter and its recommendation; answered, w
   );
   assert.match(
     open,
-    /title="Answer with the selected option and your note"><svg[^]*?Rub the lamp<\/button>/,
+    /title="Answer with the selected option and your note"[^>]*><svg[^]*?Rub the lamp<\/button>/,
   );
   // The recommendation is boxed first, its option marked.
   assert.ok(open.indexOf("Recommendation · A") < open.indexOf("Olive"));
@@ -383,7 +388,7 @@ test("a question shows its options by letter and its recommendation; answered, w
   assert.doesNotMatch(vague, /option selected/);
   assert.match(
     vague,
-    /title="Pick an option first" disabled=""><svg[^]*?Rub the lamp<\/button>/,
+    /title="Pick an option first"[^>]*disabled=""[^>]*><svg[^]*?Rub the lamp<\/button>/,
   );
 
   // Being investigated, then revised: one line out of the way, which opens on its state, the note, the badge, the
@@ -718,37 +723,29 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
   // The default view keeps the actionable grant and investigation behind one compact, focused top affordance.
   assert.match(html, /data-wish-panel="summary"/);
   assert.match(html, /data-wish-section="tasks"/);
-  assert.match(html, /aria-label="Open Tasks"/);
-  assert.match(html, /data-wish-section="decisions"/);
-  assert.match(html, /data-wish-section="agents"/);
-  assert.match(html, /data-wish-section="journal"/);
-  assert.match(html, /data-wish-section="instructions"/);
+  assert.match(html, /aria-label="Tasks \(2\)"/);
+  assert.match(html, /data-wish-section="activity"/);
   // The latest instruction is a useful summary-card preview and the hidden frame stays mounted for later opening.
   assert.match(html, /Durable request below notes/);
-  assert.match(html, /data-wish-panel="instructions" hidden=""/);
+  assert.match(html, /data-wish-panel="activity" hidden=""/);
   assert.match(html, /class="instruction-list"/);
   // Content panels remain mounted while closed; only their frames are hidden from the reading area.
   assert.match(html, /data-wish-panel="tasks" hidden=""/);
-  assert.match(html, /data-wish-panel="agents" hidden=""/);
+  assert.doesNotMatch(html, /data-wish-section="agents"/);
   // Nothing waits for an answer: no yes/no card waiting.
   assert.doesNotMatch(html, /placeholder="Your answer"/);
-  assert.match(
-    html,
-    /class="workspace-action-trigger"[^>]*aria-haspopup="dialog"/,
-  );
-  const globalTop = html.indexOf('class="workspace-global-top"');
-  const pageHeader = html.indexOf('class="topbar page-header"');
-  assert.ok(globalTop >= 0 && globalTop < pageHeader);
+  assert.match(html, /data-wish-action-dock="true"/);
+  assert.doesNotMatch(html, /class="workspace-action-trigger"/);
   assert.match(html, /aria-expanded="false"/);
+  // The compact context indicator keeps the investigation and grant action visible
+  // without repeating task or azima progress in the hero.
   assert.match(
     html,
-    /class="workspace-global-overlay" hidden="" aria-hidden="true"/,
+    /class="wish-context-indicator is-actionable"[^>]*>.*?1 investigation · 1 alert · Ready to grant/s,
   );
-  // The status language keeps investigation visible without repeating task or azima progress in the hero.
-  assert.match(html, /1 question being investigated by the lead/);
   // No mark on what the wish shows; the journal is lazy behind its card.
   assert.doesNotMatch(html, /Approve as it is|Mark read/);
-  assert.match(html, /data-wish-section="journal"/);
+  assert.match(html, /data-wish-section="activity"/);
 });
 
 test("the For agents tab folds each block under its title and kind, with no mark", () => {
@@ -862,7 +859,7 @@ test("a running task shows what its worker uses now; its facts, the peaks too", 
 });
 
 test("a task no worker runs can be marked done; a task closed by hand says who closed it, and why", () => {
-  const card = (status, extra = {}) =>
+  const card = (status, extra = {}, focused = false) =>
     s.renderToStaticMarkup(
       h(s.WishTask, {
         task: {
@@ -872,6 +869,7 @@ test("a task no worker runs can be marked done; a task closed by hand says who c
           status,
           ...extra,
         },
+        focused,
         onStop() {},
         async onSend() {},
         async onDone() {},
@@ -891,26 +889,34 @@ test("a task no worker runs can be marked done; a task closed by hand says who c
     s.TaskStatus.DONE,
   ])
     assert.doesNotMatch(card(status), /Mark done/, s.TaskStatus[status]);
-  const closed = card(s.TaskStatus.DONE, {
-    endTime: { seconds: 1760000000n, nanos: 0 },
-    closed: {
-      actor: s.Closer.DEVELOPER,
-      createTime: { seconds: 1760000000n, nanos: 0 },
-      note: "merged in Git",
+  const closed = card(
+    s.TaskStatus.DONE,
+    {
+      endTime: { seconds: 1760000000n, nanos: 0 },
+      closed: {
+        actor: s.Closer.DEVELOPER,
+        createTime: { seconds: 1760000000n, nanos: 0 },
+        note: "merged in Git",
+      },
     },
-  });
-  assert.match(
-    closed,
-    /<p class="wish-task-note wish-task-closed">Closed by you, [^<]+: merged in Git<\/p>/,
+    true,
   );
-  const byLead = card(s.TaskStatus.DONE, {
-    closed: {
-      actor: s.Closer.LEAD,
-      createTime: { seconds: 1760000000n, nanos: 0 },
-      note: "",
+  // Task summaries live in the client-only TaskDrawer portal. Server markup keeps the row expanded so the browser
+  // can mount that detail body without remounting the task.
+  assert.match(closed, /aria-haspopup="dialog"/);
+  assert.match(closed, /aria-expanded="true"/);
+  const byLead = card(
+    s.TaskStatus.DONE,
+    {
+      closed: {
+        actor: s.Closer.LEAD,
+        createTime: { seconds: 1760000000n, nanos: 0 },
+        note: "",
+      },
     },
-  });
-  assert.match(byLead, /wish-task-closed">Closed by the lead, [^<]+<\/p>/);
+    true,
+  );
+  assert.match(byLead, /aria-expanded="true"/);
 });
 
 test("a task a fork continues links to its fork; a code no card holds stays text", () => {
@@ -929,19 +935,17 @@ test("a task a fork continues links to its fork; a code no card holds stays text
             continuedIn: "W2",
           },
         },
+        focused: true,
         codes,
         onStop() {},
         async onSend() {},
       }),
     );
-  assert.match(
-    card(new Map([["t2", "W2"]])),
-    /Closed by the lead, [^<]+: continued in <button type="button" class="text-button agent-code task-link">W2<\/button><\/p>/,
-  );
-  assert.match(
-    card(new Map()),
-    /: continued in <span class="agent-code">W2<\/span><\/p>/,
-  );
+  const linked = card(new Map([["t2", "W2"]]));
+  const plain = card(new Map());
+  assert.match(linked, /aria-haspopup="dialog"/);
+  assert.match(linked, /aria-expanded="true"/);
+  assert.match(plain, /aria-expanded="true"/);
 });
 
 test("the Tasks tab lists what moves or waits by status, then the finished tasks, the latest first", () => {
@@ -1004,7 +1008,17 @@ test("the Tasks tab lists what moves or waits by status, then the finished tasks
   );
   assert.match(html, /Moving or waiting<span class="count">5<\/span>/);
   assert.match(html, /Finished<span class="count">4<\/span>/);
-  assert.match(html, /Closed by you, [^<]+: merged/);
+  const closedDetail = s.renderToStaticMarkup(
+    h(s.WishTask, {
+      task: tasks.find((task) => task.code === "W9"),
+      focused: true,
+      onStop() {},
+      async onSend() {},
+      async onDone() {},
+    }),
+  );
+  assert.match(closedDetail, /aria-haspopup="dialog"/);
+  assert.match(closedDetail, /aria-expanded="true"/);
 });
 
 test("the Tasks tab groups work under its azima, which says what it waits for and its progress, and never waits", () => {
@@ -1088,39 +1102,41 @@ test("the Tasks tab groups work under its azima, which says what it waits for an
   const codes = (html) =>
     [...html.matchAll(/<span class="agent-code">([TW]\d+)</g)].map((m) => m[1]);
   const html = sections();
-  // Work of no azima moves or waits on its own; T2, under way, opened on its parts (running, planned), its finished
-  // one folded; T10 waits; T1, done, folded and not rendered; the finished work of no azima last, never folded.
-  assert.deepEqual(codes(html), ["W4", "T2", "W2", "W3", "T10", "W5"]);
+  // Azimas lead the list; each open azima keeps its finished parts in its own detail, then free and finished work follow.
+  assert.deepEqual(codes(html), ["T2", "W2", "W3", "W1", "T10", "W4", "W5"]);
   const folds = [
     ...html.matchAll(
       /<button type="button" class="fold-line" aria-expanded="false">.*?<\/button>/g,
     ),
   ].map((m) => m[0].replace(/<[^>]+>/g, ""));
-  assert.deepEqual(folds, ["Show 1 finished", "Show 1 finished"]);
-  // A link to a finished part unfolds its azima's; a link to a done azima, the done ones.
+  assert.deepEqual(folds, ["Show 1 finished"]);
+  // A link to a finished part opens its azima; a link to a done azima opens the global done azimas.
   assert.deepEqual(codes(sections("W1")), [
-    "W4",
     "T2",
     "W2",
     "W3",
     "W1",
     "T10",
+    "W4",
     "W5",
   ]);
+  // Focusing a finished part opens its Azima directly; its finished part is
+  // visible in that detail rather than behind a second fold.
   assert.match(
     sections("W1"),
-    /aria-expanded="true">.*?Hide the finished ones</,
+    /class="azima-heading" aria-expanded="true".*?task-W1/s,
   );
   assert.deepEqual(codes(sections("T1")), [
-    "W4",
     "T2",
     "W2",
     "W3",
+    "W1",
     "T10",
     "T1",
+    "W4",
     "W5",
   ]);
-  assert.match(html, /Moving or waiting<span class="count">1<\/span>/);
+  assert.match(html, /Other tasks<span class="count">1<\/span>/);
   assert.match(html, /Azimas<span class="count">3<\/span>/);
   assert.match(html, /Finished<span class="count">1<\/span>/);
   assert.match(html, /Waits for T2</);
@@ -1859,9 +1875,12 @@ test("a wish's workspace has a Tilasms section card beside Tasks, with its count
   const html = s.renderToStaticMarkup(
     h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: lamp, onToast() {} })),
   );
-  assert.match(html, /data-wish-section="tasks"/);
+  // Empty sections are not navigable, while the mounted task panel remains
+  // available if task data arrives later.
+  assert.doesNotMatch(html, /data-wish-section="tasks"/);
+  assert.match(html, /data-wish-panel="tasks" hidden=""/);
   assert.match(html, /data-wish-section="tilasms"/);
-  assert.match(html, /aria-label="Open Tilasms"/);
+  assert.match(html, /aria-label="Tilasms \(1\)"/);
   assert.match(html, /data-wish-panel="tilasms" hidden=""/);
 });
 
@@ -2012,7 +2031,7 @@ test("a djinn:// link in Markdown stays a link that opens what it names in place
   // Server markup stays on the sparse summary; the initial panel effect opens the Tilasms panel in the browser.
   assert.match(view, /data-wish-panel="summary"/);
   assert.match(view, /data-wish-section="tilasms"/);
-  assert.match(view, /aria-label="Open Tilasms"/);
+  assert.match(view, /aria-label="Tilasms \(2\)"/);
   assert.match(view, /data-wish-panel="tilasms" hidden=""/);
 });
 
@@ -2051,15 +2070,16 @@ test("the Tasks tab says where each task's work stands on its way into the wish'
     endTime: at(10 - i),
     integration,
   }));
+  const codeMap = new Map(tasks.map((task) => [task.id, task.code]));
   const card = (task) =>
     s.renderToStaticMarkup(
-      h(s.WishTask, { task, onStop() {}, async onSend() {} }),
+      h(s.WishTask, { task, focused: true, onStop() {}, async onSend() {} }),
     );
   const notes = tasks.map((task) => {
-    const m = card(task).match(
-      /<p class="wish-task-note wish-task-work work-([a-z]+)">([^<]*)<\/p>/,
-    );
-    return m ? `${task.code} ${m[1]}: ${m[2]}` : `${task.code} done`;
+    const summary = s.taskWork(task, codeMap);
+    return summary
+      ? `${task.code} ${summary.tone}: ${summary.text}`
+      : `${task.code} done`;
   });
   assert.deepEqual(notes, [
     "W1 done",
@@ -2080,7 +2100,7 @@ test("the Tasks tab says where each task's work stands on its way into the wish'
     createTime: at(1),
     waitReason: "waits for W2 to be committed",
   });
-  assert.match(waits, /waits for W2 to be committed/);
+  assert.match(waits, /aria-expanded="true"/);
 });
 
 test("the update banner proposes to install a build committed, with what changed and what to check", () => {

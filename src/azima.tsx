@@ -16,8 +16,7 @@ import {
 import { compareCodes, finishedTask } from "./data/flight";
 import type { Tone } from "./data/format";
 import { t, type TextKey } from "./i18n";
-import { StatusBadge } from "./status";
-import { Fold } from "./task-tabs";
+import { StatusBadge, StatusIndicator } from "./status";
 
 // azimaTone and azimaLabel say where an azima stands: done in green, under way in blue while a worker runs on one of
 // its parts, its work done and its proof awaited in olive, planned grey otherwise. Never orange: an azima waits for no
@@ -93,6 +92,8 @@ export function AzimaCard({
   origin,
   render,
   focus = "",
+  compact = false,
+  workspace = false,
   onValidate,
 }: {
   azima: Task;
@@ -105,13 +106,20 @@ export function AzimaCard({
   render: (task: Task) => ReactNode;
   // What a link brings into sight: the azima, or one of its parts, opens on it.
   focus?: string;
+  // The wish workspace uses a dense icon-only state column; other azima lists keep the full badge.
+  compact?: boolean;
+  // Workspace azimas start folded; an explicit focus/deep link still opens its matching azima.
+  workspace?: boolean;
   // Validates the azima once its work is done: it is marked done, by you.
   onValidate?: () => void;
 }) {
   const state = azimaState(azima);
   const holds = focus === azima.id || parts.some((x) => x.id === focus);
   const [open, setOpen] = useState(
-    holds || (state !== AzimaState.DONE && parts.some((x) => !finishedTask(x))),
+    holds ||
+      (!workspace &&
+        state !== AzimaState.DONE &&
+        parts.some((x) => !finishedTask(x))),
   );
   useEffect(() => {
     if (holds) setOpen(true);
@@ -128,6 +136,7 @@ export function AzimaCard({
     .sort(compareCodes);
   const done = parts.filter((x) => x.status === TaskStatus.DONE).length;
   const proof = state === AzimaState.AWAITING_PROOF;
+  const statusLabel = t(labels[state]);
   // On hover, what validating it takes: each box left and what it needs, else that every task is finished.
   const needs = proof
     ? [
@@ -140,46 +149,81 @@ export function AzimaCard({
         t("azima.how_to_validate"),
       ].join("\n")
     : undefined;
+  const toggleOpen = () => setOpen((value) => !value);
   return (
     <section
-      className={`azima-card tone-${azimaTone(azima)} ${open ? "open" : ""}`}
+      className={`azima-card tone-${azimaTone(azima)} ${compact ? "compact" : ""} ${open ? "open" : ""}`}
       id={`task-${azima.id}`}
       aria-label={`${azima.code} ${azima.title}`}
     >
-      <button
-        className="azima-heading"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-      >
-        <StatusBadge
-          tone={azimaTone(azima)}
-          label={t(labels[state])}
-          title={needs}
-        />
-        <span className="agent-code">{azima.code}</span>
-        <strong title={azima.title}>{azima.title}</strong>
-        <span className="azima-meta">
-          {origin}
-          {proof && (
-            <span className="azima-needs" title={needs}>
-              {proofWords(azima.proofNeeds)}
-            </span>
+      <div className="azima-heading-row">
+        <button
+          className="azima-heading"
+          onClick={toggleOpen}
+          aria-expanded={open}
+        >
+          {compact ? (
+            <StatusIndicator
+              tone={azimaTone(azima)}
+              label={statusLabel}
+              title={needs ?? statusLabel}
+            />
+          ) : (
+            <StatusBadge
+              tone={azimaTone(azima)}
+              label={statusLabel}
+              title={needs}
+            />
           )}
-          {state !== AzimaState.DONE && waits.length > 0 && (
-            <span
-              className="azima-waits"
-              title={t("page.after", { tasks: after.join(", ") })}
-            >
-              {t("azima.waits", { tasks: waits.join(", ") })}
+          <span className="agent-code">{azima.code}</span>
+          <strong title={azima.title}>{azima.title}</strong>
+          <span className="azima-meta">
+            <span className="azima-secondary-meta">
+              {origin}
+              {proof && (
+                <span className="azima-needs" title={needs}>
+                  {proofWords(azima.proofNeeds)}
+                </span>
+              )}
+              {state !== AzimaState.DONE && waits.length > 0 && (
+                <span
+                  className="azima-waits"
+                  title={t("page.after", { tasks: after.join(", ") })}
+                >
+                  {t("azima.waits", { tasks: waits.join(", ") })}
+                </span>
+              )}
+              {state !== AzimaState.DONE &&
+                waits.length === 0 &&
+                after.length > 0 && (
+                  <span
+                    className="azima-after"
+                    title={t("page.after", { tasks: after.join(", ") })}
+                  >
+                    {t("page.after", { tasks: after.join(", ") })}
+                  </span>
+                )}
             </span>
-          )}
-          {state !== AzimaState.DONE &&
-            waits.length === 0 &&
-            after.length > 0 && (
-              <span className="azima-after">
-                {t("page.after", { tasks: after.join(", ") })}
-              </span>
-            )}
+          </span>
+        </button>
+        {proof && onValidate && (
+          <button
+            type="button"
+            className="button azima-validate"
+            onClick={onValidate}
+            title={needs}
+          >
+            <BadgeCheck size={12} aria-hidden="true" />
+            {t("azima.validate")}
+          </button>
+        )}
+        <button
+          type="button"
+          className="azima-heading-tail"
+          onClick={toggleOpen}
+          aria-expanded={open}
+          aria-label={`${azima.code} ${azima.title}`}
+        >
           {parts.length > 0 && (
             <span
               className="azima-progress"
@@ -191,55 +235,17 @@ export function AzimaCard({
               {done}/{parts.length}
             </span>
           )}
-        </span>
-        <ChevronDown size={14} className={open ? "rotated" : ""} />
-      </button>
+          <ChevronDown size={14} className={open ? "rotated" : ""} />
+        </button>
+      </div>
       {open && (
         <div className="azima-parts">
-          {proof && (
-            <div className="azima-proof">
-              <p>{t("azima.to_validate_title")}</p>
-              {azima.proofNeeds.length ? (
-                <ul>
-                  {azima.proofNeeds.map((need, i) => (
-                    <li key={i}>
-                      {need.box}{" "}
-                      <span className="muted-text">
-                        {t("azima.needs", { needs: need.needs })}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="muted-text">{t("azima.no_boxes")}</p>
-              )}
-              <p className="muted-text">{t("azima.how_to_validate")}</p>
-              {onValidate && (
-                <button className="button accent small" onClick={onValidate}>
-                  <BadgeCheck size={14} />
-                  {t("azima.validate")}
-                </button>
-              )}
-            </div>
-          )}
           {parts.length === 0 && (
             <p className="muted-text">{t("azima.no_parts")}</p>
           )}
-          {/* Every part finished, opening the azima was the click: they show. */}
-          {moving.length === 0 ? (
-            finished.map(render)
-          ) : (
-            <>
-              {moving.map(render)}
-              <Fold
-                id={`parts:${azima.id}`}
-                count={finished.length}
-                open={finished.some((x) => x.id === focus)}
-              >
-                {finished.map(render)}
-              </Fold>
-            </>
-          )}
+          {/* Every part is visible inside the one azima accordion; only done azimas fold globally. */}
+          {moving.map(render)}
+          {finished.map(render)}
         </div>
       )}
     </section>

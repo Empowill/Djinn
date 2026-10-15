@@ -148,3 +148,180 @@
   padding-top: 6px;
   border-top: 1px solid var(--line);
 }
+
+/* The wish workspace keeps tilasms on the same compact reading surface as tasks. The legacy tab above retains its
+   card grid and inline viewer; only the opt-in workspace variant uses these flat rows and the shared settings drawer. */
+.tilasms.workspace-variant.has-open {
+  display: block;
+}
+
+.tilasms.workspace-variant .tilasm-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.tilasms.workspace-variant .tilasm-row {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  border-radius: 0;
+  background: transparent;
+}
+
+.tilasms.workspace-variant .tilasm-row:last-child {
+  border-bottom: 0;
+}
+
+.tilasms.workspace-variant .tilasm-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px;
+  border-radius: 0;
+  transition: background-color 140ms ease;
+}
+
+.tilasms.workspace-variant .tilasm-row:hover .tilasm-line,
+.tilasms.workspace-variant .tilasm-row:focus-within .tilasm-line {
+  background: var(--surface-soft);
+}
+
+.tilasms.workspace-variant .tilasm-primary {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) minmax(0, 26ch);
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tilasms.workspace-variant .tilasm-primary:focus-visible {
+  outline: 1px solid var(--line-strong);
+  outline-offset: -1px;
+}
+
+.tilasms.workspace-variant .tilasm-primary > .tilasm-code {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tilasms.workspace-variant .tilasm-primary > .tilasm-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tilasms.workspace-variant .tilasm-primary > .tilasm-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tilasms.workspace-variant .tilasm-primary .tilasm-cites {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tilasms.workspace-variant .tilasm-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 24px);
+  width: 52px;
+  min-width: 52px;
+  margin: 0;
+  gap: 4px;
+  justify-content: end;
+}
+
+.tilasms.workspace-variant .tilasm-actions > .icon-button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+
+.workspace-tilasm-detail {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.workspace-tilasm-detail-meta {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--muted);
+}
+
+.workspace-tilasm-detail .tilasm-frame {
+  height: min(78vh, 820px);
+  min-height: 420px;
+  border: 1px solid var(--line);
+}
+
+.workspace-tilasm-detail .tilasm-history {
+  margin: 0;
+  padding-top: 12px;
+}
+
+.wish-settings-drawer:has(.workspace-tilasm-detail) {
+  width: min(900px, 100vw);
+}
+
+.wish-settings-drawer:has(.workspace-tilasm-detail)
+  .wish-settings-drawer-content {
+  padding: 20px 24px;
+}
+
+@media (max-width: 700px) {
+  .tilasms.workspace-variant .tilasm-primary {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .tilasms.workspace-variant .tilasm-primary > .tilasm-meta {
+    display: none;
+  }
+
+  .workspace-tilasm-detail .tilasm-frame {
+    height: min(68vh, 640px);
+    min-height: 280px;
+  }
+
+  .wish-settings-drawer:has(.workspace-tilasm-detail)
+    .wish-settings-drawer-content {
+    padding: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tilasms.workspace-variant .tilasm-line {
+    transition: none;
+  }
+}

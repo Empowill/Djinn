@@ -70,11 +70,11 @@ test("a task marked done leaves what moves and tops the finished tasks", async (
     await openWorkspaceSection(page, "tasks");
     const tasksSection = page.locator('[data-wish-section="tasks"]');
     await expect(tasksSection.locator("strong")).toHaveText("Tasks");
-    await expect(tasksSection.locator(":scope > .count")).toHaveText("3");
-    const moving = page.locator(".tasks-moving");
-    const finished = page.locator(".tasks-finished");
-    await expect(moving.locator("h2")).toHaveText("Moving or waiting2");
-    await expect(finished.locator("h2")).toHaveText("Finished1");
+    await expect(tasksSection.locator(".count")).toHaveText("3");
+    const moving = page.locator(".tasks-free-moving");
+    const finished = page.locator(".tasks-free-finished");
+    await expect(moving.locator("h3")).toHaveText("In progress2");
+    await expect(finished.locator("h3")).toHaveText("Finished1");
     // Failed before planned; the finished task at the bottom.
     await expect(moving.locator(".wish-task").first()).toContainText(
       "Failed on a flaky test",
@@ -90,20 +90,25 @@ test("a task marked done leaves what moves and tops the finished tasks", async (
       hasText: "Failed on a flaky test",
     });
     await card.getByRole("button", { name: "Mark done" }).click();
-    await card
+    const drawer = page.locator("dialog.task-drawer-shell");
+    await expect(drawer).toBeVisible();
+    await drawer
       .getByLabel("Why, in a few words (optional)")
       .fill("merged in Git");
-    await card.getByRole("button", { name: "Mark done" }).last().click();
+    await drawer.locator('form button[type="submit"]').click();
 
     // It leaves the top section and tops the finished ones.
-    await expect(moving.locator("h2")).toHaveText("Moving or waiting1");
-    await expect(finished.locator("h2")).toHaveText("Finished2");
+    await expect(moving.locator("h3")).toHaveText("In progress1");
+    await expect(finished.locator("h3")).toHaveText("Finished2");
     await expect(card).toHaveCount(0);
     const first = finished.locator(".wish-task").first();
     await expect(first).toContainText("Failed on a flaky test");
-    await expect(first.locator(".wish-task-closed")).toContainText(
+    await first.getByRole("button", { name: /Failed on a flaky test/ }).click();
+    await expect(drawer).toBeVisible();
+    await expect(drawer.locator(".wish-task-closed")).toContainText(
       /Closed by you, .+: merged in Git/,
     );
+    await drawer.getByRole("button", { name: "Close" }).click();
     await expect(finished.locator(".wish-task").nth(1)).toContainText(
       "Merged long ago",
     );

@@ -122,19 +122,6 @@ async function pauseTestClock(page: Page) {
   await page.clock.pauseAt(CLOCK_START + 1000);
 }
 
-async function settleTerminalHandoff(page: Page) {
-  const creation = page.locator('[data-wish-entry="creation"]');
-  const wish = page.locator('[data-wish-entry="wish"]');
-  // The terminal dissolve callback uses bounded RAFs so the renderer can paint its endpoint before React removes the
-  // smoke. Advance those frames until the DOM commit is observable rather than assuming one clock duration flushes it.
-  for (let frame = 0; frame < 12; frame++) {
-    if ((await creation.count()) === 0) break;
-    await page.clock.runFor(16);
-  }
-  await expect(creation).toHaveCount(0);
-  await expect(wish).toHaveAttribute("data-wish-transition", "revealing");
-}
-
 async function settleWishFocus(page: Page) {
   const wish = page.locator('[data-wish-entry="wish"]');
   // WishApp schedules focus after the handoff commit. Let that frame run only after the removal/reveal commit is visible.
@@ -149,32 +136,13 @@ async function settleWishFocus(page: Page) {
   await expect(wish).toBeFocused();
 }
 
-async function startDissipation(page: Page) {
-  const smoke = page.locator('[data-wish-entry="creation"] .wish-smoke');
-  for (let frame = 0; frame < 8; frame++) {
-    const progress = Number(
-      await smoke.getAttribute("data-wish-smoke-dissolve"),
-    );
-    if (Number.isFinite(progress) && progress > 0) return;
-    await page.clock.runFor(16);
-  }
-  await expect
-    .poll(async () =>
-      Number(await smoke.getAttribute("data-wish-smoke-dissolve")),
-    )
-    .toBeGreaterThan(0);
-}
-
-test("successful make exits content before smoke dissipation and reveal", async ({
+test("successful make fades the form in place before revealing the created wish", async ({
   page,
 }) => {
   const { region, editor } = await openCreation(page);
   await pauseTestClock(page);
   const form = region.locator("form");
-  const smokeCanvas = region.locator(".wish-smoke-canvas");
-  await smokeCanvas.evaluate((canvas) =>
-    canvas.setAttribute("data-test-canvas-token", "creation-renderer"),
-  );
+  const smoke = region.locator(".wish-smoke");
   let release!: () => void;
   const responseReady = new Promise<void>((resolve) => {
     release = resolve;
@@ -186,250 +154,58 @@ test("successful make exits content before smoke dissipation and reveal", async 
     await route.fulfill(madeResponse());
   });
 
-  await editor.fill("Keep the smoke until the new wish is ready.");
-  const beforeMake = await page.locator(".main-shell").evaluate((shell) => {
-    const creation = shell.querySelector<HTMLElement>(
-      '[data-wish-entry="creation"]',
-    );
-    if (!creation) throw new Error("creation surface is missing");
-    const rect = creation.getBoundingClientRect();
-    return {
-      left: rect.left,
-      top: rect.top,
-      width: rect.width,
-      height: rect.height,
-    };
-  });
+  await editor.fill("Keep the form stable while the new wish is ready.");
+  const beforeMake = await region.boundingBox();
+  expect(beforeMake).toBeTruthy();
   await form.evaluate((element) => element.requestSubmit());
   await expect.poll(() => makeCalls).toBe(1);
-  // A repeated form submission during the network and transition phases must remain a no-op.
   await form.evaluate((element) => element.requestSubmit());
   await expect.poll(() => makeCalls).toBe(1);
   await expect(region).toHaveAttribute("aria-busy", "true");
-  await expect(region.locator(".wish-smoke")).toHaveCount(1);
   release();
 
-  await expect(page.locator('[data-wish-transition="departing"]')).toHaveCount(
-    1,
-  );
-  await expect(
-    page.locator('[data-wish-transition="departing"] .wish-smoke-canvas'),
-  ).toHaveAttribute("data-test-canvas-token", "creation-renderer");
-  await expect(
-    page.locator('[data-wish-transition="departing"] .wish-smoke'),
-  ).toHaveAttribute("data-wish-smoke-state", "surface");
-  await expect(
-    page.locator(
-      '[data-wish-transition="departing"] [data-wish-section="title"]',
-    ),
-  ).toHaveCSS("animation-name", "wish-exit-up-fade");
-  await expect(
-    page.locator('[data-wish-transition="departing"]'),
-  ).not.toHaveCSS("position", "fixed");
-  const departureLayout = await page
-    .locator('[data-wish-transition="departing"]')
-    .evaluate((creation) => {
-      const shell = creation.parentElement;
-      const staged = shell?.querySelector<HTMLElement>(
-        '[data-wish-entry="wish"][data-wish-transition="preparing"]',
-      );
-      if (!shell || !staged) throw new Error("staged wish is missing");
-      const readRect = (element: Element) => {
-        const rect = element.getBoundingClientRect();
-        return {
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height,
-        };
-      };
-      return {
-        creation: readRect(creation),
-        shell: readRect(shell),
-        staged: {
-          ...readRect(staged),
-          position: getComputedStyle(staged).position,
-          pointerEvents: getComputedStyle(staged).pointerEvents,
-          inert: staged.hasAttribute("inert"),
-        },
-      };
-    });
-  expect(departureLayout.creation).toEqual(beforeMake);
-  expect(departureLayout.staged).toMatchObject({
-    ...departureLayout.shell,
-    position: "absolute",
-    pointerEvents: "none",
-    inert: true,
-  });
-  await page.clock.runFor(360);
-  await expect(page.locator('[data-wish-transition="opening"]')).toHaveCount(1);
-  await expect(
-    page
-      .locator('[data-wish-transition="opening"] [data-wish-section]')
-      .first(),
-  ).toHaveCSS("opacity", "0");
-  await expect(
-    page.locator('[data-wish-transition="opening"] .wish-smoke'),
-  ).toHaveAttribute("data-wish-smoke-state", "expanded");
-  await expect(page.locator('[data-wish-entry="wish"]')).toHaveCSS(
-    "opacity",
-    "0",
-  );
-  await page.clock.runFor(730);
-  await expect
-    .poll(async () =>
-      page.locator('[data-wish-transition="opening"]').evaluate((element) => {
-        const rect = element.getBoundingClientRect();
-        return {
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height,
-          position: getComputedStyle(element).position,
-        };
-      }),
-    )
-    .toMatchObject({ left: 0, top: 0, position: "fixed" });
-  const viewport = await page.evaluate(() => ({
-    width: window.innerWidth,
-    height: window.innerHeight,
-  }));
-  await expect
-    .poll(async () =>
-      page.locator('[data-wish-transition="opening"]').evaluate((element) => {
-        const rect = element.getBoundingClientRect();
-        return { width: rect.width, height: rect.height };
-      }),
-    )
-    .toEqual({ width: viewport.width, height: viewport.height });
-  await expect
-    .poll(async () =>
-      page
-        .locator('[data-wish-transition="opening"] .wish-smoke')
-        .evaluate((element) => {
-          const rect = element.getBoundingClientRect();
-          return {
-            left: rect.left,
-            top: rect.top,
-            width: rect.width,
-            height: rect.height,
-          };
-        }),
-    )
-    .toEqual({
-      left: 0,
-      top: 0,
-      width: viewport.width,
-      height: viewport.height,
-    });
-  // The pending wish is mounted beneath the smoke before the opening root is removed: there is no blank frame.
-  await expect(page.locator('[data-wish-entry="wish"]')).toBeVisible();
-  await page.clock.runFor(90);
-  await expect(page.locator('[data-wish-entry="creation"]')).toHaveAttribute(
-    "data-wish-opening-phase",
-    "dissipating",
-  );
-  await startDissipation(page);
-  await expect(page.locator('[data-wish-entry="creation"]')).toHaveCount(1);
-  await expect(
-    page.locator('[data-wish-entry="creation"] .wish-smoke'),
-  ).toHaveAttribute("data-wish-smoke-state", "dissipating");
-  await expect(page.locator('[data-wish-entry="creation"]')).toHaveCSS(
-    "opacity",
-    "1",
-  );
-  await expect(page.locator('[data-wish-entry="creation"]')).toHaveCSS(
-    "animation-name",
-    "none",
-  );
+  await expect(region).toHaveAttribute("data-wish-transition", "exiting");
+  await expect(region).toHaveCSS("animation-name", "wish-creation-exit-fade");
+  await expect(smoke).toHaveAttribute("data-wish-smoke-state", "surface");
+  await expect(page.locator('[data-wish-entry="wish"]')).toHaveCount(1);
   await expect(page.locator('[data-wish-entry="wish"]')).toHaveAttribute(
     "data-wish-transition",
     "preparing",
   );
-  await expect(page.locator('[data-wish-entry="wish"]')).toHaveCSS(
-    "opacity",
-    "0",
-  );
-  const canvasToken = await page
-    .locator('[data-wish-entry="creation"] .wish-smoke-canvas')
-    .getAttribute("data-test-canvas-token");
-  expect(canvasToken).toBe("creation-renderer");
-  await page.clock.runFor(400);
-  await expect
-    .poll(async () =>
-      Number(
-        await page
-          .locator('[data-wish-entry="creation"] .wish-smoke')
-          .getAttribute("data-wish-smoke-dissolve"),
-      ),
-    )
-    .toBeGreaterThan(0.35);
-  await expect
-    .poll(async () =>
-      Number(
-        await page
-          .locator('[data-wish-entry="creation"] .wish-smoke')
-          .getAttribute("data-wish-smoke-dissolve"),
-      ),
-    )
-    .toBeLessThan(0.75);
-  await expect(page.locator('[data-wish-entry="creation"]')).toHaveCount(1);
   await expect(page.locator('[data-wish-entry="wish"]')).toHaveAttribute(
-    "data-wish-transition",
-    "preparing",
-  );
-  await page.clock.runFor(400);
-  await settleTerminalHandoff(page);
-  await expect(page.locator('[data-wish-entry="wish"]')).toHaveAttribute(
-    "data-wish-transition",
-    "revealing",
-  );
-  await expect(page.locator('[data-wish-entry="wish"]')).not.toHaveAttribute(
     "inert",
+    "",
   );
-  await expect(
-    page.locator('[data-wish-entry="wish"] .wish-smoke'),
-  ).toHaveCount(0);
-  const revealContract = await page
-    .locator('[data-wish-entry="wish"]')
-    .evaluate((entry) => {
-      const rootStyle = getComputedStyle(entry);
-      const sections = Array.from(
-        entry.querySelectorAll<HTMLElement>("[data-wish-reveal-section]"),
-      );
-      const timeMs = (value: string) => {
-        const match = value.trim().match(/^([0-9.]+)(ms|s)$/);
-        if (!match) return Number.NaN;
-        return Number(match[1]) * (match[2] === "s" ? 1_000 : 1);
-      };
-      return {
-        distance: rootStyle.getPropertyValue("--wish-motion-distance").trim(),
-        duration: timeMs(rootStyle.getPropertyValue("--wish-motion-duration")),
-        stagger: timeMs(rootStyle.getPropertyValue("--wish-motion-stagger")),
-        sections: sections.map((section) => ({
-          marker: section.getAttribute("data-wish-reveal-section"),
-          duration: timeMs(getComputedStyle(section).animationDuration),
-          delay: timeMs(getComputedStyle(section).animationDelay),
-        })),
-      };
-    });
-  expect(revealContract.distance).toBe("28px");
-  expect(revealContract.duration).toBe(520);
-  expect(revealContract.stagger).toBe(82);
-  expect(revealContract.sections).toEqual([
-    { marker: "head", duration: 520, delay: 0 },
-    { marker: "content", duration: 520, delay: 82 },
-    { marker: "summary", duration: 520, delay: 164 },
-  ]);
-  await settleWishFocus(page);
+  const duringExit = await region.boundingBox();
+  expect(duringExit).toEqual(beforeMake);
+  await expect(region).not.toHaveCSS("position", "fixed");
+
+  await page.clock.runFor(199);
+  await expect(page.locator('[data-wish-entry="creation"]')).toHaveCount(1);
+  await page.clock.runFor(2);
+  await expect(page.locator('[data-wish-entry="creation"]')).toHaveCount(0);
+  const wish = page.locator('[data-wish-entry="wish"]');
+  await expect(wish).toHaveAttribute("data-wish-transition", "revealing");
+  await expect(wish).not.toHaveAttribute("inert");
+  await expect(wish.locator(".wish-smoke")).toHaveCount(0);
+  await expect(wish.locator(".workspace-summary-head > h1")).toHaveCSS(
+    "animation-name",
+    "wish-entry-up-fade",
+  );
+  await expect(wish.locator(".workspace-content-stage")).toHaveCSS(
+    "animation-name",
+    "wish-entry-up-fade",
+  );
+  await expect(wish.locator(".workspace-summary-slot")).toHaveCSS(
+    "animation-delay",
+    "0.246s",
+  );
   await page.clock.runFor(900);
-  await expect(page.locator('[data-wish-entry="wish"]')).toHaveAttribute(
-    "data-wish-transition",
-    "ready",
-  );
+  await expect(wish).toHaveAttribute("data-wish-transition", "ready");
+  await settleWishFocus(page);
 });
 
-test("failed make leaves the draft usable and keeps creation mounted", async ({
+test("failed make leaves the draft usable before a later simple handoff", async ({
   page,
 }) => {
   const { region, editor } = await openCreation(page);
@@ -459,26 +235,21 @@ test("failed make leaves the draft usable and keeps creation mounted", async ({
   );
   await expect(page.locator('[data-wish-entry="wish"]')).toHaveCount(0);
 
-  // The same draft can be submitted again, and the successful transition takes the normal smoke path.
+  // The same draft can be submitted again, and the successful transition is the short form fade.
   await pauseTestClock(page);
   await form.evaluate((element) => element.requestSubmit());
-  await expect(page.locator('[data-wish-transition="departing"]')).toHaveCount(
-    1,
-  );
-  await page.clock.runFor(360);
-  await expect(page.locator('[data-wish-transition="opening"]')).toHaveCount(1);
-  await page.clock.runFor(820);
+  await expect(page.locator('[data-wish-transition="exiting"]')).toHaveCount(1);
   await expect(
-    page.locator('[data-wish-opening-phase="dissipating"]'),
-  ).toHaveCount(1);
-  await startDissipation(page);
-  await page.clock.runFor(800);
-  await settleTerminalHandoff(page);
+    page.locator('[data-wish-transition="exiting"] .wish-smoke'),
+  ).toHaveAttribute("data-wish-smoke-state", "surface");
+  await page.clock.runFor(200);
   await expect(page.locator('[data-wish-entry="wish"]')).toBeVisible();
   await settleWishFocus(page);
 });
 
-test("a new draft cancels a late active-lead transition", async ({ page }) => {
+test("an active make reveals the wish before its late lead response completes", async ({
+  page,
+}) => {
   const { region, editor } = await openCreation(page);
   await pauseTestClock(page);
   let releaseResume!: () => void;
@@ -509,35 +280,24 @@ test("a new draft cancels a late active-lead transition", async ({ page }) => {
     );
   });
 
-  await editor.fill("Cancel the old lead before showing its terminal.");
+  await editor.fill("Reveal the wish before showing its terminal.");
   await region.locator("form").evaluate((element) => element.requestSubmit());
   await resumeSeen;
-  await expect(page.locator('[data-wish-transition="departing"]')).toHaveCount(
-    1,
-  );
-  await page.clock.runFor(360);
-  await expect(page.locator('[data-wish-transition="opening"]')).toHaveCount(1);
-  await page.clock.runFor(820);
-  await expect(
-    page.locator('[data-wish-opening-phase="dissipating"]'),
-  ).toHaveCount(1);
-  await startDissipation(page);
-  await page.clock.runFor(800);
-  await settleTerminalHandoff(page);
+  await expect(page.locator('[data-wish-transition="exiting"]')).toHaveCount(1);
+  await page.clock.runFor(200);
+  await expect(page.locator('[data-wish-entry="creation"]')).toHaveCount(0);
+  await expect(page.locator('[data-wish-entry="wish"]')).toBeVisible();
 
-  await page.locator(".sidebar .new-mission").click();
-  await expect(page.locator('[data-wish-entry="creation"]')).toHaveCount(1);
   const resumeResponse = page.waitForResponse((response) =>
     response.url().endsWith("/plan.v1.WishService/Resume"),
   );
   releaseResume();
-  await (await resumeResponse).body();
-  await page.clock.runFor(32);
-  await expect(page.locator('[data-wish-entry="creation"]')).toHaveCount(1);
-  await expect(
-    page.locator('[data-wish-entry="creation"] .wish-composer-input'),
-  ).toBeFocused();
-  expect(showCalls).toBe(0);
+  await resumeResponse;
+  await expect.poll(() => showCalls).toBe(1);
+  await expect(page.locator('[data-wish-entry="wish"]')).toHaveAttribute(
+    "data-wish-transition",
+    "revealing",
+  );
 });
 
 test("reduced motion removes the stagger and still completes the transition", async ({
@@ -735,5 +495,5 @@ test("an unmounted creation cannot reopen after its response arrives", async ({
   release();
   await requestDone;
   await expect(page.locator('[data-wish-entry="creation"]')).toHaveCount(0);
-  await expect(page.locator('[data-wish-transition="opening"]')).toHaveCount(0);
+  await expect(page.locator('[data-wish-entry="wish"]')).toHaveCount(0);
 });

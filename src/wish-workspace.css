@@ -1,4 +1,4 @@
-/* The wish surface has one quiet navigation card and a generous main reading area. */
+/* The compact action strip belongs to the wish view and stays above the page header. */
 .workspace-global-top {
   position: sticky;
   top: 0;
@@ -9,31 +9,6 @@
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg) 94%, transparent);
   backdrop-filter: blur(12px);
-}
-
-/* At narrow widths the open rail is only 67px wide, so reserve the rest of the toolbar's horizontal lane as well.
-   This keeps the global action card readable and clickable in the fixed chrome band. */
-.app:not(.sidebar-collapsed) .workspace-global-top {
-  padding-left: max(
-    calc(100px - var(--sidebar-width)),
-    clamp(20px, 2.4vw, 32px)
-  );
-}
-
-html.native-mac .app:not(.sidebar-collapsed) .workspace-global-top {
-  padding-left: max(
-    calc(166px - var(--sidebar-width)),
-    clamp(20px, 2.4vw, 32px)
-  );
-}
-
-/* The collapsed shell starts at the viewport edge while the app toolbar floats above it. */
-.app.sidebar-collapsed .workspace-global-top {
-  padding-left: max(100px, clamp(20px, 2.4vw, 32px));
-}
-
-html.native-mac .app.sidebar-collapsed .workspace-global-top {
-  padding-left: max(166px, clamp(20px, 2.4vw, 32px));
 }
 
 .workspace-global-overlay[hidden] {
@@ -63,8 +38,12 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
   border-color: color-mix(in srgb, var(--text) 28%, var(--line));
 }
 
-.workspace-action-trigger:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--lamp) 65%, transparent);
+.workspace-action-trigger:focus-visible,
+.workspace-section-toggle:focus-visible,
+.workspace-section-preview-toggle:focus-visible,
+.workspace-panel-action:focus-visible,
+.workspace-panel:focus-visible {
+  outline: 1px solid var(--line-strong);
   outline-offset: 2px;
 }
 
@@ -150,25 +129,32 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
   display: block;
   width: 100%;
   min-width: 0;
-  padding: 20px clamp(20px, 2.4vw, 32px) 48px;
+  padding: 20px 16px 48px 40px;
   box-sizing: border-box;
+  container: wish-workspace / inline-size;
+}
+
+@media (max-width: 700px) {
+  .wish-workspace-shell {
+    padding-left: 24px;
+  }
 }
 
 .workspace-thread-head {
   width: 100%;
   min-width: 0;
   margin: 0 auto;
-  padding: 0 0 18px;
+  padding: 0 0 10px;
   box-sizing: border-box;
 }
 
 .workspace-thread-head h1 {
   max-width: min(100%, 1100px);
-  margin: 6px 0 10px;
+  margin: 0 0 8px;
   overflow-wrap: anywhere;
   color: var(--text);
   font-size: clamp(24px, 3vw, 36px);
-  font-weight: 550;
+  font-weight: 500;
   letter-spacing: -0.55px;
   line-height: 1.15;
 }
@@ -183,7 +169,7 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
 }
 
 .workspace-thread-head .workspace-facts {
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .workspace-inline-global {
@@ -192,14 +178,12 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
 
 .wish-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 240px);
-  grid-template-rows: auto auto;
-  align-items: stretch;
-  gap: clamp(16px, 2vw, 28px);
+  grid-template-columns: minmax(0, 1fr) minmax(216px, 256px);
+  grid-template-rows: auto auto auto;
+  align-items: start;
+  gap: 10px clamp(18px, 2.4vw, 30px);
   width: 100%;
   min-width: 0;
-  min-height: max(560px, calc(100vh - 220px));
-  height: auto;
   margin: 0 auto;
 }
 
@@ -210,105 +194,182 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
 }
 
 .workspace-content-stage {
-  position: relative;
-  display: block;
-  align-self: stretch;
+  display: grid;
+  align-items: start;
+  align-self: start;
+  grid-column: 1;
+  grid-row: 3;
+  min-width: 0;
+  width: 100%;
+  gap: 16px;
+}
+
+.workspace-attention-slot {
   grid-column: 1;
   grid-row: 2;
   min-width: 0;
-  min-height: 0;
-  width: 100%;
-  height: auto;
+}
+
+.wish-workspace:not(.has-attention) {
+  grid-template-rows: auto auto;
+}
+
+.wish-workspace:not(.has-attention) .workspace-content-stage {
+  grid-row: 2;
+}
+
+/* Keep the composed direction available to direction-aware consumers. */
+.workspace-content-stage.workspace-split {
+  flex-direction: row;
+}
+
+.workspace-content-stage.is-empty {
+  display: block;
 }
 
 .workspace-summary-slot {
   position: sticky;
-  top: 0;
+  top: 20px;
   grid-column: 2;
-  grid-row: 1 / span 2;
+  grid-row: 1 / span 3;
   z-index: 5;
   min-width: 0;
   align-self: start;
 }
 
+.wish-workspace:not(.has-attention) .workspace-summary-slot {
+  grid-row: 1 / span 2;
+}
+
 .workspace-summary-card {
   min-width: 0;
-  max-height: calc(100vh - 150px);
-  overflow-y: auto;
+  overflow: hidden;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-panel);
   background: var(--surface);
-  box-shadow: 0 8px 28px color-mix(in srgb, var(--text) 8%, transparent);
-  scrollbar-gutter: stable;
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--text) 6%, transparent);
 }
 
 .workspace-section-list {
   display: grid;
-  gap: 2px;
-  padding: 10px;
-  border-top: 1px solid var(--line);
+  padding: 0;
 }
 
 .workspace-section-row {
+  position: relative;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
+  align-items: stretch;
   min-width: 0;
-  min-height: 38px;
-  padding: 7px 8px;
+  min-height: 52px;
   border: 0;
-  border-radius: var(--radius-control);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  border-radius: 0;
   color: var(--muted);
   background: transparent;
-  text-align: left;
-  cursor: pointer;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
+}
+
+.workspace-section-row:last-child {
+  border-bottom: 0;
 }
 
 .workspace-section-row:hover,
-.workspace-section-row:focus-visible,
-.workspace-section-row.is-open {
+.workspace-section-row:has(:focus-visible) {
   color: var(--text);
   background: var(--surface-soft);
 }
 
-.workspace-section-row:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--lamp) 60%, transparent);
-  outline-offset: -2px;
+.workspace-section-row.is-active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-soft) 78%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 72%, transparent);
 }
 
-.workspace-section-row:disabled {
+.workspace-section-row.is-active .workspace-section-icon,
+.workspace-section-row.is-active .workspace-section-row-title > strong {
+  color: var(--text);
+}
+
+.workspace-section-row.is-active .workspace-section-toggle {
+  color: var(--text);
+}
+
+.workspace-section-icon,
+.workspace-section-row-title > strong {
+  transition: transform 150ms ease;
+}
+
+.workspace-section-row:hover .workspace-section-icon,
+.workspace-section-row:has(:focus-visible) .workspace-section-icon,
+.workspace-section-row:hover .workspace-section-row-title > strong,
+.workspace-section-row:has(:focus-visible)
+  .workspace-section-row-title
+  > strong {
+  transform: translateX(2px);
+}
+
+.workspace-section-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-section-toggle > svg {
+  flex: 0 0 auto;
+  margin-top: 0;
+  color: var(--muted-dim);
+}
+
+.workspace-section-toggle:disabled,
+.workspace-section-preview-toggle:disabled {
   cursor: wait;
   opacity: 0.6;
 }
 
-.workspace-section-row-main {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
+.workspace-section-row-copy {
+  display: grid;
+  flex: 1 1 auto;
   min-width: 0;
+  gap: 4px;
 }
 
-.workspace-section-row-main > svg {
-  flex: 0 0 auto;
-  color: var(--muted-dim);
+.workspace-section-row-copy:has(.workspace-section-row-preview) {
+  gap: 8px;
+}
+
+.workspace-section-row-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .workspace-section-row strong {
   min-width: 0;
   overflow: hidden;
-  color: inherit;
+  color: var(--text);
   font-size: 13px;
-  font-weight: 550;
+  font-weight: 400;
+  line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.workspace-section-row-copy {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
+.workspace-section-row-title > strong {
+  flex: 0 1 auto;
 }
 
 .workspace-section-row-preview {
@@ -316,26 +377,68 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
   max-width: 100%;
   overflow: hidden;
   color: var(--muted-dim);
-  font-size: 12px;
-  line-height: 1.3;
+  font-size: 11px;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.workspace-section-row > .count {
+.wish-workspace .workspace-section-row-title > .count,
+.workspace-section-card .workspace-section-row-title > .count {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-left: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-dim);
+  font: 11px var(--mono);
+  letter-spacing: 0;
+}
+
+.workspace-section-preview-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 4px;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--muted-dim);
+  background: transparent;
+  cursor: pointer;
+}
+
+.workspace-section-preview-toggle:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+button.workspace-section-card {
+  width: 100%;
+  align-items: center;
+  padding: 9px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.workspace-section-card > svg {
   flex: 0 0 auto;
   color: var(--muted-dim);
-  font: 12px var(--mono);
 }
 
 .workspace-panel {
   display: flex;
-  flex: 1 1 0;
   min-width: 0;
-  min-height: 420px;
-  max-height: none;
+  min-height: 0;
   container-type: inline-size;
   flex-direction: column;
+  align-self: start;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -347,36 +450,53 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
     opacity 160ms ease;
 }
 
-.workspace-panel.is-positioned {
-  position: absolute;
-  inset: auto;
-  min-height: 0;
-  max-height: none;
-  box-sizing: border-box;
+/* The workspace has one reading surface. The old split grid is intentionally gone; panels stay mounted but only the
+   active panel participates in layout, which keeps drafts alive without allowing composed cards to reappear. */
+.workspace-content-stage {
+  display: block;
+}
+
+.workspace-panel:not([hidden]) {
+  width: 100%;
+}
+
+.workspace-panel.is-entering {
+  animation: workspace-panel-enter 100ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.workspace-panel.is-exiting {
+  pointer-events: none;
+  animation: workspace-panel-exit 70ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+@keyframes workspace-panel-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes workspace-panel-exit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.992);
+  }
 }
 
 .workspace-panel[hidden] {
   display: none;
 }
 
-.workspace-panel.is-maximized {
-  min-height: 0;
-  max-height: none;
-}
-
-.workspace-panel:focus-visible,
 .workspace-panel.is-focused {
-  outline: 2px solid color-mix(in srgb, var(--lamp) 22%, transparent);
-  outline-offset: -2px;
-}
-
-.workspace-panel.is-dragging {
-  opacity: 0.46;
-}
-
-.wish-workspace.is-dragging
-  .workspace-panel:not(.is-dragging):not(:has(.workspace-panel)) {
-  border-color: color-mix(in srgb, var(--lamp) 48%, var(--line));
+  border-color: transparent;
 }
 
 .workspace-panel-header {
@@ -385,8 +505,8 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
   justify-content: space-between;
   gap: var(--space-2);
   min-width: 0;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--line);
+  padding: 10px 0 9px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
 }
 
 .workspace-panel-heading {
@@ -394,14 +514,9 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 2px;
+  padding: 2px 0;
   color: var(--muted);
-  cursor: grab;
   user-select: none;
-}
-
-.workspace-panel-heading:active {
-  cursor: grabbing;
 }
 
 .workspace-panel-heading.is-fixed {
@@ -420,14 +535,24 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
   white-space: nowrap;
 }
 
-.workspace-panel-heading > svg {
-  flex: 0 0 auto;
+/* Keep panel headings compact while subgroup labels retain their hierarchy. */
+.review .workspace-panel .workspace-panel-heading h2 {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.workspace-panel-heading .count {
-  flex: 0 0 auto;
-  color: var(--muted-dim);
-  font: 12px var(--mono);
+.review .workspace-panel .section-title h2,
+.review .workspace-panel .section-heading h2,
+.review .workspace-panel .section-heading h3,
+.review .workspace-panel .section-heading h4 {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 22px;
+  letter-spacing: 0;
 }
 
 .workspace-panel-actions {
@@ -437,12 +562,18 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
   gap: 3px;
 }
 
+.workspace-panel-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .workspace-panel-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   padding: 6px;
   border: 0;
   border-radius: var(--radius-control);
@@ -458,12 +589,9 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
 }
 
 .workspace-panel-content {
-  flex: 1 1 auto;
   min-width: 0;
-  min-height: 0;
-  padding: clamp(16px, 2vw, 28px);
-  overflow: auto;
-  scrollbar-gutter: stable;
+  padding: 14px 0 0;
+  overflow: visible;
 }
 
 .workspace-panel-content > .wish-section,
@@ -473,7 +601,7 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
 }
 
 .workspace-panel-content > .wish-section + .wish-section {
-  margin-top: 24px;
+  margin-top: clamp(32px, 2.4vw, 36px);
 }
 
 .workspace-panel-content > .action-center {
@@ -486,7 +614,7 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
 
 .workspace-panel-content .wish-task-heading .task-project {
   min-width: 0;
-  max-width: 28%;
+  max-width: max-content;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -494,50 +622,32 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
 
 .workspace-panel-content .wish-task-heading strong {
   flex: 1 1 auto;
-  min-width: 48px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-@container (max-width: 520px) {
-  .workspace-panel-content .wish-task-heading {
-    display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
-    grid-template-areas:
-      "status code title chevron"
-      "project project meta meta";
-    gap: 7px 8px;
-  }
+/* The panel heading already names these sections. Task subgroup labels stay visible because they carry meaning. */
+.workspace-panel[data-wish-panel="decisions"] .decision-log > .section-title,
+.workspace-panel[data-wish-panel="instructions"]
+  .wish-instructions
+  > .section-title,
+.workspace-panel[data-wish-panel="rights"] .wish-rights > .section-heading,
+.workspace-panel[data-wish-panel="rights"] .wish-rights > .muted-text {
+  display: none;
+}
 
-  .workspace-panel-content .wish-task-heading .status-badge {
-    grid-area: status;
-    min-width: 0;
-  }
-
-  .workspace-panel-content .wish-task-heading .agent-code {
-    grid-area: code;
-  }
-
-  .workspace-panel-content .wish-task-heading .task-project {
-    grid-area: project;
-    max-width: none;
-  }
-
-  .workspace-panel-content .wish-task-heading strong {
-    grid-area: title;
-    min-width: 0;
-  }
-
-  .workspace-panel-content .wish-task-heading .wish-task-meta {
-    grid-area: meta;
-    min-width: 0;
-    flex-wrap: wrap;
-  }
-
-  .workspace-panel-content .wish-task-heading > svg {
-    grid-area: chevron;
-  }
+.workspace-panel[data-wish-panel="journal"]
+  .wish-journal
+  > .section-heading
+  h3 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }
 
 .workspace-panel-content .wish-journal,
@@ -553,45 +663,858 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
   gap: var(--space-3);
 }
 
-.workspace-keyboard-hint {
-  max-height: 0;
-  margin: 0;
-  padding: 0 14px;
-  overflow: hidden;
-  color: var(--muted-dim);
-  font-size: 12px;
-  opacity: 0;
-  transition:
-    max-height 140ms ease,
-    padding 140ms ease,
-    opacity 140ms ease;
+/* Status/count/task badges remain content-sized inside a composed panel. */
+.workspace-panel .status-badge,
+.workspace-panel .count,
+.workspace-panel .nav-counter,
+.workspace-panel .task-project {
+  width: auto;
+  min-width: 0;
+  max-width: max-content;
 }
 
-.workspace-panel:focus-visible .workspace-keyboard-hint,
-.workspace-panel.is-focused .workspace-keyboard-hint {
-  max-height: 28px;
-  padding: 0 14px 9px;
-  opacity: 0.9;
+.workspace-panel .wish-task-heading .status-badge {
+  width: auto;
+  min-width: 0;
+}
+
+.workspace-panel .wish-task-heading .wish-task-meta,
+.workspace-panel .wish-task-heading .task-usage {
+  color: var(--muted-dim);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.workspace-panel .wish-task-note {
+  padding-left: 14px;
+}
+
+/* The shared review styles add generous page-section spacing. A composed panel
+   supplies its own rhythm so its heading remains the only top-level label. */
+.review .workspace-panel .wish-section {
+  margin-top: 18px;
+  padding: 0;
+}
+
+.review .workspace-panel-content > .wish-section:first-child,
+.review .workspace-panel [role="tabpanel"] > .wish-section:first-child {
+  margin-top: 0;
+}
+
+.review .workspace-panel .wish-task-heading {
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.review .workspace-panel .wish-task-heading .status-badge {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+.review .workspace-panel .wish-task-note {
+  padding-left: 14px;
+}
+
+.review .workspace-panel .section-title .wish-spent {
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+/* The workspace is a reading surface rather than a stack of cards. Let the
+   page ground show through while keeping square separators for scanability. */
+.review .workspace-panel .wish-task {
+  margin-bottom: 0;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.review .workspace-panel .wish-task-row {
+  padding-right: 0;
+}
+
+.review .workspace-panel .wish-task-heading {
+  padding: 9px 0;
+}
+
+.review .workspace-panel .wish-task-body {
+  border-top-color: color-mix(in srgb, var(--line) 50%, transparent);
+  padding: var(--space-3) 0;
+}
+
+.review .workspace-panel .wish-task-send {
+  border-top-color: color-mix(in srgb, var(--line) 50%, transparent);
+  padding: var(--space-2) 0;
+}
+
+.review .workspace-panel .wish-task-events {
+  max-height: none;
+  overflow: visible;
+}
+
+.review .workspace-panel .azima-card {
+  margin-top: 0;
+  margin-bottom: 0;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.review .workspace-panel .azima-heading {
+  padding: 9px 0;
+}
+
+.review .workspace-panel .azima-parts {
+  border-top-color: color-mix(in srgb, var(--line) 50%, transparent);
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.review .workspace-panel .decision-log .decision-row {
+  margin-bottom: 0;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.review .workspace-panel .wish-block {
+  margin-bottom: 0;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.review .workspace-panel .instruction-list {
+  gap: 0;
+}
+
+.review .workspace-panel .instruction-entry {
+  margin: 0;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.review .workspace-panel .tilasm-view {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.review .workspace-panel .tilasm-view-head {
+  padding-right: 0;
+  padding-left: 0;
+  border-bottom-color: color-mix(in srgb, var(--line) 50%, transparent);
+}
+
+.review .workspace-panel .tilasm-row {
+  margin-bottom: 0;
+  padding-right: 0;
+  padding-left: 0;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.review .workspace-panel .compact-table td,
+.review .workspace-panel .compact-table tr:nth-child(even) td {
+  background: transparent;
+}
+
+.review .workspace-panel .wish-rights .setting-row {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+}
+
+.review .workspace-panel .wish-rights .setting-row:last-child {
+  border-bottom: 0;
+}
+
+.review .workspace-panel .wish-task.compact {
+  box-sizing: border-box;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 34%, transparent);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.review .workspace-panel .azima-card.compact {
+  box-sizing: border-box;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.review .workspace-panel .wish-task.compact {
+  margin: 0;
+}
+
+.review .workspace-panel .task-grid {
+  display: grid;
+  gap: 0;
+}
+
+.review .workspace-panel .wish-task.compact .wish-task-row {
+  --wish-task-status-column: 18px;
+  --wish-task-code-column: 48px;
+  --wish-task-project-column: 60px;
+  --wish-task-metrics-column: 312px;
+  --wish-task-actions-column: 52px;
+  display: grid;
+  grid-template-columns:
+    var(--wish-task-status-column) var(--wish-task-code-column)
+    var(--wish-task-project-column) minmax(0, 1fr)
+    var(--wish-task-metrics-column) var(--wish-task-actions-column);
+  column-gap: 6px;
+  align-items: center;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 8px;
+  transition: background-color 140ms ease;
+}
+
+.review .workspace-panel .wish-task.compact .wish-task-heading {
+  display: grid;
+  grid-column: 1 / 6;
+  grid-template-columns:
+    var(--wish-task-status-column) var(--wish-task-code-column)
+    var(--wish-task-project-column) minmax(0, 1fr)
+    var(--wish-task-metrics-column);
+  column-gap: 6px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 3px 0;
+  color: var(--text);
+  text-align: left;
+  transition: background-color 140ms ease;
+}
+
+.review .workspace-panel .wish-task.compact .wish-task-row:hover {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface-soft));
+}
+
+.review
+  .workspace-panel
+  .wish-task.compact
+  .wish-task-row:has(.wish-task-heading:hover),
+.review
+  .workspace-panel
+  .wish-task.compact
+  .wish-task-row:has(.wish-task-actions > .icon-button:hover) {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface-soft));
+}
+
+.review .workspace-panel .wish-task.compact .wish-task-heading:hover {
+  background: transparent;
+}
+
+.review .workspace-panel .wish-task.compact .wish-task-heading:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid color-mix(in srgb, var(--text) 32%, transparent);
+  outline-offset: -2px;
+}
+
+.review .workspace-panel .wish-task.compact .status-indicator {
+  grid-column: 1;
+  justify-self: start;
+}
+
+.review .workspace-panel .status-indicator {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  color: var(--tone);
+  flex: 0 0 14px;
+  line-height: 0;
+}
+
+.review .workspace-panel .status-indicator svg {
+  width: 14px;
+  height: 14px;
+}
+
+.review .workspace-panel .status-indicator .live-dot {
+  width: 8px;
+  height: 8px;
+}
+
+.review .workspace-panel .wish-task.compact .wish-task-heading > .agent-code,
+.review .workspace-panel .wish-task.compact .wish-task-heading > .task-project {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font: 10px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review .workspace-panel .wish-task.compact .wish-task-heading > .agent-code {
+  grid-column: 2;
+}
+
+.review .workspace-panel .wish-task.compact .wish-task-heading > .task-project {
+  grid-column: 3;
+}
+
+.review .workspace-panel .wish-task.compact .wish-task-heading > strong {
+  grid-column: 4;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review
+  .workspace-panel
+  .wish-task.compact
+  .wish-task-heading
+  > .wish-task-meta {
+  display: grid;
+  grid-column: 5;
+  grid-template-columns: 48px 144px 108px;
+  column-gap: 6px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-dim);
+  font-size: 10px;
+  line-height: 13px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.review .workspace-panel .wish-task.compact .task-metric {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review .workspace-panel .wish-task.compact .task-metric > .task-usage {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review .workspace-panel .wish-task.compact .task-metric-time {
+  grid-column: 1;
+}
+
+.review .workspace-panel .wish-task.compact .task-metric-usage {
+  grid-column: 2;
+}
+
+.review .workspace-panel .wish-task.compact .task-metric-resource {
+  grid-column: 3;
+}
+
+.review .workspace-panel .wish-task.compact .wish-task-actions {
+  display: grid;
+  grid-column: 6;
+  grid-template-columns: repeat(2, 24px);
+  column-gap: 4px;
+  align-items: center;
+  justify-content: end;
+  width: 52px;
+  min-width: 52px;
+}
+
+.review .workspace-panel .wish-task.compact .wish-task-actions > .icon-button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+
+.review .workspace-panel .wish-task.compact .wish-task-body,
+.review .workspace-panel .wish-task.compact .wish-task-send {
+  padding-right: 0;
+  padding-left: 12px;
+}
+
+.review .workspace-panel .wish-task.compact .wish-task-note {
+  padding-left: 12px;
+}
+
+.review .workspace-panel .wish-task.compact.focused {
+  background: color-mix(in srgb, var(--surface-soft) 32%, transparent);
+}
+
+.review .workspace-panel [role="tabpanel"] > .wish-section + .wish-section {
+  margin-top: 18px;
+}
+
+.review .workspace-panel [role="tabpanel"] > .wish-section > .section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 24px;
+  margin-bottom: 6px;
+  padding: 0;
+}
+
+.review .workspace-panel .workspace-task-subgroups {
+  display: grid;
+  gap: 10px;
+}
+
+.review .workspace-panel .workspace-task-subgroup {
+  min-width: 0;
+  margin: 0;
+}
+
+.review .workspace-panel .workspace-task-subgroup-heading {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  margin: 0 0 4px;
+}
+
+.review .workspace-panel .workspace-task-subgroup-heading h3 {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.review .workspace-panel .workspace-task-subgroup-heading .count {
+  flex: 0 0 auto;
+  padding: 0;
+  color: var(--muted-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font: 10px var(--mono);
+}
+
+.review
+  .workspace-panel
+  .workspace-task-hierarchy
+  > .wish-section.workspace-task-group
+  > .section-title
+  h2 {
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.review
+  .workspace-panel
+  .workspace-task-hierarchy
+  > .workspace-task-group
+  + .workspace-task-group {
+  margin-top: 36px;
+}
+
+.review .workspace-panel [role="tabpanel"] > .wish-section > .section-title h2 {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review
+  .workspace-panel
+  [role="tabpanel"]
+  > .wish-section
+  > .section-title
+  .count {
+  margin-left: 6px;
+  flex: 0 0 auto;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font: 10px var(--mono);
+}
+
+.review
+  .workspace-panel
+  [role="tabpanel"]
+  > .wish-section
+  > .section-title
+  .wish-spent {
+  display: inline-flex;
+  flex: 0 1 48%;
+  align-items: baseline;
+  min-width: 0;
+  max-width: min(48%, 432px);
+  margin-top: 0;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 13px;
+  white-space: nowrap;
+}
+
+.review
+  .workspace-panel
+  [role="tabpanel"]
+  > .wish-section
+  > .section-title
+  .wish-spent
+  > .eyebrow {
+  display: none;
+}
+
+.review
+  .workspace-panel
+  [role="tabpanel"]
+  > .wish-section
+  > .section-title
+  .wish-spent
+  > span:not(.eyebrow) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review
+  .workspace-panel
+  [role="tabpanel"]
+  > .wish-section
+  > .section-title
+  .wish-spent
+  > small {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review .workspace-panel .tasks-azimas .azima-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.review .workspace-panel .tasks-azimas .azima-card.compact {
+  margin: 0;
+}
+
+.review .workspace-panel .tasks-azimas .azima-heading {
+  display: grid;
+  grid-template-columns: 18px 48px minmax(0, 1fr) minmax(0, 260px);
+  column-gap: 6px;
+  align-items: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+}
+
+.review .workspace-panel .tasks-azimas .azima-heading:focus-visible,
+.review .workspace-panel .tasks-azimas .azima-heading-tail:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid color-mix(in srgb, var(--text) 32%, transparent);
+  outline-offset: -2px;
+}
+
+.review .workspace-panel .tasks-azimas .azima-heading > .status-indicator {
+  grid-column: 1;
+}
+
+.review .workspace-panel .tasks-azimas .azima-heading > .agent-code {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font: 10px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review .workspace-panel .tasks-azimas .azima-heading > strong {
+  grid-column: 3;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review .workspace-panel .tasks-azimas .azima-heading > .azima-meta {
+  display: grid;
+  grid-column: 4;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-dim);
+  font-size: 10px;
+  line-height: 13px;
+  text-align: right;
+}
+
+.review .workspace-panel .tasks-azimas .azima-secondary-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.review .workspace-panel .tasks-azimas .azima-secondary-meta:empty {
+  display: none;
+}
+
+.review .workspace-panel .tasks-azimas .azima-secondary-meta > span {
+  min-width: 0;
+  max-width: 20ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review .workspace-panel .tasks-azimas .azima-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.review .workspace-panel .tasks-azimas .azima-bar {
+  width: 28px;
+  height: 3px;
+}
+
+.review .workspace-panel .tasks-azimas .azima-heading-tail > svg {
+  width: 14px;
+  height: 14px;
+}
+
+.review .workspace-panel .tasks-azimas .azima-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--surface-soft) 78%, var(--surface));
+  border-radius: 6px;
+  transition: background-color 140ms ease;
+}
+
+.review .workspace-panel .tasks-azimas .azima-heading-row:hover {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-soft));
+}
+
+html[data-theme="light"]
+  .review
+  .workspace-panel
+  .tasks-azimas
+  .azima-heading-row {
+  background: var(--n-28);
+}
+
+html[data-theme="light"]
+  .review
+  .workspace-panel
+  .tasks-azimas
+  .azima-heading-row:hover {
+  background: var(--n-30);
+}
+
+.review .workspace-panel .tasks-azimas .azima-heading-row > .azima-heading {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.review
+  .workspace-panel
+  .tasks-azimas
+  .azima-heading-row
+  > .azima-heading-tail {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0;
+  color: var(--muted-dim);
+}
+
+html[data-theme="light"]
+  .review
+  .workspace-panel
+  .tasks-azimas
+  .azima-heading-row
+  > .azima-heading {
+  background: transparent;
+}
+
+.review .workspace-panel .tasks-azimas .azima-parts {
+  min-width: 0;
+  padding: 0 0 0 12px;
+  background: transparent;
+  border-top: 0;
+}
+
+.review .workspace-panel .tasks-azimas .azima-parts > .wish-task.compact {
+  margin: 0;
+}
+
+@container (max-width: 800px) {
+  .review .workspace-panel .wish-task.compact .wish-task-row {
+    --wish-task-project-column: 0px;
+    --wish-task-metrics-column: 198px;
+    column-gap: 4px;
+  }
+
+  .review .workspace-panel .wish-task.compact .wish-task-heading {
+    column-gap: 4px;
+  }
+
+  .review .workspace-panel .wish-task.compact .task-project {
+    display: none;
+  }
+
+  .review
+    .workspace-panel
+    .wish-task.compact
+    .wish-task-heading
+    > .wish-task-meta {
+    grid-template-columns: 48px 144px;
+    column-gap: 4px;
+  }
+
+  .review .workspace-panel .wish-task.compact .task-metric-resource {
+    display: none;
+  }
+}
+
+@container (max-width: 520px) {
+  .review .workspace-panel .wish-task.compact .wish-task-row {
+    --wish-task-metrics-column: 142px;
+  }
+
+  .review
+    .workspace-panel
+    .wish-task.compact
+    .wish-task-heading
+    > .wish-task-meta {
+    grid-template-columns: 48px 88px;
+  }
+
+  .review .workspace-panel .tasks-azimas .azima-heading {
+    grid-template-columns: 18px 48px minmax(0, 1fr);
+  }
+
+  .review .workspace-panel .tasks-azimas .azima-heading > .azima-meta {
+    grid-column: 1 / 4;
+    grid-row: 2;
+    justify-self: stretch;
+  }
+}
+
+@container (max-width: 400px) {
+  .review .workspace-panel .wish-task.compact .wish-task-row {
+    --wish-task-metrics-column: 48px;
+  }
+
+  .review
+    .workspace-panel
+    .wish-task.compact
+    .wish-task-heading
+    > .wish-task-meta {
+    grid-template-columns: 48px;
+  }
+
+  .review .workspace-panel .wish-task.compact .task-metric-usage {
+    display: none;
+  }
 }
 
 .workspace-a11y-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.review .workspace-thread-head .workspace-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 @media (max-width: 900px) {
   .wish-workspace {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(360px, 1fr);
-    min-height: 0;
-    height: auto;
+    grid-template-rows: auto auto auto auto;
+    gap: 10px;
   }
 
   .workspace-head-slot {
@@ -600,44 +1523,426 @@ html.native-mac .app.sidebar-collapsed .workspace-global-top {
   }
 
   .workspace-summary-slot {
-    position: static;
+    position: sticky;
+    top: 20px;
     grid-column: 1;
-    grid-row: 2;
-    order: -1;
-  }
-
-  .workspace-summary-card {
-    max-height: none;
+    grid-row: 3;
+    z-index: 5;
   }
 
   .workspace-content-stage {
     grid-column: 1;
+    grid-row: 4;
+  }
+
+  .workspace-attention-slot {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .wish-workspace:not(.has-attention) {
+    grid-template-rows: auto auto auto;
+  }
+
+  .wish-workspace:not(.has-attention) .workspace-summary-slot {
+    grid-row: 2;
+  }
+
+  .wish-workspace:not(.has-attention) .workspace-content-stage {
     grid-row: 3;
-    min-height: max(440px, calc(100vh - 220px));
-    height: max(440px, calc(100vh - 220px));
   }
 
-  .workspace-panel {
-    min-height: 360px;
-    max-height: none;
-  }
-
-  .workspace-panel.is-positioned {
-    min-height: 0;
-  }
-
-  .workspace-panel.is-maximized {
-    min-height: 0;
+  .workspace-content-stage.workspace-split {
+    flex-direction: column;
   }
 
   .workspace-panel-content {
-    padding: 16px;
+    padding: 14px 0 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .workspace-panel,
-  .workspace-keyboard-hint {
+  .workspace-section-row {
     transition: none;
+  }
+
+  .workspace-panel.is-entering,
+  .workspace-panel.is-exiting {
+    animation: none;
+  }
+
+  .workspace-section-icon,
+  .workspace-section-row-title > strong {
+    transition: none;
+  }
+
+  .workspace-section-row:hover .workspace-section-icon,
+  .workspace-section-row:has(:focus-visible) .workspace-section-icon,
+  .workspace-section-row:hover .workspace-section-row-title > strong,
+  .workspace-section-row:has(:focus-visible)
+    .workspace-section-row-title
+    > strong {
+    transform: none;
+  }
+}
+
+/* The no-panel stage is a viewport-filling surface. Keep the ordinary panel route
+   intrinsic so opening a panel restores the regular page scroll naturally. */
+.wish-view .mission-scroll:has(.workspace-content-stage.is-empty) {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: clip;
+  padding-bottom: 0;
+}
+
+.wish-view:has(.workspace-content-stage.is-empty) .wish-workspace-shell {
+  height: 100%;
+  min-height: 0;
+  padding-bottom: 56px;
+  box-sizing: border-box;
+}
+
+.wish-workspace:has(.workspace-content-stage.is-empty) {
+  height: 100%;
+  min-height: 0;
+}
+
+.wish-workspace:not(.has-attention):has(.workspace-content-stage.is-empty) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.wish-workspace.has-attention:has(.workspace-content-stage.is-empty) {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.wish-workspace:has(.workspace-content-stage.is-empty)
+  .workspace-content-stage.is-empty {
+  align-self: stretch;
+  height: 100%;
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
+  .wish-workspace:not(.has-attention):has(.workspace-content-stage.is-empty) {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .wish-workspace.has-attention:has(.workspace-content-stage.is-empty) {
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+  }
+}
+
+.wish-workspace {
+  grid-template-columns: minmax(0, 1fr) 256px;
+}
+
+.workspace-section-icon,
+.workspace-section-accordion-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-dim);
+}
+
+.workspace-section-icon {
+  width: 16px;
+  min-width: 16px;
+  margin-top: 0;
+}
+
+.workspace-section-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.workspace-section-accordion-icon {
+  width: 16px;
+  min-width: 16px;
+  margin-top: 1px;
+  margin-left: 2px;
+}
+
+.workspace-section-row:has(:focus-visible) .workspace-section-icon {
+  color: var(--text);
+}
+
+.wish-workspace.is-nav-compact {
+  grid-template-columns: minmax(0, 1fr) 40px;
+  column-gap: 12px;
+}
+
+.wish-workspace.is-nav-compact:not(.has-attention) {
+  grid-template-rows: auto auto;
+}
+
+.wish-workspace.is-nav-compact.has-attention {
+  grid-template-rows: auto auto auto;
+}
+
+.wish-workspace.is-nav-compact:not(.has-attention):has(
+    .workspace-content-stage.is-empty
+  ) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.wish-workspace.is-nav-compact.has-attention:has(
+    .workspace-content-stage.is-empty
+  ) {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.wish-workspace.is-nav-compact .workspace-summary-slot {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  width: 40px;
+}
+
+.wish-workspace.is-nav-compact:not(.has-attention) .workspace-summary-slot {
+  grid-row: 1 / span 2;
+}
+
+.wish-workspace.is-nav-compact .workspace-summary-card {
+  width: 40px;
+  max-width: 40px;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.wish-workspace.is-nav-compact .workspace-section-row {
+  min-height: 36px;
+}
+
+.wish-workspace.is-nav-compact .workspace-section-toggle {
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 1px 3px;
+  gap: 0;
+}
+
+.wish-workspace.is-nav-compact .workspace-section-icon {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  margin: 0;
+  border-radius: var(--radius-control);
+}
+
+.wish-workspace.is-nav-compact .workspace-section-row.is-active {
+  background: transparent;
+  box-shadow: none;
+}
+
+.wish-workspace.is-nav-compact
+  .workspace-section-row.is-active
+  .workspace-section-icon {
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-soft) 78%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 72%, transparent);
+}
+
+.wish-workspace.is-nav-compact .workspace-section-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.wish-workspace.is-nav-compact .workspace-section-row-copy,
+.wish-workspace.is-nav-compact .workspace-section-row-title > .count,
+.wish-workspace.is-nav-compact .workspace-section-accordion-icon,
+.wish-workspace.is-nav-compact .workspace-section-preview-toggle {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .wish-workspace.is-nav-compact {
+    grid-template-columns: minmax(0, 1fr) 40px;
+    grid-template-rows: auto auto auto;
+  }
+
+  .wish-workspace.is-nav-compact .workspace-head-slot {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .wish-workspace.is-nav-compact .workspace-attention-slot {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .wish-workspace.is-nav-compact .workspace-content-stage {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .wish-workspace.is-nav-compact .workspace-summary-slot {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+  }
+
+  .wish-workspace.is-nav-compact:not(.has-attention) {
+    grid-template-rows: auto auto;
+  }
+
+  .wish-workspace.is-nav-compact:not(.has-attention) .workspace-summary-slot {
+    grid-row: 1 / span 2;
+  }
+
+  .wish-workspace.is-nav-compact:not(.has-attention) .workspace-content-stage {
+    grid-row: 2;
+  }
+
+  .wish-workspace.is-nav-compact:not(.has-attention):has(
+      .workspace-content-stage.is-empty
+    ) {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .wish-workspace.is-nav-compact.has-attention:has(
+      .workspace-content-stage.is-empty
+    ) {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wish-workspace {
+    transition: none;
+  }
+}
+
+/* The rail is a property of the available workspace width, not a React state transition. Keeping this query on the
+   shell means the first layout already uses the right track, even when opening a panel changes the scrollbar width. */
+@container wish-workspace (max-width: 1179.99px) {
+  .wish-workspace {
+    grid-template-columns: minmax(0, 1fr) 40px;
+    column-gap: 12px;
+  }
+
+  .wish-workspace:not(.has-attention) {
+    grid-template-rows: auto auto;
+  }
+
+  .wish-workspace.has-attention {
+    grid-template-rows: auto auto auto;
+  }
+
+  .wish-workspace:not(.has-attention):has(.workspace-content-stage.is-empty) {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .wish-workspace.has-attention:has(.workspace-content-stage.is-empty) {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .workspace-summary-slot {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    width: 40px;
+  }
+
+  .wish-workspace:not(.has-attention) .workspace-summary-slot {
+    grid-row: 1 / span 2;
+  }
+
+  .workspace-summary-card {
+    width: 40px;
+    max-width: 40px;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  .workspace-section-row {
+    min-height: 36px;
+  }
+
+  .workspace-section-toggle {
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-width: 0;
+    min-height: 36px;
+    padding: 1px 3px;
+    gap: 0;
+  }
+
+  .workspace-section-icon {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    margin: 0;
+    border-radius: var(--radius-control);
+  }
+
+  .workspace-section-icon svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .workspace-section-row.is-active {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .workspace-section-row.is-active .workspace-section-icon {
+    color: var(--text);
+    background: color-mix(in srgb, var(--surface-soft) 78%, var(--surface));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 72%, transparent);
+  }
+
+  .workspace-section-row-copy,
+  .workspace-section-row-title > .count,
+  .workspace-section-accordion-icon,
+  .workspace-section-preview-toggle {
+    display: none;
+  }
+
+  @media (max-width: 900px) {
+    .wish-workspace {
+      grid-template-rows: auto auto auto;
+    }
+
+    .workspace-head-slot {
+      grid-column: 1;
+      grid-row: 1;
+    }
+
+    .workspace-attention-slot {
+      grid-column: 1;
+      grid-row: 2;
+    }
+
+    .workspace-content-stage {
+      grid-column: 1;
+      grid-row: 3;
+    }
+
+    .workspace-summary-slot {
+      grid-column: 2;
+      grid-row: 1 / span 3;
+    }
+
+    .wish-workspace:not(.has-attention) {
+      grid-template-rows: auto auto;
+    }
+
+    .wish-workspace:not(.has-attention) .workspace-summary-slot {
+      grid-row: 1 / span 2;
+    }
+
+    .wish-workspace:not(.has-attention) .workspace-content-stage {
+      grid-row: 2;
+    }
+
+    .wish-workspace:not(.has-attention):has(.workspace-content-stage.is-empty) {
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .wish-workspace.has-attention:has(.workspace-content-stage.is-empty) {
+      grid-template-rows: auto auto minmax(0, 1fr);
+    }
   }
 }

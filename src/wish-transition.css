@@ -1,10 +1,11 @@
-/* Creation and wish handoff motion. The renderer remains mounted while the creation root grows to the window so a
-   successful make never exposes an empty shell between the form and the wish page. */
+/* The creation form fades out in place; the mounted WishView then reveals its reading order. The smoke renderer keeps
+   its ordinary form-sized surface throughout. */
 :root {
   --wish-motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --wish-motion-distance: 28px;
   --wish-motion-duration: 520ms;
   --wish-motion-stagger: 82ms;
+  --wish-creation-exit-duration: 200ms;
 }
 
 @keyframes wish-entry-up-fade {
@@ -18,18 +19,15 @@
   }
 }
 
-@keyframes wish-exit-up-fade {
+@keyframes wish-creation-exit-fade {
   from {
     opacity: 1;
-    transform: translateY(0);
   }
   to {
     opacity: 0;
-    transform: translateY(calc(var(--wish-motion-distance) * -1));
   }
 }
 
-/* The wrapper keeps the existing WishView flex contract while giving the reveal a stable parent. */
 .wish-entry[data-wish-entry="wish"] {
   display: flex;
   flex: 1 1 auto;
@@ -43,103 +41,12 @@
   min-height: 0;
 }
 
-/* Creation enters in reading order. These selectors intentionally use the data contract so the workspace can add
-   sections without making the shell depend on its internal element names. */
-.wish-creation[data-wish-transition="entering"] [data-wish-section="title"],
-.wish-creation[data-wish-transition="entering"] [data-wish-section="options"],
-.wish-creation[data-wish-transition="entering"] [data-wish-section="editor"],
-.wish-creation[data-wish-transition="entering"] [data-wish-section="action"] {
-  animation-name: wish-entry-up-fade;
-  animation-duration: var(--wish-motion-duration);
-  animation-timing-function: var(--wish-motion-ease);
-  animation-fill-mode: both;
-  will-change: transform, opacity;
-}
-.wish-creation[data-wish-transition="entering"] [data-wish-section="title"] {
-  animation-delay: 0ms;
-}
-.wish-creation[data-wish-transition="entering"] [data-wish-section="options"] {
-  animation-delay: var(--wish-motion-stagger);
-}
-.wish-creation[data-wish-transition="entering"] [data-wish-section="editor"] {
-  animation-delay: calc(var(--wish-motion-stagger) * 2);
-}
-.wish-creation[data-wish-transition="entering"] .wish-composer {
-  animation: none;
-}
-.wish-creation-editor {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
-}
-.wish-creation-editor > .wish-composer {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-.wish-creation[data-wish-transition="entering"] [data-wish-section="action"] {
-  animation-delay: calc(var(--wish-motion-stagger) * 3);
-}
-
-/* A root-level fixed layer is deliberate: the app owns a sidebar and may also have a terminal row below it. The
-   smoke covers both while its same canvas and ASCII layers continue receiving resize/visibility updates. */
-.wish-creation[data-wish-transition="opening"] {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  width: 100vw;
-  height: 100vh;
-  background: var(--smoke-bg);
-}
-.wish-creation[data-wish-transition="opening"] .wish-creation-content::before {
-  opacity: 0;
-}
-.wish-creation[data-wish-transition="departing"] [data-wish-section="title"],
-.wish-creation[data-wish-transition="departing"] [data-wish-section="options"],
-.wish-creation[data-wish-transition="departing"] [data-wish-section="editor"],
-.wish-creation[data-wish-transition="departing"] [data-wish-section="action"],
-.wish-creation[data-wish-transition="opening"] [data-wish-section="title"],
-.wish-creation[data-wish-transition="opening"] [data-wish-section="options"],
-.wish-creation[data-wish-transition="opening"] [data-wish-section="editor"],
-.wish-creation[data-wish-transition="opening"] [data-wish-section="action"] {
-  animation-name: wish-exit-up-fade;
-  animation-duration: 360ms;
-  animation-timing-function: var(--wish-motion-ease);
-  animation-fill-mode: both;
-  animation-delay: 0ms;
+.wish-creation[data-wish-transition="exiting"] {
+  animation: wish-creation-exit-fade var(--wish-creation-exit-duration) linear
+    both;
   pointer-events: none;
-  will-change: transform, opacity;
-}
-.wish-creation[data-wish-transition="departing"] .wish-composer,
-.wish-creation[data-wish-transition="opening"] .wish-composer {
-  animation: none;
-}
-.wish-creation[data-wish-transition="opening"]
-  .wish-creation-form
-  > .wish-smoke {
-  /* The smoke is the handoff surface; the outgoing content has already faded before the root grows around it. */
-  z-index: 0;
-  pointer-events: auto;
 }
 
-/* Opening starts only after the departure timer. Freeze the completed exit while the full-window shell grows. */
-.wish-creation[data-wish-transition="opening"] [data-wish-section],
-.wish-creation[data-wish-transition="opening"] .wish-composer {
-  animation: none;
-  opacity: 0;
-  transform: translateY(calc(var(--wish-motion-distance) * -1));
-}
-
-/* The content has already left before this phase starts. The opaque creation layer stays in place while the mounted
-   smoke renderer erodes itself, so this phase never crossfades the whole page. */
-.wish-creation[data-wish-transition="opening"][data-wish-opening-phase="dissipating"] {
-  pointer-events: auto;
-}
-
-/* WishView reveals its workspace head, content, and summary through dedicated markers. Legacy four-section markers
-   remain supported. Until its workspace is mounted, the parent itself supplies a quiet reveal so there is still one
-   continuous handoff for the initial page. */
 .wish-entry[data-wish-entry="wish"][data-wish-transition="preparing"] {
   position: absolute;
   inset: 0;
@@ -148,36 +55,10 @@
   transform: none;
 }
 .wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]:not(
-    :has(
-      [data-wish-reveal-section],
-      [data-wish-section="title"],
-      [data-wish-section="options"],
-      [data-wish-section="editor"],
-      [data-wish-section="action"]
-    )
+    :has([data-wish-section])
   ) {
   animation: wish-entry-up-fade var(--wish-motion-duration)
     var(--wish-motion-ease) both;
-}
-.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
-  [data-wish-reveal-section] {
-  animation-name: wish-entry-up-fade;
-  animation-duration: var(--wish-motion-duration);
-  animation-timing-function: var(--wish-motion-ease);
-  animation-fill-mode: both;
-  will-change: transform, opacity;
-}
-.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
-  [data-wish-reveal-section="head"] {
-  animation-delay: 0ms;
-}
-.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
-  [data-wish-reveal-section="content"] {
-  animation-delay: var(--wish-motion-stagger);
-}
-.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
-  [data-wish-reveal-section="summary"] {
-  animation-delay: calc(var(--wish-motion-stagger) * 2);
 }
 .wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
   [data-wish-section="title"],
@@ -210,87 +91,89 @@
   animation-delay: calc(var(--wish-motion-stagger) * 3);
 }
 
+/* Reveal the wish page in a stable semantic order: title, description, facts, navigation, then the selected content.
+   These markers are owned by WishView and remain mounted while the form exits. */
+.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
+  .workspace-summary-head
+  > h1,
+.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
+  .workspace-thread-description,
+.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
+  .workspace-facts,
+.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
+  .workspace-summary-slot,
+.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
+  .workspace-content-stage {
+  animation-name: wish-entry-up-fade;
+  animation-duration: var(--wish-motion-duration);
+  animation-timing-function: var(--wish-motion-ease);
+  animation-fill-mode: both;
+  will-change: transform, opacity;
+}
+.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
+  .workspace-summary-head
+  > h1 {
+  animation-delay: 0ms;
+}
+.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
+  .workspace-thread-description {
+  animation-delay: var(--wish-motion-stagger);
+}
+.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
+  .workspace-facts {
+  animation-delay: calc(var(--wish-motion-stagger) * 2);
+}
+.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
+  .workspace-summary-slot {
+  animation-delay: calc(var(--wish-motion-stagger) * 3);
+}
+.wish-entry[data-wish-entry="wish"][data-wish-transition="revealing"]
+  .workspace-content-stage {
+  animation-delay: calc(var(--wish-motion-stagger) * 4);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .wish-creation[data-wish-transition="entering"] [data-wish-section],
-  .wish-creation[data-wish-transition="entering"] .wish-composer,
+  .wish-creation[data-wish-transition="exiting"],
   .wish-entry[data-wish-entry="wish"],
   .wish-entry[data-wish-entry="wish"] [data-wish-section],
-  .wish-entry[data-wish-entry="wish"] [data-wish-reveal-section] {
+  .wish-entry[data-wish-entry="wish"] .workspace-summary-head > h1,
+  .wish-entry[data-wish-entry="wish"] .workspace-thread-description,
+  .wish-entry[data-wish-entry="wish"] .workspace-facts,
+  .wish-entry[data-wish-entry="wish"] .workspace-summary-slot,
+  .wish-entry[data-wish-entry="wish"] .workspace-content-stage {
     animation: none !important;
-    opacity: 1;
     transform: none;
   }
   .wish-entry[data-wish-entry="wish"][data-wish-transition="preparing"] {
     opacity: 0;
   }
-  .wish-creation[data-wish-transition="departing"] [data-wish-section="title"],
-  .wish-creation[data-wish-transition="departing"]
-    [data-wish-section="options"],
-  .wish-creation[data-wish-transition="departing"] [data-wish-section="editor"],
-  .wish-creation[data-wish-transition="departing"] .wish-composer,
-  .wish-creation[data-wish-transition="departing"] [data-wish-section="action"],
-  .wish-creation[data-wish-transition="opening"] [data-wish-section="title"],
-  .wish-creation[data-wish-transition="opening"] [data-wish-section="options"],
-  .wish-creation[data-wish-transition="opening"] [data-wish-section="editor"],
-  .wish-creation[data-wish-transition="opening"] .wish-composer,
-  .wish-creation[data-wish-transition="opening"] [data-wish-section="action"] {
-    animation: none !important;
-    opacity: 0;
-    transform: none;
-  }
 }
-html[data-motion="reduced"]
-  .wish-creation[data-wish-transition="entering"]
-  [data-wish-section],
-html[data-motion="reduced"]
-  .wish-creation[data-wish-transition="entering"]
-  .wish-composer,
+
+html[data-motion="reduced"] .wish-creation[data-wish-transition="exiting"],
 html[data-motion="reduced"] .wish-entry[data-wish-entry="wish"],
 html[data-motion="reduced"]
   .wish-entry[data-wish-entry="wish"]
   [data-wish-section],
 html[data-motion="reduced"]
   .wish-entry[data-wish-entry="wish"]
-  [data-wish-reveal-section] {
+  .workspace-summary-head
+  > h1,
+html[data-motion="reduced"]
+  .wish-entry[data-wish-entry="wish"]
+  .workspace-thread-description,
+html[data-motion="reduced"]
+  .wish-entry[data-wish-entry="wish"]
+  .workspace-facts,
+html[data-motion="reduced"]
+  .wish-entry[data-wish-entry="wish"]
+  .workspace-summary-slot,
+html[data-motion="reduced"]
+  .wish-entry[data-wish-entry="wish"]
+  .workspace-content-stage {
   animation: none !important;
-  opacity: 1;
   transform: none;
 }
 html[data-motion="reduced"]
   .wish-entry[data-wish-entry="wish"][data-wish-transition="preparing"] {
   opacity: 0;
-}
-html[data-motion="reduced"]
-  .wish-creation[data-wish-transition="departing"]
-  [data-wish-section="title"],
-html[data-motion="reduced"]
-  .wish-creation[data-wish-transition="departing"]
-  [data-wish-section="options"],
-html[data-motion="reduced"]
-  .wish-creation[data-wish-transition="departing"]
-  [data-wish-section="editor"],
-html[data-motion="reduced"]
-  .wish-creation[data-wish-transition="departing"]
-  .wish-composer,
-html[data-motion="reduced"]
-  .wish-creation[data-wish-transition="departing"]
-  [data-wish-section="action"],
-html[data-motion="reduced"]
-  .wish-creation[data-wish-transition="opening"]
-  [data-wish-section="title"],
-html[data-motion="reduced"]
-  .wish-creation[data-wish-transition="opening"]
-  [data-wish-section="options"],
-html[data-motion="reduced"]
-  .wish-creation[data-wish-transition="opening"]
-  [data-wish-section="editor"],
-html[data-motion="reduced"]
-  .wish-creation[data-wish-transition="opening"]
-  .wish-composer,
-html[data-motion="reduced"]
-  .wish-creation[data-wish-transition="opening"]
-  [data-wish-section="action"] {
-  animation: none !important;
-  opacity: 0;
-  transform: none;
 }

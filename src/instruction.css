@@ -75,6 +75,101 @@
   margin: 0;
 }
 
+/* Workspace indications use the same flat reading rows as tasks. The default list remains card-like for FlightPlan. */
+.wish-instructions.is-workspace .instruction-list {
+  gap: 0;
+}
+
+.wish-instructions.is-workspace .instruction-entry {
+  min-height: 36px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.review .workspace-panel .wish-instructions.is-workspace .instruction-entry {
+  min-height: 36px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.wish-instructions.is-workspace .instruction-entry:hover {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.wish-instructions.is-workspace .instruction-entry:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: -2px;
+}
+
+.wish-instructions.is-workspace .instruction-entry header {
+  gap: 6px 10px;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.wish-instructions.is-workspace .instruction-entry header > code {
+  flex: 0 0 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wish-instructions.is-workspace.is-compact .instruction-entry p,
+.wish-instructions.is-workspace .instruction-preview {
+  display: -webkit-box;
+  max-width: 80ch;
+  margin: 4px 0 0;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 18px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.wish-instructions.is-workspace .instruction-reply-count {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.wish-instructions.is-workspace .instruction-replies {
+  margin-top: 12px;
+}
+
+.instruction-detail {
+  display: grid;
+  gap: 12px;
+}
+
+.instruction-detail > header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.instruction-detail > p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 21px;
+}
+
 /* Durable indications use uniform outlines. Cards keep two separate native buttons. */
 .review .plan-wish.instruction-card {
   position: relative;

@@ -40,10 +40,6 @@ import "./review.css";
 import "./wish-transition.css";
 
 type Modal = "make" | "project" | "settings" | "agents" | "docs" | null;
-type WishCreationTransition = {
-  wish: Wish;
-  phase: "departing" | "opening" | "dissipating";
-};
 
 const WISH_REVEAL_RESET_MS = 900;
 
@@ -78,15 +74,14 @@ export function WishApp() {
   const [selected, setSelected] = useState(() => stored("djinn.wish"));
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
-  // Keep a just-created wish renderable while the creation smoke expands and the next store list is in flight.
+  // Keep a just-created wish renderable while the creation form fades and the next store list is in flight.
   const [justMade, setJustMade] = useState<Wish>();
-  const [creationTransition, setCreationTransition] =
-    useState<WishCreationTransition>();
-  const [revealingWishId, setRevealingWishId] = useState("");
-  const creationRun = useRef(0);
-  const creationTransitionRef = useRef<WishCreationTransition | undefined>(
+  const [creationExitWish, setCreationExitWish] = useState<Wish | undefined>(
     undefined,
   );
+  const [revealingWishId, setRevealingWishId] = useState("");
+  const creationRun = useRef(0);
+  const creationExitWishRef = useRef<Wish | undefined>(undefined);
   const pendingMadeWishId = useRef("");
   const focusFrame = useRef<number | undefined>(undefined);
   const focusWishId = useRef("");
@@ -103,7 +98,7 @@ export function WishApp() {
   const makeBackAction = useRef<(() => void) | null>(null);
   const [makeBackInSetup, setMakeBackInSetup] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
-  const creationBusy = making || creationTransition !== undefined;
+  const creationBusy = making || creationExitWish !== undefined;
   const closeToast = useCallback(() => setToast(""), []);
   const closeMake = useCallback(() => {
     creationRun.current += 1;
@@ -111,10 +106,10 @@ export function WishApp() {
       cancelAnimationFrame(focusFrame.current);
       focusFrame.current = undefined;
     }
-    creationTransitionRef.current = undefined;
+    creationExitWishRef.current = undefined;
     pendingMadeWishId.current = "";
     focusWishId.current = "";
-    setCreationTransition(undefined);
+    setCreationExitWish(undefined);
     setMaking(false);
     setModal(null);
   }, []);
@@ -129,7 +124,7 @@ export function WishApp() {
       if (focusFrame.current !== undefined)
         cancelAnimationFrame(focusFrame.current);
       creationRun.current += 1;
-      creationTransitionRef.current = undefined;
+      creationExitWishRef.current = undefined;
     },
     [],
   );
@@ -156,20 +151,20 @@ export function WishApp() {
   );
   useLayoutEffect(() => {
     const wishId = focusWishId.current;
-    if (!wishId || creationTransition) return;
+    if (!wishId || creationExitWishRef.current) return;
     const run = creationRun.current;
     focusWishId.current = "";
     if (focusFrame.current !== undefined)
       cancelAnimationFrame(focusFrame.current);
     focusFrame.current = requestAnimationFrame(() => {
       focusFrame.current = undefined;
-      if (creationRun.current !== run || creationTransitionRef.current) return;
+      if (creationRun.current !== run || creationExitWishRef.current) return;
       const entry = document.querySelector<HTMLElement>(
         `[data-wish-entry="wish"][data-wish-id="${wishId}"]`,
       );
       entry?.focus({ preventScroll: true });
     });
-  }, [creationTransition]);
+  }, [creationExitWish]);
   // djinn wish resume, or a click on a notification, asks the window to show a wish, there.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -179,7 +174,7 @@ export function WishApp() {
         return;
       }
       const ownWishId =
-        creationTransitionRef.current?.wish.id || pendingMadeWishId.current;
+        creationExitWishRef.current?.id || pendingMadeWishId.current;
       if (
         focus.wishId &&
         !focus.replay &&
@@ -201,7 +196,12 @@ export function WishApp() {
       // The wish renders, then its details load: look for the element a few seconds.
       const until = Date.now() + 5000;
       const look = () => {
-        if (document.getElementById(focus.target)) jump(focus.target);
+        const attentionTarget =
+          focus.target.startsWith("question-") ||
+          focus.target.startsWith("grant-") ||
+          focus.target.startsWith("lead-prompt-");
+        if (document.getElementById(focus.target))
+          jump(focus.target, { focus: !attentionTarget });
         else if (Date.now() < until) timer = setTimeout(look, 100);
       };
       timer = setTimeout(look, 0);
@@ -347,30 +347,16 @@ export function WishApp() {
     },
     [clients, data],
   );
-  const completeCreation = useCallback(() => {
-    const transition = creationTransitionRef.current;
-    if (!transition || transition.phase !== "dissipating") return;
-    const wishId = transition.wish.id;
-    creationTransitionRef.current = undefined;
+  const finishCreation = useCallback(() => {
+    const made = creationExitWishRef.current;
+    if (!made) return;
+    const wishId = made.id;
+    creationExitWishRef.current = undefined;
     focusWishId.current = wishId;
     setRevealingWishId(wishId);
-    setCreationTransition(undefined);
+    setCreationExitWish(undefined);
     setMaking(false);
     setModal(null);
-  }, []);
-  const finishCreation = useCallback(() => {
-    const transition = creationTransitionRef.current;
-    if (!transition || transition.phase !== "opening") return;
-    const dissipating = { ...transition, phase: "dissipating" as const };
-    creationTransitionRef.current = dissipating;
-    setCreationTransition(dissipating);
-  }, []);
-  const finishDeparture = useCallback(() => {
-    const transition = creationTransitionRef.current;
-    if (!transition || transition.phase !== "departing") return;
-    const opening = { ...transition, phase: "opening" as const };
-    creationTransitionRef.current = opening;
-    setCreationTransition(opening);
   }, []);
   const madeWish = useCallback(
     async (made: Wish) => {
@@ -379,11 +365,10 @@ export function WishApp() {
       setJustMade(made);
       pendingMadeWishId.current = isActive(made) ? made.id : "";
       // The response carries a complete wish, so the pending copy is renderable immediately. Refresh in the
-      // background; a slow or failed list refresh must not strand the smoke overlay.
+      // background while the creation form performs its short exit fade.
       if (run !== creationRun.current) return;
-      const transition = { wish: made, phase: "departing" as const };
-      creationTransitionRef.current = transition;
-      setCreationTransition(transition);
+      creationExitWishRef.current = made;
+      setCreationExitWish(made);
       void data.changed(made.id, [Change.WISH]).catch(() => undefined);
       void launchMadeLead(made, run);
     },
@@ -537,11 +522,8 @@ export function WishApp() {
               backActionRef={makeBackAction}
               onBackSetupChange={setMakeBackInSetup}
               onClose={closeMake}
-              transitioning={creationTransition !== undefined}
-              transitionPhase={creationTransition?.phase}
-              onDepartureComplete={finishDeparture}
-              onTransitionComplete={finishCreation}
-              onDissipationComplete={completeCreation}
+              exiting={creationExitWish !== undefined}
+              onExitComplete={finishCreation}
               onMade={madeWish}
             />
           ) : plan ? (
@@ -553,8 +535,7 @@ export function WishApp() {
           ) : !wish ? (
             <HomePlaceholder />
           ) : null}
-          {wish &&
-          (modal !== "make" || creationTransition?.wish.id === wish.id) ? (
+          {wish && (modal !== "make" || creationExitWish?.id === wish.id) ? (
             <div
               key={wish.id}
               className="wish-entry"
@@ -564,11 +545,11 @@ export function WishApp() {
               data-wish-transition={
                 revealingWishId === wish.id
                   ? "revealing"
-                  : modal === "make"
+                  : modal === "make" && creationExitWish
                     ? "preparing"
                     : "ready"
               }
-              inert={modal === "make" && creationTransition !== undefined}
+              inert={modal === "make" && creationExitWish !== undefined}
             >
               <WishView
                 wish={wish}

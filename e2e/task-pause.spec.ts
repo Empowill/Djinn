@@ -78,24 +78,32 @@ test("a worker paused from its card holds, then goes on once resumed", async ({
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await openWorkspaceSection(page, "tasks");
     const card = page.locator(`#task-${taskId}`);
-    const badge = card.locator(".wish-task-heading .status-badge");
-    await expect(badge).toHaveText("Running");
+    const badge = card.locator(".wish-task-heading .status-indicator");
+    await expect(badge).toHaveAttribute("aria-label", "Running");
 
     await card.getByRole("button", { name: "Pause the worker" }).click();
-    await expect(badge).toHaveText("Paused");
+    await expect(badge).toHaveAttribute("aria-label", "Paused");
     await expect(
       card.getByRole("button", { name: "Pause the worker" }),
     ).toHaveCount(0);
     await card.getByRole("button", { name: /Work a long while/ }).click();
+    const drawer = page.locator("dialog.task-drawer-shell");
+    await expect(drawer).toBeVisible();
     await expect(
-      card.locator(".wish-event").getByText(/^paused: /),
+      drawer.locator(".wish-event").getByText(/^paused: /),
     ).toBeVisible();
+    await drawer.getByRole("button", { name: /Close|Fermer/ }).click();
+    await expect(drawer).toBeHidden();
 
     await card.getByRole("button", { name: "Resume the worker" }).click();
-    await expect(badge).toHaveText("Running");
+    await expect(badge).toHaveAttribute("aria-label", "Running");
+    await card.getByRole("button", { name: /Work a long while/ }).click();
+    await expect(drawer).toBeVisible();
     await expect(
-      card.locator(".wish-event").getByText("resumed", { exact: true }),
+      drawer.locator(".wish-event").getByText("resumed", { exact: true }),
     ).toBeVisible();
+    await drawer.getByRole("button", { name: /Close|Fermer/ }).click();
+    await expect(drawer).toBeHidden();
     await expect(
       card.getByRole("button", { name: "Pause the worker" }),
     ).toBeVisible();

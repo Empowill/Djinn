@@ -1,7 +1,7 @@
 // The tasks have a tab of their own, in a wish's view and in the flight plan, next to the rest. In it, a list: at the
-// top what moves or waits for someone, by status (running, cut short and failed first, then waiting and paused, the
-// planned ones last); then the azimas of the plan, each with the work part of it (src/azima.tsx), the done ones folded
-// (Fold); at the bottom every finished task, the latest ended first. The decisions have the next tab
+// top the azimas of the plan, each with the work part of it (src/azima.tsx), the done ones folded (Fold); then what
+// moves or waits for someone, by status (running, cut short and failed first, then waiting and paused, the planned
+// ones last); at the bottom every finished task, the latest ended first. The decisions have the next tab
 // (src/decision-log.tsx), then a wish's tilasms (src/tilasms.tsx), and last, discreet, its blocks for agents
 // (src/agent-blocks.tsx).
 import { ChevronDown } from "lucide-react";
@@ -108,8 +108,8 @@ export function Fold({
   );
 }
 
-// TaskSections lays out the Tasks tab: the tasks that move or wait, then the azimas with the work part of them, the
-// done ones folded, then the finished tasks, each in the order given. Without azimas, their section is hidden.
+// TaskSections lays out the Tasks tab: azimas first, then free tasks that move or wait, then finished tasks. Done
+// azimas stay behind their one global Fold. Without azimas, free tasks keep their usual live heading.
 export function TaskSections<T, A = never>({
   moving,
   finished,
@@ -119,6 +119,7 @@ export function TaskSections<T, A = never>({
   renderAzima,
   fold = "",
   showDone = false,
+  workspaceHierarchy = false,
   aside,
 }: {
   moving: readonly T[];
@@ -132,30 +133,123 @@ export function TaskSections<T, A = never>({
   fold?: string;
   // The done azimas show: a link brings one of them, or one of their parts, into sight.
   showDone?: boolean;
+  // The wish workspace groups Azimas and free tasks, each with moving and finished subgroups.
+  workspaceHierarchy?: boolean;
   // Beside the first title: what the tasks spent.
   aside?: ReactNode;
 }) {
+  if (workspaceHierarchy) {
+    const hasAzimas = azimas.length + doneAzimas.length > 0;
+    const hasFreeTasks = moving.length + finished.length > 0;
+
+    return (
+      <div
+        className="workspace-task-hierarchy"
+        role="tabpanel"
+        aria-labelledby="view-tab-tasks"
+      >
+        {hasAzimas && (
+          <section
+            className="wish-section workspace-task-group tasks-azimas"
+            aria-label={t("tasks.azimas")}
+          >
+            <div className="section-title">
+              <h2>{t("tasks.azimas")}</h2>
+            </div>
+            <div className="workspace-task-subgroups">
+              {azimas.length > 0 && (
+                <section
+                  className="workspace-task-subgroup tasks-azimas-moving"
+                  aria-label={t("tasks.in_progress")}
+                >
+                  <div className="workspace-task-subgroup-heading">
+                    <h3>
+                      {t("tasks.in_progress")}
+                      <span className="count">{azimas.length}</span>
+                    </h3>
+                  </div>
+                  {renderAzima && (
+                    <div className="card-grid azima-grid">
+                      {azimas.map(renderAzima)}
+                    </div>
+                  )}
+                </section>
+              )}
+              {doneAzimas.length > 0 && (
+                <section
+                  className="workspace-task-subgroup tasks-azimas-finished"
+                  aria-label={t("tasks.done")}
+                >
+                  <div className="workspace-task-subgroup-heading">
+                    <h3>
+                      {t("tasks.done")}
+                      <span className="count">{doneAzimas.length}</span>
+                    </h3>
+                  </div>
+                  {renderAzima && (
+                    <div className="card-grid azima-grid">
+                      {doneAzimas.map(renderAzima)}
+                    </div>
+                  )}
+                </section>
+              )}
+            </div>
+          </section>
+        )}
+        {hasFreeTasks && (
+          <section
+            className="wish-section workspace-task-group tasks-free"
+            aria-label={t("wish.tasks")}
+          >
+            <div className="section-title">
+              <h2>{t("wish.tasks")}</h2>
+              {aside}
+            </div>
+            <div className="workspace-task-subgroups">
+              {moving.length > 0 && (
+                <section
+                  className="workspace-task-subgroup tasks-free-moving"
+                  aria-label={t("tasks.in_progress")}
+                >
+                  <div className="workspace-task-subgroup-heading">
+                    <h3>
+                      {t("tasks.in_progress")}
+                      <span className="count">{moving.length}</span>
+                    </h3>
+                  </div>
+                  <div className="card-grid task-grid">
+                    {moving.map(render)}
+                  </div>
+                </section>
+              )}
+              {finished.length > 0 && (
+                <section
+                  className="workspace-task-subgroup tasks-free-finished"
+                  aria-label={t("tasks.done")}
+                >
+                  <div className="workspace-task-subgroup-heading">
+                    <h3>
+                      {t("tasks.done")}
+                      <span className="count">{finished.length}</span>
+                    </h3>
+                  </div>
+                  <div className="card-grid task-grid">
+                    {finished.map(render)}
+                  </div>
+                </section>
+              )}
+            </div>
+          </section>
+        )}
+      </div>
+    );
+  }
+  const hasAzimas = azimas.length + doneAzimas.length > 0;
+  const freeTasksLabel = hasAzimas ? t("tasks.other") : t("tasks.live");
+  const showMoving = moving.length > 0 || !hasAzimas;
   return (
     <div role="tabpanel" aria-labelledby="view-tab-tasks">
-      <section
-        className="wish-section tasks-moving"
-        aria-label={t("tasks.live")}
-      >
-        <div className="section-title">
-          <h2>
-            {t("tasks.live")}
-            <span className="count">{moving.length}</span>
-          </h2>
-          {aside}
-        </div>
-        {moving.length === 0 && (
-          <p className="muted-text">{t("tasks.none_live")}</p>
-        )}
-        {moving.length > 0 && (
-          <div className="card-grid task-grid">{moving.map(render)}</div>
-        )}
-      </section>
-      {azimas.length + doneAzimas.length > 0 && renderAzima && (
+      {hasAzimas && renderAzima && (
         <section
           className="wish-section tasks-azimas"
           aria-label={t("tasks.azimas")}
@@ -165,6 +259,7 @@ export function TaskSections<T, A = never>({
               {t("tasks.azimas")}
               <span className="count">{azimas.length + doneAzimas.length}</span>
             </h2>
+            {aside}
           </div>
           {azimas.length > 0 && (
             <div className="card-grid azima-grid">
@@ -176,6 +271,26 @@ export function TaskSections<T, A = never>({
               {doneAzimas.map(renderAzima)}
             </div>
           </Fold>
+        </section>
+      )}
+      {showMoving && (
+        <section
+          className="wish-section tasks-moving"
+          aria-label={freeTasksLabel}
+        >
+          <div className="section-title">
+            <h2>
+              {freeTasksLabel}
+              <span className="count">{moving.length}</span>
+            </h2>
+            {!hasAzimas && aside}
+          </div>
+          {moving.length === 0 && (
+            <p className="muted-text">{t("tasks.none_live")}</p>
+          )}
+          {moving.length > 0 && (
+            <div className="card-grid task-grid">{moving.map(render)}</div>
+          )}
         </section>
       )}
       <section

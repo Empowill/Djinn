@@ -1,0 +1,358 @@
+.wish-activity {
+  min-width: 0;
+}
+
+.wish-activity-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-bottom: 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+}
+
+.wish-activity-tabs > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.wish-activity-tabs > button:hover,
+.wish-activity-tabs > button:focus-visible {
+  color: var(--text);
+}
+
+.wish-activity-tabs > button.is-active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.wish-activity-tabs .count {
+  color: var(--muted-dim);
+  font: 10px var(--mono);
+}
+
+.wish-activity-tabs.is-icon-only {
+  flex: 0 0 auto;
+  gap: 4px;
+  margin: 0;
+  height: 34px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.wish-activity-tabs.is-icon-only > button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  line-height: 0;
+}
+
+.wish-activity-tabs.is-icon-only > button > .visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.wish-activity-tabs.is-icon-only > button:hover,
+.wish-activity-tabs.is-icon-only > button:focus-visible {
+  border-color: transparent;
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.wish-activity-tabs.is-icon-only > button:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+
+.wish-activity-tabs.is-icon-only > button.is-active {
+  border: 0;
+  background: var(--text);
+  color: var(--surface);
+}
+
+.wish-activity-tabs.is-icon-only > button > .wish-activity-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  line-height: 0;
+}
+
+.wish-activity-tabs.is-icon-only > button > .wish-activity-icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+/* The header controls share the workspace panel's close button sizing. Keep these selectors stronger than the
+   workspace's text-tab spacing so the same component can live beside that control without inheriting a tab underline. */
+.workspace-panel[data-wish-panel="activity"]
+  .workspace-panel-header
+  .wish-activity-tabs.is-icon-only {
+  gap: 4px;
+  margin: 0;
+  height: 34px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.workspace-panel[data-wish-panel="activity"]
+  .workspace-panel-header
+  .wish-activity-tabs.is-icon-only
+  > button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.workspace-panel[data-wish-panel="activity"]
+  .workspace-panel-header
+  .wish-activity-tabs.is-icon-only
+  > button.is-active {
+  border: 0;
+  background: var(--text);
+  color: var(--surface);
+}
+
+.workspace-panel-header-actions:has(.wish-activity-tabs.is-icon-only) {
+  margin-right: 8px;
+}
+
+.wish-activity-tabs .visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.wish-activity-panel {
+  min-width: 0;
+}
+
+.wish-activity-panel > .wish-section.decision-log > .section-title,
+.wish-activity-panel > .wish-section.wish-instructions > .section-title {
+  display: none;
+}
+
+/* The workspace activity panel keeps its three streams scannable. Details live in the shared native drawer so a
+   long note never pushes the panel's task rows out of sight. The default activity presentation above is unchanged. */
+.workspace-panel[data-wish-panel="activity"] .wish-activity-tabs {
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.workspace-panel[data-wish-panel="activity"] .wish-activity-tabs > button {
+  min-height: 30px;
+  padding: 5px 7px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.workspace-panel[data-wish-panel="activity"] .wish-activity-tabs .count {
+  font-size: 10px;
+}
+
+/* Keep the header control a single segmented surface even when the workspace's text-tab defaults are loaded later. */
+.workspace-panel[data-wish-panel="activity"]
+  .workspace-panel-header
+  .wish-activity-tabs.is-icon-only {
+  height: 34px;
+  margin: 0;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.workspace-panel[data-wish-panel="activity"]
+  .workspace-panel-header
+  .wish-activity-tabs.is-icon-only
+  > button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-bottom: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.workspace-panel[data-wish-panel="activity"]
+  .workspace-panel-header
+  .wish-activity-tabs.is-icon-only
+  > button:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.workspace-panel[data-wish-panel="activity"]
+  .workspace-panel-header
+  .wish-activity-tabs.is-icon-only
+  > button.is-active {
+  border: 0;
+  border-bottom: 0;
+  background: var(--text);
+  color: var(--surface);
+}
+
+.workspace-panel[data-wish-panel="activity"]
+  .workspace-panel-header
+  .wish-activity-tabs.is-icon-only
+  > button:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+
+.workspace-activity-detail {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.workspace-activity-detail > time {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.workspace-activity-detail > code {
+  display: block;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.workspace-activity-detail > p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.workspace-activity-detail .prose {
+  min-width: 0;
+}
+
+.workspace-panel[data-wish-panel="activity"] .wish-journal.is-workspace {
+  margin-top: 0;
+}
+
+.workspace-panel[data-wish-panel="activity"]
+  .wish-journal.is-workspace
+  .journal-list {
+  font-size: 12px;
+}
+
+.workspace-panel[data-wish-panel="activity"]
+  .wish-journal.is-workspace
+  .journal-list
+  tr {
+  cursor: pointer;
+}
+
+.workspace-panel[data-wish-panel="activity"]
+  .wish-journal.is-workspace
+  .journal-list
+  tr:hover {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.workspace-panel[data-wish-panel="activity"]
+  .wish-journal.is-workspace
+  .journal-list
+  tr:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: -2px;
+}
+
+.workspace-panel[data-wish-panel="activity"]
+  .wish-journal.is-workspace
+  .journal-list
+  td {
+  padding: 7px 8px;
+}
+
+.workspace-panel[data-wish-panel="activity"]
+  .wish-journal.is-workspace
+  .journal-list
+  td:first-child {
+  font-size: 10px;
+}
+
+.workspace-panel[data-wish-panel="activity"]
+  .wish-journal.is-workspace
+  .journal-preview {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wish-settings-drawer:has(.workspace-activity-detail) {
+  width: min(560px, 100vw);
+}
+
+.wish-settings-drawer:has(.workspace-activity-detail)
+  .wish-settings-drawer-content {
+  padding: 20px;
+}
+
+.journal-detail .prose {
+  font-size: 13px;
+  line-height: 19px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wish-activity-tabs > button {
+    transition: none;
+  }
+}

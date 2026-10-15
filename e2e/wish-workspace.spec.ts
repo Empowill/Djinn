@@ -1,6 +1,6 @@
-// A wish opens as a sparse summary and grows into a persistent, composable workspace. These tests use the browser
-// transport's real data and geometry: every section starts closed, content panels compose by deliberate drag, and
-// global actions stay usable while the workspace is split or maximized.
+// A wish opens as a sparse summary and reveals one persistent detail panel at a time. These tests use the browser
+// transport's real data: panel selection, draft preservation, activity tabs, drawers, and global actions remain usable
+// while the workspace switches views.
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
   expect,
@@ -48,6 +48,12 @@ type WorkspaceFixture = {
   directory: string;
   importDirectory: string;
   tilasmDirectory: string;
+};
+
+type ReadyFixture = {
+  wishId: string;
+  title: string;
+  file: string;
 };
 
 function pauseActiveWishes() {
@@ -228,6 +234,86 @@ function cleanup(sample: WorkspaceFixture) {
   fs.rmSync(sample.directory, { recursive: true, force: true });
 }
 
+function readyFixture(): ReadyFixture {
+  pauseActiveWishes();
+  const wishId = randomUUID();
+  const title = `Grant the lamp ${wishId.slice(0, 8)}`;
+  const file = path.join(
+    fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "workspace-ready-")),
+    "ready.json",
+  );
+  const at = "2026-10-09T08:00:00Z";
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      version: 1,
+      create_time: at,
+      wish: { id: wishId, title, create_time: at },
+      tasks: [
+        {
+          id: randomUUID(),
+          wish_id: wishId,
+          code: "W1",
+          title: "Finish the lamp",
+          status: "TASK_STATUS_DONE",
+          create_time: at,
+        },
+      ],
+      questions: [
+        {
+          id: randomUUID(),
+          wish_id: wishId,
+          code: "Q01",
+          text: "Keep the lamp?",
+          answer: { choice: "CHOICE_YES", create_time: at },
+          create_time: at,
+        },
+      ],
+    }),
+  );
+  djinn("wish", "import", file);
+  return { wishId, title, file };
+}
+
+function cleanupReady(sample: ReadyFixture) {
+  try {
+    djinn("wish", "pause", sample.wishId);
+  } catch {
+    // The test may already have granted or removed the wish.
+  }
+  fs.rmSync(path.dirname(sample.file), { recursive: true, force: true });
+}
+
+function installPromptingCodex(): string {
+  const file = path.join(process.env.DJINN_E2E_HOME!, "bin", "codex");
+  fs.writeFileSync(
+    file,
+    String.raw`#!/bin/sh
+stty raw -echo
+printf '\033[2J\033[HWould you like to run the following command?\r\n\r\n$ djinn wish brief\r\n\r\n› 1. Yes, proceed (y)\r\n  2. No, cancel\r\n\r\nPress enter to confirm or esc to cancel\r\n'
+dd bs=1 count=1 >/dev/null 2>&1
+stty -raw echo
+exec cat
+`,
+    { mode: 0o755 },
+  );
+  return file;
+}
+
+function startPromptingLead(sample: WorkspaceFixture) {
+  djinn(
+    "wish",
+    "set-lead",
+    sample.wishId,
+    randomUUID(),
+    "--provider",
+    "codex",
+    "--directory",
+    sample.directory,
+  );
+  djinn("wish", "resume", sample.wishId);
+}
+
 const stage = (page: Page) =>
   page.locator('.wish-workspace[data-wish-workspace="stage"]');
 const panel = (page: Page, id: string) =>
@@ -236,38 +322,50 @@ const section = (page: Page, id: string) =>
   stage(page).locator(`[data-wish-section="${id}"]`);
 const sectionButton = (page: Page, id: string) => section(page, id);
 
-const globalTrigger = (page: Page) => page.locator(".workspace-action-trigger");
+const globalTrigger = (page: Page) =>
+  page.locator(".workspace-action-attention-pending");
 
 const globalDialog = workspaceGlobalDialog;
 
 async function assertGlobalTriggerClearsToolbar(page: Page) {
-  const toolbar = await page.locator(".app-toolbar").boundingBox();
   const trigger = await globalTrigger(page).boundingBox();
-  expect(toolbar).not.toBeNull();
   expect(trigger).not.toBeNull();
-  if (
-    toolbar &&
-    trigger &&
-    toolbar.y < trigger.y + trigger.height &&
-    trigger.y < toolbar.y + toolbar.height
-  )
-    expect(trigger.x).toBeGreaterThanOrEqual(toolbar.x + toolbar.width);
+  await expect(globalDialog(page)).toHaveClass(/is-collapsed/);
 }
 
 async function openGlobalActions(page: Page) {
-  await globalTrigger(page).click();
-  await expect(globalDialog(page)).toBeVisible();
+  const dock = globalDialog(page);
+  if ((await dock.getAttribute("class"))?.includes("is-collapsed"))
+    await globalTrigger(page).click();
+  await expect(dock).not.toHaveClass(/is-collapsed/);
+}
+
+async function collapseGlobalActions(page: Page) {
+  const dock = globalDialog(page);
+  // The dock is mounted only after its first action arrives. Collapse that
+  // mounted dock before asserting on the small pending trigger.
+  await expect(dock).toHaveCount(1);
+  if (!((await dock.getAttribute("class")) ?? "").includes("is-collapsed")) {
+    await dock
+      .getByRole("button", {
+        name: workspaceLocalePattern("attention.close"),
+      })
+      .click();
+  }
+  await expect(dock).toHaveClass(/is-collapsed/);
+  await expect(globalTrigger(page)).toBeVisible();
 }
 
 async function closeGlobalActions(page: Page) {
   const dialog = globalDialog(page);
-  if (await dialog.isVisible().catch(() => false)) {
+  if ((await dialog.count()) === 0) return;
+  if (!(await dialog.getAttribute("class"))?.includes("is-collapsed")) {
     await dialog
       .getByRole("button", {
-        name: workspaceLocalePattern("app.close_window"),
+        name: workspaceLocalePattern("attention.close"),
       })
       .click();
-    await expect(dialog).toHaveCount(0);
+    await expect(dialog).toHaveClass(/is-collapsed/);
   }
 }
 
@@ -306,7 +404,24 @@ async function focusOnNextWatchShow(
   target: string,
 ): Promise<() => Promise<void>> {
   let inject = true;
+  let navigated = false;
+  const mainFrame = page.mainFrame();
+  const onFrameNavigated = (frame: typeof mainFrame) => {
+    if (frame === mainFrame) navigated = true;
+  };
+  page.on("framenavigated", onFrameNavigated);
   const handler = async (route: Route) => {
+    // A reload can leave the old document's reconnect in flight. Let that
+    // request finish; only the first WatchShow request of the new document is
+    // the signal this test installed.
+    if (!navigated) {
+      try {
+        await route.continue();
+      } catch {
+        // The old document may have been canceled during navigation.
+      }
+      return;
+    }
     if (!inject) {
       await route.fulfill({
         status: 200,
@@ -323,7 +438,11 @@ async function focusOnNextWatchShow(
     });
   };
   await page.route("**/ui.v1.UiService/WatchShow", handler);
-  return async () => page.unroute("**/ui.v1.UiService/WatchShow", handler);
+  return async () => {
+    page.off("framenavigated", onFrameNavigated);
+    if (!page.isClosed())
+      await page.unroute("**/ui.v1.UiService/WatchShow", handler);
+  };
 }
 
 async function holdQuestionList(page: Page) {
@@ -353,33 +472,72 @@ async function holdQuestionList(page: Page) {
     release,
     stop: async () => {
       release();
-      await page.unroute("**/plan.v1.QuestionService/List", handler);
+      if (!page.isClosed())
+        await page.unroute("**/plan.v1.QuestionService/List", handler);
+    },
+  };
+}
+
+async function holdTaskList(page: Page) {
+  let resolveSeen!: () => void;
+  const seen = new Promise<void>((resolve) => {
+    resolveSeen = resolve;
+  });
+  let releaseGate!: () => void;
+  const released = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  let releasedOnce = false;
+  const release = () => {
+    if (releasedOnce) return;
+    releasedOnce = true;
+    releaseGate();
+  };
+  let navigated = false;
+  const mainFrame = page.mainFrame();
+  const onFrameNavigated = (frame: typeof mainFrame) => {
+    if (frame === mainFrame) navigated = true;
+  };
+  page.on("framenavigated", onFrameNavigated);
+  const handler = async (route: Route) => {
+    if (!navigated) {
+      try {
+        await route.continue();
+      } catch {
+        // A reconnect from the old document can be canceled by navigation.
+      }
+      return;
+    }
+    try {
+      const response = await route.fetch();
+      resolveSeen();
+      await released;
+      if (!page.isClosed()) await route.fulfill({ response });
+    } catch {
+      // A canceled request must not satisfy the gate for the new document.
+    }
+  };
+  await page.route("**/plan.v1.TaskService/List", handler);
+  return {
+    seen,
+    release,
+    stop: async () => {
+      release();
+      page.off("framenavigated", onFrameNavigated);
+      if (!page.isClosed())
+        await page.unroute("**/plan.v1.TaskService/List", handler);
     },
   };
 }
 
 async function openSection(page: Page, id: string) {
-  const maximized = await stage(page).getAttribute("data-wish-maximized");
-  if (maximized && maximized !== id)
-    await panel(page, maximized)
-      .getByTitle(workspaceLocalePattern("workspace.restore"))
-      .click();
   const current = panel(page, id);
   if (!(await current.isVisible().catch(() => false))) {
-    await sectionButton(page, id).click();
+    await sectionButton(page, id).locator(".workspace-section-toggle").click();
   }
   await expect(current).toHaveCount(1);
+  await expect(current).toBeVisible();
   return current;
-}
-
-async function closeSection(page: Page, id: string) {
-  const current = panel(page, id);
-  await current
-    .getByRole("button", {
-      name: workspaceLocalePrefixPattern("workspace.close"),
-    })
-    .click();
-  await expect(current).toBeHidden();
 }
 
 async function assertNoDuplicateIds(page: Page) {
@@ -426,19 +584,6 @@ async function assertUsablePanelBody(
   }
 }
 
-async function sharedSplitDirection(
-  page: Page,
-  first: string,
-  second: string,
-): Promise<string | null> {
-  const firstBox = await panel(page, first).boundingBox();
-  const secondBox = await panel(page, second).boundingBox();
-  if (!firstBox || !secondBox) return null;
-  if (Math.abs(firstBox.x - secondBox.x) > 2) return "horizontal";
-  if (Math.abs(firstBox.y - secondBox.y) > 2) return "vertical";
-  return null;
-}
-
 async function reloadWish(page: Page, title: string) {
   await page.reload();
   await page.locator(".wish-nav").filter({ hasText: title }).click();
@@ -461,6 +606,7 @@ test("WatchShow opens and focuses hidden workspace targets", async ({
   let stopQuestionRoute: (() => Promise<void>) | undefined;
   let stopTaskRoute: (() => Promise<void>) | undefined;
   let questionGate: Awaited<ReturnType<typeof holdQuestionList>> | undefined;
+  let taskGate: Awaited<ReturnType<typeof holdTaskList>> | undefined;
   try {
     await openWish(page, sample.title);
     stopQuestionRoute = await focusOnNextWatchShow(
@@ -476,15 +622,17 @@ test("WatchShow opens and focuses hidden workspace targets", async ({
         sample.title,
       );
       await gate.seen;
-      await expect(globalDialog(page)).toBeVisible();
       const question = globalDialog(page).locator(`#question-${sample.qOpen}`);
       await expect(question).toHaveCount(0);
       gate.release();
+      await expect(globalDialog(page)).toBeVisible();
       await expect(question).toBeVisible();
-      await expect(question).toBeFocused();
+      await expect(question.getByRole("button").first()).toBeFocused();
       // Answering the focused question removes its card; the ordinary close action then closes the remaining drawer.
       await question.getByRole("button", { name: /edit the lamp/ }).click();
-      await question.getByRole("button", { name: "Rub the lamp" }).click();
+      await globalDialog(page)
+        .getByRole("button", { name: /^Respond/ })
+        .click();
       await expect(question).toHaveCount(0);
       await closeGlobalActions(page);
 
@@ -493,8 +641,9 @@ test("WatchShow opens and focuses hidden workspace targets", async ({
       stopTaskRoute = await focusOnNextWatchShow(
         page,
         sample.wishId,
-        `task-${sample.taskId}`,
+        `waiting-${sample.taskId}`,
       );
+      taskGate = await holdTaskList(page);
       await stopQuestionRoute();
       stopQuestionRoute = undefined;
     } finally {
@@ -504,9 +653,20 @@ test("WatchShow opens and focuses hidden workspace targets", async ({
 
     await page.reload();
     await expect(panel(page, "tasks")).toBeVisible();
+    const delayedTask = panel(page, "tasks").locator(`#task-${sample.taskId}`);
+    await taskGate?.seen;
+    await expect(delayedTask).toHaveCount(0);
+    taskGate?.release();
+    await expect(delayedTask).toBeVisible();
+    const taskDrawer = page.locator("dialog.task-drawer-shell");
+    await expect(taskDrawer).toBeVisible();
     await expect(
-      panel(page, "tasks").locator(`#task-${sample.taskId}`),
+      taskDrawer.getByRole("button", { name: /Close|Fermer/ }),
     ).toBeFocused();
+    await expect(delayedTask.locator(".wish-task-heading")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
     await assertNoDuplicateIds(page);
     await stopTaskRoute();
     stopTaskRoute = undefined;
@@ -514,341 +674,277 @@ test("WatchShow opens and focuses hidden workspace targets", async ({
     await stopTaskRoute?.();
     await stopQuestionRoute?.();
     await questionGate?.stop();
+    await taskGate?.stop();
     cleanup(sample);
   }
 });
 
-test("the summary opens every section and global actions survive composition and maximization", async ({
+test("WatchShow focuses lead prompts and manual dock reopening drops stale targets", async ({
+  page,
+}) => {
+  test.skip(
+    process.platform === "win32",
+    "the prompt fixture uses a POSIX PTY",
+  );
+  const sample = fixture();
+  const codex = installPromptingCodex();
+  let stopFocusRoute: (() => Promise<void>) | undefined;
+  try {
+    startPromptingLead(sample);
+    await openWish(page, sample.title);
+    const dock = page.locator('[data-wish-action-dock="true"]');
+    const promptItem = dock.locator(
+      `[data-action-dock-item^="lead-prompt-${sample.wishId}:"]`,
+    );
+    // The action is mounted immediately, but the current WatchShow target may
+    // select another item in the dock.  Verify mounting separately from the
+    // explicit focus target below.
+    await expect(promptItem).toHaveCount(1, { timeout: 10_000 });
+
+    // Explicitly target the lead prompt before checking visibility/focus; the
+    // test must not depend on the dock's initial carousel selection.
+    stopFocusRoute = await focusOnNextWatchShow(
+      page,
+      sample.wishId,
+      `lead-prompt-${sample.wishId}`,
+    );
+    await page.reload();
+    await expect(promptItem).toBeVisible();
+    await expect(promptItem.getByRole("button").first()).toBeFocused();
+    await stopFocusRoute();
+    stopFocusRoute = undefined;
+
+    // A later signal can arrive while the dock is already mounted: it must
+    // focus the requested question card's first usable control.
+    stopFocusRoute = await focusOnNextWatchShow(
+      page,
+      sample.wishId,
+      `question-${sample.qOpen}`,
+    );
+    await page.reload();
+    const questionItem = dock.locator(
+      `[data-action-dock-item^="question-${sample.qOpen}:"]`,
+    );
+    await expect(questionItem).toBeVisible();
+    await expect(questionItem.getByRole("button").first()).toBeFocused();
+
+    // Remove the focused question through the real service, leaving the prompt as the only action. Reopening the
+    // dock by hand must focus its current prompt control rather than replaying the removed question target.
+    await dock.locator(".workspace-action-attention-close").click();
+    await expect(
+      page.locator(".workspace-action-attention-pending"),
+    ).toBeVisible();
+    djinn("question", "answer", sample.qOpen, "A");
+    await expect(questionItem).toHaveCount(0, { timeout: 6_000 });
+    await page.locator(".workspace-action-attention-pending").click();
+    await expect(dock).toBeVisible();
+    await expect(promptItem).toBeVisible();
+    await expect(promptItem.getByRole("button").first()).toBeFocused();
+  } finally {
+    await stopFocusRoute?.();
+    cleanup(sample);
+    fs.rmSync(codex, { force: true });
+  }
+});
+
+test("WatchShow focuses a ready wish's grant control", async ({ page }) => {
+  const sample = readyFixture();
+  let stopFocusRoute: (() => Promise<void>) | undefined;
+  try {
+    await openWish(page, sample.title);
+    stopFocusRoute = await focusOnNextWatchShow(
+      page,
+      sample.wishId,
+      `grant-${sample.wishId}`,
+    );
+    await page.reload();
+    const dock = page.locator('[data-wish-action-dock="true"]');
+    const grantItem = dock.locator(
+      `[data-action-dock-item^="grant-${sample.wishId}"]`,
+    );
+    await expect(grantItem).toBeVisible();
+    await expect(grantItem.getByRole("button").first()).toBeFocused();
+  } finally {
+    await stopFocusRoute?.();
+    cleanupReady(sample);
+  }
+});
+
+test("the summary switches one detail panel while global actions and settings stay usable", async ({
   page,
 }) => {
   const sample = fixture();
   try {
     await openWish(page, sample.title);
+    await collapseGlobalActions(page);
     await expect(panel(page, "summary")).toHaveCount(1);
     const sidebarToggle = page.locator(".app-toolbar-toggle");
     await sidebarToggle.click();
     await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
     await assertGlobalTriggerClearsToolbar(page);
-    await page.evaluate(() =>
-      document.documentElement.classList.add("native-mac"),
-    );
-    await assertGlobalTriggerClearsToolbar(page);
-    await page.evaluate(() =>
-      document.documentElement.classList.remove("native-mac"),
-    );
     await page.setViewportSize({ width: 700, height: 1000 });
     await assertGlobalTriggerClearsToolbar(page);
-    await page.evaluate(() =>
-      document.documentElement.classList.add("native-mac"),
-    );
-    await assertGlobalTriggerClearsToolbar(page);
-    await page.evaluate(() =>
-      document.documentElement.classList.remove("native-mac"),
-    );
     await page.setViewportSize({ width: 1440, height: 1000 });
     await sidebarToggle.click();
     await expect(page.locator(".wish-app")).not.toHaveClass(
       /sidebar-collapsed/,
     );
-    for (const id of [
-      "tasks",
-      "decisions",
-      "tilasms",
-      "agents",
-      "journal",
-      "instructions",
-      "rights",
-    ]) {
+
+    for (const id of ["tasks", "tilasms", "activity"]) {
       await expect(section(page, id)).toHaveCount(1);
       await expect(panel(page, id)).toBeHidden();
     }
-    await expect(globalTrigger(page)).toContainText("Your move");
-    await expect(globalTrigger(page)).toContainText("2");
-    await expect(page.locator(".workspace-global-overlay")).toBeHidden();
+    await expect(globalTrigger(page)).toContainText("1");
+    await expect(globalDialog(page)).toHaveClass(/is-collapsed/);
     await openGlobalActions(page);
-    await expect(globalDialog(page).locator(".question-card")).toContainText(
-      "May the worker edit the lamp?",
-    );
-    await expect(globalDialog(page).locator(".plan-waiting")).toContainText(
-      "W1",
-    );
+    await expect(
+      globalDialog(page).getByRole("heading", {
+        name: /May the worker edit the lamp\?/,
+      }),
+    ).toBeVisible();
+    await expect(
+      globalDialog(page).locator("[data-action-dock-item]"),
+    ).toHaveCount(1);
     await closeGlobalActions(page);
-    await page.screenshot({
-      path: path.join(shots, "workspace-summary-default.png"),
-    });
 
-    const rights = await openSection(page, "rights");
+    const settings = page.locator(".workspace-settings-trigger");
+    await settings.click();
+    await expect(page.getByRole("menu")).toBeVisible();
+    await page.getByRole("menuitem", { name: /Rights|Droits/ }).click();
+    const rights = page.getByRole("dialog", { name: /Rights|Droits/ });
+    await expect(rights).toBeVisible();
     const allowance = rights.getByRole("combobox").first();
     await expect(allowance).toBeVisible();
     await allowance.selectOption("1");
     await expect(allowance).toHaveValue("1");
-    await closeSection(page, "rights");
+    await rights.getByRole("button", { name: /Close|Fermer/ }).click();
+    await expect(rights).toHaveCount(0);
+    await expect(settings).toBeFocused();
+
+    await settings.click();
+    const agentsMenuLabel = workspaceLocalePrefixPattern("tabs.agents");
+    const agentsDialogLabel = workspaceLocalePattern("tabs.agents");
+    await page.getByRole("menuitem", { name: agentsMenuLabel }).click();
+    const agents = page.getByRole("dialog", { name: agentsDialogLabel });
+    await expect(agents).toBeVisible();
+    await agents.getByRole("button", { name: /Close|Fermer/ }).click();
+    await expect(agents).toHaveCount(0);
+    await expect(settings).toBeFocused();
 
     await openSection(page, "tasks");
     await expect(panel(page, "tasks")).toContainText(
       "Wait for the lamp answer",
     );
+    // The dock carries the actionable question; the waiting worker remains in
+    // the Tasks panel (legacy uses .plan-waiting, workspace hierarchy uses its
+    // moving subgroup).
+    await expect(
+      panel(page, "tasks").locator(".plan-waiting, .tasks-free-moving"),
+    ).toContainText("W1");
     await openGlobalActions(page);
     await expect(globalDialog(page).locator(".question-card")).toBeVisible();
     await closeGlobalActions(page);
-    await stage(page).scrollIntoViewIfNeeded();
     await page.screenshot({
-      path: path.join(shots, "workspace-composed-tasks.png"),
+      path: path.join(shots, "workspace-tasks.png"),
       fullPage: true,
     });
 
     await openSection(page, "tilasms");
+    await expect(panel(page, "tasks")).toBeHidden();
     await expect(panel(page, "tilasms")).toContainText("Workspace model");
-    await panel(page, "tilasms")
-      .getByRole("button", { name: "Restore Tilasms" })
-      .click();
-    await assertUsablePanelBody(
-      panel(page, "tasks"),
-      ".wish-task",
-      ".wish-task-heading strong",
-    );
     await assertUsablePanelBody(panel(page, "tilasms"), ".tilasm-row");
-    await stage(page).scrollIntoViewIfNeeded();
     await page.screenshot({
-      path: path.join(shots, "workspace-composed-supports.png"),
+      path: path.join(shots, "workspace-tilasms.png"),
       fullPage: true,
     });
 
-    // Exercise each lazy section through its summary card while closing the prior panel so the check does not build
-    // an accidental eight-panel layout. These are content assertions, not just selector existence checks.
-    await closeSection(page, "tilasms");
-    await closeSection(page, "tasks");
-    for (const [id, text] of [
-      ["decisions", "Which oil should the lamp use?"],
-      ["agents", "Worker report"],
-      ["journal", "The first journal entry"],
-      ["instructions", "Keep the workspace arrangement."],
-    ] as const) {
-      const opened = await openSection(page, id);
-      await expect(opened).toContainText(text);
-      await closeSection(page, id);
-    }
-
-    const taskPanel = await openSection(page, "tasks");
-    const maximizeTasks = taskPanel.getByRole("button", {
-      name: "Maximize Tasks",
-    });
-    if (await maximizeTasks.count()) await maximizeTasks.click();
-    await expect(stage(page)).toHaveAttribute("data-wish-maximized", "tasks");
-    await expect(taskPanel).toContainText("Wait for the lamp answer");
-    await openGlobalActions(page);
-    await expect(globalDialog(page).locator(".question-card")).toBeVisible();
-    await expect(globalDialog(page).locator(".plan-waiting")).toBeVisible();
-    await assertNoDuplicateIds(page);
-    await page.screenshot({
-      path: path.join(shots, "workspace-maximized-global.png"),
-    });
-
-    const globalQuestion = globalDialog(page)
-      .locator(".question-card")
-      .filter({ hasText: "May the worker edit the lamp?" });
-    await globalQuestion.locator("textarea").fill("keep this answer draft");
-    await closeGlobalActions(page);
-    await openGlobalActions(page);
-    await expect(
-      globalDialog(page)
-        .locator(".question-card")
-        .filter({ hasText: "May the worker edit the lamp?" })
-        .locator("textarea"),
-    ).toHaveValue("keep this answer draft");
-    const reopenedQuestion = globalDialog(page)
-      .locator(".question-card")
-      .filter({ hasText: "May the worker edit the lamp?" });
-    await reopenedQuestion
-      .getByRole("button", { name: /edit the lamp/ })
-      .click();
-    await reopenedQuestion
-      .getByRole("button", { name: "Rub the lamp" })
-      .click();
-    await expect(reopenedQuestion).toHaveCount(0);
-    await assertNoDuplicateIds(page);
-    await closeGlobalActions(page);
-
-    await taskPanel.getByRole("button", { name: "Restore Tasks" }).click();
-    await expect(stage(page)).not.toHaveAttribute(
-      "data-wish-maximized",
-      "tasks",
+    await openSection(page, "activity");
+    await expect(panel(page, "tilasms")).toBeHidden();
+    await expect(panel(page, "activity")).toContainText(
+      "The first journal entry",
     );
-
-    await taskPanel.getByRole("button", { name: "Close Tasks" }).click();
-    await expect(panel(page, "tasks")).toBeHidden();
-    await expect(section(page, "tasks")).toHaveCount(1);
+    await expect(panel(page, "activity").locator('[role="tab"]')).toHaveCount(
+      3,
+    );
+    await panel(page, "activity")
+      .getByRole("button", { name: /Close Activity|Fermer Activité/ })
+      .click();
+    await expect(panel(page, "activity")).toBeHidden();
+    await expect(stage(page)).not.toHaveAttribute("data-wish-maximized");
+    await expect(stage(page)).not.toHaveAttribute(
+      "data-wish-active-panel",
+      "activity",
+    );
     await assertNoDuplicateIds(page);
   } finally {
     cleanup(sample);
   }
 });
 
-test("content panels compose by pointer geometry and keyboard controls", async ({
+test("panel selection starts on pointer down, keeps drafts mounted, and closes by keyboard", async ({
   page,
 }) => {
   const sample = fixture();
   try {
     await openWish(page, sample.title);
     await clearWorkspace(page, sample.wishId, sample.title);
-    const taskPanel = await openSection(page, "tasks");
+    await expect(panel(page, "tasks")).toBeHidden();
+
+    const taskToggle = section(page, "tasks").locator(
+      ".workspace-section-toggle",
+    );
+    const toggleBox = await taskToggle.boundingBox();
+    expect(toggleBox).toBeTruthy();
+    await page.mouse.move(
+      toggleBox!.x + toggleBox!.width / 2,
+      toggleBox!.y + toggleBox!.height / 2,
+    );
+    await page.mouse.down();
+    await expect(panel(page, "tasks")).toBeVisible();
+    await expect(stage(page)).toHaveAttribute(
+      "data-wish-active-panel",
+      "tasks",
+    );
+    await page.mouse.up();
+    await expect(taskToggle).toHaveAttribute("aria-current", "true");
+
+    const taskPanel = panel(page, "tasks");
     await taskPanel.getByRole("button", { name: "Mark done" }).click();
-    const taskDraft = taskPanel.getByRole("textbox", {
-      name: "Why, in a few words (optional)",
-    });
-    await taskDraft.fill("preserve this task draft");
-    await taskPanel.getByRole("button", { name: "Restore Tasks" }).click();
-    await taskPanel.getByRole("button", { name: "Close Tasks" }).click();
-    await expect(taskPanel).toBeHidden();
-    const reopenedTask = await openSection(page, "tasks");
-    await expect(
-      reopenedTask.getByRole("textbox", {
+    const taskDraft = page
+      .locator("dialog.task-drawer-shell")
+      .getByRole("textbox", {
         name: "Why, in a few words (optional)",
-      }),
-    ).toHaveValue("preserve this task draft");
-    await reopenedTask.getByRole("button", { name: "Cancel" }).click();
-    await reopenedTask.getByRole("button", { name: "Restore Tasks" }).click();
-    const tilasmPanel = await openSection(page, "tilasms");
-    await tilasmPanel.getByRole("button", { name: "Restore Tilasms" }).click();
-
-    // Only mounted content panels participate in drag composition. The drop point on the target's right edge makes
-    // the geometry assertion deterministic without adding placement controls to the navigation card.
-    const source = panel(page, "tilasms").locator(".workspace-panel-heading");
-    const target = panel(page, "tasks");
-    const targetBox = await target.boundingBox();
-    expect(targetBox).toBeTruthy();
-    await source.dragTo(target, {
-      force: true,
-      targetPosition: {
-        x: Math.max(2, targetBox!.width - 4),
-        y: Math.round(targetBox!.height / 2),
-      },
-    });
-    await expect(panel(page, "tasks")).toHaveCount(1);
-    await expect(panel(page, "tilasms")).toHaveCount(1);
-    const tasksBox = await panel(page, "tasks").boundingBox();
-    const tilasmsBox = await panel(page, "tilasms").boundingBox();
-    expect(tasksBox).toBeTruthy();
-    expect(tilasmsBox).toBeTruthy();
-    expect(tilasmsBox!.x).toBeGreaterThan(tasksBox!.x);
-    expect(tilasmsBox!.x).toBeGreaterThanOrEqual(
-      tasksBox!.x + tasksBox!.width - 2,
-    );
-    expect(await sharedSplitDirection(page, "tasks", "tilasms")).toBe(
-      "horizontal",
-    );
-
-    // The composed tree survives a reload with the same geometric order.
-    await reloadWish(page, sample.title);
-    await expect(panel(page, "tasks")).toHaveCount(1);
-    await expect(panel(page, "tilasms")).toHaveCount(1);
-    const reloadedTasksBox = await panel(page, "tasks").boundingBox();
-    const reloadedTilasmsBox = await panel(page, "tilasms").boundingBox();
-    expect(reloadedTasksBox).toBeTruthy();
-    expect(reloadedTilasmsBox).toBeTruthy();
-    expect(reloadedTilasmsBox!.x).toBeGreaterThan(reloadedTasksBox!.x);
-    expect(await sharedSplitDirection(page, "tasks", "tilasms")).toBe(
-      "horizontal",
-    );
-
-    // Legacy trees can nest vertical and horizontal branches. The flat stage planner keeps every resulting row
-    // readable and globally caps it at two columns instead of letting nested branches create four narrow panels.
-    const decisionsPanel = await openSection(page, "decisions");
-    await decisionsPanel
-      .getByRole("button", { name: "Restore Decisions" })
-      .click();
-    const tasksTarget = panel(page, "tasks");
-    const tasksTargetBox = await tasksTarget.boundingBox();
-    expect(tasksTargetBox).toBeTruthy();
-    await decisionsPanel
-      .locator(".workspace-panel-heading")
-      .dragTo(tasksTarget, {
-        force: true,
-        targetPosition: {
-          x: Math.round(tasksTargetBox!.width / 2),
-          y: Math.max(2, tasksTargetBox!.height - 4),
-        },
       });
-    const nestedTasks = await panel(page, "tasks").boundingBox();
-    const nestedDecisions = await panel(page, "decisions").boundingBox();
-    const nestedTilasms = await panel(page, "tilasms").boundingBox();
-    expect(nestedTasks).toBeTruthy();
-    expect(nestedDecisions).toBeTruthy();
-    expect(nestedTilasms).toBeTruthy();
-    expect(nestedTasks!.height).toBeGreaterThan(480);
-    expect(nestedDecisions!.height).toBeGreaterThan(480);
-    expect(nestedDecisions!.y).toBeGreaterThan(nestedTasks!.y + 480);
-    expect(Math.abs(nestedTilasms!.y - nestedTasks!.y)).toBeLessThan(4);
+    await expect(taskDraft).toBeVisible();
+    await taskDraft.fill("preserve this task draft");
 
-    const instructionsPanel = await openSection(page, "instructions");
-    await instructionsPanel
-      .getByRole("button", { name: "Restore Indications" })
-      .click();
-    const decisionTarget = panel(page, "decisions");
-    const decisionTargetBox = await decisionTarget.boundingBox();
-    expect(decisionTargetBox).toBeTruthy();
-    await instructionsPanel
-      .locator(".workspace-panel-heading")
-      .dragTo(decisionTarget, {
-        force: true,
-        targetPosition: {
-          x: Math.max(2, decisionTargetBox!.width - 4),
-          y: Math.round(decisionTargetBox!.height / 2),
-        },
-      });
-    const nestedBoxes = await Promise.all(
-      ["tasks", "tilasms", "decisions", "instructions"].map(async (id) =>
-        panel(page, id).boundingBox(),
-      ),
+    const taskDrawer = page.locator("dialog.task-drawer-shell");
+    await taskDrawer.getByRole("button", { name: /Close|Fermer/ }).click();
+    await expect(taskDrawer).toBeHidden();
+    await openSection(page, "tilasms");
+    await expect(taskPanel).toBeHidden();
+    await expect(panel(page, "tilasms")).toBeVisible();
+    await expect(stage(page)).toHaveAttribute(
+      "data-wish-active-panel",
+      "tilasms",
     );
-    nestedBoxes.forEach((box) => expect(box).toBeTruthy());
-    const nestedTaskBox = nestedBoxes[0]!;
-    const nestedDecisionBox = nestedBoxes[2]!;
-    const nestedInstructionBox = nestedBoxes[3]!;
-    expect(nestedTaskBox.height).toBeGreaterThan(480);
-    expect(nestedDecisionBox.height).toBeGreaterThan(480);
-    expect(nestedInstructionBox.y).toBeCloseTo(nestedTaskBox.y, 0);
-    expect(nestedInstructionBox.x).toBeGreaterThanOrEqual(
-      nestedTaskBox.x + nestedTaskBox.width - 2,
-    );
-    for (let first = 0; first < nestedBoxes.length; first += 1) {
-      for (let second = first + 1; second < nestedBoxes.length; second += 1) {
-        const left = nestedBoxes[first]!;
-        const right = nestedBoxes[second]!;
-        const horizontalOverlap =
-          Math.min(left.x + left.width, right.x + right.width) -
-          Math.max(left.x, right.x);
-        const verticalOverlap =
-          Math.min(left.y + left.height, right.y + right.height) -
-          Math.max(left.y, right.y);
-        expect(horizontalOverlap <= 2 || verticalOverlap <= 2).toBe(true);
-      }
-    }
-    await closeSection(page, "instructions");
-    await closeSection(page, "decisions");
+    await expect(stage(page)).not.toHaveAttribute("data-wish-maximized");
+    await expect(
+      stage(page).locator("main [data-wish-panel]:not([hidden])"),
+    ).toHaveCount(1);
 
-    // A focused panel frame supports keyboard reorder without entering any content control, then Delete closes it.
-    const keyboardPanel = panel(page, "tilasms");
-    await keyboardPanel.focus();
-    await expect(keyboardPanel).toBeFocused();
-    await keyboardPanel.press("Alt+ArrowLeft");
-    const keyboardTasksBox = await panel(page, "tasks").boundingBox();
-    const keyboardTilasmsBox = await panel(page, "tilasms").boundingBox();
-    expect(keyboardTasksBox).toBeTruthy();
-    expect(keyboardTilasmsBox).toBeTruthy();
-    expect(keyboardTilasmsBox!.x).toBeLessThan(keyboardTasksBox!.x);
-    await keyboardPanel.focus();
-    await keyboardPanel.press("Delete");
-    await expect(panel(page, "tilasms")).toBeHidden();
-    await expect(section(page, "tilasms")).toHaveCount(1);
-    await assertNoDuplicateIds(page);
-    await expect(
-      section(page, "tasks").locator('[draggable="true"]'),
-    ).toHaveCount(0);
-    await expect(
-      section(page, "tilasms").locator('[draggable="true"]'),
-    ).toHaveCount(0);
-    await expect(stage(page).locator(".workspace-compose-menu")).toHaveCount(0);
+    await openSection(page, "tasks");
+    await taskPanel.getByRole("button", { name: "Mark done" }).click();
+    await expect(taskDrawer).toBeVisible();
+    await expect(taskDraft).toHaveValue("preserve this task draft");
+    await taskDrawer.getByRole("button", { name: /Close|Fermer/ }).focus();
+    await page.keyboard.press("Escape");
+    await expect(taskDrawer).toBeHidden();
+    await taskPanel.focus();
+    await taskPanel.press("Escape");
+    await expect(taskPanel).toBeHidden();
+    await expect(stage(page)).not.toHaveAttribute("data-wish-active-panel");
+    await expect(taskToggle).toBeFocused();
     await assertNoDuplicateIds(page);
   } finally {
     cleanup(sample);
@@ -862,44 +958,33 @@ test("malformed workspace storage falls back to a safe summary", async ({
   try {
     await openWish(page, sample.title);
     await openSection(page, "tasks");
-    await panel(page, "tasks")
-      .getByRole("button", { name: "Restore Tasks" })
-      .click();
     await openSection(page, "tilasms");
-    await panel(page, "tilasms")
-      .getByRole("button", { name: "Restore Tilasms" })
-      .click();
     await page.evaluate((id) => {
       localStorage.setItem(`djinn.wish.workspace.${id}`, "{malformed");
     }, sample.wishId);
     await reloadWish(page, sample.title);
     await expect(panel(page, "summary")).toHaveCount(1);
+    await expect(panel(page, "tasks")).toBeHidden();
+    await expect(panel(page, "tilasms")).toBeHidden();
+    await expect(panel(page, "activity")).toBeHidden();
+    await expect(stage(page)).not.toHaveAttribute("data-wish-active-panel");
     await assertNoDuplicateIds(page);
   } finally {
     cleanup(sample);
   }
 });
 
-test("workspace storage persists panels and stays isolated per wish", async ({
+test("workspace storage persists one selected panel and stays isolated per wish", async ({
   page,
 }) => {
   const sample = fixture();
   try {
     await openWish(page, sample.title);
     await openSection(page, "tasks");
-    await panel(page, "tasks")
-      .getByRole("button", { name: "Restore Tasks" })
-      .click();
-    await openSection(page, "decisions");
-    await panel(page, "decisions")
-      .getByRole("button", { name: "Restore Decisions" })
-      .click();
-    await expect(panel(page, "decisions")).toContainText(
-      "Which oil should the lamp use?",
-    );
     await reloadWish(page, sample.title);
-    await expect(panel(page, "tasks")).toHaveCount(1);
-    await expect(panel(page, "decisions")).toHaveCount(1);
+    await expect(panel(page, "tasks")).toBeVisible();
+    await expect(panel(page, "tilasms")).toBeHidden();
+    await expect(panel(page, "activity")).toBeHidden();
 
     await page
       .locator(".wish-nav")
@@ -913,14 +998,18 @@ test("workspace storage persists panels and stays isolated per wish", async ({
     await expect(page.locator(".workspace-thread-head h1")).toHaveText(
       sample.title,
     );
-    await expect(panel(page, "tasks")).toHaveCount(1);
-    await expect(panel(page, "decisions")).toHaveCount(1);
+    await expect(panel(page, "tasks")).toBeVisible();
+    await expect(panel(page, "tilasms")).toBeHidden();
+    await expect(panel(page, "activity")).toBeHidden();
+    await expect(
+      stage(page).locator("main [data-wish-panel]:not([hidden])"),
+    ).toHaveCount(1);
   } finally {
     cleanup(sample);
   }
 });
 
-test("narrow workspace storage stacks panels and survives denied storage", async ({
+test("narrow workspace uses the icon rail and survives denied storage", async ({
   page,
 }) => {
   const sample = fixture();
@@ -928,25 +1017,17 @@ test("narrow workspace storage stacks panels and survives denied storage", async
     await openWish(page, sample.title);
     await page.setViewportSize({ width: 700, height: 1000 });
     await clearWorkspace(page, sample.wishId, sample.title);
+    await expect(stage(page)).toHaveAttribute("data-wish-nav-compact", "true");
     await openSection(page, "tasks");
-    await panel(page, "tasks")
-      .getByRole("button", { name: "Restore Tasks" })
-      .click();
     await openSection(page, "tilasms");
-    await panel(page, "tilasms")
-      .getByRole("button", { name: "Restore Tilasms" })
-      .click();
-    const narrowTasks = await panel(page, "tasks").boundingBox();
-    const narrowTilasms = await panel(page, "tilasms").boundingBox();
-    expect(narrowTasks).toBeTruthy();
-    expect(narrowTilasms).toBeTruthy();
-    expect(narrowTilasms!.y).toBeGreaterThan(narrowTasks!.y);
-    expect(await sharedSplitDirection(page, "tasks", "tilasms")).toBe(
-      "vertical",
-    );
+    await expect(panel(page, "tasks")).toBeHidden();
+    await expect(panel(page, "tilasms")).toBeVisible();
+    await expect(
+      stage(page).locator("main [data-wish-panel]:not([hidden])"),
+    ).toHaveCount(1);
     await stage(page).scrollIntoViewIfNeeded();
     await page.screenshot({
-      path: path.join(shots, "workspace-narrow-stack.png"),
+      path: path.join(shots, "workspace-narrow-rail.png"),
       fullPage: true,
     });
 
@@ -969,81 +1050,98 @@ test("narrow workspace storage stacks panels and survives denied storage", async
     await expect(page.locator(".workspace-thread-head h1")).toHaveText(
       sample.title,
     );
+    await expect(panel(page, "tasks")).toBeHidden();
+    await expect(panel(page, "tilasms")).toBeHidden();
     await assertNoDuplicateIds(page);
   } finally {
     cleanup(sample);
   }
 });
 
-test("task decisions and the same Tilasm deep link work repeatedly after close and restore", async ({
+test("task decisions and the same Tilasm deep link work repeatedly after closing panels", async ({
   page,
 }) => {
   const sample = fixture();
   try {
     await openWish(page, sample.title);
-    const decisions = await openSection(page, "decisions");
-    await expect(decisions.locator(".decision-row")).toHaveCount(2);
-    const decisionTask = decisions
+    const activity = await openSection(page, "activity");
+    await activity.getByRole("tab", { name: "Decisions" }).click();
+    await expect(activity.locator(".decision-row")).toHaveCount(2);
+    const decisionTask = activity
       .locator(".decision-row")
       .filter({ hasText: "Which oil should the lamp use?" });
     await decisionTask.getByRole("link", { name: "W1" }).click();
-    await expect(panel(page, "tasks")).toHaveCount(1);
+    await expect(panel(page, "activity")).toBeHidden();
+    await expect(panel(page, "tasks")).toBeVisible();
     await expect(panel(page, "tasks").locator(".wish-task")).toContainText(
       "Wait for the lamp answer",
     );
+    const taskDrawer = page.locator("dialog.task-drawer-shell");
+    await expect(taskDrawer).toBeVisible();
     await expect(
-      panel(page, "tasks").locator(".wish-task-heading").first(),
+      taskDrawer.getByRole("button", { name: /Close|Fermer/ }),
     ).toBeFocused();
-    await panel(page, "tasks")
-      .locator(".wish-task")
-      .getByRole("link", { name: /From Q02/ })
-      .click();
-    await expect(
-      panel(page, "decisions").locator(".decision-row.focused"),
-    ).toContainText("Which oil should the lamp use?");
-    // Repeat both directions after the state already has both panels open.
-    await panel(page, "decisions")
-      .locator(".decision-row")
-      .filter({ hasText: "Which oil should the lamp use?" })
-      .getByRole("link", { name: "W1" })
-      .click();
-    await panel(page, "tasks")
-      .locator(".wish-task")
-      .getByRole("link", { name: /From Q02/ })
-      .click();
-    const maximized = await stage(page).getAttribute("data-wish-maximized");
-    if (maximized)
-      await panel(page, maximized)
-        .getByTitle(workspaceLocalePattern("workspace.restore"))
-        .click();
-    await expect(panel(page, "tasks")).toHaveCount(1);
-    await expect(panel(page, "decisions")).toHaveCount(1);
 
-    const journal = await openSection(page, "journal");
-    const tilasmLink = journal.getByRole("link", {
-      name: "the workspace model",
+    await page
+      .locator("dialog.task-drawer-shell")
+      .getByRole("link", { name: /From Q02/ })
+      .click();
+    await expect(panel(page, "tasks")).toBeHidden();
+    await expect(panel(page, "activity")).toBeVisible();
+    await expect(
+      panel(page, "activity").locator(".decision-row.focused"),
+    ).toContainText("Which oil should the lamp use?");
+
+    const decisionDrawer = page.locator("dialog.wish-settings-drawer");
+    await expect(decisionDrawer).toBeVisible();
+    await decisionDrawer.getByRole("button", { name: /Close|Fermer/ }).click();
+    await expect(decisionDrawer).toHaveCount(0);
+
+    const activityAgain = panel(page, "activity");
+    await activityAgain.getByRole("tab", { name: "Journal" }).click();
+    const journalEntry = activityAgain
+      .locator(".workspace-journal-entry")
+      .filter({ hasText: "Open the workspace model" });
+    await expect(journalEntry).toHaveCount(1);
+    await journalEntry.click();
+    const journalDrawer = page.getByRole("dialog", {
+      name: "Open the workspace model",
     });
-    await tilasmLink.click();
-    await expect(panel(page, "tilasms")).toHaveCount(1);
+    await expect(journalDrawer).toBeVisible();
+    await journalDrawer
+      .getByRole("link", { name: "the workspace model" })
+      .click();
+    await expect(journalDrawer).toHaveCount(0);
+    await expect(panel(page, "tilasms")).toBeVisible();
     await expect(
       page.frameLocator("iframe.tilasm-frame").locator("#workspace-model"),
     ).toHaveText("Workspace model");
-    await panel(page, "tilasms")
-      .getByRole("button", { name: "Close Tilasms" })
+    const tilasmDrawer = page.locator("dialog.wish-settings-drawer");
+    await expect(tilasmDrawer).toBeVisible();
+    await tilasmDrawer.getByRole("button", { name: /Close|Fermer/ }).click();
+    await expect(tilasmDrawer).toHaveCount(0);
+    await expect(panel(page, "tilasms")).toBeVisible();
+
+    const reopenedActivity = await openSection(page, "activity");
+    await reopenedActivity.getByRole("tab", { name: "Journal" }).click();
+    const reopenedJournalEntry = reopenedActivity
+      .locator(".workspace-journal-entry")
+      .filter({ hasText: "Open the workspace model" });
+    await expect(reopenedJournalEntry).toHaveCount(1);
+    await reopenedJournalEntry.click();
+    const reopenedJournalDrawer = page.getByRole("dialog", {
+      name: "Open the workspace model",
+    });
+    await expect(reopenedJournalDrawer).toBeVisible();
+    await reopenedJournalDrawer
+      .getByRole("link", { name: "the workspace model" })
       .click();
-    await expect(panel(page, "tilasms")).toBeHidden();
-    await panel(page, "tasks")
-      .getByRole("button", { name: "Maximize Tasks" })
-      .click();
-    await expect(stage(page)).toHaveAttribute("data-wish-maximized", "tasks");
-    await panel(page, "tasks")
-      .getByRole("button", { name: "Restore Tasks" })
-      .click();
-    await journal.getByRole("link", { name: "the workspace model" }).click();
-    await expect(panel(page, "tilasms")).toHaveCount(1);
+    await expect(reopenedJournalDrawer).toHaveCount(0);
+    await expect(panel(page, "tilasms")).toBeVisible();
     await expect(
       page.frameLocator("iframe.tilasm-frame").locator("#workspace-model"),
     ).toHaveText("Workspace model");
+    await expect(stage(page)).not.toHaveAttribute("data-wish-maximized");
     await assertNoDuplicateIds(page);
   } finally {
     cleanup(sample);

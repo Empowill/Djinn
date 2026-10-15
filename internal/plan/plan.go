@@ -152,13 +152,25 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 var Validate = connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 		if m, ok := req.Any().(proto.Message); ok {
-			if err := protovalidate.Validate(m); err != nil {
+			if err := validateRequest(m); err != nil {
 				return nil, connect.NewError(connect.CodeInvalidArgument, err)
 			}
 		}
 		return next(ctx, req)
 	}
 })
+
+// validateRequest permits the zero enum as the custom-answer sentinel when its note is nonempty. The proto's required
+// choice rule still validates every other answer; the sentinel is checked against the question in resolve.
+func validateRequest(m proto.Message) error {
+	answer, ok := m.(*planv1.QuestionServiceAnswerRequest)
+	if !ok || answer.GetChoice() != planv1.Choice_CHOICE_UNSPECIFIED || strings.TrimSpace(answer.GetNote()) == "" {
+		return protovalidate.Validate(m)
+	}
+	validated := proto.CloneOf(answer)
+	validated.Choice = planv1.Choice_CHOICE_YES
+	return protovalidate.Validate(validated)
+}
 
 // write journals req, then runs fn, in one transaction. Store errors become Connect errors.
 func write(ctx context.Context, s *store.Store, spec connect.Spec, req proto.Message, fn func(*store.Tx) error) error {
@@ -658,7 +670,7 @@ func (q *Questions) Answer(
 				"question %s has routed its request already: route it again (djinn wish route) to send it elsewhere",
 				question.GetCode()))
 		}
-		choice, err := resolve(question, req.Msg.GetChoice())
+		choice, err := resolve(question, req.Msg.GetChoice(), req.Msg.GetNote())
 		if err != nil {
 			return connect.NewError(connect.CodeInvalidArgument, err)
 		}
@@ -702,9 +714,10 @@ func find(ctx context.Context, tx *store.Tx, ref *planv1.QuestionRef, wishID str
 		"%d wishes have a question %s: give its identifier, or the wish with --wish-id", len(found), ref.GetCode()))
 }
 
-// resolve checks that choice answers question, and returns the choice to keep: yes without options, or the letter
-// of one of its options. On options that say yes and no, yes and no pick them, and the answer keeps the letter.
-func resolve(question *planv1.Question, choice planv1.Choice) (planv1.Choice, error) {
+// resolve checks that choice answers question, and returns the choice to keep: yes without options, a custom response
+// with a note, or the letter of one of its options. On options that say yes and no, yes and no pick them, and the
+// answer keeps the letter.
+func resolve(question *planv1.Question, choice planv1.Choice, note string) (planv1.Choice, error) {
 	options := question.GetOptions()
 	n := len(options)
 	if n == 0 {
@@ -714,6 +727,18 @@ func resolve(question *planv1.Question, choice planv1.Choice) (planv1.Choice, er
 		return choice, nil
 	}
 	letters := fmt.Sprintf("answer with a letter from a to %c", 'a'+n-1)
+	if choice == planv1.Choice_CHOICE_UNSPECIFIED {
+		switch {
+		case strings.TrimSpace(note) == "":
+			return 0, fmt.Errorf("question %s has %d options: %s", question.GetCode(), n, letters)
+		case question.GetRoute() != nil:
+			return 0, fmt.Errorf("question %s routes a request: answer with the letter of a destination", question.GetCode())
+		case question.GetGrant():
+			return 0, fmt.Errorf("question %s grants a wish: answer with an option", question.GetCode())
+		default:
+			return choice, nil
+		}
+	}
 	if choice == planv1.Choice_CHOICE_YES || choice == planv1.Choice_CHOICE_NO {
 		key, word := "answer.yes", "yes"
 		if choice == planv1.Choice_CHOICE_NO {

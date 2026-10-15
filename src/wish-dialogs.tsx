@@ -68,8 +68,7 @@ import { MAX_PROMPT_CHARACTERS, promptTooLong } from "./wish-composer-markdown";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { WorkspaceAction } from "./workspace-action";
 
-const WISH_DEPARTURE_MS = 360;
-const WISH_OPENING_FALLBACK_MS = 820;
+const WISH_CREATION_EXIT_MS = 200;
 
 // MakeWish sends the complete request. Naming the wish belongs to the server and its lead. With three wishes active,
 // it is made paused, as the lamp would refuse a fourth.
@@ -81,11 +80,8 @@ export function MakeWish({
   onBusyChange,
   backActionRef,
   onBackSetupChange,
-  transitioning = false,
-  transitionPhase = "opening",
-  onDepartureComplete,
-  onTransitionComplete,
-  onDissipationComplete,
+  exiting = false,
+  onExitComplete,
 }: {
   projects: Project[];
   active: number;
@@ -94,11 +90,8 @@ export function MakeWish({
   onBusyChange?: (busy: boolean) => void;
   backActionRef?: { current: (() => void) | null };
   onBackSetupChange?: (setup: boolean) => void;
-  transitioning?: boolean;
-  transitionPhase?: "departing" | "opening" | "dissipating";
-  onDepartureComplete?: () => void;
-  onTransitionComplete?: () => void;
-  onDissipationComplete?: () => void;
+  exiting?: boolean;
+  onExitComplete?: () => void;
 }) {
   const clients = useClients();
   const full = active >= MAX_ACTIVE;
@@ -112,7 +105,6 @@ export function MakeWish({
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
   const mounted = useRef(true);
-  const transitionComplete = useRef(false);
   const submissionFocus = useRef<HTMLElement | null>(null);
   const [search, setSearch] = useState("");
   const form = useRef<HTMLFormElement>(null);
@@ -132,9 +124,6 @@ export function MakeWish({
     useReducedMotion() ||
     (typeof document !== "undefined" &&
       document.documentElement.dataset.motion === "reduced");
-  const openingTransition = reducedMotion
-    ? { duration: 0 }
-    : { duration: 0.72, ease: [0.22, 1, 0.36, 1] as const };
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -142,38 +131,17 @@ export function MakeWish({
     };
   }, []);
   useEffect(() => {
-    transitionComplete.current = false;
-    if (
-      !transitioning ||
-      (transitionPhase !== "departing" && transitionPhase !== "opening")
-    )
-      return;
+    if (!exiting) return;
     const finish = () => {
-      if (!mounted.current || transitionComplete.current) return;
-      transitionComplete.current = true;
-      if (transitionPhase === "departing") onDepartureComplete?.();
-      else if (transitionPhase === "opening") onTransitionComplete?.();
+      if (mounted.current) onExitComplete?.();
     };
     if (reducedMotion) {
       const frame = window.requestAnimationFrame(finish);
       return () => window.cancelAnimationFrame(frame);
     }
-    // The first timer lets the outgoing controls disappear before the smoke grows. The second keeps the expansion
-    // deterministic when a browser declines to animate a position change (for example after a tab was backgrounded).
-    const timer = window.setTimeout(
-      finish,
-      transitionPhase === "departing"
-        ? WISH_DEPARTURE_MS
-        : WISH_OPENING_FALLBACK_MS,
-    );
+    const timer = window.setTimeout(finish, WISH_CREATION_EXIT_MS);
     return () => window.clearTimeout(timer);
-  }, [
-    onDepartureComplete,
-    onTransitionComplete,
-    reducedMotion,
-    transitionPhase,
-    transitioning,
-  ]);
+  }, [exiting, onExitComplete, reducedMotion]);
   useEffect(() => {
     const focus = previousFocus.current;
     return () => {
@@ -229,7 +197,7 @@ export function MakeWish({
     if (
       submitting.current ||
       busy ||
-      transitioning ||
+      exiting ||
       !hasText ||
       !prompt.trim() ||
       overLimit
@@ -241,7 +209,7 @@ export function MakeWish({
     onBusyChange?.(true);
     setError("");
     let handedOff = false;
-    let handoffStarted = false;
+    let responseReceived = false;
     try {
       const res = await clients.wishes.make(
         {
@@ -254,15 +222,15 @@ export function MakeWish({
         { headers: { "Accept-Language": language } },
       );
       if (res.wish && mounted.current) {
-        // Keep the form busy until the smoke handoff finishes. This closes the duplicate-submit window between the
-        // Make response and the full-window transition while preserving the draft if the request fails.
-        handoffStarted = true;
+        // Keep the form busy until its short exit fade finishes. This closes the duplicate-submit window between the
+        // response and the WishView reveal while preserving the draft if the request fails.
+        responseReceived = true;
         restorePreviousFocus.current = false;
         await onMade(res.wish);
         handedOff = true;
       }
     } catch (err) {
-      if (handoffStarted && mounted.current)
+      if (responseReceived && mounted.current)
         restorePreviousFocus.current = true;
       if (!handedOff && mounted.current) setError(message(err));
     } finally {
@@ -280,20 +248,11 @@ export function MakeWish({
       ref={page}
       className="wish-creation"
       data-wish-entry="creation"
-      data-wish-transition={
-        transitioning && transitionPhase === "departing"
-          ? "departing"
-          : transitioning
-            ? "opening"
-            : "entering"
-      }
-      data-wish-opening-phase={transitioning ? transitionPhase : undefined}
+      data-wish-transition={exiting ? "exiting" : "entering"}
       aria-labelledby={`${promptId}-heading`}
-      aria-busy={busy || transitioning}
+      aria-busy={busy || exiting}
       tabIndex={-1}
-      layout
       initial={false}
-      transition={{ layout: openingTransition }}
       onKeyDown={(event) => {
         // The agent setup terminal owns Escape and its other shell shortcuts.
         if (
@@ -339,18 +298,7 @@ export function MakeWish({
             onSubmit={(event) => void submit(event)}
             aria-busy={busy}
           >
-            <WishSmoke
-              transitionState={
-                transitioning
-                  ? transitionPhase === "dissipating"
-                    ? "dissipating"
-                    : transitionPhase === "opening"
-                      ? "expanded"
-                      : "surface"
-                  : "surface"
-              }
-              onDissipationComplete={onDissipationComplete}
-            />
+            <WishSmoke />
             <div className="wish-creation-workspace">
               <div className="wish-creation-request">
                 <label

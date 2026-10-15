@@ -5,7 +5,6 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-import { Provider } from "../gen/ts/plan/v1/plan_pb";
 import { openTerminalPanel } from "./terminal-selectors";
 
 const binary = path.resolve(
@@ -65,11 +64,8 @@ test("changing the agent stops the lead and starts the new one from the brief", 
   ).toHaveCount(1);
 
   await page.locator(".wish-provider").click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByRole("combobox").selectOption(String(Provider.CODEX));
-  // Said before the change: the conversation does not pass.
-  await expect(dialog).toContainText("cannot be passed to the new agent");
-  await dialog.getByRole("button", { name: "Switch to Codex" }).click();
+  const menu = page.getByRole("menu", { name: "Change the wish's agent" });
+  await menu.getByRole("menuitemradio", { name: /Codex/ }).click();
 
   await expect(page.locator(".wish-provider")).toHaveText("Codex");
   await expect(rows.filter({ hasText: "fake-codex # The wish:" })).toHaveCount(

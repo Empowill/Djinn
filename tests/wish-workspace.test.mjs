@@ -68,28 +68,31 @@ test("normalizing storage removes the old summary leaf and keeps valid content s
   assert.equal(JSON.stringify(state).includes('"summary"'), false);
 });
 
-test("opening a section maximizes it while preserving the prior content tree for restore", () => {
-  let state = w.workspaceDefaultLayout(["summary", "tasks", "decisions"]);
-  state = w.openWorkspacePanel(state, "tasks");
-  assert.deepEqual(ids(state), ["tasks"]);
-  assert.equal(state.maximized, "tasks");
-
-  state = w.restoreWorkspace(state);
-  state = w.composeWorkspace(state, "decisions", "tasks", "right");
-  assert.deepEqual(ids(state), ["tasks", "decisions"]);
-  assert.deepEqual(state.root, {
-    type: "split",
-    direction: "horizontal",
-    children: [
-      { type: "panel", id: "tasks" },
-      { type: "panel", id: "decisions" },
-    ],
-  });
-  assert.equal(state.maximized, undefined);
-
-  state = w.openWorkspacePanel(state, "decisions");
-  assert.equal(state.maximized, "decisions");
-  assert.deepEqual(ids(state), ["tasks", "decisions"]);
+test("legacy composed storage aliases activity before the single-panel view reads it", () => {
+  const state = w.normalizeWorkspaceLayout(
+    {
+      version: 1,
+      root: {
+        type: "split",
+        direction: "horizontal",
+        children: [
+          { type: "panel", id: "tasks" },
+          { type: "panel", id: "decisions" },
+          { type: "panel", id: "journal" },
+          { type: "panel", id: "instructions" },
+        ],
+      },
+      closed: ["tilasms", "agents"],
+      maximized: "journal",
+    },
+    ["summary", "tasks", "tilasms", "activity"],
+  );
+  assert.deepEqual(ids(state), ["tasks", "activity"]);
+  assert.deepEqual(state.closed, ["tilasms"]);
+  assert.equal(state.maximized, "activity");
+  assert.equal(JSON.stringify(state).includes("decisions"), false);
+  assert.equal(JSON.stringify(state).includes("journal"), false);
+  assert.equal(JSON.stringify(state).includes("instructions"), false);
 });
 
 test("closing panels returns the tree to an empty content root", () => {

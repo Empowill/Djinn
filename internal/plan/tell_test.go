@@ -22,8 +22,9 @@ func (c clients) answer(t *testing.T, q *planv1.Question, choice planv1.Choice, 
 func TestAnswerLine(t *testing.T) {
 	q := &planv1.Question{Code: "Q43", WishId: "w1", Options: []string{"Olive", "Paraffin"}}
 	for choice, want := range map[planv1.Choice]string{
-		planv1.Choice_CHOICE_B:   `Djinn: Q43 answered B — "Paraffin". Note: "brighter, then cheaper". Act on it: djinn wish brief w1 has the context.`,
-		planv1.Choice_CHOICE_YES: `Djinn: Q43 answered yes. Note: "brighter, then cheaper". Act on it: djinn wish brief w1 has the context.`,
+		planv1.Choice_CHOICE_B:           `Djinn: Q43 answered B — "Paraffin". Note: "brighter, then cheaper". Act on it: djinn wish brief w1 has the context.`,
+		planv1.Choice_CHOICE_YES:         `Djinn: Q43 answered yes. Note: "brighter, then cheaper". Act on it: djinn wish brief w1 has the context.`,
+		planv1.Choice_CHOICE_UNSPECIFIED: `Djinn: Q43 answered custom response. Note: "brighter, then cheaper". Act on it: djinn wish brief w1 has the context.`,
 	} {
 		q.Answer = &planv1.Answer{Choice: choice, Note: "brighter,\nthen cheaper"}
 		if got := AnswerLine(q, "", ""); got != want {

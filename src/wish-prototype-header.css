@@ -1,0 +1,416 @@
+/* Compact controls that belong to the wish heading. Workspace stage geometry stays in wish-workspace.css. */
+.page-header .topbar-wish-title {
+  display: inline-block;
+  max-width: min(42vw, 440px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    visibility 0s linear 160ms;
+}
+
+.page-header .topbar-wish-title.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition-delay: 0s;
+}
+
+.workspace-thread-head .workspace-summary-head h1 {
+  margin-top: 2px;
+  margin-bottom: 20px;
+}
+
+.workspace-thread-head .workspace-thread-description {
+  display: block;
+  max-width: min(var(--measure), 100%);
+  margin-bottom: 20px;
+}
+
+.workspace-thread-head .workspace-thread-description > .wish-description,
+.workspace-thread-head .workspace-thread-description > .wish-description-edit {
+  max-width: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workspace-thread-head .workspace-thread-description > .wish-description {
+  cursor: text;
+}
+
+.workspace-thread-head .workspace-facts {
+  margin-top: 20px;
+}
+
+.workspace-thread-head .workspace-facts .review-pills {
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-thread-head .workspace-facts .review-pills button {
+  font: inherit;
+}
+
+.workspace-thread-head .wish-lifecycle-split {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  height: 26px;
+  min-height: 26px;
+  min-width: 0;
+  overflow: visible;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-raised);
+}
+
+.workspace-thread-head .wish-lifecycle-badge,
+.workspace-thread-head .wish-lifecycle-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  min-height: 24px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 0;
+  color: var(--text);
+  background: transparent;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.workspace-thread-head .wish-work-summary,
+.workspace-thread-head .wish-context-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.workspace-thread-head .wish-lifecycle-badge,
+.workspace-thread-head .wish-lifecycle-menu-trigger,
+.workspace-thread-head .wish-work-summary,
+.workspace-thread-head .wish-context-indicator {
+  cursor: pointer;
+}
+
+.workspace-thread-head .wish-lifecycle-badge:hover,
+.workspace-thread-head .wish-lifecycle-badge:focus-visible,
+.workspace-thread-head .wish-lifecycle-menu-trigger:hover,
+.workspace-thread-head .wish-lifecycle-menu-trigger:focus-visible,
+.workspace-thread-head .wish-work-summary:hover,
+.workspace-thread-head .wish-work-summary:focus-visible,
+.workspace-thread-head .wish-context-indicator:hover,
+.workspace-thread-head .wish-context-indicator:focus-visible {
+  background: var(--surface-soft);
+  outline: none;
+}
+
+.workspace-thread-head .wish-lifecycle-split:hover {
+  border-color: var(--line-strong);
+}
+
+.workspace-thread-head .wish-lifecycle-badge {
+  border-right: 1px solid var(--line);
+  border-radius: 999px 0 0 999px;
+}
+
+.workspace-thread-head .wish-lifecycle-badge:focus-visible,
+.workspace-thread-head .wish-lifecycle-menu-trigger:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.workspace-thread-head .wish-lifecycle-menu-trigger {
+  padding-inline: 8px;
+  border-radius: 0 999px 999px 0;
+}
+
+.workspace-thread-head .wish-work-summary {
+  color: var(--muted);
+}
+
+.workspace-thread-head .wish-work-summary.is-running {
+  border-color: color-mix(in srgb, var(--st-running) 42%, var(--line));
+  color: color-mix(in srgb, var(--st-running) 86%, var(--text));
+  background: color-mix(in srgb, var(--st-running) 10%, var(--surface-raised));
+}
+
+.workspace-thread-head .wish-context-indicator {
+  max-width: min(44vw, 360px);
+  overflow: hidden;
+  color: var(--muted);
+}
+
+.workspace-thread-head .wish-context-indicator.is-actionable {
+  border-color: color-mix(in srgb, #ff9a45 60%, var(--line));
+  color: #ffb66b;
+  background: color-mix(in srgb, #ff9a45 18%, var(--surface-raised));
+}
+
+.workspace-thread-head .wish-context-indicator.is-actionable:hover,
+.workspace-thread-head .wish-context-indicator.is-actionable:focus-visible {
+  border-color: #ffb66b;
+  background: color-mix(in srgb, #ff9a45 26%, var(--surface-raised));
+  outline: 2px solid color-mix(in srgb, #ff9a45 45%, transparent);
+  outline-offset: 2px;
+}
+
+html[data-theme="light"]
+  .workspace-thread-head
+  .wish-context-indicator.is-actionable {
+  border-color: #ef8a2c;
+  color: #a84300;
+  background: #fff0df;
+}
+
+html[data-theme="light"]
+  .workspace-thread-head
+  .wish-context-indicator.is-actionable:hover,
+html[data-theme="light"]
+  .workspace-thread-head
+  .wish-context-indicator.is-actionable:focus-visible {
+  border-color: #ef8a2c;
+  background: #ffddb4;
+}
+
+.workspace-thread-head .wish-context-indicator span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-thread-head .wish-lead-menu,
+.page-header .wish-agent-options {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 30;
+  display: grid;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  box-shadow: 0 10px 35px color-mix(in srgb, var(--shadow) 60%, transparent);
+}
+
+.workspace-thread-head .wish-lead-menu {
+  right: auto;
+  left: 0;
+  min-width: min(210px, calc(100vw - 40px));
+  max-width: calc(100vw - 40px);
+  box-sizing: border-box;
+}
+
+.page-header .wish-agent-options {
+  right: 0;
+}
+
+.workspace-thread-head .wish-lead-menu button,
+.page-header .wish-agent-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-thread-head .wish-lead-menu button:hover,
+.workspace-thread-head .wish-lead-menu button:focus-visible,
+.page-header .wish-agent-option:hover:not(:disabled),
+.page-header .wish-agent-option:focus-visible:not(:disabled) {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  outline: none;
+}
+
+.workspace-thread-head .wish-lead-menu button:disabled,
+.page-header .wish-agent-option:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.workspace-thread-head .wish-lead-menu-error,
+.workspace-thread-head .wish-lead-menu-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 4px 5px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.workspace-thread-head .wish-lead-menu-error {
+  color: var(--st-failed);
+}
+
+.workspace-thread-head .wish-lead-spinner {
+  animation: wish-lead-spin 0.9s linear infinite;
+}
+
+@keyframes wish-lead-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.workspace-thread-head .workspace-meta {
+  gap: 10px;
+  margin-top: 5px;
+  min-height: 20px;
+}
+
+.page-header .wish-agent-menu,
+.page-header .wish-share-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.page-header .wish-agent-trigger {
+  gap: 5px;
+}
+
+.page-header .wish-agent-options {
+  min-width: 230px;
+}
+
+.page-header .wish-agent-loading {
+  display: block;
+  padding: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.page-header .wish-agent-option {
+  align-items: flex-start;
+}
+
+.page-header .wish-agent-option.is-current {
+  color: var(--accent);
+}
+
+.page-header .wish-agent-option-mark {
+  display: inline-flex;
+  flex: 0 0 13px;
+  align-items: center;
+  justify-content: center;
+  min-height: 18px;
+}
+
+.page-header .wish-agent-option-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.page-header .wish-agent-option-copy strong,
+.page-header .wish-agent-option-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-header .wish-agent-option-copy small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.page-header .wish-agent-error {
+  margin: 5px 7px 3px;
+  color: var(--st-failed);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.page-header .wish-share-trigger {
+  position: relative;
+}
+
+.page-header .wish-share-options {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 220px;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  box-shadow: 0 10px 35px color-mix(in srgb, var(--shadow) 60%, transparent);
+}
+
+.page-header .wish-share-options button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.page-header .wish-share-options button:hover,
+.page-header .wish-share-options button:focus-visible {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  outline: none;
+}
+
+@media (max-width: 680px) {
+  .workspace-thread-head .wish-context-indicator {
+    max-width: min(64vw, 340px);
+  }
+
+  .page-header .wish-agent-trigger span {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-header .topbar-wish-title,
+  .page-header .topbar-wish-title.is-visible {
+    transition: none;
+    transform: none;
+  }
+
+  .workspace-thread-head .wish-lead-spinner {
+    animation: none;
+  }
+}

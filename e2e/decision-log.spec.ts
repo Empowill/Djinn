@@ -67,12 +67,19 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
 
     // The developer answers in the window.
     const actions = await openWorkspaceActions(page);
-    const card = actions
-      .locator(".question-card")
-      .filter({ hasText: "Which oil for the wick?" });
-    await card.getByRole("button", { name: /Paraffin/ }).click();
-    await card.getByRole("button", { name: "Rub the lamp" }).click();
-    await expect(card).toHaveCount(0);
+    // In dock mode the question text moves to the dock header, so it is not
+    // part of the question-card subtree. Use the dock's semantic Options group
+    // and keep the option text assertion tied to the requested choice.
+    const options = actions
+      .getByRole("group", { name: /Options/ })
+      .getByRole("button");
+    await expect(options).toHaveCount(2);
+    await expect(options.nth(1)).toContainText("Paraffin");
+    await options.nth(1).click();
+    await actions.getByRole("button", { name: /^Respond/ }).click();
+    await expect(actions.getByRole("group", { name: /Options/ })).toHaveCount(
+      0,
+    );
 
     // The lead spawns a task from that decision.
     djinn(
@@ -89,13 +96,11 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
       "Q01",
     );
 
-    const tab = page.locator('[data-wish-section="decisions"]');
-    await expect(tab.locator("strong")).toHaveText("Decisions");
-    await expect(tab.locator(":scope > .count")).toHaveText("2");
+    const tab = page.locator('[data-wish-section="activity"]');
+    await expect(tab.locator("strong")).toHaveText("Activity");
+    await expect(tab.locator(".count")).toHaveText("2");
     const log = await openWorkspaceSection(page, "decisions");
-    await expect(
-      log.locator(".workspace-panel-content").getByRole("button"),
-    ).toHaveCount(0);
+    await expect(log.locator('.decision-row[role="button"]')).toHaveCount(2);
     const rows = log.locator(".decision-row");
     // The latest first: the answer came after the block.
     await expect(rows.first()).toContainText("Which oil for the wick?");
@@ -113,19 +118,26 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
 
     // The decision opens its task in the Tasks tab, and the task leads back.
     await answered.getByRole("link", { name: "W1" }).click();
-    await expect(page.locator('[data-wish-section="tasks"]')).toHaveClass(
-      /is-open/,
-    );
+    await expect(
+      page.locator('[data-wish-section="tasks"] .workspace-section-toggle'),
+    ).toHaveAttribute("aria-current", "true");
     const task = page
       .locator(".wish-task")
       .filter({ hasText: "Fill with paraffin" });
     await expect(task).toHaveClass(/focused/);
     await expect(task).toBeInViewport();
-    await expect(task.locator(".wish-task-heading")).toBeFocused();
-    await task.getByRole("link", { name: /From Q01/ }).click();
-    await expect(page.locator('[data-wish-section="decisions"]')).toHaveClass(
-      /is-open/,
-    );
+    const taskDrawer = page.locator("dialog.task-drawer-shell");
+    await expect(taskDrawer).toBeVisible();
+    await expect(
+      taskDrawer.getByRole("button", { name: /Close|Fermer/ }),
+    ).toBeFocused();
+    await page
+      .locator("dialog.task-drawer-shell")
+      .getByRole("link", { name: /From Q01/ })
+      .click();
+    await expect(
+      page.locator('[data-wish-section="activity"] .workspace-section-toggle'),
+    ).toHaveAttribute("aria-current", "true");
     await expect(
       page.locator(".decision-row.focused").filter({
         hasText: "Which oil for the wick?",

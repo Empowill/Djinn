@@ -185,21 +185,23 @@ test("an answer in a wish without a lead session says no lead was told; a decisi
   assert.doesNotMatch(html, /id="decision-b2".*?no-lead.*?id="decision-b1"/);
 });
 
-test("a task links back to the decision it comes from", () => {
+test("a task opens its decision detail", () => {
   const log = d.decisionsOf(questions, blocks, tasks);
+  const decision = d.decisionOf(tasks[0], log);
   const html = d.renderToStaticMarkup(
     h(d.WishTask, {
       task: { ...tasks[0], usage: undefined, dependsOn: [] },
-      decision: d.decisionOf(tasks[0], log),
+      decision,
+      focused: true,
       onDecision() {},
       onStop() {},
       onSend: async () => {},
     }),
   );
-  assert.match(
-    html,
-    /<a class="decision-link" href="#decision-q1" title="Show the decision Q01 in the Decisions tab"><span aria-hidden="true">🔒<\/span>From Q01<\/a>/,
-  );
+  // The decision link is in the client-only TaskDrawer portal; the row retains its expanded dialog contract in SSR.
+  assert.match(html, /aria-haspopup="dialog"/);
+  assert.match(html, /aria-expanded="true"/);
+  assert.equal(decision?.id, "q1");
 });
 
 // A wish of many answered questions: Q001 the oldest.

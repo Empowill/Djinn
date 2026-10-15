@@ -73,7 +73,7 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
     await openWorkspaceSection(page, "tilasms");
     const tilasmsRow = page.locator('[data-wish-section="tilasms"]');
     await expect(tilasmsRow.locator("strong")).toHaveText("Tilasms");
-    await expect(tilasmsRow.locator(":scope > .count")).toHaveText("1");
+    await expect(tilasmsRow.locator(".count")).toHaveText("1");
     const panel = page.getByRole("tabpanel", { name: "Tilasms" });
     const row = panel.locator(".tilasm-row").filter({ hasText: "L01" });
     await expect(row).toContainText("The lamp's anatomy");
@@ -95,6 +95,15 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
     await page.screenshot({ path: path.join(shots, "tilasms-dark.png") });
     await page.screenshot({ path: mergeVisual("dark/tilasms.png") });
 
+    // Search belongs to the list surface. Close the modal viewer first so its
+    // inert backdrop cannot leave the list on a stale result while the server
+    // search settles; reopen it after the search checks for version updates.
+    await page
+      .locator("dialog.wish-settings-drawer")
+      .getByRole("button", { name: /Close|Fermer/ })
+      .click();
+    await expect(page.locator("dialog.wish-settings-drawer")).toHaveCount(0);
+
     // The search, on the titles and the text within the wish; the kind's own name finds them all.
     const search = panel.getByRole("searchbox");
     for (const words of ["wick flame", "ANATOMY", "talisman", "talismans"]) {
@@ -106,6 +115,8 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
     await expect(panel).toContainText("No tilasm holds “paraffin”");
     await search.fill("");
     await expect(panel.locator(".tilasm-row")).toHaveCount(1);
+    await row.getByRole("button", { name: "The lamp's anatomy" }).click();
+    await expect(page.locator("dialog.wish-settings-drawer")).toBeVisible();
 
     // A new version put by the command line replaces what the frame shows; the history restores the first one.
     fs.writeFileSync(
@@ -114,14 +125,22 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
     );
     djinn("tilasm", "put", dir, "--wish", wishId, "--code", "L01");
     await expect(frame.locator("body")).toContainText("Second version.");
+    await page
+      .locator("dialog.wish-settings-drawer")
+      .getByRole("button", { name: /Close|Fermer/ })
+      .click();
+    await expect(page.locator("dialog.wish-settings-drawer")).toHaveCount(0);
     await row.getByRole("button", { name: "Versions" }).click();
-    const versions = row.locator(".tilasm-history li");
+    const historyDrawer = page.locator("dialog.wish-settings-drawer");
+    await expect(historyDrawer).toBeVisible();
+    const versions = historyDrawer.locator(".tilasm-history li");
     await expect(versions).toHaveCount(2);
     await versions
       .nth(1)
       .getByRole("button", { name: "Restore this version" })
       .click();
-    await expect(frame.locator("body")).toContainText(
+    const restoredFrame = page.frameLocator("iframe.tilasm-frame");
+    await expect(restoredFrame.locator("body")).toContainText(
       "A wick carries the oil to the flame.",
     );
     await expect(versions).toHaveCount(3);

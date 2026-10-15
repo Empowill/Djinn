@@ -96,7 +96,7 @@ const levelKeys = {
 } as const;
 
 // jump scrolls to an element, puts the focus on it and makes it glow a moment.
-export function jump(id: string) {
+export function jump(id: string, options?: { focus?: boolean }) {
   const element = document.getElementById(id);
   if (!element) return;
   const reduced = document.documentElement.dataset.motion === "reduced";
@@ -104,8 +104,11 @@ export function jump(id: string) {
     behavior: reduced ? "auto" : "smooth",
     block: "start",
   });
-  if (!element.hasAttribute("tabindex")) element.setAttribute("tabindex", "-1");
-  element.focus({ preventScroll: true });
+  if (options?.focus !== false) {
+    if (!element.hasAttribute("tabindex"))
+      element.setAttribute("tabindex", "-1");
+    element.focus({ preventScroll: true });
+  }
   element.classList.remove("flash");
   void element.offsetWidth;
   element.classList.add("flash");

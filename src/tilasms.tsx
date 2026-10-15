@@ -12,7 +12,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { type DragEvent, useEffect, useState } from "react";
+import { type DragEvent, useEffect, useRef, useState } from "react";
 
 import { Change, type Task } from "../gen/ts/plan/v1/plan_pb";
 import type { Tilasm } from "../gen/ts/plan/v1/tilasm_pb";
@@ -22,6 +22,7 @@ import { when } from "./data/format";
 import { type DropEntry, TooLarge, entriesOf, readDrop } from "./data/tilasms";
 import { t } from "./i18n";
 import { memory } from "./usage";
+import { SettingsDrawer } from "./wish-settings";
 
 import "./tilasms.css";
 
@@ -36,6 +37,8 @@ export function TilasmsTab({
   tilasms,
   tasks,
   onToast,
+  workspace = false,
+  active = true,
 }: {
   wishId: string;
   // The tilasm a djinn:// link asks to show: opened in the frame, again at each new request.
@@ -44,6 +47,10 @@ export function TilasmsTab({
   tilasms: readonly Tilasm[];
   tasks: readonly Task[];
   onToast: (text: string) => void;
+  /** Compact single-panel workspace presentation; legacy tab layout remains the default. */
+  workspace?: boolean;
+  /** Hidden mounted workspace panels defer the portal viewer until they become visible. */
+  active?: boolean;
 }) {
   const clients = useClients();
   const store = useStore();
@@ -55,6 +62,14 @@ export function TilasmsTab({
     if (opening) setOpenId(opening.tilasmId);
   }, [opening]);
   const [history, setHistory] = useState("");
+  const previousActive = useRef(active);
+  useEffect(() => {
+    if (!active && previousActive.current) {
+      setOpenId("");
+      setHistory("");
+    }
+    previousActive.current = active;
+  }, [active]);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!search.trim()) return setFound(null);
@@ -97,7 +112,10 @@ export function TilasmsTab({
       open={tilasms.find((tilasm) => tilasm.id === openId)}
       onOpen={setOpenId}
       history={history}
-      onHistory={(id) => setHistory(history === id ? "" : id)}
+      onHistory={(id) => {
+        setHistory(history === id ? "" : id);
+        if (workspace) setOpenId(id);
+      }}
       onRestore={(tilasm, version) =>
         void run(async () => {
           await clients.tilasms.restore({
@@ -132,6 +150,8 @@ export function TilasmsTab({
             : t("tilasms.put", { code });
         }).finally(() => setBusy(false));
       }}
+      workspace={workspace}
+      active={active}
     />
   );
 }
@@ -151,6 +171,8 @@ export function TilasmList({
   onExport,
   busy = false,
   onDrop,
+  workspace = false,
+  active = true,
 }: {
   // What shows: the wish's tilasms, or those the search found.
   tilasms: readonly Tilasm[];
@@ -172,6 +194,10 @@ export function TilasmList({
   // A drop is being put.
   busy?: boolean;
   onDrop: (entries: DropEntry[]) => void;
+  /** Compact single-panel workspace presentation; legacy tab layout remains the default. */
+  workspace?: boolean;
+  /** Hidden mounted workspace panels defer the portal viewer until they become visible. */
+  active?: boolean;
 }) {
   const [over, setOver] = useState(false);
   const dragging = (event: DragEvent) => {
@@ -179,11 +205,76 @@ export function TilasmList({
     event.preventDefault();
     setOver(true);
   };
+  const renderHistory = (tilasm: Tilasm) => (
+    <ol className="tilasm-history" reversed>
+      {[...tilasm.versions].reverse().map((v) => (
+        <li key={v.number}>
+          <span className="tilasm-code">
+            {t("tilasms.version", { version: v.number })}
+          </span>
+          <span className="tilasm-meta">
+            {v.author} · {when(v.createTime)} ·{" "}
+            {t("tilasms.files", { count: v.files })} · {memory(v.size)}
+            {v.restoredFrom > 0 &&
+              ` · ${t("tilasms.restored_from", { version: v.restoredFrom })}`}
+          </span>
+          {v.number !== latest(tilasm) && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => onRestore(tilasm, v.number)}
+            >
+              <RotateCcw size={13} />
+              {t("tilasms.restore")}
+            </button>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+  const workspaceDetail = workspace && active && open && (
+    <SettingsDrawer
+      title={open.title}
+      onClose={() => {
+        onOpen("");
+        onHistory("");
+      }}
+    >
+      <div className="workspace-tilasm-detail">
+        <div className="workspace-tilasm-detail-meta">
+          <span className="tilasm-code">{open.code}</span>
+          <span className="tilasm-meta">
+            {open.author} · {when(open.updateTime)} ·{" "}
+            {t("tilasms.version", { version: latest(open) })}
+            {open.cites.length > 0 && (
+              <span className="tilasm-cites">
+                {t("tilasms.cites")}{" "}
+                {open.cites.map((id) => (
+                  <span key={id} className="tilasm-code">
+                    {codes.get(id) ?? id}
+                  </span>
+                ))}
+              </span>
+            )}
+          </span>
+        </div>
+        <iframe
+          key={`${open.id}-${latest(open)}`}
+          className="tilasm-frame"
+          title={`${open.code} · ${open.title}`}
+          src={tilasmAddress(open.id)}
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+        />
+        {history === open.id && renderHistory(open)}
+      </div>
+    </SettingsDrawer>
+  );
   return (
     <div
       role="tabpanel"
       aria-labelledby="view-tab-tilasms"
-      className={`tilasms ${over ? "dropping" : ""} ${open ? "has-open" : ""}`}
+      className={`tilasms ${workspace ? "workspace-variant" : ""} ${over ? "dropping" : ""} ${open ? "has-open" : ""}`}
       onDragEnter={dragging}
       onDragOver={dragging}
       onDragLeave={(event) => {
@@ -213,7 +304,7 @@ export function TilasmList({
           {busy ? t("tilasms.putting") : t("tilasms.drop")}
         </span>
       </div>
-      {open && (
+      {!workspace && open && (
         <section className="tilasm-view" aria-label={open.title}>
           <div className="tilasm-view-head">
             <span className="tilasm-code">{open.code}</span>
@@ -255,27 +346,55 @@ export function TilasmList({
               className={`tilasm-row ${open?.id === tilasm.id ? "open" : ""}`}
             >
               <div className="tilasm-line">
-                <span className="tilasm-code">{tilasm.code}</span>
-                <button
-                  type="button"
-                  className="text-button tilasm-title"
-                  title={t("tilasms.open")}
-                  onClick={() => onOpen(tilasm.id)}
-                >
-                  {tilasm.title}
-                </button>
-                <span className="tilasm-meta">
-                  {tilasm.author} · {when(tilasm.updateTime)}
-                </span>
-                {tilasm.cites.length > 0 && (
-                  <span className="tilasm-cites">
-                    {t("tilasms.cites")}{" "}
-                    {tilasm.cites.map((id) => (
-                      <span key={id} className="tilasm-code">
-                        {codes.get(id) ?? id.slice(0, 8)}
+                {workspace ? (
+                  <button
+                    type="button"
+                    className="tilasm-primary"
+                    title={tilasm.title}
+                    aria-label={tilasm.title}
+                    onClick={() => onOpen(tilasm.id)}
+                  >
+                    <span className="tilasm-code">{tilasm.code}</span>
+                    <span className="tilasm-title">{tilasm.title}</span>
+                    <span className="tilasm-meta">
+                      {tilasm.author} · {when(tilasm.updateTime)}
+                      {tilasm.cites.length > 0 && (
+                        <span className="tilasm-cites">
+                          {t("tilasms.cites")}{" "}
+                          {tilasm.cites.map((id) => (
+                            <span key={id} className="tilasm-code">
+                              {codes.get(id) ?? id.slice(0, 8)}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                ) : (
+                  <>
+                    <span className="tilasm-code">{tilasm.code}</span>
+                    <button
+                      type="button"
+                      className="text-button tilasm-title"
+                      title={t("tilasms.open")}
+                      onClick={() => onOpen(tilasm.id)}
+                    >
+                      {tilasm.title}
+                    </button>
+                    <span className="tilasm-meta">
+                      {tilasm.author} · {when(tilasm.updateTime)}
+                    </span>
+                    {tilasm.cites.length > 0 && (
+                      <span className="tilasm-cites">
+                        {t("tilasms.cites")}{" "}
+                        {tilasm.cites.map((id) => (
+                          <span key={id} className="tilasm-code">
+                            {codes.get(id) ?? id.slice(0, 8)}
+                          </span>
+                        ))}
                       </span>
-                    ))}
-                  </span>
+                    )}
+                  </>
                 )}
                 <span className="tilasm-actions">
                   <button
@@ -299,38 +418,12 @@ export function TilasmList({
                   </button>
                 </span>
               </div>
-              {history === tilasm.id && (
-                <ol className="tilasm-history" reversed>
-                  {[...tilasm.versions].reverse().map((v) => (
-                    <li key={v.number}>
-                      <span className="tilasm-code">
-                        {t("tilasms.version", { version: v.number })}
-                      </span>
-                      <span className="tilasm-meta">
-                        {v.author} · {when(v.createTime)} ·{" "}
-                        {t("tilasms.files", { count: v.files })} ·{" "}
-                        {memory(v.size)}
-                        {v.restoredFrom > 0 &&
-                          ` · ${t("tilasms.restored_from", { version: v.restoredFrom })}`}
-                      </span>
-                      {v.number !== latest(tilasm) && (
-                        <button
-                          type="button"
-                          className="text-button"
-                          onClick={() => onRestore(tilasm, v.number)}
-                        >
-                          <RotateCcw size={13} />
-                          {t("tilasms.restore")}
-                        </button>
-                      )}
-                    </li>
-                  ))}
-                </ol>
-              )}
+              {!workspace && history === tilasm.id && renderHistory(tilasm)}
             </li>
           ))}
         </ul>
       )}
+      {workspaceDetail}
     </div>
   );
 }

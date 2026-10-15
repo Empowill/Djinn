@@ -1,0 +1,1168 @@
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host {
+  width: min(840px, calc(100% - 32px));
+  max-width: min(860px, calc(100% - 32px));
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+/* Open decisions and permissions use the page surface as their reading ground. The stable pill and the editor do
+   not carry this host class, so their existing surface and blend treatment stay unchanged. */
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host
+  > .workspace-action-surface {
+  background: var(--surface);
+}
+
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-collapsed {
+  width: fit-content;
+  max-width: calc(100% - 32px);
+}
+
+.workspace-action-attention-shell {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 2px;
+}
+
+.workspace-action-attention-shell.is-editor-open {
+  display: contents;
+}
+
+.workspace-action-attention-slot {
+  min-width: 0;
+}
+
+.workspace-action-attention-stable {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 42px;
+  padding-right: 40px;
+}
+
+.workspace-action-attention-stable .workspace-action-control {
+  min-height: 42px;
+  padding: 10px 10px;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 600;
+  mix-blend-mode: normal;
+}
+
+.workspace-action-secondary:not(.is-expanded)
+  .workspace-action-attention-stable
+  .workspace-action-control {
+  color: var(--text);
+  mix-blend-mode: normal;
+}
+
+.workspace-action-attention-stable .workspace-action-attention-label {
+  justify-content: center;
+  padding-inline: 17px;
+}
+
+.workspace-action-attention-stable .workspace-action-attention-pending {
+  position: absolute;
+  right: 0;
+  min-width: 38px;
+  padding-inline: 8px 9px;
+  gap: 5px;
+  font-family: var(--mono);
+}
+
+.workspace-action-attention-pending .live-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.workspace-action-attention {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  align-items: start;
+  gap: 12px;
+  padding: 6px 0 8px;
+  color: var(--text);
+}
+
+.workspace-action-attention-nav {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto 28px;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  min-width: 0;
+  margin-inline: 18px;
+  padding: 0 0 3px;
+  background: var(--surface-raised);
+}
+
+.workspace-action-attention-header-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  gap: 2px;
+}
+
+.workspace-action-attention-header-actions > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  box-shadow: none;
+}
+
+.workspace-action-attention-header-actions > button > svg,
+.workspace-action-attention-arrow > svg,
+.workspace-action-attention-close > svg {
+  color: inherit;
+  stroke: currentColor;
+}
+
+.workspace-action-attention-header-actions > button:hover:not(:disabled),
+.workspace-action-attention-header-actions > button:focus-visible {
+  color: var(--text);
+  background: var(--surface-soft);
+  outline: none;
+}
+
+.workspace-action-attention-header-actions > button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-header-actions
+  > .dock-header-submit.button.accent {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  box-shadow: none;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-header-actions
+  > .dock-header-submit.button.accent::before,
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-header-actions
+  > .dock-header-submit.button.accent::after {
+  content: none;
+  display: none;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-header-actions
+  > .dock-header-submit.button.accent:hover:not(:disabled),
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-header-actions
+  > .dock-header-submit.button.accent:focus-visible {
+  background: color-mix(in srgb, var(--accent) 88%, var(--text));
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
+.workspace-action-attention-arrows {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.workspace-action-attention-arrow,
+.workspace-action-attention-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 28px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.workspace-action-attention-arrow {
+  width: 28px;
+  padding: 0;
+}
+
+.workspace-action-attention-close {
+  width: 28px;
+  padding: 0;
+}
+
+.workspace-action-attention-arrow:hover:not(:disabled),
+.workspace-action-attention-arrow:focus-visible,
+.workspace-action-attention-close:hover,
+.workspace-action-attention-close:focus-visible {
+  color: var(--text);
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  outline: none;
+}
+
+.workspace-action-attention-arrow:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+.workspace-action-attention-title-viewport {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  overflow: hidden;
+}
+
+.workspace-action-attention-title {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
+}
+
+.workspace-action-attention-title-text {
+  display: -webkit-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+@keyframes workspace-action-attention-title-in-next {
+  from {
+    opacity: 1;
+    filter: blur(1.5px);
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateX(0);
+  }
+}
+
+@keyframes workspace-action-attention-title-in-previous {
+  from {
+    opacity: 1;
+    filter: blur(1.5px);
+    transform: translateX(-100%);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateX(0);
+  }
+}
+
+@keyframes workspace-action-attention-title-out-next {
+  from {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateX(0);
+  }
+  to {
+    opacity: 1;
+    filter: blur(1.5px);
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes workspace-action-attention-title-out-previous {
+  from {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateX(0);
+  }
+  to {
+    opacity: 1;
+    filter: blur(1.5px);
+    transform: translateX(100%);
+  }
+}
+
+.workspace-action-attention-title.is-entering.is-next {
+  animation: workspace-action-attention-title-in-next 220ms ease both;
+}
+
+.workspace-action-attention-title.is-entering.is-previous {
+  animation: workspace-action-attention-title-in-previous 220ms ease both;
+}
+
+.workspace-action-attention-title.is-leaving.is-next {
+  animation: workspace-action-attention-title-out-next 220ms ease both;
+}
+
+.workspace-action-attention-title.is-leaving.is-previous {
+  animation: workspace-action-attention-title-out-previous 220ms ease both;
+}
+
+.workspace-action-attention-items {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.workspace-action-attention-item {
+  position: absolute;
+  inset-inline: 0;
+  min-width: 0;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateX(0);
+}
+
+.workspace-action-attention-item.is-active {
+  position: relative;
+  grid-area: 1 / 1;
+  visibility: visible;
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.workspace-action-attention-item.is-leaving {
+  position: relative;
+  grid-area: 1 / 1;
+  visibility: visible;
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: none;
+}
+
+@keyframes workspace-action-attention-content-in {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+@keyframes workspace-action-attention-item-in-next {
+  from {
+    opacity: 1;
+    filter: blur(2.5px);
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateX(0);
+  }
+}
+
+@keyframes workspace-action-attention-item-in-previous {
+  from {
+    opacity: 1;
+    filter: blur(2.5px);
+    transform: translateX(-100%);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateX(0);
+  }
+}
+
+@keyframes workspace-action-attention-item-out-next {
+  from {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateX(0);
+  }
+  to {
+    opacity: 1;
+    filter: blur(2.5px);
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes workspace-action-attention-item-out-previous {
+  from {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateX(0);
+  }
+  to {
+    opacity: 1;
+    filter: blur(2.5px);
+    transform: translateX(100%);
+  }
+}
+
+.workspace-action-attention-item.is-active.is-next {
+  animation: workspace-action-attention-item-in-next 220ms ease both;
+}
+
+.workspace-action-attention-item.is-active.is-previous {
+  animation: workspace-action-attention-item-in-previous 220ms ease both;
+}
+
+.workspace-action-attention-item.is-leaving.is-next {
+  animation: workspace-action-attention-item-out-next 220ms ease both;
+}
+
+.workspace-action-attention-item.is-leaving.is-previous {
+  animation: workspace-action-attention-item-out-previous 220ms ease both;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention.is-opening
+  .workspace-action-attention-item.is-active
+  > .question-card,
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention.is-opening
+  .workspace-action-attention-item.is-active
+  > .lead-prompt,
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention.is-opening
+  .workspace-action-attention-item.is-active
+  > .wish-grant {
+  animation: workspace-action-attention-content-in 140ms ease 80ms both;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  > .question-card,
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  > .lead-prompt,
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  > .wish-grant {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0 18px 6px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.workspace-action-attention-item > .question-card .question-top {
+  padding-right: 0;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  > .question-card:not(.lead-prompt)
+  .question-top
+  .question-id {
+  display: none;
+}
+
+.workspace-action-attention-item > .question-card .question-heading,
+.workspace-action-attention-item > .lead-prompt .question-heading {
+  gap: 7px;
+  padding: 4px 0;
+}
+
+.workspace-action-attention-item > .question-card .question-id {
+  min-width: 24px;
+  height: 23px;
+  font-size: 11px;
+}
+
+.workspace-action-attention-item > .question-card .question-meta {
+  gap: 5px;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.workspace-action-attention-item > .question-card .status-badge {
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.workspace-action-attention-item > .question-card .question-heading h3 {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.workspace-action-attention-item .status-badge {
+  --tone: var(--muted);
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--muted);
+}
+
+.workspace-action-attention-item .status-badge svg {
+  color: var(--muted);
+}
+
+.workspace-action-attention-item > .question-card .question-inner,
+.workspace-action-attention-item > .lead-prompt .question-inner {
+  gap: 6px;
+  padding: 0 0 10px;
+}
+
+.workspace-action-attention-item > .question-card .question-options,
+.workspace-action-attention-item > .lead-prompt .question-options {
+  grid-template-columns: 1fr;
+  gap: 9px;
+}
+
+.workspace-action-attention-item > .question-card .option,
+.workspace-action-attention-item > .lead-prompt .option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 6px;
+  min-height: 0;
+  padding: 9px 11px;
+  border-radius: 6px;
+}
+
+.workspace-action-attention-item > .question-card .option p,
+.workspace-action-attention-item > .lead-prompt .option p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.workspace-action-attention-item > .question-card .option .option-recommended {
+  position: static;
+  grid-column: 2;
+  justify-self: start;
+  margin-top: -2px;
+  padding: 0 5px;
+  font-size: 10px;
+}
+
+.workspace-action-attention-item .dock-choice-check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: var(--text);
+}
+
+.workspace-action-attention-item .dock-question-impact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.workspace-action-attention-item .dock-question-impact > span:first-child {
+  color: var(--muted-dim);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.workspace-action-attention-item > .question-card textarea {
+  min-height: 44px;
+}
+
+.workspace-action-attention-item > .question-card .dock-question-actions,
+.workspace-action-attention-item > .lead-prompt .dock-prompt-actions {
+  position: relative;
+  z-index: 1;
+  padding: 0 0 5px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-raised);
+}
+
+.workspace-action-attention-item .lamp-rub,
+.workspace-action-attention-item .lamp-enlighten {
+  border-color: var(--line-strong);
+  background: var(--surface-soft);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.workspace-action-attention-item .lamp-rub:hover,
+.workspace-action-attention-item .lamp-enlighten:hover {
+  border-color: var(--text);
+  background: color-mix(in srgb, var(--text) 9%, var(--surface-soft));
+  color: var(--text);
+}
+
+.workspace-action-attention-item .recommendation {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.workspace-action-attention-item .recommendation .eyebrow,
+.workspace-action-attention-item .recommendation p {
+  color: var(--muted);
+}
+
+.workspace-action-attention-item .dock-prompt-lines {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--line-strong);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  color: var(--muted);
+  font: 11px/1.5 var(--mono);
+  white-space: pre-wrap;
+}
+
+.workspace-action-attention-item
+  > .question-card
+  .dock-question-actions
+  .question-actions {
+  min-height: 32px;
+  align-items: center;
+}
+
+.workspace-action-attention-item > .question-card .dock-question-body,
+.workspace-action-attention-item > .lead-prompt .dock-prompt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  height: clamp(190px, 22vh, 210px);
+  max-height: calc(100vh - 130px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 0 8px;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  > .question-card:not(.lead-prompt)
+  .dock-question-body {
+  height: clamp(250px, 28vh, 260px);
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .dock-question-context {
+  margin: 0;
+  border-top: 0;
+  padding-top: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .dock-question-context
+  .prose {
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .dock-question-context
+  .prose
+  .ac-markdown,
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .dock-question-context
+  .prose
+  .ac-markdown
+  p,
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .dock-question-context
+  .prose
+  .ac-markdown
+  li {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .dock-question-context
+  .prose
+  .ac-markdown
+  p {
+  margin-bottom: 0;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .dock-question-note,
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .dock-question-note
+  textarea {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .dock-question-note
+  textarea {
+  margin-top: 0;
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.workspace-action-attention-item
+  > .lead-prompt
+  .dock-prompt-body
+  .lead-prompt-lines {
+  max-height: none;
+  overflow: visible;
+}
+
+.workspace-action-attention-item
+  > .lead-prompt
+  .dock-prompt-actions
+  .question-options {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.workspace-action-attention-item .question-actions {
+  gap: 6px;
+}
+
+.workspace-action-attention-item .question-actions .button {
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.workspace-action-attention-item .question-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.workspace-action-attention-item .mark-buttons {
+  gap: 4px;
+  padding-top: 0;
+}
+
+.workspace-action-attention-item .mark-toggle {
+  padding: 2px 6px;
+  font-size: 11px;
+}
+
+.workspace-action-attention-item .question-compact-details {
+  margin: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 5px;
+}
+
+.workspace-action-attention-item .question-compact-details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.workspace-action-attention-item .question-compact-details[open] > summary {
+  margin-bottom: 5px;
+}
+
+.workspace-action-attention-item .question-compact-details .recommendation {
+  margin: 0 0 8px;
+}
+
+.workspace-action-attention-item .question-compact-details .question-context {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.workspace-action-attention-item .question-compact-details textarea {
+  margin-top: 0;
+}
+
+.workspace-action-attention-item > .lead-prompt .form-tip {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.workspace-action-attention-item > .wish-grant {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0;
+}
+
+.workspace-action-attention-item > .wish-grant .button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* The dock owns a neutral decision surface. These selectors intentionally include the floating
+   action scope so the review page's spacious card palette cannot reintroduce padding, amber
+   recommendations, or light-mode white text inside this compact control. */
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-stable
+  .workspace-action-control {
+  color: var(--text);
+  font-weight: 600;
+  mix-blend-mode: normal;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-stable
+  .workspace-action-attention-label {
+  justify-content: center;
+  text-align: center;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-stable
+  .workspace-action-attention-pending {
+  color: var(--text);
+  background: var(--surface-soft);
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .status-badge {
+  --tone: var(--muted);
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--muted);
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .status-badge
+  svg {
+  color: var(--muted);
+}
+
+.wish-view .lead-message-floating .workspace-action-attention-item .option {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .option:hover,
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .option:focus-visible {
+  border-color: color-mix(in srgb, var(--st-running) 48%, var(--line-strong));
+  background: var(--surface);
+  outline: none;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .option.selected {
+  border-color: var(--st-running);
+  background: color-mix(in srgb, var(--st-running) 11%, var(--surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--st-running) 56%, transparent);
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .dock-choice-check {
+  color: var(--st-running);
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .option-recommended {
+  color: color-mix(in srgb, var(--st-interrupted) 82%, var(--text));
+  background: color-mix(in srgb, var(--st-interrupted) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--st-interrupted) 42%, var(--line));
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .recommendation {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .recommendation
+  .eyebrow,
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .recommendation
+  p {
+  color: var(--muted);
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .button.lamp-rub,
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .button.lamp-enlighten {
+  border-color: var(--line-strong);
+  background: var(--surface-soft);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .button.lamp-rub:hover,
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .button.lamp-rub:focus-visible,
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .button.lamp-enlighten:hover,
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-item
+  .button.lamp-enlighten:focus-visible {
+  border-color: var(--text);
+  background: color-mix(in srgb, var(--text) 9%, var(--surface-soft));
+  color: var(--text);
+  outline: none;
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-header-actions
+  > .mark-toggle-icon {
+  color: var(--text);
+}
+
+.wish-view
+  .lead-message-floating
+  .workspace-action-attention-header-actions
+  > .mark-toggle-icon.on {
+  color: var(--text);
+}
+
+/* The expanded dock is one continuous reading surface. Keep its nav, scroll viewport, body and permission prompt on
+   the same surface token; semantic option selection, the primary submit icon and recommendation badge keep their
+   dedicated colors below/above these containers. The host class excludes the stable pill and indication editor. */
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host
+  .workspace-action-attention,
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host
+  .workspace-action-attention-nav,
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host
+  .workspace-action-attention-items,
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host
+  .workspace-action-attention-item.is-active,
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host
+  .workspace-action-attention-item
+  > .question-card,
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host
+  .workspace-action-attention-item
+  > .lead-prompt,
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host
+  .workspace-action-attention-item
+  > .wish-grant,
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host
+  .workspace-action-attention-item
+  .question-inner,
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host
+  .workspace-action-attention-item
+  .dock-question-body,
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host
+  .workspace-action-attention-item
+  .dock-prompt-body,
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host
+  .workspace-action-attention-item
+  .dock-question-actions,
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host
+  .workspace-action-attention-item
+  .dock-prompt-actions,
+.wish-view
+  .lead-message-floating
+  > .workspace-action.workspace-action-dock-host
+  .workspace-action-attention-item
+  .dock-prompt-lines {
+  background: var(--surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-action-attention-title.is-entering {
+    animation: none;
+  }
+
+  .workspace-action-attention-title.is-leaving,
+  .workspace-action-attention-item.is-leaving {
+    display: none;
+  }
+
+  .workspace-action-attention-item,
+  .wish-view
+    .lead-message-floating
+    .workspace-action-attention-item
+    > .question-card,
+  .wish-view
+    .lead-message-floating
+    .workspace-action-attention-item
+    > .lead-prompt,
+  .wish-view
+    .lead-message-floating
+    .workspace-action-attention-item
+    > .wish-grant {
+    animation: none;
+    filter: none;
+    transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .wish-view
+    .lead-message-floating
+    > .workspace-action.workspace-action-dock-host,
+  .wish-view
+    .lead-message-floating
+    > .workspace-action.workspace-action-dock-collapsed {
+    width: calc(100% - 24px);
+    max-width: calc(100% - 24px);
+  }
+
+  .workspace-action-attention {
+    padding: 6px 0 8px;
+  }
+
+  .workspace-action-attention-nav {
+    margin-inline: 12px;
+  }
+
+  .wish-view
+    .lead-message-floating
+    .workspace-action-attention-item
+    > .question-card,
+  .wish-view
+    .lead-message-floating
+    .workspace-action-attention-item
+    > .lead-prompt,
+  .wish-view
+    .lead-message-floating
+    .workspace-action-attention-item
+    > .wish-grant {
+    padding-inline: 12px;
+  }
+
+  .workspace-action-attention-item > .question-card .dock-question-body,
+  .workspace-action-attention-item > .lead-prompt .dock-prompt-body {
+    height: clamp(180px, 30vh, 210px);
+  }
+
+  .wish-view
+    .lead-message-floating
+    .workspace-action-attention-item
+    > .question-card:not(.lead-prompt)
+    .dock-question-body {
+    height: clamp(220px, 34vh, 260px);
+  }
+}

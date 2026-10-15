@@ -811,10 +811,13 @@ func providerName(p planv1.Provider) string {
 	return strings.ToLower(strings.TrimPrefix(p.String(), "PROVIDER_"))
 }
 
-// choiceText is the answer of a decided question: the option chosen, or yes.
+// choiceText is the answer of a decided question: the custom response, the option chosen, or yes.
 func choiceText(q *planv1.Question) string {
 	c := q.GetAnswer().GetChoice()
-	if c == planv1.Choice_CHOICE_YES || c == planv1.Choice_CHOICE_UNSPECIFIED {
+	if c == planv1.Choice_CHOICE_UNSPECIFIED {
+		return "custom response"
+	}
+	if c == planv1.Choice_CHOICE_YES {
 		return "yes"
 	}
 	i := int(c - planv1.Choice_CHOICE_A)

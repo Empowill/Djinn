@@ -66,6 +66,7 @@ test("Share writes the wish's export, which imports again", async ({
     .locator(".topbar-actions")
     .getByRole("button", { name: "Share" })
     .click();
+  await page.getByRole("menuitem", { name: "Export the wish" }).click();
   const toast = page.locator(".toast");
   await expect(toast).toContainText("Wish exported to ");
   const file = (await toast.innerText())
@@ -100,10 +101,8 @@ test.describe("Lead", () => {
     const wishId = await open(page, title);
     djinn("wish", "set-lead", wishId, session, "--directory", folder);
 
-    await page
-      .locator(".topbar-actions")
-      .getByRole("button", { name: "Lead", exact: true })
-      .click();
+    await page.locator(".wish-lifecycle-menu-trigger").click();
+    await page.getByRole("menuitem", { name: "Talk to the lead" }).click();
     const terminal = page.getByRole("region", { name: "Terminal" });
     await expect(
       terminal.locator(".lead-terminal-command").first(),

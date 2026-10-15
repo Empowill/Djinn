@@ -76,3 +76,109 @@
 .decision-tasks a:hover {
   color: var(--text);
 }
+
+/* The wish workspace keeps decisions as a readable flat list. FlightPlan keeps the card treatment above. */
+.decision-log.is-workspace .card-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.decision-log.is-workspace .decision-row {
+  min-height: 32px;
+  margin-bottom: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.review .workspace-panel .decision-log.is-workspace .decision-row {
+  min-height: 36px;
+  margin-bottom: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.decision-log.is-workspace .decision-row.is-detail-trigger {
+  cursor: pointer;
+}
+
+.decision-log.is-workspace .decision-row.is-detail-trigger:hover {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.decision-log.is-workspace .decision-row.is-detail-trigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: -2px;
+}
+
+.decision-log.is-workspace .decision-icon {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.decision-log.is-workspace .decision-meta,
+.decision-log.is-workspace .decision-tasks,
+.decision-log.is-workspace .decision-by {
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.decision-log.is-workspace .decision-meta > .agent-code {
+  min-width: 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.decision-log.is-workspace.is-compact .decision-row h3 {
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 17px;
+}
+
+.decision-log.is-workspace .decision-row .answer-value {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.decision-log.is-workspace .decision-note-preview {
+  display: -webkit-box;
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 17px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.decision-detail {
+  display: grid;
+  gap: 12px;
+}
+
+.decision-detail h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.decision-detail .decision-note {
+  margin-top: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .decision-log.is-workspace .decision-row {
+    transition: none;
+  }
+}

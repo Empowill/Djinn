@@ -209,8 +209,10 @@ test("a card saves offline without navigation; drafts survive folding and openin
       .evaluateAll((nodes) => nodes.map((node) => node.className));
     expect(order.at(-1)).toContain("wish-instructions");
     await history.getByRole("link", { name: "W1" }).first().click();
+    const taskDrawer = page.locator("dialog.task-drawer-shell");
+    await expect(taskDrawer).toBeVisible();
     await expect(
-      page.locator(`#task-${sample.taskId} .wish-task-heading`),
+      taskDrawer.getByRole("button", { name: /Close|Fermer/ }),
     ).toBeFocused();
     await page.evaluate(() => localStorage.setItem("djinn.language", "fr"));
     await page.reload();

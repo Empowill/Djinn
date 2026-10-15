@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { t } from "./i18n";
 import {
@@ -120,20 +120,12 @@ type SmokeState = {
 
 type SmokePerformanceCleanup = () => void;
 
-export const WISH_SMOKE_DISSIPATION_MS = 800;
-
 type SmokeRendererHandle = {
   dispose: () => void;
-  canAcknowledgeDissolve: boolean;
-  setDissolveProgress: (progress: number) => void;
-  onDissolveFrame: (callback: () => void) => () => void;
 };
 
 const emptySmokeRenderer = (): SmokeRendererHandle => ({
   dispose: () => undefined,
-  canAcknowledgeDissolve: false,
-  setDissolveProgress: () => undefined,
-  onDissolveFrame: () => () => undefined,
 });
 
 // Opt-in browser instrumentation for measuring the real renderer without adding work to ordinary sessions. Open the
@@ -560,8 +552,6 @@ function mountSmoke(
   context.vertexAttribPointer(0, 2, context.FLOAT, false, 0, 0);
 
   let disposed = false;
-  let dissolveProgress = 0;
-  let dissolveFrameCallback: (() => void) | undefined;
   let simulationTime = 0;
   let windTime = seed;
   let animationFrame = 0;
@@ -736,18 +726,8 @@ function mountSmoke(
     float r=texture(pressure,uv+vec2(texel.x,0)).x;float b=texture(pressure,uv-vec2(0,texel.y)).x;
     float t=texture(pressure,uv+vec2(0,texel.y)).x;color=vec4(texture(velocity,uv).xy-.5*vec2(r-l,t-b),0,1);}`);
   const smokeField = `${bilinear}
-    uniform vec2 resolution;uniform float zoom;uniform float cameraScale;uniform float dissolveProgress;
+    uniform vec2 resolution;uniform float zoom;uniform float cameraScale;
     float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-    float valueNoise(vec2 p){
-      vec2 cell=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);
-      return mix(mix(hash(cell),hash(cell+vec2(1.,0.)),f.x),mix(hash(cell+vec2(0.,1.)),hash(cell+vec2(1.,1.)),f.x),f.y);
-    }
-    float dissolveMask(vec2 pixel){
-      if(dissolveProgress<=.001)return 1.;
-      if(dissolveProgress>=.999)return 0.;
-      float noise=mix(valueNoise(pixel*vec2(.018,.024)),valueNoise(pixel*vec2(.07,.09)),.32);
-      return smoothstep(dissolveProgress-.12,dissolveProgress+.12,noise);
-    }
     vec2 domain(vec2 p){
       vec2 q=vec2((.5-p.x)*cameraScale+.5,(p.y-.038)/1.16);
       vec2 focus=vec2(.565,.18);return focus+(q-focus)/zoom;}
@@ -758,7 +738,7 @@ function mountSmoke(
   const display = makeProgram(`${smokeField}
     uniform float asciiOn; uniform vec3 smokeBackground; uniform vec3 smokeTintLow; uniform vec3 smokeTintHigh;
     void main(){
-      vec2 pixel=uv*resolution;float raw=smoke(uv)*dissolveMask(pixel);
+      vec2 pixel=uv*resolution;float raw=smoke(uv);
       float value=asciiOn>.5?raw*.025:raw;
       float grain=(hash(pixel+floor(time*20.))-.5)*.007;
       float vignette=1.-.24*length((uv-.5)*vec2(1.,.7));
@@ -766,7 +746,7 @@ function mountSmoke(
       color=vec4(mix(smokeBackground,tint,value*vignette)+vec3(grain),1.);
     }`);
   const sampleAscii = makeProgram(`${smokeField}uniform vec2 coverage;
-    void main(){vec2 sampleUv=uv*coverage+vec2(1.-coverage.x,0.);float d=smoke(sampleUv)*dissolveMask(uv*resolution);color=vec4(d,d,d,1.);}`);
+    void main(){vec2 sampleUv=uv*coverage+vec2(1.-coverage.x,0.);float d=smoke(sampleUv);color=vec4(d,d,d,1.);}`);
   const trimDensity = makeProgram(`uniform float cutoff;uniform float edge;
     void main(){float inkValue=texture(density,uv).x;
     float above=smoothstep(cutoff-edge,cutoff+edge,uv.y);
@@ -867,10 +847,7 @@ function mountSmoke(
   };
 
   const renderAscii = (now: number) => {
-    // Always sample the terminal dissolve frame before acknowledging it. The display canvas can render at 60 Hz
-    // while the ASCII layers are throttled; letting progress 1 take the throttle would leave stale glyphs visible
-    // for the last frame before the creation surface is removed.
-    if (!grid || (dissolveProgress < 1 && now - lastAscii < 1000 / 30)) return;
+    if (!grid || now - lastAscii < 1000 / 30) return;
     const elapsed = textPointer.last
       ? Math.min((now - textPointer.last) / 1000, 5)
       : 1 / 30;
@@ -912,15 +889,10 @@ function mountSmoke(
       }
     }
     textPointer.points.length = 0;
-    if (dissolveProgress >= 1) {
-      grid.trail.fill(0);
-      grid.trailActive = false;
-    }
     if (
       state.paused &&
       visibleAscii &&
       Number.isFinite(lastAscii) &&
-      dissolveProgress < 1 &&
       !hadTrail &&
       !grid.trailActive
     )
@@ -935,7 +907,6 @@ function mountSmoke(
         coverage: grid.coverage,
         zoom: state.zoom,
         cameraScale,
-        dissolveProgress,
       },
       { density: ink.read },
     );
@@ -951,7 +922,9 @@ function mountSmoke(
     );
     if (!visibleAscii) {
       for (let index = 0; index < grid.pixels.length; index += 4) {
-        if (grid.pixels[index] > 10) {
+        // Keep readiness in sync with the ASCII renderer's own visibility threshold. The previous byte cutoff (11)
+        // ignored valid low-end glyphs (bytes 3–10), leaving reduced-motion main-thread startup at false/true.
+        if (computeAsciiBrightness(grid.pixels[index] / 255) > 0.035) {
           visibleAscii = true;
           if (prepared) canvas.dataset.ready = "true";
           break;
@@ -1120,18 +1093,12 @@ function mountSmoke(
         zoom: state.zoom,
         cameraScale,
         asciiOn: 1,
-        dissolveProgress,
         smokeBackground: smokePalette.background,
         smokeTintLow: smokePalette.tintLow,
         smokeTintHigh: smokePalette.tintHigh,
       },
       { density: ink.read },
     );
-    if (dissolveProgress >= 1 && dissolveFrameCallback) {
-      const callback = dissolveFrameCallback;
-      dissolveFrameCallback = undefined;
-      callback();
-    }
     canvas.dataset.visible = "true";
     canvas.dataset.renderWidth = String(Math.round(rect.width));
   };
@@ -1187,7 +1154,7 @@ function mountSmoke(
   };
   const onMotionPreferenceChange = () => {
     state.paused = reducedMotion.matches;
-    if (dissolveProgress >= 1 && !animationFrame && !disposed)
+    if (!animationFrame && !disposed)
       animationFrame = requestAnimationFrame(frame);
   };
   const onWindowResize = () => {
@@ -1222,7 +1189,6 @@ function mountSmoke(
   return {
     dispose: () => {
       disposed = true;
-      dissolveFrameCallback = undefined;
       stopTheme();
       cancelAnimationFrame(animationFrame);
       if (resizeFrame) cancelAnimationFrame(resizeFrame);
@@ -1251,19 +1217,6 @@ function mountSmoke(
         for (const name of ["perfRendererWebgl", "perfVendorWebgl"])
           delete target.dataset[name];
       }
-    },
-    canAcknowledgeDissolve: true,
-    setDissolveProgress: (progress) => {
-      dissolveProgress = Math.max(0, Math.min(1, progress));
-      if (dissolveProgress >= 1 && !animationFrame && !disposed)
-        animationFrame = requestAnimationFrame(frame);
-    },
-    onDissolveFrame: (callback) => {
-      dissolveFrameCallback = callback;
-      return () => {
-        if (dissolveFrameCallback === callback)
-          dissolveFrameCallback = undefined;
-      };
     },
   };
 }
@@ -1573,11 +1526,9 @@ function mountSmokeWorker(
   const workerCanvas =
     prewarm?.workerCanvas ?? document.createElement("canvas");
   workerCanvas.className = "wish-smoke-worker-canvas";
-  workerCanvas.setAttribute("role", "img");
-  workerCanvas.setAttribute(
-    "aria-label",
-    canvas.getAttribute("aria-label") || "",
-  );
+  workerCanvas.setAttribute("aria-hidden", "true");
+  workerCanvas.removeAttribute("role");
+  workerCanvas.removeAttribute("aria-label");
   workerCanvas.dataset.zoom = String(ASCII_REFERENCE.zoom);
   workerCanvas.dataset.ready = "false";
   workerCanvas.dataset.visible = "false";
@@ -1715,10 +1666,7 @@ function mountSmokeWorker(
   }
 
   let stopped = false;
-  let dissolveProgress = 0;
-  let dissolveFrameCallback: (() => void) | undefined;
   let fallbackCleanup: SmokeRendererHandle | undefined;
-  let fallbackDissolveCleanup: (() => void) | undefined;
   let workerDisposed = false;
   let pointerFrameHandle = 0;
   let resizeFrameHandle = 0;
@@ -1745,48 +1693,20 @@ function mountSmokeWorker(
     y: 0,
     active: false,
   };
-
-  const scheduleUnavailableDissolve = (callback: () => void) => {
-    let frame = 0;
-    let frames = 0;
-    let cancelled = false;
-    const tick = () => {
-      frame = 0;
-      if (cancelled) return;
-      frames++;
-      if (frames >= 2) callback();
-      else frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => {
-      cancelled = true;
-      if (frame) cancelAnimationFrame(frame);
-    };
-  };
-  const registerFallbackDissolve = (callback: () => void) => {
-    fallbackDissolveCleanup?.();
-    const cleanup = fallbackCleanup?.canAcknowledgeDissolve
-      ? fallbackCleanup.onDissolveFrame(callback)
-      : scheduleUnavailableDissolve(callback);
-    fallbackDissolveCleanup = cleanup;
-    return () => {
-      cleanup();
-      if (fallbackDissolveCleanup === cleanup)
-        fallbackDissolveCleanup = undefined;
-    };
-  };
-
-  const setDissolveProgress = (progress: number) => {
-    dissolveProgress = Math.max(0, Math.min(1, progress));
-    if (fallbackCleanup) fallbackCleanup.setDissolveProgress(dissolveProgress);
-    else worker.postMessage({ type: "dissolve", progress: dissolveProgress });
-  };
-  const onDissolveFrame = (callback: () => void) => {
-    if (fallbackCleanup) return registerFallbackDissolve(callback);
-    dissolveFrameCallback = callback;
-    return () => {
-      if (dissolveFrameCallback === callback) dissolveFrameCallback = undefined;
-    };
+  let lastGlyphMetricAt = -Infinity;
+  const publishSurfaceMetrics = (now = performance.now(), force = false) => {
+    if (!force && now - lastGlyphMetricAt < 120) return;
+    lastGlyphMetricAt = now;
+    let glyphCount = 0;
+    for (const layer of layers) {
+      const text = layer.textContent;
+      if (text) glyphCount += text.replace(/\s/g, "").length;
+    }
+    container.dataset.wishSmokeGlyphCount = String(glyphCount);
+    if (activeLayout) {
+      container.dataset.wishSmokeCoverage = `${activeLayout.coverage[0].toFixed(3)},${activeLayout.coverage[1].toFixed(3)}`;
+      container.dataset.wishSmokeViewport = `${Math.round(activeLayout.width)}x${Math.round(activeLayout.height)}`;
+    }
   };
 
   const installLayer = (layer: number, text: string) => {
@@ -1841,6 +1761,8 @@ function mountSmokeWorker(
     appliedSequence = 0;
     resetRows(next.gridWidth, next.gridHeight);
     applyAsciiLayout(asciiOutput, layers, next);
+    container.dataset.wishSmokeCoverage = `${next.coverage[0].toFixed(3)},${next.coverage[1].toFixed(3)}`;
+    container.dataset.wishSmokeViewport = `${Math.round(next.width)}x${Math.round(next.height)}`;
     publishLayoutMetrics(next);
   };
   const publishMetric = (name: string, value: number) => {
@@ -1971,6 +1893,7 @@ function mountSmokeWorker(
     canvas.dataset.visible = "true";
     workerCanvas.dataset.visible = "true";
     publishReadyIfVisible();
+    publishSurfaceMetrics(performance.now());
     if (perfEnabled) {
       const appliedAt = performance.now();
       const domElapsed = appliedAt - started;
@@ -2031,23 +1954,12 @@ function mountSmokeWorker(
     delete canvas.dataset.error;
     try {
       fallbackCleanup = mountSmoke(canvas, asciiOutput);
-      fallbackCleanup.setDissolveProgress(dissolveProgress);
-      if (dissolveFrameCallback) {
-        const callback = dissolveFrameCallback;
-        dissolveFrameCallback = undefined;
-        registerFallbackDissolve(callback);
-      }
     } catch (fallbackError) {
       fallbackCleanup = emptySmokeRenderer();
       canvas.dataset.error =
         fallbackError instanceof Error
           ? fallbackError.message
           : "Smoke rendering is unavailable.";
-      if (dissolveFrameCallback) {
-        const callback = dissolveFrameCallback;
-        dissolveFrameCallback = undefined;
-        registerFallbackDissolve(callback);
-      }
     }
   };
   const onWorkerMessage = (event: MessageEvent<unknown>) => {
@@ -2072,12 +1984,6 @@ function mountSmokeWorker(
       // continuing to render forever.
       prewarm.ready = true;
       if (!prewarmActivated) activatePrewarm();
-      return;
-    }
-    if (message?.type === "dissolved") {
-      const callback = dissolveFrameCallback;
-      dissolveFrameCallback = undefined;
-      callback?.();
       return;
     }
     if (message?.type === "ready") {
@@ -2284,9 +2190,6 @@ function mountSmokeWorker(
       if (resizeFrameHandle) cancelAnimationFrame(resizeFrameHandle);
       worker.removeEventListener("message", onWorkerMessage);
       worker.removeEventListener("error", onWorkerError);
-      dissolveFrameCallback = undefined;
-      fallbackDissolveCleanup?.();
-      fallbackDissolveCleanup = undefined;
       fallbackCleanup?.dispose();
       if (prewarm && !workerDisposed) {
         if (!returnSmokePrewarm(prewarm)) {
@@ -2310,6 +2213,12 @@ function mountSmokeWorker(
         "perfVendorWebgl",
       ])
         delete canvas.dataset[name];
+      for (const name of [
+        "wishSmokeGlyphCount",
+        "wishSmokeCoverage",
+        "wishSmokeViewport",
+      ])
+        delete container.dataset[name];
       for (const target of perfTargets)
         for (const name of [
           "data-perf-worker-dom-ms",
@@ -2367,31 +2276,13 @@ function mountSmokeWorker(
         ])
           target.removeAttribute(name);
     },
-    canAcknowledgeDissolve: true,
-    setDissolveProgress,
-    onDissolveFrame,
   };
 }
 
-export function WishSmoke({
-  transitionState = "surface",
-  onDissipationComplete,
-}: {
-  transitionState?: "surface" | "expanded" | "dissipating";
-  onDissipationComplete?: () => void;
-}) {
+export function WishSmoke() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const asciiOutput = useRef<HTMLDivElement>(null);
   const renderer = useRef<SmokeRendererHandle | undefined>(undefined);
-  const dissolveFrame = useRef<number | undefined>(undefined);
-  const dissolveRef = useRef(0);
-  const [dissolveProgress, setDissolveProgress] = useState(0);
-  const setProgress = useCallback((progress: number) => {
-    const next = Math.max(0, Math.min(1, progress));
-    dissolveRef.current = next;
-    setDissolveProgress(next);
-    renderer.current?.setDissolveProgress(next);
-  }, []);
 
   useEffect(() => {
     const canvasElement = canvas.current;
@@ -2426,7 +2317,6 @@ export function WishSmoke({
       }
     }
     renderer.current = cleanup ?? emptySmokeRenderer();
-    renderer.current.setDissolveProgress(dissolveRef.current);
     return () => {
       renderer.current = undefined;
       cleanup?.dispose();
@@ -2436,91 +2326,17 @@ export function WishSmoke({
     };
   }, []);
 
-  useEffect(() => {
-    if (dissolveFrame.current !== undefined) {
-      cancelAnimationFrame(dissolveFrame.current);
-      dissolveFrame.current = undefined;
-    }
-    if (transitionState !== "dissipating") {
-      setProgress(0);
-      return;
-    }
-    const reduced =
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
-      document.documentElement.dataset.motion === "reduced";
-    let completionScheduled = false;
-    let notified = false;
-    let rendererCleanup: (() => void) | undefined;
-    const notify = () => {
-      if (notified) return;
-      notified = true;
-      rendererCleanup?.();
-      rendererCleanup = undefined;
-      dissolveFrame.current = undefined;
-      onDissipationComplete?.();
-    };
-    const finish = () => {
-      if (completionScheduled) return;
-      completionScheduled = true;
-      const rendererHandle = renderer.current;
-      rendererCleanup = rendererHandle?.onDissolveFrame(notify);
-      setProgress(1);
-      if (!rendererHandle?.canAcknowledgeDissolve) {
-        // Empty or unavailable renderers have no frame acknowledgment, so hold their terminal state for two
-        // frames before handing off to the wish. Main and worker renderers notify after drawing the final frame.
-        let frames = 0;
-        const waitForTerminalFrame = () => {
-          if (notified) return;
-          frames++;
-          if (frames >= 2) notify();
-          else
-            dissolveFrame.current = requestAnimationFrame(waitForTerminalFrame);
-        };
-        dissolveFrame.current = requestAnimationFrame(waitForTerminalFrame);
-      }
-    };
-    if (reduced) {
-      finish();
-      return () => {
-        rendererCleanup?.();
-        rendererCleanup = undefined;
-        if (dissolveFrame.current !== undefined)
-          cancelAnimationFrame(dissolveFrame.current);
-        dissolveFrame.current = undefined;
-      };
-    }
-    const startedAt = performance.now();
-    const tick = (now: number) => {
-      const progress = Math.min(
-        1,
-        Math.max(0, (now - startedAt) / WISH_SMOKE_DISSIPATION_MS),
-      );
-      setProgress(progress);
-      if (progress >= 1) finish();
-      else dissolveFrame.current = requestAnimationFrame(tick);
-    };
-    dissolveFrame.current = requestAnimationFrame(tick);
-    return () => {
-      rendererCleanup?.();
-      rendererCleanup = undefined;
-      if (dissolveFrame.current !== undefined)
-        cancelAnimationFrame(dissolveFrame.current);
-      dissolveFrame.current = undefined;
-    };
-  }, [onDissipationComplete, setProgress, transitionState]);
-
   return (
     <div
       className="wish-smoke"
-      data-wish-smoke-state={transitionState}
-      data-wish-smoke-dissolve={dissolveProgress}
+      data-wish-smoke-state="surface"
+      data-wish-smoke-phase="surface"
     >
       <canvas
         ref={canvas}
         className="wish-smoke-canvas"
         data-zoom="10"
-        role="img"
-        aria-label={t("make.smoke_label")}
+        aria-hidden="true"
       />
       <div ref={asciiOutput} className="wish-smoke-ascii" aria-hidden="true" />
       <div className="wish-smoke-fallback" role="status">
