@@ -48,10 +48,10 @@ test("the status colours keep their contrast in the dark and the light theme", (
   };
   const mix = (a, b, share) => a.map((v, i) => v * share + b[i] * (1 - share));
   const themes = {
-    dark: { ...tokens(block(":root")), grounds: ["#111111", "#191919"] },
+    dark: { ...tokens(block(":root")), grounds: ["#0e0e10", "#151517"] },
     light: {
       ...tokens(block('html[data-theme="light"]')),
-      grounds: ["#f6f6f4", "#ffffff"],
+      grounds: ["#f6f6f8", "#ffffff"],
     },
   };
   for (const [name, theme] of Object.entries(themes)) {
@@ -75,8 +75,8 @@ test("the status colours keep their contrast in the dark and the light theme", (
 });
 
 // Every surface follows the theme through the tokens of theme.css. The light ramp lifts the texts to 4.5:1 on the page
-// and on a card, in order; the terminal's colours read at 4.5:1 on its light ground; the warm family and the danger
-// colour read on their grounds in both themes. Clément's dim greys (65 to 88) stay quiet in the dark theme.
+// and on a card, in order; the terminal's colours read at 4.5:1 on its light ground; the family of what waits and the
+// danger colour read on their grounds in both themes. Clément's dim greys (65 to 88) stay quiet in the dark theme.
 test("the theme's tokens keep their contrast in the dark and the light theme", () => {
   const css = fs.readFileSync(path.join(root, "theme.css"), "utf8");
   const block = (selector) => {
@@ -255,11 +255,11 @@ test("the task model uses Djinn's violet token and keeps contrast in both themes
   const themes = {
     dark: {
       violet: darkReview["st-investigating"],
-      grounds: ["#111111", "#191919"],
+      grounds: ["#0e0e10", "#151517"],
     },
     light: {
       violet: lightReview["st-investigating"],
-      grounds: ["#f6f6f4", "#ffffff"],
+      grounds: ["#f6f6f8", "#ffffff"],
     },
   };
   for (const [name, { violet, grounds }] of Object.entries(themes)) {

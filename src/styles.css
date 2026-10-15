@@ -2,24 +2,24 @@
   --font-sans:
     "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-family: var(--font-sans);
-  color: #e7e7e7;
-  background: #101010;
+  color: #ececef;
+  background: #0e0e10;
   font-synthesis: none;
-  --bg: #111111;
-  --surface: #191919;
-  --surface-raised: #202020;
-  --surface-soft: #222222;
-  --line-strong: #474747;
-  --muted-dim: #656565;
+  --bg: #0e0e10;
+  --surface: #151517;
+  --surface-raised: #1b1b1e;
+  --surface-soft: #212124;
+  --line-strong: #3e3e44;
+  --muted-dim: #6f6f77;
   --radius-control: 7px;
   --radius-panel: 10px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
-  --line: #2c2c2c;
-  --muted: #8f8f8f;
-  --accent: #ebebeb;
+  --line: #2a2a2e;
+  --muted: #9d9da5;
+  --accent: #ececef;
   --mono: "IBM Plex Mono", monospace;
   --font-size-body: 12px;
   --font-size-control: var(--font-size-body);
@@ -224,7 +224,7 @@ html[data-theme="light"] .brand-mark .brand-mark-light {
   display: block;
 }
 /* The word beside the sigil (src/wordmark.tsx): its letters take the text's colour, its dots are malachite smoke,
-   its period saffron. Its height holds the j's descender and the rising puffs. */
+   its period gold. Its height holds the j's descender and the rising puffs. */
 .wordmark {
   height: 1.16em;
   width: auto;
@@ -237,7 +237,7 @@ html[data-theme="light"] .brand-mark .brand-mark-light {
   fill: #74d4b8;
 }
 .wordmark-period {
-  fill: #f0b24a;
+  fill: #e2b33c;
 }
 html[data-theme="light"] .wordmark-puff {
   fill: #146b5a;
@@ -246,7 +246,7 @@ html[data-theme="light"] .wordmark-puff.high {
   fill: #238773;
 }
 html[data-theme="light"] .wordmark-period {
-  fill: #b8740a;
+  fill: #b8860b;
 }
 .brand.small .brand-mark {
   width: 24px;
@@ -555,13 +555,13 @@ html[data-theme="light"] .wordmark-period {
   gap: 7px;
 }
 .button.accent {
-  background: var(--accent);
-  color: var(--n-25);
-  border-color: var(--n-e7);
-  box-shadow: inset 0 1px 0 var(--n-ff);
+  background: linear-gradient(var(--lamp-hi), var(--lamp-lo));
+  color: var(--lamp-ink);
+  border-color: var(--lamp-edge);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 45%, transparent);
 }
 .button.accent:hover {
-  background: var(--n-f6);
+  background: var(--lamp-hi);
 }
 .button.secondary {
   background: linear-gradient(var(--n-22), var(--n-1c));
@@ -848,8 +848,9 @@ html[data-theme="light"] .wordmark-period {
 .recommendation {
   display: flex;
   gap: 10px;
-  background: color-mix(in srgb, var(--n-de) 3.1%, transparent);
-  border-left: 2px solid var(--n-b6);
+  background: var(--surface-raised);
+  border: 1px solid color-mix(in srgb, var(--lamp) 45%, var(--line));
+  border-radius: 8px;
   margin: 15px 0;
   padding: 11px 13px;
 }
@@ -884,9 +885,9 @@ html[data-theme="light"] .wordmark-period {
   min-width: 0;
 }
 .option.selected {
-  border-color: var(--n-a9);
-  background: color-mix(in srgb, var(--n-c4) 3.9%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--n-a9) 8.2%, transparent);
+  border-color: var(--lamp);
+  background: var(--surface-raised);
+  box-shadow: 0 0 0 1px var(--lamp);
 }
 .option:hover {
   border-color: var(--n-6f);
@@ -953,9 +954,9 @@ html[data-theme="light"] .wordmark-period {
 .action-center {
   margin: 20px 0 5px;
   padding: 19px 18px 8px;
-  border: 1px solid var(--sand-line);
+  border: 1px solid color-mix(in srgb, var(--lamp) 38%, var(--line));
   border-radius: 10px;
-  background: linear-gradient(145deg, var(--sand-bg), var(--n-19));
+  background: var(--surface);
   scroll-margin-top: 20px;
 }
 
