@@ -186,6 +186,10 @@ export function WishView({
     | "rights"
     | "agents";
   const [view, setView] = useState<WorkspaceView>(opening ? "tilasms" : "main");
+  // The Documents panel's header, where its document actions show.
+  const [tilasmActions, setTilasmActions] = useState<HTMLSpanElement | null>(
+    null,
+  );
   const [activityTab, setActivityTab] = useState<ActivityTab>("journal");
   const [settingsDrawer, setSettingsDrawer] = useState<"rights" | "agents">();
   const [workspaceRequest, setWorkspaceRequest] = useState(0);
@@ -693,6 +697,9 @@ export function WishView({
     hidden: detail.loaded && detail.tilasms.length === 0,
     preview: tilasmPreview,
     icon: <Sparkles size={14} aria-hidden="true" />,
+    headerActions: (
+      <span className="tilasm-header-actions" ref={setTilasmActions} />
+    ),
     children: (
       <>
         <span id="view-tab-tilasms" className="workspace-a11y-label">
@@ -705,6 +712,7 @@ export function WishView({
           tilasms={detail.tilasms}
           tasks={detail.tasks}
           onToast={onToast}
+          actionsSlot={tilasmActions}
         />
       </>
     ),

@@ -854,6 +854,9 @@ func (t *Tilasms) Export(
 	if err != nil {
 		return nil, err
 	}
+	if req.Msg.GetMarkdown() {
+		return t.exportMarkdown(tilasm, n, req.Msg.GetFile())
+	}
 	codes, err := citeCodes(ctx, t.Store, tilasm)
 	if err != nil {
 		return nil, Status(err)
@@ -888,6 +891,39 @@ func (t *Tilasms) Export(
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 	return connect.NewResponse(&planv1.TilasmServiceExportResponse{File: file, Size: int64(buf.Len())}), nil
+}
+
+// exportMarkdown writes the text of version n of a Markdown tilasm alone, as a .md headed by its title: to file, or by default named after
+// its title in the Downloads folder.
+func (t *Tilasms) exportMarkdown(
+	tilasm *planv1.Tilasm, n int32, file string,
+) (*connect.Response[planv1.TilasmServiceExportResponse], error) {
+	if tilasm.GetFormat() != planv1.TilasmFormat_TILASM_FORMAT_MARKDOWN {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"tilasm %s is an HTML page: export it as a .zip, without --markdown", tilasm.GetCode()))
+	}
+	data, err := os.ReadFile(filepath.Join(versionDir(t.Home, tilasm.GetId(), n), tilasmMarkdown))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("read %s: %w", tilasm.GetCode(), err))
+	}
+	// The file stands alone: it starts with the document's title, when its text does not.
+	if title := strings.TrimSpace(tilasm.GetTitle()); title != "" && !strings.HasPrefix(string(data), "# ") {
+		data = append([]byte("# "+title+"\n\n"), data...)
+	}
+	if file == "" {
+		dir, err := Downloads()
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("find the Downloads folder: %w", err))
+		}
+		file = freePath(dir, cmp.Or(fileName(tilasm.GetTitle()), strings.ToLower(tilasm.GetCode())), ".md")
+	}
+	if !filepath.IsAbs(file) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("file: %q is not an absolute path", file))
+	}
+	if err := writeFile(file, data); err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	return connect.NewResponse(&planv1.TilasmServiceExportResponse{File: file, Size: int64(len(data))}), nil
 }
 
 // zipFolder adds the files of dir to zw, by their paths in it, in a stable order.

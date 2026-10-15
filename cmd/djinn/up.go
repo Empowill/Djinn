@@ -180,6 +180,8 @@ func runUp(args []string) (restart bool, err error) {
 		return false, err
 	}
 	workers.Schedule()
+	// A discussion the developer wrote in, left unanswered when djinn stopped, wakes its document agent.
+	workers.WakeDocuments(ctx)
 	gates = gate.New(monitor, machine.NewPeaks(db), workers)
 	workers.HeldGates(gates.Held, gates.Waiting)
 	workers.GatesOutside(gates.Outside)

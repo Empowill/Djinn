@@ -417,3 +417,101 @@ func TestDocumentAgentKeepsItsCommands(t *testing.T) {
 		documentSpec(t, specs[0])
 	})
 }
+
+// TestDocumentPromptRules: the document agent answers a comment in its thread, briefly, and a request by a proposal
+// alone; its values hold no double quote, even escaped, which an agent's permission check refuses.
+func TestDocumentPromptRules(t *testing.T) {
+	t.Parallel()
+	wish := &planv1.Wish{Id: "0199e5a0-0000-7000-8000-0000000000aa", Title: "Store"}
+	tilasm := &planv1.Tilasm{Code: "L01", Title: "The store", WishId: wish.GetId()}
+	_, prompt := documentPrompt(wish, tilasm, nil, "")
+	for _, want := range []string{
+		"A comment is a conversation: reply in its thread", "in 1 to 3 sentences, in the developer's language",
+		"Do not propose a change unless the developer asks for one; you may offer to",
+		"Never answer a comment with a proposal alone", "A request asks for a change: propose it directly",
+		"one short sentence at most, 15 words or fewer", "Write no reply message, unless the request is ambiguous",
+		"put no double quote at all inside it, not even escaped: quote with « » or ’ instead",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the prompt misses %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, `\"`) {
+		t.Errorf("the prompt still shows an escaped double quote:\n%s", prompt)
+	}
+}
+
+// TestDocumentWake: a discussion left unanswered once its agent ended is woken again, without a new message, from
+// the window (Wake), and by djinn's start (WakeDocuments) when it was left while question workers were off.
+func TestDocumentWake(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	t.Run("window", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir(), WithQuestionWorkers())
+		wishID, _ := e.wish(t, fakeProject(t, ""))
+		d := e.markdownDoc(t, wishID)
+		thread := d.comment(t, "developer", "Why?", planv1.TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED)
+		agents := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)
+		if len(agents) != 1 {
+			t.Fatalf("%d document agents, want 1", len(agents))
+		}
+		a := agents[0]
+		e.settled(t, a.GetId(), func([]*planv1.TaskEvent) bool { return true })
+		if got := d.thread(t, thread.GetId()); got.GetAgentPending() || !plan.AwaitsAgent(got) {
+			t.Fatalf("the unanswered thread: pending %v, awaits %v", got.GetAgentPending(), plan.AwaitsAgent(got))
+		}
+		res, err := d.Wake(t.Context(), connect.NewRequest(&planv1.TilasmServiceWakeRequest{Thread: thread.GetId()}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n := len(res.Msg.GetThread().GetMessages()); n != 1 {
+			t.Errorf("Wake added a message: %d messages", n)
+		}
+		e.settled(t, a.GetId(), func(events []*planv1.TaskEvent) bool {
+			return countText(events, planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "continued by Djinn") == 1
+		})
+		if n := len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)); n != 1 {
+			t.Errorf("%d document agents, want the same one, continued", n)
+		}
+		// A discussion the agent answered waits for nothing.
+		d.reply(t, thread.GetId(), plan.DocumentAuthor, "Because.")
+		_, err = d.Wake(t.Context(), connect.NewRequest(&planv1.TilasmServiceWakeRequest{Thread: thread.GetId()}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+			t.Errorf("Wake on an answered discussion: %v, want failed precondition", err)
+		}
+	})
+	t.Run("start", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		e := up(t, home)
+		wishID, _ := e.wish(t, fakeProject(t, ""))
+		d := e.markdownDoc(t, wishID)
+		d.comment(t, "developer", "Why?", planv1.TilasmThreadKind_TILASM_THREAD_KIND_REQUEST)
+		d.comment(t, plan.DocumentAuthor, "A note of the agent.", planv1.TilasmThreadKind_TILASM_THREAD_KIND_COMMENT)
+		if n := len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)); n != 0 {
+			t.Fatalf("%d document agents without question workers", n)
+		}
+		e.down()
+
+		e = up(t, home, WithQuestionWorkers())
+		e.h.WakeDocuments(t.Context())
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			agents := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)
+			if len(agents) == 1 {
+				break
+			}
+			if len(agents) > 1 || time.Now().After(deadline) {
+				t.Fatalf("%d document agents after the start, want 1", len(agents))
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		// A second start while it works wakes no other one.
+		e.h.WakeDocuments(t.Context())
+		time.Sleep(50 * time.Millisecond)
+		if n := len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)); n != 1 {
+			t.Errorf("%d document agents, want 1", n)
+		}
+	})
+}

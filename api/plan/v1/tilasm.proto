@@ -359,6 +359,12 @@ service TilasmService {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Ask the document agent again to answer a discussion whose last message is the developer's, as if they had just
+  // written it: no message is added. The developer's, in the window.
+  rpc Wake(TilasmServiceWakeRequest) returns (TilasmServiceWakeResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Propose a change to a passage of a Markdown tilasm, rather than rewriting a document the developer edits: the
   // passage by --quote, or the passage of a discussion by --thread; its new Markdown by --replacement or
   // --replacement-file, or --delete. With an empty quote and --prefix or --suffix, it inserts there. The document
@@ -546,6 +552,9 @@ message TilasmServiceExportRequest {
   // The .zip to write; a relative path starts from the current directory. By default, the tilasm's title with .zip in
   // the Downloads folder.
   string file = 3 [(buf.validate.field).string.max_len = 4096];
+  // For a Markdown tilasm, its latest text alone, as a .md named after its title, rather than a .zip; refused for an
+  // HTML tilasm.
+  bool markdown = 4;
 }
 
 message TilasmServiceExportResponse {
@@ -718,6 +727,19 @@ message TilasmServiceResolveRequest {
 
 message TilasmServiceResolveResponse {
   // The discussion.
+  TilasmThread thread = 1;
+}
+
+message TilasmServiceWakeRequest {
+  // The discussion, by its identifier.
+  string thread = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TilasmServiceWakeResponse {
+  // The discussion, agent_pending set when its document agent works on it now.
   TilasmThread thread = 1;
 }
 

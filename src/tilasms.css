@@ -686,13 +686,18 @@ html[data-theme="light"] .tilasms {
   font-weight: 550;
   font-size: var(--font-size-body);
 }
+/* The field of a message, as in a chat: at the bottom of its window, growing with its text up to a few lines, its
+   quiet actions on its line. */
 .tilasm-composer {
-  display: grid;
-  gap: 6px;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
 }
 .tilasm-composer textarea {
+  flex: 1 1 auto;
   width: 100%;
-  min-height: 52px;
+  min-height: 32px;
+  max-height: calc(5lh + 14px);
   padding: 6px 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -700,7 +705,11 @@ html[data-theme="light"] .tilasms {
   color: var(--text);
   background: transparent;
   font: inherit;
-  resize: vertical;
+  resize: none;
+  overflow-y: auto;
+}
+.tilasm-composer .workspace-panel-action {
+  margin-bottom: 3px;
 }
 .tilasm-composer textarea:focus {
   border-color: var(--line-strong);
@@ -710,10 +719,6 @@ html[data-theme="light"] .tilasms {
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-}
-.tilasm-float-actions .tilasm-send {
-  width: 26px;
-  height: 26px;
 }
 .tilasm-float-actions button:disabled {
   opacity: 0.5;
@@ -733,6 +738,8 @@ html[data-theme="light"] .tilasms {
 }
 .tilasm-proposal-note {
   margin: 0;
+  color: var(--muted);
+  font-size: 11px;
 }
 .tilasm-proposal-diff {
   display: grid;
@@ -775,19 +782,7 @@ html[data-theme="light"] .tilasms {
 .tilasm-float.is-compact {
   padding: 6px;
 }
-.tilasm-ask .tilasm-composer {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-}
-.tilasm-ask .tilasm-composer textarea {
-  min-height: 32px;
-  max-height: 160px;
-  resize: none;
-  field-sizing: content;
-}
-.tilasm-ask .tilasm-float-actions {
-  padding-bottom: 3px;
-}
+
 /* A discussion opened as a request to the agent. */
 .tilasm-thread-kind {
   display: inline-flex;
@@ -803,15 +798,7 @@ html[data-theme="light"] .tilasms {
 .tilasm-dot.is-request {
   color: var(--sand);
 }
-/* The document agent at work: a dot that breathes, still when motion is reduced. */
-.tilasm-agent-writing {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-}
+/* The document agent at work, on a discussion's dot: a dot that breathes, still when motion is reduced. */
 .tilasm-working-dot {
   width: 6px;
   height: 6px;
@@ -939,4 +926,198 @@ html[data-theme="light"] .tilasms {
   .tilasm-drag-handle {
     transition: none;
   }
+}
+
+/* The panel's actions, in its header just before its close button: quiet icons, the search unfolded among them. */
+.tilasm-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.tilasm-actions .tilasm-search {
+  width: 180px;
+  height: 26px;
+}
+.tilasm-actions .tilasm-apart-button {
+  width: auto;
+  min-width: 26px;
+}
+.tilasm-header-actions {
+  display: contents;
+}
+
+/* A discussion as a chat: the developer's messages on the right, the others' on the left; the list scrolls, the field
+   stays at the bottom. Bubbles are rounded with a border on all sides, or none. */
+.tilasm-chat {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+.tilasm-chat-head {
+  display: grid;
+  gap: 4px;
+}
+.tilasm-chat-list {
+  display: flex;
+  max-height: 300px;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.tilasm-bubble {
+  display: grid;
+  max-width: 88%;
+  gap: 2px;
+}
+.tilasm-bubble.is-mine {
+  align-self: flex-end;
+  justify-items: end;
+}
+.tilasm-bubble.is-theirs {
+  align-self: flex-start;
+  justify-items: start;
+}
+.tilasm-bubble.is-proposal {
+  width: 88%;
+}
+.tilasm-bubble.is-proposal > .tilasm-proposal {
+  width: 100%;
+}
+.tilasm-bubble-author {
+  margin: 6px 0 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.tilasm-bubble-body {
+  min-width: 0;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.tilasm-bubble.is-mine .tilasm-bubble-body {
+  border-color: transparent;
+  background: var(--surface-soft);
+}
+.tilasm-bubble-body .ac-markdown p {
+  margin: 0;
+}
+.tilasm-bubble-time {
+  margin: 0 2px;
+  color: var(--muted);
+  font-size: 10px;
+  opacity: 0.8;
+}
+/* The document agent writing: three dots in a bubble, still when motion is reduced. */
+.tilasm-bubble.is-typing {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.tilasm-typing {
+  display: inline-flex;
+  gap: 3px;
+}
+.tilasm-typing i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: tilasm-typing 1.2s ease-in-out infinite;
+}
+.tilasm-typing i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.tilasm-typing i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes tilasm-typing {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tilasm-typing i {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+/* A discussion the agent has not answered: a quiet line, and the action to ask again. */
+.tilasm-no-reply {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.tilasm-link-button {
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  background: none;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.tilasm-link-button:hover,
+.tilasm-link-button:focus-visible {
+  color: var(--text);
+}
+.tilasm-link-button:disabled {
+  opacity: 0.5;
+}
+/* A pending proposal's bar, by its change in the text: accept or reject in one click. */
+.tilasm-proposal-bar {
+  position: absolute;
+  z-index: 25;
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  gap: 2px;
+  padding: 0 2px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface-raised);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--shadow) 20%, transparent);
+}
+.tilasm-bar-decide {
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+.tilasm-bar-decide:hover,
+.tilasm-bar-decide:focus-visible {
+  color: var(--text);
+  background: var(--surface-soft);
+}
+.tilasm-bar-decide.is-accept {
+  color: var(--tilasm-add);
+}
+.tilasm-bar-decide:disabled {
+  opacity: 0.5;
+}
+.tilasm-bar-error {
+  max-width: 220px;
+  padding: 0 6px;
+  overflow: hidden;
+  color: var(--danger);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

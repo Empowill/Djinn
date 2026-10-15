@@ -420,3 +420,42 @@ func TestSaveRollsBack(t *testing.T) {
 		t.Errorf("after a failed save: %q at revision %d", got.GetText(), got.GetTilasm().GetRevision())
 	}
 }
+
+// TestExportMarkdown: a Markdown document exports as its text alone, a .md headed by its title; an HTML one is
+// refused, and keeps its .zip.
+func TestExportMarkdown(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t, WithHome(t.TempDir()))
+	wish := c.wish(t)
+	if _, err := c.tilasms.Create(ctx, connect.NewRequest(&planv1.TilasmServiceCreateRequest{
+		Wish: wish, Title: "Spec", Markdown: "Plan *text*.\n",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "spec.md")
+	res, err := c.tilasms.Export(ctx, connect.NewRequest(&planv1.TilasmServiceExportRequest{
+		Tilasm: &planv1.TilasmRef{Ref: &planv1.TilasmRef_Code{Code: "L01"}}, Wish: wish, File: file, Markdown: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "# Spec\n\nPlan *text*.\n" || res.Msg.GetFile() != file || res.Msg.GetSize() != int64(len(data)) {
+		t.Errorf("export = %v, file holds %q", res.Msg, data)
+	}
+	html, err := c.tilasms.Put(ctx, connect.NewRequest(&planv1.TilasmServicePutRequest{
+		Path: folder(t, map[string]string{"index.html": "<p>Hi</p>"}), Wish: wish,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.tilasms.Export(ctx, connect.NewRequest(&planv1.TilasmServiceExportRequest{
+		Tilasm: &planv1.TilasmRef{Ref: &planv1.TilasmRef_Id{Id: html.Msg.GetTilasm().GetId()}},
+		File:   filepath.Join(t.TempDir(), "page.md"), Markdown: true,
+	})); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("an HTML tilasm as Markdown: %v, want failed_precondition", err)
+	}
+}

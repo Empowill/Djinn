@@ -61,6 +61,8 @@ const (
 	TilasmServiceReplyProcedure = "/plan.v1.TilasmService/Reply"
 	// TilasmServiceResolveProcedure is the fully-qualified name of the TilasmService's Resolve RPC.
 	TilasmServiceResolveProcedure = "/plan.v1.TilasmService/Resolve"
+	// TilasmServiceWakeProcedure is the fully-qualified name of the TilasmService's Wake RPC.
+	TilasmServiceWakeProcedure = "/plan.v1.TilasmService/Wake"
 	// TilasmServiceProposeProcedure is the fully-qualified name of the TilasmService's Propose RPC.
 	TilasmServiceProposeProcedure = "/plan.v1.TilasmService/Propose"
 	// TilasmServiceAcceptProcedure is the fully-qualified name of the TilasmService's Accept RPC.
@@ -112,6 +114,9 @@ type TilasmServiceClient interface {
 	Reply(context.Context, *connect.Request[v1.TilasmServiceReplyRequest]) (*connect.Response[v1.TilasmServiceReplyResponse], error)
 	// Close a discussion, or open it again: the developer's, in the window.
 	Resolve(context.Context, *connect.Request[v1.TilasmServiceResolveRequest]) (*connect.Response[v1.TilasmServiceResolveResponse], error)
+	// Ask the document agent again to answer a discussion whose last message is the developer's, as if they had just
+	// written it: no message is added. The developer's, in the window.
+	Wake(context.Context, *connect.Request[v1.TilasmServiceWakeRequest]) (*connect.Response[v1.TilasmServiceWakeResponse], error)
 	// Propose a change to a passage of a Markdown tilasm, rather than rewriting a document the developer edits: the
 	// passage by --quote, or the passage of a discussion by --thread; its new Markdown by --replacement or
 	// --replacement-file, or --delete. With an empty quote and --prefix or --suffix, it inserts there. The document
@@ -230,6 +235,12 @@ func NewTilasmServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(tilasmServiceMethods.ByName("Resolve")),
 			connect.WithClientOptions(opts...),
 		),
+		wake: connect.NewClient[v1.TilasmServiceWakeRequest, v1.TilasmServiceWakeResponse](
+			httpClient,
+			baseURL+TilasmServiceWakeProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Wake")),
+			connect.WithClientOptions(opts...),
+		),
 		propose: connect.NewClient[v1.TilasmServiceProposeRequest, v1.TilasmServiceProposeResponse](
 			httpClient,
 			baseURL+TilasmServiceProposeProcedure,
@@ -281,6 +292,7 @@ type tilasmServiceClient struct {
 	comment     *connect.Client[v1.TilasmServiceCommentRequest, v1.TilasmServiceCommentResponse]
 	reply       *connect.Client[v1.TilasmServiceReplyRequest, v1.TilasmServiceReplyResponse]
 	resolve     *connect.Client[v1.TilasmServiceResolveRequest, v1.TilasmServiceResolveResponse]
+	wake        *connect.Client[v1.TilasmServiceWakeRequest, v1.TilasmServiceWakeResponse]
 	propose     *connect.Client[v1.TilasmServiceProposeRequest, v1.TilasmServiceProposeResponse]
 	accept      *connect.Client[v1.TilasmServiceAcceptRequest, v1.TilasmServiceAcceptResponse]
 	reject      *connect.Client[v1.TilasmServiceRejectRequest, v1.TilasmServiceRejectResponse]
@@ -358,6 +370,11 @@ func (c *tilasmServiceClient) Resolve(ctx context.Context, req *connect.Request[
 	return c.resolve.CallUnary(ctx, req)
 }
 
+// Wake calls plan.v1.TilasmService.Wake.
+func (c *tilasmServiceClient) Wake(ctx context.Context, req *connect.Request[v1.TilasmServiceWakeRequest]) (*connect.Response[v1.TilasmServiceWakeResponse], error) {
+	return c.wake.CallUnary(ctx, req)
+}
+
 // Propose calls plan.v1.TilasmService.Propose.
 func (c *tilasmServiceClient) Propose(ctx context.Context, req *connect.Request[v1.TilasmServiceProposeRequest]) (*connect.Response[v1.TilasmServiceProposeResponse], error) {
 	return c.propose.CallUnary(ctx, req)
@@ -421,6 +438,9 @@ type TilasmServiceHandler interface {
 	Reply(context.Context, *connect.Request[v1.TilasmServiceReplyRequest]) (*connect.Response[v1.TilasmServiceReplyResponse], error)
 	// Close a discussion, or open it again: the developer's, in the window.
 	Resolve(context.Context, *connect.Request[v1.TilasmServiceResolveRequest]) (*connect.Response[v1.TilasmServiceResolveResponse], error)
+	// Ask the document agent again to answer a discussion whose last message is the developer's, as if they had just
+	// written it: no message is added. The developer's, in the window.
+	Wake(context.Context, *connect.Request[v1.TilasmServiceWakeRequest]) (*connect.Response[v1.TilasmServiceWakeResponse], error)
 	// Propose a change to a passage of a Markdown tilasm, rather than rewriting a document the developer edits: the
 	// passage by --quote, or the passage of a discussion by --thread; its new Markdown by --replacement or
 	// --replacement-file, or --delete. With an empty quote and --prefix or --suffix, it inserts there. The document
@@ -535,6 +555,12 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(tilasmServiceMethods.ByName("Resolve")),
 		connect.WithHandlerOptions(opts...),
 	)
+	tilasmServiceWakeHandler := connect.NewUnaryHandler(
+		TilasmServiceWakeProcedure,
+		svc.Wake,
+		connect.WithSchema(tilasmServiceMethods.ByName("Wake")),
+		connect.WithHandlerOptions(opts...),
+	)
 	tilasmServiceProposeHandler := connect.NewUnaryHandler(
 		TilasmServiceProposeProcedure,
 		svc.Propose,
@@ -597,6 +623,8 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 			tilasmServiceReplyHandler.ServeHTTP(w, r)
 		case TilasmServiceResolveProcedure:
 			tilasmServiceResolveHandler.ServeHTTP(w, r)
+		case TilasmServiceWakeProcedure:
+			tilasmServiceWakeHandler.ServeHTTP(w, r)
 		case TilasmServiceProposeProcedure:
 			tilasmServiceProposeHandler.ServeHTTP(w, r)
 		case TilasmServiceAcceptProcedure:
@@ -670,6 +698,10 @@ func (UnimplementedTilasmServiceHandler) Reply(context.Context, *connect.Request
 
 func (UnimplementedTilasmServiceHandler) Resolve(context.Context, *connect.Request[v1.TilasmServiceResolveRequest]) (*connect.Response[v1.TilasmServiceResolveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Resolve is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Wake(context.Context, *connect.Request[v1.TilasmServiceWakeRequest]) (*connect.Response[v1.TilasmServiceWakeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Wake is not implemented"))
 }
 
 func (UnimplementedTilasmServiceHandler) Propose(context.Context, *connect.Request[v1.TilasmServiceProposeRequest]) (*connect.Response[v1.TilasmServiceProposeResponse], error) {

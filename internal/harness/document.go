@@ -40,6 +40,61 @@ func (h *Harness) Discussed(ctx context.Context, thread *planv1.TilasmThread) {
 	}
 }
 
+// WakeDocuments wakes, once as djinn up starts and after Recover, the document agent of each Markdown tilasm with
+// discussions whose last message is the developer's and that no agent works on: left unanswered when djinn stopped,
+// or while question workers were off. It works in the background.
+func (h *Harness) WakeDocuments(ctx context.Context) {
+	if !h.questions {
+		return
+	}
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+		ctx := context.WithoutCancel(ctx)
+		if err := h.wakeDocuments(ctx); err != nil {
+			log.Printf("djinn: wake the document agents: %v", err)
+		}
+	}()
+}
+
+func (h *Harness) wakeDocuments(ctx context.Context) error {
+	threads, err := store.List[*planv1.TilasmThread](ctx, h.store, store.Where{})
+	if err != nil {
+		return err
+	}
+	type key struct{ wish, tilasm string }
+	var order []key
+	waiting := map[key][]*planv1.TilasmThread{}
+	for _, thread := range threads {
+		if !plan.AwaitsAgent(thread) {
+			continue
+		}
+		k := key{thread.GetWishId(), thread.GetTilasmId()}
+		if waiting[k] == nil {
+			order = append(order, k)
+		}
+		waiting[k] = append(waiting[k], thread)
+	}
+	h.documenting.Lock()
+	defer h.documenting.Unlock()
+	for _, k := range order {
+		if h.ctx.Err() != nil {
+			return nil
+		}
+		agent, err := plan.DocumentAgentOf(ctx, h.store, k.wish, k.tilasm)
+		if err != nil {
+			return err
+		}
+		if plan.Ongoing(agent) {
+			continue // Recover resumes it, or it runs: it reads the discussions that wait for it.
+		}
+		if err := h.wakeDocument(ctx, k.wish, k.tilasm, waiting[k]); err != nil {
+			log.Printf("djinn: tilasm %s: wake its document agent: %v", k.tilasm, err)
+		}
+	}
+	return nil
+}
+
 // wakeDocument has the tilasm's document agent answer the developer in threads: told while it runs, nothing while it
 // waits to start or resume (it reads every discussion that waits for it), a new turn of its session once it ended,
 // else a new agent. Nothing for a granted wish, an HTML tilasm, or a project whose settings turn question workers
@@ -230,13 +285,15 @@ func documentPrompt(wish *planv1.Wish, tilasm *planv1.Tilasm, threads []*planv1.
 	fmt.Fprintf(&b, "## How to answer\n\n"+
 		"1. Read each discussion, its passage and the document around it: `%[1]s --thread <id>`. The whole "+
 		"document: `%[2]s`.\n"+
-		"2. A request: propose the change it asks for, `djinn doc propose %[3]s --wish %[4]s --thread <id> "+
-		"--replacement \"…\" --note \"…\"` (`--delete` deletes the passage). The replacement is Markdown, markup "+
-		"included, in place of the passage's source that the context shows; a discussion with an empty quote marks a "+
-		"place, and the replacement is inserted there. Add a short message only if the proposal needs one: `djinn "+
-		"doc reply <id> --text \"…\"`.\n"+
-		"3. A comment: reply in it, `djinn doc reply <id> --text \"…\"`. Propose a change only when the discussion "+
-		"calls for one, with --thread <id>.\n"+
+		"2. A comment is a conversation: reply in its thread, `djinn doc reply <id> --text \"…\"`. Answer the "+
+		"developer's question, or give your view, in 1 to 3 sentences, in the developer's language. Do not propose a "+
+		"change unless the developer asks for one; you may offer to. Never answer a comment with a proposal alone.\n"+
+		"3. A request asks for a change: propose it directly, `djinn doc propose %[3]s --wish %[4]s --thread <id> "+
+		"--replacement \"…\"` (`--delete` deletes the passage). The replacement is Markdown, markup included, in place "+
+		"of the passage's source that the context shows; a discussion with an empty quote marks a place, and the "+
+		"replacement is inserted there. `--note \"…\"` is optional: one short sentence at most, 15 words or fewer, no "+
+		"justification. Write no reply message, unless the request is ambiguous and you must ask a question instead "+
+		"of proposing.\n"+
 		"4. Propose targeted changes, a passage at a time, never the document rewritten. Keep to what the developer "+
 		"asked.\n"+
 		"5. Rewording and questions about a sentence stay in the document. Tell the lead only when a decision affects "+
@@ -249,10 +306,11 @@ func documentPrompt(wish *planv1.Wish, tilasm *planv1.Tilasm, threads []*planv1.
 		"else.\n\n" +
 		"- Run each `djinn …` command alone, in a Bash call of its own: no pipe, no `;`, no `&&`, no redirection, no " +
 		"`$(…)`, no `cd` before it. A call that joins anything to a djinn command is refused whole.\n" +
-		"- Write the values of `--text`, `--replacement`, `--note` between double quotes, with no backtick nor `$` " +
-		"inside; write an inner double quote `\\\"`.\n" +
+		"- Write each value of `--text`, `--replacement`, `--note` between straight double quotes, and " +
+		"put no double quote at all inside it, not even escaped: quote with « » or ’ instead, as French typography " +
+		"does, and write an apostrophe as ’. No backtick, no `$`, no backslash inside a value either.\n" +
 		"- A refused call means that this form of the command is refused: run the djinn command again, alone and " +
-		"plain.\n\n")
+		"plain, its values rewritten by the rule above.\n\n")
 	b.WriteString("## Where the wish stands\n\n" + brief)
 	return code + ": document agent", b.String()
 }

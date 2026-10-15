@@ -1762,6 +1762,8 @@ test("the Documents panel shows its documents as tabs, the open one marked, its 
     onDrop() {},
     onRestore() {},
     onExport() {},
+    onDownload() {},
+    onCopyLink() {},
   };
   const html = s.renderToStaticMarkup(h(s.TilasmPanel, props));
   assert.match(html, /role="tabpanel" aria-labelledby="view-tab-tilasms"/);
@@ -1781,6 +1783,25 @@ test("the Documents panel shows its documents as tabs, the open one marked, its 
     html,
     /aria-label="Versions" aria-expanded="false"|aria-expanded="false"[^>]*aria-label="Versions"/,
   );
+  // The open document downloads, as a .md for a Markdown one, and copies its link; quiet icons like the other panels'.
+  assert.match(
+    html,
+    /class="workspace-panel-action"[^>]*title="Download as .md"/,
+  );
+  assert.match(html, /aria-label="Copy link"/);
+  assert.match(
+    s.renderToStaticMarkup(h(s.TilasmPanel, { ...props, open: page })),
+    /aria-label="Download as a .zip"/,
+  );
+  // The tab row holds the tabs alone once the actions go to the panel's header; none shows until the header is there.
+  const inHeader = s.renderToStaticMarkup(
+    h(s.TilasmPanel, { ...props, actionsSlot: null }),
+  );
+  assert.match(inHeader, /role="tablist"/);
+  assert.doesNotMatch(
+    inHeader,
+    /tilasm-strip-actions|aria-label="New document"/,
+  );
 
   // A search that finds nothing says so, its field open; a wish without documents says how to make one.
   const none = s.renderToStaticMarkup(
@@ -1788,12 +1809,16 @@ test("the Documents panel shows its documents as tabs, the open one marked, its 
   );
   assert.match(none, /type="search"/);
   assert.match(none, /No document holds “lamp”/);
+  const empty = s.renderToStaticMarkup(
+    h(s.TilasmPanel, { ...props, tilasms: [], count: 0, open: undefined }),
+  );
   assert.match(
-    s.renderToStaticMarkup(
-      h(s.TilasmPanel, { ...props, tilasms: [], count: 0, open: undefined }),
-    ),
+    empty,
     /No document yet: create one, or import or drop a Markdown file here./,
   );
+  // Without an open document, what needs one is hidden.
+  assert.doesNotMatch(empty, /Download as|Copy link|aria-label="Versions"/);
+  assert.match(empty, /aria-label="New document"/);
 });
 
 test("a document's versions show the latest first, restore an earlier one, and export it", () => {

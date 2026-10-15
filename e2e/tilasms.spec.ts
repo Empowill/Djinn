@@ -136,6 +136,54 @@ test("a document made from the wish's header is written in place, saved, and fou
     );
     await expect(panel.locator(".tilasm-prose strong")).toHaveText("Bright");
 
+    // The panel's header holds the document's actions, just before its close button; the tab row, the tabs alone.
+    const header = panel.locator(".workspace-panel-header");
+    await expect(
+      panel.locator(".tilasm-strip .workspace-panel-action"),
+    ).toHaveCount(0);
+    for (const name of [
+      "Search the documents of this wish",
+      "New document",
+      "Import a Markdown file",
+      "Versions",
+      "Download as .md",
+      "Copy link",
+    ])
+      await expect(header.getByRole("button", { name })).toBeVisible();
+    const actions = await header
+      .locator(".workspace-panel-actions button")
+      .evaluateAll((buttons) =>
+        buttons.map((b) => b.getAttribute("aria-label") ?? ""),
+      );
+    expect(actions.at(-1)).toMatch(/^Close/);
+    // Copy link puts the document's djinn link on the clipboard, and says so.
+    await page
+      .context()
+      .grantPermissions(["clipboard-read", "clipboard-write"]);
+    await header.getByRole("button", { name: "Copy link" }).click();
+    await expect(page.locator(".toast")).toContainText("Link copied");
+    const tilasmId = JSON.parse(
+      djinn("tilasm", "get", "L01", "--wish", wishId, "--json"),
+    ).tilasm.id as string;
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      `djinn://tilasm/${tilasmId}`,
+    );
+    // Download writes its .md, the saved text, named after its title.
+    await header.getByRole("button", { name: "Download as .md" }).click();
+    const toast = page.locator(".toast", { hasText: "Downloaded to " });
+    await expect(toast).toBeVisible();
+    const downloaded = (await toast.innerText())
+      .replace(/^.*Downloaded to /s, "")
+      .trim();
+    try {
+      expect(path.basename(downloaded)).toMatch(/^lamp-notes.*\.md$/);
+      expect(fs.readFileSync(downloaded, "utf8")).toBe(
+        markdownOf("L01", wishId),
+      );
+    } finally {
+      fs.rmSync(downloaded, { force: true });
+    }
+
     // The lead writes a new version meanwhile: the untouched document reads it in place.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-tilasm-"));
     const leadWrites = (text: string) => {
@@ -290,10 +338,16 @@ test("an HTML tilasm put by the command line opens in its frame, isolated; its s
     await expect(section.locator("strong")).toHaveText("Documents");
     await expect(section.locator(".count")).toHaveText("1");
     await openWorkspaceSection(page, "tilasms");
-    const panel = page.getByRole("tabpanel", { name: "Documents" });
     await expect(
-      panel.getByRole("tab", { name: "The lamp's anatomy" }),
+      page
+        .getByRole("tabpanel", { name: "Documents" })
+        .getByRole("tab", { name: "The lamp's anatomy" }),
     ).toHaveAttribute("aria-selected", "true");
+    // The panel, its header with the actions included; an HTML page downloads as its .zip.
+    const panel = workspacePanel(page, "tilasms");
+    await expect(
+      panel.getByRole("button", { name: "Download as a .zip" }),
+    ).toBeVisible();
 
     // The frame runs the tilasm's own script and shows its image; the network and Djinn are out of reach.
     const frame = page.frameLocator("iframe.tilasm-frame");
@@ -404,6 +458,7 @@ const discussionsOf = (code: string, wishId: string) =>
       id: string;
       kind?: string;
       agent_pending?: boolean;
+      messages?: unknown[];
       anchor?: { quote?: string; prefix?: string; suffix?: string };
     }[];
     proposals?: { id: string; status?: string; thread_id?: string }[];
@@ -449,10 +504,11 @@ test("a passage is discussed in a small window that folds into a dot; a proposal
       .click();
     const thread = page.getByRole("dialog", { name: "Comment" });
     await expect(thread).toBeVisible();
-    await thread
-      .getByRole("textbox", { name: "Your comment" })
-      .fill("Why air?");
-    await thread.getByRole("button", { name: "Send" }).click();
+    // As in a chat, no send button: Enter sends.
+    await expect(thread.getByRole("button", { name: "Send" })).toHaveCount(0);
+    const comment = thread.getByRole("textbox", { name: "Your comment" });
+    await comment.fill("Why air?");
+    await comment.press("Enter");
     await expect(thread.getByRole("textbox", { name: "Reply" })).toBeVisible();
     await expect(body.locator(".tilasm-mark")).toHaveText("needs air");
     const opened = discussionsOf("L01", wishId).threads ?? [];
@@ -473,11 +529,32 @@ test("a passage is discussed in a small window that folds into a dot; a proposal
     );
     await expect(thread).toContainText("Fire burns oxygen.");
     await expect(thread).toContainText("W12");
-    await thread.getByRole("textbox", { name: "Reply" }).fill("Thanks.");
-    await thread.getByRole("button", { name: "Send" }).click();
+    // The developer's own messages stand on the right, the others' on the left, named when the author changes.
     await expect(
-      thread.locator("li").filter({ hasText: "Thanks." }),
-    ).toContainText("You");
+      thread
+        .locator(".tilasm-bubble.is-theirs")
+        .filter({ hasText: "Fire burns oxygen." }),
+    ).toContainText("W12");
+    const answer = thread.getByRole("textbox", { name: "Reply" });
+    await answer.pressSequentially("Thanks.");
+    await page.keyboard.press("Shift+Enter");
+    await answer.pressSequentially("Really.");
+    await expect(answer).toHaveValue("Thanks.\nReally.");
+    await answer.press("Enter");
+    await expect(answer).toHaveValue("");
+    await expect(
+      thread.locator(".tilasm-bubble.is-mine").filter({ hasText: "Thanks." }),
+    ).toContainText("Really.");
+    // No agent answers here: the thread says so quietly, and asks the document agent again without a message.
+    const noReply = thread.locator(".tilasm-no-reply");
+    await expect(noReply).toHaveText("No reply yet · Ask again");
+    const woken = page.waitForResponse(/TilasmService\/Wake/);
+    await noReply.getByRole("button", { name: "Ask again" }).click();
+    expect((await woken).ok()).toBe(true);
+    await expect(thread.getByRole("alert")).toHaveCount(0);
+    expect(
+      (discussionsOf("L01", wishId).threads ?? [])[0]!.messages,
+    ).toHaveLength(3);
     await page.screenshot({ path: path.join(shots, "documents-thread.png") });
 
     // Tabbing from the field to a button keeps it; a click elsewhere folds it into a dot, its draft kept.
@@ -533,6 +610,17 @@ test("a passage is discussed in a small window that folds into a dot; a proposal
     expect(markdownOf("L01", wishId)).toContain(
       "The glass keeps the wind out.",
     );
+    // A bar by the change decides it in one click, shown without a click.
+    const bar = panel.getByRole("toolbar", { name: "Change proposed by W12" });
+    await expect(bar.getByRole("button", { name: "Accept" })).toBeVisible();
+    await expect(bar.getByRole("button", { name: "Reject" })).toBeVisible();
+    const barBox = (await bar.boundingBox())!;
+    const changeBox = (await body.locator(".tilasm-new").boundingBox())!;
+    expect(
+      barBox.x >= changeBox.x + changeBox.width ||
+        barBox.y >= changeBox.y + changeBox.height ||
+        barBox.y + barBox.height <= changeBox.y,
+    ).toBe(true);
     await old.click();
     const card = page.getByRole("dialog", { name: "Proposed change" });
     await expect(card).toContainText("A plainer word");
@@ -559,8 +647,10 @@ test("a passage is discussed in a small window that folds into a dot; a proposal
       "lead",
     );
     await expect(old).toHaveText("The wick carries the oil.");
-    await old.click();
-    await card.getByRole("button", { name: "Reject" }).click();
+    await panel
+      .getByRole("toolbar", { name: "Change proposed by Lead" })
+      .getByRole("button", { name: "Reject" })
+      .click();
     await expect(old).toHaveCount(0);
     await expect
       .poll(
@@ -571,6 +661,33 @@ test("a passage is discussed in a small window that folds into a dot; a proposal
       )
       .toBe(1);
     expect(markdownOf("L01", wishId)).toContain("The wick carries the oil.");
+
+    // Cmd+Enter (Ctrl+Enter), the caret in a proposal's passage, accepts it.
+    djinn(
+      "doc",
+      "propose",
+      "L01",
+      "--wish",
+      wishId,
+      "--quote",
+      "The glass keeps the draught out.",
+      "--replacement",
+      "The glass keeps the draught away.",
+      "--author",
+      "lead",
+    );
+    await expect(old).toHaveText("The glass keeps the draught out.");
+    await body.locator("p", { hasText: "The flame needs air." }).click();
+    await page.keyboard.press("End");
+    await page.keyboard.press("ArrowDown");
+    await expect
+      .poll(() => page.evaluate(() => getSelection()?.anchorNode?.textContent))
+      .toBe("The glass keeps the draught out.");
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect
+      .poll(() => markdownOf("L01", wishId))
+      .toContain("The glass keeps the draught away.");
+    await expect(old).toHaveCount(0);
 
     // A click on a block's handle opens its menu; Delete takes the block, undo brings it back.
     await body.locator("p").first().hover();

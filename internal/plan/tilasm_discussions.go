@@ -195,6 +195,10 @@ func (t *Tilasms) Comment(
 		t.discussedBy(ctx, thread, thread.GetMessages()[0].GetAuthor())
 	}
 	fillThread(r, thread)
+	// The window shows at once whether the document agent took the message up.
+	if err := fillAgentPending(ctx, t.Store, thread.GetWishId(), thread.GetTilasmId(), []*planv1.TilasmThread{thread}); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&planv1.TilasmServiceCommentResponse{Thread: thread}), nil
 }
 
@@ -256,6 +260,10 @@ func (t *Tilasms) Reply(
 		t.discussedBy(ctx, thread, cmp.Or(m.GetAuthor(), defaultAuthor))
 	}
 	fillThread(r, thread)
+	// The window shows at once whether the document agent took the message up.
+	if err := fillAgentPending(ctx, t.Store, thread.GetWishId(), thread.GetTilasmId(), []*planv1.TilasmThread{thread}); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&planv1.TilasmServiceReplyResponse{Thread: thread}), nil
 }
 

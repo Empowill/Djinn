@@ -3,8 +3,10 @@
 // (src/tilasm-editor.tsx): each edit saved after a pause from the revision it started from; a save another writer
 // outran keeps the developer's text and asks which to keep. An HTML tilasm shows in a frame of its own, served by Djinn
 // at /tilasm/<id>/ with a policy of its own (internal/plan/tilasm_files.go): its scripts run, it reaches no network
-// and nothing of Djinn. A search, folded behind its icon, finds words in the titles and the text, within the wish. A
-// document's versions restore an earlier one; its export writes a .zip to the Downloads folder. A .md imported, or
+// and nothing of Djinn. The panel's actions stand in its header, before its close button: a search, folded behind its
+// icon, finds words in the titles and the text, within the wish; a new document; an import; and for the open one, its
+// versions, which restore an earlier one, its download (a Markdown document as its .md, an HTML page as a .zip, in the
+// Downloads folder) and its djinn:// link copied. A .md imported, or
 // dropped anywhere on the panel, becomes a document; a folder or a .zip, an HTML tilasm or the new version of the one
 // a .zip exported.
 import { Code as ConnectCode, ConnectError } from "@connectrpc/connect";
@@ -13,6 +15,7 @@ import {
   Download,
   FileUp,
   History,
+  Link,
   Plus,
   RotateCcw,
   Search,
@@ -29,6 +32,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 
 import { Change, type Task } from "../gen/ts/plan/v1/plan_pb";
 import { type Tilasm, TilasmFormat } from "../gen/ts/plan/v1/tilasm_pb";
@@ -106,6 +110,7 @@ export function TilasmsTab({
   tilasms,
   tasks,
   onToast,
+  actionsSlot,
 }: {
   wishId: string;
   // The document a djinn:// link or a new document asks to show: its tab, again at each new request.
@@ -114,6 +119,8 @@ export function TilasmsTab({
   tilasms: readonly Tilasm[];
   tasks: readonly Task[];
   onToast: (text: string) => void;
+  // The panel's header, where the actions show, just before its close button; null until it is there.
+  actionsSlot?: HTMLElement | null;
 }) {
   const clients = useClients();
   const store = useStore();
@@ -243,6 +250,23 @@ export function TilasmsTab({
           return t("tilasms.exported", { file: res.file });
         })
       }
+      onDownload={(tilasm) =>
+        void run(async () => {
+          // A Markdown document downloads as its .md, its saved text; an HTML page as its .zip.
+          const res = await clients.tilasms.export({
+            tilasm: ref(tilasm),
+            markdown: isMarkdown(tilasm),
+          });
+          return t("tilasms.downloaded", { file: res.file });
+        })
+      }
+      onCopyLink={(tilasm) =>
+        void copyText(tilasmLink(tilasm.id)).then(
+          () => onToast(t("tilasms.link_copied")),
+          () => onToast(t("tilasms.link_not_copied")),
+        )
+      }
+      actionsSlot={actionsSlot}
     >
       {open &&
         (isMarkdown(open) ? (
@@ -258,6 +282,27 @@ export function TilasmsTab({
         ))}
     </TilasmPanel>
   );
+}
+
+// tilasmLink is a tilasm's link, as Djinn gives it: it opens the document from anywhere.
+export const tilasmLink = (id: string) => `djinn://tilasm/${id}`;
+
+// copyText puts text on the clipboard, by the older command where the clipboard is refused.
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.append(field);
+    field.select();
+    const done = document.execCommand("copy");
+    field.remove();
+    if (!done) throw new Error("copy refused");
+  }
 }
 
 // StripSlotContext is the place in the strip of tabs where the open document shows its own indicators.
@@ -278,6 +323,9 @@ export function TilasmPanel({
   onDrop,
   onRestore,
   onExport,
+  onDownload,
+  onCopyLink,
+  actionsSlot,
   children,
 }: {
   // The tabs: the wish's tilasms, or those the search found.
@@ -296,6 +344,10 @@ export function TilasmPanel({
   onDrop: (entries: DropEntry[]) => void;
   onRestore: (tilasm: Tilasm, version: number) => void;
   onExport: (tilasm: Tilasm) => void;
+  onDownload?: (tilasm: Tilasm) => void;
+  onCopyLink?: (tilasm: Tilasm) => void;
+  // Where the actions show: the panel's header; inline, in the strip of tabs, when not given; nowhere while null.
+  actionsSlot?: HTMLElement | null;
   children?: ReactNode;
 }) {
   const [over, setOver] = useState(false);
@@ -327,6 +379,131 @@ export function TilasmPanel({
       ?.querySelector<HTMLElement>(`[data-tilasm="${next.id}"]`)
       ?.focus();
   };
+  const actions = (
+    <span className="tilasm-actions">
+      <span className="tilasm-strip-slot" ref={setSlot} />
+      {searching ? (
+        <input
+          className="tilasm-search"
+          type="search"
+          value={search}
+          placeholder={t("tilasms.search")}
+          aria-label={t("tilasms.search")}
+          autoFocus
+          onChange={(event) => onSearch(event.target.value)}
+          onBlur={() => {
+            if (!search) setSearching(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            onSearch("");
+            setSearching(false);
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          className="workspace-panel-action"
+          title={t("tilasms.search")}
+          aria-label={t("tilasms.search")}
+          onClick={() => setSearching(true)}
+        >
+          <Search size={14} aria-hidden="true" />
+        </button>
+      )}
+      <button
+        type="button"
+        className="workspace-panel-action"
+        title={t("tilasms.new")}
+        aria-label={t("tilasms.new")}
+        onClick={onNew}
+      >
+        <Plus size={14} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className="workspace-panel-action"
+        title={busy ? t("tilasms.putting") : t("tilasms.import")}
+        aria-label={t("tilasms.import")}
+        aria-busy={busy}
+        disabled={busy}
+        onClick={() => file.current?.click()}
+      >
+        <FileUp size={14} aria-hidden="true" />
+      </button>
+      <input
+        ref={file}
+        className="tilasm-file"
+        type="file"
+        accept=".md,.markdown,text/markdown"
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={(event) => {
+          const picked = event.target.files?.[0];
+          event.target.value = "";
+          if (picked) onImport(picked);
+        }}
+      />
+      {open && (
+        <span className="tilasm-versions-anchor">
+          <button
+            type="button"
+            className="workspace-panel-action"
+            aria-expanded={versions}
+            title={t("tilasms.history")}
+            aria-label={t("tilasms.history")}
+            onClick={() => setVersions(!versions)}
+          >
+            <History size={14} aria-hidden="true" />
+          </button>
+          {versions && (
+            <TilasmVersions
+              tilasm={open}
+              onRestore={(version) => {
+                setVersions(false);
+                onRestore(open, version);
+              }}
+              onExport={() => {
+                setVersions(false);
+                onExport(open);
+              }}
+              onClose={() => setVersions(false)}
+            />
+          )}
+        </span>
+      )}
+      {open && onDownload && (
+        <button
+          type="button"
+          className="workspace-panel-action"
+          title={
+            isMarkdown(open)
+              ? t("tilasms.download_md")
+              : t("tilasms.download_zip")
+          }
+          aria-label={
+            isMarkdown(open)
+              ? t("tilasms.download_md")
+              : t("tilasms.download_zip")
+          }
+          onClick={() => onDownload(open)}
+        >
+          <Download size={14} aria-hidden="true" />
+        </button>
+      )}
+      {open && onCopyLink && (
+        <button
+          type="button"
+          className="workspace-panel-action"
+          title={t("tilasms.copy_link")}
+          aria-label={t("tilasms.copy_link")}
+          onClick={() => onCopyLink(open)}
+        >
+          <Link size={14} aria-hidden="true" />
+        </button>
+      )}
+    </span>
+  );
   return (
     <div
       role="tabpanel"
@@ -377,100 +554,11 @@ export function TilasmPanel({
             </span>
           )}
         </div>
-        <div className="tilasm-strip-actions">
-          <span className="tilasm-strip-slot" ref={setSlot} />
-          {searching ? (
-            <input
-              className="tilasm-search"
-              type="search"
-              value={search}
-              placeholder={t("tilasms.search")}
-              aria-label={t("tilasms.search")}
-              autoFocus
-              onChange={(event) => onSearch(event.target.value)}
-              onBlur={() => {
-                if (!search) setSearching(false);
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Escape") return;
-                onSearch("");
-                setSearching(false);
-              }}
-            />
-          ) : (
-            <button
-              type="button"
-              className="icon-button"
-              title={t("tilasms.search")}
-              aria-label={t("tilasms.search")}
-              onClick={() => setSearching(true)}
-            >
-              <Search size={14} aria-hidden="true" />
-            </button>
-          )}
-          <button
-            type="button"
-            className="icon-button"
-            title={t("tilasms.new")}
-            aria-label={t("tilasms.new")}
-            onClick={onNew}
-          >
-            <Plus size={14} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="icon-button"
-            title={busy ? t("tilasms.putting") : t("tilasms.import")}
-            aria-label={t("tilasms.import")}
-            aria-busy={busy}
-            disabled={busy}
-            onClick={() => file.current?.click()}
-          >
-            <FileUp size={14} aria-hidden="true" />
-          </button>
-          <input
-            ref={file}
-            className="tilasm-file"
-            type="file"
-            accept=".md,.markdown,text/markdown"
-            tabIndex={-1}
-            aria-hidden="true"
-            onChange={(event) => {
-              const picked = event.target.files?.[0];
-              event.target.value = "";
-              if (picked) onImport(picked);
-            }}
-          />
-          {open && (
-            <span className="tilasm-versions-anchor">
-              <button
-                type="button"
-                className="icon-button"
-                aria-expanded={versions}
-                title={t("tilasms.history")}
-                aria-label={t("tilasms.history")}
-                onClick={() => setVersions(!versions)}
-              >
-                <History size={14} aria-hidden="true" />
-              </button>
-              {versions && (
-                <TilasmVersions
-                  tilasm={open}
-                  onRestore={(version) => {
-                    setVersions(false);
-                    onRestore(open, version);
-                  }}
-                  onExport={() => {
-                    setVersions(false);
-                    onExport(open);
-                  }}
-                  onClose={() => setVersions(false)}
-                />
-              )}
-            </span>
-          )}
-        </div>
+        {actionsSlot === undefined && (
+          <div className="tilasm-strip-actions">{actions}</div>
+        )}
       </div>
+      {actionsSlot && createPortal(actions, actionsSlot)}
       {count === 0 ? (
         <p className="tilasm-strip-note">{t("tilasms.none")}</p>
       ) : (

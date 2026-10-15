@@ -2,7 +2,10 @@ package plan
 
 import (
 	"context"
+	"errors"
 	"strings"
+
+	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
@@ -91,4 +94,28 @@ func fillAgentPending(ctx context.Context, r store.Reader, wishID, tilasmID stri
 		thread.AgentPending = AwaitsAgent(thread)
 	}
 	return nil
+}
+
+// Wake asks the document agent again to answer a discussion that waits for it, as when the developer writes in it,
+// without a new message: a discussion left unanswered (its agent failed, stopped, or was off) is not silent forever.
+func (t *Tilasms) Wake(
+	ctx context.Context, req *connect.Request[planv1.TilasmServiceWakeRequest],
+) (*connect.Response[planv1.TilasmServiceWakeResponse], error) {
+	thread, _, r, err := t.threadOf(ctx, req.Msg.GetThread())
+	if err != nil {
+		return nil, err
+	}
+	if !AwaitsAgent(thread) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
+			"the discussion waits for no answer: it is resolved, or its last message is not the developer's"))
+	}
+	for _, f := range t.Discussed {
+		f(ctx, thread)
+	}
+	fillThread(r, thread)
+	threads := []*planv1.TilasmThread{thread}
+	if err := fillAgentPending(ctx, t.Store, thread.GetWishId(), thread.GetTilasmId(), threads); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TilasmServiceWakeResponse{Thread: thread}), nil
 }
