@@ -209,34 +209,44 @@ button {
   height: 29px;
   color: var(--n-de);
 }
-.brand-mark img {
+.brand-mark img,
+.brand-mark svg {
   width: 100%;
   height: 100%;
 }
-/* The word beside the lamp (src/wordmark.tsx): its letters take the text's colour, its dots are smoke, its period
-   brass. Its height holds the j's descender and the rising puffs. */
+.brand-mark .brand-mark-light {
+  display: none;
+}
+html[data-theme="light"] .brand-mark .brand-mark-dark {
+  display: none;
+}
+html[data-theme="light"] .brand-mark .brand-mark-light {
+  display: block;
+}
+/* The word beside the sigil (src/wordmark.tsx): its letters take the text's colour, its dots are malachite smoke,
+   its period saffron. Its height holds the j's descender and the rising puffs. */
 .wordmark {
   height: 1.16em;
   width: auto;
   margin-top: -0.12em;
 }
 .wordmark-puff {
-  fill: #968aff;
+  fill: #43c29f;
 }
 .wordmark-puff.high {
-  fill: #c4baff;
+  fill: #74d4b8;
 }
 .wordmark-period {
-  fill: #f0be64;
+  fill: #f0b24a;
 }
 html[data-theme="light"] .wordmark-puff {
-  fill: #7b6cf0;
+  fill: #146b5a;
 }
 html[data-theme="light"] .wordmark-puff.high {
-  fill: #a094f5;
+  fill: #238773;
 }
 html[data-theme="light"] .wordmark-period {
-  fill: #c98a2e;
+  fill: #b8740a;
 }
 .brand.small .brand-mark {
   width: 24px;

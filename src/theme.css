@@ -59,20 +59,20 @@
   --sand-raised: #28251d;
   --danger: #e0a0a0;
   /* The smoke study follows the selected theme, including its GPU canvas and ASCII fallback. */
-  --smoke-bg: #060707;
-  --smoke-fg: #d7dad4;
-  --smoke-tint-low: #8f999f;
-  --smoke-tint-high: #ede5d6;
+  --smoke-bg: #060908;
+  --smoke-fg: #d4e0dc;
+  --smoke-tint-low: #6f948a;
+  --smoke-tint-high: #eef2ea;
   /* The eight layers of glyphs, faintest to densest, then the pointer's strong and weak trail. The brand's colours:
-     violet smoke rising to the wordmark's puffs, the densest tone and the strong trail in the lamp's brass. */
-  --smoke-ascii-0: #7c74c4;
-  --smoke-ascii-1: #968aff;
-  --smoke-ascii-2: #a99ffe;
-  --smoke-ascii-3: #c4baff;
-  --smoke-ascii-4: #d3ccff;
-  --smoke-ascii-5: #fad18a;
-  --smoke-ascii-6: #f0be64;
-  --smoke-ascii-7: #b2acfe;
+     malachite and verdigris smoke rising to the wordmark's puffs, the densest tone and the strong trail in saffron. */
+  --smoke-ascii-0: #3aa384;
+  --smoke-ascii-1: #43c29f;
+  --smoke-ascii-2: #5ccbb0;
+  --smoke-ascii-3: #74d4b8;
+  --smoke-ascii-4: #9ee3ce;
+  --smoke-ascii-5: #f5c978;
+  --smoke-ascii-6: #f0b24a;
+  --smoke-ascii-7: #63cbb0;
   /* The terminal: xterm's own colours in the dark theme. */
   --term-bg: #111111;
   --term-fg: #e7e7e7;
@@ -147,18 +147,18 @@ html[data-theme="light"] {
   --sand-bg: #fbf8ef;
   --sand-raised: #f8f2e2;
   --danger: #a3261b;
-  --smoke-bg: #f4f3ef;
-  --smoke-fg: #262925;
-  --smoke-tint-low: #515d62;
-  --smoke-tint-high: #1b2527;
-  --smoke-ascii-0: #614cbd;
-  --smoke-ascii-1: #5943b3;
-  --smoke-ascii-2: #5139a9;
-  --smoke-ascii-3: #49339a;
-  --smoke-ascii-4: #412c8c;
-  --smoke-ascii-5: #a56d03;
-  --smoke-ascii-6: #ba7e15;
-  --smoke-ascii-7: #513ca4;
+  --smoke-bg: #f4f5f2;
+  --smoke-fg: #1d2825;
+  --smoke-tint-low: #3f5e56;
+  --smoke-tint-high: #14221e;
+  --smoke-ascii-0: #1b6e5c;
+  --smoke-ascii-1: #166554;
+  --smoke-ascii-2: #125c4c;
+  --smoke-ascii-3: #0e5244;
+  --smoke-ascii-4: #0a473b;
+  --smoke-ascii-5: #8a5806;
+  --smoke-ascii-6: #96620a;
+  --smoke-ascii-7: #145e4e;
   /* Every colour reads at 4.5:1 at least on the terminal's ground: white and bright white are dark greys. */
   --term-bg: #f6f6f4;
   --term-fg: #1c1c1a;

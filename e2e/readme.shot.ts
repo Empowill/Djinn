@@ -160,16 +160,12 @@ const offline = wishFile(
       recommendation:
         "B: the forms are long and filled in by several people; losing a field costs more than the merge.",
       context: [
-        "## What W3 found",
-        "",
-        "- 14% of the forms are edited on two devices the same day.",
-        "- Nine conflicts in ten touch different fields.",
+        "14% of the forms are edited on two devices the same day; nine conflicts in ten touch different fields.",
         "",
         "| Rule | Changes lost | Work |",
         "| --- | --- | --- |",
         "| Last save | some | half a day |",
         "| Field by field | none | 2 days |",
-        "| Ask the person | none | 3 days |",
       ].join("\n"),
       create_time: ago(140),
     },
@@ -270,6 +266,13 @@ async function shoot(page: Page, name: string) {
       await expect(
         page.locator(".tasks-moving .wish-task").first(),
       ).toBeVisible();
+      const showFinished = page.locator(".tasks-finished .fold-line");
+      if (
+        (await showFinished.isVisible()) &&
+        (await showFinished.getAttribute("aria-expanded")) === "false"
+      ) {
+        await showFinished.click();
+      }
     }
     await page.screenshot({
       path: path.join(shots, `${name}-${theme}.png`),
