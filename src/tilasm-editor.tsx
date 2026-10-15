@@ -4,7 +4,7 @@
 // drop shown by a line, in one step that undo takes back. What it reads and writes is Markdown
 // (src/tilasm-markdown.ts).
 import { type Editor } from "@tiptap/core";
-import { NodeSelection } from "@tiptap/pm/state";
+import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import {
@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Code,
   CodeXml,
+  Copy,
   GripVertical,
   Heading1,
   Heading2,
@@ -21,12 +22,14 @@ import {
   List,
   ListOrdered,
   ListTodo,
+  MessageSquarePlus,
   Minus,
   Pilcrow,
   Quote,
   SquareCode,
   Strikethrough,
   Table,
+  Trash2,
   Unlink,
 } from "lucide-react";
 import {
@@ -251,9 +254,18 @@ function scrollParent(element: HTMLElement | null): HTMLElement | Window {
 export function TilasmEditor({
   editor,
   editable,
+  onComment,
+  overlay,
 }: {
   editor: Editor | null;
   editable: boolean;
+  // Opens a comment on a range of the document: the bar's Comment, a block's.
+  onComment?: (from: number, to: number) => void;
+  // What stands over the text, in the editor's box: the discussions (src/tilasm-discussions.tsx).
+  overlay?: (
+    editor: Editor,
+    box: RefObject<HTMLDivElement | null>,
+  ) => ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [scroller, setScroller] = useState<HTMLElement | Window>();
@@ -263,11 +275,16 @@ export function TilasmEditor({
       <EditorContent editor={editor} />
       {editor && editable && scroller && (
         <>
-          <SelectionBar editor={editor} scroller={scroller} />
+          <SelectionBar
+            editor={editor}
+            scroller={scroller}
+            onComment={onComment}
+          />
           <SlashMenu editor={editor} />
-          <BlockHandle editor={editor} box={box} />
+          <BlockHandle editor={editor} box={box} onComment={onComment} />
         </>
       )}
+      {editor && overlay?.(editor, box)}
     </div>
   );
 }
@@ -312,20 +329,210 @@ function moveBlock(editor: Editor, index: number, boundary: number) {
   editor.view.dispatch(tr.scrollIntoView());
 }
 
+// The blocks a block's menu turns a block into.
+const turnable: BlockId[] = [
+  "paragraph",
+  "heading1",
+  "heading2",
+  "heading3",
+  "bulletList",
+  "orderedList",
+  "taskList",
+  "blockquote",
+  "codeBlock",
+];
+
+// A block whose text the menu can turn into another block, or comment.
+const textual = (name: string) =>
+  !["horizontalRule", "table", "htmlLive"].includes(name);
+
+// BlockMenu is the small menu a click on a block's handle opens by it: delete, duplicate, turn into, comment. The
+// arrows move in it, Escape closes it and gives the handle its focus back; each action is one step of undo.
+function BlockMenu({
+  editor,
+  index,
+  top,
+  onComment,
+  onClose,
+}: {
+  editor: Editor;
+  index: number;
+  top: number;
+  onComment?: (from: number, to: number) => void;
+  onClose: (refocus: boolean) => void;
+}) {
+  const menu = useRef<HTMLDivElement>(null);
+  const items = useMemo(blockItems, []);
+  const doc = editor.state.doc;
+  const node = index < doc.childCount ? doc.child(index) : null;
+  let from = 0;
+  for (let i = 0; i < index && i < doc.childCount; i++)
+    from += doc.child(i).nodeSize;
+  const to = from + (node?.nodeSize ?? 0);
+  const words = node ? textual(node.type.name) && node.textContent.trim() : "";
+  useEffect(() => {
+    menu.current?.querySelector<HTMLElement>("[role^='menuitem']")?.focus();
+    const outside = (event: PointerEvent) => {
+      if (!menu.current?.contains(event.target as Node)) onClose(false);
+    };
+    document.addEventListener("pointerdown", outside, true);
+    return () => document.removeEventListener("pointerdown", outside, true);
+  }, [onClose]);
+  if (!node) return null;
+  const current = (() => {
+    const name = node.type.name;
+    if (name === "heading") {
+      const level = node.attrs.level as number;
+      return level <= 3 ? (`heading${level}` as BlockId) : null;
+    }
+    const known: Record<string, BlockId> = {
+      paragraph: "paragraph",
+      bulletList: "bulletList",
+      orderedList: "orderedList",
+      taskList: "taskList",
+      blockquote: "blockquote",
+      codeBlock: "codeBlock",
+    };
+    return known[name] ?? null;
+  })();
+  // act runs an action on the block, then gives the text its focus at once (Tiptap's own focus waits for a frame): a
+  // key pressed right after, undo, goes to the text.
+  const act = (action: () => void, focus = true) => {
+    action();
+    if (focus) editor.view.focus();
+    onClose(false);
+  };
+  const keys = (event: ReactKeyboardEvent) => {
+    const all = [
+      ...(menu.current?.querySelectorAll<HTMLElement>(
+        "[role^='menuitem']:not(:disabled)",
+      ) ?? []),
+    ];
+    const at = all.indexOf(document.activeElement as HTMLElement);
+    let next: number;
+    if (event.key === "ArrowDown") next = (at + 1) % all.length;
+    else if (event.key === "ArrowUp") next = (at - 1 + all.length) % all.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = all.length - 1;
+    else if (event.key === "Escape" || event.key === "Tab") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose(event.key === "Escape");
+      return;
+    } else return;
+    event.preventDefault();
+    all[next]?.focus();
+  };
+  return (
+    <div
+      ref={menu}
+      className="tilasm-menu tilasm-block-menu"
+      role="menu"
+      aria-label={t("tilasms.block_menu")}
+      style={{ top }}
+      onKeyDown={keys}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        className="tilasm-menu-item"
+        onClick={() =>
+          act(() => {
+            editor.chain().deleteRange({ from, to }).scrollIntoView().run();
+          })
+        }
+      >
+        <Trash2 size={14} aria-hidden="true" />
+        <span>{t("tilasms.block.delete")}</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="tilasm-menu-item"
+        onClick={() =>
+          act(() => {
+            editor.view.dispatch(editor.state.tr.insert(to, node));
+          })
+        }
+      >
+        <Copy size={14} aria-hidden="true" />
+        <span>{t("tilasms.block.duplicate")}</span>
+      </button>
+      {onComment && words && (
+        <button
+          type="button"
+          role="menuitem"
+          className="tilasm-menu-item"
+          onClick={() => act(() => onComment(from, to), false)}
+        >
+          <MessageSquarePlus size={14} aria-hidden="true" />
+          <span>{t("tilasms.comment")}</span>
+        </button>
+      )}
+      {textual(node.type.name) && (
+        <>
+          <p className="tilasm-menu-label">{t("tilasms.turn_into")}</p>
+          {items
+            .filter((item) => turnable.includes(item.id))
+            .map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={item.id === current}
+                className={`tilasm-menu-item${item.id === current ? " is-active" : ""}`}
+                onClick={() =>
+                  act(() => {
+                    const state = editor.state;
+                    const $from = state.doc.resolve(from);
+                    const $to = state.doc.resolve(to);
+                    editor.view.dispatch(
+                      state.tr.setSelection(TextSelection.between($from, $to)),
+                    );
+                    turnInto(editor, item.id);
+                  })
+                }
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </button>
+            ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 // BlockHandle is the handle by the block under the pointer, in the left gutter. Dragged, a line shows where the block
-// lands; Escape cancels. Focused, the arrows move its block up and down.
+// lands; Escape cancels. Clicked, or Enter on it, it opens the block's menu. Focused, the arrows move its block up and
+// down.
 function BlockHandle({
   editor,
   box,
+  onComment,
 }: {
   editor: Editor;
   box: RefObject<HTMLDivElement | null>;
+  onComment?: (from: number, to: number) => void;
 }) {
   // The block the handle stands by, and where the drag would drop it: a boundary between blocks.
   const [hover, setHover] = useState<{ index: number; top: number }>();
   const [drop, setDrop] = useState<{ boundary: number; top: number }>();
   const drag = useRef<{ index: number; pointer: number } | null>(null);
   const target = useRef<number | null>(null);
+  // The block whose menu is open: the handle stays by it meanwhile.
+  const [menu, setMenu] = useState<number | null>(null);
+  const menuOpen = useRef(false);
+  useLayoutEffect(() => {
+    menuOpen.current = menu !== null;
+  });
+  // A press that dragged the block is not a click.
+  const dragged = useRef(false);
+  const handle = useRef<HTMLButtonElement>(null);
+  const closeMenu = useCallback((refocus: boolean) => {
+    setMenu(null);
+    if (refocus) requestAnimationFrame(() => handle.current?.focus());
+  }, []);
   const place = useCallback(
     (index: number) => {
       const found = blockBox(editor, index);
@@ -351,6 +558,7 @@ function BlockHandle({
         if (boundary === index || boundary === index + 1)
           return setDrop(undefined);
         target.current = boundary;
+        dragged.current = true;
         setDrop({
           boundary,
           top: (after ? found.rect.bottom : found.rect.top) - bounds.top,
@@ -358,6 +566,7 @@ function BlockHandle({
         return;
       }
       if (
+        menuOpen.current ||
         event.clientY < bounds.top ||
         event.clientY > bounds.bottom ||
         event.clientX < bounds.left ||
@@ -387,7 +596,7 @@ function BlockHandle({
       setDrop(undefined);
     };
     const leave = () => {
-      if (!drag.current) setHover(undefined);
+      if (!drag.current && !menuOpen.current) setHover(undefined);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", end);
@@ -395,7 +604,9 @@ function BlockHandle({
     window.addEventListener("keydown", cancel, true);
     frame.addEventListener("pointerleave", leave);
     // The page's text moves under a still pointer: the handle follows its block.
-    const follow = () => setHover(undefined);
+    const follow = () => {
+      if (!menuOpen.current) setHover(undefined);
+    };
     editor.on("update", follow);
     return () => {
       window.removeEventListener("pointermove", move);
@@ -411,16 +622,27 @@ function BlockHandle({
   return (
     <>
       <button
+        ref={handle}
         type="button"
         className="tilasm-drag-handle"
         style={{ top: hover.top }}
         title={t("tilasms.move_block")}
         aria-label={t("tilasms.move_block")}
+        aria-haspopup="menu"
+        aria-expanded={menu !== null}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           event.preventDefault();
+          dragged.current = false;
           drag.current = { index: hover.index, pointer: event.pointerId };
           document.body.classList.add("tilasm-dragging");
+        }}
+        onClick={() => {
+          if (dragged.current) {
+            dragged.current = false;
+            return;
+          }
+          setMenu(menu === null ? hover.index : null);
         }}
         onKeyDown={(event) => {
           if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
@@ -436,6 +658,15 @@ function BlockHandle({
       >
         <GripVertical size={14} aria-hidden="true" />
       </button>
+      {menu !== null && (
+        <BlockMenu
+          editor={editor}
+          index={menu}
+          top={hover.top}
+          onComment={onComment}
+          onClose={closeMenu}
+        />
+      )}
       {drop && (
         <div
           className="tilasm-drop-line"
@@ -452,9 +683,11 @@ function BlockHandle({
 function SelectionBar({
   editor,
   scroller,
+  onComment,
 }: {
   editor: Editor;
   scroller: HTMLElement | Window;
+  onComment?: (from: number, to: number) => void;
 }) {
   const [link, setLink] = useState<string | null>(null);
   const [blocks, setBlocks] = useState(false);
@@ -631,6 +864,23 @@ function SelectionBar({
               <Link size={14} aria-hidden="true" />
             </button>
           </span>
+          {onComment && (
+            <span className="tilasm-bar-group">
+              <button
+                type="button"
+                className="text-button tilasm-bar-block"
+                title={t("tilasms.comment")}
+                onClick={() => {
+                  const { from, to } = editor.state.selection;
+                  setBlocks(false);
+                  onComment(from, to);
+                }}
+              >
+                <MessageSquarePlus size={14} aria-hidden="true" />
+                {t("tilasms.comment")}
+              </button>
+            </span>
+          )}
           {blocks && (
             <div
               className="tilasm-menu tilasm-bar-menu"

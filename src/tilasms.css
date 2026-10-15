@@ -522,6 +522,308 @@ body.tilasm-dragging .tilasm-html-frame {
   color: var(--muted);
 }
 
+/* The menu of a block, by its handle. */
+.tilasm-block-menu {
+  position: absolute;
+  left: 34px;
+  z-index: 45;
+}
+.tilasm-menu-label {
+  margin: 4px 0 0;
+  padding: 4px 8px 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.tilasm-strip-slot {
+  display: contents;
+}
+
+/* Discussions and proposals (tilasm-discussions.tsx): the colours of a diff, each with a cue that is not a colour. */
+.tilasms {
+  --tilasm-del: #ff8178;
+  --tilasm-add: #5fd38d;
+}
+html[data-theme="light"] .tilasms {
+  --tilasm-del: #b91c1c;
+  --tilasm-add: #116b33;
+}
+.tilasm-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+/* A passage under discussion: a quiet ground, stronger while its window is open. */
+.tilasm-prose .tilasm-mark {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--sand) 14%, transparent);
+}
+.tilasm-prose .tilasm-mark.is-active {
+  background: color-mix(in srgb, var(--sand) 30%, transparent);
+}
+/* A proposal: the passage it replaces struck in red, its new text after it in green, marked with a +. */
+.tilasm-prose .tilasm-old {
+  color: var(--tilasm-del);
+  background: color-mix(in srgb, var(--tilasm-del) 10%, transparent);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  cursor: pointer;
+}
+.tilasm-prose .tilasm-new {
+  margin-left: 3px;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--tilasm-add);
+  background: color-mix(in srgb, var(--tilasm-add) 12%, transparent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--tilasm-add) 50%, transparent);
+  text-underline-offset: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  cursor: pointer;
+}
+.tilasm-prose .tilasm-new::before {
+  content: "+ ";
+  font-family: var(--mono);
+  text-decoration: none;
+}
+.tilasm-prose .tilasm-new.is-block {
+  display: block;
+  margin: 0.5em 0 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  text-decoration: none;
+}
+.tilasm-prose .tilasm-new.is-block > * {
+  margin: 0;
+}
+.tilasm-prose .tilasm-old.is-active,
+.tilasm-prose .tilasm-new:focus-visible {
+  outline: 1px solid currentColor;
+  outline-offset: 1px;
+}
+/* The dot of a folded discussion, in the margin by its passage. */
+.tilasm-dot {
+  position: absolute;
+  z-index: 20;
+  display: inline-flex;
+  height: 22px;
+  min-width: 22px;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  color: var(--muted);
+  background: var(--surface-raised);
+  font: 11px var(--mono);
+}
+.tilasm-dot:hover,
+.tilasm-dot:focus-visible {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+.tilasm-dot.is-unread {
+  border-color: var(--sand);
+  color: var(--sand);
+}
+.tilasm-dot.is-draft {
+  border-style: dashed;
+}
+/* A window over the document: small, rounded, a border on all sides. */
+.tilasm-float {
+  position: absolute;
+  z-index: 40;
+  display: grid;
+  max-height: min(440px, 70vh);
+  gap: 8px;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel, 10px);
+  background: var(--surface-raised);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--shadow) 35%, transparent);
+  color: var(--text);
+  font-size: var(--font-size-body);
+  line-height: 1.5;
+}
+.tilasm-thread {
+  display: grid;
+  gap: 8px;
+}
+.tilasm-thread-quote {
+  margin: 0;
+  color: var(--muted);
+  font-style: italic;
+  font-synthesis: style;
+}
+.tilasm-thread-messages {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tilasm-thread-messages .ac-markdown p {
+  margin: 0;
+}
+.tilasm-thread-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.tilasm-thread-meta strong {
+  color: var(--text);
+  font-weight: 550;
+  font-size: var(--font-size-body);
+}
+.tilasm-composer {
+  display: grid;
+  gap: 6px;
+}
+.tilasm-composer textarea {
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  outline: none;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  resize: vertical;
+}
+.tilasm-composer textarea:focus {
+  border-color: var(--line-strong);
+}
+.tilasm-float-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.tilasm-float-actions .tilasm-send {
+  width: 26px;
+  height: 26px;
+}
+.tilasm-float-actions button:disabled {
+  opacity: 0.5;
+}
+.tilasm-float-error {
+  margin: 0;
+  color: var(--danger);
+}
+.tilasm-proposal {
+  display: grid;
+  gap: 6px;
+}
+.tilasm-proposal.is-nested {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.tilasm-proposal-note {
+  margin: 0;
+}
+.tilasm-proposal-diff {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.tilasm-proposal-diff del {
+  color: var(--tilasm-del);
+}
+.tilasm-proposal-diff ins {
+  color: var(--tilasm-add);
+  text-decoration: none;
+}
+.tilasm-proposal-diff ins::before {
+  content: "+ ";
+  font-family: var(--mono);
+}
+.text-button.tilasm-accept {
+  color: var(--tilasm-add);
+}
+/* What stands apart from the text: an indicator by the tabs, its list in a small window. */
+.tilasm-apart-button {
+  width: auto;
+  min-width: 29px;
+  gap: 4px;
+  padding: 0 6px;
+  font: 11px var(--mono);
+}
+.tilasm-apart-button.has-apart {
+  color: var(--sand);
+}
+.tilasm-apart {
+  width: min(360px, 90vw);
+  max-height: 480px;
+  gap: 6px;
+}
+.tilasm-apart-head {
+  margin: 4px 4px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.tilasm-apart-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tilasm-apart-item {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+}
+.tilasm-apart-item:hover,
+.tilasm-apart-item[aria-expanded="true"] {
+  background: var(--surface-soft);
+}
+.tilasm-apart-item svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  color: var(--muted);
+}
+.tilasm-apart-item span {
+  display: grid;
+  min-width: 0;
+}
+.tilasm-apart-item strong {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tilasm-apart-item small,
+.tilasm-apart-reason {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.tilasm-apart-list .tilasm-thread {
+  padding: 0 6px 6px;
+}
+
 @media (max-width: 700px) {
   .tilasm-document {
     font-size: 14px;

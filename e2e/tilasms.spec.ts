@@ -396,3 +396,208 @@ test("a djinn link to a document opens its wish's Documents panel on its tab", a
     djinn("wish", "pause", wishId);
   }
 });
+
+// The discussions of a document, as the agents read them.
+const discussionsOf = (code: string, wishId: string) =>
+  JSON.parse(djinn("doc", "discussions", code, "--wish", wishId, "--json")) as {
+    threads?: { id: string; anchor?: { quote?: string } }[];
+    proposals?: { id: string; status?: string }[];
+  };
+
+test("a passage is discussed in a small window that folds into a dot; a proposal shows as a diff, accepted or rejected; a block's menu deletes, undone", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const wishId = await openWish(
+    page,
+    `Discuss the lamp ${randomUUID().slice(0, 8)}`,
+  );
+  try {
+    djinn(
+      "tilasm",
+      "create",
+      "Lamp",
+      "--wish",
+      wishId,
+      "--markdown",
+      "The wick carries the oil.\n\nThe flame needs air.\n\nThe glass keeps the wind out.",
+    );
+    await expect(page.locator('[data-wish-section="tilasms"]')).toBeVisible();
+    djinn("tilasm", "open", "L01", "--wish", wishId);
+    const panel = workspacePanel(page, "tilasms");
+    const body = panel.locator(".tilasm-prose");
+    await expect(body).toContainText("The flame needs air.");
+
+    // A selection's bar comments it: a small window by the passage, the passage marked, never the Markdown.
+    await body.locator("p", { hasText: "The flame needs air." }).click();
+    await page.keyboard.press("End");
+    await page.keyboard.press("ArrowLeft");
+    for (let i = 0; i < "needs air".length; i++)
+      await page.keyboard.press("Shift+ArrowLeft");
+    await expect
+      .poll(() => page.evaluate(() => String(getSelection())))
+      .toBe("needs air");
+    await page
+      .getByRole("toolbar", { name: "Formatting" })
+      .getByRole("button", { name: "Comment" })
+      .click();
+    const thread = page.getByRole("dialog", { name: "Comment" });
+    await expect(thread).toBeVisible();
+    await thread
+      .getByRole("textbox", { name: "Your comment" })
+      .fill("Why air?");
+    await thread.getByRole("button", { name: "Send" }).click();
+    await expect(thread.getByRole("textbox", { name: "Reply" })).toBeVisible();
+    await expect(body.locator(".tilasm-mark")).toHaveText("needs air");
+    const opened = discussionsOf("L01", wishId).threads ?? [];
+    expect(opened).toHaveLength(1);
+    expect(opened[0]!.anchor?.quote).toBe("needs air");
+    expect(markdownOf("L01", wishId)).not.toContain("Why air?");
+    const threadId = opened[0]!.id;
+
+    // An agent answers while it is open; the developer answers back.
+    djinn(
+      "doc",
+      "reply",
+      threadId,
+      "--text",
+      "Fire burns oxygen.",
+      "--author",
+      "W12",
+    );
+    await expect(thread).toContainText("Fire burns oxygen.");
+    await expect(thread).toContainText("W12");
+    await thread.getByRole("textbox", { name: "Reply" }).fill("Thanks.");
+    await thread.getByRole("button", { name: "Send" }).click();
+    await expect(
+      thread.locator("li").filter({ hasText: "Thanks." }),
+    ).toContainText("You");
+    await page.screenshot({ path: path.join(shots, "documents-thread.png") });
+
+    // Tabbing from the field to a button keeps it; a click elsewhere folds it into a dot, its draft kept.
+    const reply = thread.getByRole("textbox", { name: "Reply" });
+    await reply.fill("A draft");
+    await page.keyboard.press("Tab");
+    await expect(thread).toBeVisible();
+    await body.locator("p").first().click();
+    await expect(thread).toHaveCount(0);
+    const dot = panel.locator(".tilasm-dot");
+    await expect(dot).toHaveCount(1);
+    // A message that arrives meanwhile marks the dot, without opening the window.
+    djinn(
+      "doc",
+      "reply",
+      threadId,
+      "--text",
+      "One more thing.",
+      "--author",
+      "lead",
+    );
+    await expect(dot).toHaveClass(/is-unread/);
+    await expect(thread).toHaveCount(0);
+    await dot.click();
+    await expect(thread).toContainText("One more thing.");
+    await expect(thread.getByRole("textbox", { name: "Reply" })).toHaveValue(
+      "A draft",
+    );
+    await page.keyboard.press("Escape");
+    await expect(thread).toHaveCount(0);
+
+    // A proposal shows as a diff in the text; accepted, the Markdown holds it.
+    djinn(
+      "doc",
+      "propose",
+      "L01",
+      "--wish",
+      wishId,
+      "--quote",
+      "The glass keeps the wind out.",
+      "--replacement",
+      "The glass keeps the draught out.",
+      "--note",
+      "A plainer word",
+      "--author",
+      "W12",
+    );
+    const old = body.locator(".tilasm-old");
+    await expect(old).toHaveText("The glass keeps the wind out.");
+    await expect(body.locator(".tilasm-new")).toContainText(
+      "The glass keeps the draught out.",
+    );
+    expect(markdownOf("L01", wishId)).toContain(
+      "The glass keeps the wind out.",
+    );
+    await old.click();
+    const card = page.getByRole("dialog", { name: "Proposed change" });
+    await expect(card).toContainText("A plainer word");
+    await page.screenshot({ path: path.join(shots, "documents-proposal.png") });
+    await card.getByRole("button", { name: "Accept" }).click();
+    await expect
+      .poll(() => markdownOf("L01", wishId))
+      .toContain("The glass keeps the draught out.");
+    await expect(body).toContainText("The glass keeps the draught out.");
+    await expect(body.locator(".tilasm-old")).toHaveCount(0);
+    await expect(body.locator(".tilasm-new")).toHaveCount(0);
+
+    // Rejected, the text stays as it was.
+    djinn(
+      "doc",
+      "propose",
+      "L01",
+      "--wish",
+      wishId,
+      "--quote",
+      "The wick carries the oil.",
+      "--delete",
+      "--author",
+      "lead",
+    );
+    await expect(old).toHaveText("The wick carries the oil.");
+    await old.click();
+    await card.getByRole("button", { name: "Reject" }).click();
+    await expect(old).toHaveCount(0);
+    await expect
+      .poll(
+        () =>
+          (discussionsOf("L01", wishId).proposals ?? []).filter((p) =>
+            /REJECTED/.test(p.status ?? ""),
+          ).length,
+      )
+      .toBe(1);
+    expect(markdownOf("L01", wishId)).toContain("The wick carries the oil.");
+
+    // A click on a block's handle opens its menu; Delete takes the block, undo brings it back.
+    await body.locator("p").first().hover();
+    await panel.getByRole("button", { name: "Drag to move the block" }).click();
+    const menu = page.getByRole("menu", { name: "Block actions" });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitem").first()).toBeFocused();
+    await menu.getByRole("menuitem", { name: "Delete" }).click();
+    await expect(menu).toHaveCount(0);
+    await expect(body).not.toContainText("The wick carries the oil.");
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(body).toContainText("The wick carries the oil.");
+    await expect
+      .poll(() => markdownOf("L01", wishId))
+      .toContain("The wick carries the oil.");
+    // From the keyboard: Enter on the handle opens it, the arrows move in it, Escape gives the handle its focus back.
+    await body.locator("p").first().hover();
+    const handle = panel.getByRole("button", {
+      name: "Drag to move the block",
+    });
+    await handle.focus();
+    await page.keyboard.press("Enter");
+    await expect(menu.getByRole("menuitem").first()).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(
+      menu.getByRole("menuitem", { name: "Duplicate" }),
+    ).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+    await expect(handle).toBeFocused();
+    expect(errors).toEqual([]);
+  } finally {
+    djinn("wish", "pause", wishId);
+  }
+});
