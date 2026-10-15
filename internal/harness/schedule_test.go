@@ -708,24 +708,16 @@ func TestDependencyWorkIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// 1. Done dependency without integration record and with unmerged commits -> dependent waits.
 	w1 := &planv1.Task{
 		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W1", Title: "Task 1",
-		Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED, Branch: b1, CreateTime: timestamppb.Now(),
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b1, CreateTime: timestamppb.Now(),
 	}
 	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
 		_ = tx.Journal("test", "put", w1)
 		return tx.Put(w1)
 	}); err != nil {
 		t.Fatal(err)
-	}
-
-	// 1. Dependency closed by hand with unmerged commits -> dependent waits.
-	dropVal := true
-	_, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
-		TaskId: w1.GetId(), Drop: &dropVal, Note: "dropped for test",
-	}))
-	if err != nil {
-		t.Fatalf("task done: %v", err)
 	}
 
 	w2 := e.mustSpawn(t, wishID, "W2", "wait\ntext 2", &planv1.TaskServiceSpawnRequest{
@@ -752,7 +744,7 @@ func TestDependencyWorkIntegration(t *testing.T) {
 
 	none := "none"
 	forceVal := true
-	_, err = e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+	_, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
 		TaskId:      w1.GetId(),
 		Integration: &none,
 		Force:       &forceVal,
@@ -856,6 +848,59 @@ func TestDependencyWorkIntegration(t *testing.T) {
 	if curr6.GetStartTime() != nil {
 		t.Errorf("curr6 should not have started")
 	}
+
+	// 6. Cancelled dependency with unmerged branch, --drop closed dependency with unmerged branch,
+	// 0-commit committed dependency, and forkOf replacement do not block or tilt.
+	wCancelled := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W7", Title: "Cancelled task",
+		Status: planv1.TaskStatus_TASK_STATUS_CANCELLED, Branch: b5, CreateTime: timestamppb.Now(),
+	}
+	wDroppedZero := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W8", Title: "Dropped 0-commit task",
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b3, CreateTime: timestamppb.Now(),
+		Integration: &planv1.TaskIntegration{
+			State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+			Branch: mainBranch,
+			Sha:    "",
+		},
+	}
+	w5.Status = planv1.TaskStatus_TASK_STATUS_INTERRUPTED
+	wForkReplacement := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W9", Title: "Replacement for W5",
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b3, ForkOf: w5.GetCode(), CreateTime: timestamppb.Now(),
+		Integration: &planv1.TaskIntegration{
+			State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+			Branch: mainBranch,
+			Sha:    "",
+		},
+	}
+	wToDrop := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W10", Title: "Stopped task closed with --drop",
+		Status: planv1.TaskStatus_TASK_STATUS_STOPPED, Branch: b5, CreateTime: timestamppb.Now(),
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		for _, tk := range []*planv1.Task{w5, wCancelled, wDroppedZero, wForkReplacement, wToDrop} {
+			_ = tx.Journal("test", "put", tk)
+			if err := tx.Put(tk); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dropVal := true
+	if _, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
+		TaskId: wToDrop.GetId(), Drop: &dropVal, Note: "work superseded, dropped",
+	})); err != nil {
+		t.Fatalf("done --drop on W10: %v", err)
+	}
+	w11 := e.mustSpawn(t, wishID, "W11", "wait\ntext 11", &planv1.TaskServiceSpawnRequest{
+		DependsOn: []string{wCancelled.GetCode(), wDroppedZero.GetCode(), w5.GetCode(), wToDrop.GetCode()},
+	})
+	e.until(t, w11.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	e.release(t, w11.GetId())
+	e.ended(t, w11.GetId())
 }
 
 // TestStartAnyway: a planned task that waits for the machine alone says so, and starts at once when forced, under

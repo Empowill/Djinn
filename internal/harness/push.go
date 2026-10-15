@@ -200,6 +200,9 @@ func committedSince(tasks []*planv1.Task, projectID string, since time.Time) []*
 	var out []*planv1.Task
 	for _, t := range tasks {
 		in := t.GetIntegration()
+		if t.GetBranch() != "" && in.GetSha() == "" {
+			continue
+		}
 		if t.GetProjectId() == projectID && in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED &&
 			in.GetUpdateTime().AsTime().After(since) {
 			out = append(out, t)
@@ -578,6 +581,9 @@ func (h *Harness) committedBranchTasks(ctx context.Context, repo string, tasks [
 	}
 	for _, t := range tasks {
 		in := t.GetIntegration()
+		if t.GetBranch() != "" && in.GetSha() == "" {
+			continue
+		}
 		if t.GetProjectId() != projectID || in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
 			continue
 		}

@@ -417,6 +417,8 @@ func TestWaitsForBranchWork(t *testing.T) {
 		name       string
 		branch     string
 		state      planv1.IntegrationState
+		reason     string
+		closed     bool
 		bHead      string
 		noCommits  bool
 		intHead    string
@@ -440,6 +442,19 @@ func TestWaitsForBranchWork(t *testing.T) {
 			want: "waits for W5's work to reach feat/wails-go",
 		},
 		{
+			name:   "closed with --drop and unmerged commits starts",
+			branch: "w5-feat", state: planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED, closed: true,
+			bHead: "b1111111", noCommits: false, intHead: "i2222222", isAncestor: false,
+			want: "",
+		},
+		{
+			name:   "integration left out with unmerged commits starts",
+			branch: "w5-feat", state: planv1.IntegrationState_INTEGRATION_STATE_CONFLICT,
+			reason: "left out (Q12): merge conflict",
+			bHead:  "b1111111", noCommits: false, intHead: "i2222222", isAncestor: false,
+			want: "",
+		},
+		{
 			name:   "cleared record with merged commits starts",
 			branch: "w5-feat", state: planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED,
 			bHead: "b1111111", noCommits: false, intHead: "i2222222", isAncestor: true,
@@ -458,8 +473,11 @@ func TestWaitsForBranchWork(t *testing.T) {
 				Id: "d", WishId: "w", ProjectId: "p1", Code: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE,
 				Branch: c.branch,
 			}
-			if c.state != planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED {
-				dep.Integration = &planv1.TaskIntegration{State: c.state}
+			if c.closed {
+				dep.Closed = &planv1.Closure{Actor: planv1.Closer_CLOSER_LEAD, Note: "dropped"}
+			}
+			if c.state != planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED || c.reason != "" {
+				dep.Integration = &planv1.TaskIntegration{State: c.state, Reason: c.reason}
 			}
 			task := &planv1.Task{
 				Id: "t", WishId: "w", ProjectId: "p1", Code: "W6", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
@@ -490,7 +508,7 @@ func TestWaitsForBranchWork(t *testing.T) {
 				t.Errorf("got why %q, want %q", d.Why, c.want)
 			}
 			// Verify ancestry cache: running Blocker again should not call isAncestor again.
-			if c.bHead != "" && !c.noCommits && c.state == planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED {
+			if c.bHead != "" && !c.noCommits && !c.closed && c.state == planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED {
 				prevCalls := calls
 				sit.Blocker(task)
 				if calls != prevCalls {

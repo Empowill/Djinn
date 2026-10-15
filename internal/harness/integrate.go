@@ -422,13 +422,29 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 		if head == "" {
 			head, _ = git(ctx, project.GetDirectory(), "rev-parse", "HEAD")
 		}
+		var noWork, mergedAlready []*planv1.Task
+		for _, t := range alreadyIn {
+			if t.GetReview() == nil && t.GetCorrection() == nil && branchHasNoCommits(ctx, project.GetDirectory(), t.GetBranch()) {
+				noWork = append(noWork, t)
+			} else {
+				mergedAlready = append(mergedAlready, t)
+			}
+		}
+		text := "integration: committed: " + branch + " holds the work already, at " + short8(head)
+		if len(noWork) > 0 {
+			h.settleIntegration(ctx, noWork, &planv1.TaskIntegration{
+				State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+				Branch: branch,
+			}, text, nil)
+		}
 		committed := &planv1.TaskIntegration{
 			State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
 			Branch: branch,
 			Sha:    head,
 		}
-		text := "integration: committed: " + branch + " holds the work already, at " + short8(head)
-		h.settleIntegration(ctx, alreadyIn, committed, text, nil)
+		if len(mergedAlready) > 0 {
+			h.settleIntegration(ctx, mergedAlready, committed, text, nil)
+		}
 		settled := append(slices.Clone(alreadyIn), h.settleReviewed(ctx, alreadyIn, committed)...)
 		settled = append(settled, h.settleCorrected(ctx, settled, committed)...)
 		h.settleMain(ctx, wish, project, settled, committed)

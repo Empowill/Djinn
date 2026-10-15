@@ -355,4 +355,30 @@ func TestDoneUnmergedCommits(t *testing.T) {
 	if res2.Msg.GetTask().GetIntegration() != nil {
 		t.Errorf("expected nil integration, got %v", res2.Msg.GetTask().GetIntegration())
 	}
+
+	// 3. A DONE task whose integration failed (e.g. CONFLICT) can have its work dropped with --drop and a note.
+	t3 := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W3", Title: "failed integration work",
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b2, CreateTime: timestamppb.Now(),
+		Integration: &planv1.TaskIntegration{
+			State:  planv1.IntegrationState_INTEGRATION_STATE_CONFLICT,
+			Branch: mainBranch,
+			Reason: "merge conflict",
+		},
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		_ = tx.Journal("test", "put", t3)
+		return tx.Put(t3)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	res3, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
+		TaskId: t3.GetId(), Drop: &dropVal, Note: "superseded by W4",
+	}))
+	if err != nil {
+		t.Fatalf("done --drop on DONE task with failed integration: %v", err)
+	}
+	if res3.Msg.GetTask().GetIntegration() != nil || res3.Msg.GetTask().GetClosed().GetNote() != "superseded by W4" {
+		t.Errorf("after done --drop on DONE task: integration=%v, closed=%v", res3.Msg.GetTask().GetIntegration(), res3.Msg.GetTask().GetClosed())
+	}
 }

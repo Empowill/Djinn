@@ -394,16 +394,7 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 				head, _ = git(ctx, dir, "rev-parse", "HEAD")
 			}
 		}
-		noCommits := false
-		if head != "" {
-			reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+branch)
-			if err == nil && reflog != "" {
-				lines := strings.Split(strings.TrimSpace(reflog), "\n")
-				if strings.TrimSpace(lines[len(lines)-1]) == head {
-					noCommits = true
-				}
-			}
-		}
+		noCommits := head == "" || branchStartCommit(ctx, dir, branch) == head
 		branchCache[key] = branchState{head: head, noCommits: noCommits}
 		return head, noCommits
 	}
@@ -536,8 +527,6 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 	if dispatch.Resuming(t) {
 		return h.relaunch(ctx, t, preemptedCode)
 	}
-	t = proto.CloneOf(t)
-	t.WaitReason, t.MachineWait = "", false
 	provider, ok := h.providers[t.GetProvider()]
 	if !ok {
 		h.failPlanned(ctx, t, fmt.Sprintf("provider %s is not available", t.GetProvider()))
@@ -564,6 +553,17 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false)
 			return nil
 		}
+		if !questionWorker(t) && t.GetReview() == nil && t.GetCorrection().GetFailure() == nil && len(t.GetDependsOn()) > 0 {
+			if wish, err := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId()); err == nil {
+				from := h.workerStartBranch(ctx, wish, project, settings, t)
+				if sha, realFrom, err := startPoint(ctx, project.GetDirectory(), from); err == nil {
+					if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), t, sha, realFrom); depWhy != "" {
+						h.setWaiting(ctx, t, depWhy, false)
+						return nil
+					}
+				}
+			}
+		}
 	}
 	// A babysit spawned by hand watches what the tasks it comes after opened: its command, filled, is its prompt
 	// from now on.
@@ -572,6 +572,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		filled, why := h.babysitPrompt(ctx, project, t, prompt)
 		if why != "" {
 			h.failPlanned(ctx, t, why)
+			t = proto.CloneOf(t)
 			t.Error = why
 			h.tellWatcherFailed(t)
 			return nil
@@ -579,6 +580,8 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		prompt = filled
 		prompted = h.newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	}
+	t = proto.CloneOf(t)
+	t.WaitReason, t.MachineWait = "", false
 	r, err := h.newRun(t)
 	if err != nil {
 		return err
