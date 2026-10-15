@@ -208,6 +208,13 @@ passage by its words and what surrounds them, not by its position, so your edits
 another passage. When the passage changed, went, or now appears twice, the discussion says so, and such a proposal can
 no longer be accepted, only rejected. Discussions and proposals travel with the tilasm's and the wish's exports.
 
+Each Markdown document has its own agent, the document agent. Select a passage and comment on it, or ask for a change
+there (or at the caret, to add something): every message you send wakes it, and it answers in the same thread, with a
+proposal when you asked for a change. A draft wakes nothing, and it never answers its own messages. It remembers the
+document's discussions from one message to the next, knows the wish's goal without the lead's history, and tells the
+lead in one line only when something matters for the rest of the wish. It shows among the wish's tasks
+("L01: document agent"), reads, takes no slot, and the project's question worker settings turn it off with them.
+
 A tilasm's link, `djinn://tilasm/<id>`, opens Djinn on it from a browser, a chat, a terminal or a Markdown file, and
 starts Djinn if it does not run; so does `djinn://wish/<id>` for a wish. Inside the window, such a link in a block, a
 question or the brief opens in place.

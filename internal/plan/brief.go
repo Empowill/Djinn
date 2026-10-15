@@ -113,7 +113,12 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"`djinn doc put <folder>` with an `index.html` and its sources; draw its diagrams as inline SVG laid out by hand " +
 	"(boxes, labelled arrows, a legend), in colours that read in light and dark, never Mermaid. A tilasm reaches no " +
 	"network: everything it needs, fonts and scripts, is in its folder.\n" +
-	"- **The developer discusses a support in it**: read its discussions with `djinn doc discussions L01`, and answer " +
+	"- **Each Markdown support has its own document agent.** Every comment or request the developer writes in a " +
+	"support's discussions wakes it (a light task, \"L01: document agent\"): it answers in the thread, proposes the " +
+	"changes asked for, and tells you in one line (`djinn wish tell`) when a decision there matters for the rest of " +
+	"the wish. Leave those discussions to it: answer one yourself only when the developer or its line asks you to, or " +
+	"when question workers are off.\n" +
+	"- **When you discuss a support**: read its discussions with `djinn doc discussions L01`, and answer " +
 	"in the thread (`djinn doc reply <thread> --text \"…\"`) with what `djinn doc context L01 --thread <thread>` gives. " +
 	"To change a document the developer works on, propose rather than rewrite it: `djinn doc propose L01 --thread " +
 	"<thread> --replacement \"…\"` (or `--quote \"…\"` for another passage) waits for the developer, who accepts or " +

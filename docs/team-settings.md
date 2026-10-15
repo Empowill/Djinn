@@ -53,6 +53,7 @@ A watcher (`--provider watch`) runs a command: no setting applies to it, and non
 Three more set the *question workers*, the small tasks Djinn starts by itself on a question of a wish: after an
 answer, `Q03 → tasks` turns the decision into tasks; after "Enlighten me", `Q03: enlighten` investigates and revises
 the question ([agent protocol](agent-protocol.md)). They run the `provider` above, read only, and take no slot.
+The document agents, which answer the developer in a Markdown tilasm's discussions, follow the same settings.
 
 | Setting               | What it sets                                                          | Not set                    |
 | --------------------- | --------------------------------------------------------------------- | -------------------------- |

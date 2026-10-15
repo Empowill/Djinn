@@ -444,7 +444,10 @@ func statusText(t *planv1.Task) string {
 
 // questionStart is what a question worker's start event says it is.
 func questionStart(t *planv1.Task) string {
-	if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+	switch t.GetRole() {
+	case planv1.TaskRole_TASK_ROLE_DOCUMENT:
+		return "answers the developer in the discussions of its tilasm"
+	case planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
 		return "investigates " + t.GetQuestion() + ", then revises it"
 	}
 	return "turns the decision " + t.GetQuestion() + " into tasks"

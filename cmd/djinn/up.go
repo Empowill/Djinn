@@ -417,7 +417,8 @@ func services(
 	demoPrefix, demoHandler := demov1connect.NewDemoServiceHandler(demo.Service{})
 	uiPrefix, uiHandler := uiv1connect.NewUiServiceHandler(uiSvc)
 	language := render.SystemLanguage()
-	options := []plan.Option{plan.WithAnswered(h.Answered), plan.WithEnlightened(h.Enlightened), plan.WithNudges(nudges),
+	options := []plan.Option{plan.WithAnswered(h.Answered), plan.WithEnlightened(h.Enlightened), plan.WithDiscussed(h.Discussed),
+		plan.WithNudges(nudges),
 		plan.WithLeads(l), plan.WithPages(pages), plan.WithLanguage(language), plan.WithWatchers(h.SpawnWatcher),
 		plan.WithHome(home), plan.WithWorkers(h)}
 	options = append(options, more...)

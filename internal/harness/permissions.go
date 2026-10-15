@@ -65,6 +65,29 @@ var djinnCommands = []string{
 	"git log", "git show", "git diff", "git status",
 }
 
+// documentCommands are the commands a document agent may run: djinn's, to read the wish and its tilasm, to discuss it
+// and propose changes, and to tell the lead. Nothing that plans, edits a tilasm whole, or accepts.
+var documentCommands = []string{
+	"djinn wish brief", "djinn wish tell", "djinn task list", "djinn task get", "djinn question list", "djinn block list",
+	"djinn tilasm list", "djinn tilasm get", "djinn doc list", "djinn doc get",
+	"djinn tilasm discussions", "djinn tilasm context", "djinn tilasm comment", "djinn tilasm reply", "djinn tilasm propose",
+	"djinn doc discussions", "djinn doc context", "djinn doc comment", "djinn doc reply", "djinn doc propose",
+	"git log", "git show", "git diff", "git status",
+}
+
+// documentOnly is what a document agent gets: reading, and documentCommands; no edit, no network.
+func documentOnly() *djinnv1.Permissions {
+	return &djinnv1.Permissions{Commands: documentCommands, Mode: djinnv1.Mode_MODE_LISTED}
+}
+
+// taskAccessSpec is accessSpec for the task t: a document agent's access is its own commands.
+func taskAccessSpec(t *planv1.Task, perms *djinnv1.Permissions) (readOnly bool, out *djinnv1.Permissions) {
+	if t.GetRole() == planv1.TaskRole_TASK_ROLE_DOCUMENT && t.GetAccess() == planv1.TaskAccess_TASK_ACCESS_DJINN {
+		return false, documentOnly()
+	}
+	return accessSpec(t.GetAccess(), perms)
+}
+
 // permissionDenied starts the status event of a call the worker's permissions refused, whatever its agent: the call
 // follows, as the agent names it.
 const permissionDenied = "permission denied: "

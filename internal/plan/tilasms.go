@@ -75,6 +75,9 @@ type Tilasms struct {
 	URL func(id string) string
 	// Now is the clock of the versions; nil: the machine's.
 	Now func() time.Time
+	// Discussed are called with a discussion of a Markdown tilasm once a message the developer wrote in it is stored:
+	// the harness wakes the tilasm's document agent (WithDiscussed).
+	Discussed []func(context.Context, *planv1.TilasmThread)
 }
 
 func (t *Tilasms) now() *timestamppb.Timestamp {

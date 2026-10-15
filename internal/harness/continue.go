@@ -26,6 +26,17 @@ import (
 // it waits, with the reason, and the scheduler starts it. Refused while the task runs or is planned, when it
 // continues in a fork, when its worktree is gone, or when its agent cannot resume a session.
 func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.TaskServiceContinueRequest) (*planv1.Task, error) {
+	by := req.GetBy()
+	if by == planv1.Closer_CLOSER_UNSPECIFIED {
+		by = planv1.Closer_CLOSER_LEAD
+	}
+	return h.continueTask(ctx, procedure, req, actorLocal, "the "+plan.CloserWord(by))
+}
+
+// continueTask is Continue, journaled as actor's, its event saying who continues it.
+func (h *Harness) continueTask(
+	ctx context.Context, procedure string, req *planv1.TaskServiceContinueRequest, actor, who string,
+) (*planv1.Task, error) {
 	id := req.GetTaskId()
 	// No answer starts the worker again, and no pass of the scheduler decides, while it is planned again.
 	h.answering.Lock()
@@ -46,11 +57,7 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	by := req.GetBy()
-	if by == planv1.Closer_CLOSER_UNSPECIFIED {
-		by = planv1.Closer_CLOSER_LEAD
-	}
-	text := fmt.Sprintf("continued by the %s, was %s", plan.CloserWord(by), short(task.GetStatus()))
+	text := fmt.Sprintf("continued by %s, was %s", who, short(task.GetStatus()))
 	if e := task.GetError(); e != "" {
 		text += " (" + e + ")"
 	}
@@ -75,7 +82,7 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 		if err != nil {
 			return err
 		}
-		if err := tx.Journal(actorLocal, procedure, req); err != nil {
+		if err := tx.Journal(actor, procedure, req); err != nil {
 			return err
 		}
 		if err := tx.Put(t); err != nil {

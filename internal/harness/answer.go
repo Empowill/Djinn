@@ -255,7 +255,7 @@ func (h *Harness) again(r *run) error {
 	if err != nil {
 		return fmt.Errorf("read image attachments: %w", err)
 	}
-	readOnly, perms := accessSpec(t.GetAccess(), nil)
+	readOnly, perms := taskAccessSpec(t, nil)
 	r.base = t.GetUsage()
 	spec := Spec{
 		TaskID: t.GetId(), Dir: project.GetDirectory(), ReadOnly: readOnly, Permissions: perms, Model: t.GetModel(),

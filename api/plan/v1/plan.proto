@@ -584,6 +584,10 @@ enum TaskRole {
   // Djinn started it once the developer asked to know more about Task.question ("Enlighten me"): it reads, then
   // revises the question so that it waits for the developer again.
   TASK_ROLE_INVESTIGATOR = 2;
+  // The document agent of a Markdown tilasm (Task.tilasm_id): Djinn starts it, or gives it a new turn of its session,
+  // when the developer writes in a discussion of the tilasm. It reads, replies, proposes changes and tells the lead
+  // what matters for the wish; it never edits a file, nor accepts a change.
+  TASK_ROLE_DOCUMENT = 3;
 }
 
 // Provider is the kind of agent a worker runs.
@@ -733,8 +737,9 @@ message Task {
   // do. Empty while a box without needs is unchecked (work is left), when every box is checked, and for a file
   // without a Done-when section.
   repeated ProofNeed proof_needs = 43;
-  // What Djinn started the task for, on a question of the wish; none for a task the lead or the developer spawned. A
-  // question worker takes no slot of the machine and runs in its project's folder, reading.
+  // What Djinn started the task for, on a question or a tilasm of the wish; none for a task the lead or the developer
+  // spawned. A question worker or a document agent takes no slot of the machine and runs in its project's folder,
+  // reading.
   TaskRole role = 44;
   // The code of the question a question worker works on (Q52); empty for any other task.
   string question = 45 [(buf.validate.field).string.max_len = 64];
@@ -744,6 +749,9 @@ message Task {
   // The planned task waits for the machine alone: no slot is free, or the machine is under pressure. djinn task
   // start starts it anyway.
   bool machine_wait = 47;
+  // For a document agent (TASK_ROLE_DOCUMENT): the Markdown tilasm it answers on, by identifier; empty for any other
+  // task.
+  string tilasm_id = 48;
 }
 
 // TaskReview is what a review worker reviews: work its worker left in its worktree without committing it.

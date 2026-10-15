@@ -208,6 +208,61 @@ func (TilasmAnchorState) EnumDescriptor() ([]byte, []int) {
 	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{2}
 }
 
+// TilasmThreadKind is what the developer opens a discussion for. Each message the developer writes in a discussion
+// wakes the tilasm's document agent, which answers in it.
+type TilasmThreadKind int32
+
+const (
+	// Not set: read as a comment.
+	TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED TilasmThreadKind = 0
+	// A discussion on the passage: the agent replies, and proposes a change only when the discussion calls for one.
+	TilasmThreadKind_TILASM_THREAD_KIND_COMMENT TilasmThreadKind = 1
+	// A request for a change at the passage, or at a place with an empty quote: the agent answers with a proposal
+	// linked to the discussion, and a short message if needed.
+	TilasmThreadKind_TILASM_THREAD_KIND_REQUEST TilasmThreadKind = 2
+)
+
+// Enum value maps for TilasmThreadKind.
+var (
+	TilasmThreadKind_name = map[int32]string{
+		0: "TILASM_THREAD_KIND_UNSPECIFIED",
+		1: "TILASM_THREAD_KIND_COMMENT",
+		2: "TILASM_THREAD_KIND_REQUEST",
+	}
+	TilasmThreadKind_value = map[string]int32{
+		"TILASM_THREAD_KIND_UNSPECIFIED": 0,
+		"TILASM_THREAD_KIND_COMMENT":     1,
+		"TILASM_THREAD_KIND_REQUEST":     2,
+	}
+)
+
+func (x TilasmThreadKind) Enum() *TilasmThreadKind {
+	p := new(TilasmThreadKind)
+	*p = x
+	return p
+}
+
+func (x TilasmThreadKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TilasmThreadKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_plan_v1_tilasm_proto_enumTypes[3].Descriptor()
+}
+
+func (TilasmThreadKind) Type() protoreflect.EnumType {
+	return &file_plan_v1_tilasm_proto_enumTypes[3]
+}
+
+func (x TilasmThreadKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TilasmThreadKind.Descriptor instead.
+func (TilasmThreadKind) EnumDescriptor() ([]byte, []int) {
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{3}
+}
+
 // TilasmProposalStatus is where a proposal stands.
 type TilasmProposalStatus int32
 
@@ -249,11 +304,11 @@ func (x TilasmProposalStatus) String() string {
 }
 
 func (TilasmProposalStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_plan_v1_tilasm_proto_enumTypes[3].Descriptor()
+	return file_plan_v1_tilasm_proto_enumTypes[4].Descriptor()
 }
 
 func (TilasmProposalStatus) Type() protoreflect.EnumType {
-	return &file_plan_v1_tilasm_proto_enumTypes[3]
+	return &file_plan_v1_tilasm_proto_enumTypes[4]
 }
 
 func (x TilasmProposalStatus) Number() protoreflect.EnumNumber {
@@ -262,7 +317,7 @@ func (x TilasmProposalStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TilasmProposalStatus.Descriptor instead.
 func (TilasmProposalStatus) EnumDescriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{3}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{4}
 }
 
 // A tilasm is the material that explains a wish: a concept drawn, a data model walked through, a comparison laid out.
@@ -787,7 +842,7 @@ type TilasmMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Identifier, a UUIDv7.
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// Who wrote it: the developer, the lead, a task's code (W12).
+	// Who wrote it: the developer, the lead, the tilasm's document agent (document), a task's code (W12).
 	Author string `protobuf:"bytes,2,opt,name=author,proto3" json:"author,omitempty"`
 	// Its text, in Markdown.
 	Text string `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
@@ -889,7 +944,12 @@ type TilasmThread struct {
 	// Where its anchor stands in the latest text; computed at each read.
 	AnchorState TilasmAnchorState `protobuf:"varint,10,opt,name=anchor_state,json=anchorState,proto3,enum=plan.v1.TilasmAnchorState" json:"anchor_state,omitempty"`
 	// The rendered text at its place now, when the anchor is anchored or changed; computed at each read.
-	Current       string `protobuf:"bytes,11,opt,name=current,proto3" json:"current,omitempty"`
+	Current string `protobuf:"bytes,11,opt,name=current,proto3" json:"current,omitempty"`
+	// What it was opened for: a discussion, or a request for a change. Unspecified reads as a comment.
+	Kind TilasmThreadKind `protobuf:"varint,12,opt,name=kind,proto3,enum=plan.v1.TilasmThreadKind" json:"kind,omitempty"`
+	// The document agent works on it now: its last message is the developer's, and the tilasm's document agent is
+	// planned or running. Computed at each read of the discussions, never stored.
+	AgentPending  bool `protobuf:"varint,13,opt,name=agent_pending,json=agentPending,proto3" json:"agent_pending,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1001,6 +1061,20 @@ func (x *TilasmThread) GetCurrent() string {
 	return ""
 }
 
+func (x *TilasmThread) GetKind() TilasmThreadKind {
+	if x != nil {
+		return x.Kind
+	}
+	return TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED
+}
+
+func (x *TilasmThread) GetAgentPending() bool {
+	if x != nil {
+		return x.AgentPending
+	}
+	return false
+}
+
 // TilasmProposal is a change to a passage of a Markdown tilasm, waiting for the developer: the document holds it only
 // once accepted, which Djinn does, never an agent.
 type TilasmProposal struct {
@@ -1017,7 +1091,7 @@ type TilasmProposal struct {
 	Anchor *TilasmAnchor `protobuf:"bytes,5,opt,name=anchor,proto3" json:"anchor,omitempty"`
 	// The Markdown that replaces the passage's source, markup included; empty: the passage is deleted.
 	Replacement string `protobuf:"bytes,6,opt,name=replacement,proto3" json:"replacement,omitempty"`
-	// Who proposes it: the lead, a task's code (W12).
+	// Who proposes it: the lead, the tilasm's document agent (document), a task's code (W12).
 	Author string `protobuf:"bytes,7,opt,name=author,proto3" json:"author,omitempty"`
 	// Why, in a few words.
 	Note string `protobuf:"bytes,8,opt,name=note,proto3" json:"note,omitempty"`
@@ -2647,11 +2721,15 @@ type TilasmServiceCommentRequest struct {
 	Suffix string `protobuf:"bytes,5,opt,name=suffix,proto3" json:"suffix,omitempty"`
 	// The message, in Markdown.
 	Text string `protobuf:"bytes,6,opt,name=text,proto3" json:"text,omitempty"`
-	// Who writes it: your task's code (W12) for a worker; lead by default.
+	// Who writes it: your task's code (W12) for a worker; by default $DJINN_AUTHOR, which Djinn sets to document for a
+	// document agent; lead otherwise.
 	Author string `protobuf:"bytes,7,opt,name=author,proto3" json:"author,omitempty"`
 	// An identifier of your own for this request: sent again, after an interruption, it returns the discussion opened
 	// the first time rather than opening another.
-	RequestId     string `protobuf:"bytes,8,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	RequestId string `protobuf:"bytes,8,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// What the discussion is for: a comment, the default, or a request for a change, which the document agent answers
+	// with a proposal.
+	Kind          TilasmThreadKind `protobuf:"varint,9,opt,name=kind,proto3,enum=plan.v1.TilasmThreadKind" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2742,6 +2820,13 @@ func (x *TilasmServiceCommentRequest) GetRequestId() string {
 	return ""
 }
 
+func (x *TilasmServiceCommentRequest) GetKind() TilasmThreadKind {
+	if x != nil {
+		return x.Kind
+	}
+	return TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED
+}
+
 type TilasmServiceCommentResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The discussion.
@@ -2793,7 +2878,8 @@ type TilasmServiceReplyRequest struct {
 	Thread string `protobuf:"bytes,1,opt,name=thread,proto3" json:"thread,omitempty"`
 	// The message, in Markdown.
 	Text string `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
-	// Who writes it: your task's code (W12) for a worker; lead by default.
+	// Who writes it: your task's code (W12) for a worker; by default $DJINN_AUTHOR, which Djinn sets to document for a
+	// document agent; lead otherwise.
 	Author string `protobuf:"bytes,3,opt,name=author,proto3" json:"author,omitempty"`
 	// An identifier of your own for this request: sent again, it returns the discussion with the message written the
 	// first time rather than writing it twice.
@@ -3026,7 +3112,8 @@ type TilasmServiceProposeRequest struct {
 	Delete bool `protobuf:"varint,9,opt,name=delete,proto3" json:"delete,omitempty"`
 	// Why, in a few words, for the developer.
 	Note string `protobuf:"bytes,10,opt,name=note,proto3" json:"note,omitempty"`
-	// Who proposes it: your task's code (W12) for a worker; lead by default.
+	// Who proposes it: your task's code (W12) for a worker; by default $DJINN_AUTHOR, which Djinn sets to document for
+	// a document agent; lead otherwise.
 	Author string `protobuf:"bytes,11,opt,name=author,proto3" json:"author,omitempty"`
 	// An identifier of your own for this request: sent again, it returns the proposal made the first time rather than
 	// proposing it twice.
@@ -3857,7 +3944,7 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"\vcreate_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12'\n" +
 	"\n" +
-	"request_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\trequestId\"\xd9\x03\n" +
+	"request_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\trequestId\"\xad\x04\n" +
 	"\fTilasmThread\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1b\n" +
@@ -3873,7 +3960,9 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"request_id\x18\t \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\trequestId\x12=\n" +
 	"\fanchor_state\x18\n" +
 	" \x01(\x0e2\x1a.plan.v1.TilasmAnchorStateR\vanchorState\x12\x18\n" +
-	"\acurrent\x18\v \x01(\tR\acurrent\"\xe3\x05\n" +
+	"\acurrent\x18\v \x01(\tR\acurrent\x12-\n" +
+	"\x04kind\x18\f \x01(\x0e2\x19.plan.v1.TilasmThreadKindR\x04kind\x12#\n" +
+	"\ragent_pending\x18\r \x01(\bR\fagentPending\"\xe3\x05\n" +
 	"\x0eTilasmProposal\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1b\n" +
@@ -3993,23 +4082,24 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"\x05title\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xe8\aR\x05title\x12\x1f\n" +
 	"\x06author\x18\x05 \x01(\tB\a\xbaH\x04r\x02\x18dR\x06author\"D\n" +
 	"\x19TilasmServiceSaveResponse\x12'\n" +
-	"\x06tilasm\x18\x01 \x01(\v2\x0f.plan.v1.TilasmR\x06tilasm\"\xc2\x02\n" +
+	"\x06tilasm\x18\x01 \x01(\v2\x0f.plan.v1.TilasmR\x06tilasm\"\x8b\x03\n" +
 	"\x1bTilasmServiceCommentRequest\x122\n" +
 	"\x06tilasm\x18\x01 \x01(\v2\x12.plan.v1.TilasmRefB\x06\xbaH\x03\xc8\x01\x01R\x06tilasm\x12\x1f\n" +
 	"\x04wish\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x04wish\x12\x1f\n" +
 	"\x05quote\x18\x03 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x8d\x06R\x05quote\x12 \n" +
 	"\x06prefix\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xe8\aR\x06prefix\x12 \n" +
 	"\x06suffix\x18\x05 \x01(\tB\b\xbaH\x05r\x03\x18\xe8\aR\x06suffix\x12\x1f\n" +
-	"\x04text\x18\x06 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\xa0\x9c\x01R\x04text\x12\x1f\n" +
-	"\x06author\x18\a \x01(\tB\a\xbaH\x04r\x02\x18dR\x06author\x12'\n" +
+	"\x04text\x18\x06 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\xa0\x9c\x01R\x04text\x12/\n" +
+	"\x06author\x18\a \x01(\tB\x17\xbaH\x04r\x02\x18d\xf2\xf3\x18\fDJINN_AUTHORR\x06author\x12'\n" +
 	"\n" +
-	"request_id\x18\b \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\trequestId\"M\n" +
+	"request_id\x18\b \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\trequestId\x127\n" +
+	"\x04kind\x18\t \x01(\x0e2\x19.plan.v1.TilasmThreadKindB\b\xbaH\x05\x82\x01\x02\x10\x01R\x04kind\"M\n" +
 	"\x1cTilasmServiceCommentResponse\x12-\n" +
-	"\x06thread\x18\x01 \x01(\v2\x15.plan.v1.TilasmThreadR\x06thread\"\xab\x01\n" +
+	"\x06thread\x18\x01 \x01(\v2\x15.plan.v1.TilasmThreadR\x06thread\"\xbb\x01\n" +
 	"\x19TilasmServiceReplyRequest\x12#\n" +
 	"\x06thread\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06thread\x12\x1f\n" +
-	"\x04text\x18\x02 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\xa0\x9c\x01R\x04text\x12\x1f\n" +
-	"\x06author\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x18dR\x06author\x12'\n" +
+	"\x04text\x18\x02 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\xa0\x9c\x01R\x04text\x12/\n" +
+	"\x06author\x18\x03 \x01(\tB\x17\xbaH\x04r\x02\x18d\xf2\xf3\x18\fDJINN_AUTHORR\x06author\x12'\n" +
 	"\n" +
 	"request_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\trequestId\"K\n" +
 	"\x1aTilasmServiceReplyResponse\x12-\n" +
@@ -4018,7 +4108,7 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"\x06thread\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06thread\x12\x1a\n" +
 	"\bresolved\x18\x02 \x01(\bR\bresolved\"M\n" +
 	"\x1cTilasmServiceResolveResponse\x12-\n" +
-	"\x06thread\x18\x01 \x01(\v2\x15.plan.v1.TilasmThreadR\x06thread\"\xe0\x03\n" +
+	"\x06thread\x18\x01 \x01(\v2\x15.plan.v1.TilasmThreadR\x06thread\"\xf0\x03\n" +
 	"\x1bTilasmServiceProposeRequest\x122\n" +
 	"\x06tilasm\x18\x01 \x01(\v2\x12.plan.v1.TilasmRefB\x06\xbaH\x03\xc8\x01\x01R\x06tilasm\x12\x1f\n" +
 	"\x04wish\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x04wish\x12#\n" +
@@ -4031,8 +4121,8 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"\x10replacement_file\x18\b \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\x0freplacementFile\x12\x16\n" +
 	"\x06delete\x18\t \x01(\bR\x06delete\x12\x1d\n" +
 	"\x04note\x18\n" +
-	" \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\x04note\x12\x1f\n" +
-	"\x06author\x18\v \x01(\tB\a\xbaH\x04r\x02\x18dR\x06author\x12'\n" +
+	" \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\x04note\x12/\n" +
+	"\x06author\x18\v \x01(\tB\x17\xbaH\x04r\x02\x18d\xf2\xf3\x18\fDJINN_AUTHORR\x06author\x12'\n" +
 	"\n" +
 	"request_id\x18\f \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\trequestId\"S\n" +
 	"\x1cTilasmServiceProposeResponse\x123\n" +
@@ -4101,7 +4191,11 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"\x1cTILASM_ANCHOR_STATE_ANCHORED\x10\x01\x12\x1f\n" +
 	"\x1bTILASM_ANCHOR_STATE_CHANGED\x10\x02\x12\x1f\n" +
 	"\x1bTILASM_ANCHOR_STATE_MISSING\x10\x03\x12!\n" +
-	"\x1dTILASM_ANCHOR_STATE_AMBIGUOUS\x10\x04*\xac\x01\n" +
+	"\x1dTILASM_ANCHOR_STATE_AMBIGUOUS\x10\x04*v\n" +
+	"\x10TilasmThreadKind\x12\"\n" +
+	"\x1eTILASM_THREAD_KIND_UNSPECIFIED\x10\x00\x12\x1e\n" +
+	"\x1aTILASM_THREAD_KIND_COMMENT\x10\x01\x12\x1e\n" +
+	"\x1aTILASM_THREAD_KIND_REQUEST\x10\x02*\xac\x01\n" +
 	"\x14TilasmProposalStatus\x12&\n" +
 	"\"TILASM_PROPOSAL_STATUS_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eTILASM_PROPOSAL_STATUS_PENDING\x10\x01\x12#\n" +
@@ -4141,161 +4235,164 @@ func file_plan_v1_tilasm_proto_rawDescGZIP() []byte {
 	return file_plan_v1_tilasm_proto_rawDescData
 }
 
-var file_plan_v1_tilasm_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_plan_v1_tilasm_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
 var file_plan_v1_tilasm_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
 var file_plan_v1_tilasm_proto_goTypes = []any{
 	(TilasmFormat)(0),                        // 0: plan.v1.TilasmFormat
 	(TilasmOrigin)(0),                        // 1: plan.v1.TilasmOrigin
 	(TilasmAnchorState)(0),                   // 2: plan.v1.TilasmAnchorState
-	(TilasmProposalStatus)(0),                // 3: plan.v1.TilasmProposalStatus
-	(*Tilasm)(nil),                           // 4: plan.v1.Tilasm
-	(*TilasmVersion)(nil),                    // 5: plan.v1.TilasmVersion
-	(*TilasmRef)(nil),                        // 6: plan.v1.TilasmRef
-	(*TilasmExport)(nil),                     // 7: plan.v1.TilasmExport
-	(*TilasmAnchor)(nil),                     // 8: plan.v1.TilasmAnchor
-	(*TilasmMessage)(nil),                    // 9: plan.v1.TilasmMessage
-	(*TilasmThread)(nil),                     // 10: plan.v1.TilasmThread
-	(*TilasmProposal)(nil),                   // 11: plan.v1.TilasmProposal
-	(*TilasmFile)(nil),                       // 12: plan.v1.TilasmFile
-	(*TilasmServicePutRequest)(nil),          // 13: plan.v1.TilasmServicePutRequest
-	(*TilasmServicePutResponse)(nil),         // 14: plan.v1.TilasmServicePutResponse
-	(*TilasmServiceListRequest)(nil),         // 15: plan.v1.TilasmServiceListRequest
-	(*TilasmServiceListResponse)(nil),        // 16: plan.v1.TilasmServiceListResponse
-	(*TilasmServiceGetRequest)(nil),          // 17: plan.v1.TilasmServiceGetRequest
-	(*TilasmServiceGetResponse)(nil),         // 18: plan.v1.TilasmServiceGetResponse
-	(*TilasmServiceOpenRequest)(nil),         // 19: plan.v1.TilasmServiceOpenRequest
-	(*TilasmServiceOpenResponse)(nil),        // 20: plan.v1.TilasmServiceOpenResponse
-	(*TilasmServiceHistoryRequest)(nil),      // 21: plan.v1.TilasmServiceHistoryRequest
-	(*TilasmServiceHistoryResponse)(nil),     // 22: plan.v1.TilasmServiceHistoryResponse
-	(*TilasmServiceRestoreRequest)(nil),      // 23: plan.v1.TilasmServiceRestoreRequest
-	(*TilasmServiceRestoreResponse)(nil),     // 24: plan.v1.TilasmServiceRestoreResponse
-	(*TilasmServiceExportRequest)(nil),       // 25: plan.v1.TilasmServiceExportRequest
-	(*TilasmServiceExportResponse)(nil),      // 26: plan.v1.TilasmServiceExportResponse
-	(*TilasmServiceImportRequest)(nil),       // 27: plan.v1.TilasmServiceImportRequest
-	(*TilasmServiceImportResponse)(nil),      // 28: plan.v1.TilasmServiceImportResponse
-	(*TilasmServicePutDataRequest)(nil),      // 29: plan.v1.TilasmServicePutDataRequest
-	(*TilasmServicePutDataResponse)(nil),     // 30: plan.v1.TilasmServicePutDataResponse
-	(*TilasmServiceCreateRequest)(nil),       // 31: plan.v1.TilasmServiceCreateRequest
-	(*TilasmServiceCreateResponse)(nil),      // 32: plan.v1.TilasmServiceCreateResponse
-	(*TilasmServiceSaveRequest)(nil),         // 33: plan.v1.TilasmServiceSaveRequest
-	(*TilasmServiceSaveResponse)(nil),        // 34: plan.v1.TilasmServiceSaveResponse
-	(*TilasmServiceCommentRequest)(nil),      // 35: plan.v1.TilasmServiceCommentRequest
-	(*TilasmServiceCommentResponse)(nil),     // 36: plan.v1.TilasmServiceCommentResponse
-	(*TilasmServiceReplyRequest)(nil),        // 37: plan.v1.TilasmServiceReplyRequest
-	(*TilasmServiceReplyResponse)(nil),       // 38: plan.v1.TilasmServiceReplyResponse
-	(*TilasmServiceResolveRequest)(nil),      // 39: plan.v1.TilasmServiceResolveRequest
-	(*TilasmServiceResolveResponse)(nil),     // 40: plan.v1.TilasmServiceResolveResponse
-	(*TilasmServiceProposeRequest)(nil),      // 41: plan.v1.TilasmServiceProposeRequest
-	(*TilasmServiceProposeResponse)(nil),     // 42: plan.v1.TilasmServiceProposeResponse
-	(*TilasmServiceAcceptRequest)(nil),       // 43: plan.v1.TilasmServiceAcceptRequest
-	(*TilasmServiceAcceptResponse)(nil),      // 44: plan.v1.TilasmServiceAcceptResponse
-	(*TilasmServiceRejectRequest)(nil),       // 45: plan.v1.TilasmServiceRejectRequest
-	(*TilasmServiceRejectResponse)(nil),      // 46: plan.v1.TilasmServiceRejectResponse
-	(*TilasmServiceDiscussionsRequest)(nil),  // 47: plan.v1.TilasmServiceDiscussionsRequest
-	(*TilasmServiceDiscussionsResponse)(nil), // 48: plan.v1.TilasmServiceDiscussionsResponse
-	(*TilasmServiceContextRequest)(nil),      // 49: plan.v1.TilasmServiceContextRequest
-	(*TilasmServiceContextResponse)(nil),     // 50: plan.v1.TilasmServiceContextResponse
-	(*timestamppb.Timestamp)(nil),            // 51: google.protobuf.Timestamp
+	(TilasmThreadKind)(0),                    // 3: plan.v1.TilasmThreadKind
+	(TilasmProposalStatus)(0),                // 4: plan.v1.TilasmProposalStatus
+	(*Tilasm)(nil),                           // 5: plan.v1.Tilasm
+	(*TilasmVersion)(nil),                    // 6: plan.v1.TilasmVersion
+	(*TilasmRef)(nil),                        // 7: plan.v1.TilasmRef
+	(*TilasmExport)(nil),                     // 8: plan.v1.TilasmExport
+	(*TilasmAnchor)(nil),                     // 9: plan.v1.TilasmAnchor
+	(*TilasmMessage)(nil),                    // 10: plan.v1.TilasmMessage
+	(*TilasmThread)(nil),                     // 11: plan.v1.TilasmThread
+	(*TilasmProposal)(nil),                   // 12: plan.v1.TilasmProposal
+	(*TilasmFile)(nil),                       // 13: plan.v1.TilasmFile
+	(*TilasmServicePutRequest)(nil),          // 14: plan.v1.TilasmServicePutRequest
+	(*TilasmServicePutResponse)(nil),         // 15: plan.v1.TilasmServicePutResponse
+	(*TilasmServiceListRequest)(nil),         // 16: plan.v1.TilasmServiceListRequest
+	(*TilasmServiceListResponse)(nil),        // 17: plan.v1.TilasmServiceListResponse
+	(*TilasmServiceGetRequest)(nil),          // 18: plan.v1.TilasmServiceGetRequest
+	(*TilasmServiceGetResponse)(nil),         // 19: plan.v1.TilasmServiceGetResponse
+	(*TilasmServiceOpenRequest)(nil),         // 20: plan.v1.TilasmServiceOpenRequest
+	(*TilasmServiceOpenResponse)(nil),        // 21: plan.v1.TilasmServiceOpenResponse
+	(*TilasmServiceHistoryRequest)(nil),      // 22: plan.v1.TilasmServiceHistoryRequest
+	(*TilasmServiceHistoryResponse)(nil),     // 23: plan.v1.TilasmServiceHistoryResponse
+	(*TilasmServiceRestoreRequest)(nil),      // 24: plan.v1.TilasmServiceRestoreRequest
+	(*TilasmServiceRestoreResponse)(nil),     // 25: plan.v1.TilasmServiceRestoreResponse
+	(*TilasmServiceExportRequest)(nil),       // 26: plan.v1.TilasmServiceExportRequest
+	(*TilasmServiceExportResponse)(nil),      // 27: plan.v1.TilasmServiceExportResponse
+	(*TilasmServiceImportRequest)(nil),       // 28: plan.v1.TilasmServiceImportRequest
+	(*TilasmServiceImportResponse)(nil),      // 29: plan.v1.TilasmServiceImportResponse
+	(*TilasmServicePutDataRequest)(nil),      // 30: plan.v1.TilasmServicePutDataRequest
+	(*TilasmServicePutDataResponse)(nil),     // 31: plan.v1.TilasmServicePutDataResponse
+	(*TilasmServiceCreateRequest)(nil),       // 32: plan.v1.TilasmServiceCreateRequest
+	(*TilasmServiceCreateResponse)(nil),      // 33: plan.v1.TilasmServiceCreateResponse
+	(*TilasmServiceSaveRequest)(nil),         // 34: plan.v1.TilasmServiceSaveRequest
+	(*TilasmServiceSaveResponse)(nil),        // 35: plan.v1.TilasmServiceSaveResponse
+	(*TilasmServiceCommentRequest)(nil),      // 36: plan.v1.TilasmServiceCommentRequest
+	(*TilasmServiceCommentResponse)(nil),     // 37: plan.v1.TilasmServiceCommentResponse
+	(*TilasmServiceReplyRequest)(nil),        // 38: plan.v1.TilasmServiceReplyRequest
+	(*TilasmServiceReplyResponse)(nil),       // 39: plan.v1.TilasmServiceReplyResponse
+	(*TilasmServiceResolveRequest)(nil),      // 40: plan.v1.TilasmServiceResolveRequest
+	(*TilasmServiceResolveResponse)(nil),     // 41: plan.v1.TilasmServiceResolveResponse
+	(*TilasmServiceProposeRequest)(nil),      // 42: plan.v1.TilasmServiceProposeRequest
+	(*TilasmServiceProposeResponse)(nil),     // 43: plan.v1.TilasmServiceProposeResponse
+	(*TilasmServiceAcceptRequest)(nil),       // 44: plan.v1.TilasmServiceAcceptRequest
+	(*TilasmServiceAcceptResponse)(nil),      // 45: plan.v1.TilasmServiceAcceptResponse
+	(*TilasmServiceRejectRequest)(nil),       // 46: plan.v1.TilasmServiceRejectRequest
+	(*TilasmServiceRejectResponse)(nil),      // 47: plan.v1.TilasmServiceRejectResponse
+	(*TilasmServiceDiscussionsRequest)(nil),  // 48: plan.v1.TilasmServiceDiscussionsRequest
+	(*TilasmServiceDiscussionsResponse)(nil), // 49: plan.v1.TilasmServiceDiscussionsResponse
+	(*TilasmServiceContextRequest)(nil),      // 50: plan.v1.TilasmServiceContextRequest
+	(*TilasmServiceContextResponse)(nil),     // 51: plan.v1.TilasmServiceContextResponse
+	(*timestamppb.Timestamp)(nil),            // 52: google.protobuf.Timestamp
 }
 var file_plan_v1_tilasm_proto_depIdxs = []int32{
-	5,  // 0: plan.v1.Tilasm.versions:type_name -> plan.v1.TilasmVersion
-	51, // 1: plan.v1.Tilasm.create_time:type_name -> google.protobuf.Timestamp
-	51, // 2: plan.v1.Tilasm.update_time:type_name -> google.protobuf.Timestamp
+	6,  // 0: plan.v1.Tilasm.versions:type_name -> plan.v1.TilasmVersion
+	52, // 1: plan.v1.Tilasm.create_time:type_name -> google.protobuf.Timestamp
+	52, // 2: plan.v1.Tilasm.update_time:type_name -> google.protobuf.Timestamp
 	0,  // 3: plan.v1.Tilasm.format:type_name -> plan.v1.TilasmFormat
-	51, // 4: plan.v1.TilasmVersion.create_time:type_name -> google.protobuf.Timestamp
+	52, // 4: plan.v1.TilasmVersion.create_time:type_name -> google.protobuf.Timestamp
 	1,  // 5: plan.v1.TilasmVersion.origin:type_name -> plan.v1.TilasmOrigin
-	51, // 6: plan.v1.TilasmVersion.update_time:type_name -> google.protobuf.Timestamp
-	4,  // 7: plan.v1.TilasmExport.tilasm:type_name -> plan.v1.Tilasm
-	12, // 8: plan.v1.TilasmExport.files:type_name -> plan.v1.TilasmFile
-	10, // 9: plan.v1.TilasmExport.threads:type_name -> plan.v1.TilasmThread
-	11, // 10: plan.v1.TilasmExport.proposals:type_name -> plan.v1.TilasmProposal
-	51, // 11: plan.v1.TilasmMessage.create_time:type_name -> google.protobuf.Timestamp
-	8,  // 12: plan.v1.TilasmThread.anchor:type_name -> plan.v1.TilasmAnchor
-	9,  // 13: plan.v1.TilasmThread.messages:type_name -> plan.v1.TilasmMessage
-	51, // 14: plan.v1.TilasmThread.create_time:type_name -> google.protobuf.Timestamp
-	51, // 15: plan.v1.TilasmThread.update_time:type_name -> google.protobuf.Timestamp
+	52, // 6: plan.v1.TilasmVersion.update_time:type_name -> google.protobuf.Timestamp
+	5,  // 7: plan.v1.TilasmExport.tilasm:type_name -> plan.v1.Tilasm
+	13, // 8: plan.v1.TilasmExport.files:type_name -> plan.v1.TilasmFile
+	11, // 9: plan.v1.TilasmExport.threads:type_name -> plan.v1.TilasmThread
+	12, // 10: plan.v1.TilasmExport.proposals:type_name -> plan.v1.TilasmProposal
+	52, // 11: plan.v1.TilasmMessage.create_time:type_name -> google.protobuf.Timestamp
+	9,  // 12: plan.v1.TilasmThread.anchor:type_name -> plan.v1.TilasmAnchor
+	10, // 13: plan.v1.TilasmThread.messages:type_name -> plan.v1.TilasmMessage
+	52, // 14: plan.v1.TilasmThread.create_time:type_name -> google.protobuf.Timestamp
+	52, // 15: plan.v1.TilasmThread.update_time:type_name -> google.protobuf.Timestamp
 	2,  // 16: plan.v1.TilasmThread.anchor_state:type_name -> plan.v1.TilasmAnchorState
-	8,  // 17: plan.v1.TilasmProposal.anchor:type_name -> plan.v1.TilasmAnchor
-	3,  // 18: plan.v1.TilasmProposal.status:type_name -> plan.v1.TilasmProposalStatus
-	51, // 19: plan.v1.TilasmProposal.decide_time:type_name -> google.protobuf.Timestamp
-	51, // 20: plan.v1.TilasmProposal.create_time:type_name -> google.protobuf.Timestamp
-	2,  // 21: plan.v1.TilasmProposal.anchor_state:type_name -> plan.v1.TilasmAnchorState
-	4,  // 22: plan.v1.TilasmServicePutResponse.tilasm:type_name -> plan.v1.Tilasm
-	4,  // 23: plan.v1.TilasmServiceListResponse.tilasms:type_name -> plan.v1.Tilasm
-	6,  // 24: plan.v1.TilasmServiceGetRequest.tilasm:type_name -> plan.v1.TilasmRef
-	4,  // 25: plan.v1.TilasmServiceGetResponse.tilasm:type_name -> plan.v1.Tilasm
-	6,  // 26: plan.v1.TilasmServiceOpenRequest.tilasm:type_name -> plan.v1.TilasmRef
-	4,  // 27: plan.v1.TilasmServiceOpenResponse.tilasm:type_name -> plan.v1.Tilasm
-	6,  // 28: plan.v1.TilasmServiceHistoryRequest.tilasm:type_name -> plan.v1.TilasmRef
-	5,  // 29: plan.v1.TilasmServiceHistoryResponse.versions:type_name -> plan.v1.TilasmVersion
-	6,  // 30: plan.v1.TilasmServiceRestoreRequest.tilasm:type_name -> plan.v1.TilasmRef
-	4,  // 31: plan.v1.TilasmServiceRestoreResponse.tilasm:type_name -> plan.v1.Tilasm
-	6,  // 32: plan.v1.TilasmServiceExportRequest.tilasm:type_name -> plan.v1.TilasmRef
-	4,  // 33: plan.v1.TilasmServiceImportResponse.tilasm:type_name -> plan.v1.Tilasm
-	12, // 34: plan.v1.TilasmServicePutDataRequest.files:type_name -> plan.v1.TilasmFile
-	4,  // 35: plan.v1.TilasmServicePutDataResponse.tilasm:type_name -> plan.v1.Tilasm
-	4,  // 36: plan.v1.TilasmServiceCreateResponse.tilasm:type_name -> plan.v1.Tilasm
-	4,  // 37: plan.v1.TilasmServiceSaveResponse.tilasm:type_name -> plan.v1.Tilasm
-	6,  // 38: plan.v1.TilasmServiceCommentRequest.tilasm:type_name -> plan.v1.TilasmRef
-	10, // 39: plan.v1.TilasmServiceCommentResponse.thread:type_name -> plan.v1.TilasmThread
-	10, // 40: plan.v1.TilasmServiceReplyResponse.thread:type_name -> plan.v1.TilasmThread
-	10, // 41: plan.v1.TilasmServiceResolveResponse.thread:type_name -> plan.v1.TilasmThread
-	6,  // 42: plan.v1.TilasmServiceProposeRequest.tilasm:type_name -> plan.v1.TilasmRef
-	11, // 43: plan.v1.TilasmServiceProposeResponse.proposal:type_name -> plan.v1.TilasmProposal
-	11, // 44: plan.v1.TilasmServiceAcceptResponse.proposal:type_name -> plan.v1.TilasmProposal
-	4,  // 45: plan.v1.TilasmServiceAcceptResponse.tilasm:type_name -> plan.v1.Tilasm
-	11, // 46: plan.v1.TilasmServiceRejectResponse.proposal:type_name -> plan.v1.TilasmProposal
-	6,  // 47: plan.v1.TilasmServiceDiscussionsRequest.tilasm:type_name -> plan.v1.TilasmRef
-	10, // 48: plan.v1.TilasmServiceDiscussionsResponse.threads:type_name -> plan.v1.TilasmThread
-	11, // 49: plan.v1.TilasmServiceDiscussionsResponse.proposals:type_name -> plan.v1.TilasmProposal
-	6,  // 50: plan.v1.TilasmServiceContextRequest.tilasm:type_name -> plan.v1.TilasmRef
-	2,  // 51: plan.v1.TilasmServiceContextResponse.anchor_state:type_name -> plan.v1.TilasmAnchorState
-	8,  // 52: plan.v1.TilasmServiceContextResponse.anchor:type_name -> plan.v1.TilasmAnchor
-	10, // 53: plan.v1.TilasmServiceContextResponse.thread:type_name -> plan.v1.TilasmThread
-	11, // 54: plan.v1.TilasmServiceContextResponse.proposals:type_name -> plan.v1.TilasmProposal
-	13, // 55: plan.v1.TilasmService.Put:input_type -> plan.v1.TilasmServicePutRequest
-	15, // 56: plan.v1.TilasmService.List:input_type -> plan.v1.TilasmServiceListRequest
-	17, // 57: plan.v1.TilasmService.Get:input_type -> plan.v1.TilasmServiceGetRequest
-	19, // 58: plan.v1.TilasmService.Open:input_type -> plan.v1.TilasmServiceOpenRequest
-	21, // 59: plan.v1.TilasmService.History:input_type -> plan.v1.TilasmServiceHistoryRequest
-	23, // 60: plan.v1.TilasmService.Restore:input_type -> plan.v1.TilasmServiceRestoreRequest
-	25, // 61: plan.v1.TilasmService.Export:input_type -> plan.v1.TilasmServiceExportRequest
-	27, // 62: plan.v1.TilasmService.Import:input_type -> plan.v1.TilasmServiceImportRequest
-	29, // 63: plan.v1.TilasmService.PutData:input_type -> plan.v1.TilasmServicePutDataRequest
-	31, // 64: plan.v1.TilasmService.Create:input_type -> plan.v1.TilasmServiceCreateRequest
-	33, // 65: plan.v1.TilasmService.Save:input_type -> plan.v1.TilasmServiceSaveRequest
-	35, // 66: plan.v1.TilasmService.Comment:input_type -> plan.v1.TilasmServiceCommentRequest
-	37, // 67: plan.v1.TilasmService.Reply:input_type -> plan.v1.TilasmServiceReplyRequest
-	39, // 68: plan.v1.TilasmService.Resolve:input_type -> plan.v1.TilasmServiceResolveRequest
-	41, // 69: plan.v1.TilasmService.Propose:input_type -> plan.v1.TilasmServiceProposeRequest
-	43, // 70: plan.v1.TilasmService.Accept:input_type -> plan.v1.TilasmServiceAcceptRequest
-	45, // 71: plan.v1.TilasmService.Reject:input_type -> plan.v1.TilasmServiceRejectRequest
-	47, // 72: plan.v1.TilasmService.Discussions:input_type -> plan.v1.TilasmServiceDiscussionsRequest
-	49, // 73: plan.v1.TilasmService.Context:input_type -> plan.v1.TilasmServiceContextRequest
-	14, // 74: plan.v1.TilasmService.Put:output_type -> plan.v1.TilasmServicePutResponse
-	16, // 75: plan.v1.TilasmService.List:output_type -> plan.v1.TilasmServiceListResponse
-	18, // 76: plan.v1.TilasmService.Get:output_type -> plan.v1.TilasmServiceGetResponse
-	20, // 77: plan.v1.TilasmService.Open:output_type -> plan.v1.TilasmServiceOpenResponse
-	22, // 78: plan.v1.TilasmService.History:output_type -> plan.v1.TilasmServiceHistoryResponse
-	24, // 79: plan.v1.TilasmService.Restore:output_type -> plan.v1.TilasmServiceRestoreResponse
-	26, // 80: plan.v1.TilasmService.Export:output_type -> plan.v1.TilasmServiceExportResponse
-	28, // 81: plan.v1.TilasmService.Import:output_type -> plan.v1.TilasmServiceImportResponse
-	30, // 82: plan.v1.TilasmService.PutData:output_type -> plan.v1.TilasmServicePutDataResponse
-	32, // 83: plan.v1.TilasmService.Create:output_type -> plan.v1.TilasmServiceCreateResponse
-	34, // 84: plan.v1.TilasmService.Save:output_type -> plan.v1.TilasmServiceSaveResponse
-	36, // 85: plan.v1.TilasmService.Comment:output_type -> plan.v1.TilasmServiceCommentResponse
-	38, // 86: plan.v1.TilasmService.Reply:output_type -> plan.v1.TilasmServiceReplyResponse
-	40, // 87: plan.v1.TilasmService.Resolve:output_type -> plan.v1.TilasmServiceResolveResponse
-	42, // 88: plan.v1.TilasmService.Propose:output_type -> plan.v1.TilasmServiceProposeResponse
-	44, // 89: plan.v1.TilasmService.Accept:output_type -> plan.v1.TilasmServiceAcceptResponse
-	46, // 90: plan.v1.TilasmService.Reject:output_type -> plan.v1.TilasmServiceRejectResponse
-	48, // 91: plan.v1.TilasmService.Discussions:output_type -> plan.v1.TilasmServiceDiscussionsResponse
-	50, // 92: plan.v1.TilasmService.Context:output_type -> plan.v1.TilasmServiceContextResponse
-	74, // [74:93] is the sub-list for method output_type
-	55, // [55:74] is the sub-list for method input_type
-	55, // [55:55] is the sub-list for extension type_name
-	55, // [55:55] is the sub-list for extension extendee
-	0,  // [0:55] is the sub-list for field type_name
+	3,  // 17: plan.v1.TilasmThread.kind:type_name -> plan.v1.TilasmThreadKind
+	9,  // 18: plan.v1.TilasmProposal.anchor:type_name -> plan.v1.TilasmAnchor
+	4,  // 19: plan.v1.TilasmProposal.status:type_name -> plan.v1.TilasmProposalStatus
+	52, // 20: plan.v1.TilasmProposal.decide_time:type_name -> google.protobuf.Timestamp
+	52, // 21: plan.v1.TilasmProposal.create_time:type_name -> google.protobuf.Timestamp
+	2,  // 22: plan.v1.TilasmProposal.anchor_state:type_name -> plan.v1.TilasmAnchorState
+	5,  // 23: plan.v1.TilasmServicePutResponse.tilasm:type_name -> plan.v1.Tilasm
+	5,  // 24: plan.v1.TilasmServiceListResponse.tilasms:type_name -> plan.v1.Tilasm
+	7,  // 25: plan.v1.TilasmServiceGetRequest.tilasm:type_name -> plan.v1.TilasmRef
+	5,  // 26: plan.v1.TilasmServiceGetResponse.tilasm:type_name -> plan.v1.Tilasm
+	7,  // 27: plan.v1.TilasmServiceOpenRequest.tilasm:type_name -> plan.v1.TilasmRef
+	5,  // 28: plan.v1.TilasmServiceOpenResponse.tilasm:type_name -> plan.v1.Tilasm
+	7,  // 29: plan.v1.TilasmServiceHistoryRequest.tilasm:type_name -> plan.v1.TilasmRef
+	6,  // 30: plan.v1.TilasmServiceHistoryResponse.versions:type_name -> plan.v1.TilasmVersion
+	7,  // 31: plan.v1.TilasmServiceRestoreRequest.tilasm:type_name -> plan.v1.TilasmRef
+	5,  // 32: plan.v1.TilasmServiceRestoreResponse.tilasm:type_name -> plan.v1.Tilasm
+	7,  // 33: plan.v1.TilasmServiceExportRequest.tilasm:type_name -> plan.v1.TilasmRef
+	5,  // 34: plan.v1.TilasmServiceImportResponse.tilasm:type_name -> plan.v1.Tilasm
+	13, // 35: plan.v1.TilasmServicePutDataRequest.files:type_name -> plan.v1.TilasmFile
+	5,  // 36: plan.v1.TilasmServicePutDataResponse.tilasm:type_name -> plan.v1.Tilasm
+	5,  // 37: plan.v1.TilasmServiceCreateResponse.tilasm:type_name -> plan.v1.Tilasm
+	5,  // 38: plan.v1.TilasmServiceSaveResponse.tilasm:type_name -> plan.v1.Tilasm
+	7,  // 39: plan.v1.TilasmServiceCommentRequest.tilasm:type_name -> plan.v1.TilasmRef
+	3,  // 40: plan.v1.TilasmServiceCommentRequest.kind:type_name -> plan.v1.TilasmThreadKind
+	11, // 41: plan.v1.TilasmServiceCommentResponse.thread:type_name -> plan.v1.TilasmThread
+	11, // 42: plan.v1.TilasmServiceReplyResponse.thread:type_name -> plan.v1.TilasmThread
+	11, // 43: plan.v1.TilasmServiceResolveResponse.thread:type_name -> plan.v1.TilasmThread
+	7,  // 44: plan.v1.TilasmServiceProposeRequest.tilasm:type_name -> plan.v1.TilasmRef
+	12, // 45: plan.v1.TilasmServiceProposeResponse.proposal:type_name -> plan.v1.TilasmProposal
+	12, // 46: plan.v1.TilasmServiceAcceptResponse.proposal:type_name -> plan.v1.TilasmProposal
+	5,  // 47: plan.v1.TilasmServiceAcceptResponse.tilasm:type_name -> plan.v1.Tilasm
+	12, // 48: plan.v1.TilasmServiceRejectResponse.proposal:type_name -> plan.v1.TilasmProposal
+	7,  // 49: plan.v1.TilasmServiceDiscussionsRequest.tilasm:type_name -> plan.v1.TilasmRef
+	11, // 50: plan.v1.TilasmServiceDiscussionsResponse.threads:type_name -> plan.v1.TilasmThread
+	12, // 51: plan.v1.TilasmServiceDiscussionsResponse.proposals:type_name -> plan.v1.TilasmProposal
+	7,  // 52: plan.v1.TilasmServiceContextRequest.tilasm:type_name -> plan.v1.TilasmRef
+	2,  // 53: plan.v1.TilasmServiceContextResponse.anchor_state:type_name -> plan.v1.TilasmAnchorState
+	9,  // 54: plan.v1.TilasmServiceContextResponse.anchor:type_name -> plan.v1.TilasmAnchor
+	11, // 55: plan.v1.TilasmServiceContextResponse.thread:type_name -> plan.v1.TilasmThread
+	12, // 56: plan.v1.TilasmServiceContextResponse.proposals:type_name -> plan.v1.TilasmProposal
+	14, // 57: plan.v1.TilasmService.Put:input_type -> plan.v1.TilasmServicePutRequest
+	16, // 58: plan.v1.TilasmService.List:input_type -> plan.v1.TilasmServiceListRequest
+	18, // 59: plan.v1.TilasmService.Get:input_type -> plan.v1.TilasmServiceGetRequest
+	20, // 60: plan.v1.TilasmService.Open:input_type -> plan.v1.TilasmServiceOpenRequest
+	22, // 61: plan.v1.TilasmService.History:input_type -> plan.v1.TilasmServiceHistoryRequest
+	24, // 62: plan.v1.TilasmService.Restore:input_type -> plan.v1.TilasmServiceRestoreRequest
+	26, // 63: plan.v1.TilasmService.Export:input_type -> plan.v1.TilasmServiceExportRequest
+	28, // 64: plan.v1.TilasmService.Import:input_type -> plan.v1.TilasmServiceImportRequest
+	30, // 65: plan.v1.TilasmService.PutData:input_type -> plan.v1.TilasmServicePutDataRequest
+	32, // 66: plan.v1.TilasmService.Create:input_type -> plan.v1.TilasmServiceCreateRequest
+	34, // 67: plan.v1.TilasmService.Save:input_type -> plan.v1.TilasmServiceSaveRequest
+	36, // 68: plan.v1.TilasmService.Comment:input_type -> plan.v1.TilasmServiceCommentRequest
+	38, // 69: plan.v1.TilasmService.Reply:input_type -> plan.v1.TilasmServiceReplyRequest
+	40, // 70: plan.v1.TilasmService.Resolve:input_type -> plan.v1.TilasmServiceResolveRequest
+	42, // 71: plan.v1.TilasmService.Propose:input_type -> plan.v1.TilasmServiceProposeRequest
+	44, // 72: plan.v1.TilasmService.Accept:input_type -> plan.v1.TilasmServiceAcceptRequest
+	46, // 73: plan.v1.TilasmService.Reject:input_type -> plan.v1.TilasmServiceRejectRequest
+	48, // 74: plan.v1.TilasmService.Discussions:input_type -> plan.v1.TilasmServiceDiscussionsRequest
+	50, // 75: plan.v1.TilasmService.Context:input_type -> plan.v1.TilasmServiceContextRequest
+	15, // 76: plan.v1.TilasmService.Put:output_type -> plan.v1.TilasmServicePutResponse
+	17, // 77: plan.v1.TilasmService.List:output_type -> plan.v1.TilasmServiceListResponse
+	19, // 78: plan.v1.TilasmService.Get:output_type -> plan.v1.TilasmServiceGetResponse
+	21, // 79: plan.v1.TilasmService.Open:output_type -> plan.v1.TilasmServiceOpenResponse
+	23, // 80: plan.v1.TilasmService.History:output_type -> plan.v1.TilasmServiceHistoryResponse
+	25, // 81: plan.v1.TilasmService.Restore:output_type -> plan.v1.TilasmServiceRestoreResponse
+	27, // 82: plan.v1.TilasmService.Export:output_type -> plan.v1.TilasmServiceExportResponse
+	29, // 83: plan.v1.TilasmService.Import:output_type -> plan.v1.TilasmServiceImportResponse
+	31, // 84: plan.v1.TilasmService.PutData:output_type -> plan.v1.TilasmServicePutDataResponse
+	33, // 85: plan.v1.TilasmService.Create:output_type -> plan.v1.TilasmServiceCreateResponse
+	35, // 86: plan.v1.TilasmService.Save:output_type -> plan.v1.TilasmServiceSaveResponse
+	37, // 87: plan.v1.TilasmService.Comment:output_type -> plan.v1.TilasmServiceCommentResponse
+	39, // 88: plan.v1.TilasmService.Reply:output_type -> plan.v1.TilasmServiceReplyResponse
+	41, // 89: plan.v1.TilasmService.Resolve:output_type -> plan.v1.TilasmServiceResolveResponse
+	43, // 90: plan.v1.TilasmService.Propose:output_type -> plan.v1.TilasmServiceProposeResponse
+	45, // 91: plan.v1.TilasmService.Accept:output_type -> plan.v1.TilasmServiceAcceptResponse
+	47, // 92: plan.v1.TilasmService.Reject:output_type -> plan.v1.TilasmServiceRejectResponse
+	49, // 93: plan.v1.TilasmService.Discussions:output_type -> plan.v1.TilasmServiceDiscussionsResponse
+	51, // 94: plan.v1.TilasmService.Context:output_type -> plan.v1.TilasmServiceContextResponse
+	76, // [76:95] is the sub-list for method output_type
+	57, // [57:76] is the sub-list for method input_type
+	57, // [57:57] is the sub-list for extension type_name
+	57, // [57:57] is the sub-list for extension extendee
+	0,  // [0:57] is the sub-list for field type_name
 }
 
 func init() { file_plan_v1_tilasm_proto_init() }
@@ -4312,7 +4409,7 @@ func file_plan_v1_tilasm_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_plan_v1_tilasm_proto_rawDesc), len(file_plan_v1_tilasm_proto_rawDesc)),
-			NumEnums:      4,
+			NumEnums:      5,
 			NumMessages:   47,
 			NumExtensions: 0,
 			NumServices:   1,

@@ -72,6 +72,7 @@ type Harness struct {
 
 	answering   sync.Mutex // one answer to an edit question at a time
 	questioning sync.Mutex // one question worker decided at a time (question.go)
+	documenting sync.Mutex // one document agent woken at a time (document.go)
 	questions   bool       // question workers start (WithQuestionWorkers)
 
 	scopes *machine.Scopes // the systemd scopes the workers run in, one each (WithScopes); nil: none
@@ -295,7 +296,7 @@ func (h *Harness) spawn(
 		Id: store.NewID(), WishId: req.GetWishId(), Title: req.GetTitle(), Status: planv1.TaskStatus_TASK_STATUS_PENDING,
 		CreateTime: timestamppb.Now(), Model: req.GetModel(), MaxBudgetUsd: req.GetMaxBudgetUsd(),
 		WriteScopes: scopes, Scheduled: true, Correction: made.GetCorrection(), Review: made.GetReview(), Role: made.GetRole(),
-		Question: made.GetQuestion(),
+		Question: made.GetQuestion(), TilasmId: made.GetTilasmId(),
 	}
 	if made.GetReview() != nil {
 		task.Branch, task.Worktree = made.GetBranch(), made.GetWorktree()
@@ -587,7 +588,7 @@ func (h *Harness) launch(
 	ctx context.Context, r *run, provider Provider, project *planv1.Project, prep prepared, prompt string,
 ) (*planv1.Task, error) {
 	task := r.task
-	readOnly, perms := accessSpec(task.GetAccess(), prep.declared)
+	readOnly, perms := taskAccessSpec(task, prep.declared)
 	perms = withCommit(task, perms)
 	wk := r.warm
 	r.warm = nil
@@ -706,6 +707,9 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	// A worker that calls djinn knows its task.
 	spec.Env = []string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}
+	if documentAgent(t) {
+		spec.Env = append(spec.Env, "DJINN_AUTHOR="+plan.DocumentAuthor) // Its replies and proposals are the document's.
+	}
 	spec.Scope = h.scope(t.GetCode())
 	if len(h.prefix) > 0 {
 		prefix := slices.Clone(h.prefix)
@@ -999,7 +1003,7 @@ func (h *Harness) end(r *run, res Result) {
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, r.failure
 	case t.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_WAITING, "waiting for the answer to its edit question"
-	case r.light && r.refused != "" && questionWorker(t) && !h.questionDid(t):
+	case r.light && r.refused != "" && questionWorker(t) && !documentAgent(t) && !h.questionDid(t):
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, refusedError(r.refused)
 	default:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_DONE, ""
@@ -1025,7 +1029,10 @@ func (h *Harness) end(r *run, res Result) {
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: pending, to be merged into the integration branch"})
 		h.kickIntegrate()
 	}
-	if r.light {
+	switch {
+	case documentAgent(t):
+		h.documentEnded(r, t) // It wakes again on what the developer wrote while it ended.
+	case r.light:
 		h.questionEnded(t) // The lead learns what it did, before the task's watchers let go, as a watcher's lead does.
 	}
 	// The links to the summoned skills go with the worker; a worker started again makes them anew.

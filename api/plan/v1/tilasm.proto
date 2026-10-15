@@ -156,7 +156,7 @@ enum TilasmAnchorState {
 message TilasmMessage {
   // Identifier, a UUIDv7.
   string id = 1 [(buf.validate.field).string.uuid = true];
-  // Who wrote it: the developer, the lead, a task's code (W12).
+  // Who wrote it: the developer, the lead, the tilasm's document agent (document), a task's code (W12).
   string author = 2 [(buf.validate.field).string.max_len = 100];
   // Its text, in Markdown.
   string text = 3 [(buf.validate.field).string.max_len = 20000];
@@ -191,6 +191,23 @@ message TilasmThread {
   TilasmAnchorState anchor_state = 10;
   // The rendered text at its place now, when the anchor is anchored or changed; computed at each read.
   string current = 11;
+  // What it was opened for: a discussion, or a request for a change. Unspecified reads as a comment.
+  TilasmThreadKind kind = 12;
+  // The document agent works on it now: its last message is the developer's, and the tilasm's document agent is
+  // planned or running. Computed at each read of the discussions, never stored.
+  bool agent_pending = 13;
+}
+
+// TilasmThreadKind is what the developer opens a discussion for. Each message the developer writes in a discussion
+// wakes the tilasm's document agent, which answers in it.
+enum TilasmThreadKind {
+  // Not set: read as a comment.
+  TILASM_THREAD_KIND_UNSPECIFIED = 0;
+  // A discussion on the passage: the agent replies, and proposes a change only when the discussion calls for one.
+  TILASM_THREAD_KIND_COMMENT = 1;
+  // A request for a change at the passage, or at a place with an empty quote: the agent answers with a proposal
+  // linked to the discussion, and a short message if needed.
+  TILASM_THREAD_KIND_REQUEST = 2;
 }
 
 // TilasmProposalStatus is where a proposal stands.
@@ -220,7 +237,7 @@ message TilasmProposal {
   TilasmAnchor anchor = 5;
   // The Markdown that replaces the passage's source, markup included; empty: the passage is deleted.
   string replacement = 6 [(buf.validate.field).string.max_len = 52428800];
-  // Who proposes it: the lead, a task's code (W12).
+  // Who proposes it: the lead, the tilasm's document agent (document), a task's code (W12).
   string author = 7 [(buf.validate.field).string.max_len = 100];
   // Why, in a few words.
   string note = 8 [(buf.validate.field).string.max_len = 20000];
@@ -643,11 +660,18 @@ message TilasmServiceCommentRequest {
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 20000
   ];
-  // Who writes it: your task's code (W12) for a worker; lead by default.
-  string author = 7 [(buf.validate.field).string.max_len = 100];
+  // Who writes it: your task's code (W12) for a worker; by default $DJINN_AUTHOR, which Djinn sets to document for a
+  // document agent; lead otherwise.
+  string author = 7 [
+    (buf.validate.field).string.max_len = 100,
+    (djinn.v1.env) = "DJINN_AUTHOR"
+  ];
   // An identifier of your own for this request: sent again, after an interruption, it returns the discussion opened
   // the first time rather than opening another.
   string request_id = 8 [(buf.validate.field).string.max_len = 200];
+  // What the discussion is for: a comment, the default, or a request for a change, which the document agent answers
+  // with a proposal.
+  TilasmThreadKind kind = 9 [(buf.validate.field).enum.defined_only = true];
 }
 
 message TilasmServiceCommentResponse {
@@ -666,8 +690,12 @@ message TilasmServiceReplyRequest {
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 20000
   ];
-  // Who writes it: your task's code (W12) for a worker; lead by default.
-  string author = 3 [(buf.validate.field).string.max_len = 100];
+  // Who writes it: your task's code (W12) for a worker; by default $DJINN_AUTHOR, which Djinn sets to document for a
+  // document agent; lead otherwise.
+  string author = 3 [
+    (buf.validate.field).string.max_len = 100,
+    (djinn.v1.env) = "DJINN_AUTHOR"
+  ];
   // An identifier of your own for this request: sent again, it returns the discussion with the message written the
   // first time rather than writing it twice.
   string request_id = 4 [(buf.validate.field).string.max_len = 200];
@@ -720,8 +748,12 @@ message TilasmServiceProposeRequest {
   bool delete = 9;
   // Why, in a few words, for the developer.
   string note = 10 [(buf.validate.field).string.max_len = 20000];
-  // Who proposes it: your task's code (W12) for a worker; lead by default.
-  string author = 11 [(buf.validate.field).string.max_len = 100];
+  // Who proposes it: your task's code (W12) for a worker; by default $DJINN_AUTHOR, which Djinn sets to document for
+  // a document agent; lead otherwise.
+  string author = 11 [
+    (buf.validate.field).string.max_len = 100,
+    (djinn.v1.env) = "DJINN_AUTHOR"
+  ];
   // An identifier of your own for this request: sent again, it returns the proposal made the first time rather than
   // proposing it twice.
   string request_id = 12 [(buf.validate.field).string.max_len = 200];

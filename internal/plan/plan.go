@@ -56,7 +56,9 @@ type options struct {
 	show     func(wishID, tilasmID string) bool
 	url      func(id string) string
 	enlight  []func(context.Context, *planv1.Question, string)
-	clock    func() time.Time
+	// discussed are called with a discussion once the developer wrote in it.
+	discussed []func(context.Context, *planv1.TilasmThread)
+	clock     func() time.Time
 }
 
 // WithClock gives the tilasms a clock other than the machine's: a test moves it, to see a save rewrite the latest
@@ -148,7 +150,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewInboxServiceHandler(&Inbox{Wishes: wishes}, opt)
 	out[p] = h
-	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url, Now: o.clock}
+	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url, Now: o.clock, Discussed: o.discussed}
 	p, h = planv1connect.NewTilasmServiceHandler(tilasms, opt)
 	out[p] = h
 	out[server.TilasmPrefix] = tilasms.Files()

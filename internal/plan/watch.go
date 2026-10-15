@@ -131,6 +131,10 @@ func (ws *watchers) changed(ms []proto.Message) {
 		case *planv1.Task:
 			// Whether Djinn proposes to grant the wish follows its tasks.
 			changes = append(changes, watched{m.GetWishId(), planv1.Change_CHANGE_TASK, m.GetId()})
+			if m.GetRole() == planv1.TaskRole_TASK_ROLE_DOCUMENT {
+				// Whether the document agent works on a discussion shows on its tilasm (TilasmThread.agent_pending).
+				changes = append(changes, watched{m.GetWishId(), planv1.Change_CHANGE_TILASM, ""})
+			}
 		case *planv1.Question:
 			// And its questions.
 			changes = append(changes, watched{m.GetWishId(), planv1.Change_CHANGE_QUESTION, m.GetId()},

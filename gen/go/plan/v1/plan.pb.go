@@ -549,6 +549,10 @@ const (
 	// Djinn started it once the developer asked to know more about Task.question ("Enlighten me"): it reads, then
 	// revises the question so that it waits for the developer again.
 	TaskRole_TASK_ROLE_INVESTIGATOR TaskRole = 2
+	// The document agent of a Markdown tilasm (Task.tilasm_id): Djinn starts it, or gives it a new turn of its session,
+	// when the developer writes in a discussion of the tilasm. It reads, replies, proposes changes and tells the lead
+	// what matters for the wish; it never edits a file, nor accepts a change.
+	TaskRole_TASK_ROLE_DOCUMENT TaskRole = 3
 )
 
 // Enum value maps for TaskRole.
@@ -557,11 +561,13 @@ var (
 		0: "TASK_ROLE_UNSPECIFIED",
 		1: "TASK_ROLE_CONVERTER",
 		2: "TASK_ROLE_INVESTIGATOR",
+		3: "TASK_ROLE_DOCUMENT",
 	}
 	TaskRole_value = map[string]int32{
 		"TASK_ROLE_UNSPECIFIED":  0,
 		"TASK_ROLE_CONVERTER":    1,
 		"TASK_ROLE_INVESTIGATOR": 2,
+		"TASK_ROLE_DOCUMENT":     3,
 	}
 )
 
@@ -3681,8 +3687,9 @@ type Task struct {
 	// do. Empty while a box without needs is unchecked (work is left), when every box is checked, and for a file
 	// without a Done-when section.
 	ProofNeeds []*ProofNeed `protobuf:"bytes,43,rep,name=proof_needs,json=proofNeeds,proto3" json:"proof_needs,omitempty"`
-	// What Djinn started the task for, on a question of the wish; none for a task the lead or the developer spawned. A
-	// question worker takes no slot of the machine and runs in its project's folder, reading.
+	// What Djinn started the task for, on a question or a tilasm of the wish; none for a task the lead or the developer
+	// spawned. A question worker or a document agent takes no slot of the machine and runs in its project's folder,
+	// reading.
 	Role TaskRole `protobuf:"varint,44,opt,name=role,proto3,enum=plan.v1.TaskRole" json:"role,omitempty"`
 	// The code of the question a question worker works on (Q52); empty for any other task.
 	Question string `protobuf:"bytes,45,opt,name=question,proto3" json:"question,omitempty"`
@@ -3691,7 +3698,10 @@ type Task struct {
 	Review *TaskReview `protobuf:"bytes,46,opt,name=review,proto3" json:"review,omitempty"`
 	// The planned task waits for the machine alone: no slot is free, or the machine is under pressure. djinn task
 	// start starts it anyway.
-	MachineWait   bool `protobuf:"varint,47,opt,name=machine_wait,json=machineWait,proto3" json:"machine_wait,omitempty"`
+	MachineWait bool `protobuf:"varint,47,opt,name=machine_wait,json=machineWait,proto3" json:"machine_wait,omitempty"`
+	// For a document agent (TASK_ROLE_DOCUMENT): the Markdown tilasm it answers on, by identifier; empty for any other
+	// task.
+	TilasmId      string `protobuf:"bytes,48,opt,name=tilasm_id,json=tilasmId,proto3" json:"tilasm_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4053,6 +4063,13 @@ func (x *Task) GetMachineWait() bool {
 		return x.MachineWait
 	}
 	return false
+}
+
+func (x *Task) GetTilasmId() string {
+	if x != nil {
+		return x.TilasmId
+	}
+	return ""
 }
 
 // TaskReview is what a review worker reviews: work its worker left in its worktree without committing it.
@@ -15694,7 +15711,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\routput_tokens\x18\x02 \x01(\x03R\foutputTokens\x12*\n" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
-	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\xc8\r\n" +
+	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\xe5\r\n" +
 	"\x04Task\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1d\n" +
@@ -15754,7 +15771,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04role\x18, \x01(\x0e2\x11.plan.v1.TaskRoleR\x04role\x12#\n" +
 	"\bquestion\x18- \x01(\tB\a\xbaH\x04r\x02\x18@R\bquestion\x12+\n" +
 	"\x06review\x18. \x01(\v2\x13.plan.v1.TaskReviewR\x06review\x12!\n" +
-	"\fmachine_wait\x18/ \x01(\bR\vmachineWait:\x13\xd2\xf3\x18\x0f\n" +
+	"\fmachine_wait\x18/ \x01(\bR\vmachineWait\x12\x1b\n" +
+	"\ttilasm_id\x180 \x01(\tR\btilasmId:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"A\n" +
 	"\n" +
@@ -16613,11 +16631,12 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x18TASK_ACCESS_EDIT_REFUSED\x10\x06\x12\x19\n" +
 	"\x15TASK_ACCESS_WISH_EDIT\x10\a\x12\x19\n" +
 	"\x15TASK_ACCESS_WISH_AUTO\x10\b\x12\x15\n" +
-	"\x11TASK_ACCESS_DJINN\x10\t*Z\n" +
+	"\x11TASK_ACCESS_DJINN\x10\t*r\n" +
 	"\bTaskRole\x12\x19\n" +
 	"\x15TASK_ROLE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13TASK_ROLE_CONVERTER\x10\x01\x12\x1a\n" +
-	"\x16TASK_ROLE_INVESTIGATOR\x10\x02*\x8e\x01\n" +
+	"\x16TASK_ROLE_INVESTIGATOR\x10\x02\x12\x16\n" +
+	"\x12TASK_ROLE_DOCUMENT\x10\x03*\x8e\x01\n" +
 	"\bProvider\x12\x18\n" +
 	"\x14PROVIDER_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fPROVIDER_CLAUDE\x10\x01\x12\x11\n" +

@@ -173,7 +173,7 @@ func (t *Tilasms) Comment(
 	now := t.now()
 	thread := &planv1.TilasmThread{
 		Id: store.NewID(), WishId: tilasm.GetWishId(), TilasmId: tilasm.GetId(), Anchor: anchor,
-		CreateTime: now, UpdateTime: now, RequestId: m.GetRequestId(),
+		CreateTime: now, UpdateTime: now, RequestId: m.GetRequestId(), Kind: ThreadKind(&planv1.TilasmThread{Kind: m.GetKind()}),
 		Messages: []*planv1.TilasmMessage{{
 			Id: store.NewID(), Author: cmp.Or(m.GetAuthor(), defaultAuthor), Text: m.GetText(), CreateTime: now,
 			RequestId: m.GetRequestId(),
@@ -190,6 +190,9 @@ func (t *Tilasms) Comment(
 	})
 	if err != nil && !errors.Is(err, errRepeated) {
 		return nil, err
+	}
+	if err == nil {
+		t.discussedBy(ctx, thread, thread.GetMessages()[0].GetAuthor())
 	}
 	fillThread(r, thread)
 	return connect.NewResponse(&planv1.TilasmServiceCommentResponse{Thread: thread}), nil
@@ -248,6 +251,9 @@ func (t *Tilasms) Reply(
 	})
 	if err != nil && !errors.Is(err, errRepeated) {
 		return nil, err
+	}
+	if err == nil {
+		t.discussedBy(ctx, thread, cmp.Or(m.GetAuthor(), defaultAuthor))
 	}
 	fillThread(r, thread)
 	return connect.NewResponse(&planv1.TilasmServiceReplyResponse{Thread: thread}), nil
@@ -567,6 +573,9 @@ func (t *Tilasms) Discussions(
 			p = r.resolve(proposal.GetAnchor(), true) // Ordered by its passage still, when it is there.
 		}
 		at[proposal.GetId()] = position(p)
+	}
+	if err := fillAgentPending(ctx, t.Store, tilasm.GetWishId(), tilasm.GetId(), threads); err != nil {
+		return nil, Status(err)
 	}
 	slices.SortStableFunc(threads, func(a, b *planv1.TilasmThread) int { return cmp.Compare(at[a.GetId()], at[b.GetId()]) })
 	slices.SortStableFunc(proposals, func(a, b *planv1.TilasmProposal) int {

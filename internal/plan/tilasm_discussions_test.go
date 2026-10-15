@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -461,6 +462,58 @@ func TestBriefDiscussions(t *testing.T) {
 		"you never accept a proposal", "`djinn doc context <code> --thread <thread>`", "--request-id"} {
 		if !strings.Contains(brief.Stable, want) {
 			t.Errorf("the rules lack %q", want)
+		}
+	}
+}
+
+// TestDiscussedByDeveloper: only a message the developer commits calls the Discussed hooks, once, after the write: a
+// request sent again, or a message by the lead, the document agent or a worker, calls none. A comment is a comment
+// unless it says it is a request.
+func TestDiscussedByDeveloper(t *testing.T) {
+	ctx := t.Context()
+	var got []string
+	c := serve(t, WithHome(t.TempDir()), WithDiscussed(func(_ context.Context, thread *planv1.TilasmThread) {
+		msgs := thread.GetMessages()
+		got = append(got, thread.GetKind().String()+" "+msgs[len(msgs)-1].GetText())
+	}))
+	wish := c.wish(t)
+	newDocument(t, c, wish, discussed)
+	comment := func(author, text, request string, kind planv1.TilasmThreadKind) *planv1.TilasmThread {
+		t.Helper()
+		res, err := c.tilasms.Comment(ctx, connect.NewRequest(&planv1.TilasmServiceCommentRequest{
+			Tilasm: ref("L01"), Quote: "The end.", Text: text, Author: author, RequestId: request, Kind: kind,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetThread()
+	}
+	reply := func(thread, author, text string) {
+		t.Helper()
+		if _, err := c.tilasms.Reply(ctx, connect.NewRequest(&planv1.TilasmServiceReplyRequest{
+			Thread: thread, Author: author, Text: text,
+		})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	asked := comment("developer", "Say more", "r1", planv1.TilasmThreadKind_TILASM_THREAD_KIND_REQUEST)
+	comment("developer", "Say more", "r1", planv1.TilasmThreadKind_TILASM_THREAD_KIND_REQUEST) // Sent again.
+	note := comment("", "The lead's note", "", planv1.TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED)
+	comment(DocumentAuthor, "The agent's note", "", planv1.TilasmThreadKind_TILASM_THREAD_KIND_COMMENT)
+	reply(asked.GetId(), DocumentAuthor, "Proposed.")
+	reply(asked.GetId(), "W03", "Seen.")
+	reply(note.GetId(), "Developer", "Why?")
+	want := []string{"TILASM_THREAD_KIND_REQUEST Say more", "TILASM_THREAD_KIND_COMMENT Why?"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("hooks called with %q, want %q", got, want)
+	}
+	if note.GetKind() != planv1.TilasmThreadKind_TILASM_THREAD_KIND_COMMENT {
+		t.Errorf("a comment that says nothing: kind %v", note.GetKind())
+	}
+	// No document agent: nothing pending.
+	for _, thread := range discussions(t, c, "L01").GetThreads() {
+		if thread.GetAgentPending() {
+			t.Errorf("discussion %s pending without an agent", thread.GetId())
 		}
 	}
 }
