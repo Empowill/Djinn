@@ -1,0 +1,38 @@
+<!doctype html>
+<!--
+  The document a live HTML block of a tilasm runs in (src/tilasm-html-view.tsx). The page loads it by its address, in a
+  frame sandboxed with scripts only: an opaque origin, nothing of Djinn's to read or call. A srcdoc frame would inherit
+  the page's policy, which runs no inline script (src/renderer-policy.ts); this document has its own, which runs inline
+  scripts and styles and loads nothing: no network, images and fonts from data: addresses only.
+  It waits for the page's one message, the block's whole document, and writes it in place of itself.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+  </head>
+  <body>
+    <script>
+      (() => {
+        // Opened anywhere but in its sandbox, it does nothing.
+        if (self.origin !== "null" || parent === self) return;
+        let written = false;
+        addEventListener("message", (event) => {
+          const message = event.data;
+          if (written || event.source !== parent || !message) return;
+          if (message.type !== "djinn:html-live-render") return;
+          if (typeof message.document !== "string") return;
+          written = true;
+          document.open();
+          document.write(message.document);
+          document.close();
+        });
+        parent.postMessage({ type: "djinn:html-live-ready" }, "*");
+      })();
+    </script>
+  </body>
+</html>

@@ -11,6 +11,7 @@ import {
   Bold,
   ChevronDown,
   Code,
+  CodeXml,
   GripVertical,
   Heading1,
   Heading2,
@@ -42,6 +43,8 @@ import {
 import { createPortal } from "react-dom";
 
 import { t } from "./i18n";
+import { HTML_LIVE } from "./tilasm-html";
+import { htmlLiveView, openNextBlock } from "./tilasm-html-view";
 import { tilasmExtensions } from "./tilasm-markdown";
 
 // useTilasmEditor makes the editor of a document, read only until told otherwise. onEdit hears each edit the
@@ -56,6 +59,7 @@ export function useTilasmEditor(onEdit: () => void): Editor | null {
       extensions: tilasmExtensions({
         placeholder: t("tilasms.placeholder"),
         emptyNodeClass: "tilasm-empty-block",
+        htmlView: htmlLiveView,
       }),
       editable: false,
       immediatelyRender: false,
@@ -85,7 +89,8 @@ type BlockId =
   | "blockquote"
   | "codeBlock"
   | "horizontalRule"
-  | "table";
+  | "table"
+  | "htmlLive";
 
 interface BlockItem {
   id: BlockId;
@@ -163,6 +168,12 @@ function blockItems(): BlockItem[] {
       words: "table grid",
       icon: icon(Table),
     },
+    {
+      id: "htmlLive",
+      label: t("tilasms.block.html"),
+      words: "html interactive live chart widget embed simulator",
+      icon: icon(CodeXml),
+    },
   ];
 }
 
@@ -222,6 +233,7 @@ function run(chain: Chain, id: BlockId) {
   if (id === "horizontalRule") chain.setHorizontalRule();
   if (id === "table")
     chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true });
+  if (id === "htmlLive") chain.insertContent({ type: HTML_LIVE });
   chain.run();
 }
 
@@ -627,7 +639,10 @@ function SelectionBar({
             >
               {items
                 .filter(
-                  (item) => item.id !== "horizontalRule" && item.id !== "table",
+                  (item) =>
+                    item.id !== "horizontalRule" &&
+                    item.id !== "table" &&
+                    item.id !== "htmlLive",
                 )
                 .map((item) => (
                   <button
@@ -703,6 +718,8 @@ function SlashMenu({ editor }: { editor: Editor }) {
       const at = live.current.slash;
       if (!at) return;
       setSlash(null);
+      // A live HTML block opens on its source, to be written at once.
+      if (item.id === "htmlLive") openNextBlock(editor);
       run(
         editor.chain().focus().deleteRange({ from: at.from, to: at.to }),
         item.id,

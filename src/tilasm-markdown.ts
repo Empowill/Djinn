@@ -1,22 +1,30 @@
 // The Markdown of a tilasm, as the window's editor reads and writes it (src/tilasms.tsx). Markdown is the reference
 // both the developer and the agents share: the editor (Tiptap, its Markdown extension) parses it in and writes it back
-// out. What the editor cannot keep (raw HTML, images, footnotes, or text a round trip changes) is found before any
+// out. What the editor cannot keep (raw HTML outside a live block, images, footnotes, or text a round trip changes) is found before any
 // edit, so a document is never saved through a lossy conversion without the developer asking for it.
-import type { AnyExtension } from "@tiptap/core";
+import type { AnyExtension, NodeViewRenderer } from "@tiptap/core";
 import { TableKit } from "@tiptap/extension-table";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Placeholder } from "@tiptap/extensions";
 import { Markdown, type MarkdownManager } from "@tiptap/markdown";
 import StarterKit from "@tiptap/starter-kit";
 
+import { HtmlLive } from "./tilasm-html";
+
 // tilasmExtensions are the blocks and marks the editor offers, each one written back to Markdown: paragraphs,
 // headings, lists (task lists too), quotes, code, rules, hard breaks, links, bold, italic, strike, inline code and GFM
-// tables. No underline: Markdown has none.
-// placeholder is what an empty block says, emptyNodeClass the class it takes then (the editor's stylesheet styles it).
+// tables, and live HTML blocks (src/tilasm-html.ts). No underline: Markdown has none.
+// placeholder is what an empty block says, emptyNodeClass the class it takes then (the editor's stylesheet styles it);
+// htmlView shows a live HTML block (the editor's frame), none in a Markdown manager without a page.
 export function tilasmExtensions({
   placeholder = "",
   emptyNodeClass = "",
-}: { placeholder?: string; emptyNodeClass?: string } = {}): AnyExtension[] {
+  htmlView = null,
+}: {
+  placeholder?: string;
+  emptyNodeClass?: string;
+  htmlView?: NodeViewRenderer | null;
+} = {}): AnyExtension[] {
   return [
     StarterKit.configure({
       underline: false,
@@ -32,6 +40,7 @@ export function tilasmExtensions({
     TaskItem.configure({ nested: true }),
     TableKit.configure({ table: { resizable: false } }),
     Placeholder.configure({ placeholder, emptyNodeClass }),
+    HtmlLive.configure({ view: htmlView }),
     Markdown.configure({ indentation: { style: "space", size: 2 } }),
   ];
 }

@@ -378,6 +378,57 @@ body.tilasm-dragging {
   user-select: none;
 }
 
+/* A live HTML block (tilasm-html-view.ts): it blends into the text, no border nor background. A thin margin around
+   the frame is where a click selects it whole; selected, an outline on all sides shows it. */
+.tilasm-prose .tilasm-html {
+  padding: 4px 0;
+  border-radius: 4px;
+}
+.tilasm-prose .tilasm-html.is-selected {
+  outline: 1px solid var(--line-strong);
+  outline-offset: 2px;
+}
+.tilasm-html-frame {
+  display: block;
+  width: 100%;
+  height: 0;
+  border: 0;
+  background: transparent;
+}
+/* Hidden until it has drawn and said its height: no flash of an empty or opaque frame. */
+.tilasm-html-frame.is-drawing {
+  visibility: hidden;
+}
+/* A dragged block passes over a frame: the page, not the frame, follows the pointer. */
+body.tilasm-dragging .tilasm-html-frame {
+  pointer-events: none;
+}
+.tilasm-prose .tilasm-html-empty {
+  margin: 0;
+  color: var(--muted-dim);
+  cursor: default;
+}
+.tilasm-html-source {
+  display: block;
+  width: 100%;
+  min-height: 4em;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control, 7px);
+  outline: none;
+  background: var(--surface-soft);
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.55;
+  tab-size: 2;
+  resize: none;
+  overflow: hidden;
+}
+.tilasm-html-source:focus {
+  border-color: var(--line-strong);
+}
+
 /* The bar by the selection, and the menus of blocks: small floating windows. */
 .tilasm-bar,
 .tilasm-menu {

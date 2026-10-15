@@ -13,7 +13,8 @@ export {
   tilasmLoss,
   splitTitle,
   joinTitle,
-} from "@/src/tilasm-markdown.ts";`,
+} from "@/src/tilasm-markdown.ts";
+export { isLiveFence, liveFence } from "@/src/tilasm-html.ts";`,
 );
 
 const manager = new s.MarkdownManager({ extensions: s.tilasmExtensions() });
@@ -77,4 +78,47 @@ test("the title line comes out of the body when the first heading says it, and g
   assert.equal(s.joinTitle(true, "Title", ""), "# Title\n");
   assert.equal(s.joinTitle(false, "Title", "Body"), "Body");
   assert.equal(s.joinTitle(true, " ", "Body"), "Body");
+});
+
+test("a live HTML block keeps its source byte for byte, and an html fence stays a code example", () => {
+  const bodies = [
+    '<div id="chart"></div>\n<script>\n\tconst data = [1, 2, 3];\n  document.getElementById("chart").textContent = `n=${data.length}`;\n</script>',
+    "<p>a</p>\n\n\n<p>b</p>\n",
+    "<p>&amp; &lt;x&gt; *not emphasis* _nor this_</p>",
+    "<style>p { color: var(--accent); }</style>\n<p>```fences``` inside</p>",
+    "",
+  ];
+  for (const body of bodies) {
+    const markdown = `Before\n\n${s.liveFence(body)}\n\nAfter`;
+    const block = manager
+      .parse(markdown)
+      .content.find((node) => node.type === "htmlLive");
+    assert.ok(block, markdown);
+    assert.equal(block.attrs.source, body);
+    assert.equal(roundTrip(markdown), markdown);
+    assert.deepEqual(s.tilasmLoss(manager, markdown), [], markdown);
+  }
+  // The form agents write: a fence whose info string is `html live`; a tilde fence reads alike.
+  assert.equal(
+    manager.parse("```html live\n<b>x</b>\n```").content[0].type,
+    "htmlLive",
+  );
+  assert.equal(
+    manager.parse("~~~html live\n<b>x</b>\n~~~").content[0].attrs.source,
+    "<b>x</b>",
+  );
+  // An html fence is an example: a code block, never run.
+  const example = manager.parse("```html\n<b>x</b>\n```").content[0];
+  assert.equal(example.type, "codeBlock");
+  assert.equal(example.attrs.language, "html");
+  assert.equal(roundTrip("```html\n<b>x</b>\n```"), "```html\n<b>x</b>\n```");
+  // Raw HTML outside a live block is still named.
+  assert.deepEqual(
+    s.tilasmLoss(manager, "```html live\n<b>x</b>\n```\n\n<div>raw</div>"),
+    ["html"],
+  );
+  assert.ok(s.isLiveFence("```html live"));
+  assert.ok(s.isLiveFence("````HTML  Live"));
+  assert.ok(!s.isLiveFence("```html"));
+  assert.ok(!s.isLiveFence("```html lively"));
 });
