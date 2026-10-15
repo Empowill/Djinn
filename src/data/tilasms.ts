@@ -32,16 +32,33 @@ export interface DropEntry {
   };
 }
 
-// entriesOf takes the entries of a drop at once: the browser empties its items once the drop event returns.
-export function entriesOf(data: DataTransfer | null): DropEntry[] {
-  return [...(data?.items ?? [])]
-    .filter((item) => item.kind === "file")
-    .map((item) => item.webkitGetAsEntry() as DropEntry | null)
-    .filter((entry): entry is DropEntry => !!entry);
+// entriesFromFiles wraps Files chosen with an <input type="file"> or a drop without directory entries.
+export function entriesFromFiles(
+  files: Iterable<File> | ArrayLike<File> | null | undefined,
+): DropEntry[] {
+  if (!files) return [];
+  return Array.from(files, (file) => ({
+    name: file.name,
+    isFile: true,
+    isDirectory: false,
+    file: (ok: (blob: Blob) => void) => ok(file),
+  }));
 }
 
-// readDrop reads what was dropped: one folder, its files under it; one file, itself (a .zip); several, side by side.
-// Hidden files (.DS_Store, .git) stay out.
+// entriesOf takes the entries of a drop at once: the browser empties its items once the drop event returns.
+export function entriesOf(data: DataTransfer | null): DropEntry[] {
+  const entries = [...(data?.items ?? [])]
+    .filter((item) => item.kind === "file")
+    .map((item) => item.webkitGetAsEntry?.() as DropEntry | null)
+    .filter((entry): entry is DropEntry => !!entry);
+  if (entries.length > 0) return entries;
+  return entriesFromFiles(data?.files);
+}
+
+const isHTMLName = (name: string) => /\.html?$/i.test(name);
+
+// readDrop reads what was dropped: one folder, its files under it; one .html file, as index.html; one .zip, itself;
+// several files, side by side. Hidden files (.DS_Store, .git) stay out.
 export async function readDrop(entries: DropEntry[]): Promise<Dropped> {
   const files: DroppedFile[] = [];
   let size = 0;
@@ -64,6 +81,10 @@ export async function readDrop(entries: DropEntry[]): Promise<Dropped> {
   if (entries.length === 1 && first?.isDirectory) {
     await add(first, "");
     return { name: first.name, files };
+  }
+  if (entries.length === 1 && first?.isFile && isHTMLName(first.name)) {
+    await add(first, "index.html");
+    return { name: first.name.replace(/\.html?$/i, ""), files };
   }
   for (const entry of entries) await add(entry, entry.name);
   return { name: entries.length === 1 ? first!.name : "", files };

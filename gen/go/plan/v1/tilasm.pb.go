@@ -461,12 +461,12 @@ func (x *TilasmFile) GetContent() []byte {
 
 type TilasmServicePutRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The folder that holds the index.html, or a .zip of it; a relative path starts from the current directory.
+	// The folder that holds the index.html, an .html file, or a .zip of it; a relative path starts from the current directory.
 	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
 	// The wish it explains.
 	Wish string `protobuf:"bytes,2,opt,name=wish,proto3" json:"wish,omitempty"`
-	// Title, in a line; by default the <title> of its index.html, or the folder's name. A new version keeps the title
-	// it had unless one is given.
+	// Title, in a line; by default the <title> of its index.html, or the folder's or file's name. A new version keeps the
+	// title it had unless one is given.
 	Title string `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
 	// The tilasm to put again, by its code (L01): a new version of it. Without it, a new tilasm with the next code.
 	Code string `protobuf:"bytes,4,opt,name=code,proto3" json:"code,omitempty"`

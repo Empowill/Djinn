@@ -55,8 +55,8 @@ const (
 
 // TilasmServiceClient is a client for the plan.v1.TilasmService service.
 type TilasmServiceClient interface {
-	// Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new
-	// version of that one, its links unchanged.
+	// Put a folder that holds an index.html, an .html file, or a .zip of one, as a tilasm of the wish: a new one, or
+	// with --code a new version of that one, its links unchanged.
 	Put(context.Context, *connect.Request[v1.TilasmServicePutRequest]) (*connect.Response[v1.TilasmServicePutResponse], error)
 	// List the tilasms, of a wish or of all; --search keeps those whose code, title or text holds every word.
 	List(context.Context, *connect.Request[v1.TilasmServiceListRequest]) (*connect.Response[v1.TilasmServiceListResponse], error)
@@ -73,8 +73,8 @@ type TilasmServiceClient interface {
 	Export(context.Context, *connect.Request[v1.TilasmServiceExportRequest]) (*connect.Response[v1.TilasmServiceExportResponse], error)
 	// Import a tilasm's .zip into a wish: a new version of the same tilasm when the wish has it, else a new tilasm.
 	Import(context.Context, *connect.Request[v1.TilasmServiceImportRequest]) (*connect.Response[v1.TilasmServiceImportResponse], error)
-	// Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
-	// export wrote is imported, as Import; any other is put, as Put.
+	// Put the files the window read, dropped on the Tilasms tab: a folder's files, an .html file, or a .zip. A .zip that
+	// djinn tilasm export wrote is imported, as Import; any other is put, as Put.
 	PutData(context.Context, *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error)
 }
 
@@ -209,8 +209,8 @@ func (c *tilasmServiceClient) PutData(ctx context.Context, req *connect.Request[
 
 // TilasmServiceHandler is an implementation of the plan.v1.TilasmService service.
 type TilasmServiceHandler interface {
-	// Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new
-	// version of that one, its links unchanged.
+	// Put a folder that holds an index.html, an .html file, or a .zip of one, as a tilasm of the wish: a new one, or
+	// with --code a new version of that one, its links unchanged.
 	Put(context.Context, *connect.Request[v1.TilasmServicePutRequest]) (*connect.Response[v1.TilasmServicePutResponse], error)
 	// List the tilasms, of a wish or of all; --search keeps those whose code, title or text holds every word.
 	List(context.Context, *connect.Request[v1.TilasmServiceListRequest]) (*connect.Response[v1.TilasmServiceListResponse], error)
@@ -227,8 +227,8 @@ type TilasmServiceHandler interface {
 	Export(context.Context, *connect.Request[v1.TilasmServiceExportRequest]) (*connect.Response[v1.TilasmServiceExportResponse], error)
 	// Import a tilasm's .zip into a wish: a new version of the same tilasm when the wish has it, else a new tilasm.
 	Import(context.Context, *connect.Request[v1.TilasmServiceImportRequest]) (*connect.Response[v1.TilasmServiceImportResponse], error)
-	// Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
-	// export wrote is imported, as Import; any other is put, as Put.
+	// Put the files the window read, dropped on the Tilasms tab: a folder's files, an .html file, or a .zip. A .zip that
+	// djinn tilasm export wrote is imported, as Import; any other is put, as Put.
 	PutData(context.Context, *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error)
 }
 

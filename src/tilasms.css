@@ -1,5 +1,5 @@
-/* The Tilasms tab: a search and the drop's hint on a line, the tilasm open in its frame, then a row per tilasm. The
-   whole tab takes a drop: it shows it with the accent's outline. */
+/* The Tilasms tab: a search and the drop zone on a line, a single left-aligned column of regular cards (newest first),
+   and the open tilasm in its frame. The whole tab and the drop zone take a drop. */
 .tilasms {
   border-radius: 8px;
   outline: 2px dashed transparent;
@@ -12,14 +12,14 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 16px;
+  gap: 8px 12px;
   margin-bottom: 12px;
 }
 .tilasm-search {
   position: relative;
   display: flex;
-  flex: 1 1 280px;
-  max-width: 720px;
+  flex: 1 1 260px;
+  max-width: 460px;
   align-items: center;
   color: var(--muted);
 }
@@ -37,9 +37,28 @@
 .tilasm-drop {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--surface);
   color: var(--muted);
   font-size: var(--font-size-body);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease;
+}
+.tilasm-drop input {
+  display: none;
+}
+.tilasm-drop:hover,
+.tilasm-drop.dropping,
+.tilasms.dropping .tilasm-drop {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  color: var(--text);
 }
 .tilasm-view {
   margin-bottom: 14px;
@@ -76,17 +95,19 @@
   padding: 0;
   list-style: none;
 }
-/* The rows share the width in columns; on a wide view, the tilasm open stands beside them, taller. */
+/* A single column of uniform cards on the far left, ready to open; when a tilasm is open on a wide view, the frame
+   stands to the right of the column. */
 .tilasm-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr));
-  column-gap: 12px;
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 460px;
 }
-@container main (min-width: 1400px) {
+@container main (min-width: 960px) {
   .tilasms.has-open {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    grid-template-columns: minmax(300px, 460px) minmax(0, 1fr);
     column-gap: 16px;
     align-items: start;
   }
@@ -96,6 +117,7 @@
   .tilasms.has-open > .tilasm-view {
     grid-column: 2;
     grid-row: 2;
+    margin-bottom: 0;
   }
   .tilasms.has-open > :not(.tilasm-bar, .tilasm-view) {
     grid-column: 1;
@@ -106,8 +128,9 @@
   }
 }
 .tilasm-row {
-  margin-bottom: 8px;
-  padding: 8px 8px 8px 14px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -115,7 +138,18 @@
 .tilasm-row.open {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
 }
-.tilasm-line,
+.tilasm-line {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 44px;
+}
+.tilasm-line > .tilasm-code {
+  grid-column: 1;
+  grid-row: 1;
+}
 .tilasm-history li {
   display: flex;
   flex-wrap: wrap;
@@ -131,16 +165,37 @@
   margin-left: 6px;
 }
 .tilasm-title {
+  grid-column: 2 / span 2;
+  grid-row: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
   text-align: left;
 }
 .tilasm-meta,
 .tilasm-cites {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
   font-size: var(--font-size-body);
 }
+.tilasm-meta {
+  grid-column: 1 / span 2;
+  grid-row: 2;
+}
+.tilasm-cites {
+  grid-column: 3;
+  grid-row: 2;
+}
 .tilasm-actions {
+  grid-column: 4;
+  grid-row: 1 / span 2;
   display: inline-flex;
+  align-items: center;
   margin-left: auto;
 }
 .tilasm-history {

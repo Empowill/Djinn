@@ -259,6 +259,33 @@ func TestTilasmPutReplaceHistoryRestore(t *testing.T) {
 	}
 }
 
+func TestTilasmPutHTMLFile(t *testing.T) {
+	c := serve(t, WithHome(t.TempDir()))
+	wish := c.wish(t)
+
+	dir := t.TempDir()
+	withTitle := filepath.Join(dir, "architecture.html")
+	if err := os.WriteFile(withTitle, []byte(page("System architecture", "The lamp and the smoke.")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	first := putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: withTitle, Wish: wish}).GetTilasm()
+	if first.GetCode() != "L01" || first.GetTitle() != "System architecture" || first.GetVersions()[0].GetFiles() != 1 {
+		t.Fatalf("single .html with title = %v", first)
+	}
+	if got := getTilasm(t, c, "L01", 0); !slices.Equal(got.GetFiles(), []string{"index.html"}) || !strings.Contains(got.GetText(), "The lamp and the smoke.") {
+		t.Errorf("stored .html tilasm = %v", got)
+	}
+
+	withoutTitle := filepath.Join(dir, "quick-sketch.htm")
+	if err := os.WriteFile(withoutTitle, []byte("<!doctype html><p>Only a paragraph.</p>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	second := putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: withoutTitle, Wish: wish}).GetTilasm()
+	if second.GetCode() != "L02" || second.GetTitle() != "quick-sketch" || second.GetVersions()[0].GetFiles() != 1 {
+		t.Fatalf("single .htm without title = %v", second)
+	}
+}
+
 func TestTilasmSearch(t *testing.T) {
 	c := serve(t, WithHome(t.TempDir()))
 	wish := c.wish(t)

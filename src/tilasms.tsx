@@ -1,9 +1,10 @@
-// The Tilasms tab of a wish: the material that explains it (T25), a folder with an index.html kept in Djinn's data
-// folder. A row per tilasm, by code: its title, who made it, when, what it cites. One opens in a frame of its own,
-// served by Djinn at /tilasm/<id>/ with a policy of its own (internal/plan/tilasm_files.go): its scripts run, it reaches
-// no network and nothing of Djinn. A search finds words in the titles and the text, within the wish; "talisman" finds
-// them all. A row's history restores an earlier version; its export writes a .zip to the Downloads folder. A folder or
-// a .zip dropped on the tab becomes a tilasm, or the new version of the one a .zip exported.
+// The Tilasms tab of a wish: the material that explains it (T25), an .html file or a folder with an index.html kept in
+// Djinn's data folder. A regular card list in a single left column, newest first: its title, who made it, when, what it
+// cites. One opens in a frame of its own, served by Djinn at /tilasm/<id>/ with a policy of its own
+// (internal/plan/tilasm_files.go): its scripts run, it reaches no network and nothing of Djinn. A search finds words in
+// the titles and the text, within the wish; "talisman" finds them all. A row's history restores an earlier version; its
+// export writes a .zip to the Downloads folder. An .html file, a folder or a .zip dropped on the tab or chosen in the
+// drop zone becomes a tilasm, or the new version of the one a .zip exported.
 import {
   Download,
   FolderInput,
@@ -17,9 +18,17 @@ import { type DragEvent, useEffect, useState } from "react";
 import { Change, type Task } from "../gen/ts/plan/v1/plan_pb";
 import type { Tilasm } from "../gen/ts/plan/v1/tilasm_pb";
 import { message } from "./data/client";
+import { later } from "./data/decisions";
 import { useClients, useStore } from "./data/djinn";
+import { compareCodes } from "./data/flight";
 import { when } from "./data/format";
-import { type DropEntry, TooLarge, entriesOf, readDrop } from "./data/tilasms";
+import {
+  type DropEntry,
+  TooLarge,
+  entriesFromFiles,
+  entriesOf,
+  readDrop,
+} from "./data/tilasms";
 import { t } from "./i18n";
 import { memory } from "./usage";
 
@@ -29,6 +38,19 @@ import "./tilasms.css";
 export const tilasmAddress = (id: string) => `/tilasm/${id}/`;
 
 const latest = (tilasm: Tilasm) => tilasm.versions.at(-1)?.number ?? 0;
+
+const tilasmTime = (tilasm: Tilasm) => {
+  const last = tilasm.versions.at(-1)?.createTime;
+  if (tilasm.updateTime && last)
+    return later(tilasm.updateTime, last) <= 0 ? tilasm.updateTime : last;
+  return tilasm.updateTime ?? last ?? tilasm.createTime;
+};
+
+// newestTilasm orders tilasms from the most recent to the oldest.
+export const newestTilasm = (a: Tilasm, b: Tilasm): number =>
+  later(tilasmTime(a), tilasmTime(b)) ||
+  later(a.createTime, b.createTime) ||
+  compareCodes(b.code, a.code);
 
 export function TilasmsTab({
   wishId,
@@ -179,6 +201,7 @@ export function TilasmList({
     event.preventDefault();
     setOver(true);
   };
+  const sorted = [...tilasms].sort(newestTilasm);
   return (
     <div
       role="tabpanel"
@@ -208,10 +231,21 @@ export function TilasmList({
             onChange={(event) => onSearch(event.target.value)}
           />
         </label>
-        <span className="tilasm-drop">
-          <FolderInput size={13} />
-          {busy ? t("tilasms.putting") : t("tilasms.drop")}
-        </span>
+        <label className={`tilasm-drop ${over ? "dropping" : ""}`}>
+          <FolderInput size={14} />
+          <span>{busy ? t("tilasms.putting") : t("tilasms.drop")}</span>
+          <input
+            type="file"
+            accept=".html,.htm,.zip,text/html,application/zip"
+            disabled={busy}
+            aria-label={t("tilasms.drop")}
+            onChange={(event) => {
+              const entries = entriesFromFiles(event.target.files);
+              event.target.value = "";
+              if (entries.length) onDrop(entries);
+            }}
+          />
+        </label>
       </div>
       {open && (
         <section className="tilasm-view" aria-label={open.title}>
@@ -244,11 +278,11 @@ export function TilasmList({
       )}
       {count === 0 ? (
         <p className="muted-text">{t("tilasms.none")}</p>
-      ) : tilasms.length === 0 ? (
+      ) : sorted.length === 0 ? (
         <p className="muted-text">{t("tilasms.none_found", { search })}</p>
       ) : (
         <ul className="tilasm-list" aria-label={t("tabs.tilasms")}>
-          {tilasms.map((tilasm) => (
+          {sorted.map((tilasm) => (
             <li
               key={tilasm.id}
               id={`tilasm-${tilasm.id}`}
@@ -265,7 +299,7 @@ export function TilasmList({
                   {tilasm.title}
                 </button>
                 <span className="tilasm-meta">
-                  {tilasm.author} · {when(tilasm.updateTime)}
+                  {tilasm.author} · {when(tilasmTime(tilasm))}
                 </span>
                 {tilasm.cites.length > 0 && (
                   <span className="tilasm-cites">

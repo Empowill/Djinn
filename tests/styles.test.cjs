@@ -419,3 +419,33 @@ test("the sidebar section labels align with nav-item and the wish counter stays 
   assert.doesNotMatch(full, /background:\s*var\(--accent\)/);
   assert.doesNotMatch(review, /html\[data-theme="light"\]\s*\.nav-counter/);
 });
+
+// The Tilasms tab lays out a clear drop zone and a single left-aligned column of regular cards, with uniform 4-sided
+// borders on rounded elements.
+test("the Tilasms tab lays out a single left column of regular cards and a drop zone with uniform borders", () => {
+  const css = fs.readFileSync(path.join(root, "tilasms.css"), "utf8");
+  const rule = (selector) => {
+    const from = css.indexOf(selector + " {");
+    assert.ok(from >= 0, `${selector} has its rule`);
+    return css.slice(from, css.indexOf("}", from));
+  };
+  const drop = rule(".tilasm-drop");
+  assert.match(drop, /border:\s*1px dashed var\(--line\);/);
+  assert.match(drop, /border-radius:\s*8px;/);
+  assert.match(drop, /cursor:\s*pointer;/);
+  assert.doesNotMatch(drop, /border-(?:top|right|bottom|left)/);
+
+  const list = rule(".tilasm-list");
+  assert.match(list, /display:\s*flex;/);
+  assert.match(list, /flex-direction:\s*column;/);
+  assert.match(list, /max-width:\s*460px;/);
+
+  const row = rule(".tilasm-row");
+  assert.match(row, /border:\s*1px solid var\(--line\);/);
+  assert.match(row, /border-radius:\s*8px;/);
+  assert.doesNotMatch(row, /border-(?:top|right|bottom|left)/);
+
+  const open = rule(".tilasm-row.open");
+  assert.match(open, /border-color:/);
+  assert.doesNotMatch(open, /border-(?:top|right|bottom|left)/);
+});

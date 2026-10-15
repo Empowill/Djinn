@@ -88,8 +88,8 @@ message TilasmFile {
 service TilasmService {
   option (djinn.v1.alias) = "talisman";
 
-  // Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new
-  // version of that one, its links unchanged.
+  // Put a folder that holds an index.html, an .html file, or a .zip of one, as a tilasm of the wish: a new one, or
+  // with --code a new version of that one, its links unchanged.
   rpc Put(TilasmServicePutRequest) returns (TilasmServicePutResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -131,8 +131,8 @@ service TilasmService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
-  // export wrote is imported, as Import; any other is put, as Put.
+  // Put the files the window read, dropped on the Tilasms tab: a folder's files, an .html file, or a .zip. A .zip that
+  // djinn tilasm export wrote is imported, as Import; any other is put, as Put.
   rpc PutData(TilasmServicePutDataRequest) returns (TilasmServicePutDataResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -140,15 +140,15 @@ service TilasmService {
 }
 
 message TilasmServicePutRequest {
-  // The folder that holds the index.html, or a .zip of it; a relative path starts from the current directory.
+  // The folder that holds the index.html, an .html file, or a .zip of it; a relative path starts from the current directory.
   string path = 1 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_len = 4096
   ];
   // The wish it explains.
   string wish = 2 [(buf.validate.field).string.uuid = true];
-  // Title, in a line; by default the <title> of its index.html, or the folder's name. A new version keeps the title
-  // it had unless one is given.
+  // Title, in a line; by default the <title> of its index.html, or the folder's or file's name. A new version keeps the
+  // title it had unless one is given.
   string title = 3 [(buf.validate.field).string.max_len = 1000];
   // The tilasm to put again, by its code (L01): a new version of it. Without it, a new tilasm with the next code.
   string code = 4 [

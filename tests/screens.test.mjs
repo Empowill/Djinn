@@ -104,7 +104,7 @@ export {
   getUsageUnit,
   SpentLine,
 } from "@/src/usage.tsx";
-export { TilasmList } from "@/src/tilasms.tsx";
+export { TilasmList, newestTilasm } from "@/src/tilasms.tsx";
 export { AgentBlocks } from "@/src/agent-blocks.tsx";
 export { MarkdownBody } from "@/src/markdown-body.tsx";
 export { CopyButton } from "@/src/copy-command.tsx";
@@ -113,7 +113,11 @@ export * as dew from "@/e2e/report-question.ts";
 export { SafeSvg, sanitizeSvg } from "@/src/safe-svg.tsx";
 export { openDjinnLink, parseDjinnLink } from "@/src/data/links.ts";
 export { ConnectError, Code } from "@connectrpc/connect";
-export { readDrop } from "@/src/data/tilasms.ts";
+export {
+  entriesFromFiles,
+  entriesOf,
+  readDrop,
+} from "@/src/data/tilasms.ts";
 export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export { ConsumptionPanel, WorkerRow } from "@/src/consumption-panel.tsx";
 export { ResourceChart } from "@/src/resource-chart.tsx";
@@ -3694,7 +3698,7 @@ const tilasm = (id, code, title, extra = {}) => ({
   ...extra,
 });
 
-test("the Tilasms tab lists each tilasm with its code, title, author, date and what it cites, and opens one in a sandboxed frame", () => {
+test("the Tilasms tab lists each tilasm newest first with its code, title, author, date and what it cites, and opens one in a sandboxed frame", () => {
   const model = tilasm(
     "01a1223a-ae45-728f-8c37-c005eee91edb",
     "L01",
@@ -3731,9 +3735,17 @@ test("the Tilasms tab lists each tilasm with its code, title, author, date and w
     },
   );
   const flows = tilasm("01a1223a-ae45-728f-8c37-c005eee91edc", "L02", "Flows");
+  const recent = tilasm(
+    "01a1223a-ae45-728f-8c37-c005eee91edd",
+    "L03",
+    "Latest sketch",
+    {
+      updateTime: stamp("2026-10-09T13:00:00Z"),
+    },
+  );
   const props = {
-    tilasms: [model, flows],
-    count: 2,
+    tilasms: [flows, model, recent],
+    count: 3,
     codes: new Map([["t29", "T29"]]),
     search: "",
     onSearch() {},
@@ -3752,9 +3764,14 @@ test("the Tilasms tab lists each tilasm with its code, title, author, date and w
   );
   assert.match(
     html,
-    /Drop a folder with an index.html, or a .zip, to add a tilasm/,
+    /class="tilasm-drop ".*Drop an \.html file, a folder with an index\.html, or a \.zip — or click to choose a file/,
   );
-  // A row per tilasm, by code: its title opens it; who made it and when; what it cites, by code.
+  assert.match(
+    html,
+    /<input type="file" accept="\.html,\.htm,\.zip,text\/html,application\/zip"/,
+  );
+  // Sorted from newest to oldest: L03 (13:00), then L01 (v3 at 12:00), then L02 (10:00).
+  assert.ok(html.indexOf("L03") < html.indexOf("L01"));
   assert.ok(html.indexOf("L01") < html.indexOf("L02"));
   assert.match(
     html,
@@ -3768,6 +3785,34 @@ test("the Tilasms tab lists each tilasm with its code, title, author, date and w
   // Nothing open: no frame; the history folded.
   assert.doesNotMatch(html, /<iframe/);
   assert.doesNotMatch(html, /Restore this version/);
+
+  // The drop zone reacts on dragover and forwards files picked from the file input.
+  const picked = [];
+  const view = live(s.TilasmList, {
+    ...props,
+    onDrop: (entries) => picked.push(entries),
+  });
+  view.one("tilasms").onDragOver({
+    dataTransfer: { types: ["Files"] },
+    preventDefault() {},
+  });
+  assert.match(view.html(), /class="tilasm-drop dropping"/);
+  view.one("tilasms").onDragLeave({
+    currentTarget: { contains: () => false },
+    relatedTarget: null,
+  });
+  assert.doesNotMatch(view.html(), /dropping/);
+  const input = view
+    .all("input")
+    .find((node) => node.props.type === "file").props;
+  input.onChange({
+    target: {
+      files: [new File(["<h1>Lamp</h1>"], "lamp.html", { type: "text/html" })],
+      value: "lamp.html",
+    },
+  });
+  assert.equal(picked.length, 1);
+  assert.equal(picked[0][0].name, "lamp.html");
 
   // Open: a frame served by Djinn at the tilasm's address, scripts only, never Djinn's origin.
   const open = s.renderToStaticMarkup(
@@ -3833,7 +3878,7 @@ test("a wish's view has a Tilasms tab beside Tasks and Decisions, with its count
   );
 });
 
-test("a folder dropped on the Tilasms tab is read with its files by their paths in it, hidden files left out", async () => {
+test("a folder, an .html file or a .zip dropped on the Tilasms tab is read with its files, hidden files left out", async () => {
   const file = (name, text) => ({
     name,
     isFile: true,
@@ -3866,6 +3911,25 @@ test("a folder dropped on the Tilasms tab is read with its files by their paths 
       ["index.html", "<p>model</p>"],
       ["css/a.css", "p{}"],
     ],
+  );
+  const htmlFile = await s.readDrop([
+    file("diagram.html", "<title>Lamp</title><p>diagram</p>"),
+  ]);
+  assert.equal(htmlFile.name, "diagram");
+  assert.deepEqual(
+    htmlFile.files.map((f) => [f.path, new TextDecoder().decode(f.content)]),
+    [["index.html", "<title>Lamp</title><p>diagram</p>"]],
+  );
+  const htmFile = await s.readDrop(
+    s.entriesOf({
+      items: [],
+      files: [new File(["<p>notes</p>"], "notes.HTM", { type: "text/html" })],
+    }),
+  );
+  assert.equal(htmFile.name, "notes");
+  assert.deepEqual(
+    htmFile.files.map((f) => [f.path, new TextDecoder().decode(f.content)]),
+    [["index.html", "<p>notes</p>"]],
   );
   const zip = await s.readDrop([file("model.zip", "PK")]);
   assert.equal(zip.name, "model.zip");
