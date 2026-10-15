@@ -10,21 +10,25 @@
   outline-color: color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
-/* The strip: square, so its line and the open tab's mark are straight. */
+/* The strip: the documents as compact pills, the open one enclosed by a quiet fill and a uniform line; no separator
+   under it, nor under the panel's header: spacing alone parts them from the document. */
+.workspace-panel[data-wish-panel="tilasms"] > .workspace-panel-header {
+  border-bottom-color: transparent;
+}
 .tilasm-strip {
   display: flex;
   min-width: 0;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
-  margin-bottom: 32px;
-  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
 }
 .tilasm-tabs {
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
-  align-items: flex-end;
-  gap: 2px;
+  align-items: center;
+  gap: 4px;
+  padding: 1px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -32,31 +36,35 @@
   display: none;
 }
 .tilasm-tab {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
   max-width: 240px;
-  padding: 7px 10px 6px;
+  height: 26px;
+  padding: 0 10px;
   overflow: hidden;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
   color: var(--muted);
   background: transparent;
   font-size: var(--font-size-body);
+  line-height: 24px;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: color 120ms ease;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
 }
 .tilasm-tab:hover {
   color: var(--text);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
 }
 .tilasm-tab[aria-selected="true"] {
-  border-bottom-color: var(--accent);
+  border-color: var(--line);
   color: var(--text);
+  background: var(--surface-soft);
 }
 .tilasm-tab:focus-visible {
   outline: 1px solid var(--line-strong);
-  outline-offset: -1px;
+  outline-offset: 1px;
 }
 .tilasm-strip-actions {
   display: flex;
@@ -833,14 +841,26 @@ html[data-theme="light"] .tilasms {
 }
 /* What stands apart from the text: an indicator by the tabs, its list in a small window. */
 .tilasm-apart-button {
-  width: auto;
-  min-width: 29px;
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
-  padding: 0 6px;
+  height: 20px;
+  margin-right: 4px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-soft);
   font: 11px var(--mono);
+  cursor: pointer;
 }
-.tilasm-apart-button.has-apart {
-  color: var(--sand);
+.tilasm-apart-button:hover,
+.tilasm-apart-button[aria-expanded="true"] {
+  color: var(--text);
+}
+.tilasm-apart-button:focus-visible {
+  outline: 1px solid var(--line-strong);
+  outline-offset: 2px;
 }
 .tilasm-apart {
   width: min(360px, 90vw);
@@ -938,9 +958,29 @@ html[data-theme="light"] .tilasms {
   width: 180px;
   height: 26px;
 }
-.tilasm-actions .tilasm-apart-button {
+/* The More menu, under its button: the panel's less frequent actions. */
+.tilasm-more {
   width: auto;
-  min-width: 26px;
+  min-width: 220px;
+  gap: 2px;
+  padding: 4px;
+}
+.tilasm-more .tilasm-menu-item {
+  min-height: 30px;
+  border-radius: var(--radius-control);
+  font: inherit;
+  font-size: var(--font-size-body);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tilasm-more .tilasm-menu-item:hover:not(:disabled),
+.tilasm-more .tilasm-menu-item:focus {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  outline: none;
+}
+.tilasm-more .tilasm-menu-item:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 .tilasm-header-actions {
   display: contents;

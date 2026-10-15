@@ -45,7 +45,13 @@ export {
 export { UpdateBannerView } from "@/src/update-banner.tsx";
 export { InstallStep } from "@/gen/ts/ui/v1/ui_pb.ts";
 export { memory, resourcesDetail } from "@/src/usage.tsx";
-export { TilasmPanel, TilasmVersions, HtmlTilasm } from "@/src/tilasms.tsx";
+export {
+  TilasmPanel,
+  TilasmVersions,
+  TilasmMore,
+  tilasmMoreItems,
+  HtmlTilasm,
+} from "@/src/tilasms.tsx";
 export { AgentBlocks } from "@/src/agent-blocks.tsx";
 export { MarkdownBody } from "@/src/markdown-body.tsx";
 export { openDjinnLink, parseDjinnLink } from "@/src/data/links.ts";
@@ -1773,25 +1779,59 @@ test("the Documents panel shows its documents as tabs, the open one marked, its 
   assert.ok(tabs.indexOf(">Notes<") < tabs.indexOf(">Flows<"));
   assert.match(tabs, /aria-selected="true"[^>]*title="L01 · Notes"/);
   assert.match(tabs, /aria-selected="false"[^>]*title="L02 · Flows"/);
-  // The search is folded behind its icon; a new document, an import of a .md, and the versions are icons too.
+  // The header holds two actions: a new document and More, a menu button; the rest waits in the menu.
   assert.doesNotMatch(html, /type="search"/);
-  assert.match(html, /aria-label="Search the documents of this wish"/);
   assert.match(html, /aria-label="New document"/);
-  assert.match(html, /aria-label="Import a Markdown file"/);
+  assert.match(
+    html,
+    /aria-haspopup="menu" aria-expanded="false"[^>]*aria-label="More actions"/,
+  );
+  assert.equal(html.match(/class="workspace-panel-action"/g).length, 2);
+  assert.doesNotMatch(
+    html,
+    /aria-label="(Search the documents of this wish|Import a Markdown file|Versions|Download as .md|Copy link)"/,
+  );
   assert.match(html, /accept=".md,.markdown,text\/markdown"/);
-  assert.match(
-    html,
-    /aria-label="Versions" aria-expanded="false"|aria-expanded="false"[^>]*aria-label="Versions"/,
-  );
-  // The open document downloads, as a .md for a Markdown one, and copies its link; quiet icons like the other panels'.
-  assert.match(
-    html,
-    /class="workspace-panel-action"[^>]*title="Download as .md"/,
-  );
-  assert.match(html, /aria-label="Copy link"/);
-  assert.match(
-    s.renderToStaticMarkup(h(s.TilasmPanel, { ...props, open: page })),
-    /aria-label="Download as a .zip"/,
+  // The menu: the search and the import always; the versions, the download and the link for an open document.
+  const menu = (args) =>
+    s.renderToStaticMarkup(
+      h(s.TilasmMore, {
+        items: s.tilasmMoreItems({
+          busy: false,
+          onSearch() {},
+          onImport() {},
+          onVersions() {},
+          onDownload() {},
+          onCopyLink() {},
+          ...args,
+        }),
+        onClose() {},
+      }),
+    );
+  const labels = (markup) =>
+    [
+      ...markup.matchAll(
+        /role="menuitem"[^>]*>(?:<svg[\s\S]*?<\/svg>)?([^<]*)</g,
+      ),
+    ].map((m) => m[1]);
+  const full = menu({ open: notes });
+  assert.match(full, /role="menu" aria-label="More actions"/);
+  assert.deepEqual(labels(full), [
+    "Search the documents of this wish",
+    "Import a Markdown file",
+    "Versions",
+    "Download as .md",
+    "Copy link",
+  ]);
+  assert.deepEqual(labels(menu({ open: page })).at(3), "Download as a .zip");
+  assert.deepEqual(labels(menu({})), [
+    "Search the documents of this wish",
+    "Import a Markdown file",
+  ]);
+  assert.match(menu({ busy: true }), /disabled=""[^>]*>[\s\S]*?Importing…/);
+  assert.deepEqual(
+    labels(menu({ open: notes, onResolved() {} })).at(-1),
+    "Resolved comments",
   );
   // The tab row holds the tabs alone once the actions go to the panel's header; none shows until the header is there.
   const inHeader = s.renderToStaticMarkup(
@@ -1816,9 +1856,8 @@ test("the Documents panel shows its documents as tabs, the open one marked, its 
     empty,
     /No document yet: create one, or import or drop a Markdown file here./,
   );
-  // Without an open document, what needs one is hidden.
-  assert.doesNotMatch(empty, /Download as|Copy link|aria-label="Versions"/);
   assert.match(empty, /aria-label="New document"/);
+  assert.match(empty, /aria-label="More actions"/);
 });
 
 test("a document's versions show the latest first, restore an earlier one, and export it", () => {

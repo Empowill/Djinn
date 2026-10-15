@@ -3,7 +3,7 @@
 // opens read only until asked; an HTML tilasm the lead puts with the command line opens in its frame, isolated, its
 // search folded behind an icon and its versions restorable; a djinn link opens the document's tab. Every run makes a
 // fresh wish, so --repeat-each works on the same djinn. Screenshots of the panel go to test-results/e2e/.
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -35,6 +35,18 @@ async function openWish(page: Page, title: string): Promise<string> {
 }
 
 // The Markdown of a wish's document, as the agents read it.
+// moreAction picks an action from the panel's More menu, opened from its header.
+async function moreAction(panel: Locator, name: string) {
+  await panel
+    .locator(".workspace-panel-header")
+    .getByRole("button", { name: "More actions" })
+    .click();
+  await panel
+    .getByRole("menu", { name: "More actions" })
+    .getByRole("menuitem", { name })
+    .click();
+}
+
 const markdownOf = (code: string, wishId: string): string =>
   JSON.parse(djinn("tilasm", "get", code, "--wish", wishId, "--json")).text;
 
@@ -136,31 +148,55 @@ test("a document made from the wish's header is written in place, saved, and fou
     );
     await expect(panel.locator(".tilasm-prose strong")).toHaveText("Bright");
 
-    // The panel's header holds the document's actions, just before its close button; the tab row, the tabs alone.
+    // The panel's header holds two actions, a new document and More, just before its close button; the tab row,
+    // the tabs alone. More is a small menu: the arrows move in it, Escape closes it and gives the focus back.
     const header = panel.locator(".workspace-panel-header");
     await expect(
       panel.locator(".tilasm-strip .workspace-panel-action"),
     ).toHaveCount(0);
-    for (const name of [
-      "Search the documents of this wish",
-      "New document",
-      "Import a Markdown file",
-      "Versions",
-      "Download as .md",
-      "Copy link",
-    ])
-      await expect(header.getByRole("button", { name })).toBeVisible();
     const actions = await header
       .locator(".workspace-panel-actions button")
       .evaluateAll((buttons) =>
         buttons.map((b) => b.getAttribute("aria-label") ?? ""),
       );
-    expect(actions.at(-1)).toMatch(/^Close/);
+    expect(actions).toEqual([
+      "New document",
+      "More actions",
+      expect.stringMatching(/^Close/),
+    ]);
+    const moreButton = header.getByRole("button", { name: "More actions" });
+    await moreButton.click();
+    const menu = panel.getByRole("menu", { name: "More actions" });
+    await expect(menu.getByRole("menuitem")).toHaveText([
+      "Search the documents of this wish",
+      "Import a Markdown file",
+      "Versions",
+      "Download as .md",
+      "Copy link",
+    ]);
+    await expect(menu.getByRole("menuitem").first()).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(
+      menu.getByRole("menuitem", { name: "Import a Markdown file" }),
+    ).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowUp");
+    await expect(
+      menu.getByRole("menuitem", { name: "Copy link" }),
+    ).toBeFocused();
+    await expect(
+      menu.getByRole("menuitem", { name: "Copy link" }),
+    ).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await page.screenshot({ path: path.join(shots, "documents-menu.png") });
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+    await expect(moreButton).toBeFocused();
+    await expect(panel).toBeVisible();
     // Copy link puts the document's djinn link on the clipboard, and says so.
     await page
       .context()
       .grantPermissions(["clipboard-read", "clipboard-write"]);
-    await header.getByRole("button", { name: "Copy link" }).click();
+    await moreAction(panel, "Copy link");
     await expect(page.locator(".toast")).toContainText("Link copied");
     const tilasmId = JSON.parse(
       djinn("tilasm", "get", "L01", "--wish", wishId, "--json"),
@@ -169,7 +205,7 @@ test("a document made from the wish's header is written in place, saved, and fou
       `djinn://tilasm/${tilasmId}`,
     );
     // Download writes its .md, the saved text, named after its title.
-    await header.getByRole("button", { name: "Download as .md" }).click();
+    await moreAction(panel, "Download as .md");
     const toast = page.locator(".toast", { hasText: "Downloaded to " });
     await expect(toast).toBeVisible();
     const downloaded = (await toast.innerText())
@@ -345,9 +381,11 @@ test("an HTML tilasm put by the command line opens in its frame, isolated; its s
     ).toHaveAttribute("aria-selected", "true");
     // The panel, its header with the actions included; an HTML page downloads as its .zip.
     const panel = workspacePanel(page, "tilasms");
+    await panel.getByRole("button", { name: "More actions" }).click();
     await expect(
-      panel.getByRole("button", { name: "Download as a .zip" }),
+      panel.getByRole("menuitem", { name: "Download as a .zip" }),
     ).toBeVisible();
+    await page.keyboard.press("Escape");
 
     // The frame runs the tilasm's own script and shows its image; the network and Djinn are out of reach.
     const frame = page.frameLocator("iframe.tilasm-frame");
@@ -366,9 +404,7 @@ test("an HTML tilasm put by the command line opens in its frame, isolated; its s
 
     // The search, folded behind its icon: on the titles and the text within the wish; the kind's name finds them all.
     await expect(panel.getByRole("searchbox")).toHaveCount(0);
-    await panel
-      .getByRole("button", { name: "Search the documents of this wish" })
-      .click();
+    await moreAction(panel, "Search the documents of this wish");
     const search = panel.getByRole("searchbox");
     for (const words of ["wick flame", "ANATOMY", "talisman"]) {
       await search.fill(words);
@@ -388,7 +424,7 @@ test("an HTML tilasm put by the command line opens in its frame, isolated; its s
     );
     djinn("tilasm", "put", dir, "--wish", wishId, "--code", "L01");
     await expect(frame.locator("body")).toContainText("Second version.");
-    await panel.getByRole("button", { name: "Versions" }).click();
+    await moreAction(panel, "Versions");
     const versions = page.getByRole("dialog", { name: "Versions" });
     await expect(versions.locator("li")).toHaveCount(2);
     await versions
@@ -399,7 +435,7 @@ test("an HTML tilasm put by the command line opens in its frame, isolated; its s
     await expect(frame.locator("body")).toContainText(
       "A wick carries the oil to the flame.",
     );
-    await panel.getByRole("button", { name: "Versions" }).click();
+    await moreAction(panel, "Versions");
     await expect(versions.locator("li")).toHaveCount(3);
     await expect(versions.locator("li").first()).toContainText("developer");
     await expect(versions.locator("li").first()).toContainText("restores v1");
@@ -718,6 +754,58 @@ test("a passage is discussed in a small window that folds into a dot; a proposal
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
     await expect(handle).toBeFocused();
+
+    // Nothing detached from the text: no indicator in the header. The lead's new version drops the discussed passage:
+    // a quiet count shows by the actions, and lists it.
+    const header = panel.locator(".workspace-panel-header");
+    const detached = header.locator(".tilasm-apart-button");
+    await expect(detached).toHaveCount(0);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-tilasm-"));
+    try {
+      const file = path.join(dir, "lamp.md");
+      fs.writeFileSync(
+        file,
+        "# Lamp\n\nThe wick carries the oil.\n\nThe glass keeps the draught away.\n",
+      );
+      djinn("tilasm", "put", file, "--wish", wishId, "--code", "L01");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    // The undo left the editor's text unsaved: the developer takes the lead's version.
+    const reloadTheirs = panel
+      .locator(".tilasm-notice")
+      .getByRole("button", { name: "Reload theirs" });
+    await expect
+      .poll(
+        async () =>
+          (await reloadTheirs.isVisible()) ||
+          !(await body.textContent())?.includes("The flame needs air."),
+      )
+      .toBe(true);
+    if (await reloadTheirs.isVisible()) await reloadTheirs.click();
+    await expect(body).not.toContainText("The flame needs air.");
+    await expect(detached).toHaveText("1");
+    await expect(detached).toHaveAccessibleName(
+      "1 comment or proposal detached from the text",
+    );
+    const headerBox = (await header.boundingBox())!;
+    const stripBox = (await panel.locator(".tilasm-strip").boundingBox())!;
+    await page.screenshot({
+      path: path.join(shots, "documents-header-detached.png"),
+      clip: {
+        x: headerBox.x - 8,
+        y: headerBox.y - 8,
+        width: headerBox.width + 16,
+        height: stripBox.y + stripBox.height - headerBox.y + 16,
+      },
+    });
+    await detached.click();
+    await expect(
+      page.getByRole("dialog", {
+        name: "1 comment or proposal detached from the text",
+      }),
+    ).toContainText("needs air");
+    await page.keyboard.press("Escape");
     expect(errors).toEqual([]);
   } finally {
     djinn("wish", "pause", wishId);

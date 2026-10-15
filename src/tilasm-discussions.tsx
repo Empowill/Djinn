@@ -348,6 +348,9 @@ export interface DiscussionsProps {
   reload: (after: number) => Promise<void>;
   // Where the indicator of what is apart goes, in the strip of tabs.
   strip: HTMLElement | null;
+  // Given what opens the resolved discussions while nothing is detached (the indicator then does not show), null when
+  // there is nothing to open: the panel's More menu offers it.
+  onResolved?: (open: (() => void) | null) => void;
   // Set to what opens a comment, or a request to the agent (ask), on a range of the editor: a place when from is to.
   commentRef: RefObject<
     ((from: number, to: number, ask?: boolean) => void) | null
@@ -363,6 +366,7 @@ export function TilasmDiscussions({
   settle,
   reload,
   strip,
+  onResolved,
   commentRef,
 }: DiscussionsProps) {
   const clients = useClients();
@@ -1104,6 +1108,7 @@ export function TilasmDiscussions({
             errors={errors}
             onReject={(proposal) => void reject(proposal)}
             onReopen={(thread) => void setResolved(thread, false)}
+            onResolved={onResolved}
           />,
           strip,
         )}
@@ -1783,6 +1788,7 @@ function Apart({
   errors,
   onReject,
   onReopen,
+  onResolved,
 }: {
   count: number;
   threads: TilasmThread[];
@@ -1794,10 +1800,18 @@ function Apart({
   errors: Record<string, string>;
   onReject: (proposal: TilasmProposal) => void;
   onReopen: (thread: TilasmThread) => void;
+  onResolved?: (open: (() => void) | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState("");
   const anchor = useRef<HTMLSpanElement>(null);
+  // Nothing detached: no indicator, the resolved discussions open from the panel's More menu.
+  const quiet = count === 0;
+  useEffect(() => {
+    if (!quiet || !onResolved) return;
+    onResolved(() => setOpen(true));
+    return () => onResolved(null);
+  }, [quiet, onResolved]);
   useEffect(() => {
     if (!open) return;
     const outside = (event: PointerEvent) => {
@@ -1819,17 +1833,19 @@ function Apart({
       : t("tilasms.apart.resolved_label");
   return (
     <span className="tilasm-versions-anchor" ref={anchor}>
-      <button
-        type="button"
-        className={`workspace-panel-action tilasm-apart-button${count > 0 ? " has-apart" : ""}`}
-        aria-expanded={open}
-        title={label}
-        aria-label={label}
-        onClick={() => setOpen(!open)}
-      >
-        <Unlink size={14} aria-hidden="true" />
-        {count > 0 && <span>{count}</span>}
-      </button>
+      {!quiet && (
+        <button
+          type="button"
+          className="tilasm-apart-button"
+          aria-expanded={open}
+          title={label}
+          aria-label={label}
+          onClick={() => setOpen(!open)}
+        >
+          <Unlink size={12} aria-hidden="true" />
+          <span>{count}</span>
+        </button>
+      )}
       {open && (
         <div
           className="tilasm-popover tilasm-apart"

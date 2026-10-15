@@ -708,6 +708,7 @@
   "tilasms.loss.html": "raw HTML",
   "tilasms.loss.image": "images",
   "tilasms.lossy": "This document holds what the editor cannot keep: {what}. It stays read only; editing it would drop that.",
+  "tilasms.more": "More actions",
   "tilasms.move_block": "Drag to move the block",
   "tilasms.new": "New document",
   "tilasms.none": "No document yet: create one, or import or drop a Markdown file here.",

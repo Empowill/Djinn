@@ -708,6 +708,7 @@
   "tilasms.loss.html": "du HTML brut",
   "tilasms.loss.image": "des images",
   "tilasms.lossy": "Ce support contient ce que l'éditeur ne peut pas conserver : {what}. Il reste en lecture seule ; le modifier le perdrait.",
+  "tilasms.more": "Plus d'actions",
   "tilasms.move_block": "Glisser pour déplacer le bloc",
   "tilasms.new": "Nouveau support",
   "tilasms.none": "Aucun support pour l'instant : créez-en un, ou importez ou déposez ici un fichier Markdown.",

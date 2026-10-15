@@ -858,6 +858,53 @@ test("the summary switches one detail panel while global actions and settings st
       fullPage: true,
     });
 
+    // The navigation card and the Documents header, in both themes: the card a quiet surface with no shadow, its rows
+    // soft fills with no border of their own; the header's actions a new document and More.
+    // Wide enough for the full card rather than the icon rail.
+    const viewport = page.viewportSize()!;
+    await page.setViewportSize({ width: 1720, height: viewport.height });
+    await expect(stage(page)).not.toHaveAttribute("data-wish-nav-compact");
+    const card = page.locator(".workspace-summary-card");
+    await expect(card).toHaveCSS("box-shadow", "none");
+    const activeRow = section(page, "tilasms");
+    await expect(activeRow).toHaveAttribute("data-wish-selected", "true");
+    for (const side of ["top", "right", "bottom", "left"])
+      await expect(activeRow).toHaveCSS(`border-${side}-width`, "0px");
+    await expect(activeRow).toHaveCSS("box-shadow", "none");
+    await expect(
+      panel(page, "tilasms").locator(
+        ".workspace-panel-header .workspace-panel-action",
+      ),
+    ).toHaveCount(3);
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expect(page.locator("html")).toHaveAttribute("data-theme", scheme);
+      await page.mouse.move(0, 0);
+      // The rows' colours ease in: the shot waits for the theme to settle.
+      await page.waitForTimeout(300);
+      await card.screenshot({
+        path: path.join(shots, `workspace-nav-${scheme}.png`),
+      });
+      await section(page, "tasks").hover();
+      await card.screenshot({
+        path: path.join(shots, `workspace-nav-hover-${scheme}.png`),
+      });
+      await page.mouse.move(0, 0);
+      const head = panel(page, "tilasms").locator(".workspace-panel-header");
+      const headBox = (await head.boundingBox())!;
+      await page.screenshot({
+        path: path.join(shots, `workspace-tilasms-header-${scheme}.png`),
+        clip: {
+          x: headBox.x - 8,
+          y: headBox.y - 8,
+          width: headBox.width + 16,
+          height: headBox.height + 80,
+        },
+      });
+    }
+    await page.emulateMedia({ colorScheme: null });
+    await page.setViewportSize(viewport);
+
     await openSection(page, "activity");
     await expect(panel(page, "tilasms")).toBeHidden();
     await expect(panel(page, "activity")).toContainText(
@@ -1030,6 +1077,21 @@ test("narrow workspace uses the icon rail and survives denied storage", async ({
       path: path.join(shots, "workspace-narrow-rail.png"),
       fullPage: true,
     });
+    // The rail: the selected icon on a soft fill, no border of its own, inside the card's padding.
+    const railRow = section(page, "tilasms");
+    await expect(railRow).toHaveCSS("box-shadow", "none");
+    await expect(railRow.locator(".workspace-section-icon")).toHaveCSS(
+      "box-shadow",
+      "none",
+    );
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expect(page.locator("html")).toHaveAttribute("data-theme", scheme);
+      await page.locator(".workspace-summary-card").screenshot({
+        path: path.join(shots, `workspace-rail-${scheme}.png`),
+      });
+    }
+    await page.emulateMedia({ colorScheme: null });
 
     await page.addInitScript(() => {
       const denied = () => {

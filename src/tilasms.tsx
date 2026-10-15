@@ -3,16 +3,18 @@
 // (src/tilasm-editor.tsx): each edit saved after a pause from the revision it started from; a save another writer
 // outran keeps the developer's text and asks which to keep. An HTML tilasm shows in a frame of its own, served by Djinn
 // at /tilasm/<id>/ with a policy of its own (internal/plan/tilasm_files.go): its scripts run, it reaches no network
-// and nothing of Djinn. The panel's actions stand in its header, before its close button: a search, folded behind its
-// icon, finds words in the titles and the text, within the wish; a new document; an import; and for the open one, its
-// versions, which restore an earlier one, its download (a Markdown document as its .md, an HTML page as a .zip, in the
-// Downloads folder) and its djinn:// link copied. A .md imported, or
+// and nothing of Djinn. The panel's header keeps two actions before its close button: a new document, and More, a small
+// menu with a search (its field unfolds in the header) that finds words in the titles and the text, within the wish; an
+// import; and for the open one, its versions, which restore an earlier one, its download (a Markdown document as its
+// .md, an HTML page as a .zip, in the Downloads folder) and its djinn:// link copied. A .md imported, or
 // dropped anywhere on the panel, becomes a document; a folder or a .zip, an HTML tilasm or the new version of the one
 // a .zip exported.
 import { Code as ConnectCode, ConnectError } from "@connectrpc/connect";
 import { type Editor } from "@tiptap/core";
 import {
+  CheckCheck,
   Download,
+  Ellipsis,
   FileUp,
   History,
   Link,
@@ -29,6 +31,7 @@ import {
   use,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -305,8 +308,12 @@ async function copyText(text: string) {
   }
 }
 
-// StripSlotContext is the place in the strip of tabs where the open document shows its own indicators.
-const StripSlotContext = createContext<HTMLElement | null>(null);
+// StripSlotContext is the place in the panel's actions where the open document shows its own indicators, and where it
+// offers what has no indicator of its own: its resolved discussions, opened from the More menu.
+const StripSlotContext = createContext<{
+  slot: HTMLElement | null;
+  onResolved: (open: (() => void) | null) => void;
+}>({ slot: null, onResolved: () => {} });
 
 // TilasmPanel is the panel as it shows, from what it is given: the strip of tabs and its actions, then the open
 // document. The whole panel takes a drop.
@@ -353,8 +360,17 @@ export function TilasmPanel({
   const [over, setOver] = useState(false);
   const [searching, setSearching] = useState(search !== "");
   const [versions, setVersions] = useState(false);
+  const [more, setMore] = useState(false);
+  // Opens the open document's resolved discussions, when it has some and nothing detached shows them.
+  const [resolved, setResolved] = useState<(() => void) | null>(null);
+  const onResolved = useCallback(
+    (open: (() => void) | null) => setResolved(() => open),
+    [],
+  );
   // Where the open document puts what stands by the tabs: its discussions apart from the text.
   const [slot, setSlot] = useState<HTMLSpanElement | null>(null);
+  const moreButton = useRef<HTMLButtonElement>(null);
+  const stripSlot = useMemo(() => ({ slot, onResolved }), [slot, onResolved]);
   const file = useRef<HTMLInputElement>(null);
   const tabs = useRef<HTMLDivElement>(null);
   // A drop of files only: a block the editor's handle drags is the editor's own.
@@ -379,10 +395,20 @@ export function TilasmPanel({
       ?.querySelector<HTMLElement>(`[data-tilasm="${next.id}"]`)
       ?.focus();
   };
+  const items = tilasmMoreItems({
+    open,
+    busy,
+    onSearch: () => setSearching(true),
+    onImport: () => file.current?.click(),
+    onVersions: () => setVersions(true),
+    onDownload,
+    onCopyLink,
+    onResolved: resolved,
+  });
   const actions = (
     <span className="tilasm-actions">
       <span className="tilasm-strip-slot" ref={setSlot} />
-      {searching ? (
+      {searching && (
         <input
           className="tilasm-search"
           type="search"
@@ -398,18 +424,9 @@ export function TilasmPanel({
             if (event.key !== "Escape") return;
             onSearch("");
             setSearching(false);
+            moreButton.current?.focus();
           }}
         />
-      ) : (
-        <button
-          type="button"
-          className="workspace-panel-action"
-          title={t("tilasms.search")}
-          aria-label={t("tilasms.search")}
-          onClick={() => setSearching(true)}
-        >
-          <Search size={14} aria-hidden="true" />
-        </button>
       )}
       <button
         type="button"
@@ -420,17 +437,47 @@ export function TilasmPanel({
       >
         <Plus size={14} aria-hidden="true" />
       </button>
-      <button
-        type="button"
-        className="workspace-panel-action"
-        title={busy ? t("tilasms.putting") : t("tilasms.import")}
-        aria-label={t("tilasms.import")}
-        aria-busy={busy}
-        disabled={busy}
-        onClick={() => file.current?.click()}
-      >
-        <FileUp size={14} aria-hidden="true" />
-      </button>
+      <span className="tilasm-versions-anchor">
+        <button
+          ref={moreButton}
+          type="button"
+          className="workspace-panel-action"
+          aria-haspopup="menu"
+          aria-expanded={more}
+          aria-busy={busy}
+          title={t("tilasms.more")}
+          aria-label={t("tilasms.more")}
+          onClick={() => {
+            setVersions(false);
+            setMore(!more);
+          }}
+        >
+          <Ellipsis size={14} aria-hidden="true" />
+        </button>
+        {more && (
+          <TilasmMore
+            items={items}
+            onClose={(refocus) => {
+              setMore(false);
+              if (refocus) moreButton.current?.focus();
+            }}
+          />
+        )}
+        {open && versions && (
+          <TilasmVersions
+            tilasm={open}
+            onRestore={(version) => {
+              setVersions(false);
+              onRestore(open, version);
+            }}
+            onExport={() => {
+              setVersions(false);
+              onExport(open);
+            }}
+            onClose={() => setVersions(false)}
+          />
+        )}
+      </span>
       <input
         ref={file}
         className="tilasm-file"
@@ -444,64 +491,6 @@ export function TilasmPanel({
           if (picked) onImport(picked);
         }}
       />
-      {open && (
-        <span className="tilasm-versions-anchor">
-          <button
-            type="button"
-            className="workspace-panel-action"
-            aria-expanded={versions}
-            title={t("tilasms.history")}
-            aria-label={t("tilasms.history")}
-            onClick={() => setVersions(!versions)}
-          >
-            <History size={14} aria-hidden="true" />
-          </button>
-          {versions && (
-            <TilasmVersions
-              tilasm={open}
-              onRestore={(version) => {
-                setVersions(false);
-                onRestore(open, version);
-              }}
-              onExport={() => {
-                setVersions(false);
-                onExport(open);
-              }}
-              onClose={() => setVersions(false)}
-            />
-          )}
-        </span>
-      )}
-      {open && onDownload && (
-        <button
-          type="button"
-          className="workspace-panel-action"
-          title={
-            isMarkdown(open)
-              ? t("tilasms.download_md")
-              : t("tilasms.download_zip")
-          }
-          aria-label={
-            isMarkdown(open)
-              ? t("tilasms.download_md")
-              : t("tilasms.download_zip")
-          }
-          onClick={() => onDownload(open)}
-        >
-          <Download size={14} aria-hidden="true" />
-        </button>
-      )}
-      {open && onCopyLink && (
-        <button
-          type="button"
-          className="workspace-panel-action"
-          title={t("tilasms.copy_link")}
-          aria-label={t("tilasms.copy_link")}
-          onClick={() => onCopyLink(open)}
-        >
-          <Link size={14} aria-hidden="true" />
-        </button>
-      )}
     </span>
   );
   return (
@@ -562,8 +551,166 @@ export function TilasmPanel({
       {count === 0 ? (
         <p className="tilasm-strip-note">{t("tilasms.none")}</p>
       ) : (
-        <StripSlotContext value={slot}>{children}</StripSlotContext>
+        <StripSlotContext value={stripSlot}>{children}</StripSlotContext>
       )}
+    </div>
+  );
+}
+
+export interface TilasmMoreItem {
+  key: string;
+  icon: ReactNode;
+  label: string;
+  disabled?: boolean;
+  run: () => void;
+}
+
+// tilasmMoreItems is what the More menu holds: the search and the import always; the versions, the download and the
+// link for the open document alone; the resolved discussions when the open document has some and nothing detached.
+export function tilasmMoreItems({
+  open,
+  busy,
+  onSearch,
+  onImport,
+  onVersions,
+  onDownload,
+  onCopyLink,
+  onResolved,
+}: {
+  open?: Tilasm;
+  busy: boolean;
+  onSearch: () => void;
+  onImport: () => void;
+  onVersions: () => void;
+  onDownload?: (tilasm: Tilasm) => void;
+  onCopyLink?: (tilasm: Tilasm) => void;
+  onResolved?: (() => void) | null;
+}): TilasmMoreItem[] {
+  const items: TilasmMoreItem[] = [
+    {
+      key: "search",
+      icon: <Search size={14} aria-hidden="true" />,
+      label: t("tilasms.search"),
+      run: onSearch,
+    },
+    {
+      key: "import",
+      icon: <FileUp size={14} aria-hidden="true" />,
+      label: busy ? t("tilasms.putting") : t("tilasms.import"),
+      disabled: busy,
+      run: onImport,
+    },
+  ];
+  if (open) {
+    items.push({
+      key: "versions",
+      icon: <History size={14} aria-hidden="true" />,
+      label: t("tilasms.history"),
+      run: onVersions,
+    });
+    if (onDownload)
+      items.push({
+        key: "download",
+        icon: <Download size={14} aria-hidden="true" />,
+        label: isMarkdown(open)
+          ? t("tilasms.download_md")
+          : t("tilasms.download_zip"),
+        run: () => onDownload(open),
+      });
+    if (onCopyLink)
+      items.push({
+        key: "copy",
+        icon: <Link size={14} aria-hidden="true" />,
+        label: t("tilasms.copy_link"),
+        run: () => onCopyLink(open),
+      });
+  }
+  if (onResolved)
+    items.push({
+      key: "resolved",
+      icon: <CheckCheck size={14} aria-hidden="true" />,
+      label: t("tilasms.apart.resolved_label"),
+      run: onResolved,
+    });
+  return items;
+}
+
+// TilasmMore is the panel's More menu, under its button: the arrows move between its items, Escape, Tab or a click
+// outside close it.
+export function TilasmMore({
+  items,
+  onClose,
+}: {
+  items: TilasmMoreItem[];
+  // refocus: the menu closed by the keyboard, its button takes the focus back.
+  onClose: (refocus: boolean) => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  const entries = () => [
+    ...(box.current?.querySelectorAll<HTMLButtonElement>(
+      '[role="menuitem"]:not(:disabled)',
+    ) ?? []),
+  ];
+  useEffect(() => {
+    entries()[0]?.focus();
+    const outside = (event: PointerEvent) => {
+      const anchor = box.current?.parentElement;
+      if (anchor && !anchor.contains(event.target as Node))
+        close.current(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, []);
+  const keys = (event: ReactKeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose(true);
+      return;
+    }
+    if (event.key === "Tab") return onClose(false);
+    const all = entries();
+    const at = all.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      event.key === "ArrowDown"
+        ? (at + 1) % all.length
+        : event.key === "ArrowUp"
+          ? (at - 1 + all.length) % all.length
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? all.length - 1
+              : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    all[next]?.focus();
+  };
+  return (
+    <div
+      ref={box}
+      className="tilasm-popover tilasm-more"
+      role="menu"
+      aria-label={t("tilasms.more")}
+      onKeyDown={keys}
+    >
+      {items.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          role="menuitem"
+          className="tilasm-menu-item"
+          disabled={item.disabled}
+          onClick={() => {
+            onClose(false);
+            item.run();
+          }}
+        >
+          {item.icon}
+          {item.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -942,7 +1089,7 @@ function MarkdownTilasm({
     () => (headed.current ? titleNow.current : ""),
     [],
   );
-  const strip = use(StripSlotContext);
+  const { slot: strip, onResolved } = use(StripSlotContext);
   const comment = useRef<
     ((from: number, to: number, ask?: boolean) => void) | null
   >(null);
@@ -1079,6 +1226,7 @@ function MarkdownTilasm({
               settle={settle}
               reload={reread}
               strip={strip}
+              onResolved={onResolved}
               commentRef={comment}
             />
           )
