@@ -2341,6 +2341,24 @@ func (h *Harness) Note(taskID string, ev Event) {
 	h.writeAlone(context.Background(), actorHarness, methodEvent, nil, taskID, nil, ev)
 }
 
+// lastEventsFrom is the position after which the task's last n stored events start: 0 when it has n or fewer.
+func (h *Harness) lastEventsFrom(ctx context.Context, taskID string, n int) (int64, error) {
+	var from int64
+	seen := 0
+	err := store.Latest(ctx, h.store, store.Where{"task_id": taskID}, func(e *planv1.TaskEvent) bool {
+		seen++
+		if seen > n {
+			from = e.GetSeq()
+			return false
+		}
+		return true
+	})
+	if err != nil {
+		return 0, plan.Status(err)
+	}
+	return from, nil
+}
+
 // Watch sends the task's events after the position after, as they come, until the task has ended and all its
 // events are sent, or ctx ends.
 func (h *Harness) Watch(ctx context.Context, taskID string, after int64, send func(*planv1.TaskEvent) error) error {

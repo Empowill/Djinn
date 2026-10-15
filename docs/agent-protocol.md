@@ -14,7 +14,14 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
 - **The brief says where the wishes stand, and how to lead them.** `djinn brief` gives the Djinn every active
   wish at once (each wish's title, description, open questions, what runs and waits, its azimas), then Djinn's rules
   once; paused and granted wishes in one line each. `djinn wish brief <wish>` gives one wish's detail (latest decisions,
-  blocks, and the Djinn's last session). Reconstructing the state is not the Djinn's job.
+  blocks, and the Djinn's last session). Reconstructing the state is not the Djinn's job. The brief starts with the rule
+  on direct commands and ends with a line per active wish and that rule again: an agent whose tool keeps only the end
+  of a long output (Antigravity's `run_command`) still sees both. `djinn brief --wishes` prints where the wishes stand
+  without the rules.
+- **The Djinn runs each command alone.** A pipe, a chain (`&&`, `||`, `;`), a loop, a redirection or a substitution
+  around a `djinn` command makes the developer approve it by hand: the first message, the brief and the note
+  `direct-commands` forbid them, and flags replace them (`djinn brief --wishes`, `djinn lead notes a,b` or `--all`,
+  `djinn task list --short`, `djinn task watch --last 5`).
 - **A wish describes itself.** Its description is a few lines: what it is for, its scope, where it goes.
   `djinn wish describe <wish> --text "…"` sets it; the developer edits it in the wish's head, under its title (a
   click, saved when the field is left). Until someone writes one, the title stands for it.
@@ -43,8 +50,9 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   (🚀 a merge or a release, 🔎 a review, 🔐 a right or a permission, 🧪 a check or a test, 📦 a build, 🌿 a branch,
   🧭 an organisation choice, 🪵 logs, ⚠️ an incident); the same emoji goes in `--icon`.
 - **The Djinn's notes stay true.** `djinn lead notes` gives how to lead, learnt from past wishes (`lead/notes/`, built
-  into Djinn). When a task fixes what a note describes, the Djinn updates or removes that note in the same breath, by
-  a task that edits `lead/notes/`; no cleanup waits for later.
+  into Djinn); `djinn lead notes a,b` or `--all` prints several in one command. When a task fixes what a note
+  describes, the Djinn updates or removes that note in the same breath, by a task that edits `lead/notes/`; no cleanup
+  waits for later.
 - **The Djinn starts the same way, whatever its agent.** Its first message is one line, the same for claude, codex
   and antigravity: run `djinn brief`, then continue from what it says (`StartLine` in
   `internal/plan/newlead.go`). Nothing in it is about one agent or a wish's state: the Djinn on another agent than the
@@ -303,7 +311,7 @@ A worker is one agent process per task: Claude Code, Codex or Antigravity, in th
 Djinn runs, what a worker may do, and how each agent signs in: [`providers.md`](providers.md).
 
 Djinn reads each worker's stream into the same task events, stored with the task and streamed by
-`djinn task watch` (`--raw` adds the provider's own line):
+`djinn task watch` (`--raw` adds the provider's own line, `--last 5` starts at the last five events stored):
 
 | Event         | What it holds                                                    |
 | ------------- | ---------------------------------------------------------------- |

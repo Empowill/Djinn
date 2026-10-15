@@ -14449,7 +14449,10 @@ func (*LeadServiceChooseResponse) Descriptor() ([]byte, []int) {
 }
 
 type LeadServiceBriefRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Only where the wishes stand: each active wish, then the paused and granted ones in a line each, without Djinn's
+	// rules nor the projects'. Short enough that no agent's tool cuts it.
+	Wishes        bool `protobuf:"varint,1,opt,name=wishes,proto3" json:"wishes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -14482,6 +14485,13 @@ func (x *LeadServiceBriefRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use LeadServiceBriefRequest.ProtoReflect.Descriptor instead.
 func (*LeadServiceBriefRequest) Descriptor() ([]byte, []int) {
 	return file_plan_v1_plan_proto_rawDescGZIP(), []int{164}
+}
+
+func (x *LeadServiceBriefRequest) GetWishes() bool {
+	if x != nil {
+		return x.Wishes
+	}
+	return false
 }
 
 type LeadServiceBriefResponse struct {
@@ -14531,8 +14541,11 @@ func (x *LeadServiceBriefResponse) GetText() string {
 
 type LeadServiceNotesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// A note's name, as the index lists it: that note whole. Empty: the index.
-	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// A note's name, as the index lists it: that note whole. Several, separated by commas (a,b): each of them whole,
+	// in one call. Empty: the index.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Every note whole, in one call.
+	All           bool `protobuf:"varint,2,opt,name=all,proto3" json:"all,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -14572,6 +14585,13 @@ func (x *LeadServiceNotesRequest) GetName() string {
 		return x.Name
 	}
 	return ""
+}
+
+func (x *LeadServiceNotesRequest) GetAll() bool {
+	if x != nil {
+		return x.All
+	}
+	return false
 }
 
 type LeadServiceNotesResponse struct {
@@ -15881,7 +15901,10 @@ type TaskServiceListRequest struct {
 	// The page token from a previous list response, to fetch the next page.
 	PageToken string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	// Only the failed tasks that wait for the lead.
-	Failed        bool `protobuf:"varint,5,opt,name=failed,proto3" json:"failed,omitempty"`
+	Failed bool `protobuf:"varint,5,opt,name=failed,proto3" json:"failed,omitempty"`
+	// Each task in a few fields: its code, title, status, kind, azima, what it waits for and its times; no prompt, no
+	// runs, no resources. Where the tasks stand, in a few lines each.
+	Short         bool `protobuf:"varint,6,opt,name=short,proto3" json:"short,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -15947,6 +15970,13 @@ func (x *TaskServiceListRequest) GetPageToken() string {
 func (x *TaskServiceListRequest) GetFailed() bool {
 	if x != nil {
 		return x.Failed
+	}
+	return false
+}
+
+func (x *TaskServiceListRequest) GetShort() bool {
+	if x != nil {
+		return x.Short
 	}
 	return false
 }
@@ -17354,7 +17384,10 @@ type TaskServiceWatchRequest struct {
 	// Only the events after this position, to resume where a reader left off.
 	AfterSeq int64 `protobuf:"varint,2,opt,name=after_seq,json=afterSeq,proto3" json:"after_seq,omitempty"`
 	// Also send each event's raw line from the provider.
-	Raw           bool `protobuf:"varint,3,opt,name=raw,proto3" json:"raw,omitempty"`
+	Raw bool `protobuf:"varint,3,opt,name=raw,proto3" json:"raw,omitempty"`
+	// Only the last events already stored, this many (a task that ended: its final note is among them), then the ones
+	// that come. Not set: from the first one, or after after_seq.
+	Last          int32 `protobuf:"varint,4,opt,name=last,proto3" json:"last,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -17408,6 +17441,13 @@ func (x *TaskServiceWatchRequest) GetRaw() bool {
 		return x.Raw
 	}
 	return false
+}
+
+func (x *TaskServiceWatchRequest) GetLast() int32 {
+	if x != nil {
+		return x.Last
+	}
+	return 0
 }
 
 type TaskServiceWatchResponse struct {
@@ -20187,12 +20227,14 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05title\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x05title\x12\x1f\n" +
 	"\x05lines\x18\x03 \x03(\tB\t\xbaH\x06\x92\x01\x03\x10\xc8\x01R\x05lines\x12\"\n" +
 	"\aoptions\x18\x04 \x03(\tB\b\xbaH\x05\x92\x01\x02\x10\x14R\aoptions\"\x1b\n" +
-	"\x19LeadServiceChooseResponse\"\x19\n" +
-	"\x17LeadServiceBriefRequest\".\n" +
+	"\x19LeadServiceChooseResponse\"1\n" +
+	"\x17LeadServiceBriefRequest\x12\x16\n" +
+	"\x06wishes\x18\x01 \x01(\bR\x06wishes\".\n" +
 	"\x18LeadServiceBriefResponse\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\":\n" +
-	"\x17LeadServiceNotesRequest\x12\x1f\n" +
-	"\x04name\x18\x01 \x01(\tB\v\xbaH\x04r\x02\x18d\x88\xf4\x18\x01R\x04name\".\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"M\n" +
+	"\x17LeadServiceNotesRequest\x12 \n" +
+	"\x04name\x18\x01 \x01(\tB\f\xbaH\x05r\x03\x18\xd0\x0f\x88\xf4\x18\x01R\x04name\x12\x10\n" +
+	"\x03all\x18\x02 \x01(\bR\x03all\".\n" +
 	"\x18LeadServiceNotesResponse\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\"\x8e\x03\n" +
 	"\x05Block\x12\x18\n" +
@@ -20295,7 +20337,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\ababysit\x18\x16 \x01(\bR\ababysit\"Q\n" +
 	"\x18TaskServiceSpawnResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\x12\x12\n" +
-	"\x04note\x18\x02 \x01(\tR\x04note\"\xd4\x01\n" +
+	"\x04note\x18\x02 \x01(\tR\x04note\"\xea\x01\n" +
 	"\x16TaskServiceListRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12*\n" +
 	"\n" +
@@ -20304,7 +20346,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\xbaH\a\x1a\x05\x18\xc8\x01(\x00R\bpageSize\x12'\n" +
 	"\n" +
 	"page_token\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03R\tpageToken\x12\x16\n" +
-	"\x06failed\x18\x05 \x01(\bR\x06failed\"|\n" +
+	"\x06failed\x18\x05 \x01(\bR\x06failed\x12\x14\n" +
+	"\x05short\x18\x06 \x01(\bR\x05short\"|\n" +
 	"\x17TaskServiceListResponse\x12#\n" +
 	"\x05tasks\x18\x01 \x03(\v2\r.plan.v1.TaskR\x05tasks\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x14\n" +
@@ -20399,11 +20442,13 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x17TaskServiceStartRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\"=\n" +
 	"\x18TaskServiceStartResponse\x12!\n" +
-	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"w\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\x97\x01\n" +
 	"\x17TaskServiceWatchRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12$\n" +
 	"\tafter_seq\x18\x02 \x01(\x03B\a\xbaH\x04\"\x02(\x00R\bafterSeq\x12\x10\n" +
-	"\x03raw\x18\x03 \x01(\bR\x03raw\"D\n" +
+	"\x03raw\x18\x03 \x01(\bR\x03raw\x12\x1e\n" +
+	"\x04last\x18\x04 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\x04last\"D\n" +
 	"\x18TaskServiceWatchResponse\x12(\n" +
 	"\x05event\x18\x01 \x01(\v2\x12.plan.v1.TaskEventR\x05event\"U\n" +
 	"\x17TaskServiceCleanRequest\x12$\n" +

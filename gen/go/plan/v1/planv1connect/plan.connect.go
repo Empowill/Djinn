@@ -1878,11 +1878,14 @@ type LeadServiceClient interface {
 	Resume(context.Context, *connect.Request[v1.LeadServiceResumeRequest]) (*connect.Response[v1.LeadServiceResumeResponse], error)
 	// The lead of Djinn, as currently recorded.
 	Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error)
-	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
+	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line; at its end,
+	// a line per active wish again, for an agent whose tool keeps only the end of a long output. With --wishes, where
+	// the wishes stand only.
 	Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error)
 	// The lead's notes: how to lead, learnt from past wishes, one note per file of lead/notes in Djinn's repository,
 	// built into djinn and read only. Without a name, the index: a line per note, its name and what it is about (the
-	// brief holds the same); with one, that note whole. A lead reads a note before it acts in its area; to add or fix
+	// brief holds the same); with one, that note whole; with several (a,b) or --all, each whole, in one call. A lead
+	// reads a note before it acts in its area; to add or fix
 	// one, a lead that may change Djinn spawns a task that edits lead/notes.
 	Notes(context.Context, *connect.Request[v1.LeadServiceNotesRequest]) (*connect.Response[v1.LeadServiceNotesResponse], error)
 	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
@@ -2038,11 +2041,14 @@ type LeadServiceHandler interface {
 	Resume(context.Context, *connect.Request[v1.LeadServiceResumeRequest]) (*connect.Response[v1.LeadServiceResumeResponse], error)
 	// The lead of Djinn, as currently recorded.
 	Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error)
-	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
+	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line; at its end,
+	// a line per active wish again, for an agent whose tool keeps only the end of a long output. With --wishes, where
+	// the wishes stand only.
 	Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error)
 	// The lead's notes: how to lead, learnt from past wishes, one note per file of lead/notes in Djinn's repository,
 	// built into djinn and read only. Without a name, the index: a line per note, its name and what it is about (the
-	// brief holds the same); with one, that note whole. A lead reads a note before it acts in its area; to add or fix
+	// brief holds the same); with one, that note whole; with several (a,b) or --all, each whole, in one call. A lead
+	// reads a note before it acts in its area; to add or fix
 	// one, a lead that may change Djinn spawns a task that edits lead/notes.
 	Notes(context.Context, *connect.Request[v1.LeadServiceNotesRequest]) (*connect.Response[v1.LeadServiceNotesResponse], error)
 	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a

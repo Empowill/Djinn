@@ -77,6 +77,17 @@ func installMoveRule(projects []*planv1.Project, home string) string {
 	return fmt.Sprintf("grant a right, install and restart (%s)", strings.Join(parts, ", "))
 }
 
+// DirectCommandsRule is how a lead runs djinn: one direct command at a time. The first message of every lead says it,
+// and the brief at its start, in its rules and at its end, where a tool that cuts a long output keeps it.
+const DirectCommandsRule = "Run each `djinn` command alone, as one direct command: never a pipe (`|`), a chain " +
+	"(`&&`, `||`, `;`), a loop (`for`), a redirection (`>`, `<<`) nor a substitution (`$(...)`): any of them makes " +
+	"the developer approve the command by hand."
+
+// DirectFlags are the flags that replace what a lead would pipe or loop over.
+const DirectFlags = "Flags replace them: `djinn brief --wishes` for the wishes alone, `djinn lead notes a,b` or " +
+	"`--all` for several notes, `djinn task list --wish-id <wish> --short` for where the tasks stand, " +
+	"`djinn task watch <task> --last 5` for a task's final note, `djinn question list --wish-id <wish> --open`."
+
 // briefRules are Djinn's rules for whoever leads the wishes. They name no wish: every lead reads the same text.
 func briefRules(projects []*planv1.Project, home string) string {
 	return "# Leading in Djinn\n\n" +
@@ -138,11 +149,10 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"covers them; a done task left with refused calls holds its wish's grant. Never take a broad right by " +
 		"default: when a new one is needed (auto mode on a project, a permission line), ask for it in one `--move` " +
 		"question naming exactly that right, the command that grants it, and why.\n" +
-		"- **Run direct `djinn` commands and native file tools.** Run each `djinn` command as a single direct command, " +
-		"without shell chaining (`&&`, `||`, `;`), redirections, pipes (`|`), or backtick command substitutions in " +
-		"double quotes, so pre-authorized commands run without prompting the developer. Use native file tools " +
-		"(`Read`, `Write`, `view_file`, `write_to_file`) instead of shell commands (`cat`, `sed`, `echo`, heredocs) " +
-		"for plan files.\n" +
+		"- **Run direct `djinn` commands and native file tools.** " + DirectCommandsRule + " Your pre-authorized " +
+		"commands run without a prompt only when each runs alone; a backtick between double quotes is a substitution " +
+		"too. " + DirectFlags + " Use native file tools (`Read`, `Write`, `view_file`, `write_to_file`) instead of " +
+		"shell commands (`cat`, `sed`, `echo`, heredocs) for plan files.\n" +
 		"- **Delegate.** You lead; workers do the work. Code, investigations, fixes and checks go to tasks, even small " +
 		"ones, several side by side. Never read or search source code yourself (no `Read`, `Grep`, `Glob`, or `view_file` " +
 		"in the lead session to inspect code before spawning a task): even finding out where a feature lives or how a flag " +
@@ -255,7 +265,8 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"later.\n\n" +
 		"## Commands\n\n" +
 		"`<wish>` is a wish's identifier.\n\n" +
-		"- `djinn brief`: the brief of all active wishes.\n" +
+		"- `djinn brief`: the brief of all active wishes; `djinn brief --wishes`: where they stand only, without these " +
+		"rules, short enough that no tool cuts it.\n" +
 		"- `djinn lead watch --after <cursor>`: acknowledges the events up to the cursor, waits for the next ones and " +
 		"prints them, a line each, with the next cursor (`--timeout 0s` returns at once).\n" +
 		"- `djinn wish brief <wish>`: one wish's brief, up to date.\n" +
@@ -275,7 +286,8 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"all or none; " +
 		"`djinn task group <task> --part-of T07` sets its azima; " +
 		"`djinn plan sync <wish>` reads the azimas from the projects' plan files and writes their `after:` lines back; " +
-		"`djinn task list --wish-id <wish>`; `djinn task watch <task>`; " +
+		"`djinn task list --wish-id <wish> --short` (a few lines per task; `--failed`, `--page-size`); `djinn task watch " +
+		"<task>`, `--last 5` for its last events only, its final note among them; " +
 		"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
 		"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task update <task>` edits what is given in place (not started: everything; running or paused: title only; finished: title, prompt, agent, azima, integration (none clears it, --force if unmerged); never its dependencies once it ran; alias `set-agent`); `djinn task done <task> [--drop] --note " +
 		"\"…\"` closes a task no worker runs (planned, cut short, failed, stopped, imported; unmerged commits queue for merging unless --drop) once its work is done " +
@@ -297,7 +309,8 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"changes, republish that file as it is, in one call, to the same address: do not read it, rewrite it, or write " +
 		"HTML by hand. The first publish needs the developer's go. `djinn wish render <wish>` writes the page once.\n" +
 		"- `djinn wish grant <wish>` is the developer's word, never yours.\n" +
-		"- `djinn lead notes`: the index of the lead's notes; `djinn lead notes <name>` prints one.\n" +
+		"- `djinn lead notes`: the index of the lead's notes; `djinn lead notes <name>` prints one, `djinn lead notes " +
+		"<name>,<name>` several and `djinn lead notes --all` every one, in one command.\n" +
 		notesBrief()
 }
 
@@ -1084,9 +1097,19 @@ func (w *Wishes) home() string {
 	return w.Pages.Home
 }
 
-// BuildGlobalBrief writes the brief of all wishes in Djinn: every active wish with its details,
-// paused and granted wishes on one line each, then Djinn's rules once for all projects.
+// BuildGlobalBrief writes the brief of all wishes in Djinn: how to run djinn, every active wish with its details,
+// paused and granted wishes on one line each, then Djinn's rules once for all projects; at its end, a line per active
+// wish again and how to run djinn, for an agent whose tool keeps only the end of a long output (Antigravity's).
 func BuildGlobalBrief(ctx context.Context, r store.Reader, home string) (string, error) {
+	return globalBrief(ctx, r, home, false)
+}
+
+// BuildWishesBrief is where the wishes stand, the global brief without the rules: djinn brief --wishes.
+func BuildWishesBrief(ctx context.Context, r store.Reader, home string) (string, error) {
+	return globalBrief(ctx, r, home, true)
+}
+
+func globalBrief(ctx context.Context, r store.Reader, home string, wishesOnly bool) (string, error) {
 	allWishes, err := store.List[*planv1.Wish](ctx, r, nil)
 	if err != nil {
 		return "", err
@@ -1116,6 +1139,8 @@ func BuildGlobalBrief(ctx context.Context, r store.Reader, home string) (string,
 	})
 
 	var b strings.Builder
+	b.WriteString(DirectCommandsRule + " Too long for your tool: `djinn brief --wishes`.\n\n")
+	var glance []string
 	if len(actives) == 0 {
 		b.WriteString("No active wishes.\n\n")
 	} else {
@@ -1134,6 +1159,7 @@ func BuildGlobalBrief(ctx context.Context, r store.Reader, home string) (string,
 				b.WriteString("\n")
 			}
 			activeWishBrief(&b, exp, wish.GetRank(), ready, strategy)
+			glance = append(glance, glanceLine(exp))
 		}
 	}
 
@@ -1156,9 +1182,48 @@ func BuildGlobalBrief(ctx context.Context, r store.Reader, home string) (string,
 		}
 	}
 
-	b.WriteString("\n")
-	b.WriteString(stableBrief(home, allProjects))
+	if !wishesOnly {
+		b.WriteString("\n")
+		b.WriteString(stableBrief(home, allProjects))
+		b.WriteString("\n# The active wishes, at a glance\n\n")
+		b.WriteString("A tool that keeps only the end of a long output has cut the wishes above: `djinn brief --wishes` " +
+			"prints them alone.\n\n")
+		if len(glance) == 0 {
+			b.WriteString("No active wishes.\n")
+		}
+		for _, line := range glance {
+			b.WriteString(line)
+		}
+		b.WriteString("\n" + DirectCommandsRule + " " + DirectFlags + "\n")
+	}
 	return stripCredentials(b.String()), nil
+}
+
+// glanceLine is an active wish in a line, for the end of the brief: its title, its identifier, and how many of its
+// tasks run and wait and of its questions are open.
+func glanceLine(exp *planv1.WishExport) string {
+	wish := exp.GetWish()
+	running, waiting, open := 0, 0, 0
+	for _, t := range exp.GetTasks() {
+		if IsAzima(t) {
+			continue
+		}
+		switch t.GetStatus() {
+		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
+			running++
+		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED,
+			planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+		default:
+			waiting++
+		}
+	}
+	for _, q := range exp.GetQuestions() {
+		if q.GetWithdrawal() == nil && q.GetAnswer() == nil {
+			open++
+		}
+	}
+	return fmt.Sprintf("- **%s** (`%s`): %d running, %d waiting, %d open questions.\n",
+		oneLine(wish.GetTitle()), wish.GetId(), running, waiting, open)
 }
 
 // landsLine says in one line where the wish's work lands, and how to change it: its integration branch in each of its

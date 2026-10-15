@@ -24,12 +24,13 @@ const LeadFirstFile = "lead-first.md"
 // Linux takes 128 KiB in one argument.
 const maxFirstArg = 64 << 10
 
-// StartLine is how every new lead starts, whatever its agent: from the brief, which Djinn computes from the plan.
+// StartLine is how every new lead starts, whatever its agent: from the brief, which Djinn computes from the plan, each
+// djinn command run alone so that none waits for the developer's approval.
 func StartLine() string {
 	return "You lead the active wishes of this Djinn. Run `djinn brief`: where the wishes stand and how to " +
 		"lead them, computed by Djinn from its plan. Then continue the wishes from what it says. Everything for the " +
 		"developer, reports included, is a question through `djinn question ask`; write nothing in this terminal. The " +
-		"work goes to tasks."
+		"work goes to tasks. " + DirectCommandsRule + " If your tool cuts the brief, run `djinn brief --wishes`."
 }
 
 // newLead prepares a new lead: the command line that starts provider's agent in dir (FirstProjectFolder: a

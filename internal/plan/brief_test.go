@@ -996,6 +996,114 @@ func TestGlobalBrief(t *testing.T) {
 	if resp.Msg.GetText() != brief {
 		t.Errorf("c.lead.Brief text mismatch: got %d bytes, want %d bytes", len(resp.Msg.GetText()), len(brief))
 	}
+
+	// The incident of 15/10/2026: Antigravity's run_command kept only the end of the brief, and the lead piped it
+	// through head and sed. The rule on direct commands opens it; its end names every active wish and the rule again.
+	if !strings.HasPrefix(brief, DirectCommandsRule) {
+		t.Errorf("the brief does not open with the rule on direct commands:\n%.300s", brief)
+	}
+	lines := strings.Split(strings.TrimRight(brief, "\n"), "\n")
+	tail := strings.Join(lines[max(0, len(lines)-12):], "\n")
+	for _, want := range []string{
+		"- **Active Wish 1** (`" + wish1ID + "`): 0 running, 0 waiting, 1 open questions.",
+		"- **Active Wish 2** (`" + wish2ID + "`): 0 running, 0 waiting, 0 open questions.",
+		"`djinn brief --wishes`", DirectCommandsRule, DirectFlags,
+	} {
+		if !strings.Contains(tail, want) {
+			t.Errorf("the brief's last lines lack %q:\n%s", want, tail)
+		}
+	}
+	if strings.Contains(tail, "Paused Wish") || strings.Contains(tail, "Granted Wish") {
+		t.Errorf("the brief's last lines name a wish that is not active:\n%s", tail)
+	}
+
+	// djinn brief --wishes: where the wishes stand, without the rules.
+	wishes, err := c.lead.Brief(ctx, connect.NewRequest(&planv1.LeadServiceBriefRequest{Wishes: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	short := wishes.Msg.GetText()
+	for _, want := range []string{DirectCommandsRule, "# The wish: Active Wish 1", "Which oil?", "# The wish: Active Wish 2", wantPaused, wantGranted} {
+		if !strings.Contains(short, want) {
+			t.Errorf("djinn brief --wishes lacks %q:\n%s", want, short)
+		}
+	}
+	for _, gone := range []string{"# Leading in Djinn", "## Commands", "## The projects' rules", "at a glance"} {
+		if strings.Contains(short, gone) {
+			t.Errorf("djinn brief --wishes holds %q:\n%s", gone, short)
+		}
+	}
+	if !strings.HasPrefix(brief, strings.TrimRight(short, "\n")) {
+		t.Errorf("djinn brief --wishes is not the start of the brief:\n%s", short)
+	}
+}
+
+// TestStartLineRunsCommandsAlone: the first message of every lead forbids pipes, chains, loops, redirections and
+// substitutions, and names the brief that no tool cuts; cmd.exe still carries it as one argument.
+func TestStartLineRunsCommandsAlone(t *testing.T) {
+	start := StartLine()
+	for _, want := range []string{"never a pipe (`|`)", "`&&`, `||`, `;`", "a loop (`for`)", "(`>`, `<<`)", "(`$(...)`)", "`djinn brief --wishes`"} {
+		if !strings.Contains(start, want) {
+			t.Errorf("StartLine lacks %q: %s", want, start)
+		}
+	}
+	for _, goos := range []string{"linux", "windows"} {
+		if _, ok := quoteArg(goos, start); !ok {
+			t.Errorf("StartLine does not go through the shell of %s: %s", goos, start)
+		}
+	}
+	rules := briefRules(nil, "")
+	for _, want := range []string{DirectCommandsRule, DirectFlags, "`djinn brief --wishes`", "`djinn lead notes --all`",
+		"`djinn task list --wish-id <wish> --short`", "`djinn task watch <task>`, `--last 5`"} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("briefRules lacks %q", want)
+		}
+	}
+}
+
+// TestLeadNotesAtOnce: djinn lead notes prints several notes, or all of them, in one command, never in a shell loop.
+func TestLeadNotesAtOnce(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	read := func(req *planv1.LeadServiceNotesRequest) (string, error) {
+		res, err := c.lead.Notes(ctx, connect.NewRequest(req))
+		if err != nil {
+			return "", err
+		}
+		return res.Msg.GetText(), nil
+	}
+	all, err := notes.Notes()
+	if err != nil || len(all) < 2 {
+		t.Fatalf("notes: %d, %v", len(all), err)
+	}
+	a, b := all[0], all[1]
+
+	if got, err := read(&planv1.LeadServiceNotesRequest{}); err != nil || !strings.HasPrefix(got, "- `"+a.Name+"`: ") {
+		t.Errorf("the index: %q, %v", got, err)
+	}
+	if got, err := read(&planv1.LeadServiceNotesRequest{Name: a.Name}); err != nil || got != a.Text() {
+		t.Errorf("one note: %q, %v", got, err)
+	}
+	if got, err := read(&planv1.LeadServiceNotesRequest{Name: " " + b.Name + " , " + strings.ToUpper(a.Name) + ","}); err != nil ||
+		got != b.Text()+"\n"+a.Text() {
+		t.Errorf("two notes: %q, %v", got, err)
+	}
+	got, err := read(&planv1.LeadServiceNotesRequest{All: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range all {
+		if strings.Count(got, n.Text()) != 1 {
+			t.Errorf("--all lacks %s once", n.Name)
+		}
+	}
+	if _, err := read(&planv1.LeadServiceNotesRequest{Name: a.Name + ",nope,nada"}); code(err) != connect.CodeNotFound ||
+		!strings.Contains(err.Error(), `"nope", "nada"`) {
+		t.Errorf("unknown notes: %v", err)
+	}
+	if _, err := read(&planv1.LeadServiceNotesRequest{Name: a.Name, All: true}); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("--all with a name: %v", err)
+	}
 }
 
 func TestBriefHeldPush(t *testing.T) {
@@ -1124,7 +1232,8 @@ func TestBriefListsNotes(t *testing.T) {
 	for _, want := range []string{
 		"**Read the lead's notes before you act in their area.**",
 		"**Run direct `djinn` commands and native file tools.**",
-		"single direct command, without shell chaining (`&&`, `||`, `;`), redirections, pipes (`|`), or backtick command substitutions in double quotes",
+		"Run each `djinn` command alone, as one direct command: never a pipe (`|`), a chain (`&&`, `||`, `;`), a loop (`for`)",
+		"a backtick between double quotes is a substitution too",
 		"(`Read`, `Write`, `view_file`, `write_to_file`)",
 		"**Delegate.**",
 		"Never read or search source code yourself (no `Read`, `Grep`, `Glob`, or `view_file` in the lead session to inspect code before spawning a task)",

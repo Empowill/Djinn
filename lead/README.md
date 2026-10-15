@@ -21,7 +21,8 @@ doc.
 
 Djinn builds the folder into its binary (`go:embed`): at run time the notes are read only. The brief gives every lead
 the index, a line per note with its name and description, never the notes themselves; `djinn lead notes` prints the
-index, and `djinn lead notes <name>` one note, which a lead opens before it acts in that note's area. A lead that may
+index, `djinn lead notes <name>` one note, which a lead opens before it acts in that note's area, and `djinn lead notes
+a,b` or `djinn lead notes --all` several in one command. A lead that may
 change Djinn adds or fixes a note by spawning a task that edits this folder; nothing writes here at run time.
 
 The pitfalls of the codebase, for workers, are not lead notes.

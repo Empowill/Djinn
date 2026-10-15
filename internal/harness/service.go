@@ -101,11 +101,26 @@ func (s *Tasks) List(
 	if err != nil {
 		return nil, err
 	}
+	if req.Msg.GetShort() {
+		for i, t := range page {
+			page[i] = shortTask(t)
+		}
+	}
 	return connect.NewResponse(&planv1.TaskServiceListResponse{
 		Tasks:         page,
 		NextPageToken: nextToken,
 		Total:         total,
 	}), nil
+}
+
+// shortTask is t in the few fields that say where it stands, for djinn task list --short: a lead reads them without
+// piping a list of whole tasks, prompts and runs included, through head or grep.
+func shortTask(t *planv1.Task) *planv1.Task {
+	return &planv1.Task{
+		Id: t.GetId(), Code: t.GetCode(), Title: t.GetTitle(), Status: t.GetStatus(), Kind: t.GetKind(),
+		Provider: t.GetProvider(), PartOf: t.GetPartOf(), DependsOn: t.GetDependsOn(), WaitReason: t.GetWaitReason(),
+		CreateTime: t.GetCreateTime(), StartTime: t.GetStartTime(), EndTime: t.GetEndTime(),
+	}
 }
 
 func (s *Tasks) Get(
@@ -186,7 +201,15 @@ func (s *Tasks) Watch(
 	if err := protovalidate.Validate(req.Msg); err != nil {
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	return s.h.Watch(ctx, req.Msg.GetTaskId(), req.Msg.GetAfterSeq(), func(ev *planv1.TaskEvent) error {
+	after := req.Msg.GetAfterSeq()
+	if n := int(req.Msg.GetLast()); n > 0 {
+		from, err := s.h.lastEventsFrom(ctx, req.Msg.GetTaskId(), n)
+		if err != nil {
+			return err
+		}
+		after = max(after, from)
+	}
+	return s.h.Watch(ctx, req.Msg.GetTaskId(), after, func(ev *planv1.TaskEvent) error {
 		if !req.Msg.GetRaw() && ev.GetRaw() != "" {
 			ev = proto.CloneOf(ev)
 			ev.Raw = ""

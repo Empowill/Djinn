@@ -179,6 +179,31 @@ func TestConvention(t *testing.T) {
 			parseOnly: true,
 		},
 		{
+			name: "the lead reads several notes in one direct command",
+			args: []string{"blockers-as-questions,direct-commands"},
+			want: &planv1.LeadServiceNotesRequest{Name: "blockers-as-questions,direct-commands"},
+		},
+		{
+			name: "the lead reads every note in one direct command",
+			args: []string{"--all"},
+			want: &planv1.LeadServiceNotesRequest{All: true},
+		},
+		{
+			name: "the brief of the wishes alone",
+			args: []string{"--wishes"},
+			want: &planv1.LeadServiceBriefRequest{Wishes: true},
+		},
+		{
+			name: "where the tasks stand, in a few lines each",
+			args: []string{"--wish-id", wishID, "--short"},
+			want: &planv1.TaskServiceListRequest{WishId: wishID, Short: true},
+		},
+		{
+			name: "a task's last events",
+			args: []string{wishID, "--last", "5"},
+			want: &planv1.TaskServiceWatchRequest{TaskId: wishID, Last: 5},
+		},
+		{
 			name:      "-- ends the flags",
 			args:      []string{"--", "--verbose?"},
 			want:      &planv1.QuestionServiceAskRequest{Text: "--verbose?"},

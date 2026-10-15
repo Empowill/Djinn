@@ -3142,14 +3142,17 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
-  // The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
+  // The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line; at its end,
+  // a line per active wish again, for an agent whose tool keeps only the end of a long output. With --wishes, where
+  // the wishes stand only.
   rpc Brief(LeadServiceBriefRequest) returns (LeadServiceBriefResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // The lead's notes: how to lead, learnt from past wishes, one note per file of lead/notes in Djinn's repository,
   // built into djinn and read only. Without a name, the index: a line per note, its name and what it is about (the
-  // brief holds the same); with one, that note whole. A lead reads a note before it acts in its area; to add or fix
+  // brief holds the same); with one, that note whole; with several (a,b) or --all, each whole, in one call. A lead
+  // reads a note before it acts in its area; to add or fix
   // one, a lead that may change Djinn spawns a task that edits lead/notes.
   rpc Notes(LeadServiceNotesRequest) returns (LeadServiceNotesResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -3323,7 +3326,11 @@ message LeadServiceChooseRequest {
 
 message LeadServiceChooseResponse {}
 
-message LeadServiceBriefRequest {}
+message LeadServiceBriefRequest {
+  // Only where the wishes stand: each active wish, then the paused and granted ones in a line each, without Djinn's
+  // rules nor the projects'. Short enough that no agent's tool cuts it.
+  bool wishes = 1;
+}
 
 message LeadServiceBriefResponse {
   // The brief, in Markdown.
@@ -3331,11 +3338,14 @@ message LeadServiceBriefResponse {
 }
 
 message LeadServiceNotesRequest {
-  // A note's name, as the index lists it: that note whole. Empty: the index.
+  // A note's name, as the index lists it: that note whole. Several, separated by commas (a,b): each of them whole,
+  // in one call. Empty: the index.
   string name = 1 [
     (djinn.v1.positional) = true,
-    (buf.validate.field).string.max_len = 100
+    (buf.validate.field).string.max_len = 2000
   ];
+  // Every note whole, in one call.
+  bool all = 2;
 }
 
 message LeadServiceNotesResponse {
@@ -3833,6 +3843,9 @@ message TaskServiceListRequest {
   string page_token = 4 [(buf.validate.field).string.max_len = 500];
   // Only the failed tasks that wait for the lead.
   bool failed = 5;
+  // Each task in a few fields: its code, title, status, kind, azima, what it waits for and its times; no prompt, no
+  // runs, no resources. Where the tasks stand, in a few lines each.
+  bool short = 6;
 }
 
 message TaskServiceListResponse {
@@ -4104,6 +4117,12 @@ message TaskServiceWatchRequest {
   int64 after_seq = 2 [(buf.validate.field).int64.gte = 0];
   // Also send each event's raw line from the provider.
   bool raw = 3;
+  // Only the last events already stored, this many (a task that ended: its final note is among them), then the ones
+  // that come. Not set: from the first one, or after after_seq.
+  int32 last = 4 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000
+  }];
 }
 
 message TaskServiceWatchResponse {
