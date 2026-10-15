@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -151,10 +152,96 @@ func proposalByRequest(ctx context.Context, r store.Reader, tilasmID, requestID 
 	return found[0], nil
 }
 
+// unescaped is a value an agent wrote on one line with --escapes: \n a line break, \t a tab, \\ a backslash. Any
+// other backslash escape is refused, so a value written for the shell is never stored half read.
+func unescaped(field, value string) (string, error) {
+	if !strings.Contains(value, `\`) {
+		return value, nil
+	}
+	var b strings.Builder
+	b.Grow(len(value))
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if c != '\\' {
+			b.WriteByte(c)
+			continue
+		}
+		if i+1 == len(value) {
+			return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+				"%s ends with a lone backslash: with --escapes, write \\\\ for a backslash", field))
+		}
+		i++
+		switch value[i] {
+		case 'n':
+			b.WriteByte('\n')
+		case 't':
+			b.WriteByte('\t')
+		case '\\':
+			b.WriteByte('\\')
+		default:
+			r, _ := utf8.DecodeRuneInString(value[i:])
+			return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+				"%s holds the escape \\%c, which --escapes does not know: only \\n, \\t and \\\\ are read", field, r))
+		}
+	}
+	return b.String(), nil
+}
+
+// unescapedComment is the request with its text decoded when it asks for --escapes, the flag then cleared: the
+// journal and the request identifier see the text as stored.
+func unescapedComment(m *planv1.TilasmServiceCommentRequest) (*planv1.TilasmServiceCommentRequest, error) {
+	if !m.GetEscapes() {
+		return m, nil
+	}
+	text, err := unescaped("text", m.GetText())
+	if err != nil {
+		return nil, err
+	}
+	m = proto.CloneOf(m)
+	m.Text, m.Escapes = text, false
+	return m, nil
+}
+
+// unescapedReply is the request with its text decoded when it asks for --escapes, the flag then cleared.
+func unescapedReply(m *planv1.TilasmServiceReplyRequest) (*planv1.TilasmServiceReplyRequest, error) {
+	if !m.GetEscapes() {
+		return m, nil
+	}
+	text, err := unescaped("text", m.GetText())
+	if err != nil {
+		return nil, err
+	}
+	m = proto.CloneOf(m)
+	m.Text, m.Escapes = text, false
+	return m, nil
+}
+
+// unescapedProposal is the request with its replacement and note decoded when it asks for --escapes, the flag then
+// cleared. A replacement file is read as it is.
+func unescapedProposal(m *planv1.TilasmServiceProposeRequest) (*planv1.TilasmServiceProposeRequest, error) {
+	if !m.GetEscapes() {
+		return m, nil
+	}
+	replacement, err := unescaped("replacement", m.GetReplacement())
+	if err != nil {
+		return nil, err
+	}
+	note, err := unescaped("note", m.GetNote())
+	if err != nil {
+		return nil, err
+	}
+	m = proto.CloneOf(m)
+	m.Replacement, m.Note, m.Escapes = replacement, note, false
+	return m, nil
+}
+
 func (t *Tilasms) Comment(
 	ctx context.Context, req *connect.Request[planv1.TilasmServiceCommentRequest],
 ) (*connect.Response[planv1.TilasmServiceCommentResponse], error) {
-	m := req.Msg
+	m, err := unescapedComment(req.Msg)
+	if err != nil {
+		return nil, err
+	}
 	tilasm, r, err := t.discussed(ctx, m.GetTilasm(), m.GetWish())
 	if err != nil {
 		return nil, err
@@ -229,7 +316,10 @@ func notFound(err error, what, id string) error {
 func (t *Tilasms) Reply(
 	ctx context.Context, req *connect.Request[planv1.TilasmServiceReplyRequest],
 ) (*connect.Response[planv1.TilasmServiceReplyResponse], error) {
-	m := req.Msg
+	m, err := unescapedReply(req.Msg)
+	if err != nil {
+		return nil, err
+	}
 	_, _, r, err := t.threadOf(ctx, m.GetThread())
 	if err != nil {
 		return nil, err
@@ -335,7 +425,10 @@ func (t *Tilasms) replacement(m *planv1.TilasmServiceProposeRequest, ceiling int
 func (t *Tilasms) Propose(
 	ctx context.Context, req *connect.Request[planv1.TilasmServiceProposeRequest],
 ) (*connect.Response[planv1.TilasmServiceProposeResponse], error) {
-	m := req.Msg
+	m, err := unescapedProposal(req.Msg)
+	if err != nil {
+		return nil, err
+	}
 	tilasm, r, err := t.discussed(ctx, m.GetTilasm(), m.GetWish())
 	if err != nil {
 		return nil, err

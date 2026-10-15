@@ -191,6 +191,19 @@ func TestConvention(t *testing.T) {
 			parseOnly: true,
 		},
 		{
+			name: "an agent's one-line Markdown asks for --escapes, and travels as written",
+			args: []string{"L01", "--thread", questionID, "--replacement", `a\n\n## Options`, "--note", `one\ttwo`, "--escapes"},
+			want: &planv1.TilasmServiceProposeRequest{
+				Tilasm: &planv1.TilasmRef{Ref: &planv1.TilasmRef_Code{Code: "L01"}}, Thread: questionID, Escapes: true,
+				Replacement: `a\n\n## Options`, Note: `one\ttwo`,
+			},
+		},
+		{
+			name: "djinn doc reply --escapes",
+			args: []string{questionID, "--text", `a\nb`, "--escapes"},
+			want: &planv1.TilasmServiceReplyRequest{Thread: questionID, Escapes: true, Text: `a\nb`},
+		},
+		{
 			name:      "-- ends the flags",
 			args:      []string{"--", "--verbose?"},
 			want:      &planv1.QuestionServiceAskRequest{Text: "--verbose?"},

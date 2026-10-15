@@ -2739,7 +2739,10 @@ type TilasmServiceCommentRequest struct {
 	RequestId string `protobuf:"bytes,8,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	// What the discussion is for: a comment, the default, or a request for a change, which the document agent answers
 	// with a proposal.
-	Kind          TilasmThreadKind `protobuf:"varint,9,opt,name=kind,proto3,enum=plan.v1.TilasmThreadKind" json:"kind,omitempty"`
+	Kind TilasmThreadKind `protobuf:"varint,9,opt,name=kind,proto3,enum=plan.v1.TilasmThreadKind" json:"kind,omitempty"`
+	// --text is written on one line with escapes: \n is a line break, \t a tab, \\ a backslash, and any other
+	// backslash escape is refused. Without it, the text is taken as written.
+	Escapes       bool `protobuf:"varint,10,opt,name=escapes,proto3" json:"escapes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2837,6 +2840,13 @@ func (x *TilasmServiceCommentRequest) GetKind() TilasmThreadKind {
 	return TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED
 }
 
+func (x *TilasmServiceCommentRequest) GetEscapes() bool {
+	if x != nil {
+		return x.Escapes
+	}
+	return false
+}
+
 type TilasmServiceCommentResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The discussion.
@@ -2893,7 +2903,10 @@ type TilasmServiceReplyRequest struct {
 	Author string `protobuf:"bytes,3,opt,name=author,proto3" json:"author,omitempty"`
 	// An identifier of your own for this request: sent again, it returns the discussion with the message written the
 	// first time rather than writing it twice.
-	RequestId     string `protobuf:"bytes,4,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	RequestId string `protobuf:"bytes,4,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// --text is written on one line with escapes: \n is a line break, \t a tab, \\ a backslash, and any other
+	// backslash escape is refused. Without it, the text is taken as written.
+	Escapes       bool `protobuf:"varint,5,opt,name=escapes,proto3" json:"escapes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2954,6 +2967,13 @@ func (x *TilasmServiceReplyRequest) GetRequestId() string {
 		return x.RequestId
 	}
 	return ""
+}
+
+func (x *TilasmServiceReplyRequest) GetEscapes() bool {
+	if x != nil {
+		return x.Escapes
+	}
+	return false
 }
 
 type TilasmServiceReplyResponse struct {
@@ -3217,7 +3237,10 @@ type TilasmServiceProposeRequest struct {
 	Author string `protobuf:"bytes,11,opt,name=author,proto3" json:"author,omitempty"`
 	// An identifier of your own for this request: sent again, it returns the proposal made the first time rather than
 	// proposing it twice.
-	RequestId     string `protobuf:"bytes,12,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	RequestId string `protobuf:"bytes,12,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// --replacement and --note are written on one line with escapes: \n is a line break, \t a tab, \\ a
+	// backslash, and any other backslash escape is refused. Without it, they are taken as written.
+	Escapes       bool `protobuf:"varint,13,opt,name=escapes,proto3" json:"escapes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3334,6 +3357,13 @@ func (x *TilasmServiceProposeRequest) GetRequestId() string {
 		return x.RequestId
 	}
 	return ""
+}
+
+func (x *TilasmServiceProposeRequest) GetEscapes() bool {
+	if x != nil {
+		return x.Escapes
+	}
+	return false
 }
 
 type TilasmServiceProposeResponse struct {
@@ -4183,7 +4213,7 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"\x05title\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xe8\aR\x05title\x12\x1f\n" +
 	"\x06author\x18\x05 \x01(\tB\a\xbaH\x04r\x02\x18dR\x06author\"D\n" +
 	"\x19TilasmServiceSaveResponse\x12'\n" +
-	"\x06tilasm\x18\x01 \x01(\v2\x0f.plan.v1.TilasmR\x06tilasm\"\x8b\x03\n" +
+	"\x06tilasm\x18\x01 \x01(\v2\x0f.plan.v1.TilasmR\x06tilasm\"\xa5\x03\n" +
 	"\x1bTilasmServiceCommentRequest\x122\n" +
 	"\x06tilasm\x18\x01 \x01(\v2\x12.plan.v1.TilasmRefB\x06\xbaH\x03\xc8\x01\x01R\x06tilasm\x12\x1f\n" +
 	"\x04wish\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x04wish\x12\x1f\n" +
@@ -4194,15 +4224,18 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"\x06author\x18\a \x01(\tB\x17\xbaH\x04r\x02\x18d\xf2\xf3\x18\fDJINN_AUTHORR\x06author\x12'\n" +
 	"\n" +
 	"request_id\x18\b \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\trequestId\x127\n" +
-	"\x04kind\x18\t \x01(\x0e2\x19.plan.v1.TilasmThreadKindB\b\xbaH\x05\x82\x01\x02\x10\x01R\x04kind\"M\n" +
+	"\x04kind\x18\t \x01(\x0e2\x19.plan.v1.TilasmThreadKindB\b\xbaH\x05\x82\x01\x02\x10\x01R\x04kind\x12\x18\n" +
+	"\aescapes\x18\n" +
+	" \x01(\bR\aescapes\"M\n" +
 	"\x1cTilasmServiceCommentResponse\x12-\n" +
-	"\x06thread\x18\x01 \x01(\v2\x15.plan.v1.TilasmThreadR\x06thread\"\xbb\x01\n" +
+	"\x06thread\x18\x01 \x01(\v2\x15.plan.v1.TilasmThreadR\x06thread\"\xd5\x01\n" +
 	"\x19TilasmServiceReplyRequest\x12#\n" +
 	"\x06thread\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06thread\x12\x1f\n" +
 	"\x04text\x18\x02 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\xa0\x9c\x01R\x04text\x12/\n" +
 	"\x06author\x18\x03 \x01(\tB\x17\xbaH\x04r\x02\x18d\xf2\xf3\x18\fDJINN_AUTHORR\x06author\x12'\n" +
 	"\n" +
-	"request_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\trequestId\"K\n" +
+	"request_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\trequestId\x12\x18\n" +
+	"\aescapes\x18\x05 \x01(\bR\aescapes\"K\n" +
 	"\x1aTilasmServiceReplyResponse\x12-\n" +
 	"\x06thread\x18\x01 \x01(\v2\x15.plan.v1.TilasmThreadR\x06thread\"^\n" +
 	"\x1bTilasmServiceResolveRequest\x12#\n" +
@@ -4213,7 +4246,7 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"\x18TilasmServiceWakeRequest\x12#\n" +
 	"\x06thread\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06thread\"J\n" +
 	"\x19TilasmServiceWakeResponse\x12-\n" +
-	"\x06thread\x18\x01 \x01(\v2\x15.plan.v1.TilasmThreadR\x06thread\"\xf0\x03\n" +
+	"\x06thread\x18\x01 \x01(\v2\x15.plan.v1.TilasmThreadR\x06thread\"\x8a\x04\n" +
 	"\x1bTilasmServiceProposeRequest\x122\n" +
 	"\x06tilasm\x18\x01 \x01(\v2\x12.plan.v1.TilasmRefB\x06\xbaH\x03\xc8\x01\x01R\x06tilasm\x12\x1f\n" +
 	"\x04wish\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x04wish\x12#\n" +
@@ -4229,7 +4262,8 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	" \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\x04note\x12/\n" +
 	"\x06author\x18\v \x01(\tB\x17\xbaH\x04r\x02\x18d\xf2\xf3\x18\fDJINN_AUTHORR\x06author\x12'\n" +
 	"\n" +
-	"request_id\x18\f \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\trequestId\"S\n" +
+	"request_id\x18\f \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\trequestId\x12\x18\n" +
+	"\aescapes\x18\r \x01(\bR\aescapes\"S\n" +
 	"\x1cTilasmServiceProposeResponse\x123\n" +
 	"\bproposal\x18\x01 \x01(\v2\x17.plan.v1.TilasmProposalR\bproposal\"f\n" +
 	"\x1aTilasmServiceAcceptRequest\x12'\n" +

@@ -470,7 +470,11 @@ func TestDocumentPromptRules(t *testing.T) {
 		"Do not propose a change unless the developer asks for one; you may offer to",
 		"Never answer a comment with a proposal alone", "A request asks for a change: propose it directly",
 		"one short sentence at most, 15 words or fewer", "Write no reply message, unless the request is ambiguous",
-		"put no double quote at all inside it, not even escaped: quote with « » or ’ instead",
+		"Put no double quote at all inside a value, not even escaped: quote with « » or ’ instead",
+		"on ONE line between straight double quotes, with `\\n` for each line break",
+		"give the command `--escapes` always", "Never put a real line break inside a command",
+		`--escapes --replacement "## Options comparées\n\n- Option A : plus rapide\n- Option B : plus sûre"`,
+		"djinn doc reply <id> --escapes --text", "--thread <id> --escapes --replacement",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the prompt misses %q:\n%s", want, prompt)
@@ -478,6 +482,17 @@ func TestDocumentPromptRules(t *testing.T) {
 	}
 	if strings.Contains(prompt, `\"`) {
 		t.Errorf("the prompt still shows an escaped double quote:\n%s", prompt)
+	}
+	// A continued agent, started before these rules, is told them again on every later turn.
+	turn := documentTurn(tilasm, nil)
+	for _, want := range []string{
+		"## How to work within your access", "on ONE line between straight double quotes, with `\\n` for each line break",
+		"give the command `--escapes` always", "Never put a real line break inside a command",
+		"Put no double quote at all inside a value", `--escapes --replacement "## Options comparées\n`,
+	} {
+		if !strings.Contains(turn, want) {
+			t.Errorf("a later turn misses %q:\n%s", want, turn)
+		}
 	}
 }
 

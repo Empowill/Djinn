@@ -122,7 +122,8 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"in the thread (`djinn doc reply <thread> --text \"…\"`) with what `djinn doc context L01 --thread <thread>` gives. " +
 	"To change a document the developer works on, propose rather than rewrite it: `djinn doc propose L01 --thread " +
 	"<thread> --replacement \"…\"` (or `--quote \"…\"` for another passage) waits for the developer, who accepts or " +
-	"rejects it in the window; you never accept a proposal, and a discussion alone never changes the document.\n" +
+	"rejects it in the window; you never accept a proposal, and a discussion alone never changes the document. For " +
+	"text on several lines, write it on one line with `\\n` for each line break and add `--escapes`.\n" +
 	"- **No secret, no local path** in the plan: name the project.\n" +
 	"- **Every request finds its wish.** A request that is not about this wish goes through " +
 	"`djinn wish route \"<request>\" --wish-id <wish> --ask`: Djinn asks the developer, on a card, to open a new wish " +
@@ -175,7 +176,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"--text \"…\"` (`--prefix`/`--suffix` when the quote is there twice); `djinn doc reply <thread> --text \"…\"`; " +
 	"`djinn doc propose <code> --thread <thread> --replacement \"…\"` (or `--quote \"…\"`, `--replacement-file x.md`, " +
 	"`--delete`; an empty quote with `--prefix`/`--suffix` inserts there): the replacement replaces the passage's Markdown " +
-	"source, markup included. Give `--request-id` to a write you may retry: sent again, it does nothing twice.\n" +
+	"source, markup included. Give `--request-id` to a write you may retry: sent again, it does nothing twice. With " +
+	"`--escapes`, `\\n` in `--text`, `--replacement` and `--note` is a line break and `\\t` a tab: write multi-line " +
+	"text on one line that way, never a real line break in a command.\n" +
 	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for a " +
 	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, by its question worker or by you.\n" +
 	"- `djinn mark list <wish>`: the open questions the developer marked read in the window, without a word. Start a " +

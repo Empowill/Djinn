@@ -397,13 +397,34 @@ func threadsText(b *strings.Builder, threads []*planv1.TilasmThread) {
 	}
 }
 
+// documentAccess is how a document agent works within its access: the rules its commands must follow to be allowed.
+// Every turn carries them, so an agent continued in an older session learns them too.
+func documentAccess() string {
+	return "## How to work within your access\n\n" +
+		"You read files, and run djinn's commands to read the wish, discuss the document and tell the lead: nothing " +
+		"else.\n\n" +
+		"- Run each `djinn …` command alone, in a Bash call of its own: no pipe, no `;`, no `&&`, no redirection, no " +
+		"`$(…)`, no `cd` before it. A call that joins anything to a djinn command is refused whole.\n" +
+		"- Write each value of `--text`, `--replacement`, `--note` on ONE line between straight double quotes, with " +
+		"`\\n` for each line break (`\\n\\n` between paragraphs, `\\t` for a tab, no other backslash), and give " +
+		"the command `--escapes` always. Never put a real line break inside a command: a line that starts with `#` " +
+		"is read as a comment, and the call is refused. Put no double quote at all inside a value, not even " +
+		"escaped: quote with « » or ’ instead, as French typography does, and write an apostrophe as ’. No " +
+		"backtick, no `$` inside a value either. For instance, a heading and a list: `djinn doc propose L01 --wish " +
+		"<wish> --thread <id> --escapes --replacement \"## Options comparées\\n\\n- Option A : plus rapide\\n- Option " +
+		"B : plus sûre\" --note \"Ajoute la comparaison\"`.\n" +
+		"- A refused call means that this form of the command is refused: run the djinn command again, alone and " +
+		"plain, its values rewritten by the rule above.\n\n"
+}
+
 // documentTurn is what the document agent is told when the developer writes again: the discussions to answer.
 func documentTurn(tilasm *planv1.Tilasm, threads []*planv1.TilasmThread) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "The developer wrote in discussions of %s:\n\n", tilasm.GetCode())
 	threadsText(&b, threads)
 	fmt.Fprintf(&b, "\nRead each one (djinn doc context %s --wish %s --thread <id>), answer as your rules say, then end "+
-		"your turn.", tilasm.GetCode(), tilasm.GetWishId())
+		"your turn.\n\n", tilasm.GetCode(), tilasm.GetWishId())
+	b.WriteString(documentAccess())
 	return b.String()
 }
 
@@ -426,11 +447,11 @@ func documentPrompt(wish *planv1.Wish, tilasm *planv1.Tilasm, threads []*planv1.
 	fmt.Fprintf(&b, "## How to answer\n\n"+
 		"1. Read each discussion, its passage and the document around it: `%[1]s --thread <id>`. The whole "+
 		"document: `%[2]s`.\n"+
-		"2. A comment is a conversation: reply in its thread, `djinn doc reply <id> --text \"…\"`. Answer the "+
+		"2. A comment is a conversation: reply in its thread, `djinn doc reply <id> --escapes --text \"…\"`. Answer the "+
 		"developer's question, or give your view, in 1 to 3 sentences, in the developer's language. Do not propose a "+
 		"change unless the developer asks for one; you may offer to. Never answer a comment with a proposal alone.\n"+
 		"3. A request asks for a change: propose it directly, `djinn doc propose %[3]s --wish %[4]s --thread <id> "+
-		"--replacement \"…\"` (`--delete` deletes the passage). The replacement is Markdown, markup included, in place "+
+		"--escapes --replacement \"…\"` (`--delete` deletes the passage). The replacement is Markdown, markup included, in place "+
 		"of the passage's source that the context shows; a discussion with an empty quote marks a place, and the "+
 		"replacement is inserted there. `--note \"…\"` is optional: one short sentence at most, 15 words or fewer, no "+
 		"justification. Write no reply message, unless the request is ambiguous and you must ask a question instead "+
@@ -442,16 +463,7 @@ func documentPrompt(wish *planv1.Wish, tilasm *planv1.Tilasm, threads []*planv1.
 		"6. Answer every developer message you were given, then end your turn: Djinn wakes you when the developer "+
 		"writes again, in this same conversation.\n\n",
 		fmt.Sprintf(doc, "context"), fmt.Sprintf(doc, "get"), code, id)
-	b.WriteString("## How to work within your access\n\n" +
-		"You read files, and run djinn's commands to read the wish, discuss the document and tell the lead: nothing " +
-		"else.\n\n" +
-		"- Run each `djinn …` command alone, in a Bash call of its own: no pipe, no `;`, no `&&`, no redirection, no " +
-		"`$(…)`, no `cd` before it. A call that joins anything to a djinn command is refused whole.\n" +
-		"- Write each value of `--text`, `--replacement`, `--note` between straight double quotes, and " +
-		"put no double quote at all inside it, not even escaped: quote with « » or ’ instead, as French typography " +
-		"does, and write an apostrophe as ’. No backtick, no `$`, no backslash inside a value either.\n" +
-		"- A refused call means that this form of the command is refused: run the djinn command again, alone and " +
-		"plain, its values rewritten by the rule above.\n\n")
+	b.WriteString(documentAccess())
 	b.WriteString("## Where the wish stands\n\n" + brief)
 	return code + ": document agent", b.String()
 }

@@ -681,6 +681,9 @@ message TilasmServiceCommentRequest {
   // What the discussion is for: a comment, the default, or a request for a change, which the document agent answers
   // with a proposal.
   TilasmThreadKind kind = 9 [(buf.validate.field).enum.defined_only = true];
+  // --text is written on one line with escapes: \n is a line break, \t a tab, \\ a backslash, and any other
+  // backslash escape is refused. Without it, the text is taken as written.
+  bool escapes = 10;
 }
 
 message TilasmServiceCommentResponse {
@@ -708,6 +711,9 @@ message TilasmServiceReplyRequest {
   // An identifier of your own for this request: sent again, it returns the discussion with the message written the
   // first time rather than writing it twice.
   string request_id = 4 [(buf.validate.field).string.max_len = 200];
+  // --text is written on one line with escapes: \n is a line break, \t a tab, \\ a backslash, and any other
+  // backslash escape is refused. Without it, the text is taken as written.
+  bool escapes = 5;
 }
 
 message TilasmServiceReplyResponse {
@@ -779,6 +785,9 @@ message TilasmServiceProposeRequest {
   // An identifier of your own for this request: sent again, it returns the proposal made the first time rather than
   // proposing it twice.
   string request_id = 12 [(buf.validate.field).string.max_len = 200];
+  // --replacement and --note are written on one line with escapes: \n is a line break, \t a tab, \\ a
+  // backslash, and any other backslash escape is refused. Without it, they are taken as written.
+  bool escapes = 13;
 }
 
 message TilasmServiceProposeResponse {

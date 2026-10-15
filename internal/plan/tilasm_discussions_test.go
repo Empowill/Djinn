@@ -517,3 +517,93 @@ func TestDiscussedByDeveloper(t *testing.T) {
 		}
 	}
 }
+
+// TestEscapes: with --escapes, an agent's one-line text, replacement and note read \n as a line break, \t as a tab and
+// \\ as a backslash, so Markdown with headings travels on one shell line; any other escape is refused by name, and
+// without the flag the values are stored as written.
+func TestEscapes(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t, WithHome(t.TempDir()))
+	wish := c.wish(t)
+	newDocument(t, c, wish, discussed)
+
+	thread, err := c.tilasms.Comment(ctx, connect.NewRequest(&planv1.TilasmServiceCommentRequest{
+		Tilasm: ref("L01"), Quote: "We cache it", Text: `First\n\n## Options\n- a\tb\\c`, Escapes: true, RequestId: "e1",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := thread.Msg.GetThread().GetMessages()[0].GetText(), "First\n\n## Options\n- a\tb\\c"; got != want {
+		t.Errorf("comment text = %q, want %q", got, want)
+	}
+	again, err := c.tilasms.Comment(ctx, connect.NewRequest(&planv1.TilasmServiceCommentRequest{
+		Tilasm: ref("L01"), Quote: "We cache it", Text: `First\n\n## Options\n- a\tb\\c`, Escapes: true, RequestId: "e1",
+	}))
+	if err != nil || again.Msg.GetThread().GetId() != thread.Msg.GetThread().GetId() {
+		t.Errorf("the same escaped request again = %v, %v; want the same discussion", again, err)
+	}
+	id := thread.Msg.GetThread().GetId()
+
+	reply, err := c.tilasms.Reply(ctx, connect.NewRequest(&planv1.TilasmServiceReplyRequest{
+		Thread: id, Text: `a\nb`, Escapes: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	literal, err := c.tilasms.Reply(ctx, connect.NewRequest(&planv1.TilasmServiceReplyRequest{Thread: id, Text: `a\nb\q`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := literal.Msg.GetThread().GetMessages()
+	if got := reply.Msg.GetThread().GetMessages()[1].GetText(); got != "a\nb" {
+		t.Errorf("escaped reply = %q, want a line break", got)
+	}
+	if got := msgs[len(msgs)-1].GetText(); got != `a\nb\q` {
+		t.Errorf("reply without --escapes = %q, want it as written", got)
+	}
+
+	p, err := c.tilasms.Propose(ctx, connect.NewRequest(&planv1.TilasmServiceProposeRequest{
+		Tilasm: ref("L01"), Thread: id, Replacement: `a\n\n## Options comparées\n\n- A\n- B`, Note: `one\ttwo`,
+		Escapes: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Msg.GetProposal(); got.GetReplacement() != "a\n\n## Options comparées\n\n- A\n- B" || got.GetNote() != "one\ttwo" {
+		t.Errorf("escaped proposal = %q, note %q", got.GetReplacement(), got.GetNote())
+	}
+
+	for name, call := range map[string]func() error{
+		"comment": func() error {
+			_, err := c.tilasms.Comment(ctx, connect.NewRequest(&planv1.TilasmServiceCommentRequest{
+				Tilasm: ref("L01"), Quote: "The end", Text: `a\qb`, Escapes: true,
+			}))
+			return err
+		},
+		"reply": func() error {
+			_, err := c.tilasms.Reply(ctx, connect.NewRequest(&planv1.TilasmServiceReplyRequest{
+				Thread: id, Text: `a\"b`, Escapes: true,
+			}))
+			return err
+		},
+		"note": func() error {
+			_, err := c.tilasms.Propose(ctx, connect.NewRequest(&planv1.TilasmServiceProposeRequest{
+				Tilasm: ref("L01"), Thread: id, Replacement: "x", Note: `why\r`, Escapes: true,
+			}))
+			return err
+		},
+		"trailing": func() error {
+			_, err := c.tilasms.Propose(ctx, connect.NewRequest(&planv1.TilasmServiceProposeRequest{
+				Tilasm: ref("L01"), Thread: id, Replacement: `x\`, Escapes: true,
+			}))
+			return err
+		},
+	} {
+		if err := call(); code(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `\`) {
+			t.Errorf("%s with an unknown escape: %v, want invalid_argument naming it", name, err)
+		}
+	}
+	if got := len(discussions(t, c, "L01").GetThreads()); got != 1 {
+		t.Errorf("%d discussions: a refused escape opened one", got)
+	}
+}
