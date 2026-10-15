@@ -10,11 +10,9 @@
   outline-color: color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
-/* The strip: the documents as compact pills, the open one enclosed by a quiet fill and a uniform line; no separator
-   under it, nor under the panel's header: spacing alone parts them from the document. */
-.workspace-panel[data-wish-panel="tilasms"] > .workspace-panel-header {
-  border-bottom-color: transparent;
-}
+/* The strip: the documents as compact pills, the open one enclosed by a quiet fill and a uniform line. The panel's
+   header keeps its separator, as every panel's does; the strip has none under it: spacing alone parts it from the
+   document. */
 .tilasm-strip {
   display: flex;
   min-width: 0;
