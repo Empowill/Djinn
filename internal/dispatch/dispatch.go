@@ -115,8 +115,12 @@ func Watcher(t *planv1.Task) bool { return t.GetProvider() == planv1.Provider_PR
 
 // QuestionWorker tells whether Djinn started the task on a question (Task.role): it reads and runs djinn's commands,
 // no build nor gate, so it takes no slot and holds no write scope; an agent all the same, it waits while the machine is
-// under pressure or its memory would not hold it.
+// under pressure or, but for a document agent, its memory would not hold it.
 func QuestionWorker(t *planv1.Task) bool { return t.GetRole() != planv1.TaskRole_TASK_ROLE_UNSPECIFIED }
+
+// Document tells whether the task is a document agent (TASK_ROLE_DOCUMENT): it answers a person in a discussion, so
+// it does not wait for the free memory, only for the machine's pressure.
+func Document(t *planv1.Task) bool { return t.GetRole() == planv1.TaskRole_TASK_ROLE_DOCUMENT }
 
 // Light tells whether the task takes no slot of the machine: a watcher, or a question worker.
 func Light(t *planv1.Task) bool { return Watcher(t) || QuestionWorker(t) }
@@ -347,7 +351,8 @@ func provider(t *planv1.Task) string {
 }
 
 // full says why the task's worker may not start now, or "" when it may: a slot is free (a question worker takes none),
-// and the memory holds a worker of its provider. Once the memory holds a task, the ones after it wait for it: they keep their order.
+// and the memory holds a worker of its provider. Once the memory holds a task, the ones after it wait for it: they keep
+// their order. A document agent waits for neither the memory nor the task the memory holds, only for the pressure.
 func (s *Situation) full(t *planv1.Task) string {
 	m := s.machine
 	if m == nil {
@@ -372,7 +377,7 @@ func (s *Situation) full(t *planv1.Task) string {
 		return workers + ", the most this machine holds (" + m.Rule + ")"
 	}
 	// Then the memory: it must hold what a worker of the task's provider typically takes.
-	if m.Available == 0 {
+	if m.Available == 0 || Document(t) {
 		return ""
 	}
 	if s.short != nil {

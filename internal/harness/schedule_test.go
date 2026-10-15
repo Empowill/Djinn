@@ -297,6 +297,48 @@ func TestMemoryHoldsWorker(t *testing.T) {
 	}
 }
 
+// TestWaitingOnce: a task waiting for the memory keeps the latest memory free in its wait reason, but records its
+// waiting event once, not on each pass where the memory free changed.
+func TestWaitingOnce(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	var mu sync.Mutex
+	free := uint64(machine.GiB)
+	available := func() uint64 {
+		mu.Lock()
+		defer mu.Unlock()
+		free += 1 << 20 // One more MiB on each reading, never enough.
+		return free
+	}
+	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 4}).capacity), WithMemory(available, machine.DefaultPolicy()),
+		WithTick(10*time.Millisecond))
+	wishID, _ := e.wish(t, gitRepo(t))
+	waiting := e.mustSpawn(t, wishID, "Heavy", "text ok", nil)
+	first := waiting.GetWaitReason()
+	if !strings.HasPrefix(first, "a fake worker peaks at 1.0 GiB") {
+		t.Fatalf("waiting: %v", waiting)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for e.get(t, waiting.GetId()).GetWaitReason() == first {
+		if time.Now().After(deadline) {
+			t.Fatal("the wait reason kept its first memory free")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond) // More passes.
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	n := 0
+	for _, ev := range e.watch(ctx, t, waiting.GetId(), 0) {
+		if strings.HasPrefix(ev.GetText(), "waiting: ") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("%d waiting events, want 1", n)
+	}
+}
+
 // TestPlannedSurvivesRestart: a task planned for later waits across a restart of djinn up, then starts.
 func TestPlannedSurvivesRestart(t *testing.T) {
 	testx.Portable(t)

@@ -12,6 +12,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -260,6 +261,45 @@ func TestDocumentAgent(t *testing.T) {
 	}
 	if e.get(t, busy.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 		t.Error("the busy task should still run")
+	}
+}
+
+// TestDocumentAgentSkipsMemory: on a machine whose free memory holds no worker, a task waits for it, but a
+// developer's request starts its document agent at once; under critical memory pressure, the next one waits.
+func TestDocumentAgentSkipsMemory(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	lim := &limit{slots: 4}
+	free := func() uint64 { return 1 * machine.GiB } // Less than a worker's 1 GiB and the 512 MiB kept.
+	e := up(t, t.TempDir(), WithQuestionWorkers(), WithCapacity(lim.capacity), WithMemory(free, machine.DefaultPolicy()),
+		WithTick(20*time.Millisecond))
+	wishID, _ := e.wish(t, fakeProject(t, ""))
+	waiting := e.mustSpawn(t, wishID, "Heavy", "text ok", nil)
+	if waiting.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !waiting.GetMachineWait() {
+		t.Fatalf("the task should wait for the memory: %v", waiting)
+	}
+	d := e.markdownDoc(t, wishID)
+	d.comment(t, "developer", "wait", planv1.TilasmThreadKind_TILASM_THREAD_KIND_REQUEST)
+	agents := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)
+	if len(agents) != 1 || agents[0].GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		t.Fatalf("the document agent should run beside the waiting task: %v", agents)
+	}
+	if got := e.get(t, waiting.GetId()); got.GetStartTime() != nil {
+		t.Errorf("the task started on a tight machine: %v", got)
+	}
+
+	lim.set(4, "the system reports critical memory pressure")
+	other := e.markdownDoc(t, wishID)
+	other.comment(t, "developer", "wait", planv1.TilasmThreadKind_TILASM_THREAD_KIND_REQUEST)
+	i := slices.IndexFunc(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT), func(a *planv1.Task) bool {
+		return a.GetTilasmId() == other.tilasm.GetId()
+	})
+	if i < 0 {
+		t.Fatal("no document agent on the second document")
+	}
+	if a := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)[i]; a.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING ||
+		a.GetWaitReason() != "the machine is under pressure: the system reports critical memory pressure" {
+		t.Errorf("under critical pressure: %v", a)
 	}
 }
 

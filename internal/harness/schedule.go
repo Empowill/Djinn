@@ -27,7 +27,7 @@ import (
 // What the scheduler journals, under the actor harness.
 const (
 	methodSchedule = "harness/schedule" // a planned task is ready: its access is decided; the request is the task
-	methodWait     = "harness/wait"     // a planned task waits, for a new reason; the request is the task
+	methodWait     = "harness/wait"     // a planned task waits, for a new reason or new measures; the request is the task
 )
 
 // Capacity says how many workers may run at once now and the rule that gave it, and why the machine is under
@@ -282,15 +282,42 @@ func (h *Harness) GatesOutside(n func() int) {
 	h.outside = n
 }
 
-// setWaiting records why a planned task waits, when the reason changed, with an event.
+// setWaiting records why a planned task waits, when the reason changed, with an event; when only its measures
+// changed (the memory free, a percentage), the task keeps the latest ones without a new event.
 func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, machine bool) {
 	why = grantedWhy(t, shelvedWhy(t, why))
 	if t.GetWaitReason() == why && t.GetMachineWait() == machine {
 		return
 	}
+	same := t.GetMachineWait() == machine && waitGist(t.GetWaitReason()) == waitGist(why)
 	t = proto.CloneOf(t)
 	t.WaitReason, t.MachineWait = why, machine
+	if same {
+		h.putAlone(ctx, actorHarness, methodWait, t)
+		return
+	}
 	h.writeAlone(ctx, actorHarness, methodWait, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why})
+}
+
+// measure is a measure in a wait reason: a size, a percentage, a load. A task's code is none.
+var measure = regexp.MustCompile(`\d+(\.\d+)? ?(MiB|GiB|%)|\d+\.\d+`)
+
+// waitGist is a wait reason without its measures: two reasons with the same gist say the same thing, only measured
+// at another time.
+func waitGist(why string) string { return measure.ReplaceAllString(why, "#") }
+
+// putAlone records the task, which no worker runs for, journaled with it, without an event.
+func (h *Harness) putAlone(ctx context.Context, actor, method string, t *planv1.Task) {
+	err := h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
+		if err := tx.Journal(actor, method, t); err != nil {
+			return err
+		}
+		return tx.Put(t)
+	})
+	if err != nil {
+		log.Printf("djinn: task %s: record its wait: %v", t.GetId(), err)
+	}
+	h.notify()
 }
 
 // failPlanned ends a planned task that never will start.

@@ -217,6 +217,39 @@ func TestQuestionWorkerTakesNoSlot(t *testing.T) {
 	}
 }
 
+// TestDocumentAgentSkipsMemory: a document agent starts while the free memory holds no worker, even behind a task that
+// waits for it, but waits under the machine's pressure, as the system's critical memory pressure.
+func TestDocumentAgentSkipsMemory(t *testing.T) {
+	at := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
+	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
+	task := func(id string, role planv1.TaskRole, minute int) *planv1.Task {
+		return &planv1.Task{Id: id, WishId: "w", Code: id, Status: planv1.TaskStatus_TASK_STATUS_PENDING, Role: role,
+			Scheduled: true, CreateTime: timestamppb.New(at.Add(time.Duration(minute) * time.Minute))}
+	}
+	agent := task("agent", planv1.TaskRole_TASK_ROLE_UNSPECIFIED, 0)
+	converter := task("converter", planv1.TaskRole_TASK_ROLE_CONVERTER, 1)
+	document := task("document", planv1.TaskRole_TASK_ROLE_DOCUMENT, 2)
+	pass := func(m *Machine) map[string]string {
+		got := map[string]string{}
+		for _, d := range New([]*planv1.Task{agent, converter, document}, []*planv1.Wish{wish}, nil, m).At(at).Pass() {
+			got[d.Task.GetId()] = d.Why
+		}
+		return got
+	}
+	// 1 GiB free: less than a worker's 1 GiB and the 512 MiB kept.
+	tight := &Machine{Slots: 4, Rule: "test", Available: machine.GiB, Policy: machine.DefaultPolicy()}
+	why := "a claude worker peaks at 1.0 GiB (none measured yet), 1.0 GiB free, 512 MiB kept"
+	if got, want := pass(tight), map[string]string{
+		"agent": why, "converter": "agent goes first: " + why, "document": "",
+	}; !maps.Equal(got, want) {
+		t.Errorf("tight: %v, want %v", got, want)
+	}
+	tight.Pressure = machine.DefaultPolicy().Pressure(machine.Snapshot{MemoryLevel: machine.MemoryCritical})
+	if got := pass(tight); got["document"] != "the machine is under pressure: the system reports critical memory pressure" {
+		t.Errorf("critical: %v", got)
+	}
+}
+
 // TestRestartQueue plays the passes after a restart: 6 tasks Djinn resumes over 2 wishes, a planned one, and 2
 // resumed tasks of a paused wish, on a machine of 2 slots where each pass ends the oldest worker. The first wish's
 // resumed tasks start first, then the second's, each wish in its own order, then the planned one: 2 at a time, the

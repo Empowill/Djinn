@@ -213,7 +213,8 @@ there (or at the caret, to add something): every message you send wakes it, and 
 proposal when you asked for a change. A draft wakes nothing, and it never answers its own messages. It remembers the
 document's discussions from one message to the next, knows the wish's goal without the lead's history, and tells the
 lead in one line only when something matters for the rest of the wish. It shows among the wish's tasks
-("L01: document agent"), reads, takes no slot, and the project's question worker settings turn it off with them.
+("L01: document agent"), reads, takes no slot, does not wait for free memory (only a machine under pressure holds
+it), and the project's question worker settings turn it off with them.
 
 A tilasm's link, `djinn://tilasm/<id>`, opens Djinn on it from a browser, a chat, a terminal or a Markdown file, and
 starts Djinn if it does not run; so does `djinn://wish/<id>` for a wish. Inside the window, such a link in a block, a

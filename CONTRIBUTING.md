@@ -281,7 +281,8 @@ To use Djinn, see the [README](README.md). To work on it:
   from its scope's cgroup on Linux (else from its process group), from its process group on macOS; `djinn machine
   show` lists every running worker's, the busiest first, and the Tasks tab shows them. Not measured on Windows yet
   ([T14](plan/8ce817da-cost.md)). Another worker starts only when the free memory holds the typical peak
-  of its provider's workers (1 GiB while none is measured); else its task says what it waits for.
+  of its provider's workers (1 GiB while none is measured); else its task says what it waits for. A document agent
+  answers a person: it waits only for the machine's pressure (as macOS's critical memory pressure), not for free memory.
 - `go tool task bench-dispatch`: the scheduler's decisions on hand-written dispatch cases, as a table
   ([T07](plan/8e8d3d76-orchestrator.md)).
 - `djinn backup [--file <archive>]` copies the data folder, even while Djinn runs; `djinn backup restore <archive>`
