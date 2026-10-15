@@ -51,7 +51,7 @@ Each one is a decision. Changing one is a discussion first.
   one agent's own (`.claude/settings.json`) follows from `.agents/`, and a test checks it.
 - **The lead's memory lives in Djinn.** How to lead, learnt from past wishes, is kept in [`lead/notes/`](lead/README.md),
   one note per file, built into the binary and read only at run time, for any lead whatever its agent. The brief
-  lists them; `djinn lead notes <name>` prints one. A note changes by pull request, like any doc.
+  lists them; `djinn lead notes <name>` prints one, `djinn lead notes a,b` or `--all` several. A note changes by pull request, like any doc.
 - **Auto mode by default.** Agents run in their own auto mode, trusted as their providers
   document it.
 - **A worker's rights come from where it runs.** Outside any project: read only. In a project:
@@ -302,7 +302,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   `.agents/skills/babysit-pr` for a GitHub pull request, `.agents/skills/babysit-mr` for a GitLab merge request
   ([`docs/wish-templates.md`](docs/wish-templates.md)).
 - `djinn lead brief` (or `djinn brief`): every active wish at once and how to lead them, computed from the store; every
-  new lead, of any agent, starts by running it. `djinn wish brief <wish-id>`: where one wish stands, which the lead
+  new lead, of any agent, starts by running it; `--wishes` prints where the wishes stand without the rules. `djinn wish brief <wish-id>`: where one wish stands, which the lead
   reads when focused on it. `djinn wish describe <wish-id> --text "…"` gives the wish the few lines it opens with
   (also edited under the wish's title). `djinn lead resume --provider antigravity` (or the arrow beside Talk to the Djinn) starts a
   lead of another agent than the recorded one's.

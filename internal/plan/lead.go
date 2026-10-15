@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -384,31 +385,64 @@ func (s *LeadService) Brief(
 	ctx context.Context, req *connect.Request[planv1.LeadServiceBriefRequest],
 ) (*connect.Response[planv1.LeadServiceBriefResponse], error) {
 	home := s.Wishes.home()
-	brief, err := BuildGlobalBrief(ctx, s.Wishes.Store, home)
+	build := BuildGlobalBrief
+	if req.Msg.GetWishes() {
+		build = BuildWishesBrief
+	}
+	brief, err := build(ctx, s.Wishes.Store, home)
 	if err != nil {
 		return nil, Status(err)
 	}
 	return connect.NewResponse(&planv1.LeadServiceBriefResponse{Text: brief}), nil
 }
 
-// Notes is the index of the lead's notes, or one note whole: they are built into djinn, read only.
+// Notes is the index of the lead's notes, or notes whole: one, several named a,b, or all of them. They are built into
+// djinn, read only.
 func (s *LeadService) Notes(
 	ctx context.Context, req *connect.Request[planv1.LeadServiceNotesRequest],
 ) (*connect.Response[planv1.LeadServiceNotesResponse], error) {
-	name := strings.TrimSpace(req.Msg.GetName())
-	if name == "" {
+	var names []string
+	for name := range strings.SplitSeq(req.Msg.GetName(), ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			names = append(names, name)
+		}
+	}
+	if req.Msg.GetAll() {
+		if len(names) > 0 {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(
+				"--all prints every note: give it no name"))
+		}
+		all, err := notes.Notes()
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		texts := make([]string, len(all))
+		for i, n := range all {
+			texts[i] = n.Text()
+		}
+		return connect.NewResponse(&planv1.LeadServiceNotesResponse{Text: strings.Join(texts, "\n")}), nil
+	}
+	if len(names) == 0 {
 		index, err := notes.Index()
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
 		return connect.NewResponse(&planv1.LeadServiceNotesResponse{Text: index}), nil
 	}
-	note, ok := notes.Find(name)
-	if !ok {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf(
-			"the lead has no note %q: djinn lead notes lists them", name))
+	var texts, missing []string
+	for _, name := range names {
+		note, ok := notes.Find(name)
+		if !ok {
+			missing = append(missing, strconv.Quote(name))
+			continue
+		}
+		texts = append(texts, note.Text())
 	}
-	return connect.NewResponse(&planv1.LeadServiceNotesResponse{Text: note.Text()}), nil
+	if len(missing) > 0 {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf(
+			"the lead has no note %s: djinn lead notes lists them", strings.Join(missing, ", ")))
+	}
+	return connect.NewResponse(&planv1.LeadServiceNotesResponse{Text: strings.Join(texts, "\n")}), nil
 }
 
 // sessionLine is the command line that resumes the session of the lead, and the folder it runs in.
