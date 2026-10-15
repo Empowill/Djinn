@@ -54,7 +54,9 @@ func TestBriefListsTilasms(t *testing.T) {
 	if l := line("- **T30**"); l == "" || strings.Contains(l, "explained by") {
 		t.Errorf("the azima graph: %q, want T30 explained by none", l)
 	}
-	for _, want := range []string{"To explain a concept, make a tilasm", "talisman", "`djinn tilasm put <folder> --wish <wish>",
+	for _, want := range []string{"To explain a concept, write a support", "talisman", "a Markdown document",
+		"One support per subject", "`djinn doc list --wish <wish> --search", "`djinn doc put brief.md --wish <wish> --code L01`",
+		"`djinn doc put brief.md --wish <wish> --cites T07`", "An HTML page only when the developer asks for one",
 		"inline SVG laid out by hand", "never Mermaid", "reaches no network", "by its link, `djinn://tilasm/<id>`", "`--tilasm L01`"} {
 		if !strings.Contains(brief.Stable, want) {
 			t.Errorf("the rules lack %q", want)

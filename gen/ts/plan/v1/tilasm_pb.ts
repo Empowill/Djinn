@@ -2,8 +2,8 @@
 // @generated from file plan/v1/tilasm.proto (package plan.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../buf/validate/validate_pb";
 import { file_djinn_v1_options } from "../../djinn/v1/options_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
@@ -14,13 +14,14 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file plan/v1/tilasm.proto.
  */
 export const file_plan_v1_tilasm: GenFile = /*@__PURE__*/
-  fileDesc("ChRwbGFuL3YxL3RpbGFzbS5wcm90bxIHcGxhbi52MSLIAgoGVGlsYXNtEhQKAmlkGAEgASgJQgi6SAVyA7ABARIPCgd3aXNoX2lkGAIgASgJEiIKBGNvZGUYAyABKAlCFLpIEXIPMg1eTFswLTldezIsM30kEhcKBXRpdGxlGAQgASgJQgi6SAVyAxjoBxIXCgZhdXRob3IYBSABKAlCB7pIBHICGGQSKAoIdmVyc2lvbnMYBiADKAsyFi5wbGFuLnYxLlRpbGFzbVZlcnNpb24SDQoFY2l0ZXMYByADKAkSLwoLY3JlYXRlX3RpbWUYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC3VwZGF0ZV90aW1lGAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCgltYXhfYnl0ZXMYCiABKAM6E9LzGA8KB3dpc2hfaWQKBGNvZGUinQEKDVRpbGFzbVZlcnNpb24SDgoGbnVtYmVyGAEgASgFEi8KC2NyZWF0ZV90aW1lGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIXCgZhdXRob3IYAyABKAlCB7pIBHICGGQSDAoEc2l6ZRgEIAEoAxINCgVmaWxlcxgFIAEoBRIVCg1yZXN0b3JlZF9mcm9tGAYgASgFIloKCVRpbGFzbVJlZhInCgRjb2RlGAEgASgJQhe6SBRyEjIQXltMbF1bMC05XXsyLDN9JEgAEhYKAmlkGAIgASgJQgi6SAVyA7ABAUgAQgwKA3JlZhIFukgCCAEiZwoMVGlsYXNtRXhwb3J0Eh8KBnRpbGFzbRgBIAEoCzIPLnBsYW4udjEuVGlsYXNtEhIKCmNpdGVfY29kZXMYAiADKAkSIgoFZmlsZXMYAyADKAsyEy5wbGFuLnYxLlRpbGFzbUZpbGUiPAoKVGlsYXNtRmlsZRIPCgd2ZXJzaW9uGAEgASgFEgwKBHBhdGgYAiABKAkSDwoHY29udGVudBgDIAEoDCLJAQoXVGlsYXNtU2VydmljZVB1dFJlcXVlc3QSGQoEcGF0aBgBIAEoCUILukgIyAEBcgMYgCASFgoEd2lzaBgCIAEoCUIIukgFcgOwAQESFwoFdGl0bGUYAyABKAlCCLpIBXIDGOgHEigKBGNvZGUYBCABKAlCGrpIF9gBAXISMhBeW0xsXVswLTldezIsM30kEh8KBWNpdGVzGAUgAygJQhC6SA2SAQoQZCIGcgQQARhAEhcKBmF1dGhvchgGIAEoCUIHukgEcgIYZCJOChhUaWxhc21TZXJ2aWNlUHV0UmVzcG9uc2USHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20SEQoJZGlyZWN0b3J5GAIgASgJIk8KGFRpbGFzbVNlcnZpY2VMaXN0UmVxdWVzdBIZCgR3aXNoGAEgASgJQgu6SAjYAQFyA7ABARIYCgZzZWFyY2gYAiABKAlCCLpIBXIDGOgHIj0KGVRpbGFzbVNlcnZpY2VMaXN0UmVzcG9uc2USIAoHdGlsYXNtcxgBIAMoCzIPLnBsYW4udjEuVGlsYXNtInoKF1RpbGFzbVNlcnZpY2VHZXRSZXF1ZXN0EioKBnRpbGFzbRgBIAEoCzISLnBsYW4udjEuVGlsYXNtUmVmQga6SAPIAQESGQoEd2lzaBgCIAEoCUILukgI2AEBcgOwAQESGAoHdmVyc2lvbhgDIAEoBUIHukgEGgIoACKXAQoYVGlsYXNtU2VydmljZUdldFJlc3BvbnNlEh8KBnRpbGFzbRgBIAEoCzIPLnBsYW4udjEuVGlsYXNtEg8KB3ZlcnNpb24YAiABKAUSDAoEdGV4dBgDIAEoCRIRCglkaXJlY3RvcnkYBCABKAkSDQoFZmlsZXMYBSADKAkSDAoEbGluaxgGIAEoCRILCgN1cmwYByABKAkiYQoYVGlsYXNtU2VydmljZU9wZW5SZXF1ZXN0EioKBnRpbGFzbRgBIAEoCzISLnBsYW4udjEuVGlsYXNtUmVmQga6SAPIAQESGQoEd2lzaBgCIAEoCUILukgI2AEBcgOwAQEiWgoZVGlsYXNtU2VydmljZU9wZW5SZXNwb25zZRIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbRIMCgRsaW5rGAIgASgJEg4KBndpbmRvdxgDIAEoCCJkChtUaWxhc21TZXJ2aWNlSGlzdG9yeVJlcXVlc3QSKgoGdGlsYXNtGAEgASgLMhIucGxhbi52MS5UaWxhc21SZWZCBrpIA8gBARIZCgR3aXNoGAIgASgJQgu6SAjYAQFyA7ABASJbChxUaWxhc21TZXJ2aWNlSGlzdG9yeVJlc3BvbnNlEigKCHZlcnNpb25zGAEgAygLMhYucGxhbi52MS5UaWxhc21WZXJzaW9uEhEKCWRpcmVjdG9yeRgCIAEoCSKaAQobVGlsYXNtU2VydmljZVJlc3RvcmVSZXF1ZXN0EioKBnRpbGFzbRgBIAEoCzISLnBsYW4udjEuVGlsYXNtUmVmQga6SAPIAQESGwoHdmVyc2lvbhgCIAEoBUIKukgHyAEBGgIoARIZCgR3aXNoGAMgASgJQgu6SAjYAQFyA7ABARIXCgZhdXRob3IYBCABKAlCB7pIBHICGGQiPwocVGlsYXNtU2VydmljZVJlc3RvcmVSZXNwb25zZRIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbSJ7ChpUaWxhc21TZXJ2aWNlRXhwb3J0UmVxdWVzdBIqCgZ0aWxhc20YASABKAsyEi5wbGFuLnYxLlRpbGFzbVJlZkIGukgDyAEBEhkKBHdpc2gYAiABKAlCC7pICNgBAXIDsAEBEhYKBGZpbGUYAyABKAlCCLpIBXIDGIAgIjkKG1RpbGFzbVNlcnZpY2VFeHBvcnRSZXNwb25zZRIMCgRmaWxlGAEgASgJEgwKBHNpemUYAiABKAMiaAoaVGlsYXNtU2VydmljZUltcG9ydFJlcXVlc3QSGQoEZmlsZRgBIAEoCUILukgIyAEBcgMYgCASFgoEd2lzaBgCIAEoCUIIukgFcgOwAQESFwoGYXV0aG9yGAMgASgJQge6SARyAhhkIj4KG1RpbGFzbVNlcnZpY2VJbXBvcnRSZXNwb25zZRIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbSKaAQobVGlsYXNtU2VydmljZVB1dERhdGFSZXF1ZXN0EhkKBHdpc2gYASABKAlCC7pICMgBAXIDsAEBEhYKBG5hbWUYAiABKAlCCLpIBXIDGOgHEi8KBWZpbGVzGAMgAygLMhMucGxhbi52MS5UaWxhc21GaWxlQgu6SAiSAQUIARCQThIXCgZhdXRob3IYBCABKAlCB7pIBHICGGQiUQocVGlsYXNtU2VydmljZVB1dERhdGFSZXNwb25zZRIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbRIQCghpbXBvcnRlZBgCIAEoCDLgBgoNVGlsYXNtU2VydmljZRJUCgNQdXQSIC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VQdXRSZXF1ZXN0GiEucGxhbi52MS5UaWxhc21TZXJ2aWNlUHV0UmVzcG9uc2UiCMjzGAHg8xgBElYKBExpc3QSIS5wbGFuLnYxLlRpbGFzbVNlcnZpY2VMaXN0UmVxdWVzdBoiLnBsYW4udjEuVGlsYXNtU2VydmljZUxpc3RSZXNwb25zZSIHkAIByPMYARJTCgNHZXQSIC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VHZXRSZXF1ZXN0GiEucGxhbi52MS5UaWxhc21TZXJ2aWNlR2V0UmVzcG9uc2UiB5ACAcjzGAESWwoET3BlbhIhLnBsYW4udjEuVGlsYXNtU2VydmljZU9wZW5SZXF1ZXN0GiIucGxhbi52MS5UaWxhc21TZXJ2aWNlT3BlblJlc3BvbnNlIgzI8xgB2PMYAeDzGAESXwoHSGlzdG9yeRIkLnBsYW4udjEuVGlsYXNtU2VydmljZUhpc3RvcnlSZXF1ZXN0GiUucGxhbi52MS5UaWxhc21TZXJ2aWNlSGlzdG9yeVJlc3BvbnNlIgeQAgHI8xgBEmAKB1Jlc3RvcmUSJC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VSZXN0b3JlUmVxdWVzdBolLnBsYW4udjEuVGlsYXNtU2VydmljZVJlc3RvcmVSZXNwb25zZSIIyPMYAeDzGAESXQoGRXhwb3J0EiMucGxhbi52MS5UaWxhc21TZXJ2aWNlRXhwb3J0UmVxdWVzdBokLnBsYW4udjEuVGlsYXNtU2VydmljZUV4cG9ydFJlc3BvbnNlIgjI8xgB4PMYAhJdCgZJbXBvcnQSIy5wbGFuLnYxLlRpbGFzbVNlcnZpY2VJbXBvcnRSZXF1ZXN0GiQucGxhbi52MS5UaWxhc21TZXJ2aWNlSW1wb3J0UmVzcG9uc2UiCMjzGAHg8xgBEmAKB1B1dERhdGESJC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VQdXREYXRhUmVxdWVzdBolLnBsYW4udjEuVGlsYXNtU2VydmljZVB1dERhdGFSZXNwb25zZSIIyPMYAuDzGAEaDOrzGAh0YWxpc21hbkKIAQoLY29tLnBsYW4udjFCC1RpbGFzbVByb3RvUAFaL2dpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL3BsYW4vdjE7cGxhbnYxogIDUFhYqgIHUGxhbi5WMcoCB1BsYW5cVjHiAhNQbGFuXFYxXEdQQk1ldGFkYXRh6gIIUGxhbjo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options, file_google_protobuf_timestamp]);
+  fileDesc("ChRwbGFuL3YxL3RpbGFzbS5wcm90bxIHcGxhbi52MSKBAwoGVGlsYXNtEhQKAmlkGAEgASgJQgi6SAVyA7ABARIPCgd3aXNoX2lkGAIgASgJEiIKBGNvZGUYAyABKAlCFLpIEXIPMg1eTFswLTldezIsM30kEhcKBXRpdGxlGAQgASgJQgi6SAVyAxjoBxIXCgZhdXRob3IYBSABKAlCB7pIBHICGGQSKAoIdmVyc2lvbnMYBiADKAsyFi5wbGFuLnYxLlRpbGFzbVZlcnNpb24SDQoFY2l0ZXMYByADKAkSLwoLY3JlYXRlX3RpbWUYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC3VwZGF0ZV90aW1lGAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCgltYXhfYnl0ZXMYCiABKAMSJQoGZm9ybWF0GAsgASgOMhUucGxhbi52MS5UaWxhc21Gb3JtYXQSEAoIcmV2aXNpb24YDCABKAM6E9LzGA8KB3dpc2hfaWQKBGNvZGUihwIKDVRpbGFzbVZlcnNpb24SDgoGbnVtYmVyGAEgASgFEi8KC2NyZWF0ZV90aW1lGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIXCgZhdXRob3IYAyABKAlCB7pIBHICGGQSDAoEc2l6ZRgEIAEoAxINCgVmaWxlcxgFIAEoBRIVCg1yZXN0b3JlZF9mcm9tGAYgASgFEiUKBm9yaWdpbhgHIAEoDjIVLnBsYW4udjEuVGlsYXNtT3JpZ2luEhAKCHJldmlzaW9uGAggASgDEi8KC3VwZGF0ZV90aW1lGAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJaCglUaWxhc21SZWYSJwoEY29kZRgBIAEoCUIXukgUchIyEF5bTGxdWzAtOV17MiwzfSRIABIWCgJpZBgCIAEoCUIIukgFcgOwAQFIAEIMCgNyZWYSBbpIAggBImcKDFRpbGFzbUV4cG9ydBIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbRISCgpjaXRlX2NvZGVzGAIgAygJEiIKBWZpbGVzGAMgAygLMhMucGxhbi52MS5UaWxhc21GaWxlIjwKClRpbGFzbUZpbGUSDwoHdmVyc2lvbhgBIAEoBRIMCgRwYXRoGAIgASgJEg8KB2NvbnRlbnQYAyABKAwiyQEKF1RpbGFzbVNlcnZpY2VQdXRSZXF1ZXN0EhkKBHBhdGgYASABKAlCC7pICMgBAXIDGIAgEhYKBHdpc2gYAiABKAlCCLpIBXIDsAEBEhcKBXRpdGxlGAMgASgJQgi6SAVyAxjoBxIoCgRjb2RlGAQgASgJQhq6SBfYAQFyEjIQXltMbF1bMC05XXsyLDN9JBIfCgVjaXRlcxgFIAMoCUIQukgNkgEKEGQiBnIEEAEYQBIXCgZhdXRob3IYBiABKAlCB7pIBHICGGQiTgoYVGlsYXNtU2VydmljZVB1dFJlc3BvbnNlEh8KBnRpbGFzbRgBIAEoCzIPLnBsYW4udjEuVGlsYXNtEhEKCWRpcmVjdG9yeRgCIAEoCSJPChhUaWxhc21TZXJ2aWNlTGlzdFJlcXVlc3QSGQoEd2lzaBgBIAEoCUILukgI2AEBcgOwAQESGAoGc2VhcmNoGAIgASgJQgi6SAVyAxjoByI9ChlUaWxhc21TZXJ2aWNlTGlzdFJlc3BvbnNlEiAKB3RpbGFzbXMYASADKAsyDy5wbGFuLnYxLlRpbGFzbSJ6ChdUaWxhc21TZXJ2aWNlR2V0UmVxdWVzdBIqCgZ0aWxhc20YASABKAsyEi5wbGFuLnYxLlRpbGFzbVJlZkIGukgDyAEBEhkKBHdpc2gYAiABKAlCC7pICNgBAXIDsAEBEhgKB3ZlcnNpb24YAyABKAVCB7pIBBoCKAAilwEKGFRpbGFzbVNlcnZpY2VHZXRSZXNwb25zZRIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbRIPCgd2ZXJzaW9uGAIgASgFEgwKBHRleHQYAyABKAkSEQoJZGlyZWN0b3J5GAQgASgJEg0KBWZpbGVzGAUgAygJEgwKBGxpbmsYBiABKAkSCwoDdXJsGAcgASgJImEKGFRpbGFzbVNlcnZpY2VPcGVuUmVxdWVzdBIqCgZ0aWxhc20YASABKAsyEi5wbGFuLnYxLlRpbGFzbVJlZkIGukgDyAEBEhkKBHdpc2gYAiABKAlCC7pICNgBAXIDsAEBIloKGVRpbGFzbVNlcnZpY2VPcGVuUmVzcG9uc2USHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20SDAoEbGluaxgCIAEoCRIOCgZ3aW5kb3cYAyABKAgiZAobVGlsYXNtU2VydmljZUhpc3RvcnlSZXF1ZXN0EioKBnRpbGFzbRgBIAEoCzISLnBsYW4udjEuVGlsYXNtUmVmQga6SAPIAQESGQoEd2lzaBgCIAEoCUILukgI2AEBcgOwAQEiWwocVGlsYXNtU2VydmljZUhpc3RvcnlSZXNwb25zZRIoCgh2ZXJzaW9ucxgBIAMoCzIWLnBsYW4udjEuVGlsYXNtVmVyc2lvbhIRCglkaXJlY3RvcnkYAiABKAkimgEKG1RpbGFzbVNlcnZpY2VSZXN0b3JlUmVxdWVzdBIqCgZ0aWxhc20YASABKAsyEi5wbGFuLnYxLlRpbGFzbVJlZkIGukgDyAEBEhsKB3ZlcnNpb24YAiABKAVCCrpIB8gBARoCKAESGQoEd2lzaBgDIAEoCUILukgI2AEBcgOwAQESFwoGYXV0aG9yGAQgASgJQge6SARyAhhkIj8KHFRpbGFzbVNlcnZpY2VSZXN0b3JlUmVzcG9uc2USHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20iewoaVGlsYXNtU2VydmljZUV4cG9ydFJlcXVlc3QSKgoGdGlsYXNtGAEgASgLMhIucGxhbi52MS5UaWxhc21SZWZCBrpIA8gBARIZCgR3aXNoGAIgASgJQgu6SAjYAQFyA7ABARIWCgRmaWxlGAMgASgJQgi6SAVyAxiAICI5ChtUaWxhc21TZXJ2aWNlRXhwb3J0UmVzcG9uc2USDAoEZmlsZRgBIAEoCRIMCgRzaXplGAIgASgDImgKGlRpbGFzbVNlcnZpY2VJbXBvcnRSZXF1ZXN0EhkKBGZpbGUYASABKAlCC7pICMgBAXIDGIAgEhYKBHdpc2gYAiABKAlCCLpIBXIDsAEBEhcKBmF1dGhvchgDIAEoCUIHukgEcgIYZCI+ChtUaWxhc21TZXJ2aWNlSW1wb3J0UmVzcG9uc2USHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20imgEKG1RpbGFzbVNlcnZpY2VQdXREYXRhUmVxdWVzdBIZCgR3aXNoGAEgASgJQgu6SAjIAQFyA7ABARIWCgRuYW1lGAIgASgJQgi6SAVyAxjoBxIvCgVmaWxlcxgDIAMoCzITLnBsYW4udjEuVGlsYXNtRmlsZUILukgIkgEFCAEQkE4SFwoGYXV0aG9yGAQgASgJQge6SARyAhhkIlEKHFRpbGFzbVNlcnZpY2VQdXREYXRhUmVzcG9uc2USHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20SEAoIaW1wb3J0ZWQYAiABKAgiqQEKGlRpbGFzbVNlcnZpY2VDcmVhdGVSZXF1ZXN0EhYKBHdpc2gYASABKAlCCLpIBXIDsAEBEhsKBXRpdGxlGAIgASgJQgy6SAVyAxjoB/jzGAESHAoIbWFya2Rvd24YAyABKAlCCrpIB3IFGICAgBkSHwoFY2l0ZXMYBCADKAlCELpIDZIBChBkIgZyBBABGEASFwoGYXV0aG9yGAUgASgJQge6SARyAhhkIlEKG1RpbGFzbVNlcnZpY2VDcmVhdGVSZXNwb25zZRIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbRIRCglkaXJlY3RvcnkYAiABKAkioAEKGFRpbGFzbVNlcnZpY2VTYXZlUmVxdWVzdBIUCgJpZBgBIAEoCUIIukgFcgOwAQESHgoNYmFzZV9yZXZpc2lvbhgCIAEoA0IHukgEIgIoABIcCghtYXJrZG93bhgDIAEoCUIKukgHcgUYgICAGRIXCgV0aXRsZRgEIAEoCUIIukgFcgMY6AcSFwoGYXV0aG9yGAUgASgJQge6SARyAhhkIjwKGVRpbGFzbVNlcnZpY2VTYXZlUmVzcG9uc2USHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20qYQoMVGlsYXNtRm9ybWF0Eh0KGVRJTEFTTV9GT1JNQVRfVU5TUEVDSUZJRUQQABIWChJUSUxBU01fRk9STUFUX0hUTUwQARIaChZUSUxBU01fRk9STUFUX01BUktET1dOEAIqqwEKDFRpbGFzbU9yaWdpbhIdChlUSUxBU01fT1JJR0lOX1VOU1BFQ0lGSUVEEAASFQoRVElMQVNNX09SSUdJTl9QVVQQARIYChRUSUxBU01fT1JJR0lOX0NSRUFURRACEhYKElRJTEFTTV9PUklHSU5fU0FWRRADEhkKFVRJTEFTTV9PUklHSU5fUkVTVE9SRRAEEhgKFFRJTEFTTV9PUklHSU5fSU1QT1JUEAUynwgKDVRpbGFzbVNlcnZpY2USVAoDUHV0EiAucGxhbi52MS5UaWxhc21TZXJ2aWNlUHV0UmVxdWVzdBohLnBsYW4udjEuVGlsYXNtU2VydmljZVB1dFJlc3BvbnNlIgjI8xgB4PMYARJWCgRMaXN0EiEucGxhbi52MS5UaWxhc21TZXJ2aWNlTGlzdFJlcXVlc3QaIi5wbGFuLnYxLlRpbGFzbVNlcnZpY2VMaXN0UmVzcG9uc2UiB5ACAcjzGAESUwoDR2V0EiAucGxhbi52MS5UaWxhc21TZXJ2aWNlR2V0UmVxdWVzdBohLnBsYW4udjEuVGlsYXNtU2VydmljZUdldFJlc3BvbnNlIgeQAgHI8xgBElsKBE9wZW4SIS5wbGFuLnYxLlRpbGFzbVNlcnZpY2VPcGVuUmVxdWVzdBoiLnBsYW4udjEuVGlsYXNtU2VydmljZU9wZW5SZXNwb25zZSIMyPMYAdjzGAHg8xgBEl8KB0hpc3RvcnkSJC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VIaXN0b3J5UmVxdWVzdBolLnBsYW4udjEuVGlsYXNtU2VydmljZUhpc3RvcnlSZXNwb25zZSIHkAIByPMYARJgCgdSZXN0b3JlEiQucGxhbi52MS5UaWxhc21TZXJ2aWNlUmVzdG9yZVJlcXVlc3QaJS5wbGFuLnYxLlRpbGFzbVNlcnZpY2VSZXN0b3JlUmVzcG9uc2UiCMjzGAHg8xgBEl0KBkV4cG9ydBIjLnBsYW4udjEuVGlsYXNtU2VydmljZUV4cG9ydFJlcXVlc3QaJC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VFeHBvcnRSZXNwb25zZSIIyPMYAeDzGAISXQoGSW1wb3J0EiMucGxhbi52MS5UaWxhc21TZXJ2aWNlSW1wb3J0UmVxdWVzdBokLnBsYW4udjEuVGlsYXNtU2VydmljZUltcG9ydFJlc3BvbnNlIgjI8xgB4PMYARJgCgdQdXREYXRhEiQucGxhbi52MS5UaWxhc21TZXJ2aWNlUHV0RGF0YVJlcXVlc3QaJS5wbGFuLnYxLlRpbGFzbVNlcnZpY2VQdXREYXRhUmVzcG9uc2UiCMjzGALg8xgBEl0KBkNyZWF0ZRIjLnBsYW4udjEuVGlsYXNtU2VydmljZUNyZWF0ZVJlcXVlc3QaJC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VDcmVhdGVSZXNwb25zZSIIyPMYAeDzGAESVwoEU2F2ZRIhLnBsYW4udjEuVGlsYXNtU2VydmljZVNhdmVSZXF1ZXN0GiIucGxhbi52MS5UaWxhc21TZXJ2aWNlU2F2ZVJlc3BvbnNlIgjI8xgC4PMYARoT6vMYCHRhbGlzbWFu6vMYA2RvY0KIAQoLY29tLnBsYW4udjFCC1RpbGFzbVByb3RvUAFaL2dpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL3BsYW4vdjE7cGxhbnYxogIDUFhYqgIHUGxhbi5WMcoCB1BsYW5cVjHiAhNQbGFuXFYxXEdQQk1ldGFkYXRh6gIIUGxhbjo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options, file_google_protobuf_timestamp]);
 
 /**
  * A tilasm is the material that explains a wish: a concept drawn, a data model walked through, a comparison laid out.
- * A folder with an index.html and its sources, kept in Djinn's data folder, tilasms/<id>/v<n>/, never in a project.
- * Putting it again adds a version; the latest is what its links show. The word comes from the Arabic ṭilasm, the
- * origin of "talisman".
+ * A support, as the window calls it: a Markdown document, index.md, that the developer and the agents write together;
+ * or, when one is asked for, an HTML page, a folder with an index.html and its sources. Kept in Djinn's data folder,
+ * tilasms/<id>/v<n>/, never in a project. Putting it again adds a version; the latest is what its links show. The word
+ * comes from the Arabic ṭilasm, the origin of "talisman".
  *
  * @generated from message plan.v1.Tilasm
  */
@@ -94,6 +95,22 @@ export type Tilasm = Message<"plan.v1.Tilasm"> & {
    * @generated from field: int64 max_bytes = 10;
    */
   maxBytes: bigint;
+
+  /**
+   * What its versions hold: a Markdown document or an HTML page. It never changes. Unspecified: an HTML page, put
+   * before tilasms had a format.
+   *
+   * @generated from field: plan.v1.TilasmFormat format = 11;
+   */
+  format: TilasmFormat;
+
+  /**
+   * Grows by one at each write of its content: a put, a save, a restore, an import. A save names the revision it
+   * started from, and is refused when the tilasm has moved on since.
+   *
+   * @generated from field: int64 revision = 12;
+   */
+  revision: bigint;
 };
 
 /**
@@ -150,6 +167,28 @@ export type TilasmVersion = Message<"plan.v1.TilasmVersion"> & {
    * @generated from field: int32 restored_from = 6;
    */
   restoredFrom: number;
+
+  /**
+   * How it came to be.
+   *
+   * @generated from field: plan.v1.TilasmOrigin origin = 7;
+   */
+  origin: TilasmOrigin;
+
+  /**
+   * The tilasm's revision its content holds. A save by the same author within minutes of it rewrites the version in
+   * place, which takes the save's revision, so that the history keeps one version per sitting.
+   *
+   * @generated from field: int64 revision = 8;
+   */
+  revision: bigint;
+
+  /**
+   * When its content was last written: its create_time, unless a save rewrote it.
+   *
+   * @generated from field: google.protobuf.Timestamp update_time = 9;
+   */
+  updateTime?: Timestamp | undefined;
 };
 
 /**
@@ -270,7 +309,8 @@ export const TilasmFileSchema: GenMessage<TilasmFile> = /*@__PURE__*/
  */
 export type TilasmServicePutRequest = Message<"plan.v1.TilasmServicePutRequest"> & {
   /**
-   * The folder that holds the index.html, or a .zip of it; a relative path starts from the current directory.
+   * The .md file, or the folder that holds the index.md, or for an HTML page the index.html, or a .zip of it; a
+   * relative path starts from the current directory.
    *
    * @generated from field: string path = 1;
    */
@@ -284,8 +324,8 @@ export type TilasmServicePutRequest = Message<"plan.v1.TilasmServicePutRequest">
   wish: string;
 
   /**
-   * Title, in a line; by default the <title> of its index.html, or the folder's name. A new version keeps the title
-   * it had unless one is given.
+   * Title, in a line; by default the first heading of its Markdown, or the <title> of its index.html, or the file's
+   * or folder's name. A new version keeps the title it had unless one is given.
    *
    * @generated from field: string title = 3;
    */
@@ -445,7 +485,7 @@ export type TilasmServiceGetResponse = Message<"plan.v1.TilasmServiceGetResponse
   version: number;
 
   /**
-   * The text of its index.html, without tags, scripts nor styles.
+   * The Markdown of a Markdown tilasm; the text of an HTML page's index.html, without tags, scripts nor styles.
    *
    * @generated from field: string text = 3;
    */
@@ -784,14 +824,14 @@ export type TilasmServicePutDataRequest = Message<"plan.v1.TilasmServicePutDataR
   wish: string;
 
   /**
-   * The name of what was dropped, the folder's or the .zip's: the title when its index.html has none.
+   * The name of what was dropped, the folder's, the .md's or the .zip's: the title when its content gives none.
    *
    * @generated from field: string name = 2;
    */
   name: string;
 
   /**
-   * The files, by their paths in the folder (version 0); or one file, the .zip.
+   * The files, by their paths in the folder (version 0); or one file, the .md or the .zip.
    *
    * @generated from field: repeated plan.v1.TilasmFile files = 3;
    */
@@ -839,6 +879,234 @@ export const TilasmServicePutDataResponseSchema: GenMessage<TilasmServicePutData
   messageDesc(file_plan_v1_tilasm, 22);
 
 /**
+ * @generated from message plan.v1.TilasmServiceCreateRequest
+ */
+export type TilasmServiceCreateRequest = Message<"plan.v1.TilasmServiceCreateRequest"> & {
+  /**
+   * The wish it explains.
+   *
+   * @generated from field: string wish = 1;
+   */
+  wish: string;
+
+  /**
+   * Title, in a line; by default the first heading of its text.
+   *
+   * @generated from field: string title = 2;
+   */
+  title: string;
+
+  /**
+   * Its text, in Markdown; empty for a document to write.
+   *
+   * @generated from field: string markdown = 3;
+   */
+  markdown: string;
+
+  /**
+   * An azima or a task of the wish it explains, by code (T29, W12) or identifier; repeat it for each.
+   *
+   * @generated from field: repeated string cites = 4;
+   */
+  cites: string[];
+
+  /**
+   * Who makes it: your task's code (W12) for a worker; lead by default.
+   *
+   * @generated from field: string author = 5;
+   */
+  author: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceCreateRequest.
+ * Use `create(TilasmServiceCreateRequestSchema)` to create a new message.
+ */
+export const TilasmServiceCreateRequestSchema: GenMessage<TilasmServiceCreateRequest> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 23);
+
+/**
+ * @generated from message plan.v1.TilasmServiceCreateResponse
+ */
+export type TilasmServiceCreateResponse = Message<"plan.v1.TilasmServiceCreateResponse"> & {
+  /**
+   * The tilasm, at its first version and revision.
+   *
+   * @generated from field: plan.v1.Tilasm tilasm = 1;
+   */
+  tilasm?: Tilasm | undefined;
+
+  /**
+   * The folder of its first version.
+   *
+   * @generated from field: string directory = 2;
+   */
+  directory: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceCreateResponse.
+ * Use `create(TilasmServiceCreateResponseSchema)` to create a new message.
+ */
+export const TilasmServiceCreateResponseSchema: GenMessage<TilasmServiceCreateResponse> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 24);
+
+/**
+ * @generated from message plan.v1.TilasmServiceSaveRequest
+ */
+export type TilasmServiceSaveRequest = Message<"plan.v1.TilasmServiceSaveRequest"> & {
+  /**
+   * The tilasm, by its identifier.
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * The tilasm's revision the text was edited from.
+   *
+   * @generated from field: int64 base_revision = 2;
+   */
+  baseRevision: bigint;
+
+  /**
+   * Its whole text, in Markdown.
+   *
+   * @generated from field: string markdown = 3;
+   */
+  markdown: string;
+
+  /**
+   * A new title, in a line; empty keeps it.
+   *
+   * @generated from field: string title = 4;
+   */
+  title: string;
+
+  /**
+   * Who saves it; the developer by default.
+   *
+   * @generated from field: string author = 5;
+   */
+  author: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceSaveRequest.
+ * Use `create(TilasmServiceSaveRequestSchema)` to create a new message.
+ */
+export const TilasmServiceSaveRequestSchema: GenMessage<TilasmServiceSaveRequest> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 25);
+
+/**
+ * @generated from message plan.v1.TilasmServiceSaveResponse
+ */
+export type TilasmServiceSaveResponse = Message<"plan.v1.TilasmServiceSaveResponse"> & {
+  /**
+   * The tilasm, at its new revision, the version saved last.
+   *
+   * @generated from field: plan.v1.Tilasm tilasm = 1;
+   */
+  tilasm?: Tilasm | undefined;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceSaveResponse.
+ * Use `create(TilasmServiceSaveResponseSchema)` to create a new message.
+ */
+export const TilasmServiceSaveResponseSchema: GenMessage<TilasmServiceSaveResponse> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 26);
+
+/**
+ * TilasmFormat is what a tilasm's versions hold.
+ *
+ * @generated from enum plan.v1.TilasmFormat
+ */
+export enum TilasmFormat {
+  /**
+   * Not set: an HTML page, put before tilasms had a format.
+   *
+   * @generated from enum value: TILASM_FORMAT_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * A folder with an index.html and its sources, read only in the window.
+   *
+   * @generated from enum value: TILASM_FORMAT_HTML = 1;
+   */
+  HTML = 1,
+
+  /**
+   * A Markdown document, index.md, with the files it links beside it: edited in the window.
+   *
+   * @generated from enum value: TILASM_FORMAT_MARKDOWN = 2;
+   */
+  MARKDOWN = 2,
+}
+
+/**
+ * Describes the enum plan.v1.TilasmFormat.
+ */
+export const TilasmFormatSchema: GenEnum<TilasmFormat> = /*@__PURE__*/
+  enumDesc(file_plan_v1_tilasm, 0);
+
+/**
+ * TilasmOrigin is how a version came to be.
+ *
+ * @generated from enum plan.v1.TilasmOrigin
+ */
+export enum TilasmOrigin {
+  /**
+   * Not set: a put, recorded before versions had an origin.
+   *
+   * @generated from enum value: TILASM_ORIGIN_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * djinn tilasm put, a folder, a .zip or a .md.
+   *
+   * @generated from enum value: TILASM_ORIGIN_PUT = 1;
+   */
+  PUT = 1,
+
+  /**
+   * djinn tilasm create, or a new document in the window.
+   *
+   * @generated from enum value: TILASM_ORIGIN_CREATE = 2;
+   */
+  CREATE = 2,
+
+  /**
+   * A save of the window's editor.
+   *
+   * @generated from enum value: TILASM_ORIGIN_SAVE = 3;
+   */
+  SAVE = 3,
+
+  /**
+   * A restore of an earlier version.
+   *
+   * @generated from enum value: TILASM_ORIGIN_RESTORE = 4;
+   */
+  RESTORE = 4,
+
+  /**
+   * An export imported, or files dropped on the window.
+   *
+   * @generated from enum value: TILASM_ORIGIN_IMPORT = 5;
+   */
+  IMPORT = 5,
+}
+
+/**
+ * Describes the enum plan.v1.TilasmOrigin.
+ */
+export const TilasmOriginSchema: GenEnum<TilasmOrigin> = /*@__PURE__*/
+  enumDesc(file_plan_v1_tilasm, 1);
+
+/**
  * Tilasms, or talismans: the material that explains a wish, kept on this machine and linked from anywhere. A put
  * replaces a tilasm with a new version, and the earlier ones can be read and restored.
  *
@@ -846,7 +1114,8 @@ export const TilasmServicePutDataResponseSchema: GenMessage<TilasmServicePutData
  */
 export const TilasmService: GenService<{
   /**
-   * Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new
+   * Put a Markdown document, a .md file or a folder with an index.md, as a tilasm of the wish; or, for an HTML page
+   * the developer asked for, a folder that holds an index.html, or a .zip of one. A new one, or with --code a new
    * version of that one, its links unchanged.
    *
    * @generated from rpc plan.v1.TilasmService.Put
@@ -928,8 +1197,8 @@ export const TilasmService: GenService<{
     output: typeof TilasmServiceImportResponseSchema;
   },
   /**
-   * Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
-   * export wrote is imported, as Import; any other is put, as Put.
+   * Put the files the window read, dropped on the Tilasms tab: a folder's files, a .md file, or a .zip. A .zip that
+   * djinn tilasm export wrote is imported, as Import; any other is put, as Put.
    *
    * @generated from rpc plan.v1.TilasmService.PutData
    */
@@ -937,6 +1206,28 @@ export const TilasmService: GenService<{
     methodKind: "unary";
     input: typeof TilasmServicePutDataRequestSchema;
     output: typeof TilasmServicePutDataResponseSchema;
+  },
+  /**
+   * Create a Markdown document as a tilasm of the wish, from its title and, if given, its text.
+   *
+   * @generated from rpc plan.v1.TilasmService.Create
+   */
+  create: {
+    methodKind: "unary";
+    input: typeof TilasmServiceCreateRequestSchema;
+    output: typeof TilasmServiceCreateResponseSchema;
+  },
+  /**
+   * Save the text of a Markdown tilasm, edited in the window, from the revision the editor started from. Refused with
+   * ABORTED when the tilasm has moved on since: the window reads it again. A save by the latest version's author,
+   * within minutes of it, rewrites that version; any other adds one.
+   *
+   * @generated from rpc plan.v1.TilasmService.Save
+   */
+  save: {
+    methodKind: "unary";
+    input: typeof TilasmServiceSaveRequestSchema;
+    output: typeof TilasmServiceSaveResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_plan_v1_tilasm, 0);

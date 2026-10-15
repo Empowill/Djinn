@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Clock3,
   LoaderCircle,
+  FilePlus,
   FileText,
   MessageSquare,
   Pause,
@@ -103,7 +104,7 @@ import { DecisionLog } from "./decision-log";
 import { StatusBadge } from "./status";
 import { AzimaCard, azimaFinished } from "./azima";
 import { TaskSections } from "./task-tabs";
-import { TilasmsTab } from "./tilasms";
+import { TilasmsTab, createTilasm } from "./tilasms";
 import { SpentLine } from "./usage";
 import { WishQuestion } from "./wish-question";
 import { WishTask } from "./wish-task";
@@ -123,10 +124,12 @@ import { ActionDock, type ActionDockItem } from "./action-dock";
 
 import "./wish-prototype-header.css";
 
-// Opening is a tilasm to show in a wish's Tilasms workspace panel, as a djinn:// link asks: a new object at each request.
+// Opening is a tilasm to show in a wish's Documents workspace panel, as a djinn:// link or a new document asks: a new
+// object at each request. focus puts the caret in its title, for a new document.
 export interface Opening {
   wishId: string;
   tilasmId: string;
+  focus?: boolean;
 }
 
 function contentKey(value: string): string {
@@ -144,7 +147,7 @@ export function WishView({
   onToast,
 }: {
   wish: Wish;
-  // A tilasm of the wish to show now, in its Tilasms workspace panel.
+  // A tilasm of the wish to show now, in its Documents workspace panel.
   opening?: Opening;
   onToast: (text: string) => void;
 }) {
@@ -221,8 +224,19 @@ export function WishView({
     setAttentionCollapsed(false);
     setAttentionFocusRequest((request) => request + 1);
   };
-  // The tilasm a link opened: the Tilasms workspace panel shows it, again at each new request.
+  // The tilasm a link opened: the Documents workspace panel shows it, again at each new request.
   const [opened, setOpened] = useState(opening);
+  // A new document, the developer's: the panel opens on it, its title ready to be typed in. The panel shows once the
+  // list holds it.
+  const newTilasm = () =>
+    void createTilasm(clients, wish.id)
+      .then(async (tilasmId) => {
+        await data.changed(wish.id, [Change.TILASM]);
+        setOpened({ wishId: wish.id, tilasmId, focus: true });
+        setView("tilasms");
+        setWorkspaceRequest((request) => request + 1);
+      })
+      .catch((error) => onToast(message(error)));
   useEffect(() => {
     if (!opening) return;
     setView("tilasms");
@@ -691,8 +705,6 @@ export function WishView({
           tilasms={detail.tilasms}
           tasks={detail.tasks}
           onToast={onToast}
-          workspace
-          active={workspaceVisiblePanel === "tilasms"}
         />
       </>
     ),
@@ -1012,6 +1024,9 @@ export function WishView({
           <>
             <HeaderAgentMenu wish={wish} onPick={changeProvider} />
             <HeaderShareMenu onRender={renderWishPage} onExport={exportWish} />
+            <PageHeaderAction label={t("tilasms.new")} onClick={newTilasm}>
+              <FilePlus size={16} aria-hidden="true" />
+            </PageHeaderAction>
             <PageHeaderAction
               className="danger"
               label={t("wish.delete")}

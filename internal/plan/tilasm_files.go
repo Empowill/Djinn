@@ -29,7 +29,7 @@ import (
 const developerAuthor = "developer"
 
 // PutData puts the files the window read: they are written to a temporary folder of the tilasms' folder, then put as
-// a folder, or as a .zip, or imported when the .zip is a tilasm's export. The journal keeps the request without the
+// a folder, as a .md, or as a .zip, or imported when the .zip is a tilasm's export. The journal keeps the request without the
 // files' contents, as a wish's import does.
 func (t *Tilasms) PutData(
 	ctx context.Context, req *connect.Request[planv1.TilasmServicePutDataRequest],
@@ -69,7 +69,25 @@ func (t *Tilasms) PutData(
 		}
 		tilasm, _, err := t.put(ctx, req.Spec(), journaled, &planv1.TilasmServicePutRequest{
 			Path: file, Wish: m.GetWish(), Author: author,
-		})
+		}, planv1.TilasmOrigin_TILASM_ORIGIN_IMPORT)
+		if err != nil {
+			return nil, err
+		}
+		return connect.NewResponse(&planv1.TilasmServicePutDataResponse{Tilasm: tilasm}), nil
+	}
+	if files := m.GetFiles(); len(files) == 1 && (markdownFile(files[0].GetPath()) || markdownFile(name)) {
+		// A Markdown file alone: a document, titled by its first heading, else by its name.
+		base := dropName(cmp.Or(files[0].GetPath(), name))
+		if !markdownFile(base) {
+			base = name
+		}
+		file := filepath.Join(dir, base)
+		if err := os.WriteFile(file, files[0].GetContent(), 0o600); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		tilasm, _, err := t.put(ctx, req.Spec(), journaled, &planv1.TilasmServicePutRequest{
+			Path: file, Wish: m.GetWish(), Author: author,
+		}, planv1.TilasmOrigin_TILASM_ORIGIN_IMPORT)
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +115,7 @@ func (t *Tilasms) PutData(
 	}
 	tilasm, _, err := t.put(ctx, req.Spec(), journaled, &planv1.TilasmServicePutRequest{
 		Path: folder, Wish: m.GetWish(), Author: author,
-	})
+	}, planv1.TilasmOrigin_TILASM_ORIGIN_IMPORT)
 	if err != nil {
 		return nil, err
 	}
@@ -187,9 +205,9 @@ var tilasmTypes = map[string]string{
 	".md":    "text/plain; charset=utf-8",
 }
 
-// Files serves the latest version of each tilasm at server.TilasmPrefix: /tilasm/<id>/ is its index.html, and its
-// other files are under it, by their paths. Every answer carries tilasmPolicy. A folder serves its index.html, never a
-// listing.
+// Files serves the latest version of each tilasm at server.TilasmPrefix: /tilasm/<id>/ is its index.html, or the
+// index.md of a Markdown tilasm, as text, and its other files are under it, by their paths. Every answer carries
+// tilasmPolicy. A folder serves its index.html (index.md), never a listing.
 func (t *Tilasms) Files() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -233,12 +251,16 @@ func (t *Tilasms) Files() http.Handler {
 			return
 		}
 		root := os.DirFS(versionDir(t.Home, tilasm.GetId(), n))
+		entry := tilasmIndex
+		if markdown(tilasm) {
+			entry = tilasmMarkdown
+		}
 		name := path.Clean("/" + rest)[1:]
 		if name == "" {
-			name = tilasmIndex
+			name = entry
 		}
 		if info, err := fs.Stat(root, name); err == nil && info.IsDir() {
-			name = path.Join(name, tilasmIndex)
+			name = path.Join(name, entry)
 		}
 		f, err := root.Open(name)
 		if err != nil {
@@ -251,9 +273,14 @@ func (t *Tilasms) Files() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		// A version never changes: its number tells a file the browser kept from the same file of another version, put
-		// within the same second as Last-Modified counts.
-		h.Set("Etag", fmt.Sprintf(`"v%d"`, n))
+		// A page's version never changes, and a document's only by a save, which gives it the tilasm's new revision:
+		// its number, and a document's revision, tell a file the browser kept from the same file of another version, or
+		// of an earlier save, written within the same second as Last-Modified counts.
+		etag := fmt.Sprintf(`"v%d"`, n)
+		if markdown(tilasm) {
+			etag = fmt.Sprintf(`"v%d-r%d"`, n, tilasm.GetVersions()[len(tilasm.GetVersions())-1].GetRevision())
+		}
+		h.Set("Etag", etag)
 		ext := strings.ToLower(path.Ext(name))
 		if typ := cmp.Or(tilasmTypes[ext], mime.TypeByExtension(ext)); typ != "" {
 			h.Set("Content-Type", typ)

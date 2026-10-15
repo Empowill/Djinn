@@ -45,13 +45,13 @@ export {
 export { UpdateBannerView } from "@/src/update-banner.tsx";
 export { InstallStep } from "@/gen/ts/ui/v1/ui_pb.ts";
 export { memory, resourcesDetail } from "@/src/usage.tsx";
-export { TilasmList } from "@/src/tilasms.tsx";
+export { TilasmPanel, TilasmVersions, HtmlTilasm } from "@/src/tilasms.tsx";
 export { AgentBlocks } from "@/src/agent-blocks.tsx";
 export { MarkdownBody } from "@/src/markdown-body.tsx";
 export { openDjinnLink, parseDjinnLink } from "@/src/data/links.ts";
 export { ConnectError, Code } from "@connectrpc/connect";
 export { readDrop } from "@/src/data/tilasms.ts";
-export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
+export { TilasmService, TilasmFormat } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
@@ -1742,118 +1742,131 @@ const tilasm = (id, code, title, extra = {}) => ({
   ...extra,
 });
 
-test("the Tilasms tab lists each tilasm with its code, title, author, date and what it cites, and opens one in a sandboxed frame", () => {
-  const model = tilasm(
+test("the Documents panel shows its documents as tabs, the open one marked, its actions folded to icons", () => {
+  const notes = tilasm("01a1223a-ae45-728f-8c37-c005eee91edb", "L01", "Notes", {
+    format: s.TilasmFormat.MARKDOWN,
+    revision: 3n,
+  });
+  const page = tilasm("01a1223a-ae45-728f-8c37-c005eee91edc", "L02", "Flows", {
+    format: s.TilasmFormat.HTML,
+  });
+  const props = {
+    tilasms: [notes, page],
+    count: 2,
+    search: "",
+    onSearch() {},
+    open: notes,
+    onOpen() {},
+    onNew() {},
+    onImport() {},
+    onDrop() {},
+    onRestore() {},
+    onExport() {},
+  };
+  const html = s.renderToStaticMarkup(h(s.TilasmPanel, props));
+  assert.match(html, /role="tabpanel" aria-labelledby="view-tab-tilasms"/);
+  // A tab per document, by code, its title alone; the open one selected.
+  const tabs = html.match(/<div[^>]*role="tablist"[^>]*>[\s\S]*?<\/div>/)[0];
+  assert.match(tabs, /aria-label="Documents"/);
+  assert.ok(tabs.indexOf(">Notes<") < tabs.indexOf(">Flows<"));
+  assert.match(tabs, /aria-selected="true"[^>]*title="L01 · Notes"/);
+  assert.match(tabs, /aria-selected="false"[^>]*title="L02 · Flows"/);
+  // The search is folded behind its icon; a new document, an import of a .md, and the versions are icons too.
+  assert.doesNotMatch(html, /type="search"/);
+  assert.match(html, /aria-label="Search the documents of this wish"/);
+  assert.match(html, /aria-label="New document"/);
+  assert.match(html, /aria-label="Import a Markdown file"/);
+  assert.match(html, /accept=".md,.markdown,text\/markdown"/);
+  assert.match(
+    html,
+    /aria-label="Versions" aria-expanded="false"|aria-expanded="false"[^>]*aria-label="Versions"/,
+  );
+
+  // A search that finds nothing says so, its field open; a wish without documents says how to make one.
+  const none = s.renderToStaticMarkup(
+    h(s.TilasmPanel, { ...props, tilasms: [], search: "lamp" }),
+  );
+  assert.match(none, /type="search"/);
+  assert.match(none, /No document holds “lamp”/);
+  assert.match(
+    s.renderToStaticMarkup(
+      h(s.TilasmPanel, { ...props, tilasms: [], count: 0, open: undefined }),
+    ),
+    /No document yet: create one, or import or drop a Markdown file here./,
+  );
+});
+
+test("a document's versions show the latest first, restore an earlier one, and export it", () => {
+  const versions = [
+    {
+      number: 1,
+      author: "W12",
+      files: 3,
+      size: 2048n,
+      restoredFrom: 0,
+      createTime: stamp("2026-10-09T10:00:00Z"),
+    },
+    {
+      number: 2,
+      author: "lead",
+      files: 1,
+      size: 512n,
+      restoredFrom: 0,
+      createTime: stamp("2026-10-09T11:00:00Z"),
+    },
+    {
+      number: 3,
+      author: "developer",
+      files: 3,
+      size: 2048n,
+      restoredFrom: 1,
+      createTime: stamp("2026-10-09T12:00:00Z"),
+    },
+  ];
+  const page = tilasm("x1", "L01", "Model", {
+    versions,
+    format: s.TilasmFormat.HTML,
+  });
+  const html = s.renderToStaticMarkup(
+    h(s.TilasmVersions, {
+      tilasm: page,
+      onRestore() {},
+      onExport() {},
+      onClose() {},
+    }),
+  );
+  assert.match(html, /role="dialog" aria-label="Versions"/);
+  assert.ok(html.indexOf("v3") < html.indexOf("v2"));
+  assert.match(html, /developer · .* · 3 files · 2 kB · restores v1/);
+  assert.match(html, /1 file · 512 byte/);
+  assert.equal(html.match(/aria-label="Restore this version"/g).length, 2);
+  assert.match(html, /Export as a .zip/);
+  // A Markdown document's versions leave out files and sizes: one file, always.
+  const notes = s.renderToStaticMarkup(
+    h(s.TilasmVersions, {
+      tilasm: { ...page, format: s.TilasmFormat.MARKDOWN },
+      onRestore() {},
+      onExport() {},
+      onClose() {},
+    }),
+  );
+  assert.doesNotMatch(notes, /files/);
+});
+
+test("an HTML tilasm shows read only in a sandboxed frame Djinn serves, never on Djinn's origin", () => {
+  const page = tilasm(
     "01a1223a-ae45-728f-8c37-c005eee91edb",
     "L01",
     "The objects in the database",
-    {
-      cites: ["t29", "gone-1234-5678"],
-      author: "W12",
-      versions: [
-        {
-          number: 1,
-          author: "W12",
-          files: 3,
-          size: 2048n,
-          restoredFrom: 0,
-          createTime: stamp("2026-10-09T10:00:00Z"),
-        },
-        {
-          number: 2,
-          author: "lead",
-          files: 1,
-          size: 512n,
-          restoredFrom: 0,
-          createTime: stamp("2026-10-09T11:00:00Z"),
-        },
-        {
-          number: 3,
-          author: "developer",
-          files: 3,
-          size: 2048n,
-          restoredFrom: 1,
-          createTime: stamp("2026-10-09T12:00:00Z"),
-        },
-      ],
-    },
   );
-  const flows = tilasm("01a1223a-ae45-728f-8c37-c005eee91edc", "L02", "Flows");
-  const props = {
-    tilasms: [model, flows],
-    count: 2,
-    codes: new Map([["t29", "T29"]]),
-    search: "",
-    onSearch() {},
-    onOpen() {},
-    history: "",
-    onHistory() {},
-    onRestore() {},
-    onExport() {},
-    onDrop() {},
-  };
-  const html = s.renderToStaticMarkup(h(s.TilasmList, props));
-  assert.match(html, /role="tabpanel" aria-labelledby="view-tab-tilasms"/);
-  assert.match(
-    html,
-    /placeholder="Search the tilasms \(talismans\) of this wish"/,
-  );
-  assert.match(
-    html,
-    /Drop a folder with an index.html, or a .zip, to add a tilasm/,
-  );
-  // A row per tilasm, by code: its title opens it; who made it and when; what it cites, by code.
-  assert.ok(html.indexOf("L01") < html.indexOf("L02"));
-  assert.match(
-    html,
-    /tilasm-title"[^>]*>The objects in the database<\/button>/,
-  );
-  assert.match(html, /W12 · /);
-  assert.match(
-    html,
-    /Explains <span class="tilasm-code">T29<\/span><span class="tilasm-code">gone-123<\/span>/,
-  );
-  // Nothing open: no frame; the history folded.
-  assert.doesNotMatch(html, /<iframe/);
-  assert.doesNotMatch(html, /Restore this version/);
-
-  // Open: a frame served by Djinn at the tilasm's address, scripts only, never Djinn's origin.
-  const open = s.renderToStaticMarkup(
-    h(s.TilasmList, { ...props, open: model, history: model.id }),
-  );
-  const frame = open.match(/<iframe[^>]*>/)[0];
+  const frame = s.renderToStaticMarkup(h(s.HtmlTilasm, { tilasm: page }));
   assert.match(frame, /src="\/tilasm\/01a1223a-ae45-728f-8c37-c005eee91edb\/"/);
   assert.match(frame, /sandbox="allow-scripts"/);
   assert.doesNotMatch(frame, /allow-same-origin/);
   assert.match(frame, /title="L01 · The objects in the database"/);
-  assert.match(
-    open,
-    /<section class="tilasm-view" aria-label="The objects in the database">.*v3/,
-  );
-  assert.match(open, /tilasm-row open/);
-  // The history: the latest first, each with who and when, its files and size; an earlier one restores.
-  const versions = open.match(/<ol class="tilasm-history"[\s\S]*?<\/ol>/)[0];
-  assert.ok(versions.indexOf("v3") < versions.indexOf("v2"));
-  assert.match(versions, /developer · .* · 3 files · 2 kB · restores v1/);
-  assert.match(versions, /1 file · 512 byte/);
-  assert.equal(versions.match(/Restore this version/g).length, 2);
-
-  // A search that finds nothing says so; a wish without tilasms says how to make one.
-  assert.match(
-    s.renderToStaticMarkup(
-      h(s.TilasmList, { ...props, tilasms: [], search: "lamp" }),
-    ),
-    /No tilasm holds “lamp”/,
-  );
-  assert.match(
-    s.renderToStaticMarkup(
-      h(s.TilasmList, { ...props, tilasms: [], count: 0 }),
-    ),
-    /No tilasm yet: .*djinn tilasm put/,
-  );
 });
 
-test("a wish's workspace has a Tilasms section card beside Tasks, with its count", async () => {
+test("a wish's workspace has a Documents section card beside Tasks, with its count, and a new document in its header", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da71";
   const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
   const transport = s.createRouterTransport(({ service }) => {
@@ -1880,11 +1893,12 @@ test("a wish's workspace has a Tilasms section card beside Tasks, with its count
   assert.doesNotMatch(html, /data-wish-section="tasks"/);
   assert.match(html, /data-wish-panel="tasks" hidden=""/);
   assert.match(html, /data-wish-section="tilasms"/);
-  assert.match(html, /aria-label="Tilasms \(1\)"/);
+  assert.match(html, /aria-label="Documents \(1\)"/);
+  assert.match(html, /aria-label="New document"/);
   assert.match(html, /data-wish-panel="tilasms" hidden=""/);
 });
 
-test("a folder dropped on the Tilasms tab is read with its files by their paths in it, hidden files left out", async () => {
+test("a folder dropped on the Documents panel is read with its files by their paths in it, hidden files left out", async () => {
   const file = (name, text) => ({
     name,
     isFile: true,
@@ -1926,7 +1940,7 @@ test("a folder dropped on the Tilasms tab is read with its files by their paths 
   );
 });
 
-test("a djinn:// link in Markdown stays a link that opens what it names in place: a tilasm in its wish's Tilasms tab", async () => {
+test("a djinn:// link in Markdown stays a link that opens what it names in place: a tilasm in its wish's Documents panel", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da71";
   const id = "01a1223a-ae45-728f-8c37-c005eee91edb";
   // In a block, a question, a decision or the brief: Markdown keeps the link, which does not leave the page.
@@ -1963,7 +1977,7 @@ test("a djinn:// link in Markdown stays a link that opens what it names in place
   ])
     assert.equal(s.parseDjinnLink(unknown), undefined, unknown);
 
-  // A click: the tilasm's wish on its Tilasms tab, the wish, or the window says it does not know the link.
+  // A click: the tilasm's wish on its Documents panel, the wish, or the window says it does not know the link.
   const transport = s.createRouterTransport(({ service }) => {
     service(s.TilasmService, {
       get: (req) => {
@@ -1993,7 +2007,7 @@ test("a djinn:// link in Markdown stays a link that opens what it names in place
     { unknownLink: "djinn://moon/x" },
   ]);
 
-  // The wish's view, asked to open the tilasm: its Tilasms tab, the tilasm in the frame.
+  // The wish's view, asked to open the tilasm: its Documents panel, on the tilasm's tab.
   const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
   const store = s.createDjinn(
     s.createRouterTransport(({ service }) => {
@@ -2028,11 +2042,16 @@ test("a djinn:// link in Markdown stays a link that opens what it names in place
       }),
     ),
   );
-  // Server markup stays on the sparse summary; the initial panel effect opens the Tilasms panel in the browser.
+  // Server markup stays on the sparse summary; the initial panel effect opens the Documents panel in the browser, on
+  // the tab of the document the link names.
   assert.match(view, /data-wish-panel="summary"/);
   assert.match(view, /data-wish-section="tilasms"/);
-  assert.match(view, /aria-label="Tilasms \(2\)"/);
+  assert.match(view, /aria-label="Documents \(2\)"/);
   assert.match(view, /data-wish-panel="tilasms" hidden=""/);
+  assert.match(
+    view,
+    new RegExp(`data-tilasm="${id}" aria-selected="true"[^>]*>Model<`),
+  );
 });
 
 test("the Tasks tab says where each task's work stands on its way into the wish's branch", () => {

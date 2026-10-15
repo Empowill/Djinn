@@ -59,7 +59,7 @@ func editOnly() *djinnv1.Permissions {
 // and Git's to read the history. No gate, no build, no task stopped or continued.
 var djinnCommands = []string{
 	"djinn wish brief", "djinn task list", "djinn task get", "djinn question list", "djinn block list",
-	"djinn mark list", "djinn tilasm list", "djinn tilasm get", "djinn task spawn", "djinn question ask",
+	"djinn mark list", "djinn tilasm list", "djinn tilasm get", "djinn doc list", "djinn doc get", "djinn task spawn", "djinn question ask",
 	"djinn question revise", "djinn block put",
 	"git log", "git show", "git diff", "git status",
 }

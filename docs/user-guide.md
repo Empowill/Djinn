@@ -189,9 +189,11 @@ took it (you, the lead, or a worker) and the tasks it led to.
 
 ### The Tilasms tab
 
-A tilasm is the material that explains a wish: a folder with an `index.html` (a page, a diagram, a demonstration),
-coded `L01`, `L02`…, versioned, and kept in Djinn's data folder, never in a project. The lead makes them with
-`djinn tilasm put`; you may drop a folder or a `.zip` on the tab.
+A tilasm, or support, is the material that explains a wish: a Markdown document that you and the agents write
+together (a brief, a spec, a comparison), or, when you ask for one, an HTML page, a folder with an `index.html` (a
+diagram, a demonstration). Each is coded `L01`, `L02`…, versioned, and kept in Djinn's data folder, never in a
+project. The agents write one per subject, with `djinn tilasm put` (a command also named `doc` or `talisman`), and
+reuse it rather than make another; you may create one, or drop a `.md`, a folder or a `.zip` on the tab.
 
 **Open it here** shows one in a frame of its own: its scripts run, the network and Djinn stay out of its reach. The
 tab searches the tilasms' titles and text, lists each one's **Versions** (**Restore this version** makes an older one

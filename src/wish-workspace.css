@@ -813,30 +813,6 @@ button.workspace-section-card {
   box-shadow: none;
 }
 
-.review .workspace-panel .tilasm-view {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.review .workspace-panel .tilasm-view-head {
-  padding-right: 0;
-  padding-left: 0;
-  border-bottom-color: color-mix(in srgb, var(--line) 50%, transparent);
-}
-
-.review .workspace-panel .tilasm-row {
-  margin-bottom: 0;
-  padding-right: 0;
-  padding-left: 0;
-  border: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
 .review .workspace-panel .compact-table td,
 .review .workspace-panel .compact-table tr:nth-child(even) td {
   background: transparent;

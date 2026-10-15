@@ -51,11 +51,16 @@ const (
 	TilasmServiceImportProcedure = "/plan.v1.TilasmService/Import"
 	// TilasmServicePutDataProcedure is the fully-qualified name of the TilasmService's PutData RPC.
 	TilasmServicePutDataProcedure = "/plan.v1.TilasmService/PutData"
+	// TilasmServiceCreateProcedure is the fully-qualified name of the TilasmService's Create RPC.
+	TilasmServiceCreateProcedure = "/plan.v1.TilasmService/Create"
+	// TilasmServiceSaveProcedure is the fully-qualified name of the TilasmService's Save RPC.
+	TilasmServiceSaveProcedure = "/plan.v1.TilasmService/Save"
 )
 
 // TilasmServiceClient is a client for the plan.v1.TilasmService service.
 type TilasmServiceClient interface {
-	// Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new
+	// Put a Markdown document, a .md file or a folder with an index.md, as a tilasm of the wish; or, for an HTML page
+	// the developer asked for, a folder that holds an index.html, or a .zip of one. A new one, or with --code a new
 	// version of that one, its links unchanged.
 	Put(context.Context, *connect.Request[v1.TilasmServicePutRequest]) (*connect.Response[v1.TilasmServicePutResponse], error)
 	// List the tilasms, of a wish or of all; --search keeps those whose code, title or text holds every word.
@@ -73,9 +78,15 @@ type TilasmServiceClient interface {
 	Export(context.Context, *connect.Request[v1.TilasmServiceExportRequest]) (*connect.Response[v1.TilasmServiceExportResponse], error)
 	// Import a tilasm's .zip into a wish: a new version of the same tilasm when the wish has it, else a new tilasm.
 	Import(context.Context, *connect.Request[v1.TilasmServiceImportRequest]) (*connect.Response[v1.TilasmServiceImportResponse], error)
-	// Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
-	// export wrote is imported, as Import; any other is put, as Put.
+	// Put the files the window read, dropped on the Tilasms tab: a folder's files, a .md file, or a .zip. A .zip that
+	// djinn tilasm export wrote is imported, as Import; any other is put, as Put.
 	PutData(context.Context, *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error)
+	// Create a Markdown document as a tilasm of the wish, from its title and, if given, its text.
+	Create(context.Context, *connect.Request[v1.TilasmServiceCreateRequest]) (*connect.Response[v1.TilasmServiceCreateResponse], error)
+	// Save the text of a Markdown tilasm, edited in the window, from the revision the editor started from. Refused with
+	// ABORTED when the tilasm has moved on since: the window reads it again. A save by the latest version's author,
+	// within minutes of it, rewrites that version; any other adds one.
+	Save(context.Context, *connect.Request[v1.TilasmServiceSaveRequest]) (*connect.Response[v1.TilasmServiceSaveResponse], error)
 }
 
 // NewTilasmServiceClient constructs a client for the plan.v1.TilasmService service. By default, it
@@ -146,6 +157,18 @@ func NewTilasmServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(tilasmServiceMethods.ByName("PutData")),
 			connect.WithClientOptions(opts...),
 		),
+		create: connect.NewClient[v1.TilasmServiceCreateRequest, v1.TilasmServiceCreateResponse](
+			httpClient,
+			baseURL+TilasmServiceCreateProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Create")),
+			connect.WithClientOptions(opts...),
+		),
+		save: connect.NewClient[v1.TilasmServiceSaveRequest, v1.TilasmServiceSaveResponse](
+			httpClient,
+			baseURL+TilasmServiceSaveProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Save")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -160,6 +183,8 @@ type tilasmServiceClient struct {
 	export  *connect.Client[v1.TilasmServiceExportRequest, v1.TilasmServiceExportResponse]
 	_import *connect.Client[v1.TilasmServiceImportRequest, v1.TilasmServiceImportResponse]
 	putData *connect.Client[v1.TilasmServicePutDataRequest, v1.TilasmServicePutDataResponse]
+	create  *connect.Client[v1.TilasmServiceCreateRequest, v1.TilasmServiceCreateResponse]
+	save    *connect.Client[v1.TilasmServiceSaveRequest, v1.TilasmServiceSaveResponse]
 }
 
 // Put calls plan.v1.TilasmService.Put.
@@ -207,9 +232,20 @@ func (c *tilasmServiceClient) PutData(ctx context.Context, req *connect.Request[
 	return c.putData.CallUnary(ctx, req)
 }
 
+// Create calls plan.v1.TilasmService.Create.
+func (c *tilasmServiceClient) Create(ctx context.Context, req *connect.Request[v1.TilasmServiceCreateRequest]) (*connect.Response[v1.TilasmServiceCreateResponse], error) {
+	return c.create.CallUnary(ctx, req)
+}
+
+// Save calls plan.v1.TilasmService.Save.
+func (c *tilasmServiceClient) Save(ctx context.Context, req *connect.Request[v1.TilasmServiceSaveRequest]) (*connect.Response[v1.TilasmServiceSaveResponse], error) {
+	return c.save.CallUnary(ctx, req)
+}
+
 // TilasmServiceHandler is an implementation of the plan.v1.TilasmService service.
 type TilasmServiceHandler interface {
-	// Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new
+	// Put a Markdown document, a .md file or a folder with an index.md, as a tilasm of the wish; or, for an HTML page
+	// the developer asked for, a folder that holds an index.html, or a .zip of one. A new one, or with --code a new
 	// version of that one, its links unchanged.
 	Put(context.Context, *connect.Request[v1.TilasmServicePutRequest]) (*connect.Response[v1.TilasmServicePutResponse], error)
 	// List the tilasms, of a wish or of all; --search keeps those whose code, title or text holds every word.
@@ -227,9 +263,15 @@ type TilasmServiceHandler interface {
 	Export(context.Context, *connect.Request[v1.TilasmServiceExportRequest]) (*connect.Response[v1.TilasmServiceExportResponse], error)
 	// Import a tilasm's .zip into a wish: a new version of the same tilasm when the wish has it, else a new tilasm.
 	Import(context.Context, *connect.Request[v1.TilasmServiceImportRequest]) (*connect.Response[v1.TilasmServiceImportResponse], error)
-	// Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
-	// export wrote is imported, as Import; any other is put, as Put.
+	// Put the files the window read, dropped on the Tilasms tab: a folder's files, a .md file, or a .zip. A .zip that
+	// djinn tilasm export wrote is imported, as Import; any other is put, as Put.
 	PutData(context.Context, *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error)
+	// Create a Markdown document as a tilasm of the wish, from its title and, if given, its text.
+	Create(context.Context, *connect.Request[v1.TilasmServiceCreateRequest]) (*connect.Response[v1.TilasmServiceCreateResponse], error)
+	// Save the text of a Markdown tilasm, edited in the window, from the revision the editor started from. Refused with
+	// ABORTED when the tilasm has moved on since: the window reads it again. A save by the latest version's author,
+	// within minutes of it, rewrites that version; any other adds one.
+	Save(context.Context, *connect.Request[v1.TilasmServiceSaveRequest]) (*connect.Response[v1.TilasmServiceSaveResponse], error)
 }
 
 // NewTilasmServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -296,6 +338,18 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(tilasmServiceMethods.ByName("PutData")),
 		connect.WithHandlerOptions(opts...),
 	)
+	tilasmServiceCreateHandler := connect.NewUnaryHandler(
+		TilasmServiceCreateProcedure,
+		svc.Create,
+		connect.WithSchema(tilasmServiceMethods.ByName("Create")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceSaveHandler := connect.NewUnaryHandler(
+		TilasmServiceSaveProcedure,
+		svc.Save,
+		connect.WithSchema(tilasmServiceMethods.ByName("Save")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TilasmService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TilasmServicePutProcedure:
@@ -316,6 +370,10 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 			tilasmServiceImportHandler.ServeHTTP(w, r)
 		case TilasmServicePutDataProcedure:
 			tilasmServicePutDataHandler.ServeHTTP(w, r)
+		case TilasmServiceCreateProcedure:
+			tilasmServiceCreateHandler.ServeHTTP(w, r)
+		case TilasmServiceSaveProcedure:
+			tilasmServiceSaveHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -359,4 +417,12 @@ func (UnimplementedTilasmServiceHandler) Import(context.Context, *connect.Reques
 
 func (UnimplementedTilasmServiceHandler) PutData(context.Context, *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.PutData is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Create(context.Context, *connect.Request[v1.TilasmServiceCreateRequest]) (*connect.Response[v1.TilasmServiceCreateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Create is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Save(context.Context, *connect.Request[v1.TilasmServiceSaveRequest]) (*connect.Response[v1.TilasmServiceSaveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Save is not implemented"))
 }

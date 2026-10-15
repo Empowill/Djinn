@@ -102,13 +102,17 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"question workers are off and the move is yours.\n" +
 	"- **Blocks are for agents**: a hand-off, a reference, a decision taken outside a question (kind decision, which " +
 	"the decision log shows). The developer does not read blocks: what the developer must see is a question.\n" +
-	"- **To explain a concept, make a tilasm** (the developer may say talisman): a folder with an `index.html` and its " +
-	"sources (a diagram, a data model walked through, a comparison), kept by Djinn outside the projects. " +
-	"`djinn tilasm put <folder> --wish <wish> --cites T07` makes it, `L01`, and names the azimas and tasks it " +
-	"explains; `--code L01` replaces it, its link unchanged. Cite it in blocks and questions by its link, " +
-	"`djinn://tilasm/<id>`, rather than explaining again; `--tilasm L01` gives it to a worker as context. Draw its " +
-	"diagrams as inline SVG laid out by hand (boxes, labelled arrows, a legend), in colours that read in light and " +
-	"dark, never Mermaid. A tilasm reaches no network: everything it needs, fonts and scripts, is in its folder.\n" +
+	"- **To explain a concept, write a support** (a tilasm; the developer may say document or talisman): a Markdown " +
+	"document kept by Djinn outside the projects, which the developer reads, annotates and edits in the window. One " +
+	"support per subject to work on together (a brief, a spec, a comparison, a data model walked through), not one " +
+	"per task or answer: look first with `djinn doc list --wish <wish> --search \"…\"`, and reuse one that fits, " +
+	"`djinn doc put brief.md --wish <wish> --code L01`, a new version, its link unchanged. Else " +
+	"`djinn doc put brief.md --wish <wish> --cites T07` makes it, `L01`, and names the azimas and tasks it explains. " +
+	"Cite it in blocks and questions by its link, `djinn://tilasm/<id>`, rather than explaining again; " +
+	"`--tilasm L01` gives it to a worker as context. An HTML page only when the developer asks for one: " +
+	"`djinn doc put <folder>` with an `index.html` and its sources; draw its diagrams as inline SVG laid out by hand " +
+	"(boxes, labelled arrows, a legend), in colours that read in light and dark, never Mermaid. A tilasm reaches no " +
+	"network: everything it needs, fonts and scripts, is in its folder.\n" +
 	"- **No secret, no local path** in the plan: name the project.\n" +
 	"- **Every request finds its wish.** A request that is not about this wish goes through " +
 	"`djinn wish route \"<request>\" --wish-id <wish> --ask`: Djinn asks the developer, on a card, to open a new wish " +
@@ -152,9 +156,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- `djinn wish route \"<request>\" --wish-id <wish> --ask`: where a request goes, asked to the developer on a " +
 	"card; without `--ask`, the proposal only.\n" +
 	"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\" --icon 🧱`; `djinn block list <wish>`.\n" +
-	"- `djinn tilasm put <folder> --wish <wish> --cites T07 --code L01`; `djinn tilasm list --wish <wish> --search " +
-	"\"…\"`; `djinn tilasm get <code>` (its text, the folder of its files); `djinn tilasm history <code>`, " +
-	"`djinn tilasm restore <code> <version>`.\n" +
+	"- `djinn doc put brief.md --wish <wish> --cites T07 --code L01`; `djinn doc create \"<title>\" --wish <wish> " +
+	"--markdown \"…\"`; `djinn doc list --wish <wish> --search \"…\"`; `djinn doc get <code>` (its Markdown, the " +
+	"folder of its files); `djinn doc history <code>`, `djinn doc restore <code> <version>`.\n" +
 	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for a " +
 	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, by its question worker or by you.\n" +
 	"- `djinn mark list <wish>`: the open questions the developer marked read in the window, without a word. Start a " +
@@ -713,8 +717,8 @@ func tilasmsBrief(b *strings.Builder, tilasms []*planv1.TilasmExport) {
 		return
 	}
 	b.WriteString("\n## Tilasms\n\n")
-	b.WriteString("The material that explains the wish. `djinn tilasm get <code>` gives one's text and the folder of its " +
-		"files; cite one by its link.\n\n")
+	b.WriteString("The supports that explain the wish: reuse one before writing another. `djinn doc get <code>` gives " +
+		"one's text and the folder of its files; cite one by its link.\n\n")
 	for _, t := range tilasms[:min(len(tilasms), briefTilasms)] {
 		tilasm := t.GetTilasm()
 		fmt.Fprintf(b, "- **%s** %s: %s", tilasm.GetCode(), cmp.Or(clipLine(tilasm.GetTitle()), "(untitled)"),
@@ -725,7 +729,7 @@ func tilasmsBrief(b *strings.Builder, tilasms []*planv1.TilasmExport) {
 		b.WriteString("\n")
 	}
 	if n := len(tilasms) - briefTilasms; n > 0 {
-		fmt.Fprintf(b, "- And %d more: `djinn tilasm list --wish <wish>`.\n", n)
+		fmt.Fprintf(b, "- And %d more: `djinn doc list --wish <wish>`.\n", n)
 	}
 }
 

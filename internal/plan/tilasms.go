@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 
 	"connectrpc.com/connect"
@@ -40,8 +41,18 @@ const tilasmManifest = "tilasm.json"
 // maxTilasmCode is the last code a wish can give: the codes follow ^L[0-9]{2,3}$.
 const maxTilasmCode = 999
 
-// tilasmIndex is the page a tilasm opens on.
+// tilasmIndex is the page an HTML tilasm opens on.
 const tilasmIndex = "index.html"
+
+// tilasmMarkdown is the document of a Markdown tilasm.
+const tilasmMarkdown = "index.md"
+
+// maxTilasmText is how much of a version's page or document is read for its text, its title and a search.
+const maxTilasmText = 10 << 20
+
+// saveSitting is how long after a version's making a save by its author rewrites it rather than adding one: the
+// history keeps one version per sitting, not one per pause in the typing.
+const saveSitting = 10 * time.Minute
 
 var tilasmCode = regexp.MustCompile(`^L[0-9]{2,3}$`)
 
@@ -62,6 +73,43 @@ type Tilasms struct {
 	// URL is the local http address of a tilasm's latest version, by its identifier; empty, or nil, while Djinn serves
 	// no http.
 	URL func(id string) string
+	// Now is the clock of the versions; nil: the machine's.
+	Now func() time.Time
+}
+
+func (t *Tilasms) now() *timestamppb.Timestamp {
+	if t.Now != nil {
+		return timestamppb.New(t.Now())
+	}
+	return timestamppb.Now()
+}
+
+// formatOf is what the tilasm's versions hold: an HTML page when it was put before tilasms had a format.
+func formatOf(tilasm *planv1.Tilasm) planv1.TilasmFormat {
+	if f := tilasm.GetFormat(); f != planv1.TilasmFormat_TILASM_FORMAT_UNSPECIFIED {
+		return f
+	}
+	return planv1.TilasmFormat_TILASM_FORMAT_HTML
+}
+
+// markdown tells a Markdown tilasm.
+func markdown(tilasm *planv1.Tilasm) bool {
+	return formatOf(tilasm) == planv1.TilasmFormat_TILASM_FORMAT_MARKDOWN
+}
+
+// sameFormat refuses files of another format than the tilasm's: a tilasm stays a Markdown document or an HTML page.
+// Files beyond the ceiling were not read: the ceiling refuses them.
+func sameFormat(tilasm *planv1.Tilasm, files *staged) error {
+	if tilasm.GetVersions() == nil || files.over != "" || formatOf(tilasm) == files.format {
+		return nil
+	}
+	if markdown(tilasm) {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"tilasm %s is a Markdown document: put a .md, or a folder with an index.md", tilasm.GetCode()))
+	}
+	return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+		"tilasm %s is an HTML page: put a folder with an index.html, or make a Markdown document a tilasm of its own",
+		tilasm.GetCode()))
 }
 
 // TilasmDir is the folder of a tilasm in the data folder home: version n is in its folder v<n>.
@@ -98,17 +146,18 @@ func (t *Tilasms) ceiling(existing *planv1.Tilasm) int64 {
 func (t *Tilasms) Put(
 	ctx context.Context, req *connect.Request[planv1.TilasmServicePutRequest],
 ) (*connect.Response[planv1.TilasmServicePutResponse], error) {
-	tilasm, placed, err := t.put(ctx, req.Spec(), req.Msg, req.Msg)
+	tilasm, placed, err := t.put(ctx, req.Spec(), req.Msg, req.Msg, planv1.TilasmOrigin_TILASM_ORIGIN_PUT)
 	if err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.TilasmServicePutResponse{Tilasm: tilasm, Directory: placed}), nil
 }
 
-// put puts m's folder or .zip, journaling the request journaled under spec. It returns the tilasm and the folder of the
-// version put.
+// put puts m's .md, folder or .zip, journaling the request journaled under spec, its new version made by origin. It
+// returns the tilasm and the folder of the version put.
 func (t *Tilasms) put(
 	ctx context.Context, spec connect.Spec, journaled proto.Message, m *planv1.TilasmServicePutRequest,
+	origin planv1.TilasmOrigin,
 ) (*planv1.Tilasm, string, error) {
 	if err := t.ready(); err != nil {
 		return nil, "", err
@@ -135,7 +184,7 @@ func (t *Tilasms) put(
 		if _, err := store.Get[*planv1.Wish](ctx, tx, m.GetWish()); err != nil {
 			return err
 		}
-		now := timestamppb.Now()
+		now := t.now()
 		var err error
 		if m.GetCode() != "" {
 			if tilasm, err = tilasmByCode(ctx, tx, m.GetWish(), m.GetCode()); err != nil {
@@ -145,7 +194,7 @@ func (t *Tilasms) put(
 		if tilasm == nil {
 			tilasm = &planv1.Tilasm{
 				Id: store.NewID(), WishId: m.GetWish(), Code: strings.ToUpper(m.GetCode()), CreateTime: now,
-				Author: cmp.Or(m.GetAuthor(), defaultAuthor), MaxBytes: t.ceiling(nil),
+				Author: cmp.Or(m.GetAuthor(), defaultAuthor), MaxBytes: t.ceiling(nil), Format: files.format,
 			}
 			if tilasm.Code == "" {
 				if tilasm.Code, err = nextTilasmCode(ctx, tx, m.GetWish()); err != nil {
@@ -153,6 +202,9 @@ func (t *Tilasms) put(
 				}
 			}
 			tilasm.Title = cmp.Or(files.title, strings.TrimSuffix(filepath.Base(src), filepath.Ext(src)))
+		}
+		if err := sameFormat(tilasm, files); err != nil {
+			return err
 		}
 		if err := files.fits(tilasm, t.ceiling(tilasm)); err != nil {
 			return err
@@ -165,7 +217,7 @@ func (t *Tilasms) put(
 				return err
 			}
 		}
-		placed, err = t.addVersion(tilasm, files, cmp.Or(m.GetAuthor(), defaultAuthor), 0, now)
+		placed, err = t.addVersion(tilasm, files, cmp.Or(m.GetAuthor(), defaultAuthor), 0, origin, now)
 		if err != nil {
 			return err
 		}
@@ -178,9 +230,11 @@ func (t *Tilasms) put(
 	return tilasm, placed, nil
 }
 
-// addVersion moves the staged files into the tilasm's next version, and records it. It returns the version's folder.
+// addVersion moves the staged files into the tilasm's next version, and records it, made by origin, at the tilasm's
+// next revision. It returns the version's folder.
 func (t *Tilasms) addVersion(
-	tilasm *planv1.Tilasm, files *staged, author string, from int32, now *timestamppb.Timestamp,
+	tilasm *planv1.Tilasm, files *staged, author string, from int32, origin planv1.TilasmOrigin,
+	now *timestamppb.Timestamp,
 ) (string, error) {
 	var n int32 = 1
 	if vs := tilasm.GetVersions(); len(vs) > 0 {
@@ -198,8 +252,10 @@ func (t *Tilasms) addVersion(
 		return "", err
 	}
 	files.dir = ""
+	tilasm.Revision++
 	tilasm.Versions = append(tilasm.Versions, &planv1.TilasmVersion{
 		Number: n, CreateTime: now, Author: author, Size: files.size, Files: files.count, RestoredFrom: from,
+		Origin: origin, Revision: tilasm.GetRevision(), UpdateTime: now,
 	})
 	tilasm.UpdateTime = now
 	return dir, nil
@@ -213,11 +269,12 @@ func removeIf(dir string) {
 
 // staged are files copied into a temporary folder of the tilasms' folder, on their way to a version.
 type staged struct {
-	dir   string
-	size  int64
-	count int32
-	title string // the <title> of its index.html
-	over  string // the file at which the ceiling was passed; empty when it was not
+	dir    string
+	size   int64
+	count  int32
+	title  string // the first heading of its index.md, or the <title> of its index.html
+	format planv1.TilasmFormat
+	over   string // the file at which the ceiling was passed; empty when it was not
 }
 
 func (s *staged) clean() { removeIf(s.dir) }
@@ -249,8 +306,8 @@ func bytesText(n int64) string {
 	return fmt.Sprintf("%d bytes", n)
 }
 
-// stagePath copies a folder, or the content of a .zip, into a temporary folder, up to limit bytes: past it, it stops
-// and says at which file. The folder must hold an index.html at its root.
+// stagePath copies a .md file as index.md, or a folder, or the content of a .zip, into a temporary folder, up to limit
+// bytes: past it, it stops and says at which file. The folder must hold an index.html or an index.md at its root.
 func (t *Tilasms) stagePath(src string, limit int64) (*staged, error) {
 	info, err := os.Stat(src)
 	if err != nil {
@@ -261,12 +318,19 @@ func (t *Tilasms) stagePath(src string, limit int64) (*staged, error) {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	s := &staged{dir: dir}
-	if info.IsDir() {
+	switch {
+	case info.IsDir():
 		err = s.copyFolder(src, limit)
-	} else {
+	case markdownFile(src):
+		var f *os.File
+		if f, err = os.Open(src); err == nil {
+			err = s.add(tilasmMarkdown, f, limit)
+			f.Close()
+		}
+	default:
 		var zr *zip.ReadCloser
 		if zr, err = zip.OpenReader(src); err != nil {
-			err = connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s is neither a folder nor a .zip: %w", src, err))
+			err = connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s is neither a .md, a folder nor a .zip: %w", src, err))
 		} else {
 			err = s.copyZip(&zr.Reader, limit)
 			zr.Close()
@@ -282,19 +346,87 @@ func (t *Tilasms) stagePath(src string, limit int64) (*staged, error) {
 	return s, nil
 }
 
-// index checks that the files hold an index.html, and reads its title.
+// markdownFile tells a Markdown file by its name: .md or .markdown.
+func markdownFile(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	return ext == ".md" || ext == ".markdown"
+}
+
+// index reads the format of the files and their title: an HTML page when they hold an index.html, a Markdown document
+// when they hold an index.md; neither is refused.
 func (s *staged) index() error {
 	if s.over != "" {
 		return nil // The ceiling refuses it, saying so.
 	}
-	f, err := os.Open(filepath.Join(s.dir, tilasmIndex))
+	if f, err := os.Open(filepath.Join(s.dir, tilasmIndex)); err == nil {
+		defer f.Close()
+		s.format = planv1.TilasmFormat_TILASM_FORMAT_HTML
+		s.title, _ = htmlText(f)
+		return nil
+	}
+	data, err := readHead(filepath.Join(s.dir, tilasmMarkdown))
 	if err != nil {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New(
-			"a tilasm is a folder with an index.html at its root, and this one has none"))
+			"a tilasm is a .md file, or a folder with an index.md or an index.html at its root, and this one has neither"))
+	}
+	s.format = planv1.TilasmFormat_TILASM_FORMAT_MARKDOWN
+	s.title = markdownTitle(string(data))
+	return nil
+}
+
+// readHead reads a file, up to maxTilasmText bytes.
+func readHead(name string) ([]byte, error) {
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, err
 	}
 	defer f.Close()
-	s.title, _ = htmlText(f)
-	return nil
+	return io.ReadAll(io.LimitReader(f, maxTilasmText))
+}
+
+// markdownTitle is the text of a Markdown document's first heading of level 1, outside code blocks; empty when it has
+// none.
+func markdownTitle(text string) string {
+	fence := ""
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if fence != "" {
+			if strings.HasPrefix(trimmed, fence) {
+				fence = ""
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			fence = trimmed[:3]
+			continue
+		}
+		if len(line)-len(strings.TrimLeft(line, " ")) > 3 {
+			continue // An indented code block.
+		}
+		if rest, ok := strings.CutPrefix(trimmed, "#"); ok && (rest == "" || rest[0] == ' ' || rest[0] == '\t') {
+			title := strings.TrimSpace(strings.TrimRight(strings.TrimSpace(rest), "#"))
+			if title != "" {
+				return title
+			}
+		}
+	}
+	return ""
+}
+
+// versionText is the text of version n of a tilasm: the Markdown of a document, the text of a page without its tags.
+func versionText(home string, tilasm *planv1.Tilasm, n int32) string {
+	dir := versionDir(home, tilasm.GetId(), n)
+	if markdown(tilasm) {
+		data, _ := readHead(filepath.Join(dir, tilasmMarkdown))
+		return string(data)
+	}
+	f, err := os.Open(filepath.Join(dir, tilasmIndex))
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	_, text := htmlText(f)
+	return text
 }
 
 func (s *staged) copyFolder(src string, limit int64) error {
@@ -523,6 +655,7 @@ func (t *Tilasms) List(
 	res := &planv1.TilasmServiceListResponse{}
 	for _, tilasm := range all {
 		if len(words) == 0 || t.matches(tilasm, words) {
+			tilasm.Format = formatOf(tilasm)
 			res.Tilasms = append(res.Tilasms, tilasm)
 		}
 	}
@@ -551,10 +684,7 @@ func (t *Tilasms) matches(tilasm *planv1.Tilasm, words []string) bool {
 	hay := strings.ToLower(tilasm.GetCode() + " " + tilasm.GetTitle())
 	text := ""
 	if vs := tilasm.GetVersions(); len(vs) > 0 && t.Home != "" {
-		if f, err := os.Open(filepath.Join(versionDir(t.Home, tilasm.GetId(), vs[len(vs)-1].GetNumber()), tilasmIndex)); err == nil {
-			_, text = htmlText(f)
-			f.Close()
-		}
+		text = versionText(t.Home, tilasm, vs[len(vs)-1].GetNumber())
 	}
 	hay += " " + strings.ToLower(text)
 	for _, w := range words {
@@ -580,15 +710,13 @@ func (t *Tilasms) Get(
 		return nil, err
 	}
 	dir := versionDir(t.Home, tilasm.GetId(), n)
+	tilasm.Format = formatOf(tilasm)
 	res := &planv1.TilasmServiceGetResponse{
 		Tilasm: tilasm, Version: n, Directory: dir, Link: link.Of(link.Tilasm, tilasm.GetId()),
+		Text: versionText(t.Home, tilasm, n),
 	}
 	if t.URL != nil {
 		res.Url = t.URL(tilasm.GetId())
-	}
-	if f, err := os.Open(filepath.Join(dir, tilasmIndex)); err == nil {
-		_, res.Text = htmlText(f)
-		f.Close()
 	}
 	if res.Files, err = folderFiles(dir); err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("read the files of %s: %w", tilasm.GetCode(), err))
@@ -695,7 +823,8 @@ func (t *Tilasms) Restore(
 		if tilasm, err = store.Get[*planv1.Tilasm](ctx, tx, found.GetId()); err != nil {
 			return err
 		}
-		placed, err = t.addVersion(tilasm, files, cmp.Or(m.GetAuthor(), defaultAuthor), n, timestamppb.Now())
+		placed, err = t.addVersion(tilasm, files, cmp.Or(m.GetAuthor(), defaultAuthor), n,
+			planv1.TilasmOrigin_TILASM_ORIGIN_RESTORE, t.now())
 		if err != nil {
 			return err
 		}
@@ -837,7 +966,7 @@ func (t *Tilasms) importZip(
 		if _, err := store.Get[*planv1.Wish](ctx, tx, m.GetWish()); err != nil {
 			return err
 		}
-		now := timestamppb.Now()
+		now := t.now()
 		var err error
 		tilasm, err = store.Get[*planv1.Tilasm](ctx, tx, from.GetId())
 		switch {
@@ -851,7 +980,7 @@ func (t *Tilasms) importZip(
 			}
 			tilasm = &planv1.Tilasm{
 				Id: id, WishId: m.GetWish(), Author: cmp.Or(from.GetAuthor(), defaultAuthor), CreateTime: now,
-				MaxBytes: t.ceiling(nil),
+				MaxBytes: t.ceiling(nil), Format: files.format,
 			}
 			if code := strings.ToUpper(from.GetCode()); tilasmCode.MatchString(code) {
 				if taken, err := tilasmByCode(ctx, tx, m.GetWish(), code); err != nil {
@@ -868,6 +997,9 @@ func (t *Tilasms) importZip(
 		default:
 			return err
 		}
+		if err := sameFormat(tilasm, files); err != nil {
+			return err
+		}
 		if err := files.fits(tilasm, t.ceiling(tilasm)); err != nil {
 			return err
 		}
@@ -875,7 +1007,8 @@ func (t *Tilasms) importZip(
 		if tilasm.Cites, err = matchCites(ctx, tx, m.GetWish(), from.GetCites(), exp.GetCiteCodes()); err != nil {
 			return err
 		}
-		placed, err = t.addVersion(tilasm, files, cmp.Or(m.GetAuthor(), from.GetAuthor(), defaultAuthor), 0, now)
+		placed, err = t.addVersion(tilasm, files, cmp.Or(m.GetAuthor(), from.GetAuthor(), defaultAuthor), 0,
+			planv1.TilasmOrigin_TILASM_ORIGIN_IMPORT, now)
 		if err != nil {
 			return err
 		}
@@ -1291,12 +1424,7 @@ func TilasmContext(ctx context.Context, r store.Reader, home, wishID string, nam
 			files = append(files[:tilasmPromptFiles], fmt.Sprintf("and %d more", len(files)-tilasmPromptFiles))
 		}
 		fmt.Fprintf(&b, "  (%s)\n", strings.Join(files, ", "))
-		text := ""
-		if f, err := os.Open(filepath.Join(dir, tilasmIndex)); err == nil {
-			_, text = htmlText(f)
-			f.Close()
-		}
-		if text = clipText(text, tilasmPromptText); text != "" {
+		if text := clipText(versionText(home, tilasm, n), tilasmPromptText); text != "" {
 			b.WriteString("\n" + text + "\n")
 		}
 	}

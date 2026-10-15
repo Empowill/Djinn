@@ -1,28 +1,48 @@
-// The Tilasms tab of a wish: the material that explains it (T25), a folder with an index.html kept in Djinn's data
-// folder. A row per tilasm, by code: its title, who made it, when, what it cites. One opens in a frame of its own,
-// served by Djinn at /tilasm/<id>/ with a policy of its own (internal/plan/tilasm_files.go): its scripts run, it reaches
-// no network and nothing of Djinn. A search finds words in the titles and the text, within the wish; "talisman" finds
-// them all. A row's history restores an earlier version; its export writes a .zip to the Downloads folder. A folder or
-// a .zip dropped on the tab becomes a tilasm, or the new version of the one a .zip exported.
+// The Documents panel of a wish (T25): its tilasms, the documents the developer and the agents write together. A tab
+// per document, by code, and the open one on the panel's own surface, as a page. A Markdown tilasm is edited in place
+// (src/tilasm-editor.tsx): each edit saved after a pause from the revision it started from; a save another writer
+// outran keeps the developer's text and asks which to keep. An HTML tilasm shows in a frame of its own, served by Djinn
+// at /tilasm/<id>/ with a policy of its own (internal/plan/tilasm_files.go): its scripts run, it reaches no network
+// and nothing of Djinn. A search, folded behind its icon, finds words in the titles and the text, within the wish. A
+// document's versions restore an earlier one; its export writes a .zip to the Downloads folder. A .md imported, or
+// dropped anywhere on the panel, becomes a document; a folder or a .zip, an HTML tilasm or the new version of the one
+// a .zip exported.
+import { Code as ConnectCode, ConnectError } from "@connectrpc/connect";
+import { type Editor } from "@tiptap/core";
 import {
   Download,
-  FolderInput,
+  FileUp,
   History,
+  Plus,
   RotateCcw,
   Search,
-  X,
 } from "lucide-react";
-import { type DragEvent, useEffect, useRef, useState } from "react";
+import {
+  type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Change, type Task } from "../gen/ts/plan/v1/plan_pb";
-import type { Tilasm } from "../gen/ts/plan/v1/tilasm_pb";
-import { message } from "./data/client";
+import { type Tilasm, TilasmFormat } from "../gen/ts/plan/v1/tilasm_pb";
+import { type Clients, message } from "./data/client";
 import { useClients, useStore } from "./data/djinn";
 import { when } from "./data/format";
 import { type DropEntry, TooLarge, entriesOf, readDrop } from "./data/tilasms";
 import { t } from "./i18n";
+import { TilasmEditor, useTilasmEditor } from "./tilasm-editor";
+import {
+  type TilasmLoss,
+  joinTitle,
+  splitTitle,
+  tilasmLoss,
+} from "./tilasm-markdown";
 import { memory } from "./usage";
-import { SettingsDrawer } from "./wish-settings";
 
 import "./tilasms.css";
 
@@ -31,46 +51,85 @@ export const tilasmAddress = (id: string) => `/tilasm/${id}/`;
 
 const latest = (tilasm: Tilasm) => tilasm.versions.at(-1)?.number ?? 0;
 
+export const isMarkdown = (tilasm: Tilasm) =>
+  tilasm.format === TilasmFormat.MARKDOWN;
+
+// The pause after the last edit before it is saved.
+const SAVE_DELAY = 800;
+
+// The document a wish showed last, kept by the browser: a preference, never needed.
+const openKey = (wishId: string) => `djinn.tilasms.open.${wishId}`;
+
+function readOpen(wishId: string): string {
+  try {
+    return globalThis.localStorage?.getItem(openKey(wishId)) ?? "";
+  } catch {
+    // A refused storage (a private window, an embedded view) remembers nothing.
+    return "";
+  }
+}
+
+function writeOpen(wishId: string, id: string) {
+  try {
+    globalThis.localStorage?.setItem(openKey(wishId), id);
+  } catch {
+    // A refused or full storage only forgets the tab.
+  }
+}
+
+// createTilasm makes an untitled document of the wish, the developer's, and gives its identifier.
+export async function createTilasm(
+  clients: Clients,
+  wishId: string,
+): Promise<string> {
+  const res = await clients.tilasms.create({
+    wish: wishId,
+    title: t("tilasms.untitled"),
+    markdown: "",
+    author: "developer",
+  });
+  return res.tilasm?.id ?? "";
+}
+
+// What a document is asked to show: its tab, and its title ready to be typed in for a new one.
+export interface TilasmOpening {
+  tilasmId: string;
+  focus?: boolean;
+}
+
 export function TilasmsTab({
   wishId,
   opening,
   tilasms,
   tasks,
   onToast,
-  workspace = false,
-  active = true,
 }: {
   wishId: string;
-  // The tilasm a djinn:// link asks to show: opened in the frame, again at each new request.
-  opening?: { tilasmId: string };
+  // The document a djinn:// link or a new document asks to show: its tab, again at each new request.
+  opening?: TilasmOpening;
   // The wish's tilasms, by code.
   tilasms: readonly Tilasm[];
   tasks: readonly Task[];
   onToast: (text: string) => void;
-  /** Compact single-panel workspace presentation; legacy tab layout remains the default. */
-  workspace?: boolean;
-  /** Hidden mounted workspace panels defer the portal viewer until they become visible. */
-  active?: boolean;
 }) {
   const clients = useClients();
   const store = useStore();
+  const [openId, setOpenId] = useState(
+    () => opening?.tilasmId || readOpen(wishId),
+  );
+  // A request to put the caret in a document's title: a new object at each request.
+  const [focus, setFocus] = useState<{ id: string }>();
+  useEffect(() => {
+    if (!opening) return;
+    setOpenId(opening.tilasmId);
+    if (opening.focus) setFocus({ id: opening.tilasmId });
+  }, [opening]);
   const [search, setSearch] = useState("");
   // What the search found, by the server; null without a search.
   const [found, setFound] = useState<Tilasm[] | null>(null);
-  const [openId, setOpenId] = useState(opening?.tilasmId ?? "");
-  useEffect(() => {
-    if (opening) setOpenId(opening.tilasmId);
-  }, [opening]);
-  const [history, setHistory] = useState("");
-  const previousActive = useRef(active);
-  useEffect(() => {
-    if (!active && previousActive.current) {
-      setOpenId("");
-      setHistory("");
-    }
-    previousActive.current = active;
-  }, [active]);
   const [busy, setBusy] = useState(false);
+  // Each restore asks the open document to read its text again, whatever it held.
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     if (!search.trim()) return setFound(null);
     let live = true;
@@ -88,6 +147,11 @@ export function TilasmsTab({
     // The wish's tilasms changing searches again; a new onToast does not.
     // eslint-disable-next-line react-hooks/exhaustive-deps, @eslint-react/exhaustive-deps -- onToast left out, see above
   }, [clients, wishId, search, tilasms]);
+  const open =
+    tilasms.find((tilasm) => tilasm.id === openId) ?? tilasms[0] ?? undefined;
+  useEffect(() => {
+    if (open) writeOpen(wishId, open.id);
+  }, [wishId, open?.id]); // eslint-disable-line react-hooks/exhaustive-deps, @eslint-react/exhaustive-deps -- the id alone
   const run = async (write: () => Promise<string>) => {
     try {
       onToast(await write());
@@ -102,20 +166,63 @@ export function TilasmsTab({
   const ref = (tilasm: Tilasm) => ({
     ref: { case: "id" as const, value: tilasm.id },
   });
+  // put sends what was dropped or imported; the new document opens.
+  const put = (
+    read: () => Promise<{
+      name: string;
+      files: { path: string; content: Uint8Array }[];
+    }>,
+  ) => {
+    setBusy(true);
+    void run(async () => {
+      const dropped = await read();
+      if (dropped.files.length === 0) return t("tilasms.drop_empty");
+      const res = await clients.tilasms.putData({
+        wish: wishId,
+        name: dropped.name,
+        files: dropped.files,
+      });
+      const code = res.tilasm?.code ?? "";
+      await store.changed(wishId, [Change.TILASM]);
+      setOpenId(res.tilasm?.id ?? "");
+      return res.imported
+        ? t("tilasms.imported", { code })
+        : t("tilasms.put", { code });
+    }).finally(() => setBusy(false));
+  };
   return (
-    <TilasmList
+    <TilasmPanel
       tilasms={found ?? tilasms}
       count={tilasms.length}
-      codes={new Map(tasks.map((task) => [task.id, task.code]))}
       search={search}
       onSearch={setSearch}
-      open={tilasms.find((tilasm) => tilasm.id === openId)}
-      onOpen={setOpenId}
-      history={history}
-      onHistory={(id) => {
-        setHistory(history === id ? "" : id);
-        if (workspace) setOpenId(id);
+      open={open}
+      onOpen={(id) => {
+        setFocus(undefined);
+        setOpenId(id);
       }}
+      busy={busy}
+      onNew={() =>
+        void createTilasm(clients, wishId)
+          .then(async (id) => {
+            await store.changed(wishId, [Change.TILASM]);
+            setOpenId(id);
+            setFocus({ id });
+          })
+          .catch((error) => onToast(message(error)))
+      }
+      onImport={(file) =>
+        put(async () => ({
+          name: file.name,
+          files: [
+            {
+              path: file.name,
+              content: new Uint8Array(await file.arrayBuffer()),
+            },
+          ],
+        }))
+      }
+      onDrop={(entries) => put(() => readDrop(entries))}
       onRestore={(tilasm, version) =>
         void run(async () => {
           await clients.tilasms.restore({
@@ -123,6 +230,7 @@ export function TilasmsTab({
             version,
             author: "developer",
           });
+          setReload((n) => n + 1);
           return t("tilasms.restored", { code: tilasm.code, version });
         })
       }
@@ -132,298 +240,685 @@ export function TilasmsTab({
           return t("tilasms.exported", { file: res.file });
         })
       }
-      busy={busy}
-      onDrop={(entries) => {
-        setBusy(true);
-        void run(async () => {
-          const dropped = await readDrop(entries);
-          if (dropped.files.length === 0) return t("tilasms.drop_empty");
-          const res = await clients.tilasms.putData({
-            wish: wishId,
-            name: dropped.name,
-            files: dropped.files,
-          });
-          const code = res.tilasm?.code ?? "";
-          setOpenId(res.tilasm?.id ?? "");
-          return res.imported
-            ? t("tilasms.imported", { code })
-            : t("tilasms.put", { code });
-        }).finally(() => setBusy(false));
-      }}
-      workspace={workspace}
-      active={active}
-    />
+    >
+      {open &&
+        (isMarkdown(open) ? (
+          <MarkdownTilasm
+            key={open.id}
+            tilasm={open}
+            codes={new Map(tasks.map((task) => [task.id, task.code]))}
+            focus={focus?.id === open.id ? focus : undefined}
+            reload={reload}
+          />
+        ) : (
+          <HtmlTilasm tilasm={open} />
+        ))}
+    </TilasmPanel>
   );
 }
 
-// TilasmList is the tab as it shows, from what it is given.
-export function TilasmList({
+// TilasmPanel is the panel as it shows, from what it is given: the strip of tabs and its actions, then the open
+// document. The whole panel takes a drop.
+export function TilasmPanel({
   tilasms,
   count,
-  codes,
   search,
   onSearch,
   open,
   onOpen,
-  history,
-  onHistory,
+  busy = false,
+  onNew,
+  onImport,
+  onDrop,
   onRestore,
   onExport,
-  busy = false,
-  onDrop,
-  workspace = false,
-  active = true,
+  children,
 }: {
-  // What shows: the wish's tilasms, or those the search found.
+  // The tabs: the wish's tilasms, or those the search found.
   tilasms: readonly Tilasm[];
   // How many the wish has.
   count: number;
-  // The codes of the wish's tasks and azimas, by id: what a tilasm cites.
-  codes: ReadonlyMap<string, string>;
   search: string;
   onSearch: (text: string) => void;
-  // The tilasm shown in the frame.
+  // The document shown.
   open?: Tilasm;
-  // Shows a tilasm in the frame; "" closes it.
   onOpen: (id: string) => void;
-  // The tilasm whose versions show.
-  history: string;
-  onHistory: (id: string) => void;
+  // An import or a drop is being put.
+  busy?: boolean;
+  onNew: () => void;
+  onImport: (file: File) => void;
+  onDrop: (entries: DropEntry[]) => void;
   onRestore: (tilasm: Tilasm, version: number) => void;
   onExport: (tilasm: Tilasm) => void;
-  // A drop is being put.
-  busy?: boolean;
-  onDrop: (entries: DropEntry[]) => void;
-  /** Compact single-panel workspace presentation; legacy tab layout remains the default. */
-  workspace?: boolean;
-  /** Hidden mounted workspace panels defer the portal viewer until they become visible. */
-  active?: boolean;
+  children?: ReactNode;
 }) {
   const [over, setOver] = useState(false);
+  const [searching, setSearching] = useState(search !== "");
+  const [versions, setVersions] = useState(false);
+  const file = useRef<HTMLInputElement>(null);
+  const tabs = useRef<HTMLDivElement>(null);
+  // A drop of files only: a block the editor's handle drags is the editor's own.
   const dragging = (event: DragEvent) => {
     if (!event.dataTransfer?.types.includes("Files")) return;
     event.preventDefault();
+    event.stopPropagation();
     setOver(true);
   };
-  const renderHistory = (tilasm: Tilasm) => (
-    <ol className="tilasm-history" reversed>
-      {[...tilasm.versions].reverse().map((v) => (
-        <li key={v.number}>
-          <span className="tilasm-code">
-            {t("tilasms.version", { version: v.number })}
-          </span>
-          <span className="tilasm-meta">
-            {v.author} · {when(v.createTime)} ·{" "}
-            {t("tilasms.files", { count: v.files })} · {memory(v.size)}
-            {v.restoredFrom > 0 &&
-              ` · ${t("tilasms.restored_from", { version: v.restoredFrom })}`}
-          </span>
-          {v.number !== latest(tilasm) && (
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => onRestore(tilasm, v.number)}
-            >
-              <RotateCcw size={13} />
-              {t("tilasms.restore")}
-            </button>
-          )}
-        </li>
-      ))}
-    </ol>
-  );
-  const workspaceDetail = workspace && active && open && (
-    <SettingsDrawer
-      title={open.title}
-      onClose={() => {
-        onOpen("");
-        onHistory("");
-      }}
-    >
-      <div className="workspace-tilasm-detail">
-        <div className="workspace-tilasm-detail-meta">
-          <span className="tilasm-code">{open.code}</span>
-          <span className="tilasm-meta">
-            {open.author} · {when(open.updateTime)} ·{" "}
-            {t("tilasms.version", { version: latest(open) })}
-            {open.cites.length > 0 && (
-              <span className="tilasm-cites">
-                {t("tilasms.cites")}{" "}
-                {open.cites.map((id) => (
-                  <span key={id} className="tilasm-code">
-                    {codes.get(id) ?? id}
-                  </span>
-                ))}
-              </span>
-            )}
-          </span>
-        </div>
-        <iframe
-          key={`${open.id}-${latest(open)}`}
-          className="tilasm-frame"
-          title={`${open.code} · ${open.title}`}
-          src={tilasmAddress(open.id)}
-          sandbox="allow-scripts"
-          referrerPolicy="no-referrer"
-        />
-        {history === open.id && renderHistory(open)}
-      </div>
-    </SettingsDrawer>
-  );
+  const keys = (event: ReactKeyboardEvent) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    const at = tilasms.findIndex((tilasm) => tilasm.id === open?.id);
+    const next =
+      tilasms[
+        (at + (event.key === "ArrowRight" ? 1 : -1) + tilasms.length) %
+          tilasms.length
+      ];
+    if (!next) return;
+    event.preventDefault();
+    onOpen(next.id);
+    tabs.current
+      ?.querySelector<HTMLElement>(`[data-tilasm="${next.id}"]`)
+      ?.focus();
+  };
   return (
     <div
       role="tabpanel"
       aria-labelledby="view-tab-tilasms"
-      className={`tilasms ${workspace ? "workspace-variant" : ""} ${over ? "dropping" : ""} ${open ? "has-open" : ""}`}
-      onDragEnter={dragging}
-      onDragOver={dragging}
+      className={`tilasms${over ? " dropping" : ""}`}
+      onDragEnterCapture={dragging}
+      onDragOverCapture={dragging}
       onDragLeave={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null))
           setOver(false);
       }}
-      onDrop={(event) => {
+      onDropCapture={(event) => {
+        if (!event.dataTransfer?.types.includes("Files")) return;
         event.preventDefault();
+        event.stopPropagation();
         setOver(false);
         const entries = entriesOf(event.dataTransfer);
         if (entries.length) onDrop(entries);
       }}
     >
-      <div className="tilasm-bar">
-        <label className="tilasm-search">
-          <Search size={13} />
-          <input
-            type="search"
-            value={search}
-            placeholder={t("tilasms.search")}
-            aria-label={t("tilasms.search")}
-            onChange={(event) => onSearch(event.target.value)}
-          />
-        </label>
-        <span className="tilasm-drop">
-          <FolderInput size={13} />
-          {busy ? t("tilasms.putting") : t("tilasms.drop")}
-        </span>
-      </div>
-      {!workspace && open && (
-        <section className="tilasm-view" aria-label={open.title}>
-          <div className="tilasm-view-head">
-            <span className="tilasm-code">{open.code}</span>
-            <strong>{open.title}</strong>
-            <span className="muted-text">
-              {t("tilasms.version", { version: latest(open) })}
+      <div className="tilasm-strip">
+        <div
+          ref={tabs}
+          className="tilasm-tabs"
+          role="tablist"
+          aria-label={t("tabs.tilasms")}
+          onKeyDown={keys}
+        >
+          {tilasms.map((tilasm) => (
+            <button
+              key={tilasm.id}
+              type="button"
+              role="tab"
+              id={`tilasm-${tilasm.id}`}
+              data-tilasm={tilasm.id}
+              aria-selected={tilasm.id === open?.id}
+              tabIndex={tilasm.id === open?.id ? 0 : -1}
+              className="tilasm-tab"
+              title={`${tilasm.code} · ${tilasm.title}`}
+              onClick={() => onOpen(tilasm.id)}
+            >
+              {tilasm.title || t("tilasms.untitled")}
+            </button>
+          ))}
+          {count > 0 && tilasms.length === 0 && (
+            <span className="tilasm-strip-note">
+              {t("tilasms.none_found", { search })}
             </span>
+          )}
+        </div>
+        <div className="tilasm-strip-actions">
+          {searching ? (
+            <input
+              className="tilasm-search"
+              type="search"
+              value={search}
+              placeholder={t("tilasms.search")}
+              aria-label={t("tilasms.search")}
+              autoFocus
+              onChange={(event) => onSearch(event.target.value)}
+              onBlur={() => {
+                if (!search) setSearching(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape") return;
+                onSearch("");
+                setSearching(false);
+              }}
+            />
+          ) : (
             <button
               type="button"
               className="icon-button"
-              title={t("tilasms.close")}
-              aria-label={t("tilasms.close")}
-              onClick={() => onOpen("")}
+              title={t("tilasms.search")}
+              aria-label={t("tilasms.search")}
+              onClick={() => setSearching(true)}
             >
-              <X size={14} />
+              <Search size={14} aria-hidden="true" />
             </button>
-          </div>
-          {/* Scripts only: an opaque origin, never Djinn's; the server's policy refuses the network. */}
-          <iframe
-            key={`${open.id}-${latest(open)}`}
-            className="tilasm-frame"
-            title={`${open.code} · ${open.title}`}
-            src={tilasmAddress(open.id)}
-            sandbox="allow-scripts"
-            referrerPolicy="no-referrer"
+          )}
+          <button
+            type="button"
+            className="icon-button"
+            title={t("tilasms.new")}
+            aria-label={t("tilasms.new")}
+            onClick={onNew}
+          >
+            <Plus size={14} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            title={busy ? t("tilasms.putting") : t("tilasms.import")}
+            aria-label={t("tilasms.import")}
+            aria-busy={busy}
+            disabled={busy}
+            onClick={() => file.current?.click()}
+          >
+            <FileUp size={14} aria-hidden="true" />
+          </button>
+          <input
+            ref={file}
+            className="tilasm-file"
+            type="file"
+            accept=".md,.markdown,text/markdown"
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={(event) => {
+              const picked = event.target.files?.[0];
+              event.target.value = "";
+              if (picked) onImport(picked);
+            }}
           />
-        </section>
-      )}
+          {open && (
+            <span className="tilasm-versions-anchor">
+              <button
+                type="button"
+                className="icon-button"
+                aria-expanded={versions}
+                title={t("tilasms.history")}
+                aria-label={t("tilasms.history")}
+                onClick={() => setVersions(!versions)}
+              >
+                <History size={14} aria-hidden="true" />
+              </button>
+              {versions && (
+                <TilasmVersions
+                  tilasm={open}
+                  onRestore={(version) => {
+                    setVersions(false);
+                    onRestore(open, version);
+                  }}
+                  onExport={() => {
+                    setVersions(false);
+                    onExport(open);
+                  }}
+                  onClose={() => setVersions(false)}
+                />
+              )}
+            </span>
+          )}
+        </div>
+      </div>
       {count === 0 ? (
-        <p className="muted-text">{t("tilasms.none")}</p>
-      ) : tilasms.length === 0 ? (
-        <p className="muted-text">{t("tilasms.none_found", { search })}</p>
+        <p className="tilasm-strip-note">{t("tilasms.none")}</p>
       ) : (
-        <ul className="tilasm-list" aria-label={t("tabs.tilasms")}>
-          {tilasms.map((tilasm) => (
-            <li
-              key={tilasm.id}
-              id={`tilasm-${tilasm.id}`}
-              className={`tilasm-row ${open?.id === tilasm.id ? "open" : ""}`}
-            >
-              <div className="tilasm-line">
-                {workspace ? (
-                  <button
-                    type="button"
-                    className="tilasm-primary"
-                    title={tilasm.title}
-                    aria-label={tilasm.title}
-                    onClick={() => onOpen(tilasm.id)}
-                  >
-                    <span className="tilasm-code">{tilasm.code}</span>
-                    <span className="tilasm-title">{tilasm.title}</span>
-                    <span className="tilasm-meta">
-                      {tilasm.author} · {when(tilasm.updateTime)}
-                      {tilasm.cites.length > 0 && (
-                        <span className="tilasm-cites">
-                          {t("tilasms.cites")}{" "}
-                          {tilasm.cites.map((id) => (
-                            <span key={id} className="tilasm-code">
-                              {codes.get(id) ?? id.slice(0, 8)}
-                            </span>
-                          ))}
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                ) : (
-                  <>
-                    <span className="tilasm-code">{tilasm.code}</span>
-                    <button
-                      type="button"
-                      className="text-button tilasm-title"
-                      title={t("tilasms.open")}
-                      onClick={() => onOpen(tilasm.id)}
-                    >
-                      {tilasm.title}
-                    </button>
-                    <span className="tilasm-meta">
-                      {tilasm.author} · {when(tilasm.updateTime)}
-                    </span>
-                    {tilasm.cites.length > 0 && (
-                      <span className="tilasm-cites">
-                        {t("tilasms.cites")}{" "}
-                        {tilasm.cites.map((id) => (
-                          <span key={id} className="tilasm-code">
-                            {codes.get(id) ?? id.slice(0, 8)}
-                          </span>
-                        ))}
-                      </span>
-                    )}
-                  </>
-                )}
-                <span className="tilasm-actions">
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-expanded={history === tilasm.id}
-                    title={t("tilasms.history")}
-                    aria-label={t("tilasms.history")}
-                    onClick={() => onHistory(tilasm.id)}
-                  >
-                    <History size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-button"
-                    title={t("tilasms.export")}
-                    aria-label={t("tilasms.export")}
-                    onClick={() => onExport(tilasm)}
-                  >
-                    <Download size={14} />
-                  </button>
-                </span>
-              </div>
-              {!workspace && history === tilasm.id && renderHistory(tilasm)}
-            </li>
-          ))}
-        </ul>
+        children
       )}
-      {workspaceDetail}
     </div>
+  );
+}
+
+// TilasmVersions is the small window of a document's versions, the latest first, each earlier one restorable, and
+// its export. A click outside or Escape closes it.
+export function TilasmVersions({
+  tilasm,
+  onRestore,
+  onExport,
+  onClose,
+}: {
+  tilasm: Tilasm;
+  onRestore: (version: number) => void;
+  onExport: () => void;
+  onClose: () => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const outside = (event: PointerEvent) => {
+      const anchor = box.current?.parentElement;
+      if (anchor && !anchor.contains(event.target as Node)) onClose();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [onClose]);
+  const html = !isMarkdown(tilasm);
+  return (
+    <div
+      ref={box}
+      className="tilasm-popover"
+      role="dialog"
+      aria-label={t("tilasms.history")}
+    >
+      <ol className="tilasm-history" reversed>
+        {[...tilasm.versions].reverse().map((v) => (
+          <li key={v.number}>
+            <span className="tilasm-history-line">
+              <strong>{t("tilasms.version", { version: v.number })}</strong>
+              <span className="tilasm-history-meta">
+                {v.author} · {when(v.updateTime ?? v.createTime)}
+                {html &&
+                  ` · ${t("tilasms.files", { count: v.files })} · ${memory(v.size)}`}
+                {v.restoredFrom > 0 &&
+                  ` · ${t("tilasms.restored_from", { version: v.restoredFrom })}`}
+              </span>
+            </span>
+            {v.number !== latest(tilasm) && (
+              <button
+                type="button"
+                className="icon-button"
+                title={t("tilasms.restore")}
+                aria-label={t("tilasms.restore")}
+                onClick={() => onRestore(v.number)}
+              >
+                <RotateCcw size={13} aria-hidden="true" />
+              </button>
+            )}
+          </li>
+        ))}
+      </ol>
+      <button type="button" className="text-button" onClick={onExport}>
+        <Download size={13} aria-hidden="true" />
+        {t("tilasms.export")}
+      </button>
+    </div>
+  );
+}
+
+// HtmlTilasm shows an HTML tilasm as its page, read only. Scripts only: an opaque origin, never Djinn's; the server's
+// policy refuses the network.
+export function HtmlTilasm({ tilasm }: { tilasm: Tilasm }) {
+  return (
+    <iframe
+      key={`${tilasm.id}-${latest(tilasm)}`}
+      className="tilasm-frame"
+      title={`${tilasm.code} · ${tilasm.title}`}
+      src={tilasmAddress(tilasm.id)}
+      sandbox="allow-scripts"
+      referrerPolicy="no-referrer"
+      // A frame in a panel not shown waits until it shows.
+      loading="lazy"
+    />
+  );
+}
+
+type SaveState = "saved" | "saving" | "unsaved" | "failed";
+
+// Another writer's text, met by a save or a live update while the developer's own was not saved.
+interface Theirs {
+  markdown: string;
+  revision: bigint;
+  title: string;
+}
+
+const lossNames: Record<TilasmLoss, () => string> = {
+  html: () => t("tilasms.loss.html"),
+  image: () => t("tilasms.loss.image"),
+  footnote: () => t("tilasms.loss.footnote"),
+  content: () => t("tilasms.loss.content"),
+};
+
+// read gets a document's Markdown and revision.
+async function read(clients: Clients, id: string) {
+  const res = await clients.tilasms.get({
+    tilasm: { ref: { case: "id", value: id } },
+  });
+  return {
+    markdown: res.text,
+    revision: res.tilasm?.revision ?? 0n,
+    title: res.tilasm?.title ?? "",
+  };
+}
+
+// MarkdownTilasm is a Markdown document on the panel: its title line, a quiet line of who and when and whether it is
+// saved, then its text in the editor.
+function MarkdownTilasm({
+  tilasm,
+  codes,
+  focus,
+  reload,
+}: {
+  tilasm: Tilasm;
+  // The codes of the wish's tasks and azimas, by id: what a tilasm cites.
+  codes: ReadonlyMap<string, string>;
+  // A request to put the caret in the title.
+  focus?: { id: string };
+  // Changes when the document must read its text again, unsaved edits dropped: a restore.
+  reload: number;
+}) {
+  const clients = useClients();
+  const id = tilasm.id;
+  const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
+  const [failure, setFailure] = useState("");
+  const [title, setTitle] = useState(tilasm.title);
+  const [save, setSave] = useState<SaveState>("saved");
+  const [loss, setLoss] = useState<TilasmLoss[]>([]);
+  // The developer chose to edit a document the editor cannot keep whole.
+  const [anyway, setAnyway] = useState(false);
+  const [theirs, setTheirs] = useState<Theirs | null>(null);
+  // A save finished: a revision listed meanwhile is read then.
+  const [settled, setSettled] = useState(0);
+  const titleField = useRef<HTMLInputElement>(null);
+
+  // What the saves work from, out of React's renders.
+  const base = useRef(0n); // the revision the editor's text started from
+  const saved = useRef(""); // the Markdown at that revision, as last read or saved
+  const headed = useRef(false); // the Markdown starts with the title as a heading
+  const titleNow = useRef(tilasm.title);
+  const dirty = useRef(false);
+  const edits = useRef(0);
+  const saving = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const editable = phase === "ready" && (loss.length === 0 || anyway);
+  const state = useRef({ editable, theirs });
+  useLayoutEffect(() => {
+    state.current = { editable, theirs };
+  });
+
+  const edited = useRef(() => {});
+  const editor = useTilasmEditor(() => edited.current());
+  const editorRef = useRef<Editor | null>(null);
+  useLayoutEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
+
+  // markdown is the document as it would be saved now: the title line, then the editor's text.
+  const markdown = useCallback(() => {
+    const current = editorRef.current;
+    if (!current) return saved.current;
+    return joinTitle(headed.current, titleNow.current, current.getMarkdown());
+  }, []);
+
+  // apply puts a text read from Djinn in the editor, out of its undo history; keep leaves the caret where it was.
+  const apply = useCallback(
+    (text: string, revision: bigint, named: string, keep: boolean) => {
+      const current = editorRef.current;
+      if (!current) return;
+      clearTimeout(timer.current);
+      const split = splitTitle(text, named);
+      headed.current = split.headed;
+      const lost = current.markdown
+        ? tilasmLoss(current.markdown, split.body)
+        : [];
+      const { from, to } = current.state.selection;
+      current
+        .chain()
+        .command(({ tr }) => {
+          tr.setMeta("addToHistory", false);
+          return true;
+        })
+        .setContent(split.body, { contentType: "markdown", emitUpdate: false })
+        .run();
+      if (keep && current.isFocused) {
+        const size = current.state.doc.content.size;
+        current.commands.setTextSelection({
+          from: Math.min(from, size),
+          to: Math.min(to, size),
+        });
+      }
+      base.current = revision;
+      saved.current = text;
+      dirty.current = false;
+      titleNow.current = named;
+      setTitle(named);
+      setLoss(lost);
+      setTheirs(null);
+      setSave("saved");
+    },
+    [],
+  );
+
+  // flush saves the document now, from the revision it started from. Another writer first: their text is kept aside
+  // and the developer picks.
+  const flush = useCallback(async () => {
+    clearTimeout(timer.current);
+    if (!dirty.current || !state.current.editable || state.current.theirs)
+      return;
+    if (saving.current) return;
+    const text = markdown();
+    const at = edits.current;
+    saving.current = true;
+    setSave("saving");
+    try {
+      const res = await clients.tilasms.save({
+        id,
+        baseRevision: base.current,
+        markdown: text,
+        title: titleNow.current.replace(/\s+/g, " ").trim(),
+        author: "developer",
+      });
+      base.current = res.tilasm?.revision ?? base.current;
+      saved.current = text;
+      if (edits.current === at) {
+        dirty.current = false;
+        setSave("saved");
+      } else {
+        timer.current = setTimeout(() => void flush(), SAVE_DELAY);
+      }
+    } catch (error) {
+      if (error instanceof ConnectError && error.code === ConnectCode.Aborted) {
+        try {
+          const now = await read(clients, id);
+          if (now.markdown === text) {
+            base.current = now.revision;
+            saved.current = text;
+            if (edits.current === at) dirty.current = false;
+            setSave(dirty.current ? "unsaved" : "saved");
+          } else {
+            setTheirs(now);
+            setSave("unsaved");
+          }
+        } catch (again) {
+          setFailure(message(again));
+          setSave("failed");
+        }
+      } else {
+        setFailure(message(error));
+        setSave("failed");
+      }
+    } finally {
+      saving.current = false;
+      setSettled((n) => n + 1);
+    }
+  }, [clients, id, markdown]);
+
+  const changed = useCallback(() => {
+    dirty.current = true;
+    edits.current += 1;
+    setSave("unsaved");
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => void flush(), SAVE_DELAY);
+  }, [flush]);
+  useLayoutEffect(() => {
+    edited.current = changed;
+  }, [changed]);
+
+  // Read the document once the editor is ready, and again at each restore.
+  useEffect(() => {
+    if (!editor) return;
+    let live = true;
+    read(clients, id)
+      .then((now) => {
+        if (!live) return;
+        apply(now.markdown, now.revision, now.title, false);
+        setPhase("ready");
+      })
+      .catch((error) => {
+        if (!live) return;
+        setFailure(message(error));
+        setPhase("error");
+      });
+    return () => {
+      live = false;
+    };
+  }, [editor, clients, id, apply, reload]);
+
+  useEffect(() => {
+    editor?.setEditable(editable, false);
+  }, [editor, editable]);
+
+  // A new document: the caret in its title, the title selected to be typed over.
+  useEffect(() => {
+    if (phase !== "ready" || !focus) return;
+    titleField.current?.focus();
+    titleField.current?.select();
+  }, [phase, focus]);
+
+  // Another writer saved a later revision: an untouched document reads it in place, the caret kept; a touched one
+  // keeps the developer's text and asks.
+  const listed = tilasm.revision;
+  useEffect(() => {
+    if (phase !== "ready" || saving.current || listed <= base.current) return;
+    let live = true;
+    read(clients, id)
+      .then((now) => {
+        if (!live || saving.current || now.revision <= base.current) return;
+        if (now.markdown === saved.current) {
+          base.current = now.revision;
+          return;
+        }
+        if (dirty.current) {
+          clearTimeout(timer.current);
+          setTheirs(now);
+          setSave("unsaved");
+        } else apply(now.markdown, now.revision, now.title, true);
+      })
+      .catch(() => {
+        // The next change of the list tries again.
+      });
+    return () => {
+      live = false;
+    };
+  }, [phase, listed, settled, clients, id, apply]);
+
+  // What is not saved yet is saved when the document closes, its tab changed or its wish left, and when the page
+  // goes.
+  useEffect(() => {
+    const leave = () => void flush();
+    window.addEventListener("pagehide", leave);
+    return () => {
+      window.removeEventListener("pagehide", leave);
+      void flush();
+    };
+  }, [flush]);
+
+  const status =
+    phase === "loading"
+      ? t("tilasms.loading")
+      : !editable
+        ? t("tilasms.read_only")
+        : save === "saving"
+          ? t("tilasms.saving")
+          : save === "unsaved"
+            ? t("tilasms.unsaved")
+            : save === "failed"
+              ? t("tilasms.save_failed")
+              : t("tilasms.saved");
+  return (
+    <article className="tilasm-document" aria-label={title || tilasm.title}>
+      <input
+        ref={titleField}
+        className="tilasm-title"
+        value={title}
+        placeholder={t("tilasms.untitled")}
+        aria-label={t("tilasms.title")}
+        readOnly={!editable}
+        onChange={(event) => {
+          titleNow.current = event.target.value;
+          setTitle(event.target.value);
+          changed();
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== "ArrowDown") return;
+          event.preventDefault();
+          editor?.commands.focus("start");
+        }}
+      />
+      <p className="tilasm-meta">
+        <span>{tilasm.code}</span>
+        <span>
+          {tilasm.author} · {when(tilasm.updateTime)}
+        </span>
+        {tilasm.cites.length > 0 && (
+          <span>
+            {t("tilasms.cites")}{" "}
+            {tilasm.cites
+              .map((cite) => codes.get(cite) ?? cite.slice(0, 8))
+              .join(" ")}
+          </span>
+        )}
+        <span className="tilasm-save" aria-live="polite" data-state={save}>
+          {status}
+        </span>
+      </p>
+      {phase === "error" || save === "failed" ? (
+        <p className="tilasm-notice" role="alert">
+          {failure}
+        </p>
+      ) : null}
+      {phase === "ready" && loss.length > 0 && !anyway && (
+        <p className="tilasm-notice">
+          <span>
+            {t("tilasms.lossy", {
+              what: loss.map((kind) => lossNames[kind]()).join(", "),
+            })}
+          </span>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => setAnyway(true)}
+          >
+            {t("tilasms.edit_anyway")}
+          </button>
+        </p>
+      )}
+      {theirs && (
+        <p className="tilasm-notice" role="alert">
+          <span>{t("tilasms.conflict")}</span>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() =>
+              apply(theirs.markdown, theirs.revision, theirs.title, false)
+            }
+          >
+            {t("tilasms.reload_theirs")}
+          </button>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => {
+              base.current = theirs.revision;
+              saved.current = theirs.markdown;
+              state.current = { ...state.current, theirs: null };
+              setTheirs(null);
+              dirty.current = true;
+              void flush();
+            }}
+          >
+            {t("tilasms.keep_mine")}
+          </button>
+        </p>
+      )}
+      <TilasmEditor editor={editor} editable={editable} />
+    </article>
   );
 }

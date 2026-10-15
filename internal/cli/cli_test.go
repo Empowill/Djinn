@@ -424,7 +424,8 @@ func TestRun(t *testing.T) {
 		{name: "talisman answers as tilasm", args: []string{"talisman", "list", "--search", "model"}, wantOut: "code: L01", wantCalled: true},
 		{name: "an alias by a prefix no command takes", args: []string{"tali", "l"}, wantOut: "code: L01", wantCalled: true},
 		{name: "a prefix a command takes is not an alias's", args: []string{"t", "list"}, wantCode: 2, wantErr: `command "t" is ambiguous: task, tilasm`},
-		{name: "help names the alias", args: []string{"help"}, wantOut: "  tilasm, talisman "},
+		{name: "doc answers as tilasm", args: []string{"doc", "list", "--search", "model"}, wantOut: "code: L01", wantCalled: true},
+		{name: "help names the alias", args: []string{"help"}, wantOut: "  tilasm, talisman, doc "},
 		{name: "help comes from the proto comments", args: []string{"q", "answer", "--help"}, wantOut: "Usage: djinn question answer <question> <choice> [flags]\n\nAnswer a question, which turns it into a decision."},
 		{name: "help command", args: []string{"help", "pr"}, wantOut: "Methods:\n  add    Add a folder as a project."},
 	}

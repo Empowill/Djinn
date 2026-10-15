@@ -7,9 +7,10 @@ import "djinn/v1/options.proto";
 import "google/protobuf/timestamp.proto";
 
 // A tilasm is the material that explains a wish: a concept drawn, a data model walked through, a comparison laid out.
-// A folder with an index.html and its sources, kept in Djinn's data folder, tilasms/<id>/v<n>/, never in a project.
-// Putting it again adds a version; the latest is what its links show. The word comes from the Arabic ṭilasm, the
-// origin of "talisman".
+// A support, as the window calls it: a Markdown document, index.md, that the developer and the agents write together;
+// or, when one is asked for, an HTML page, a folder with an index.html and its sources. Kept in Djinn's data folder,
+// tilasms/<id>/v<n>/, never in a project. Putting it again adds a version; the latest is what its links show. The word
+// comes from the Arabic ṭilasm, the origin of "talisman".
 message Tilasm {
   option (djinn.v1.unique) = {fields: ["wish_id", "code"]};
 
@@ -33,6 +34,38 @@ message Tilasm {
   google.protobuf.Timestamp update_time = 9;
   // Most a version may hold, in bytes, its files summed: a put beyond it is refused, saying so.
   int64 max_bytes = 10;
+  // What its versions hold: a Markdown document or an HTML page. It never changes. Unspecified: an HTML page, put
+  // before tilasms had a format.
+  TilasmFormat format = 11;
+  // Grows by one at each write of its content: a put, a save, a restore, an import. A save names the revision it
+  // started from, and is refused when the tilasm has moved on since.
+  int64 revision = 12;
+}
+
+// TilasmFormat is what a tilasm's versions hold.
+enum TilasmFormat {
+  // Not set: an HTML page, put before tilasms had a format.
+  TILASM_FORMAT_UNSPECIFIED = 0;
+  // A folder with an index.html and its sources, read only in the window.
+  TILASM_FORMAT_HTML = 1;
+  // A Markdown document, index.md, with the files it links beside it: edited in the window.
+  TILASM_FORMAT_MARKDOWN = 2;
+}
+
+// TilasmOrigin is how a version came to be.
+enum TilasmOrigin {
+  // Not set: a put, recorded before versions had an origin.
+  TILASM_ORIGIN_UNSPECIFIED = 0;
+  // djinn tilasm put, a folder, a .zip or a .md.
+  TILASM_ORIGIN_PUT = 1;
+  // djinn tilasm create, or a new document in the window.
+  TILASM_ORIGIN_CREATE = 2;
+  // A save of the window's editor.
+  TILASM_ORIGIN_SAVE = 3;
+  // A restore of an earlier version.
+  TILASM_ORIGIN_RESTORE = 4;
+  // An export imported, or files dropped on the window.
+  TILASM_ORIGIN_IMPORT = 5;
 }
 
 // TilasmVersion is one put of a tilasm: its files stay in tilasms/<id>/v<number>/.
@@ -49,6 +82,13 @@ message TilasmVersion {
   int32 files = 5;
   // The version it copies, when it was restored from an earlier one; 0 otherwise.
   int32 restored_from = 6;
+  // How it came to be.
+  TilasmOrigin origin = 7;
+  // The tilasm's revision its content holds. A save by the same author within minutes of it rewrites the version in
+  // place, which takes the save's revision, so that the history keeps one version per sitting.
+  int64 revision = 8;
+  // When its content was last written: its create_time, unless a save rewrote it.
+  google.protobuf.Timestamp update_time = 9;
 }
 
 // TilasmRef points to a tilasm by its code or by its identifier.
@@ -87,8 +127,10 @@ message TilasmFile {
 // replaces a tilasm with a new version, and the earlier ones can be read and restored.
 service TilasmService {
   option (djinn.v1.alias) = "talisman";
+  option (djinn.v1.alias) = "doc";
 
-  // Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new
+  // Put a Markdown document, a .md file or a folder with an index.md, as a tilasm of the wish; or, for an HTML page
+  // the developer asked for, a folder that holds an index.html, or a .zip of one. A new one, or with --code a new
   // version of that one, its links unchanged.
   rpc Put(TilasmServicePutRequest) returns (TilasmServicePutResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -131,24 +173,37 @@ service TilasmService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
-  // export wrote is imported, as Import; any other is put, as Put.
+  // Put the files the window read, dropped on the Tilasms tab: a folder's files, a .md file, or a .zip. A .zip that
+  // djinn tilasm export wrote is imported, as Import; any other is put, as Put.
   rpc PutData(TilasmServicePutDataRequest) returns (TilasmServicePutDataResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Create a Markdown document as a tilasm of the wish, from its title and, if given, its text.
+  rpc Create(TilasmServiceCreateRequest) returns (TilasmServiceCreateResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Save the text of a Markdown tilasm, edited in the window, from the revision the editor started from. Refused with
+  // ABORTED when the tilasm has moved on since: the window reads it again. A save by the latest version's author,
+  // within minutes of it, rewrites that version; any other adds one.
+  rpc Save(TilasmServiceSaveRequest) returns (TilasmServiceSaveResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
 }
 
 message TilasmServicePutRequest {
-  // The folder that holds the index.html, or a .zip of it; a relative path starts from the current directory.
+  // The .md file, or the folder that holds the index.md, or for an HTML page the index.html, or a .zip of it; a
+  // relative path starts from the current directory.
   string path = 1 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_len = 4096
   ];
   // The wish it explains.
   string wish = 2 [(buf.validate.field).string.uuid = true];
-  // Title, in a line; by default the <title> of its index.html, or the folder's name. A new version keeps the title
-  // it had unless one is given.
+  // Title, in a line; by default the first heading of its Markdown, or the <title> of its index.html, or the file's
+  // or folder's name. A new version keeps the title it had unless one is given.
   string title = 3 [(buf.validate.field).string.max_len = 1000];
   // The tilasm to put again, by its code (L01): a new version of it. Without it, a new tilasm with the next code.
   string code = 4 [
@@ -206,7 +261,7 @@ message TilasmServiceGetResponse {
   Tilasm tilasm = 1;
   // The version read.
   int32 version = 2;
-  // The text of its index.html, without tags, scripts nor styles.
+  // The Markdown of a Markdown tilasm; the text of an HTML page's index.html, without tags, scripts nor styles.
   string text = 3;
   // The folder of the version's files.
   string directory = 4;
@@ -322,9 +377,9 @@ message TilasmServicePutDataRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.uuid = true
   ];
-  // The name of what was dropped, the folder's or the .zip's: the title when its index.html has none.
+  // The name of what was dropped, the folder's, the .md's or the .zip's: the title when its content gives none.
   string name = 2 [(buf.validate.field).string.max_len = 1000];
-  // The files, by their paths in the folder (version 0); or one file, the .zip.
+  // The files, by their paths in the folder (version 0); or one file, the .md or the .zip.
   repeated TilasmFile files = 3 [
     (buf.validate.field).repeated.min_items = 1,
     (buf.validate.field).repeated.max_items = 10000
@@ -338,4 +393,49 @@ message TilasmServicePutDataResponse {
   Tilasm tilasm = 1;
   // The .zip was a tilasm's export: it was imported.
   bool imported = 2;
+}
+
+message TilasmServiceCreateRequest {
+  // The wish it explains.
+  string wish = 1 [(buf.validate.field).string.uuid = true];
+  // Title, in a line; by default the first heading of its text.
+  string title = 2 [
+    (buf.validate.field).string.max_len = 1000,
+    (djinn.v1.positional) = true
+  ];
+  // Its text, in Markdown; empty for a document to write.
+  string markdown = 3 [(buf.validate.field).string.max_len = 52428800];
+  // An azima or a task of the wish it explains, by code (T29, W12) or identifier; repeat it for each.
+  repeated string cites = 4 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 64
+  ];
+  // Who makes it: your task's code (W12) for a worker; lead by default.
+  string author = 5 [(buf.validate.field).string.max_len = 100];
+}
+
+message TilasmServiceCreateResponse {
+  // The tilasm, at its first version and revision.
+  Tilasm tilasm = 1;
+  // The folder of its first version.
+  string directory = 2;
+}
+
+message TilasmServiceSaveRequest {
+  // The tilasm, by its identifier.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The tilasm's revision the text was edited from.
+  int64 base_revision = 2 [(buf.validate.field).int64.gte = 0];
+  // Its whole text, in Markdown.
+  string markdown = 3 [(buf.validate.field).string.max_len = 52428800];
+  // A new title, in a line; empty keeps it.
+  string title = 4 [(buf.validate.field).string.max_len = 1000];
+  // Who saves it; the developer by default.
+  string author = 5 [(buf.validate.field).string.max_len = 100];
+}
+
+message TilasmServiceSaveResponse {
+  // The tilasm, at its new revision, the version saved last.
+  Tilasm tilasm = 1;
 }

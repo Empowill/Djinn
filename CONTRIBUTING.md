@@ -221,15 +221,21 @@ To use Djinn, see the [README](README.md). To work on it:
   summed. Refused while it runs, once its worktree is gone, or for an agent that cannot resume a session (Antigravity,
   a watcher). `djinn task spawn --fork` starts another task from a task's context; forking a task cut short, failed or
   stopped closes it, "continued in" the fork.
-- `djinn tilasm put <folder> --wish <wish-id> --cites T25 --cites W12` keeps a folder with an `index.html` (or a
-  `.zip` of one) as a tilasm of the wish, `L01`, `L02`…: the material that explains it, in the data folder
-  (`tilasms/<id>/v<n>/`), never in a project; `--code L01` puts a new version of it. `djinn tilasm get L01` gives an
-  agent its text and the folder of its files; `history`, `restore <version>`, `export` (a `.zip` with `tilasm.json`)
-  and `import <zip> --wish <wish-id>` follow, and `djinn wish export` carries them. A tilasm holds 50 MiB at most.
-  `djinn talisman …` is the same command ([T25](plan/4a699d0f-review-at-a-glance.md)). Djinn serves each one's latest version at
+- `djinn tilasm put brief.md --wish <wish-id> --cites T25 --cites W12` keeps a Markdown document (a `.md`, or a
+  folder with an `index.md`) as a tilasm of the wish, `L01`, `L02`…: a support, as the window calls it, the material
+  that explains it, in the data folder (`tilasms/<id>/v<n>/`), never in a project; `--code L01` puts a new version of
+  it. `djinn tilasm create "<title>" --wish <wish-id> --markdown "…"` writes one from its text. Agents write
+  Markdown, one support per subject, reused before another is made; an HTML page, a folder with an `index.html` (or a
+  `.zip` of one), only when the developer asks for one. A tilasm keeps its format; its `revision` grows at each
+  write. The window edits a Markdown tilasm (`Save`, internal, from the revision it read, refused with `aborted` when
+  it moved on; a save by the latest version's author within ten minutes of it rewrites that version), and shows an
+  HTML one read only. `djinn tilasm get L01` gives an agent its text (the Markdown, or the page without its tags) and
+  the folder of its files; `history`, `restore <version>`, `export` (a `.zip` with `tilasm.json`) and
+  `import <zip> --wish <wish-id>` follow, and `djinn wish export` carries them. A tilasm holds 50 MiB at most.
+  `djinn talisman …` and `djinn doc …` are the same command ([T25](plan/4a699d0f-review-at-a-glance.md)). Djinn serves each one's latest version at
   `/tilasm/<id>/`, with a content security policy of its own: its scripts and files run, the network and Djinn stay
   out of reach. The wish's *Tilasms* tab lists them, opens one in a sandboxed frame, searches their titles and text,
-  restores a version and exports one; a folder or a `.zip` dropped on it becomes a tilasm. The brief lists the wish's
+  restores a version and exports one; a `.md`, a folder or a `.zip` dropped on it becomes a tilasm. The brief lists the wish's
   tilasms, each with its link, `djinn://tilasm/<id>`, and the azimas and tasks it cites; `djinn task get` and the
   brief's azima graph show each task the tilasms that cite it. `djinn task spawn … --tilasm L01` opens the worker's
   first prompt with the tilasm's text and the folder of its files.
@@ -344,6 +350,10 @@ their contributors.
   [Lucide](https://github.com/lucide-icons/lucide),
   [react-markdown](https://github.com/remarkjs/react-markdown) and
   [remark-gfm](https://github.com/remarkjs/remark-gfm),
+  [Tiptap](https://github.com/ueberdosis/tiptap) (the editor of the documents: its core, React binding, starter kit,
+  Markdown, lists, tables, extensions and bubble menu) and what it brings,
+  [ProseMirror](https://github.com/ProseMirror), [marked](https://github.com/markedjs/marked) and
+  [Floating UI](https://github.com/floating-ui/floating-ui),
   [Thinking Orbs](https://github.com/Jakubantalik/Libraries.dev),
   [xterm.js](https://github.com/xtermjs/xterm.js) and its fit and web-links addons (the terminal),
   [Fontsource](https://github.com/fontsource/font-files) (DM Sans, IBM Plex Mono).

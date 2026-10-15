@@ -852,7 +852,7 @@ test("the summary switches one detail panel while global actions and settings st
     await openSection(page, "tilasms");
     await expect(panel(page, "tasks")).toBeHidden();
     await expect(panel(page, "tilasms")).toContainText("Workspace model");
-    await assertUsablePanelBody(panel(page, "tilasms"), ".tilasm-row");
+    await assertUsablePanelBody(panel(page, "tilasms"), ".tilasm-frame");
     await page.screenshot({
       path: path.join(shots, "workspace-tilasms.png"),
       fullPage: true,
@@ -1116,11 +1116,6 @@ test("task decisions and the same Tilasm deep link work repeatedly after closing
     await expect(
       page.frameLocator("iframe.tilasm-frame").locator("#workspace-model"),
     ).toHaveText("Workspace model");
-    const tilasmDrawer = page.locator("dialog.wish-settings-drawer");
-    await expect(tilasmDrawer).toBeVisible();
-    await tilasmDrawer.getByRole("button", { name: /Close|Fermer/ }).click();
-    await expect(tilasmDrawer).toHaveCount(0);
-    await expect(panel(page, "tilasms")).toBeVisible();
 
     const reopenedActivity = await openSection(page, "activity");
     await reopenedActivity.getByRole("tab", { name: "Journal" }).click();

@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"buf.build/go/protovalidate"
@@ -54,7 +55,12 @@ type options struct {
 	show     func(wishID, tilasmID string) bool
 	url      func(id string) string
 	enlight  []func(context.Context, *planv1.Question, string)
+	clock    func() time.Time
 }
+
+// WithClock gives the tilasms a clock other than the machine's: a test moves it, to see a save rewrite the latest
+// version within minutes of it, and add one after.
+func WithClock(now func() time.Time) Option { return func(o *options) { o.clock = now } }
 
 // WithShowTilasm gives TilasmService.Open the window: show shows a tilasm in its wish's Tilasms tab, and tells whether
 // a native window came to the front.
@@ -141,7 +147,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewInboxServiceHandler(&Inbox{Wishes: wishes}, opt)
 	out[p] = h
-	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url}
+	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url, Now: o.clock}
 	p, h = planv1connect.NewTilasmServiceHandler(tilasms, opt)
 	out[p] = h
 	out[server.TilasmPrefix] = tilasms.Files()
