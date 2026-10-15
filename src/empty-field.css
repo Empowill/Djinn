@@ -1,11 +1,12 @@
-/* An empty workspace panel: a small data field, its line and its actions, on the panel's own ground. No card, no
-   border: the tones come from the neutral ramp, so the field reads in both themes. */
+/* An empty workspace panel: a data field, its line and its actions, on the panel's own ground. No card, no border:
+   the tones come from the neutral ramp, so the field reads in both themes. The field's mono size follows the panel's
+   width (42 columns, each about 0.66em wide with the tracking), up to 12px: it never overflows a narrow panel. */
 .empty-field {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-3);
-  padding: 28px var(--space-4) 32px;
+  padding: 36px var(--space-4) 40px;
   text-align: center;
 }
 .empty-field-grid {
@@ -14,7 +15,7 @@
 .empty-field-layer {
   grid-area: 1 / 1;
   margin: 0;
-  font: 10.5px / 1.45 var(--mono);
+  font: clamp(7px, (100cqi - 2 * var(--space-4)) / 29, 12px) / 1.45 var(--mono);
   letter-spacing: 0.04em;
   white-space: pre;
   user-select: none;
@@ -30,27 +31,31 @@
   color: var(--n-a9);
 }
 .empty-field-message {
-  margin: 0;
-  color: var(--n-9c);
-  font-size: var(--font-size-body, 12px);
-  line-height: 1.6;
+  margin: 20px 0 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
 }
 .empty-field-actions {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+  margin-top: var(--space-4);
 }
 
 /* The workspace's stage while no panel is open: the wish's pulse, larger, and its caption in the same mono. */
 .wish-pulse {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-3);
   padding: 56px var(--space-4) 40px;
 }
+/* 72 columns, each about 0.7em wide with this tracking, up to 11.5px. */
 .wish-pulse .empty-field-layer {
-  font-size: 11px;
+  font-size: clamp(6px, (100cqi - 2 * var(--space-4)) / 52, 11.5px);
   letter-spacing: 0.08em;
 }
 .wish-pulse-caption {

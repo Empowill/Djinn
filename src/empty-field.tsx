@@ -8,8 +8,8 @@ import "./empty-field.css";
 
 export type EmptyFieldPattern = "queue" | "timeline" | "page";
 
-export const FIELD_COLUMNS = 36;
-export const FIELD_ROWS = 7;
+export const FIELD_COLUMNS = 42;
+export const FIELD_ROWS = 8;
 // The time, in seconds, of the frame shown before the first animation frame: on the server and under reduced motion.
 export const FIELD_STILL_TIME = 4.2;
 // About eight frames a second: a steady tempo, and a cheap panel.
@@ -53,8 +53,8 @@ function put(grid: Grid, row: number, col: number, text: string, tone: Tone) {
   });
 }
 
-// queue: twelve slots of barcode bars fill one by one, then leave first in, first out; the newest is the brightest.
-const SLOTS = 12;
+// queue: fourteen slots of barcode bars fill one by one, then leave first in, first out; the newest is the brightest.
+const SLOTS = 14;
 const BARS = ["| ", "||", " |", "|:", ":|", ": "];
 const QUEUE_STEP = 0.45;
 function queue(time: number): Grid {
@@ -69,13 +69,13 @@ function queue(time: number): Grid {
     const filled = slot >= first && slot <= last && first <= last;
     if (filled) {
       const bars = BARS[hash(slot, cycle) % BARS.length];
-      const height = 3 + (hash(cycle, slot, 7) % 3);
+      const height = 3 + (hash(cycle, slot, 7) % 4);
       const tone: Tone = slot === last && phase < SLOTS ? 2 : 1;
-      for (let row = 5 - height; row < 5; row++)
+      for (let row = 6 - height; row < 6; row++)
         put(grid, row, col, bars, tone);
     }
-    put(grid, 5, col, "--", 0);
-    put(grid, 6, col, String(slot).padStart(2, "0"), filled ? 1 : 0);
+    put(grid, 6, col, "--", 0);
+    put(grid, 7, col, String(slot).padStart(2, "0"), filled ? 1 : 0);
   }
   return grid;
 }
@@ -93,7 +93,7 @@ function timeline(time: number): Grid {
   for (let row = 0; row < FIELD_ROWS; row++) {
     const entry = newest - (FIELD_ROWS - 1 - row);
     const tone: Tone = row === FIELD_ROWS - 1 ? 1 : 0;
-    const words = Array.from({ length: 6 }, (_, i) =>
+    const words = Array.from({ length: 8 }, (_, i) =>
       hex(hash(entry, i), 2),
     ).join(" ");
     const meter = "|".repeat(1 + (hash(entry, 9) % 6)).padEnd(6, " ");
@@ -110,8 +110,8 @@ function timeline(time: number): Grid {
 
 // page: a page-shaped grid with its addresses; lines of hex glyphs are typed into it, held, then cleared.
 const PAGE_LEFT = 6;
-const PAGE_WIDTH = 24;
-const PAGE_LINES = [18, 20, 13, 19, 9];
+const PAGE_WIDTH = 28;
+const PAGE_LINES = [22, 24, 16, 23, 11, 19];
 const TYPE_RATE = 16;
 const PAGE_TOTAL = PAGE_LINES.reduce((sum, length) => sum + length, 0);
 const PAGE_CYCLE = PAGE_TOTAL / TYPE_RATE + 1.6;
@@ -174,8 +174,8 @@ export function fieldFrame(pattern: EmptyFieldPattern, time: number): Layers {
 // stream as dense as the workers are many, a steady blink while something waits for the developer.
 export type PulseState = "still" | "lead" | "workers" | "waiting";
 
-export const PULSE_COLUMNS = 64;
-export const PULSE_ROWS = 9;
+export const PULSE_COLUMNS = 72;
+export const PULSE_ROWS = 11;
 
 // pulseStateOf reads the state from the window's signals: what waits for the developer first, then the workers, then
 // the lead; a wish paused or granted, with nothing waiting, is still.

@@ -870,7 +870,7 @@
   "workspace.activity": "Activité",
   "workspace.empty_activity": "Aucune activité pour l'instant",
   "workspace.empty_tasks": "Aucune tâche pour l'instant",
-  "workspace.hint_open": "cliquez sur un bloc pour l'afficher",
+  "workspace.hint_open": "choisissez un bloc",
   "workspace.pulse_lead_off": "lead arrêté",
   "workspace.pulse_lead_on": "lead en marche",
   "workspace.pulse_waiting.one": "{count} attend votre réponse",

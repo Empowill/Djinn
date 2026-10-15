@@ -251,6 +251,7 @@ export function WishWorkspace({
   const panelIdsRef = useRef(panelIds);
   const onPanelChangeRef = useRef(onPanelChange);
   const navButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const summarySlotRef = useRef<HTMLDivElement | null>(null);
   const mouseDownOpenRef = useRef(false);
   const userIntentVersionRef = useRef(0);
   const initialRequestUserVersionRef = useRef(new Map<string, number>());
@@ -772,16 +773,21 @@ export function WishWorkspace({
             .filter((definition) => definition.id !== summary?.id)
             .map((definition) => renderPanel(definition.id))}
         </main>
-        <div className="workspace-summary-slot">
+        <div className="workspace-summary-slot" ref={summarySlotRef}>
           {renderSummary()}
           {summary && !hasActivePanel && !navCompact && (
-            <p className="workspace-open-hint">
-              <span className="workspace-open-hint-arrows" aria-hidden="true">
-                {"  ↑   ↑   ↑"}
-              </span>
-              <span aria-hidden="true">{"  └─ "}</span>
-              {t("workspace.hint_open")}
-            </p>
+            <OpenHint
+              slot={summarySlotRef}
+              rows={() =>
+                contentPanels
+                  .map((definition) =>
+                    navButtonRefs.current
+                      .get(definition.id)
+                      ?.closest<HTMLElement>(".workspace-section-row"),
+                  )
+                  .filter((row): row is HTMLElement => !!row)
+              }
+            />
           )}
         </div>
       </div>
@@ -915,5 +921,105 @@ export function WorkspaceSectionCard({
         )}
       </span>
     </button>
+  );
+}
+
+// How long the hint's pointer rests on a row before it moves to the next.
+const HINT_STEP_MS = 1600;
+
+// OpenHint is what the navigation card says while no panel is open: a small mono pointer in the gutter on the card's
+// left travels down its rows, one at a time, each row it points at taking the faint hover fill; under the card, one
+// short line says what to do. The pointer is placed by measuring the real rows. It holds on the first row, without the
+// fill, under reduced motion, and pauses while the window is hidden.
+function OpenHint({
+  slot,
+  rows,
+}: {
+  slot: { current: HTMLDivElement | null };
+  rows: () => HTMLElement[];
+}) {
+  const pointer = useRef<HTMLSpanElement>(null);
+  const listRows = useRef(rows);
+  listRows.current = rows;
+  useEffect(() => {
+    const element = pointer.current;
+    const host = slot.current;
+    if (!element || !host) return;
+    const motion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    let index = 0;
+    let timer = 0;
+    let hinted: HTMLElement | undefined;
+    const unhint = () => {
+      hinted?.removeAttribute("data-wish-hinted");
+      hinted = undefined;
+    };
+    const place = () => {
+      const all = listRows.current();
+      if (!all.length) {
+        element.style.visibility = "hidden";
+        unhint();
+        return;
+      }
+      const row = all[index % all.length];
+      const box = row.getBoundingClientRect();
+      const top =
+        box.top -
+        host.getBoundingClientRect().top +
+        box.height / 2 -
+        element.offsetHeight / 2;
+      element.style.visibility = "";
+      element.style.transform = `translateY(${Math.round(top)}px)`;
+      unhint();
+      if (!motion?.matches) {
+        hinted = row;
+        row.setAttribute("data-wish-hinted", "true");
+      }
+    };
+    const schedule = () => {
+      window.clearInterval(timer);
+      timer = 0;
+      if (motion?.matches) index = 0;
+      place();
+      if (motion?.matches || document.visibilityState === "hidden") return;
+      timer = window.setInterval(() => {
+        index += 1;
+        place();
+      }, HINT_STEP_MS);
+    };
+    schedule();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(place);
+    observer?.observe(host);
+    document.addEventListener("visibilitychange", schedule);
+    motion?.addEventListener?.("change", schedule);
+    return () => {
+      window.clearInterval(timer);
+      observer?.disconnect();
+      document.removeEventListener("visibilitychange", schedule);
+      motion?.removeEventListener?.("change", schedule);
+      unhint();
+    };
+  }, [slot]);
+  return (
+    <>
+      <span
+        ref={pointer}
+        className="workspace-open-hint-pointer"
+        aria-hidden="true"
+      >
+        {"─▸"}
+      </span>
+      <p className="workspace-open-hint">
+        <span className="workspace-open-hint-mark" aria-hidden="true">
+          {"↑ "}
+        </span>
+        {t("workspace.hint_open")}
+        <span className="workspace-open-hint-cursor" aria-hidden="true">
+          _
+        </span>
+      </p>
+    </>
   );
 }

@@ -1870,25 +1870,49 @@ html[data-theme="light"]
   }
 }
 
-/* Under the navigation card while no panel is open: arrows up to its rows, and what a click does. */
-.workspace-open-hint {
-  margin: var(--space-3) var(--space-3) 0;
-  color: var(--n-79);
-  font: 11px / 1.5 var(--mono);
+/* While no panel is open: a mono pointer in the gutter left of the navigation card travels down its rows (placed by
+   OpenHint, by measuring them), the row it points at takes the hover fill, and one short line under the card says what
+   to do. The line wraps rather than leave the card's width. */
+.workspace-open-hint-pointer {
+  position: absolute;
+  top: 0;
+  right: calc(100% + 5px);
+  color: color-mix(in srgb, var(--text) 62%, transparent);
+  font: 14px / 1 var(--mono);
   white-space: pre;
+  pointer-events: none;
+  transition: transform 320ms ease;
 }
-.workspace-open-hint-arrows {
-  display: block;
-  color: var(--n-6f);
-  animation: workspace-open-hint-blink 2.4s steps(1, end) infinite;
+.workspace-section-row[data-wish-hinted]:not(.is-active) {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+.workspace-section-list:hover
+  .workspace-section-row[data-wish-hinted]:not(:hover):not(.is-active) {
+  background: transparent;
+}
+.workspace-open-hint {
+  margin: var(--space-3) var(--space-2) 0;
+  color: var(--muted);
+  font: 13px / 1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+.workspace-open-hint-mark {
+  color: var(--n-9c);
+}
+.workspace-open-hint-cursor {
+  margin-left: 1px;
+  animation: workspace-open-hint-blink 1.2s steps(1, end) infinite;
 }
 @keyframes workspace-open-hint-blink {
   50% {
-    color: var(--n-a9);
+    opacity: 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .workspace-open-hint-arrows {
+  .workspace-open-hint-pointer {
+    transition: none;
+  }
+  .workspace-open-hint-cursor {
     animation: none;
   }
 }

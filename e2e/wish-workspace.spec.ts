@@ -791,9 +791,7 @@ test("the stage shows the wish's pulse and a hint under the card while no panel 
       "true",
     );
     await expect(hint).toBeVisible();
-    await expect(hint).toContainText(
-      /click a block to open it|cliquez sur un bloc pour l'afficher/,
-    );
+    await expect(hint).toContainText(/pick a block|choisissez un bloc/);
     // A panel open takes the stage: no pulse, no hint; closing it brings both back.
     await openSection(page, "tasks");
     await expect(pulse).toHaveCount(0);
@@ -853,8 +851,94 @@ console.log(JSON.stringify(states.map(([state, workers, caption]) => f.renderToS
         });
       }
     }
-    await page.emulateMedia({ colorScheme: null });
+
+    // The hint, in English and French, at the narrowest width that keeps the full card and at a wide one: its line
+    // stays within the card's width, and its pointer, in the gutter, faces one of the card's rows, which takes the fill.
+    const slot = stage(page).locator(".workspace-summary-slot");
+    const pointer = slot.locator(".workspace-open-hint-pointer");
+    for (const language of ["en", "fr"] as const) {
+      await page.evaluate(
+        (code) => localStorage.setItem("djinn.language", code),
+        language,
+      );
+      for (const width of [1480, 1900]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.reload();
+        await expect(hint).toBeVisible();
+        await expect(hint).toContainText(
+          language === "en" ? "pick a block" : "choisissez un bloc",
+        );
+        const card = await slot
+          .locator(".workspace-summary-card")
+          .boundingBox();
+        const line = await hint.boundingBox();
+        expect(line!.x).toBeGreaterThanOrEqual(card!.x);
+        expect(line!.x + line!.width).toBeLessThanOrEqual(
+          card!.x + card!.width,
+        );
+        expect(
+          await hint.evaluate(
+            (element) => element.scrollWidth <= element.clientWidth,
+          ),
+        ).toBe(true);
+        await expect(slot.locator("[data-wish-hinted]")).toHaveCount(1);
+        await page.waitForTimeout(400);
+        // Between steps the pointer rests on the hinted row: measured together, in one frame.
+        await expect
+          .poll(() =>
+            slot.evaluate((element) => {
+              const mark = element
+                .querySelector(".workspace-open-hint-pointer")!
+                .getBoundingClientRect();
+              const row = element
+                .querySelector("[data-wish-hinted]")!
+                .getBoundingClientRect();
+              const card = element
+                .querySelector(".workspace-summary-card")!
+                .getBoundingClientRect();
+              return (
+                mark.right <= card.left &&
+                mark.left >= 0 &&
+                Math.abs(
+                  mark.top + mark.height / 2 - (row.top + row.height / 2),
+                ) <= 2
+              );
+            }),
+          )
+          .toBe(true);
+        for (const scheme of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: scheme });
+          await page.mouse.move(0, 0);
+          await page.waitForTimeout(150);
+          const box = (await slot.boundingBox())!;
+          await page.screenshot({
+            path: path.join(
+              shots,
+              `workspace-open-hint-${language}-${width}-${scheme}.png`,
+            ),
+            clip: {
+              x: Math.max(0, box.x - 48),
+              y: Math.max(0, box.y - 8),
+              width: box.width + 56,
+              height: box.height + 16,
+            },
+          });
+        }
+      }
+    }
+    // Reduced motion holds the pointer on the first row, without the fill.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.reload();
+    await expect(hint).toBeVisible();
+    await expect(slot.locator("[data-wish-hinted]")).toHaveCount(0);
+    const held = await pointer.evaluate((element) => element.style.transform);
+    await page.waitForTimeout(1800);
+    expect(await pointer.evaluate((element) => element.style.transform)).toBe(
+      held,
+    );
+    await page.emulateMedia({ colorScheme: null, reducedMotion: null });
   } finally {
+    await page.evaluate(() => localStorage.removeItem("djinn.language"));
     await page.setViewportSize(viewport);
     cleanup(sample);
   }
