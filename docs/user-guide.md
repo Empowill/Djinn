@@ -230,6 +230,12 @@ Clicking a task opens its card body: when it started and ended, the files it wri
 diffs, its worker's last word, where its work stands, its events, and folded terminal logs with **See logs** (or
 **Hide logs**).
 
+- **See the diff** opens a drawer from the right of the window with the task's committed work: its files in a column,
+  each file's diff beside them. **See uncommitted files** opens it on its other tab, what the task's worktree holds not
+  committed (changes to tracked files, staged or not, and new files), read only; it says when the worktree is clean or
+  gone, and the button is off for a task with no worktree. The refresh button reads the diff again; the close button,
+  Escape or a click beside the drawer closes it. `djinn task diff <task> --uncommitted` gives the same from a terminal.
+
 - **Send** an instruction to a running worker, in the box under its events. "Received" shows once the worker said
   something after it.
 - **Pause the worker** holds a running worker where it is and frees its slot; **Resume the worker** lets it go on.

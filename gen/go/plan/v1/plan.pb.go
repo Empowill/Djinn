@@ -16727,7 +16727,10 @@ type TaskServiceDiffRequest struct {
 	// First line of the file's diff to show, from 0: a long diff comes by chunks, each one giving the next one's offset.
 	Offset int32 `protobuf:"varint,4,opt,name=offset,proto3" json:"offset,omitempty"`
 	// Lines of the file's diff to show from the offset. 0: 2 000, the most a chunk holds.
-	Limit         int32 `protobuf:"varint,5,opt,name=limit,proto3" json:"limit,omitempty"`
+	Limit int32 `protobuf:"varint,5,opt,name=limit,proto3" json:"limit,omitempty"`
+	// Show what the task's worktree holds not committed instead of its committed work: the changes to tracked files,
+	// staged or not, and the untracked files, against the worktree's HEAD, the project's .gitignore applying.
+	Uncommitted   bool `protobuf:"varint,6,opt,name=uncommitted,proto3" json:"uncommitted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -16797,6 +16800,13 @@ func (x *TaskServiceDiffRequest) GetLimit() int32 {
 	return 0
 }
 
+func (x *TaskServiceDiffRequest) GetUncommitted() bool {
+	if x != nil {
+		return x.Uncommitted
+	}
+	return false
+}
+
 type TaskServiceDiffResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Changed files with line counts and folded flags (when no file is requested).
@@ -16805,8 +16815,10 @@ type TaskServiceDiffResponse struct {
 	File *TaskFileDiff `protobuf:"bytes,2,opt,name=file,proto3" json:"file,omitempty"`
 	// Base commit or ref used for comparison.
 	Base string `protobuf:"bytes,3,opt,name=base,proto3" json:"base,omitempty"`
-	// Head commit or ref used for comparison.
-	Head          string `protobuf:"bytes,4,opt,name=head,proto3" json:"head,omitempty"`
+	// Head commit or ref used for comparison; empty for uncommitted, which compares base with the worktree's files.
+	Head string `protobuf:"bytes,4,opt,name=head,proto3" json:"head,omitempty"`
+	// For uncommitted: the task has no worktree, never made or removed once its work merged, so nothing to show.
+	NoWorktree    bool `protobuf:"varint,5,opt,name=no_worktree,json=noWorktree,proto3" json:"no_worktree,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -16867,6 +16879,13 @@ func (x *TaskServiceDiffResponse) GetHead() string {
 		return x.Head
 	}
 	return ""
+}
+
+func (x *TaskServiceDiffResponse) GetNoWorktree() bool {
+	if x != nil {
+		return x.NoWorktree
+	}
+	return false
 }
 
 type TaskServiceStopRequest struct {
@@ -20344,19 +20363,22 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\aTaskRef\x12/\n" +
 	"\x04code\x18\x01 \x01(\tB\x19\xbaH\x16r\x142\x12^[WTwt][0-9]{1,4}$H\x00R\x04code\x12\x1a\n" +
 	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01H\x00R\x02idB\f\n" +
-	"\x03ref\x12\x05\xbaH\x02\b\x01\"\xcd\x01\n" +
+	"\x03ref\x12\x05\xbaH\x02\b\x01\"\xef\x01\n" +
 	"\x16TaskServiceDiffRequest\x12,\n" +
 	"\x04task\x18\x01 \x01(\v2\x10.plan.v1.TaskRefB\x06\xbaH\x03\xc8\x01\x01R\x04task\x12\x1c\n" +
 	"\x04file\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xe8\aR\x04file\x12$\n" +
 	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12\x1f\n" +
 	"\x06offset\x18\x04 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x06offset\x12 \n" +
 	"\x05limit\x18\x05 \x01(\x05B\n" +
-	"\xbaH\a\x1a\x05\x18\xd0\x0f(\x00R\x05limit\"\x99\x01\n" +
+	"\xbaH\a\x1a\x05\x18\xd0\x0f(\x00R\x05limit\x12 \n" +
+	"\vuncommitted\x18\x06 \x01(\bR\vuncommitted\"\xba\x01\n" +
 	"\x17TaskServiceDiffResponse\x12+\n" +
 	"\x05files\x18\x01 \x03(\v2\x15.plan.v1.TaskDiffFileR\x05files\x12)\n" +
 	"\x04file\x18\x02 \x01(\v2\x15.plan.v1.TaskFileDiffR\x04file\x12\x12\n" +
 	"\x04base\x18\x03 \x01(\tR\x04base\x12\x12\n" +
-	"\x04head\x18\x04 \x01(\tR\x04head\">\n" +
+	"\x04head\x18\x04 \x01(\tR\x04head\x12\x1f\n" +
+	"\vno_worktree\x18\x05 \x01(\bR\n" +
+	"noWorktree\">\n" +
 	"\x16TaskServiceStopRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\"<\n" +
 	"\x17TaskServiceStopResponse\x12!\n" +

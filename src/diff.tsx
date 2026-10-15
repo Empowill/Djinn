@@ -1,6 +1,9 @@
 // TaskDiffView displays git diffs for a task: changed files list, then unified and side-by-side diff viewers. A file's
 // diff comes by chunks of 2 000 lines, the next one asked for as the reader scrolls near the end. A line of the unified
-// diff, or a range of them (shift-click), takes a review comment: TaskService.Comment.
+// diff, or a range of them (shift-click), takes a review comment: TaskService.Comment. Its uncommitted view shows what
+// the task's worktree holds not committed instead, read only. TaskDiffDrawer opens both from the right of the window.
+import { RefreshCw, X } from "lucide-react";
+import { motion } from "motion/react";
 import {
   type FormEvent,
   memo,
@@ -9,6 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   DiffHunk,
   DiffLine,
@@ -20,6 +24,7 @@ import {
   type TaskServiceDiffResponse,
 } from "../gen/ts/plan/v1/plan_pb";
 import { useDjinn } from "./data/djinn";
+import { useDialogKeys } from "./frame";
 import { t } from "./i18n";
 import "./diff.css";
 
@@ -159,6 +164,11 @@ export function CommentBox({
         aria-label={title}
         autoFocus
         rows={3}
+        onKeyDown={(e) => {
+          if (e.key !== "Escape") return;
+          e.preventDefault();
+          onCancel();
+        }}
       />
       {error && <div className="diff-error">{error}</div>}
       <div className="diff-comment-box-actions">
@@ -189,6 +199,8 @@ export interface UnifiedViewProps {
   filePath?: string;
   headCommit?: string;
   onCommentAdded?: (comment: TaskComment) => void;
+  // No comment on these lines: work not committed has no commit a comment could name.
+  readOnly?: boolean;
 }
 
 interface LineRange {
@@ -206,6 +218,7 @@ const UnifiedLine = memo(function UnifiedLine({
   taskId,
   filePath,
   headCommit,
+  readOnly,
   onClick,
   onPick,
   onCancel,
@@ -214,6 +227,7 @@ const UnifiedLine = memo(function UnifiedLine({
   line: DiffLine;
   comments?: readonly TaskComment[];
   selected: boolean;
+  readOnly?: boolean;
   // The range picked, given to the row that ends it only.
   box: LineRange | null;
   taskId?: string;
@@ -260,7 +274,7 @@ const UnifiedLine = memo(function UnifiedLine({
         </span>
         <span className="diff-cell-marker">{marker}</span>
         <span className="diff-cell-code">
-          {lineNum > 0 && (
+          {lineNum > 0 && !readOnly && (
             <button
               type="button"
               className="diff-add-comment-btn"
@@ -330,20 +344,24 @@ export function UnifiedView({
   filePath,
   headCommit,
   onCommentAdded,
+  readOnly = false,
 }: UnifiedViewProps) {
   const [activeRange, setActiveRange] = useState<LineRange | null>(null);
 
-  const handleLineClick = useCallback((lineNum: number, shift: boolean) => {
-    if (lineNum <= 0) return;
-    setActiveRange((range) =>
-      shift && range
-        ? {
-            start: Math.min(range.start, lineNum),
-            end: Math.max(range.start, lineNum),
-          }
-        : { start: lineNum, end: lineNum },
-    );
-  }, []);
+  const handleLineClick = useCallback(
+    (lineNum: number, shift: boolean) => {
+      if (lineNum <= 0 || readOnly) return;
+      setActiveRange((range) =>
+        shift && range
+          ? {
+              start: Math.min(range.start, lineNum),
+              end: Math.max(range.start, lineNum),
+            }
+          : { start: lineNum, end: lineNum },
+      );
+    },
+    [readOnly],
+  );
   const pick = useCallback(
     (lineNum: number) => setActiveRange({ start: lineNum, end: lineNum }),
     [],
@@ -382,6 +400,7 @@ export function UnifiedView({
                 taskId={taskId}
                 filePath={filePath}
                 headCommit={headCommit}
+                readOnly={readOnly}
                 onClick={handleLineClick}
                 onPick={pick}
                 onCancel={cancel}
@@ -552,6 +571,7 @@ function NextChunk({
 
 function SingleFileDiff({
   task,
+  uncommitted,
   file,
   viewMode,
   onToggleMode,
@@ -559,6 +579,7 @@ function SingleFileDiff({
   onCommentAdded,
 }: {
   task: Task;
+  uncommitted: boolean;
   file: TaskDiffFile;
   viewMode: "unified" | "split";
   onToggleMode: (mode: "unified" | "split") => void;
@@ -590,6 +611,7 @@ function SingleFileDiff({
       .diff({
         task: { ref: { case: "id", value: task.id } },
         file: file.path,
+        uncommitted,
       })
       .then((res: TaskServiceDiffResponse) => {
         if (!active) return;
@@ -606,7 +628,7 @@ function SingleFileDiff({
     return () => {
       active = false;
     };
-  }, [clients, task.id, file.path]);
+  }, [clients, task.id, file.path, uncommitted]);
 
   const nextOffset = diff?.nextOffset ?? 0;
   const loadMore = useCallback(() => {
@@ -619,6 +641,7 @@ function SingleFileDiff({
         task: { ref: { case: "id", value: task.id } },
         file: path,
         offset: nextOffset,
+        uncommitted,
       })
       .then((res: TaskServiceDiffResponse) => {
         if (shown.current.path !== path) return;
@@ -634,7 +657,7 @@ function SingleFileDiff({
         shown.current.busy = false;
         setLoadingMore(false);
       });
-  }, [clients, task.id, nextOffset]);
+  }, [clients, task.id, nextOffset, uncommitted]);
 
   return (
     <div className="single-file-diff">
@@ -675,6 +698,7 @@ function SingleFileDiff({
               filePath={file.path}
               headCommit={headCommit}
               onCommentAdded={onCommentAdded}
+              readOnly={uncommitted}
             />
           ) : (
             <SplitView
@@ -700,15 +724,22 @@ function SingleFileDiff({
   );
 }
 
+// NO_COMMENTS are the comments the uncommitted view shows: those of the task name lines of its commits.
+const NO_COMMENTS: readonly TaskComment[] = [];
+
 export const TaskDiffView = memo(function TaskDiffView({
   task,
+  uncommitted = false,
 }: {
   task: Task;
+  // What the task's worktree holds not committed, instead of its committed work.
+  uncommitted?: boolean;
 }) {
   const djinn = useDjinn();
   const clients = djinn?.clients;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [noWorktree, setNoWorktree] = useState(false);
   const [files, setFiles] = useState<TaskDiffFile[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"unified" | "split">("unified");
@@ -736,9 +767,11 @@ export const TaskDiffView = memo(function TaskDiffView({
       .diff({
         task: { ref: { case: "id", value: task.id } },
         file: "",
+        uncommitted,
       })
       .then((res: TaskServiceDiffResponse) => {
         if (!active) return;
+        setNoWorktree(res.noWorktree);
         setFiles(res.files);
         setLoading(false);
         if (res.files.length > 0) {
@@ -756,11 +789,11 @@ export const TaskDiffView = memo(function TaskDiffView({
     return () => {
       active = false;
     };
-  }, [clients, task.id]);
+  }, [clients, task.id, uncommitted]);
 
   if (loading) {
     return (
-      <div className="task-diff-view">
+      <div className="task-diff-view diff-state">
         <div className="diff-loading">{t("diff.loading")}</div>
       </div>
     );
@@ -768,16 +801,21 @@ export const TaskDiffView = memo(function TaskDiffView({
 
   if (error) {
     return (
-      <div className="task-diff-view">
+      <div className="task-diff-view diff-state">
         <div className="diff-error">{t("diff.error", { error })}</div>
       </div>
     );
   }
 
   if (files.length === 0) {
+    const empty = noWorktree
+      ? t("diff.no_worktree")
+      : uncommitted
+        ? t("diff.worktree_clean")
+        : t("diff.no_changes");
     return (
-      <div className="task-diff-view">
-        <div className="diff-empty">{t("diff.no_changes")}</div>
+      <div className="task-diff-view diff-state">
+        <div className="diff-empty">{empty}</div>
       </div>
     );
   }
@@ -828,13 +866,113 @@ export const TaskDiffView = memo(function TaskDiffView({
       {selectedFile && (
         <SingleFileDiff
           task={task}
+          uncommitted={uncommitted}
           file={selectedFile}
           viewMode={viewMode}
           onToggleMode={setViewMode}
-          comments={localComments}
+          comments={uncommitted ? NO_COMMENTS : localComments}
           onCommentAdded={handleCommentAdded}
         />
       )}
     </div>
   );
 });
+
+// DiffDrawerView is what the drawer shows: the task's committed work, or what its worktree holds not committed.
+export type DiffDrawerView = "committed" | "uncommitted";
+
+// TaskDiffDrawer shows a task's diffs in a drawer from the right of the window, as wide as a diff needs: a tab for its
+// committed work, one for what its worktree holds not committed. The close button, Escape or a click beside it
+// closes it; refresh reads the diff again, a running worker changing it.
+export function TaskDiffDrawer({
+  task,
+  view,
+  onView,
+  onClose,
+}: {
+  task: Task;
+  view: DiffDrawerView;
+  onView: (view: DiffDrawerView) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  useDialogKeys(ref, onClose);
+  // Each read of the diff is a new view: refresh counts them.
+  const [reads, setReads] = useState(0);
+  const title = t("diff.drawer_title", { task: task.code || task.title });
+  const tabs: readonly [DiffDrawerView, string][] = [
+    ["committed", t("diff.tab_committed")],
+    ["uncommitted", t("diff.tab_uncommitted")],
+  ];
+  return createPortal(
+    <motion.div
+      className="modal-backdrop diff-drawer-backdrop"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <motion.aside
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="diff-drawer"
+        initial={{ x: 48, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        exit={{ x: 48, opacity: 0 }}
+        transition={{ duration: 0.22 }}
+      >
+        <header className="diff-drawer-head">
+          <div className="diff-drawer-title">
+            <span className="eyebrow">{task.code}</span>
+            <h2 title={task.title}>{task.title}</h2>
+          </div>
+          <div className="diff-drawer-tabs" role="tablist" aria-label={title}>
+            {tabs.map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={view === key}
+                className={`diff-mode-btn ${view === key ? "active" : ""}`}
+                onClick={() => onView(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => setReads((n) => n + 1)}
+            aria-label={t("diff.refresh")}
+            title={t("diff.refresh")}
+          >
+            <RefreshCw size={16} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onClose}
+            aria-label={t("diff.close")}
+            title={t("diff.close")}
+          >
+            <X size={18} />
+          </button>
+        </header>
+        <div className="diff-drawer-body" role="tabpanel">
+          <TaskDiffView
+            key={`${view}-${reads}`}
+            task={task}
+            uncommitted={view === "uncommitted"}
+          />
+        </div>
+      </motion.aside>
+    </motion.div>,
+    document.body,
+  );
+}

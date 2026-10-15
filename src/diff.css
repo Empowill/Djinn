@@ -1,31 +1,126 @@
 /* Diff inspection views: file list, unified and side-by-side diff viewers. */
 
-.wish-task-diff-fold {
-  display: inline-block;
+/* A task card's two buttons: its committed diff, and what its worktree holds not committed. */
+.wish-task-diff-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   vertical-align: top;
   margin-right: var(--space-2);
 }
 
-.wish-task-diff-fold[open] {
-  display: block;
-  width: 100%;
-}
-
-.wish-task-diff-fold > summary.wish-task-diff-button {
-  list-style: none;
-  cursor: pointer;
-}
-
-.wish-task-diff-fold > summary.wish-task-diff-button::-webkit-details-marker {
-  display: none;
-}
-
-.wish-task-diff-button {
+.wish-task-diff-button,
+.wish-task-worktree-button {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   margin-top: var(--space-2);
   margin-bottom: var(--space-2);
+}
+
+/* The drawer of a task's diffs, from the right of the window: square, a straight separator on its left edge. */
+.diff-drawer-backdrop {
+  justify-content: flex-end;
+  align-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  backdrop-filter: blur(3px);
+}
+
+.diff-drawer {
+  display: flex;
+  flex-direction: column;
+  width: min(1480px, 92vw);
+  height: 100%;
+  background: var(--n-19);
+  border-left: 1px solid var(--n-38);
+  box-shadow: -24px 0 80px color-mix(in srgb, var(--shadow) 60%, transparent);
+}
+
+.diff-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--n-25);
+}
+
+.diff-drawer-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.diff-drawer-title h2 {
+  font-size: 16px;
+  color: var(--n-eb);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-drawer-tabs {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.diff-drawer-body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+/* In the drawer, the files make a column on the left, the file's diff fills the rest, each scrolling on its own. */
+.diff-drawer .task-diff-view {
+  display: grid;
+  grid-template-columns: minmax(200px, 300px) minmax(0, 1fr);
+  gap: var(--space-3);
+  height: 100%;
+  margin: 0;
+}
+
+.diff-drawer .task-diff-view.diff-state {
+  display: block;
+  height: auto;
+}
+
+.diff-drawer .diff-file-list {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  margin: 0;
+  padding: 0 var(--space-3) 0 0;
+  border-bottom: 0;
+  border-right: 1px solid var(--n-25);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.diff-drawer .diff-file-btn {
+  flex-wrap: wrap;
+  text-align: left;
+}
+
+.diff-drawer .diff-file-path {
+  max-width: 100%;
+}
+
+.diff-drawer .single-file-diff {
+  min-height: 0;
+  overflow: auto;
+}
+
+/* The file's diff scrolls as one: its parts keep their height, the file's name and modes stay on top. */
+.diff-drawer .single-file-diff > * {
+  flex-shrink: 0;
+}
+
+.diff-drawer .diff-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--n-14);
 }
 
 .task-diff-view {

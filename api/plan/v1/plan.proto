@@ -3578,6 +3578,7 @@ service TaskService {
   }
   // File diff of a task against its base: with no file given, the files changed and their counts; with a file, the
   // unified diff of that file with syntax tokens, by chunks of 2 000 lines at most: --offset asks for the next one.
+  // --uncommitted shows what the task's worktree holds not committed instead.
   rpc Diff(TaskServiceDiffRequest) returns (TaskServiceDiffResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -4005,6 +4006,9 @@ message TaskServiceDiffRequest {
     gte: 0
     lte: 2000
   }];
+  // Show what the task's worktree holds not committed instead of its committed work: the changes to tracked files,
+  // staged or not, and the untracked files, against the worktree's HEAD, the project's .gitignore applying.
+  bool uncommitted = 6;
 }
 
 message TaskServiceDiffResponse {
@@ -4014,8 +4018,10 @@ message TaskServiceDiffResponse {
   TaskFileDiff file = 2;
   // Base commit or ref used for comparison.
   string base = 3;
-  // Head commit or ref used for comparison.
+  // Head commit or ref used for comparison; empty for uncommitted, which compares base with the worktree's files.
   string head = 4;
+  // For uncommitted: the task has no worktree, never made or removed once its work merged, so nothing to show.
+  bool no_worktree = 5;
 }
 
 message TaskServiceStopRequest {
