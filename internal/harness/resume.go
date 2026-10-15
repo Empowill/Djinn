@@ -291,7 +291,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		}
 		r.checks = settings.ChecksBrief()
 	}
-	readOnly, perms := accessSpec(t.GetAccess(), prep.declared)
+	readOnly, perms := taskAccessSpec(t, prep.declared)
 	perms = withCommit(t, perms)
 	line := restartedLine
 	switch by {

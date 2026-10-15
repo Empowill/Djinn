@@ -325,3 +325,95 @@ func htmlTilasm(t *testing.T, e *env, home, wishID string) *planv1.Tilasm {
 	}
 	return put.Msg.GetTilasm()
 }
+
+// TestDocumentAgentKeepsItsCommands: a document agent given a new turn of its session, by the developer's message once
+// it ended or by djinn's restart while it ran, is started again with its own commands (documentOnly), not a question
+// worker's: it may still reply and propose.
+func TestDocumentAgentKeepsItsCommands(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	documentSpec := func(t *testing.T, spec Spec) {
+		t.Helper()
+		cmds := spec.Permissions.GetCommands()
+		if spec.ReadOnly || spec.Permissions.GetEdit() || !slices.Contains(cmds, "djinn doc reply") ||
+			!slices.Contains(cmds, "djinn doc propose") || slices.Contains(cmds, "djinn task spawn") {
+			t.Errorf("document agent's spec (resume %q): read-only %v, permissions %v", spec.Resume, spec.ReadOnly, spec.Permissions)
+		}
+	}
+	of := func(fake *recordingFake, id string) []Spec {
+		var out []Spec
+		for _, s := range fake.all() {
+			if s.TaskID == id {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+
+	t.Run("continued", func(t *testing.T) {
+		t.Parallel()
+		fake := &recordingFake{}
+		providers := testProviders()
+		providers[planv1.Provider_PROVIDER_FAKE] = fake
+		e := upWith(t, t.TempDir(), providers, WithQuestionWorkers())
+		wishID, _ := e.wish(t, fakeProject(t, ""))
+		d := e.markdownDoc(t, wishID)
+		d.comment(t, "developer", "Why?", planv1.TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED)
+		agents := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)
+		if len(agents) != 1 {
+			t.Fatalf("%d document agents, want 1", len(agents))
+		}
+		a := agents[0]
+		// Once it ended, the developer's next message gives it a new turn of its session.
+		e.settled(t, a.GetId(), func([]*planv1.TaskEvent) bool { return true })
+		d.comment(t, "developer", "And now?", planv1.TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED)
+		e.settled(t, a.GetId(), func(events []*planv1.TaskEvent) bool {
+			return countText(events, planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "continued by Djinn") == 1
+		})
+		specs := of(fake, a.GetId())
+		if len(specs) < 2 {
+			t.Fatalf("%d workers started for the agent, want its launch and its new turn", len(specs))
+		}
+		for _, spec := range specs {
+			documentSpec(t, spec)
+		}
+		if specs[len(specs)-1].Resume == "" {
+			t.Error("the last turn does not resume the agent's session")
+		}
+	})
+
+	t.Run("restarted", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		fake := &recordingFake{}
+		providers := testProviders()
+		providers[planv1.Provider_PROVIDER_FAKE] = fake
+		e := upWith(t, home, providers, WithQuestionWorkers())
+		wishID, _ := e.wish(t, fakeProject(t, ""))
+		d := e.markdownDoc(t, wishID)
+		d.comment(t, "developer", "wait", planv1.TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED)
+		agents := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)
+		if len(agents) != 1 {
+			t.Fatalf("%d document agents, want 1", len(agents))
+		}
+		a := agents[0]
+		e.workerUp(t, a.GetId())
+		e.down() // It is cut short while it waits.
+
+		again := &recordingFake{}
+		providers = testProviders()
+		providers[planv1.Provider_PROVIDER_FAKE] = again
+		e = upWith(t, home, providers, WithQuestionWorkers())
+		e.settled(t, a.GetId(), func(events []*planv1.TaskEvent) bool {
+			return countText(events, planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "resumed "+byRestart) == 1
+		})
+		specs := of(again, a.GetId())
+		if len(specs) == 0 {
+			t.Fatal("the interrupted agent was not resumed")
+		}
+		if specs[0].Resume == "" {
+			t.Errorf("the restart does not resume the agent's session: %+v", specs[0])
+		}
+		documentSpec(t, specs[0])
+	})
+}
