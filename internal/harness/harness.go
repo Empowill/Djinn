@@ -225,7 +225,8 @@ func (h *Harness) Close() {
 // Recover marks as interrupted the tasks a previous djinn up left running: their workers died with it. They keep
 // what resuming them needs (provider, session, worktree). Then every interrupted task Djinn may resume waits for the
 // scheduler to resume it (queueInterrupted). First, the azimas stored as work before tasks had kinds become azimas
-// (migrateAzimas), and a task part of an azima that is gone becomes part of none (ungroupOrphans).
+// (migrateAzimas), and a task part of an azima that is gone becomes part of none (ungroupOrphans). Last, a document
+// agent whose agent no longer applies is closed rather than resumed (closeStaleDocuments).
 func (h *Harness) Recover(ctx context.Context) error {
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
@@ -267,7 +268,14 @@ func (h *Harness) Recover(ctx context.Context) error {
 			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
 		}
 	}
-	return h.queueInterrupted(ctx, tasks)
+	if err := h.queueInterrupted(ctx, tasks); err != nil {
+		return err
+	}
+	// Read again: queueInterrupted made the interrupted ones resuming.
+	if tasks, err = store.List[*planv1.Task](ctx, h.store, nil); err != nil {
+		return err
+	}
+	return h.closeStaleDocuments(ctx, tasks)
 }
 
 // Spawn creates a task and starts its worker: in a Git project, in a new worktree on its own branch. procedure

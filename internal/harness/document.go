@@ -2,10 +2,13 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
@@ -41,8 +44,8 @@ func (h *Harness) Discussed(ctx context.Context, thread *planv1.TilasmThread) {
 }
 
 // WakeDocuments wakes, once as djinn up starts and after Recover, the document agent of each Markdown tilasm with
-// discussions whose last message is the developer's and that no agent works on: left unanswered when djinn stopped,
-// or while question workers were off. It works in the background.
+// discussions that wait for it (plan.AwaitsAgent) and that no worker runs: left unanswered when djinn stopped, or
+// while question workers were off. It works in the background.
 func (h *Harness) WakeDocuments(ctx context.Context) {
 	if !h.questions {
 		return
@@ -62,11 +65,15 @@ func (h *Harness) wakeDocuments(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	proposals, err := store.List[*planv1.TilasmProposal](ctx, h.store, store.Where{})
+	if err != nil {
+		return err
+	}
 	type key struct{ wish, tilasm string }
 	var order []key
 	waiting := map[key][]*planv1.TilasmThread{}
 	for _, thread := range threads {
-		if !plan.AwaitsAgent(thread) {
+		if !plan.AwaitsAgent(thread, proposals) {
 			continue
 		}
 		k := key{thread.GetWishId(), thread.GetTilasmId()}
@@ -85,8 +92,8 @@ func (h *Harness) wakeDocuments(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if plan.Ongoing(agent) {
-			continue // Recover resumes it, or it runs: it reads the discussions that wait for it.
+		if agent != nil && h.running(agent.GetId()) {
+			continue // It runs, resumed: it reads the discussions that wait for it.
 		}
 		if err := h.wakeDocument(ctx, k.wish, k.tilasm, waiting[k]); err != nil {
 			log.Printf("djinn: tilasm %s: wake its document agent: %v", k.tilasm, err)
@@ -95,10 +102,12 @@ func (h *Harness) wakeDocuments(ctx context.Context) error {
 	return nil
 }
 
-// wakeDocument has the tilasm's document agent answer the developer in threads: told while it runs, nothing while it
-// waits to start or resume (it reads every discussion that waits for it), a new turn of its session once it ended,
-// else a new agent. Nothing for a granted wish, an HTML tilasm, or a project whose settings turn question workers
-// off. The caller holds h.documenting.
+// wakeDocument has the tilasm's document agent answer the developer in threads: told while it runs; while it waits to
+// start or resume, its pending turn is told the discussions that wait for it now (retellDocument); a new turn of its
+// session once it ended; else a new agent. An agent whose provider or model is no longer the one the wish's question
+// workers get (plan.QuestionAgent), or whose provider is not available, is not continued: Djinn closes it and starts
+// a new one (staleDocument). Nothing for a granted wish, an HTML tilasm, or a project whose settings turn question
+// workers off. The caller holds h.documenting.
 func (h *Harness) wakeDocument(ctx context.Context, wishID, tilasmID string, threads []*planv1.TilasmThread) error {
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, wishID)
 	if err != nil || wish.GetState() == planv1.WishState_WISH_STATE_GRANTED {
@@ -119,9 +128,6 @@ func (h *Harness) wakeDocument(ctx context.Context, wishID, tilasmID string, thr
 		if agent, err = store.Get[*planv1.Task](ctx, h.store, agent.GetId()); err != nil {
 			return err
 		}
-		if plan.Ongoing(agent) {
-			return nil // It waits to start or to resume: it reads the discussions that wait for it then.
-		}
 	}
 	var project *planv1.Project
 	if ids := wish.GetProjectIds(); len(ids) > 0 {
@@ -133,6 +139,18 @@ func (h *Harness) wakeDocument(ctx context.Context, wishID, tilasmID string, thr
 	if err != nil || !settings.QuestionWorkers {
 		return err
 	}
+	provider, model := plan.QuestionAgent(wish, settings)
+	if agent != nil {
+		if why := h.staleDocument(agent, provider, model); why != "" {
+			over, err := h.closeDocument(ctx, agent.GetId(), why)
+			if err != nil || !over {
+				return err // A worker took it meanwhile: it reads the discussions that wait for it.
+			}
+			agent = nil
+		} else if plan.Ongoing(agent) {
+			return h.retellDocument(ctx, agent.GetId(), tilasm)
+		}
+	}
 	if agent != nil {
 		_, err := h.continueTask(ctx, methodDocument, &planv1.TaskServiceContinueRequest{
 			TaskId: agent.GetId(), Prompt: documentTurn(tilasm, threads),
@@ -143,7 +161,6 @@ func (h *Harness) wakeDocument(ctx context.Context, wishID, tilasmID string, thr
 		// Its session cannot go on (its budget is spent, its agent cannot resume one): another agent starts.
 		h.Note(agent.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: "not continued: " + err.Error()})
 	}
-	provider, model := plan.QuestionAgent(wish, settings)
 	brief, err := plan.BuildBrief(ctx, h.store, h.home, wish.GetId())
 	if err != nil {
 		return err
@@ -154,6 +171,110 @@ func (h *Harness) wakeDocument(ctx context.Context, wishID, tilasmID string, thr
 		Model: model, MaxBudgetUsd: settings.QuestionBudgetUSD,
 	}, &planv1.Task{Role: planv1.TaskRole_TASK_ROLE_DOCUMENT, TilasmId: tilasm.GetId()})
 	return err
+}
+
+// staleDocument says why the document agent t, which no worker runs, must not be continued nor resumed, "" when it
+// may: its provider or its model is no longer the one its wish's question workers get (provider, model), or its
+// provider is not available here.
+func (h *Harness) staleDocument(t *planv1.Task, provider planv1.Provider, model string) string {
+	switch {
+	case t.GetProvider() != provider:
+		return fmt.Sprintf("its agent %s is no longer the wish's, %s", short(t.GetProvider()), short(provider))
+	case t.GetModel() != model:
+		return fmt.Sprintf("its model %q is no longer the one its project's settings give, %q", t.GetModel(), model)
+	}
+	if _, ok := h.providers[t.GetProvider()]; !ok {
+		return fmt.Sprintf("its agent %s is not available", short(t.GetProvider()))
+	}
+	return ""
+}
+
+// closeDocument closes, as Djinn, the document agent id that must not go on (why, staleDocument): one that waits to
+// start or to resume is done, with an event that says why, so that Djinn neither resumes nor continues it. It tells
+// whether the agent is over, closed now or ended already, so that a new agent takes its discussions; false while a
+// worker runs it.
+func (h *Harness) closeDocument(ctx context.Context, id, why string) (bool, error) {
+	h.answering.Lock()
+	defer h.answering.Unlock()
+	h.sched.Lock()
+	defer h.sched.Unlock()
+	t, err := store.Get[*planv1.Task](ctx, h.store, id)
+	if err != nil {
+		return false, err
+	}
+	switch s := t.GetStatus(); {
+	case h.running(id) || s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED:
+		return false, nil
+	case !plan.Ongoing(t):
+		return true, nil
+	}
+	text := fmt.Sprintf("closed by Djinn, was %s: %s; a new document agent takes its discussions", short(t.GetStatus()), why)
+	t.Status, t.Error, t.WaitReason, t.ResumeAfter, t.MachineWait, t.Continuing =
+		planv1.TaskStatus_TASK_STATUS_DONE, "", "", nil, false, false
+	if t.GetEndTime() == nil {
+		t.EndTime = timestamppb.Now()
+	}
+	h.writeAlone(ctx, actorHarness, methodDocument, t, id, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
+	h.wake()
+	return true, nil
+}
+
+// closeStaleDocuments closes, as djinn up starts, each document agent left to resume or to start that must not go on
+// (staleDocument): Recover calls it before the scheduler runs, so that none waits for a provider that no longer
+// applies, nor holds the machine for the others. WakeDocuments then starts a new agent where discussions wait.
+func (h *Harness) closeStaleDocuments(ctx context.Context, tasks []*planv1.Task) error {
+	for _, t := range tasks {
+		if !documentAgent(t) || !plan.Ongoing(t) {
+			continue
+		}
+		wish, err := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId())
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				continue
+			}
+			return err
+		}
+		var project *planv1.Project
+		if ids := wish.GetProjectIds(); len(ids) > 0 {
+			if project, err = store.Get[*planv1.Project](ctx, h.store, ids[0]); err != nil {
+				return err
+			}
+		}
+		settings, err := plan.LoadSettings(h.home, project)
+		if err != nil {
+			log.Printf("djinn: task %s: read its project's settings: %v", t.GetCode(), err)
+			continue
+		}
+		provider, model := plan.QuestionAgent(wish, settings)
+		if why := h.staleDocument(t, provider, model); why != "" {
+			if _, err := h.closeDocument(ctx, t.GetId(), why); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// retellDocument tells the document agent id, which waits to be continued, every discussion of tilasm that waits for
+// it now: the prompt its worker takes when it starts (lastPrompt) becomes that one, so that a message the developer
+// wrote while it waited is answered in the same turn. An agent Djinn resumes otherwise (cut short by a restart or a
+// limit) is told nothing: it ends, and is woken again on what it left (documentEnded).
+func (h *Harness) retellDocument(ctx context.Context, id string, tilasm *planv1.Tilasm) error {
+	h.answering.Lock()
+	defer h.answering.Unlock()
+	h.sched.Lock()
+	defer h.sched.Unlock()
+	t, err := store.Get[*planv1.Task](ctx, h.store, id)
+	if err != nil || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RESUMING || !t.GetContinuing() || h.running(id) {
+		return err
+	}
+	threads, err := plan.AwaitingAgent(ctx, h.store, tilasm.GetId())
+	if err != nil || len(threads) == 0 {
+		return err
+	}
+	h.writeAlone(ctx, actorHarness, methodDocument, nil, id, nil,
+		Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: documentTurn(tilasm, threads)})
+	return nil
 }
 
 // tellDocument sends the document agent the threads while its worker runs, and tells whether it did. A worker that
@@ -195,14 +316,13 @@ func (h *Harness) tellDocument(
 	return false, nil
 }
 
-// documentEnded wakes the document agent t again, once its run is over, when the developer wrote in a discussion
-// after its turn started and it left that message unanswered: told too late, or interrupted. One turn more at most
-// for each such message, since the next turn starts after it: no loop.
+// documentEnded wakes the document agent t again, once its run is over, when a discussion still waits for it whose
+// developer's last message came after its last prompt: told while it ran, too late, or interrupted. One turn more at
+// most for each such message, since the next turn's prompt comes after it: no loop.
 func (h *Harness) documentEnded(r *run, t *planv1.Task) {
 	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		return // Failed or stopped: the next message of the developer wakes it.
 	}
-	started := t.GetStartTime().AsTime()
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()
@@ -215,7 +335,12 @@ func (h *Harness) documentEnded(r *run, t *planv1.Task) {
 		defer cancel()
 		h.documenting.Lock()
 		defer h.documenting.Unlock()
-		threads, err := store.List[*planv1.TilasmThread](ctx, h.store, store.Where{"tilasm_id": t.GetTilasmId()})
+		told, err := lastPromptTime(ctx, h.store, t.GetId())
+		if err != nil {
+			log.Printf("djinn: task %s: read its last prompt: %v", t.GetCode(), err)
+			return
+		}
+		threads, err := plan.AwaitingAgent(ctx, h.store, t.GetTilasmId())
 		if err != nil {
 			log.Printf("djinn: task %s: read its discussions: %v", t.GetCode(), err)
 			return
@@ -223,7 +348,7 @@ func (h *Harness) documentEnded(r *run, t *planv1.Task) {
 		var late []*planv1.TilasmThread
 		for _, thread := range threads {
 			msgs := thread.GetMessages()
-			if plan.AwaitsAgent(thread) && msgs[len(msgs)-1].GetCreateTime().AsTime().After(started) {
+			if msgs[len(msgs)-1].GetCreateTime().AsTime().After(told) {
 				late = append(late, thread)
 			}
 		}
@@ -237,6 +362,21 @@ func (h *Harness) documentEnded(r *run, t *planv1.Task) {
 			log.Printf("djinn: task %s: wake it again: %v", t.GetCode(), err)
 		}
 	}()
+}
+
+// lastPromptTime is when the task was given its last prompt: its first, or the last turn Djinn continued it with.
+func lastPromptTime(ctx context.Context, s *store.Store, taskID string) (time.Time, error) {
+	var last *planv1.TaskEvent
+	err := store.Latest(ctx, s, store.Where{"task_id": taskID}, func(ev *planv1.TaskEvent) bool {
+		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
+			last = ev
+		}
+		return last == nil
+	})
+	if err != nil || last == nil {
+		return time.Time{}, err
+	}
+	return last.GetCreateTime().AsTime(), nil
 }
 
 // threadsText lists the discussions to answer, each with what the developer opened it for and their last message,
@@ -280,7 +420,8 @@ func documentPrompt(wish *planv1.Wish, tilasm *planv1.Tilasm, threads []*planv1.
 		code, tilasm.GetTitle(), id, wish.GetTitle())
 	b.WriteString("## Now\n\n")
 	threadsText(&b, threads)
-	fmt.Fprintf(&b, "\nAnswer any other open discussion whose last message is the developer's too (`%s`).\n\n",
+	fmt.Fprintf(&b, "\nAnswer too any other open discussion in which nothing answered the developer's last message yet, "+
+		"neither a message by someone else nor a proposal linked to it after it (`%s`).\n\n",
 		fmt.Sprintf(doc, "discussions"))
 	fmt.Fprintf(&b, "## How to answer\n\n"+
 		"1. Read each discussion, its passage and the document around it: `%[1]s --thread <id>`. The whole "+

@@ -458,8 +458,8 @@ func TestDocumentWake(t *testing.T) {
 		}
 		a := agents[0]
 		e.settled(t, a.GetId(), func([]*planv1.TaskEvent) bool { return true })
-		if got := d.thread(t, thread.GetId()); got.GetAgentPending() || !plan.AwaitsAgent(got) {
-			t.Fatalf("the unanswered thread: pending %v, awaits %v", got.GetAgentPending(), plan.AwaitsAgent(got))
+		if got := d.thread(t, thread.GetId()); got.GetAgentPending() || !plan.AwaitsAgent(got, nil) {
+			t.Fatalf("the unanswered thread: pending %v, awaits %v", got.GetAgentPending(), plan.AwaitsAgent(got, nil))
 		}
 		res, err := d.Wake(t.Context(), connect.NewRequest(&planv1.TilasmServiceWakeRequest{Thread: thread.GetId()}))
 		if err != nil {
@@ -514,4 +514,190 @@ func TestDocumentWake(t *testing.T) {
 			t.Errorf("%d document agents, want 1", n)
 		}
 	})
+}
+
+// TestDocumentWakeAtStartEnds: a document agent djinn's start gives a new turn of its session ends done, and the
+// developer's next message gives it another.
+func TestDocumentWakeAtStartEnds(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	e := up(t, home, WithQuestionWorkers())
+	wishID, _ := e.wish(t, fakeProject(t, ""))
+	d := e.markdownDoc(t, wishID)
+	d.comment(t, "developer", "Why?", planv1.TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED)
+	agents := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)
+	if len(agents) != 1 {
+		t.Fatalf("%d document agents, want 1", len(agents))
+	}
+	a := agents[0]
+	e.settled(t, a.GetId(), func([]*planv1.TaskEvent) bool { return true })
+	e.down()
+
+	e = up(t, home, WithQuestionWorkers())
+	e.h.WakeDocuments(t.Context())
+	e.settled(t, a.GetId(), func(events []*planv1.TaskEvent) bool {
+		return countText(events, planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "continued by Djinn") == 1
+	})
+	d = docs{planv1connect.NewTilasmServiceClient(e.srv.Client(), e.srv.URL), wishID, d.tilasm}
+	d.comment(t, "developer", "And now?", planv1.TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED)
+	e.settled(t, a.GetId(), func(events []*planv1.TaskEvent) bool {
+		return countText(events, planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "continued by Djinn") == 2
+	})
+}
+
+// TestDocumentAnsweredByProposal: a request the agent answered with a proposal linked to it, made after the
+// developer's message and without a reply, waits for no answer: djinn's start wakes no agent on it, and Wake refuses
+// it. A message of the developer after that proposal waits again.
+func TestDocumentAnsweredByProposal(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	e := up(t, home)
+	wishID, _ := e.wish(t, fakeProject(t, ""))
+	d := e.markdownDoc(t, wishID)
+	thread := d.comment(t, "developer", "Say Postgres.", planv1.TilasmThreadKind_TILASM_THREAD_KIND_REQUEST)
+	if _, err := d.Propose(t.Context(), connect.NewRequest(&planv1.TilasmServiceProposeRequest{
+		Tilasm: &planv1.TilasmRef{Ref: &planv1.TilasmRef_Id{Id: d.tilasm.GetId()}}, Thread: thread.GetId(),
+		Quote: "SQLite", Replacement: "Postgres", Author: plan.DocumentAuthor,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	e.down()
+
+	e = up(t, home, WithQuestionWorkers())
+	d = docs{planv1connect.NewTilasmServiceClient(e.srv.Client(), e.srv.URL), wishID, d.tilasm}
+	e.h.WakeDocuments(t.Context())
+	time.Sleep(100 * time.Millisecond)
+	if n := len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)); n != 0 {
+		t.Errorf("%d document agents woken on a request answered by a proposal, want none", n)
+	}
+	_, err := d.Wake(t.Context(), connect.NewRequest(&planv1.TilasmServiceWakeRequest{Thread: thread.GetId()}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("Wake on a request answered by a proposal: %v, want failed precondition", err)
+	}
+	d.reply(t, thread.GetId(), "developer", "Shorter, please.")
+	if n := len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)); n != 1 {
+		t.Errorf("%d document agents once the developer wrote again, want 1", n)
+	}
+}
+
+// TestDocumentStaleAgent: a document agent whose model is no longer the one its project's settings give is not
+// continued: the developer's next message starts a new agent; and one djinn's restart cut short is closed by Djinn
+// rather than resumed, and a new agent takes the discussion that waits.
+func TestDocumentStaleAgent(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	t.Run("ended", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir(), WithQuestionWorkers())
+		dir := fakeProject(t, "question_model: \"cheap\"\n")
+		wishID, _ := e.wish(t, dir)
+		d := e.markdownDoc(t, wishID)
+		d.comment(t, "developer", "Why?", planv1.TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED)
+		agents := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)
+		if len(agents) != 1 {
+			t.Fatalf("%d document agents, want 1", len(agents))
+		}
+		old := agents[0]
+		e.settled(t, old.GetId(), func([]*planv1.TaskEvent) bool { return true })
+		writeFile(t, dir, plan.SettingsFile, "provider: PROVIDER_FAKE\nquestion_model: \"other\"\n")
+		d.comment(t, "developer", "And now?", planv1.TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED)
+		agents = e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)
+		if len(agents) != 2 {
+			t.Fatalf("%d document agents, want the old one and a new one", len(agents))
+		}
+		for _, a := range agents {
+			if a.GetId() != old.GetId() && a.GetModel() != "other" {
+				t.Errorf("the new agent's model %q, want other", a.GetModel())
+			}
+		}
+		if n := countText(e.events(t, old.GetId()), planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "continued"); n != 0 {
+			t.Error("the stale agent was continued")
+		}
+	})
+	t.Run("restarted", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		e := up(t, home, WithQuestionWorkers())
+		dir := fakeProject(t, "question_model: \"cheap\"\n")
+		wishID, _ := e.wish(t, dir)
+		d := e.markdownDoc(t, wishID)
+		d.comment(t, "developer", "wait", planv1.TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED)
+		agents := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)
+		if len(agents) != 1 {
+			t.Fatalf("%d document agents, want 1", len(agents))
+		}
+		old := agents[0]
+		e.workerUp(t, old.GetId())
+		e.down() // Cut short: it would resume.
+		writeFile(t, dir, plan.SettingsFile, "provider: PROVIDER_FAKE\nquestion_model: \"other\"\n")
+
+		e = up(t, home, WithQuestionWorkers())
+		got := e.get(t, old.GetId())
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			t.Fatalf("the stale agent is %v after the restart, want done", got.GetStatus())
+		}
+		events := e.events(t, old.GetId())
+		if countText(events, planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "closed by Djinn, was resuming") != 1 ||
+			countText(events, planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "resumed") != 0 {
+			t.Errorf("the stale agent's events: %v", eventKinds(events))
+		}
+		e.h.WakeDocuments(t.Context())
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			agents = e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)
+			if len(agents) == 2 {
+				break
+			}
+			if len(agents) > 2 || time.Now().After(deadline) {
+				t.Fatalf("%d document agents after the start, want the closed one and a new one", len(agents))
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	})
+}
+
+// TestDocumentToldWhileWaiting: a document agent continued while the machine holds it waits to resume; the
+// developer's message meanwhile is not lost: the turn it takes once it starts names it.
+func TestDocumentToldWhileWaiting(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	fake := &recordingFake{}
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_FAKE] = fake
+	lim := &limit{slots: 4}
+	e := upWith(t, t.TempDir(), providers, WithQuestionWorkers(), WithCapacity(lim.capacity), WithTick(20*time.Millisecond))
+	wishID, _ := e.wish(t, fakeProject(t, ""))
+	d := e.markdownDoc(t, wishID)
+	d.comment(t, "developer", "Why?", planv1.TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED)
+	agents := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)
+	if len(agents) != 1 {
+		t.Fatalf("%d document agents, want 1", len(agents))
+	}
+	a := agents[0]
+	e.settled(t, a.GetId(), func([]*planv1.TaskEvent) bool { return true })
+
+	lim.set(4, "the test holds it")
+	d.comment(t, "developer", "And now?", planv1.TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED)
+	if got := e.get(t, a.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RESUMING {
+		t.Fatalf("the continued agent is %v, want resuming while the machine holds it", got.GetStatus())
+	}
+	late := d.comment(t, "developer", "And this?", planv1.TilasmThreadKind_TILASM_THREAD_KIND_UNSPECIFIED)
+	lim.set(4, "")
+	e.settled(t, a.GetId(), func(events []*planv1.TaskEvent) bool {
+		return countText(events, planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "continued: started") == 1
+	})
+	var prompt string
+	for _, spec := range fake.all() {
+		if spec.TaskID == a.GetId() {
+			prompt = spec.Prompt
+		}
+	}
+	if !strings.Contains(prompt, "- "+late.GetId()+": a comment") {
+		t.Errorf("the turn does not name the message written while it waited:\n%s", prompt)
+	}
+	if n := len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_DOCUMENT)); n != 1 {
+		t.Errorf("%d document agents, want 1", n)
+	}
 }

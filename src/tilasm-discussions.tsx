@@ -56,6 +56,7 @@ import {
   renderDoc,
   resolve,
 } from "./tilasm-anchor";
+import { waitsForAnswer } from "./tilasm-answer";
 
 // A passage marked in the editor: a discussion's, a proposal's, or the one a new comment or request is being written
 // on (ask: a request to the agent). lost: its text was deleted in the editor since it was found. A passage with no
@@ -1432,10 +1433,6 @@ function AgentWriting() {
   );
 }
 
-// waitsForAnswer tells whether a discussion's last message is the developer's, open: the agent owes an answer.
-const waitsForAnswer = (thread: TilasmThread) =>
-  !thread.resolved && thread.messages.at(-1)?.author === "developer";
-
 const seconds = (stamp?: { seconds: bigint; nanos: number }) =>
   stamp ? Number(stamp.seconds) + stamp.nanos / 1e9 : 0;
 
@@ -1501,7 +1498,7 @@ function ThreadBody({
     const el = list.current;
     if (el && stuck.current) el.scrollTop = el.scrollHeight;
   }, [size]);
-  const unanswered = waitsForAnswer(thread) && !thread.agentPending;
+  const unanswered = waitsForAnswer(thread, proposals) && !thread.agentPending;
   return (
     <div className={`tilasm-thread tilasm-chat${request ? " is-request" : ""}`}>
       {(request || quote) && (

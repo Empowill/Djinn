@@ -27,11 +27,36 @@ func WithDiscussed(f func(context.Context, *planv1.TilasmThread)) Option {
 // byDeveloper tells whether author is the developer, who writes in the window.
 func byDeveloper(author string) bool { return strings.EqualFold(author, developerAuthor) }
 
-// AwaitsAgent tells whether the discussion waits for the document agent: open, and its last message is the
-// developer's.
-func AwaitsAgent(thread *planv1.TilasmThread) bool {
+// AwaitsAgent tells whether the discussion waits for the document agent: open, and nothing answered the developer's
+// last message, neither a message by someone else after it nor a proposal linked to the discussion made after it
+// (pending, accepted or rejected). proposals may hold any proposals: only the discussion's count.
+func AwaitsAgent(thread *planv1.TilasmThread, proposals []*planv1.TilasmProposal) bool {
 	msgs := thread.GetMessages()
-	return !thread.GetResolved() && len(msgs) > 0 && byDeveloper(msgs[len(msgs)-1].GetAuthor())
+	if thread.GetResolved() || len(msgs) == 0 || !byDeveloper(msgs[len(msgs)-1].GetAuthor()) {
+		return false
+	}
+	asked := msgs[len(msgs)-1].GetCreateTime().AsTime()
+	for _, p := range proposals {
+		if strings.EqualFold(p.GetThreadId(), thread.GetId()) && !p.GetCreateTime().AsTime().Before(asked) {
+			return false
+		}
+	}
+	return true
+}
+
+// AwaitingAgent are the discussions of the tilasm that wait for its document agent (AwaitsAgent).
+func AwaitingAgent(ctx context.Context, r store.Reader, tilasmID string) ([]*planv1.TilasmThread, error) {
+	threads, proposals, err := discussionsOf(ctx, r, tilasmID)
+	if err != nil {
+		return nil, err
+	}
+	var out []*planv1.TilasmThread
+	for _, thread := range threads {
+		if AwaitsAgent(thread, proposals) {
+			out = append(out, thread)
+		}
+	}
+	return out, nil
 }
 
 // ThreadKind is what a discussion is for, a comment when it does not say.
@@ -90,8 +115,12 @@ func fillAgentPending(ctx context.Context, r store.Reader, wishID, tilasmID stri
 	if err != nil || agent == nil || !Ongoing(agent) {
 		return err
 	}
+	proposals, err := store.List[*planv1.TilasmProposal](ctx, r, store.Where{"tilasm_id": tilasmID})
+	if err != nil {
+		return err
+	}
 	for _, thread := range threads {
-		thread.AgentPending = AwaitsAgent(thread)
+		thread.AgentPending = AwaitsAgent(thread, proposals)
 	}
 	return nil
 }
@@ -105,9 +134,14 @@ func (t *Tilasms) Wake(
 	if err != nil {
 		return nil, err
 	}
-	if !AwaitsAgent(thread) {
+	proposals, err := store.List[*planv1.TilasmProposal](ctx, t.Store, store.Where{"tilasm_id": thread.GetTilasmId()})
+	if err != nil {
+		return nil, Status(err)
+	}
+	if !AwaitsAgent(thread, proposals) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
-			"the discussion waits for no answer: it is resolved, or its last message is not the developer's"))
+			"the discussion waits for no answer: it is resolved, or the developer's last message has a reply or a "+
+				"proposal after it"))
 	}
 	for _, f := range t.Discussed {
 		f(ctx, thread)

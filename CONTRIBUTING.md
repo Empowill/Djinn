@@ -248,7 +248,8 @@ To use Djinn, see the [README](README.md). To work on it:
   the transaction: sent the thread while it runs, given a new turn of its own session once it ended (`task continue`),
   a new one only when that session cannot go on. It runs only djinn's commands to read, `comment`, `reply`, `propose`
   and `wish tell` the lead, as author `document` (`$DJINN_AUTHOR`); messages by anyone else wake nothing.
-  `Discussions` fills `agent_pending` on a thread whose last message is the developer's while the agent works.
+  `Discussions` fills `agent_pending` on an open thread whose last developer message has no message by someone else
+  nor linked proposal after it, while the agent works.
   `djinn talisman …` and `djinn doc …` are the same command ([T25](plan/4a699d0f-review-at-a-glance.md)). Djinn serves each one's latest version at
   `/tilasm/<id>/`, with a content security policy of its own: its scripts and files run, the network and Djinn stay
   out of reach. The wish's *Tilasms* tab lists them, opens one in a sandboxed frame, searches their titles and text,
