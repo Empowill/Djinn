@@ -1082,6 +1082,9 @@ func Work(t *planv1.Task, code func(id string) string, tr func(string, ...string
 	case planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING:
 		text, class = tr("work.integrating", "branch", in.GetBranch()), "run"
 	case planv1.IntegrationState_INTEGRATION_STATE_COMMITTED:
+		if in.GetSha() == "" && in.GetCorrectedBy() == "" && in.GetReviewedBy() == "" {
+			return "", ""
+		}
 		text, class = tr("work.committed", "branch", in.GetBranch(), "sha", ShortSha(in.GetSha())), "ok"
 	case planv1.IntegrationState_INTEGRATION_STATE_CONFLICT:
 		text, class = tr("work.conflict", "reason", in.GetReason()), "fail"

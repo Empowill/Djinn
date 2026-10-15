@@ -615,6 +615,7 @@ export function taskWork(
       };
       break;
     case IntegrationState.COMMITTED:
+      if (!sha && !work.correctedBy && !work.reviewedBy) return undefined;
       out = {
         text: t("work.committed", { branch: work.branch, sha }),
         tone: "done",

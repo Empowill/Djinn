@@ -1128,7 +1128,7 @@ func (h *Harness) launch(
 					logx.L().Info("worktree not created: a dependency is not merged", "task", task.GetCode(), "why", depWhy)
 					_ = os.RemoveAll(skillsDir)
 					task.Branch, task.Worktree = "", ""
-					h.forget(r)
+					h.forgetWithoutWake(r)
 					h.setWaiting(ctx, task, depWhy, false)
 					return store.Get[*planv1.Task](ctx, h.store, task.GetId())
 				}
@@ -1931,6 +1931,12 @@ func (h *Harness) workerEnded(t *planv1.Task) {
 
 // forget removes the run once its task is written for good, and ends its watchers' live feed.
 func (h *Harness) forget(r *run) {
+	h.forgetWithoutWake(r)
+	h.wake() // A slot, a scope or a dependency may have freed.
+}
+
+// forgetWithoutWake removes a run that never started a worker without waking the scheduler again.
+func (h *Harness) forgetWithoutWake(r *run) {
 	h.mu.Lock()
 	delete(h.runs, r.id)
 	h.useMu.Lock()
@@ -1944,7 +1950,6 @@ func (h *Harness) forget(r *run) {
 	h.mu.Unlock()
 	close(r.done)
 	h.wg.Done()
-	h.wake() // A slot, a scope or a dependency may have freed.
 }
 
 // write records an event of the run, and the task when it is not nil, in one transaction journaled under

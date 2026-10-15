@@ -363,7 +363,7 @@ func (s *Situation) Held(t *planv1.Task) (why, failed string) {
 				}
 				continue
 			}
-			if d.GetBranch() != "" && d.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+			if !plan.IsAzima(d) && !integrationDropped(d) && d.GetBranch() != "" && d.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
 				if !s.workMerged(d) && why == "" {
 					intBranch := s.integrationBranch(d)
 					why = fmt.Sprintf("waits for %s's work to reach %s", d.GetCode(), intBranch)
@@ -428,10 +428,22 @@ func (s *Situation) awaitsCommit(t *planv1.Task) bool {
 	return false
 }
 
+// integrationDropped tells whether the branch work of d, a task done, was dropped by hand (djinn task done --drop,
+// which closes the task without queuing integration, or left out when answering an integration question).
+func integrationDropped(d *planv1.Task) bool {
+	if d.GetClosed() != nil && d.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED {
+		return true
+	}
+	return strings.HasPrefix(d.GetIntegration().GetReason(), "left out (")
+}
+
 // uncommitted tells whether the work of d, a task done, waits to be committed into its wish's integration branch:
 // not when it is committed, nor when Djinn does not integrate it. state is " (conflict)" or " (red)" when its merge
 // met one, " (uncommitted)" while its worktree holds changes not committed, "" while it waits or is being committed.
 func uncommitted(d *planv1.Task) (waits bool, state string) {
+	if integrationDropped(d) {
+		return false, ""
+	}
 	switch d.GetIntegration().GetState() {
 	case planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED, planv1.IntegrationState_INTEGRATION_STATE_COMMITTED:
 		return false, ""

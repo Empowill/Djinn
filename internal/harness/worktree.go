@@ -14,6 +14,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -218,6 +219,32 @@ func removeWorktree(ctx context.Context, dir, path string, force bool) error {
 	return err
 }
 
+// branchStartCommit returns the commit from which branch in dir was created, from its reflog.
+func branchStartCommit(ctx context.Context, dir, branch string) string {
+	if branch == "" {
+		return ""
+	}
+	reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+branch)
+	if err != nil || reflog == "" {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(reflog), "\n")
+	return strings.TrimSpace(lines[len(lines)-1])
+}
+
+// branchHasNoCommits tells whether branch in dir is still at the commit it started from.
+func branchHasNoCommits(ctx context.Context, dir, branch string) bool {
+	if branch == "" {
+		return false
+	}
+	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"^{commit}")
+	if err != nil || head == "" {
+		return false
+	}
+	start := branchStartCommit(ctx, dir, branch)
+	return start != "" && start == head
+}
+
 // branchHoldsUnmergedCommits tells whether branch in dir has commits of its own that are not in integration.
 func branchHoldsUnmergedCommits(ctx context.Context, dir, branch, integration string) bool {
 	if branch == "" {
@@ -231,12 +258,8 @@ func branchHoldsUnmergedCommits(ctx context.Context, dir, branch, integration st
 		}
 	}
 	// A branch with no commit beyond the point it started from holds no unmerged work.
-	reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+branch)
-	if err == nil && reflog != "" {
-		lines := strings.Split(strings.TrimSpace(reflog), "\n")
-		if strings.TrimSpace(lines[len(lines)-1]) == head {
-			return false
-		}
+	if start := branchStartCommit(ctx, dir, branch); start != "" && start == head {
+		return false
 	}
 	intTarget := "refs/heads/" + integration + "^{commit}"
 	intHead, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", intTarget)
@@ -259,6 +282,9 @@ func depWorkInSha(ctx context.Context, dir string, dep *planv1.Task, sha string)
 	if sha == "" {
 		return false
 	}
+	if dep.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+		return true
+	}
 	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+dep.GetBranch()+"^{commit}")
 	if err != nil || head == "" {
 		head, _ = git(ctx, dir, "rev-parse", "--verify", "--quiet", dep.GetBranch()+"^{commit}")
@@ -267,12 +293,8 @@ func depWorkInSha(ctx context.Context, dir string, dep *planv1.Task, sha string)
 		return true // Branch does not exist; no work to check.
 	}
 	// A branch with no commit beyond the point it started from holds no unmerged work.
-	reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+dep.GetBranch())
-	if err == nil && reflog != "" {
-		lines := strings.Split(strings.TrimSpace(reflog), "\n")
-		if strings.TrimSpace(lines[len(lines)-1]) == head {
-			return true
-		}
+	if start := branchStartCommit(ctx, dir, dep.GetBranch()); start != "" && start == head {
+		return true
 	}
 	if _, err := git(ctx, dir, "merge-base", "--is-ancestor", head, sha); err == nil {
 		return true
@@ -329,9 +351,44 @@ func (h *Harness) dependenciesUnmergedIn(ctx context.Context, dir string, task *
 	if targetBranch == "" {
 		targetBranch = "the integration branch"
 	}
+	all, _ := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": task.GetWishId()})
+	byID := make(map[string]*planv1.Task, len(all))
+	byCode := make(map[string]*planv1.Task, len(all))
+	for _, t := range all {
+		byID[t.GetId()] = t
+		if t.GetCode() != "" {
+			byCode[t.GetCode()] = t
+		}
+	}
 	for _, depID := range task.GetDependsOn() {
-		dep, err := store.Get[*planv1.Task](ctx, h.store, depID)
-		if err != nil || dep == nil {
+		dep := byID[depID]
+		if dep == nil {
+			var err error
+			dep, err = store.Get[*planv1.Task](ctx, h.store, depID)
+			if err != nil || dep == nil {
+				continue
+			}
+		}
+		seen := map[string]bool{}
+		for !seen[dep.GetId()] {
+			seen[dep.GetId()] = true
+			code := dep.GetClosed().GetContinuedIn()
+			if dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
+				code = render.ForkedAs(dep, all)
+			}
+			if code == "" || byCode[code] == nil {
+				break
+			}
+			dep = byCode[code]
+		}
+		if plan.IsAzima(dep) {
+			continue
+		}
+		if dep.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			continue
+		}
+		if (dep.GetClosed() != nil && dep.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED) ||
+			strings.HasPrefix(dep.GetIntegration().GetReason(), "left out (") {
 			continue
 		}
 		if dep.GetProjectId() != "" && task.GetProjectId() != "" && dep.GetProjectId() != task.GetProjectId() {

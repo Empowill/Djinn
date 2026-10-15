@@ -8995,7 +8995,7 @@ test("the Review tab lists merged work, its merges under the task they serve, ch
         },
       ],
     }),
-    // Not merged: its tests failed; still running; an azima; a question worker, without a branch.
+    // Not merged: its tests failed; still running; an azima; a question worker, without a branch; a 0-commit task without a merge sha.
     work("W2", { integration: { state: s.IntegrationState.RED } }),
     work("W3", { status: s.TaskStatus.RUNNING, integration: undefined }),
     work("W4", { kind: s.TaskKind.AZIMA, branch: "" }),
@@ -9006,6 +9006,9 @@ test("the Review tab lists merged work, its merges under the task they serve, ch
     work("W7", reviewed("local")),
     // A push correction serves no task: a row of its own.
     work("W8", { correction: { failure: { taskIds: [] }, attempt: 1 } }),
+    work("W9", {
+      integration: { state: s.IntegrationState.COMMITTED, sha: "" },
+    }),
   ];
   const rows = s.reviewRows(tasks);
   assert.deepEqual(
@@ -9038,7 +9041,7 @@ test("the Review tab lists merged work, its merges under the task they serve, ch
   );
   assert.doesNotMatch(html, /review-code">W7</);
   assert.match(html, /Show 1 reviewed/);
-  for (const code of ["W2", "W3", "W4", "W5"])
+  for (const code of ["W2", "W3", "W4", "W5", "W9"])
     assert.doesNotMatch(html, new RegExp(`review-code">${code}<`));
 
   // A click on the box checks the task; checked, it says who and when, and a click takes the mark off.

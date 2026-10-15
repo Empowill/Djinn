@@ -24,6 +24,7 @@ export function toReview(task: Task): boolean {
     task.kind !== TaskKind.AZIMA &&
     task.status === TaskStatus.DONE &&
     task.integration?.state === IntegrationState.COMMITTED &&
+    Boolean(task.integration?.sha) &&
     task.branch !== ""
   );
 }

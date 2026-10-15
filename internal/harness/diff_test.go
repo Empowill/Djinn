@@ -386,6 +386,71 @@ func TestDiff(t *testing.T) {
 	if len(resIntegrated.Msg.GetFiles()) == 0 {
 		t.Errorf("integrated task diff expected changed files, got 0")
 	}
+
+	// 9. Merge branch into baseBranch (--no-ff) and verify diff when Integration is not yet COMMITTED
+	// (merge-base(branch, baseBranch) == branch, so resolveBaseAndHead uses branchStartCommit)
+	// and when a subsequent 0-commit branch has a stale Integration.Sha pointing to the merge commit.
+	if _, err := git(ctx, repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "merge", "--no-ff", "-m", "Merge W1", branch); err != nil {
+		t.Fatal(err)
+	}
+	mergedHead, err := git(ctx, repo, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	noCommitBranch := "djinn/W2-no-commits"
+	if _, err := git(ctx, repo, "branch", noCommitBranch, mergedHead); err != nil {
+		t.Fatal(err)
+	}
+	err = e.db.Tx(ctx, func(tx *store.Tx) error {
+		_ = tx.Journal("local", "test", &planv1.Task{})
+		if err := tx.Put(&planv1.Task{
+			Id:         taskID,
+			WishId:     wishID,
+			ProjectId:  projectID,
+			Code:       "W1",
+			Title:      "Merged branch without committed state",
+			Branch:     branch,
+			Status:     planv1.TaskStatus_TASK_STATUS_DONE,
+			CreateTime: timestamppb.Now(),
+		}); err != nil {
+			return err
+		}
+		return tx.Put(&planv1.Task{
+			Id:        store.NewID(),
+			WishId:    wishID,
+			ProjectId: projectID,
+			Code:      "W2",
+			Title:     "No-commit task with stale integration sha",
+			Branch:    noCommitBranch,
+			Status:    planv1.TaskStatus_TASK_STATUS_DONE,
+			Integration: &planv1.TaskIntegration{
+				State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+				Branch: baseBranch,
+				Sha:    mergedHead,
+			},
+			CreateTime: timestamppb.Now(),
+		})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resAlreadyMerged, err := e.tasks.Diff(ctx, connect.NewRequest(diffReq))
+	if err != nil {
+		t.Fatalf("already-merged task diff failed: %v", err)
+	}
+	if len(resAlreadyMerged.Msg.GetFiles()) == 0 {
+		t.Errorf("already-merged task diff expected changed files from branchStartCommit..branch, got 0")
+	}
+	resNoCommit, err := e.tasks.Diff(ctx, connect.NewRequest(&planv1.TaskServiceDiffRequest{
+		Task:   &planv1.TaskRef{Ref: &planv1.TaskRef_Code{Code: "W2"}},
+		WishId: wishID,
+	}))
+	if err != nil {
+		t.Fatalf("no-commit task diff failed: %v", err)
+	}
+	if len(resNoCommit.Msg.GetFiles()) != 0 {
+		t.Errorf("no-commit task diff expected 0 files even with stale integration sha, got %d", len(resNoCommit.Msg.GetFiles()))
+	}
 }
 
 // TestDiffChunks reads a diff of several hunks by chunks of every size: put end to end, the chunks give back the whole

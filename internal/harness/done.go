@@ -32,10 +32,16 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 	running := h.runs[id] != nil
 	h.mu.Unlock()
 	switch s := task.GetStatus(); {
-	case plan.DoneWithProblems(task):
+	case plan.DoneWithProblems(task) && !req.GetDrop():
 		return h.doneSeen(ctx, procedure, req, task)
 	case s == planv1.TaskStatus_TASK_STATUS_DONE:
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is done already", task.GetCode()))
+		if !req.GetDrop() || task.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED ||
+			(task.GetClosed() != nil && task.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is done already", task.GetCode()))
+		}
+		if task.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is integrating: refused while it merges", task.GetCode()))
+		}
 	case s == planv1.TaskStatus_TASK_STATUS_CANCELLED:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is cancelled already", task.GetCode()))
 	case running || s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED:
@@ -75,7 +81,7 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 			unmerged = branchHoldsUnmergedCommits(ctx, project.GetDirectory(), task.GetBranch(), intBranch)
 		}
 	}
-	if unmerged {
+	if unmerged || (task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && req.GetDrop()) {
 		if req.GetDrop() {
 			if req.GetNote() == "" {
 				return nil, connect.NewError(connect.CodeInvalidArgument,

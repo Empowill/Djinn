@@ -827,6 +827,19 @@ func TestNoOpBatchTellsTheEndOnly(t *testing.T) {
 	if !slices.Equal(told, want) {
 		t.Errorf("told lines %q; want only %q for a no-op batch", told, want)
 	}
+	if gotW2, _ := in.integration(t, w2); gotW2.GetSha() != "" {
+		t.Errorf("W2 with no commits should have empty integration sha, got %q", gotW2.GetSha())
+	}
+	diffRes, err := in.tasks.Diff(t.Context(), connect.NewRequest(&planv1.TaskServiceDiffRequest{
+		Task:   &planv1.TaskRef{Ref: &planv1.TaskRef_Code{Code: "W2"}},
+		WishId: in.wishID,
+	}))
+	if err != nil {
+		t.Fatalf("W2 diff failed: %v", err)
+	}
+	if len(diffRes.Msg.GetFiles()) != 0 {
+		t.Errorf("W2 with no commits should have 0 diff files, got %v", diffRes.Msg.GetFiles())
+	}
 }
 
 // TestRealMergeTellsOneLine verifies that a real merge that moves the branch

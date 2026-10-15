@@ -73,10 +73,14 @@ func (h *Harness) failed(
 			if head == "" {
 				head, _ = git(ctx, project.GetDirectory(), "rev-parse", "HEAD")
 			}
+			sha := head
+			if t.GetReview() == nil && t.GetCorrection() == nil && branchHasNoCommits(ctx, project.GetDirectory(), t.GetBranch()) {
+				sha = ""
+			}
 			committed := &planv1.TaskIntegration{
 				State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
 				Branch: in.GetBranch(),
-				Sha:    head,
+				Sha:    sha,
 			}
 			text := "integration: committed: " + in.GetBranch() + " holds the work already, at " + short8(head)
 			h.settleIntegration(ctx, []*planv1.Task{t}, committed, text, nil)
