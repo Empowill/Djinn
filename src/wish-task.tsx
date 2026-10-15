@@ -22,6 +22,7 @@ import {
   Send,
   Terminal,
 } from "lucide-react";
+import { AnimatePresence } from "motion/react";
 import {
   type FormEvent,
   type ReactNode,
@@ -68,7 +69,7 @@ import { HOURGLASS } from "./hourglass";
 import { language, t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
-import { TaskDiffView } from "./diff";
+import { type DiffDrawerView, TaskDiffDrawer } from "./diff";
 import {
   costTitle,
   resourcesDetail,
@@ -735,7 +736,8 @@ function TaskBody({
   onTurnComments?: (task: Task) => Promise<unknown>;
 }) {
   const [showLogs, setShowLogs] = useState(false);
-  const [showDiff, setShowDiff] = useState(false);
+  // The drawer of the task's diffs, open on its committed work or on its worktree; null while closed.
+  const [diff, setDiff] = useState<DiffDrawerView | null>(null);
   const events = useTaskEvents(task.id, task.status, showLogs);
   const box = useRef<HTMLDivElement>(null);
   // Keep the newest event in sight while the worker runs, inside the box: the page stays where it is.
@@ -834,19 +836,36 @@ function TaskBody({
       {onTurnComments && commentsWaiting(task) && (
         <TurnCommentsButton task={task} onTurn={onTurnComments} />
       )}
-      <details className="wish-task-diff-fold" open={showDiff}>
-        <summary
+      <div className="wish-task-diff-actions">
+        <button
+          type="button"
           className="button secondary small wish-task-diff-button"
-          role="button"
-          onClick={(e) => {
-            e.preventDefault();
-            setShowDiff(!showDiff);
-          }}
+          aria-haspopup="dialog"
+          onClick={() => setDiff("committed")}
         >
-          {showDiff ? t("task.hide_diff") : t("task.see_diff")}
-        </summary>
-        {showDiff && <TaskDiffView task={task} />}
-      </details>
+          {t("task.see_diff")}
+        </button>
+        <button
+          type="button"
+          className="button secondary small wish-task-worktree-button"
+          aria-haspopup="dialog"
+          disabled={!task.worktree}
+          title={task.worktree ? undefined : t("task.no_worktree")}
+          onClick={() => setDiff("uncommitted")}
+        >
+          {t("task.see_worktree")}
+        </button>
+      </div>
+      <AnimatePresence>
+        {diff && (
+          <TaskDiffDrawer
+            task={task}
+            view={diff}
+            onView={setDiff}
+            onClose={() => setDiff(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 // The frame of the window, kept from the first interface: the brand, a modal, a toast.
 import { AnimatePresence, motion } from "motion/react";
 import { X } from "lucide-react";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, type RefObject, useEffect, useRef } from "react";
 
 import icon from "../build/icon.svg";
 import { t } from "./i18n";
@@ -90,20 +90,12 @@ export function Brand({ small = false }: { small?: boolean }) {
   );
 }
 
-export function ModalFrame({
-  title,
-  eyebrow,
-  children,
-  onClose,
-  wide = false,
-}: {
-  title: string;
-  eyebrow: string;
-  children: ReactNode;
-  onClose: () => void;
-  wide?: boolean;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
+// useDialogKeys keeps a dialog's keys: focus on its first control, Tab cycling within it, Escape closing it, and the
+// focus given back to what had it once the dialog closes.
+export function useDialogKeys(
+  ref: RefObject<HTMLElement | null>,
+  onClose: () => void,
+) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const previousFocus = useRef<HTMLElement | null>(
@@ -125,7 +117,8 @@ export function ModalFrame({
       );
     focusable()?.[0]?.focus({ preventScroll: true });
     const handle = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
+      // A field that takes Escape for itself (a comment box cancelling) keeps the dialog open.
+      if (e.key === "Escape" && !e.defaultPrevented) onCloseRef.current();
       if (e.key === "Tab") {
         const nodes = focusable();
         if (!nodes?.length) return;
@@ -145,7 +138,24 @@ export function ModalFrame({
       document.removeEventListener("keydown", handle);
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
-  }, []);
+  }, [ref]);
+}
+
+export function ModalFrame({
+  title,
+  eyebrow,
+  children,
+  onClose,
+  wide = false,
+}: {
+  title: string;
+  eyebrow: string;
+  children: ReactNode;
+  onClose: () => void;
+  wide?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useDialogKeys(ref, onClose);
   return (
     <motion.div
       className="modal-backdrop"

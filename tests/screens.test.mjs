@@ -2403,9 +2403,23 @@ test("a task card shows its prompt on hover, and opened shows prompt and no logs
   assert.match(opened, /See logs/);
   assert.match(opened, /wish-task-diff-button/);
   assert.match(opened, /See the diff/);
-  // Logs and diff are deferred: containers are not rendered until toggled.
+  // A task with no worktree has no uncommitted files to show: the button says why it is off.
+  assert.match(
+    opened,
+    /<button type="button" class="button secondary small wish-task-worktree-button" aria-haspopup="dialog" disabled="" title="This task has no worktree">See uncommitted files<\/button>/,
+  );
+  const withWorktree = s.renderToStaticMarkup(
+    h(s.WishTask, {
+      task: { ...task, worktree: "/tmp/w1" },
+      focused: true,
+      onStop() {},
+    }),
+  );
+  assert.doesNotMatch(withWorktree, /disabled=""[^>]*>See uncommitted files/);
+  // Logs and diff are deferred: containers are not rendered until toggled, the diff's drawer until a button opens it.
   assert.doesNotMatch(opened, /class="wish-task-events"/);
-  assert.doesNotMatch(opened, /class="task-diff-view"/);
+  assert.doesNotMatch(opened, /task-diff-view/);
+  assert.doesNotMatch(opened, /diff-drawer/);
 });
 
 test("diff views render unified and split diffs with Chroma syntax tokens and hunk headers", () => {
@@ -9032,6 +9046,103 @@ test("a long diff loads its next chunk as the reader scrolls near its end, a hun
   } finally {
     s.act(() => root.unmount());
     globalThis.IntersectionObserver = savedObserver;
+    for (const handle of process._getActiveHandles()) {
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+    }
+  }
+});
+
+test("the uncommitted diff asks for the worktree's changes, read only, and says when the worktree is clean or gone", async () => {
+  const container = setupMockDom();
+  const asked = [];
+  let answer = {};
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.TaskService, {
+      diff: (req) => {
+        asked.push([req.file, req.uncommitted]);
+        if (req.file !== "") {
+          return {
+            file: {
+              path: "notes.md",
+              totalLines: 6,
+              hunks: [
+                {
+                  header: "@@ -0,0 +1 @@",
+                  lines: [
+                    {
+                      kind: s.DiffLineKind.ADDED,
+                      newLine: 1,
+                      text: "a draft",
+                      tokens: [],
+                    },
+                  ],
+                },
+              ],
+            },
+            base: "abc",
+          };
+        }
+        return answer;
+      },
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const text = (node) =>
+    node.childNodes.length > 0
+      ? node.childNodes.map(text).join("")
+      : (node.nodeValue ?? node.textContent ?? "");
+  const count = (node, cls) =>
+    (node.attributes?.class?.split(" ").includes(cls) ? 1 : 0) +
+    node.childNodes.reduce((n, c) => n + count(c, cls), 0);
+  const settle = async () => {
+    for (let i = 0; i < 5; i++) {
+      await s.act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+  };
+  const root = s.createRoot(container);
+  const show = async (key) => {
+    s.act(() => {
+      root.render(
+        h(
+          s.DjinnProvider,
+          { djinn },
+          h(s.TaskDiffView, {
+            key,
+            task: { id: "t1", comments: [] },
+            uncommitted: true,
+          }),
+        ),
+      );
+    });
+    await settle();
+    return text(container);
+  };
+  try {
+    answer = {
+      files: [{ path: "notes.md", added: 1, status: s.DiffStatus.ADDED }],
+      base: "abc",
+    };
+    const shown = await show("changed");
+    assert.deepEqual(asked, [
+      ["", true],
+      ["notes.md", true],
+    ]);
+    assert.match(shown, /a draft/);
+    assert.equal(count(container, "diff-line-row"), 1);
+    // Work not committed has no commit a comment could name: no comment on it.
+    assert.equal(count(container, "diff-add-comment-btn"), 0);
+
+    answer = { files: [], base: "abc" };
+    assert.match(
+      await show("clean"),
+      /The worktree is clean: nothing left uncommitted\./,
+    );
+    answer = { files: [], noWorktree: true };
+    assert.match(await show("gone"), /This task has no worktree any more/);
+  } finally {
+    s.act(() => root.unmount());
     for (const handle of process._getActiveHandles()) {
       if (handle?.constructor?.name === "MessagePort") handle.unref();
     }
