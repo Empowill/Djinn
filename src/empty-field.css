@@ -1,3 +1,11 @@
+/* The fields' three tones, shared with the workspace's hint: at rest, live (what moves), hot (the newest mark, the
+   scan line, the cursor). Hot sits a little under halfway from the brightest text grey toward live: it leads the eye
+   without glaring. */
+:root {
+  --field-rest: var(--n-4c);
+  --field-live: var(--n-6f);
+  --field-hot: color-mix(in srgb, var(--n-a9) 55%, var(--n-6f));
+}
 /* An empty workspace panel: a data field, its line and its actions, on the panel's own ground. No card, no border:
    the tones come from the neutral ramp, so the field reads in both themes. The field's mono size follows the panel's
    width (42 columns, each about 0.66em wide with the tracking), up to 12px: it never overflows a narrow panel. */
@@ -22,17 +30,17 @@
   pointer-events: none;
 }
 .empty-field-layer.is-rest {
-  color: var(--n-4c);
+  color: var(--field-rest);
 }
 .empty-field-layer.is-live {
-  color: var(--n-6f);
+  color: var(--field-live);
 }
 .empty-field-layer.is-hot {
-  color: var(--n-a9);
+  color: var(--field-hot);
 }
 .empty-field-message {
   margin: 20px 0 0;
-  color: var(--text);
+  color: var(--muted);
   font-size: 15px;
   font-weight: 500;
   line-height: 1.4;

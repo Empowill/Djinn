@@ -251,7 +251,6 @@ export function WishWorkspace({
   const panelIdsRef = useRef(panelIds);
   const onPanelChangeRef = useRef(onPanelChange);
   const navButtonRefs = useRef(new Map<string, HTMLButtonElement>());
-  const summarySlotRef = useRef<HTMLDivElement | null>(null);
   const mouseDownOpenRef = useRef(false);
   const userIntentVersionRef = useRef(0);
   const initialRequestUserVersionRef = useRef(new Map<string, number>());
@@ -773,11 +772,10 @@ export function WishWorkspace({
             .filter((definition) => definition.id !== summary?.id)
             .map((definition) => renderPanel(definition.id))}
         </main>
-        <div className="workspace-summary-slot" ref={summarySlotRef}>
+        <div className="workspace-summary-slot">
           {renderSummary()}
           {summary && !hasActivePanel && !navCompact && (
             <OpenHint
-              slot={summarySlotRef}
               rows={() =>
                 contentPanels
                   .map((definition) =>
@@ -924,102 +922,147 @@ export function WorkspaceSectionCard({
   );
 }
 
-// How long the hint's pointer rests on a row before it moves to the next.
+// How long the hint dwells on one row of the card before it moves to the next, and how long its packet takes to climb.
 const HINT_STEP_MS = 1600;
+const HINT_CLIMB_MS = 1000;
+// About eight frames a second, as the panels' fields.
+const HINT_FRAME_MS = 125;
+// The hint's diagram: HINT_COLUMNS characters wide, a lane per row of the card rising HINT_LANE_ROWS lines to its ▲.
+const HINT_COLUMNS = 25;
+const HINT_LANE_ROWS = 5;
 
-// OpenHint is what the navigation card says while no panel is open: a small mono pointer in the gutter on the card's
-// left travels down its rows, one at a time, each row it points at taking the faint hover fill; under the card, one
-// short line says what to do. The pointer is placed by measuring the real rows. It holds on the first row, without the
-// fill, under reduced motion, and pauses while the window is hidden.
-function OpenHint({
-  slot,
-  rows,
-}: {
-  slot: { current: HTMLDivElement | null };
-  rows: () => HTMLElement[];
-}) {
-  const pointer = useRef<HTMLSpanElement>(null);
+// hintFrame draws the hint's diagram, one layer per tone (rest, live, hot), blank where another layer draws: one
+// vertical lane per row of the card, a bus joining them below, their numbers under it. The lane of the row in focus
+// is lit, and a packet climbs it during the first part of its step (progress 0 to 1), then its ▲ glows. Without a
+// lane in focus (reduced motion), the lanes rest and their ▲ are lit.
+function hintFrame(
+  lanes: number,
+  focus: number | undefined,
+  progress: number,
+): [string, string, string] {
+  const count = Math.max(1, lanes);
+  const rows = HINT_LANE_ROWS + 3;
+  const grid = Array.from({ length: rows }, () =>
+    Array.from({ length: HINT_COLUMNS }, () => ({ char: " ", tone: 0 })),
+  );
+  const put = (row: number, col: number, char: string, tone: number) => {
+    const cell = grid[row]?.[col];
+    if (cell) {
+      cell.char = char;
+      cell.tone = tone;
+    }
+  };
+  const columns = Array.from({ length: count }, (_, i) =>
+    Math.floor(((i + 0.5) * HINT_COLUMNS) / count),
+  );
+  const bus = HINT_LANE_ROWS + 1;
+  for (let col = columns[0] - 2; col <= columns[count - 1] + 2; col++)
+    put(bus, col, "─", 0);
+  const arrived = progress >= 1;
+  // The packet's head climbs from the lane's foot to the line under the ▲.
+  const head =
+    HINT_LANE_ROWS -
+    Math.min(HINT_LANE_ROWS - 1, Math.floor(progress * HINT_LANE_ROWS));
+  columns.forEach((col, lane) => {
+    const lit = lane === focus;
+    put(0, col, "▲", lit ? (arrived ? 2 : 1) : focus === undefined ? 1 : 0);
+    for (let row = 1; row <= HINT_LANE_ROWS; row++)
+      put(row, col, lit ? "│" : "┊", lit ? 1 : 0);
+    put(bus, col, "┴", lit ? 1 : 0);
+    put(bus + 1, col, String(lane + 1), lit ? 1 : 0);
+    if (lit && !arrived) {
+      put(head, col, "█", 2);
+      put(head + 1, col, "┃", 1);
+      put(head + 2, col, "┃", 1);
+    }
+  });
+  const layer = (tone: number) =>
+    grid
+      .map((line) =>
+        line.map((cell) => (cell.tone === tone ? cell.char : " ")).join(""),
+      )
+      .join("\n");
+  return [layer(0), layer(1), layer(2)];
+}
+
+// OpenHint is what the navigation card says while no panel is open, in the room under the card: a mono diagram of one
+// lane per row of the card, rising to it. The rows take their turn: the row in focus takes the faint hover fill, and a
+// packet climbs its lane to the card. Under the diagram, one line says what to do. It holds still, without the fill,
+// under reduced motion, and pauses while the window is hidden.
+function OpenHint({ rows }: { rows: () => HTMLElement[] }) {
+  const layers = useRef<(HTMLPreElement | null)[]>([]);
   const listRows = useRef(rows);
   listRows.current = rows;
-  useEffect(() => {
-    const element = pointer.current;
-    const host = slot.current;
-    if (!element || !host) return;
+  useLayoutEffect(() => {
     const motion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    let index = 0;
     let timer = 0;
+    let start = 0;
     let hinted: HTMLElement | undefined;
     const unhint = () => {
       hinted?.removeAttribute("data-wish-hinted");
       hinted = undefined;
     };
-    const place = () => {
+    const draw = (frame: [string, string, string]) =>
+      frame.forEach((text, i) => {
+        const element = layers.current[i];
+        if (element && element.textContent !== text) element.textContent = text;
+      });
+    const tick = () => {
       const all = listRows.current();
-      if (!all.length) {
-        element.style.visibility = "hidden";
+      if (motion?.matches || !all.length) {
         unhint();
+        draw(hintFrame(all.length || 3, undefined, 1));
         return;
       }
-      const row = all[index % all.length];
-      const box = row.getBoundingClientRect();
-      const top =
-        box.top -
-        host.getBoundingClientRect().top +
-        box.height / 2 -
-        element.offsetHeight / 2;
-      element.style.visibility = "";
-      element.style.transform = `translateY(${Math.round(top)}px)`;
-      unhint();
-      if (!motion?.matches) {
+      const elapsed = performance.now() - start;
+      const lane = Math.floor(elapsed / HINT_STEP_MS) % all.length;
+      const row = all[lane];
+      if (row !== hinted) {
+        unhint();
         hinted = row;
         row.setAttribute("data-wish-hinted", "true");
       }
+      draw(
+        hintFrame(all.length, lane, (elapsed % HINT_STEP_MS) / HINT_CLIMB_MS),
+      );
     };
     const schedule = () => {
       window.clearInterval(timer);
       timer = 0;
-      if (motion?.matches) index = 0;
-      place();
+      start = performance.now();
+      tick();
       if (motion?.matches || document.visibilityState === "hidden") return;
-      timer = window.setInterval(() => {
-        index += 1;
-        place();
-      }, HINT_STEP_MS);
+      timer = window.setInterval(tick, HINT_FRAME_MS);
     };
     schedule();
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? undefined
-        : new ResizeObserver(place);
-    observer?.observe(host);
     document.addEventListener("visibilitychange", schedule);
     motion?.addEventListener?.("change", schedule);
     return () => {
       window.clearInterval(timer);
-      observer?.disconnect();
       document.removeEventListener("visibilitychange", schedule);
       motion?.removeEventListener?.("change", schedule);
       unhint();
     };
-  }, [slot]);
+  }, []);
   return (
-    <>
-      <span
-        ref={pointer}
-        className="workspace-open-hint-pointer"
-        aria-hidden="true"
-      >
-        {"─▸"}
-      </span>
-      <p className="workspace-open-hint">
-        <span className="workspace-open-hint-mark" aria-hidden="true">
-          {"↑ "}
-        </span>
+    <div className="workspace-open-hint">
+      <div className="workspace-open-hint-diagram" aria-hidden="true">
+        {(["is-rest", "is-live", "is-hot"] as const).map((tone, i) => (
+          <pre
+            key={tone}
+            ref={(element) => {
+              layers.current[i] = element;
+            }}
+            className={"workspace-open-hint-layer " + tone}
+          />
+        ))}
+      </div>
+      <p className="workspace-open-hint-caption">
         {t("workspace.hint_open")}
         <span className="workspace-open-hint-cursor" aria-hidden="true">
           _
         </span>
       </p>
-    </>
+    </div>
   );
 }

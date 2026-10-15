@@ -852,10 +852,10 @@ console.log(JSON.stringify(states.map(([state, workers, caption]) => f.renderToS
       }
     }
 
-    // The hint, in English and French, at the narrowest width that keeps the full card and at a wide one: its line
-    // stays within the card's width, and its pointer, in the gutter, faces one of the card's rows, which takes the fill.
+    // The hint, in English and French, at the narrowest width that keeps the full card and at a wide one: its diagram
+    // and its line stay within the card's width, and the lane lit in the diagram is the one of the row with the fill.
     const slot = stage(page).locator(".workspace-summary-slot");
-    const pointer = slot.locator(".workspace-open-hint-pointer");
+    const diagram = hint.locator(".workspace-open-hint-diagram");
     for (const language of ["en", "fr"] as const) {
       await page.evaluate(
         (code) => localStorage.setItem("djinn.language", code),
@@ -868,41 +868,46 @@ console.log(JSON.stringify(states.map(([state, workers, caption]) => f.renderToS
         await expect(hint).toContainText(
           language === "en" ? "pick a block" : "choisissez un bloc",
         );
-        const card = await slot
+        const card = (await slot
           .locator(".workspace-summary-card")
-          .boundingBox();
-        const line = await hint.boundingBox();
-        expect(line!.x).toBeGreaterThanOrEqual(card!.x);
-        expect(line!.x + line!.width).toBeLessThanOrEqual(
-          card!.x + card!.width,
-        );
+          .boundingBox())!;
+        for (const part of [
+          diagram,
+          hint.locator(".workspace-open-hint-caption"),
+        ]) {
+          const box = (await part.boundingBox())!;
+          expect(box.x).toBeGreaterThanOrEqual(card.x);
+          expect(box.x + box.width).toBeLessThanOrEqual(card.x + card.width);
+          expect(box.y).toBeGreaterThan(card.y + card.height);
+        }
+        // Real vertical room: the diagram's lines, a lane per row of the card.
+        expect((await diagram.boundingBox())!.height).toBeGreaterThan(90);
         expect(
-          await hint.evaluate(
-            (element) => element.scrollWidth <= element.clientWidth,
+          await hint.evaluate((element) =>
+            [element, ...element.querySelectorAll("pre, p")].every(
+              (part) => part.scrollWidth <= part.clientWidth + 1,
+            ),
           ),
         ).toBe(true);
         await expect(slot.locator("[data-wish-hinted]")).toHaveCount(1);
-        await page.waitForTimeout(400);
-        // Between steps the pointer rests on the hinted row: measured together, in one frame.
         await expect
           .poll(() =>
             slot.evaluate((element) => {
-              const mark = element
-                .querySelector(".workspace-open-hint-pointer")!
-                .getBoundingClientRect();
-              const row = element
-                .querySelector("[data-wish-hinted]")!
-                .getBoundingClientRect();
-              const card = element
-                .querySelector(".workspace-summary-card")!
-                .getBoundingClientRect();
-              return (
-                mark.right <= card.left &&
-                mark.left >= 0 &&
-                Math.abs(
-                  mark.top + mark.height / 2 - (row.top + row.height / 2),
-                ) <= 2
+              const rows = [
+                ...element.querySelectorAll(
+                  ".workspace-section-list .workspace-section-row",
+                ),
+              ];
+              const lane = rows.indexOf(
+                element.querySelector("[data-wish-hinted]")!,
               );
+              // The diagram's lanes share its 25 columns evenly; the lit one is drawn in the live tone.
+              const column = Math.floor(((lane + 0.5) * 25) / rows.length);
+              const lanes =
+                element
+                  .querySelector(".workspace-open-hint-layer.is-live")!
+                  .textContent!.split("\n")[1] ?? "";
+              return lane >= 0 && lanes.indexOf("│") === column;
             }),
           )
           .toBe(true);
@@ -926,16 +931,14 @@ console.log(JSON.stringify(states.map(([state, workers, caption]) => f.renderToS
         }
       }
     }
-    // Reduced motion holds the pointer on the first row, without the fill.
+    // Reduced motion holds the diagram still, without the fill.
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.reload();
     await expect(hint).toBeVisible();
     await expect(slot.locator("[data-wish-hinted]")).toHaveCount(0);
-    const held = await pointer.evaluate((element) => element.style.transform);
+    const held = await diagram.evaluate((element) => element.textContent);
     await page.waitForTimeout(1800);
-    expect(await pointer.evaluate((element) => element.style.transform)).toBe(
-      held,
-    );
+    expect(await diagram.evaluate((element) => element.textContent)).toBe(held);
     await page.emulateMedia({ colorScheme: null, reducedMotion: null });
   } finally {
     await page.evaluate(() => localStorage.removeItem("djinn.language"));

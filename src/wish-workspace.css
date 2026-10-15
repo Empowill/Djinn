@@ -1870,19 +1870,10 @@ html[data-theme="light"]
   }
 }
 
-/* While no panel is open: a mono pointer in the gutter left of the navigation card travels down its rows (placed by
-   OpenHint, by measuring them), the row it points at takes the hover fill, and one short line under the card says what
-   to do. The line wraps rather than leave the card's width. */
-.workspace-open-hint-pointer {
-  position: absolute;
-  top: 0;
-  right: calc(100% + 5px);
-  color: color-mix(in srgb, var(--text) 62%, transparent);
-  font: 14px / 1 var(--mono);
-  white-space: pre;
-  pointer-events: none;
-  transition: transform 320ms ease;
-}
+/* While no panel is open, in the room under the navigation card: a mono diagram of one lane per row of the card,
+   rising to it (drawn by OpenHint), and one line that says what to do. The row whose lane is lit takes the hover fill.
+   The diagram's size follows the card's width (25 columns, each about 0.62em wide), up to 14px: never cropped. Its
+   tones are the panels' fields' tones. */
 .workspace-section-row[data-wish-hinted]:not(.is-active) {
   background: color-mix(in srgb, var(--text) 4%, transparent);
 }
@@ -1891,13 +1882,40 @@ html[data-theme="light"]
   background: transparent;
 }
 .workspace-open-hint {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
   margin: var(--space-3) var(--space-2) 0;
-  color: var(--muted);
-  font: 13px / 1.5 var(--mono);
-  overflow-wrap: anywhere;
+  text-align: center;
 }
-.workspace-open-hint-mark {
-  color: var(--n-9c);
+.workspace-open-hint-diagram {
+  display: grid;
+}
+.workspace-open-hint-layer {
+  grid-area: 1 / 1;
+  margin: 0;
+  font: clamp(9px, 100cqi / 16, 14px) / 1.3 var(--mono);
+  white-space: pre;
+  text-align: left;
+  user-select: none;
+  pointer-events: none;
+}
+.workspace-open-hint-layer.is-rest {
+  color: var(--field-rest);
+}
+.workspace-open-hint-layer.is-live {
+  color: var(--field-live);
+}
+.workspace-open-hint-layer.is-hot {
+  color: var(--field-hot);
+}
+.workspace-open-hint-caption {
+  margin: 0;
+  color: var(--muted);
+  font: clamp(11px, 100cqi / 16, 14px) / 1.5 var(--mono);
+  overflow-wrap: anywhere;
 }
 .workspace-open-hint-cursor {
   margin-left: 1px;
@@ -1909,9 +1927,6 @@ html[data-theme="light"]
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .workspace-open-hint-pointer {
-    transition: none;
-  }
   .workspace-open-hint-cursor {
     animation: none;
   }
