@@ -21,7 +21,9 @@ import {
   type DragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
+  createContext,
   useCallback,
+  use,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -35,6 +37,7 @@ import { useClients, useStore } from "./data/djinn";
 import { when } from "./data/format";
 import { type DropEntry, TooLarge, entriesOf, readDrop } from "./data/tilasms";
 import { t } from "./i18n";
+import { TilasmDiscussions } from "./tilasm-discussions";
 import { TilasmEditor, useTilasmEditor } from "./tilasm-editor";
 import {
   type TilasmLoss,
@@ -257,6 +260,9 @@ export function TilasmsTab({
   );
 }
 
+// StripSlotContext is the place in the strip of tabs where the open document shows its own indicators.
+const StripSlotContext = createContext<HTMLElement | null>(null);
+
 // TilasmPanel is the panel as it shows, from what it is given: the strip of tabs and its actions, then the open
 // document. The whole panel takes a drop.
 export function TilasmPanel({
@@ -295,6 +301,8 @@ export function TilasmPanel({
   const [over, setOver] = useState(false);
   const [searching, setSearching] = useState(search !== "");
   const [versions, setVersions] = useState(false);
+  // Where the open document puts what stands by the tabs: its discussions apart from the text.
+  const [slot, setSlot] = useState<HTMLSpanElement | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const tabs = useRef<HTMLDivElement>(null);
   // A drop of files only: a block the editor's handle drags is the editor's own.
@@ -370,6 +378,7 @@ export function TilasmPanel({
           )}
         </div>
         <div className="tilasm-strip-actions">
+          <span className="tilasm-strip-slot" ref={setSlot} />
           {searching ? (
             <input
               className="tilasm-search"
@@ -465,7 +474,7 @@ export function TilasmPanel({
       {count === 0 ? (
         <p className="tilasm-strip-note">{t("tilasms.none")}</p>
       ) : (
-        children
+        <StripSlotContext value={slot}>{children}</StripSlotContext>
       )}
     </div>
   );
@@ -647,9 +656,16 @@ function MarkdownTilasm({
     return joinTitle(headed.current, titleNow.current, current.getMarkdown());
   }, []);
 
-  // apply puts a text read from Djinn in the editor, out of its undo history; keep leaves the caret where it was.
+  // apply puts a text read from Djinn in the editor, out of its undo history; keep leaves the caret where it was, and
+  // a caret from after on moves with the text the change added or took there.
   const apply = useCallback(
-    (text: string, revision: bigint, named: string, keep: boolean) => {
+    (
+      text: string,
+      revision: bigint,
+      named: string,
+      keep: boolean,
+      after = Infinity,
+    ) => {
       const current = editorRef.current;
       if (!current) return;
       clearTimeout(timer.current);
@@ -659,6 +675,7 @@ function MarkdownTilasm({
         ? tilasmLoss(current.markdown, split.body)
         : [];
       const { from, to } = current.state.selection;
+      const before = current.state.doc.content.size;
       current
         .chain()
         .command(({ tr }) => {
@@ -667,12 +684,11 @@ function MarkdownTilasm({
         })
         .setContent(split.body, { contentType: "markdown", emitUpdate: false })
         .run();
-      if (keep && current.isFocused) {
+      if (keep && (current.isFocused || after !== Infinity)) {
         const size = current.state.doc.content.size;
-        current.commands.setTextSelection({
-          from: Math.min(from, size),
-          to: Math.min(to, size),
-        });
+        const moved = (pos: number) =>
+          Math.max(0, Math.min(pos >= after ? pos + size - before : pos, size));
+        current.commands.setTextSelection({ from: moved(from), to: moved(to) });
       }
       base.current = revision;
       saved.current = text;
@@ -809,6 +825,42 @@ function MarkdownTilasm({
     };
   }, [phase, listed, settled, clients, id, apply]);
 
+  // settle saves what is not saved yet, waiting for a save under way, and says whether Djinn now holds the text the
+  // editor shows: a discussion or a decision works on Djinn's text.
+  const settle = useCallback(async () => {
+    for (let tries = 0; tries < 100; tries++) {
+      if (state.current.theirs) return false;
+      if (saving.current) await new Promise((done) => setTimeout(done, 50));
+      else if (dirty.current) {
+        if (!state.current.editable) return false;
+        await flush();
+        if (dirty.current && !saving.current) return false;
+      } else return true;
+    }
+    return false;
+  }, [flush]);
+
+  // reread reads the document again once Djinn wrote it (an accepted proposal), the caret kept.
+  const reread = useCallback(
+    async (after: number) => {
+      const now = await read(clients, id);
+      apply(now.markdown, now.revision, now.title, true, after);
+    },
+    [clients, id, apply],
+  );
+
+  // The title the rendered text starts with: the Markdown's first heading, when it says the title.
+  const titleText = useCallback(
+    () => (headed.current ? titleNow.current : ""),
+    [],
+  );
+  const strip = use(StripSlotContext);
+  const comment = useRef<((from: number, to: number) => void) | null>(null);
+  const onComment = useCallback(
+    (from: number, to: number) => comment.current?.(from, to),
+    [],
+  );
+
   // What is not saved yet is saved when the document closes, its tab changed or its wish left, and when the page
   // goes.
   useEffect(() => {
@@ -918,7 +970,25 @@ function MarkdownTilasm({
           </button>
         </p>
       )}
-      <TilasmEditor editor={editor} editable={editable} />
+      <TilasmEditor
+        editor={editor}
+        editable={editable}
+        onComment={onComment}
+        overlay={(current, box) =>
+          phase === "ready" && (
+            <TilasmDiscussions
+              editor={current}
+              tilasm={tilasm}
+              box={box}
+              titleText={titleText}
+              settle={settle}
+              reload={reread}
+              strip={strip}
+              commentRef={comment}
+            />
+          )
+        }
+      />
     </article>
   );
 }
