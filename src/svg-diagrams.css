@@ -8,13 +8,13 @@
   background: var(--raise, var(--n-17));
   --sans: var(--font-sans, system-ui, -apple-system, sans-serif);
   --mono: var(--font-mono, ui-monospace, monospace);
-  --bg: #141515;
-  --raise: #1b1c1b;
+  --bg: #151517;
+  --raise: #1b1b1e;
   --line: rgba(255, 255, 255, 0.1);
   --line-strong: rgba(255, 255, 255, 0.24);
-  --ink: #ecece8;
-  --ink-soft: #b8b8b2;
-  --ink-faint: #85857f;
+  --ink: #ececef;
+  --ink-soft: #b8b8bf;
+  --ink-faint: #85858d;
   --brass: #f0b24a;
   --brass-text: #f5c978;
   --smoke: #43c29f;
@@ -31,13 +31,13 @@
   --w: color-mix(in srgb, var(--c) 9%, var(--raise));
 }
 html[data-theme="light"] .dia-frame {
-  --bg: #f6f6f4;
+  --bg: #f6f6f8;
   --raise: #ffffff;
-  --line: rgba(28, 28, 26, 0.12);
-  --line-strong: rgba(28, 28, 26, 0.28);
-  --ink: #1c1c1a;
-  --ink-soft: #4a4a45;
-  --ink-faint: #6b6b64;
+  --line: rgba(22, 22, 26, 0.12);
+  --line-strong: rgba(22, 22, 26, 0.28);
+  --ink: #16161a;
+  --ink-soft: #4a4a50;
+  --ink-faint: #6b6b74;
   --brass: #b8740a;
   --brass-text: #8a5200;
   --smoke: #146b5a;

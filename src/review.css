@@ -2,52 +2,58 @@
    status language of colours, icons and words; a bar of what waits for you; titles, subtitles and a readable measure;
    the light theme. Each status colour reads at 4.5:1 at least on the surfaces of its theme (tests/styles.test.cjs). */
 :root {
-  --text: #e7e7e7;
+  --text: #ececef;
   --st-done: #43c29f;
-  --st-running: #93aaf2;
-  --st-waiting: #f0b24a;
-  --st-investigating: #6bc4d2;
-  --st-planned: #a3a39e;
+  --st-running: #b39cff;
+  --st-waiting: #e9c15c;
+  --st-investigating: #b39cff;
+  --st-planned: #a3a3ab;
   --st-failed: #f08a72;
-  --st-interrupted: #e2be62;
-  --st-stopped: #9a9a95;
-  --st-cancelled: #a6a19b;
-  --st-paused: #adb6c4;
-  --st-watching: #74d4b8;
-  --st-human: #e59ab0;
-  --st-proof: #a8c976;
-  --lamp: #f0b24a;
-  --lamp-ink: #241700;
+  --st-interrupted: #e9c15c;
+  --st-stopped: #9a9aa2;
+  --st-cancelled: #9a9aa2;
+  --st-paused: #a3a3ab;
+  --st-watching: #43c29f;
+  --st-human: #e9c15c;
+  --st-proof: #43c29f;
+  --lamp: #e2b33c;
+  --lamp-hi: #f3d276;
+  --lamp-lo: #d29f25;
+  --lamp-edge: #b8891c;
+  --lamp-ink: #1c1300;
   --measure: 72ch;
 }
 html[data-theme="light"] {
   color-scheme: light;
-  color: #1c1c1a;
-  background: #f6f6f4;
-  --text: #1c1c1a;
-  --bg: #f6f6f4;
+  color: #16161a;
+  background: #f6f6f8;
+  --text: #16161a;
+  --bg: #f6f6f8;
   --surface: #ffffff;
-  --surface-raised: #fafaf8;
-  --surface-soft: #f0f0ed;
-  --line: #e2e2dd;
-  --line-strong: #c9c9c2;
-  --muted: #66665f;
-  --muted-dim: #6f6f68;
-  --accent: #1c1c1a;
+  --surface-raised: #fafafb;
+  --surface-soft: #f0f0f3;
+  --line: #e3e3e8;
+  --line-strong: #cbcbd2;
+  --muted: #5e5e67;
+  --muted-dim: #6b6b74;
+  --accent: #16161a;
   --st-done: #146b5a;
-  --st-running: #2f4c8a;
-  --st-waiting: #8a5200;
-  --st-investigating: #175c6b;
-  --st-planned: #57534e;
-  --st-failed: #a8321e;
-  --st-interrupted: #784d00;
-  --st-stopped: #57534e;
-  --st-cancelled: #68615a;
-  --st-paused: #465062;
-  --st-watching: #126658;
-  --st-human: #942b4f;
-  --st-proof: #466114;
-  --lamp: #f0be59;
+  --st-running: #6a3fd4;
+  --st-waiting: #805c00;
+  --st-investigating: #6a3fd4;
+  --st-planned: #5e5e67;
+  --st-failed: #b0321f;
+  --st-interrupted: #805c00;
+  --st-stopped: #5e5e67;
+  --st-cancelled: #5e5e67;
+  --st-paused: #5e5e67;
+  --st-watching: #146b5a;
+  --st-human: #805c00;
+  --st-proof: #146b5a;
+  --lamp: #dcaa2e;
+  --lamp-hi: #f1d071;
+  --lamp-lo: #d4a020;
+  --lamp-edge: #b08415;
 }
 
 /* The status language. */
@@ -69,7 +75,7 @@ html[data-theme="light"] {
 .tone-failed {
   --tone: var(--st-failed);
 }
-/* A failed merge an agent fixes: orange as what waits, a wrench and its words say no one waits for you. */
+/* A failed merge an agent fixes: gold as what waits, a wrench and its words say no one waits for you. */
 .tone-fixing {
   --tone: var(--st-waiting);
 }
@@ -196,12 +202,13 @@ html[data-theme="light"] {
   width: 100%;
   min-width: 0;
   padding: 5px 10px;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: color-mix(in srgb, var(--tone) 8%, var(--bg));
+  background: var(--surface-raised);
   text-align: left;
 }
 button.attention-item:hover {
-  background: color-mix(in srgb, var(--tone) 16%, var(--bg));
+  background: var(--surface-soft);
 }
 .attention-item.level-blocking {
   --tone: var(--st-failed);
@@ -438,8 +445,8 @@ button.attention-item:hover {
   margin-top: 20px;
   padding: 22px 24px 18px;
   border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--st-waiting) 35%, var(--line));
-  background: color-mix(in srgb, var(--st-waiting) 4%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--lamp) 38%, var(--line));
+  background: var(--surface);
 }
 .review .action-center .decisions-section {
   border: 0;
@@ -664,10 +671,10 @@ button.attention-item:hover {
   padding: 12px 16px 14px;
   border: 1px solid color-mix(in srgb, var(--lamp) 45%, var(--line));
   border-radius: 8px;
-  background: color-mix(in srgb, var(--lamp) 9%, var(--surface));
+  background: var(--surface-raised);
 }
 .review .recommendation .eyebrow {
-  color: var(--text);
+  color: var(--st-waiting);
   font-weight: 600;
   margin-bottom: 4px;
 }
@@ -698,9 +705,9 @@ button.attention-item:hover {
   user-select: text;
 }
 .review .option.selected {
-  border-color: var(--st-running);
-  background: color-mix(in srgb, var(--st-running) 10%, var(--surface));
-  box-shadow: 0 0 0 1px var(--st-running);
+  border-color: var(--lamp);
+  background: var(--surface-raised);
+  box-shadow: 0 0 0 1px var(--lamp);
 }
 .review .option .option-letter {
   font: 600 var(--font-size-body) var(--mono);
@@ -738,32 +745,32 @@ button.attention-item:hover {
 }
 .review .button.accent.lamp-rub,
 html[data-theme="light"] .review .button.accent.lamp-rub {
-  background: linear-gradient(#f3d27a, var(--lamp));
-  border-color: #c99a2e;
+  background: linear-gradient(var(--lamp-hi), var(--lamp-lo));
+  border-color: var(--lamp-edge);
   color: var(--lamp-ink);
-  box-shadow: inset 0 1px 0 #fff3c4;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 45%, transparent);
   font-weight: 650;
 }
 .review .button.accent.lamp-rub:hover {
-  background: #f6dc90;
+  background: var(--lamp-hi);
 }
 .review .button.secondary.lamp-enlighten,
 html[data-theme="light"] .review .button.secondary.lamp-enlighten {
   color: var(--st-investigating);
-  border-color: color-mix(in srgb, var(--st-investigating) 55%, transparent);
-  background: color-mix(in srgb, var(--st-investigating) 8%, var(--surface));
+  border-color: color-mix(in srgb, var(--st-investigating) 60%, transparent);
+  background: color-mix(in srgb, var(--st-investigating) 9%, var(--surface));
 }
 
 /* A gesture, by key or by click (wish-question.tsx): its button goes down for 150 ms, the answer leaves as it comes
-   back up; the card glows in the gesture's colour, the lamp's brass or a cool light, and a wisp of smoke rises from
-   the button. Under 600 ms, by transform and opacity only: a box-shadow that moves repaints the whole card in WebKit
-   (W513). The chosen button keeps its colour while the answer leaves; the other one fades as disabled. */
+   back up; the card glows in the gesture's colour, the lamp's gold or the violet of Enlighten me, and a wisp of smoke
+   rises from the button. Under 600 ms, by transform and opacity only: a box-shadow that moves repaints the whole card
+   in WebKit (W513). The chosen button keeps its colour while the answer leaves; the other one fades as disabled. */
 .review .question-card.gesture-rub {
   --gesture: var(--lamp);
   --gesture-x: 100%;
 }
 html[data-theme="light"] .review .question-card.gesture-rub {
-  --gesture: #c99a2e;
+  --gesture: var(--lamp-edge);
 }
 .review .question-card.gesture-enlighten {
   --gesture: var(--st-investigating);
@@ -803,7 +810,7 @@ html[data-theme="light"] .review .question-card.gesture-rub {
 }
 .review .button.accent.lamp-rub.is-pressed,
 html[data-theme="light"] .review .button.accent.lamp-rub.is-pressed {
-  background: linear-gradient(#cf9f36, #e2b54b);
+  background: linear-gradient(var(--lamp-lo), var(--lamp));
   box-shadow: inset 0 2px 4px
     color-mix(in srgb, var(--lamp-ink) 40%, transparent);
 }
@@ -1241,10 +1248,10 @@ html[data-motion="reduced"] .question-wisp {
 /* The light theme on the window's frame: Clément's dark values, read again on a light ground. */
 html[data-theme="light"] ::selection {
   background: #c9d7f5;
-  color: #1c1c1a;
+  color: #16161a;
 }
 html[data-theme="light"] .sidebar {
-  background: #efefeb;
+  background: #f0f0f3;
 }
 html[data-theme="light"] .mission-nav,
 html[data-theme="light"] .import-nav,
@@ -1264,7 +1271,7 @@ html[data-theme="light"] .mission-nav.selected,
 html[data-theme="light"] .mission-nav:hover,
 html[data-theme="light"] .nav-item.selected,
 html[data-theme="light"] .nav-item:hover {
-  background: #e2e2dc;
+  background: #e3e3e8;
   color: var(--text);
 }
 html[data-theme="light"] .breadcrumbs strong,
@@ -1277,19 +1284,13 @@ html[data-theme="light"] .icon-button:hover {
   background: var(--surface-soft);
 }
 html[data-theme="light"] .new-mission {
-  background: #1c1c1a;
-  color: #f6f6f4;
-  border-color: #1c1c1a;
+  background: #16161a;
+  color: #f6f6f8;
+  border-color: #16161a;
   box-shadow: none;
 }
 html[data-theme="light"] .new-mission kbd {
-  color: #b5b5ad;
-}
-html[data-theme="light"] .button.accent {
-  background: #1c1c1a;
-  color: #ffffff;
-  border-color: #1c1c1a;
-  box-shadow: none;
+  color: #b4b4bc;
 }
 html[data-theme="light"] .button.secondary {
   background: #ffffff;
@@ -1342,7 +1343,7 @@ html[data-theme="light"] .provider-setting h3 {
   color: var(--text);
 }
 html[data-theme="light"] ::-webkit-scrollbar-thumb {
-  background: #c9c9c2;
+  background: #cbcbd2;
 }
 html[data-theme="light"] .wish-origin,
 html[data-theme="light"] .review .question-meta .wish-origin {

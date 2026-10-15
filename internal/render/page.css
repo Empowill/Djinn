@@ -2,12 +2,12 @@
    word. The test checks their contrast, at least 4.5:1, in both themes: keep plain hex colours. */
 :root {
   color-scheme: light;
-  --bg: #f6f6f3;
+  --bg: #f6f6f8;
   --surface: #ffffff;
-  --surface-soft: #f0f0ec;
-  --text: #1b1b18;
-  --muted: #5c5c56;
-  --line: #e3e2dc;
+  --surface-soft: #f0f0f3;
+  --text: #16161a;
+  --muted: #5e5e67;
+  --line: #e3e3e8;
   --ok: #146b5a;
   --ok-soft: #e4f3ee;
   --run: #2f4c8a;
@@ -18,27 +18,27 @@
   --amber-soft: #fbf3d9;
   --bad: #a8321e;
   --bad-soft: #fdede9;
-  --idle: #5c5c56;
-  --idle-soft: #efefeb;
+  --idle: #5e5e67;
+  --idle-soft: #f0f0f3;
   --pause: #465062;
   --pause-soft: #eceef2;
   --dig: #175c6b;
   --dig-soft: #e6f2f5;
   --human: #942b4f;
   --human-soft: #fbeaf0;
-  --shadow: 0 6px 20px rgb(20 20 10 / 10%);
+  --shadow: 0 6px 20px rgb(20 20 26 / 10%);
   --sans: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #121211;
-    --surface: #1b1b1a;
-    --surface-soft: #262624;
-    --text: #ececea;
-    --muted: #a3a39d;
-    --line: #33332f;
+    --bg: #0e0e10;
+    --surface: #151517;
+    --surface-soft: #212124;
+    --text: #ececef;
+    --muted: #9d9da5;
+    --line: #2a2a2e;
     --ok: #43c29f;
     --ok-soft: #132922;
     --run: #93aaf2;
@@ -49,8 +49,8 @@
     --amber-soft: #282212;
     --bad: #f08a72;
     --bad-soft: #301a16;
-    --idle: #a3a39d;
-    --idle-soft: #262624;
+    --idle: #a3a3ab;
+    --idle-soft: #212124;
     --pause: #adb6c4;
     --pause-soft: #1e2228;
     --dig: #6bc4d2;
@@ -62,12 +62,12 @@
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #121211;
-  --surface: #1b1b1a;
-  --surface-soft: #262624;
-  --text: #ececea;
-  --muted: #a3a39d;
-  --line: #33332f;
+  --bg: #0e0e10;
+  --surface: #151517;
+  --surface-soft: #212124;
+  --text: #ececef;
+  --muted: #9d9da5;
+  --line: #2a2a2e;
   --ok: #43c29f;
   --ok-soft: #132922;
   --run: #93aaf2;
@@ -78,8 +78,8 @@
   --amber-soft: #282212;
   --bad: #f08a72;
   --bad-soft: #301a16;
-  --idle: #a3a39d;
-  --idle-soft: #262624;
+  --idle: #a3a3ab;
+  --idle-soft: #212124;
   --pause: #adb6c4;
   --pause-soft: #1e2228;
   --dig: #6bc4d2;
@@ -393,13 +393,13 @@ pre, .md pre {
   overflow-x: auto;
   border: 1px solid var(--line);
   background: var(--raise, #ffffff);
-  --bg: #f6f6f4;
+  --bg: #f6f6f8;
   --raise: #ffffff;
-  --line: rgba(28, 28, 26, 0.12);
-  --line-strong: rgba(28, 28, 26, 0.28);
-  --ink: #1c1c1a;
-  --ink-soft: #4a4a45;
-  --ink-faint: #6b6b64;
+  --line: rgba(22, 22, 26, 0.12);
+  --line-strong: rgba(22, 22, 26, 0.28);
+  --ink: #16161a;
+  --ink-soft: #4a4a50;
+  --ink-faint: #6b6b74;
   --brass: #b8740a;
   --brass-text: #8a5200;
   --smoke: #146b5a;
@@ -417,14 +417,14 @@ pre, .md pre {
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .dia-frame {
-    background: var(--raise, #1b1c1b);
-    --bg: #141515;
-    --raise: #1b1c1b;
+    background: var(--raise, #1b1b1e);
+    --bg: #151517;
+    --raise: #1b1b1e;
     --line: rgba(255, 255, 255, 0.1);
     --line-strong: rgba(255, 255, 255, 0.24);
-    --ink: #ecece8;
-    --ink-soft: #b8b8b2;
-    --ink-faint: #85857f;
+    --ink: #ececef;
+    --ink-soft: #b8b8bf;
+    --ink-faint: #85858d;
     --brass: #f0b24a;
     --brass-text: #f5c978;
     --smoke: #43c29f;
@@ -440,14 +440,14 @@ pre, .md pre {
   }
 }
 :root[data-theme="dark"] .dia-frame {
-  background: var(--raise, #1b1c1b);
-  --bg: #141515;
-  --raise: #1b1c1b;
+  background: var(--raise, #1b1b1e);
+  --bg: #151517;
+  --raise: #1b1b1e;
   --line: rgba(255, 255, 255, 0.1);
   --line-strong: rgba(255, 255, 255, 0.24);
-  --ink: #ecece8;
-  --ink-soft: #b8b8b2;
-  --ink-faint: #85857f;
+  --ink: #ececef;
+  --ink-soft: #b8b8bf;
+  --ink-faint: #85858d;
   --brass: #f0b24a;
   --brass-text: #f5c978;
   --smoke: #43c29f;

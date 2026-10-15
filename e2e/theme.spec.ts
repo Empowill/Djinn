@@ -119,7 +119,7 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
 
     const looks = {
       dark: { page: "rgb(17, 17, 17)", card: "rgb(25, 25, 25)" },
-      light: { page: "rgb(246, 246, 244)", card: "rgb(255, 255, 255)" },
+      light: { page: "rgb(246, 246, 248)", card: "rgb(255, 255, 255)" },
     };
     for (const theme of ["dark", "light"] as const) {
       await choose(page, theme);
