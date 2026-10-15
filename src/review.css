@@ -3,21 +3,21 @@
    the light theme. Each status colour reads at 4.5:1 at least on the surfaces of its theme (tests/styles.test.cjs). */
 :root {
   --text: #e7e7e7;
-  --st-done: #5fd38d;
-  --st-running: #6aa9ff;
-  --st-waiting: #ffa24c;
-  --st-investigating: #c3a6f5;
-  --st-planned: #a3a3a3;
-  --st-failed: #ff8178;
-  --st-interrupted: #e9c45a;
-  --st-stopped: #9a9a9a;
-  --st-cancelled: #a8a29e;
-  --st-paused: #b4b4c8;
-  --st-watching: #4fd1c5;
-  --st-human: #f590b8;
-  --st-proof: #b8cf6a;
-  --lamp: #e9bf55;
-  --lamp-ink: #2a1d00;
+  --st-done: #43c29f;
+  --st-running: #93aaf2;
+  --st-waiting: #f0b24a;
+  --st-investigating: #6bc4d2;
+  --st-planned: #a3a39e;
+  --st-failed: #f08a72;
+  --st-interrupted: #e2be62;
+  --st-stopped: #9a9a95;
+  --st-cancelled: #a6a19b;
+  --st-paused: #adb6c4;
+  --st-watching: #74d4b8;
+  --st-human: #e59ab0;
+  --st-proof: #a8c976;
+  --lamp: #f0b24a;
+  --lamp-ink: #241700;
   --measure: 72ch;
 }
 html[data-theme="light"] {
@@ -34,20 +34,20 @@ html[data-theme="light"] {
   --muted: #66665f;
   --muted-dim: #6f6f68;
   --accent: #1c1c1a;
-  --st-done: #116b33;
-  --st-running: #1d4ed8;
-  --st-waiting: #9a4600;
-  --st-investigating: #6d28d9;
+  --st-done: #146b5a;
+  --st-running: #2f4c8a;
+  --st-waiting: #8a5200;
+  --st-investigating: #175c6b;
   --st-planned: #57534e;
-  --st-failed: #b91c1c;
-  --st-interrupted: #7a4f00;
+  --st-failed: #a8321e;
+  --st-interrupted: #784d00;
   --st-stopped: #57534e;
-  --st-cancelled: #6b635c;
-  --st-paused: #4b4b6b;
-  --st-watching: #0f6b63;
-  --st-human: #a8235a;
-  --st-proof: #4f6212;
-  --lamp: #f0c75e;
+  --st-cancelled: #68615a;
+  --st-paused: #465062;
+  --st-watching: #126658;
+  --st-human: #942b4f;
+  --st-proof: #466114;
+  --lamp: #f0be59;
 }
 
 /* The status language. */

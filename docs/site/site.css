@@ -80,48 +80,53 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #070b1a;
-  --bg-deep: #04060f;
-  --bg-raise: #0d1430;
-  --panel: rgba(17, 26, 56, 0.62);
-  --panel-solid: #0f1733;
-  --line: rgba(222, 176, 98, 0.18);
-  --line-strong: rgba(222, 176, 98, 0.42);
-  --ink: #e7e9f5;
-  --ink-soft: #b4bbd6;
-  --ink-faint: #7d86a8;
+  --bg: #111212;
+  --bg-deep: #0b0c0c;
+  --bg-raise: #171918;
+  --panel: rgba(24, 26, 25, 0.78);
+  --panel-solid: #181a19;
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(240, 178, 74, 0.38);
+  --ink: #ecebe6;
+  --ink-soft: #b6b5ae;
+  --ink-faint: #84837c;
   --brass: var(--brass-400);
   --brass-text: var(--brass-300);
-  --smoke: #9fb0ff;
-  --smoke-a: rgba(140, 158, 255, 0.11);
-  --smoke-b: rgba(222, 176, 98, 0.08);
-  --smoke-c: rgba(120, 200, 230, 0.07);
-  --glow: rgba(236, 201, 124, 0.32);
+  --smoke: #43c29f;
+  --smoke-a: rgba(67, 194, 159, 0.11);
+  --smoke-b: rgba(240, 178, 74, 0.08);
+  --smoke-c: rgba(116, 212, 184, 0.07);
+  --glow: rgba(67, 194, 159, 0.28);
   --shadow: 0 30px 80px -40px rgba(0, 0, 0, 0.85);
-  --code-bg: rgba(4, 7, 18, 0.7);
+  --code-bg: #141615;
 }
 
 [data-theme="light"] {
   color-scheme: light;
-  --bg: #f7f1e3;
-  --bg-deep: #efe5cf;
-  --bg-raise: #fffaf0;
-  --panel: rgba(255, 251, 241, 0.78);
-  --panel-solid: #fffaf0;
-  --line: rgba(124, 90, 32, 0.2);
-  --line-strong: rgba(124, 90, 32, 0.45);
-  --ink: #18203d;
-  --ink-soft: #3d4668;
-  --ink-faint: #6f7592;
+  --bg: #f6f6f4;
+  --bg-deep: #ecece8;
+  --bg-raise: #ffffff;
+  --panel: rgba(255, 255, 255, 0.88);
+  --panel-solid: #ffffff;
+  --line: rgba(20, 20, 19, 0.11);
+  --line-strong: rgba(20, 107, 90, 0.36);
+  --ink: #161615;
+  --ink-soft: #454542;
+  --ink-faint: #6e6e69;
   --brass: var(--brass-600);
   --brass-text: #85601d;
-  --smoke: #5b6cc4;
-  --smoke-a: rgba(91, 108, 196, 0.1);
-  --smoke-b: rgba(166, 122, 46, 0.1);
-  --smoke-c: rgba(60, 140, 170, 0.07);
-  --glow: rgba(222, 176, 98, 0.35);
-  --shadow: 0 30px 70px -45px rgba(60, 40, 10, 0.45);
-  --code-bg: #1a2142;
+  --smoke: #146b5a;
+  --smoke-a: rgba(20, 107, 90, 0.09);
+  --smoke-b: rgba(166, 122, 46, 0.09);
+  --smoke-c: rgba(18, 102, 88, 0.06);
+  --glow: rgba(20, 107, 90, 0.22);
+  --shadow: 0 24px 60px -40px rgba(15, 20, 18, 0.22);
+  --code-bg: #181a19;
+}
+
+[data-theme="dark"] .mark-light,
+[data-theme="light"] .mark-dark {
+  display: none !important;
 }
 
 *,
@@ -531,14 +536,13 @@ h3 {
   filter: drop-shadow(0 24px 40px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 22px var(--glow));
 }
 
-/* The wisps rise from the lamp's own: the point (318, 500) of their drawing sits where the mark's wisp starts, at 80%
-   of its width and 52% of its height. */
+/* The wisps rise from the khatam sigil's top apex, centered at 50% width. */
 .smoke {
   position: absolute;
   z-index: 1;
   width: 120%;
-  left: -15.7%;
-  top: -98.4%;
+  left: -45.4%;
+  top: -136%;
   overflow: visible;
   pointer-events: none;
 }

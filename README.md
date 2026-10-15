@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/site/assets/mark-dark.svg">
+    <img src="docs/site/assets/mark.svg" width="88" height="88" alt="Djinn">
+  </picture>
+</p>
+
 # Djinn
 
 _A wisp of smoke to work your will._

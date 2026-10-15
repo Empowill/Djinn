@@ -478,7 +478,7 @@
   background: var(--accent);
   border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
-  color: var(--n-ff);
+  color: var(--bg);
   cursor: pointer;
   font-weight: 600;
   font-size: var(--font-size-body);
@@ -491,8 +491,7 @@
 
 .diff-comment-item {
   background: var(--n-17);
-  border: 1px solid var(--n-28);
-  border-left: 3px solid var(--accent);
+  border: 1px solid var(--n-38);
   border-radius: var(--radius-sm);
   padding: var(--space-2) var(--space-3);
   margin: var(--space-1) 0;
@@ -502,7 +501,7 @@
 }
 
 .diff-comment-item.resolved {
-  border-left-color: var(--n-47);
+  border-color: var(--n-28);
   opacity: 0.85;
 }
 

@@ -42,9 +42,9 @@ export type SmokePalette = {
 };
 
 const DEFAULT_SMOKE_PALETTE: SmokePalette = {
-  background: [0.024, 0.027, 0.027],
-  tintLow: [0.561, 0.6, 0.624],
-  tintHigh: [0.929, 0.898, 0.839],
+  background: [0.024, 0.035, 0.031],
+  tintLow: [0.435, 0.58, 0.541],
+  tintHigh: [0.933, 0.949, 0.918],
 };
 
 function parseSmokeColor(
