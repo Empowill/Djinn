@@ -270,7 +270,7 @@ export const TilasmFileSchema: GenMessage<TilasmFile> = /*@__PURE__*/
  */
 export type TilasmServicePutRequest = Message<"plan.v1.TilasmServicePutRequest"> & {
   /**
-   * The folder that holds the index.html, or a .zip of it; a relative path starts from the current directory.
+   * The folder that holds the index.html, an .html file, or a .zip of it; a relative path starts from the current directory.
    *
    * @generated from field: string path = 1;
    */
@@ -284,8 +284,8 @@ export type TilasmServicePutRequest = Message<"plan.v1.TilasmServicePutRequest">
   wish: string;
 
   /**
-   * Title, in a line; by default the <title> of its index.html, or the folder's name. A new version keeps the title
-   * it had unless one is given.
+   * Title, in a line; by default the <title> of its index.html, or the folder's or file's name. A new version keeps the
+   * title it had unless one is given.
    *
    * @generated from field: string title = 3;
    */
@@ -846,8 +846,8 @@ export const TilasmServicePutDataResponseSchema: GenMessage<TilasmServicePutData
  */
 export const TilasmService: GenService<{
   /**
-   * Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new
-   * version of that one, its links unchanged.
+   * Put a folder that holds an index.html, an .html file, or a .zip of one, as a tilasm of the wish: a new one, or
+   * with --code a new version of that one, its links unchanged.
    *
    * @generated from rpc plan.v1.TilasmService.Put
    */
@@ -928,8 +928,8 @@ export const TilasmService: GenService<{
     output: typeof TilasmServiceImportResponseSchema;
   },
   /**
-   * Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
-   * export wrote is imported, as Import; any other is put, as Put.
+   * Put the files the window read, dropped on the Tilasms tab: a folder's files, an .html file, or a .zip. A .zip that
+   * djinn tilasm export wrote is imported, as Import; any other is put, as Put.
    *
    * @generated from rpc plan.v1.TilasmService.PutData
    */

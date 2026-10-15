@@ -123,6 +123,22 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
     await expect(versions).toHaveCount(3);
     await expect(versions.first()).toContainText("developer");
     await expect(versions.first()).toContainText("restores v1");
+
+    // Choosing a single .html file in the drop zone adds a new tilasm, opens it, and lists it first (newest to oldest).
+    const single = path.join(dir, "sketch.html");
+    fs.writeFileSync(
+      single,
+      "<!doctype html><html><head><title>Flame sketch</title></head><body><p>Single HTML file.</p></body></html>",
+    );
+    await panel
+      .locator('.tilasm-drop input[type="file"]')
+      .setInputFiles(single);
+    await expect(panel.locator(".tilasm-row")).toHaveCount(2);
+    await expect(panel.locator(".tilasm-row").first()).toContainText("L02");
+    await expect(panel.locator(".tilasm-row").first()).toContainText(
+      "Flame sketch",
+    );
+    await expect(frame.locator("body")).toContainText("Single HTML file.");
     expect(errors).toEqual([]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

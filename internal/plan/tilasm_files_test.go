@@ -210,4 +210,32 @@ func TestTilasmPutData(t *testing.T) {
 	if got := res.Msg.GetTilasm(); got.GetCode() != "L01" || len(got.GetVersions()) != 2 || !res.Msg.GetImported() {
 		t.Fatalf("a dropped export = %v", res.Msg)
 	}
+
+	// A single .html file dropped or chosen: stored as index.html, titled by its <title> or its file name.
+	res, err = c.tilasms.PutData(ctx, connect.NewRequest(&planv1.TilasmServicePutDataRequest{
+		Wish:  wish,
+		Name:  "overview.html",
+		Files: []*planv1.TilasmFile{{Path: "overview.html", Content: []byte(page("Overview", "One file."))}},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Msg.GetTilasm(); got.GetCode() != "L03" || got.GetTitle() != "Overview" || got.GetVersions()[0].GetFiles() != 1 || res.Msg.GetImported() {
+		t.Fatalf("a dropped .html with title = %v", res.Msg)
+	}
+	if got := getTilasm(t, c, "L03", 0); len(got.GetFiles()) != 1 || got.GetFiles()[0] != "index.html" || !strings.Contains(got.GetText(), "One file.") {
+		t.Fatalf("L03 files = %v, text = %q", got.GetFiles(), got.GetText())
+	}
+
+	res, err = c.tilasms.PutData(ctx, connect.NewRequest(&planv1.TilasmServicePutDataRequest{
+		Wish:  wish,
+		Name:  "draft-notes.htm",
+		Files: []*planv1.TilasmFile{{Path: "draft-notes.htm", Content: []byte("<p>Untagged title</p>")}},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Msg.GetTilasm(); got.GetCode() != "L04" || got.GetTitle() != "draft-notes" || got.GetVersions()[0].GetFiles() != 1 {
+		t.Fatalf("a dropped .htm without title = %v", res.Msg)
+	}
 }

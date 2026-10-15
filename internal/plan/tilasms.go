@@ -249,8 +249,13 @@ func bytesText(n int64) string {
 	return fmt.Sprintf("%d bytes", n)
 }
 
-// stagePath copies a folder, or the content of a .zip, into a temporary folder, up to limit bytes: past it, it stops
-// and says at which file. The folder must hold an index.html at its root.
+func isHTMLFile(name string) bool {
+	ext := strings.ToLower(path.Ext(strings.ReplaceAll(name, `\`, "/")))
+	return ext == ".html" || ext == ".htm"
+}
+
+// stagePath copies a folder, an .html file, or the content of a .zip, into a temporary folder, up to limit bytes: past
+// it, it stops and says at which file. The folder must hold an index.html at its root.
 func (t *Tilasms) stagePath(src string, limit int64) (*staged, error) {
 	info, err := os.Stat(src)
 	if err != nil {
@@ -261,12 +266,15 @@ func (t *Tilasms) stagePath(src string, limit int64) (*staged, error) {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	s := &staged{dir: dir}
-	if info.IsDir() {
+	switch {
+	case info.IsDir():
 		err = s.copyFolder(src, limit)
-	} else {
+	case isHTMLFile(src):
+		err = s.copyHTML(src, limit)
+	default:
 		var zr *zip.ReadCloser
 		if zr, err = zip.OpenReader(src); err != nil {
-			err = connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s is neither a folder nor a .zip: %w", src, err))
+			err = connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s is neither a folder, an .html file, nor a .zip: %w", src, err))
 		} else {
 			err = s.copyZip(&zr.Reader, limit)
 			zr.Close()
@@ -280,6 +288,23 @@ func (t *Tilasms) stagePath(src string, limit int64) (*staged, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+func (s *staged) copyHTML(src string, limit int64) error {
+	linfo, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	if linfo.Mode()&fs.ModeSymlink != 0 {
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"%s is a symbolic link: a tilasm holds its files themselves", filepath.Base(src)))
+	}
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return s.add(tilasmIndex, f, limit)
 }
 
 // index checks that the files hold an index.html, and reads its title.

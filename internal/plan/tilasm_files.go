@@ -47,9 +47,15 @@ func (t *Tilasms) PutData(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	defer removeIf(dir)
-	name := dropName(m.GetName())
+	files := m.GetFiles()
+	singleHTML := len(files) == 1 && !strings.ContainsAny(files[0].GetPath(), `/\`) && isHTMLFile(files[0].GetPath())
+	rawName := m.GetName()
+	if singleHTML {
+		rawName = trimHTMLExt(cmp.Or(rawName, files[0].GetPath()))
+	}
+	name := dropName(rawName)
 	author := cmp.Or(m.GetAuthor(), developerAuthor)
-	if files := m.GetFiles(); len(files) == 1 && bytes.HasPrefix(files[0].GetContent(), []byte("PK\x03\x04")) {
+	if len(files) == 1 && bytes.HasPrefix(files[0].GetContent(), []byte("PK\x03\x04")) {
 		file := filepath.Join(dir, strings.TrimSuffix(name, ".zip")+".zip")
 		if err := os.WriteFile(file, files[0].GetContent(), 0o600); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
@@ -77,10 +83,13 @@ func (t *Tilasms) PutData(
 	}
 	folder := filepath.Join(dir, name)
 	var size int64
-	for _, f := range m.GetFiles() {
+	for _, f := range files {
 		rel := filepath.FromSlash(f.GetPath())
 		if !filepath.IsLocal(rel) {
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s leaves the folder", f.GetPath()))
+		}
+		if singleHTML {
+			rel = tilasmIndex
 		}
 		// The ceiling counts again as the files are put; this only spares writing what it would refuse.
 		if size += int64(len(f.GetContent())); size > t.ceiling(nil)*2 {
@@ -102,6 +111,13 @@ func (t *Tilasms) PutData(
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.TilasmServicePutDataResponse{Tilasm: tilasm}), nil
+}
+
+func trimHTMLExt(name string) string {
+	if isHTMLFile(name) {
+		return name[:len(name)-len(path.Ext(strings.ReplaceAll(name, `\`, "/")))]
+	}
+	return name
 }
 
 // dropName is the name of what was dropped, as a file name: the title of a tilasm whose index.html has none.
