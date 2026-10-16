@@ -275,7 +275,9 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"- `djinn question ask \"🔐 <question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\" --icon 🔐` " +
 		"(the emoji its title starts with); `--before \"before the merge\"` says what the answer is needed before, without it the " +
 		"question can wait (a question a waiting task needs is blocking anyway); `--move` marks a move only the " +
-		"developer can make; `djinn question list --wish-id <wish> --open`.\n" +
+		"developer can make, with `--before` when it cannot wait. The bar \"N things wait for you\" is for what " +
+		"cannot wait: never mark a question that can wait to get it seen, never leave a real blocker unmarked " +
+		"(`djinn lead notes blocking-or-can-wait`); `djinn question list --wish-id <wish> --open`.\n" +
 		"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--project-id`, " +
 		"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`, `--tilasm L01`); " +
 		"`djinn task spawn <wish> --kind azima --title \"…\" --after T02` makes an azima (`--draft`, `--description \"…\"`); " +

@@ -9,21 +9,28 @@ import (
 
 // QuestionShape is the shape of a question's context, the same for every agent that asks or revises one: the lead
 // reads it in its brief, a worker at the end of its first prompt, an investigator in its own. The developer, 13/10
-// (W575), got revisions whose commands to run were lost in a wall of text. ContextWarnings checks it.
+// (W575), got revisions whose commands to run were lost in a wall of text; 16/10 (W55), a question is never long, its
+// details in a tilasm it links. ContextWarnings checks it.
 const QuestionShape = "A question's `--context` reads at a glance, in this order. First, every command the " +
 	"developer must run, in one fenced code block, in run order, a `# …` comment above each command saying what it " +
 	"prints and what to expect; fence it with `~~~` lines, which need no backtick (between double quotes, backticks " +
 	"run as a command). Then short Markdown: a one-line why; a few bullets of facts, each saying whether it is " +
 	"verified; the decision, with what each option changes and costs. No command, flag, path or hash inside a " +
 	"sentence: it goes in the code block (a branch or a commit as a `#` comment) or in a table. No wall of text: " +
-	"short paragraphs, lists, tables and code blocks, which the window renders. `djinn question ask` and `djinn " +
+	"short paragraphs, lists, tables and code blocks, which the window renders. Short, too: outside the code block, " +
+	"at most 1200 characters, one screen of the window (a one-line why, up to six bullets, the options, the " +
+	"recommendation); the details the developer needs to choose with full light (an analysis, a comparison, a " +
+	"mockup, a design) go in a tilasm that lays out the possible choices, and the question links it " +
+	"(`djinn://tilasm/<id>`) instead of carrying them. `djinn question ask` and `djinn " +
 	"question revise` print a warning for each break of this shape: revise the context at once."
 
 // Beyond these, text is a wall: a paragraph (or a list item) of maxParagraph characters, or maxFlatText characters
-// of text with no list, table nor heading.
+// of text with no list, table nor heading. Beyond maxText characters of text outside the code blocks, structured or
+// not, a context no longer fits on a screen: its details belong in a tilasm (W55).
 const (
 	maxParagraph = 400
 	maxFlatText  = 800
+	maxText      = 1200
 )
 
 var (
@@ -145,6 +152,12 @@ func ContextWarnings(context string) []string {
 	if !structured && flatText > maxFlatText {
 		warnings = append(warnings, fmt.Sprintf("%d characters of text with no list, table nor heading: write a "+
 			"one-line why, then bullets", flatText))
+	}
+	if flatText > maxText {
+		warnings = append(warnings, fmt.Sprintf("%d characters of text outside the code block, over %d: more than a "+
+			"screen. Keep the decision here, what each option changes and the recommendation; put the details (an "+
+			"analysis, a comparison, a mockup) in a tilasm that lays out the choices, and link it, "+
+			"djinn://tilasm/<id>", flatText, maxText))
 	}
 	return warnings
 }

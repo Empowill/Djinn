@@ -21,6 +21,8 @@ you expect from me getting lost: that will not do at all!" (W575).
   flag in the text, a path or a hash in a sentence, commands in two blocks or after text, a paragraph over 400
   characters, 800 characters with no list): revise the context at once, and check what an investigator revised.
 - A question with nothing to run has no code block: it starts with its why.
+- Short, too: outside its code block a context fits on one screen, its details in a tilasm it links
+  ([[short-questions]]).
 
 The developer's example, a revised context (translated from French; the commands and options as they were):
 
@@ -60,4 +62,4 @@ go run ./cmd/stork cleanup-legacy-roles --pg_url="postgres://:@:/syn?sslmode=dis
 - **C**: not now, we wait.
 ````
 
-See also [[blockers-as-questions]], [[question-context-heredoc]].
+See also [[blockers-as-questions]], [[question-context-heredoc]], [[short-questions]].
