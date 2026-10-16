@@ -405,7 +405,10 @@ the Djinn acknowledges it, and the brief lists it under **Open answers without a
 
 An open question can be moved to another wish (`djinn question move <question> --wish <wish>`), with `--follow` to
 bring tasks following this decision along with it. A question no longer relevant can be withdrawn without an answer
-(`djinn question withdraw <question> --note "…"`), marked **Withdrawn**.
+(`djinn question withdraw <question> --note "…"`), marked **Withdrawn**. A question you will take later goes to the
+bottom of its wish's list with the clock in its top right corner, next to Move (`djinn question later <question>`):
+Djinn keeps when you put it off, so it stays below the questions asked before, for the Djinn too, and a new question
+still comes below it. The same button, pressed, gives it its place back (`--clear`).
 
 **From anywhere.** In the window, a question asked in an active wish also shows as a system notification: a click
 shows the wish, a button answers it (one per option, or **Yes**). The browser shows none; on macOS, notifications need

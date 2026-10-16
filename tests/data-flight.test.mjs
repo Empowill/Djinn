@@ -1285,3 +1285,26 @@ test("an ifrit's ports are links, its gates those it holds, and a task waiting f
     ["b", "a"],
   );
 });
+
+test("a question put off for later goes below those asked before, above one asked after; cleared, back in place", () => {
+  const lamp = wish("w1", "Ship the lamp", 1);
+  const asked = [
+    { id: "q1", code: "Q01", text: "Brass?", createTime: at(10) },
+    { id: "q2", code: "Q02", text: "Wick?", createTime: at(20) },
+    { id: "q3", code: "Q03", text: "Glass?", createTime: at(30) },
+    { id: "q4", code: "Q04", text: "Oil?", createTime: at(50) },
+  ];
+  const codes = (questions) =>
+    f.openQuestions(lamp, detail([], questions)).map((q) => q.item.code);
+  assert.deepEqual(codes(asked), ["Q01", "Q02", "Q03", "Q04"]);
+  // Q01 put off at 40: below Q02 and Q03, asked before, above Q04, asked after.
+  const putOff = [{ ...asked[0], laterTime: at(40) }, ...asked.slice(1)];
+  assert.deepEqual(codes(putOff), ["Q02", "Q03", "Q01", "Q04"]);
+  assert.equal(f.placeOf(putOff[0]), 40_000);
+  // Its date taken off, it is back where it was asked; a date before that changes nothing.
+  assert.deepEqual(
+    codes([{ ...asked[0], laterTime: undefined }, ...asked.slice(1)]),
+    ["Q01", "Q02", "Q03", "Q04"],
+  );
+  assert.equal(f.placeOf({ ...asked[2], laterTime: at(1) }), 30_000);
+});

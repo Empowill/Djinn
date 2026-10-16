@@ -653,6 +653,9 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool, strategy planv1
 			if n := q.GetRevision(); n > 0 {
 				fmt.Fprintf(&b, "  - Revised %d times\n", n)
 			}
+			if q.GetLaterTime() != nil {
+				b.WriteString("  - Put off for later: listed below the others\n")
+			}
 		}
 	}
 	if len(investigate) > 0 {
@@ -1410,6 +1413,9 @@ func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, rea
 			}
 			if n := q.GetRevision(); n > 0 {
 				fmt.Fprintf(b, "  - Revised %d times\n", n)
+			}
+			if q.GetLaterTime() != nil {
+				b.WriteString("  - Put off for later: listed below the others\n")
 			}
 		}
 	}

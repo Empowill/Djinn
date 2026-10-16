@@ -1502,3 +1502,32 @@ func (q *Questions) Withdraw(
 	}
 	return connect.NewResponse(&planv1.QuestionServiceWithdrawResponse{Question: question}), nil
 }
+
+// Later puts an open question off for later, or back in its place with clear: its later_time is now, or unset.
+func (q *Questions) Later(
+	ctx context.Context, req *connect.Request[planv1.QuestionServiceLaterRequest],
+) (*connect.Response[planv1.QuestionServiceLaterResponse], error) {
+	var question *planv1.Question
+	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if question, err = find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		if question.GetAnswer() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s is decided", question.GetCode()))
+		}
+		if question.GetWithdrawal() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s was withdrawn", question.GetCode()))
+		}
+		if req.Msg.GetClear() {
+			question.LaterTime = nil
+		} else {
+			question.LaterTime = timestamppb.Now()
+		}
+		return tx.Put(question)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.QuestionServiceLaterResponse{Question: question}), nil
+}
