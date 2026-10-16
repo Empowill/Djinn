@@ -933,6 +933,23 @@ button.glance-line:hover .name {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+/* A closed question's line never wraps: its badge, before words and the date a revision or a put off lengthens would
+   make it taller there, and what is read below would move. The grey date gives way, cut short; the open card shows it
+   whole. */
+.question-row.closed .question-row-meta {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow-x: clip;
+}
+.question-row.closed .question-row-meta > * {
+  flex: none;
+}
+.question-row.closed .question-row-meta > .question-asked {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* The open question, top to bottom as today's card: where to act, what is at stake in full, the recommendation
    boxed, the lettered options, the note, the three gestures. */
 .question-open {
