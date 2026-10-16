@@ -4744,6 +4744,117 @@ test("work that merges stays in sight, shows as merging apart from the workers e
   assert.doesNotMatch(later.plan, /plan-wish tone-running/);
 });
 
+// An investigator, the worker Enlighten me starts on a question (TaskRole.INVESTIGATOR), is violet while it works, as
+// the button that started it, and counted apart from the workers that run, blue: in the side panel's second line, the
+// head of the wish, the flying carpet and its task row.
+test("an investigator at work shows violet, apart from the running workers, wherever workers are counted", async () => {
+  const wishId = "01a14419-ec14-7ab3-837e-8b26cb20e7e1";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const worker = {
+    id: "w1",
+    wishId,
+    code: "W1",
+    title: "Pour",
+    status: s.TaskStatus.RUNNING,
+    dependsOn: [],
+    createTime: at(1),
+    startTime: at(2),
+  };
+  const investigator = {
+    id: "w2",
+    wishId,
+    code: "W2",
+    title: "Q1: enlighten",
+    status: s.TaskStatus.RUNNING,
+    role: s.TaskRole.INVESTIGATOR,
+    question: "Q1",
+    dependsOn: [],
+    createTime: at(3),
+    startTime: at(4),
+  };
+  const both = [worker, investigator];
+  const alone = [investigator];
+  const sidebar = (list) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [lamp],
+        projects: [],
+        counts: { [wishId]: { questions: 0, ...s.runningOf(list) } },
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed: false,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  const pill = (tone, label) =>
+    new RegExp(`count-pill tone-${tone}" title="${label}"`);
+  const investigating =
+    "1 investigating: a worker finds out more on a question, for you";
+  // The second line counts the worker blue and the investigator violet, apart; the wish works, blue.
+  const side = sidebar(both);
+  assert.match(side, pill("running", "1 running"));
+  assert.match(side, pill("investigating", investigating));
+  assert.match(side, /wish-tone tone-running/);
+  // The investigator alone: violet, and no worker runs.
+  const sideAlone = sidebar(alone);
+  assert.match(sideAlone, pill("investigating", investigating));
+  assert.doesNotMatch(sideAlone, /tone-running/);
+  assert.match(sideAlone, /wish-tone tone-investigating/);
+  // Nothing investigates: no violet count.
+  assert.doesNotMatch(sidebar([worker]), /tone-investigating/);
+
+  // Its task row is violet and says it investigates; the worker's stays blue.
+  const row = (task) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, { task, codes: new Map(), onStop() {} }),
+    );
+  assert.match(row(investigator), /wish-task tone-investigating/);
+  assert.match(row(investigator), /<span>Investigating<\/span>/);
+  assert.match(row(worker), /wish-task tone-running/);
+
+  // The head of the wish and the flying carpet count one running worker, not two.
+  const page = async (list) => {
+    const transport = s.createRouterTransport(({ service }) => {
+      service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+      service(s.TaskService, { list: () => ({ tasks: list }) });
+      service(s.QuestionService, { list: () => ({ questions: [] }) });
+      service(s.BlockService, { list: () => ({ blocks: [] }) });
+    });
+    const djinn = s.createDjinn(transport, 10);
+    const close = djinn.store.open(wishId);
+    await djinn.store.changed(wishId, [s.Change.WISH]);
+    close();
+    const view = s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishView, { wish: lamp, onToast() {} }),
+      ),
+    );
+    const plan = s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.FlightPlan, { wishes: [lamp], onOpen() {}, onToast() {} }),
+      ),
+    );
+    return { view, plan };
+  };
+  const now = await page(both);
+  assert.match(now.view, pill("running", "1 running"));
+  assert.doesNotMatch(now.view, /title="2 running"/);
+  assert.match(now.plan, /plan-wish tone-running/);
+  assert.match(now.plan, /<span>1 running<\/span>/);
+  const only = await page(alone);
+  assert.doesNotMatch(only.view, /count-pill tone-running/);
+  assert.match(only.plan, /plan-wish tone-investigating/);
+  assert.match(only.plan, /<span>1 investigating<\/span>/);
+});
+
 test("a failed merge an agent fixes shows orange, naming its correction, everywhere; red once no correction runs", async () => {
   const wishId = "01a13c45-f3a8-7295-855a-73c0445d7c88";
   const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);

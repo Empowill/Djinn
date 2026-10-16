@@ -507,3 +507,52 @@ test("the load gauge's stops read as round buttons and its limits show on hover 
   const note = rule(".operating-load-forecast-note");
   assert.match(note, /white-space:\s*normal;/);
 });
+
+// Running work is blue, an investigator Enlighten me started is violet as its button (W40): the two never share a
+// colour, in either theme, and each tone reads its own token.
+test("running workers stay blue, apart from the investigators' violet, in both themes", () => {
+  const css = fs.readFileSync(path.join(root, "review.css"), "utf8");
+  assert.match(css, /\.tone-running\s*\{\s*--tone:\s*var\(--st-running\);/);
+  assert.match(
+    css,
+    /\.tone-investigating\s*\{\s*--tone:\s*var\(--st-investigating\);/,
+  );
+  const block = (selector) => {
+    const start = css.indexOf(selector + " {");
+    return Object.fromEntries(
+      [
+        ...css
+          .slice(start, css.indexOf("}", start))
+          .matchAll(/--([\w-]+):\s*(#[0-9a-f]{6});/g),
+      ].map((m) => [m[1], m[2]]),
+    );
+  };
+  const hue = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const max = Math.max(r, g, b);
+    const span = max - Math.min(r, g, b);
+    if (!span) return NaN;
+    const h =
+      max === r
+        ? (g - b) / span
+        : max === g
+          ? 2 + (b - r) / span
+          : 4 + (r - g) / span;
+    return (h * 60 + 360) % 360;
+  };
+  for (const [name, theme] of Object.entries({
+    dark: block(":root"),
+    light: block('html[data-theme="light"]'),
+  })) {
+    const running = hue(theme["st-running"]);
+    const investigating = hue(theme["st-investigating"]);
+    assert.ok(
+      running >= 200 && running <= 235,
+      `${name}: running (${theme["st-running"]}) is blue, its hue ${running.toFixed(0)}°`,
+    );
+    assert.ok(
+      investigating >= 245 && investigating <= 290,
+      `${name}: investigating (${theme["st-investigating"]}) is violet, its hue ${investigating.toFixed(0)}°`,
+    );
+  }
+});

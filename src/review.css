@@ -4,7 +4,7 @@
 :root {
   --text: #ececef;
   --st-done: #43c29f;
-  --st-running: #b39cff;
+  --st-running: #93aaf2;
   --st-waiting: #e9c15c;
   --st-investigating: #b39cff;
   --st-planned: #a3a3ab;
@@ -38,7 +38,7 @@ html[data-theme="light"] {
   --muted-dim: #6b6b74;
   --accent: #16161a;
   --st-done: #146b5a;
-  --st-running: #6a3fd4;
+  --st-running: #2f4c8a;
   --st-waiting: #805c00;
   --st-investigating: #6a3fd4;
   --st-planned: #5e5e67;

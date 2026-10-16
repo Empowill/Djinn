@@ -642,8 +642,13 @@ export function FlightPlan({
                           detail?.questions.filter(waitsForYou).length ?? 0;
                         const digging =
                           detail?.questions.filter(investigating).length ?? 0;
-                        const { running, watching, merging, fixing } =
-                          runningOf(detail?.tasks ?? []);
+                        const {
+                          running,
+                          investigating: investigators,
+                          watching,
+                          merging,
+                          fixing,
+                        } = runningOf(detail?.tasks ?? []);
                         // Work merging is Djinn at work on the wish: its tone, not its count of workers (W577).
                         const busy = running + merging;
                         const done =
@@ -665,7 +670,7 @@ export function FlightPlan({
                         return (
                           <button
                             key={wish.id}
-                            className={`plan-wish tone-${wishTone(wish, open, busy, watching)}`}
+                            className={`plan-wish tone-${wishTone(wish, open, busy, watching, investigators)}`}
                             onClick={() => onOpen(wish.id)}
                             title={t("plan.open_wish")}
                           >
@@ -677,7 +682,13 @@ export function FlightPlan({
                             </span>
                             <span className="plan-wish-counts">
                               <StatusBadge
-                                tone={wishTone(wish, open, busy, watching)}
+                                tone={wishTone(
+                                  wish,
+                                  open,
+                                  busy,
+                                  watching,
+                                  investigators,
+                                )}
                                 label={
                                   open
                                     ? t("plan.questions", { count: open })
@@ -689,11 +700,15 @@ export function FlightPlan({
                                           ? t("plan.merging", {
                                               count: merging,
                                             })
-                                          : watching
-                                            ? t("plan.watching", {
-                                                count: watching,
+                                          : investigators
+                                            ? t("plan.investigating", {
+                                                count: investigators,
                                               })
-                                            : t("pill.calm")
+                                            : watching
+                                              ? t("plan.watching", {
+                                                  count: watching,
+                                                })
+                                              : t("pill.calm")
                                 }
                               />
                               {digging > 0 && (

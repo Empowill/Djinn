@@ -23,6 +23,7 @@ import {
   RoundKind,
   type Task,
   TaskKind,
+  TaskRole,
   TaskStatus,
   type Wish,
   WishState,
@@ -369,16 +370,18 @@ const taskStatusKeys: Record<TaskStatus, TextKey> = {
 };
 
 // taskStatusText names where a task stands: a task Djinn resumes once its provider's limit resets waits for the
-// limit; one cut short and resumed as another task (forkedAs) says which; a running watcher watches.
+// limit; one cut short and resumed as another task (forkedAs) says which; a running watcher watches, and a running
+// investigator investigates.
 // fixedBy is the code of the correction task that fixes its failed merge while it works (fixerOf): the merge shows
 // being fixed, not failed.
 export function taskStatusText(
   task: Pick<Task, "status" | "resumeAfter"> &
-    Partial<Pick<Task, "provider" | "integration">>,
+    Partial<Pick<Task, "provider" | "integration" | "role">>,
   forkedAs = "",
   fixedBy = "",
 ): string {
   if (watcherRuns(task)) return t("task.status_watching");
+  if (investigatorRuns(task)) return t("task.status_investigating");
   if (task.status === TaskStatus.RESUMING && task.resumeAfter)
     return t("task.status_limit");
   if (task.status === TaskStatus.INTERRUPTED && forkedAs)
@@ -442,11 +445,12 @@ export type Tone =
 
 // taskTone is a task's state in that language. A task Djinn resumes runs; one waiting for its provider's limit to
 // reset holds still, as a paused one; one cut short and resumed as another task (forkedAs) is stopped, no alarm.
-// None of them is the person's move. A running watcher has its own tone: it sleeps until its command prints. A merge
+// None of them is the person's move. A running watcher has its own tone: it sleeps until its command prints. An
+// investigator at work is violet, as Enlighten me that started it (investigatorRuns), not blue as the work. A merge
 // that failed is red, unless a correction task fixes it while it works (fixedBy, fixerOf): orange, Djinn handles it.
 export function taskTone(
   task: Pick<Task, "status" | "resumeAfter"> &
-    Partial<Pick<Task, "provider" | "integration">>,
+    Partial<Pick<Task, "provider" | "integration" | "role">>,
   forkedAs = "",
   fixedBy = "",
 ): Tone {
@@ -457,7 +461,7 @@ export function taskTone(
   switch (status) {
     case TaskStatus.RUNNING:
     case TaskStatus.RESUMING:
-      return "running";
+      return task.role === TaskRole.INVESTIGATOR ? "investigating" : "running";
     case TaskStatus.DONE:
       switch (task.integration?.state) {
         case IntegrationState.PENDING:
@@ -493,6 +497,16 @@ export function watcherRuns(
   task: Pick<Task, "status"> & Partial<Pick<Task, "provider">>,
 ): boolean {
   return task.provider === Provider.WATCH && task.status === TaskStatus.RUNNING;
+}
+
+// investigatorRuns tells whether the task is an investigator at work: the worker Djinn starts on a question after
+// Enlighten me (TaskRole.INVESTIGATOR).
+export function investigatorRuns(
+  task: Pick<Task, "status"> & Partial<Pick<Task, "role">>,
+): boolean {
+  return (
+    task.role === TaskRole.INVESTIGATOR && task.status === TaskStatus.RUNNING
+  );
 }
 
 // isTaskMerging tells whether a done task's work is merging: waiting for its batch, or in it. It shows blue, as work
@@ -552,14 +566,16 @@ export function fixerOf<T extends Fixable>(
   return of(task);
 }
 
-// Running counts a wish's tasks whose process runs, apart: workers at work, and watchers that wait for their command to
-// print. A watcher is not work in progress: "1 running" for a PR watched alone said a worker ran. Work that merges
-// (isTaskMerging) is counted apart: no worker runs for it, and the load bar's count of workers never had it (W577:
-// 6 workers and 2 merges waiting read as "8 running" at a level that runs 6). Djinn is at work on it all the same: a
-// wish's tone counts it as running. Work whose merge failed and that a correction fixes (fixerOf) is counted apart too:
-// its correction runs, and counts with the running.
+// Running counts a wish's tasks whose process runs, apart: workers at work, investigators at work on a question after
+// Enlighten me (investigatorRuns), and watchers that wait for their command to print. A watcher is not work in
+// progress: "1 running" for a PR watched alone said a worker ran. Work that merges (isTaskMerging) is counted apart: no
+// worker runs for it, and the load bar's count of workers never had it (W577: 6 workers and 2 merges waiting read as "8
+// running" at a level that runs 6). Djinn is at work on it all the same: a wish's tone counts it as running. Work whose
+// merge failed and that a correction fixes (fixerOf) is counted apart too: its correction runs, and counts with the
+// running.
 export interface Running {
   running: number;
+  investigating: number;
   watching: number;
   merging: number;
   fixing: number;
@@ -567,15 +583,22 @@ export interface Running {
 
 export function runningOf(
   tasks: (Pick<Task, "status"> &
-    Partial<Pick<Task, "id" | "provider" | "integration">>)[],
+    Partial<Pick<Task, "id" | "provider" | "integration" | "role">>)[],
 ): Running {
   const live = tasks.filter((task) => task.status === TaskStatus.RUNNING);
   const watching = live.filter(watcherRuns).length;
+  const investigating = live.filter(investigatorRuns).length;
   const merging = tasks.filter(isTaskMerging).length;
   const fixing = tasks.filter(
     (task) => mergeFailed(task) && fixerOf(task, tasks),
   ).length;
-  return { running: live.length - watching, watching, merging, fixing };
+  return {
+    running: live.length - watching - investigating,
+    investigating,
+    watching,
+    merging,
+    fixing,
+  };
 }
 
 export function taskFinished(status: TaskStatus): boolean {
@@ -712,11 +735,13 @@ export function wishTone(
   questions: number,
   running: number,
   watching = 0,
+  investigating = 0,
 ): Tone {
   if (wish.state === WishState.GRANTED) return "done";
   if (wish.state === WishState.PAUSED) return "paused";
   if (questions > 0 || wish.ready) return "waiting";
   if (running > 0) return "running";
+  if (investigating > 0) return "investigating";
   if (watching > 0) return "watching";
   return "planned";
 }

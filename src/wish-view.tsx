@@ -232,7 +232,9 @@ export function WishView({
     detail.blocks,
     decisionItems.length,
   ]);
-  const { running, watching, merging, fixing } = runningOf(detail.tasks);
+  const { running, investigating, watching, merging, fixing } = runningOf(
+    detail.tasks,
+  );
   const done = workDoneCount(detail.tasks);
   // The azimas' progress, then the work's: the azimas are not counted as tasks.
   const azimaProgress = azimasDone(detail.tasks);
@@ -740,7 +742,13 @@ export function WishView({
     if (reaching) to(reaching.target);
   }, [reaching, to]);
   useStickyRoom(scrollRef, attention.length > 0);
-  const tone = wishTone(wish, open.length, running + merging, watching);
+  const tone = wishTone(
+    wish,
+    open.length,
+    running + merging,
+    watching,
+    investigating,
+  );
 
   return (
     <div className="wish-view review">
