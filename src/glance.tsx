@@ -17,7 +17,7 @@ import {
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import { compareCodes, isAzima } from "./data/flight";
-import { t } from "./i18n";
+import { type TextKey, t } from "./i18n";
 
 export type GlanceState = "run" | "investigate" | "wait" | "plan";
 
@@ -178,6 +178,13 @@ const stateWords: Record<GlanceState, () => string> = {
   investigate: () => t("task.status_investigating"),
   wait: () => t("glance.waits"),
   plan: () => t("task.status_pending"),
+};
+
+const legendKeys: Record<GlanceState, TextKey> = {
+  run: "glance.legend_run",
+  investigate: "glance.legend_investigate",
+  wait: "glance.legend_wait",
+  plan: "glance.legend_plan",
 };
 
 function Dot({ state, title }: { state: GlanceState; title?: string }) {
@@ -396,7 +403,7 @@ export function Glance({
               .map((state) => (
                 <span key={state}>
                   <span className={`glance-dot ${state}`} aria-hidden="true" />
-                  {t(`glance.legend_${state}`)}
+                  {t(legendKeys[state])}
                 </span>
               ))}
             {present.has("watch") && (
