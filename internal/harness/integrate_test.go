@@ -905,3 +905,39 @@ func TestThreeMergesInPassTellOneLine(t *testing.T) {
 		t.Errorf("told line %q; want prefix %q", told[0], wantPrefix)
 	}
 }
+
+// TestStopAfterAMergeStillTellsIt: djinn up stopping during a pass, after W1 is committed and while W2's checks run,
+// still queues W1's merged line for the lead, though W3 waits and the pass's context is cancelled (W52: the restarts
+// of 16/10 lost the lines of W44, W51 and W76). The queue fails on a cancelled context, as the store does.
+func TestStopAfterAMergeStillTellsIt(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	var mu sync.Mutex
+	var told []string
+	in.h.NotifyLead(func(ctx context.Context, e *planv1.LeadEvent) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		told = append(told, e.GetText())
+		return nil
+	})
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
+	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
+	ctx, stop := context.WithCancel(t.Context())
+	defer stop()
+	in.afterTest = func() { in.afterTest = stop } // W1's checks pass; W2's stop djinn up.
+	in.h.integratePass(ctx)
+
+	if got := in.states(t, w1); got != "W1 COMMITTED" {
+		t.Fatalf("W1 state: %s", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	want := fmt.Sprintf("Djinn: W1 merged into %s as ", in.branch)
+	if len(told) != 1 || !strings.HasPrefix(told[0], want) {
+		t.Errorf("queued %q; want one line starting %q", told, want)
+	}
+}
