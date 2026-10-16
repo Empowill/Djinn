@@ -35,7 +35,12 @@ import {
   type WishChanges,
   WishChangesSchema,
 } from "../../gen/ts/plan/v1/plan_pb";
-import { type Tilasm, TilasmSchema } from "../../gen/ts/plan/v1/tilasm_pb";
+import {
+  type Tilasm,
+  type TilasmComment,
+  TilasmCommentSchema,
+  TilasmSchema,
+} from "../../gen/ts/plan/v1/tilasm_pb";
 import { type Clients, message, notFound, unimplemented } from "./client";
 
 // What the page shows of one wish, read while a screen shows it.
@@ -45,6 +50,8 @@ export interface WishDetail {
   blocks: Block[];
   // Its tilasms, by code.
   tilasms: Tilasm[];
+  // The developer's draft comments on its tilasms, read with them: the window's alone.
+  drafts: TilasmComment[];
   // Read at least once.
   loaded: boolean;
   // Totals from the server for paginated lists.
@@ -125,6 +132,7 @@ const EMPTY_DETAIL: WishDetail = {
   questions: [],
   blocks: [],
   tilasms: [],
+  drafts: [],
   loaded: false,
   loadedKinds: new Set<Change>(),
 };
@@ -736,6 +744,18 @@ export function createStore(
             .tilasms;
           into.tilasms = reconcile(TilasmSchema, prevDetail.tilasms, list);
         });
+      if (kinds.has(Change.TILASM))
+        attemptKind(wishId, Change.TILASM, async () => {
+          // A djinn without comments has none to read.
+          const list = await clients.tilasms
+            .drafts({ wish: wishId }, call)
+            .then((res) => res.comments)
+            .catch((error: unknown) => {
+              if (unimplemented(error)) return [];
+              throw error;
+            });
+          into.drafts = reconcile(TilasmCommentSchema, prevDetail.drafts, list);
+        });
     }
     await Promise.all(reads);
     const next = { ...state.details };
@@ -749,6 +769,7 @@ export function createStore(
         : prevDetail.questions;
       const blocks = got.blocks ?? prevDetail.blocks;
       const tilasms = got.tilasms ?? prevDetail.tilasms;
+      const drafts = got.drafts ?? prevDetail.drafts;
       const tasksTotal =
         got.tasksTotal !== undefined ? got.tasksTotal : prevDetail.tasksTotal;
       const questionsTotal =
@@ -790,6 +811,7 @@ export function createStore(
         questions === prevDetail.questions &&
         blocks === prevDetail.blocks &&
         tilasms === prevDetail.tilasms &&
+        drafts === prevDetail.drafts &&
         tasksTotal === prevDetail.tasksTotal &&
         questionsTotal === prevDetail.questionsTotal &&
         blocksTotal === prevDetail.blocksTotal &&
@@ -805,6 +827,7 @@ export function createStore(
         questions,
         blocks,
         tilasms,
+        drafts,
         loaded: true,
         tasksTotal,
         questionsTotal,

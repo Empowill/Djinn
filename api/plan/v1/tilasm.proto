@@ -234,6 +234,74 @@ service TilasmService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // Write a draft comment on a tilasm, from the window: a new one, or an edit of one not sent yet; a sent one is refused.
+  rpc PutComment(TilasmServicePutCommentRequest) returns (TilasmServicePutCommentResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Delete a draft comment, from the window; a sent one stays. It returns the draft, for the window's Undo to put back.
+  rpc DeleteComment(TilasmServiceDeleteCommentRequest) returns (TilasmServiceDeleteCommentResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // The draft comments on a wish's tilasms, for the window: no agent reads them.
+  rpc Drafts(TilasmServiceDraftsRequest) returns (TilasmServiceDraftsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message TilasmServicePutCommentRequest {
+  // The tilasm it is on.
+  string tilasm_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The draft to edit; a new draft without it, with the next code and the tilasm's latest version.
+  string id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What the developer wrote.
+  string text = 3 [(buf.validate.field).string.max_len = 4000];
+  // Where it is; unset: the whole tilasm. An edit keeps its anchor unless one is given.
+  TilasmAnchor anchor = 4;
+  // The comment it follows up, by code (C2).
+  string follows = 5 [(buf.validate.field).string.max_len = 10];
+  // A draft DeleteComment returned, put back whole as the window's Undo asks: its place, its code unless another comment
+  // took it meanwhile, its version. The other fields are left out then.
+  TilasmComment deleted = 6;
+}
+
+message TilasmServicePutCommentResponse {
+  // The draft as stored.
+  TilasmComment comment = 1;
+}
+
+message TilasmServiceDeleteCommentRequest {
+  // The draft to delete.
+  string id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TilasmServiceDeleteCommentResponse {
+  // The draft deleted, whole: PutComment puts it back.
+  TilasmComment comment = 1;
+}
+
+message TilasmServiceDraftsRequest {
+  // The wish whose tilasms' drafts to read.
+  string wish = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TilasmServiceDraftsResponse {
+  // The drafts, in the order they were written.
+  repeated TilasmComment comments = 1;
 }
 
 message TilasmServiceCommentsRequest {

@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
@@ -95,10 +97,7 @@ func replyTaskCodes(ctx context.Context, r store.Reader, comments []*planv1.Tila
 // commentsText lays out the comments sent on a tilasm for the lead: the tilasm, then each send, then each comment
 // with what it is on, so that it reads them without reading the tilasm again.
 func commentsText(tilasm *planv1.Tilasm, sent []*planv1.TilasmComment, taskCodes map[string]string) string {
-	var latest int32
-	if vs := tilasm.GetVersions(); len(vs) > 0 {
-		latest = vs[len(vs)-1].GetNumber()
-	}
+	latest := latestVersion(tilasm)
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s · %s · version %d\n", tilasm.GetCode(), oneLine(tilasm.GetTitle()), latest)
 	if len(sent) == 0 {
@@ -194,4 +193,155 @@ func indent(text string) string {
 		lines[i] = strings.TrimRight("  "+l, " ")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// maxCommentCode is the last code a tilasm's comments may take: C9999.
+const maxCommentCode = 9999
+
+func (t *Tilasms) PutComment(
+	ctx context.Context, req *connect.Request[planv1.TilasmServicePutCommentRequest],
+) (*connect.Response[planv1.TilasmServicePutCommentResponse], error) {
+	m := req.Msg
+	if m.GetDeleted() == nil && strings.TrimSpace(m.GetText()) == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text: a comment says something"))
+	}
+	var comment *planv1.TilasmComment
+	err := write(ctx, t.Store, req.Spec(), m, func(tx *store.Tx) error {
+		tilasm, err := store.Get[*planv1.Tilasm](ctx, tx, m.GetTilasmId())
+		if err != nil {
+			return err
+		}
+		now := timestamppb.Now()
+		switch {
+		case m.GetDeleted() != nil:
+			comment, err = putBack(ctx, tx, tilasm, m.GetDeleted())
+		case m.GetId() != "":
+			comment, err = editDraft(ctx, tx, tilasm, m, now)
+		default:
+			comment = &planv1.TilasmComment{
+				Id: store.NewID(), TilasmId: tilasm.GetId(), WishId: tilasm.GetWishId(), Text: m.GetText(),
+				Anchor: m.GetAnchor(), Version: latestVersion(tilasm), State: planv1.CommentState_COMMENT_STATE_DRAFT,
+				CreateTime: now, UpdateTime: now, Follows: m.GetFollows(),
+			}
+			comment.Code, err = nextCommentCode(ctx, tx, tilasm)
+		}
+		if err != nil {
+			return err
+		}
+		return tx.Put(comment)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TilasmServicePutCommentResponse{Comment: comment}), nil
+}
+
+// editDraft is the draft m names with m's text: a sent comment no longer changes.
+func editDraft(
+	ctx context.Context, tx *store.Tx, tilasm *planv1.Tilasm, m *planv1.TilasmServicePutCommentRequest, now *timestamppb.Timestamp,
+) (*planv1.TilasmComment, error) {
+	comment, err := store.Get[*planv1.TilasmComment](ctx, tx, m.GetId())
+	if err != nil {
+		return nil, err
+	}
+	if comment.GetTilasmId() != tilasm.GetId() {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s is on another tilasm than %s", comment.GetCode(), tilasm.GetCode()))
+	}
+	if err := stillDraft(comment); err != nil {
+		return nil, err
+	}
+	comment.Text, comment.Follows, comment.UpdateTime = m.GetText(), m.GetFollows(), now
+	if m.GetAnchor() != nil {
+		comment.Anchor = m.GetAnchor()
+	}
+	return comment, nil
+}
+
+// putBack is the draft DeleteComment took, as it was: with its code, unless another comment took it meanwhile.
+func putBack(ctx context.Context, tx *store.Tx, tilasm *planv1.Tilasm, deleted *planv1.TilasmComment) (*planv1.TilasmComment, error) {
+	comment := proto.CloneOf(deleted)
+	if comment.GetTilasmId() != tilasm.GetId() || comment.GetState() != planv1.CommentState_COMMENT_STATE_DRAFT {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("deleted: a draft of this tilasm is put back"))
+	}
+	if _, err := store.Get[*planv1.TilasmComment](ctx, tx, comment.GetId()); err == nil {
+		return nil, connect.NewError(connect.CodeAlreadyExists, fmt.Errorf("%s is already there", comment.GetCode()))
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	comment.WishId = tilasm.GetWishId()
+	taken, err := store.List[*planv1.TilasmComment](ctx, tx, store.Where{"tilasm_id": tilasm.GetId(), "code": comment.GetCode()})
+	if err != nil {
+		return nil, err
+	}
+	if len(taken) > 0 || comment.GetCode() == "" {
+		if comment.Code, err = nextCommentCode(ctx, tx, tilasm); err != nil {
+			return nil, err
+		}
+	}
+	return comment, nil
+}
+
+// stillDraft refuses a comment sent: it belongs to the Djinn.
+func stillDraft(c *planv1.TilasmComment) error {
+	if c.GetState() == planv1.CommentState_COMMENT_STATE_DRAFT {
+		return nil
+	}
+	return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("%s was sent: it no longer changes; write another", c.GetCode()))
+}
+
+// nextCommentCode follows the highest code of the tilasm's comments.
+func nextCommentCode(ctx context.Context, r store.Reader, tilasm *planv1.Tilasm) (string, error) {
+	all, err := store.List[*planv1.TilasmComment](ctx, r, store.Where{"tilasm_id": tilasm.GetId()})
+	if err != nil {
+		return "", err
+	}
+	last := 0
+	for _, c := range all {
+		last = max(last, commentNumber(c.GetCode()))
+	}
+	if last >= maxCommentCode {
+		return "", connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("%s has used its %d comment codes", tilasm.GetCode(), maxCommentCode))
+	}
+	return "C" + strconv.Itoa(last+1), nil
+}
+
+// latestVersion is the number of a tilasm's latest version.
+func latestVersion(tilasm *planv1.Tilasm) int32 {
+	if vs := tilasm.GetVersions(); len(vs) > 0 {
+		return vs[len(vs)-1].GetNumber()
+	}
+	return 0
+}
+
+func (t *Tilasms) DeleteComment(
+	ctx context.Context, req *connect.Request[planv1.TilasmServiceDeleteCommentRequest],
+) (*connect.Response[planv1.TilasmServiceDeleteCommentResponse], error) {
+	var comment *planv1.TilasmComment
+	err := write(ctx, t.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if comment, err = store.Get[*planv1.TilasmComment](ctx, tx, req.Msg.GetId()); err != nil {
+			return err
+		}
+		if err := stillDraft(comment); err != nil {
+			return err
+		}
+		return tx.Delete(comment)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TilasmServiceDeleteCommentResponse{Comment: comment}), nil
+}
+
+func (t *Tilasms) Drafts(
+	ctx context.Context, req *connect.Request[planv1.TilasmServiceDraftsRequest],
+) (*connect.Response[planv1.TilasmServiceDraftsResponse], error) {
+	all, err := store.List[*planv1.TilasmComment](ctx, t.Store, store.Where{"wish_id": req.Msg.GetWish()})
+	if err != nil {
+		return nil, Status(err)
+	}
+	drafts := slices.DeleteFunc(all, func(c *planv1.TilasmComment) bool {
+		return c.GetState() != planv1.CommentState_COMMENT_STATE_DRAFT
+	})
+	return connect.NewResponse(&planv1.TilasmServiceDraftsResponse{Comments: drafts}), nil
 }
