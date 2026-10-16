@@ -449,3 +449,46 @@ test("the Tilasms tab lays out a single left column of regular cards and a drop 
   assert.match(open, /border-color:/);
   assert.doesNotMatch(open, /border-(?:top|right|bottom|left)/);
 });
+
+// W28: the load gauge's stops are round buttons, a dot of one uniform border each; the limits it forecasts are laid
+// over the page, hidden until the gauge is hovered or has the keyboard.
+test("the load gauge's stops read as round buttons and its limits show on hover only", () => {
+  const css = fs.readFileSync(path.join(root, "operating-load.css"), "utf8");
+  const rule = (selector) => {
+    const from = css.indexOf("\n" + selector + " {");
+    assert.ok(from >= 0, `${selector} has its rule`);
+    return css.slice(from, css.indexOf("}", from));
+  };
+  const stop = rule(".operating-load-stop");
+  assert.match(stop, /border:\s*none;/);
+  assert.match(stop, /border-radius:\s*50%;/);
+  assert.match(stop, /cursor:\s*pointer;/);
+  const dot = rule(".operating-load-stop::before");
+  assert.match(dot, /border:\s*1.5px solid var\(--muted\);/);
+  assert.match(dot, /border-radius:\s*50%;/);
+  for (const selector of [
+    ".operating-load-stop:hover",
+    ".operating-load-stop:focus-visible",
+    ".operating-load-stop.current::before",
+  ])
+    rule(selector);
+  assert.match(
+    rule(".operating-load-stop.current::before"),
+    /background:\s*var\(--notch-color\);/,
+  );
+  for (const selector of [
+    ".operating-load-stop",
+    ".operating-load-stop::before",
+  ])
+    assert.doesNotMatch(rule(selector), /border-(?:top|right|bottom|left)/);
+
+  const forecast = rule(".operating-load-forecast");
+  assert.match(forecast, /position:\s*absolute;/);
+  assert.match(forecast, /visibility:\s*hidden;/);
+  assert.match(forecast, /opacity:\s*0;/);
+  const shown = rule(
+    ".operating-load:hover .operating-load-forecast,\n.operating-load:has(:focus-visible) .operating-load-forecast",
+  );
+  assert.match(shown, /visibility:\s*visible;/);
+  assert.match(shown, /opacity:\s*1;/);
+});

@@ -8426,7 +8426,7 @@ test("flightPlan includes waitingLead questions", () => {
   assert.equal(plan.waitingLead[0].item.id, "q-wait");
 });
 
-test("operating load gauge: click selects nearest notch, keyboard steps, colours per notch class", async () => {
+test("operating load gauge: click selects nearest notch, keyboard steps, round stops, colours per notch class", async () => {
   s.loadManager.setSnapshot({
     notch: s.LoadNotch.MEDIUM,
     auto: false,
@@ -8564,7 +8564,61 @@ test("operating load gauge: click selects nearest notch, keyboard steps, colours
   input = screen.one("operating-load-input");
   assert.equal(input["aria-valuenow"], 5);
 
-  // 3. Colours per notch class
+  // 3. A round stop per notch on the track (W28): a button named for its notch, the one in effect pressed and filled;
+  // a click on one sets its notch as its label does.
+  let stops = screen.all("operating-load-stop");
+  assert.deepEqual(
+    stops.map((b) => [b.type, b.props["aria-label"], b.props.style.left]),
+    [
+      ["button", "Minimal", "0%"],
+      ["button", "Medium", "25%"],
+      ["button", "High", "50%"],
+      ["button", "Max", "75%"],
+      ["button", "Overclock", "100%"],
+    ],
+  );
+  const stopOf = (slug) =>
+    screen
+      .all("operating-load-stop")
+      .find((b) => b.props["data-notch"] === slug).props;
+  assert.equal(stopOf("overclock")["aria-pressed"], true);
+  assert.match(stopOf("overclock").className, /\bcurrent\b/);
+  assert.match(stopOf("overclock").title, /^Overclock: up to \d+ workers/);
+  let propagated = true;
+  stopOf("medium").onClick({
+    stopPropagation() {
+      propagated = false;
+    },
+  });
+  assert.equal(propagated, false, "the track's click does not run after it");
+  slider = screen.one("operating-load-slider");
+  assert.equal(slider["data-notch"], "medium");
+  input = screen.one("operating-load-input");
+  assert.equal(input["aria-valuenow"], 2);
+  stops = screen.all("operating-load-stop");
+  assert.deepEqual(
+    stops.map((b) => b.props["aria-pressed"]),
+    [false, true, false, false, false],
+  );
+  assert.deepEqual(
+    stops.map((b) => /\bcurrent\b/.test(b.props.className)),
+    [false, true, false, false, false],
+  );
+  assert.match(
+    screen
+      .all("operating-load-notch")
+      .find((b) => b.props["data-notch"] === "medium").props.className,
+    /active/,
+  );
+  // Hovering a stop previews its notch (the filled stop moves there), the one in effect staying pressed.
+  stopOf("max").onMouseEnter();
+  assert.equal(screen.one("operating-load-slider")["data-notch"], "max");
+  assert.match(stopOf("max").className, /\bcurrent\b/);
+  assert.equal(stopOf("medium")["aria-pressed"], true);
+  stopOf("max").onMouseLeave();
+  assert.equal(screen.one("operating-load-slider")["data-notch"], "medium");
+
+  // 4. Colours per notch class
   // Check that all 5 notches correctly reflect their active class and data-notch
   for (const notch of s.NOTCHES) {
     const slug = s.notchSlug(notch);
