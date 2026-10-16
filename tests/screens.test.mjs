@@ -9127,6 +9127,46 @@ test("the side panel's Hourglass sits at the bottom of the menu, after the wishe
   );
 });
 
+// The Grimoire, the documentation (W89), sits just under the Hourglass, before the profile; its tooltip says
+// Documentation, and folded to its book it keeps its name and its tooltip.
+test("the side panel's Grimoire sits under the Hourglass, opens the documentation, and reads folded too", (t) => {
+  globalThis.__DJINN_MAC__ = false;
+  t.after(() => delete globalThis.__DJINN_MAC__);
+  const sidebar = (collapsed, onOpenDocs) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
+        projects: [],
+        onSelectPlan() {},
+        onSelectHourglass() {},
+        onOpenDocs,
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+        onImportWish() {},
+      }),
+    );
+  const open = sidebar(false, () => {});
+  const glass = open.indexOf("hourglass-nav");
+  const grimoire = open.indexOf("grimoire-nav");
+  assert.ok(glass >= 0 && grimoire > glass, open);
+  assert.match(
+    open,
+    /<button class="nav-item grimoire-nav" title="Documentation" aria-label="Grimoire"><svg[^>]*lucide-book-marked[^>]*>[^]*?<\/svg><span>Grimoire<\/span><\/button>$/,
+  );
+  // Folded: the book alone, its name and its tooltip kept.
+  assert.match(
+    sidebar(true, () => {}),
+    /<button class="nav-item grimoire-nav" title="Documentation" aria-label="Grimoire"><svg[^>]*lucide-book-marked[^>]*>[^]*?<\/svg><\/button>$/,
+  );
+  // No way to the documentation, no entry.
+  assert.doesNotMatch(sidebar(false), /grimoire-nav/);
+});
+
 // Ctrl+1 and Ctrl+2 (Q254) are the key's place: the digit row, whatever it types (& and e acute on AZERTY), or the numpad;
 // the platform's modifier alone, never with Shift or Alt.
 test("a page's shortcut is the place of its digit key, on any layout, the numpad too", () => {

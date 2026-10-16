@@ -2,7 +2,6 @@
 // settings: those that stay on this page (the language, the theme), and the global shortcut, which djinn takes.
 import {
   ArrowRight,
-  BookOpen,
   Check,
   Folder,
   FolderOpen,
@@ -1155,14 +1154,8 @@ function NotificationSetting() {
 }
 
 // Settings: the agents djinn finds on this machine, the system notifications, the language and the theme of the page,
-// the global shortcut, and the way to the documentation.
-export function Settings({
-  onClose,
-  onDocs,
-}: {
-  onClose: () => void;
-  onDocs: () => void;
-}) {
+// and the global shortcut. The documentation, the Grimoire, has its own entry in the side panel (W89).
+export function Settings({ onClose }: { onClose: () => void }) {
   const clients = useClients();
   const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
   const agents = useAgents();
@@ -1234,16 +1227,6 @@ export function Settings({
           setEnv((prev) => prev && { ...prev, shortcut: res.shortcut });
         }}
       />
-      <div className="setting-row">
-        <div>
-          <strong>{t("settings.docs")}</strong>
-          <p>{t("settings.docs_detail")}</p>
-        </div>
-        <button type="button" className="button secondary" onClick={onDocs}>
-          <BookOpen size={14} />
-          {t("settings.docs_open")}
-        </button>
-      </div>
       <div className="settings-foot">
         <Brand small />
         <span>Djinn {env?.version}</span>

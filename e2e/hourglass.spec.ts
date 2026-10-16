@@ -144,9 +144,9 @@ test("the Hourglass reads its measures while it shows, and leaving it stops them
     ).toBeVisible({
       timeout: 15_000,
     });
-    // The menu: the Hourglass at the bottom of the side panel, right above the profile.
+    // The menu: the Hourglass at the bottom of the side panel, the Grimoire under it (W89), right above the profile.
     const entries = page.locator(
-      ".sidebar .plan-nav, .sidebar .wish-list, .sidebar .project-list, .sidebar .import-nav, .sidebar .hourglass-nav, .sidebar .sidebar-bottom",
+      ".sidebar .plan-nav, .sidebar .wish-list, .sidebar .project-list, .sidebar .import-nav, .sidebar .hourglass-nav, .sidebar .grimoire-nav, .sidebar .sidebar-bottom",
     );
     await expect(entries.nth(0)).toHaveClass(/plan-nav/);
     await expect(entries.nth(1)).toHaveClass(/wish-list/);
@@ -154,7 +154,9 @@ test("the Hourglass reads its measures while it shows, and leaving it stops them
     await expect(entries.nth(3)).toHaveClass(/import-nav/);
     await expect(entries.nth(4)).toHaveClass(/hourglass-nav/);
     await expect(entries.nth(4)).toHaveText("Hourglass");
-    await expect(entries.nth(5)).toHaveClass(/sidebar-bottom/);
+    await expect(entries.nth(5)).toHaveClass(/grimoire-nav/);
+    await expect(entries.nth(5)).toHaveText("Grimoire");
+    await expect(entries.nth(6)).toHaveClass(/sidebar-bottom/);
 
     // The flying carpet: no live graph, no series read; one line of the machine's load.
     await expect(page.locator(".consumption-panel")).toHaveCount(0);

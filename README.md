@@ -189,7 +189,7 @@ _Screenshots of a demonstration wish, with fictional data. `go tool task screens
 [Team settings](docs/team-settings.md) · [Wish templates](docs/wish-templates.md) · [Backups](docs/backup.md) ·
 [Release notes](docs/releases/)
 
-Every concept and command in one site: **Documentation** in the window's settings, served at `/docs/` while
+Every concept and command in one site: **Grimoire** in the window's side panel, served at `/docs/` while
 `djinn up` runs, or `go tool task docs`, then `bin/docs/index.html`.
 
 ## Contributing
