@@ -284,7 +284,9 @@
             <p>
               Workers share one machine. Tests, builds and code generation take a gate, one at a time:
               <code>djinn gate run test -- go tool task test</code>. Djinn records what each command cost and, next time,
-              waits for the memory it peaked at.
+              waits for the memory it peaked at. Djinn's own checks to merge a task's work or push a branch go before
+              the workers' requests, and on a machine of more than one slot, one stays free for them: what ends a task
+              never waits behind workers.
             </p>
           </article>
           <article class="card word" id="machine">

@@ -136,9 +136,21 @@ func take(t *testing.T, g *Gates, name, taskID string) (<-chan func(), <-chan st
 // run takes the gate in the background to run what; the channel gets the give function once granted.
 func run(t *testing.T, g *Gates, name, taskID, what string) (<-chan func(), <-chan string) {
 	t.Helper()
+	return ask(t, g, Request{Name: name, TaskID: taskID, What: what})
+}
+
+// merge takes the gate in the background for Djinn's merge or push of the task taskID, to run what.
+func merge(t *testing.T, g *Gates, name, taskID, what string) (<-chan func(), <-chan string) {
+	t.Helper()
+	return ask(t, g, Request{Name: name, TaskID: taskID, What: what, First: true})
+}
+
+// ask takes the gate r asks in the background; the channel gets the give function once granted.
+func ask(t *testing.T, g *Gates, r Request) (<-chan func(), <-chan string) {
+	t.Helper()
 	granted, waits := make(chan func(), 1), make(chan string, 16)
 	go func() {
-		hold, err := g.Take(t.Context(), Request{Name: name, TaskID: taskID, What: what}, func(why string) { waits <- why })
+		hold, err := g.Take(t.Context(), r, func(why string) { waits <- why })
 		if err == nil {
 			granted <- hold.Give
 		}
@@ -285,6 +297,96 @@ func TestRankFirst(t *testing.T) {
 	await(t, outside, "the grant outside any task")()
 }
 
+// TestMergeFirst: Djinn's requests for a merge or a push go before the workers' that wait, whoever came first and
+// whatever their wish's rank, the first come first among them (Q26); the holder keeps its gate. Each waiter says which
+// class it is in and why it waits.
+func TestMergeFirst(t *testing.T) {
+	f := &tasks{rank: map[string]int{"holder": 0, "W1": 0, "W2": 1, "M1": 3, "M2": 2}, works: map[string]bool{"holder": true, "W1": true, "W2": true}}
+	g := New(nil, nil, f)
+	give := await(t, func() <-chan func() { c, _ := take(t, g, "test", "holder"); return c }(), "first grant")
+	w1, w1Waits := take(t, g, "test", "W1")
+	if why := times(await(t, w1Waits, "W1 waits")); why != "held by holder, for Ns" {
+		t.Errorf("W1 waits because %q", why)
+	}
+	w2, w2Waits := take(t, g, "test", "W2")
+	await(t, w2Waits, "W2 waits")
+	m1, m1Waits := merge(t, g, "test", "M1", "")
+	if why := times(await(t, m1Waits, "M1 waits")); why != "a merge or a push, served before the workers: held by holder, for Ns" {
+		t.Errorf("the merge waits because %q", why)
+	}
+	m2, m2Waits := merge(t, g, "test", "M2", "")
+	await(t, m2Waits, "M2 waits")
+	// Told of each merge as it comes, maybe of the second only.
+	for why := ""; why != "held by holder, for Ns, then 2 merges or pushes go first"; {
+		if why = times(await(t, w1Waits, "W1 told of the merges")); why != "held by holder, for Ns, then 1 merge or push goes first" &&
+			why != "held by holder, for Ns, then 2 merges or pushes go first" {
+			t.Fatalf("W1 waits behind the merges because %q", why)
+		}
+	}
+	notGranted(t, m1, "a held gate, for a merge")
+
+	give()
+	order := make(chan string, 4)
+	for _, c := range []struct {
+		name    string
+		granted <-chan func()
+	}{{"M1", m1}, {"M2", m2}, {"W1", w1}, {"W2", w2}} {
+		give := await(t, c.granted, "the grant of "+c.name)
+		order <- c.name
+		notGranted(t, w2, "a gate held")
+		give()
+	}
+	close(order)
+	var got []string
+	for name := range order {
+		got = append(got, name)
+	}
+	if want := []string{"M1", "M2", "W1", "W2"}; !slices.Equal(got, want) {
+		t.Errorf("served %v, want %v", got, want)
+	}
+}
+
+// TestMergeKeepsItsGate: a merge that waits for the memory keeps its free gate from a worker's lighter command, which
+// says it waits for the merge; on a machine full of workers holding their own gates, a merge gets another gate at once,
+// and its gate held outside the workers counts as a merge's (Outside).
+func TestMergeKeepsItsGate(t *testing.T) {
+	f := &tasks{rank: map[string]int{"M": 0, "W1": 0, "W2": 0, "W3": 0}, works: map[string]bool{"W1": true, "W2": true, "W3": true}}
+	m := calm()
+	m.setFree(18 * machine.GiB / 10)
+	g := New(m, peaks{"go tool task test": 5 * machine.GiB, "go tool task lint": 200 << 20}, f)
+	g.tick = 10 * time.Millisecond
+
+	heavy, heavyWaits := merge(t, g, "test", "M", "go tool task test")
+	if why := await(t, heavyWaits, "the merge waits"); why != "a merge or a push, served before the workers: go tool task test peaks at 5.0 GiB, 1.8 GiB free" {
+		t.Errorf("the merge waits because %q", why)
+	}
+	light, lightWaits := run(t, g, "test", "W1", "go tool task lint")
+	if why := await(t, lightWaits, "the worker waits"); why != "a merge or a push goes first: go tool task test peaks at 5.0 GiB, 1.8 GiB free" {
+		t.Errorf("the worker waits because %q", why)
+	}
+	notGranted(t, light, "a gate a merge waits for")
+	m.setFree(8 * machine.GiB)
+	giveTest := await(t, heavy, "the merge's grant once memory frees")
+	notGranted(t, light, "a gate a merge holds")
+	giveTest()
+	await(t, light, "the worker's grant after the merge")()
+
+	// The workers hold their gates in their own slots; the merge gets its own at once.
+	var gives []func()
+	for i, name := range []string{"e2e", "stack", "paid"} {
+		c, _ := take(t, g, name, fmt.Sprintf("W%d", i+1))
+		gives = append(gives, await(t, c, "the grant of "+name))
+	}
+	c, _ := merge(t, g, "lint", "M", "go tool task lint")
+	gives = append(gives, await(t, c, "the merge's lint beside the workers' gates"))
+	if n, merges := g.Outside(); n != 1 || merges != 1 {
+		t.Errorf("outside the workers: %d gates, %d of merges", n, merges)
+	}
+	for _, give := range gives {
+		give()
+	}
+}
+
 // TestMemory: a gate goes to a measured command only when the machine holds its peak, the peaks of the commands
 // holding a gate counted as taken; a light command goes at once, and one never measured goes as it comes.
 func TestMemory(t *testing.T) {
@@ -354,19 +456,19 @@ func TestOutside(t *testing.T) {
 		return await(t, c, "the grant of "+name)
 	}
 	worker := grant("test", "W1")
-	if n := g.Outside(); n != 0 {
+	if n, _ := g.Outside(); n != 0 {
 		t.Errorf("a running worker's gate: %d outside", n)
 	}
 	direct, lead := grant("e2e", ""), grant("stack", "W2")
-	if n := g.Outside(); n != 2 {
-		t.Errorf("two gates held outside the workers: %d", n)
+	if n, merges := g.Outside(); n != 2 || merges != 0 {
+		t.Errorf("two gates held outside the workers: %d, %d of merges", n, merges)
 	}
 	l := g.List()
 	if len(l) != 3 || !l[0].TakesSlot || !l[1].TakesSlot || l[2].TakesSlot || l[0].Until.Sub(l[0].Since) != DefaultTimeout {
 		t.Errorf("list = %+v", l)
 	}
 	direct()
-	if n := g.Outside(); n != 1 || freed.Load() != 1 {
+	if n, _ := g.Outside(); n != 1 || freed.Load() != 1 {
 		t.Errorf("once given back: %d outside, freed %d times", n, freed.Load())
 	}
 	lead()
@@ -413,8 +515,8 @@ func TestHolderEnds(t *testing.T) {
 			break
 		}
 	}
-	if !gate.GetTakesSlot() || gate.GetResources().GetProcesses() < 1 || gate.GetResources().GetMemoryBytes() == 0 ||
-		gate.GetExpireTime().AsTime().Sub(gate.GetSince().AsTime()) != DefaultTimeout || g.Outside() != 1 {
+	if n, _ := g.Outside(); !gate.GetTakesSlot() || gate.GetResources().GetProcesses() < 1 || gate.GetResources().GetMemoryBytes() == 0 ||
+		gate.GetExpireTime().AsTime().Sub(gate.GetSince().AsTime()) != DefaultTimeout || n != 1 {
 		t.Fatalf("held by process %d: %v", pid, gate)
 	}
 
@@ -429,7 +531,7 @@ func TestHolderEnds(t *testing.T) {
 	}
 	waitFree(t, g)
 	await(t, freed, "the slot freed")
-	if n := g.Outside(); n != 0 {
+	if n, _ := g.Outside(); n != 0 {
 		t.Errorf("%d gates still held outside", n)
 	}
 }

@@ -182,14 +182,15 @@ func TestDependsOn(t *testing.T) {
 
 // TestGateHeldOutside: a gate held outside the running workers (a person's terminal, a lead, a script) takes a slot:
 // on a full machine a new worker waits, saying so, and starts once the gate is given back, woken with no tick. A
-// running worker holds its own gates in its slot (Works).
+// running worker holds its own gates in its slot (Works). Djinn serves the gates: one slot of the three is kept for
+// the merges and pushes (Q26).
 func TestGateHeldOutside(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	l := &limit{slots: 2}
+	l := &limit{slots: 3}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	var outside atomic.Int32
-	e.h.GatesOutside(func() int { return int(outside.Load()) })
+	e.h.GatesOutside(func() (int, int) { return int(outside.Load()), 0 })
 	wishID, _ := e.wish(t, gitRepo(t))
 	busy := e.mustSpawn(t, wishID, "Busy", "sleep 1h", nil)
 	if !e.h.Works(busy.GetId()) {
@@ -198,8 +199,8 @@ func TestGateHeldOutside(t *testing.T) {
 
 	outside.Store(1)
 	next := e.mustSpawn(t, wishID, "Next", "text one", nil)
-	if next.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING ||
-		next.GetWaitReason() != "1 worker runs and 1 gate is held outside the workers, the most this machine holds (set by the test)" {
+	if next.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || next.GetWaitReason() != "1 worker runs and 1 gate is held "+
+		"outside the workers, 1 slot is kept for merges and pushes, the most this machine holds (set by the test)" {
 		t.Fatalf("spawned beside a gate held outside: %v", next)
 	}
 	if e.h.Works(next.GetId()) {
@@ -209,6 +210,59 @@ func TestGateHeldOutside(t *testing.T) {
 	e.h.Wake()
 	if got := e.ended(t, next.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Errorf("once the gate is given back: %v", got)
+	}
+}
+
+// TestSlotKeptForMerges: on a machine of several slots full of workers, one slot stays free for the gates of merges and
+// pushes (Q26): a new worker never takes it, a merge's gate held outside the workers takes it and the machine holds no
+// more than its slots, and once it is given back the slot is kept again. On a machine of one slot, nothing is kept: a
+// worker takes it.
+func TestSlotKeptForMerges(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	l := &limit{slots: 3}
+	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
+	var outside, merges atomic.Int32
+	e.h.GatesOutside(func() (int, int) { return int(outside.Load()), int(merges.Load()) })
+	wishID, _ := e.wish(t, gitRepo(t))
+	first := e.mustSpawn(t, wishID, "First", "wait", nil)
+	second := e.mustSpawn(t, wishID, "Second", "wait", nil)
+	third := e.mustSpawn(t, wishID, "Third", "wait", nil)
+	for _, task := range []*planv1.Task{first, second} {
+		if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+			t.Fatalf("%s does not run: %v", task.GetCode(), task)
+		}
+	}
+	const kept = "2 workers run, 1 slot is kept for merges and pushes, the most this machine holds (set by the test)"
+	if third.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || third.GetWaitReason() != kept {
+		t.Fatalf("the third took the kept slot: %v", third)
+	}
+
+	// A merge's gate held outside the workers takes the kept slot: the third still waits, for that gate.
+	outside.Store(1)
+	merges.Store(1)
+	e.h.Wake()
+	held := "2 workers run and 1 gate is held outside the workers, the most this machine holds (set by the test)"
+	e.until(t, third.GetId(), func(t *planv1.Task) bool { return t.GetWaitReason() == held })
+	outside.Store(0)
+	merges.Store(0)
+	e.h.Wake()
+	e.until(t, third.GetId(), func(t *planv1.Task) bool { return t.GetWaitReason() == kept })
+
+	for _, task := range []*planv1.Task{first, second, third} {
+		e.release(t, task.GetId())
+	}
+	if got := e.ended(t, third.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("once a worker ended: %v", got)
+	}
+
+	// One slot alone: nothing is kept, a worker takes it.
+	one := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithTick(time.Hour))
+	one.h.GatesOutside(func() (int, int) { return 0, 0 })
+	oneWish, _ := one.wish(t, gitRepo(t))
+	alone := one.mustSpawn(t, oneWish, "Alone", "text one", nil)
+	if got := one.ended(t, alone.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("on one slot: %v", got)
 	}
 }
 
