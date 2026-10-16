@@ -71,8 +71,11 @@ func TestIfritListensBetweenMessages(t *testing.T) {
 	clock.set(clock.now().Add(20 * time.Minute))
 	e.send(t, id, "And then?")
 	working := next("a message came", func(ev *planv1.TaskEvent) bool { return strings.HasPrefix(ev.GetText(), "a message came: claude") })
-	if ifritState(working) != planv1.IfritState_IFRIT_STATE_WORKING {
-		t.Errorf("on the message: %v, want working", ifritState(working))
+	// The fake answers at once: read after the event, the task may have ended its second turn and listen again. The
+	// time it listened before the message, counted when the message started a turn, says it worked either way.
+	if s := ifritState(working); s != planv1.IfritState_IFRIT_STATE_WORKING && s != planv1.IfritState_IFRIT_STATE_LISTENING ||
+		working.GetIfrit().GetListened().AsDuration() != 20*time.Minute {
+		t.Errorf("on the message: %v, listened %v, want working (or listening again), 20m", s, working.GetIfrit().GetListened().AsDuration())
 	}
 	next("its second answer", func(ev *planv1.TaskEvent) bool { return ev.GetText() == "Second answer." })
 	again := next("its second turn ended", listens)
