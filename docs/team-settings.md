@@ -155,9 +155,11 @@ developer_file: /home/me/.config/djinn/projects/01a1…/settings.txtpb
 
 ## A file Djinn cannot read
 
-A malformed file, an unknown field, a value out of range: Djinn still starts, and `djinn project show` lists the
-problem under `problems`, with the file and the line. The other file still shows. Spawning a task in the project
-fails with the same message until you fix it: a team's budget never silently vanishes.
+A malformed file, a value out of range, two checks of one name: Djinn still starts, and `djinn project show` lists the
+problem under `problems`, with the file and the line, as the project's view in the window does. The other file still
+shows. A task spawned in the project waits, saying `settings unreadable: …`, and starts once you fix it; merges there
+wait too: a team's budget never silently vanishes. An unknown field, which a newer Djinn may know, is only a warning
+(`warnings`): the line is ignored.
 
 ## No secret, ever
 
@@ -191,11 +193,12 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
 - **Push checks** run on the branch's tip when a push is due. A check that passed as a commit check on that very commit
   does not run again. Red, the push is **held**: the tasks' events and the wish's head say why. Red twice in a row, or
   at once when no work of the wish is left to commit in the project, Djinn starts a correction worker (within
-  `correction_attempts`). If the correction fails, or its attempts are spent, or none can start, Djinn asks you: try
-  again with a new correction worker, take the push checks over yourself, or push without the push checks this once.
-  A correction stopped on request stays the correction for ten minutes, time to continue it on another agent. A
-  question about the push withdrawn, or the branch moved since its checks were red (even pushed by hand), runs the
-  push checks again: green, the hold lifts; red at a new commit, Djinn withdraws a stale question and acts again.
+  `correction_attempts`). If the correction fails, or its attempts are spent, or none can start, Djinn tells the lead
+  (a move event, no question to the developer): retry a correction, drop the work, or leave it waiting. While the push
+  is held, the wish's new tasks in the project wait (`waits for feat/x to be green again`), corrections and
+  investigators aside. A correction stopped on request stays the correction for ten minutes, time to continue it on
+  another agent. New work committed, or the branch moved since its checks were red (even pushed by hand), runs the
+  push checks again: green, the hold lifts.
 - **The setup** makes the integration worktree, and the install worktree, ready before the first command there (a
   check, `generate`, `install`): once, then again when the setup command or a lock file changes (`package-lock.json`,
   `go.sum`, `yarn.lock`, `pnpm-lock.yaml`, `Cargo.lock`, `poetry.lock`, `uv.lock` and the like, anywhere in the
@@ -245,10 +248,10 @@ brings it there by itself, no model ([T07](../plan/8e8d3d76-orchestrator.md)):
    the end of its output. It commits its work, which concludes the merge, and its branch integrates like any task's,
    at once and alone. Green, the failed tasks are committed with it, saying
    `corrected by W5`. A correction whose work fails in turn, or whose worker fails, counts as an attempt.
-7. Past `correction_attempts` (2 by default), Djinn **asks you** on the wish: try again (a new correction worker, its
-   attempts counted again), leave it (the work stays out of the branch), or you take it (the question says how to
-   find the failed merge). The question blocks nothing else: the rest of the wish goes on. A correction worker you
-   stop leaves it to you, asked the same.
+7. Past `correction_attempts` (2 by default), Djinn **tells the lead**, a move event and no question to the
+   developer: "the work of W2 into feat/x failed: …. The move is yours: retry a correction, drop the work, or leave it
+   waiting." The rest of the wish goes on. A correction worker stopped, and not continued within ten minutes, leaves
+   the work failed (`Merge failed`), its event saying so.
 8. **Work not committed is not merged, and Djinn commits nothing blindly.** Before merging a task, a correction
    worker's included, Djinn looks at its worktree (`git status --porcelain`, untracked files included, the project's
    `.gitignore` applying). Clean, it merges as above. With changes, the task is **uncommitted**: a **review worker**
@@ -257,7 +260,7 @@ brings it there by itself, no model ([T07](../plan/8e8d3d76-orchestrator.md)):
    belongs to the task, with a message in the repository's style, reverts or deletes the rest (debug output, scratch
    files, artifacts), and ends with a line saying what it kept, what it dropped, and why. Its branch then integrates
    like any task's, and the task says `uncommitted: reviewed by W5`. A review that fails, or leaves changes in turn,
-   counts as an attempt; past `correction_attempts`, Djinn asks you, as above. Review and correction workers may run
+   counts as an attempt; past `correction_attempts`, Djinn tells the lead, as above. Review and correction workers may run
    `git add`, `git commit`, `git restore`, `git rm` and `git clean` besides the project's `commands`; its
    `denied_commands` still win.
 
