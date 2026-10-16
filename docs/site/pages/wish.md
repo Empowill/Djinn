@@ -30,12 +30,15 @@ Click **New wish** at the top of the side panel. The page asks one question, *Wh
 two choices:
 
 - **Projects it works on.** Search them by name or folder. A wish may also be made without a project, for research or
-  a plan, and be given one later.
+  a plan: its tasks then only read, each in an empty folder. The Djinn can add a project to a wish later; a project
+  is never removed from a wish.
 - **Rights in the chosen projects**: **The project decides**, **Edit the files**, or **Edit, in auto mode**. See
   [Rights](#rights).
 
-**Make the wish** creates it and tells the Djinn. You can also ask the Djinn for a wish in its terminal, or with
-**Write to the Djinn**: it makes the wish the same way.
+**Make the wish** creates it and tells the Djinn, which gives it its title: until then it is a **New wish**. The button
+waits for a running Djinn to receive the wish, and offers to start it. With three wishes active already, it reads
+**Make it paused**: the new wish waits, paused, until you resume it. You can also ask the Djinn for a wish in its
+terminal, or with **Write to the Djinn**: it makes the wish the same way.
 
 > **Example.** You make the wish "Let customers export their invoices as PDF" on the project app, with Edit the files.
 > The Djinn opens it, reads the project, and lays out a plan: an azima for the PDF rendering, one for the export button,
@@ -43,9 +46,12 @@ two choices:
 
 ### A request that belongs elsewhere
 
-When something unrelated comes up while the Djinn works on a wish, it does not slip it into the plan. The window asks
-you **Where does this request go?**: file it in an existing wish, keep it where it is, or open a new one. Djinn ranks
-the wishes that could take it by their titles, projects and latest notes, without a model.
+When something unrelated comes up while the Djinn works on a wish, it does not slip it into the plan. It asks you, in
+a question card of the wish, **Where does this request go?**: file it in another wish, keep it where it is, or make a
+new wish, paused if three are active, or pausing the last active one. Djinn ranks the wishes that could take it by
+the words of their titles, the projects the request names, and their latest blocks, without a model. When a skill of
+those projects has a wish template for that kind of request, the new wish follows it and starts its
+[watcher](#watcher).
 
 ## Active, paused and granted
 
@@ -80,9 +86,9 @@ Every window shows the same order, and a restart keeps it.
 
 ## The principal wish
 
-The star beside a wish's title, **Mark as principal**, makes it the principal wish: the Djinn coordinates from it, and
-receives there the answers you give in the other wishes. When none is marked, the active wish with the lowest rank is
-principal.
+**Mark as principal**, with its star under an active wish's title, makes it the principal wish: the Djinn coordinates
+from it, and receives there the answers you give in the other wishes; the button then reads **Principal**. When none is
+marked, the first active wish by rank is principal.
 
 ## A wish's page
 
@@ -103,19 +109,45 @@ run.
 
 ## Granting a wish
 
-When every task is finished, none waits on a call its permissions refused that the Djinn has not decided about yet,
-and no question is open, Djinn proposes to grant the wish: **My wish is granted**. Only you grant a wish; you may grant
-it earlier, and **Reopen** brings it back if something was left.
+When every task is finished, every azima validated, none waits on a call its permissions refused that the Djinn has
+not decided about yet, and no question is open, Djinn proposes to grant the wish: **My wish is granted**, in the Wish
+tab. Only you grant a wish. To grant it earlier, tell the Djinn so; **Reopen** brings it back if something was left.
+A wish with no task at all is never proposed.
 
 Djinn never grants a wish by itself, not even one made from a template whose watcher says the work is done: it asks you.
 
 ## Deleting a wish
 
-The bin, **Delete this wish**, deletes it for good once you confirm: its tasks and their events, its questions and its
-blocks. Its running workers stop first. A worktree with no work of its own goes; one with commits, or with changes not
-committed, stays; every branch stays.
+The bin, **Delete this wish**, deletes it for good once you confirm: its tasks and their events, its questions, its
+blocks and its tilasms. Its running workers stop first. A worktree with no work of its own goes; one with commits, or
+with changes not committed, stays; every branch stays.
 
 To set a wish aside without losing it, pause it; to keep it once done, grant it. Deleting is for a wish made by mistake.
+
+## Wishes from the Djinn
+
+The Djinn reads every active wish when it starts, and acts on a wish when you ask it in words, in its terminal or with
+**Write to the Djinn**:
+
+- **Make a wish**, from a sentence or from a long request it keeps whole, active or paused, on the projects you name.
+- **Rename** it, or **rewrite its description**; both are also edited in place, with a click on them in the window.
+- **Pause** or **resume** it, **move** an active wish to another rank, or reorder the paused and granted ones.
+- **Add a project** to it: its tasks may then spawn there, and its work lands in the branch that project's checkout is
+  on.
+- **Grant its workers a right** in one of its projects, as **Rights** does.
+- **Switch its push strategy**, per wish or per azima.
+- **Grant** it, when you say it is done: granting is your word, never the Djinn's own.
+
+What Djinn refuses:
+
+| You ask | Djinn says |
+| --- | --- |
+| Pause a granted wish | It is not active: there is nothing to pause |
+| Reorder an active wish among the paused | An active wish changes rank instead |
+| Add a project the wish has already | It is already in the wish |
+| Remove a project | Not possible: a project stays in the wish |
+| A task in a project the wish lacks | It is not one of the wish's projects; add it first |
+| A task, in a wish with several projects, without naming one | Name the project |
 
 ## Sharing a wish
 
@@ -130,6 +162,8 @@ wish**, in the side panel, opens it on another machine. See [Sharing a wish](#sh
 - **The description is for the Djinn too.** A wish whose scope is written down gets a tighter plan and fewer
   questions.
 - **Closing the window pauses nothing.** Active wishes go on while Djinn runs.
+- **Pause, don't delete.** Deleting cannot be undone; a paused wish costs nothing and loses nothing.
+- **Granted means checked.** Djinn proposes the grant once the work is finished; the grant says the wish holds for you.
 
 ## Read next
 
