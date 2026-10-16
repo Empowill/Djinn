@@ -1,8 +1,9 @@
-/* Diagrams rendered in SVG */
+/* Diagrams rendered in SVG. A diagram's text measures in its own units, as tools/svgdiagrams laid it out: it stays in
+   px, the drawing keeps its size whatever the text size; its frame follows it. */
 .dia-frame {
-  margin: 14px 0;
-  padding: 14px 16px;
-  border-radius: 8px;
+  margin: 0.875rem 0;
+  padding: 0.875rem 1rem;
+  border-radius: 0.5rem;
   overflow-x: auto;
   border: 1px solid var(--line, var(--n-30));
   background: var(--raise, var(--n-17));

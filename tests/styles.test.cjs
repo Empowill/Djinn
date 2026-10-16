@@ -1,6 +1,7 @@
 "use strict";
 
-// Clément's styles keep functional text at 12px, in every stylesheet of the interface.
+// Clément's styles keep functional text at 12px, in every stylesheet of the interface: 0.75rem at the default text
+// size, where 1rem is 16px (styles.css); the smaller steps of the personal space shrink it on purpose.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -8,15 +9,106 @@ const test = require("node:test");
 
 const root = path.resolve(__dirname, "../src");
 
-test("the shared CSS contract keeps functional text at 12px", () => {
-  const css = fs
+const stylesheets = () =>
+  fs
     .readdirSync(root)
     .filter((entry) => entry.endsWith(".css"))
-    .map((entry) => fs.readFileSync(path.join(root, entry), "utf8"))
+    .map((entry) => [entry, fs.readFileSync(path.join(root, entry), "utf8")]);
+
+test("the shared CSS contract keeps functional text at 12px", () => {
+  const css = stylesheets()
+    .map(([, text]) => text)
     .join("\n");
-  assert.match(css, /--font-size-body:\s*12px/);
+  assert.match(css, /--font-size-body:\s*0\.75rem/);
   assert.doesNotMatch(css, /font-size\s*:\s*(?:[1-9]|1[01])px/);
   assert.doesNotMatch(css, /font\s*:\s*(?:[1-9]|1[01])px/);
+  // The same, written in rem: 1px to 11px.
+  const under = Array.from({ length: 11 }, (_, i) =>
+    String((i + 1) / 16).replace(".", "\\."),
+  ).join("|");
+  assert.doesNotMatch(css, new RegExp(`font-size\\s*:\\s*(?:${under})rem`));
+  assert.doesNotMatch(css, new RegExp(`font\\s*:\\s*(?:${under})rem`));
+});
+
+// The text size of the personal space (text-size.ts) scales the root font size: every length of the stylesheets is in
+// rem or em, or it would stay put while the text shrinks. Stay in px: hairlines (1px and less), borders and outlines,
+// SVG strokes and filters, media queries (they read the browser's own size, never the root's), the smoke's measures
+// (wish-smoke.tsx lays it out in px), the root's own steps, and the text of SVG diagrams, in their drawing's units.
+test("every length of the stylesheets follows the text size", () => {
+  const kept =
+    /^(?:border(?:-(?:top|right|bottom|left|block|inline)(?:-(?:start|end))?)?(?:-width)?|outline(?:-width|-offset)?|stroke-\w+|(?:-webkit-)?(?:backdrop-)?filter|text-decoration-thickness|--smoke-glyph-size|--smoke-row-height)$/;
+  const fixed = [];
+  for (const [entry, text] of stylesheets()) {
+    const css = text.replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const [, prop, value] of css.matchAll(
+      /(?<=[;{])\s*([-\w]+)\s*:\s*([^;{}]+)(?=[;}])/g,
+    )) {
+      if (kept.test(prop)) continue;
+      if (entry === "svg-diagrams.css" && /^font/.test(prop)) continue;
+      if (
+        entry === "styles.css" &&
+        prop === "font-size" &&
+        /^1[3-9]\.?\d*px$/.test(value.trim())
+      )
+        continue;
+      for (const [length, n] of value.matchAll(/(?<![\w.-])(\d*\.?\d+)px\b/g))
+        if (Number(n) > 1) fixed.push(`${entry}: ${prop}: ${length}`);
+    }
+  }
+  assert.deepEqual(fixed, [], "lengths in px: write them in rem (16px = 1rem)");
+});
+
+// An icon's size is its width and height attributes, in px: styles.css gives each size the components ask a rule in
+// rem, so the icons follow the text size too.
+test("every icon size the components give follows the text size", () => {
+  const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+  const sizes = new Set();
+  for (const entry of fs.readdirSync(root).filter((e) => e.endsWith(".tsx"))) {
+    const text = fs.readFileSync(path.join(root, entry), "utf8");
+    for (const [, sizesText] of text.matchAll(/\bsize=\{([^}]*)\}/g))
+      for (const [n] of sizesText.matchAll(/\b\d+\b/g)) sizes.add(Number(n));
+    for (const [, n] of text.matchAll(/\bsize = (\d+)/g)) sizes.add(Number(n));
+  }
+  const missing = [...sizes]
+    .filter((n) => n < 30)
+    .filter((n) => {
+      const rule = new RegExp(
+        `:where\\(svg\\.lucide\\[width="${n}"\\]\\) \\{\\s*width: ${n / 16}rem;\\s*height: ${n / 16}rem;`,
+      );
+      return !rule.test(css);
+    });
+  assert.deepEqual(missing, [], "icon sizes without their rule in styles.css");
+});
+
+// The steps of the text size: one root font size each, the same in the window and in the documentation site, which
+// the window opens at its own step (docs.tsx, docs/site/theme.js).
+test("each text size has its root font size, the same in the documentation site", () => {
+  const source = fs.readFileSync(path.join(root, "text-size.ts"), "utf8");
+  const steps = [
+    ...source.match(/textSizes[^=]*=\s*\[([^\]]*)\]/)[1].matchAll(/"([^"]*)"/g),
+  ].map((m) => m[1]);
+  assert.deepEqual(steps, ["large", "", "compact", "very-compact"]);
+  const sizes = (css) =>
+    Object.fromEntries(
+      [
+        ...css.matchAll(
+          /^html(?:\[data-text-size="([\w-]+)"\])? \{\s*font-size: ([\d.]+px);/gm,
+        ),
+      ].map((m) => [m[1] ?? "", m[2]]),
+    );
+  const window = sizes(fs.readFileSync(path.join(root, "styles.css"), "utf8"));
+  assert.deepEqual(Object.keys(window).sort(), [...steps].sort());
+  assert.equal(window[""], "16px");
+  const site = sizes(
+    fs.readFileSync(path.join(root, "../docs/site/site.css"), "utf8"),
+  );
+  assert.deepEqual(site, window);
+  const theme = fs.readFileSync(
+    path.join(root, "../docs/site/theme.js"),
+    "utf8",
+  );
+  for (const step of steps.filter(Boolean))
+    assert.match(theme, new RegExp(`"${step}"`));
 });
 
 // The status language reads in both themes: every status colour on its badge (13% of itself over the page and over a
@@ -312,6 +404,7 @@ test("every class of the stylesheets is used by a component", () => {
     /^level-/, // attention.tsx: level-${item.level}
     /^kind-\d+$/, // wish-task.tsx: kind-${event.kind}, a TaskEvent kind
     /^work-/, // wish-task.tsx: work-${work.tone}, where a task's work stands
+    /^lucide$/, // lucide-react's icons carry it (styles.css sizes them in rem)
   ];
   const components = fs
     .readdirSync(root, { recursive: true })
@@ -403,11 +496,11 @@ test("the sidebar section labels align with nav-item and the wish counter stays 
   for (const decl of [
     "display: flex;",
     "align-items: center;",
-    "gap: 10px;",
+    "gap: 0.625rem;",
     "width: 100%;",
-    "padding: 11px 10px;",
+    "padding: 0.6875rem 0.625rem;",
     "color: var(--n-9c);",
-    "font-size: var(--font-size-body, 12px);",
+    "font-size: var(--font-size-body, 0.75rem);",
   ]) {
     assert.ok(label.includes(decl), `.sidebar-section-label has ${decl}`);
     assert.ok(nav.includes(decl), `.nav-item has ${decl}`);
@@ -431,18 +524,18 @@ test("the Tilasms tab lays out a single left column of regular cards and a drop 
   };
   const drop = rule(".tilasm-drop");
   assert.match(drop, /border:\s*1px dashed var\(--line\);/);
-  assert.match(drop, /border-radius:\s*8px;/);
+  assert.match(drop, /border-radius:\s*0\.5rem;/);
   assert.match(drop, /cursor:\s*pointer;/);
   assert.doesNotMatch(drop, /border-(?:top|right|bottom|left)/);
 
   const list = rule(".tilasm-list");
   assert.match(list, /display:\s*flex;/);
   assert.match(list, /flex-direction:\s*column;/);
-  assert.match(list, /max-width:\s*460px;/);
+  assert.match(list, /max-width:\s*28\.75rem;/);
 
   const row = rule(".tilasm-row");
   assert.match(row, /border:\s*1px solid var\(--line\);/);
-  assert.match(row, /border-radius:\s*8px;/);
+  assert.match(row, /border-radius:\s*0\.5rem;/);
   assert.doesNotMatch(row, /border-(?:top|right|bottom|left)/);
 
   const open = rule(".tilasm-row.open");

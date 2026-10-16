@@ -32,11 +32,14 @@ import {
 import { type TreeLayout, type TreeNode, treeLayout } from "./data/tree";
 import { t } from "./i18n";
 import { ToneIcon } from "./status";
+import { useTextScale } from "./text-size";
 import { TaskUsage } from "./usage";
 import { MergeLabel, promptPreview } from "./wish-task";
 import "./task-tree.css";
 
-// A row's height, a lane's width, and the room left of the first lane, in pixels.
+// A row's height, a lane's width, and the room left of the first lane, in pixels at the default text size: the tree
+// lays out in these units and draws in rem, so it follows the root font size (text-size.ts), and measures the screen
+// with the text size's scale.
 export const ROW = 24;
 const LANE = 12;
 const PAD = 10;
@@ -44,6 +47,7 @@ const PAD = 10;
 const OVERSCAN = 40;
 
 const x = (lane: number) => PAD + lane * LANE;
+const rem = (length: number) => `${length / 16}rem`;
 
 // joint goes on from a point to another, rising: it leaves vertically and arrives vertically, a soft curve between, like
 // smoke.
@@ -193,6 +197,8 @@ export function TaskTree({
   const drawn = useMemo(() => pieces(layout, tones), [layout, tones]);
   const width = PAD * 2 + (layout.lanes - 1) * LANE;
   const height = n * ROW;
+  // A row's height on screen.
+  const row = ROW * useTextScale();
 
   // The rows on screen, by the scroll of the page: the newest ones until it is measured.
   const ref = useRef<HTMLDivElement>(null);
@@ -208,12 +214,12 @@ export function TaskTree({
     const view = scroller
       ? scroller.getBoundingClientRect()
       : { top: 0, bottom: window.innerHeight };
-    const top = Math.floor((view.top - box.top) / ROW);
-    const bottom = Math.ceil((view.bottom - box.top) / ROW);
+    const top = Math.floor((view.top - box.top) / row);
+    const bottom = Math.ceil((view.bottom - box.top) / row);
     const lo = Math.max(0, n - 1 - bottom - OVERSCAN);
     const hi = Math.min(n - 1, n - 1 - top + OVERSCAN);
     setRange((was) => (was[0] === lo && was[1] === hi ? was : [lo, hi]));
-  }, [n]);
+  }, [n, row]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -249,16 +255,16 @@ export function TaskTree({
     if (!scroller) return;
     const box = el.getBoundingClientRect();
     const view = scroller.getBoundingClientRect();
-    const at = box.top + (n - 1 - focusRow) * ROW;
+    const at = box.top + (n - 1 - focusRow) * row;
     // Under the attention bar is out of sight (src/azima.tsx useStickyRoom).
     const top =
       view.top +
       (parseFloat(
         getComputedStyle(scroller).getPropertyValue("--attention-height"),
       ) || 0);
-    if (at >= top && at + ROW <= view.bottom) return;
+    if (at >= top && at + row <= view.bottom) return;
     scroller.scrollTop += at - (top + view.bottom) / 2;
-  }, [focusRow, n]);
+  }, [focusRow, n, row]);
 
   const [hover, setHover] = useState(-1);
   const lit = hover >= 0 ? hover : (focusRow ?? -1);
@@ -283,12 +289,18 @@ export function TaskTree({
           <div
             className="task-tree"
             ref={ref}
-            style={{ height, "--tree-lanes": `${width}px` } as CSSProperties}
+            style={
+              {
+                height: rem(height),
+                "--tree-lanes": rem(width),
+              } as CSSProperties
+            }
           >
             <svg
               className="task-tree-lines"
               width={width}
               height={height}
+              style={{ width: rem(width), height: rem(height) }}
               viewBox={`0 0 ${width} ${height}`}
               aria-hidden="true"
             >
@@ -376,7 +388,7 @@ const TreeRow = memo(function TreeRow({
     <button
       type="button"
       className={`tree-row tone-${tone}${focused ? " focused" : ""}${kin ? " kin" : ""}`}
-      style={{ top: (n - 1 - node.row) * ROW }}
+      style={{ top: rem((n - 1 - node.row) * ROW) }}
       data-task={task.code}
       aria-label={`${task.code} ${task.title}: ${taskStatusText(task, forkedAs, fixedBy)}`}
       onClick={() => onOpen(task.id)}
@@ -385,7 +397,7 @@ const TreeRow = memo(function TreeRow({
       onFocus={() => onHover(node.row)}
       onBlur={() => onHover(-1)}
     >
-      <span className="tree-dot" style={{ left: x(node.lane) }}>
+      <span className="tree-dot" style={{ left: rem(x(node.lane)) }}>
         <ToneIcon tone={tone} size={12} />
       </span>
       <span className="tree-label">
@@ -423,7 +435,7 @@ function TreeTip({
     <span
       className="task-tooltip tree-tip"
       role="tooltip"
-      style={{ top: (n - node.row) * ROW }}
+      style={{ top: rem((n - node.row) * ROW) }}
     >
       <span className="task-tooltip-title">{task.title}</span>
       {azima && (

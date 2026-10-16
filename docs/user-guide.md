@@ -661,5 +661,6 @@ name your projects' folders and branches and your tasks' codes; nothing else of 
   window's theme, its navigation in the window's language: a splash page, then Introduction, Getting started, a page per
   concept, and the command line (also served at `/docs/` while `djinn up` runs).
 - [Agent protocol](agent-protocol.md) · [Providers](providers.md) · [Adaptable wishes](adaptable-wishes.md) · [Worker memory](worker-memory.md)
-- The language follows the system (English or French); change it, and the theme, in **Connections & preferences**.
+- The language follows the system (English or French); change it, the theme and the text size (Large, Default,
+  Compact, Very compact: the whole window scales, its spacing with its text) in **Connections & preferences**.
 - To build Djinn, or work on it: [`CONTRIBUTING.md`](../CONTRIBUTING.md).
