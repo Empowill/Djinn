@@ -2780,7 +2780,7 @@ enum Change {
   CHANGE_PROJECT = 5;
   // The inbox: an item came, or was routed or dismissed; a source was plugged in or unplugged, or a project added.
   CHANGE_INBOX = 6;
-  // Its tilasms: one put, restored or imported.
+  // Its tilasms: one put, restored or imported, or a comment on one written or sent.
   CHANGE_TILASM = 7;
   // The machine operating load notch changed.
   CHANGE_LOAD = 8;

@@ -83,6 +83,97 @@ message TilasmFile {
   bytes content = 3;
 }
 
+// TilasmComment is a remark of the developer on a tilasm: on a passage, on an element, or on the whole of it. A draft
+// reaches no agent and costs nothing; SendComments sends every draft of the tilasm at once, as one lead event. Kept on
+// this machine: a tilasm's export leaves its comments out.
+message TilasmComment {
+  option (djinn.v1.unique) = {fields: ["tilasm_id", "code"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The tilasm it is on.
+  string tilasm_id = 2;
+  // The wish of that tilasm.
+  string wish_id = 3;
+  // Short code within the tilasm, like C3: L42 C3 names it.
+  string code = 4 [(buf.validate.field).string.pattern = "^C[0-9]{1,4}$"];
+  // What the developer wrote.
+  string text = 5 [(buf.validate.field).string.max_len = 4000];
+  // Where it is; unset: the whole tilasm.
+  TilasmAnchor anchor = 6;
+  // The version it was written on.
+  int32 version = 7;
+  // A draft, or sent.
+  CommentState state = 8;
+  // The send it left with, 1, 2… within the tilasm; 0 while a draft.
+  int32 send = 9;
+  // When it was written.
+  google.protobuf.Timestamp create_time = 10;
+  // When its draft was last edited.
+  google.protobuf.Timestamp update_time = 11;
+  // When it was sent.
+  google.protobuf.Timestamp send_time = 12;
+  // The Djinn's reply, and the tasks it made of it.
+  CommentReply reply = 13;
+  // The comment it follows up, by code (C2), when the developer answered a reply.
+  string follows = 14 [(buf.validate.field).string.max_len = 10];
+}
+
+// TilasmAnchor is what a comment is on, kept so that it is found again in another version.
+message TilasmAnchor {
+  // The page of the tilasm: index.html, or another of its .html files.
+  string page = 1 [(buf.validate.field).string.max_len = 4096];
+  // A passage: the text quoted, the 32 characters before and after it, and its place in the page's text.
+  string exact = 2 [(buf.validate.field).string.max_len = 2000];
+  string prefix = 3 [(buf.validate.field).string.max_len = 200];
+  string suffix = 4 [(buf.validate.field).string.max_len = 200];
+  int32 start = 5;
+  int32 end = 6;
+  // An element: its id, else its path from the body, with the start of its text.
+  string element_id = 7 [(buf.validate.field).string.max_len = 1000];
+  string path = 8 [(buf.validate.field).string.max_len = 2000];
+  string fingerprint = 9 [(buf.validate.field).string.max_len = 2000];
+  // What the developer saw: the heading above it, "figure: The path of a notice".
+  string label = 10 [(buf.validate.field).string.max_len = 1000];
+  // Where it stands in the latest version the window read: found, changed or lost, and which version.
+  AnchorStatus status = 11;
+  int32 status_version = 12;
+}
+
+// CommentReply is the Djinn's answer to a sent comment: what it did, or why not.
+message CommentReply {
+  // The reply.
+  string text = 1 [(buf.validate.field).string.max_len = 4000];
+  // Who wrote it: the lead, or a task's code (W12).
+  string author = 2 [(buf.validate.field).string.max_len = 100];
+  // When it was written.
+  google.protobuf.Timestamp create_time = 3;
+  // The tasks made of the comment, by identifier.
+  repeated string task_ids = 4;
+}
+
+// CommentState is where a comment stands: written, or sent to the Djinn.
+enum CommentState {
+  // Not set.
+  COMMENT_STATE_UNSPECIFIED = 0;
+  // Written, not sent: no agent reads it.
+  COMMENT_STATE_DRAFT = 1;
+  // Sent to the Djinn: it no longer changes.
+  COMMENT_STATE_SENT = 2;
+}
+
+// AnchorStatus is how a comment's anchor was found again in a later version.
+enum AnchorStatus {
+  // Not looked for yet.
+  ANCHOR_STATUS_UNSPECIFIED = 0;
+  // Found as it was, perhaps moved.
+  ANCHOR_STATUS_FOUND = 1;
+  // Found changed: a passage or an element that shares most of its words.
+  ANCHOR_STATUS_CHANGED = 2;
+  // Not found: the passage or the element is gone.
+  ANCHOR_STATUS_LOST = 3;
+}
+
 // Tilasms, or talismans: the material that explains a wish, kept on this machine and linked from anywhere. A put
 // replaces a tilasm with a new version, and the earlier ones can be read and restored.
 service TilasmService {
@@ -137,6 +228,31 @@ service TilasmService {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Read the comments the developer sent on a tilasm, each with the passage or the element it is on: those of one send
+  // with --send, as its comments event names it, else every send. A draft never shows: it is the developer's alone.
+  rpc Comments(TilasmServiceCommentsRequest) returns (TilasmServiceCommentsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message TilasmServiceCommentsRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Only the comments of this send, 1, 2…; by default every send.
+  int32 send = 3 [(buf.validate.field).int32.gte = 0];
+}
+
+message TilasmServiceCommentsResponse {
+  // The comments to read: the tilasm, then each send, then each of its comments with what it is on.
+  string text = 1;
+  // The same comments, by send then code.
+  repeated TilasmComment comments = 2 [(djinn.v1.json_only) = true];
 }
 
 message TilasmServicePutRequest {
