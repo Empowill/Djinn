@@ -27,6 +27,7 @@ import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
 import { Docs } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
 import { startWishSmokePrewarm } from "./wish-smoke";
+import { TilasmOver } from "./tilasm-over";
 import { type Opening, type Reaching, WishView } from "./wish-view";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
@@ -406,51 +407,54 @@ export function WishApp() {
         </div>
       </aside>
       <main className="main-shell">
-        <LayoutGroup id="workspace-action-group">
-          {modal === "make" ? (
-            <MakeWish
-              projects={projects}
-              active={active.length}
-              onBusyChange={setMaking}
-              backActionRef={makeBackAction}
-              onBackSetupChange={setMakeBackInSetup}
-              onClose={closeMake}
-              onMade={(made, warning) => {
-                setModal(null);
-                setSelected(made.id);
-                setJustMade(made);
-                void data.changed(made.id, [Change.WISH]);
-                if (warning) setToast(warning);
-              }}
-            />
-          ) : settling ? (
-            <div className="wish-view" aria-busy="true" />
-          ) : hourglass ? (
-            <Hourglass
-              wishes={active}
-              target={reaching?.wishId === HOURGLASS ? reaching : undefined}
-            />
-          ) : plan ? (
-            <FlightPlan
-              wishes={active}
-              onOpen={setSelected}
-              onToast={setToast}
-              onSetupAgents={() => setModal("agents")}
-            />
-          ) : wish ? (
-            <WishView
-              key={wish.id}
-              wish={wish}
-              opening={opening?.wishId === wish.id ? opening : undefined}
-              reaching={reaching?.wishId === wish.id ? reaching : undefined}
-              onToast={setToast}
-              onSetupAgents={() => setModal("agents")}
-            />
-          ) : (
-            <HomePlaceholder />
-          )}
-          <StatusBar live={live} error={error} />
-        </LayoutGroup>
+        {/* A tilasm a question names opens over the view shown, which stays as it is under it. */}
+        <TilasmOver view={modal === "make" ? "make" : selected}>
+          <LayoutGroup id="workspace-action-group">
+            {modal === "make" ? (
+              <MakeWish
+                projects={projects}
+                active={active.length}
+                onBusyChange={setMaking}
+                backActionRef={makeBackAction}
+                onBackSetupChange={setMakeBackInSetup}
+                onClose={closeMake}
+                onMade={(made, warning) => {
+                  setModal(null);
+                  setSelected(made.id);
+                  setJustMade(made);
+                  void data.changed(made.id, [Change.WISH]);
+                  if (warning) setToast(warning);
+                }}
+              />
+            ) : settling ? (
+              <div className="wish-view" aria-busy="true" />
+            ) : hourglass ? (
+              <Hourglass
+                wishes={active}
+                target={reaching?.wishId === HOURGLASS ? reaching : undefined}
+              />
+            ) : plan ? (
+              <FlightPlan
+                wishes={active}
+                onOpen={setSelected}
+                onToast={setToast}
+                onSetupAgents={() => setModal("agents")}
+              />
+            ) : wish ? (
+              <WishView
+                key={wish.id}
+                wish={wish}
+                opening={opening?.wishId === wish.id ? opening : undefined}
+                reaching={reaching?.wishId === wish.id ? reaching : undefined}
+                onToast={setToast}
+                onSetupAgents={() => setModal("agents")}
+              />
+            ) : (
+              <HomePlaceholder />
+            )}
+            <StatusBar live={live} error={error} />
+          </LayoutGroup>
+        </TilasmOver>
       </main>
       <AnimatePresence>
         {modal === "project" && (

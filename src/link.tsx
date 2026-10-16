@@ -1,12 +1,18 @@
-// A link an agent wrote: a djinn:// one opens what it names in place, a tilasm or a wish; in the window, the system's
-// browser opens an http(s) one; anything else stays text. A click on it does only that: inside a question's option it
+// A link an agent wrote: a djinn:// one opens what it names in place, a tilasm or a wish (a tilasm named in a question
+// opens over the view, tilasm-over.tsx); in the window, the system's browser opens an http(s) one; anything else stays text. A click on it does only that: inside a question's option it
 // never picks the option.
 import { ExternalLink } from "lucide-react";
 import { type MouseEvent, type ReactNode } from "react";
 
 import { useDjinn } from "./data/djinn";
-import { isDjinnLink, linkName, openDjinnLink } from "./data/links";
+import {
+  isDjinnLink,
+  linkName,
+  openDjinnLink,
+  parseDjinnLink,
+} from "./data/links";
 import { t } from "./i18n";
+import { useTilasmOver } from "./tilasm-over";
 
 export function Link({
   href,
@@ -18,15 +24,23 @@ export function Link({
   children?: ReactNode;
 }) {
   const djinn = useDjinn();
+  const openOver = useTilasmOver();
   if (href && isDjinnLink(href))
     return (
       <a
         href={href}
         className={className ? `djinn-link ${className}` : "djinn-link"}
-        onClick={(e: MouseEvent) => {
+        onClick={(e: MouseEvent<HTMLAnchorElement>) => {
           e.preventDefault();
           e.stopPropagation();
-          if (djinn) void openDjinnLink(djinn, href);
+          // A tilasm a question names opens over the view, the question kept as it is.
+          if (
+            openOver &&
+            parseDjinnLink(href)?.kind === "tilasm" &&
+            e.currentTarget.closest(".question-card")
+          )
+            openOver(href, e.currentTarget);
+          else if (djinn) void openDjinnLink(djinn, href);
         }}
       >
         {children}
