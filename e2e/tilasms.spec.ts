@@ -297,7 +297,9 @@ test("a tilasm a question links to opens full size over the wish's page and the 
       const hemp = card.getByRole("button", { name: /Hemp/ });
       await hemp.click();
       await expect(hemp).toHaveAttribute("aria-pressed", "true");
-      await link.scrollIntoViewIfNeeded();
+      // In the middle of the view: at its top, the bar of what waits for you would take the click, and Playwright
+      // would scroll again to click, after the scroll is read.
+      await link.evaluate((el) => el.scrollIntoView({ block: "center" }));
       // The card is marked: the same element after, never drawn again.
       await card.evaluate(
         (el, where) => el.setAttribute("data-kept", where),
