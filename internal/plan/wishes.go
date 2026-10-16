@@ -390,6 +390,15 @@ func (w *Wishes) Delete(
 				return err
 			}
 		}
+		comments, err := store.List[*planv1.TilasmComment](ctx, tx, where)
+		if err != nil {
+			return err
+		}
+		for _, c := range comments {
+			if err := tx.Delete(c); err != nil {
+				return err
+			}
+		}
 		items, err := store.List[*planv1.InboxItem](ctx, tx, where)
 		if err != nil {
 			return err

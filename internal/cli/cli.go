@@ -575,7 +575,7 @@ func writeWarnings(w io.Writer, m protoreflect.Message) {
 }
 
 // singleContentField returns the single content field of fields, ignoring pagination metadata
-// (next_page_token and total) and warnings if present.
+// (next_page_token and total), warnings if present, and the fields printed with --json only.
 func singleContentField(fields protoreflect.FieldDescriptors) protoreflect.FieldDescriptor {
 	if fields.Len() == 1 {
 		return fields.Get(0)
@@ -584,7 +584,7 @@ func singleContentField(fields protoreflect.FieldDescriptors) protoreflect.Field
 	for i := range fields.Len() {
 		fd := fields.Get(i)
 		name := string(fd.Name())
-		if name == "next_page_token" || name == "total" || name == "warnings" {
+		if name == "next_page_token" || name == "total" || name == "warnings" || jsonOnly(fd) {
 			continue
 		}
 		nonPagination = append(nonPagination, fd)
@@ -595,9 +595,14 @@ func singleContentField(fields protoreflect.FieldDescriptors) protoreflect.Field
 	return nil
 }
 
+// jsonOnly tells whether the command line prints the field with --json only.
+func jsonOnly(fd protoreflect.FieldDescriptor) bool {
+	return proto.GetExtension(fd.Options(), djinnv1.E_JsonOnly) == true
+}
+
 func writeFields(w io.Writer, m protoreflect.Message, indent string) {
 	for _, fd := range byNumber(m.Descriptor()) {
-		if !m.Has(fd) || fd.IsMap() {
+		if !m.Has(fd) || fd.IsMap() || jsonOnly(fd) {
 			continue
 		}
 		v := m.Get(fd)

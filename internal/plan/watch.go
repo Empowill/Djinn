@@ -157,6 +157,9 @@ func (ws *watchers) changed(ms []proto.Message) {
 			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_BLOCK, m.GetId()})
 		case *planv1.Tilasm:
 			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TILASM, ""})
+		case *planv1.TilasmComment:
+			// The comments show in the tilasm's view, which reads its tilasm again.
+			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TILASM, ""})
 		case *planv1.Project:
 			// The inbox's sources come from the projects' skills.
 			changes = append(changes, change{"", planv1.Change_CHANGE_PROJECT, ""}, change{"", planv1.Change_CHANGE_INBOX, ""})

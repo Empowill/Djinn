@@ -351,6 +351,16 @@ func (f tilasms) List(_ context.Context, req *connect.Request[planv1.TilasmServi
 	}}), nil
 }
 
+func (f tilasms) Comments(_ context.Context, req *connect.Request[planv1.TilasmServiceCommentsRequest]) (*connect.Response[planv1.TilasmServiceCommentsResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&planv1.TilasmServiceCommentsResponse{
+		Text: fmt.Sprintf("L01 · The objects in the database · version 1\n\nsend %d · 1 comment\n", req.Msg.GetSend()),
+		Comments: []*planv1.TilasmComment{{
+			Code: "C1", Text: "Say what a wish holds.", State: planv1.CommentState_COMMENT_STATE_SENT, Send: req.Msg.GetSend(),
+		}},
+	}), nil
+}
+
 type projects struct {
 	planv1connect.UnimplementedProjectServiceHandler
 	*fake
@@ -614,6 +624,23 @@ func TestRun(t *testing.T) {
 				t.Errorf("server called = %v, want %v", called, tt.wantCalled)
 			}
 		})
+	}
+}
+
+// TestJSONOnly: a response field marked json_only prints with --json only, so that djinn tilasm comments shows the
+// text the lead reads and not the same comments again, field by field.
+func TestJSONOnly(t *testing.T) {
+	f, run := serve(t)
+	code, out, errs := run("tilasm", "comments", "L01", "--send", "2")
+	if want := "text: L01 · The objects in the database · version 1\n\nsend 2 · 1 comment\n\n"; code != 0 || out != want {
+		t.Errorf("djinn tilasm comments L01 --send 2: code %d, stdout %q, want %q; stderr %s", code, out, want, errs)
+	}
+	if got := f.calls[0].(*planv1.TilasmServiceCommentsRequest); got.GetTilasm().GetCode() != "L01" || got.GetSend() != 2 {
+		t.Errorf("request = %v", got)
+	}
+	code, out, errs = run("--json", "tilasm", "comments", "L01")
+	if code != 0 || !strings.Contains(out, `"comments": [`) || !strings.Contains(out, `"text": "Say what a wish holds."`) {
+		t.Errorf("djinn --json tilasm comments L01: code %d, stdout:\n%s\nstderr: %s", code, out, errs)
 	}
 }
 
