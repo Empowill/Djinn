@@ -542,11 +542,13 @@ test("a question shows its options by letter and its recommendation; answered, w
       onWithdraw: () => {},
     }),
   );
-  // Move at the top; Withdraw on the left, Enlighten in the middle, then the lamp; B, recommended, is the one rubbed.
+  // Move, an icon named by its label, beside the heading; Withdraw on the left, Enlighten in the middle, then the
+  // lamp; B, recommended, is the one rubbed.
   assert.match(
     lamp,
-    /<button type="button" class="button secondary small question-move"><svg[^>]*>.*?<\/svg>Move to another wish…<\/button>/,
+    /<\/div><button class="question-move" type="button" aria-label="Move to another wish"><svg[^>]*>(?:(?!<\/svg>).)*<\/svg><\/button><\/div>/,
   );
+  assert.doesNotMatch(lamp, /question-move"[^>]*title=/);
   assert.ok(
     lamp.indexOf("Withdraw question…") < lamp.indexOf(">Enlighten me<kbd"),
   );
@@ -1220,7 +1222,7 @@ test("the questions column groups the open questions by wish, the first open in 
       ["Trim the wick", "1"],
     ],
   );
-  // The first question is open, in full: its move at the top, the whole context (no Read more), its table and its
+  // The first question is open, in full: its move icon beside the title, the whole context (no Read more), its table and its
   // code block with Copy, the recommendation, the lettered options, the note and the three gestures.
   const rows = html.split('<article id="question-').slice(1);
   assert.equal(rows.length, 3);
@@ -1230,7 +1232,7 @@ test("the questions column groups the open questions by wish, the first open in 
   );
   assert.match(
     rows[0],
-    /<div class="question-open"><div class="question-open-top"><button type="button" class="button secondary small question-move">/,
+    /<\/p><\/div><button class="question-move" type="button" aria-label="Move to another wish"><svg[^>]*>(?:(?!<\/svg>).)*<\/svg><\/button><div class="question-open">/,
   );
   assert.doesNotMatch(rows[0], /read-more|Read more/);
   assert.match(rows[0], /<h2>Versions<\/h2>\s*<h3>Round 0<\/h3>/);
@@ -1545,7 +1547,7 @@ test("a question reads top-down: its title, what is at stake folded, its report,
   };
   const order = [
     "Will you run the command?",
-    "Move to another wish…",
+    'aria-label="Move to another wish"',
     "What is at stake</h4>",
     s.dew.CONTEXT_FIRST,
     "Read more",

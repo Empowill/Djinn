@@ -569,7 +569,7 @@
   "question.investigating_note": "Vous avez demandé à en savoir plus : {note}",
   "question.investigating_section": "Vous avez demandé à en savoir plus avant de décider : elles reviennent ici une fois révisées par le Djinn. Vous pouvez encore décider maintenant.",
   "question.investigating_title": "En investigation",
-  "question.move": "Déplacer vers un autre souhait…",
+  "question.move": "Déplacer vers un autre souhait",
   "question.move_confirm": "Déplacer la question",
   "question.move_dialog_title": "Déplacer {code}",
   "question.move_follow": "Les tâches suivant cette décision la suivent",

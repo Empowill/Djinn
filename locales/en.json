@@ -569,7 +569,7 @@
   "question.investigating_note": "You asked to find out more: {note}",
   "question.investigating_section": "You asked for more before deciding: they come back here once the Djinn has revised them. You can still decide now.",
   "question.investigating_title": "Being investigated",
-  "question.move": "Move to another wish…",
+  "question.move": "Move to another wish",
   "question.move_confirm": "Move question",
   "question.move_dialog_title": "Move {code}",
   "question.move_follow": "Tasks following this decision follow it",
