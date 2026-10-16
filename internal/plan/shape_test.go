@@ -115,7 +115,17 @@ func TestContextWarnings(t *testing.T) {
 			context: long,
 			want:    []string{"line 1: a paragraph of 879 characters", "879 characters of text with no list"},
 		},
-		{name: "a long list", context: strings.Repeat("- "+long[:200]+"\n", 6)},
+		{name: "a long list", context: strings.Repeat("- "+long[:200]+"\n", 5)},
+		{
+			name:    "a list over a screen",
+			context: strings.Repeat("- "+long[:200]+"\n", 6),
+			want:    []string{"1212 characters of text outside the code block, over 1200"},
+		},
+		{
+			name: "a long code block, short text",
+			context: "~~~sh\n" + strings.Repeat("# "+long[:200]+"\ngit fetch\n", 8) + "~~~\n\n" +
+				"Why: the fetch brings the fix.\n\nDetails: djinn://tilasm/01a1",
+		},
 		{
 			name:    "a long list item",
 			context: "- " + long,
