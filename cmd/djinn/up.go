@@ -183,6 +183,10 @@ func runUp(args []string) (restart bool, err error) {
 		return false, fmt.Errorf("open the database: %w", err)
 	}
 	defer down.Step("database", func() { db.Close() })
+	// The questions stored with the history Djinn appended to their context lose it: their rounds hold it (W114).
+	if err := plan.CleanVersions(ctx, db); err != nil {
+		return false, fmt.Errorf("clean the questions' versions: %w", err)
+	}
 	// A transaction that holds the one connection past logx.HeldLong names itself in the log, with a dump (W549).
 	go db.Watch(ctx, logx.Folder(home))
 	// The workers stop before the database closes: deferred calls run last first.

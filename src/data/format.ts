@@ -742,6 +742,44 @@ export function investigating(question: Question): boolean {
   );
 }
 
+// A version a question had before its last revision.
+export interface QuestionVersion {
+  // 1 for the question as it was asked.
+  number: number;
+  // When it was asked, or revised into this version.
+  time?: Timestamp;
+  context: string;
+  options: string[];
+  recommendation: string;
+  // What you asked to investigate about it, in order.
+  asked: string[];
+}
+
+// questionVersions are a question's earlier versions, the first asked first, as its rounds keep them: each revision's
+// round holds the version it replaced. The question itself is its current version, never among them.
+export function questionVersions(question: Question): QuestionVersion[] {
+  const out: QuestionVersion[] = [];
+  let time = question.createTime;
+  let asked: string[] = [];
+  for (const round of question.rounds ?? []) {
+    if (round.kind === RoundKind.ENLIGHTEN) {
+      if (round.note.trim()) asked.push(round.note.trim());
+    } else if (round.kind === RoundKind.REVISE) {
+      out.push({
+        number: out.length + 1,
+        time,
+        context: round.context,
+        options: round.options,
+        recommendation: round.recommendation,
+        asked,
+      });
+      time = round.createTime;
+      asked = [];
+    }
+  }
+  return out;
+}
+
 // waitsForYou tells an open question that waits for your answer.
 export function waitsForYou(question: Question): boolean {
   return isOpen(question) && !investigating(question);

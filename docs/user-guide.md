@@ -386,9 +386,10 @@ of its context. A check, a measure, a log or a CI result is never asked of you: 
 - **Enlighten me**, on its left, starts an investigator worker to dig first, in one click (`enlighten_workers: false`
   lets the Djinn investigate itself): the note you typed says what to dig into (empty, it digs in general). The question
   folds to one line, **Being investigated** with what you asked, out of the way of the questions that wait for you; a
-  click opens it, and you may still decide now. Revised, it opens again and waits for your answer. Its earlier
-  versions fold under **Previous versions** below what is at stake, closed until you open them; its rounds fold
-  below the card.
+  click opens it, and you may still decide now. Revised, it opens again and waits for your answer. Its context
+  is its current version only: **Versions (3)**, a small button in the card's corner, opens the earlier versions
+  below the question, to read, the last one first, each with what you asked to investigate about it; a second click
+  closes them. `djinn question revise` prints the current version too, its rounds with `--history`.
 - **Keyboard shortcuts.** Focus on the card, or in its note field, drives it from the keys:
   - Enter in the note field rubs the lamp: answers with the option selected. An input method composing does not
     answer, nor does Enter answer before an option is selected.

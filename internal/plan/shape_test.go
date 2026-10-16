@@ -190,8 +190,7 @@ func TestAskReviseWarn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if q, w := rev.Msg.GetQuestion(), rev.Msg.GetWarnings(); CleanContext(q.GetContext()) != good ||
-		!strings.Contains(q.GetContext(), HistoryHeader) || len(w) > 0 {
+	if q, w := rev.Msg.GetQuestion(), rev.Msg.GetWarnings(); q.GetContext() != good || len(w) > 0 {
 		t.Errorf("revise in shape: context %q, warnings %q", q.GetContext(), w)
 	}
 }

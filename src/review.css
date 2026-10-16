@@ -1657,7 +1657,8 @@ html[data-motion="reduced"] .question-wisp {
 .copy-command.failed {
   color: var(--st-failed);
 }
-.question-context h4 {
+.question-context h4,
+.question-versions-list h4 {
   font-size: 13px;
   font-weight: 600;
   color: var(--muted);
@@ -1665,8 +1666,6 @@ html[data-motion="reduced"] .question-wisp {
   letter-spacing: 0.6px;
   margin: 0 0 6px;
 }
-.question-rounds > summary,
-.question-history > summary,
 .wish-task-events-fold > summary {
   display: inline-flex;
   align-items: center;
@@ -1675,19 +1674,57 @@ html[data-motion="reduced"] .question-wisp {
   cursor: pointer;
   padding: 2px 0;
 }
-.question-rounds[open] > summary,
-.question-history[open] > summary {
-  margin-bottom: 6px;
+/* A question's earlier versions, below it, to read: one bordered box each, the last one first. */
+.question-versions-list > ol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.question-context > * + .question-history {
-  margin-top: 8px;
+.question-versions-list > ol > li {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+.question-version-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.question-version-number {
+  color: var(--text);
+  font-weight: 600;
+}
+.question-version-options {
+  margin: 0;
+  padding-left: 22px;
+}
+.question-version-recommendation,
+.question-version-asked {
+  margin: 0;
+  color: var(--muted);
+}
+.question-version-asked {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
 }
 .review .answered-info {
   color: var(--muted);
 }
 
-/* Later and Move to another wish: small squares in the card's top right corner, centred on the title's first line (a
-   row's) or on the code (a card's); the title wraps before them. Later, pressed, while the question is put off. */
+/* Versions, Later and Move to another wish: small squares in the card's top right corner, centred on the title's
+   first line (a row's) or on the code (a card's); the title wraps before them. Later, pressed, while the question is
+   put off. */
 .question-corner {
   display: flex;
   flex-shrink: 0;
@@ -1722,7 +1759,17 @@ html[data-motion="reduced"] .question-wisp {
   outline-offset: 2px;
   color: var(--text);
 }
-.question-later.is-pressed {
+/* Versions (3): the count says what it opens; a pill as small as its neighbours. */
+.question-corner-button.question-versions {
+  display: inline-flex;
+  gap: 5px;
+  width: auto;
+  padding: 0 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.question-later.is-pressed,
+.question-versions.is-pressed {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
   color: var(--text);
