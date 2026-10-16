@@ -48,7 +48,9 @@ html[data-theme="light"] {
 
 /* Notch Color Variations */
 .operating-load-slider[data-notch="minimal"],
-.operating-load-forecast[data-notch="minimal"] {
+.operating-load-forecast[data-notch="minimal"],
+.operating-load-fill[data-notch="minimal"],
+.operating-load-fill-reach[data-notch="minimal"] {
   --notch-color: #a3a3ab;
   --thumb-size: 13px;
   --thumb-glow: 0 0 0 1px rgba(163, 163, 171, 0.4);
@@ -56,7 +58,9 @@ html[data-theme="light"] {
 }
 
 .operating-load-slider[data-notch="medium"],
-.operating-load-forecast[data-notch="medium"] {
+.operating-load-forecast[data-notch="medium"],
+.operating-load-fill[data-notch="medium"],
+.operating-load-fill-reach[data-notch="medium"] {
   --notch-color: #43c29f;
   --thumb-size: 14px;
   --thumb-glow: 0 0 0 1px rgba(67, 194, 159, 0.4);
@@ -64,7 +68,9 @@ html[data-theme="light"] {
 }
 
 .operating-load-slider[data-notch="high"],
-.operating-load-forecast[data-notch="high"] {
+.operating-load-forecast[data-notch="high"],
+.operating-load-fill[data-notch="high"],
+.operating-load-fill-reach[data-notch="high"] {
   --notch-color: #43c29f;
   --thumb-size: 15px;
   --thumb-glow: 0 0 5px rgba(67, 194, 159, 0.45);
@@ -72,7 +78,9 @@ html[data-theme="light"] {
 }
 
 .operating-load-slider[data-notch="max"],
-.operating-load-forecast[data-notch="max"] {
+.operating-load-forecast[data-notch="max"],
+.operating-load-fill[data-notch="max"],
+.operating-load-fill-reach[data-notch="max"] {
   --notch-color: #e2b33c;
   --thumb-size: 16px;
   --thumb-glow: 0 0 7px 1px rgba(226, 179, 60, 0.5);
@@ -80,7 +88,9 @@ html[data-theme="light"] {
 }
 
 .operating-load-slider[data-notch="overclock"],
-.operating-load-forecast[data-notch="overclock"] {
+.operating-load-forecast[data-notch="overclock"],
+.operating-load-fill[data-notch="overclock"],
+.operating-load-fill-reach[data-notch="overclock"] {
   --notch-color: #f08a72;
   --thumb-size: 18px;
   --thumb-glow: 0 0 8px 2px rgba(240, 138, 114, 0.6);
@@ -89,31 +99,41 @@ html[data-theme="light"] {
 
 /* Light Theme Overrides */
 html[data-theme="light"] .operating-load-slider[data-notch="minimal"],
-html[data-theme="light"] .operating-load-forecast[data-notch="minimal"] {
+html[data-theme="light"] .operating-load-forecast[data-notch="minimal"],
+html[data-theme="light"] .operating-load-fill[data-notch="minimal"],
+html[data-theme="light"] .operating-load-fill-reach[data-notch="minimal"] {
   --notch-color: #5e5e67;
   --thumb-glow: 0 0 0 1px rgba(94, 94, 103, 0.38);
 }
 
 html[data-theme="light"] .operating-load-slider[data-notch="medium"],
-html[data-theme="light"] .operating-load-forecast[data-notch="medium"] {
+html[data-theme="light"] .operating-load-forecast[data-notch="medium"],
+html[data-theme="light"] .operating-load-fill[data-notch="medium"],
+html[data-theme="light"] .operating-load-fill-reach[data-notch="medium"] {
   --notch-color: #146b5a;
   --thumb-glow: 0 0 0 1px rgba(20, 107, 90, 0.38);
 }
 
 html[data-theme="light"] .operating-load-slider[data-notch="high"],
-html[data-theme="light"] .operating-load-forecast[data-notch="high"] {
+html[data-theme="light"] .operating-load-forecast[data-notch="high"],
+html[data-theme="light"] .operating-load-fill[data-notch="high"],
+html[data-theme="light"] .operating-load-fill-reach[data-notch="high"] {
   --notch-color: #146b5a;
   --thumb-glow: 0 0 5px rgba(20, 107, 90, 0.38);
 }
 
 html[data-theme="light"] .operating-load-slider[data-notch="max"],
-html[data-theme="light"] .operating-load-forecast[data-notch="max"] {
+html[data-theme="light"] .operating-load-forecast[data-notch="max"],
+html[data-theme="light"] .operating-load-fill[data-notch="max"],
+html[data-theme="light"] .operating-load-fill-reach[data-notch="max"] {
   --notch-color: #805c00;
   --thumb-glow: 0 0 7px 1px rgba(138, 99, 0, 0.38);
 }
 
 html[data-theme="light"] .operating-load-slider[data-notch="overclock"],
-html[data-theme="light"] .operating-load-forecast[data-notch="overclock"] {
+html[data-theme="light"] .operating-load-forecast[data-notch="overclock"],
+html[data-theme="light"] .operating-load-fill[data-notch="overclock"],
+html[data-theme="light"] .operating-load-fill-reach[data-notch="overclock"] {
   --notch-color: #b0321f;
   --thumb-glow: 0 0 8px 2px rgba(176, 50, 31, 0.45);
 }
@@ -190,6 +210,33 @@ html[data-theme="light"] .operating-load-forecast[data-notch="overclock"] {
   position: absolute;
   inset: 0 7px;
   pointer-events: none;
+}
+
+/* The gauge's fill over the track, from its left end to a stop: solid to the level in effect, striped to the previewed
+   level beneath it. No border; only its width moves. */
+.operating-load-fill,
+.operating-load-fill-reach {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 3px;
+  pointer-events: none;
+  transition: width 0.2s ease;
+}
+
+.operating-load-fill {
+  background: var(--notch-color);
+  opacity: 0.85;
+}
+
+.operating-load-fill-reach {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--notch-color) 70%, transparent) 0 3px,
+    color-mix(in srgb, var(--notch-color) 30%, transparent) 3px 6px
+  );
 }
 
 /* A stop is a round button with no border: an 18px target around its dot. */
@@ -449,6 +496,26 @@ html[data-theme="light"] .operating-load-notch[data-notch="overclock"].active {
   color: var(--notch-color);
 }
 
+/* A note under the rows, as wide as they are: it wraps rather than widening the preview. */
+.operating-load-forecast-note {
+  box-sizing: border-box;
+  width: 0;
+  min-width: 100%;
+  margin-top: 3px;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+/* Overclock's risk, a warning in the theme's danger colour, framed by one uniform border. */
+.operating-load-forecast-risk {
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+  font-weight: 600;
+}
+
 /* Mini progress bars showing current use against new limit */
 .operating-load-bar {
   position: relative;
@@ -505,6 +572,8 @@ html[data-theme="light"] .operating-load-notch[data-notch="overclock"].active {
     transition: none !important;
   }
 
+  .operating-load-fill,
+  .operating-load-fill-reach,
   .operating-load-bar-limit,
   .operating-load-bar-used {
     transition: none !important;

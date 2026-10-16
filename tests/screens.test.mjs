@@ -144,10 +144,13 @@ export {
   OperatingLoad,
   OperatingLoadSlider,
   OperatingLoadForecast,
+  OperatingLoadAuto,
   loadManager,
   NOTCHES,
   notchLabel,
   notchSlug,
+  nearestNotch,
+  stopAt,
 } from "@/src/operating-load.tsx";
 export { LoadNotch } from "@/gen/ts/djinn/v1/load_pb.ts";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
@@ -8689,11 +8692,15 @@ test("operating load gauge: click selects nearest notch, keyboard steps, round s
     /active/,
   );
   // Hovering a stop previews its notch (the filled stop moves there), the one in effect staying pressed.
-  stopOf("max").onMouseEnter();
+  const track = { getBoundingClientRect: () => ({ left: 0, width: 200 }) };
+  screen.one("operating-load-slider").onMouseMove({
+    clientX: 150,
+    currentTarget: track,
+  });
   assert.equal(screen.one("operating-load-slider")["data-notch"], "max");
   assert.match(stopOf("max").className, /\bcurrent\b/);
   assert.equal(stopOf("medium")["aria-pressed"], true);
-  stopOf("max").onMouseLeave();
+  screen.one("operating-load-slider").onMouseLeave();
   assert.equal(screen.one("operating-load-slider")["data-notch"], "medium");
 
   // 4. Colours per notch class
@@ -8885,6 +8892,219 @@ test("operating load: each notch shows what the scheduler lets run there, and wh
   s.loadManager.setSnapshot({ ...base, notchSlots: {}, runningWorkers: 0 });
   assert.match(notchDescription("medium"), /up to 4 workers/);
   s.loadManager.setSnapshot(base);
+});
+
+// The pointer on the track previews the stop nearest it, gaps included: between Max and Overclock it never falls back
+// to the level in effect (W37). Nothing applies before a click.
+test("operating load: the hover previews the stop nearest the pointer along the whole track (W37)", () => {
+  const N = s.LoadNotch;
+  s.loadManager.setSnapshot({
+    notch: N.HIGH,
+    auto: false,
+    chosenNotch: N.HIGH,
+    memoryTotalBytes: 32n * 1024n * 1024n * 1024n,
+    memoryAvailableBytes: 24n * 1024n * 1024n * 1024n,
+    baseSlots: 8,
+  });
+  s.loadManager.setPreviewNotch(null);
+  const screen = live(s.OperatingLoadSlider, {});
+  const track = { getBoundingClientRect: () => ({ left: 10, width: 200 }) };
+  const at = (x) => {
+    screen.one("operating-load-slider").onMouseMove({
+      clientX: 10 + x,
+      currentTarget: track,
+    });
+    return screen.one("operating-load-slider")["data-notch"];
+  };
+  try {
+    // Stops at 0, 50, 100, 150 and 200: from Max across the gap to Overclock, then back between High and Max.
+    const seen = [
+      150, 160, 170, 174, 176, 185, 200, 186, 176, 174, 140, 126, 124, 101,
+    ].map(at);
+    assert.deepEqual(seen, [
+      "max",
+      "max",
+      "max",
+      "max",
+      "overclock",
+      "overclock",
+      "overclock",
+      "overclock",
+      "overclock",
+      "max",
+      "max",
+      "max",
+      "high",
+      "high",
+    ]);
+    // Beyond either end, the end stops.
+    assert.equal(at(-20), "minimal");
+    assert.equal(at(260), "overclock");
+    // A label previews its own notch, whatever the stop nearest it.
+    screen
+      .all("operating-load-notch")
+      .find((b) => b.props["data-notch"] === "medium")
+      .props.onMouseMove({ stopPropagation() {} });
+    assert.equal(screen.one("operating-load-slider")["data-notch"], "medium");
+    // Nothing applied while hovering; leaving the track shows the level in effect again.
+    assert.equal(s.loadManager.getSnapshot().notch, N.HIGH);
+    screen.one("operating-load-slider").onMouseLeave();
+    assert.equal(screen.one("operating-load-slider")["data-notch"], "high");
+    // The helper itself: the nearest index, none on a box not drawn.
+    assert.equal(s.nearestNotch(37, { left: 0, width: 100 }), 1);
+    assert.equal(s.nearestNotch(38, { left: 0, width: 100 }), 2);
+    assert.equal(s.nearestNotch(10, { left: 0, width: 0 }), null);
+  } finally {
+    s.loadManager.setPreviewNotch(null);
+  }
+});
+
+// A real gauge: a solid fill from the track's left end to the level in effect, a striped one on to the previewed
+// level, rising or going down (W37).
+test("operating load: the fill rises to the level in effect, striped to the previewed one (W37)", () => {
+  const N = s.LoadNotch;
+  s.loadManager.setSnapshot({
+    notch: N.HIGH,
+    auto: false,
+    chosenNotch: N.HIGH,
+  });
+  s.loadManager.setPreviewNotch(null);
+  const screen = live(s.OperatingLoadSlider, {});
+  const fill = () => {
+    const solid = screen.one("operating-load-fill");
+    const reach = screen.one("operating-load-fill-reach");
+    return [
+      solid.style.width,
+      solid["data-notch"],
+      reach.style.width,
+      reach["data-notch"],
+    ];
+  };
+  try {
+    assert.equal(s.stopAt(0), "calc(7px + 0 * (100% - 14px))");
+    assert.equal(s.stopAt(2), "calc(7px + 0.5 * (100% - 14px))");
+    assert.equal(s.stopAt(4), "calc(7px + 1 * (100% - 14px))");
+    // At rest: both up to High.
+    assert.deepEqual(fill(), [s.stopAt(2), "high", s.stopAt(2), "high"]);
+    // Previewing Overclock: solid to High, striped on to Overclock in its colour.
+    s.loadManager.setPreviewNotch(N.OVERCLOCK);
+    assert.deepEqual(fill(), [s.stopAt(2), "high", s.stopAt(4), "overclock"]);
+    // Previewing Minimal: solid down to Minimal, striped over what High gives up.
+    s.loadManager.setPreviewNotch(N.MINIMAL);
+    assert.deepEqual(fill(), [s.stopAt(0), "high", s.stopAt(2), "minimal"]);
+    s.loadManager.setPreviewNotch(null);
+    // In Auto, the fill stands at the level Auto put in effect.
+    s.loadManager.setSnapshot({
+      notch: N.MAX,
+      auto: true,
+      chosenNotch: N.HIGH,
+    });
+    assert.deepEqual(fill(), [s.stopAt(3), "max", s.stopAt(3), "max"]);
+  } finally {
+    s.loadManager.setPreviewNotch(null);
+    s.loadManager.setSnapshot({
+      notch: N.MEDIUM,
+      auto: false,
+      chosenNotch: N.MEDIUM,
+    });
+  }
+});
+
+// W32 left the Overclock risk and Auto's explanation in aria-description only: the coloured preview shows them (W37).
+test("operating load: the preview warns of Overclock's risk and explains Auto (W37)", () => {
+  const N = s.LoadNotch;
+  const base = {
+    notch: N.HIGH,
+    auto: false,
+    chosenNotch: N.HIGH,
+    memoryTotalBytes: 32n * 1024n * 1024n * 1024n,
+    memoryAvailableBytes: 24n * 1024n * 1024n * 1024n,
+    baseSlots: 8,
+  };
+  const risk =
+    /Risk: Djinn will saturate CPU and memory; other applications may slow down or be terminated\./;
+  const auto =
+    /Auto: follows keyboard and mouse activity and system load, stepping down to Minimal while you work and climbing towards High when idle\./;
+  const notes = () =>
+    live(s.OperatingLoadForecast, {})
+      .all("operating-load-forecast-note")
+      .map((n) => [
+        n.props.className,
+        s.renderToStaticMarkup(n.props.children),
+      ]);
+  try {
+    s.loadManager.setSnapshot(base);
+    s.loadManager.setPreviewNotch(null);
+    s.loadManager.setPreviewAuto(false);
+    assert.deepEqual(notes(), []);
+
+    // Overclock previewed: the risk, styled as a warning.
+    s.loadManager.setPreviewNotch(N.OVERCLOCK);
+    let found = notes();
+    assert.equal(found.length, 1);
+    assert.match(found[0][0], /\boperating-load-forecast-risk\b/);
+    assert.match(found[0][1], risk);
+    // Overclock set: the risk again; another level previewed over it shows that level's preview, without it.
+    s.loadManager.setPreviewNotch(null);
+    s.loadManager.setSnapshot({
+      ...base,
+      notch: N.OVERCLOCK,
+      chosenNotch: N.OVERCLOCK,
+    });
+    assert.match(notes()[0][1], risk);
+    s.loadManager.setPreviewNotch(N.MEDIUM);
+    assert.deepEqual(notes(), []);
+    s.loadManager.setPreviewNotch(null);
+    s.loadManager.setSnapshot(base);
+
+    // The Auto button hovered or focused: Auto's explanation, not as a warning.
+    const button = () =>
+      live(s.OperatingLoadAuto, {})
+        .all("operating-load-notch")
+        .find((b) => b.props["data-notch"] === "auto").props;
+    button().onMouseEnter();
+    found = notes();
+    assert.equal(found.length, 1);
+    assert.doesNotMatch(found[0][0], /risk/);
+    assert.match(found[0][1], auto);
+    button().onMouseLeave();
+    assert.deepEqual(notes(), []);
+    button().onFocus();
+    assert.match(notes()[0][1], auto);
+    button().onBlur();
+    assert.deepEqual(notes(), []);
+    // Auto on: the explanation stays, with the risk when Auto climbed to Overclock.
+    s.loadManager.setSnapshot({
+      ...base,
+      auto: true,
+      notch: N.OVERCLOCK,
+      chosenNotch: N.OVERCLOCK,
+    });
+    found = notes();
+    assert.equal(found.length, 2);
+    assert.match(found[0][1], risk);
+    assert.match(found[1][1], /climbing towards Overclock when idle/);
+
+    // Both stay in aria-description, and no title anywhere (W32).
+    const html = s.renderToStaticMarkup(h(s.OperatingLoad));
+    assert.doesNotMatch(html, /\stitle=/);
+    assert.match(
+      html,
+      /aria-label="Overclock"[^>]*aria-description="Overclock: up to \d+ workers[^"]*Risk: Djinn will saturate CPU and memory/,
+    );
+    assert.match(
+      html,
+      /aria-description="Auto: follows keyboard and mouse activity/,
+    );
+  } finally {
+    s.loadManager.setPreviewNotch(null);
+    s.loadManager.setPreviewAuto(false);
+    s.loadManager.setSnapshot({
+      ...base,
+      notch: N.MEDIUM,
+      chosenNotch: N.MEDIUM,
+    });
+  }
 });
 
 // The coloured preview is the gauge's only hover: a title on any of its elements brought the browser's own
