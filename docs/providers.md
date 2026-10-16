@@ -482,6 +482,24 @@ lead starts in the first project's folder) first asks to trust it, there, in the
 Djinn never answers it: trusting a folder is the user's decision. A first run of interactive Claude Code on a
 machine also shows its onboarding (theme, sign-in) once.
 
+**The driven lead (decision Q31, W131).** With `"leadDriven": true` in `settings.json`, Djinn runs no lead in a
+terminal: `harness.LeadDriver` starts a worker-like `claude -p` for each batch of the lead's events, in Djinn's own
+`lead` folder (no project's `CLAUDE.md` nor memory), with `--session-id` new each time, `--max-turns 60`,
+`--max-budget-usd 5`, the rules of the driven lead in `--append-system-prompt` and
+`--exclude-dynamic-system-prompt-sections` (the per-machine sections move to the first message, so the system prompt
+is the same from one session to the next and its cache serves them all). Its permissions are the lead's: `djinn`
+and the read-only Git commands, writing in its folder (plan files, tilasms), reading Djinn's data folder; it gets
+`DJINN_LEAD=1` and an empty `DJINN_TASK_ID`, `DJINN_WISH_ID`, `DJINN_WORKER_TOKEN`: a `djinn up` started from a
+worker's shell gave its session the worker's identity, and every write of the lead was refused (found on the first
+real run). Not `--bare`: it would not use the subscription's sign-in. **Verified** in Claude Code's docs
+(`headless.md`, `cli-reference.md`, 16/10/2026): `--max-turns` is print mode only and ends with `error_max_turns`;
+`--bare` needs an API key. **Verified** on real runs (claude 2.1.301, Opus 5.5, 16/10/2026): `--max-turns`, hidden
+from `claude --help`, is taken; a fresh session reads 18,626 tokens (system prompt, tools, rules) from the cache the
+previous batch's session wrote, and writes its own message and turn to the cache for an hour. Measured per batch: a
+cold start $0.21 (26,522 tokens written), a one-command batch $0.16, a question with two plan files $0.22, as
+claude counts them; L10 estimated $0.12 to $0.21. The price table's estimate of the $0.16 batch is $0.11: it prices
+a cache write at 5 minutes (5 $ a million tokens), `claude -p` writes them for an hour (8 $).
+
 **Stream.** One JSON message per line: `system/init` (session, model), `assistant` and `user` messages made of
 blocks (`text`, `tool_use`, `tool_result`, `thinking`), and one `result` per turn with the cost.
 
@@ -515,6 +533,7 @@ error subtype (`error_max_turns`, `error_during_execution`…) fails the turn ev
 | Turns counted as they come                    | `claude/turns-mid-run.jsonl`     | by hand, from `tool-call.jsonl`             | a model turn per assistant message id, on its first event; a subagent's line (`parent_tool_use_id`) is none       |
 | Second message                                | `claude/two-turns.jsonl`         | by hand                                     | two turns in one process                                                                                            |
 | Message sent during the turn                  | `claude/mid-turn-message.jsonl`  | by hand, from W59's real result             | one result with `queued_turn_count` 0 answers both messages: the input is closed and the worker ends               |
+| A batch of the driven lead                    | `claude/lead-batch.jsonl`        | **real**, claude 2.1.301, Opus 5.5          | the rules in the system prompt, turns capped, the lead's folder writable without a deny of every edit; the batch's cost, $0.16, kept in the lead's journal (`TestLeadBatchCostOnRecordedStream`) |
 | Session limit reached                         | `claude/session-limit.jsonl`     | **real**, claude 2.1.293                    | `rate_limit_event` `rejected` gives the limit and its `resetsAt`; error "You've hit your session limit · resets 7:20am (Europe/Paris)"; the task waits for the reset, then resumes |
 
 ## Codex

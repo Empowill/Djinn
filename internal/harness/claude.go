@@ -53,8 +53,23 @@ func (c Claude) args(spec Spec) []string {
 		settings := map[string]any{"pluginConfigs": claudeAgentsMd}
 		if p := spec.Permissions; p != nil {
 			perms := claudePermissions(p)
+			if len(spec.WriteDirs) > 0 {
+				// A deny wins over every allow: its folders' allow rules would not work. Don't-ask refuses an edit
+				// elsewhere that no rule allows.
+				perms["deny"] = slices.DeleteFunc(perms["deny"].([]string), func(r string) bool {
+					return r == "Edit" || r == "Write" || r == "NotebookEdit"
+				})
+			}
 			settings["permissions"] = perms
 			args = append(args, "--permission-mode", perms["defaultMode"].(string))
+		}
+		if allow := claudeDirRules(spec); len(allow) > 0 {
+			perms, _ := settings["permissions"].(map[string]any)
+			if perms == nil {
+				perms = map[string]any{"allow": []string{}, "deny": []string{}}
+				settings["permissions"] = perms
+			}
+			perms["allow"] = append(perms["allow"].([]string), allow...)
 		}
 		if allow, deny := claudeSkillRules(spec); len(allow)+len(deny) > 0 {
 			perms, _ := settings["permissions"].(map[string]any)
@@ -89,7 +104,28 @@ func (c Claude) args(spec Spec) []string {
 	if spec.MaxBudgetUSD > 0 {
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(spec.MaxBudgetUSD, 'f', -1, 64))
 	}
+	if spec.MaxTurns > 0 {
+		// Print mode only; a run that reaches it ends with error_max_turns (code.claude.com/docs/en/cli-reference).
+		args = append(args, "--max-turns", strconv.Itoa(spec.MaxTurns))
+	}
+	if spec.SystemPrompt != "" {
+		// The same text for every session: with the machine's sections moved to the first message, the system
+		// prompt is the same from one session to the next, and its cache serves them all (cli-reference).
+		args = append(args, "--append-system-prompt", spec.SystemPrompt, "--exclude-dynamic-system-prompt-sections")
+	}
 	return append(args, c.Extra...)
+}
+
+// claudeDirRules are the permission rules of spec's WriteDirs and ReadDirs: writing in the first, reading in both.
+func claudeDirRules(spec Spec) []string {
+	var allow []string
+	for _, dir := range spec.WriteDirs {
+		allow = append(allow, "Edit("+claudeAbsolute(dir)+"/**)", "Write("+claudeAbsolute(dir)+"/**)")
+	}
+	for _, dir := range append(slices.Clone(spec.WriteDirs), spec.ReadDirs...) {
+		allow = append(allow, "Read("+claudeAbsolute(dir)+"/**)")
+	}
+	return allow
 }
 
 // claudePermissions are the permissions of Claude's settings for p: allow and deny rules, and the mode. Edit

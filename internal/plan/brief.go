@@ -270,12 +270,23 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"one note per file; nothing writes them at run time. When a task fixes what a note describes, update or remove " +
 		"that note in the same breath: that task, or one spawned with it, edits `lead/notes/`; no cleanup waits for " +
 		"later.\n\n" +
-		"## Commands\n\n" +
+		leadCommandsBrief(false) +
+		notesBrief()
+}
+
+// leadCommandsBrief is the brief's list of the lead's commands. A driven lead (decision Q31) runs no watch: Djinn
+// hands it its events.
+func leadCommandsBrief(driven bool) string {
+	watch := ""
+	if !driven {
+		watch = "- `djinn lead watch --after <cursor>`: acknowledges the events up to the cursor, waits for the next ones " +
+			"and prints them, a line each, with the next cursor (`--timeout 0s` returns at once).\n"
+	}
+	return "## Commands\n\n" +
 		"`<wish>` is a wish's identifier.\n\n" +
 		"- `djinn brief`: the brief of all active wishes; `djinn brief --wishes`: where they stand only, without these " +
 		"rules, short enough that no tool cuts it.\n" +
-		"- `djinn lead watch --after <cursor>`: acknowledges the events up to the cursor, waits for the next ones and " +
-		"prints them, a line each, with the next cursor (`--timeout 0s` returns at once).\n" +
+		watch +
 		"- `djinn wish brief <wish>`: one wish's brief, up to date.\n" +
 		"- `djinn wish describe <wish> --text \"…\"`: the wish's description, a few lines: what it is for, its scope, " +
 		"where it goes. The developer edits it in the window too.\n" +
@@ -321,8 +332,7 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"HTML by hand. The first publish needs the developer's go. `djinn wish render <wish>` writes the page once.\n" +
 		"- `djinn wish grant <wish>` is the developer's word, never yours.\n" +
 		"- `djinn lead notes`: the index of the lead's notes; `djinn lead notes <name>` prints one, `djinn lead notes " +
-		"<name>,<name>` several and `djinn lead notes --all` every one, in one command.\n" +
-		notesBrief()
+		"<name>,<name>` several and `djinn lead notes --all` every one, in one command.\n"
 }
 
 // notesBrief is the index of the lead's notes, a line per note, its name and description: never a note's text, which
