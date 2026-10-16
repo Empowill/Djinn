@@ -8583,7 +8583,10 @@ test("operating load gauge: click selects nearest notch, keyboard steps, round s
       .find((b) => b.props["data-notch"] === slug).props;
   assert.equal(stopOf("overclock")["aria-pressed"], true);
   assert.match(stopOf("overclock").className, /\bcurrent\b/);
-  assert.match(stopOf("overclock").title, /^Overclock: up to \d+ workers/);
+  assert.match(
+    stopOf("overclock")["aria-description"],
+    /^Overclock: up to \d+ workers/,
+  );
   let propagated = true;
   stopOf("medium").onClick({
     stopPropagation() {
@@ -8733,20 +8736,20 @@ test("operating load: each notch shows what the scheduler lets run there, and wh
     const row = screen.all("operating-load-forecast-row")[0];
     return {
       text: s.renderToStaticMarkup(row.props.children),
-      title:
+      description:
         s
           .renderToStaticMarkup(row.props.children)
-          .match(/title="([^"]*)"/)?.[1] ?? "",
+          .match(/aria-description="([^"]*)"/)?.[1] ?? "",
     };
   };
-  const notchTitle = (slug) =>
+  const notchDescription = (slug) =>
     live(s.OperatingLoadSlider, {})
       .all("operating-load-notch")
-      .find((b) => b.props["data-notch"] === slug).props.title;
+      .find((b) => b.props["data-notch"] === slug).props["aria-description"];
 
   s.loadManager.setPreviewNotch(null);
   s.loadManager.setSnapshot(base);
-  // Each notch's tooltip names the server's count, never an estimate of its own.
+  // Each notch's description names the server's count, never an estimate of its own.
   for (const [slug, n] of [
     ["minimal", N.MINIMAL],
     ["medium", N.MEDIUM],
@@ -8755,7 +8758,7 @@ test("operating load: each notch shows what the scheduler lets run there, and wh
     ["overclock", N.OVERCLOCK],
   ])
     assert.match(
-      notchTitle(slug),
+      notchDescription(slug),
       new RegExp(`up to ${notchSlots[n]} workers`),
       slug,
     );
@@ -8764,7 +8767,7 @@ test("operating load: each notch shows what the scheduler lets run there, and wh
   assert.match(row.text, /CPU: 6 of 6 workers run/);
   assert.doesNotMatch(row.text, /operating-load-forecast-over/);
   assert.match(
-    row.title,
+    row.description,
     /Lowering the load pauses the newest workers above its limit/,
   );
 
@@ -8780,7 +8783,10 @@ test("operating load: each notch shows what the scheduler lets run there, and wh
     row.text,
     /data-over="finish"[^>]*> · 3 above the limit finish their run/,
   );
-  assert.match(row.title, /lets the workers above its limit finish their run/);
+  assert.match(
+    row.description,
+    /lets the workers above its limit finish their run/,
+  );
   s.loadManager.setPreviewNotch(null);
 
   // At Medium, 4 run: 1 started by hand, the other above the limit finishing its run (a gate, a correction).
@@ -8802,8 +8808,57 @@ test("operating load: each notch shows what the scheduler lets run there, and wh
 
   // Before the server says, the estimate stands in.
   s.loadManager.setSnapshot({ ...base, notchSlots: {}, runningWorkers: 0 });
-  assert.match(notchTitle("medium"), /up to 4 workers/);
+  assert.match(notchDescription("medium"), /up to 4 workers/);
   s.loadManager.setSnapshot(base);
+});
+
+// The coloured preview is the gauge's only hover: a title on any of its elements brought the browser's own
+// tooltip up late over it (W32). Names stay in aria-label, the explanations in aria-description.
+test("operating load: no element of the gauge or its preview carries a title (W32)", () => {
+  const N = s.LoadNotch;
+  const base = {
+    notch: N.HIGH,
+    auto: false,
+    chosenNotch: N.HIGH,
+    engagedMemoryBytes: 8n * 1024n * 1024n * 1024n,
+    workerMemoryBytes: 6n * 1024n * 1024n * 1024n,
+    memoryTotalBytes: 31n * 1024n * 1024n * 1024n,
+    memoryAvailableBytes: 14n * 1024n * 1024n * 1024n,
+    workerForecastBytes: 1536n * 1024n * 1024n,
+    bindingResource: "cpu",
+    cpuSlots: 8,
+    memorySlots: 10,
+    baseSlots: 8,
+    runningWorkers: 6,
+    pausedWorkers: 1,
+    forcedWorkers: 1,
+    lowerPauses: true,
+  };
+  const states = [
+    [base, null],
+    [base, N.MINIMAL],
+    [{ ...base, auto: true, notch: N.MEDIUM }, null],
+  ];
+  try {
+    for (const [snapshot, preview] of states) {
+      s.loadManager.setSnapshot(snapshot);
+      s.loadManager.setPreviewNotch(preview);
+      const html = s.renderToStaticMarkup(h(s.OperatingLoad));
+      const label = `auto ${snapshot.auto}, preview ${preview}`;
+      assert.match(html, /class="operating-load-forecast /, label);
+      assert.doesNotMatch(html, /\stitle=/, label);
+      assert.match(html, /aria-label="Operating load"/, label);
+      assert.match(html, /aria-description="[^"]*up to \d+ workers?/, label);
+    }
+    s.loadManager.setSnapshot(base);
+    s.loadManager.setPreviewNotch(null);
+    const html = s.renderToStaticMarkup(h(s.OperatingLoad));
+    for (const n of ["Minimal", "Medium", "High", "Max", "Overclock"])
+      assert.match(html, new RegExp(`aria-label="${n}"`), n);
+    assert.match(html, /aria-description="Lowering the load pauses/);
+  } finally {
+    s.loadManager.setPreviewNotch(null);
+  }
 });
 
 test("azima counters and states in the window are right before any azima is opened on a wish with more tasks than one page", async () => {
