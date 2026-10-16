@@ -258,6 +258,7 @@ func (h *Harness) schedule(ctx context.Context) {
 	start := time.Now()
 	logx.L().Debug("scheduler pass begins")
 	defer func() { logx.Took(slog.LevelDebug, "scheduler pass ended", start) }()
+	h.pokeIfrits() // Time went by: an ifrit may be due a warning, or to go out.
 	p := h.Policy()
 	if !p.Auto && h.capacity != nil {
 		h.enforceNotchCapacity(ctx, p)

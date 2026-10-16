@@ -176,7 +176,8 @@ func TestIfritTakesNoSlotWhileListening(t *testing.T) {
 }
 
 // TestLamplighterLeavesAListeningIfrit: a listening ifrit is never silent too long, and its duration budget counts its
-// turns only: hours of listening stop nothing. While it works, its silence counts as any worker's.
+// turns only: hours of listening stop nothing (the developer away less than its 4 hours of idle delay). While it
+// works, its silence counts as any worker's.
 func TestLamplighterLeavesAListeningIfrit(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -186,7 +187,7 @@ func TestLamplighterLeavesAListeningIfrit(t *testing.T) {
 	wishID, _ := e.wish(t, gitRepo(t))
 	spawn := func(prompt string) string {
 		return e.mustSpawn(t, wishID, "Front of the lamp", prompt, &planv1.TaskServiceSpawnRequest{
-			Kind: planv1.TaskKind_TASK_KIND_IFRIT,
+			Kind: planv1.TaskKind_TASK_KIND_IFRIT, IdleMinutes: 240,
 		}).GetId()
 	}
 

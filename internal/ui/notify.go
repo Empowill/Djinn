@@ -34,6 +34,8 @@ type Notification struct {
 	QuestionID string
 	// Actions are the buttons that answer the question, in order.
 	Actions []Action
+	// Shown even while the window is in front on its wish: an ifrit's warning, which the page does not say.
+	Always bool
 }
 
 // Action is a button of a notification. Its ID comes back in Response.Action.
@@ -95,6 +97,8 @@ type Notices struct {
 	Show func(wishID, target string)
 	// Answer answers a question with a choice, as the window would.
 	Answer func(ctx context.Context, questionID string, choice planv1.Choice) error
+	// KeepLit says that the developer is there, as the Keep lit button of an ifrit's warning does (IfritWarning).
+	KeepLit func()
 
 	mu       sync.Mutex
 	notifier Notifier
@@ -418,7 +422,7 @@ func (n *Notices) show(key string, note Notification) error {
 		}
 		n.seen[key] = true
 	}
-	inView := note.WishID != "" && n.focused && n.viewing == note.WishID
+	inView := note.WishID != "" && n.focused && n.viewing == note.WishID && !note.Always
 	n.mu.Unlock()
 	if inView {
 		return nil // The user sees it already.
@@ -552,10 +556,44 @@ func (n *Notices) notifyLeadPrompt(p *planv1.LeadPrompt) error {
 	})
 }
 
-// Respond follows what the user did with a notification: a button answers its question; a click, or an answer
-// that fails, brings the window forward on the wish, there, or as it is for an inbox item or the lead's choice,
-// which have none.
+// keepLit is the identifier of the Keep lit button of an ifrit's warning.
+const keepLit = "keep-lit"
+
+// IfritWarning notifies that the ifrit t goes out soon (Task.ifrit.out_time), unless the developer comes back: its
+// Keep lit button keeps it lit, a click shows it. Once per out time. It never waits.
+func (n *Notices) IfritWarning(t *planv1.Task) {
+	go func() {
+		defer logx.Crash("notices: ifrit", "task", t.GetCode())
+		if err := n.ifritWarning(context.Background(), t); err != nil {
+			logx.L().Warn("notify an ifrit's warning", "task", t.GetCode(), "err", err)
+		}
+	}()
+}
+
+func (n *Notices) ifritWarning(ctx context.Context, t *planv1.Task) error {
+	wish, err := store.Get[*planv1.Wish](ctx, n.Store, t.GetWishId())
+	if err != nil {
+		return err
+	}
+	out := t.GetIfrit().GetOutTime().AsTime().Local()
+	key := fmt.Sprintf("ifrit:%s:%d", t.GetId(), out.Unix())
+	vars := map[string]string{"code": t.GetCode(), "wish": wish.GetTitle(), "time": out.Format("15:04")}
+	return n.show(key, Notification{
+		ID: "ifrit-" + t.GetId(), WishID: wish.GetId(), Target: "task-" + t.GetId(),
+		Title:   n.text("notify.ifrit_out_title", vars),
+		Body:    n.text("notify.ifrit_out_body", vars),
+		Actions: []Action{{ID: keepLit, Title: n.text("notify.keep_lit", nil)}}, Always: true,
+	})
+}
+
+// Respond follows what the user did with a notification: a button answers its question, or keeps an ifrit lit; a
+// click, or an answer that fails, brings the window forward on the wish, there, or as it is for an inbox item or the
+// lead's choice, which have none.
 func (n *Notices) Respond(ctx context.Context, r Response) {
+	if r.Action == keepLit && n.KeepLit != nil {
+		n.KeepLit()
+		return
+	}
 	choice, ok := choices[r.Action]
 	if ok && n.Answer != nil {
 		err := n.Answer(ctx, r.QuestionID, choice)
