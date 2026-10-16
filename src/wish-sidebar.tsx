@@ -60,6 +60,8 @@ export interface WishCounts {
   questions: number;
   // Workers at work, watchers waiting for their command, and finished work waiting to merge, apart (runningOf).
   running: number;
+  // Investigators at work on a question after Enlighten me (runningOf), apart from the running ones: shown violet.
+  investigating?: number;
   watching: number;
   merging: number;
   // Failed merges a correction task fixes (runningOf): Djinn's move, shown orange.
@@ -199,18 +201,25 @@ export function WishSidebar({
       count.questions,
       count.running + count.merging,
       count.watching,
+      count.investigating,
     );
     // Unfolded, an active wish takes a second line under its title: what waits for you, then what works, then what
-    // watches, a count at zero left out, and its rank at the end. Its icon then says what it does: the questions have
-    // their count, and no raised hand repeats it (Q01). Folded to the rail, the icon is all that shows: it keeps the hand.
-    // A narrow window folds the bar by its width alone (styles.css, 820px), the second line hidden: the row carries the
-    // hand, which shows only then, in place of the icon.
+    // investigates, then what watches, a count at zero left out, and its rank at the end. Its icon then says what it
+    // does: the questions have their count, and no raised hand repeats it (Q01). Folded to the rail, the icon is all
+    // that shows: it keeps the hand. A narrow window folds the bar by its width alone (styles.css, 820px), the second
+    // line hidden: the row carries the hand, which shows only then, in place of the icon.
     const counted = !!rank && !collapsed;
     const shown =
       tone === "waiting" && counted
         ? wish.ready
           ? "proof"
-          : wishTone(wish, 0, count.running + count.merging, count.watching)
+          : wishTone(
+              wish,
+              0,
+              count.running + count.merging,
+              count.watching,
+              count.investigating,
+            )
         : tone;
     // Alt+Arrow moves a wish one step within its list: its rank, or its place among the paused or granted ones.
     const keys = (event: KeyboardEvent) => {
@@ -296,6 +305,15 @@ export function WishSidebar({
                     icon={GitMerge}
                     count={count.merging}
                     label={t("plan.merging_detail", { count: count.merging })}
+                  />
+                )}
+                {!!count.investigating && (
+                  <CountPill
+                    tone="investigating"
+                    count={count.investigating}
+                    label={t("plan.investigating_detail", {
+                      count: count.investigating,
+                    })}
                   />
                 )}
                 {!!count.fixing && (

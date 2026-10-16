@@ -369,7 +369,7 @@ test("work that merges counts as running: a worker at work, not a watcher", () =
       done(I.CONFLICT),
       { status: S.DONE },
     ]),
-    { running: 1, watching: 1, merging: 2, fixing: 0 },
+    { running: 1, investigating: 0, watching: 1, merging: 2, fixing: 0 },
   );
 });
 
@@ -466,7 +466,7 @@ test("a failed merge is being fixed while its correction works, failed when none
       correction(S.RUNNING),
       { id: "t2", status: S.DONE, integration: { state: I.RED } },
     ]),
-    { running: 1, watching: 0, merging: 0, fixing: 1 },
+    { running: 1, investigating: 0, watching: 0, merging: 0, fixing: 1 },
   );
 });
 
@@ -653,6 +653,41 @@ test("a watcher has its own tone while its command runs", () => {
   assert.equal(
     f.taskTone({ status: S.RUNNING, provider: f.Provider.CLAUDE }),
     "running",
+  );
+});
+
+// An investigator, the worker Enlighten me starts on a question (TaskRole.INVESTIGATOR), is violet as the button that
+// started it while it works, and counted apart from the workers that run, blue; ended, it is a task like any other.
+test("an investigator at work has its own tone and count, apart from the running workers", () => {
+  const S = f.TaskStatus;
+  const R = f.TaskRole;
+  const investigator = (status) => ({
+    status,
+    role: R.INVESTIGATOR,
+    question: "Q3",
+  });
+  assert.equal(f.taskTone(investigator(S.RUNNING)), "investigating");
+  assert.equal(f.taskStatusText(investigator(S.RUNNING)), "Investigating");
+  assert.equal(f.taskTone(investigator(S.RESUMING)), "investigating");
+  assert.equal(
+    f.taskTone({ ...investigator(S.RESUMING), resumeAfter: at(100) }),
+    "paused",
+  );
+  assert.equal(f.taskTone(investigator(S.DONE)), "done");
+  assert.equal(f.taskStatusText(investigator(S.DONE)), "Done");
+  assert.equal(
+    f.taskTone({ status: S.RUNNING, role: R.UNSPECIFIED }),
+    "running",
+  );
+  assert.deepEqual(
+    f.runningOf([
+      { status: S.RUNNING },
+      investigator(S.RUNNING),
+      investigator(S.RUNNING),
+      investigator(S.DONE),
+      { status: S.RUNNING, provider: f.Provider.WATCH },
+    ]),
+    { running: 1, investigating: 2, watching: 1, merging: 0, fixing: 0 },
   );
 });
 
