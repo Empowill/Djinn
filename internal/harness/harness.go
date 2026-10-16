@@ -1136,16 +1136,36 @@ const workerMoveRule = "A question to the developer is only for a decision or a 
 const workerWaitRule = "Never end a turn while a long run you started is going (a benchmark, a build, a background command, a monitor): your task ends with your turn, and Djinn removes its worktree. Wait for it in the foreground, in commands under 9 minutes each (`sleep`, then read its output), until it ends; then report what it gave."
 const workerRules = workerHandRule + " " + workerCheckRule + " " + workerWaitRule + " " + workerMoveRule
 
+// ifritRule (T51, Q11) is how an ifrit works: a turn per request, then it listens; Djinn runs what lasts, and keeps it
+// alive. It replaces workerWaitRule, whose wait in the foreground would hold its turn open.
+const ifritRule = "You are an ifrit: Djinn keeps you lit between the developer's requests, which the Djinn relays to " +
+	"you as messages. After each request: make the change, say in three lines at most what changed and how to see it " +
+	"(its URL), then end your turn; Djinn keeps you alive, and the next message starts your next turn. Run every " +
+	"durable process (a dev server, a stack) with `djinn serve run <name> \"<command>\"` (`--port 5173=front`, " +
+	"`--gate <gate>`, `--stop \"<command>\"`), never with `&` or `nohup`: Djinn shows its ports as links, and stops it " +
+	"when you go out or end. Never wait in a loop or sleep. Run no check and no test suite after a change: only the " +
+	"tests a request names, when it asks."
+const ifritRules = workerHandRule + " " + workerCheckRule + " " + ifritRule + " " + workerMoveRule
+
 // briefed is the first prompt of the run's task as its worker reads it, at launch and on a resume that gives it again:
 // a worker that edits a worktree learns which checks its work meets (run.checks), to run the commit checks before it
-// ends, to run what it can check itself, and to ask only a decision or a move only the developer can make.
+// ends, to run what it can check itself, and to ask only a decision or a move only the developer can make. An ifrit
+// learns its own rules instead (ifritRule), whatever folder it works in.
 func briefed(r *run, prompt string, readOnly bool) string {
-	if r.task.GetBranch() != "" && !readOnly {
+	rules := workerRules
+	if r.ifrit {
+		rules = ifritRules
+	}
+	edits := r.task.GetBranch() != "" && !readOnly
+	if r.ifrit && !edits && r.task.GetProvider() != planv1.Provider_PROVIDER_FAKE {
+		return prompt + "\n\n" + rules
+	}
+	if edits {
 		if r.checks != "" {
-			return prompt + "\n\n" + r.checks + " " + workerRules
+			return prompt + "\n\n" + r.checks + " " + rules
 		}
 		if r.task.GetProvider() != planv1.Provider_PROVIDER_FAKE {
-			return prompt + "\n\n" + workerRules
+			return prompt + "\n\n" + rules
 		}
 	}
 	return prompt
@@ -1620,6 +1640,9 @@ func (h *Harness) record(r *run, ev Event) {
 // setChecks records what the project's settings say of checks Djinn runs, and its push checks to watch for.
 func (r *run) setChecks(settings plan.Settings) {
 	r.checks = settings.ChecksBrief()
+	if r.ifrit {
+		r.checks = settings.IfritChecksBrief()
+	}
 	r.testOne = settings.TestOne
 	var pushes []string
 	commitNames := make(map[string]bool)

@@ -42,8 +42,8 @@ flags; none of it is the worker's to change.
 
 | Part | What it bounds | Where it comes from |
 | ---- | -------------- | ------------------- |
-| Silence limit | 15 minutes without an event, no process busy, no gate held or awaited: the Lamplighter ends the worker, then [wakes it](#when-djinn-resumes-a-worker) | Djinn's default (`SilenceLimit`) |
-| Wall time | 2 hours of work over all its runs, gate waits included; past it the task is stopped, "budget exceeded", and stays stopped | Djinn's default (`TaskMaxWallTime`) |
+| Silence limit | 15 minutes without an event, no process busy, no gate held or awaited: the Lamplighter ends the worker, then [wakes it](#when-djinn-resumes-a-worker); never while an [ifrit](#ifrit-an-agent-whose-input-stays-open) listens | Djinn's default (`SilenceLimit`) |
+| Wall time | 2 hours of work over all its runs, gate waits included, an ifrit's listening aside; past it the task is stopped, "budget exceeded", and stays stopped | Djinn's default (`TaskMaxWallTime`) |
 | Model turns | 500 turns in one run (`Task.turns`, shown `37/500`); past it the run is stopped; `djinn task continue` gives 500 again | Djinn's default (`TaskMaxTurns`) |
 | Wakes and resumes | 3 wakes in a row, 3 resumes on usage limits, 2 replays after an environment failure | Djinn's defaults |
 | Spending cap | US dollars over its runs; Claude alone enforces it (`--max-budget-usd`), Codex and Antigravity have none | the spawn request (`max_budget_usd`), else the project's `max_budget_usd`; a question worker's, `question_budget_usd` (2 by default) |
@@ -437,6 +437,52 @@ Tests: `TestWatchParagraphs`, `TestWatcher` (no slot, the restart loop, the line
 binary plays the command), `TestWatcherLife`, `TestLamplighterWatcherOutlivesBudgets`,
 `TestWatcherStartsAgainWhenItDies`, `TestWatcherGivesUp`, `TestLamplighterLostWatcherStartsAgain`
 (`lamplighter_test.go`), and `TestWatcherTakesNoSlot` (`internal/dispatch`).
+
+## Ifrit: an agent whose input stays open
+
+`djinn task spawn <wish> --kind ifrit` (`TASK_KIND_IFRIT`, decision Q11) runs an agent that stays lit while the
+developer is in Djinn ([the user's side](user-guide.md#an-ifrit-a-worker-that-stays-lit-while-you-are-there)). It
+needs a project, and runs Claude or Antigravity: Djinn does not keep Codex's input open yet, and refuses it, as it
+refuses `--provider watch`.
+
+- **Its input stays open** (`Spec.Listen`, `ifrit.go`, `stream.go`). A worker closes its agent's input once every
+  message has its result, and the agent ends; an ifrit's stays open. Once a turn has its result its worker says it
+  listens (`Task.ifrit.state` `LISTENING`): the process is blocked on its input, no CPU, no model call. A message
+  (`djinn task send`) starts the next turn (`WORKING`); one sent during a turn is absorbed by it, as for any worker.
+- **Its seal.** It starts at once, beyond the slots, like `djinn task start`: no load notch pauses it, no investigator
+  preempts it. It takes a slot only while it works on a turn. The Lamplighter leaves its silence alone while it
+  listens, and its wall time counts its turns only (`Task.ifrit.listened` is taken off).
+- **Its first prompt** carries the ifrit's rules in place of the wait in the foreground every other worker reads
+  (`ifritRule`, `harness.go`): after each request, make the change, say in three lines at most what changed and how to
+  see it, then end the turn; run every durable process through `djinn serve run`, never `&` nor `nohup`; never wait in
+  a loop nor sleep; run only the tests a request names. Its checks sentence (`Settings.IfritChecksBrief`) names the
+  project's checks but tells it to run none after a change: Djinn runs the commit checks once it is finished. An ifrit
+  outside Git, with no branch, still reads its rules.
+- **Its serves** (`serve.go`, `djinn serve run|list|logs|stop`) run in its worktree, each in a process group of its
+  own, in its systemd scope where Djinn has one, logged under the data folder. Djinn reads the ports they listen on
+  every 5 seconds and checks those declared with `--port`; a serve stops when the ifrit's run ends, its `--stop`
+  command first. A serve's command runs when the ifrit's own permissions allow it (the wish's allowance, else the
+  project's `.agents/permissions.txtpb`) or the developer's `serve_commands` list it, the project's denied commands
+  winning; where neither declares permissions, the agent's own configuration decides, as for its worker.
+- **Going out** (`presence.go`, `ifritTimers`). The developer's activity in Djinn (`Presence`: the window's
+  `UiService.Touch` and actions, a terminal's keys, a `djinn` command they type) pushes back its out time; the lead's,
+  the workers' and the watchers' calls do not. Past the idle delay (`--idle-minutes`, else `djinn up --ifrit-idle`,
+  else 30 minutes), once it listens, Djinn closes its input: its serves stop, its gates and slot go back, the task is
+  `STOPPED` with `Task.ifrit.state` `OUT` and why, and the lead hears a `LEAD_EVENT_KIND_OUT` line. A warning comes 5
+  minutes before. A restart of Djinn brings a lit ifrit back out (`putOut`).
+- **Lighting it again** (`relight`). `djinn task send` to an ifrit out goes through `djinn task continue`: its next
+  worker resumes its session in its worktree, its serves started first, its turn the message, told how long it was
+  out.
+- **Finishing it** (`doneIfrit`). `djinn task done` on a lit ifrit closes its input once the turn under way has its
+  result: its agent ends, and the task ends `DONE`, its work integrated like any task's.
+
+Tests: `TestIfritListensBetweenMessages` (the `two-turns` Claude fixture), `TestIfritTakesNoSlotWhileListening`,
+`TestLamplighterLeavesAListeningIfrit`, `TestSpawnIfrit`, `TestIfritIdle`, `TestIfritPromptRules` (`move_test.go`);
+`TestIfritWarnsThenGoesOut`, `TestYourActivityKeepsItLit`, `TestLeadAndWorkersAreNoActivity`,
+`TestIfritOutLetsTheTurnEnd`, `TestSendRelightsAnIfrit`, `TestIfritOutAfterARestart` (`presence_test.go`);
+`TestServeRunsAndStops`, `TestServeStopCommandRunsWhenItGoesOut`, `TestServesComeBackOnRelight`,
+`TestServeFollowsTheWatchersRule` (`serve_test.go`); `TestIfritKeepsItsGate`, `TestIfritGateGoesBackWhenItGoesOut`
+(`internal/gate`); `TestIfritChecksBrief` (`internal/plan`).
 
 ## Claude
 

@@ -88,6 +88,20 @@ const DirectFlags = "Flags replace them: `djinn brief --wishes` for the wishes a
 	"`--all` for several notes, `djinn task list --wish-id <wish> --short` for where the tasks stand, " +
 	"`djinn task watch <task> --last 5` for a task's final note, `djinn question list --wish-id <wish> --open`."
 
+// IfritRule is how the lead uses an ifrit (T51, decision Q11): a worker that stays lit while the developer is in
+// Djinn, for live iteration only, one per wish, its requests relayed, finished once its work is good.
+const IfritRule = "- **An ifrit for live iteration (Q11).** An ifrit is a worker that stays lit while the developer " +
+	"is in Djinn, listening between their requests without a slot or a token: `djinn task spawn <wish> --kind ifrit " +
+	"--title \"…\" --prompt \"…\"` (`--idle-minutes 60` when they say they leave to try it for an hour), in a project. " +
+	"Light one when the developer wants to iterate live (changes they judge by eye) or try a stack; never for work a " +
+	"task with its checks does alone. One lit per wish. While it burns, relay each of the developer's requests to it, " +
+	"short and concrete, with `djinn task send <ifrit> \"…\"`, instead of spawning tasks; ask a question about it with " +
+	"`--about <ifrit>`, which shows it in the ifrit's band; do not repeat its reply to the developer, who follows it in " +
+	"the window. When a task waits for a gate it holds, offer the developer to stop it (`djinn task stop`) or finish " +
+	"it. Out (the developer left Djinn, or Djinn restarted), a message would light it again: never send it one " +
+	"without the developer's word. Once the developer judges its work good, finish it, `djinn task done <ifrit> " +
+	"--note \"…\"`: its work integrates like a task's, through the commit checks (`djinn lead notes ifrit`).\n"
+
 // briefRules are Djinn's rules for whoever leads the wishes. They name no wish: every lead reads the same text.
 func briefRules(projects []*planv1.Project, home string) string {
 	return "# Leading in Djinn\n\n" +
@@ -253,6 +267,7 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"`--provider watch --prompt \"<command>\"` runs the command with no agent, no model and no slot, and each new " +
 		"paragraph it prints comes to you in your lead watch. `--restart` starts again a command that exits on each change; one that dies starts again by itself, in the same task. The project must " +
 		"allow the command.\n" +
+		IfritRule +
 		"- **A request that comes back is a template.** A skill holds one under `metadata.djinn.wish` in its `SKILL.md` " +
 		"(`title`, `match`, `watch`, `restart`, `done_when`): a routed request it matches becomes a wish that follows the " +
 		"skill, its watcher started. When the developer asks for the same kind of work again, propose one. " +
@@ -295,11 +310,13 @@ func leadCommandsBrief(driven bool) string {
 		"question can wait (a question a waiting task needs is blocking anyway); `--move` marks a move only the " +
 		"developer can make, with `--before` when it cannot wait. The bar \"N things wait for you\" is for what " +
 		"cannot wait: never mark a question that can wait to get it seen, never leave a real blocker unmarked " +
-		"(`djinn lead notes blocking-or-can-wait`); `djinn question list --wish-id <wish> --open`. `--plan-file a.md` " +
+		"(`djinn lead notes blocking-or-can-wait`); `--about W12` names the task it is about, an ifrit's first; " +
+		"`djinn question list --wish-id <wish> --open`. `--plan-file a.md` " +
 		"plans an option's task (repeat it per option; `djinn question revise --plan-file` replaces one); " +
 		"`djinn question launch <question> [--title …] [--after …]` launches the chosen option's plan.\n" +
 		"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--project-id`, " +
-		"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`, `--tilasm L01`); " +
+		"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`, `--tilasm L01`, " +
+		"`--kind ifrit` with `--idle-minutes`); " +
 		"`djinn task spawn <wish> --kind azima --title \"…\" --after T02` makes an azima (`--draft`, `--description \"…\"`); " +
 		"`djinn task describe <azima> --text \"…\"` revises its description; " +
 		"`djinn task open <azima>` turns a draft open; " +
@@ -311,9 +328,10 @@ func leadCommandsBrief(driven bool) string {
 		"`djinn task list --wish-id <wish> --short` (a few lines per task; `--failed`, `--page-size`); `djinn task watch " +
 		"<task>`, `--last 5` for its last events only, its final note among them; " +
 		"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
+		"to an ifrit out, it lights it again; " +
 		"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task update <task>` edits what is given in place (not started: everything; running or paused: title only; finished: title, prompt, agent, azima, integration (none clears it, --force if unmerged); never its dependencies once it ran; alias `set-agent`); `djinn task done <task> [--drop] --note " +
 		"\"…\"` closes a task no worker runs (planned, cut short, failed, stopped, imported; unmerged commits queue for merging unless --drop) once its work is done " +
-		"elsewhere; a task no longer useful is cancelled, never marked done: `djinn task cancel <task> --note \"…\"` " +
+		"elsewhere, and finishes a lit ifrit, its work integrated; a task no longer useful is cancelled, never marked done: `djinn task cancel <task> --note \"…\"` " +
 		"stops its worker, removes its worktree (its branch stays) and drops its work from integration.\n" +
 		"- `djinn wish route \"<request>\" --wish-id <wish> --ask`: where a request goes, asked to the developer on a " +
 		"card; without `--ask`, the proposal only.\n" +
@@ -439,6 +457,21 @@ func ifritWaitsBrief(b *strings.Builder, t *planv1.Task, waits map[string][]stri
 	fmt.Fprintf(b, "  - Waiting for the gates this ifrit holds until the developer leaves Djinn: %s. "+
 		"Offer the developer to end it (`djinn task done %s`) or stop it (`djinn task stop %s`).\n",
 		strings.Join(who, "; "), t.GetCode(), t.GetCode())
+}
+
+// ifritWord says, on a running task's line, that it is an ifrit and where it stands: working on a request or
+// listening for the next; "" for a task that is no ifrit.
+func ifritWord(t *planv1.Task) string {
+	if t.GetKind() != planv1.TaskKind_TASK_KIND_IFRIT {
+		return ""
+	}
+	switch t.GetIfrit().GetState() {
+	case planv1.IfritState_IFRIT_STATE_WORKING:
+		return ", ifrit, working"
+	case planv1.IfritState_IFRIT_STATE_LISTENING:
+		return ", ifrit, listening"
+	}
+	return ", ifrit"
 }
 
 // StableBrief is the part of a brief that changes rarely, for a wish on projects: Djinn's rules, then where each
@@ -624,7 +657,7 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool, strategy planv1
 			if t.GetModel() != "" {
 				name += " · " + t.GetModel()
 			}
-			fmt.Fprintf(&b, "- **%s** %s (%s", t.GetCode(), clipLine(t.GetTitle()), name)
+			fmt.Fprintf(&b, "- **%s** %s (%s%s", t.GetCode(), clipLine(t.GetTitle()), name, ifritWord(t))
 			if e := codes[t.GetPartOf()]; e != "" {
 				b.WriteString(", part of " + e)
 			}
@@ -660,6 +693,9 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool, strategy planv1
 			}
 			if work := workText(t, codes); work != "" {
 				word = work
+			}
+			if t.GetKind() == planv1.TaskKind_TASK_KIND_IFRIT && t.GetIfrit().GetState() == planv1.IfritState_IFRIT_STATE_OUT {
+				word = "an ifrit " + clipLine(t.GetError()) + ", lit again by a message only at the developer's word"
 			}
 			fmt.Fprintf(&b, "- **%s** %s: %s", t.GetCode(), clipLine(t.GetTitle()), word)
 			if c := t.GetClosed(); c != nil {
@@ -1427,7 +1463,7 @@ func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, rea
 			if t.GetModel() != "" {
 				name += " · " + t.GetModel()
 			}
-			fmt.Fprintf(b, "- **%s** %s (%s", t.GetCode(), clipLine(t.GetTitle()), name)
+			fmt.Fprintf(b, "- **%s** %s (%s%s", t.GetCode(), clipLine(t.GetTitle()), name, ifritWord(t))
 			if e := codes[t.GetPartOf()]; e != "" {
 				b.WriteString(", part of " + e)
 			}

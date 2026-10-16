@@ -706,26 +706,8 @@ func (s Settings) ChecksBrief() string {
 	if !s.Integrates() {
 		return ""
 	}
-	list := func(when planv1.CheckWhen) string {
-		var names []string
-		for _, c := range s.ChecksAt(when) {
-			names = append(names, "`"+GateCommand(c)+"`")
-		}
-		return strings.Join(names, ", ")
-	}
 	var b strings.Builder
-	b.WriteString("Djinn checks this project's work")
-	commit, push := list(planv1.CheckWhen_CHECK_WHEN_COMMIT), list(planv1.CheckWhen_CHECK_WHEN_PUSH)
-	if commit != "" {
-		b.WriteString(" before it commits a task's work, with " + commit)
-	}
-	if push != "" {
-		if commit != "" {
-			b.WriteString(";")
-		}
-		b.WriteString(" before it pushes, with " + push)
-	}
-	b.WriteString(".")
+	commit, push := s.checksWhen(&b)
 	commitHasTest := slices.ContainsFunc(s.ChecksAt(planv1.CheckWhen_CHECK_WHEN_COMMIT), func(c *planv1.ProjectCheck) bool {
 		return strings.EqualFold(c.GetName(), "test")
 	})
@@ -751,8 +733,63 @@ func (s Settings) ChecksBrief() string {
 		}
 		b.WriteString("; do not run the push checks (" + push + "): Djinn runs them before pushing.")
 	}
+	s.setupBrief(&b)
+	return b.String()
+}
+
+// IfritChecksBrief is ChecksBrief for an ifrit's first prompt (T51): which checks Djinn runs and when, but an ifrit
+// runs none of them after a change: Djinn runs the commit checks once the developer finishes it. "" for a project
+// that sets none.
+func (s Settings) IfritChecksBrief() string {
+	if !s.Integrates() {
+		return ""
+	}
+	var b strings.Builder
+	commit, push := s.checksWhen(&b)
+	switch {
+	case commit != "" && push != "":
+		b.WriteString(" Run neither after a change: Djinn runs the commit checks once you are finished, the push checks " +
+			"before it pushes.")
+	case commit != "":
+		b.WriteString(" Do not run them after a change: Djinn runs them once you are finished.")
+	case push != "":
+		b.WriteString(" Do not run them: Djinn runs them before it pushes.")
+	}
+	if s.TestOne != "" {
+		b.WriteString(" A test the developer asks for runs with `" + s.TestOne + "`.")
+	}
+	s.setupBrief(&b)
+	return b.String()
+}
+
+// checksWhen writes to b which checks Djinn runs on the project's work, before it commits and before it pushes, and
+// returns them, each list "" when there is none.
+func (s Settings) checksWhen(b *strings.Builder) (commit, push string) {
+	list := func(when planv1.CheckWhen) string {
+		var names []string
+		for _, c := range s.ChecksAt(when) {
+			names = append(names, "`"+GateCommand(c)+"`")
+		}
+		return strings.Join(names, ", ")
+	}
+	b.WriteString("Djinn checks this project's work")
+	commit, push = list(planv1.CheckWhen_CHECK_WHEN_COMMIT), list(planv1.CheckWhen_CHECK_WHEN_PUSH)
+	if commit != "" {
+		b.WriteString(" before it commits a task's work, with " + commit)
+	}
+	if push != "" {
+		if commit != "" {
+			b.WriteString(";")
+		}
+		b.WriteString(" before it pushes, with " + push)
+	}
+	b.WriteString(".")
+	return commit, push
+}
+
+// setupBrief writes to b what a fresh worktree needs first, if anything.
+func (s Settings) setupBrief(b *strings.Builder) {
 	if s.Setup != "" {
 		b.WriteString(" A fresh worktree needs `" + s.Setup + "` first.")
 	}
-	return b.String()
 }

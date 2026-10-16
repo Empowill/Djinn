@@ -87,6 +87,49 @@ func TestWorkerPromptMoveRule(t *testing.T) {
 	}
 }
 
+// TestIfritPromptRules (T51, Q11): an ifrit's first prompt carries its own rules in place of the wait in the
+// foreground: a turn per request, three lines, serves through djinn serve run, no loop nor sleep, no checks after a
+// change. Outside Git it still has them; a task that is no ifrit never does.
+func TestIfritPromptRules(t *testing.T) {
+	testx.Portable(t)
+	checks := plan.Settings{Checks: []*planv1.ProjectCheck{{Name: "lint", Command: "make lint",
+		When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_COMMIT}}}}
+	ifrit := &run{ifrit: true, task: &planv1.Task{Branch: "w12-front", Provider: planv1.Provider_PROVIDER_CLAUDE,
+		Kind: planv1.TaskKind_TASK_KIND_IFRIT}}
+	ifrit.setChecks(checks)
+	got := briefed(ifrit, "Make the button primary.", false)
+	for _, want := range []string{
+		"Make the button primary.\n\n" + checks.IfritChecksBrief() + " ",
+		"After each request: make the change, say in three lines at most what changed and how to see it",
+		"then end your turn; Djinn keeps you alive",
+		"`djinn serve run <name> \"<command>\"`",
+		"never with `&` or `nohup`",
+		"Never wait in a loop or sleep.",
+		"only the tests a request names, when it asks",
+		workerHandRule, workerCheckRule, workerMoveRule,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("ifrit prompt lacks %q:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{workerWaitRule, "A worker runs the commit checks"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("ifrit prompt has %q:\n%s", unwanted, got)
+		}
+	}
+
+	outside := &run{ifrit: true, task: &planv1.Task{Provider: planv1.Provider_PROVIDER_CLAUDE, Kind: planv1.TaskKind_TASK_KIND_IFRIT}}
+	if got := briefed(outside, "Try the stack.", false); got != "Try the stack.\n\n"+ifritRules {
+		t.Errorf("ifrit outside Git: %q", got)
+	}
+
+	task := &run{task: &planv1.Task{Branch: "w13-back", Provider: planv1.Provider_PROVIDER_CLAUDE}}
+	task.setChecks(checks)
+	if got := briefed(task, "Fix it.", false); strings.Contains(got, ifritRule) || !strings.Contains(got, workerWaitRule) {
+		t.Errorf("a task's prompt: %q", got)
+	}
+}
+
 // TestMergeMoveTag: a worker's merge creates a local tag. Djinn raises a question
 // with Move: true to push the tag, the lead line names the move, and answering Choice A pushes it.
 func TestMergeMoveTag(t *testing.T) {
