@@ -1,6 +1,7 @@
-// The documentation site that djinn serves at /docs/ (docs/site): its concepts, its Command line tab, filled in by
-// djinn from its own commands (TestCommands checks that every command has its entry), and the way to it from the
-// settings. Screenshots of both tabs, dark and light, go to test-results/e2e/docs-*.png.
+// The Grimoire, the documentation that djinn serves at /docs/ (docs/site): its splash page, then the book, a navigation
+// on the left with Introduction by default, a page per concept, and the Command line, filled in by djinn from its own
+// commands (TestCommands checks that every command has its entry); the navigation in the window's language; and the
+// way to it from the settings. Screenshots, dark and light, go to test-results/e2e/docs-*.png.
 import { type Page, expect, test } from "@playwright/test";
 import path from "node:path";
 import { portable } from "./portable";
@@ -9,9 +10,11 @@ portable();
 
 const shots = path.join(__dirname, "../test-results/e2e");
 
-function djinnURL(pathname = "/"): string {
+function djinnURL(pathname = "/", params: Record<string, string> = {}): string {
   const url = new URL(process.env.DJINN_URL!);
   url.pathname = pathname;
+  for (const [name, value] of Object.entries(params))
+    url.searchParams.set(name, value);
   return url.toString();
 }
 
@@ -25,7 +28,7 @@ function collectErrors(page: Page): string[] {
 }
 
 for (const scheme of ["dark", "light"] as const) {
-  test(`the documentation shows its concepts and every command, ${scheme}`, async ({
+  test(`the Grimoire opens on its splash, then its book, its concepts and every command, ${scheme}`, async ({
     page,
   }) => {
     const errors = collectErrors(page);
@@ -33,11 +36,13 @@ for (const scheme of ["dark", "light"] as const) {
     // The first visit trades the token for the cookie that /docs/ needs too.
     await page.goto(djinnURL());
     await page.goto(djinnURL("/docs/"));
-    await expect(page).toHaveTitle("Djinn · Documentation");
+    await expect(page).toHaveTitle("Grimoire · Djinn documentation");
     await expect(page.locator("html")).toHaveAttribute("data-theme", scheme);
 
+    // The splash: the page the documentation was, titled Grimoire.
+    const splash = page.locator("#welcome");
     await expect(
-      page.getByRole("heading", { level: 1, name: "Djinn" }),
+      splash.getByRole("heading", { level: 1, name: "Grimoire" }),
     ).toBeVisible();
     for (const name of [
       "The lamp and the smoke",
@@ -45,7 +50,9 @@ for (const scheme of ["dark", "light"] as const) {
       "The life of a wish",
       "What you will meet",
     ])
-      await expect(page.getByRole("heading", { level: 2, name })).toBeVisible();
+      await expect(
+        splash.getByRole("heading", { level: 2, name }),
+      ).toBeVisible();
     for (const name of [
       "Azimas",
       "Workers",
@@ -59,16 +66,80 @@ for (const scheme of ["dark", "light"] as const) {
           .locator("#words")
           .getByRole("heading", { level: 3, name: new RegExp(`^${name}`) }),
       ).toBeVisible();
+    await expect(page.locator(".book")).toBeHidden();
     await page.screenshot({
-      path: path.join(shots, `docs-concepts-${scheme}.png`),
+      path: path.join(shots, `docs-splash-${scheme}.png`),
     });
 
-    await page.getByRole("tab", { name: "Command line" }).click();
-    await expect(page).toHaveURL(/#commands$/);
+    // Into the book: Introduction first, the navigation on the left.
+    await splash
+      .getByRole("link", { name: "Read the Grimoire" })
+      .first()
+      .click();
+    await expect(page).toHaveURL(/#introduction$/);
+    await expect(splash).toBeHidden();
+    const nav = page.getByRole("navigation", { name: "Grimoire" });
     await expect(
-      page.getByRole("tab", { name: "Command line" }),
-    ).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator("#concepts")).toBeHidden();
+      nav.getByRole("link", { name: "Introduction" }),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Introduction" }),
+    ).toBeVisible();
+    for (const name of [
+      "Getting started",
+      "Wish",
+      "Azima",
+      "Task and worker",
+      "Watcher",
+      "Question and move",
+      "Decision",
+      "Block",
+      "Tilasm",
+      "Project and settings",
+      "Integration branch",
+      "Gates",
+      "Push strategy",
+      "Lead notes",
+      "Skills and templates",
+      "Ifrit",
+      "Command line",
+    ])
+      await expect(nav.getByRole("link", { name, exact: true })).toBeVisible();
+    await page.screenshot({
+      path: path.join(shots, `docs-introduction-${scheme}.png`),
+    });
+
+    // A concept's page: what is on it leads to its sections, and the next page follows.
+    await nav.getByRole("link", { name: "Wish", exact: true }).click();
+    await expect(page).toHaveURL(/#wish$/);
+    const wish = page.locator("#wish");
+    await expect(
+      wish.getByRole("heading", { level: 1, name: "Wish" }),
+    ).toBeVisible();
+    await expect(page.locator("#introduction")).toBeHidden();
+    await wish
+      .getByRole("navigation", { name: "On this page" })
+      .getByRole("link", { name: "Granting a wish" })
+      .click();
+    await expect(page.locator("#wish-granting-a-wish")).toBeInViewport();
+    await wish.getByRole("link", { name: /^Next/ }).click();
+    await expect(page).toHaveURL(/#azima$/);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Azima" }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: path.join(shots, `docs-azima-${scheme}.png`),
+    });
+
+    // An address that names nothing opens the book on Introduction.
+    await page.goto(djinnURL("/docs/") + "#no-such-page");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Introduction" }),
+    ).toBeVisible();
+
+    await nav.getByRole("link", { name: "Command line" }).click();
+    await expect(page).toHaveURL(/#commands$/);
+    await expect(page.locator("#introduction")).toBeHidden();
     const commands = page.locator("#commands .cli-cmd");
     expect(await commands.count()).toBeGreaterThan(50);
     for (const name of ["djinn wish make", "djinn gate run", "djinn up"])
@@ -97,27 +168,53 @@ for (const scheme of ["dark", "light"] as const) {
     await page.getByRole("searchbox").fill("");
     await expect(page.locator("#group-wish")).toBeVisible();
 
-    await page.getByRole("tab", { name: "Concepts" }).click();
-    await expect(page.locator("#concepts")).toBeVisible();
+    // The brand leads back to the splash.
+    await page.locator(".brand").click();
+    await expect(splash).toBeVisible();
+    await expect(page.locator(".book")).toBeHidden();
     expect(errors).toEqual([]);
   });
 }
 
+// The navigation speaks the window's language; the pages stay in English.
+test("the Grimoire's navigation is in the language asked", async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto(djinnURL());
+  await page.goto(djinnURL("/docs/", { lang: "fr" }) + "#wish");
+  const nav = page.getByRole("navigation", { name: "Le Grimoire" });
+  await expect(
+    nav.getByRole("link", { name: "Souhait", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(nav.getByRole("link", { name: "Prise en main" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Wish" }),
+  ).toBeVisible();
+  await expect(
+    page.locator("#wish").getByRole("link", { name: /^Suivant/ }),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 // The documentation was so slow to scroll in the window that it seemed to reload: a blur as wide as the window under
 // smoke that drifted, drawn again on every frame (W144). The frame scrolls at the pace of the screen, is never
 // reloaded by a scroll or a click, and nothing blurs what moves behind it.
-test("the settings open the documentation over the window, in its theme, and it scrolls without stalling", async ({
+test("the settings open the Grimoire over the window, in its theme and language, and it scrolls without stalling", async ({
   page,
 }) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto(djinnURL());
   await page.getByTitle("Connections & preferences").click();
   await page.getByRole("dialog").getByRole("button", { name: "Open" }).click();
-  const docs = page.getByRole("dialog", { name: "Documentation" });
+  const docs = page.getByRole("dialog", { name: "Grimoire" });
   await expect(docs).toBeVisible();
-  const frame = page.frameLocator('iframe[title="Documentation"]');
+  await expect(docs.locator("iframe")).toHaveAttribute(
+    "src",
+    /[?&]lang=en(&|$)/,
+  );
+  const frame = page.frameLocator('iframe[title="Grimoire"]');
+  // It opens on the splash.
   await expect(
-    frame.getByRole("heading", { level: 1, name: "Djinn" }),
+    frame.getByRole("heading", { level: 1, name: "Grimoire" }),
   ).toBeVisible();
   await expect(frame.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(frame.locator("html")).toHaveClass(/embedded/);
@@ -178,15 +275,22 @@ test("the settings open the documentation over the window, in its theme, and it 
   });
   expect(median).toBeLessThan(100);
 
-  // A tab and a command move in the page: the page stays the one loaded.
-  await frame.getByRole("tab", { name: "Command line" }).click();
+  // The book, a page and a command move in the page: the page stays the one loaded.
+  await frame.getByRole("link", { name: "Open the Grimoire" }).click();
+  await expect(
+    frame.getByRole("heading", { level: 1, name: "Introduction" }),
+  ).toBeVisible();
+  const nav = frame.getByRole("navigation", { name: "Grimoire" });
+  await nav.getByRole("link", { name: "Command line" }).click();
   await frame
     .locator(".cli-toc")
     .getByRole("link", { name: "answer", exact: true })
     .click();
   await expect(frame.locator("#cmd-question-answer")).toBeInViewport();
-  await frame.getByRole("tab", { name: "Concepts" }).click();
-  await expect(frame.locator("#concepts")).toBeVisible();
+  await nav.getByRole("link", { name: "Question and move" }).click();
+  await expect(
+    frame.getByRole("heading", { level: 1, name: "Question and move" }),
+  ).toBeVisible();
   expect(
     await site.evaluate(
       () => (window as unknown as { loaded?: number }).loaded,

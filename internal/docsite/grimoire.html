@@ -1,0 +1,50 @@
+{{/* The Grimoire, in place of the markers of docs/site/index.html: "nav" is the navigation on the left, a group per
+part, a link per page; "pages" is every page but the Command line's, each with what is on it and the pages around it.
+Words with a data-text or data-title take the reader's language in site.js; the pages stay in English. */ -}}
+{{define "nav" -}}
+<p class="nav-title">
+  <span data-text="docs.title">{{en "docs.title"}}</span>
+  <span class="nav-sub" data-text="docs.subtitle">{{en "docs.subtitle"}}</span>
+</p>
+{{- range .}}
+<div class="nav-group">
+  <p class="nav-heading" data-text="{{.Key}}">{{en .Key}}</p>
+  <ul>
+    {{- range .Pages}}
+    <li><a href="#{{.Slug}}" data-text="{{.Key}}">{{en .Key}}</a></li>
+    {{- end}}
+  </ul>
+</div>
+{{- end}}
+{{- end}}
+
+{{define "pages" -}}
+{{range . -}}
+<section id="{{.Slug}}" class="page" aria-labelledby="{{.Slug}}-title" hidden>
+  <div class="page-main">
+    <article class="prose">
+      <h1 id="{{.Slug}}-title">{{.Title}}</h1>
+      {{.Body}}
+    </article>
+    <nav class="page-turn">
+      {{- with .Prev}}
+      <a class="turn prev" href="#{{.Slug}}"><span data-text="docs.previous">{{en "docs.previous"}}</span> <strong data-text="{{.Key}}">{{en .Key}}</strong></a>
+      {{- end}}
+      {{- with .Next}}
+      <a class="turn next" href="#{{.Slug}}"><span data-text="docs.next">{{en "docs.next"}}</span> <strong data-text="{{.Key}}">{{en .Key}}</strong></a>
+      {{- end}}
+    </nav>
+  </div>
+  {{- if .Sections}}
+  <nav class="page-toc" aria-labelledby="{{.Slug}}-toc">
+    <p id="{{.Slug}}-toc" data-text="docs.on_this_page">{{en "docs.on_this_page"}}</p>
+    <ul>
+      {{- range .Sections}}
+      <li><a href="#{{.ID}}">{{.Title}}</a></li>
+      {{- end}}
+    </ul>
+  </nav>
+  {{- end}}
+</section>
+{{end -}}
+{{- end}}

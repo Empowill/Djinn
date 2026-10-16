@@ -630,8 +630,9 @@ name your projects' folders and branches and your tasks' codes; nothing else of 
 
 ## More
 
-- **Documentation**, in Connections & preferences: **Open** displays the documentation window over the interface,
-  synchronized with the window's theme (also served at `/docs/` while `djinn up` runs).
+- **Grimoire**, Djinn's documentation, in Connections & preferences: **Open** displays it over the interface, in the
+  window's theme, its navigation in the window's language: a splash page, then Introduction, Getting started, a page per
+  concept, and the command line (also served at `/docs/` while `djinn up` runs).
 - [Agent protocol](agent-protocol.md) · [Providers](providers.md) · [Adaptable wishes](adaptable-wishes.md) · [Worker memory](worker-memory.md)
 - The language follows the system (English or French); change it, and the theme, in **Connections & preferences**.
 - To build Djinn, or work on it: [`CONTRIBUTING.md`](../CONTRIBUTING.md).
