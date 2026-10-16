@@ -163,6 +163,8 @@ type Event struct {
 	Limit *Limit
 	// Watched is set on a paragraph a watcher's command printed: the wish's lead is told its first line.
 	Watched *Watched
+	// Ran is set at the end of each run of a watcher's command, when its Watch asks for it (Watch.Runs).
+	Ran *Ran
 	// Model is the model the worker actually runs, when the event tells it.
 	Model string
 	// Ifrit is set by a worker started with Spec.Listen when its agent starts a turn on a message (WORKING), and
