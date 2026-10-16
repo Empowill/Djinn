@@ -9,6 +9,15 @@ the code does not say by itself; remove one when a change makes it false.
 - **A test over the time limit is a failing test.** `test-go` fails a Go test over 10 s on Linux (15 s elsewhere), and
   the project counts one over 1 s as a bug. *Do:* a fake clock, a short tick, a wait on an event; keep git merges
   and spawned processes few. *Where:* `tools/slowtests`.
+- **A slow test with an idle CPU waits on fsync.** Djinn's store syncs each commit (`synchronous(FULL)`), ~20 ms on a
+  machine busy with workers: `TestEventsBesideTheRun` took 8.3 s alone, 0.8 s of it on the CPU (W124). Tests now
+  open their stores with `synchronous(NORMAL)` (`durability`, under `go test` or `DJINN_TEST=1`). *Sign:* a CPU
+  profile far shorter than the test; `-test.trace`, then `go tool trace -pprof=syscall`, shows `Tx.Commit`. `strace
+  -c` hides it: it counts the CPU time of a syscall, not its wait. *Where:* `internal/store/store.go`.
+- **Making the harness tests parallel is not one line each.** W124 made 160 serial `internal/harness` tests parallel:
+  the package went from 127 s to about 60 s and passed three times, but under `-race` 40 tests failed against 5
+  (deadlines missed, and the scheduler's known race on `run.task` in `copyRunning`). A test with parallel subtests
+  stays serial: queued behind the others, `TestReleaseFit` took 21 s. *Where:* `internal/harness`.
 - **`jq` is slow in test fakes.** jq 1.6 costs ~57 ms a run: a fake `gh`/`glab` that runs it per call made a test
   last 1.5 s (W148). *Do:* run jq once per command over all its data files (`input_filename` before each line) and
   cache the answers, or answer in Go with no jq at all. *Where:* `internal/harness/babysit_pr_test.go`,
