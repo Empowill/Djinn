@@ -422,8 +422,13 @@ type Settings struct {
 	// Minutes without you in Djinn before Djinn puts an ifrit out, 5 to 240: your pace on this machine. Unset: 30.
 	// djinn up --ifrit-idle, and an ifrit's own (djinn task spawn --idle-minutes), come first.
 	IfritIdleMinutes *uint32 `protobuf:"varint,3,opt,name=ifrit_idle_minutes,json=ifritIdleMinutes,proto3,oneof" json:"ifrit_idle_minutes,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Djinn drives the lead (decision Q31): a fresh headless session for each batch of the lead's events and of what
+	// you write to the Djinn, with the rules, the events whole, the briefs of their wishes and the lead's journal in
+	// its prompt; no terminal, no djinn lead watch. Unset or false: the lead runs in its terminal, as before, until the
+	// driven lead is proven. djinn up reads it as it starts.
+	LeadDriven    *bool `protobuf:"varint,4,opt,name=lead_driven,json=leadDriven,proto3,oneof" json:"lead_driven,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Settings) Reset() {
@@ -475,6 +480,13 @@ func (x *Settings) GetIfritIdleMinutes() uint32 {
 		return *x.IfritIdleMinutes
 	}
 	return 0
+}
+
+func (x *Settings) GetLeadDriven() bool {
+	if x != nil && x.LeadDriven != nil {
+		return *x.LeadDriven
+	}
+	return false
 }
 
 // An agent command line. Djinn looks for it on its PATH, the PATH of the user's login shell, and the folders its
@@ -2329,15 +2341,18 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x05chord\x18\x01 \x01(\tR\x05chord\x12#\n" +
 	"\rdefault_chord\x18\x02 \x01(\tR\fdefaultChord\x12\x1c\n" +
 	"\tavailable\x18\x03 \x01(\bR\tavailable\x12\x18\n" +
-	"\aproblem\x18\x04 \x01(\tR\aproblem\"\xc5\x01\n" +
+	"\aproblem\x18\x04 \x01(\tR\aproblem\"\xfb\x01\n" +
 	"\bSettings\x12\x1f\n" +
 	"\bshortcut\x18\x01 \x01(\tH\x00R\bshortcut\x88\x01\x01\x12,\n" +
 	"\x04load\x18\x02 \x01(\x0e2\x13.djinn.v1.LoadNotchH\x01R\x04load\x88\x01\x01\x12=\n" +
 	"\x12ifrit_idle_minutes\x18\x03 \x01(\rB\n" +
-	"\xbaH\a*\x05\x18\xf0\x01(\x05H\x02R\x10ifritIdleMinutes\x88\x01\x01B\v\n" +
+	"\xbaH\a*\x05\x18\xf0\x01(\x05H\x02R\x10ifritIdleMinutes\x88\x01\x01\x12$\n" +
+	"\vlead_driven\x18\x04 \x01(\bH\x03R\n" +
+	"leadDriven\x88\x01\x01B\v\n" +
 	"\t_shortcutB\a\n" +
 	"\x05_loadB\x15\n" +
-	"\x13_ifrit_idle_minutes\"\xfa\x01\n" +
+	"\x13_ifrit_idle_minutesB\x0e\n" +
+	"\f_lead_driven\"\xfa\x01\n" +
 	"\bProvider\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
