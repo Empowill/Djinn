@@ -1,7 +1,7 @@
 // The screen of one wish, read from the services: on the left, what waits for you first (its open questions in the
 // questions column, question-column.tsx, the blocking ones first; its workers that wait, and "My wish is granted" once
-// Djinn proposes it; the questions you asked to investigate), on the right its journal and the rights its workers
-// have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent, its decisions another
+// Djinn proposes it; the questions you asked to investigate), on the right its workers running now and to come
+// (glance.tsx), then below both its journal and the rights its workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent, its decisions another
 // (decision-log.tsx), its tilasms another (tilasms.tsx), and the blocks its agents wrote for one another the last
 // (agent-blocks.tsx): what is for you is a question.
 // Djinn proposes; only the user grants.
@@ -128,6 +128,7 @@ import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
 import { QuestionColumn } from "./question-column";
+import { Glance } from "./glance";
 import { WishTask } from "./wish-task";
 import {
   LastPushes,
@@ -202,6 +203,10 @@ export function WishView({
     () => (open.length ? [{ wish, questions: open }] : []),
     [wish, open],
   );
+  // The glance on the right: the wish alone; the tasks of the other active wishes, read for the window's side panel,
+  // name what one of its tasks waits on across wishes (glance.tsx).
+  const glanceWish = useMemo(() => [wish], [wish]);
+  const allDetails = useData((s) => s.details);
   const waitingLead = waitingLeadQuestions(wish, detail);
   const digging = investigatingQuestions(wish, detail);
   const waiting = waitingTasks(wish, detail);
@@ -1222,7 +1227,13 @@ export function WishView({
                 )}
               </div>
 
-              <div className="main-side">
+              <Glance
+                wishes={glanceWish}
+                tasksOf={allDetails}
+                all={allWishes}
+              />
+
+              <div className="main-after">
                 <Journal
                   wish={wish}
                   blocks={detail.blocks}
