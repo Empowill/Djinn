@@ -66,4 +66,7 @@ extend google.protobuf.FieldOptions {
   string env = 51006;
   // Keep a singular field positional when it becomes optional, preserving an existing command's arguments.
   bool positional = 51009;
+  // A response field the command line prints with --json only: a text beside it says the same, as its reader wants
+  // it. djinn mcp still returns it.
+  bool json_only = 51010;
 }

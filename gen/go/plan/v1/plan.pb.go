@@ -1983,7 +1983,7 @@ const (
 	Change_CHANGE_PROJECT Change = 5
 	// The inbox: an item came, or was routed or dismissed; a source was plugged in or unplugged, or a project added.
 	Change_CHANGE_INBOX Change = 6
-	// Its tilasms: one put, restored or imported.
+	// Its tilasms: one put, restored or imported, or a comment on one written or sent.
 	Change_CHANGE_TILASM Change = 7
 	// The machine operating load notch changed.
 	Change_CHANGE_LOAD Change = 8

@@ -51,6 +51,8 @@ const (
 	TilasmServiceImportProcedure = "/plan.v1.TilasmService/Import"
 	// TilasmServicePutDataProcedure is the fully-qualified name of the TilasmService's PutData RPC.
 	TilasmServicePutDataProcedure = "/plan.v1.TilasmService/PutData"
+	// TilasmServiceCommentsProcedure is the fully-qualified name of the TilasmService's Comments RPC.
+	TilasmServiceCommentsProcedure = "/plan.v1.TilasmService/Comments"
 )
 
 // TilasmServiceClient is a client for the plan.v1.TilasmService service.
@@ -76,6 +78,9 @@ type TilasmServiceClient interface {
 	// Put the files the window read, dropped on the Tilasms tab: a folder's files, an .html file, or a .zip. A .zip that
 	// djinn tilasm export wrote is imported, as Import; any other is put, as Put.
 	PutData(context.Context, *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error)
+	// Read the comments the developer sent on a tilasm, each with the passage or the element it is on: those of one send
+	// with --send, as its comments event names it, else every send. A draft never shows: it is the developer's alone.
+	Comments(context.Context, *connect.Request[v1.TilasmServiceCommentsRequest]) (*connect.Response[v1.TilasmServiceCommentsResponse], error)
 }
 
 // NewTilasmServiceClient constructs a client for the plan.v1.TilasmService service. By default, it
@@ -146,20 +151,28 @@ func NewTilasmServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(tilasmServiceMethods.ByName("PutData")),
 			connect.WithClientOptions(opts...),
 		),
+		comments: connect.NewClient[v1.TilasmServiceCommentsRequest, v1.TilasmServiceCommentsResponse](
+			httpClient,
+			baseURL+TilasmServiceCommentsProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Comments")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // tilasmServiceClient implements TilasmServiceClient.
 type tilasmServiceClient struct {
-	put     *connect.Client[v1.TilasmServicePutRequest, v1.TilasmServicePutResponse]
-	list    *connect.Client[v1.TilasmServiceListRequest, v1.TilasmServiceListResponse]
-	get     *connect.Client[v1.TilasmServiceGetRequest, v1.TilasmServiceGetResponse]
-	open    *connect.Client[v1.TilasmServiceOpenRequest, v1.TilasmServiceOpenResponse]
-	history *connect.Client[v1.TilasmServiceHistoryRequest, v1.TilasmServiceHistoryResponse]
-	restore *connect.Client[v1.TilasmServiceRestoreRequest, v1.TilasmServiceRestoreResponse]
-	export  *connect.Client[v1.TilasmServiceExportRequest, v1.TilasmServiceExportResponse]
-	_import *connect.Client[v1.TilasmServiceImportRequest, v1.TilasmServiceImportResponse]
-	putData *connect.Client[v1.TilasmServicePutDataRequest, v1.TilasmServicePutDataResponse]
+	put      *connect.Client[v1.TilasmServicePutRequest, v1.TilasmServicePutResponse]
+	list     *connect.Client[v1.TilasmServiceListRequest, v1.TilasmServiceListResponse]
+	get      *connect.Client[v1.TilasmServiceGetRequest, v1.TilasmServiceGetResponse]
+	open     *connect.Client[v1.TilasmServiceOpenRequest, v1.TilasmServiceOpenResponse]
+	history  *connect.Client[v1.TilasmServiceHistoryRequest, v1.TilasmServiceHistoryResponse]
+	restore  *connect.Client[v1.TilasmServiceRestoreRequest, v1.TilasmServiceRestoreResponse]
+	export   *connect.Client[v1.TilasmServiceExportRequest, v1.TilasmServiceExportResponse]
+	_import  *connect.Client[v1.TilasmServiceImportRequest, v1.TilasmServiceImportResponse]
+	putData  *connect.Client[v1.TilasmServicePutDataRequest, v1.TilasmServicePutDataResponse]
+	comments *connect.Client[v1.TilasmServiceCommentsRequest, v1.TilasmServiceCommentsResponse]
 }
 
 // Put calls plan.v1.TilasmService.Put.
@@ -207,6 +220,11 @@ func (c *tilasmServiceClient) PutData(ctx context.Context, req *connect.Request[
 	return c.putData.CallUnary(ctx, req)
 }
 
+// Comments calls plan.v1.TilasmService.Comments.
+func (c *tilasmServiceClient) Comments(ctx context.Context, req *connect.Request[v1.TilasmServiceCommentsRequest]) (*connect.Response[v1.TilasmServiceCommentsResponse], error) {
+	return c.comments.CallUnary(ctx, req)
+}
+
 // TilasmServiceHandler is an implementation of the plan.v1.TilasmService service.
 type TilasmServiceHandler interface {
 	// Put a folder that holds an index.html, an .html file, or a .zip of one, as a tilasm of the wish: a new one, or
@@ -230,6 +248,9 @@ type TilasmServiceHandler interface {
 	// Put the files the window read, dropped on the Tilasms tab: a folder's files, an .html file, or a .zip. A .zip that
 	// djinn tilasm export wrote is imported, as Import; any other is put, as Put.
 	PutData(context.Context, *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error)
+	// Read the comments the developer sent on a tilasm, each with the passage or the element it is on: those of one send
+	// with --send, as its comments event names it, else every send. A draft never shows: it is the developer's alone.
+	Comments(context.Context, *connect.Request[v1.TilasmServiceCommentsRequest]) (*connect.Response[v1.TilasmServiceCommentsResponse], error)
 }
 
 // NewTilasmServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -296,6 +317,13 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(tilasmServiceMethods.ByName("PutData")),
 		connect.WithHandlerOptions(opts...),
 	)
+	tilasmServiceCommentsHandler := connect.NewUnaryHandler(
+		TilasmServiceCommentsProcedure,
+		svc.Comments,
+		connect.WithSchema(tilasmServiceMethods.ByName("Comments")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TilasmService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TilasmServicePutProcedure:
@@ -316,6 +344,8 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 			tilasmServiceImportHandler.ServeHTTP(w, r)
 		case TilasmServicePutDataProcedure:
 			tilasmServicePutDataHandler.ServeHTTP(w, r)
+		case TilasmServiceCommentsProcedure:
+			tilasmServiceCommentsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -359,4 +389,8 @@ func (UnimplementedTilasmServiceHandler) Import(context.Context, *connect.Reques
 
 func (UnimplementedTilasmServiceHandler) PutData(context.Context, *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.PutData is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Comments(context.Context, *connect.Request[v1.TilasmServiceCommentsRequest]) (*connect.Response[v1.TilasmServiceCommentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Comments is not implemented"))
 }

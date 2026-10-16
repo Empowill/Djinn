@@ -12195,7 +12195,7 @@ export enum Change {
   INBOX = 6,
 
   /**
-   * Its tilasms: one put, restored or imported.
+   * Its tilasms: one put, restored or imported, or a comment on one written or sent.
    *
    * @generated from enum value: CHANGE_TILASM = 7;
    */
