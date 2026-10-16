@@ -48,8 +48,9 @@ djinn up --browser    # no window: prints the URL to open in your browser
   `--worker-cpu` (e.g. `150` for 1.5 cores). Memory limits can be set with an expert static ceiling (`--worker-memory`)
   or an adaptive guardrail based on observed provider peaks (`--worker-memory-guard 2.5`): [worker memory](worker-memory.md).
 - **Operating load slider.** Controls how much of the machine Djinn uses: five manual notches (**Minimal**,
-  **Medium**, **High**, **Max**, **Overclock**), or **Auto** (`light` is accepted as an alias for `medium`).
-  The UI displays a dual gauge forecast: CPU (how many workers run of the most the notch lets run, exactly what the
+  **Medium**, **High**, **Max**, **Overclock**), or **Auto** (`light` is accepted as an alias for `medium`). Click a
+  notch's label or its round stop on the track (or Tab to a stop, then Enter or Space).
+  Hovering the slider, or reaching it with the keyboard, shows a dual gauge forecast under it: CPU (how many workers run of the most the notch lets run, exactly what the
   scheduler allows there, every agent counted and watchers not, with the workers started by hand and those finishing
   their run above the limit; standard versus low CPU priority) and Memory
   (peak memory Djinn may engage against current usage and total machine RAM). The **Overclock** notch pushes up to

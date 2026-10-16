@@ -578,6 +578,12 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
     void loadManager.setNotch(NOTCHES[idx] ?? LoadNotch.MEDIUM);
   };
 
+  // select sets a notch from a label or a stop: the same move from either.
+  const select = (notch: LoadNotch) => {
+    loadManager.setPreviewNotch(null);
+    void loadManager.setNotch(notch);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     let nextIdx: number;
     if (e.key === "ArrowRight" || e.key === "ArrowUp") {
@@ -602,32 +608,61 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
       data-notch={notchSlug(displayNotch)}
       onClick={handleTrackClick}
     >
-      <input
-        type="range"
-        role="slider"
-        min={1}
-        max={5}
-        step={1}
-        value={sliderIndex + 1}
-        onInput={(e) => {
-          const idx = Number(e.currentTarget.value) - 1;
-          loadManager.setPreviewNotch(NOTCHES[idx] ?? LoadNotch.MEDIUM);
-        }}
-        onChange={(e) => {
-          const idx = Number(e.currentTarget.value) - 1;
-          loadManager.setPreviewNotch(null);
-          void loadManager.setNotch(NOTCHES[idx] ?? LoadNotch.MEDIUM);
-        }}
-        onKeyDown={handleKeyDown}
-        onBlur={() => loadManager.setPreviewNotch(null)}
-        aria-label={t("load.label")}
-        aria-valuemin={1}
-        aria-valuemax={5}
-        aria-valuenow={sliderIndex + 1}
-        aria-valuetext={valuetext}
-        title={sliderTooltip}
-        className="operating-load-input"
-      />
+      <div className="operating-load-track">
+        <input
+          type="range"
+          role="slider"
+          min={1}
+          max={5}
+          step={1}
+          value={sliderIndex + 1}
+          onInput={(e) => {
+            const idx = Number(e.currentTarget.value) - 1;
+            loadManager.setPreviewNotch(NOTCHES[idx] ?? LoadNotch.MEDIUM);
+          }}
+          onChange={(e) => {
+            const idx = Number(e.currentTarget.value) - 1;
+            loadManager.setPreviewNotch(null);
+            void loadManager.setNotch(NOTCHES[idx] ?? LoadNotch.MEDIUM);
+          }}
+          onKeyDown={handleKeyDown}
+          onBlur={() => loadManager.setPreviewNotch(null)}
+          aria-label={t("load.label")}
+          aria-valuemin={1}
+          aria-valuemax={5}
+          aria-valuenow={sliderIndex + 1}
+          aria-valuetext={valuetext}
+          title={sliderTooltip}
+          className="operating-load-input"
+        />
+        {/* A round stop per notch on the track, a button each: the one shown filled (it stands for the cursor), the
+            one in effect let through to the cursor beneath, which it drags. */}
+        <div className="operating-load-stops">
+          {NOTCHES.map((n, i) => {
+            const inEffect = !data.auto && activeNotch === n;
+            return (
+              <button
+                key={n}
+                type="button"
+                data-notch={notchSlug(n)}
+                className={`operating-load-stop${i === sliderIndex ? " current" : ""}${inEffect ? " active" : ""}`}
+                style={{ left: `${(i / (NOTCHES.length - 1)) * 100}%` }}
+                aria-label={notchLabel(n)}
+                aria-pressed={inEffect}
+                onMouseEnter={() => loadManager.setPreviewNotch(n)}
+                onMouseLeave={() => loadManager.setPreviewNotch(null)}
+                onFocus={() => loadManager.setPreviewNotch(n)}
+                onBlur={() => loadManager.setPreviewNotch(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  select(n);
+                }}
+                title={notchTooltip(n, data, chosen)}
+              />
+            );
+          })}
+        </div>
+      </div>
       <div className="operating-load-notches">
         {NOTCHES.map((n) => (
           <button
@@ -640,8 +675,7 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
             onMouseLeave={() => loadManager.setPreviewNotch(null)}
             onClick={(e) => {
               e.stopPropagation();
-              loadManager.setPreviewNotch(null);
-              void loadManager.setNotch(n);
+              select(n);
             }}
             title={notchTooltip(n, data, chosen)}
           >
@@ -762,6 +796,7 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
     ? "load.limited_by_memory"
     : "load.limited_by_cpu";
 
+  // Laid over the page under the gauge, shown while the gauge is hovered or has the keyboard (operating-load.css).
   return (
     <div
       className="operating-load-forecast operating-load-memory"
