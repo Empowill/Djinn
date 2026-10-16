@@ -16,6 +16,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
 
@@ -88,6 +89,29 @@ func nextSaid(t *testing.T, said <-chan string) string {
 	}
 }
 
+// keptRun is the last run the source of the skill keeps, once ok says it is the one awaited.
+func keptRun(t *testing.T, e *env, skill string, ok func(*planv1.SourceRun) bool) *planv1.SourceRun {
+	t.Helper()
+	var last *planv1.SourceRun
+	for range 200 {
+		runs, err := store.List[*planv1.SourceRun](t.Context(), e.db, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range runs {
+			if r.GetSkill() == skill {
+				last = r
+			}
+		}
+		if last != nil && ok(last) {
+			return last
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("the source %s keeps %v", skill, last)
+	return nil
+}
+
 // plugSource plugs in the source named name, through the API.
 func plugSource(t *testing.T, client planv1connect.InboxServiceClient, name string) {
 	t.Helper()
@@ -152,6 +176,10 @@ func TestSourceReadsOnly(t *testing.T) {
 	if after := files(t, dir); len(after) != len(before) {
 		t.Errorf("the project's folder changed: %v", after)
 	}
+	// Its run is kept: it went well, and printed two items.
+	keptRun(t, e, "assigned", func(r *planv1.SourceRun) bool {
+		return r.GetItems() == 2 && r.GetError() == "" && r.GetFailures() == 0 && r.GetEndTime() != nil
+	})
 	wishes, err := e.wishes.List(t.Context(), connect.NewRequest(&planv1.WishServiceListRequest{}))
 	if err != nil || len(wishes.Msg.GetWishes()) != 1 || wishes.Msg.GetWishes()[0].GetTitle() != "Babysit !12 · Fix the wick" {
 		t.Errorf("wishes = %v, %v", wishes.Msg.GetWishes(), err)
@@ -180,6 +208,36 @@ func TestSourceRefused(t *testing.T) {
 	}
 	if _, err := os.Stat(runs); !os.IsNotExist(err) {
 		t.Errorf("a source the project does not allow ran: %v", err)
+	}
+	// Why it does not run is kept, as a run that could not start.
+	if r := keptRun(t, e, "assigned", func(*planv1.SourceRun) bool { return true }); r.GetFailures() != 1 ||
+		!strings.Contains(r.GetError(), "does not let its workers run") {
+		t.Errorf("run = %v", r)
+	}
+}
+
+// TestSourceFails: a source whose command fails keeps why, with its last error lines, and how many runs failed in a
+// row. Its error output makes no item.
+func TestSourceFails(t *testing.T) {
+	t.Parallel()
+	e := up(t, t.TempDir())
+	dir := t.TempDir()
+	sourceSkill(t, dir, "assigned", watchCommand("err:gh: not logged in", "exit:1"))
+	scan, _ := sourcesUp(e)
+	if _, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir})); err != nil {
+		t.Fatal(err)
+	}
+	client := planv1connect.NewInboxServiceClient(e.srv.Client(), e.srv.URL)
+	plugSource(t, client, "assigned")
+	scan()
+	r := keptRun(t, e, "assigned", func(r *planv1.SourceRun) bool { return r.GetFailures() > 0 })
+	if r.GetFailures() != 1 || r.GetItems() != 0 || r.GetError() != "exit code 1; its error output: gh: not logged in" ||
+		!r.GetFailingSince().AsTime().Equal(r.GetEndTime().AsTime()) {
+		t.Errorf("run = %v", r)
+	}
+	res, err := client.List(t.Context(), connect.NewRequest(&planv1.InboxServiceListRequest{All: true}))
+	if err != nil || len(res.Msg.GetItems()) != 0 {
+		t.Errorf("items = %v, %v; want none", res, err)
 	}
 }
 

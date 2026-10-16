@@ -369,15 +369,20 @@ func (l *watcherLife) ended(res Result, restart bool, ran time.Duration) (wait t
 // gaveUp is the error of a watcher whose command died watchTries times in a row: the last death, and the last lines
 // of its error output.
 func gaveUp(res Result, errLines []string) error {
+	return fmt.Errorf("its command died %d times in a row; the last time: %s", watchTries, death(res, errLines))
+}
+
+// death says why a run of a watcher's command died: its exit code, or why it could not run, then the last lines of
+// its error output.
+func death(res Result, errLines []string) string {
 	why := fmt.Sprintf("exit code %d", res.ExitCode)
 	if res.Err != nil {
 		why = res.Err.Error()
 	}
-	text := fmt.Sprintf("its command died %d times in a row; the last time: %s", watchTries, why)
 	if len(errLines) > 0 {
-		text += "; its error output: " + strings.Join(errLines, " / ")
+		why += "; its error output: " + strings.Join(errLines, " / ")
 	}
-	return errors.New(text)
+	return why
 }
 
 // restartLostWatcher starts again the command of a watcher whose process is lost: its task waits to resume, and the
