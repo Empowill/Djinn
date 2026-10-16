@@ -29,3 +29,5 @@ repeat them.
 ## Interface
 - Rounded elements use a uniform border on all sides, or no border. Never combine a rounded card with a
   one-sided border or a thicker accent border on one side. Straight separators belong on square elements.
+- A list being read never moves under the reader: new items append below the older ones, a revision keeps an item's
+  place, and the scroll stays anchored on what is on screen (`src/scroll-anchor.ts`).

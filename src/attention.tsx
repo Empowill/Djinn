@@ -1,9 +1,10 @@
 // The bar that stays at the top of the flying carpet and of a wish while something waits for you: one line each, the
-// most blocking first, in the colour of how much it holds up. A click takes you there, in whatever tab, wish or fold
-// it is; a line the page cannot show any more is not a button. A move's line has its main link beside it, a button
-// that opens where the developer acts (a pull request, a CI run). A question is blocking (red), needed before something
-// (orange, under its before words) or can wait (grey), as on its card. A choice the lead's agent shows in its
-// terminal (an approval, a folder to trust) is blocking too: its options are buttons that answer it there.
+// most blocking first, in the colour of how much it holds up; within a level the questions as they were asked, so a
+// new line comes after the others of its level. A click takes you there, in whatever tab, wish or fold it is; a line
+// the page cannot show any more is not a button. A move's line has its main link beside it, a button that opens where
+// the developer acts (a pull request, a CI run). A question is blocking (red), needed before something (orange, under
+// its before words) or can wait (grey), as on its card. A choice the lead's agent shows in its terminal (an approval,
+// a folder to trust) is blocking too: its options are buttons that answer it there.
 import {
   ArrowDownRight,
   BellRing,
@@ -19,7 +20,7 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import { useClients, useDjinn } from "./data/djinn";
-import type { OpenQuestion, Waiting } from "./data/flight";
+import { byAsked, type OpenQuestion, type Waiting } from "./data/flight";
 import { firstLine } from "./data/format";
 import { mainLink } from "./data/links";
 import { t } from "./i18n";
@@ -57,8 +58,9 @@ const order: Record<Level, number> = {
   ready: 5,
 };
 
-// attentionOf lists what waits for you, the most blocking first; origin marks a line with its wish. prompt is the
-// choice the lead's agent shows in its terminal, if any: it holds up the lead, so every wish, and comes first.
+// attentionOf lists what waits for you, the most blocking first, each level's questions the oldest first; origin marks
+// a line with its wish. prompt is the choice the lead's agent shows in its terminal, if any: it holds up the lead, so
+// every wish, and comes first.
 export function attentionOf(
   questions: readonly OpenQuestion[],
   waiting: readonly Waiting[],
@@ -78,7 +80,7 @@ export function attentionOf(
       text: prompt.title || t("lead_prompt.title"),
       prompt,
     });
-  for (const { wish, item, blocking } of questions) {
+  for (const { wish, item, blocking } of [...questions].sort(byAsked)) {
     const level: Level = blocking.length
       ? "blocking"
       : item.move && item.before

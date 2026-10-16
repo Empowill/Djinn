@@ -758,6 +758,16 @@ button.glance-line:hover .name {
 .question-row-picked {
   color: var(--text);
 }
+/* A revision adds its badge to the line without making it taller: what is below does not move. */
+.question-row-meta .revised-badge {
+  margin-block: -1px;
+}
+/* When a question was asked, and revised: grey and small, last on its line. */
+.question-asked {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 /* The open question, top to bottom as today's card: where to act, what is at stake in full, the recommendation
    boxed, the lettered options, the note, the three gestures. */
 .question-open {

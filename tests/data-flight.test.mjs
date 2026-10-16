@@ -41,7 +41,7 @@ const detail = (tasks, questions) => ({
   loaded: true,
 });
 
-test("the flying carpet merges the wishes: blocking questions first, every item keeps its wish", () => {
+test("the flying carpet merges the wishes: questions by wish, as they were asked, every item keeps its wish", () => {
   const lamp = wish("w1", "Ship the lamp", 1);
   const oil = wish("w2", "Find the oil", 2, { ready: true });
   const plan = f.flightPlan([lamp, oil], {
@@ -80,12 +80,12 @@ test("the flying carpet merges the wishes: blocking questions first, every item 
       ],
     ),
   });
-  // The second wish's blocking question comes before the first wish's free one.
+  // The wishes' rank first: the second wish's blocking question stays after the first wish's free one.
   assert.deepEqual(
     plan.questions.map((q) => [q.wish.id, q.item.id, q.blocking]),
     [
-      ["w2", "q3", ["W2"]],
       ["w1", "q1", []],
+      ["w2", "q3", ["W2"]],
     ],
   );
   // Only a worker that asks waits for the user: W3, cut short, is Djinn's to resume or history.
@@ -987,21 +987,29 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
   assert.equal(f.workDoneCount(local), 2);
 });
 
-test("open questions come blocking, then your move, then before X, then can wait, across the wishes", () => {
+// Nothing moves under the reader (AGENTS.md, Interface): a question asked later comes below, whatever it holds up.
+test("open questions come as they were asked, by wish, whatever they hold up; each keeps its urgency", () => {
   const lamp = wish("w1", "Ship the lamp", 1);
   const oil = wish("w2", "Find the oil", 2);
   const plan = f.flightPlan([lamp, oil], {
     w1: detail(
       [],
       [
-        { id: "q1", code: "Q01", text: "Brass?" },
-        { id: "q2", code: "Q02", text: "Wick?", before: "before the merge" },
+        { id: "q1", code: "Q01", text: "Brass?", createTime: at(10) },
+        {
+          id: "q2",
+          code: "Q02",
+          text: "Wick?",
+          before: "before the merge",
+          createTime: at(20),
+        },
         {
           id: "q6",
           code: "Q03",
           text: "Push tag?",
           move: true,
           before: "before the release",
+          createTime: at(30),
         },
         { id: "q7", code: "Q04", text: "Install build?", move: true },
       ],
@@ -1016,56 +1024,61 @@ test("open questions come blocking, then your move, then before X, then can wait
         },
       ],
       [
-        { id: "q3", code: "Q01", text: "Olive?" },
-        { id: "q4", code: "Q02", text: "Glass?", before: "before the demo" },
+        { id: "q3", code: "Q01", text: "Olive?", createTime: at(5) },
+        {
+          id: "q4",
+          code: "Q02",
+          text: "Glass?",
+          before: "before the demo",
+          createTime: at(15),
+        },
         {
           id: "q5",
           code: "Q03",
           text: "May W1 edit?",
           before: "before the demo",
+          createTime: at(25),
         },
       ],
     ),
   });
+  // The first wish's, then the second's, each the oldest first: one with no time comes first, by its id.
   assert.deepEqual(
     plan.questions.map((q) => [q.item.id, f.urgency(q)]),
     [
-      ["q5", 0],
-      ["q6", 1],
-      ["q2", 2],
-      ["q4", 2],
-      ["q1", 3],
       ["q7", 3],
+      ["q1", 3],
+      ["q2", 2],
+      ["q6", 1],
       ["q3", 3],
+      ["q4", 2],
+      ["q5", 0],
     ],
   );
-  // One wish alone sorts the same way.
+  // A revision keeps the question's creation time: it stays where it was, even listed after a newer one (the store
+  // put it back in place of its old copy).
+  const revised = {
+    id: "q1",
+    code: "Q01",
+    text: "Brass or copper?",
+    revision: 1,
+    createTime: at(10),
+    rounds: [{ kind: f.RoundKind.REVISE, createTime: at(40) }],
+  };
   assert.deepEqual(
     f
       .openQuestions(
-        oil,
+        lamp,
         detail(
+          [],
           [
-            {
-              id: "t1",
-              code: "W1",
-              status: f.TaskStatus.WAITING,
-              editQuestionId: "q5",
-            },
-          ],
-          [
-            { id: "q3", code: "Q01", text: "Olive?" },
-            {
-              id: "q4",
-              code: "Q02",
-              text: "Glass?",
-              before: "before the demo",
-            },
-            { id: "q5", code: "Q03", text: "May W1 edit?" },
+            { id: "q2", code: "Q02", text: "Wick?", createTime: at(20) },
+            revised,
+            { id: "q8", code: "Q05", text: "Oil?", createTime: at(50) },
           ],
         ),
       )
-      .map((q) => q.item.id),
-    ["q5", "q4", "q3"],
+      .map((q) => q.item.code),
+    ["Q01", "Q02", "Q05"],
   );
 });

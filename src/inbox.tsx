@@ -3,7 +3,9 @@
 // destination files the item or makes its wish, "Rub the lamp" takes the recommended one, "Dismiss" sets it aside.
 // Djinn never answers the source. A source runs only once plugged in on this machine: empty, the inbox lists the
 // sources the skills declare, each with "Plug in" or "Unplug"; with items, they fold under them. Without items nor
-// sources, it is hidden.
+// sources, it is hidden. The items come as they arrived, the oldest first: a new one comes after the others and moves
+// none of them while you read (AGENTS.md, Interface).
+import { timestampMs } from "@bufbuild/protobuf/wkt";
 import { Inbox as InboxIcon, Lamp, Plug, Unplug, X } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 
@@ -20,6 +22,13 @@ import { choiceOf, letter, when } from "./data/format";
 import { t } from "./i18n";
 import "./inbox.css";
 
+// byArrival orders inbox items as they arrived, the oldest first.
+function byArrival(a: InboxItem, b: InboxItem): number {
+  const at = (item: InboxItem) =>
+    item.createTime ? timestampMs(item.createTime) : 0;
+  return at(a) - at(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+
 export function Inbox({
   onOpen,
   onToast,
@@ -28,7 +37,8 @@ export function Inbox({
   onOpen: (wishId: string) => void;
   onToast: (text: string) => void;
 }) {
-  const items = useData((s) => s.inbox);
+  const newest = useData((s) => s.inbox);
+  const items = useMemo(() => [...newest].sort(byArrival), [newest]);
   const sources = useData((s) => s.sources);
   if (!items.length && !sources.length) return null;
   return (

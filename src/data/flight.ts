@@ -1,6 +1,7 @@
 // The flying carpet of the active wishes, merged from what the store read of each: one list of questions, of what
 // waits, of what runs, of the decisions. Every item keeps its wish. The order is the page's (the Go page of a
-// wish sorts the same way); what the lamp decides (a wish's rank, whether it is ready) comes from the lamp.
+// wish sorts the same way), but for the open questions, which the window lists as they were asked (byAsked) where the
+// page puts the most urgent first; what the lamp decides (a wish's rank, whether it is ready) comes from the lamp.
 // The flying carpet was called the flight plan: this file, flightPlan and FlightPlan keep that name.
 import {
   AzimaState,
@@ -49,9 +50,13 @@ export function urgency(question: OpenQuestion): number {
   return question.item.before ? 2 : 3;
 }
 
-// byUrgency orders open questions: blocking, then before X, then can wait. A sort keeps the order within a level.
-export function byUrgency(a: OpenQuestion, b: OpenQuestion): number {
-  return urgency(a) - urgency(b);
+// byAsked orders questions as they were asked, the oldest first: a new one always comes below, and a revision, which
+// keeps its creation time, never moves one. The window lists them so (AGENTS.md, Interface); its urgency shows on each.
+export function byAsked(a: Item<Question>, b: Item<Question>): number {
+  return (
+    time(a.item.createTime) - time(b.item.createTime) ||
+    (a.item.id < b.item.id ? -1 : a.item.id > b.item.id ? 1 : 0)
+  );
 }
 
 // Something that waits for the user and is not a question: a worker that waits for an answer, one cut short.
@@ -467,9 +472,8 @@ export function movingTasks(tasks: readonly Task[]): Task[] {
     .sort(byMotion);
 }
 
-// openQuestions are a wish's questions that wait for your answer, the blocking ones first, then those needed before
-// something, then those that can wait; each level in the order they were asked. Those being investigated wait for the
-// lead: investigatingQuestions.
+// openQuestions are a wish's questions that wait for your answer, in the order they were asked (byAsked). Those being
+// investigated wait for the lead: investigatingQuestions.
 export function openQuestions(wish: Wish, detail: WishDetail): OpenQuestion[] {
   return questionsWhere(wish, detail, waitsForYou);
 }
@@ -507,7 +511,7 @@ function questionsWhere(
         ...(report && { report }),
       };
     })
-    .sort(byUrgency);
+    .sort(byAsked);
 }
 
 // forkedAs is the code of the task that took over one cut short: a task of its wish forked from its session; "" when
@@ -627,9 +631,8 @@ export function flightPlan(
     ))
       plan.decisions.push({ wish, item });
   }
-  // Blocking, then before X, then can wait across every wish; within a level each keeps its wish's rank and its order.
-  plan.questions.sort(byUrgency);
-  plan.waitingLead.sort(byUrgency);
+  // The questions stay by wish, in the wishes' rank, each wish's in the order they were asked: nothing sorts them
+  // across wishes, so a new one never comes above the others of its wish.
   plan.decisions.sort((a, b) => later(a.item.at, b.item.at));
   plan.moving.sort((a, b) => byMotion(a.item, b.item));
   plan.azimas.sort(
