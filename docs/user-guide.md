@@ -196,7 +196,7 @@ Under them, one line says the machine's load, with a link to the [Hourglass](#th
 
 ## The Hourglass
 
-**Hourglass**, below the flying carpet in the side panel, or Ctrl+2 (Cmd+2 on macOS), is where the live metrics are, as
+**Hourglass**, near the bottom of the side panel, after Import a wish, or Ctrl+2 (Cmd+2 on macOS), is where the live metrics are, as
 time goes by. First the machine: its CPU and memory over the time you pick (10 minutes to 7 days), with Djinn's share,
 the load limit and the gates held; each running worker, its facts and its own graphs (its eye opens the task in its
 wish); then where the time of the commands goes, by project and gate. The page reads them only while it shows: leave it,
@@ -411,8 +411,8 @@ so an answer typed by the Djinn is attributed to it without echoing back to its 
 typed in a plain shell is attributed to the developer and reaches the Djinn. When a question is answered in
 any wish, the answer is queued for the Djinn, which waits on `djinn lead watch`: nothing is typed in its
 terminal while its watch runs, so nothing lands in your prompt box; without a watch, Djinn types one short line,
-"Djinn: N events waiting, run djinn lead watch". If the Djinn does not run, the question is marked as waiting for it until
-the Djinn acknowledges it, and the brief lists it under **Open answers without a lead.** While Djinn drives the lead
+"Djinn: N events waiting, run djinn lead watch". If the Djinn does not run, the question is marked **Waiting for the Djinn** until
+the Djinn acknowledges it; the next `djinn up` queues it for the Djinn. While Djinn drives the lead
 (`"leadDriven": true` in `settings.json`), there is no terminal and no watch: the answer goes to the next batch's
 session, whole, and `djinn lead journal` shows what each batch did.
 
@@ -437,9 +437,6 @@ and the Djinn is told of it. Djinn ranks the wishes by their titles, projects an
 Whatever the Djinn needs from you comes as a question, even without options when it really does not know what to
 think: its analysis is in the card's context. A question you answered is resolved: the Djinn does not bring it back,
 and asks a new one only on a real doubt.
-
-On an open question, **Mark read** tells the Djinn you have seen it, without a word; it finds it in its brief and
-with `djinn mark list`.
 
 ### The For agents tab
 
@@ -575,9 +572,10 @@ takes that slot. On a machine of one slot, none is kept: only the order above ap
 
 Nothing is lost. Stopping Djinn interrupts the workers; the next `djinn up` resumes each one by itself, in the same
 task, worktree and session, in the order of the wishes' ranks and within the machine's slots. It does not resume a
-task imported from another machine, a task of a granted wish, or a task whose worktree is gone; after three resumes, a
-task fails. Such a task is history: it shows among the finished parts of its azima, never in what waits for you.
-`djinn task continue <task-id> --prompt "…"` gives it a new turn of its own session, or **Mark done** closes it.
+task imported from another machine, a task of a granted wish, a task whose worktree is gone, or a task already
+continued in a fork. Such a task is history: it shows among the finished parts of its azima, never in what waits for
+you; **Mark done** closes it, and `djinn task spawn --fork` starts a new task from its context. Only the resumes after
+a usage limit count: after three of them, a task fails; a restart, a pause or a lost process spends none.
 
 A worker stopped by its provider's usage limit shows "Waiting for the limit", then resumes once the limit resets.
 
@@ -592,9 +590,10 @@ continue` gives a stopped worker 500 turns again, not more time. These budgets a
 [seal](providers.md#a-tasks-seal). A Claude worker's count grows as it works; Antigravity
 reports its own at the end of each answer, Codex none.
 
-At every start, the Djinn comes back on its session, in its folder. Its terminal comes
-back after an update or a crash too, on the same session; not after you quit. When a newer Djinn is installed, a
-banner offers **Update**, with its **Release notes** when it has some: nothing restarts without that click. A Djinn
+At every start, the Djinn comes back on its session, in its folder, however Djinn stopped. The other terminals come
+back after an update, on the same sessions; not after a crash or a quit. When a newer release is ready, a banner
+offers **Update**, with its **Release notes** when it has some; a newer Djinn already installed where it runs from
+offers **Restart**: nothing restarts without that click. A Djinn
 built from a checkout is named as a build is (its commit, branch and wish, what it adds and lacks); × hides it until
 another version is installed. After the
 restart, it lists the terminals that did not start again.
