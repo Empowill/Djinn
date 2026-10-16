@@ -72,9 +72,10 @@ type Spec struct {
 	// IsWorkDone reports whether the worker has committed clean work since start.
 	// When nil, callers compute it from git status in Dir.
 	IsWorkDone func() bool
-	// Track, when set, is told of each process the worker starts, its PID and the cgroup of its scope, as it starts;
-	// what it returns is called once the process ended. Djinn records them so that none outlives it (W514).
-	Track func(pid int, cgroup string) (ended func())
+	// Track, when set, is told of each process the worker starts, its PID, the cgroup of its scope and its mark
+	// (markVar), as it starts; what it returns is called once the process, and what it left running, ended. Djinn
+	// records them so that none outlives it (W514).
+	Track func(pid int, cgroup, mark string) (ended func())
 }
 
 // Skill is a skill summoned from another project: its folder stays in its source, and the worker reads it there.

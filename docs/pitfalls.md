@@ -166,6 +166,11 @@ the code does not say by itself; remove one when a change makes it false.
 - **A `djinn-sentinel` shell per running harness is expected.** Since W514 Djinn records each child under
   `$DJINN_HOME/run/`, stops a dead djinn's leftovers at start, and a `/bin/sh … djinn-sentinel` kills the groups
   when Djinn dies: it is not an orphan. *Where:* `internal/harness/orphans_unix.go`.
+- **What a worker starts dies with it.** Since W68 the end of any process Djinn starts (a worker, each run of a
+  watcher's command) stops what it left: its group, its scope's cgroup, and every process whose environment holds its
+  `DJINN_MARK` (a `setsid` daemon). A test or a watcher that expects a background process to outlive its command
+  fails: nothing may outlive it until `djinn serve` (W63) lands. On Linux the process stays a zombie (waitid
+  WNOWAIT) until its leftovers are gone, so its group ID cannot be reused meanwhile. *Where:* `internal/harness/process_unix.go` (stopLeft), `orphans_linux.go` (procsOf).
 - **Finding a freeze in a goroutine dump.** `djinn debug dump` (or `kill -USR2` on djinn up, found by its socket,
   not `pgrep`: from the desktop menu it runs as `djinn open`) writes the goroutines to the log folder. Every waiter
   shows `lockSlow(0xADDR)`; ADDR minus the base address of a `Harness` method's receiver is the field offset, which

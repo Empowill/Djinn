@@ -168,7 +168,7 @@ func TestSweepLeavesOthersAlone(t *testing.T) {
 }
 
 // fakeParentArg makes the test binary play a djinn up that starts a worker, prints its PID and on Unix the PID of
-// what the worker started, then waits to be killed. With "unguarded" after it, it starts no guard (no sentinel nor
+// what the worker started, on Linux that of the daemon it started too (setsid), then waits to be killed. With "unguarded" after it, it starts no guard (no sentinel nor
 // job): only PR_SET_PDEATHSIG remains.
 const fakeParentArg = "djinn-fake-parent"
 
@@ -176,7 +176,11 @@ func fakeParent(args []string) int {
 	cs := newChildren(os.Getenv("DJINN_FAKE_RUN"), time.Second)
 	cs.noGuard = slices.Contains(args, "unguarded")
 	name, cargs := os.Args[0], []string{fakeWatchArg, "wait"}
-	if runtime.GOOS != "windows" {
+	switch runtime.GOOS {
+	case "windows":
+	case "linux":
+		name, cargs = "sh", []string{"-c", "sleep 600 & echo $!; setsid sleep 600 </dev/null >/dev/null 2>&1 & echo $!; wait"}
+	default:
 		name, cargs = "sh", []string{"-c", "sleep 600 & echo $!; wait"}
 	}
 	p, err := startProcess(os.TempDir(), name, cargs, nil, nil, time.Second, false, cs.tracker("W1", "worker"))
@@ -185,16 +189,27 @@ func fakeParent(args []string) int {
 		return 1
 	}
 	fmt.Println(p.cmd.Process.Pid)
-	if runtime.GOOS != "windows" {
+	for range startedBy() {
 		fmt.Println((<-p.lines).text)
 	}
 	time.Sleep(time.Hour)
 	return 0
 }
 
+// startedBy is how many processes fakeParent's worker starts: a job on Unix, a daemon too on Linux.
+func startedBy() int {
+	switch runtime.GOOS {
+	case "windows":
+		return 0
+	case "linux":
+		return 2
+	}
+	return 1
+}
+
 // TestChildrenDieWithDjinn: a djinn up killed, its worker dies, and what the worker started too. On Linux the kernel
 // kills the worker (PR_SET_PDEATHSIG), even without the sentinel; the sentinel stops the rest of its group, on macOS
-// all of it; on Windows, the job object kills the tree.
+// all of it, on Linux its daemon too, by its mark; on Windows, the job object kills the tree.
 func TestChildrenDieWithDjinn(t *testing.T) {
 	t.Parallel()
 	modes := []string{"guarded"}
@@ -216,11 +231,7 @@ func TestChildrenDieWithDjinn(t *testing.T) {
 			t.Cleanup(func() { _ = parent.Process.Kill() })
 			lines := bufio.NewScanner(out)
 			var ids []identity
-			n := 2 // The worker, and on Unix what it started.
-			if runtime.GOOS == "windows" {
-				n = 1
-			}
-			for range n {
+			for range 1 + startedBy() {
 				if !lines.Scan() {
 					t.Fatalf("the parent said no PID: %v", lines.Err())
 				}
@@ -244,12 +255,16 @@ func TestChildrenDieWithDjinn(t *testing.T) {
 			}
 			if mode == "unguarded" {
 				// Without the sentinel, what the worker started outlives it: this test's to stop.
-				if p, err := os.FindProcess(ids[1].pid); err == nil {
-					_ = p.Kill()
+				for _, id := range ids[1:] {
+					if p, err := os.FindProcess(id.pid); err == nil && same(id) {
+						_ = p.Kill()
+					}
 				}
 				return
 			}
-			waitFor(t, "what the worker started to die with it", func() bool { return !same(ids[1]) })
+			waitFor(t, "what the worker started to die with it", func() bool {
+				return !slices.ContainsFunc(ids[1:], same)
+			})
 		})
 	}
 }
