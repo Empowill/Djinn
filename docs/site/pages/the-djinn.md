@@ -1,13 +1,128 @@
 # The Djinn
 
-Djinn has one lead for every active wish: the Djinn. It is an agent session, Claude Code, Codex or Antigravity, that
-talks with you, splits wishes into tasks, asks the questions and keeps the plans true. **Talk to the Djinn**, at the
-top of a wish, opens it in the window's terminal, focused on that wish; **Write to the Djinn** sends it a word without
-leaving the page.
+The app is Djinn; its lead is the Djinn. It is one agent session, on Claude Code, Codex or Antigravity, that leads
+every active wish at once: it reads where each wish stands, splits the work into [azimas](#azima) and
+[tasks](#task-and-worker), sends the workers, turns your answers into work, and asks you what only you can give. The
+workers are its hands; the Djinn is the one voice you talk with.
 
-> **This page is a sketch.** Its full guide, how to use it from the window and from the Djinn, what to expect and
-> the common mistakes, is being written.
+## Why one voice
+
+With an agent per wish, you would follow three conversations, each with its own memory of what you said, and repeat
+yourself in each. One lead for every wish sees them all together: it knows that a task of one waits on a decision of
+another, that two wishes touch the same files, that you already answered the same question elsewhere.
+
+The Djinn also keeps no memory of its own that matters. Djinn computes where every wish stands, its plan, its
+questions, its decisions, and hands it to the Djinn at the start of each session. A new session, or the Djinn on
+another agent, picks up exactly where the last one left.
+
+## What the Djinn reads first
+
+Every new session of the Djinn starts from its brief, which Djinn writes from its own records, no model involved:
+
+- **Every active wish**: its title and description, its projects, where its work lands, its azimas, what runs and
+  what waits, its open questions with how much each holds up, and what is being investigated.
+- **The paused and granted wishes**, a line each.
+- **Djinn's rules for leading**: how to ask, how to plan, what it may do alone.
+- **The index of the [lead notes](#lead-notes)**: a line per lesson learnt, which it opens when it acts in that area.
+- **The projects' own rules**: the instructions each project holds, which it reads before it works there.
+
+When it turns to one wish, the Djinn reads that wish's own brief: its finished work, its latest decisions, what you
+marked read, its latest blocks and its tilasms.
+
+## Talking with the Djinn
+
+The Djinn talks to you only in the window, and only by [questions](#question-and-move). A report, a doubt, a "done as
+you asked" all come as a question in the wish they concern, often a yes or no with "OK, nothing to do" as an option.
+It writes nothing for you in its terminal: a line you type there is answered in the window.
+
+You have three ways to reach it:
+
+- **Answer its questions.** This is the usual way: an answer goes to the Djinn, which turns it into tasks.
+- **Write to the Djinn**, the pill at the bottom of a wish, or of the flying carpet. Ctrl+I (Cmd+I on macOS) opens it,
+  Enter sends, Shift+Enter breaks the line, Escape folds it and keeps your draft. From a wish, your words reach the
+  Djinn with the wish named; they wait while you type in its terminal or a choice is on screen there, then go.
+- **Talk to the Djinn**, at the top of a wish, opens its terminal in the window, focused on that wish. At the top of
+  the flying carpet it opens it on no wish. There you talk to it as to any agent.
+
+### Starting it, and its agent
+
+At every start, Djinn brings the Djinn back on its session, in its terminal. **Talk to the Djinn** does the same if it
+does not run, or shows it if it does.
+
+- **No session yet.** A new Djinn starts on Claude Code, from its brief, in the first of your projects with a folder on
+  this machine. Never in your home folder: with no project at all, nothing starts, and Djinn asks you to create one.
+- **Choose the agent**, the arrow beside **Talk to the Djinn**, lists the agents found on this machine. One that is not
+  installed is greyed, saying so; the current one is checked, and picking it resumes it. Picking another starts the
+  Djinn anew on that agent, from the brief. **Set up the agents**, at the bottom, opens their setup.
+- **While the Djinn runs**, another agent starts nothing: Djinn says to quit it in its terminal first.
+
+A small dot on **Talk to the Djinn** says the Djinn could not start, or that its program ended: its tooltip gives the
+error or the exit code, and its tab keeps its last output. **Talk to the Djinn** tries again.
+
+### When its agent asks for approval
+
+The Djinn's agent may stop to ask for your approval in its terminal: a command to run, a folder to trust. Djinn
+reads that choice from the screen and puts it first in **What waits for you**, on the flying carpet and in every
+wish, as **Approval for the Djinn**, with the agent's options as buttons; a notification says so too. A button
+answers in the terminal as its keys would, and only while that very choice is still on screen. It comes first because
+it holds the Djinn up, and so every wish.
+
+## What it decides alone
+
+The Djinn runs the work without asking you for what an agent can do:
+
+- **Planning.** It splits a wish into azimas and tasks, orders them so that workers do not collide, and keeps as many
+  running side by side as the plan allows.
+- **Checking.** A check, a measure, a log to read, the result of a CI run: it sends a worker or a watcher, and reports
+  what they found. It never asks you to look.
+- **Running the work.** Failed merges, held pushes, conflicts and corrections are its to sort out. A worker's refused
+  calls are its too: you see them only if it needs a right only you can grant.
+- **Damage control.** It may stop workers, withdraw a question or undo a faulty merge on its own, and tells you at
+  once.
+- **Your answers.** It turns each answer into tasks itself, in one pass. When it planned the task an option launches,
+  your answer without a note launches it at once.
+
+It does not read or change code itself: all the work goes to tasks.
+
+## What it asks
+
+- **A decision** that is yours: a choice of design, of scope, of order, with its recommendation.
+- **A move** only a person can make: push a tag, open or merge a pull request, start a release, check on a machine
+  Djinn does not have, grant a right, install and restart. Its question gives the exact commands, in order.
+- **A right** its workers lack, asked narrowly, never broad by default.
+- **A doubt about your answer.** When it does not fully understand an answer, it asks again before any work starts.
+- **Granting a wish**, which is never its call: it proposes, you grant. See [Wish](#wish).
+
+## A request that belongs elsewhere
+
+When you ask the Djinn for something unrelated to the wish at hand, it does not slip it into that plan. It hands the
+request to Djinn, and the window asks you **Where does this request go?**: file it in an existing wish, keep it where
+it is, or open a new one, each option with its reason. Djinn ranks the wishes that could take it by their titles,
+projects and latest notes, without a model. A request that matches a project's wish template makes a wish from that
+template. See [Skills and templates](#skills-and-templates).
+
+## What to expect
+
+- **Silence in its terminal is normal.** The Djinn ends its turns without a word there; what it has for you is in the
+  window.
+- **Your answers are never lost.** Each event for the Djinn waits until it has taken it. An answer given while the
+  Djinn does not run says **Waiting for the Djinn**, and reaches it once it starts.
+- **It waits for events, not for you.** Between turns, the Djinn waits for what it must act on: an answer, a task
+  that ends, a watcher that speaks.
+
+## Common mistakes
+
+- **Talking to it in its terminal and waiting for an answer there.** It answers in the window. Its terminal is for
+  when you want to see it work, or speak to it at length.
+- **Asking it to do several unrelated things in one wish.** Each gets its own wish, through **Where does this request
+  go?**: plans stay readable, and each decision stays with its work.
+- **Expecting it to remember a correction.** A word in its session lasts for that session. A rule meant to last
+  belongs in your project's instructions; how any lead should work belongs in a [lead note](#lead-notes).
+- **Switching agents while it runs.** Picking another agent while the Djinn runs starts nothing; quit it in its
+  terminal first, then pick the other agent.
 
 ## Read next
 
-Related: [Question and move](#question-and-move), [Lead notes](#lead-notes).
+- [Question and move](#question-and-move): what the Djinn asks you, and how to answer.
+- [Lead notes](#lead-notes): what the Djinn has learnt from past wishes.
+- [Restarts and updates](#restarts-and-updates): how the Djinn comes back after a restart.
