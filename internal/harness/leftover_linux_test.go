@@ -1,8 +1,11 @@
 package harness
 
 import (
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -17,24 +20,18 @@ import (
 
 // leftoverClaude is a claude that starts two long jobs before it plays the fake provider, as an agent's shell does: a
 // job in the background, in its process group (a dev server started with &), and a daemon, in a session of its own
-// (what setsid, a double fork or docker compose up -d leave). Each writes its PID to a file of $DJINN_LEFT once it
-// runs.
+// (what setsid or a double fork leave). Each writes its PID to a file of $DJINN_LEFT once it runs.
 const leftoverClaude = `#!/bin/sh
 sh -c 'echo $$ > "$0.new" && mv "$0.new" "$0" && exec sleep 600' "$DJINN_LEFT/job" </dev/null >/dev/null 2>&1 &
 setsid sh -c 'echo $$ > "$0.new" && mv "$0.new" "$0" && exec sleep 600' "$DJINN_LEFT/daemon" </dev/null >/dev/null 2>&1 &
 exec "$DJINN_FAKE_BIN" "$@"
 `
 
-// TestTaskEndStopsWhatItsWorkerStarted (W46): what a worker starts and leaves running, a dev server, a docker compose
-// up, a background shell job, ends with its task, however the task ends: done, failed, stopped or cancelled; in its
-// process group or out of it, with or without a systemd scope. Else it runs on, holding its ports and the worktree,
-// and nothing stops it later: the worker's record in run/ goes with the worker, so neither the sentinel at Djinn's end
-// nor the sweep at the next start knows of it; PR_SET_PDEATHSIG is the worker's alone, which its children do not
-// inherit.
-//
-// Done and failed tasks leave both running today, stopped and cancelled ones the daemon when there is no scope: a case
-// where only those leak skips, until the cleanup lands; with DJINN_KNOWN_LEAKS=1 it fails, and checks that neither
-// Djinn's end nor the next start stops them.
+// TestTaskEndStopsWhatItsWorkerStarted (W46, W68): what a worker starts and leaves running, a dev server, a daemon,
+// a background shell job, ends with its task, however the task ends: done, failed, stopped or cancelled;
+// in its process group or out of it, with or without a systemd scope. Else it runs on, holding its ports and the
+// worktree. W46 found both left running at a task's own end, and the daemon at a stop without a scope; since W68 the
+// worker's end stops its group, its cgroup and what carries its mark (stopLeft).
 func TestTaskEndStopsWhatItsWorkerStarted(t *testing.T) {
 	t.Parallel()
 	script := filepath.Join(t.TempDir(), "claude")
@@ -93,41 +90,13 @@ func TestTaskEndStopsWhatItsWorkerStarted(t *testing.T) {
 
 				procs := map[string]identity{"job": job, "daemon": daemon}
 				status := strings.TrimPrefix(ended.GetStatus().String(), "TASK_STATUS_")
-				// What leaks today (W46): all of it at a task's own end, the daemon at a stop without a scope.
-				var leaks, rest []string
-				switch {
-				case end == "done" || end == "failed":
-					leaks = []string{"job", "daemon"}
-				case mode == "group":
-					leaks, rest = []string{"daemon"}, []string{"job"}
-				default:
-					rest = []string{"job", "daemon"}
-				}
 				// The worker's grace (1 s) past, what it left is stopped; 3 s leave room for a loaded machine.
-				for _, name := range survivors(procs, rest, 3*time.Second) {
+				for _, name := range survivors(procs, []string{"job", "daemon"}, 3*time.Second) {
 					t.Errorf("its %s still runs after the task %s", name, status)
 				}
-				left := survivors(procs, leaks, 3*time.Second)
-				if len(left) == 0 {
-					return
-				}
-				if os.Getenv("DJINN_KNOWN_LEAKS") == "" {
-					t.Skipf("W46: its %s still run(s) after the task %s; DJINN_KNOWN_LEAKS=1 fails on it", strings.Join(left, " and "), status)
-				}
-				for _, name := range left {
-					t.Errorf("its %s still runs after the task %s", name, status)
-				}
-				// Nothing stops it later either: its worker's record went with the worker.
+				// Its record went once what it left was stopped.
 				if rs := records(t, filepath.Join(home, runDir)); len(rs) != 0 {
-					t.Logf("run/ records left: %+v", rs)
-				}
-				e.down()
-				if left := survivors(procs, left, time.Second); len(left) > 0 {
-					t.Errorf("its %s still run(s) after Djinn's end (the sentinel)", strings.Join(left, " and "))
-				}
-				up(t, home, opts...)
-				if left := survivors(procs, left, 0); len(left) > 0 {
-					t.Errorf("its %s still run(s) after the next start (the sweep)", strings.Join(left, " and "))
+					t.Errorf("run/ records left: %+v", rs)
 				}
 			})
 		}
@@ -174,5 +143,63 @@ func survivors(procs map[string]identity, names []string, wait time.Duration) []
 			return left
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// startMarked starts a daemon, in a session of its own, whose environment holds the mark: what a worker left running.
+// It kills it as the test ends.
+func startMarked(t *testing.T, mark string) identity {
+	t.Helper()
+	cmd := exec.Command("sleep", "600")
+	cmd.Env = append(os.Environ(), markEntry(mark))
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	ended := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(ended)
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-ended
+	})
+	var id identity
+	waitFor(t, "the daemon's start time", func() bool {
+		var err error
+		id = identity{pid: cmd.Process.Pid}
+		id.start, err = procStart(id.pid)
+		return err == nil
+	})
+	return id
+}
+
+// TestSweepStopsWhatCarriesItsMark (W68): a djinn up that died as its worker's end stopped what the worker left (the
+// grace delay) leaves a record of a worker that ended, and a daemon with its mark: the next start stops the daemon,
+// and leaves alone a process with another mark.
+func TestSweepStopsWhatCarriesItsMark(t *testing.T) {
+	t.Parallel()
+	daemon, other := startMarked(t, "MINE"), startMarked(t, "ANOTHER")
+	crashed := endedPID(t)
+	dir := t.TempDir()
+	cs := &children{dir: dir, grace: time.Second, self: identity{pid: crashed.pid + 1, start: "another"}}
+	gone := endedPID(t)
+	b, _ := json.Marshal(child{PID: gone.pid, Start: "an ended worker", Mark: "MINE", Djinn: crashed.pid,
+		DjinnStart: crashed.start, Task: "W1", Kind: "worker"})
+	if err := os.WriteFile(filepath.Join(dir, strconv.Itoa(gone.pid)+".json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := cs.sweep(); !slices.Equal(got, []string{"W1's worker"}) {
+		t.Errorf("sweep() = %v, want W1's worker", got)
+	}
+	if same(daemon) {
+		t.Error("the daemon with the worker's mark still runs")
+	}
+	if !same(other) {
+		t.Error("the process with another mark was stopped")
+	}
+	if rs := records(t, dir); len(rs) != 0 {
+		t.Errorf("records left: %+v", rs)
 	}
 }

@@ -1499,7 +1499,7 @@ func runCommand(ctx context.Context, dir string, args []string) (string, int, er
 // it ended; lines, when set, each line the command writes, as it writes it. low sets a low-priority worker's CPU
 // priority on the command once started.
 func runTracked(
-	ctx context.Context, dir string, args []string, track func(pid int, cgroup string) func(), lines func(string), low bool,
+	ctx context.Context, dir string, args []string, track func(pid int, cgroup, mark string) func(), lines func(string), low bool,
 ) (string, int, error) {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
@@ -1526,7 +1526,7 @@ func runTracked(
 			applyPriority(cmd, true)
 		}
 		if track != nil {
-			defer track(cmd.Process.Pid, "")()
+			defer track(cmd.Process.Pid, "", "")()
 		}
 		err = cmd.Wait()
 	}

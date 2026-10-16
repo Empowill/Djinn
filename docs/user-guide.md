@@ -617,6 +617,13 @@ same, the next start stops it before it resumes any task (its start time tells i
 same number: Djinn never touches a process it did not start), and the restart line tells the Djinn: "2 orphans
 stopped: W488's watcher ×2".
 
+A task's end stops what its worker left running, however the task ends (done, failed, stopped or cancelled): a dev
+server started in the background, a daemon that left its terminal (`setsid`, a double fork). Djinn asks them to stop,
+and kills them 5 seconds later. It finds them by their process group, their systemd scope, and a mark Djinn puts in
+each worker's environment, `DJINN_MARK`, which what the worker starts inherits; on Windows, a job object per worker.
+What clears its environment, or what another service runs for the worker (a container that `docker compose up -d`
+asks Docker for), escapes it.
+
 To report it, send `logs/djinn.log` and the latest `goroutines-*.txt` (and the latest `crash-*.txt` and `console.log`
 if Djinn crashed). They
 name your projects' folders and branches and your tasks' codes; nothing else of yours.

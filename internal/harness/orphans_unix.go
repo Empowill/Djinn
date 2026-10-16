@@ -27,8 +27,9 @@ func groupOf(pid int, _ bool) int {
 }
 
 // stopChild asks a child of a previous djinn up to stop, or kills it: its process group while the child still runs
-// and leads it, or the child alone; and every process of its cgroup, a djinn scope's. A group is signalled only while
-// the child, the same process, is in it: a group whose processes all ended may be another's now.
+// and leads it, or the child alone; every process of its cgroup, a djinn scope's; and every process with its mark. A
+// group is signalled only while the child, the same process, is in it: a group whose processes all ended may be
+// another's now.
 func stopChild(c child, kill bool) {
 	sig := syscall.SIGTERM
 	if kill {
@@ -42,6 +43,7 @@ func stopChild(c child, kill bool) {
 			_ = syscall.Kill(c.PID, sig)
 		}
 	}
+	signalSame(procsOf(c.Start, 0, markEntry(c.Mark)), sig)
 	if !djinnScope(c.Cgroup) {
 		return
 	}
@@ -63,27 +65,34 @@ func djinnScope(cgroup string) bool {
 		strings.HasPrefix(cgroup[strings.LastIndex(cgroup, "/")+1:], "djinn-") && strings.HasSuffix(cgroup, ".scope")
 }
 
-// sentinelScript is the sentinel's: it reads, on its input, "+ <pid> <group> <cgroup>" as Djinn starts a child and
-// "- <pid>" as it ends. Its input ends when Djinn ends, however it ended, the kernel closing Djinn's end of the pipe:
-// it then asks every child left, its process group and its cgroup to stop, and kills them after the grace delay, its
-// first argument, in seconds. It ignores the signals of a terminal: it runs in a session of its own.
+// sentinelScript is the sentinel's: it reads, on its input, "+ <pid> <group> <mark> <cgroup>" as Djinn starts a
+// child ("-" for no mark) and "- <pid>" as it ends. Its input ends when Djinn ends, however it ended, the kernel
+// closing Djinn's end of the pipe: it then asks every child left, its process group, its cgroup and on Linux the
+// processes with its mark to stop, and kills them after the grace delay, its first argument, in seconds. It ignores
+// the signals of a terminal: it runs in a session of its own.
 const sentinelScript = `trap '' INT HUP
 p=
-while read -r op pid grp cg; do
+while read -r op pid grp mk cg; do
 	case $op in
-	+) p="$p $pid"; eval "g$pid=\$grp c$pid=\$cg" ;;
-	-) n=; for x in $p; do [ "$x" = "$pid" ] || n="$n $x"; done; p=$n; unset "g$pid" "c$pid" ;;
+	+) p="$p $pid"; eval "g$pid=\$grp m$pid=\$mk c$pid=\$cg" ;;
+	-) n=; for x in $p; do [ "$x" = "$pid" ] || n="$n $x"; done; p=$n; unset "g$pid" "m$pid" "c$pid" ;;
 	esac
 done
 [ -n "$p" ] || exit 0
 stop() {
 	for x in $p; do
-		eval "grp=\$g$x cg=\$c$x"
+		eval "grp=\$g$x mk=\$m$x cg=\$c$x"
 		if [ "$grp" -gt 1 ] 2>/dev/null; then
 			kill -s "$1" -- "-$grp" 2>/dev/null
 			kill -s CONT -- "-$grp" 2>/dev/null
 		fi
 		kill -s "$1" "$x" 2>/dev/null
+		if [ "$mk" != - ] && [ -d /proc/self ]; then
+			for f in $(grep -lzxF "` + markVar + `=$mk" /proc/[0-9]*/environ 2>/dev/null); do
+				f=${f#/proc/}
+				kill -s "$1" "${f%/environ}" 2>/dev/null
+			done
+		fi
 		if [ -n "$cg" ] && [ -r "$cg/cgroup.procs" ]; then
 			if [ "$1" = KILL ] && [ -w "$cg/cgroup.kill" ]; then
 				echo 1 > "$cg/cgroup.kill"
@@ -133,7 +142,24 @@ func (s *sentinel) sayf(format string, args ...any) {
 }
 
 func (s *sentinel) add(c child) {
-	s.sayf("+ %d %d %s\n", c.PID, c.Group, c.Cgroup)
+	mark := c.Mark
+	if mark == "" {
+		mark = "-"
+	}
+	s.sayf("+ %d %d %s %s\n", c.PID, c.Group, mark, c.Cgroup)
+}
+
+// signalSame sends sig to each of ids that still runs, the same process; after SIGTERM, SIGCONT too, so that a
+// paused one gets it.
+func signalSame(ids []identity, sig syscall.Signal) {
+	for _, id := range ids {
+		if same(id) {
+			_ = syscall.Kill(id.pid, sig)
+			if sig == syscall.SIGTERM {
+				_ = syscall.Kill(id.pid, syscall.SIGCONT)
+			}
+		}
+	}
 }
 
 func (s *sentinel) remove(c child) { s.sayf("- %d\n", c.PID) }
