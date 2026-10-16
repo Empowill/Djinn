@@ -393,7 +393,8 @@ func (u *updater) Restarting() bool {
 // A note from a Djinn of one lead per wish names its leads' terminals lead-<wish id>: the first that runs session,
 // the lead's recorded session (any when none is), comes back as the lead's terminal; the others do not, and
 // resumeLead resumes the lead's session after: never a lead under another name, nor two terminals on a session.
-func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, session string, say io.Writer) []string {
+// While Djinn drives the lead (driven), the lead's terminal does not run again: no lead lives in a terminal.
+func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, session string, driven bool, say io.Writer) []string {
 	path := filepath.Join(home, RestartFile)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -416,6 +417,11 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, sess
 	shown, dropped := "", 0
 	lead := slices.ContainsFunc(note.Terminals, func(t restartTerminal) bool { return t.Name == plan.LeadTerminal })
 	for _, t := range note.Terminals {
+		if driven && (t.Name == plan.LeadTerminal || strings.HasPrefix(t.Name, "lead-")) {
+			fmt.Fprintf(say, "djinn: %s does not run again: Djinn drives the lead, a session per batch of its events\n", t.Name)
+			dropped++
+			continue
+		}
 		if strings.HasPrefix(t.Name, "lead-") {
 			if lead || session != "" && !strings.Contains(strings.Join(t.Command, " "), session) {
 				fmt.Fprintf(say, "djinn: %s, a wish's lead, does not run again: Djinn has one lead now, in the %q terminal\n",

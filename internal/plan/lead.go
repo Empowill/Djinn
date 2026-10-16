@@ -220,6 +220,9 @@ func (s *LeadService) Resume(
 func (s *LeadService) resume(
 	ctx context.Context, req *connect.Request[planv1.LeadServiceResumeRequest],
 ) (*connect.Response[planv1.LeadServiceResumeResponse], error) {
+	if d := s.Wishes.drive(); d != nil {
+		return s.resumeDriven(ctx, req, d)
+	}
 	if s.Wishes.Leads == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this server runs no terminal"))
 	}
@@ -299,11 +302,13 @@ func (s *LeadService) resume(
 }
 
 // Tell types what the developer writes in the lead's terminal, as their own words: the lead must run there, never a
-// shell, where the text would run as a command. About a wish, the text starts by naming it.
+// shell, where the text would run as a command. About a wish, the text starts by naming it. While Djinn drives the
+// lead, the text is an event of its queue instead, for the next batch.
 func (s *LeadService) Tell(
 	ctx context.Context, req *connect.Request[planv1.LeadServiceTellRequest],
 ) (*connect.Response[planv1.LeadServiceTellResponse], error) {
-	if s.Wishes.Leads == nil {
+	d := s.Wishes.drive()
+	if s.Wishes.Leads == nil && d == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this server runs no terminal"))
 	}
 	text := strings.TrimSpace(req.Msg.GetText())
@@ -316,6 +321,13 @@ func (s *LeadService) Tell(
 			return nil, Status(err)
 		}
 		text = fmt.Sprintf("About wish %s (%s): %s", wish.GetTitle(), wish.GetId(), text)
+	}
+	if d != nil {
+		// The event names its wish: its text stays the developer's own words.
+		if err := s.Wishes.tellDriven(ctx, req.Msg.GetWishId(), strings.TrimSpace(req.Msg.GetText())); err != nil {
+			return nil, err
+		}
+		return connect.NewResponse(&planv1.LeadServiceTellResponse{}), nil
 	}
 	lead, err := store.Get[*planv1.Lead](ctx, s.Wishes.Store, "lead")
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -371,6 +383,15 @@ func (s *LeadService) Get(
 		return nil, Status(err)
 	}
 	res := &planv1.LeadServiceGetResponse{Lead: lead, StartError: s.Wishes.leadFailure.get()}
+	if d := s.Wishes.drive(); d != nil {
+		// No terminal: the lead is the batches Djinn drives, and why the last one failed twice, if it did.
+		res.Driven, res.Batch, res.StartError = true, d.Batch(), d.Failure()
+		if lead == nil {
+			res.Lead = &planv1.Lead{Id: "lead", Provider: planv1.Provider_PROVIDER_CLAUDE,
+				SessionId: res.GetBatch().GetSessionId(), Directory: LeadFolder(s.Wishes.home())}
+		}
+		return connect.NewResponse(res), nil
+	}
 	// The choice the lead shows comes with it: the window shows it in its attention bar, whatever page is open. So
 	// does how it ended, beside Lead, until Lead starts it again.
 	if s.Wishes.Leads != nil {
@@ -386,11 +407,7 @@ func (s *LeadService) Brief(
 	ctx context.Context, req *connect.Request[planv1.LeadServiceBriefRequest],
 ) (*connect.Response[planv1.LeadServiceBriefResponse], error) {
 	home := s.Wishes.home()
-	build := BuildGlobalBrief
-	if req.Msg.GetWishes() {
-		build = BuildWishesBrief
-	}
-	brief, err := build(ctx, s.Wishes.Store, home)
+	brief, err := globalBrief(ctx, s.Wishes.Store, home, req.Msg.GetWishes(), s.Wishes.ifritWaits())
 	if err != nil {
 		return nil, Status(err)
 	}

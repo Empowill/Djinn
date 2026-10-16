@@ -123,8 +123,8 @@ html[data-theme="light"] {
 .count-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  border-radius: 999px;
+  gap: 0.3125rem;
+  border-radius: 62.4375rem;
   color: var(--tone);
   background: color-mix(in srgb, var(--tone) 13%, transparent);
   border: 1px solid color-mix(in srgb, var(--tone) 32%, transparent);
@@ -134,11 +134,11 @@ html[data-theme="light"] {
 }
 .status-badge {
   font-family: var(--font-sans);
-  padding: 1px 9px 1px 7px;
+  padding: 1px 0.5625rem 1px 0.4375rem;
   font-weight: 600;
 }
 .count-pill {
-  padding: 0 7px 0 6px;
+  padding: 0 0.4375rem 0 0.375rem;
   font-family: var(--mono);
 }
 .count-pill b {
@@ -148,8 +148,8 @@ html[data-theme="light"] {
    without painting: the box-shadow it grew before repainted the window on every frame of every dot (W503, W513). */
 .live-dot {
   position: relative;
-  width: 7px;
-  height: 7px;
+  width: 0.4375rem;
+  height: 0.4375rem;
   border-radius: 50%;
   background: var(--st-running);
   flex-shrink: 0;
@@ -182,15 +182,15 @@ html[data-theme="light"] {
   z-index: 6;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 33px 10px;
+  gap: 0.25rem;
+  padding: 0.625rem 2.0625rem 0.625rem;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
 .attention-summary {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 0.4375rem;
   font-weight: 600;
   color: var(--st-waiting);
 }
@@ -200,20 +200,20 @@ html[data-theme="light"] {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  max-height: 152px;
+  gap: 0.1875rem;
+  max-height: 9.5rem;
   overflow-y: auto;
 }
 .attention-item {
   --tone: var(--st-waiting);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.625rem;
   width: 100%;
   min-width: 0;
-  padding: 5px 10px;
+  padding: 0.3125rem 0.625rem;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 0.375rem;
   background: var(--surface-raised);
   text-align: left;
 }
@@ -235,10 +235,10 @@ button.attention-item:hover {
 .attention-level {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 0.3125rem;
   color: var(--tone);
   font-weight: 600;
-  min-width: 78px;
+  min-width: 4.875rem;
 }
 .attention-code {
   font-family: var(--mono);
@@ -259,22 +259,22 @@ button.attention-item:hover {
 .attention-with-link {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
 }
 .attention-with-link .move-link {
   flex: none;
-  padding: 4px 9px;
+  padding: 0.25rem 0.5625rem;
 }
 /* The lead's choice: its question, what it is about, then its options as buttons, under one another. */
 .attention-prompt {
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
+  gap: 0.375rem;
 }
 .attention-prompt-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.625rem;
   min-width: 0;
 }
 .attention-prompt-lines {
@@ -283,13 +283,13 @@ button.attention-item:hover {
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 12px/1.6 var(--mono);
+  font: 0.75rem/1.6 var(--mono);
   color: var(--text);
 }
 .attention-prompt-options {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 0.375rem;
 }
 .attention-prompt-error {
   margin: 0;
@@ -298,31 +298,31 @@ button.attention-item:hover {
 /* A lit ifrit's band: tinted vermilion, one border all round; its head (a button to its card, its links, its
    countdown), the first line of its last reply, then its questions. The bar grows to hold it. */
 .attention-bar.with-ifrit ul {
-  max-height: 340px;
+  max-height: 21.25rem;
 }
 .attention-ifrit {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 6px 8px 8px;
+  gap: 0.3125rem;
+  padding: 0.375rem 0.5rem 0.5rem;
   border: 1px solid color-mix(in srgb, var(--tone) 45%, var(--line));
-  border-radius: 6px;
+  border-radius: 0.375rem;
   background: color-mix(in srgb, var(--tone) 12%, var(--surface-raised));
 }
 .attention-ifrit-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 12px;
+  gap: 0.375rem 0.75rem;
   min-width: 0;
 }
 .attention-ifrit-title {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex: 1 1 260px;
+  gap: 0.625rem;
+  flex: 1 1 16.25rem;
   min-width: 0;
-  padding: 2px;
+  padding: 0.125rem;
   text-align: left;
 }
 .attention-ifrit-title > svg {
@@ -336,11 +336,11 @@ button.attention-item:hover {
 .attention-ifrit-warning {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
 }
 .attention-ifrit-reply {
   margin: 0;
-  padding: 0 2px;
+  padding: 0 0.125rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -360,12 +360,12 @@ button.attention-item:hover {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
+  gap: 0.25rem 0.625rem;
 }
 .ifrit-link {
   display: inline-flex;
   align-items: baseline;
-  gap: 5px;
+  gap: 0.3125rem;
   font-family: var(--mono);
 }
 .ifrit-link a {
@@ -381,12 +381,12 @@ button.attention-item:hover {
 .ifrit-gates {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 0.375rem;
 }
 .ifrit-gate {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 0.25rem;
   font-family: var(--mono);
   color: var(--text);
 }
@@ -394,10 +394,10 @@ button.attention-item:hover {
 .ifrit-countdown {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 7px;
+  gap: 0.3125rem;
+  padding: 0 0.4375rem;
   border: 1px dashed var(--st-waiting);
-  border-radius: 999px;
+  border-radius: 62.4375rem;
   color: var(--st-waiting);
   font-weight: 600;
   white-space: nowrap;
@@ -408,12 +408,12 @@ button.attention-item:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 14px;
+  gap: 0.375rem 0.875rem;
 }
 .ifrit-actions {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 0.375rem;
   margin-left: auto;
 }
 .wish-task-note.ifrit-reply {
@@ -422,7 +422,7 @@ button.attention-item:hover {
 .wish-task-note.ifrit-wait {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
 }
 .wish-task-note.ifrit-wait > svg {
   flex: none;
@@ -431,8 +431,8 @@ button.attention-item:hover {
 .status-ifrit {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-left: 10px;
+  gap: 0.375rem;
+  margin-left: 0.625rem;
   color: var(--st-ifrit);
 }
 .status-dot.ifrit {
@@ -441,7 +441,7 @@ button.attention-item:hover {
 .operating-load-forecast-ifrit {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 0.25rem;
   color: var(--tone);
 }
 .flash {
@@ -449,10 +449,11 @@ button.attention-item:hover {
 }
 @keyframes flash {
   0% {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--st-waiting) 70%, transparent);
+    box-shadow: 0 0 0 0.1875rem
+      color-mix(in srgb, var(--st-waiting) 70%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 3px transparent;
+    box-shadow: 0 0 0 0.1875rem transparent;
   }
 }
 .review .question-card,
@@ -460,26 +461,26 @@ button.attention-item:hover {
 .review .wish-block,
 .review .wish-grant,
 .review .plan-line {
-  scroll-margin-top: 170px;
+  scroll-margin-top: 10.625rem;
 }
 
 /* Titles, subtitles, a readable measure, air. The view takes the window's width, from the side panel to the right
    edge: the cards share it in columns, the prose keeps its measure inside them. */
 .review .overview-content {
-  padding: 8px 33px 64px;
+  padding: 0.5rem 2.0625rem 4rem;
   container: main / inline-size;
 }
 .review .review-head {
   min-height: 0;
   border-bottom: 0;
-  padding: 0 33px;
+  padding: 0 2.0625rem;
   margin: 0;
   width: 100%;
 }
 /* A list of cards: as many columns as the width holds, none narrower than --card-min; one column on a narrow window.
    Each card keeps its own space below it. */
 .card-grid {
-  --card-min: 560px;
+  --card-min: 35rem;
   display: grid;
   grid-template-columns: repeat(
     auto-fill,
@@ -489,7 +490,7 @@ button.attention-item:hover {
   align-items: start;
 }
 .task-grid {
-  --card-min: 760px;
+  --card-min: 47.5rem;
 }
 .azima-list {
   display: flex;
@@ -504,14 +505,14 @@ button.attention-item:hover {
 .main-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 22px 48px;
+  gap: 1.375rem 3rem;
   align-items: start;
-  margin-top: 22px;
+  margin-top: 1.375rem;
 }
 /* What reads as a list of lines or a setting stays at a hand's reach. */
 .main-columns .wish-journal,
 .main-columns .wish-rights {
-  max-width: 1200px;
+  max-width: 75rem;
 }
 .main-columns > .glance {
   order: -1;
@@ -522,10 +523,10 @@ button.attention-item:hover {
 .glance-wide {
   display: none;
 }
-@container main (min-width: 720px) {
+@container main (min-width: 45rem) {
   .main-columns {
     grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
-    row-gap: 28px;
+    row-gap: 1.75rem;
   }
   .main-columns > .main-moves {
     grid-column: 1;
@@ -536,7 +537,7 @@ button.attention-item:hover {
     grid-row: 1;
     order: 0;
     position: sticky;
-    top: calc(var(--attention-height, 0px) + 16px);
+    top: calc(var(--attention-height, 0px) + 1rem);
   }
   .main-columns > .main-after {
     grid-column: 1 / -1;
@@ -553,23 +554,23 @@ button.attention-item:hover {
 /* The glance: each wish's workers, running now and to come, nothing else. Blue runs, violet investigates; a circle
    waits on a task, a dotted one is planned; gold is for what waits on you, never here. */
 .glance-label {
-  margin: 0 0 6px;
-  font: 500 11px var(--font-sans);
+  margin: 0 0 0.375rem;
+  font: 500 0.6875rem var(--font-sans);
   letter-spacing: 0.6px;
   text-transform: uppercase;
   color: var(--muted-dim);
 }
 .glance-wish + .glance-wish {
-  margin-top: 20px;
+  margin-top: 1.25rem;
 }
 .glance-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0 8px;
+  gap: 0 0.5rem;
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
 }
 .glance-head button {
@@ -583,7 +584,7 @@ button.attention-item:hover {
 .glance-head button:hover {
   color: var(--text);
   text-decoration: underline;
-  text-underline-offset: 3px;
+  text-underline-offset: 0.1875rem;
 }
 .glance-head button:focus-visible,
 .glance-line:focus-visible {
@@ -592,43 +593,43 @@ button.attention-item:hover {
 }
 .glance-count {
   flex: none;
-  font: 400 12px var(--mono);
+  font: 400 0.75rem var(--mono);
   color: var(--muted-dim);
 }
 .glance-list {
   list-style: none;
-  margin: 6px 0 0;
+  margin: 0.375rem 0 0;
   padding: 0;
 }
 .glance-investigators {
-  margin-top: 10px;
+  margin-top: 0.625rem;
 }
 .glance-row {
   position: relative;
   display: grid;
-  grid-template-columns: 14px 38px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 0.875rem 2.375rem minmax(0, 1fr);
+  gap: 0.5rem;
   align-items: center;
-  min-height: 24px;
-  font-size: 12.5px;
+  min-height: 1.5rem;
+  font-size: 0.78125rem;
   color: var(--text);
 }
 /* A task listed under the one it waits on, joined to it by a square elbow, a step deeper for each task between. */
 .glance-row.child {
-  padding-left: calc(var(--depth) * 22px);
+  padding-left: calc(var(--depth) * 1.375rem);
 }
 .glance-row.child::before {
   content: "";
   position: absolute;
-  left: calc(var(--depth) * 22px - 16px);
-  top: -6px;
-  width: 11px;
-  height: calc(50% + 6px);
+  left: calc(var(--depth) * 1.375rem - 1rem);
+  top: -0.375rem;
+  width: 0.6875rem;
+  height: calc(50% + 0.375rem);
   border-left: 1px solid var(--line-strong);
   border-bottom: 1px solid var(--line-strong);
 }
 .glance-code {
-  font: 500 12px var(--mono);
+  font: 500 0.75rem var(--mono);
   color: var(--muted);
 }
 .glance-title {
@@ -642,24 +643,24 @@ button.attention-item:hover {
   color: var(--muted);
 }
 .glance-after {
-  margin-left: 6px;
-  font-size: 12px;
+  margin-left: 0.375rem;
+  font-size: 0.75rem;
   color: var(--muted-dim);
   white-space: nowrap;
 }
 .glance-quiet {
-  padding: 2px 0;
+  padding: 0.125rem 0;
   color: var(--muted-dim);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .glance-watch {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 0.875rem minmax(0, 1fr);
+  gap: 0.5rem;
   align-items: center;
-  min-height: 24px;
+  min-height: 1.5rem;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .glance-watch > svg,
 .glance-legend-watch > svg,
@@ -668,18 +669,18 @@ button.attention-item:hover {
   justify-self: center;
 }
 .glance-marks {
-  margin-left: 6px;
-  font: 400 12px var(--mono);
+  margin-left: 0.375rem;
+  font: 400 0.75rem var(--mono);
   overflow-wrap: anywhere;
 }
 .glance-marks span + span {
-  margin-left: 6px;
+  margin-left: 0.375rem;
 }
 .glance-dot {
   position: relative;
   display: inline-block;
-  width: 9px;
-  height: 9px;
+  width: 0.5625rem;
+  height: 0.5625rem;
   border-radius: 50%;
   justify-self: center;
   flex: none;
@@ -710,7 +711,7 @@ button.attention-item:hover {
 .glance-row .glance-dot.investigate::after {
   content: "";
   position: absolute;
-  inset: -4px;
+  inset: -0.25rem;
   border: 1px solid currentColor;
   border-radius: 50%;
   opacity: 0;
@@ -734,29 +735,29 @@ button.attention-item:hover {
 .glance-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
-  margin: 22px 0 0;
-  padding-top: 10px;
+  gap: 0.25rem 0.875rem;
+  margin: 1.375rem 0 0;
+  padding-top: 0.625rem;
   border-top: 1px solid var(--line);
   color: var(--muted-dim);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .glance-legend > span {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
 }
 .glance-legend .glance-dot {
-  width: 8px;
-  height: 8px;
+  width: 0.5rem;
+  height: 0.5rem;
 }
 /* Narrow: one line per wish, its name and a dot per worker. */
 .glance-line {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.625rem;
   width: 100%;
-  min-height: 26px;
+  min-height: 1.625rem;
   padding: 0;
   text-align: left;
   font: inherit;
@@ -769,7 +770,7 @@ button.attention-item:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 500;
 }
 button.glance-line:hover .name {
@@ -780,20 +781,20 @@ button.glance-line:hover .name {
   flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
   margin-left: auto;
   min-width: 0;
 }
 .glance-line-marks.zero {
   color: var(--muted-dim);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .glance-line-watch {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 0.1875rem;
   color: var(--st-watching);
-  font: 400 12px var(--mono);
+  font: 400 0.75rem var(--mono);
 }
 
 /* The questions column: on the page's ground, no card around it; only the open question is framed. */
@@ -801,43 +802,43 @@ button.glance-line:hover .name {
   padding: 0;
 }
 .question-column-label {
-  margin: 0 12px 6px;
-  font: 500 11px var(--font-sans);
+  margin: 0 0.75rem 0.375rem;
+  font: 500 0.6875rem var(--font-sans);
   letter-spacing: 0.6px;
   text-transform: uppercase;
   color: var(--muted-dim);
 }
 .question-none {
-  padding: 6px 12px;
+  padding: 0.375rem 0.75rem;
   color: var(--muted);
 }
 /* A wish's questions, on the flying carpet: its title as a light heading, which opens the wish. */
 .question-group-head {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 0.5rem;
   width: 100%;
-  padding: 16px 12px 4px;
+  padding: 1rem 0.75rem 0.25rem;
   text-align: left;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
   border-radius: var(--radius-control);
 }
 .question-group:first-of-type .question-group-head {
-  padding-top: 4px;
+  padding-top: 0.25rem;
 }
 .question-group-head:hover .name {
   color: var(--text);
   text-decoration: underline;
-  text-underline-offset: 3px;
+  text-underline-offset: 0.1875rem;
 }
 .question-group-head:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 .question-group-count {
-  font: 400 11px var(--mono);
+  font: 400 0.6875rem var(--mono);
   color: var(--muted-dim);
 }
 /* A question closed is its two-line row: its code, its title on two lines at most, how much it holds up. Open, it
@@ -845,15 +846,15 @@ button.glance-line:hover .name {
 .review .question-card.question-row {
   display: grid;
   /* The code, the title, the open one's corner buttons: an empty last column takes no room on a closed row. */
-  grid-template-columns: 46px minmax(0, 1fr) auto;
+  grid-template-columns: 2.875rem minmax(0, 1fr) auto;
   margin: 0;
-  padding: 8px 12px 9px 8px;
+  padding: 0.5rem 0.75rem 0.5625rem 0.5rem;
   border: 1px solid transparent;
   border-radius: var(--radius-panel);
   background: transparent;
   cursor: pointer;
-  scroll-margin-top: calc(var(--attention-height, 0px) + 12px);
-  scroll-margin-bottom: 12px;
+  scroll-margin-top: calc(var(--attention-height, 0px) + 0.75rem);
+  scroll-margin-bottom: 0.75rem;
   transition:
     background 0.15s,
     border-color 0.15s;
@@ -879,7 +880,7 @@ button.glance-line:hover .name {
   padding: 1px 0 0;
   border: 0;
   background: none;
-  font: 500 11px/18px var(--mono);
+  font: 500 0.6875rem/1.125rem var(--mono);
   color: var(--muted-dim);
 }
 .review .question-row.current .question-id {
@@ -887,7 +888,7 @@ button.glance-line:hover .name {
 }
 .review .question-row-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
   line-height: 1.45;
   color: var(--text);
@@ -900,20 +901,20 @@ button.glance-line:hover .name {
 .review .question-row.current .question-row-title {
   display: block;
   overflow: visible;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
 }
 .question-row-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px 10px;
-  margin: 2px 0 0;
-  font-size: 12px;
+  gap: 0.125rem 0.625rem;
+  margin: 0.125rem 0 0;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 .review .question-row-meta .status-badge {
-  gap: 4px;
+  gap: 0.25rem;
   padding: 0;
   border: 0;
   background: none;
@@ -929,7 +930,7 @@ button.glance-line:hover .name {
 }
 /* When a question was asked, and revised: grey and small, last on its line. */
 .question-asked {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -956,31 +957,31 @@ button.glance-line:hover .name {
   grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 0.875rem;
   min-width: 0;
-  padding: 10px 4px 6px 46px;
+  padding: 0.625rem 0.25rem 0.375rem 2.875rem;
 }
-@container main (max-width: 559px) {
+@container main (max-width: 34.9375rem) {
   .question-open {
-    padding-left: 4px;
+    padding-left: 0.25rem;
   }
 }
 .question-open-top {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 0.625rem;
 }
 .review .question-row .question-options {
   grid-template-columns: minmax(0, 1fr);
-  gap: 3px;
+  gap: 0.1875rem;
 }
 .review .question-row .option {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: 1.25rem minmax(0, 1fr) auto;
   align-items: start;
-  gap: 8px;
-  padding: 5px 8px 5px 6px;
+  gap: 0.5rem;
+  padding: 0.3125rem 0.5rem 0.3125rem 0.375rem;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   background: none;
@@ -991,17 +992,17 @@ button.glance-line:hover .name {
 }
 .review .question-row .option p {
   margin: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.45;
 }
 .review .question-row .option .option-letter {
   display: block;
-  height: 18px;
-  font: 500 11px/16px var(--mono);
+  height: 1.125rem;
+  font: 500 0.6875rem/1rem var(--mono);
   text-align: center;
   color: var(--muted);
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: 0.25rem;
 }
 .review .question-row .option:has(.option-recommended) .option-letter {
   color: var(--sand);
@@ -1021,9 +1022,12 @@ button.glance-line:hover .name {
   padding: 1px 0 0;
   background: none;
   color: var(--sand);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 500;
   white-space: nowrap;
+}
+.review .question-row .option-plan {
+  grid-column: 2 / -1;
 }
 .review .question-row textarea {
   max-width: none;
@@ -1034,33 +1038,33 @@ button.glance-line:hover .name {
 }
 /* What else waits for you, below the questions: the workers that wait, the proofs, the grant. */
 .your-move {
-  padding: 0 12px;
-  scroll-margin-top: 20px;
+  padding: 0 0.75rem;
+  scroll-margin-top: 1.25rem;
 }
 .your-move > :first-child {
   margin-top: 0;
 }
 
 .review .review-head .hero-copy {
-  padding: 30px 0 18px;
+  padding: 1.875rem 0 1.125rem;
 }
 .review .hero h1 {
-  font-size: 34px;
+  font-size: 2.125rem;
   font-weight: 550;
   letter-spacing: -0.8px;
   line-height: 1.15;
-  margin: 8px 0 12px;
+  margin: 0.5rem 0 0.75rem;
   color: var(--text);
-  max-width: 1100px;
+  max-width: 68.75rem;
 }
 .review .hero-copy > p {
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--muted);
   max-width: var(--measure);
 }
 .review .hero-visual {
-  width: 170px;
-  height: 150px;
+  width: 10.625rem;
+  height: 9.375rem;
   flex: 0 0 auto;
 }
 /* The wish's pills, then when it was made and its pushes, on one line while it holds them. */
@@ -1068,13 +1072,13 @@ button.glance-line:hover .name {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 20px;
+  gap: 0.625rem 1.25rem;
 }
 .review-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
 }
 .review-facts .review-pills {
   margin-bottom: 0;
@@ -1083,26 +1087,26 @@ button.glance-line:hover .name {
   margin-top: 0;
 }
 .section-title {
-  margin-bottom: 14px;
+  margin-bottom: 0.875rem;
 }
 .section-title h2 {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  font-size: 19px;
+  gap: 0.5625rem;
+  font-size: 1.1875rem;
   font-weight: 600;
   letter-spacing: -0.2px;
   color: var(--text);
 }
 .section-title p,
 .section-title .wish-spent {
-  margin-top: 4px;
-  font-size: 13px;
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
   color: var(--muted);
   max-width: var(--measure);
 }
 .review .wish-section {
-  margin-top: 44px;
+  margin-top: 2.75rem;
 }
 /* Markdown as prose: what the lead writes reads like a page. */
 .prose,
@@ -1111,14 +1115,14 @@ button.glance-line:hover .name {
 }
 .prose .ac-markdown,
 .review .recommendation .ac-markdown {
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.7;
   color: var(--text);
 }
 .prose .ac-markdown p,
 .prose .ac-markdown li,
 .review .recommendation .ac-markdown p {
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.7;
   color: var(--text);
 }
@@ -1127,14 +1131,14 @@ button.glance-line:hover .name {
 }
 .prose .ac-markdown h1,
 .prose .ac-markdown h2 {
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 600;
   margin: 1.3em 0 0.5em;
   color: var(--text);
 }
 .prose .ac-markdown h3,
 .prose .ac-markdown h4 {
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 600;
   margin: 1.1em 0 0.4em;
   color: var(--text);
@@ -1145,25 +1149,25 @@ button.glance-line:hover .name {
   margin: 0.5em 0;
 }
 .prose .ac-markdown :not(pre) > code {
-  font: 12.5px var(--mono);
+  font: 0.78125rem var(--mono);
   background: var(--surface-soft);
-  border-radius: 4px;
-  padding: 1px 5px;
+  border-radius: 0.25rem;
+  padding: 1px 0.3125rem;
 }
 .prose .ac-markdown blockquote {
   margin: 0.8em 0;
-  padding: 2px 0 2px 14px;
+  padding: 0.125rem 0 0.125rem 0.875rem;
   border-left: 3px solid var(--line-strong);
   color: var(--muted);
 }
 .prose .ac-markdown table {
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .prose .ac-markdown th,
 .prose .ac-markdown td {
   border: 1px solid var(--line);
-  padding: 5px 9px;
+  padding: 0.3125rem 0.5625rem;
   text-align: left;
 }
 
@@ -1172,9 +1176,9 @@ button.glance-line:hover .name {
 .review .question-card {
   --tone: var(--st-waiting);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 0.625rem;
   background: var(--surface);
-  margin: 0 0 16px;
+  margin: 0 0 1rem;
   overflow: visible;
 }
 .review .question-card:focus {
@@ -1195,33 +1199,33 @@ button.glance-line:hover .name {
 }
 .review .question-card.answered {
   --tone: var(--st-done);
-  margin-bottom: 8px;
+  margin-bottom: 0.5rem;
 }
 .review .question-card.withdrawn {
   --tone: var(--st-stopped);
-  margin-bottom: 8px;
+  margin-bottom: 0.5rem;
   opacity: 0.85;
 }
 .question-top {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding-right: 14px;
+  gap: 0.75rem;
+  padding-right: 0.875rem;
 }
 .review .question-heading {
   flex: 1;
   min-width: 0;
   align-items: flex-start;
-  padding: 18px 20px 12px;
+  padding: 1.125rem 1.25rem 0.75rem;
 }
 /* Being investigated, folded: one line out of the way of the questions that wait for an answer. */
 .review .question-card.folded {
-  margin-bottom: 8px;
+  margin-bottom: 0.5rem;
 }
 .review .question-heading.question-fold {
   align-items: center;
-  gap: 10px;
-  padding: 10px 20px;
+  gap: 0.625rem;
+  padding: 0.625rem 1.25rem;
   white-space: nowrap;
 }
 .review .question-fold > svg:first-child {
@@ -1247,10 +1251,10 @@ button.glance-line:hover .name {
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .review .question-card.answered .question-heading {
-  padding-bottom: 14px;
+  padding-bottom: 0.875rem;
   align-items: center;
 }
 .review .question-id {
@@ -1258,7 +1262,7 @@ button.glance-line:hover .name {
   border-color: color-mix(in srgb, var(--tone) 40%, transparent);
   color: var(--tone);
   font-weight: 600;
-  min-width: 38px;
+  min-width: 2.375rem;
 }
 .question-title {
   flex: 1;
@@ -1280,23 +1284,23 @@ button.glance-line:hover .name {
 .review .question-meta {
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   font-family: inherit;
-  margin-bottom: 8px;
+  margin-bottom: 0.5rem;
 }
 .review .question-heading h3 {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 600;
   line-height: 1.4;
   color: var(--text);
   max-width: var(--measure);
 }
 .review .question-card.answered .question-heading h3 {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 500;
 }
 .review .answer-value {
-  margin-top: 4px;
+  margin-top: 0.25rem;
   color: var(--st-done);
   font-weight: 500;
 }
@@ -1305,39 +1309,39 @@ button.glance-line:hover .name {
   color: var(--st-investigating);
   border: 1px dashed
     color-mix(in srgb, var(--st-investigating) 50%, transparent);
-  border-radius: 999px;
-  padding: 0 8px;
+  border-radius: 62.4375rem;
+  padding: 0 0.5rem;
 }
 .review .question-inner {
-  padding: 2px 22px 20px 72px;
+  padding: 0.125rem 1.375rem 1.25rem 4.5rem;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 0.875rem;
 }
 .review .recommendation {
   display: block;
   margin: 0;
-  padding: 12px 16px 14px;
+  padding: 0.75rem 1rem 0.875rem;
   border: 1px solid color-mix(in srgb, var(--lamp) 45%, var(--line));
-  border-radius: 8px;
+  border-radius: 0.5rem;
   background: var(--surface-raised);
 }
 .review .recommendation .eyebrow {
   color: var(--st-waiting);
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: 0.25rem;
 }
 .review .question-options {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr));
+  gap: 0.5rem;
 }
 .review .option {
   position: relative;
   flex-direction: column;
-  gap: 4px;
-  padding: 11px 13px;
-  border-radius: 8px;
+  gap: 0.25rem;
+  padding: 0.6875rem 0.8125rem;
+  border-radius: 0.5rem;
   border: 1px solid var(--line-strong);
   background: var(--surface-raised);
   color: var(--text);
@@ -1349,7 +1353,7 @@ button.glance-line:hover .name {
 }
 .review .option p {
   color: var(--text);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.5;
   user-select: text;
 }
@@ -1367,14 +1371,38 @@ button.glance-line:hover .name {
 }
 .option-recommended {
   position: absolute;
-  top: 9px;
-  right: 10px;
+  top: 0.5625rem;
+  right: 0.625rem;
   font-size: var(--font-size-body);
   color: var(--lamp-ink);
   background: var(--lamp);
-  border-radius: 999px;
-  padding: 0 8px;
+  border-radius: 62.4375rem;
+  padding: 0 0.5rem;
   font-weight: 600;
+}
+/* The task an option launches once picked: one grey line, cut short, never a second one (W100). */
+.option-plan {
+  display: flex;
+  align-items: center;
+  gap: 0.3125rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--font-size-body);
+  line-height: 1rem;
+  user-select: text;
+}
+.option-plan svg {
+  flex: none;
+}
+.option-plan-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.option-plan-azima {
+  flex: none;
+  white-space: nowrap;
 }
 .review .question-card textarea {
   width: 100%;
@@ -1387,7 +1415,7 @@ button.glance-line:hover .name {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 0.625rem;
 }
 .question-actions .spacer {
   flex: 1;
@@ -1460,7 +1488,7 @@ html[data-theme="light"] .review .question-card.gesture-rub {
 .review .button.accent.lamp-rub.is-pressed,
 html[data-theme="light"] .review .button.accent.lamp-rub.is-pressed {
   background: linear-gradient(var(--lamp-lo), var(--lamp));
-  box-shadow: inset 0 2px 4px
+  box-shadow: inset 0 0.125rem 0.25rem
     color-mix(in srgb, var(--lamp-ink) 40%, transparent);
 }
 .review .button.secondary.lamp-enlighten.is-pressed,
@@ -1472,9 +1500,9 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten.is-pressed {
   position: absolute;
   left: 50%;
   bottom: 50%;
-  width: 28px;
-  height: 46px;
-  margin-left: -14px;
+  width: 1.75rem;
+  height: 2.875rem;
+  margin-left: -0.875rem;
   border-radius: 50%;
   background: radial-gradient(
     closest-side,
@@ -1488,7 +1516,7 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten.is-pressed {
   content: "";
   left: 0;
   bottom: 0;
-  margin-left: -6px;
+  margin-left: -0.375rem;
   animation-name: question-wisp-curl;
   animation-delay: 140ms;
 }
@@ -1506,14 +1534,14 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten.is-pressed {
 @keyframes question-wisp {
   0% {
     opacity: 0;
-    transform: translate(0, 6px) rotate(0) scale(0.4);
+    transform: translate(0, 0.375rem) rotate(0) scale(0.4);
   }
   30% {
     opacity: 0.8;
   }
   100% {
     opacity: 0;
-    transform: translate(8px, -40px) rotate(14deg) scale(1.4);
+    transform: translate(0.5rem, -2.5rem) rotate(14deg) scale(1.4);
   }
 }
 @keyframes question-wisp-curl {
@@ -1526,7 +1554,7 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten.is-pressed {
   }
   100% {
     opacity: 0;
-    transform: translate(-12px, -24px) rotate(-18deg) scale(1.2);
+    transform: translate(-0.75rem, -1.5rem) rotate(-18deg) scale(1.2);
   }
 }
 /* Reduced motion: the glow is a plain flash of colour while the gesture plays, the button and the smoke stay still. */
@@ -1558,10 +1586,10 @@ html[data-motion="reduced"] .question-wisp {
 }
 .investigating-note {
   display: flex;
-  gap: 8px;
+  gap: 0.5rem;
   align-items: flex-start;
   color: var(--st-investigating);
-  font-size: 13px;
+  font-size: 0.8125rem;
   max-width: var(--measure);
 }
 .key-hint {
@@ -1569,17 +1597,17 @@ html[data-motion="reduced"] .question-wisp {
   align-items: center;
   justify-content: center;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1;
-  padding: 2px 4px;
-  border-radius: 4px;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
   border: 1px solid currentColor;
   opacity: 0.75;
   letter-spacing: -0.5px;
 }
 .question-hint {
   display: flex;
-  gap: 7px;
+  gap: 0.4375rem;
   align-items: center;
   color: var(--muted);
 }
@@ -1595,9 +1623,9 @@ html[data-motion="reduced"] .question-wisp {
 .read-more {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  margin-top: 6px;
-  padding: 2px 0;
+  gap: 0.3125rem;
+  margin-top: 0.375rem;
+  padding: 0.125rem 0;
   color: var(--st-running);
   font-weight: 500;
 }
@@ -1611,10 +1639,10 @@ html[data-motion="reduced"] .question-wisp {
 .question-report-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
+  gap: 0.375rem;
+  padding: 0.1875rem 0.625rem;
   border: 1px solid color-mix(in srgb, var(--st-running) 45%, var(--line));
-  border-radius: 999px;
+  border-radius: 62.4375rem;
   color: var(--text);
   background: color-mix(in srgb, var(--st-running) 6%, var(--surface));
   font-weight: 500;
@@ -1623,10 +1651,10 @@ html[data-motion="reduced"] .question-wisp {
   color: var(--st-running);
 }
 .question-report-body {
-  margin-top: 8px;
-  padding: 12px 16px;
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   background: var(--surface-raised);
 }
 /* A command to run: its text selectable, a small button to copy it exactly. */
@@ -1637,13 +1665,13 @@ html[data-motion="reduced"] .question-wisp {
 .copy-command {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-left: 3px;
-  padding: 2px 3px;
-  border-radius: 4px;
+  gap: 0.25rem;
+  margin-left: 0.1875rem;
+  padding: 0.125rem 0.1875rem;
+  border-radius: 0.25rem;
   vertical-align: middle;
   color: var(--muted);
-  font-size: var(--font-size-body, 12px);
+  font-size: var(--font-size-body, 0.75rem);
   line-height: 1;
 }
 .copy-command:hover,
@@ -1659,26 +1687,26 @@ html[data-motion="reduced"] .question-wisp {
 }
 .question-context h4,
 .question-versions-list h4 {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  margin: 0 0 6px;
+  margin: 0 0 0.375rem;
 }
 .wish-task-events-fold > summary {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
   color: var(--muted);
   cursor: pointer;
-  padding: 2px 0;
+  padding: 0.125rem 0;
 }
 /* A question's earlier versions, below it, to read: one bordered box each, the last one first. */
 .question-versions-list > ol {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.5rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1686,19 +1714,19 @@ html[data-motion="reduced"] .question-wisp {
 .question-versions-list > ol > li {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 14px;
+  gap: 0.375rem;
+  padding: 0.625rem 0.875rem;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   background: var(--surface-raised);
 }
 .question-version-head {
   display: flex;
-  gap: 8px;
+  gap: 0.5rem;
   align-items: baseline;
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .question-version-number {
   color: var(--text);
@@ -1706,7 +1734,7 @@ html[data-motion="reduced"] .question-wisp {
 }
 .question-version-options {
   margin: 0;
-  padding-left: 22px;
+  padding-left: 1.375rem;
 }
 .question-version-recommendation,
 .question-version-asked {
@@ -1715,7 +1743,7 @@ html[data-motion="reduced"] .question-wisp {
 }
 .question-version-asked {
   display: flex;
-  gap: 6px;
+  gap: 0.375rem;
   align-items: baseline;
 }
 .review .answered-info {
@@ -1728,19 +1756,19 @@ html[data-motion="reduced"] .question-wisp {
 .question-corner {
   display: flex;
   flex-shrink: 0;
-  gap: 6px;
-  margin-top: 20px;
+  gap: 0.375rem;
+  margin-top: 1.25rem;
 }
 .question-row > .question-corner {
-  margin: -3px 0 0 8px;
+  margin: -0.1875rem 0 0 0.5rem;
 }
 .question-corner-button {
   display: inline-grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 1.625rem;
+  height: 1.625rem;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 0.375rem;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -1762,10 +1790,10 @@ html[data-motion="reduced"] .question-wisp {
 /* Versions (3): the count says what it opens; a pill as small as its neighbours. */
 .question-corner-button.question-versions {
   display: inline-flex;
-  gap: 5px;
+  gap: 0.3125rem;
   width: auto;
-  padding: 0 8px;
-  font-size: 12px;
+  padding: 0 0.5rem;
+  font-size: 0.75rem;
   white-space: nowrap;
 }
 .question-later.is-pressed,
@@ -1781,14 +1809,14 @@ html[data-motion="reduced"] .question-wisp {
   border-color: var(--line);
 }
 .review .wish-task-heading {
-  padding: 10px 14px;
+  padding: 0.625rem 0.875rem;
 }
 .review .wish-task-heading strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .review .wish-task-note {
-  padding-left: 34px;
+  padding-left: 2.125rem;
 }
 .review .wish-task-note.error {
   color: var(--st-failed);
@@ -1827,19 +1855,19 @@ html[data-motion="reduced"] .question-wisp {
 /* The tabs of a view: the wish or the flying carpet, and the tasks, which say how many they are. */
 .view-tabs {
   display: flex;
-  gap: 4px;
-  margin: 0 0 12px;
+  gap: 0.25rem;
+  margin: 0 0 0.75rem;
   border-bottom: 1px solid var(--line);
 }
 .view-tabs > button {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
   margin-bottom: -1px;
   border-bottom: 2px solid transparent;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .view-tabs > button:hover {
   color: var(--text);
@@ -1863,7 +1891,7 @@ html[data-motion="reduced"] .question-wisp {
   font: var(--font-size-body) var(--mono);
 }
 .compact-table td {
-  padding: 3px 8px;
+  padding: 0.1875rem 0.5rem;
   vertical-align: top;
   border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
 }
@@ -1890,7 +1918,7 @@ html[data-motion="reduced"] .question-wisp {
 .fold-heading {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   padding: 0;
 }
 .rotated-90 {
@@ -1901,9 +1929,9 @@ html[data-motion="reduced"] .question-wisp {
 .review .wish-block {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px 16px;
-  margin-bottom: 8px;
+  border-radius: 0.625rem;
+  padding: 0.625rem 1rem;
+  margin-bottom: 0.5rem;
 }
 .agent-block > .fold-heading {
   width: 100%;
@@ -1911,51 +1939,51 @@ html[data-motion="reduced"] .question-wisp {
 }
 .review .agent-block h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 500;
   color: var(--text);
 }
 .agent-block > .wish-block-body {
-  margin-top: 10px;
+  margin-top: 0.625rem;
 }
 
 .review .plan-line {
   color: var(--text);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.625rem;
 }
 .review .wish-grant {
   border: 1px solid color-mix(in srgb, var(--st-done) 40%, var(--line));
   background: color-mix(in srgb, var(--st-done) 6%, var(--surface));
-  border-radius: 10px;
-  padding: 14px 18px;
+  border-radius: 0.625rem;
+  padding: 0.875rem 1.125rem;
 }
 .review .wish-grant h3 {
-  font-size: 15px;
+  font-size: 0.9375rem;
   color: var(--text);
 }
 .review .step-result-kicker {
   display: inline-flex;
-  gap: 8px;
+  gap: 0.5rem;
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: 0.375rem;
 }
 
 /* The side panel: each wish's state and counts. */
 .wish-tone {
   display: inline-flex;
   color: var(--tone);
-  width: 14px;
+  width: 0.875rem;
   justify-content: center;
 }
 .wish-tone .live-dot {
-  width: 6px;
-  height: 6px;
+  width: 0.375rem;
+  height: 0.375rem;
 }
 .mission-nav .count-pill {
-  border-radius: 999px;
-  padding: 0 6px;
+  border-radius: 62.4375rem;
+  padding: 0 0.375rem;
   font-size: var(--font-size-body);
 }
 
@@ -2067,7 +2095,7 @@ html[data-theme="light"] .review .question-meta .wish-origin {
 /* The wish's title, edited in place. */
 .review .hero-copy > .wish-title {
   cursor: text;
-  border-radius: 5px;
+  border-radius: 0.3125rem;
 }
 .review .hero-copy > .wish-title:hover,
 .review .hero-copy > .wish-title:focus-visible {
@@ -2077,30 +2105,30 @@ html[data-theme="light"] .review .question-meta .wish-origin {
 .wish-title-edit {
   display: block;
   width: 100%;
-  max-width: 1100px;
-  margin: 8px 0 12px;
-  padding: 4px 8px;
+  max-width: 68.75rem;
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.25rem 0.5rem;
   font: inherit;
-  font-size: 34px;
+  font-size: 2.125rem;
   font-weight: 550;
   letter-spacing: -0.02em;
   line-height: 1.15;
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: 0.375rem;
 }
 
 /* The wish's description, under its title: a few lines, edited in place. */
 .review .hero-copy > .wish-description {
-  margin: -4px 0 12px;
-  font-size: 14px;
+  margin: -0.25rem 0 0.75rem;
+  font-size: 0.875rem;
   line-height: 1.55;
   color: var(--muted);
   max-width: var(--measure);
   white-space: pre-line;
   cursor: text;
-  border-radius: 5px;
+  border-radius: 0.3125rem;
 }
 .review .hero-copy > .wish-description:hover,
 .review .hero-copy > .wish-description:focus-visible {
@@ -2112,15 +2140,15 @@ html[data-theme="light"] .review .question-meta .wish-origin {
   display: block;
   width: 100%;
   max-width: var(--measure);
-  margin: -4px 0 12px;
-  padding: 6px 8px;
+  margin: -0.25rem 0 0.75rem;
+  padding: 0.375rem 0.5rem;
   font: inherit;
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.55;
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: 0.375rem;
   resize: vertical;
 }
 
@@ -2134,16 +2162,16 @@ html[data-theme="light"] .review .question-meta .wish-origin {
   border-bottom-right-radius: 0;
 }
 .split-button > .split-arrow {
-  padding-left: 6px;
-  padding-right: 6px;
+  padding-left: 0.375rem;
+  padding-right: 0.375rem;
   margin-left: -1px;
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
 }
 /* The lead could not start, or ended: a dot on Lead until Lead starts it again. */
 .lead-dot {
-  width: 7px;
-  height: 7px;
+  width: 0.4375rem;
+  height: 0.4375rem;
   border-radius: 50%;
   background: var(--muted);
 }
@@ -2152,29 +2180,29 @@ html[data-theme="light"] .review .question-meta .wish-origin {
 }
 .lead-menu {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 0.375rem);
   right: 0;
   z-index: 60;
-  min-width: 260px;
-  padding: 5px;
+  min-width: 16.25rem;
+  padding: 0.3125rem;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0.125rem;
   background: var(--surface);
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  box-shadow: 0 10px 30px color-mix(in srgb, black 35%, transparent);
+  border-radius: 0.5rem;
+  box-shadow: 0 0.625rem 1.875rem color-mix(in srgb, black 35%, transparent);
 }
 .lead-menu > p {
-  padding: 8px 10px;
+  padding: 0.5rem 0.625rem;
 }
 .lead-agent {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
-  padding: 8px 10px;
-  border-radius: 5px;
+  gap: 0.125rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.3125rem;
   text-align: left;
   color: var(--text);
 }
@@ -2189,10 +2217,10 @@ html[data-theme="light"] .review .question-meta .wish-origin {
 .lead-agent-name {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
   font-weight: 550;
 }
 .lead-agent-detail {
-  font-size: var(--font-size-body, 12px);
+  font-size: var(--font-size-body, 0.75rem);
   color: var(--muted);
 }

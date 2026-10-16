@@ -174,6 +174,8 @@ const (
 	LeadServiceWatchProcedure = "/plan.v1.LeadService/Watch"
 	// LeadServiceTellProcedure is the fully-qualified name of the LeadService's Tell RPC.
 	LeadServiceTellProcedure = "/plan.v1.LeadService/Tell"
+	// LeadServiceJournalProcedure is the fully-qualified name of the LeadService's Journal RPC.
+	LeadServiceJournalProcedure = "/plan.v1.LeadService/Journal"
 	// LeadServiceChooseProcedure is the fully-qualified name of the LeadService's Choose RPC.
 	LeadServiceChooseProcedure = "/plan.v1.LeadService/Choose"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
@@ -1990,7 +1992,9 @@ type LeadServiceClient interface {
 	// agent from the brief the same way: a claude one becomes the lead, a codex one once djinn lead set gives its
 	// session, and an antigravity one leaves the record as it is. While the lead's terminal runs a program, nothing
 	// starts, and the note says so. A lead never starts in the home folder: a session recorded there starts a new lead
-	// the same way, and with no project nothing starts, the error says to create one. Starts djinn if it is not running.
+	// the same way, and with no project nothing starts, the error says to create one. While Djinn drives the lead, no
+	// terminal opens: the events that wait after a failed batch go to a new session at once, and the note says how the
+	// lead runs. Starts djinn if it is not running.
 	Resume(context.Context, *connect.Request[v1.LeadServiceResumeRequest]) (*connect.Response[v1.LeadServiceResumeResponse], error)
 	// The lead of Djinn, as currently recorded.
 	Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error)
@@ -2012,13 +2016,20 @@ type LeadServiceClient interface {
 	// next ones: an event never acknowledged (the lead crashed, its session was lost) comes back on the next watch, at
 	// least once, never lost. While a watch of the lead's session waits, Djinn types nothing in the lead's terminal;
 	// without one, it types one short line, "Djinn: N events waiting, run djinn lead watch". The lead runs it as a
-	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent).
+	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent). Refused while Djinn
+	// drives the lead: Djinn hands each batch to a session of its own.
 	Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error)
 	// Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
 	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
 	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
-	// djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
+	// djinn lead resume starts it. While Djinn drives the lead, the text is an event of its queue instead, whole: the
+	// next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
+	// call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
+	// The lead's journal while Djinn drives it: a paragraph per batch, the latest last, saying who led it (agent, model,
+	// session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's
+	// prompt carries the latest entries of its wishes; this prints them for the developer.
+	Journal(context.Context, *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error)
 	// Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
 	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
 	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
@@ -2081,6 +2092,13 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(leadServiceMethods.ByName("Tell")),
 			connect.WithClientOptions(opts...),
 		),
+		journal: connect.NewClient[v1.LeadServiceJournalRequest, v1.LeadServiceJournalResponse](
+			httpClient,
+			baseURL+LeadServiceJournalProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Journal")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		choose: connect.NewClient[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse](
 			httpClient,
 			baseURL+LeadServiceChooseProcedure,
@@ -2092,14 +2110,15 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // leadServiceClient implements LeadServiceClient.
 type leadServiceClient struct {
-	set    *connect.Client[v1.LeadServiceSetRequest, v1.LeadServiceSetResponse]
-	resume *connect.Client[v1.LeadServiceResumeRequest, v1.LeadServiceResumeResponse]
-	get    *connect.Client[v1.LeadServiceGetRequest, v1.LeadServiceGetResponse]
-	brief  *connect.Client[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse]
-	notes  *connect.Client[v1.LeadServiceNotesRequest, v1.LeadServiceNotesResponse]
-	watch  *connect.Client[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse]
-	tell   *connect.Client[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse]
-	choose *connect.Client[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse]
+	set     *connect.Client[v1.LeadServiceSetRequest, v1.LeadServiceSetResponse]
+	resume  *connect.Client[v1.LeadServiceResumeRequest, v1.LeadServiceResumeResponse]
+	get     *connect.Client[v1.LeadServiceGetRequest, v1.LeadServiceGetResponse]
+	brief   *connect.Client[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse]
+	notes   *connect.Client[v1.LeadServiceNotesRequest, v1.LeadServiceNotesResponse]
+	watch   *connect.Client[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse]
+	tell    *connect.Client[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse]
+	journal *connect.Client[v1.LeadServiceJournalRequest, v1.LeadServiceJournalResponse]
+	choose  *connect.Client[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse]
 }
 
 // Set calls plan.v1.LeadService.Set.
@@ -2137,6 +2156,11 @@ func (c *leadServiceClient) Tell(ctx context.Context, req *connect.Request[v1.Le
 	return c.tell.CallUnary(ctx, req)
 }
 
+// Journal calls plan.v1.LeadService.Journal.
+func (c *leadServiceClient) Journal(ctx context.Context, req *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error) {
+	return c.journal.CallUnary(ctx, req)
+}
+
 // Choose calls plan.v1.LeadService.Choose.
 func (c *leadServiceClient) Choose(ctx context.Context, req *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error) {
 	return c.choose.CallUnary(ctx, req)
@@ -2153,7 +2177,9 @@ type LeadServiceHandler interface {
 	// agent from the brief the same way: a claude one becomes the lead, a codex one once djinn lead set gives its
 	// session, and an antigravity one leaves the record as it is. While the lead's terminal runs a program, nothing
 	// starts, and the note says so. A lead never starts in the home folder: a session recorded there starts a new lead
-	// the same way, and with no project nothing starts, the error says to create one. Starts djinn if it is not running.
+	// the same way, and with no project nothing starts, the error says to create one. While Djinn drives the lead, no
+	// terminal opens: the events that wait after a failed batch go to a new session at once, and the note says how the
+	// lead runs. Starts djinn if it is not running.
 	Resume(context.Context, *connect.Request[v1.LeadServiceResumeRequest]) (*connect.Response[v1.LeadServiceResumeResponse], error)
 	// The lead of Djinn, as currently recorded.
 	Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error)
@@ -2175,13 +2201,20 @@ type LeadServiceHandler interface {
 	// next ones: an event never acknowledged (the lead crashed, its session was lost) comes back on the next watch, at
 	// least once, never lost. While a watch of the lead's session waits, Djinn types nothing in the lead's terminal;
 	// without one, it types one short line, "Djinn: N events waiting, run djinn lead watch". The lead runs it as a
-	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent).
+	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent). Refused while Djinn
+	// drives the lead: Djinn hands each batch to a session of its own.
 	Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error)
 	// Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
 	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
 	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
-	// djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
+	// djinn lead resume starts it. While Djinn drives the lead, the text is an event of its queue instead, whole: the
+	// next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
+	// call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
+	// The lead's journal while Djinn drives it: a paragraph per batch, the latest last, saying who led it (agent, model,
+	// session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's
+	// prompt carries the latest entries of its wishes; this prints them for the developer.
+	Journal(context.Context, *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error)
 	// Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
 	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
 	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
@@ -2240,6 +2273,13 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(leadServiceMethods.ByName("Tell")),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceJournalHandler := connect.NewUnaryHandler(
+		LeadServiceJournalProcedure,
+		svc.Journal,
+		connect.WithSchema(leadServiceMethods.ByName("Journal")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	leadServiceChooseHandler := connect.NewUnaryHandler(
 		LeadServiceChooseProcedure,
 		svc.Choose,
@@ -2262,6 +2302,8 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceWatchHandler.ServeHTTP(w, r)
 		case LeadServiceTellProcedure:
 			leadServiceTellHandler.ServeHTTP(w, r)
+		case LeadServiceJournalProcedure:
+			leadServiceJournalHandler.ServeHTTP(w, r)
 		case LeadServiceChooseProcedure:
 			leadServiceChooseHandler.ServeHTTP(w, r)
 		default:
@@ -2299,6 +2341,10 @@ func (UnimplementedLeadServiceHandler) Watch(context.Context, *connect.Request[v
 
 func (UnimplementedLeadServiceHandler) Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Tell is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Journal(context.Context, *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Journal is not implemented"))
 }
 
 func (UnimplementedLeadServiceHandler) Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error) {

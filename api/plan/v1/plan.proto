@@ -714,6 +714,58 @@ enum LeadEventKind {
   LEAD_EVENT_KIND_REPLIED = 11;
   // An ifrit went out, and why: the developer left Djinn alone, or Djinn restarted. A message lights it again.
   LEAD_EVENT_KIND_OUT = 12;
+  // The developer wrote to the Djinn (Write to the Djinn, djinn lead tell) while Djinn drives the lead: their words
+  // whole, in the next batch like any event.
+  LEAD_EVENT_KIND_MESSAGE = 13;
+}
+
+// LeadBatch is one turn of the lead Djinn drives (decision Q31): a fresh headless session that took a batch of the
+// lead's events, acted on them with djinn's commands, and ended. The batches are the lead's journal: who led (the
+// agent, its model, its session), on what, what it ran and what it said at the end of its turn, and what it cost.
+// Every batch's prompt carries the latest entries of the wishes it is about, so that no lead depends on what another
+// one remembers.
+message LeadBatch {
+  // Identifier, a UUIDv7: the batches go in its order.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // When its session started, and ended; unset while it runs.
+  google.protobuf.Timestamp start_time = 2;
+  google.protobuf.Timestamp end_time = 3;
+  // The agent and the model that led it, as the agent said.
+  Provider provider = 4;
+  string model = 5;
+  // The session, new for each batch: claude --resume takes it to read what it did.
+  string session_id = 6;
+  // 1 for its first session, 2 for the one Djinn starts again once after a failure.
+  int32 attempt = 7;
+  // The events it took, by identifier, and each in a line as the digest writes it.
+  repeated string event_ids = 8;
+  repeated string events = 9;
+  // The wishes its events are about.
+  repeated string wish_ids = 10;
+  // Where it stands.
+  LeadBatchState state = 11;
+  // Why it failed, when it did.
+  string error = 12;
+  // The commands the lead ran, in order, a line each.
+  repeated string commands = 13;
+  // The text that ended its turn: no one reads it but the next leads, in their journal.
+  string note = 14;
+  // What it spent.
+  Usage usage = 15;
+  // How many characters its prompt held: the rules aside, its events, briefs and journal.
+  int32 prompt_chars = 16;
+}
+
+// LeadBatchState is where a batch of the driven lead stands.
+enum LeadBatchState {
+  // Not set.
+  LEAD_BATCH_STATE_UNSPECIFIED = 0;
+  // Its session runs.
+  LEAD_BATCH_STATE_RUNNING = 1;
+  // Its session ended its turn: its events are acknowledged.
+  LEAD_BATCH_STATE_DONE = 2;
+  // Its session failed: its events wait still, for the attempt that follows, or the next batch.
+  LEAD_BATCH_STATE_FAILED = 3;
 }
 
 // Allowance is a right the developer allows a wish's workers in one of its projects, an explicit decision that
@@ -1458,7 +1510,8 @@ message Closure {
   // Why, in a few words; may be empty.
   string note = 3;
   // The task that continues this one, by code (W57): a fork of its session, spawned once it was cut short, failed or
-  // stopped. The scheduler follows it: a task that depends on this one waits for the fork.
+  // stopped; or the question worker Djinn started again in its place after it failed on a refused call (W96). The
+  // scheduler follows it: a task that depends on this one waits for the fork.
   string continued_in = 4;
 }
 
@@ -2585,6 +2638,34 @@ message InboxSource {
   bool plugged = 6;
   // Why it cannot be used; empty when it can.
   string error = 7;
+  // What it reads, in a sentence: its SKILL.md's metadata.djinn.source.summary, else the skill's description.
+  string summary = 8;
+  // Its last run on this machine; unset before its first, and once it is unplugged.
+  SourceRun last_run = 9;
+}
+
+// The last run of an inbox source on this machine. It lives in Djinn's data, never in a repository; unplugging the
+// source forgets it.
+message SourceRun {
+  option (djinn.v1.unique) = {fields: ["project_id", "skill"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The project that holds the skill.
+  string project_id = 2;
+  // The skill's folder name.
+  string skill = 3;
+  // When its command last ended, or could not start.
+  google.protobuf.Timestamp end_time = 4;
+  // How many items that run printed, those the inbox had already included.
+  int32 items = 5;
+  // Why that run failed: its exit code and the last lines of its error output, or why its command could not start.
+  // Empty when it went well.
+  string error = 6;
+  // How many runs failed in a row, that one included; 0 when it went well.
+  int32 failures = 7;
+  // When the first of those failed runs ended; unset when the last run went well.
+  google.protobuf.Timestamp failing_since = 8;
 }
 
 // A source plugged in on this machine. It lives in Djinn's data, never in a repository: a clone of a project whose
@@ -2956,7 +3037,7 @@ enum Change {
   CHANGE_PROJECT = 5;
   // The inbox: an item came, or was routed or dismissed; a source was plugged in or unplugged, or a project added.
   CHANGE_INBOX = 6;
-  // Its tilasms: one put, restored or imported.
+  // Its tilasms: one put, restored or imported, or a comment on one written or sent.
   CHANGE_TILASM = 7;
   // The machine operating load notch changed.
   CHANGE_LOAD = 8;
@@ -3472,7 +3553,9 @@ service LeadService {
   // agent from the brief the same way: a claude one becomes the lead, a codex one once djinn lead set gives its
   // session, and an antigravity one leaves the record as it is. While the lead's terminal runs a program, nothing
   // starts, and the note says so. A lead never starts in the home folder: a session recorded there starts a new lead
-  // the same way, and with no project nothing starts, the error says to create one. Starts djinn if it is not running.
+  // the same way, and with no project nothing starts, the error says to create one. While Djinn drives the lead, no
+  // terminal opens: the events that wait after a failed batch go to a new session at once, and the note says how the
+  // lead runs. Starts djinn if it is not running.
   rpc Resume(LeadServiceResumeRequest) returns (LeadServiceResumeResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -3507,7 +3590,8 @@ service LeadService {
   // next ones: an event never acknowledged (the lead crashed, its session was lost) comes back on the next watch, at
   // least once, never lost. While a watch of the lead's session waits, Djinn types nothing in the lead's terminal;
   // without one, it types one short line, "Djinn: N events waiting, run djinn lead watch". The lead runs it as a
-  // command its agent wakes it up for when it ends (djinn lead brief says how, for each agent).
+  // command its agent wakes it up for when it ends (djinn lead brief says how, for each agent). Refused while Djinn
+  // drives the lead: Djinn hands each batch to a session of its own.
   rpc Watch(LeadServiceWatchRequest) returns (LeadServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -3515,11 +3599,20 @@ service LeadService {
   // Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
   // queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
   // the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
-  // djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
+  // djinn lead resume starts it. While Djinn drives the lead, the text is an event of its queue instead, whole: the
+  // next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
+  // call it, and djinn mcp has no tool for it.
   rpc Tell(LeadServiceTellRequest) returns (LeadServiceTellResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
     option (djinn.v1.command_line_only) = true;
+  }
+  // The lead's journal while Djinn drives it: a paragraph per batch, the latest last, saying who led it (agent, model,
+  // session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's
+  // prompt carries the latest entries of its wishes; this prints them for the developer.
+  rpc Journal(LeadServiceJournalRequest) returns (LeadServiceJournalResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
   // would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
@@ -3598,8 +3691,12 @@ message LeadServiceGetResponse {
   // started. Never stored.
   LeadExit exit = 3;
   // Why the last LeadService.Resume could not start the lead, as it answered: kept until one starts or attaches to
-  // it. Never stored.
+  // it. While Djinn drives the lead, why its last batch failed twice, until a batch ends its turn. Never stored.
   string start_error = 4;
+  // Djinn drives the lead (decision Q31): a fresh headless session per batch of events, no terminal.
+  bool driven = 5;
+  // The batch that runs, or else the last one, while Djinn drives the lead.
+  LeadBatch batch = 6;
 }
 
 // LeadExit is how the program of the lead's terminal ended.
@@ -3650,6 +3747,24 @@ message LeadServiceTellResponse {
   // The text waits in the lead's terminal: something is being typed there, or a choice is on screen. It goes once
   // they are done.
   bool waiting = 1;
+}
+
+message LeadServiceJournalRequest {
+  // Only the batches about this wish.
+  string wish_id = 1 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // How many batches, the latest; 10 by default.
+  int32 limit = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 200
+  }];
+}
+
+message LeadServiceJournalResponse {
+  // The journal, in Markdown: a paragraph per batch, the latest last.
+  string text = 1;
 }
 
 message LeadServiceChooseRequest {

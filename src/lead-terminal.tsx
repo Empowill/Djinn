@@ -32,6 +32,7 @@ import { type Djinn, useData, useDjinn, useStore } from "./data/djinn";
 import type { TerminalInfo } from "./data/terminal";
 import "./lead-terminal.css";
 import { t } from "./i18n";
+import { onTextSize, textScale } from "./text-size";
 import { onTheme, token } from "./theme";
 import { AddProject } from "./wish-dialogs";
 
@@ -497,6 +498,10 @@ function LeadTerminal({
   );
 }
 
+// terminalFontSize is the emulator's font size: 13px at the default text size, scaled with it (text-size.ts) to the
+// half pixel.
+const terminalFontSize = () => Math.round(26 * textScale()) / 2;
+
 // mountTerminal runs an emulator in element on the terminal of djinn that request opens or attaches to, and tells
 // onStatus where its program stands, until dispose. The window's terminal and the agents' setup both use it; onNew,
 // when given, takes Ctrl+Shift+T.
@@ -515,13 +520,17 @@ export function mountTerminal(
   const api = djinn.terminal;
   const term = new Terminal({
     fontFamily: '"IBM Plex Mono", monospace',
-    fontSize: 13,
+    fontSize: terminalFontSize(),
     cursorBlink: true,
     scrollback: 5000,
     allowProposedApi: false,
     theme: terminalTheme(),
   });
   const stopTheme = onTheme(() => (term.options.theme = terminalTheme()));
+  const stopTextSize = onTextSize(() => {
+    term.options.fontSize = terminalFontSize();
+    fitSafely(fit);
+  });
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.loadAddon(
@@ -641,6 +650,7 @@ export function mountTerminal(
     dispose: () => {
       abort.abort();
       stopTheme();
+      stopTextSize();
       inputs.forEach((d) => d.dispose());
       element.removeEventListener("keydown", keep);
       term.dispose();

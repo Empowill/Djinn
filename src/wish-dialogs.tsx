@@ -54,7 +54,14 @@ import {
   setLanguage,
   systemLanguage,
   t,
+  type TextKey,
 } from "./i18n";
+import {
+  type TextSize,
+  chosenTextSize,
+  setTextSize as applyTextSize,
+  textSizes,
+} from "./text-size";
 import { type Theme, chosenTheme, setTheme as applyTheme } from "./theme";
 import { WishComposer } from "./wish-composer";
 import { WishDropdown } from "./wish-dropdown";
@@ -1153,13 +1160,21 @@ function NotificationSetting() {
   );
 }
 
-// Settings: the agents djinn finds on this machine, the system notifications, the language and the theme of the page,
-// and the global shortcut. The documentation, the Grimoire, has its own entry in the side panel (W89).
+const textSizeLabel: Record<TextSize, TextKey> = {
+  large: "settings.text_size_large",
+  "": "settings.text_size_default",
+  compact: "settings.text_size_compact",
+  "very-compact": "settings.text_size_very_compact",
+};
+
+// Settings: the agents djinn finds on this machine, the system notifications, the language, the theme and the text size
+// of the page, and the global shortcut. The documentation, the Grimoire, has its own entry in the side panel (W89).
 export function Settings({ onClose }: { onClose: () => void }) {
   const clients = useClients();
   const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
   const agents = useAgents();
   const [theme, setTheme] = useState<Theme>(chosenTheme);
+  const [textSize, setTextSize] = useState<TextSize>(chosenTextSize);
   useEffect(() => {
     let live = true;
     clients.ui
@@ -1218,6 +1233,27 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <option value="">{t("settings.theme_system")}</option>
           <option value="dark">{t("settings.theme_dark")}</option>
           <option value="light">{t("settings.theme_light")}</option>
+        </select>
+      </div>
+      <div className="setting-row">
+        <div>
+          <strong>{t("settings.text_size")}</strong>
+          <p>{t("settings.text_size_detail")}</p>
+        </div>
+        <select
+          value={textSize}
+          aria-label={t("settings.text_size")}
+          onChange={(e) => {
+            const next = e.target.value as TextSize;
+            setTextSize(next);
+            applyTextSize(next);
+          }}
+        >
+          {textSizes.map((size) => (
+            <option key={size} value={size}>
+              {t(textSizeLabel[size])}
+            </option>
+          ))}
         </select>
       </div>
       <ShortcutField

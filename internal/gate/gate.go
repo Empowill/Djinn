@@ -3,7 +3,8 @@
 // the command peaked at. Djinn's own requests to merge a task's work, settle a merge or check a push go first, the
 // first come first; then the others, the first wish of the rank first (Q26). A holder keeps its gate until it gives it
 // back, its connection ends, its process ends or its timeout passes: none is taken back for a request that goes first.
-// A gate held outside a running worker takes a worker's slot.
+// A lit ifrit's gate has no timeout: it is held until the ifrit goes out or ends, at its out time at the latest (T51),
+// and goes to no one first for it. A gate held outside a running worker takes a worker's slot.
 package gate
 
 import (
@@ -27,12 +28,17 @@ import (
 )
 
 // Tasks is what the gates need from the tasks: to name a holder, to rank waiters by their wish, to tell a task's
-// events, and whether a task's worker runs, which holds its gates in its own slot. The harness is one.
+// events, whether a task's worker runs, which holds its gates in its own slot, and whether a task is a lit ifrit, which
+// holds its gates until it goes out or ends. The harness is one.
 type Tasks interface {
 	Describe(ctx context.Context, taskID string) (string, error)
 	Ranks(ctx context.Context, taskIDs []string) map[string]int
 	Note(taskID string, ev harness.Event)
 	Works(taskID string) bool
+	// Ifrit tells whether the task is an ifrit lit now, and when it goes out unless the developer comes back (zero:
+	// not known yet); once it no longer is, why says why: "went out: …", "ended". A task that is no ifrit is not lit,
+	// and has no why. It must not call the gates back.
+	Ifrit(ctx context.Context, taskID string) (lit bool, out time.Time, why string)
 }
 
 // Machine is what the gates need from the machine: its pressure, its memory, and the policy that judges them. The
@@ -83,10 +89,13 @@ type waiter struct {
 	peak                    uint64 // the command's highest measured peak memory; 0 when never measured
 	pid                     int    // the holder's process; 0 when unknown
 	first                   bool   // Djinn's request for a merge or a push: it goes before the others (Request.First)
+	ifrit                   bool   // taken for a lit ifrit: held until it goes out or ends, with no timeout unless asked
 	timeout                 time.Duration
+	timed                   bool // the holder asked for its timeout (Request.Timeout)
 	seq                     int
 	asked                   time.Time     // when the gate was requested
-	since, until            time.Time     // when it was granted, and when it is taken back
+	since, until            time.Time     // when it was granted, and when it is taken back at the latest; guarded by Gates.mu
+	out                     time.Time     // when the ifrit holding it goes out unless the developer comes back; zero: not known
 	granted                 chan struct{} // closed when the gate is granted
 	changed                 chan struct{} // the cause to wait changed
 	done                    chan struct{} // closed when the gate is given or taken back
@@ -141,7 +150,8 @@ type Request struct {
 	// PID is the holder's process, 0 when unknown: it is measured while it holds the gate, and the gate goes back
 	// once it ends.
 	PID int
-	// Timeout is how long the gate may be held: Djinn takes it back after that. 0: DefaultTimeout.
+	// Timeout is how long the gate may be held: Djinn takes it back after that. 0: DefaultTimeout, but none for a lit
+	// ifrit, which holds its gates until it goes out or ends.
 	Timeout time.Duration
 	// First tells that Djinn takes the gate to merge a task's work into its branch (its wish's or its azima's), to
 	// settle such a merge, or to check a push: it blocks what comes after the task, so it goes before every other
@@ -162,8 +172,8 @@ func (h *Hold) Give() { h.once.Do(func() { h.g.give(h.w, "") }) }
 // Done is closed once the gate is no longer held: given back, or taken back (TakenBack says why).
 func (h *Hold) Done() <-chan struct{} { return h.w.done }
 
-// TakenBack says why Djinn took the gate back before its holder gave it: its process ended, or it held it past its
-// timeout; "" when it did not.
+// TakenBack says why Djinn took the gate back before its holder gave it: its process ended, it held it past its
+// timeout, or its ifrit went out or ended; "" when it did not.
 func (h *Hold) TakenBack() string {
 	h.g.mu.Lock()
 	defer h.g.mu.Unlock()
@@ -191,6 +201,12 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 			return nil, err
 		}
 	}
+	// A lit ifrit's own gates, not Djinn's merges of its work: held until it goes out or ends.
+	var ifrit bool
+	var out time.Time
+	if taskID != "" && !r.First {
+		ifrit, out, _ = g.tasks.Ifrit(ctx, taskID)
+	}
 	var peak uint64
 	if what != "" {
 		who += ": " + what
@@ -207,7 +223,7 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 	}
 	w := &waiter{
 		name: name, taskID: taskID, who: who, what: what, dir: r.Dir, project: proj, peak: peak, pid: r.PID, first: r.First,
-		timeout: timeout, seq: g.seq,
+		ifrit: ifrit, out: out, timeout: timeout, timed: r.Timeout > 0, seq: g.seq,
 		asked:   time.Now(),
 		granted: make(chan struct{}), changed: make(chan struct{}, 1), done: make(chan struct{}),
 	}
@@ -223,7 +239,7 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 		select {
 		case <-w.granted:
 			g.note(w, "taken")
-			go g.keep(w)
+			go g.keep(context.WithoutCancel(ctx), w) // It follows the hold, not the call that asked for it.
 			return &Hold{g: g, w: w}, nil
 		case <-w.changed:
 			g.mu.Lock()
@@ -292,19 +308,25 @@ func (g *Gates) give(w *waiter, why string) {
 }
 
 // keep follows a holder while it holds its gate: it reads what its process uses, and takes the gate back once that
-// process ends or the timeout passes, so a forgotten hold never blocks the others.
-func (g *Gates) keep(w *waiter) {
+// process ends or the timeout passes, so a forgotten hold never blocks the others. A lit ifrit's gate has no timeout
+// of its own: it follows the ifrit's out time, pushed back by each action of the developer, and is taken back once
+// the ifrit goes out or ends.
+func (g *Gates) keep(ctx context.Context, w *waiter) {
 	defer logx.Crash("gate keep", "gate", w.name, "task", w.taskID)
 	tick := time.NewTicker(g.tick)
 	defer tick.Stop()
-	limit := time.NewTimer(time.Until(w.until))
-	defer limit.Stop()
+	var limit <-chan time.Time
+	if !w.ifrit || w.timed {
+		timer := time.NewTimer(time.Until(w.since.Add(w.timeout)))
+		defer timer.Stop()
+		limit = timer.C
+	}
 	g.measure(w)
 	for {
 		select {
 		case <-w.done:
 			return
-		case <-limit.C:
+		case <-limit:
 			g.give(w, "held past its timeout of "+w.timeout.String())
 			return
 		case <-tick.C:
@@ -312,11 +334,35 @@ func (g *Gates) keep(w *waiter) {
 				g.give(w, fmt.Sprintf("its process %d ended", w.pid))
 				return
 			}
+			if w.ifrit {
+				lit, out, why := g.tasks.Ifrit(ctx, w.taskID)
+				if !lit {
+					g.give(w, "its ifrit "+cmp.Or(why, "ended"))
+					return
+				}
+				g.mu.Lock()
+				w.out = out
+				w.until = w.latest()
+				g.mu.Unlock()
+			}
 			if time.Since(w.read) >= g.every {
 				g.measure(w)
 			}
 		}
 	}
+}
+
+// latest is when the holder gives its gate back at the latest: its timeout's end; for a lit ifrit, its out time, or
+// the timeout it asked for if sooner, zero when neither is known. The caller holds g.mu, or w is not granted yet.
+func (w *waiter) latest() time.Time {
+	end := w.since.Add(w.timeout)
+	if !w.ifrit {
+		return end
+	}
+	if w.timed && (w.out.IsZero() || end.Before(w.out)) {
+		return end
+	}
+	return w.out
 }
 
 // measure reads what the holder's process uses, and keeps it with its peaks.
@@ -427,6 +473,13 @@ func (g *Gates) pass(ctx context.Context) {
 		switch h := g.held[w.name]; {
 		case h != nil:
 			why, cause = fmt.Sprintf("held by %s, for %s", h.who, time.Since(h.since).Round(time.Second)), "held by "+h.who
+			if h.ifrit {
+				// Its out time moves with each action of the developer: the waiter is told the one known as the cause changed.
+				why, cause = "held by ifrit "+h.who+"; released when you leave", "held by ifrit "+h.who
+				if !h.until.IsZero() {
+					why += ", at " + harness.ClockText(h.until, time.Now()) + " at the latest"
+				}
+			}
 			if n := merges[w.name]; !w.first && n > 0 {
 				then := fmt.Sprintf(", then %d merges or pushes go first", n)
 				if n == 1 {
@@ -447,7 +500,7 @@ func (g *Gates) pass(ctx context.Context) {
 			}
 			held += w.peak
 			w.since = time.Now()
-			w.until = w.since.Add(w.timeout)
+			w.until = w.latest()
 			g.held[w.name] = w
 			g.queue = slices.DeleteFunc(g.queue, func(o *waiter) bool { return o == w })
 			close(w.granted)
@@ -507,12 +560,27 @@ func (g *Gates) Waiting(taskID string) []string {
 	return out
 }
 
+// IfritWaits names, by the task of each lit ifrit, who waits for a gate it holds, the first come first: "W15 (Its
+// title): go tool task e2e, for stack". The lead's brief says it, to offer the developer to end the ifrit.
+func (g *Gates) IfritWaits() map[string][]string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	out := map[string][]string{}
+	for _, w := range g.queue {
+		if h := g.held[w.name]; h != nil && h.ifrit {
+			out[h.taskID] = append(out[h.taskID], w.who+", for "+w.name)
+		}
+	}
+	return out
+}
+
 // State is a gate held or waited for.
 type State struct {
 	Name, Holder, HolderTaskID string
-	Since, Until               time.Time
+	Since, Until               time.Time // Until: when it is taken back at the latest; zero when not known
 	Waiting                    []string
 	TakesSlot                  bool              // held outside a running worker
+	Ifrit                      bool              // held by a lit ifrit, until it goes out or ends
 	Use                        *planv1.Resources // what the holder's process uses; nil when not read
 }
 
@@ -528,7 +596,7 @@ func (g *Gates) List() []State {
 	}
 	for name, h := range g.held {
 		s := get(name)
-		s.Holder, s.HolderTaskID, s.Since, s.Until, s.Use = h.who, h.taskID, h.since, h.until, h.use
+		s.Holder, s.HolderTaskID, s.Since, s.Until, s.Use, s.Ifrit = h.who, h.taskID, h.since, h.until, h.use, h.ifrit
 	}
 	for _, w := range g.queue {
 		s := get(w.name)

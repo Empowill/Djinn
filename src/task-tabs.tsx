@@ -14,6 +14,7 @@ import {
 
 import { Change } from "../gen/ts/plan/v1/plan_pb";
 import { t } from "./i18n";
+import { DraftDot } from "./tilasm-comments";
 
 export type View =
   "main" | "tasks" | "review" | "decisions" | "tilasms" | "agents";
@@ -56,6 +57,7 @@ export function ViewTabs({
   review,
   decisions,
   tilasms,
+  drafts = 0,
   agents,
   onView,
 }: {
@@ -70,6 +72,8 @@ export function ViewTabs({
   decisions: number;
   // How many tilasms the Tilasms tab holds; without it, a view with no such tab (the flying carpet).
   tilasms?: number;
+  // How many draft comments the developer wrote on them, not sent yet.
+  drafts?: number;
   // How many blocks the For agents tab holds; without it, a view with no such tab (the flying carpet).
   agents?: number;
   onView: (view: View) => void;
@@ -99,6 +103,7 @@ export function ViewTabs({
         >
           {label}
           {count >= 0 && <span className="count">{count}</span>}
+          {id === "tilasms" && drafts > 0 && <DraftDot count={drafts} />}
         </button>
       ))}
     </div>

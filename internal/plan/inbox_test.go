@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,19 +29,23 @@ const babysitMRFront = `metadata:
     source:
       watch: "sh assigned.sh"
       every: 10m
+      summary: >-
+        The merge requests
+        assigned to you.
 `
 
-// TestReadSource: a skill's source reads with its period, five minutes by default; one that cannot be used says
-// why, in djinn skill list too.
+// TestReadSource: a skill's source reads with its period, five minutes by default, and its summary on one line, the
+// skill's description without one; one that cannot be used says why, in djinn skill list too.
 func TestReadSource(t *testing.T) {
 	dir := t.TempDir()
 	src, err := ReadSource(agentSkill(t, dir, "babysit-mr", babysitMRFront))
-	if err != nil || src == nil || src.Skill != "babysit-mr" || src.Watch != "sh assigned.sh" || src.Every != 10*time.Minute {
+	if err != nil || src == nil || src.Skill != "babysit-mr" || src.Watch != "sh assigned.sh" || src.Every != 10*time.Minute ||
+		src.Summary != "The merge requests assigned to you." {
 		t.Fatalf("source = %+v, %v", src, err)
 	}
 	src, err = ReadSource(agentSkill(t, dir, "mentions", "metadata:\n  djinn:\n    source:\n      watch: mentions --new\n"))
-	if err != nil || src.Every != SourceEvery {
-		t.Errorf("default period: %+v, %v", src, err)
+	if err != nil || src.Every != SourceEvery || src.Summary != "Test skill." {
+		t.Errorf("default period and summary: %+v, %v", src, err)
 	}
 	for name, front := range map[string]string{"plain": "", "wish-only": babysitFront} {
 		if src, err := ReadSource(agentSkill(t, dir, name, front)); src != nil || err != nil {
@@ -180,6 +185,72 @@ func TestSources(t *testing.T) {
 	}
 }
 
+// TestKeepSourceRun: a source plugged in keeps its last run on this machine: when it ended, how many items it printed,
+// and why it failed, with the failures in a row and since when. djinn inbox sources shows it beside the summary. One
+// not plugged in keeps nothing, and unplugging a source forgets its run.
+func TestKeepSourceRun(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	gong := &planv1.Project{Id: store.NewID(), Name: "gong", Directory: t.TempDir()}
+	agentSkill(t, gong.GetDirectory(), "babysit-mr", babysitMRFront)
+	c.put(t, gong)
+	src := &Source{Skill: "babysit-mr", HolderID: gong.GetId(), Holder: "gong", ProjectID: gong.GetId()}
+	listed := func() *planv1.InboxSource {
+		t.Helper()
+		res, err := c.inbox.Sources(ctx, connect.NewRequest(&planv1.InboxServiceSourcesRequest{}))
+		if err != nil || len(res.Msg.GetSources()) != 1 {
+			t.Fatalf("sources = %v, %v", res, err)
+		}
+		return res.Msg.GetSources()[0]
+	}
+	start := time.Date(2026, 10, 16, 10, 42, 0, 0, time.UTC)
+	keep := func(minutes, items int, failed error) {
+		t.Helper()
+		if err := KeepSourceRun(ctx, c.store, src, start.Add(time.Duration(minutes)*time.Minute), items, failed); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	keep(0, 3, nil)
+	if s := listed(); s.GetLastRun() != nil || s.GetSummary() != "The merge requests assigned to you." {
+		t.Errorf("a source not plugged in: %v", s)
+	}
+	if _, err := c.inbox.Plug(ctx, connect.NewRequest(&planv1.InboxServicePlugRequest{Source: "babysit-mr"})); err != nil {
+		t.Fatal(err)
+	}
+	keep(5, 2, nil)
+	run := listed().GetLastRun()
+	if !run.GetEndTime().AsTime().Equal(start.Add(5*time.Minute)) || run.GetItems() != 2 || run.GetError() != "" ||
+		run.GetFailures() != 0 || run.GetFailingSince() != nil {
+		t.Errorf("a run that went well: %v", run)
+	}
+	keep(10, 0, errors.New("exit code 1; its error output: gh: not logged in"))
+	keep(15, 0, errors.New("exit code 1; its error output: gh: not logged in"))
+	run = listed().GetLastRun()
+	if !run.GetEndTime().AsTime().Equal(start.Add(15*time.Minute)) || run.GetItems() != 0 || run.GetFailures() != 2 ||
+		run.GetError() != "exit code 1; its error output: gh: not logged in" ||
+		!run.GetFailingSince().AsTime().Equal(start.Add(10*time.Minute)) {
+		t.Errorf("two runs that failed: %v", run)
+	}
+	keep(20, 1, nil)
+	if run = listed().GetLastRun(); run.GetItems() != 1 || run.GetError() != "" || run.GetFailures() != 0 ||
+		run.GetFailingSince() != nil {
+		t.Errorf("a run that went well again: %v", run)
+	}
+	if runs, err := store.List[*planv1.SourceRun](ctx, c.store, nil); err != nil || len(runs) != 1 {
+		t.Errorf("runs = %v, %v; want one per source", runs, err)
+	}
+
+	res, err := c.inbox.Unplug(ctx, connect.NewRequest(&planv1.InboxServiceUnplugRequest{Source: "babysit-mr"}))
+	if err != nil || res.Msg.GetSource().GetLastRun() != nil {
+		t.Fatalf("unplug: %v, %v", res, err)
+	}
+	keep(25, 4, nil)
+	if runs, err := store.List[*planv1.SourceRun](ctx, c.store, nil); err != nil || len(runs) != 0 {
+		t.Errorf("runs = %v, %v; want none once unplugged", runs, err)
+	}
+}
+
 // TestOwnSource: Djinn's own babysit-pr declares a source that reads with gh, and changes nothing: run with a fake
 // gh, it lists the pull requests assigned to the developer and those that request their review, read only. An assigned
 // one proposes the skill's wish; one to review proposes none of the skill.
@@ -193,7 +264,8 @@ func TestOwnSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	src, err := ReadSource(filepath.Join(root, ".agents", "skills", "babysit-pr"))
-	if err != nil || src == nil || src.Watch != "sh .agents/skills/babysit-pr/inbox.sh" || src.Every != SourceEvery {
+	if err != nil || src == nil || src.Watch != "sh .agents/skills/babysit-pr/inbox.sh" || src.Every != SourceEvery ||
+		!strings.Contains(src.Summary, "assigned to you or that request your review") {
 		t.Fatalf("source = %+v, %v", src, err)
 	}
 

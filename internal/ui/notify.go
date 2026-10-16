@@ -270,11 +270,10 @@ func (n *Notices) follow(ctx context.Context, m proto.Message) error {
 		}
 	case *planv1.Task:
 		wishID = m.GetWishId()
-		switch m.GetStatus() {
-		case planv1.TaskStatus_TASK_STATUS_WAITING, planv1.TaskStatus_TASK_STATUS_FAILED:
-			if recent(m.GetEndTime()) {
-				err = n.task(ctx, m)
-			}
+		// A failed worker is the lead's (Q273), never the developer's: it reaches the developer only as a question the
+		// lead asks (W96).
+		if m.GetStatus() == planv1.TaskStatus_TASK_STATUS_WAITING && recent(m.GetEndTime()) {
+			err = n.task(ctx, m)
 		}
 	case *planv1.InboxItem:
 		err = n.notifyItem(m)
@@ -305,31 +304,20 @@ func (n *Notices) question(ctx context.Context, q *planv1.Question) error {
 	return n.show("question:"+q.GetId(), note)
 }
 
-// task notifies a task that waits for the answer to its edit question, or failed.
+// task notifies a task that waits for the answer to its edit question.
 func (n *Notices) task(ctx context.Context, t *planv1.Task) error {
+	if t.GetEditQuestionId() == "" {
+		return nil
+	}
 	wish, err := n.activeWish(ctx, t.GetWishId())
 	if wish == nil || err != nil {
 		return err
 	}
 	key := fmt.Sprintf("task:%s:%d:%d", t.GetId(), t.GetStatus(), t.GetEndTime().AsTime().UnixNano())
-	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_WAITING {
-		if t.GetEditQuestionId() == "" {
-			return nil
-		}
-		// Its notification replaces the one of its question: the same event, now that the worker has read.
-		note := n.permissionNote(ctx, wish, t, t.GetEditQuestionId())
-		note.Title = n.text("notify.task_waiting_title", map[string]string{"code": t.GetCode(), "wish": wish.GetTitle()})
-		return n.show(key, note)
-	}
-	body := []string{clipText(t.GetTitle(), maxBody/2)}
-	if e := t.GetError(); e != "" {
-		body = append(body, clipText(e, maxBody/2))
-	}
-	return n.show(key, Notification{
-		ID: "task-" + t.GetId(), WishID: wish.GetId(), Target: "task-" + t.GetId(),
-		Title: n.text("notify.task_failed_title", map[string]string{"code": t.GetCode(), "wish": wish.GetTitle()}),
-		Body:  strings.Join(body, "\n"),
-	})
+	// Its notification replaces the one of its question: the same event, now that the worker has read.
+	note := n.permissionNote(ctx, wish, t, t.GetEditQuestionId())
+	note.Title = n.text("notify.task_waiting_title", map[string]string{"code": t.GetCode(), "wish": wish.GetTitle()})
+	return n.show(key, note)
 }
 
 // readiness notifies the wish of id when it just became ready to review (plan.Ready).

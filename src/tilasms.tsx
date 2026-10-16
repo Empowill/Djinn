@@ -6,12 +6,15 @@
 // export writes a .zip to the Downloads folder. An .html file, a folder or a .zip dropped on the tab or chosen in the
 // drop zone becomes a tilasm, or the new version of the one a .zip exported. The open one goes full size: its frame
 // covers the main shell, the side panel beside it; leaving puts the tab back as it was, the frame never reloaded. The
-// same frame opens over any view, full size, as a link in a question asks (tilasm-over.tsx).
+// same frame opens over any view, full size, as a link in a question asks (tilasm-over.tsx). Beside the frame in the
+// tab, full size too, the developer's draft comments on it (tilasm-comments.tsx): counted on its head, on its row and
+// on the tab.
 import {
   Download,
   FolderInput,
   History,
   Maximize2,
+  MessageSquare,
   Minimize2,
   RotateCcw,
   Search,
@@ -26,8 +29,9 @@ import {
 } from "react";
 
 import { Change, type Task } from "../gen/ts/plan/v1/plan_pb";
-import type { Tilasm } from "../gen/ts/plan/v1/tilasm_pb";
+import type { Tilasm, TilasmComment } from "../gen/ts/plan/v1/tilasm_pb";
 import { message } from "./data/client";
+import { draftCounts, draftsOn } from "./data/comments";
 import { later } from "./data/decisions";
 import { useClients, useStore } from "./data/djinn";
 import { compareCodes } from "./data/flight";
@@ -40,6 +44,11 @@ import {
   readDrop,
 } from "./data/tilasms";
 import { t } from "./i18n";
+import {
+  type CommentWrites,
+  CommentsColumn,
+  DraftDot,
+} from "./tilasm-comments";
 import { memory } from "./usage";
 
 import "./tilasms.css";
@@ -66,6 +75,7 @@ export function TilasmsTab({
   wishId,
   opening,
   tilasms,
+  drafts = [],
   tasks,
   onToast,
 }: {
@@ -74,6 +84,8 @@ export function TilasmsTab({
   opening?: { tilasmId: string };
   // The wish's tilasms, by code.
   tilasms: readonly Tilasm[];
+  // The developer's draft comments on them.
+  drafts?: readonly TilasmComment[];
   tasks: readonly Task[];
   onToast: (text: string) => void;
 }) {
@@ -119,9 +131,32 @@ export function TilasmsTab({
   const ref = (tilasm: Tilasm) => ({
     ref: { case: "id" as const, value: tilasm.id },
   });
+  // Each write reads the drafts again before it resolves: the card shows what was stored, never what it held before.
+  const reread = () => store.changed(wishId, [Change.TILASM]);
+  const comments: CommentWrites = {
+    put: async (tilasmId, text, id) => {
+      await clients.tilasms.putComment({ tilasmId, id, text });
+      await reread();
+    },
+    remove: async (comment) => {
+      const res = await clients.tilasms.deleteComment({ id: comment.id });
+      await reread();
+      return res.comment ?? comment;
+    },
+    putBack: async (comment) => {
+      await clients.tilasms.putComment({
+        tilasmId: comment.tilasmId,
+        deleted: comment,
+      });
+      await reread();
+    },
+  };
   return (
     <TilasmList
       tilasms={found ?? tilasms}
+      drafts={drafts}
+      comments={comments}
+      onCommentError={(error) => onToast(message(error))}
       count={tilasms.length}
       codes={new Map(tasks.map((task) => [task.id, task.code]))}
       search={search}
@@ -171,6 +206,9 @@ export function TilasmsTab({
 // TilasmList is the tab as it shows, from what it is given.
 export function TilasmList({
   tilasms,
+  drafts = [],
+  comments,
+  onCommentError = () => {},
   count,
   codes,
   search,
@@ -186,6 +224,11 @@ export function TilasmList({
 }: {
   // What shows: the wish's tilasms, or those the search found.
   tilasms: readonly Tilasm[];
+  // The developer's draft comments on the wish's tilasms.
+  drafts?: readonly TilasmComment[];
+  // What writes them; without it, the open tilasm shows no comments.
+  comments?: CommentWrites;
+  onCommentError?: (error: unknown) => void;
   // How many the wish has.
   count: number;
   // The codes of the wish's tasks and azimas, by id: what a tilasm cites.
@@ -215,6 +258,7 @@ export function TilasmList({
     setOver(true);
   };
   const sorted = [...tilasms].sort(newestTilasm);
+  const counts = draftCounts(drafts);
   return (
     <div
       role="tabpanel"
@@ -269,6 +313,9 @@ export function TilasmList({
             setFullId("");
             onOpen("");
           }}
+          drafts={draftsOn(drafts, open.id)}
+          comments={comments}
+          onCommentError={onCommentError}
         />
       )}
       {count === 0 ? (
@@ -307,6 +354,9 @@ export function TilasmList({
                   </span>
                 )}
                 <span className="tilasm-actions">
+                  {(counts.get(tilasm.id) ?? 0) > 0 && (
+                    <DraftDot count={counts.get(tilasm.id) ?? 0} />
+                  )}
                   <button
                     type="button"
                     className="icon-button"
@@ -373,6 +423,9 @@ export function TilasmFrame({
   onFull,
   onClose,
   over = false,
+  drafts = [],
+  comments,
+  onCommentError = () => {},
 }: {
   tilasm: Tilasm;
   // Full size: the frame covers the main shell. Over a view, it always is.
@@ -381,7 +434,14 @@ export function TilasmFrame({
   onClose: () => void;
   // Opened over a view: full size, and its button closes it.
   over?: boolean;
+  // The developer's drafts on it, in the order written.
+  drafts?: readonly TilasmComment[];
+  // What writes them: the Comments column shows beside the frame, on demand; without it, none.
+  comments?: CommentWrites;
+  onCommentError?: (error: unknown) => void;
 }) {
+  const [commenting, setCommenting] = useState(false);
+  const column = comments !== undefined && commenting && !over;
   const frame = useRef<HTMLIFrameElement>(null);
   const enter = useRef<HTMLButtonElement>(null);
   const leave = useRef<HTMLButtonElement>(null);
@@ -392,9 +452,27 @@ export function TilasmFrame({
     leave,
     over ? onClose : () => onFull(false),
   );
+  const toggle = (className: string) =>
+    comments !== undefined &&
+    !over && (
+      <button
+        type="button"
+        className={`icon-button tilasm-comments-toggle${className ? ` ${className}` : ""}`}
+        aria-pressed={commenting}
+        title={`${t("tilasms.comments")} · ${t("tilasms.drafts", { count: drafts.length })}`}
+        aria-label={`${t("tilasms.comments")} · ${t("tilasms.drafts", { count: drafts.length })}`}
+        data-full-keep={className ? "" : undefined}
+        onClick={() => setCommenting(!commenting)}
+      >
+        <MessageSquare size={14} aria-hidden="true" />
+        <span className={drafts.length > 0 ? "draft-count" : undefined}>
+          {drafts.length}
+        </span>
+      </button>
+    );
   return (
     <section
-      className={`tilasm-view${over ? " over" : full ? " full" : ""}`}
+      className={`tilasm-view${over ? " over" : full ? " full" : ""}${column ? " commenting" : ""}`}
       aria-label={tilasm.title}
     >
       {!over && (
@@ -413,6 +491,7 @@ export function TilasmFrame({
             <Maximize2 size={13} aria-hidden="true" />
             {t("tilasms.full")}
           </button>
+          {toggle("")}
           <button
             type="button"
             className="icon-button"
@@ -439,6 +518,17 @@ export function TilasmFrame({
           by the same class that takes the frame out, so the page never lays out without both. Over a view, the frame
           takes no room. */}
       {!over && <div className="tilasm-frame-room" />}
+      {column && (
+        <CommentsColumn
+          key={tilasm.id}
+          tilasmId={tilasm.id}
+          drafts={drafts}
+          writes={comments}
+          onError={onCommentError}
+          onClose={() => setCommenting(false)}
+        />
+      )}
+      {full && toggle("tilasm-full-comments")}
       {(full || over) && (
         <button
           ref={leave}
@@ -500,8 +590,12 @@ function useFullSize(
   }, [full, frame, enter, leave]);
 }
 
-// cover makes inert what the elements kept lie over in the main shell: every element there that holds none of them.
-// It returns what gives them back.
+// What stays in reach beside the full-size frame, should it show after the frame went full size: the Comments column
+// and its button.
+const KEPT = ".tilasm-comments, [data-full-keep]";
+
+// cover makes inert what the elements kept lie over in the main shell: every element there that holds none of them,
+// and is none of KEPT. It returns what gives them back.
 function cover(...keep: (HTMLElement | null)[]): () => void {
   const kept = keep.filter((el) => el !== null);
   const shell = kept[0]?.closest(".main-shell");
@@ -511,6 +605,7 @@ function cover(...keep: (HTMLElement | null)[]): () => void {
       if (
         child instanceof HTMLElement &&
         !child.inert &&
+        !child.matches(KEPT) &&
         !kept.some((el) => child.contains(el))
       ) {
         child.inert = true;

@@ -143,7 +143,9 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"right, a merge, a release, a machine Djinn does not have); then the exact command goes in the code block at " +
 		"the top of its `--context`, never in a sentence.\n" +
 		"- **Refused calls are yours, rights stay explicit (Q273).** A worker's `ended` or `failed` event names the " +
-		"calls its permissions refused and the right that would allow them; the developer never sees them. Decide: " +
+		"calls its permissions refused and the right that would allow them; the developer never sees them, nor a " +
+		"failed worker: the window never counts one as waiting for them, it is yours alone. A failed investigator " +
+		"Djinn started again, or whose question was answered or revised since, closes by itself. Decide: " +
 		"continue the task otherwise (`djinn task continue`), or close it as seen (`djinn task done <task> --note " +
 		"\"…\"`) and, when its work is still needed, spawn it again where a right the wish or project grants already " +
 		"covers them; a done task left with refused calls holds its wish's grant. Never take a broad right by " +
@@ -268,12 +270,23 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"one note per file; nothing writes them at run time. When a task fixes what a note describes, update or remove " +
 		"that note in the same breath: that task, or one spawned with it, edits `lead/notes/`; no cleanup waits for " +
 		"later.\n\n" +
-		"## Commands\n\n" +
+		leadCommandsBrief(false) +
+		notesBrief()
+}
+
+// leadCommandsBrief is the brief's list of the lead's commands. A driven lead (decision Q31) runs no watch: Djinn
+// hands it its events.
+func leadCommandsBrief(driven bool) string {
+	watch := ""
+	if !driven {
+		watch = "- `djinn lead watch --after <cursor>`: acknowledges the events up to the cursor, waits for the next ones " +
+			"and prints them, a line each, with the next cursor (`--timeout 0s` returns at once).\n"
+	}
+	return "## Commands\n\n" +
 		"`<wish>` is a wish's identifier.\n\n" +
 		"- `djinn brief`: the brief of all active wishes; `djinn brief --wishes`: where they stand only, without these " +
 		"rules, short enough that no tool cuts it.\n" +
-		"- `djinn lead watch --after <cursor>`: acknowledges the events up to the cursor, waits for the next ones and " +
-		"prints them, a line each, with the next cursor (`--timeout 0s` returns at once).\n" +
+		watch +
 		"- `djinn wish brief <wish>`: one wish's brief, up to date.\n" +
 		"- `djinn wish describe <wish> --text \"…\"`: the wish's description, a few lines: what it is for, its scope, " +
 		"where it goes. The developer edits it in the window too.\n" +
@@ -319,8 +332,7 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"HTML by hand. The first publish needs the developer's go. `djinn wish render <wish>` writes the page once.\n" +
 		"- `djinn wish grant <wish>` is the developer's word, never yours.\n" +
 		"- `djinn lead notes`: the index of the lead's notes; `djinn lead notes <name>` prints one, `djinn lead notes " +
-		"<name>,<name>` several and `djinn lead notes --all` every one, in one command.\n" +
-		notesBrief()
+		"<name>,<name>` several and `djinn lead notes --all` every one, in one command.\n"
 }
 
 // notesBrief is the index of the lead's notes, a line per note, its name and description: never a note's text, which
@@ -367,6 +379,23 @@ func LeadWatchRule() string {
 // BuildBrief writes the brief of a wish from what r holds. home is Djinn's data folder: like the projects' folders
 // and the home folder, it never shows. No secret: Djinn stores none, and a URL loses its credentials.
 func BuildBrief(ctx context.Context, r store.Reader, home, wishID string, leads ...Leads) (Brief, error) {
+	return buildBrief(ctx, r, home, wishID, nil)
+}
+
+// IfritWaits names, by the task of each lit ifrit, who waits for a gate it holds: "W15 (Its title): go tool task
+// e2e, for stack". djinn up gives the gates' (gate.Gates.IfritWaits).
+type IfritWaits func() map[string][]string
+
+// ifritWaits is who waits for a gate a lit ifrit holds, by the ifrit's task; nil where no gates run.
+func (w *Wishes) ifritWaits() map[string][]string {
+	if w.IfritWaits == nil {
+		return nil
+	}
+	return w.IfritWaits()
+}
+
+// buildBrief is BuildBrief, saying who waits for the gates of each lit ifrit as waits does.
+func buildBrief(ctx context.Context, r store.Reader, home, wishID string, waits map[string][]string) (Brief, error) {
 	exp, projects, err := collect(ctx, r, wishID, noEvents)
 	if err != nil {
 		return Brief{}, err
@@ -382,8 +411,34 @@ func BuildBrief(ctx context.Context, r store.Reader, home, wishID string, leads 
 	if err != nil {
 		return Brief{}, err
 	}
-	exp = portable(exp, newScrubber(all, home, dataName))
-	return Brief{Stable: stableBrief(home, projects), Moving: movingBrief(exp, rank, ready, strategy)}, nil
+	scrub := newScrubber(all, home, dataName)
+	exp = portable(exp, scrub)
+	return Brief{Stable: stableBrief(home, projects), Moving: movingBrief(exp, rank, ready, strategy, scrub.waits(waits))}, nil
+}
+
+// waits is who waits for the gates of the ifrits, their commands' folders replaced.
+func (s *scrubber) waits(waits map[string][]string) map[string][]string {
+	out := make(map[string][]string, len(waits))
+	for id, who := range waits {
+		for _, w := range who {
+			out[id] = append(out[id], s.r.Replace(w))
+		}
+	}
+	return out
+}
+
+// ifritWaitsBrief says who waits for a gate the lit ifrit t holds, if any: the lead offers the developer to end it.
+func ifritWaitsBrief(b *strings.Builder, t *planv1.Task, waits map[string][]string) {
+	who := waits[t.GetId()]
+	if len(who) == 0 {
+		return
+	}
+	for i, w := range who {
+		who[i] = clipLine(w)
+	}
+	fmt.Fprintf(b, "  - Waiting for the gates this ifrit holds until the developer leaves Djinn: %s. "+
+		"Offer the developer to end it (`djinn task done %s`) or stop it (`djinn task stop %s`).\n",
+		strings.Join(who, "; "), t.GetCode(), t.GetCode())
 }
 
 // StableBrief is the part of a brief that changes rarely, for a wish on projects: Djinn's rules, then where each
@@ -451,7 +506,7 @@ func presentFiles(dir string, names []string) []string {
 
 // movingBrief is where the wish stands: its description, its azimas, what runs and waits, its tilasms, its open
 // questions, its latest decisions and blocks, and when a lead last acted. Empty sections are left out.
-func movingBrief(exp *planv1.WishExport, rank int32, ready bool, strategy planv1.PushStrategy) string {
+func movingBrief(exp *planv1.WishExport, rank int32, ready bool, strategy planv1.PushStrategy, waits map[string][]string) string {
 	wish := exp.GetWish()
 	var b strings.Builder
 	fmt.Fprintf(&b, "# The wish: %s\n\n", oneLine(wish.GetTitle()))
@@ -580,6 +635,7 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool, strategy planv1
 				b.WriteString(", since " + when(s.AsTime()))
 			}
 			b.WriteString(")\n")
+			ifritWaitsBrief(&b, t, waits)
 			commentsBrief(&b, t.GetComments())
 		}
 	}
@@ -1098,7 +1154,7 @@ func stripCredentials(s string) string { return credentials.ReplaceAllString(s, 
 func (w *Wishes) Brief(
 	ctx context.Context, req *connect.Request[planv1.WishServiceBriefRequest],
 ) (*connect.Response[planv1.WishServiceBriefResponse], error) {
-	brief, err := BuildBrief(ctx, w.Store, w.home(), req.Msg.GetWishId(), w.Leads)
+	brief, err := buildBrief(ctx, w.Store, w.home(), req.Msg.GetWishId(), w.ifritWaits())
 	if err != nil {
 		return nil, Status(err)
 	}
@@ -1117,15 +1173,17 @@ func (w *Wishes) home() string {
 // paused and granted wishes on one line each, then Djinn's rules once for all projects; at its end, a line per active
 // wish again and how to run djinn, for an agent whose tool keeps only the end of a long output (Antigravity's).
 func BuildGlobalBrief(ctx context.Context, r store.Reader, home string) (string, error) {
-	return globalBrief(ctx, r, home, false)
+	return globalBrief(ctx, r, home, false, nil)
 }
 
 // BuildWishesBrief is where the wishes stand, the global brief without the rules: djinn brief --wishes.
 func BuildWishesBrief(ctx context.Context, r store.Reader, home string) (string, error) {
-	return globalBrief(ctx, r, home, true)
+	return globalBrief(ctx, r, home, true, nil)
 }
 
-func globalBrief(ctx context.Context, r store.Reader, home string, wishesOnly bool) (string, error) {
+// globalBrief writes the brief of all wishes, or where they stand only, saying who waits for the gates of each lit
+// ifrit as waits does.
+func globalBrief(ctx context.Context, r store.Reader, home string, wishesOnly bool, waits map[string][]string) (string, error) {
 	allWishes, err := store.List[*planv1.Wish](ctx, r, nil)
 	if err != nil {
 		return "", err
@@ -1154,6 +1212,8 @@ func globalBrief(ctx context.Context, r store.Reader, home string, wishesOnly bo
 		return bt.Compare(at)
 	})
 
+	scrub := newScrubber(allProjects, home, dataName)
+	waits = scrub.waits(waits)
 	var b strings.Builder
 	b.WriteString(DirectCommandsRule + " Too long for your tool: `djinn brief --wishes`.\n\n")
 	var glance []string
@@ -1169,12 +1229,12 @@ func globalBrief(ctx context.Context, r store.Reader, home string, wishesOnly bo
 			if err != nil {
 				return "", err
 			}
-			exp = portable(exp, newScrubber(allProjects, home, dataName))
+			exp = portable(exp, scrub)
 			ready := wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions())
 			if i > 0 {
 				b.WriteString("\n")
 			}
-			activeWishBrief(&b, exp, wish.GetRank(), ready, strategy)
+			activeWishBrief(&b, exp, wish.GetRank(), ready, strategy, waits)
 			glance = append(glance, glanceLine(exp))
 		}
 	}
@@ -1281,7 +1341,7 @@ func landsLine(exp *planv1.WishExport, strategy planv1.PushStrategy) string {
 	return "- Work lands in " + strings.Join(branches, ", ") + ": " + change + " changes it.\n"
 }
 
-func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, ready bool, strategy planv1.PushStrategy) {
+func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, ready bool, strategy planv1.PushStrategy, waits map[string][]string) {
 	wish := exp.GetWish()
 	fmt.Fprintf(b, "# The wish: %s\n\n", oneLine(wish.GetTitle()))
 	if desc := strings.TrimSpace(wish.GetDescription()); desc != "" {
@@ -1378,6 +1438,7 @@ func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, rea
 				b.WriteString(", since " + when(s.AsTime()))
 			}
 			b.WriteString(")\n")
+			ifritWaitsBrief(b, t, waits)
 		}
 	}
 	if len(waiting) > 0 {

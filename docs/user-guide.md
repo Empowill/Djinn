@@ -184,8 +184,10 @@ one lead per wish keeps the lead of the first active wish as the Djinn.
 - a bar at the top while something waits for you, the most blocking first; a click takes you there;
 - the [inbox](#the-inbox), when a source found something;
 - each wish at a glance: its questions, what runs, or `READY`;
-- what waits for you, in every wish: open questions, workers that wait, wishes Djinn proposes to grant, and the
-  **Proofs you can give** (see [azimas](#azimas));
+- what waits for you, in every wish: open questions, workers that wait for your answer before they edit, wishes
+  Djinn proposes to grant, and the **Proofs you can give** (see [azimas](#azimas)). A worker that failed, refused
+  calls included, never waits for you, nor notifies you: it is the Djinn's, which asks you a question only for a right
+  it lacks, with the command that grants it;
 - the questions you asked the Djinn to investigate.
 
 Each line names its wish; an answer, a stop or a grant goes back to it. Like a wish, the flying carpet has a **Tasks**
@@ -410,7 +412,9 @@ typed in a plain shell is attributed to the developer and reaches the Djinn. Whe
 any wish, the answer is queued for the Djinn, which waits on `djinn lead watch`: nothing is typed in its
 terminal while its watch runs, so nothing lands in your prompt box; without a watch, Djinn types one short line,
 "Djinn: N events waiting, run djinn lead watch". If the Djinn does not run, the question is marked as waiting for it until
-the Djinn acknowledges it, and the brief lists it under **Open answers without a lead.**
+the Djinn acknowledges it, and the brief lists it under **Open answers without a lead.** While Djinn drives the lead
+(`"leadDriven": true` in `settings.json`), there is no terminal and no watch: the answer goes to the next batch's
+session, whole, and `djinn lead journal` shows what each batch did.
 
 An open question can be moved to another wish (`djinn question move <question> --wish <wish>`), with `--follow` to
 bring tasks following this decision along with it. A question no longer relevant can be withdrawn without an answer
@@ -513,13 +517,13 @@ When a project's settings name its checks, Djinn brings finished work into the w
 ends, it merges the task's branch in a worktree of its own (made ready by the `setup` command), runs the checks named
 for `commit` through their gates, and moves the branch when they pass. Each task says where its work stands: waiting
 to be committed, committed, conflict, red, corrected by another task. A conflict in code or a red check start a
-correction worker; past two attempts, Djinn asks you.
+correction worker; past two attempts, Djinn hands it to the Djinn, which decides what follows.
 
 Each project defines its push cadence: **Standard** (pushes at an azima's end or after an hour and three tasks committed)
 or **On demand** (pushes only when you click **Push** or run `djinn project push <project> [--wish <wish>]`). You can
 switch cadence in the project view or with `djinn project set-push <project> standard|on_demand`. Before it pushes the branch,
 it runs the checks named for `push`: red, the push is held, and Djinn starts a correction worker; if that fails or attempts
-are spent, it asks you. `djinn project show` and the project's view in the window list the checks and how each last ran.
+are spent, it tells the Djinn. `djinn project show` and the project's view in the window list the checks and how each last ran.
 When the settings also name an install command, the window proposes the build it pushed, one per integration branch:
 on one line, its commit, the branch and wish it comes from, and against the running Djinn the tasks it adds, or "older
 than the running Djinn on 3 commits" when the running Djinn holds commits it lacks; **Details** unfolds the tasks merged
@@ -659,5 +663,6 @@ name your projects' folders and branches and your tasks' codes; nothing else of 
   window's theme, its navigation in the window's language: a splash page, then Introduction, Getting started, a page per
   concept, and the command line (also served at `/docs/` while `djinn up` runs).
 - [Agent protocol](agent-protocol.md) · [Providers](providers.md) · [Adaptable wishes](adaptable-wishes.md) · [Worker memory](worker-memory.md)
-- The language follows the system (English or French); change it, and the theme, in **Connections & preferences**.
+- The language follows the system (English or French); change it, the theme and the text size (Large, Default,
+  Compact, Very compact: the whole window scales, its spacing with its text) in **Connections & preferences**.
 - To build Djinn, or work on it: [`CONTRIBUTING.md`](../CONTRIBUTING.md).

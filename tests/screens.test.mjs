@@ -27,7 +27,7 @@ export {
   questionGroups,
   stepTo,
 } from "@/src/question-column.tsx";
-export { WishView } from "@/src/wish-view.tsx";
+export { WaitingTasks, WishView } from "@/src/wish-view.tsx";
 export {
   WishTask,
   TurnCommentsButton,
@@ -69,7 +69,6 @@ export {
   holdsUp,
   mergeNest,
   movingTasks,
-  taskDealtWith,
   waitingLeadQuestions,
   waitingTasks,
   workCount,
@@ -542,6 +541,162 @@ test("a revised question's earlier versions take no room: Versions (3) in its co
     }),
   );
   assert.doesNotMatch(plain, /question-versions|Versions \(/);
+});
+
+test("W100: an option with a planned task says on one grey line what it launches, and its azima", () => {
+  const azima = {
+    id: "a58",
+    wishId: "w1",
+    code: "T58",
+    title: "Lighting",
+  };
+  const question = {
+    id: "q1",
+    code: "Q01",
+    wishId: "w1",
+    text: "Which oil?",
+    options: ["Olive", "Paraffin", "Neither"],
+    recommendation: "",
+    context: "",
+    plans: [
+      {
+        option: s.Choice.A,
+        title: "Fill the lamp with olive oil",
+        partOf: "a58",
+      },
+      {
+        option: s.Choice.B,
+        title: "",
+        prompt: "Buy paraffin\nThen fill the lamp.",
+      },
+    ],
+  };
+  // The wish's tasks read: the azima by its code and title.
+  const djinn = {
+    store: {
+      getState: () => ({ details: { w1: { tasks: [azima] } } }),
+      subscribe: () => () => {},
+    },
+  };
+  const render = (props) =>
+    s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishQuestion, { question, onAnswer: async () => {}, ...props }),
+      ),
+    );
+  for (const html of [render({}), render({ current: true, onSelect() {} })]) {
+    const options = html.split('<strong class="option-letter">').slice(1);
+    assert.equal(options.length, 3);
+    assert.match(
+      options[0],
+      /<p>Olive<\/p><span class="option-plan" title="Launches: Fill the lamp with olive oil · T58 Lighting"><svg[^>]*lucide-corner-down-right[^]*?<\/svg><span class="option-plan-text">Launches: Fill the lamp with olive oil<\/span><span class="option-plan-azima">· T58 Lighting<\/span><\/span><\/div>/,
+    );
+    // Untitled, its prompt's first line; no azima, nothing after it.
+    assert.match(
+      options[1],
+      /<span class="option-plan-text">Launches: Buy paraffin<\/span><\/span><\/div>/,
+    );
+    // An option without a plan says nothing.
+    assert.doesNotMatch(options[2], /option-plan/);
+  }
+  // The wish's tasks not read yet: the line, without its azima, on the same single line.
+  const alone = s.renderToStaticMarkup(
+    h(s.WishQuestion, { question, onAnswer: async () => {} }),
+  );
+  assert.match(
+    alone,
+    /<span class="option-plan" title="Launches: Fill the lamp with olive oil">.*?<span class="option-plan-text">Launches: Fill the lamp with olive oil<\/span>/,
+  );
+  assert.doesNotMatch(alone, /T58/);
+  // A question without options: the plan of its yes, above the note.
+  const yes = s.renderToStaticMarkup(
+    h(s.WishQuestion, {
+      question: {
+        ...question,
+        options: [],
+        plans: [{ option: s.Choice.YES, title: "Light the lamp" }],
+      },
+      onAnswer: async () => {},
+    }),
+  );
+  assert.match(yes, /Launches: Light the lamp<\/span><\/span><textarea/);
+});
+
+test("W100: an answer that launched its option's plan links the launched task on its own line in the decision log", () => {
+  const question = {
+    id: "q1",
+    code: "Q01",
+    wishId: "w1",
+    text: "Which oil?",
+    options: ["Olive", "Paraffin"],
+    answer: { choice: s.Choice.A, note: "" },
+    plans: [
+      {
+        option: s.Choice.A,
+        title: "Fill the lamp with olive oil",
+        taskId: "t40",
+      },
+      { option: s.Choice.B, title: "Buy paraffin" },
+    ],
+  };
+  const item = (q, tasks) => ({
+    item: {
+      id: q.id,
+      ref: q.code,
+      question: q,
+      human: true,
+      approved: false,
+      by: "",
+      icon: "*",
+      tasks,
+    },
+  });
+  const launched = { id: "t40", code: "W40", title: "Fill the lamp" };
+  const other = { id: "t41", code: "W41", title: "Polish the lamp" };
+  const opened = [];
+  const html = s.renderToStaticMarkup(
+    h(s.DecisionLog, {
+      items: [item(question, [launched, other])],
+      onTask: (id) => opened.push(id),
+    }),
+  );
+  assert.match(
+    html,
+    /<p class="decision-tasks decision-launched"><svg[^]*?<\/svg>Launched as planned<a class="agent-code" href="#task-t40" title="Open W40 in the Tasks tab">W40<\/a><span class="decision-launched-title">Fill the lamp<\/span><\/p><p class="decision-tasks"><svg[^]*?<\/svg>Led to<a class="agent-code" href="#task-t41"[^>]*>W41<\/a><\/p>/,
+  );
+  // Not launched yet (a note left it to the lead): nothing launched, the plan says nothing in the log.
+  const pending = s.renderToStaticMarkup(
+    h(s.DecisionLog, {
+      items: [
+        item(
+          {
+            ...question,
+            plans: [
+              { option: s.Choice.A, title: "Fill the lamp with olive oil" },
+            ],
+          },
+          [],
+        ),
+      ],
+      onTask() {},
+    }),
+  );
+  assert.doesNotMatch(pending, /decision-launched|Launched|Led to/);
+  // Another option's plan launched nothing for this answer.
+  const otherOption = s.renderToStaticMarkup(
+    h(s.DecisionLog, {
+      items: [
+        item({ ...question, answer: { choice: s.Choice.B, note: "" } }, [
+          other,
+        ]),
+      ],
+      onTask() {},
+    }),
+  );
+  assert.doesNotMatch(otherOption, /decision-launched/);
+  assert.match(otherOption, /Led to<a class="agent-code" href="#task-t41"/);
 });
 
 test("a question shows its options by letter and its recommendation; answered, what was chosen", () => {
@@ -4381,6 +4536,78 @@ test("the Tilasms tab lists each tilasm newest first with its code, title, autho
   );
 });
 
+test("a tilasm's draft comments are counted in gold on its head, its row and the Tilasms tab", () => {
+  const model = tilasm("01a1223a-ae45-728f-8c37-c005eee91edb", "L01", "Model");
+  const flows = tilasm("01a1223a-ae45-728f-8c37-c005eee91edc", "L02", "Flows");
+  const draft = (id, tilasmId, code, state = 1) => ({
+    id,
+    tilasmId,
+    wishId: "w1",
+    code,
+    text: `Text of ${code}`,
+    state,
+  });
+  const props = {
+    tilasms: [model, flows],
+    drafts: [
+      draft("01a14600-0000-7000-8000-000000000001", model.id, "C1"),
+      draft("01a14600-0000-7000-8000-000000000002", model.id, "C2"),
+      // Sent: no longer waits for the developer.
+      draft("01a14600-0000-7000-8000-000000000003", model.id, "C3", 2),
+    ],
+    comments: { put() {}, remove() {}, putBack() {} },
+    count: 2,
+    codes: new Map(),
+    search: "",
+    onSearch() {},
+    open: model,
+    onOpen() {},
+    history: "",
+    onHistory() {},
+    onRestore() {},
+    onExport() {},
+    onDrop() {},
+  };
+  const html = s.renderToStaticMarkup(h(s.TilasmList, props));
+  // The head: a button that opens the column, with the count; the column stays closed until it is pressed.
+  assert.match(
+    html,
+    /<button type="button" class="icon-button tilasm-comments-toggle[^"]*" aria-pressed="false" title="Comments · 2 draft comments"[^>]*>.*<span class="draft-count">2<\/span><\/button>/,
+  );
+  assert.doesNotMatch(html, /class="tilasm-comments"/);
+  // The row of the tilasm with drafts has its gold dot; the other has none.
+  const rows = html.match(/<li id="tilasm-[^"]*"[\s\S]*?<\/li>/g);
+  const row = (id) => rows.find((r) => r.includes(`tilasm-${id}`));
+  assert.match(
+    row(model.id),
+    /<span class="draft-dot" title="2 draft comments" aria-label="2 draft comments">2<\/span>/,
+  );
+  assert.doesNotMatch(row(flows.id), /draft-dot/);
+  // Without what writes them, as over a view, no comments show.
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(h(s.TilasmList, { ...props, comments: undefined })),
+    /tilasm-comments-toggle/,
+  );
+  // The tab: the tilasms' count, then the drafts' gold dot; none without drafts.
+  const tabs = (drafts) =>
+    s.renderToStaticMarkup(
+      h(s.ViewTabs, {
+        view: "main",
+        main: "Wish",
+        tasks: 0,
+        decisions: 0,
+        tilasms: 2,
+        drafts,
+        onView() {},
+      }),
+    );
+  assert.match(
+    tabs(2),
+    /id="view-tab-tilasms"[^>]*>Tilasms<span class="count">2<\/span><span class="draft-dot" title="2 draft comments" aria-label="2 draft comments">2<\/span><\/button>/,
+  );
+  assert.doesNotMatch(tabs(0), /draft-dot/);
+});
+
 test("the open tilasm goes full size and back, the same tilasm open, its frame never made again", () => {
   const model = tilasm("01a1223a-ae45-728f-8c37-c005eee91edb", "L01", "Model");
   const flows = tilasm("01a1223a-ae45-728f-8c37-c005eee91edc", "L02", "Flows");
@@ -4626,6 +4853,9 @@ test("a tilasm opened from a question covers the view full size, which stays mou
     },
   });
   Object.assign(proto, {
+    matches(selectors) {
+      return matches(this, selectors);
+    },
     closest(selectors) {
       if (matches(this, selectors)) return this;
       return this.parentNode?.nodeType === 1
@@ -6604,8 +6834,7 @@ test("a line of the attention bar takes you to its target in another tab, a fold
         item: {
           id: "t9",
           code: "W9",
-          status: s.TaskStatus.FAILED,
-          error: "",
+          status: s.TaskStatus.WAITING,
         },
         question: "",
       },
@@ -6856,119 +7085,71 @@ test("an open question that can wait stays visible in WishView's questions colum
   assert.doesNotMatch(html, /question-card[^"]*folded/);
 });
 
-test("the attention bar shows a failed worker until it is dealt with (continued, done, or a new task names it)", () => {
-  const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
-  const failedTask = {
-    id: "t1",
+test("a failed worker never waits for you: refused calls are the Djinn's (W96)", () => {
+  // W19 of wish Will retour beta (16/10/2026): an investigator failed on refused djinn commands, Djinn started W20 in
+  // its place, and W19 still showed at the top as waiting for you, with nothing you could do.
+  const w = wish("w1", "Will retour beta", s.WishState.ACTIVE, 1);
+  const w19 = {
+    id: "t19",
     wishId: "w1",
-    code: "W1",
-    title: "Light the wick",
+    code: "W19",
+    title: "Q17: enlighten",
     status: s.TaskStatus.FAILED,
-    error: "exit code 1: fuel line broken\nstack trace follows",
+    role: s.TaskRole.INVESTIGATOR,
+    question: "Q17",
+    error: "its command was refused: djinn task list --wish-id w1 | grep Q17",
+    refused: { count: 2, names: ["djinn"] },
   };
-
-  // 1. Initially, undealt-with failed task is in waitingTasks and attentionOf.
-  let tasks = [failedTask];
-  let waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 1);
-  assert.equal(waiting[0].item.id, "t1");
-
-  let items = s.attentionOf([], waiting, []);
-  assert.equal(items.length, 1);
-  assert.equal(items[0].key, "t1");
-  assert.equal(items[0].level, "action");
-  assert.equal(items[0].target, "waiting-t1");
-  assert.equal(items[0].code, "W1");
-  assert.equal(items[0].text, "exit code 1: fuel line broken");
-
-  // 2. When marked done: dealt with, disappears from attention bar.
-  tasks = [{ ...failedTask, status: s.TaskStatus.DONE }];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 3. When continuing: true: dealt with, disappears.
-  tasks = [{ ...failedTask, continuing: true }];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 4. When closed.continuedIn is set: dealt with, disappears.
-  tasks = [{ ...failedTask, closed: { continuedIn: "t2" } }];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 5. When forked by another task (forkOf === "W1"): dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Forked",
-      status: s.TaskStatus.RUNNING,
-      forkOf: "W1",
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 6. When another task has decision === "W1": dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Follow up",
-      status: s.TaskStatus.RUNNING,
-      decision: "W1",
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 7. When another task's title names W1: dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Fix W1 build error",
-      status: s.TaskStatus.RUNNING,
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 8. When another task's correction failure taskIds includes t1.id: dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Correct W1",
-      status: s.TaskStatus.RUNNING,
-      correction: { failure: { taskIds: ["t1"] } },
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 9. When another task's review taskIds includes t1.id: dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Review W1",
-      status: s.TaskStatus.RUNNING,
-      review: { taskIds: ["t1"] },
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
+  const w20 = {
+    ...w19,
+    id: "t20",
+    code: "W20",
+    status: s.TaskStatus.RUNNING,
+    error: "",
+    refused: undefined,
+  };
+  const failed = {
+    ...w19,
+    id: "t3",
+    code: "W3",
+    title: "Light the wick",
+    role: s.TaskRole.UNSPECIFIED,
+    question: "",
+    error: "exit code 1: fuel line broken",
+    refused: undefined,
+  };
+  const detail = { tasks: [w19, w20, failed], questions: [] };
+  assert.deepEqual(s.waitingTasks(w, detail), []);
+  assert.deepEqual(s.attentionOf([], s.waitingTasks(w, detail), []), []);
+  const plan = s.flightPlan([w], {
+    w1: { ...detail, blocks: [], loaded: true },
+  });
+  assert.deepEqual(plan.waiting, []);
+  // It stays in sight among the tasks that move, failed, for the Djinn to take up.
+  assert.deepEqual(
+    plan.moving.map(({ item }) => item.code),
+    ["W20", "W19", "W3"],
+  );
+  // A worker that waits for its edit question still waits for you.
+  const asking = {
+    id: "t4",
+    wishId: "w1",
+    code: "W4",
+    title: "Edit",
+    status: s.TaskStatus.WAITING,
+  };
+  const waiting = s.waitingTasks(w, { tasks: [w19, asking], questions: [] });
+  assert.deepEqual(
+    waiting.map(({ item }) => item.code),
+    ["W4"],
+  );
+  const [line] = s.attentionOf([], waiting, []);
+  assert.equal(line.target, "waiting-t4");
+  assert.equal(line.text, "waits for your answer before it may edit");
+  // The flying carpet's list of what waits for you names it alone.
+  const html = s.renderToStaticMarkup(h(s.WaitingTasks, { waiting }));
+  assert.match(html, /waiting-t4/);
+  assert.doesNotMatch(html, /W19|refused/);
 });
 
 test("the wish's head says where Djinn last pushed its integration branch, and a push refused", () => {
@@ -10076,9 +10257,9 @@ test("operating load: the fill rises to the level in effect, striped to the prev
     ];
   };
   try {
-    assert.equal(s.stopAt(0), "calc(7px + 0 * (100% - 14px))");
-    assert.equal(s.stopAt(2), "calc(7px + 0.5 * (100% - 14px))");
-    assert.equal(s.stopAt(4), "calc(7px + 1 * (100% - 14px))");
+    assert.equal(s.stopAt(0), "calc(0.4375rem + 0 * (100% - 0.875rem))");
+    assert.equal(s.stopAt(2), "calc(0.4375rem + 0.5 * (100% - 0.875rem))");
+    assert.equal(s.stopAt(4), "calc(0.4375rem + 1 * (100% - 0.875rem))");
     // At rest: both up to High.
     assert.deepEqual(fill(), [s.stopAt(2), "high", s.stopAt(2), "high"]);
     // Previewing Overclock: solid to High, striped on to Overclock in its colour.

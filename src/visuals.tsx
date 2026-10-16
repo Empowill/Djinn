@@ -39,6 +39,8 @@ export function Orb({
   color?: string;
   animation?: OrbState;
 }) {
+  // size is in pixels at the default text size: the orb follows the root font size (text-size.ts).
+  const length = `${size / 16}rem`;
   const [reduced, setReduced] = useState(
     document.documentElement.dataset.motion === "reduced",
   );
@@ -55,7 +57,7 @@ export function Orb({
   return (
     <span
       className={`orb orb-${status} thinking-avatar`}
-      style={{ width: size, height: size }}
+      style={{ width: length, height: length }}
       aria-hidden="true"
     >
       <ThinkingOrb
@@ -65,7 +67,7 @@ export function Orb({
         color={color}
         speed={status === "running" ? 0.85 : status === "queued" ? 0.35 : 0.45}
         paused={reduced || status === "done"}
-        style={{ width: size, height: size }}
+        style={{ width: length, height: length }}
       />
       {status === "done" && <span className="orb-finished">✓</span>}
     </span>

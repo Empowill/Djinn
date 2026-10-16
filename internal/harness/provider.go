@@ -76,6 +76,15 @@ type Spec struct {
 	// next message, spending nothing, until Djinn closes it (Listener). Its worker says when each turn starts and
 	// ends (Event.Ifrit).
 	Listen bool
+	// SystemPrompt, when set, is added to the agent's own system prompt, the same text for every session that gets
+	// it: the rules of the lead Djinn drives (decision Q31). Claude only, so far; the others ignore it.
+	SystemPrompt string
+	// MaxTurns caps the model turns of the run, when the provider can enforce it; 0 for no cap.
+	MaxTurns int
+	// WriteDirs are folders the agent may write in even without Permissions.Edit, and ReadDirs folders it may read
+	// outside its own: the driven lead's folder, where it writes plan files and tilasms, and Djinn's data folder.
+	// Claude only, so far.
+	WriteDirs, ReadDirs []string
 	// Track, when set, is told of each process the worker starts, its PID, the cgroup of its scope and its mark
 	// (markVar), as it starts; what it returns is called once the process, and what it left running, ended. Djinn
 	// records them so that none outlives it (W514).
@@ -163,6 +172,8 @@ type Event struct {
 	Limit *Limit
 	// Watched is set on a paragraph a watcher's command printed: the wish's lead is told its first line.
 	Watched *Watched
+	// Ran is set at the end of each run of a watcher's command, when its Watch asks for it (Watch.Runs).
+	Ran *Ran
 	// Model is the model the worker actually runs, when the event tells it.
 	Model string
 	// Ifrit is set by a worker started with Spec.Listen when its agent starts a turn on a message (WORKING), and

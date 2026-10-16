@@ -16,11 +16,16 @@ there. Everything must become a question, even statements." On 13/10/2026, after
 not read the terminal... it costs you output tokens for nothing."
 
 **How to apply:**
-- Whenever work waits on the developer (a right, a command only they can run, a refused call, a report to read), ask
+- Whenever work waits on the developer (a right only they grant, a command only they can run, a report to read), ask
   one action-oriented question at once, `--move` when the gesture is theirs: what happened, the report's key points in
   its `--context`, the exact command in the code block at its top, what starts once it is done
   ([[readable-questions]]). Mark it right: `--move` with `--before` when it cannot wait, neither when it can
   ([[blocking-or-can-wait]]).
+- A worker's refused calls, and a worker that failed, are yours, never the developer's (Q273, Q24 of 16/10/2026: W19,
+  an investigator failed on refused commands, showed as waiting for them with nothing they could do; the window no
+  longer shows it so). Take it up again otherwise, close it, or spawn it where a right already covers the calls. It
+  reaches the developer only as a `--move` question naming the exact right it lacks and, in the code block at the top
+  of its `--context`, the command that grants it (`djinn wish allow …`, a permission line).
 - Every pull or merge request a task opens gets a `--move` question with its link: taking it out of draft is the
   developer's own responsibility.
 - Only what deserves their attention (Q223 note): a routine merge or an expected step needs no question; a finding, a
