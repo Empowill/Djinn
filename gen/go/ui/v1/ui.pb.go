@@ -418,9 +418,12 @@ type Settings struct {
 	// The global shortcut's chord. Unset: the default one. Empty: off.
 	Shortcut *string `protobuf:"bytes,1,opt,name=shortcut,proto3,oneof" json:"shortcut,omitempty"`
 	// The operating load notch in effect on this machine. Unset: default (medium).
-	Load          *v1.LoadNotch `protobuf:"varint,2,opt,name=load,proto3,enum=djinn.v1.LoadNotch,oneof" json:"load,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Load *v1.LoadNotch `protobuf:"varint,2,opt,name=load,proto3,enum=djinn.v1.LoadNotch,oneof" json:"load,omitempty"`
+	// Minutes without you in Djinn before Djinn puts an ifrit out, 5 to 240: your pace on this machine. Unset: 30.
+	// djinn up --ifrit-idle, and an ifrit's own (djinn task spawn --idle-minutes), come first.
+	IfritIdleMinutes *uint32 `protobuf:"varint,3,opt,name=ifrit_idle_minutes,json=ifritIdleMinutes,proto3,oneof" json:"ifrit_idle_minutes,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Settings) Reset() {
@@ -465,6 +468,13 @@ func (x *Settings) GetLoad() v1.LoadNotch {
 		return *x.Load
 	}
 	return v1.LoadNotch(0)
+}
+
+func (x *Settings) GetIfritIdleMinutes() uint32 {
+	if x != nil && x.IfritIdleMinutes != nil {
+		return *x.IfritIdleMinutes
+	}
+	return 0
 }
 
 // An agent command line. Djinn looks for it on its PATH, the PATH of the user's login shell, and the folders its
@@ -2230,6 +2240,78 @@ func (*UiServiceViewResponse) Descriptor() ([]byte, []int) {
 	return file_ui_v1_ui_proto_rawDescGZIP(), []int{33}
 }
 
+type UiServiceTouchRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UiServiceTouchRequest) Reset() {
+	*x = UiServiceTouchRequest{}
+	mi := &file_ui_v1_ui_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UiServiceTouchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UiServiceTouchRequest) ProtoMessage() {}
+
+func (x *UiServiceTouchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ui_v1_ui_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UiServiceTouchRequest.ProtoReflect.Descriptor instead.
+func (*UiServiceTouchRequest) Descriptor() ([]byte, []int) {
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{34}
+}
+
+type UiServiceTouchResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UiServiceTouchResponse) Reset() {
+	*x = UiServiceTouchResponse{}
+	mi := &file_ui_v1_ui_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UiServiceTouchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UiServiceTouchResponse) ProtoMessage() {}
+
+func (x *UiServiceTouchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ui_v1_ui_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UiServiceTouchResponse.ProtoReflect.Descriptor instead.
+func (*UiServiceTouchResponse) Descriptor() ([]byte, []int) {
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{35}
+}
+
 var File_ui_v1_ui_proto protoreflect.FileDescriptor
 
 const file_ui_v1_ui_proto_rawDesc = "" +
@@ -2247,12 +2329,15 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x05chord\x18\x01 \x01(\tR\x05chord\x12#\n" +
 	"\rdefault_chord\x18\x02 \x01(\tR\fdefaultChord\x12\x1c\n" +
 	"\tavailable\x18\x03 \x01(\bR\tavailable\x12\x18\n" +
-	"\aproblem\x18\x04 \x01(\tR\aproblem\"o\n" +
+	"\aproblem\x18\x04 \x01(\tR\aproblem\"\xc5\x01\n" +
 	"\bSettings\x12\x1f\n" +
 	"\bshortcut\x18\x01 \x01(\tH\x00R\bshortcut\x88\x01\x01\x12,\n" +
-	"\x04load\x18\x02 \x01(\x0e2\x13.djinn.v1.LoadNotchH\x01R\x04load\x88\x01\x01B\v\n" +
+	"\x04load\x18\x02 \x01(\x0e2\x13.djinn.v1.LoadNotchH\x01R\x04load\x88\x01\x01\x12=\n" +
+	"\x12ifrit_idle_minutes\x18\x03 \x01(\rB\n" +
+	"\xbaH\a*\x05\x18\xf0\x01(\x05H\x02R\x10ifritIdleMinutes\x88\x01\x01B\v\n" +
 	"\t_shortcutB\a\n" +
-	"\x05_load\"\xfa\x01\n" +
+	"\x05_loadB\x15\n" +
+	"\x13_ifrit_idle_minutes\"\xfa\x01\n" +
 	"\bProvider\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -2365,7 +2450,9 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	")UiServiceOpenNotificationSettingsResponse\"8\n" +
 	"\x14UiServiceViewRequest\x12 \n" +
 	"\awish_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x18@R\x06wishId\"\x17\n" +
-	"\x15UiServiceViewResponse*\xa0\x01\n" +
+	"\x15UiServiceViewResponse\"\x17\n" +
+	"\x15UiServiceTouchRequest\"\x18\n" +
+	"\x16UiServiceTouchResponse*\xa0\x01\n" +
 	"\rProviderState\x12\x1e\n" +
 	"\x1aPROVIDER_STATE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16PROVIDER_STATE_MISSING\x10\x01\x12\x1d\n" +
@@ -2383,8 +2470,7 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x1fNOTIFICATION_ACCESS_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fNOTIFICATION_ACCESS_UNAVAILABLE\x10\x01\x12\x1f\n" +
 	"\x1bNOTIFICATION_ACCESS_ALLOWED\x10\x02\x12\x1e\n" +
-	"\x1aNOTIFICATION_ACCESS_DENIED\x10\x032\xc5\n" +
-	"\n" +
+	"\x1aNOTIFICATION_ACCESS_DENIED\x10\x032\x91\v\n" +
 	"\tUiService\x12e\n" +
 	"\x0eGetEnvironment\x12%.ui.v1.UiServiceGetEnvironmentRequest\x1a&.ui.v1.UiServiceGetEnvironmentResponse\"\x04\xc8\xf3\x18\x02\x12h\n" +
 	"\x0fChooseDirectory\x12&.ui.v1.UiServiceChooseDirectoryRequest\x1a'.ui.v1.UiServiceChooseDirectoryResponse\"\x04\xc8\xf3\x18\x02\x12_\n" +
@@ -2399,7 +2485,8 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x10GetNotifications\x12'.ui.v1.UiServiceGetNotificationsRequest\x1a(.ui.v1.UiServiceGetNotificationsResponse\"\x04\xc8\xf3\x18\x02\x12w\n" +
 	"\x14RequestNotifications\x12+.ui.v1.UiServiceRequestNotificationsRequest\x1a,.ui.v1.UiServiceRequestNotificationsResponse\"\x04\xc8\xf3\x18\x02\x12\x83\x01\n" +
 	"\x18OpenNotificationSettings\x12/.ui.v1.UiServiceOpenNotificationSettingsRequest\x1a0.ui.v1.UiServiceOpenNotificationSettingsResponse\"\x04\xc8\xf3\x18\x02\x12G\n" +
-	"\x04View\x12\x1b.ui.v1.UiServiceViewRequest\x1a\x1c.ui.v1.UiServiceViewResponse\"\x04\xc8\xf3\x18\x02Bv\n" +
+	"\x04View\x12\x1b.ui.v1.UiServiceViewRequest\x1a\x1c.ui.v1.UiServiceViewResponse\"\x04\xc8\xf3\x18\x02\x12J\n" +
+	"\x05Touch\x12\x1c.ui.v1.UiServiceTouchRequest\x1a\x1d.ui.v1.UiServiceTouchResponse\"\x04\xc8\xf3\x18\x02Bv\n" +
 	"\tcom.ui.v1B\aUiProtoP\x01Z+github.com/empowill/djinn/gen/go/ui/v1;uiv1\xa2\x02\x03UXX\xaa\x02\x05Ui.V1\xca\x02\x05Ui\\V1\xe2\x02\x11Ui\\V1\\GPBMetadata\xea\x02\x06Ui::V1b\x06proto3"
 
 var (
@@ -2415,7 +2502,7 @@ func file_ui_v1_ui_proto_rawDescGZIP() []byte {
 }
 
 var file_ui_v1_ui_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_ui_v1_ui_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_ui_v1_ui_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_ui_v1_ui_proto_goTypes = []any{
 	(ProviderState)(0),                                // 0: ui.v1.ProviderState
 	(InstallStep)(0),                                  // 1: ui.v1.InstallStep
@@ -2454,13 +2541,15 @@ var file_ui_v1_ui_proto_goTypes = []any{
 	(*UiServiceOpenNotificationSettingsResponse)(nil), // 34: ui.v1.UiServiceOpenNotificationSettingsResponse
 	(*UiServiceViewRequest)(nil),                      // 35: ui.v1.UiServiceViewRequest
 	(*UiServiceViewResponse)(nil),                     // 36: ui.v1.UiServiceViewResponse
-	(v1.LoadNotch)(0),                                 // 37: djinn.v1.LoadNotch
-	(*v1.LoadServiceWatchResponse)(nil),               // 38: djinn.v1.LoadServiceWatchResponse
+	(*UiServiceTouchRequest)(nil),                     // 37: ui.v1.UiServiceTouchRequest
+	(*UiServiceTouchResponse)(nil),                    // 38: ui.v1.UiServiceTouchResponse
+	(v1.LoadNotch)(0),                                 // 39: djinn.v1.LoadNotch
+	(*v1.LoadServiceWatchResponse)(nil),               // 40: djinn.v1.LoadServiceWatchResponse
 }
 var file_ui_v1_ui_proto_depIdxs = []int32{
 	7,  // 0: ui.v1.UiServiceGetEnvironmentResponse.providers:type_name -> ui.v1.Provider
 	5,  // 1: ui.v1.UiServiceGetEnvironmentResponse.shortcut:type_name -> ui.v1.Shortcut
-	37, // 2: ui.v1.Settings.load:type_name -> djinn.v1.LoadNotch
+	39, // 2: ui.v1.Settings.load:type_name -> djinn.v1.LoadNotch
 	0,  // 3: ui.v1.Provider.state:type_name -> ui.v1.ProviderState
 	5,  // 4: ui.v1.UiServiceSetShortcutResponse.shortcut:type_name -> ui.v1.Shortcut
 	26, // 5: ui.v1.UiServiceWatchUpdateResponse.builds:type_name -> ui.v1.Build
@@ -2468,7 +2557,7 @@ var file_ui_v1_ui_proto_depIdxs = []int32{
 	26, // 7: ui.v1.UiServiceWatchUpdateResponse.ready_build:type_name -> ui.v1.Build
 	19, // 8: ui.v1.UiServiceWatchResponse.show:type_name -> ui.v1.UiServiceWatchShowResponse
 	21, // 9: ui.v1.UiServiceWatchResponse.update:type_name -> ui.v1.UiServiceWatchUpdateResponse
-	38, // 10: ui.v1.UiServiceWatchResponse.load:type_name -> djinn.v1.LoadServiceWatchResponse
+	40, // 10: ui.v1.UiServiceWatchResponse.load:type_name -> djinn.v1.LoadServiceWatchResponse
 	1,  // 11: ui.v1.Installing.step:type_name -> ui.v1.InstallStep
 	25, // 12: ui.v1.Build.summaries:type_name -> ui.v1.TaskSummary
 	2,  // 13: ui.v1.UiServiceGetNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
@@ -2487,22 +2576,24 @@ var file_ui_v1_ui_proto_depIdxs = []int32{
 	31, // 26: ui.v1.UiService.RequestNotifications:input_type -> ui.v1.UiServiceRequestNotificationsRequest
 	33, // 27: ui.v1.UiService.OpenNotificationSettings:input_type -> ui.v1.UiServiceOpenNotificationSettingsRequest
 	35, // 28: ui.v1.UiService.View:input_type -> ui.v1.UiServiceViewRequest
-	4,  // 29: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
-	9,  // 30: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
-	11, // 31: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
-	13, // 32: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
-	15, // 33: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
-	17, // 34: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
-	19, // 35: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
-	21, // 36: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
-	23, // 37: ui.v1.UiService.Watch:output_type -> ui.v1.UiServiceWatchResponse
-	28, // 38: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
-	30, // 39: ui.v1.UiService.GetNotifications:output_type -> ui.v1.UiServiceGetNotificationsResponse
-	32, // 40: ui.v1.UiService.RequestNotifications:output_type -> ui.v1.UiServiceRequestNotificationsResponse
-	34, // 41: ui.v1.UiService.OpenNotificationSettings:output_type -> ui.v1.UiServiceOpenNotificationSettingsResponse
-	36, // 42: ui.v1.UiService.View:output_type -> ui.v1.UiServiceViewResponse
-	29, // [29:43] is the sub-list for method output_type
-	15, // [15:29] is the sub-list for method input_type
+	37, // 29: ui.v1.UiService.Touch:input_type -> ui.v1.UiServiceTouchRequest
+	4,  // 30: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
+	9,  // 31: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
+	11, // 32: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
+	13, // 33: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
+	15, // 34: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
+	17, // 35: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
+	19, // 36: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
+	21, // 37: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
+	23, // 38: ui.v1.UiService.Watch:output_type -> ui.v1.UiServiceWatchResponse
+	28, // 39: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
+	30, // 40: ui.v1.UiService.GetNotifications:output_type -> ui.v1.UiServiceGetNotificationsResponse
+	32, // 41: ui.v1.UiService.RequestNotifications:output_type -> ui.v1.UiServiceRequestNotificationsResponse
+	34, // 42: ui.v1.UiService.OpenNotificationSettings:output_type -> ui.v1.UiServiceOpenNotificationSettingsResponse
+	36, // 43: ui.v1.UiService.View:output_type -> ui.v1.UiServiceViewResponse
+	38, // 44: ui.v1.UiService.Touch:output_type -> ui.v1.UiServiceTouchResponse
+	30, // [30:45] is the sub-list for method output_type
+	15, // [15:30] is the sub-list for method input_type
 	15, // [15:15] is the sub-list for extension type_name
 	15, // [15:15] is the sub-list for extension extendee
 	0,  // [0:15] is the sub-list for field type_name
@@ -2520,7 +2611,7 @@ func file_ui_v1_ui_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ui_v1_ui_proto_rawDesc), len(file_ui_v1_ui_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   34,
+			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -142,6 +142,7 @@ type Harness struct {
 	outside      func() int                   // the gates held outside the running workers (GatesOutside); nil: none
 	silenceLimit time.Duration                // silence limit before the Lamplighter checks a worker (lamplighter.go)
 	maxWallTime  time.Duration                // ceiling on wall time budget per task (lamplighter.go)
+	ifritIdle    time.Duration                // how long the developer may leave Djinn alone before an ifrit goes out (ifrit.go)
 	maxTurns     int                          // ceiling on model turns budget per task (lamplighter.go)
 	version      string                       // version of the running binary (WithVersion)
 	builtFrom    map[string]string            // by project id: the branch the running binary was built from (compare.go)
@@ -793,6 +794,9 @@ func (h *Harness) spawn(
 		task.Restart = req.GetRestart()
 	} else if req.GetRestart() {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--restart is for a watcher (--provider watch)"))
+	}
+	if err := ifritSpawn(req, kind, project, task); err != nil {
+		return nil, err
 	}
 	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), after(req)); err != nil {
 		return nil, plan.Status(err)

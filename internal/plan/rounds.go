@@ -87,10 +87,11 @@ func (q *Questions) Enlighten(
 	ctx context.Context, req *connect.Request[planv1.QuestionServiceEnlightenRequest],
 ) (*connect.Response[planv1.QuestionServiceEnlightenResponse], error) {
 	question, err := q.round(ctx, req.Spec(), req.Msg, req.Msg.GetQuestion(), req.Msg.GetWishId(),
-		func(question *planv1.Question, round *planv1.Round) {
+		func(_ *store.Tx, question *planv1.Question, round *planv1.Round) error {
 			round.Kind, round.Note = planv1.RoundKind_ROUND_KIND_ENLIGHTEN, req.Msg.GetNote()
 			round.Context, round.Options, round.Recommendation =
 				CleanContext(question.GetContext()), slices.Clone(question.GetOptions()), question.GetRecommendation()
+			return nil
 		})
 	if err != nil {
 		return nil, err
@@ -128,7 +129,14 @@ func (q *Questions) Revise(
 		m.Context, m.ContextFile = text, ""
 	}
 	question, err := q.round(ctx, req.Spec(), m, m.GetQuestion(), m.GetWishId(),
-		func(question *planv1.Question, round *planv1.Round) {
+		func(tx *store.Tx, question *planv1.Question, round *planv1.Round) error {
+			if m.About != nil {
+				about, err := aboutTask(ctx, tx, question.GetWishId(), m.GetAbout())
+				if err != nil {
+					return err
+				}
+				question.AboutTaskId = about
+			}
 			prevContext := CleanContext(question.GetContext())
 			round.Kind, round.TaskId = planv1.RoundKind_ROUND_KIND_REVISE, m.GetTaskId()
 			round.Context, round.Options, round.Recommendation =
@@ -156,6 +164,7 @@ func (q *Questions) Revise(
 				question.Context = baseContext
 			}
 			question.Revision++
+			return nil
 		})
 	if err != nil {
 		return nil, err
@@ -168,7 +177,7 @@ func (q *Questions) Revise(
 // round adds a round to an open question, set by fn, in one journaled transaction.
 func (q *Questions) round(
 	ctx context.Context, spec connect.Spec, msg proto.Message,
-	ref *planv1.QuestionRef, wishID string, fn func(*planv1.Question, *planv1.Round),
+	ref *planv1.QuestionRef, wishID string, fn func(*store.Tx, *planv1.Question, *planv1.Round) error,
 ) (*planv1.Question, error) {
 	var question *planv1.Question
 	err := write(ctx, q.Store, spec, msg, func(tx *store.Tx) error {
@@ -185,7 +194,9 @@ func (q *Questions) round(
 				fmt.Errorf("question %s was withdrawn", question.GetCode()))
 		}
 		round := &planv1.Round{Actor: actor, CreateTime: timestamppb.Now()}
-		fn(question, round)
+		if err := fn(tx, question, round); err != nil {
+			return err
+		}
 		if err := taskOfWish(ctx, tx, question.GetWishId(), round.GetTaskId()); err != nil {
 			return err
 		}

@@ -41,6 +41,8 @@ const (
 	MarkServiceName = "plan.v1.MarkService"
 	// TaskServiceName is the fully-qualified name of the TaskService service.
 	TaskServiceName = "plan.v1.TaskService"
+	// ServeServiceName is the fully-qualified name of the ServeService service.
+	ServeServiceName = "plan.v1.ServeService"
 	// PlanServiceName is the fully-qualified name of the PlanService service.
 	PlanServiceName = "plan.v1.PlanService"
 )
@@ -227,6 +229,14 @@ const (
 	// TaskServiceTurnCommentsProcedure is the fully-qualified name of the TaskService's TurnComments
 	// RPC.
 	TaskServiceTurnCommentsProcedure = "/plan.v1.TaskService/TurnComments"
+	// ServeServiceRunProcedure is the fully-qualified name of the ServeService's Run RPC.
+	ServeServiceRunProcedure = "/plan.v1.ServeService/Run"
+	// ServeServiceListProcedure is the fully-qualified name of the ServeService's List RPC.
+	ServeServiceListProcedure = "/plan.v1.ServeService/List"
+	// ServeServiceStopProcedure is the fully-qualified name of the ServeService's Stop RPC.
+	ServeServiceStopProcedure = "/plan.v1.ServeService/Stop"
+	// ServeServiceLogsProcedure is the fully-qualified name of the ServeService's Logs RPC.
+	ServeServiceLogsProcedure = "/plan.v1.ServeService/Logs"
 	// PlanServiceSyncProcedure is the fully-qualified name of the PlanService's Sync RPC.
 	PlanServiceSyncProcedure = "/plan.v1.PlanService/Sync"
 )
@@ -3223,6 +3233,170 @@ func (UnimplementedTaskServiceHandler) Comment(context.Context, *connect.Request
 
 func (UnimplementedTaskServiceHandler) TurnComments(context.Context, *connect.Request[v1.TaskServiceTurnCommentsRequest]) (*connect.Response[v1.TaskServiceTurnCommentsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.TurnComments is not implemented"))
+}
+
+// ServeServiceClient is a client for the plan.v1.ServeService service.
+type ServeServiceClient interface {
+	// Start a serve: the command returns once its process lives, and once each port it declares answers. A serve of the
+	// same name is stopped first. Like a watcher's, its command must be allowed by the project or the wish's allowance.
+	Run(context.Context, *connect.Request[v1.ServeServiceRunRequest]) (*connect.Response[v1.ServeServiceRunResponse], error)
+	// List an ifrit's serves: their ports, their state.
+	List(context.Context, *connect.Request[v1.ServeServiceListRequest]) (*connect.Response[v1.ServeServiceListResponse], error)
+	// Stop a serve: its stop command first, then its process group. It stays in the ifrit's serves, stopped, and does not
+	// start again when the ifrit is lit again.
+	Stop(context.Context, *connect.Request[v1.ServeServiceStopRequest]) (*connect.Response[v1.ServeServiceStopResponse], error)
+	// Print the end of what a serve wrote, its output and its errors together.
+	Logs(context.Context, *connect.Request[v1.ServeServiceLogsRequest]) (*connect.Response[v1.ServeServiceLogsResponse], error)
+}
+
+// NewServeServiceClient constructs a client for the plan.v1.ServeService service. By default, it
+// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewServeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ServeServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	serveServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("ServeService").Methods()
+	return &serveServiceClient{
+		run: connect.NewClient[v1.ServeServiceRunRequest, v1.ServeServiceRunResponse](
+			httpClient,
+			baseURL+ServeServiceRunProcedure,
+			connect.WithSchema(serveServiceMethods.ByName("Run")),
+			connect.WithClientOptions(opts...),
+		),
+		list: connect.NewClient[v1.ServeServiceListRequest, v1.ServeServiceListResponse](
+			httpClient,
+			baseURL+ServeServiceListProcedure,
+			connect.WithSchema(serveServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		stop: connect.NewClient[v1.ServeServiceStopRequest, v1.ServeServiceStopResponse](
+			httpClient,
+			baseURL+ServeServiceStopProcedure,
+			connect.WithSchema(serveServiceMethods.ByName("Stop")),
+			connect.WithClientOptions(opts...),
+		),
+		logs: connect.NewClient[v1.ServeServiceLogsRequest, v1.ServeServiceLogsResponse](
+			httpClient,
+			baseURL+ServeServiceLogsProcedure,
+			connect.WithSchema(serveServiceMethods.ByName("Logs")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// serveServiceClient implements ServeServiceClient.
+type serveServiceClient struct {
+	run  *connect.Client[v1.ServeServiceRunRequest, v1.ServeServiceRunResponse]
+	list *connect.Client[v1.ServeServiceListRequest, v1.ServeServiceListResponse]
+	stop *connect.Client[v1.ServeServiceStopRequest, v1.ServeServiceStopResponse]
+	logs *connect.Client[v1.ServeServiceLogsRequest, v1.ServeServiceLogsResponse]
+}
+
+// Run calls plan.v1.ServeService.Run.
+func (c *serveServiceClient) Run(ctx context.Context, req *connect.Request[v1.ServeServiceRunRequest]) (*connect.Response[v1.ServeServiceRunResponse], error) {
+	return c.run.CallUnary(ctx, req)
+}
+
+// List calls plan.v1.ServeService.List.
+func (c *serveServiceClient) List(ctx context.Context, req *connect.Request[v1.ServeServiceListRequest]) (*connect.Response[v1.ServeServiceListResponse], error) {
+	return c.list.CallUnary(ctx, req)
+}
+
+// Stop calls plan.v1.ServeService.Stop.
+func (c *serveServiceClient) Stop(ctx context.Context, req *connect.Request[v1.ServeServiceStopRequest]) (*connect.Response[v1.ServeServiceStopResponse], error) {
+	return c.stop.CallUnary(ctx, req)
+}
+
+// Logs calls plan.v1.ServeService.Logs.
+func (c *serveServiceClient) Logs(ctx context.Context, req *connect.Request[v1.ServeServiceLogsRequest]) (*connect.Response[v1.ServeServiceLogsResponse], error) {
+	return c.logs.CallUnary(ctx, req)
+}
+
+// ServeServiceHandler is an implementation of the plan.v1.ServeService service.
+type ServeServiceHandler interface {
+	// Start a serve: the command returns once its process lives, and once each port it declares answers. A serve of the
+	// same name is stopped first. Like a watcher's, its command must be allowed by the project or the wish's allowance.
+	Run(context.Context, *connect.Request[v1.ServeServiceRunRequest]) (*connect.Response[v1.ServeServiceRunResponse], error)
+	// List an ifrit's serves: their ports, their state.
+	List(context.Context, *connect.Request[v1.ServeServiceListRequest]) (*connect.Response[v1.ServeServiceListResponse], error)
+	// Stop a serve: its stop command first, then its process group. It stays in the ifrit's serves, stopped, and does not
+	// start again when the ifrit is lit again.
+	Stop(context.Context, *connect.Request[v1.ServeServiceStopRequest]) (*connect.Response[v1.ServeServiceStopResponse], error)
+	// Print the end of what a serve wrote, its output and its errors together.
+	Logs(context.Context, *connect.Request[v1.ServeServiceLogsRequest]) (*connect.Response[v1.ServeServiceLogsResponse], error)
+}
+
+// NewServeServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewServeServiceHandler(svc ServeServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	serveServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("ServeService").Methods()
+	serveServiceRunHandler := connect.NewUnaryHandler(
+		ServeServiceRunProcedure,
+		svc.Run,
+		connect.WithSchema(serveServiceMethods.ByName("Run")),
+		connect.WithHandlerOptions(opts...),
+	)
+	serveServiceListHandler := connect.NewUnaryHandler(
+		ServeServiceListProcedure,
+		svc.List,
+		connect.WithSchema(serveServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	serveServiceStopHandler := connect.NewUnaryHandler(
+		ServeServiceStopProcedure,
+		svc.Stop,
+		connect.WithSchema(serveServiceMethods.ByName("Stop")),
+		connect.WithHandlerOptions(opts...),
+	)
+	serveServiceLogsHandler := connect.NewUnaryHandler(
+		ServeServiceLogsProcedure,
+		svc.Logs,
+		connect.WithSchema(serveServiceMethods.ByName("Logs")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/plan.v1.ServeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case ServeServiceRunProcedure:
+			serveServiceRunHandler.ServeHTTP(w, r)
+		case ServeServiceListProcedure:
+			serveServiceListHandler.ServeHTTP(w, r)
+		case ServeServiceStopProcedure:
+			serveServiceStopHandler.ServeHTTP(w, r)
+		case ServeServiceLogsProcedure:
+			serveServiceLogsHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedServeServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedServeServiceHandler struct{}
+
+func (UnimplementedServeServiceHandler) Run(context.Context, *connect.Request[v1.ServeServiceRunRequest]) (*connect.Response[v1.ServeServiceRunResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ServeService.Run is not implemented"))
+}
+
+func (UnimplementedServeServiceHandler) List(context.Context, *connect.Request[v1.ServeServiceListRequest]) (*connect.Response[v1.ServeServiceListResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ServeService.List is not implemented"))
+}
+
+func (UnimplementedServeServiceHandler) Stop(context.Context, *connect.Request[v1.ServeServiceStopRequest]) (*connect.Response[v1.ServeServiceStopResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ServeService.Stop is not implemented"))
+}
+
+func (UnimplementedServeServiceHandler) Logs(context.Context, *connect.Request[v1.ServeServiceLogsRequest]) (*connect.Response[v1.ServeServiceLogsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ServeService.Logs is not implemented"))
 }
 
 // PlanServiceClient is a client for the plan.v1.PlanService service.

@@ -1004,6 +1004,10 @@ func (q *Questions) Ask(
 		if err := taskOfWish(ctx, tx, question.GetWishId(), question.GetTaskId()); err != nil {
 			return err
 		}
+		var err error
+		if question.AboutTaskId, err = aboutTask(ctx, tx, question.GetWishId(), req.Msg.GetAbout()); err != nil {
+			return err
+		}
 		return Ask(ctx, tx, question)
 	})
 	if err != nil {

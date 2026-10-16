@@ -132,6 +132,14 @@ var WorkerGuard = connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) conn
 			}
 			return next(ctx, req)
 
+		case planv1connect.ServeServiceRunProcedure, planv1connect.ServeServiceStopProcedure,
+			planv1connect.ServeServiceListProcedure, planv1connect.ServeServiceLogsProcedure:
+			// An ifrit runs its own serves; ServeService refuses a task that is no ifrit.
+			if err := ownServes(req.Any(), caller); err != nil {
+				return nil, err
+			}
+			return next(ctx, req)
+
 		case planv1connect.TilasmServicePutProcedure:
 			if r, ok := req.Any().(*planv1.TilasmServicePutRequest); ok {
 				if r.Wish == "" {
@@ -159,6 +167,33 @@ var WorkerGuard = connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) conn
 		))
 	}
 })
+
+// ownServes points a worker's ServeService request at its own task, and refuses one at another task.
+func ownServes(msg any, caller *WorkerCaller) error {
+	var taskID *string
+	switch r := msg.(type) {
+	case *planv1.ServeServiceRunRequest:
+		taskID = &r.TaskId
+	case *planv1.ServeServiceStopRequest:
+		taskID = &r.TaskId
+	case *planv1.ServeServiceListRequest:
+		taskID = &r.TaskId
+	case *planv1.ServeServiceLogsRequest:
+		taskID = &r.TaskId
+	default:
+		return nil
+	}
+	switch *taskID {
+	case "":
+		*taskID = caller.TaskID
+	case caller.TaskID:
+	default:
+		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf(
+			"a worker can only reach its own serves (task %s)", caller.TaskID,
+		))
+	}
+	return nil
+}
 
 func isReadOnlyProcedure(procedure string) bool {
 	idx := strings.LastIndexByte(procedure, '/')

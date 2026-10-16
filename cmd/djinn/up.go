@@ -61,7 +61,7 @@ func runUp(args []string) (restart bool, err error) {
 		profiles                                  bool
 		port, maxWorkers, workerCPU, workerMemory int
 		workerMemoryGuard                         float64
-		term, termDir                             string
+		term, termDir, ifritIdle                  string
 	)
 	flags := cli.Up.FlagSet(map[string]any{
 		"browser": &browser, "port": &port, "terminal": &term, "terminal-dir": &termDir, "workers": &maxWorkers,
@@ -69,6 +69,7 @@ func runUp(args []string) (restart bool, err error) {
 		"worker-memory-guard": &workerMemoryGuard,
 		"enlighten-workers":   &enlightenWorkers,
 		"pprof":               &profiles,
+		"ifrit-idle":          &ifritIdle,
 	})
 	if err := flags.Parse(args); err != nil {
 		return false, err
@@ -124,6 +125,10 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	if workerMemoryGuard < 0 {
 		return false, fmt.Errorf("--worker-memory-guard %g: expected a positive factor (e.g. 2 to 3), or 0 to turn off", workerMemoryGuard)
+	}
+	idle, err := ifritIdleFlag(ifritIdle)
+	if err != nil {
+		return false, err
 	}
 	home, err := ui.Home()
 	if err != nil {
@@ -198,6 +203,9 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	if enlightenSet {
 		opts = append(opts, harness.WithEnlightenWorkers(enlightenWorkers))
+	}
+	if idle > 0 {
+		opts = append(opts, harness.WithIfritIdle(idle))
 	}
 	if scopes := workerScopes(ctx, os.Stderr, workerCPU, policy.WorkerMemory, policy.WorkerMemoryGuard); scopes != nil {
 		opts = append(opts, harness.WithScopes(scopes))
@@ -602,6 +610,8 @@ func services(
 	out[taskPrefix] = taskHandler
 	planPrefix, planHandler := harness.PlanHandler(h)
 	out[planPrefix] = planHandler
+	servePrefix, serveHandler := harness.ServeHandler(h)
+	out[servePrefix] = serveHandler
 	terminalPrefix, terminalHandler := terminal.Handler(terminals)
 	out[terminalPrefix] = terminalHandler
 	return out
@@ -698,6 +708,18 @@ func answer(ctx context.Context, addr, questionID string, choice planv1.Choice) 
 		By: planv1.Closer_CLOSER_DEVELOPER,
 	}))
 	return err
+}
+
+// ifritIdleFlag reads djinn up --ifrit-idle: a duration from 5 minutes to 4 hours, in whole minutes; 0 for none given.
+func ifritIdleFlag(s string) (time.Duration, error) {
+	if s == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d < 5*time.Minute || d > 4*time.Hour || d%time.Minute != 0 {
+		return 0, fmt.Errorf("--ifrit-idle %s: expected whole minutes from 5m to 4h, like 30m or 1h30m", s)
+	}
+	return d, nil
 }
 
 // flagSet tells whether the command line set the flag name.

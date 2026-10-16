@@ -312,6 +312,9 @@ message Gate {
   plan.v1.Resources resources = 7;
   // When Djinn takes it back if its holder has not given it back by then.
   google.protobuf.Timestamp expire_time = 8;
+  // Its holder is an ifrit (plan.v1.TaskKind TASK_KIND_IFRIT): it keeps the gate while it is lit, and gives it back when
+  // it goes out, at expire_time at the latest, or ends.
+  bool ifrit = 9;
 }
 
 message GateServiceHoldRequest {

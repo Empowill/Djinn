@@ -67,6 +67,8 @@ const (
 	UiServiceOpenNotificationSettingsProcedure = "/ui.v1.UiService/OpenNotificationSettings"
 	// UiServiceViewProcedure is the fully-qualified name of the UiService's View RPC.
 	UiServiceViewProcedure = "/ui.v1.UiService/View"
+	// UiServiceTouchProcedure is the fully-qualified name of the UiService's Touch RPC.
+	UiServiceTouchProcedure = "/ui.v1.UiService/Touch"
 )
 
 // UiServiceClient is a client for the ui.v1.UiService service.
@@ -115,6 +117,9 @@ type UiServiceClient interface {
 	OpenNotificationSettings(context.Context, *connect.Request[v1.UiServiceOpenNotificationSettingsRequest]) (*connect.Response[v1.UiServiceOpenNotificationSettingsResponse], error)
 	// Say which wish the page shows: no notification comes for it while the window is in front.
 	View(context.Context, *connect.Request[v1.UiServiceViewRequest]) (*connect.Response[v1.UiServiceViewResponse], error)
+	// Say that the developer is there: a key, a click or a scroll in the window in front, sent at most every 30 seconds.
+	// It keeps the ifrits lit.
+	Touch(context.Context, *connect.Request[v1.UiServiceTouchRequest]) (*connect.Response[v1.UiServiceTouchResponse], error)
 }
 
 // NewUiServiceClient constructs a client for the ui.v1.UiService service. By default, it uses the
@@ -212,6 +217,12 @@ func NewUiServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(uiServiceMethods.ByName("View")),
 			connect.WithClientOptions(opts...),
 		),
+		touch: connect.NewClient[v1.UiServiceTouchRequest, v1.UiServiceTouchResponse](
+			httpClient,
+			baseURL+UiServiceTouchProcedure,
+			connect.WithSchema(uiServiceMethods.ByName("Touch")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -231,6 +242,7 @@ type uiServiceClient struct {
 	requestNotifications     *connect.Client[v1.UiServiceRequestNotificationsRequest, v1.UiServiceRequestNotificationsResponse]
 	openNotificationSettings *connect.Client[v1.UiServiceOpenNotificationSettingsRequest, v1.UiServiceOpenNotificationSettingsResponse]
 	view                     *connect.Client[v1.UiServiceViewRequest, v1.UiServiceViewResponse]
+	touch                    *connect.Client[v1.UiServiceTouchRequest, v1.UiServiceTouchResponse]
 }
 
 // GetEnvironment calls ui.v1.UiService.GetEnvironment.
@@ -303,6 +315,11 @@ func (c *uiServiceClient) View(ctx context.Context, req *connect.Request[v1.UiSe
 	return c.view.CallUnary(ctx, req)
 }
 
+// Touch calls ui.v1.UiService.Touch.
+func (c *uiServiceClient) Touch(ctx context.Context, req *connect.Request[v1.UiServiceTouchRequest]) (*connect.Response[v1.UiServiceTouchResponse], error) {
+	return c.touch.CallUnary(ctx, req)
+}
+
 // UiServiceHandler is an implementation of the ui.v1.UiService service.
 type UiServiceHandler interface {
 	// The environment the window runs in.
@@ -349,6 +366,9 @@ type UiServiceHandler interface {
 	OpenNotificationSettings(context.Context, *connect.Request[v1.UiServiceOpenNotificationSettingsRequest]) (*connect.Response[v1.UiServiceOpenNotificationSettingsResponse], error)
 	// Say which wish the page shows: no notification comes for it while the window is in front.
 	View(context.Context, *connect.Request[v1.UiServiceViewRequest]) (*connect.Response[v1.UiServiceViewResponse], error)
+	// Say that the developer is there: a key, a click or a scroll in the window in front, sent at most every 30 seconds.
+	// It keeps the ifrits lit.
+	Touch(context.Context, *connect.Request[v1.UiServiceTouchRequest]) (*connect.Response[v1.UiServiceTouchResponse], error)
 }
 
 // NewUiServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -442,6 +462,12 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 		connect.WithSchema(uiServiceMethods.ByName("View")),
 		connect.WithHandlerOptions(opts...),
 	)
+	uiServiceTouchHandler := connect.NewUnaryHandler(
+		UiServiceTouchProcedure,
+		svc.Touch,
+		connect.WithSchema(uiServiceMethods.ByName("Touch")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/ui.v1.UiService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case UiServiceGetEnvironmentProcedure:
@@ -472,6 +498,8 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 			uiServiceOpenNotificationSettingsHandler.ServeHTTP(w, r)
 		case UiServiceViewProcedure:
 			uiServiceViewHandler.ServeHTTP(w, r)
+		case UiServiceTouchProcedure:
+			uiServiceTouchHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -535,4 +563,8 @@ func (UnimplementedUiServiceHandler) OpenNotificationSettings(context.Context, *
 
 func (UnimplementedUiServiceHandler) View(context.Context, *connect.Request[v1.UiServiceViewRequest]) (*connect.Response[v1.UiServiceViewResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.View is not implemented"))
+}
+
+func (UnimplementedUiServiceHandler) Touch(context.Context, *connect.Request[v1.UiServiceTouchRequest]) (*connect.Response[v1.UiServiceTouchResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.Touch is not implemented"))
 }

@@ -694,6 +694,10 @@ enum LeadEventKind {
   // The developer approved a decision the lead or a worker took: a question they answered. An approval that
   // answers an open question is an answer; one of the developer's own decisions changes nothing for the lead.
   LEAD_EVENT_KIND_APPROVED = 10;
+  // An ifrit's turn ended: the first line of its answer, which the window shows too.
+  LEAD_EVENT_KIND_REPLIED = 11;
+  // An ifrit went out, and why: the developer left Djinn alone, or Djinn restarted. A message lights it again.
+  LEAD_EVENT_KIND_OUT = 12;
 }
 
 // Allowance is a right the developer allows a wish's workers in one of its projects, an explicit decision that
@@ -995,6 +999,8 @@ message Task {
   // For a watcher that babysits a pull or merge request with the project's babysit skill (metadata.djinn.babysit): the
   // request, and the line that ends the watcher. Unset for any other task.
   TaskBabysit babysit = 68;
+  // For an ifrit (TASK_KIND_IFRIT): where it stands, its timers and its serves. Unset for any other task.
+  TaskIfrit ifrit = 69;
 }
 
 // TaskBabysit is the pull or merge request a watcher babysits.
@@ -1207,6 +1213,98 @@ enum TaskKind {
   // (Task.part_of); it depends on other tasks like work does. It is done when marked done (djinn task done) or when
   // its plan file says so (djinn plan sync); it never waits for the person.
   TASK_KIND_AZIMA = 2;
+  // An ifrit (the djinn of fire of the tales, who serves within call): a worker that stays lit while the developer is
+  // there (T51). Between two messages its process waits on its input, spending nothing; it keeps its gates and its
+  // serves. Djinn puts it out once the developer leaves Djinn alone (Task.ifrit), and a message lights it again, in
+  // the same session and worktree. Done, its work integrates like any task's.
+  TASK_KIND_IFRIT = 3;
+}
+
+// TaskIfrit is where an ifrit stands (TASK_KIND_IFRIT).
+message TaskIfrit {
+  // Working on a turn, listening between two, or out.
+  IfritState state = 1;
+  // When Djinn puts it out if the developer does nothing in Djinn till then: pushed back by each of their actions.
+  // Unset while out.
+  google.protobuf.Timestamp out_time = 2;
+  // When Djinn warns that it goes out soon, before out_time. Unset while out, and before a warning is due.
+  google.protobuf.Timestamp warn_time = 3;
+  // Minutes without the developer before it goes out, 5 to 240, as spawned (--idle-minutes); 0 for this machine's
+  // default: djinn up --ifrit-idle, else the window's settings, else 30.
+  uint32 idle_minutes = 4;
+  // The processes it runs through Djinn (djinn serve run): kept while it is out, to start them again when it is lit
+  // again.
+  repeated Serve serves = 5;
+  // The first lines of its last answer, as its last turn ended; empty before one has.
+  string reply = 6;
+}
+
+// IfritState is where an ifrit stands between the developer's messages.
+enum IfritState {
+  // Not set: not lit yet.
+  IFRIT_STATE_UNSPECIFIED = 0;
+  // A turn of its model runs: it takes a slot, like any worker.
+  IFRIT_STATE_WORKING = 1;
+  // Its turn ended and its process waits on its input: no slot, no token. A message starts a turn.
+  IFRIT_STATE_LISTENING = 2;
+  // Put out (the developer left, or Djinn restarted): its gates, slot and serves given back, its worktree and session
+  // kept. A message lights it again.
+  IFRIT_STATE_OUT = 3;
+}
+
+// Serve is a process an ifrit runs through Djinn (djinn serve run): a dev server, a stack. Djinn starts it in a
+// process group of its own, writes its output to a log, finds the ports it listens on, and stops it when the ifrit
+// goes out, ends or stops.
+message Serve {
+  // Its name in the ifrit, like front or back: unique among its serves, case ignored.
+  string name = 1 [(buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,39}$"];
+  // The command, run through the shell.
+  string command = 2 [(buf.validate.field).string.max_len = 4096];
+  // The folder it runs in: the ifrit's worktree, unless given.
+  string directory = 3 [(buf.validate.field).string.max_len = 4096];
+  // The gate it holds for as long as it runs; empty for none.
+  string gate = 4 [(buf.validate.field).string.max_len = 40];
+  // The command that stops what lives outside its process group, like containers: run first when it stops.
+  string stop = 5 [(buf.validate.field).string.max_len = 4096];
+  // Its process, while it runs; 0 otherwise.
+  int32 pid = 6;
+  // Where it stands.
+  ServeState state = 7;
+  // When it last started.
+  google.protobuf.Timestamp start_time = 8;
+  // The ports it listens on, found or declared.
+  repeated Port ports = 9;
+}
+
+// ServeState is where a serve stands.
+enum ServeState {
+  // Not set.
+  SERVE_STATE_UNSPECIFIED = 0;
+  // Started: its process lives, and the ports it declares do not answer yet.
+  SERVE_STATE_STARTING = 1;
+  // Its process lives, and every port it declares answers.
+  SERVE_STATE_RUNNING = 2;
+  // Stopped by Djinn or by its ifrit: its ifrit went out, ended or stopped, or djinn serve stop.
+  SERVE_STATE_STOPPED = 3;
+  // Its process ended by itself.
+  SERVE_STATE_EXITED = 4;
+}
+
+// Port is a port a serve listens on, shown as a link (http://localhost:5173/).
+message Port {
+  // The port number.
+  uint32 number = 1 [(buf.validate.field).uint32 = {
+    gte: 1
+    lte: 65535
+  }];
+  // Its name, like front or api, as declared; empty for a port found.
+  string label = 2 [(buf.validate.field).string.max_len = 40];
+  // The address it listens on: 127.0.0.1, ::1, 0.0.0.0 or ::.
+  string address = 3 [(buf.validate.field).string.max_len = 64];
+  // Declared with --port (one Docker publishes, which no process of the serve holds), not found.
+  bool declared = 4;
+  // It answered at the last check.
+  bool open = 5;
 }
 
 // Azima is where an azima stands, computed on every read from the tasks of its wish; but for what Djinn records of its
@@ -1481,6 +1579,9 @@ message Question {
   // The move Djinn asked for, set only when Djinn asks the question itself: Djinn acts on the answer by it alone,
   // never by the words of the question. Empty on a worker's or the lead's move question, whose answer is only noted.
   DjinnMove djinn_move = 21;
+  // The task it is about, by identifier, when the lead asks about a worker's work (djinn question ask --about W12):
+  // the window shows it with that task, an ifrit's band first. Empty for a question about no task in particular.
+  string about_task_id = 22;
 }
 
 // DjinnMove is a move Djinn asked the developer for on its own move question, recorded when Djinn asks it.
@@ -1741,6 +1842,9 @@ message QuestionServiceReviseRequest {
   // File holding what is at stake now, in Markdown, read in place of context; a relative path starts from the current
   // directory.
   string context_file = 8 [(buf.validate.field).string.max_len = 4096];
+  // The task of the wish the question is about now, by code (W12) or identifier; the former one when not given, none
+  // when given empty (--about "").
+  optional string about = 9 [(buf.validate.field).string.pattern = "^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$"];
 }
 
 message QuestionServiceReviseResponse {
@@ -1789,6 +1893,12 @@ message QuestionServiceAskRequest {
   // A move only the developer can make: push a tag, open or merge a PR, start a release, check on a Mac or Windows,
   // grant a right, install and restart.
   bool move = 9;
+  // The task of the wish the question is about, by code (W12) or identifier, when you ask about a worker's work: the
+  // window shows it with that task, an ifrit's first.
+  string about = 10 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+  ];
 }
 
 message QuestionServiceAskResponse {
@@ -3805,7 +3915,8 @@ message TaskServiceSpawnRequest {
   // waits for with after.
   string part_of = 15 [(buf.validate.field).string.max_len = 64];
   // What the task is; by default work, for a worker. azima makes an azima (T1, T2…): no worker, no prompt, never
-  // scheduled; work is spawned part of it.
+  // scheduled; work is spawned part of it. ifrit makes an ifrit: an agent that stays lit while you are there, to
+  // iterate with you through the lead (djinn task send), in a project.
   TaskKind kind = 16 [(buf.validate.field).enum.defined_only = true];
   // What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
   // Repeat it, or separate them with commas: --after W1,W2. Give a task what comes before it here, at its spawn.
@@ -3838,6 +3949,15 @@ message TaskServiceSpawnRequest {
   // command, its restart and its done line come from the skill, the prompt and the provider need not be given. The
   // request is found as it starts: the one a task of after opened, else the one open for the wish's branch.
   bool babysit = 22;
+  // For an ifrit (--kind ifrit): minutes without you in Djinn before Djinn puts it out, 5 to 240, as when you go and
+  // test for an hour. By default this machine's: djinn up --ifrit-idle, else the window's settings, else 30.
+  uint32 idle_minutes = 23 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).uint32 = {
+      gte: 5
+      lte: 240
+    }
+  ];
 }
 
 message TaskServiceSpawnResponse {
@@ -4464,6 +4584,132 @@ message TaskServiceTurnCommentsResponse {
   Task task = 1;
   // Whether the task was continued in place (true) or a correction task was spawned (false).
   bool continued = 2;
+}
+
+// The processes an ifrit runs through Djinn, rather than in the background of its shell: a dev server, a stack. Djinn
+// starts each in the ifrit's worktree, in a process group of its own, writes its output to a log, shows the ports it
+// listens on as links, and stops it when the ifrit goes out, ends or stops; it starts them again when the ifrit is lit
+// again. Only an ifrit runs one.
+service ServeService {
+  // Start a serve: the command returns once its process lives, and once each port it declares answers. A serve of the
+  // same name is stopped first. Like a watcher's, its command must be allowed by the project or the wish's allowance.
+  rpc Run(ServeServiceRunRequest) returns (ServeServiceRunResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // List an ifrit's serves: their ports, their state.
+  rpc List(ServeServiceListRequest) returns (ServeServiceListResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Stop a serve: its stop command first, then its process group. It stays in the ifrit's serves, stopped, and does not
+  // start again when the ifrit is lit again.
+  rpc Stop(ServeServiceStopRequest) returns (ServeServiceStopResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Print the end of what a serve wrote, its output and its errors together.
+  rpc Logs(ServeServiceLogsRequest) returns (ServeServiceLogsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message ServeServiceRunRequest {
+  // Its name, like front or back.
+  string name = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,39}$"
+  ];
+  // The command, run through the shell: quote it whole, like "npm run dev".
+  string command = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 4096
+  ];
+  // The ifrit; by default $DJINN_TASK_ID, which Djinn sets for every worker.
+  string task_id = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
+  ];
+  // The folder it runs in; by default the ifrit's worktree.
+  string directory = 4 [(buf.validate.field).string.max_len = 4096];
+  // A gate it holds for as long as it runs, like stack: others wait for it until the ifrit goes out or ends.
+  string gate = 5 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,39}$"
+  ];
+  // A port it listens on, with its name: 8080=api. Repeat it for each. Djinn finds the ports its processes hold by
+  // itself; declare one that Docker publishes, which none of them does.
+  repeated string port = 6 [
+    (buf.validate.field).repeated.max_items = 20,
+    (buf.validate.field).repeated.items.string.pattern = "^[0-9]{1,5}(=[A-Za-z0-9_-]{1,40})?$"
+  ];
+  // The command that stops what lives outside its processes, like containers: run first when it stops, for a minute
+  // at most.
+  string stop = 7 [(buf.validate.field).string.max_len = 4096];
+}
+
+message ServeServiceRunResponse {
+  // The serve, started.
+  Serve serve = 1;
+}
+
+message ServeServiceListRequest {
+  // The ifrit; by default $DJINN_TASK_ID, which Djinn sets for every worker.
+  string task_id = 1 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
+  ];
+}
+
+message ServeServiceListResponse {
+  // Its serves, in the order they were first started.
+  repeated Serve serves = 1;
+}
+
+message ServeServiceStopRequest {
+  // Its name.
+  string name = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,39}$"
+  ];
+  // The ifrit; by default $DJINN_TASK_ID, which Djinn sets for every worker.
+  string task_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
+  ];
+}
+
+message ServeServiceStopResponse {
+  // The serve, stopped.
+  Serve serve = 1;
+}
+
+message ServeServiceLogsRequest {
+  // Its name.
+  string name = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,39}$"
+  ];
+  // The ifrit; by default $DJINN_TASK_ID, which Djinn sets for every worker.
+  string task_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
+  ];
+  // How many of its last lines; by default 100.
+  int32 last = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 10000
+  }];
+}
+
+message ServeServiceLogsResponse {
+  // Its last lines, oldest first.
+  repeated string lines = 1;
 }
 
 // The plan of a wish as a graph of azimas: tasks of kind AZIMA that no worker runs, which work is part of. The store

@@ -714,3 +714,17 @@ func TestWorkerMemoryGuardFlag(t *testing.T) {
 		t.Errorf("runUp with invalid env guard: got %v, want error", err)
 	}
 }
+
+// TestIfritIdleFlag: djinn up --ifrit-idle takes whole minutes from 5m to 4h; none given leaves it to the settings.
+func TestIfritIdleFlag(t *testing.T) {
+	for in, want := range map[string]time.Duration{"": 0, "30m": 30 * time.Minute, "1h30m": 90 * time.Minute, "5m": 5 * time.Minute, "4h": 4 * time.Hour} {
+		if got, err := ifritIdleFlag(in); err != nil || got != want {
+			t.Errorf("--ifrit-idle %q = %v, %v; want %v", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"4m", "4h1m", "30", "30m30s", "half an hour", "-30m"} {
+		if _, err := ifritIdleFlag(in); err == nil || !strings.Contains(err.Error(), "expected whole minutes from 5m to 4h") {
+			t.Errorf("--ifrit-idle %q: %v, want refused", in, err)
+		}
+	}
+}
