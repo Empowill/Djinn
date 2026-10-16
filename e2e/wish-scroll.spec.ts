@@ -105,17 +105,28 @@ for (const engine of ["native", "script"] as const)
     expect(box.y + box.height).toBeLessThan(viewTop);
     const before = await scroller.evaluate((el) => el.scrollTop);
 
-    // Every frame from now on, where the question read is on screen.
-    await read.evaluate((el) => {
-      const w = window as unknown as { tops: number[]; sampling: boolean };
+    // Every frame from now on, where the question read is on screen, and whether the one above is still there.
+    await read.evaluate((el, aboveText) => {
+      const w = window as unknown as {
+        tops: number[];
+        shown: boolean[];
+        sampling: boolean;
+      };
+      const scroller = el.closest(".mission-scroll")!;
       w.tops = [];
+      w.shown = [];
       w.sampling = true;
       const step = () => {
         w.tops.push(el.getBoundingClientRect().top);
+        w.shown.push(
+          [...scroller.querySelectorAll(".question-card h3")].some(
+            (h) => (h as HTMLElement).innerText === aboveText,
+          ),
+        );
         if (w.sampling) requestAnimationFrame(step);
       };
       step();
-    });
+    }, aboveText);
 
     // The first question, closed, is answered out of sight, as from another window: nothing scrolls to it.
     const code = aboveText
@@ -126,14 +137,22 @@ for (const engine of ["native", "script"] as const)
     await expect(cards).toHaveCount(19);
     await expect(read).toHaveClass(/current/);
 
-    const tops = await page.evaluate(async () => {
-      const w = window as unknown as { tops: number[]; sampling: boolean };
-      await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+    // The frames are counted, not timed: answered from the command line, the card can go within a few frames.
+    const { tops, shown } = await page.evaluate(async () => {
+      const w = window as unknown as {
+        tops: number[];
+        shown: boolean[];
+        sampling: boolean;
+      };
+      while (w.shown.filter((s) => !s).length < 10)
+        await new Promise((r) => requestAnimationFrame(() => r(undefined)));
       w.sampling = false;
-      return w.tops;
+      return { tops: w.tops, shown: w.shown };
     });
     const drift = Math.max(...tops.map((top) => Math.abs(top - tops[0])));
-    expect(tops.length).toBeGreaterThan(10);
+    // Sampled with the card above there, then for ten frames without it.
+    expect(shown[0]).toBe(true);
+    expect(shown.filter((s) => !s).length).toBeGreaterThanOrEqual(10);
     expect(drift).toBeLessThanOrEqual(1);
     // The scroller did move: the page above the question read changed, and the view followed it.
     expect(await scroller.evaluate((el) => el.scrollTop)).not.toBe(before);
