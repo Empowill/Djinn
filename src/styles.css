@@ -1493,6 +1493,7 @@ html[data-theme="light"] .wordmark-period {
 }
 /* A window at rest (hidden, or not focused: stillness.ts) pauses what loops: nobody sees it move. */
 html[data-still] .live-dot::after,
+html[data-still] .glance-dot::after,
 html[data-still] .machine *,
 html[data-still] .wave-line,
 html[data-still] .sync-spinner,

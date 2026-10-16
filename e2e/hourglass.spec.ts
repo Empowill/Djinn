@@ -137,7 +137,11 @@ test("the Hourglass reads its measures while it shows, and leaving it stops them
   try {
     await page.goto(process.env.DJINN_URL!);
     await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
-    await expect(page.locator(".flight-plan .live-dot").first()).toBeVisible({
+    await expect(
+      page
+        .locator(".flight-plan .glance-wide .glance-row .glance-dot.run")
+        .first(),
+    ).toBeVisible({
       timeout: 15_000,
     });
     // The menu: the Hourglass at the bottom of the side panel, right above the profile.
