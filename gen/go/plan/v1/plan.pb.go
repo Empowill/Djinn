@@ -4925,7 +4925,12 @@ type Task struct {
 	// request, and the line that ends the watcher. Unset for any other task.
 	Babysit *TaskBabysit `protobuf:"bytes,68,opt,name=babysit,proto3" json:"babysit,omitempty"`
 	// For an ifrit (TASK_KIND_IFRIT): where it stands, its timers and its serves. Unset for any other task.
-	Ifrit         *TaskIfrit `protobuf:"bytes,69,opt,name=ifrit,proto3" json:"ifrit,omitempty"`
+	Ifrit *TaskIfrit `protobuf:"bytes,69,opt,name=ifrit,proto3" json:"ifrit,omitempty"`
+	// The lead marked the task urgent (djinn task spawn --urgent, djinn task update --urgent), to unblock its wish: while
+	// planned, it goes before every other planned task, takes a slot even on a full machine (as djinn task start does)
+	// and is not held by its integration branch's red push checks. At most one task of a wish is urgent while it is to
+	// run or runs (dispatch.Urgent).
+	Urgent        bool `protobuf:"varint,70,opt,name=urgent,proto3" json:"urgent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5441,6 +5446,13 @@ func (x *Task) GetIfrit() *TaskIfrit {
 		return x.Ifrit
 	}
 	return nil
+}
+
+func (x *Task) GetUrgent() bool {
+	if x != nil {
+		return x.Urgent
+	}
+	return false
 }
 
 // TaskBabysit is the pull or merge request a watcher babysits.
@@ -17399,7 +17411,11 @@ type TaskServiceSpawnRequest struct {
 	Babysit bool `protobuf:"varint,22,opt,name=babysit,proto3" json:"babysit,omitempty"`
 	// For an ifrit (--kind ifrit): minutes without you in Djinn before Djinn puts it out, 5 to 240, as when you go and
 	// test for an hour. By default this machine's: djinn up --ifrit-idle, else the window's settings, else 30.
-	IdleMinutes   uint32 `protobuf:"varint,23,opt,name=idle_minutes,json=idleMinutes,proto3" json:"idle_minutes,omitempty"`
+	IdleMinutes uint32 `protobuf:"varint,23,opt,name=idle_minutes,json=idleMinutes,proto3" json:"idle_minutes,omitempty"`
+	// Mark the task urgent, to unblock the wish (a repair of its red integration branch, a task a chain waits for): it
+	// goes before the wish's other planned tasks, takes a slot even on a full machine, and starts while the push checks
+	// are red. One urgent task per wish at a time: refused, naming it, while another is to run or runs.
+	Urgent        bool `protobuf:"varint,24,opt,name=urgent,proto3" json:"urgent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -17595,6 +17611,13 @@ func (x *TaskServiceSpawnRequest) GetIdleMinutes() uint32 {
 	return 0
 }
 
+func (x *TaskServiceSpawnRequest) GetUrgent() bool {
+	if x != nil {
+		return x.Urgent
+	}
+	return false
+}
+
 type TaskServiceSpawnResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The task: running, or waiting with its reason.
@@ -17662,8 +17685,8 @@ type TaskServiceListRequest struct {
 	PageToken string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	// Only the failed tasks that wait for the lead.
 	Failed bool `protobuf:"varint,5,opt,name=failed,proto3" json:"failed,omitempty"`
-	// Each task in a few fields: its code, title, status, kind, azima, what it waits for and its times; no prompt, no
-	// runs, no resources. Where the tasks stand, in a few lines each.
+	// Each task in a few fields: its code, title, status, kind, azima, what it waits for, its times and its urgent mark;
+	// no prompt, no runs, no resources. Where the tasks stand, in a few lines each.
 	Short         bool `protobuf:"varint,6,opt,name=short,proto3" json:"short,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -20093,7 +20116,10 @@ type TaskServiceUpdateRequest struct {
 	// main it was cut from (their merge base); one only the remote holds is made from the remote's; one that does not
 	// exist is cut from main under that name. Refused on a work task, while a merge runs into the azima's branch, and
 	// when the branch here has diverged from the remote's.
-	Branch        *string `protobuf:"bytes,13,opt,name=branch,proto3,oneof" json:"branch,omitempty"`
+	Branch *string `protobuf:"bytes,13,opt,name=branch,proto3,oneof" json:"branch,omitempty"`
+	// Mark the task urgent (as djinn task spawn --urgent), or no longer with --urgent=false. Refused on an azima, a
+	// watcher, a task that has ended, and while another task of the wish is urgent, which the refusal names.
+	Urgent        *bool `protobuf:"varint,14,opt,name=urgent,proto3,oneof" json:"urgent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -20217,6 +20243,13 @@ func (x *TaskServiceUpdateRequest) GetBranch() string {
 		return *x.Branch
 	}
 	return ""
+}
+
+func (x *TaskServiceUpdateRequest) GetUrgent() bool {
+	if x != nil && x.Urgent != nil {
+		return *x.Urgent
+	}
+	return false
 }
 
 type TaskServiceUpdateResponse struct {
@@ -21680,7 +21713,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
 	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\x12'\n" +
-	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\xbf\x15\n" +
+	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\xd7\x15\n" +
 	"\x04Task\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1d\n" +
@@ -21763,7 +21796,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\fmachine_wait\x18B \x01(\bR\vmachineWait\x12/\n" +
 	"\arefused\x18C \x01(\v2\x15.plan.v1.TaskRefusalsR\arefused\x12.\n" +
 	"\ababysit\x18D \x01(\v2\x14.plan.v1.TaskBabysitR\ababysit\x12(\n" +
-	"\x05ifrit\x18E \x01(\v2\x12.plan.v1.TaskIfritR\x05ifrit:\x13\xd2\xf3\x18\x0f\n" +
+	"\x05ifrit\x18E \x01(\v2\x12.plan.v1.TaskIfritR\x05ifrit\x12\x16\n" +
+	"\x06urgent\x18F \x01(\bR\x06urgent:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"\x87\x01\n" +
 	"\vTaskBabysit\x12\x10\n" +
@@ -22660,7 +22694,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16MarkServiceListRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"@\n" +
 	"\x17MarkServiceListResponse\x12%\n" +
-	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\xf9\a\n" +
+	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\x91\b\n" +
 	"\x17TaskServiceSpawnRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12 \n" +
 	"\x05title\x18\x02 \x01(\tB\n" +
@@ -22689,7 +22723,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vdescription\x18\x15 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\vdescription\x12\x18\n" +
 	"\ababysit\x18\x16 \x01(\bR\ababysit\x120\n" +
 	"\fidle_minutes\x18\x17 \x01(\rB\r\xbaH\n" +
-	"\xd8\x01\x01*\x05\x18\xf0\x01(\x05R\vidleMinutes\"Q\n" +
+	"\xd8\x01\x01*\x05\x18\xf0\x01(\x05R\vidleMinutes\x12\x16\n" +
+	"\x06urgent\x18\x18 \x01(\bR\x06urgent\"Q\n" +
 	"\x18TaskServiceSpawnResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\x12\x12\n" +
 	"\x04note\x18\x02 \x01(\tR\x04note\"\xea\x01\n" +
@@ -22853,7 +22888,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x02by\x18\x03 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02byB\t\n" +
 	"\a_prompt\"@\n" +
 	"\x1bTaskServiceContinueResponse\x12!\n" +
-	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xc1\x06\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xe9\x06\n" +
 	"\x18TaskServiceUpdateRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12%\n" +
 	"\x05title\x18\x02 \x01(\tB\n" +
@@ -22870,7 +22905,9 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vintegration\x18\v \x01(\tB\x14\xbaH\x11r\x0fR\x04noneR\apendingH\aR\vintegration\x88\x01\x01\x12\x19\n" +
 	"\x05force\x18\f \x01(\bH\bR\x05force\x88\x01\x01\x12'\n" +
 	"\x06branch\x18\r \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xfa\x01H\tR\x06branch\x88\x01\x01B\b\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xfa\x01H\tR\x06branch\x88\x01\x01\x12\x1b\n" +
+	"\x06urgent\x18\x0e \x01(\bH\n" +
+	"R\x06urgent\x88\x01\x01B\b\n" +
 	"\x06_titleB\t\n" +
 	"\a_promptB\v\n" +
 	"\t_providerB\b\n" +
@@ -22881,7 +22918,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0f_max_budget_usdB\x0e\n" +
 	"\f_integrationB\b\n" +
 	"\x06_forceB\t\n" +
-	"\a_branch\">\n" +
+	"\a_branchB\t\n" +
+	"\a_urgent\">\n" +
 	"\x19TaskServiceUpdateResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"_\n" +
 	"\x1aTaskServiceDescribeRequest\x12\"\n" +

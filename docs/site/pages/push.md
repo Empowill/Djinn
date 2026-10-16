@@ -91,7 +91,8 @@ When a push check is red, the push is **held**:
 - The top of the wish says **The push is held: its checks are red**, and the branch's line shows the cross, with the
   check that failed.
 - New tasks of the wish in that project wait, saying the branch must be green again first: nothing more piles onto a
-  red branch. Corrections and investigators still start.
+  red branch. Corrections and investigators still start, and so does an **urgent** task the Djinn marks to repair the
+  branch once Djinn's corrections gave up on it ([Task and worker](#task-and-worker)).
 - Djinn runs the push checks again when new work is committed, or when the branch moves, even by a push of yours.
   Green, the hold lifts and the push goes on.
 
