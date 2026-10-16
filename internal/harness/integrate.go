@@ -262,7 +262,7 @@ func (h *Harness) integratePass(ctx context.Context) {
 	var merged []*mergedBatch
 	for _, t := range waiting {
 		if ctx.Err() != nil {
-			return
+			break // Stopping: what is merged already is still told.
 		}
 		wish, err1 := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId())
 		project, err2 := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
@@ -1597,8 +1597,9 @@ func tail(out string) string {
 }
 
 // tellLead hands the lead of wishID an event of kind about code, in line (toLead).
+// What it tells already happened: djinn up stopping does not cancel the telling, or the lead never learns it.
 func (h *Harness) tellLead(ctx context.Context, kind planv1.LeadEventKind, wishID, code, line string) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	if err := h.toLead(ctx, kind, wishID, code, line); err != nil && !errors.Is(err, plan.ErrNoLead) {
 		logx.L().Error("tell the lead", "wish", wishID, "task", code, "kind", kind.String(), "err", err)
