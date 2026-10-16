@@ -21,7 +21,7 @@ tasks:
       - go tool buf build --exclude-imports --as-file-descriptor-set -o gen/djinn.binpb
 
   docs:
-    desc: "Build the documentation site into bin/docs, to open offline (bin/docs/index.html): docs/site, its concepts and its Command line tab, filled in from djinn's command tree. djinn up serves the same at /docs/"
+    desc: "Build the Grimoire, the documentation site, into bin/docs, to open offline (bin/docs/index.html): docs/site, its pages from docs/site/pages and its Command line, filled in from djinn's command tree. djinn up serves the same at /docs/"
     cmds:
       - go run ./tools/docsite bin/docs
 

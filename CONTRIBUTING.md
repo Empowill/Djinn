@@ -166,9 +166,12 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   - Interface: [ESLint](eslint.config.mjs) (typescript-eslint, @eslint-react, the rules of hooks); `tsc` checks the
     types, Prettier owns the layout.
 - `go tool task gen`: code from the protos, and the descriptors the command line embeds.
-- `go tool task docs`: the documentation site, its concepts and its command line, into `bin/docs` (open
-  `bin/docs/index.html`, offline). Its sources are in [`docs/site`](docs/site); `djinn up` serves it at `/docs/`, and
-  the settings open it. The Command line tab has nothing to regenerate by hand: `djinn up` and `go tool task docs`
+- `go tool task docs`: the Grimoire, Djinn's documentation, into `bin/docs` (open `bin/docs/index.html`, offline):
+  its splash page, then its book, a navigation on the left with Introduction first, a page per concept, and the
+  command line. Its sources are in [`docs/site`](docs/site): one Markdown file per page in `docs/site/pages`, in
+  English and with no code (Djinn is used without code), each listed in `Nav` (`internal/docsite/grimoire.go`) with
+  its title's locale key; `TestGrimoire` fails on a page missing from either. `djinn up` serves it at `/docs/`, and
+  the settings open it, its navigation in the window's language. The Command line tab has nothing to regenerate by hand: `djinn up` and `go tool task docs`
   fill it from the command tree djinn is built from (`internal/cli`), so a method added to a proto, or a flag, is
   there at once. A command written by hand in `cmd/djinn` takes its entry in `cli.Builtins`, which is its `--help`
   too; `TestEveryCommandIsDocumented` fails on one that runs without it.

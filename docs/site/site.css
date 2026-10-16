@@ -312,56 +312,33 @@ h3 {
   letter-spacing: 0.06em;
 }
 
-.tabs {
-  position: relative;
-  display: flex;
-  gap: 4px;
-  margin-left: auto;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel);
-}
-
-.tabs button {
-  position: relative;
-  z-index: 1;
-  border: 0;
-  background: none;
-  padding: 8px 20px;
-  border-radius: 999px;
-  color: var(--ink-soft);
-  font: 500 0.92rem/1 var(--sans);
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  transition: color 0.3s var(--ease);
-}
-
-.tabs button[aria-selected="true"] {
-  color: #1a1305;
-}
-
-.tabs button:focus-visible,
+.bar-open:focus-visible,
 .theme-toggle:focus-visible,
 .button:focus-visible {
   outline: 2px solid var(--brass);
   outline-offset: 3px;
 }
 
-.tab-ink {
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  left: var(--ink-left, 4px);
-  width: var(--ink-width, 0);
+/* The way into the book, on the splash; the book has its navigation. */
+.bar-open {
+  margin-left: auto;
+  padding: 8px 18px;
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
-  background: linear-gradient(180deg, var(--brass-200), var(--brass-400) 60%, var(--brass-500));
-  box-shadow:
-    0 0 18px var(--glow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  transition:
-    left 0.45s var(--ease),
-    width 0.45s var(--ease);
+  background: var(--panel);
+  color: var(--brass-text);
+  font: 500 0.92rem/1 var(--sans);
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  transition: background-color 0.3s var(--ease);
+}
+
+.bar-open:hover {
+  background: var(--smoke-a);
+}
+
+.reading .bar-open {
+  visibility: hidden;
 }
 
 .theme-toggle {
@@ -400,16 +377,15 @@ h3 {
   transform: rotate(-90deg) scale(0.5);
 }
 
-/* The concepts. */
-.panel {
-  display: block;
+/* The splash page. */
+/* Hidden wins over the display of the book's pages. */
+.splash[hidden],
+.book[hidden],
+.page[hidden] {
+  display: none !important;
 }
 
-.panel[hidden] {
-  display: none;
-}
-
-#concepts {
+.splash {
   max-width: 1180px;
   margin: 0 auto;
   padding: 0 clamp(20px, 5vw, 56px);
@@ -901,18 +877,6 @@ h3 {
   color: var(--brass-text);
 }
 
-.soon {
-  margin-left: 8px;
-  padding: 3px 9px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  font: 600 0.66rem/1 var(--sans);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  vertical-align: middle;
-  color: var(--ink-faint);
-}
-
 .chip {
   display: inline-block;
   padding: 2px 12px;
@@ -1054,6 +1018,15 @@ h3 {
   font-size: 0.88rem;
 }
 
+.word h3 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.word h3 a:hover {
+  color: var(--brass-text);
+}
+
 .foot p {
   margin: 0;
 }
@@ -1070,6 +1043,276 @@ h3 {
 .js .reveal.seen {
   opacity: 1;
   transform: none;
+}
+
+/* The book: its navigation on the left, the page beside it, what is on the page on the right where the window is
+   wide. Rounded elements take a border on every side or none. */
+.book {
+  display: grid;
+  grid-template-columns: 272px minmax(0, 1fr);
+  max-width: 1480px;
+  margin: 0 auto;
+}
+
+.book-nav {
+  position: sticky;
+  top: var(--bar-height);
+  align-self: start;
+  max-height: calc(100vh - var(--bar-height));
+  overflow-y: auto;
+  padding: 32px 20px 48px clamp(16px, 3vw, 32px);
+  font-size: 0.93rem;
+}
+
+.nav-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0 0 26px;
+  font: 600 1.7rem/1 var(--serif);
+}
+
+.nav-sub {
+  font: 600 0.66rem/1 var(--sans);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.nav-group {
+  margin-bottom: 24px;
+}
+
+.nav-heading {
+  margin: 0 0 8px;
+  padding-left: 13px;
+  font: 600 0.68rem/1.2 var(--sans);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--brass-text);
+}
+
+.nav-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.book-nav a {
+  display: block;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--ink-soft);
+  line-height: 1.35;
+  text-decoration: none;
+  transition:
+    background-color 0.2s var(--ease),
+    color 0.2s var(--ease);
+}
+
+.book-nav a:hover {
+  color: var(--ink);
+  background: var(--smoke-a);
+}
+
+.book-nav a[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 600;
+  background: var(--panel-solid);
+  border-color: var(--line-strong);
+}
+
+.book-nav a:focus-visible,
+.page-toc a:focus-visible,
+.turn:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+}
+
+.page:not(.cli) {
+  display: grid;
+  grid-template-columns: minmax(0, 760px) 210px;
+  gap: 56px;
+  padding: 44px clamp(20px, 4vw, 56px) 72px;
+}
+
+.prose {
+  font-size: 1.02rem;
+}
+
+.prose h1 {
+  margin: 0 0 22px;
+  font-size: clamp(2.6rem, 4.4vw, 3.4rem);
+}
+
+.prose h2 {
+  margin: 2.1em 0 0.5em;
+  font-size: 2rem;
+}
+
+.prose h3 {
+  margin: 1.7em 0 0.4em;
+  font-size: 1.4rem;
+}
+
+.prose p,
+.prose li {
+  color: var(--ink-soft);
+}
+
+.prose h1 + p {
+  font-size: 1.14rem;
+  color: var(--ink);
+}
+
+.prose strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.prose em {
+  color: var(--ink);
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.3em;
+}
+
+.prose li {
+  margin: 0.35em 0;
+}
+
+.prose li::marker {
+  color: var(--brass);
+}
+
+.prose blockquote {
+  margin: 1.5em 0;
+  padding: 14px 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--smoke-a);
+}
+
+.prose blockquote p {
+  margin: 0;
+  color: var(--ink);
+}
+
+.prose blockquote p + p {
+  margin-top: 0.6em;
+}
+
+.prose table {
+  width: 100%;
+  margin: 1.4em 0;
+  border-collapse: collapse;
+  font-size: 0.94rem;
+}
+
+.prose th,
+.prose td {
+  padding: 9px 12px 9px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th:first-child,
+.prose td:first-child {
+  min-width: 8.5em;
+}
+
+.prose th {
+  color: var(--brass-text);
+  font-weight: 600;
+}
+
+.prose td {
+  color: var(--ink-soft);
+}
+
+.prose hr {
+  margin: 2.4em 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.page-turn {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 64px;
+}
+
+.turn {
+  display: grid;
+  gap: 6px;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-solid);
+  color: var(--ink);
+  text-decoration: none;
+  transition: border-color 0.2s var(--ease);
+}
+
+.turn:hover {
+  border-color: var(--line-strong);
+}
+
+.turn span {
+  font: 600 0.66rem/1 var(--sans);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.turn strong {
+  font: 600 1.35rem/1.15 var(--serif);
+}
+
+.turn.next {
+  grid-column: 2;
+  text-align: right;
+}
+
+.page-toc {
+  position: sticky;
+  top: calc(var(--bar-height) + 44px);
+  align-self: start;
+  max-height: calc(100vh - var(--bar-height) - 64px);
+  overflow-y: auto;
+  font-size: 0.86rem;
+}
+
+.page-toc p {
+  margin: 0 0 10px;
+  font: 600 0.66rem/1 var(--sans);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--brass-text);
+}
+
+.page-toc ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.page-toc a {
+  display: block;
+  padding: 4px 0;
+  color: var(--ink-soft);
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.page-toc a:hover {
+  color: var(--brass-text);
 }
 
 /* The command line: plain HTML, a table of contents beside the commands, nothing that moves. */
@@ -1297,6 +1540,15 @@ h3 {
   color: var(--ink-soft);
 }
 
+@media (max-width: 1240px) {
+  .page:not(.cli) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .page-toc {
+    display: none;
+  }
+}
+
 @media (max-width: 1080px) {
   .limits {
     grid-template-columns: repeat(2, 1fr);
@@ -1327,9 +1579,22 @@ h3 {
   .cli-reference {
     grid-template-columns: 1fr;
   }
-  .cli-toc {
+  .cli-toc,
+  .book-nav {
     position: static;
     max-height: none;
+  }
+  .book {
+    grid-template-columns: 1fr;
+  }
+  .book-nav {
+    padding-bottom: 0;
+  }
+  .page-turn {
+    grid-template-columns: 1fr;
+  }
+  .turn.next {
+    grid-column: auto;
   }
   .hero {
     min-height: 0;
