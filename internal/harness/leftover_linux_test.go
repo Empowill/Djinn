@@ -20,9 +20,10 @@ import (
 
 // leftoverClaude is a claude that starts two long jobs before it plays the fake provider, as an agent's shell does: a
 // job in the background, in its process group (a dev server started with &), and a daemon, in a session of its own
-// (what setsid or a double fork leave). Each writes its PID to a file of $DJINN_LEFT once it runs.
+// (what setsid or a double fork leave). Each writes its PID to a file of $DJINN_LEFT once it runs; the job writes its
+// environment first, to job.env.
 const leftoverClaude = `#!/bin/sh
-sh -c 'echo $$ > "$0.new" && mv "$0.new" "$0" && exec sleep 600' "$DJINN_LEFT/job" </dev/null >/dev/null 2>&1 &
+sh -c 'env > "$0.env" && echo $$ > "$0.new" && mv "$0.new" "$0" && exec sleep 600' "$DJINN_LEFT/job" </dev/null >/dev/null 2>&1 &
 setsid sh -c 'echo $$ > "$0.new" && mv "$0.new" "$0" && exec sleep 600' "$DJINN_LEFT/daemon" </dev/null >/dev/null 2>&1 &
 exec "$DJINN_FAKE_BIN" "$@"
 `
@@ -71,13 +72,13 @@ func TestTaskEndStopsWhatItsWorkerStarted(t *testing.T) {
 					&planv1.TaskServiceSpawnRequest{Provider: planv1.Provider_PROVIDER_CLAUDE})
 				job, daemon := leftoverPID(t, leftovers, "job"), leftoverPID(t, leftovers, "daemon")
 				// They run as a claude's background run does, its wait after the last turn unbounded (W80): the
-				// task's end bounds it. Its environment reads empty while it execs sleep.
-				var environ []byte
-				waitFor(t, "the job's environment", func() bool {
-					environ, _ = os.ReadFile("/proc/" + strconv.Itoa(job.pid) + "/environ")
-					return len(environ) > 0
-				})
-				if !slices.Contains(strings.Split(string(environ), "\x00"), claudeBackgroundWait) {
+				// task's end bounds it. The job wrote its environment before its PID: a done or failed task may
+				// have stopped it already, and its /proc/PID/environ is then gone (W135).
+				environ, err := os.ReadFile(filepath.Join(leftovers, "job.env"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !slices.Contains(strings.Split(string(environ), "\n"), claudeBackgroundWait) {
 					t.Errorf("the job runs without %s", claudeBackgroundWait)
 				}
 
