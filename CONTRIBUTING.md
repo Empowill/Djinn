@@ -264,7 +264,9 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   http: `--browser`, Windows), opens the app on it from a browser, a chat, a terminal or a Markdown file; so does
   `djinn://wish/<id>`. The system runs `djinn open <link>`, which hands it to the running Djinn, starting it when none
   runs; the window shows the wish's *Tilasms* tab on that tilasm, or says it does not know the link. `djinn tilasm
-  open L01` does the same. Inside the app, such a link in a block, a question, a decision or the brief opens in place.
+  open L01` does the same. Inside the app, such a link in a block, a question, a decision or the brief opens in place;
+  a tilasm's link in a question opens it full size over the view, which stays as it was, and closing it returns to
+  the link.
   The scheme is registered without sudo: on Linux `go tool task install` adds it to the menu entry
   (`MimeType=x-scheme-handler/djinn`, `xdg-mime default`); on macOS `Djinn.app` declares it (`CFBundleURLTypes`);
   on Windows the install, or else `djinn up`, writes it in the user's registry (`HKCU\Software\Classes\djinn`).

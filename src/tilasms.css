@@ -143,7 +143,18 @@
 .main-shell:has(.tilasm-view.full) > .wish-view {
   position: static;
 }
-.tilasms.has-open .tilasm-view.full > .tilasm-frame {
+/* Over a view, as a link in a question opens it: the same frame, full size from the start, the section itself laid
+   over the main shell, so the view underneath keeps its place, its layout and its scroll. */
+.tilasm-view.over {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.tilasms.has-open .tilasm-view.full > .tilasm-frame,
+.tilasm-view.over > .tilasm-frame {
   position: absolute;
   inset: 0;
   z-index: 30;

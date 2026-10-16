@@ -213,7 +213,13 @@ export function QuestionColumn({
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
       const root = column.current;
-      if (!root || document.querySelector(".modal-backdrop")) return;
+      // A dialog, or a tilasm opened over the page (which leaves the column inert), keeps the keys.
+      if (
+        !root ||
+        root.closest("[inert]") ||
+        document.querySelector(".modal-backdrop")
+      )
+        return;
       const target = e.target instanceof Node ? e.target : null;
       const inside = !!target && root.contains(target);
       const nowhere =

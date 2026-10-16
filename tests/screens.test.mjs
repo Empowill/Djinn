@@ -113,7 +113,12 @@ export {
   getUsageUnit,
   SpentLine,
 } from "@/src/usage.tsx";
-export { TilasmList, newestTilasm } from "@/src/tilasms.tsx";
+export { TilasmFrame, TilasmList, newestTilasm } from "@/src/tilasms.tsx";
+export {
+  TilasmOver,
+  TilasmOverContext,
+  giveBack,
+} from "@/src/tilasm-over.tsx";
 export { AgentBlocks } from "@/src/agent-blocks.tsx";
 export { MarkdownBody } from "@/src/markdown-body.tsx";
 export { CopyButton } from "@/src/copy-command.tsx";
@@ -4215,11 +4220,12 @@ test("the open tilasm goes full size and back, the same tilasm open, its frame n
     onExport() {},
     onDrop() {},
   });
-  const frame = () => view.all("iframe")[0];
-  const before = frame();
+  const shown = () => view.one(s.TilasmFrame);
+  // The frame as it renders, from what the tab gives it.
+  const frame = (props = shown()) => live(s.TilasmFrame, props);
+  const before = frame().all("iframe")[0];
   // Not full size: the button that enters it says so in words, with no tooltip; nothing leaves it.
-  const enter = view.one("tilasm-full-enter");
-  assert.equal(enter.title, undefined);
+  assert.equal(frame().one("tilasm-full-enter").title, undefined);
   assert.match(
     view.html(),
     /class="text-button tilasm-full-enter">.*Full size<\/button>/,
@@ -4227,28 +4233,39 @@ test("the open tilasm goes full size and back, the same tilasm open, its frame n
   assert.match(view.html(), /<section class="tilasm-view"/);
   assert.doesNotMatch(view.html(), /tilasm-full-leave/);
 
-  enter.onClick();
+  // The enter button asks the tab for full size.
+  let asked;
+  frame({ ...shown(), onFull: (on) => (asked = on) })
+    .one("tilasm-full-enter")
+    .onClick();
+  assert.equal(asked, true);
+  shown().onFull(true);
   const html = view.html();
   assert.match(html, /<section class="tilasm-view full"/);
   // The same frame, at the same place: React keeps it, so its page does not load again.
-  assert.equal(frame().key, before.key);
-  assert.equal(frame().props.className, "tilasm-frame");
-  assert.equal(frame().props.src, before.props.src);
-  assert.equal(frame().props.sandbox, "allow-scripts");
+  const iframe = frame().all("iframe")[0];
+  assert.equal(iframe.key, before.key);
+  assert.equal(iframe.props.className, "tilasm-frame");
+  assert.equal(iframe.props.src, before.props.src);
+  assert.equal(iframe.props.sandbox, "allow-scripts");
   assert.doesNotMatch(html.match(/<iframe[^>]*>/)[0], /allow-same-origin/);
   // The room it left keeps the page's place; a small button leaves, named, with Escape as its key, and no tooltip.
   assert.match(
     html,
     /<\/iframe><div class="tilasm-frame-room"><\/div><button type="button" class="icon-button tilasm-full-leave" aria-label="Leave full size" aria-keyshortcuts="Escape">/,
   );
-  assert.equal(view.one("tilasm-full-leave").title, undefined);
+  assert.equal(frame().one("tilasm-full-leave").title, undefined);
   assert.match(html, /tilasm-row open/);
 
-  view.one("tilasm-full-leave").onClick();
+  frame({ ...shown(), onFull: (on) => (asked = on) })
+    .one("tilasm-full-leave")
+    .onClick();
+  assert.equal(asked, false);
+  shown().onFull(false);
   const back = view.html();
   assert.match(back, /<section class="tilasm-view"/);
   assert.doesNotMatch(back, /tilasm-full-leave/);
-  assert.equal(frame().key, before.key);
+  assert.equal(frame().all("iframe")[0].key, before.key);
   // The same tilasm open, the same row marked: leaving full size opens and closes nothing.
   assert.deepEqual(opened, []);
   assert.deepEqual(
@@ -4260,8 +4277,8 @@ test("the open tilasm goes full size and back, the same tilasm open, its frame n
   );
 
   // Closing the tilasm while full ends full size: the next one opens in the page, and so does this one again.
-  view.one("tilasm-full-enter").onClick();
-  view
+  shown().onFull(true);
+  frame()
     .all("icon-button")
     .find((button) => button.props["aria-label"] === "Close the tilasm")
     .props.onClick();
@@ -4270,6 +4287,385 @@ test("the open tilasm goes full size and back, the same tilasm open, its frame n
   assert.match(view.html(), /<section class="tilasm-view"/);
   view.update({ open: model });
   assert.match(view.html(), /<section class="tilasm-view"/);
+});
+
+test("a tilasm over a view is the same frame, full size from the start, with no head and a button that closes it", () => {
+  const model = tilasm("01a1223a-ae45-728f-8c37-c005eee91edb", "L01", "Model");
+  let closed = 0;
+  const props = {
+    tilasm: model,
+    full: true,
+    over: true,
+    onFull() {},
+    onClose: () => closed++,
+  };
+  const html = s.renderToStaticMarkup(h(s.TilasmFrame, props));
+  // Laid over the view, it takes no room in it: no head, no room left in the page.
+  assert.match(
+    html,
+    /^<section class="tilasm-view over" aria-label="Model"><iframe/,
+  );
+  assert.doesNotMatch(
+    html,
+    /tilasm-view-head|tilasm-frame-room|tilasm-full-enter/,
+  );
+  // The tab's frame: scripts only, at the tilasm's address.
+  const frame = html.match(/<iframe[^>]*>/)[0];
+  assert.match(frame, /class="tilasm-frame"/);
+  assert.match(frame, /src="\/tilasm\/01a1223a-ae45-728f-8c37-c005eee91edb\/"/);
+  assert.match(frame, /sandbox="allow-scripts"/);
+  assert.doesNotMatch(frame, /allow-same-origin/);
+  assert.match(
+    html,
+    /<button type="button" class="icon-button tilasm-full-leave" aria-label="Close the tilasm" aria-keyshortcuts="Escape"><svg[^>]*lucide-x/,
+  );
+  live(s.TilasmFrame, props).one("tilasm-full-leave").onClick();
+  assert.equal(closed, 1);
+});
+
+test("a tilasm link in a question opens over the view; elsewhere it opens its wish's tab", () => {
+  const href = "djinn://tilasm/01a1223a-ae45-728f-8c37-c005eee91edb";
+  const asked = [];
+  const view = live(s.Link, { href, children: "the diagram" });
+  const click = (inQuestion) => {
+    const anchor = {
+      closest: (sel) => (sel === ".question-card" && inQuestion ? {} : null),
+    };
+    let stopped = false;
+    view.one("djinn-link").onClick({
+      preventDefault() {},
+      stopPropagation: () => (stopped = true),
+      currentTarget: anchor,
+    });
+    return { anchor, stopped };
+  };
+  // Without the window around (no TilasmOver), nothing opens over.
+  assert.equal(click(true).stopped, true);
+  s.TilasmOverContext._currentValue = (link, from) => asked.push([link, from]);
+  try {
+    const { anchor, stopped } = click(true);
+    assert.equal(stopped, true);
+    assert.deepEqual(asked, [[href, anchor]]);
+    // Out of a question, the link does as before: nothing opens over.
+    click(false);
+    assert.equal(asked.length, 1);
+  } finally {
+    s.TilasmOverContext._currentValue = undefined;
+  }
+});
+
+test("closing gives the focus back to the link, else the same link drawn again in its question, else the question, never scrolling", () => {
+  const href = "djinn://tilasm/01a1223a-ae45-728f-8c37-c005eee91edb";
+  const focused = [];
+  const el = (name, extra = {}) => ({
+    name,
+    isConnected: true,
+    focus: (options) => focused.push([name, options]),
+    ...extra,
+  });
+  const link = el("link");
+  const again = el("again", { getAttribute: () => href });
+  const other = el("other", { getAttribute: () => "djinn://wish/x" });
+  let links = [other, again];
+  const question = el("question", { querySelectorAll: () => links });
+  const doc = {
+    getElementById: (id) => (id === "question-q1" ? question : null),
+  };
+  const back = { link, href, question: "question-q1" };
+  assert.equal(s.giveBack(back, doc), link);
+  // The link drawn again: the same one in its question takes the focus; none there, the question.
+  link.isConnected = false;
+  assert.equal(s.giveBack(back, doc), again);
+  links = [other];
+  assert.equal(s.giveBack(back, doc), question);
+  // The question gone too: nothing takes it.
+  assert.equal(s.giveBack({ ...back, question: "question-q2" }, doc), null);
+  assert.deepEqual(focused, [
+    ["link", { preventScroll: true }],
+    ["again", { preventScroll: true }],
+    ["question", { preventScroll: true }],
+  ]);
+});
+
+test("a tilasm opened from a question covers the view full size, which stays mounted; closing lands back on the link, focus and scroll kept", async () => {
+  const container = setupMockDom();
+  const doc = globalThis.document;
+  // What the frame, its cover and the focus need of a DOM, on the test's own.
+  const proto = Object.getPrototypeOf(container);
+  const classes = (el) => String(el.attributes?.class ?? "").split(" ");
+  const matches = (el, selectors) =>
+    el.nodeType === 1 &&
+    selectors.split(",").some((one) => {
+      const m =
+        /^([a-z]*)((?:\.[\w-]+)*)(?:\[([\w-]+)(?:="([^"]*)")?\])?$/i.exec(
+          one.trim(),
+        );
+      if (!m) throw new Error(`selector ${one}`);
+      const [, tag, cls, attr, value] = m;
+      if (tag && el.nodeName !== tag.toUpperCase()) return false;
+      if (
+        cls &&
+        !cls
+          .slice(1)
+          .split(".")
+          .every((c) => classes(el).includes(c))
+      )
+        return false;
+      if (attr === "inert") return el.inert === true;
+      if (attr)
+        return value === undefined
+          ? attr in el.attributes
+          : el.attributes[attr] === value;
+      return true;
+    });
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const focused = [];
+  Object.defineProperties(proto, {
+    parentElement: {
+      configurable: true,
+      get() {
+        return this.parentNode?.nodeType === 1 ? this.parentNode : null;
+      },
+    },
+    isConnected: {
+      configurable: true,
+      get() {
+        return doc.documentElement.contains(this);
+      },
+    },
+    id: {
+      configurable: true,
+      get() {
+        return this.attributes.id ?? "";
+      },
+    },
+  });
+  Object.assign(proto, {
+    closest(selectors) {
+      if (matches(this, selectors)) return this;
+      return this.parentNode?.nodeType === 1
+        ? this.parentNode.closest(selectors)
+        : null;
+    },
+    contains(node) {
+      for (let at = node; at; at = at.parentNode) if (at === this) return true;
+      return false;
+    },
+    querySelectorAll(selectors) {
+      return below(this).filter((el) => matches(el, selectors));
+    },
+    getAttribute(name) {
+      return this.attributes[name] ?? null;
+    },
+    focus(options) {
+      if (this.closest("[inert]")) return;
+      doc.activeElement = this;
+      focused.push(options);
+    },
+  });
+  doc.documentElement.appendChild(doc.body);
+  doc.body.appendChild(container);
+  doc.getElementById = (id) =>
+    below(doc.documentElement).find((el) => el.id === id) ?? null;
+  const keys = [];
+  doc.addEventListener = (type, listener) =>
+    type === "keydown" && keys.push(listener);
+  doc.removeEventListener = (type, listener) =>
+    keys.includes(listener) && keys.splice(keys.indexOf(listener), 1);
+  const press = (key, target) => {
+    const event = {
+      key,
+      target,
+      defaultPrevented: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+    };
+    [...keys].forEach((listener) => listener(event));
+    return event;
+  };
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+  const settle = async () => {
+    for (let i = 0; i < 5; i++)
+      await s.act(() => new Promise((r) => setTimeout(r, 0)));
+  };
+
+  const id = "01a1223a-ae45-728f-8c37-c005eee91edb";
+  const href = `djinn://tilasm/${id}`;
+  const shown = [];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, {
+      list: () => ({ wishes: [] }),
+      watch: async function* () {},
+    });
+    service(s.TaskService, { list: () => ({ tasks: [] }) });
+    service(s.QuestionService, { list: () => ({ questions: [] }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+    service(s.TilasmService, {
+      get: (req) => ({
+        tilasm:
+          req.tilasm.ref.value === id ? tilasm(id, "L01", "Model") : undefined,
+      }),
+    });
+  });
+  // What the window is asked to show is kept here.
+  const djinn = {
+    ...s.createDjinn(transport, 10),
+    focus: { subscribe: () => () => {}, show: (focus) => shown.push(focus) },
+  };
+
+  const root = s.createRoot(container);
+  try {
+    s.act(() =>
+      root.render(
+        h(
+          s.DjinnProvider,
+          { djinn },
+          h(
+            "main",
+            { className: "main-shell" },
+            h(
+              s.TilasmOver,
+              { view: "plan" },
+              h(
+                "div",
+                { className: "wish-view" },
+                h(
+                  "div",
+                  { className: "mission-scroll" },
+                  h(
+                    "article",
+                    {
+                      id: "question-q1",
+                      className: "question-card question-row open current",
+                      tabIndex: 0,
+                    },
+                    h("p", null, "Read it first: ", h(s.Link, { href }, "L01")),
+                    h("button", { type: "button" }, "Yes"),
+                  ),
+                ),
+              ),
+              h("footer", { className: "app-statusbar" }),
+            ),
+          ),
+        ),
+      ),
+    );
+    const main = container.children[0];
+    const [view, footer] = main.children;
+    const scroller = view.children[0];
+    const question = doc.getElementById("question-q1");
+    const link = question.querySelectorAll("a.djinn-link")[0];
+    assert.ok(link);
+    scroller.scrollTop = 240;
+    question.focus({ preventScroll: true });
+    focused.length = 0;
+
+    for (const how of ["Escape", "button"]) {
+      // The click on the link: it opens nothing in the page, the frame comes over the view.
+      s.act(() =>
+        props(link).onClick({
+          preventDefault() {},
+          stopPropagation() {},
+          currentTarget: link,
+        }),
+      );
+      await settle();
+      const over = main.children.at(-1);
+      assert.equal(over.nodeName, "SECTION");
+      assert.equal(over.attributes.class, "tilasm-view over");
+      const frame = over.children[0];
+      assert.equal(frame.nodeName, "IFRAME");
+      assert.equal(frame.attributes.src, `/tilasm/${id}/`);
+      assert.equal(frame.attributes.sandbox, "allow-scripts");
+      const leave = over.querySelectorAll(".tilasm-full-leave")[0];
+      // The view underneath stays mounted, out of the keyboard's reach, and unscrolled; the button that closes has the
+      // focus.
+      assert.equal(doc.getElementById("question-q1"), question);
+      assert.equal(main.children[0], view);
+      assert.equal(view.inert, true);
+      assert.equal(footer.inert, true);
+      assert.equal(over.inert, undefined);
+      assert.equal(scroller.scrollTop, 240);
+      assert.equal(doc.activeElement, leave);
+      assert.deepEqual(shown, []);
+
+      if (how === "Escape") {
+        // Escape in a dialog is the dialog's.
+        const dialog = doc.createElement("dialog");
+        const inside = dialog.appendChild(doc.createElement("button"));
+        assert.equal(press("Escape", inside).defaultPrevented, false);
+        s.act(() => press("Escape", leave));
+      } else s.act(() => props(leave).onClick());
+      await settle();
+      // Gone, the cover lifted, the focus on the link again, the page where it was.
+      assert.equal(main.children.length, 2);
+      assert.equal(over.isConnected, false);
+      assert.equal(view.inert, false);
+      assert.equal(footer.inert, false);
+      assert.equal(doc.activeElement, link);
+      assert.equal(doc.getElementById("question-q1"), question);
+      assert.equal(scroller.scrollTop, 240);
+      assert.deepEqual(keys, []);
+    }
+    // Every focus moved never scrolled.
+    assert.ok(focused.length >= 4);
+    assert.ok(focused.every((options) => options?.preventScroll === true));
+
+    // A tilasm not on this machine: the window says so, and nothing covers the view.
+    const gone = `djinn://tilasm/${"0".repeat(8)}-0000-7000-8000-${"0".repeat(12)}`;
+    s.act(() =>
+      root.render(
+        h(
+          s.DjinnProvider,
+          { djinn },
+          h(
+            "main",
+            { className: "main-shell" },
+            h(
+              s.TilasmOver,
+              { view: "plan" },
+              h(
+                "div",
+                { className: "wish-view" },
+                h(
+                  "article",
+                  { id: "question-q2", className: "question-card" },
+                  h(s.Link, { href: gone }, "gone"),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    const lost = doc.getElementById("question-q2").querySelectorAll("a")[0];
+    s.act(() =>
+      props(lost).onClick({
+        preventDefault() {},
+        stopPropagation() {},
+        currentTarget: lost,
+      }),
+    );
+    await settle();
+    assert.deepEqual(
+      shown.map((f) => f.unknownLink),
+      [gone],
+    );
+    assert.equal(container.children[0].querySelectorAll("section").length, 0);
+  } finally {
+    s.act(() => root.unmount());
+    // React's act keeps a port open: it holds the test's process no more.
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
 });
 
 test("a wish's view has a Tilasms tab beside Tasks and Decisions, with its count", async () => {

@@ -361,7 +361,8 @@ fonts and scripts: it reaches no network.
 
 A tilasm's link, `djinn://tilasm/<id>`, opens Djinn on it from a browser, a chat, a terminal or a Markdown file, and
 starts Djinn if it does not run; so does `djinn://wish/<id>` for a wish. Inside the window, such a link in a block, a
-question or the brief opens in place.
+question or the brief opens in place. A tilasm's link in a question opens it full size over the page you read, without
+leaving it: close it, or press Escape, and you are back on the link, ready to answer.
 
 ## Questions
 

@@ -5,7 +5,8 @@
 // the titles and the text, within the wish; "talisman" finds them all. A row's history restores an earlier version; its
 // export writes a .zip to the Downloads folder. An .html file, a folder or a .zip dropped on the tab or chosen in the
 // drop zone becomes a tilasm, or the new version of the one a .zip exported. The open one goes full size: its frame
-// covers the main shell, the side panel beside it; leaving puts the tab back as it was, the frame never reloaded.
+// covers the main shell, the side panel beside it; leaving puts the tab back as it was, the frame never reloaded. The
+// same frame opens over any view, full size, as a link in a question asks (tilasm-over.tsx).
 import {
   Download,
   FolderInput,
@@ -208,10 +209,6 @@ export function TilasmList({
   // The tilasm shown full size: the open one, until it is left or closed.
   const [fullId, setFullId] = useState("");
   const full = open !== undefined && fullId === open.id;
-  const frame = useRef<HTMLIFrameElement>(null);
-  const enter = useRef<HTMLButtonElement>(null);
-  const leave = useRef<HTMLButtonElement>(null);
-  useFullSize(full, frame, enter, leave, setFullId);
   const dragging = (event: DragEvent) => {
     if (!event.dataTransfer?.types.includes("Files")) return;
     event.preventDefault();
@@ -264,65 +261,15 @@ export function TilasmList({
         </label>
       </div>
       {open && (
-        <section
-          className={`tilasm-view${full ? " full" : ""}`}
-          aria-label={open.title}
-        >
-          <div className="tilasm-view-head">
-            <span className="tilasm-code">{open.code}</span>
-            <strong>{open.title}</strong>
-            <span className="muted-text">
-              {t("tilasms.version", { version: latest(open) })}
-            </span>
-            <button
-              ref={enter}
-              type="button"
-              className="text-button tilasm-full-enter"
-              onClick={() => setFullId(open.id)}
-            >
-              <Maximize2 size={13} aria-hidden="true" />
-              {t("tilasms.full")}
-            </button>
-            <button
-              type="button"
-              className="icon-button"
-              title={t("tilasms.close")}
-              aria-label={t("tilasms.close")}
-              onClick={() => {
-                setFullId("");
-                onOpen("");
-              }}
-            >
-              <X size={14} />
-            </button>
-          </div>
-          {/* Scripts only: an opaque origin, never Djinn's; the server's policy refuses the network. Full size changes
-              the section's class only, never the frame's place in the page: a frame moved elsewhere would load again. */}
-          <iframe
-            key={`${open.id}-${latest(open)}`}
-            ref={frame}
-            className="tilasm-frame"
-            title={`${open.code} · ${open.title}`}
-            src={tilasmAddress(open.id)}
-            sandbox="allow-scripts"
-            referrerPolicy="no-referrer"
-          />
-          {/* The room the frame leaves in the page, full size: what it covers keeps its place and its scroll. It shows
-              by the same class that takes the frame out, so the page never lays out without both. */}
-          <div className="tilasm-frame-room" />
-          {full && (
-            <button
-              ref={leave}
-              type="button"
-              className="icon-button tilasm-full-leave"
-              aria-label={t("tilasms.full_leave")}
-              aria-keyshortcuts="Escape"
-              onClick={() => setFullId("")}
-            >
-              <Minimize2 size={14} aria-hidden="true" />
-            </button>
-          )}
-        </section>
+        <TilasmFrame
+          tilasm={open}
+          full={full}
+          onFull={(on) => setFullId(on ? open.id : "")}
+          onClose={() => {
+            setFullId("");
+            onOpen("");
+          }}
+        />
       )}
       {count === 0 ? (
         <p className="muted-text">{t("tilasms.none")}</p>
@@ -417,17 +364,115 @@ export function TilasmList({
   );
 }
 
+// TilasmFrame is a tilasm in its frame. In the Tilasms tab, under its head, in the page, it goes full size and back;
+// over a view, as a link in a question opens it (tilasm-over.tsx), it is full size from the start, with no head, and
+// leaving it closes it.
+export function TilasmFrame({
+  tilasm,
+  full,
+  onFull,
+  onClose,
+  over = false,
+}: {
+  tilasm: Tilasm;
+  // Full size: the frame covers the main shell. Over a view, it always is.
+  full: boolean;
+  onFull: (full: boolean) => void;
+  onClose: () => void;
+  // Opened over a view: full size, and its button closes it.
+  over?: boolean;
+}) {
+  const frame = useRef<HTMLIFrameElement>(null);
+  const enter = useRef<HTMLButtonElement>(null);
+  const leave = useRef<HTMLButtonElement>(null);
+  useFullSize(
+    full || over,
+    frame,
+    enter,
+    leave,
+    over ? onClose : () => onFull(false),
+  );
+  return (
+    <section
+      className={`tilasm-view${over ? " over" : full ? " full" : ""}`}
+      aria-label={tilasm.title}
+    >
+      {!over && (
+        <div className="tilasm-view-head">
+          <span className="tilasm-code">{tilasm.code}</span>
+          <strong>{tilasm.title}</strong>
+          <span className="muted-text">
+            {t("tilasms.version", { version: latest(tilasm) })}
+          </span>
+          <button
+            ref={enter}
+            type="button"
+            className="text-button tilasm-full-enter"
+            onClick={() => onFull(true)}
+          >
+            <Maximize2 size={13} aria-hidden="true" />
+            {t("tilasms.full")}
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            title={t("tilasms.close")}
+            aria-label={t("tilasms.close")}
+            onClick={onClose}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {/* Scripts only: an opaque origin, never Djinn's; the server's policy refuses the network. Full size changes
+          the section's class only, never the frame's place in the page: a frame moved elsewhere would load again. */}
+      <iframe
+        key={`${tilasm.id}-${latest(tilasm)}`}
+        ref={frame}
+        className="tilasm-frame"
+        title={`${tilasm.code} · ${tilasm.title}`}
+        src={tilasmAddress(tilasm.id)}
+        sandbox="allow-scripts"
+        referrerPolicy="no-referrer"
+      />
+      {/* The room the frame leaves in the page, full size: what it covers keeps its place and its scroll. It shows
+          by the same class that takes the frame out, so the page never lays out without both. Over a view, the frame
+          takes no room. */}
+      {!over && <div className="tilasm-frame-room" />}
+      {(full || over) && (
+        <button
+          ref={leave}
+          type="button"
+          className="icon-button tilasm-full-leave"
+          aria-label={over ? t("tilasms.close") : t("tilasms.full_leave")}
+          aria-keyshortcuts="Escape"
+          onClick={over ? onClose : () => onFull(false)}
+        >
+          {over ? (
+            <X size={14} aria-hidden="true" />
+          ) : (
+            <Minimize2 size={14} aria-hidden="true" />
+          )}
+        </button>
+      )}
+    </section>
+  );
+}
+
 // useFullSize keeps the page under the full-size frame out of reach of the keyboard and gives the focus to the button
 // that leaves; Escape leaves too, unless a dialog takes it (a key pressed in the frame stays in the frame's document).
-// Once left, the focus goes back to the button that entered. The page never scrolls for it.
+// Once left, the focus goes back to the button that entered, if there is one. The page never scrolls for it.
 function useFullSize(
   full: boolean,
   frame: RefObject<HTMLIFrameElement | null>,
   enter: RefObject<HTMLButtonElement | null>,
   leave: RefObject<HTMLButtonElement | null>,
-  setFullId: (id: string) => void,
+  onLeave: () => void,
 ) {
   const was = useRef(false);
+  // The last onLeave given: a new one at each render covers and uncovers nothing.
+  const leaving = useRef(onLeave);
+  leaving.current = onLeave;
   useEffect(() => {
     if (!full) {
       if (was.current) enter.current?.focus({ preventScroll: true });
@@ -445,14 +490,14 @@ function useFullSize(
       )
         return;
       event.preventDefault();
-      setFullId("");
+      leaving.current();
     };
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
       uncover();
     };
-  }, [full, frame, enter, leave, setFullId]);
+  }, [full, frame, enter, leave]);
 }
 
 // cover makes inert what the elements kept lie over in the main shell: every element there that holds none of them.
