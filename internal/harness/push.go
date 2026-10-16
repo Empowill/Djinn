@@ -116,10 +116,16 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 			why = "its branch moved since its push checks were red"
 		}
 	}
-	if why != "" {
-		_, err := h.push(ctx, wish, project, committed, why, false)
-		logPush(err, "wish", wishID, "project", project.GetId())
+	branch := plan.IntegrationBranchOf(wish, project.GetId())
+	if why == "" {
+		h.forgetPushWait(wishID, project.GetId(), branch)
+		return
 	}
+	if h.pushWaitsForMerges(ctx, wish, project, branch, why, tasks, committed) {
+		return // The work queued merges first: Djinn pushes it merged safely (repair.go).
+	}
+	_, err = h.push(ctx, wish, project, committed, why, false)
+	logPush(err, "wish", wishID, "project", project.GetId())
 }
 
 // movedSince tells whether branch, in repo, is at another commit than sha, the one its push checks were red on.
@@ -682,7 +688,10 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 		if state.GetHeld() != "" && why == "" && len(committed) > 0 {
 			why = "push checks corrected"
 		}
-		if why != "" {
+		if why == "" {
+			h.forgetPushWait(wish.GetId(), project.GetId(), branch)
+		}
+		if why != "" && !h.pushWaitsForMerges(ctx, wish, project, branch, why, tasks, committed) {
 			_, err := h.pushBranch(ctx, wish, project, branch, committed, why, false)
 			logPush(err, "wish", wish.GetId(), "project", project.GetId(), "branch", branch)
 		}
@@ -700,7 +709,10 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 		if state.GetHeld() != "" && why == "" && len(committed) > 0 {
 			why = "push checks corrected"
 		}
-		if why != "" {
+		if why == "" {
+			h.forgetPushWait(wish.GetId(), project.GetId(), wishBranch)
+		}
+		if why != "" && !h.pushWaitsForMerges(ctx, wish, project, wishBranch, why, tasks, committed) {
 			_, err := h.pushBranch(ctx, wish, project, wishBranch, committed, why, false)
 			logPush(err, "wish", wish.GetId(), "project", project.GetId(), "branch", wishBranch)
 		}

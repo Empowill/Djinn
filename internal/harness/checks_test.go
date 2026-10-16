@@ -264,8 +264,8 @@ func TestARedCommitCheck(t *testing.T) {
 }
 
 // TestPushChecksHoldThePush: before a push, the push checks run on the branch's tip; red, the push is held, said in
-// the tasks' events and on the wish. Red while work is left to commit, Djinn checks again at the next push due; red
-// again, it starts a correction worker. A second red does not spawn another worker while it runs; a failed correction
+// the tasks' events and on the wish. Red once no work is left to commit (W1 and W2 merged as one batch), it starts a
+// correction worker. A second red does not spawn another worker while it runs; a failed correction
 // asks the person, who can retry, take it over, or push without checks.
 func TestPushChecksHoldThePush(t *testing.T) {
 	testx.Portable(t)
@@ -305,8 +305,9 @@ func TestPushChecksHoldThePush(t *testing.T) {
 		t.Errorf("gates %q; want the push check test through its gate, the commit check lint not again", gates)
 	}
 	state := in.pushState(t)
-	if !strings.Contains(state.GetHeld(), "test: test exited 1") || state.GetHeldRuns() != 2 {
-		t.Fatalf("the push %v; want held twice, W2's azima ending after W1's", state)
+	// W1 and W2 merged as one batch: the push checks ran once, red, and no work is left to commit (W126).
+	if !strings.Contains(state.GetHeld(), "test: test exited 1") || state.GetHeldRuns() != 1 {
+		t.Fatalf("the push %v; want held once, W1 and W2 merged as one batch", state)
 	}
 	if state.GetCorrectedBy() == "" || state.GetAttempts() != 1 {
 		t.Fatalf("the push %v; want corrected by a worker, attempt 1", state)
@@ -599,28 +600,23 @@ func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 
 	// Dependent task W2 is free to start because W1 is COMMITTED!
 	w2 = in.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
-	// In W2, modify app/src/a.txt so W3's commit conflicts on merge into the branch.
-	writeFile(t, w2.GetWorktree(), "app/src/a.txt", "a modified by W2\n")
-	commitAll(t, w2.GetWorktree(), "W2 modifies a.txt")
-	in.release(t, w2.GetId())
-	in.ended(t, w2.GetId())
+	writeFile(t, w2.GetWorktree(), "app/src/b.txt", "b by W2\n")
+	commitAll(t, w2.GetWorktree(), "W2 adds b.txt")
 
-	// Pass 2: W2 integrates and commits its change into the branch first.
-	in.pass(t, time.Second)
+	// The person commits on the branch by hand, changing app/src/a.txt: W3's merge conflicts with it. (Work a task
+	// finishes meanwhile would wait for W3, which repairs the branch: W126.)
+	writeFile(t, in.repo, "app/src/a.txt", "a modified by hand\n")
+	commitAll(t, in.repo, "a.txt by hand")
 
-	// Now release correction worker W3: its merge into the branch conflicts with W2's commit!
+	// Now release correction worker W3: its merge into the branch conflicts.
 	in.release(t, w3ID)
 	in.ended(t, w3ID)
 	in.pass(t, time.Second)
 
-	// Verify W1 and W2 STILL have state COMMITTED and no CorrectedBy!
+	// Verify W1 STILL has state COMMITTED and no CorrectedBy!
 	w1In, _ = in.integration(t, w1)
 	if w1In.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || w1In.GetCorrectedBy() != "" {
 		t.Errorf("W1 integration after correction conflict = %v; want COMMITTED", w1In)
-	}
-	w2In, _ := in.integration(t, w2)
-	if w2In.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || w2In.GetCorrectedBy() != "" {
-		t.Errorf("W2 integration after correction conflict = %v; want COMMITTED", w2In)
 	}
 
 	// A new dependent task WDep depending on W1 is planned: while push checks are red, it waits to be green again!
@@ -669,6 +665,14 @@ func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 	}
 	if state := in.pushState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
 		t.Errorf("after push, pushState = %v; want cleared", state)
+	}
+
+	// W2 ends: its work merges, no correction repairing the branch any more.
+	in.release(t, w2.GetId())
+	in.ended(t, w2.GetId())
+	in.pass(t, time.Second)
+	if w2In, _ := in.integration(t, w2); w2In.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || w2In.GetCorrectedBy() != "" {
+		t.Errorf("W2 integration = %v; want COMMITTED", w2In)
 	}
 
 	// Now that push checks have passed and push succeeded, wDep starts running and finishes!

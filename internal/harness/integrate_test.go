@@ -35,10 +35,11 @@ type integration struct {
 	behind    []string // of them, those not taken first, before the workers' (Q26): an install's
 	testCode  int      // what the test command exits with
 	testOut   string
-	afterTest func()         // run once by the next test command, then forgotten
-	testWait  chan struct{}  // the test command waits until it closes, the clock free meanwhile
-	exits     map[string]int // what the other commands exit with, by their first word: setup, lint
-	forge     *fakeForge     // answers gh and glab when set
+	afterTest func()                         // run once by the next test command, then forgotten
+	testWait  chan struct{}                  // the test command waits until it closes, the clock free meanwhile
+	verdict   func(dir string) (string, int) // when set, what the test command says and exits with, from the files in dir
+	exits     map[string]int                 // what the other commands exit with, by their first word: setup, lint
+	forge     *fakeForge                     // answers gh and glab when set
 }
 
 // integrating starts djinn up on a repository with app/README.md, app/gen/index.txt and app/src, a wish on it whose
@@ -111,6 +112,10 @@ func (in *integration) run(ctx context.Context, dir string, args []string) (stri
 			in.mu.Unlock()
 			<-wait
 			in.mu.Lock()
+		}
+		if v := in.verdict; v != nil {
+			out, code := v(dir)
+			return out, code, nil
 		}
 		return in.testOut, in.testCode, nil
 	case "install":
@@ -270,10 +275,11 @@ func (in *integration) states(t *testing.T, tasks ...*planv1.Task) string {
 	return strings.Join(s, ", ")
 }
 
-// TestCommitEachTaskAlone: each task's work is committed into the integration branch as soon as it ends, alone, in
-// the order the tasks ended: merged without fast-forward, tested once each, the journal recording each commit; its
-// worktree is then removed, its branch kept. Not marked portable: the integration's smoke on Windows (CONTRIBUTING.md).
-func TestCommitEachTaskAlone(t *testing.T) {
+// TestCommitABatch: the tasks' work waiting is committed into the integration branch as one batch (W126, Q30 A): the
+// branches merged without fast-forward one on top of the other, in the order the tasks ended, the commit checks run
+// once for all of them, the journal recording one commit; each worktree is then removed, its branch kept. Not marked
+// portable: the integration's smoke on Windows (CONTRIBUTING.md).
+func TestCommitABatch(t *testing.T) {
 	in := integrating(t)
 	old := in.tip(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
@@ -292,24 +298,21 @@ func TestCommitEachTaskAlone(t *testing.T) {
 	}
 	tip := in.tip(t)
 	commits := in.commits(t)
-	if len(commits) != 3 || commits[0].GetOldSha() != old || commits[2].GetNewSha() != tip {
+	if len(commits) != 1 || commits[0].GetOldSha() != old || commits[0].GetNewSha() != tip ||
+		!slices.Equal(commits[0].GetTaskIds(), []string{w1.GetId(), w2.GetId(), w3.GetId()}) {
 		t.Fatalf("journal: %v", commits)
 	}
-	for i, task := range []*planv1.Task{w1, w2, w3} {
-		c := commits[i]
-		if !slices.Equal(c.GetTaskIds(), []string{task.GetId()}) || i > 0 && c.GetOldSha() != commits[i-1].GetNewSha() {
-			t.Errorf("commit %d: %v", i, c)
-		}
-		if got, _ := in.integration(t, task); got.GetSha() != c.GetNewSha() || got.GetBranch() != in.branch {
-			t.Errorf("%s's integration %v; its commit %s", task.GetCode(), got, c.GetNewSha())
+	for _, task := range []*planv1.Task{w1, w2, w3} {
+		if got, _ := in.integration(t, task); got.GetSha() != tip || got.GetBranch() != in.branch {
+			t.Errorf("%s's integration %v; the batch's commit %s", task.GetCode(), got, tip)
 		}
 	}
 	got, texts := in.integration(t, w1)
 	want := []string{
-		"integrating into " + in.branch + ", with W1",
+		"integrating into " + in.branch + ", with W1, W2, W3",
 		"merged " + w1.GetBranch(),
-		"checking W1: test (test)",
-		"committed into " + in.branch + " as " + got.GetSha()[:8] + ", with W1; your checkout of it, " + in.repo + ", follows",
+		"checking W1, W2, W3: test (test)",
+		"committed into " + in.branch + " as " + got.GetSha()[:8] + ", with W1, W2, W3; your checkout of it, " + in.repo + ", follows",
 	}
 	if !slices.Equal(texts, want) {
 		t.Errorf("W1's events:\n%s\nwant\n%s", strings.Join(texts, "\n"), strings.Join(want, "\n"))
@@ -325,11 +328,10 @@ func TestCommitEachTaskAlone(t *testing.T) {
 	if out := in.git(t, in.repo, "log", "--format=%s", "-1", w2.GetBranch()); out != "Work of W2" {
 		t.Errorf("W2's branch ends with %q", out)
 	}
-	// The tests ran once per task, in the integration worktree, never in the person's checkout, under the test gate,
-	// taken before the workers' requests (Q26).
+	// The tests ran once for the batch, in the integration worktree, never in the person's checkout, under the test
+	// gate, taken before the workers' requests (Q26).
 	wt := filepath.Join(integrationDir(in.home, in.projectID, in.wishID), "app")
-	if !slices.Equal(in.runs, []string{"test in " + wt, "test in " + wt, "test in " + wt}) ||
-		!slices.Equal(in.gates, []string{"test W1", "test W2", "test W3"}) || in.behind != nil {
+	if !slices.Equal(in.runs, []string{"test in " + wt}) || !slices.Equal(in.gates, []string{"test W1"}) || in.behind != nil {
 		t.Errorf("runs %v, gates %v, not first %v", in.runs, in.gates, in.behind)
 	}
 	// The person's checkout was clean and on the branch: it follows, clean.
@@ -342,7 +344,7 @@ func TestCommitEachTaskAlone(t *testing.T) {
 
 	// Nothing waits any more: the next pass does nothing.
 	in.pass(t, time.Hour)
-	if len(in.runs) != 3 || len(in.commits(t)) != 3 {
+	if len(in.runs) != 1 || len(in.commits(t)) != 1 {
 		t.Errorf("a pass with nothing waiting ran %v", in.runs)
 	}
 }
@@ -399,8 +401,8 @@ func TestIntegrateGeneratedConflict(t *testing.T) {
 		t.Errorf("gen/index.txt = %q, made again from the sources", out)
 	}
 	wt := filepath.Join(integrationDir(in.home, in.projectID, in.wishID), "app")
-	if !slices.Equal(in.runs, []string{"test in " + wt, "gen in " + wt, "test in " + wt}) ||
-		!slices.Equal(in.gates, []string{"test W1", "gen W2", "test W2"}) {
+	// One batch: W2's merge settled by gen, the tests run once for both.
+	if !slices.Equal(in.runs, []string{"gen in " + wt, "test in " + wt}) || !slices.Equal(in.gates, []string{"gen W2", "test W1"}) {
 		t.Errorf("runs %v, gates %v", in.runs, in.gates)
 	}
 	if in.tip(t) == old || in.states(t, w1) != "W1 COMMITTED" {
@@ -424,13 +426,21 @@ func TestIntegrateCodeConflict(t *testing.T) {
 	w3 := in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
 
 	in.pass(t, 0)
-	// W1 went in first; W2 conflicts with it, alone; W3 goes in after it, on its own.
+	// W1, W2 and W3 go as one batch; W2 conflicts with W1 and leaves it (W126): W1 and W3 go in together, checked
+	// once; W2 merges alone after them, conflicts again, and gets its own correction, here none: left to the lead.
 	if got := in.states(t, w1, w2, w3); got != "W1 COMMITTED, W2 CONFLICT, W3 COMMITTED" {
 		t.Fatalf("a conflict in code: %s", got)
 	}
 	got, texts := in.integration(t, w2)
 	if want := "W2 conflicts with " + in.branch + " in app/README.md"; got.GetReason() != want {
 		t.Errorf("W2's reason %q; want %q", got.GetReason(), want)
+	}
+	if want := "left its batch: W2 conflicts with " + in.branch + " in app/README.md; it merges alone after the batch, " +
+		"with a correction of its own if it still conflicts"; !slices.Contains(texts, want) {
+		t.Errorf("W2's events %q; want %q", texts, want)
+	}
+	if c := in.commits(t); len(c) != 1 || !slices.Equal(c[0].GetTaskIds(), []string{w1.GetId(), w3.GetId()}) {
+		t.Errorf("commits %v; want one, W1 and W3", c)
 	}
 	if got.GetQuestionId() != "" {
 		t.Errorf("W2 question ID %q; want empty", got.GetQuestionId())
@@ -442,7 +452,7 @@ func TestIntegrateCodeConflict(t *testing.T) {
 	if err != nil || len(questions) != 0 {
 		t.Errorf("questions in store: %d, want 0", len(questions))
 	}
-	if commits := in.commits(t); len(commits) != 2 || len(in.runs) != 2 {
+	if commits := in.commits(t); len(commits) != 1 || len(in.runs) != 1 {
 		t.Errorf("commits %v; runs %v", commits, in.runs)
 	}
 	if b, _ := os.ReadFile(filepath.Join(in.repo, "app", "README.md")); string(b) != "# One\n" {
@@ -458,7 +468,7 @@ func TestIntegrateCodeConflict(t *testing.T) {
 	}
 	// Failed work waits for its correction, or the person: it is not tried again.
 	in.pass(t, time.Hour)
-	if got := in.states(t, w2); got != "W2 CONFLICT" || len(in.runs) != 2 {
+	if got := in.states(t, w2); got != "W2 CONFLICT" || len(in.runs) != 1 {
 		t.Errorf("tried again: %s, runs %v", got, in.runs)
 	}
 }
@@ -503,7 +513,7 @@ func TestIntegrateWithoutAGitIdentity(t *testing.T) {
 	if err := errors.Join(err1, err2, err3); err != nil {
 		t.Fatal(err)
 	}
-	_, merged, _ := in.h.mergeAndTest(t.Context(), wish, project, settings, in.branch, old, []*planv1.Task{w1})
+	_, merged, _, _ := in.h.mergeAndTest(t.Context(), wish, project, settings, in.branch, old, []*planv1.Task{w1})
 	if merged.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING || merged.GetReason() != noIdentity {
 		t.Errorf("the merge without identity: %v", merged)
 	}
@@ -928,9 +938,11 @@ func TestStopAfterAMergeStillTellsIt(t *testing.T) {
 		told = append(told, e.GetText())
 		return nil
 	})
+	// W2 and W3 merge alone, after W1 (TaskIntegration.alone): W1's batch is committed before W2's checks run.
+	alone := func(task *planv1.Task) { task.Integration.Alone = true }
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
-	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
+	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, alone)
+	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"}, alone)
 	ctx, stop := context.WithCancel(t.Context())
 	defer stop()
 	in.afterTest = func() { in.afterTest = stop } // W1's checks pass; W2's stop djinn up.

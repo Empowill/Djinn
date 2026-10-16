@@ -32,6 +32,11 @@ count: one that babysits the azima's pull request runs until the merge, and does
 wish was made before its first push. Djinn looks after each task's work is committed, and every minute. Paused and
 granted wishes are not pushed by the cadence.
 
+**Merged safely first.** A push that is due waits while finished work is still in line for the branch, being merged, or
+while a correction repairs it: Djinn pushes once all of it is in and checked. The tasks' events say it: *a push of
+feat/invoice-pdf is due (the azima A2 ends); it waits for W7, W8 to merge, 15 minutes at most*. Fifteen minutes after
+the push became due, it goes all the same, if its push checks pass: a stream of merges never holds it back for good.
+
 ### Changing the cadence
 
 Click the project in the side panel: its view has **Push cadence**, with **Standard**, *Pushes at an azima's end or
@@ -98,7 +103,10 @@ When a push check is red, the push is **held**:
 ### Its correction
 
 When the push checks are red twice in a row, or at once when the wish has no work left to commit in the project, Djinn
-starts a correction worker: a task told to make the push checks pass without undoing what the branch did. The top of
+starts a correction worker: a task told to make the push checks pass without undoing what the branch did. It is the
+branch's one repair: while it runs, nothing else merges into the branch, and when another correction already repairs
+it, the push stays held until that one's work is in (see
+[One repair at a time](#merges-and-corrections-one-repair-at-a-time)). The top of
 the wish says **The push is held, corrected by W9**. Its work lands like any task's, and its success has the push checks
 run again.
 

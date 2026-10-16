@@ -555,15 +555,20 @@ A repository may share defaults for its workers in `.agents/settings.txtpb`: whi
 much one may spend. Your own file, in Djinn's data folder, wins over the team's; a task's own flags win over both.
 `djinn project show <project>` says where each setting comes from. Details: [team settings](team-settings.md).
 
-When a project's settings name its checks, Djinn brings finished work into the wish's branch by itself: as each task
-ends, it merges the task's branch in a worktree of its own (made ready by the `setup` command), runs the checks named
-for `commit` through their gates, and moves the branch when they pass. Each task says where its work stands: waiting
-to be committed, committed, conflict, red, corrected by another task. A conflict in code or a red check start a
-correction worker; past two attempts, Djinn hands it to the Djinn, which decides what follows.
+When a project's settings name its checks, Djinn brings finished work into the wish's branch by itself: the tasks
+ended and waiting go as one batch, their branches merged one on top of the other in a worktree of its own (made ready
+by the `setup` command), the checks named for `commit` run once through their gates, and the branch moves when they
+pass. Each task says where its work stands: waiting to be committed, committed, conflict, red, corrected by another
+task. A branch that conflicts leaves the batch and merges alone after it; a conflict in code or a red check start a
+correction worker, one for a whole red batch, and when that one fails, Djinn merges the batch one branch at a time to
+find the culprit. One correction repairs a branch at a time: meanwhile nothing else merges into it, the work ended
+waits in line, and merges once the correction is in. Past two attempts, Djinn hands it to the Djinn, which decides
+what follows.
 
 Each project defines its push cadence: **Standard** (pushes at an azima's end or after an hour and three tasks committed)
 or **On demand** (pushes only when you click **Push** or run `djinn project push <project> [--wish <wish>]`). You can
-switch cadence in the project view or with `djinn project set-push <project> standard|on_demand`. Before it pushes the branch,
+switch cadence in the project view or with `djinn project set-push <project> standard|on_demand`. A push due waits for the work in line to be
+merged and checked, 15 minutes at most. Before it pushes the branch,
 it runs the checks named for `push`: red, the push is held, and Djinn starts a correction worker; if that fails or attempts
 are spent, it tells the Djinn. `djinn project show` and the project's view in the window list the checks and how each last ran.
 When the settings also name an install command, the window proposes the build it pushed, one per integration branch:

@@ -145,7 +145,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
     the interface alone. Never mark one that reaches what differs on Windows: a `_windows.go` file or a
     `runtime.GOOS` branch, processes and their stop, paths and worktrees, the terminal, the command line's files.
     A test that costs nothing stays unmarked: it runs everywhere. Two portable tests stay unmarked as Windows'
-    smoke of that logic, end to end: `TestCommitEachTaskAlone` (the integration) and `TestDependsOn` (the
+    smoke of that logic, end to end: `TestCommitABatch` (the integration) and `TestDependsOn` (the
     scheduler). `DJINN_TEST_SYSTEM_ONLY=1 go tool task test` runs on any system what Windows runs.
 - `go tool task test-race`: the Go tests under the race detector (needs CGO); `-- <go test arguments>` narrows it.
 - A wish of real size, to measure on before optimizing: `internal/testx/bigwish` makes it, the same bytes every time,

@@ -368,6 +368,12 @@ func (h *Harness) holdPush(
 	if runs < 2 && workLeft(tasks, project.GetId()) {
 		return // The next work committed may make them pass: Djinn checks again when the next push is due.
 	}
+	if r := h.repairOf(ctx, wish, project, branch, tasks); r != nil {
+		// One correction repairs a branch at a time: once its work is in, the push checks run again (repair.go).
+		h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push of %s stays held; its correction waits for %s, which repairs it",
+			branch, r.GetCode()))
+		return
+	}
 	settings, err := plan.LoadSettings(h.home, project)
 	if err != nil {
 		logx.L().Warn("read the project settings", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)

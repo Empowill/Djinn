@@ -176,6 +176,10 @@ func (h *Harness) keepLineUp(ctx context.Context, l mainLine, settings plan.Sett
 		h.editLine(ctx, l, func(m *planv1.WishMain) { m.CorrectedBy = "" })
 		now = true
 	}
+	// Nothing merges into a branch a correction repairs, main no more than work (repair.go): it waits for it.
+	if r := h.repairOn(ctx, l.wish, l.project, branch); r != nil {
+		return
+	}
 	repo := l.project.GetDirectory()
 	key := l.key()
 	// Main merged into a branch whose remote holds commits it lacks could not be pushed (remote_branch.go).

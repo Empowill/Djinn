@@ -93,6 +93,11 @@ func (h *Harness) failed(
 	if len(group) == 0 {
 		return
 	}
+	// A batch whose correction failed, or that no correction may repair, merges one branch at a time (repair.go).
+	if works(group) > 1 && (attempts > 0 || settings.CorrectionAttempts == 0) {
+		h.stepByStep(ctx, group, in, text)
+		return
+	}
 	h.correct(ctx, wish, project, settings, group, in, text, attempts, true)
 }
 
@@ -106,6 +111,18 @@ func (h *Harness) correct(
 	in = proto.CloneOf(in)
 	in.CorrectedBy, in.QuestionId, in.Attempts = "", "", attempts
 	if more && int(attempts) < settings.CorrectionAttempts {
+		// One correction repairs a branch at a time: the work waits for the one that runs, then merges alone, a
+		// correction of its own starting if it still fails (repair.go).
+		if r := h.repairOn(ctx, wish, project, in.GetBranch()); r != nil && !slices.ContainsFunc(group, func(t *planv1.Task) bool {
+			return t.GetId() == r.GetId()
+		}) {
+			why := fmt.Sprintf("waits for %s, which repairs %s: it merges once that work is in", r.GetCode(), in.GetBranch())
+			h.settleIntegration(ctx, group, &planv1.TaskIntegration{
+				State: planv1.IntegrationState_INTEGRATION_STATE_PENDING, Branch: in.GetBranch(), Reason: why, Alone: true,
+			}, text+"; "+why, nil)
+			return fmt.Sprintf("Djinn merges the work of %s again once %s, which repairs %s, is in", codes(originals(group)),
+				r.GetCode(), in.GetBranch())
+		}
 		c, err := h.spawnCorrection(ctx, wish, project, group, in, attempts+1)
 		if err == nil {
 			in.CorrectedBy, in.Attempts = c.GetId(), attempts+1
@@ -391,6 +408,11 @@ func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 				group = g
 			}
 			h.review(ctx, wish, project, settings, group, group[0].GetIntegration(), text, r.GetAttempt(), true)
+			continue
+		}
+		if works(group) > 1 {
+			// The correction of a batch failed: its work merges one branch at a time (repair.go).
+			h.stepByStep(ctx, group, group[0].GetIntegration(), text)
 			continue
 		}
 		h.correct(ctx, wish, project, settings, group, group[0].GetIntegration(), text, c.GetCorrection().GetAttempt(), true)
