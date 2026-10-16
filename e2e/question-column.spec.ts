@@ -33,7 +33,7 @@ type Wish = { id: string; state: string; rank?: number };
 const wishes = (): Wish[] =>
   JSON.parse(djinn("wish", "list", "--json")).wishes ?? [];
 
-// A long context, as a revised question's: its versions in full, a table, a code block.
+// A long context: many sections, a table, a code block.
 const LONG = [
   "~~~",
   "# Prints the oils in stock, one a line.",
@@ -47,7 +47,7 @@ const LONG = [
   "| Olive | 9 |",
   "| Paraffin | 12 |",
   "",
-  "## Previous versions",
+  "## What came before",
   "",
   ...Array.from(
     { length: 30 },

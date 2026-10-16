@@ -106,15 +106,17 @@ test("a revision reaches the card under investigation without a reload", async (
     await expect(question).not.toHaveClass(/investigating/);
     await expect(question).toHaveClass(/open/);
     await expect(question.locator(".revised-badge")).toHaveText("Revised");
-    // The whole context: what the worker found, then the history of its versions folded under Previous versions,
-    // closed, never cut (mockup L04 v2, W69).
+    // The whole context is what the worker found: the version before it is behind Versions (2), never in the
+    // context (W114).
     const headings = question.locator(".question-context h2");
     await expect(headings).toHaveCount(1);
     await expect(headings.first()).toHaveText("What the worker found");
-    const history = question.locator(".question-history");
-    await expect(history.locator("summary")).toHaveText("Previous versions");
-    await expect(history).not.toHaveAttribute("open");
-    await expect(history.locator("h3")).toHaveText("Tour 0 (initial)");
+    await expect(question.locator(".question-context")).not.toContainText(
+      "Historique",
+    );
+    await expect(question.locator(".question-versions")).toHaveText(
+      "Versions (2)",
+    );
     await expect(
       question.getByRole("button", { name: /Linen, twice as long/ }),
     ).toHaveAttribute("aria-pressed", "true");
@@ -149,6 +151,10 @@ test("a revision reaches the card under investigation without a reload", async (
     await expect(waiting).toHaveClass(/open/);
     await expect(waiting.locator(".question-context h2").first()).toHaveText(
       "The price",
+    );
+    await expect(waiting.locator(".question-context h2")).toHaveCount(1);
+    await expect(waiting.locator(".question-versions")).toHaveText(
+      "Versions (3)",
     );
     expect(errors).toEqual([]);
   } finally {

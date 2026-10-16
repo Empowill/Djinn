@@ -62,15 +62,14 @@ func TestRounds(t *testing.T) {
 	}
 
 	rev, err := c.questions.Revise(ctx, connect.NewRequest(&planv1.QuestionServiceReviseRequest{
-		Question: ref, WishId: wish, Context: "Olive: 6 h. Paraffin: 9 h.", Recommendation: "B: it lasts.",
+		Question: ref, WishId: wish, Context: "Olive: 6 h. Paraffin: 9 h.", Recommendation: "B: it lasts.", History: true,
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	q = rev.Msg.GetQuestion()
 	last := q.GetRounds()[1]
-	if Investigating(q) || q.GetRevision() != 1 || CleanContext(q.GetContext()) != "Olive: 6 h. Paraffin: 9 h." ||
-		!strings.Contains(q.GetContext(), HistoryHeader) ||
+	if Investigating(q) || q.GetRevision() != 1 || q.GetContext() != "Olive: 6 h. Paraffin: 9 h." ||
 		q.GetRecommendation() != "B: it lasts." || len(q.GetOptions()) != 2 {
 		t.Errorf("after revise = %v", q)
 	}
@@ -138,7 +137,7 @@ func TestWorkerAttribution(t *testing.T) {
 	}
 	ref := &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q01"}}
 	rev, err := c.questions.Revise(ctx, connect.NewRequest(&planv1.QuestionServiceReviseRequest{
-		Question: ref, WishId: wish, Context: "Olive: 6 h.", TaskId: task.GetId(),
+		Question: ref, WishId: wish, Context: "Olive: 6 h.", TaskId: task.GetId(), History: true,
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -180,10 +179,9 @@ func TestWorkerAttribution(t *testing.T) {
 	}
 }
 
-// TestRevisionHistoryAndContextFile verifies:
-// - Enlighten preserves Tour 0 (initial context, options, recommendation) on rounds[0] before any revision.
-// - Multi-round revisions preserve a clean, non-duplicating HistoryHeader section from Tour 0 through prior revisions.
-// - Revise supports ContextFile (--context-file) with markdown headers (#), arrows (->), and parentheses.
+// TestRevisionHistoryAndContextFile: a revised question's context is its current version only (W114), what the
+// caller pastes of an older history cut; each earlier version lives in its round, Tour 0 on the first. Revise reads
+// --context-file, Markdown headers, arrows and parentheses as written, and gives back the rounds only with history.
 func TestRevisionHistoryAndContextFile(t *testing.T) {
 	ctx := t.Context()
 	c := serve(t)
@@ -206,7 +204,7 @@ func TestRevisionHistoryAndContextFile(t *testing.T) {
 	}
 	r0 := enl1.Msg.GetQuestion().GetRounds()[0]
 	if r0.GetContext() != "Tour 0 initial context." || r0.GetRecommendation() != "B: Connect works over HTTP/1.1." ||
-		!slices.Equal(r0.GetOptions(), []string{"gRPC", "Postgres"}[:1]) && !slices.Equal(r0.GetOptions(), []string{"gRPC", "Connect"}) {
+		!slices.Equal(r0.GetOptions(), []string{"gRPC", "Connect"}) {
 		t.Fatalf("Tour 0 not preserved on enlighten round: %v", r0)
 	}
 
@@ -223,17 +221,14 @@ func TestRevisionHistoryAndContextFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	q1 := rev1.Msg.GetQuestion()
-	if CleanContext(q1.GetContext()) != rev1Body {
-		t.Errorf("CleanContext after rev1 = %q, want %q", CleanContext(q1.GetContext()), rev1Body)
+	if q1.GetContext() != rev1Body {
+		t.Errorf("context after rev1 = %q, want %q", q1.GetContext(), rev1Body)
 	}
-	if strings.Count(q1.GetContext(), HistoryHeader) != 1 ||
-		!strings.Contains(q1.GetContext(), "### Tour 0 (initial)") ||
-		!strings.Contains(q1.GetContext(), "Tour 0 initial context.") ||
-		!strings.Contains(q1.GetContext(), "Check browser streaming.") {
-		t.Errorf("history after rev1:\n%s", q1.GetContext())
+	if len(q1.GetRounds()) != 0 || q1.GetRevision() != 1 {
+		t.Errorf("revise without history gives back its rounds, or no revision: %v", q1)
 	}
 
-	// Enlighten 2 + Revise 2 (even when caller passes context containing old HistoryHeader, it never duplicates).
+	// Enlighten 2 + Revise 2: a context pasted with an old history keeps its current part only.
 	if _, err := c.questions.Enlighten(ctx, connect.NewRequest(&planv1.QuestionServiceEnlightenRequest{
 		Question: ref, WishId: wish, Note: "What about trailers?",
 	})); err != nil {
@@ -243,30 +238,30 @@ func TestRevisionHistoryAndContextFile(t *testing.T) {
 		Question: ref, WishId: wish,
 		Context:        "Tour 2 context.\n\n" + HistoryHeader + "\n\nstale copy",
 		Recommendation: "B: trailers framed in body.",
+		History:        true,
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	q2 := rev2.Msg.GetQuestion()
-	if CleanContext(q2.GetContext()) != "Tour 2 context." {
-		t.Errorf("CleanContext after rev2 = %q", CleanContext(q2.GetContext()))
+	if q2.GetContext() != "Tour 2 context." {
+		t.Errorf("context after rev2 = %q, want the current version only", q2.GetContext())
 	}
-	if count := strings.Count(q2.GetContext(), HistoryHeader); count != 1 {
-		t.Errorf("HistoryHeader count = %d, want 1:\n%s", count, q2.GetContext())
-	}
-	for _, want := range []string{
-		"### Tour 0 (initial)",
-		"Tour 0 initial context.",
-		"### Tour 1",
-		"browser -> server streaming (verified).",
-		"What about trailers?",
-	} {
-		if !strings.Contains(q2.GetContext(), want) {
-			t.Errorf("q2 context missing %q:\n%s", want, q2.GetContext())
+	var revised []string
+	for _, r := range q2.GetRounds() {
+		if r.GetKind() == planv1.RoundKind_ROUND_KIND_REVISE {
+			revised = append(revised, r.GetContext())
 		}
 	}
-	if strings.Contains(q2.GetContext(), "stale copy") {
-		t.Errorf("q2 context kept stale HistoryHeader section:\n%s", q2.GetContext())
+	if !slices.Equal(revised, []string{"Tour 0 initial context.", rev1Body}) {
+		t.Errorf("the revisions' rounds hold %q, want each earlier version", revised)
+	}
+	stored, err := store.Get[*planv1.Question](ctx, c.store, q2.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.GetContext() != "Tour 2 context." || len(stored.GetRounds()) != 4 {
+		t.Errorf("stored = %v, want the current context and its four rounds", stored)
 	}
 
 	// Passing both context and context_file is rejected.
@@ -274,6 +269,53 @@ func TestRevisionHistoryAndContextFile(t *testing.T) {
 		Question: ref, WishId: wish, Context: "x", ContextFile: ctxFile,
 	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("both context and context_file: %v, want invalid_argument", err)
+	}
+}
+
+// TestCleanVersions (W114): a question stored with the history Revise appended to its context, and a round that
+// kept it, lose it at djinn up; a clean one is not written again.
+func TestCleanVersions(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	wish := c.wish(t)
+	old := c.ask(t, wish, "Olive", "Paraffin")
+	old.Context = "Paraffin lasts.\n\n" + HistoryHeader + "\n\n### Tour 0 (initial)\n\nBoth burn."
+	old.Rounds = []*planv1.Round{
+		{Kind: planv1.RoundKind_ROUND_KIND_REVISE, Context: "Both burn."},
+		{Kind: planv1.RoundKind_ROUND_KIND_REVISE, Context: "Olive smells.\n" + HistoryHeader + "\n\nBoth burn."},
+	}
+	clean := c.ask(t, wish, "Yes", "No")
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("test", "put", old); err != nil {
+			return err
+		}
+		return tx.Put(old)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	journal := func() int {
+		cmds, err := store.CommandsOf(ctx, c.store, methodCleanVersions, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(cmds)
+	}
+	for range 2 {
+		if err := CleanVersions(ctx, c.store); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := store.Get[*planv1.Question](ctx, c.store, old.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetContext() != "Paraffin lasts." || got.GetRounds()[0].GetContext() != "Both burn." ||
+		got.GetRounds()[1].GetContext() != "Olive smells." {
+		t.Errorf("cleaned = %v", got)
+	}
+	if n := journal(); n != 1 {
+		t.Errorf("%d cleanings journaled, want 1: the second run and the clean question %s change nothing", n,
+			clean.GetCode())
 	}
 }
 

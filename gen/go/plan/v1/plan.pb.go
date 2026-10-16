@@ -8548,7 +8548,10 @@ type QuestionServiceReviseRequest struct {
 	Plan []string `protobuf:"bytes,10,rep,name=plan,proto3" json:"plan,omitempty"`
 	// A file holding the task an option launches now, read in place of --plan; a relative path starts from the current
 	// directory.
-	PlanFile      []string `protobuf:"bytes,11,rep,name=plan_file,json=planFile,proto3" json:"plan_file,omitempty"`
+	PlanFile []string `protobuf:"bytes,11,rep,name=plan_file,json=planFile,proto3" json:"plan_file,omitempty"`
+	// Give back the question's earlier versions too: its rounds, each with what the question said before it. Not set:
+	// the question as it stands now, its current version only.
+	History       bool `protobuf:"varint,12,opt,name=history,proto3" json:"history,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -8660,9 +8663,16 @@ func (x *QuestionServiceReviseRequest) GetPlanFile() []string {
 	return nil
 }
 
+func (x *QuestionServiceReviseRequest) GetHistory() bool {
+	if x != nil {
+		return x.History
+	}
+	return false
+}
+
 type QuestionServiceReviseResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The question, revised.
+	// The question, revised: its current version, and its rounds only when asked with history.
 	Question *Question `protobuf:"bytes,1,opt,name=question,proto3" json:"question,omitempty"`
 	// How its context breaks the shape a question reads in at a glance (every command in one code block at the top,
 	// short Markdown), a line each; none when it keeps it. The question is stored as given: revise it.
@@ -21541,7 +21551,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04note\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x04note\x12$\n" +
 	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"Q\n" +
 	" QuestionServiceEnlightenResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xf7\x04\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\x91\x05\n" +
 	"\x1cQuestionServiceReviseRequest\x128\n" +
 	"\bquestion\x18\x01 \x01(\v2\x14.plan.v1.QuestionRefB\x06\xbaH\x03\xc8\x01\x01R\bquestion\x12#\n" +
 	"\acontext\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\acontext\x12(\n" +
@@ -21555,7 +21565,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04plan\x18\n" +
 	" \x03(\tB\x10\xbaH\r\x92\x01\n" +
 	"\x10\x04\"\x06r\x04\x18\xd0\xe8\fR\x04plan\x12,\n" +
-	"\tplan_file\x18\v \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x04\"\x05r\x03\x18\x80 R\bplanFileB\t\n" +
+	"\tplan_file\x18\v \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x04\"\x05r\x03\x18\x80 R\bplanFile\x12\x18\n" +
+	"\ahistory\x18\f \x01(\bR\ahistoryB\t\n" +
 	"\a_beforeB\b\n" +
 	"\x06_about\"j\n" +
 	"\x1dQuestionServiceReviseResponse\x12-\n" +

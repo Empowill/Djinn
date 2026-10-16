@@ -16,10 +16,11 @@
 // waits for it, orange under its before words ("before the merge"), grey when it can wait. Being investigated, it
 // folds to one line out of the way, and opens on a click; revised, it waits for you again, in its place. Answered, it
 // is a decision: no mark asks to read or approve it again, and the decision log shows it. Djinn types each answer in
-// the lead's terminal; a wish without a lead session has no lead to tell, and the card says so. Its rounds, each
-// request and each revision, fold below; a grey line says when it was asked, and revised.
-// Two small buttons sit in its top right corner: Later sends it to the bottom of its list, where it stays (Djinn keeps
-// when, Question.laterTime), and, pressed, gives it its place back; Move takes it to another wish.
+// the lead's terminal; a wish without a lead session has no lead to tell, and the card says so. A grey line says
+// when it was asked, and revised. Small buttons sit in its top right corner: Versions (3), once revised, opens its
+// earlier versions below it, to read, the current one staying what the card shows first (W114); Later sends it to the
+// bottom of its list, where it stays (Djinn keeps when, Question.laterTime), and, pressed, gives it its place back;
+// Move takes it to another wish.
 // A gesture shows, by key or by click: its button stays pressed a moment and the answer leaves as it comes back up,
 // while the card glows in the colour of the gesture, the lamp's brass or a cool light, and a wisp of smoke rises
 // from the button (review.css). Reduced motion keeps the colour, without the movement.
@@ -48,12 +49,7 @@ import {
   useState,
 } from "react";
 
-import {
-  type Block,
-  Choice,
-  type Question,
-  RoundKind,
-} from "../gen/ts/plan/v1/plan_pb";
+import { type Block, Choice, type Question } from "../gen/ts/plan/v1/plan_pb";
 import { EMPTY_BLOCKING } from "./data/flight";
 import {
   answerText,
@@ -62,13 +58,15 @@ import {
   investigating,
   isWithdrawn,
   letter,
+  questionVersions,
+  type QuestionVersion,
   recommendedChoice,
   span,
   useNow,
   when,
 } from "./data/format";
 import { mainLink } from "./data/links";
-import { splitHistory } from "./data/text";
+import { placeTaken } from "./scroll-anchor";
 import { t } from "./i18n";
 import { CommandText } from "./copy-command";
 import { MoveLink } from "./link";
@@ -155,6 +153,9 @@ export const WishQuestion = memo(function WishQuestion({
     : 0;
   const recommended = answered || withdrawn ? undefined : recommendedChoice(q);
   const [expanded, setExpanded] = useState(open);
+  // The earlier versions, which a small button in the card's corner opens below it, to read (W114).
+  const versions = useMemo(() => questionVersions(q), [q]);
+  const [showVersions, setShowVersions] = useState(false);
   // Being investigated, it is one line until you open it.
   const [peek, setPeek] = useState(false);
   const folded = digging && !peek;
@@ -615,8 +616,25 @@ export const WishQuestion = memo(function WishQuestion({
       )}
     </TooltipButton>
   );
-  const corner = (later || move) && (
+  // Versions (3): the current version and the two before it, which the button opens below the question.
+  const versionsButton = versions.length > 0 && (
+    <button
+      type="button"
+      className={`question-corner-button question-versions${showVersions ? " is-pressed" : ""}`}
+      title={t("question.versions_detail")}
+      aria-expanded={showVersions}
+      onClick={() => setShowVersions(!showVersions)}
+    >
+      <History size={13} aria-hidden="true" />
+      {t("question.versions", { count: versions.length + 1 })}
+    </button>
+  );
+  const earlier = showVersions && versions.length > 0 && (
+    <Versions versions={versions} />
+  );
+  const corner = (later || move || versionsButton) && (
     <div className="question-corner">
+      {versionsButton}
       {later}
       {move}
     </div>
@@ -685,7 +703,7 @@ export const WishQuestion = memo(function WishQuestion({
             {recommendation}
             {options}
             {gestures}
-            {rounds.length > 0 && <Rounds question={q} />}
+            {earlier}
           </div>
         )}
       </motion.article>
@@ -740,7 +758,7 @@ export const WishQuestion = memo(function WishQuestion({
         ) : (
           <div className="question-heading">{heading}</div>
         )}
-        {!answered && !withdrawn && !folded && corner}
+        {!folded && (answered || withdrawn ? body && versionsButton : corner)}
       </div>
       {body && (
         <div className="question-inner">
@@ -789,7 +807,7 @@ export const WishQuestion = memo(function WishQuestion({
               {gestures}
             </>
           )}
-          {rounds.length > 0 && <Rounds question={q} />}
+          {earlier}
         </div>
       )}
     </motion.article>
@@ -857,8 +875,8 @@ function QuestionReport({ report }: { report: Block }) {
   );
 }
 
-// QuestionContext is what happened and what is at stake, whole or in its first view (folded); the earlier versions
-// Djinn appends to it at each revision fold below it under "Previous versions", closed until you open them.
+// QuestionContext is what happened and what is at stake, whole or in its first view (folded): the current version
+// only, the earlier ones are behind the card's Versions button.
 function QuestionContext({
   context,
   folded = false,
@@ -866,70 +884,92 @@ function QuestionContext({
   context: string;
   folded?: boolean;
 }) {
-  const versions = useMemo(() => splitHistory(context), [context]);
   return (
     <section className="question-context">
       <h4>{t("page.context")}</h4>
-      {versions.context &&
-        (folded ? (
-          <FoldedMarkdown
-            text={versions.context}
-            more={t("question.read_more")}
-            less={t("question.read_less")}
-            copy
-          />
-        ) : (
-          <div className="prose">
-            <MarkdownBody text={versions.context} copy />
-          </div>
-        ))}
-      {versions.history && (
-        <details className="question-history">
-          <summary>
-            <History size={13} aria-hidden="true" />
-            {t("question.previous_versions")}
-          </summary>
-          <div className="prose">
-            <MarkdownBody text={versions.history} copy />
-          </div>
-        </details>
+      {folded ? (
+        <FoldedMarkdown
+          text={context}
+          more={t("question.read_more")}
+          less={t("question.read_less")}
+          copy
+        />
+      ) : (
+        <div className="prose">
+          <MarkdownBody text={context} copy />
+        </div>
       )}
     </section>
   );
 }
 
-// Rounds is a question's history, folded: each request to investigate and each revision, dated.
-function Rounds({ question }: { question: Question }) {
+// Versions are a question's earlier versions, to read, the last one first, as a tilasm's: when each was asked or
+// revised into, what you asked to investigate about it, and what it said, its context folded to its first view.
+function Versions({ versions }: { versions: QuestionVersion[] }) {
+  const list = useRef<HTMLElement>(null);
+  // Opened from the corner, it may start below the view: it comes into view, and the place is the reader's.
+  useEffect(() => {
+    const element = list.current;
+    if (!element) return;
+    element.scrollIntoView({ block: "nearest" });
+    for (let node = element.parentElement; node; node = node.parentElement) {
+      if (/auto|scroll/.test(getComputedStyle(node).overflowY)) {
+        placeTaken(node);
+        break;
+      }
+    }
+  }, []);
   return (
-    <details className="question-rounds">
-      <summary>
-        <History size={13} aria-hidden="true" />
-        {t("question.rounds", { count: question.rounds.length })}
-      </summary>
-      <table className="compact-table">
-        <tbody>
-          {question.rounds.map((round, i) => (
-            <tr key={i}>
-              <td>
-                <time>{when(round.createTime)}</time>
-              </td>
-              <td>
-                {round.kind === RoundKind.ENLIGHTEN
-                  ? t("page.round_enlighten")
-                  : t("page.round_revise")}
-              </td>
-              <td>
-                {round.kind === RoundKind.ENLIGHTEN
-                  ? round.note
-                  : round.recommendation &&
-                    t("question.round_before", {
-                      recommendation: round.recommendation,
-                    })}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </details>
+    <section ref={list} className="question-versions-list">
+      <h4>{t("question.versions_earlier")}</h4>
+      <ol reversed>
+        {[...versions].reverse().map((v) => (
+          <li key={v.number}>
+            <p className="question-version-head">
+              <span className="question-version-number">
+                {t("question.version", { number: v.number })}
+              </span>
+              <time>
+                {t(
+                  v.number === 1
+                    ? "question.version_asked"
+                    : "question.version_revised",
+                  {
+                    when: when(v.time),
+                  },
+                )}
+              </time>
+            </p>
+            {v.context && (
+              <FoldedMarkdown
+                text={v.context}
+                more={t("question.read_more")}
+                less={t("question.read_less")}
+              />
+            )}
+            {v.options.length > 0 && (
+              <ol className="question-version-options" type="A">
+                {v.options.map((option, i) => (
+                  <li key={i}>{option}</li>
+                ))}
+              </ol>
+            )}
+            {v.recommendation && (
+              <p className="question-version-recommendation">
+                {t("question.version_recommendation", {
+                  recommendation: v.recommendation,
+                })}
+              </p>
+            )}
+            {v.asked.map((note, i) => (
+              <p key={i} className="question-version-asked">
+                <Lightbulb size={13} aria-hidden="true" />
+                {t("question.version_enlighten", { note })}
+              </p>
+            ))}
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

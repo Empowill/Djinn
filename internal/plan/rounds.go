@@ -15,15 +15,13 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// HistoryHeader introduces the prior-versions section appended to a revised question's context.
+// HistoryHeader introduced the history of earlier versions Revise appended to a question's context until W114. A
+// context holds its current version only now, the earlier ones live in the question's rounds: CleanContext cuts what
+// a caller still pastes, and CleanVersions what questions stored before.
 const HistoryHeader = "## Historique des versions pr\u00e9c\u00e9dentes"
 
-// CleanContext strips any auto-appended HistoryHeader section from a question's context so revisions never nest or
-// duplicate prior history.
+// CleanContext strips the HistoryHeader section from a question's context, and all that follows it.
 func CleanContext(context string) string {
-	if i := strings.Index(context, "\n\n"+HistoryHeader); i >= 0 {
-		return strings.TrimRight(context[:i], "\r\n ")
-	}
 	if i := strings.Index(context, "\n"+HistoryHeader); i >= 0 {
 		return strings.TrimRight(context[:i], "\r\n ")
 	}
@@ -33,46 +31,42 @@ func CleanContext(context string) string {
 	return context
 }
 
-// formatHistory formats the chronological history from Tour 0 through prior revisions so the question context
-// preserves every prior version without nesting or duplicating.
-func formatHistory(rounds []*planv1.Round) string {
-	var b strings.Builder
-	tour := 0
-	for _, r := range rounds {
-		switch r.GetKind() {
-		case planv1.RoundKind_ROUND_KIND_ENLIGHTEN:
-			if note := strings.TrimSpace(r.GetNote()); note != "" {
-				fmt.Fprintf(&b, "- Enlighten (Tour %d): %s\n", tour, note)
+// CleanVersions cuts from every stored question the history Revise appended to its context until W114, in its
+// context and in its rounds' (CleanContext), each change journaled: run as djinn up opens the store, it changes
+// nothing once done.
+func CleanVersions(ctx context.Context, s *store.Store) error {
+	questions, err := store.List[*planv1.Question](ctx, s, nil)
+	if err != nil {
+		return err
+	}
+	for _, q := range questions {
+		changed := false
+		clean := func(text *string) {
+			if c := CleanContext(*text); c != *text {
+				*text, changed = c, true
 			}
-		case planv1.RoundKind_ROUND_KIND_REVISE:
-			label := fmt.Sprintf("Tour %d", tour)
-			if tour == 0 {
-				label = "Tour 0 (initial)"
+		}
+		clean(&q.Context)
+		for _, r := range q.GetRounds() {
+			clean(&r.Context)
+		}
+		if !changed {
+			continue
+		}
+		if err := s.Tx(ctx, func(tx *store.Tx) error {
+			if err := tx.Journal(actor, methodCleanVersions, q); err != nil {
+				return err
 			}
-			fmt.Fprintf(&b, "### %s\n", label)
-			if opts := r.GetOptions(); len(opts) > 0 {
-				var formatted []string
-				for i, o := range opts {
-					formatted = append(formatted, fmt.Sprintf("%c: %s", 'A'+i, o))
-				}
-				fmt.Fprintf(&b, "- Options: %s\n", strings.Join(formatted, " | "))
-			}
-			if rec := strings.TrimSpace(r.GetRecommendation()); rec != "" {
-				fmt.Fprintf(&b, "- Recommendation: %s\n", rec)
-			}
-			if ctx := strings.TrimSpace(CleanContext(r.GetContext())); ctx != "" {
-				fmt.Fprintf(&b, "\n%s\n", ctx)
-			}
-			b.WriteString("\n")
-			tour++
+			return tx.Put(q)
+		}); err != nil {
+			return fmt.Errorf("clean the versions of %s: %w", q.GetCode(), err)
 		}
 	}
-	body := strings.TrimSpace(b.String())
-	if body == "" {
-		return ""
-	}
-	return HistoryHeader + "\n\n" + body
+	return nil
 }
+
+// methodCleanVersions journals CleanVersions; the request is the question, cleaned.
+const methodCleanVersions = "plan/clean-versions"
 
 // Investigating tells an open question whose last round is a request to investigate: it waits for the lead's
 // revision, not for the developer.
@@ -90,7 +84,7 @@ func (q *Questions) Enlighten(
 		func(_ *store.Tx, question *planv1.Question, round *planv1.Round) error {
 			round.Kind, round.Note = planv1.RoundKind_ROUND_KIND_ENLIGHTEN, req.Msg.GetNote()
 			round.Context, round.Options, round.Recommendation =
-				CleanContext(question.GetContext()), slices.Clone(question.GetOptions()), question.GetRecommendation()
+				question.GetContext(), slices.Clone(question.GetOptions()), question.GetRecommendation()
 			return nil
 		})
 	if err != nil {
@@ -146,13 +140,13 @@ func (q *Questions) Revise(
 				}
 				question.AboutTaskId = about
 			}
-			prevContext := CleanContext(question.GetContext())
 			round.Kind, round.TaskId = planv1.RoundKind_ROUND_KIND_REVISE, m.GetTaskId()
 			round.Context, round.Options, round.Recommendation =
-				prevContext, slices.Clone(question.GetOptions()), question.GetRecommendation()
-			baseContext := prevContext
+				question.GetContext(), slices.Clone(question.GetOptions()), question.GetRecommendation()
+			// The context is the current version only: the former one is the round's. What a caller pastes from an
+			// older output, with the history Djinn appended to it, is cut.
 			if m.GetContext() != "" {
-				baseContext = CleanContext(m.GetContext())
+				question.Context = CleanContext(m.GetContext())
 			}
 			if len(m.GetOptions()) > 0 {
 				question.Options = m.GetOptions()
@@ -167,20 +161,14 @@ func (q *Questions) Revise(
 			if m.Before != nil {
 				question.Before = strings.TrimSpace(m.GetBefore())
 			}
-			history := formatHistory(append(slices.Clone(question.GetRounds()), round))
-			switch {
-			case baseContext != "" && history != "":
-				question.Context = baseContext + "\n\n" + history
-			case history != "":
-				question.Context = history
-			default:
-				question.Context = baseContext
-			}
 			question.Revision++
 			return nil
 		})
 	if err != nil {
 		return nil, err
+	}
+	if !m.GetHistory() {
+		question.Rounds = nil // The current version only: its earlier ones are behind history.
 	}
 	return connect.NewResponse(&planv1.QuestionServiceReviseResponse{
 		Question: question, Warnings: ContextWarnings(question.GetContext()),

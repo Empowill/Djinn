@@ -223,7 +223,7 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   expect(brief).toContain("## To investigate");
   expect(brief).toContain("How long does each burn?");
 
-  // The lead revises from the command line: the question waits for you again, revised, its history folded.
+  // The lead revises from the command line: the question waits for you again, revised, its earlier version apart.
   djinn(
     "question",
     "revise",
@@ -250,19 +250,28 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   ).toHaveClass(/current/);
   await revised.locator(".question-row-title").click();
   await expect(revised).toHaveClass(/current/);
-  await expect(revised.locator(".question-rounds summary")).toHaveText(
-    "History: 2 rounds",
-  );
-  // The new context first; the version before it, which Djinn appended, folded under Previous versions, closed.
-  const history = revised.locator(".question-history");
+  // The new context only; the version before it takes no room: Versions (2), in the card's corner, opens it below
+  // the question, to read, and closes it again (W114).
   await expect(revised.locator(".question-context > .prose h2")).toHaveText(
     "What we found",
   );
-  await expect(history.locator("summary")).toHaveText("Previous versions");
-  await expect(history).not.toHaveAttribute("open");
-  await expect(history.getByText("Tour 0 (initial)")).toBeHidden();
-  await history.locator("summary").click();
-  await expect(history.getByText("Tour 0 (initial)")).toBeVisible();
+  await expect(revised).not.toContainText("Historique");
+  const versions = revised.locator(".question-corner .question-versions");
+  await expect(versions).toHaveText("Versions (2)");
+  await expect(versions).toHaveAttribute("aria-expanded", "false");
+  const earlier = revised.locator(".question-versions-list");
+  await expect(earlier).toHaveCount(0);
+  await versions.click();
+  await expect(versions).toHaveAttribute("aria-expanded", "true");
+  await expect(earlier.locator("li").first()).toContainText("Version 1");
+  await expect(earlier.locator("h2")).toHaveText("What it changes");
+  await expect(earlier).toContainText(
+    "Recommended: A: it smells good, and the wick lasts.",
+  );
+  await earlier.scrollIntoViewIfNeeded();
+  await shoot(page, "review-wish-versions-dark");
+  await versions.click();
+  await expect(earlier).toHaveCount(0);
   await expect(revised.locator(".option-recommended")).toHaveCount(1);
   await expect(
     revised.locator(".option", { has: page.locator(".option-recommended") }),

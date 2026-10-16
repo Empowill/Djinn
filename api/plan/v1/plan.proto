@@ -2001,10 +2001,13 @@ message QuestionServiceReviseRequest {
     (buf.validate.field).repeated.max_items = 4,
     (buf.validate.field).repeated.items.string.max_len = 4096
   ];
+  // Give back the question's earlier versions too: its rounds, each with what the question said before it. Not set:
+  // the question as it stands now, its current version only.
+  bool history = 12;
 }
 
 message QuestionServiceReviseResponse {
-  // The question, revised.
+  // The question, revised: its current version, and its rounds only when asked with history.
   Question question = 1;
   // How its context breaks the shape a question reads in at a glance (every command in one code block at the top,
   // short Markdown), a line each; none when it keeps it. The question is stored as given: revise it.

@@ -468,8 +468,8 @@ func investigatorPrompt(q *planv1.Question, note, retry, brief string, tasks ...
 		"answer what the developer asks.\n"+
 		"3. Revise the question: `djinn question revise %[1]s --wish-id %[2]s --context \"…\" --recommendation \"…\"` "+
 		"(or `--context-file <path>`), and `--options \"…\"` (each one, up to four) when the options change. The "+
-		"context says what you found and what each option costs, in the shape below; Djinn automatically preserves "+
-		"prior versions under `%[4]s`, so write only the current revised context. Keep it short: what you found "+
+		"context says what you found and what each option costs, in the shape below; Djinn keeps the former version "+
+		"in the question's rounds, so write the current context only, never the earlier versions. Keep it short: what you found "+
 		"to choose with full light, an analysis, a comparison, a mockup, goes in a tilasm that lays out the possible "+
 		"choices, and the context links it (`djinn://tilasm/<id>`) instead of carrying it. You write no file: link a "+
 		"tilasm of the wish (`djinn tilasm list --wish %[2]s`), or spawn a worker that makes one "+
@@ -477,7 +477,7 @@ func investigatorPrompt(q *planv1.Question, note, retry, brief string, tasks ...
 		"it once made. Set `--before \"…\"` only when the answer is needed before something, `--before \"\"` when "+
 		"it can wait: never to get it seen.\n"+
 		"4. Revise it once, at the end, even if you found little: the question waits for you until you do.\n"+
-		"5. End with one line: what you found.\n\n", code, wish, q.GetText(), plan.HistoryHeader)
+		"5. End with one line: what you found.\n\n", code, wish, q.GetText())
 	b.WriteString("## The shape of the context\n\n" + plan.QuestionShape + " Rewrite the former context into this " +
 		"shape even where you found nothing new.\n\n")
 	b.WriteString(questionAccess + retry + "## Where the wish stands\n\n" + brief)
