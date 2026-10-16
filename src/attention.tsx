@@ -1,10 +1,12 @@
-// The bar that stays at the top of the flying carpet and of a wish while something waits for you: one line each, the
-// most blocking first, in the colour of how much it holds up; within a level the questions as they were asked, so a
-// new line comes after the others of its level. A click takes you there, in whatever tab, wish or fold it is; a line
-// the page cannot show any more is not a button. A move's line has its main link beside it, a button that opens where
-// the developer acts (a pull request, a CI run). A question is blocking (red), needed before something (orange, under
-// its before words) or can wait (grey), as on its card. A choice the lead's agent shows in its terminal (an approval,
-// a folder to trust) is blocking too: its options are buttons that answer it there.
+// The bar that stays at the top of the flying carpet and of a wish while something keeps a wish from moving forward and
+// cannot wait, most often a move the developer is expected to make (Q13): one line each, the most blocking first, in
+// the colour of how much it holds up; within a level the questions as they were asked, so a new line comes after the
+// others of its level. A click takes you there, in whatever tab, wish or fold it is; a line the page cannot show any
+// more is not a button. A move's line has its main link beside it, a button that opens where the developer acts (a
+// pull request, a CI run). A question is a line when it holds up its wish (holdsUp, as on its card): blocking (red) or
+// needed before something (orange, under its before words); one that can wait is in the questions column alone. A
+// choice the lead's agent shows in its terminal (an approval, a folder to trust) is blocking too: its options are
+// buttons that answer it there.
 import {
   ArrowDownRight,
   BellRing,
@@ -20,16 +22,21 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import { useClients, useDjinn } from "./data/djinn";
-import { byAsked, type OpenQuestion, type Waiting } from "./data/flight";
+import {
+  byAsked,
+  holdsUp,
+  type OpenQuestion,
+  urgency,
+  type Waiting,
+} from "./data/flight";
 import { firstLine } from "./data/format";
 import { mainLink } from "./data/links";
 import { t } from "./i18n";
 import { MoveLink } from "./link";
 
 // How much a line holds up: a question workers wait on, a move only the developer can make, a question needed
-// before something, a worker that asks to edit, a question that can wait, a wish ready to grant.
-export type Level =
-  "blocking" | "move" | "question" | "action" | "later" | "ready";
+// before something, a worker that asks to edit, a wish ready to grant.
+export type Level = "blocking" | "move" | "question" | "action" | "ready";
 
 export interface Attention {
   key: string;
@@ -54,13 +61,21 @@ const order: Record<Level, number> = {
   move: 1,
   question: 2,
   action: 3,
-  later: 4,
-  ready: 5,
+  ready: 4,
 };
 
-// attentionOf lists what waits for you, the most blocking first, each level's questions the oldest first; origin marks
-// a line with its wish. prompt is the choice the lead's agent shows in its terminal, if any: it holds up the lead, so
-// every wish, and comes first.
+// The level of a question's line, by its urgency (urgency): an answered one waiting for a lead is a question.
+const questionLevel: readonly Level[] = [
+  "blocking",
+  "move",
+  "question",
+  "question",
+];
+
+// attentionOf lists what keeps a wish from moving forward, the most blocking first, each level's questions the oldest
+// first: the questions that hold up their wish (holdsUp), those answered that wait for a lead to start, the workers
+// that wait for you, the wishes ready to grant. origin marks a line with its wish. prompt is the choice the lead's
+// agent shows in its terminal, if any: it holds up the lead, so every wish, and comes first.
 export function attentionOf(
   questions: readonly OpenQuestion[],
   waiting: readonly Waiting[],
@@ -80,16 +95,11 @@ export function attentionOf(
       text: prompt.title || t("lead_prompt.title"),
       prompt,
     });
-  for (const { wish, item, blocking } of [...questions].sort(byAsked)) {
-    const level: Level = blocking.length
-      ? "blocking"
-      : item.move && item.before
-        ? "move"
-        : item.waitingLead
-          ? "question"
-          : item.before
-            ? "question"
-            : "later";
+  for (const question of [...questions].sort(byAsked)) {
+    const { wish, item, blocking } = question;
+    // One that can wait is not a line; one answered holds its wish until a lead starts and reads it.
+    if (!item.waitingLead && !holdsUp(question)) continue;
+    const level = questionLevel[urgency(question)];
     out.push({
       key: item.id,
       level,
@@ -145,7 +155,6 @@ const levelKeys = {
   move: "attention.level_move",
   question: "attention.level_question",
   action: "attention.level_action",
-  later: "attention.level_later",
   ready: "attention.level_ready",
 } as const;
 

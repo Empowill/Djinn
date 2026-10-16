@@ -219,9 +219,6 @@ button.attention-item:hover {
 .attention-item.level-action {
   --tone: var(--st-interrupted);
 }
-.attention-item.level-later {
-  --tone: var(--st-planned);
-}
 .attention-item.level-ready {
   --tone: var(--st-done);
 }
@@ -1486,6 +1483,7 @@ html[data-motion="reduced"] .question-wisp {
   margin: 0 0 6px;
 }
 .question-rounds > summary,
+.question-history > summary,
 .wish-task-events-fold > summary {
   display: inline-flex;
   align-items: center;
@@ -1494,8 +1492,12 @@ html[data-motion="reduced"] .question-wisp {
   cursor: pointer;
   padding: 2px 0;
 }
-.question-rounds[open] > summary {
+.question-rounds[open] > summary,
+.question-history[open] > summary {
   margin-bottom: 6px;
+}
+.question-context > * + .question-history {
+  margin-top: 8px;
 }
 .review .answered-info {
   color: var(--muted);

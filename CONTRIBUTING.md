@@ -321,7 +321,8 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   `$DJINN_TASK_ID`: the decision log says "By W12".
 - An open question is blocking when a task waits for its answer, red; `djinn question ask … --before "before the merge"`
   makes it orange under those words; without them it can wait, grey. `djinn question revise … --before …` changes them,
-  `--before ""` lets it wait. Everywhere, blocking comes first, then before X, then can wait.
+  `--before ""` lets it wait. Everywhere, blocking comes first, then before X, then can wait. The bar of what waits
+  for you lists only the questions that cannot wait (`holdsUp` in `src/data/flight.ts`), never one that can.
 - With the window, what waits for you in an active wish shows as a system notification: a question (a button
   answers it), a task that waits or failed, a wish ready to review; a click shows the wish there. None for the wish
   the window shows while it is in front. A new inbox item shows as one too, and the side panel counts the new ones on

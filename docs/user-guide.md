@@ -368,7 +368,10 @@ question or the brief opens in place.
 The Djinn asks you rather than guessing. A question card, coded `Q01`, `Q02`…, gives the Djinn's
 recommendation first, then the options A to D, then what is at stake. Its colour says how much it holds up: red
 when a task waits for the answer, orange under the words the Djinn gave ("before the merge"), grey when it **Can wait**.
-The cards, the bar of what waits for you and the brief list them in that order.
+The cards and the brief list them in that order. The bar of what waits for you, at the top of the flying carpet and of
+a wish, lists only what keeps a wish from moving forward: the red and orange questions (a move of yours needed before
+something among them), the tasks waiting on you, the wishes ready to grant; a question that can wait is in the
+questions column alone.
 
 When work leaves a move only the developer can make (push a tag, open or merge a PR, start a release, check on a Mac or
 Windows, install when needed), Djinn or the agent asks it as a question, the exact command in a code block at the top
@@ -380,7 +383,8 @@ of its context. A check, a measure, a log or a CI result is never asked of you: 
 - **Enlighten me**, on its left, starts an investigator worker to dig first, in one click (`enlighten_workers: false`
   lets the Djinn investigate itself): the note you typed says what to dig into (empty, it digs in general). The question
   folds to one line, **Being investigated** with what you asked, out of the way of the questions that wait for you; a
-  click opens it, and you may still decide now. Revised, it opens again and waits for your answer. Its rounds fold
+  click opens it, and you may still decide now. Revised, it opens again and waits for your answer. Its earlier
+  versions fold under **Previous versions** below what is at stake, closed until you open them; its rounds fold
   below the card.
 - **Keyboard shortcuts.** Focus on the card, or in its note field, drives it from the keys:
   - Enter in the note field rubs the lamp: answers with the option selected. An input method composing does not
