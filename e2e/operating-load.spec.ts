@@ -78,24 +78,24 @@ test.describe("operating load slider", () => {
     for (const notch of notches) {
       const btn = page.locator(`.operating-load-notch[data-notch="${notch}"]`);
       await expect(btn).toBeVisible();
-      const title = await btn.getAttribute("title");
-      expect(title).toBeTruthy();
-      expect(title?.length).toBeGreaterThan(15);
-      expect(title?.toLowerCase()).toContain("workers");
+      const description = await btn.getAttribute("aria-description");
+      expect(description).toBeTruthy();
+      expect(description?.length).toBeGreaterThan(15);
+      expect(description?.toLowerCase()).toContain("workers");
     }
 
     const ocBtn = page.locator('.operating-load-notch[data-notch="overclock"]');
-    const ocTitle = await ocBtn.getAttribute("title");
-    expect(ocTitle).toContain("saturate CPU and memory");
+    const ocDescription = await ocBtn.getAttribute("aria-description");
+    expect(ocDescription).toContain("saturate CPU and memory");
 
     const activeBtn = page.locator(".operating-load-notch.active");
     await expect(activeBtn).toHaveAttribute("data-notch", "medium");
 
     const autoBtn = page.locator('.operating-load-notch[data-notch="auto"]');
     await expect(autoBtn).toBeVisible();
-    const autoTitle = await autoBtn.getAttribute("title");
-    expect(autoTitle).toBeTruthy();
-    expect(autoTitle?.length).toBeGreaterThan(10);
+    const autoDescription = await autoBtn.getAttribute("aria-description");
+    expect(autoDescription).toBeTruthy();
+    expect(autoDescription?.length).toBeGreaterThan(10);
     await expect(autoBtn).not.toHaveClass(/active/);
 
     expect(errors).toEqual([]);
@@ -526,7 +526,7 @@ test.describe("operating load slider", () => {
       await expect(
         page.locator(`.operating-load-notch[data-notch="${notch}"]`),
       ).toHaveAttribute(
-        "title",
+        "aria-description",
         new RegExp(`up to ${slots[notch]} workers?\\b`),
       );
     }
@@ -541,7 +541,7 @@ test.describe("operating load slider", () => {
     }
     // What lowering does, said on the CPU line.
     await expect(label).toHaveAttribute(
-      "title",
+      "aria-description",
       /Lowering the load (pauses the newest workers|lets the workers above its limit finish)/,
     );
     expect(errors).toEqual([]);
@@ -572,6 +572,10 @@ test.describe("operating load slider", () => {
     await expect(forecastEl).toBeVisible();
     await expect(forecastEl).toHaveAttribute("data-notch", "max");
     expect(getNotch()).toBe("medium");
+
+    // The coloured preview is the only hover: no title brings the browser's tooltip up over it (W32).
+    await expect(page.locator(".operating-load [title]")).toHaveCount(0);
+    await expect(page.locator(".operating-load[title]")).toHaveCount(0);
 
     // Move away
     await page.mouse.move(0, 0);
@@ -675,22 +679,22 @@ test.describe("in French", () => {
       const btn = page.locator(`.operating-load-notch[data-notch="${notch}"]`);
       await expect(btn).toBeVisible();
       await expect(btn).toHaveText(fr[`load.notch.${notch}`]);
-      const title = await btn.getAttribute("title");
-      expect(title).toBeTruthy();
-      expect(title?.length).toBeGreaterThan(15);
-      expect(title).toContain(fr[`load.notch.${notch}`]);
+      const description = await btn.getAttribute("aria-description");
+      expect(description).toBeTruthy();
+      expect(description?.length).toBeGreaterThan(15);
+      expect(description).toContain(fr[`load.notch.${notch}`]);
     }
 
     const ocBtn = page.locator('.operating-load-notch[data-notch="overclock"]');
-    const ocTitle = await ocBtn.getAttribute("title");
-    expect(ocTitle).toContain(fr["load.notch.overclock"]);
-    expect(ocTitle?.length).toBeGreaterThan(50);
+    const ocDescription = await ocBtn.getAttribute("aria-description");
+    expect(ocDescription).toContain(fr["load.notch.overclock"]);
+    expect(ocDescription?.length).toBeGreaterThan(50);
 
     const autoBtn = page.locator('.operating-load-notch[data-notch="auto"]');
     await expect(autoBtn).toBeVisible();
     await expect(autoBtn).toHaveText(fr["load.notch.auto"]);
-    const autoTitle = await autoBtn.getAttribute("title");
-    expect(autoTitle).toBeTruthy();
+    const autoDescription = await autoBtn.getAttribute("aria-description");
+    expect(autoDescription).toBeTruthy();
 
     const forecastEl = page.locator(".operating-load-forecast");
     await page.locator(".operating-load-slider").hover();

@@ -632,7 +632,7 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
           aria-valuemax={5}
           aria-valuenow={sliderIndex + 1}
           aria-valuetext={valuetext}
-          title={sliderTooltip}
+          aria-description={sliderTooltip}
           className="operating-load-input"
         />
         {/* A round stop per notch on the track, a button each: the one shown filled (it stands for the cursor), the
@@ -657,7 +657,7 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
                   e.stopPropagation();
                   select(n);
                 }}
-                title={notchTooltip(n, data, chosen)}
+                aria-description={notchTooltip(n, data, chosen)}
               />
             );
           })}
@@ -677,7 +677,7 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
               e.stopPropagation();
               select(n);
             }}
-            title={notchTooltip(n, data, chosen)}
+            aria-description={notchTooltip(n, data, chosen)}
           >
             {notchLabel(n)}
           </button>
@@ -703,7 +703,7 @@ const OperatingLoadAuto = React.memo(function OperatingLoadAuto() {
         data-notch="auto"
         className={`operating-load-notch ${data.auto ? "active" : ""}`}
         onClick={() => void loadManager.setNotch(LoadNotch.AUTO)}
-        title={notchTooltip(LoadNotch.AUTO, data, chosen)}
+        aria-description={notchTooltip(LoadNotch.AUTO, data, chosen)}
       >
         {t("load.notch.auto")}
       </button>
@@ -711,7 +711,7 @@ const OperatingLoadAuto = React.memo(function OperatingLoadAuto() {
         <span
           className="operating-load-effective"
           data-effective={notchSlug(data.notch)}
-          title={notchTooltip(LoadNotch.AUTO, data, chosen)}
+          aria-description={notchTooltip(LoadNotch.AUTO, data, chosen)}
         >
           ({notchLabel(data.notch)})
         </span>
@@ -811,7 +811,10 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
         })}
       </div>
       <div className="operating-load-forecast-row">
-        <span className="operating-load-forecast-label" title={lowerText}>
+        <span
+          className="operating-load-forecast-label"
+          aria-description={lowerText}
+        >
           {t("load.forecast_cpu_running", {
             running: data.runningWorkers,
             workers: Math.round(animatedWorkers),
@@ -841,10 +844,7 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
             </span>
           )}
         </span>
-        <div
-          className="operating-load-bar"
-          title={`CPU: ${data.runningWorkers} / ${allowedWorkers}${data.pausedWorkers > 0 ? ` (${data.pausedWorkers} paused)` : ""}`}
-        >
+        <div className="operating-load-bar">
           <div
             className="operating-load-bar-limit"
             style={{ width: `${cpuLimitPct}%` }}
@@ -863,10 +863,7 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
             used: memory(data.workerMemoryBytes),
           })}
         </span>
-        <div
-          className="operating-load-bar"
-          title={`Memory: ${memory(data.workerMemoryBytes)} / ${memory(limitMemory)}`}
-        >
+        <div className="operating-load-bar">
           <div
             className="operating-load-bar-limit"
             style={{ width: `${memLimitPct}%` }}
@@ -894,6 +891,8 @@ export const OperatingLoad = React.memo(function OperatingLoad() {
     }
   }, [djinn]);
 
+  // No element of the gauge carries a title: the browser's own tooltip came up late over the coloured preview, a
+  // hover on a hover (W32). Names stay in aria-label, the longer explanations in aria-description.
   return (
     <div className="operating-load" role="group" aria-label={t("load.label")}>
       <OperatingLoadSlider />
