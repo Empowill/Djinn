@@ -253,7 +253,7 @@
 /* The Comments column beside the frame (L08): the frame narrows for it, and the column never covers the text but on a
    narrow view. A square element in the rounded view: a straight separator on its left. Its height is the frame's. */
 .tilasm-view {
-  --tilasm-comments-width: 320px;
+  --tilasm-comments-width: 20rem;
 }
 .tilasm-view.commenting {
   display: grid;
@@ -287,7 +287,8 @@
     justify-self: end;
     width: min(var(--tilasm-comments-width), 90%);
     z-index: 1;
-    box-shadow: -6px 0 18px color-mix(in srgb, var(--shadow) 25%, transparent);
+    box-shadow: -0.375rem 0 1.125rem
+      color-mix(in srgb, var(--shadow) 25%, transparent);
   }
 }
 /* Full size, the column stands at the right of the main shell and the frame narrows beside it. */
@@ -306,24 +307,25 @@
 }
 .tilasm-full-comments {
   position: absolute;
-  top: 8px;
-  right: 48px;
+  top: 0.5rem;
+  right: 3rem;
   z-index: 31;
   border: 1px solid var(--line);
   background: var(--surface);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--shadow) 25%, transparent);
+  box-shadow: 0 0.125rem 0.5rem
+    color-mix(in srgb, var(--shadow) 25%, transparent);
 }
 .tilasm-view.full.commenting > .tilasm-full-leave {
-  right: calc(var(--tilasm-comments-width) + 8px);
+  right: calc(var(--tilasm-comments-width) + 0.5rem);
 }
 .tilasm-view.full.commenting > .tilasm-full-comments {
-  right: calc(var(--tilasm-comments-width) + 48px);
+  right: calc(var(--tilasm-comments-width) + 3rem);
 }
 .tilasm-comments-toggle {
   flex: none;
-  gap: 5px;
+  gap: 0.3125rem;
   width: auto;
-  padding: 0 8px;
+  padding: 0 0.5rem;
   font-family: var(--mono);
   font-size: var(--font-size-body);
 }
@@ -333,8 +335,8 @@
 .tilasm-comments-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 6px 6px 12px;
+  gap: 0.5rem;
+  padding: 0.375rem 0.375rem 0.375rem 0.75rem;
   border-bottom: 1px solid var(--line);
 }
 .tilasm-comments-head strong {
@@ -344,27 +346,27 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 10px 12px;
+  padding: 0.625rem 0.75rem;
 }
 .tilasm-comment-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.5rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .tilasm-comment {
-  padding: 8px 10px;
+  padding: 0.5rem 0.625rem;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   background: var(--bg);
 }
 .tilasm-comment-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 28px;
+  gap: 0.5rem;
+  min-height: 1.75rem;
 }
 .tilasm-comment-anchor {
   flex: 1;
@@ -383,14 +385,14 @@
   display: inline-flex;
 }
 .tilasm-comment-text {
-  margin: 4px 0 0;
+  margin: 0.25rem 0 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .tilasm-comment-editor textarea {
   box-sizing: border-box;
   width: 100%;
-  margin-top: 6px;
+  margin-top: 0.375rem;
   resize: vertical;
   font: inherit;
 }
@@ -399,8 +401,8 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 6px;
+  gap: 0.5rem;
+  margin-top: 0.375rem;
 }
 .tilasm-comment-editor-foot .muted-text {
   margin-right: auto;
@@ -410,8 +412,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 0.625rem;
+  padding: 0.5rem 0.75rem;
   border-top: 1px solid var(--line);
   font-size: var(--font-size-body);
 }
@@ -421,12 +423,12 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  min-width: 20px;
-  height: 20px;
-  margin: 0 6px;
-  padding: 0 6px;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  margin: 0 0.375rem;
+  padding: 0 0.375rem;
   border: 1px solid color-mix(in srgb, var(--sand) 45%, transparent);
-  border-radius: 10px;
+  border-radius: 0.625rem;
   background: color-mix(in srgb, var(--sand) 14%, transparent);
   color: var(--sand);
   font: 600 var(--font-size-body) var(--mono);
