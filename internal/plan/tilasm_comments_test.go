@@ -260,3 +260,111 @@ func commentCodes(comments []*planv1.TilasmComment) []string {
 	}
 	return out
 }
+
+// TestTilasmDrafts: the window writes a draft on the whole tilasm with the next code and the latest version, edits it,
+// deletes it and puts it back as it was; Drafts reads the wish's drafts in the order written, never a sent one, which
+// neither changes nor goes.
+func TestTilasmDrafts(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t, WithHome(t.TempDir()))
+	wish := c.wish(t)
+	src := folder(t, map[string]string{"index.html": page("Notes", "Text.")})
+	putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: src, Wish: wish})
+	tilasm := putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: src, Wish: wish, Code: "L01"}).GetTilasm()
+	put := func(m *planv1.TilasmServicePutCommentRequest) (*planv1.TilasmComment, error) {
+		m.TilasmId = tilasm.GetId()
+		res, err := c.tilasms.PutComment(ctx, connect.NewRequest(m))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg.GetComment(), nil
+	}
+	drafts := func() []string {
+		t.Helper()
+		res, err := c.tilasms.Drafts(ctx, connect.NewRequest(&planv1.TilasmServiceDraftsRequest{Wish: wish}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, d := range res.Msg.GetComments() {
+			out = append(out, d.GetCode()+" "+d.GetText())
+		}
+		return out
+	}
+
+	if _, err := put(&planv1.TilasmServicePutCommentRequest{Text: "  \n"}); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("an empty comment = %v, want invalid", err)
+	}
+	c1, err := put(&planv1.TilasmServicePutCommentRequest{Text: "A paused wish: do its notices wait?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c1.GetCode() != "C1" || c1.GetWishId() != wish || c1.GetVersion() != 2 || c1.GetAnchor() != nil ||
+		c1.GetState() != planv1.CommentState_COMMENT_STATE_DRAFT || c1.GetCreateTime() == nil {
+		t.Fatalf("a new draft = %v", c1)
+	}
+	c2, err := put(&planv1.TilasmServicePutCommentRequest{Text: "Say two seconds."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A sent comment counts for the codes, never among the drafts.
+	putComments(t, c.store, &planv1.TilasmComment{
+		TilasmId: tilasm.GetId(), WishId: wish, Code: "C7", Text: "Sent before.", State: planv1.CommentState_COMMENT_STATE_SENT, Send: 1,
+	})
+	sent, err := store.List[*planv1.TilasmComment](ctx, c.store, store.Where{"code": "C7"})
+	if err != nil || len(sent) != 1 {
+		t.Fatal(sent, err)
+	}
+	if got := drafts(); !slices.Equal(got, []string{"C1 A paused wish: do its notices wait?", "C2 Say two seconds."}) {
+		t.Errorf("drafts = %q", got)
+	}
+
+	edited, err := put(&planv1.TilasmServicePutCommentRequest{Id: c1.GetId(), Text: "A paused wish: its notices wait."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edited.GetCode() != "C1" || edited.GetText() != "A paused wish: its notices wait." || !proto.Equal(edited.GetCreateTime(), c1.GetCreateTime()) {
+		t.Errorf("an edit = %v", edited)
+	}
+	if _, err := put(&planv1.TilasmServicePutCommentRequest{Id: sent[0].GetId(), Text: "Changed."}); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+		!strings.Contains(err.Error(), "C7 was sent") {
+		t.Errorf("an edit of a sent comment = %v", err)
+	}
+	if _, err := c.tilasms.DeleteComment(ctx, connect.NewRequest(&planv1.TilasmServiceDeleteCommentRequest{Id: sent[0].GetId()})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("a delete of a sent comment = %v", err)
+	}
+
+	res, err := c.tilasms.DeleteComment(ctx, connect.NewRequest(&planv1.TilasmServiceDeleteCommentRequest{Id: c1.GetId()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleted := res.Msg.GetComment()
+	if got := drafts(); !slices.Equal(got, []string{"C2 Say two seconds."}) {
+		t.Errorf("after the delete: %q", got)
+	}
+	back, err := put(&planv1.TilasmServicePutCommentRequest{Deleted: deleted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(back, deleted) {
+		t.Errorf("put back = %v\nwant %v", back, deleted)
+	}
+	if got := drafts(); !slices.Equal(got, []string{"C1 A paused wish: its notices wait.", "C2 Say two seconds."}) {
+		t.Errorf("after the Undo, the draft is back in its place: %q", got)
+	}
+	if _, err := put(&planv1.TilasmServicePutCommentRequest{Deleted: deleted}); connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Errorf("put back twice = %v", err)
+	}
+
+	// Its code taken meanwhile, a draft put back takes the next one.
+	res, err = c.tilasms.DeleteComment(ctx, connect.NewRequest(&planv1.TilasmServiceDeleteCommentRequest{Id: c2.GetId()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	putComments(t, c.store, &planv1.TilasmComment{
+		TilasmId: tilasm.GetId(), WishId: wish, Code: "C2", Text: "Another.", State: planv1.CommentState_COMMENT_STATE_DRAFT,
+	})
+	if back, err := put(&planv1.TilasmServicePutCommentRequest{Deleted: res.Msg.GetComment()}); err != nil || back.GetCode() != "C8" {
+		t.Errorf("put back, its code taken = %v, %v; want C8", back, err)
+	}
+}

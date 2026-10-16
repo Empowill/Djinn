@@ -1160,6 +1160,7 @@ export function WishView({
             review={reviewLeft(review)}
             decisions={decisionsTotal ?? decisions.length}
             tilasms={detail.tilasms.length}
+            drafts={detail.drafts.length}
             agents={forAgents.length}
             onView={(to) => show(to)}
           />
@@ -1169,6 +1170,7 @@ export function WishView({
               wishId={wish.id}
               opening={opened}
               tilasms={detail.tilasms}
+              drafts={detail.drafts}
               tasks={detail.tasks}
               onToast={onToast}
             />

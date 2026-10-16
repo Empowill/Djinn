@@ -4536,6 +4536,78 @@ test("the Tilasms tab lists each tilasm newest first with its code, title, autho
   );
 });
 
+test("a tilasm's draft comments are counted in gold on its head, its row and the Tilasms tab", () => {
+  const model = tilasm("01a1223a-ae45-728f-8c37-c005eee91edb", "L01", "Model");
+  const flows = tilasm("01a1223a-ae45-728f-8c37-c005eee91edc", "L02", "Flows");
+  const draft = (id, tilasmId, code, state = 1) => ({
+    id,
+    tilasmId,
+    wishId: "w1",
+    code,
+    text: `Text of ${code}`,
+    state,
+  });
+  const props = {
+    tilasms: [model, flows],
+    drafts: [
+      draft("01a14600-0000-7000-8000-000000000001", model.id, "C1"),
+      draft("01a14600-0000-7000-8000-000000000002", model.id, "C2"),
+      // Sent: no longer waits for the developer.
+      draft("01a14600-0000-7000-8000-000000000003", model.id, "C3", 2),
+    ],
+    comments: { put() {}, remove() {}, putBack() {} },
+    count: 2,
+    codes: new Map(),
+    search: "",
+    onSearch() {},
+    open: model,
+    onOpen() {},
+    history: "",
+    onHistory() {},
+    onRestore() {},
+    onExport() {},
+    onDrop() {},
+  };
+  const html = s.renderToStaticMarkup(h(s.TilasmList, props));
+  // The head: a button that opens the column, with the count; the column stays closed until it is pressed.
+  assert.match(
+    html,
+    /<button type="button" class="icon-button tilasm-comments-toggle[^"]*" aria-pressed="false" title="Comments · 2 draft comments"[^>]*>.*<span class="draft-count">2<\/span><\/button>/,
+  );
+  assert.doesNotMatch(html, /class="tilasm-comments"/);
+  // The row of the tilasm with drafts has its gold dot; the other has none.
+  const rows = html.match(/<li id="tilasm-[^"]*"[\s\S]*?<\/li>/g);
+  const row = (id) => rows.find((r) => r.includes(`tilasm-${id}`));
+  assert.match(
+    row(model.id),
+    /<span class="draft-dot" title="2 draft comments" aria-label="2 draft comments">2<\/span>/,
+  );
+  assert.doesNotMatch(row(flows.id), /draft-dot/);
+  // Without what writes them, as over a view, no comments show.
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(h(s.TilasmList, { ...props, comments: undefined })),
+    /tilasm-comments-toggle/,
+  );
+  // The tab: the tilasms' count, then the drafts' gold dot; none without drafts.
+  const tabs = (drafts) =>
+    s.renderToStaticMarkup(
+      h(s.ViewTabs, {
+        view: "main",
+        main: "Wish",
+        tasks: 0,
+        decisions: 0,
+        tilasms: 2,
+        drafts,
+        onView() {},
+      }),
+    );
+  assert.match(
+    tabs(2),
+    /id="view-tab-tilasms"[^>]*>Tilasms<span class="count">2<\/span><span class="draft-dot" title="2 draft comments" aria-label="2 draft comments">2<\/span><\/button>/,
+  );
+  assert.doesNotMatch(tabs(0), /draft-dot/);
+});
+
 test("the open tilasm goes full size and back, the same tilasm open, its frame never made again", () => {
   const model = tilasm("01a1223a-ae45-728f-8c37-c005eee91edb", "L01", "Model");
   const flows = tilasm("01a1223a-ae45-728f-8c37-c005eee91edc", "L02", "Flows");
@@ -4781,6 +4853,9 @@ test("a tilasm opened from a question covers the view full size, which stays mou
     },
   });
   Object.assign(proto, {
+    matches(selectors) {
+      return matches(this, selectors);
+    },
     closest(selectors) {
       if (matches(this, selectors)) return this;
       return this.parentNode?.nodeType === 1

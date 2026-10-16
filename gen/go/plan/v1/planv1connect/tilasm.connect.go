@@ -53,6 +53,14 @@ const (
 	TilasmServicePutDataProcedure = "/plan.v1.TilasmService/PutData"
 	// TilasmServiceCommentsProcedure is the fully-qualified name of the TilasmService's Comments RPC.
 	TilasmServiceCommentsProcedure = "/plan.v1.TilasmService/Comments"
+	// TilasmServicePutCommentProcedure is the fully-qualified name of the TilasmService's PutComment
+	// RPC.
+	TilasmServicePutCommentProcedure = "/plan.v1.TilasmService/PutComment"
+	// TilasmServiceDeleteCommentProcedure is the fully-qualified name of the TilasmService's
+	// DeleteComment RPC.
+	TilasmServiceDeleteCommentProcedure = "/plan.v1.TilasmService/DeleteComment"
+	// TilasmServiceDraftsProcedure is the fully-qualified name of the TilasmService's Drafts RPC.
+	TilasmServiceDraftsProcedure = "/plan.v1.TilasmService/Drafts"
 )
 
 // TilasmServiceClient is a client for the plan.v1.TilasmService service.
@@ -81,6 +89,12 @@ type TilasmServiceClient interface {
 	// Read the comments the developer sent on a tilasm, each with the passage or the element it is on: those of one send
 	// with --send, as its comments event names it, else every send. A draft never shows: it is the developer's alone.
 	Comments(context.Context, *connect.Request[v1.TilasmServiceCommentsRequest]) (*connect.Response[v1.TilasmServiceCommentsResponse], error)
+	// Write a draft comment on a tilasm, from the window: a new one, or an edit of one not sent yet; a sent one is refused.
+	PutComment(context.Context, *connect.Request[v1.TilasmServicePutCommentRequest]) (*connect.Response[v1.TilasmServicePutCommentResponse], error)
+	// Delete a draft comment, from the window; a sent one stays. It returns the draft, for the window's Undo to put back.
+	DeleteComment(context.Context, *connect.Request[v1.TilasmServiceDeleteCommentRequest]) (*connect.Response[v1.TilasmServiceDeleteCommentResponse], error)
+	// The draft comments on a wish's tilasms, for the window: no agent reads them.
+	Drafts(context.Context, *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error)
 }
 
 // NewTilasmServiceClient constructs a client for the plan.v1.TilasmService service. By default, it
@@ -158,21 +172,43 @@ func NewTilasmServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		putComment: connect.NewClient[v1.TilasmServicePutCommentRequest, v1.TilasmServicePutCommentResponse](
+			httpClient,
+			baseURL+TilasmServicePutCommentProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("PutComment")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteComment: connect.NewClient[v1.TilasmServiceDeleteCommentRequest, v1.TilasmServiceDeleteCommentResponse](
+			httpClient,
+			baseURL+TilasmServiceDeleteCommentProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("DeleteComment")),
+			connect.WithClientOptions(opts...),
+		),
+		drafts: connect.NewClient[v1.TilasmServiceDraftsRequest, v1.TilasmServiceDraftsResponse](
+			httpClient,
+			baseURL+TilasmServiceDraftsProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Drafts")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // tilasmServiceClient implements TilasmServiceClient.
 type tilasmServiceClient struct {
-	put      *connect.Client[v1.TilasmServicePutRequest, v1.TilasmServicePutResponse]
-	list     *connect.Client[v1.TilasmServiceListRequest, v1.TilasmServiceListResponse]
-	get      *connect.Client[v1.TilasmServiceGetRequest, v1.TilasmServiceGetResponse]
-	open     *connect.Client[v1.TilasmServiceOpenRequest, v1.TilasmServiceOpenResponse]
-	history  *connect.Client[v1.TilasmServiceHistoryRequest, v1.TilasmServiceHistoryResponse]
-	restore  *connect.Client[v1.TilasmServiceRestoreRequest, v1.TilasmServiceRestoreResponse]
-	export   *connect.Client[v1.TilasmServiceExportRequest, v1.TilasmServiceExportResponse]
-	_import  *connect.Client[v1.TilasmServiceImportRequest, v1.TilasmServiceImportResponse]
-	putData  *connect.Client[v1.TilasmServicePutDataRequest, v1.TilasmServicePutDataResponse]
-	comments *connect.Client[v1.TilasmServiceCommentsRequest, v1.TilasmServiceCommentsResponse]
+	put           *connect.Client[v1.TilasmServicePutRequest, v1.TilasmServicePutResponse]
+	list          *connect.Client[v1.TilasmServiceListRequest, v1.TilasmServiceListResponse]
+	get           *connect.Client[v1.TilasmServiceGetRequest, v1.TilasmServiceGetResponse]
+	open          *connect.Client[v1.TilasmServiceOpenRequest, v1.TilasmServiceOpenResponse]
+	history       *connect.Client[v1.TilasmServiceHistoryRequest, v1.TilasmServiceHistoryResponse]
+	restore       *connect.Client[v1.TilasmServiceRestoreRequest, v1.TilasmServiceRestoreResponse]
+	export        *connect.Client[v1.TilasmServiceExportRequest, v1.TilasmServiceExportResponse]
+	_import       *connect.Client[v1.TilasmServiceImportRequest, v1.TilasmServiceImportResponse]
+	putData       *connect.Client[v1.TilasmServicePutDataRequest, v1.TilasmServicePutDataResponse]
+	comments      *connect.Client[v1.TilasmServiceCommentsRequest, v1.TilasmServiceCommentsResponse]
+	putComment    *connect.Client[v1.TilasmServicePutCommentRequest, v1.TilasmServicePutCommentResponse]
+	deleteComment *connect.Client[v1.TilasmServiceDeleteCommentRequest, v1.TilasmServiceDeleteCommentResponse]
+	drafts        *connect.Client[v1.TilasmServiceDraftsRequest, v1.TilasmServiceDraftsResponse]
 }
 
 // Put calls plan.v1.TilasmService.Put.
@@ -225,6 +261,21 @@ func (c *tilasmServiceClient) Comments(ctx context.Context, req *connect.Request
 	return c.comments.CallUnary(ctx, req)
 }
 
+// PutComment calls plan.v1.TilasmService.PutComment.
+func (c *tilasmServiceClient) PutComment(ctx context.Context, req *connect.Request[v1.TilasmServicePutCommentRequest]) (*connect.Response[v1.TilasmServicePutCommentResponse], error) {
+	return c.putComment.CallUnary(ctx, req)
+}
+
+// DeleteComment calls plan.v1.TilasmService.DeleteComment.
+func (c *tilasmServiceClient) DeleteComment(ctx context.Context, req *connect.Request[v1.TilasmServiceDeleteCommentRequest]) (*connect.Response[v1.TilasmServiceDeleteCommentResponse], error) {
+	return c.deleteComment.CallUnary(ctx, req)
+}
+
+// Drafts calls plan.v1.TilasmService.Drafts.
+func (c *tilasmServiceClient) Drafts(ctx context.Context, req *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error) {
+	return c.drafts.CallUnary(ctx, req)
+}
+
 // TilasmServiceHandler is an implementation of the plan.v1.TilasmService service.
 type TilasmServiceHandler interface {
 	// Put a folder that holds an index.html, an .html file, or a .zip of one, as a tilasm of the wish: a new one, or
@@ -251,6 +302,12 @@ type TilasmServiceHandler interface {
 	// Read the comments the developer sent on a tilasm, each with the passage or the element it is on: those of one send
 	// with --send, as its comments event names it, else every send. A draft never shows: it is the developer's alone.
 	Comments(context.Context, *connect.Request[v1.TilasmServiceCommentsRequest]) (*connect.Response[v1.TilasmServiceCommentsResponse], error)
+	// Write a draft comment on a tilasm, from the window: a new one, or an edit of one not sent yet; a sent one is refused.
+	PutComment(context.Context, *connect.Request[v1.TilasmServicePutCommentRequest]) (*connect.Response[v1.TilasmServicePutCommentResponse], error)
+	// Delete a draft comment, from the window; a sent one stays. It returns the draft, for the window's Undo to put back.
+	DeleteComment(context.Context, *connect.Request[v1.TilasmServiceDeleteCommentRequest]) (*connect.Response[v1.TilasmServiceDeleteCommentResponse], error)
+	// The draft comments on a wish's tilasms, for the window: no agent reads them.
+	Drafts(context.Context, *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error)
 }
 
 // NewTilasmServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -324,6 +381,25 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	tilasmServicePutCommentHandler := connect.NewUnaryHandler(
+		TilasmServicePutCommentProcedure,
+		svc.PutComment,
+		connect.WithSchema(tilasmServiceMethods.ByName("PutComment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceDeleteCommentHandler := connect.NewUnaryHandler(
+		TilasmServiceDeleteCommentProcedure,
+		svc.DeleteComment,
+		connect.WithSchema(tilasmServiceMethods.ByName("DeleteComment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceDraftsHandler := connect.NewUnaryHandler(
+		TilasmServiceDraftsProcedure,
+		svc.Drafts,
+		connect.WithSchema(tilasmServiceMethods.ByName("Drafts")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TilasmService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TilasmServicePutProcedure:
@@ -346,6 +422,12 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 			tilasmServicePutDataHandler.ServeHTTP(w, r)
 		case TilasmServiceCommentsProcedure:
 			tilasmServiceCommentsHandler.ServeHTTP(w, r)
+		case TilasmServicePutCommentProcedure:
+			tilasmServicePutCommentHandler.ServeHTTP(w, r)
+		case TilasmServiceDeleteCommentProcedure:
+			tilasmServiceDeleteCommentHandler.ServeHTTP(w, r)
+		case TilasmServiceDraftsProcedure:
+			tilasmServiceDraftsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -393,4 +475,16 @@ func (UnimplementedTilasmServiceHandler) PutData(context.Context, *connect.Reque
 
 func (UnimplementedTilasmServiceHandler) Comments(context.Context, *connect.Request[v1.TilasmServiceCommentsRequest]) (*connect.Response[v1.TilasmServiceCommentsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Comments is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) PutComment(context.Context, *connect.Request[v1.TilasmServicePutCommentRequest]) (*connect.Response[v1.TilasmServicePutCommentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.PutComment is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) DeleteComment(context.Context, *connect.Request[v1.TilasmServiceDeleteCommentRequest]) (*connect.Response[v1.TilasmServiceDeleteCommentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.DeleteComment is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Drafts(context.Context, *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Drafts is not implemented"))
 }
