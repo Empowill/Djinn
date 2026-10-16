@@ -1,6 +1,7 @@
-// Package docsite is Djinn's documentation site, docs/site, with its Command line tab filled in from the command tree
-// of this very djinn (cli.Reference): what `go tool task docs` writes into bin/docs, and what djinn up serves at /docs/.
-// Nothing is generated ahead and committed, so the tab cannot lag behind the commands.
+// Package docsite is the Grimoire, Djinn's documentation site, docs/site: its book's navigation and pages rendered from
+// docs/site/pages (grimoire.go), and its Command line filled in from the command tree of this very djinn
+// (cli.Reference). It is what `go tool task docs` writes into bin/docs, and what djinn up serves at /docs/. Nothing is
+// generated ahead and committed, so the site cannot lag behind its pages or the commands.
 package docsite
 
 import (
@@ -38,7 +39,7 @@ func anchor(prefix, name string) string {
 	return prefix + "-" + strings.ReplaceAll(name, " ", "-")
 }
 
-// Commands is the HTML of the Command line tab: a table of contents, then every command of djinn by group, with its
+// Commands is the HTML of the Command line page: a table of contents, then every command of djinn by group, with its
 // usage, its help, its arguments and its flags.
 func Commands() []byte {
 	var b bytes.Buffer
@@ -63,13 +64,23 @@ type withCommands struct {
 	err   error
 }
 
-// page is index.html with the commands, made once, when first asked.
+// page is index.html with the commands and the Grimoire's navigation, pages and words, made once, when first asked.
 func (s *withCommands) page() ([]byte, error) {
 	s.once.Do(func() {
 		var b []byte
-		if b, s.err = fs.ReadFile(s.site, index); s.err == nil {
-			s.index = bytes.Replace(b, []byte(Marker), Commands(), 1)
+		if b, s.err = fs.ReadFile(s.site, index); s.err != nil {
+			return
 		}
+		b = bytes.Replace(b, []byte(Marker), Commands(), 1)
+		if bytes.Contains(b, []byte(PagesMarker)) {
+			var pages []byte
+			if pages, s.err = Pages(s.site); s.err != nil {
+				return
+			}
+			b = bytes.Replace(b, []byte(PagesMarker), pages, 1)
+		}
+		b = bytes.Replace(b, []byte(NavMarker), NavHTML(), 1)
+		s.index = bytes.Replace(b, []byte(LabelsMarker), Labels(), 1)
 	})
 	return s.index, s.err
 }

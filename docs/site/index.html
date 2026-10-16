@@ -1,7 +1,9 @@
 <!doctype html>
-<!-- Djinn's documentation: the concepts, then the command line, whose reference takes the place of the djinn:commands
-     marker, computed from the command tree of djinn (internal/docsite) by `go tool task docs` and by djinn up at
-     /docs/. Opens offline, from a file too. -->
+<!-- Djinn's documentation, the Grimoire: a splash page, then the book, a navigation on the left with Introduction
+     first, a page per concept, and the command line. internal/docsite fills the markers: the navigation (djinn:nav)
+     and the pages (djinn:pages) from pages/*.md, the navigation's words in every language (djinn:labels), and the
+     reference of the commands (djinn:commands) from the command tree of djinn; `go tool task docs` and djinn up at
+     /docs/ both do. Opens offline, from a file too. -->
 <html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
@@ -11,8 +13,8 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <meta name="color-scheme" content="dark light" />
-    <meta name="description" content="Djinn: a wisp of smoke to work your will. Its concepts, and its command line." />
-    <title>Djinn · Documentation</title>
+    <meta name="description" content="The Grimoire, Djinn's documentation: getting started, every concept, and the command line." />
+    <title>Grimoire · Djinn documentation</title>
     <link rel="icon" href="assets/mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="site.css" />
     <script src="theme.js"></script>
@@ -37,17 +39,13 @@
     </div>
 
     <header class="bar">
-      <a class="brand" href="#concepts">
+      <a class="brand" href="#welcome" data-title="docs.subtitle" title="Documentation">
         <img class="mark-dark" src="assets/mark-dark.svg" alt="" width="30" height="30" />
         <img class="mark-light" src="assets/mark.svg" alt="" width="30" height="30" />
         <span class="brand-name">Djinn</span>
-        <span class="brand-sub">Documentation</span>
+        <span class="brand-sub" data-text="docs.title">Grimoire</span>
       </a>
-      <nav class="tabs" role="tablist" aria-label="Documentation">
-        <button role="tab" id="tab-concepts" aria-controls="concepts" aria-selected="true">Concepts</button>
-        <button role="tab" id="tab-commands" aria-controls="commands" aria-selected="false" tabindex="-1">Command line</button>
-        <span class="tab-ink" aria-hidden="true"></span>
-      </nav>
+      <a class="bar-open" href="#introduction" data-text="docs.open">Open the Grimoire</a>
       <button class="theme-toggle" type="button" aria-label="Switch to the light theme" title="Light or dark">
         <svg class="sun" viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="4.2" />
@@ -59,11 +57,12 @@
       </button>
     </header>
 
-    <main id="concepts" class="panel" role="tabpanel" aria-labelledby="tab-concepts">
+    <!-- The splash page: what Djinn is at a glance. Its links lead into the book. -->
+    <main id="welcome" class="splash">
       <section class="hero">
         <div class="hero-text">
-          <p class="eyebrow">A local app for your coding agents</p>
-          <h1>Djinn</h1>
+          <p class="eyebrow">Djinn, a local app for your coding agents</p>
+          <h1 data-text="docs.title">Grimoire</h1>
           <p class="motto">A wisp of smoke to work your will.</p>
           <p class="lede">
             Give an intent, stay in control of your agents' work. Djinn runs <strong>Claude Code</strong> and
@@ -71,8 +70,9 @@
             and results you can open, annotate and validate.
           </p>
           <div class="actions">
-            <a class="button primary" href="#lamp">Rub the lamp</a>
-            <a class="button" href="#commands">Read the command line</a>
+            <a class="button primary" href="#introduction">Read the Grimoire</a>
+            <a class="button" href="#getting-started">Getting started</a>
+            <a class="button" href="#lamp">Rub the lamp</a>
           </div>
         </div>
         <figure class="lamp-scene" aria-hidden="true">
@@ -214,54 +214,54 @@
           from the old tales, each where nothing plainer would do. Everything else is plain.
         </p>
         <div class="words">
-          <article class="card word" id="wishes">
-            <h3>Wishes</h3>
+          <article class="card word" id="word-wishes">
+            <h3><a href="#wish">Wishes</a></h3>
             <p>
               What you want done. A wish has its projects, one lead, its tasks and its decisions. Three are active at most;
               the others wait, set aside. Give one priority with <code>djinn wish move</code>; say it is done with
               <code>djinn wish grant</code>.
             </p>
           </article>
-          <article class="card word" id="lead">
-            <h3>The lead</h3>
+          <article class="card word" id="word-lead">
+            <h3><a href="#the-djinn">The lead</a></h3>
             <p>
               Claude Code or Codex, in a terminal inside the window. It plans the wish, asks the questions, reviews each
               diff and commits. Djinn brings it back on its session at every start, in its folder.
             </p>
           </article>
-          <article class="card word" id="principal-lead">
-            <h3>The principal lead</h3>
+          <article class="card word" id="word-principal-lead">
+            <h3><a href="#the-djinn">The principal lead</a></h3>
             <p>
               When multiple wishes run, one lead is principal: its terminal receives your answers whenever another wish has
               no active lead, keeping decisions moving across the project. Designate one with
               <code>djinn wish principal &lt;wish-id&gt; --principal</code> or let the oldest active wish lead.
             </p>
           </article>
-          <article class="card word" id="azimas">
-            <h3>Azimas <span class="tongue">ʿazīma</span></h3>
+          <article class="card word" id="word-azimas">
+            <h3><a href="#azima">Azimas</a> <span class="tongue">ʿazīma</span></h3>
             <p>
               The incantation that binds and commands a djinn. The plan of a wish is a graph of azimas: tasks no worker
               runs, which work is part of. Only <code>depends_on</code> makes a task wait. <code>djinn plan sync</code>
               reads them from a project's <code>plan/*.md</code>.
             </p>
           </article>
-          <article class="card word" id="azima-drafts">
-            <h3>Draft azimas</h3>
+          <article class="card word" id="word-azima-drafts">
+            <h3><a href="#azima">Draft azimas</a></h3>
             <p>
               Plan azimas ahead as drafts without dispatching workers or cluttering active progress. Open a draft for work
               when you are ready with <code>djinn task open &lt;azima&gt;</code>, or move it to another wish with
               <code>djinn task move &lt;azima&gt; --wish &lt;wish&gt;</code>.
             </p>
           </article>
-          <article class="card word" id="workers">
-            <h3>Workers</h3>
+          <article class="card word" id="word-workers">
+            <h3><a href="#task-and-worker">Workers</a></h3>
             <p>
               An agent on one task, in its own worktree and branch. Send it an instruction, pause it, stop it. Stopping
               Djinn interrupts workers, never loses them: the next start resumes each one in its own session.
             </p>
           </article>
-          <article class="card word featured" id="questions">
-            <h3>Questions, and the lamp's rub</h3>
+          <article class="card word featured" id="word-questions">
+            <h3><a href="#question-and-move">Questions, and the lamp's rub</a></h3>
             <p>
               When the lead needs you, it asks: its options, and the one it recommends.
               <span class="chip">Rub the lamp</span> takes the option selected, the recommended one until you pick
@@ -270,8 +270,8 @@
               Decisions tab.
             </p>
           </article>
-          <article class="card word" id="push-strategy">
-            <h3>Push strategy</h3>
+          <article class="card word" id="word-push-strategy">
+            <h3><a href="#push-strategy">Push strategy</a></h3>
             <p>
               Control how a wish integrates its code: combine every task into one wish branch (<code>--strategy wish</code>),
               or keep each task on an independent azima branch (<code>--strategy azima</code>) with automated pull request
@@ -279,54 +279,54 @@
               <code>djinn wish push-strategy &lt;wish-id&gt; --strategy &lt;wish|azima&gt;</code>.
             </p>
           </article>
-          <article class="card word" id="gates">
-            <h3>Gates</h3>
+          <article class="card word" id="word-gates">
+            <h3><a href="#gates">Gates</a></h3>
             <p>
               Workers share one machine. Tests, builds and code generation take a gate, one at a time:
               <code>djinn gate run test -- go tool task test</code>. Djinn records what each command cost and, next time,
               waits for the memory it peaked at.
             </p>
           </article>
-          <article class="card word" id="machine">
-            <h3>The machine</h3>
+          <article class="card word" id="word-machine">
+            <h3><a href="#machine-and-load">The machine</a></h3>
             <p>
               Djinn reads what each worker uses, CPU, memory and processes, every five seconds; on Linux from a systemd
               scope of its own. Another worker starts only when the free memory holds its typical peak.
               <code>djinn machine show</code> lists them, the busiest first.
             </p>
           </article>
-          <article class="card word" id="tilasms">
-            <h3>Tilasms <span class="tongue">ṭilasm</span> <span class="soon">Coming</span></h3>
+          <article class="card word" id="word-tilasms">
+            <h3><a href="#tilasm">Tilasms</a> <span class="tongue">ṭilasm</span></h3>
             <p>
               The engraved object that holds a power, origin of “talisman”: the material that explains a wish. A folder
               with an <code>index.html</code> and its sources, kept on your machine, in its own tab, opened by a
               <code>djinn://</code> link from anywhere.
             </p>
           </article>
-          <article class="card word" id="blocks">
-            <h3>Blocks for agents</h3>
+          <article class="card word" id="word-blocks">
+            <h3><a href="#block">Blocks for agents</a></h3>
             <p>
               The smoke: what the lead and the workers write down for one another, Markdown and Mermaid diagrams, kept in a
               tab of their own. What needs you is a question. One HTML page shares the wish; <code>djinn wish export</code>
               hands it over in one file.
             </p>
           </article>
-          <article class="card word" id="journal">
-            <h3>Nothing is lost</h3>
+          <article class="card word" id="word-journal">
+            <h3><a href="#restarts-and-updates">Nothing is lost</a></h3>
             <p>
               Every write is a transaction with its journal entry, durable through a power cut. A worker stopped by its
               usage limit waits for the reset, then goes on. <code>djinn backup</code> copies it all, even running.
             </p>
           </article>
-          <article class="card word" id="routing">
-            <h3>Every request finds its wish</h3>
+          <article class="card word" id="word-routing">
+            <h3><a href="#inbox">Every request finds its wish</a></h3>
             <p>
               Something unrelated comes up: open a new wish, file it in another, or keep it here. What comes from outside
               lands in the inbox; a skill's wish template makes a wish that already knows how to work.
             </p>
           </article>
-          <article class="card word" id="skills">
-            <h3>Summoned skills</h3>
+          <article class="card word" id="word-skills">
+            <h3><a href="#skills-and-templates">Summoned skills</a></h3>
             <p>
               <code>djinn skill summon app/babysit-mr --into infra</code> lets one project's workers use another's skill,
               without a copy: they follow the source.
@@ -380,7 +380,8 @@
 <span class="p">$</span> djinn mcp</code></pre>
         </div>
         <p class="next">
-          <a class="button" href="#commands">Every command, in the Command line tab</a>
+          <a class="button primary" href="#introduction">Read the Grimoire</a>
+          <a class="button" href="#commands">Every command, in the Command line</a>
         </p>
       </section>
 
@@ -394,27 +395,38 @@
       </footer>
     </main>
 
-    <section id="commands" class="panel cli" role="tabpanel" aria-labelledby="tab-commands" hidden>
-      <div class="cli-inner">
-        <div class="cli-head">
-          <div>
-            <p class="eyebrow">Generated from the commands themselves</p>
-            <h2>The command line</h2>
-            <p>
-              Every command of <code>djinn</code>: those generated from the protos, one per public method, and those
-              written by hand. A unique prefix of a command or a method is enough: <code>djinn q answer</code>. Each
-              generated command that answers once is a tool of <code>djinn mcp</code> too.
-            </p>
+    <!-- The book: the navigation on the left, the page beside it; one page shows at a time, the one the address names. -->
+    <div class="book" hidden>
+      <nav class="book-nav" aria-label="Grimoire" data-label="docs.title">
+        <!-- djinn:nav -->
+      </nav>
+      <div class="book-pages">
+        <!-- djinn:pages -->
+        <section id="commands" class="page cli" aria-labelledby="commands-title" hidden>
+          <div class="cli-inner">
+            <div class="cli-head">
+              <div>
+                <p class="eyebrow">Generated from the commands themselves</p>
+                <h2 id="commands-title">The command line</h2>
+                <p>
+                  Every command of <code>djinn</code>: those generated from the protos, one per public method, and those
+                  written by hand. A unique prefix of a command or a method is enough: <code>djinn q answer</code>. Each
+                  generated command that answers once is a tool of <code>djinn mcp</code> too.
+                </p>
+              </div>
+              <label class="cli-search">
+                <span>Search</span>
+                <input type="search" placeholder="wish make, --kind, talisman…" autocomplete="off" spellcheck="false" />
+              </label>
+            </div>
+            <div class="cli-reference">
+              <!-- djinn:commands -->
+            </div>
           </div>
-          <label class="cli-search">
-            <span>Search</span>
-            <input type="search" placeholder="wish make, --kind, talisman…" autocomplete="off" spellcheck="false" />
-          </label>
-        </div>
-        <div class="cli-reference">
-          <!-- djinn:commands -->
-        </div>
+        </section>
       </div>
-    </section>
+    </div>
+    <!-- The navigation's words in every language Djinn speaks; site.js shows the reader's. -->
+    <script type="application/json" id="labels"><!-- djinn:labels --></script>
   </body>
 </html>

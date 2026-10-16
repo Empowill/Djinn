@@ -565,7 +565,7 @@ export function WishSidebar({
         <button
           className="nav-item grimoire-nav"
           onClick={onOpenDocs}
-          title={t("docs.title")}
+          title={t("docs.subtitle")}
           aria-label={t("sidebar.grimoire")}
         >
           <BookMarked size={15} />

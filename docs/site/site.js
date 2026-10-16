@@ -1,13 +1,53 @@
-// The two tabs (#concepts, #commands), the theme, the chapters revealed as they come into view, and the search of the
-// command line, which only hides what does not match: the reference itself is plain HTML.
+// The Grimoire: the splash page or the book, whichever the address names; in the book, the page it names, Introduction
+// when it names none of them; the navigation's words in the reader's language; the theme; the splash's chapters
+// revealed as they come into view; and the search of the command line, which only hides what does not match: the
+// reference itself is plain HTML.
 (function () {
   "use strict";
   var root = document.documentElement;
   root.classList.add("js");
 
-  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
-  var ink = document.querySelector(".tab-ink");
+  var welcome = document.getElementById("welcome");
+  var book = document.querySelector(".book");
+  var pages = Array.prototype.slice.call(document.querySelectorAll(".page"));
+  var links = Array.prototype.slice.call(document.querySelectorAll(".book-nav a"));
   var commands = document.getElementById("commands");
+
+  // The words of the navigation and of the site's own chrome, in the language the window passes (?lang=), else the
+  // browser's; the pages stay in English. The page as written is English, and stays so when the labels are missing.
+  function translate() {
+    var labels;
+    try {
+      labels = JSON.parse(document.getElementById("labels").textContent);
+    } catch (e) {
+      return;
+    }
+    var asked = [new URLSearchParams(location.search).get("lang")].concat(navigator.languages || [navigator.language]);
+    var language = "en";
+    for (var i = 0; i < asked.length; i++) {
+      var base = String(asked[i] || "")
+        .toLowerCase()
+        .split(/[-_]/)[0];
+      if (labels[base]) {
+        language = base;
+        break;
+      }
+    }
+    var texts = labels[language];
+    if (language === "en" || !texts) return;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-text]"), function (e) {
+      var text = texts[e.dataset.text];
+      if (!text) return;
+      e.textContent = text;
+      e.lang = language;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-title]"), function (e) {
+      if (texts[e.dataset.title]) e.title = texts[e.dataset.title];
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-label]"), function (e) {
+      if (texts[e.dataset.label]) e.setAttribute("aria-label", texts[e.dataset.label]);
+    });
+  }
 
   function paint() {
     var theme = root.dataset.theme === "light" ? "light" : "dark";
@@ -15,36 +55,31 @@
     toggle.setAttribute("aria-label", theme === "dark" ? "Switch to the light theme" : "Switch to the dark theme");
   }
 
-  function place() {
-    var current = tabs.filter(function (t) {
-      return t.getAttribute("aria-selected") === "true";
-    })[0];
-    if (!current || !ink) return;
-    ink.style.setProperty("--ink-left", current.offsetLeft + "px");
-    ink.style.setProperty("--ink-width", current.offsetWidth + "px");
-  }
-
-  function show(name, focus) {
-    tabs.forEach(function (tab) {
-      var on = tab.getAttribute("aria-controls") === name;
-      tab.setAttribute("aria-selected", on ? "true" : "false");
-      tab.tabIndex = on ? 0 : -1;
-      document.getElementById(tab.getAttribute("aria-controls")).hidden = !on;
-      if (on && focus) tab.focus();
-    });
-    place();
-  }
-
-  // A hash names a tab, or a place in one: a chapter of the concepts, a command (#cmd-wish-make).
+  // A hash names the splash or a place in it (#lamp), a page of the book (#wish), or a place in a page: a section
+  // (#wish-paused-wishes), a command (#cmd-wish-make). No hash is the splash; a hash nothing has is Introduction.
   function route() {
-    var id = location.hash.slice(1);
-    var target = id && document.getElementById(id);
-    var name = target && commands.contains(target) ? "commands" : "concepts";
-    show(name);
+    var id = decodeURIComponent(location.hash.slice(1));
+    var target = id ? document.getElementById(id) : welcome;
+    if (!target) target = document.getElementById("introduction");
+    var page = welcome.contains(target) ? null : target.closest(".page");
+    welcome.hidden = !!page;
+    book.hidden = !page;
+    root.classList.toggle("reading", !!page);
+    pages.forEach(function (p) {
+      p.hidden = p !== page;
+    });
+    links.forEach(function (a) {
+      if (page && a.getAttribute("href") === "#" + page.id) a.setAttribute("aria-current", "page");
+      else a.removeAttribute("aria-current");
+    });
     // A command is reached at once: the reference is long, and nothing in it moves.
-    if (target && target.getAttribute("role") !== "tabpanel") {
-      target.scrollIntoView(name === "commands" ? { behavior: "instant" } : undefined);
-    } else window.scrollTo(0, 0);
+    if (target !== welcome && target !== page) {
+      target.scrollIntoView(page === commands ? { behavior: "instant" } : undefined);
+    } else window.scrollTo({ top: 0, behavior: "instant" });
+    if (page) {
+      var current = book.querySelector('.book-nav a[aria-current="page"]');
+      if (current) current.scrollIntoView({ block: "nearest" });
+    }
   }
 
   // The search keeps the commands whose text holds every word typed, and the groups that keep one.
@@ -76,20 +111,13 @@
   }
   if (search) search.addEventListener("input", filter);
 
-  tabs.forEach(function (tab, i) {
-    tab.addEventListener("click", function () {
-      var name = tab.getAttribute("aria-controls");
-      if (location.hash !== "#" + name) location.hash = name;
-      else route();
-    });
-    tab.addEventListener("keydown", function (e) {
-      var step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
-      if (!step) return;
+  // A link to the place the address already names moves nowhere by itself: route again.
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest('a[href^="#"]');
+    if (a && a.getAttribute("href") === location.hash) {
       e.preventDefault();
-      var next = tabs[(i + step + tabs.length) % tabs.length];
-      location.hash = next.getAttribute("aria-controls");
-      next.focus();
-    });
+      route();
+    }
   });
 
   document.querySelector(".theme-toggle").addEventListener("click", function () {
@@ -126,8 +154,7 @@
   }
 
   window.addEventListener("hashchange", route);
-  window.addEventListener("resize", place);
-  if (document.fonts) document.fonts.ready.then(place);
+  translate();
   paint();
   route();
 })();

@@ -27,8 +27,8 @@ func UI() fs.FS {
 //go:embed docs/site
 var site embed.FS
 
-// Docs returns the documentation site, its Command line tab filled in from this djinn's commands: what djinn up
-// serves at /docs/.
+// Docs returns the Grimoire, the documentation site, its pages rendered and its Command line filled in from this
+// djinn's commands: what djinn up serves at /docs/.
 func Docs() fs.FS {
 	s, err := fs.Sub(site, "docs/site")
 	if err != nil {

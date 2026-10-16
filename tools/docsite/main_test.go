@@ -9,7 +9,7 @@ import (
 )
 
 // TestBuild builds the site of the repository and checks that every file index.html names is there: the styles,
-// the scripts, the fonts and the mark; and that its Command line tab holds the commands.
+// the scripts, the fonts and the mark; and that its Command line holds the commands.
 func TestBuild(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "docs")
 	if err := os.MkdirAll(filepath.Join(out, "stale"), 0o755); err != nil {
