@@ -143,7 +143,9 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"right, a merge, a release, a machine Djinn does not have); then the exact command goes in the code block at " +
 		"the top of its `--context`, never in a sentence.\n" +
 		"- **Refused calls are yours, rights stay explicit (Q273).** A worker's `ended` or `failed` event names the " +
-		"calls its permissions refused and the right that would allow them; the developer never sees them. Decide: " +
+		"calls its permissions refused and the right that would allow them; the developer never sees them, nor a " +
+		"failed worker: the window never counts one as waiting for them, it is yours alone. A failed investigator " +
+		"Djinn started again, or whose question was answered or revised since, closes by itself. Decide: " +
 		"continue the task otherwise (`djinn task continue`), or close it as seen (`djinn task done <task> --note " +
 		"\"…\"`) and, when its work is still needed, spawn it again where a right the wish or project grants already " +
 		"covers them; a done task left with refused calls holds its wish's grant. Never take a broad right by " +

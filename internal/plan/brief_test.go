@@ -883,6 +883,8 @@ func TestBriefRefusedCallsRule(t *testing.T) {
 	for _, want := range []string{
 		"**Refused calls are yours, rights stay explicit (Q273).**",
 		"names the calls its permissions refused and the right that would allow them; the developer never sees them",
+		"nor a failed worker: the window never counts one as waiting for them, it is yours alone.",
+		"ask for it in one `--move` question naming exactly that right, the command that grants it, and why.",
 		"continue the task otherwise (`djinn task continue`)",
 		"close it as seen (`djinn task done <task> --note \"…\"`)",
 		"spawn it again where a right the wish or project grants already covers them",

@@ -181,10 +181,7 @@ export function attentionOf(
   for (const { wish, item, question, host } of waiting) {
     // A worker that waits for an open question is already on that question's line.
     if (item.status === TaskStatus.WAITING && question) continue;
-    const failed = item.status === TaskStatus.FAILED;
-    const text = failed
-      ? firstLine(item.error) || t("attention.worker_failed")
-      : t("attention.worker_waits");
+    const text = t("attention.worker_waits");
     out.push({
       key: item.id,
       level: "action",

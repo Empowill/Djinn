@@ -3079,7 +3079,8 @@ export type Closure = Message<"plan.v1.Closure"> & {
 
   /**
    * The task that continues this one, by code (W57): a fork of its session, spawned once it was cut short, failed or
-   * stopped. The scheduler follows it: a task that depends on this one waits for the fork.
+   * stopped; or the question worker Djinn started again in its place after it failed on a refused call (W96). The
+   * scheduler follows it: a task that depends on this one waits for the fork.
    *
    * @generated from field: string continued_in = 4;
    */

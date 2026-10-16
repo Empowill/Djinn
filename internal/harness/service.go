@@ -83,10 +83,19 @@ func (s *Tasks) List(
 		return nil, plan.Status(err)
 	}
 	if req.Msg.GetFailed() {
+		// A question has no project: the wish's questions, or all of them.
+		asked := store.Where{}
+		if id := req.Msg.GetWishId(); id != "" {
+			asked["wish_id"] = id
+		}
+		questions, err := store.List[*planv1.Question](ctx, s.h.store, asked)
+		if err != nil {
+			return nil, plan.Status(err)
+		}
 		var filtered []*planv1.Task
 		for _, t := range tasks {
 			if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED &&
-				!render.TaskDealtWith(t, tasks) &&
+				!render.TaskDealtWith(t, tasks) && !outrun(t, questions) &&
 				!(t.GetEnvCause() != "" && t.GetEnvReplays() < 2) {
 				filtered = append(filtered, t)
 			}
