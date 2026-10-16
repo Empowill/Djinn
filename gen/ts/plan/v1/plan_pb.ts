@@ -8945,8 +8945,8 @@ export type TaskServiceListRequest = Message<"plan.v1.TaskServiceListRequest"> &
   failed: boolean;
 
   /**
-   * Each task in a few fields: its code, title, status, kind, azima, what it waits for and its times; no prompt, no
-   * runs, no resources. Where the tasks stand, in a few lines each.
+   * Each task in a few fields: its code, title, status, kind, azima, what it waits for, its times and its urgent mark;
+   * no prompt, no runs, no resources. Where the tasks stand, in a few lines each.
    *
    * @generated from field: bool short = 6;
    */

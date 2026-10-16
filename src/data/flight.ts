@@ -175,6 +175,23 @@ export function isMerge(task: Task): boolean {
   return !!task.correction || !!task.review;
 }
 
+// isUrgent tells a task the lead marked urgent, to unblock its wish, while it is to run or runs: it passes the
+// queue and takes a slot on a full machine (internal/dispatch.Urgent). A watcher or an azima never is.
+export function isUrgent(task: Task): boolean {
+  if (!task.urgent || task.provider === Provider.WATCH || isAzima(task)) {
+    return false;
+  }
+  switch (task.status) {
+    case TaskStatus.PENDING:
+    case TaskStatus.RESUMING:
+    case TaskStatus.RUNNING:
+    case TaskStatus.PAUSED:
+    case TaskStatus.WAITING:
+      return true;
+  }
+  return false;
+}
+
 // mergeOf are the tasks a merge brings the work of, by id.
 function mergeOf(task: Task): readonly string[] {
   return task.correction?.failure?.taskIds ?? task.review?.taskIds ?? [];

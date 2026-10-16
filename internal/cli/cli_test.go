@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -644,8 +645,13 @@ func TestJSONOnly(t *testing.T) {
 		t.Errorf("request = %v", got)
 	}
 	code, out, errs = run("--json", "tilasm", "comments", "L01")
-	if code != 0 || !strings.Contains(out, `"comments": [`) || !strings.Contains(out, `"text": "Say what a wish holds."`) {
-		t.Errorf("djinn --json tilasm comments L01: code %d, stdout:\n%s\nstderr: %s", code, out, errs)
+	// protojson spaces its output at random, one space or two: read it back rather than compare its text.
+	var printed struct {
+		Comments []struct{ Text string } `json:"comments"`
+	}
+	if err := json.Unmarshal([]byte(out), &printed); code != 0 || err != nil || len(printed.Comments) != 1 ||
+		printed.Comments[0].Text != "Say what a wish holds." {
+		t.Errorf("djinn --json tilasm comments L01: code %d, %v, stdout:\n%s\nstderr: %s", code, err, out, errs)
 	}
 }
 

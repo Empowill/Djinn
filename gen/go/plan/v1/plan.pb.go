@@ -17685,8 +17685,8 @@ type TaskServiceListRequest struct {
 	PageToken string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	// Only the failed tasks that wait for the lead.
 	Failed bool `protobuf:"varint,5,opt,name=failed,proto3" json:"failed,omitempty"`
-	// Each task in a few fields: its code, title, status, kind, azima, what it waits for and its times; no prompt, no
-	// runs, no resources. Where the tasks stand, in a few lines each.
+	// Each task in a few fields: its code, title, status, kind, azima, what it waits for, its times and its urgent mark;
+	// no prompt, no runs, no resources. Where the tasks stand, in a few lines each.
 	Short         bool `protobuf:"varint,6,opt,name=short,proto3" json:"short,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

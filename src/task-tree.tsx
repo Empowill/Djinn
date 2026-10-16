@@ -18,7 +18,7 @@ import { X } from "lucide-react";
 
 import type { Project, Task } from "../gen/ts/plan/v1/plan_pb";
 import { useTaskPrompt } from "./data/djinn";
-import { isMerge } from "./data/flight";
+import { isMerge, isUrgent } from "./data/flight";
 import {
   cancelledText,
   fixerOf,
@@ -34,7 +34,7 @@ import { t } from "./i18n";
 import { ToneIcon } from "./status";
 import { useTextScale } from "./text-size";
 import { TaskUsage } from "./usage";
-import { MergeLabel, promptPreview } from "./wish-task";
+import { MergeLabel, promptPreview, UrgentLabel } from "./wish-task";
 import "./task-tree.css";
 
 // A row's height, a lane's width, and the room left of the first lane, in pixels at the default text size: the tree
@@ -402,6 +402,7 @@ const TreeRow = memo(function TreeRow({
       </span>
       <span className="tree-label">
         {isMerge(task) && <MergeLabel task={task} codes={codes} />}
+        {isUrgent(task) && <UrgentLabel />}
         <span className="agent-code">{task.code}</span>
         <span className="tree-title">{task.title}</span>
       </span>

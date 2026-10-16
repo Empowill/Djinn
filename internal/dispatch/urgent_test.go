@@ -32,8 +32,8 @@ func TestUrgentPassesTheQueue(t *testing.T) {
 	git := map[string]bool{"p": true}
 
 	for name, m := range map[string]*Machine{
-		"full":            {Slots: 1, Rule: "test", Running: 1},
-		"under pressure":  {Slots: 4, Rule: "test", Running: 1, Pressure: "memory at 95%"},
+		"full":           {Slots: 1, Rule: "test", Running: 1},
+		"under pressure": {Slots: 4, Rule: "test", Running: 1, Pressure: "memory at 95%"},
 		"short of memory": {Slots: 4, Rule: "test", Running: 1, Available: machine.GiB / 4, Total: 8 * machine.GiB,
 			Policy: machine.DefaultPolicy()},
 	} {

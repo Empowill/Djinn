@@ -374,6 +374,17 @@
   line-height: 1rem;
   white-space: nowrap;
 }
+/* An urgent task (the lead's, to unblock the wish): a compact label like a merge's. */
+.urgent-label {
+  flex-shrink: 0;
+  padding: 0 0.3125rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--st-failed);
+  font-size: var(--font-size-body, 0.75rem);
+  line-height: 1rem;
+  white-space: nowrap;
+}
 .wish-task-merges {
   padding: 0 0.875rem 0.625rem 2.125rem;
 }

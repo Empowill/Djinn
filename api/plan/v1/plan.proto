@@ -4313,8 +4313,8 @@ message TaskServiceListRequest {
   string page_token = 4 [(buf.validate.field).string.max_len = 500];
   // Only the failed tasks that wait for the lead.
   bool failed = 5;
-  // Each task in a few fields: its code, title, status, kind, azima, what it waits for and its times; no prompt, no
-  // runs, no resources. Where the tasks stand, in a few lines each.
+  // Each task in a few fields: its code, title, status, kind, azima, what it waits for, its times and its urgent mark;
+  // no prompt, no runs, no resources. Where the tasks stand, in a few lines each.
   bool short = 6;
 }
 
