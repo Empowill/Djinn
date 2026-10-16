@@ -115,13 +115,13 @@ func limitBackoff(resumes int32) time.Duration {
 // limitText says what a task waits for: "the account's session limit, resets at 07:20", in the machine's time.
 func limitText(l Limit, after time.Time, now time.Time) string {
 	if !l.Until.IsZero() {
-		return l.What + ", resets at " + clockText(l.Until, now)
+		return l.What + ", resets at " + ClockText(l.Until, now)
 	}
-	return l.What + ", tries again at " + clockText(after, now)
+	return l.What + ", tries again at " + ClockText(after, now)
 }
 
-// clockText writes a time of the machine's day: 07:20, or with its date when it is not today.
-func clockText(t, now time.Time) string {
+// ClockText writes a time of the machine's day: 07:20, or with its date when it is not today.
+func ClockText(t, now time.Time) string {
 	t, now = t.Local(), now.Local()
 	if y, m, d := t.Date(); y != now.Year() || m != now.Month() || d != now.Day() {
 		return t.Format("2006-01-02 15:04")

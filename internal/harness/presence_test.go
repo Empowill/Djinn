@@ -93,7 +93,7 @@ func TestIfritWarnsThenGoesOut(t *testing.T) {
 	l.at(t, 30*time.Minute)
 	l.next("it goes out", goingOut)
 	out := l.e.ended(t, l.id)
-	why := "out: you left Djinn alone at " + clockText(l.start, l.clock.now())
+	why := "out: you left Djinn alone at " + ClockText(l.start, l.clock.now())
 	if out.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED || ifritState(out) != planv1.IfritState_IFRIT_STATE_OUT || out.GetError() != why {
 		t.Errorf("out: %v %v (%s), want stopped, out (%s)", out.GetStatus(), ifritState(out), out.GetError(), why)
 	}
@@ -375,4 +375,75 @@ func (c callerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
 	r.Header.Set(CallerHeader, c.who)
 	return c.base.RoundTrip(r)
+}
+
+// ifritFor polls what the gates learn of the ifrit (Ifrit) until ok holds, and says it.
+func (l *lit) ifritFor(t *testing.T, what string, ok func(lit bool, out time.Time, why string) bool) (bool, time.Time, string) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		lit, out, why := l.e.h.Ifrit(t.Context(), l.id)
+		if ok(lit, out, why) {
+			return lit, out, why
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s: lit %v, out at %v, why %q", what, lit, out, why)
+		}
+	}
+}
+
+// TestIfritKeepsItsGate: the gates hold a lit ifrit's gate until its out time, its turn under way or not, the
+// developer's actions pushing it back (Q11). A task that is no ifrit holds its gates as any.
+func TestIfritKeepsItsGate(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	l := lightIfrit(t, t.TempDir(), "text working\nwait")
+	l.next("it works", said("working"))
+	at := func(d time.Duration) func(bool, time.Time, string) bool {
+		return func(lit bool, out time.Time, why string) bool { return lit && out.Equal(l.start.Add(d)) && why == "" }
+	}
+	l.ifritFor(t, "at work, lit at 10:00", at(30*time.Minute))
+
+	l.e.send(t, l.id, "the end of it")
+	l.next("it listens", listens)
+	l.at(t, 20*time.Minute)
+	l.e.h.Presence().Touch()
+	l.ifritFor(t, "listening, you came back at 10:20", at(50*time.Minute))
+	l.at(t, 40*time.Minute)
+	l.ifritFor(t, "at 10:40, left alone since 10:20", at(50*time.Minute))
+
+	if lit, out, why := l.e.h.Ifrit(t.Context(), "01a144ba-0000-7000-8000-000000000000"); lit || !out.IsZero() || why != "" {
+		t.Errorf("a task that is no ifrit: lit %v, out at %v, why %q", lit, out, why)
+	}
+	l.e.done(t, l.id, "")
+	l.e.ended(t, l.id)
+}
+
+// TestIfritGateGoesBackWhenItGoesOut: the gates take a lit ifrit's gate back once it goes out, and say why, whether its
+// run is over or not; lit again, its gates are held again until it ends.
+func TestIfritGateGoesBackWhenItGoesOut(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	l := lightIfrit(t, t.TempDir(), "text lit")
+	l.next("it listens", listens)
+	l.at(t, 25*time.Minute)
+	l.next("the warning", goesOutAt)
+	l.ifritFor(t, "warned", func(lit bool, out time.Time, _ string) bool { return lit && out.Equal(l.start.Add(30*time.Minute)) })
+
+	l.at(t, 30*time.Minute)
+	why := "went out: you left Djinn alone at " + ClockText(l.start, l.clock.now())
+	l.ifritFor(t, "going out", func(lit bool, _ time.Time, got string) bool { return !lit && got == why })
+	l.e.ended(t, l.id)
+	if lit, _, got := l.e.h.Ifrit(t.Context(), l.id); lit || got != why {
+		t.Errorf("out, its run over: lit %v, why %q, want %q", lit, got, why)
+	}
+
+	l.clock.set(l.start.Add(40 * time.Minute))
+	l.e.send(t, l.id, "text relit")
+	l.e.follow(t, l.id)("it listens again", listens)
+	l.ifritFor(t, "lit again at 10:40", func(lit bool, out time.Time, _ string) bool { return lit && out.Equal(l.start.Add(70*time.Minute)) })
+	l.e.done(t, l.id, "")
+	l.e.ended(t, l.id)
+	if lit, _, got := l.e.h.Ifrit(t.Context(), l.id); lit || got != "ended" {
+		t.Errorf("done: lit %v, why %q, want ended", lit, got)
+	}
 }

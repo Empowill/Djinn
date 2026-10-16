@@ -202,6 +202,7 @@ type run struct {
 	listenSince        time.Time            // when the ifrit began to listen; zero while it works: it takes no slot meanwhile
 	listened           time.Duration        // how long the ifrit listened before listenSince, over all its runs
 	out                string               // why the ifrit goes out (ifritTimers): its input closes, and it ends out
+	outAt              time.Time            // when the ifrit goes out unless the developer comes back (ifritTimers)
 	ending             bool                 // djinn task done closed the ifrit's input (doneIfrit): it ends done, never out
 	final              bool                 // the task is getting its final status: an answer waits for done instead
 	answers            []*planv1.Question   // answers to the task's edit question, for the pump to apply
@@ -1299,6 +1300,14 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	if r.ifrit {
 		setIfrit(t, planv1.IfritState_IFRIT_STATE_WORKING, r.listened)
 		spec.Listen = true
+		since := h.presence.Last()
+		if since.Before(now) {
+			since = now // Lit at the developer's word: they were there.
+		}
+		outAt := since.Add(h.IfritIdle(t))
+		h.mu.Lock()
+		r.outAt = outAt
+		h.mu.Unlock()
 	}
 	r.turnsBefore = int(t.GetTurns().GetTotal())
 	h.setTurns(r, func(int) int { return 1 })

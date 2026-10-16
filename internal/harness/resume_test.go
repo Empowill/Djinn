@@ -125,7 +125,7 @@ func TestSessionLimitWaitsThenResumes(t *testing.T) {
 	id := res.Msg.GetTask().GetId()
 
 	got := e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_RESUMING))
-	why := "the account's session limit, resets at " + clockText(resetAt, clock.now())
+	why := "the account's session limit, resets at " + ClockText(resetAt, clock.now())
 	if got.GetWaitReason() != why || !got.GetResumeAfter().AsTime().Equal(resetAt.Add(time.Minute)) || got.GetError() != "" ||
 		got.GetResumes() != 0 || got.GetSessionId() != "01a119c3-80f9-76b3-ba8a-13d6778efbdf" {
 		t.Fatalf("after the limit: %v, want waiting for %q", got, why)

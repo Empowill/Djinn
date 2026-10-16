@@ -29,12 +29,44 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
-// tasks is a fake harness: tasks by id with their wish's rank, those whose worker runs, and the events noted.
+// tasks is a fake harness: tasks by id with their wish's rank, those whose worker runs, the ifrits, and the events
+// noted.
 type tasks struct {
-	mu    sync.Mutex
-	rank  map[string]int
-	works map[string]bool
-	notes []string
+	mu     sync.Mutex
+	rank   map[string]int
+	works  map[string]bool
+	ifrits map[string]ifritAt
+	notes  []string
+}
+
+// ifritAt is where an ifrit stands: lit, going out at out, or no longer lit, and why.
+type ifritAt struct {
+	out time.Time
+	why string
+}
+
+func (f *tasks) Ifrit(_ context.Context, id string) (bool, time.Time, string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	at, ok := f.ifrits[id]
+	return ok && at.why == "", at.out, at.why
+}
+
+// light lights the ifrit id, or pushes its out time back to out.
+func (f *tasks) light(id string, out time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ifrits == nil {
+		f.ifrits = map[string]ifritAt{}
+	}
+	f.ifrits[id] = ifritAt{out: out}
+}
+
+// putOut has the ifrit id no longer lit, for why.
+func (f *tasks) putOut(id, why string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ifrits[id] = ifritAt{why: why}
 }
 
 func (f *tasks) Works(id string) bool {
@@ -558,6 +590,131 @@ func TestTimeout(t *testing.T) {
 		slices.ContainsFunc(notes, func(n string) bool { return strings.HasPrefix(n, "W1 gate e2e: given back") }) {
 		t.Errorf("notes = %q", notes)
 	}
+}
+
+// TestIfritKeepsItsGate: a lit ifrit holds its gate with no timeout: its expire time is its out time, pushed back by
+// each action of the developer, and djinn gate list says an ifrit holds it. Who waits is told it goes back when the
+// developer leaves; an ifrit that waits goes before no one, and Djinn's merge of its work, or a timeout it asks for,
+// are what they are for any task (Q11).
+func TestIfritKeepsItsGate(t *testing.T) {
+	f := &tasks{rank: map[string]int{"W12": 0, "W13": 1, "W14": 0, "W15": 0}}
+	out := time.Now().Add(30 * time.Minute).Truncate(time.Second)
+	f.light("W12", out)
+	f.light("W13", out)
+	g := New(nil, nil, f)
+	g.tick = 10 * time.Millisecond
+	client := server(t, g)
+
+	stack, _ := run(t, g, "stack", "W12", "task run-back")
+	give := await(t, stack, "the ifrit's grant")
+	first, waits := take(t, g, "stack", "W15")
+	want := "held by ifrit W12: task run-back; released when you leave, at " + harness.ClockText(out, time.Now()) + " at the latest"
+	if why := await(t, waits, "W15 waits"); why != want {
+		t.Errorf("W15 waits because %q, want %q", why, want)
+	}
+	if !slices.Contains(f.noted(), "W15 gate stack: waiting: "+want) {
+		t.Errorf("notes = %q", f.noted())
+	}
+	res, err := client.List(t.Context(), connect.NewRequest(&machinev1.GateServiceListRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gates := res.Msg.GetGates(); len(gates) != 1 || !gates[0].GetIfrit() || !gates[0].GetExpireTime().AsTime().Equal(out) ||
+		gates[0].GetHolderTaskId() != "W12" {
+		t.Errorf("djinn gate list: %v, want stack held by the ifrit W12 until %v", gates, out)
+	}
+
+	// The developer comes back: its gate is held until its new out time.
+	later := out.Add(20 * time.Minute)
+	f.light("W12", later)
+	for deadline := time.Now().Add(5 * time.Second); !g.List()[0].Until.Equal(later); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("pushed back to %v: %+v", later, g.List())
+		}
+	}
+
+	// The ifrit W13, of a lower wish, asked before W14: it is served after.
+	ifrit, _ := take(t, g, "stack", "W13")
+	notGranted(t, ifrit, "a held gate, for an ifrit")
+	second, _ := take(t, g, "stack", "W14")
+	for deadline := time.Now().Add(5 * time.Second); g.Waiting("W14") == nil; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("W14 does not wait")
+		}
+	}
+	give()
+	order := []string{}
+	for _, c := range []struct {
+		name    string
+		granted <-chan func()
+	}{{"W15", first}, {"W14", second}, {"W13", ifrit}} {
+		give := await(t, c.granted, "the grant of "+c.name)
+		order = append(order, c.name)
+		give()
+	}
+	if want := []string{"W15", "W14", "W13"}; !slices.Equal(order, want) {
+		t.Errorf("served %v, want %v", order, want)
+	}
+
+	// Djinn's merge of its work is no ifrit's gate; nor does a timeout it asks for go.
+	lint := await(t, func() <-chan func() { c, _ := merge(t, g, "lint", "W12", "go tool task lint"); return c }(), "the merge's grant")
+	if l := g.List(); len(l) != 1 || l[0].Ifrit || l[0].Until.Sub(l[0].Since) != DefaultTimeout {
+		t.Errorf("the merge of an ifrit's work: %+v", l)
+	}
+	lint()
+	hold, err := g.Take(t.Context(), Request{Name: "e2e", TaskID: "W12", Timeout: 50 * time.Millisecond}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	await(t, hold.Done(), "the gate taken back")
+	if why := hold.TakenBack(); why != "held past its timeout of 50ms" {
+		t.Errorf("taken back because %q", why)
+	}
+}
+
+// TestIfritGateGoesBackWhenItGoesOut: the gate a lit ifrit holds goes back once it goes out, the stream and its
+// events saying why, and to the next waiter; once it ends, as well.
+func TestIfritGateGoesBackWhenItGoesOut(t *testing.T) {
+	const ifrit = "01a144ba-1ff6-73e6-8373-89464355150f"
+	f := &tasks{rank: map[string]int{ifrit: 0, "W15": 0}}
+	f.light(ifrit, time.Now().Add(30*time.Minute))
+	g := New(nil, nil, f)
+	g.tick = 10 * time.Millisecond
+	client := server(t, g)
+
+	stream, err := client.Hold(t.Context(), connect.NewRequest(&machinev1.GateServiceHoldRequest{
+		Name: "stack", TaskId: ifrit, What: "task run-back",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stream.Receive() || stream.Msg().GetState() != machinev1.GateState_GATE_STATE_HELD {
+		t.Fatalf("hold: %v, %v", stream.Msg(), stream.Err())
+	}
+	next, _ := take(t, g, "stack", "W15")
+	notGranted(t, next, "a gate a lit ifrit holds")
+	f.putOut(ifrit, "went out: you left Djinn alone at 10:00")
+	if !stream.Receive() || stream.Msg().GetState() != machinev1.GateState_GATE_STATE_TAKEN_BACK ||
+		stream.Msg().GetReason() != "gate stack taken back: its ifrit went out: you left Djinn alone at 10:00" {
+		t.Fatalf("once it went out: %v, %v", stream.Msg(), stream.Err())
+	}
+	await(t, next, "the next waiter's grant")()
+	if !slices.Contains(f.noted(), ifrit+" gate stack: taken back: its ifrit went out: you left Djinn alone at 10:00") {
+		t.Errorf("notes = %q", f.noted())
+	}
+
+	// Lit again, then ended.
+	f.light(ifrit, time.Now().Add(30*time.Minute))
+	hold, err := g.Take(t.Context(), Request{Name: "stack", TaskID: ifrit}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.putOut(ifrit, "ended")
+	await(t, hold.Done(), "the gate taken back")
+	if why := hold.TakenBack(); why != "its ifrit ended" {
+		t.Errorf("taken back because %q", why)
+	}
+	waitFree(t, g)
 }
 
 const helperEnv = "DJINN_GATE_HELPER"

@@ -71,6 +71,7 @@ type options struct {
 	launch          LaunchPlan
 	fillModels      func(context.Context, []*planv1.Task)
 	clock           func() time.Time
+	ifritWaits      IfritWaits
 }
 
 // WithLeadFailed gives LeadService.Get why the lead could not start before the services ran, as djinn up resumes it:
@@ -143,6 +144,11 @@ func WithClock(now func() time.Time) Option {
 	return func(o *options) { o.clock = now }
 }
 
+// WithIfritWaits tells the briefs who waits for the gates the lit ifrits hold.
+func WithIfritWaits(waits IfritWaits) Option {
+	return func(o *options) { o.ifritWaits = waits }
+}
+
 // Handlers returns the Connect handlers of the plan services, by path prefix.
 func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	var o options
@@ -154,7 +160,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home, Pusher: o.pusher}, opt)
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers,
-		Workers: o.workers, Home: o.home, Load: o.load, FillModels: o.fillModels, Clock: o.clock}
+		Workers: o.workers, Home: o.home, Load: o.load, FillModels: o.fillModels, Clock: o.clock, IfritWaits: o.ifritWaits}
 	if o.loadBroadcaster != nil {
 		*o.loadBroadcaster = wishes.ChangeLoad
 	}
@@ -676,6 +682,8 @@ type Wishes struct {
 	FillModels func(context.Context, []*planv1.Task)
 	// Clock gives the wishes their time; nil uses time.Now.
 	Clock func() time.Time
+	// IfritWaits says who waits for the gates the lit ifrits hold, in the briefs; nil where djinn up runs no gates.
+	IfritWaits IfritWaits
 
 	watch       watchers    // the open Watch streams
 	leadFailure leadFailure // why the lead's last start failed, for LeadService.Get
