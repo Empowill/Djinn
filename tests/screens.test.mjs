@@ -21,6 +21,7 @@ export { SyncLine, SyncLines } from "@/src/project-sync.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export {
   QuestionColumn,
+  arrowTo,
   columnMove,
   heir,
   questionGroups,
@@ -1318,6 +1319,30 @@ test("the questions column's keys: up and down across the groups stop at both en
   assert.equal(s.heir(order, ["q1", "q2"], "q3"), "q2");
   assert.equal(s.heir(order, ["q3"], "q1"), "q3");
   assert.equal(s.heir(order, [], "q2"), undefined);
+});
+
+// W59: with no question focused (the focus on the page, or nowhere), the first arrow gives the focus to the open
+// question and moves nothing; the next one, from the focused question, moves. None open, the first for Down, the last
+// for Up, opens.
+test("the questions column's first arrow takes the focus, the second moves it", () => {
+  const order = ["q1", "q2", "q3"];
+  assert.deepEqual(s.arrowTo(order, "q2", 1, false), { id: "q2", move: false });
+  assert.deepEqual(s.arrowTo(order, "q2", -1, false), {
+    id: "q2",
+    move: false,
+  });
+  assert.deepEqual(s.arrowTo(order, "q2", 1, true), { id: "q3", move: true });
+  assert.deepEqual(s.arrowTo(order, "q2", -1, true), { id: "q1", move: true });
+  assert.deepEqual(s.arrowTo(order, "q3", 1, true), { id: "q3", move: false });
+  assert.deepEqual(s.arrowTo(order, undefined, 1, false), {
+    id: "q1",
+    move: true,
+  });
+  assert.deepEqual(s.arrowTo(order, undefined, -1, false), {
+    id: "q3",
+    move: true,
+  });
+  assert.equal(s.arrowTo([], undefined, 1, false), undefined);
 });
 
 test("an open question of the column: letters and digits pick, Enter goes to the note, Escape clears the pick, then leaves it to the column", async () => {

@@ -8,10 +8,13 @@
 // open stays open when one comes above it, and stays where it is on screen: the page's scroll anchoring holds it
 // (scroll-anchor.ts), and at the very top of the page, where that holds nothing, the column does.
 // The keys: ↑ and ↓ (Home, End) go to the question above or below, from one wish to the next, and nothing moves past
-// either end; the question they reach opens, and the page shows it by its title. Escape steps back: from the note to
-// the question, then your pick is cleared (wish-question.tsx), then the focus leaves the column, where ↓ brings it
-// back. With the focus nowhere, the open question takes the keys as if it had it. Space and the page keys scroll a long
-// question: the arrows stay with the questions.
+// either end; the question they reach opens, and the page scrolls its title to the top of the view, wherever it was:
+// a scroll you ask for by moving. The question that has the focus, the one Enter acts on, shows a gold ring. With no
+// question focused, anywhere on the page but in a field, the first ↑ or ↓ gives the open question the focus (none
+// open, the first for ↓, the last for ↑), and the next one moves. Escape steps back: from the note to the question,
+// then your pick is cleared (wish-question.tsx), then the focus leaves the column, where ↓ brings it back. With the
+// focus nowhere, the open question takes the other keys as if it had it, and the focus with them. Space and the page
+// keys scroll a long question: the arrows stay with the questions.
 import {
   type ReactNode,
   useCallback,
@@ -30,6 +33,7 @@ import {
   type QuestionKeys,
   WishQuestion,
 } from "./wish-question";
+import { placeTaken } from "./scroll-anchor";
 
 export interface QuestionGroup {
   wish: Wish;
@@ -64,6 +68,20 @@ export function stepTo(
   const at = current === undefined ? -1 : order.indexOf(current);
   if (at < 0) return step > 0 ? order[0] : order.at(-1);
   return order[Math.min(Math.max(at + step, 0), order.length - 1)];
+}
+
+// arrowTo is where ↑ (step -1) or ↓ (step 1) goes, and whether it moves: with a question focused, to the one above or
+// below (stepTo); with none, the open one takes the focus first and nothing moves, none open the first or the last
+// opens.
+export function arrowTo(
+  order: readonly string[],
+  current: string | undefined,
+  step: number,
+  focused: boolean,
+): { id: string; move: boolean } | undefined {
+  const id =
+    focused || current === undefined ? stepTo(order, current, step) : current;
+  return id === undefined ? undefined : { id, move: id !== current };
 }
 
 // heir is the question that opens when the open one, gone, has left the list: the first below it in the list before
@@ -157,7 +175,8 @@ export function QuestionColumn({
           : heir(seen.current, order, opened);
   const column = useRef<HTMLElement>(null);
   const keys: QuestionKeys = useRef<(e: QuestionKey) => void>(undefined);
-  // Whether the question that opens takes the focus: it was gone to, or the open one left with the focus in it.
+  // Whether the question that opens takes the focus: it was gone to (its title to the top of the view), or the open
+  // one left with the focus in it.
   const follow = useRef(false);
   const shown = useRef(current);
 
@@ -174,17 +193,20 @@ export function QuestionColumn({
     if (typeof chosen === "string" && chosen !== current)
       setChosen(current ?? undefined);
     const left = was !== undefined && was !== current && !order.includes(was);
-    if (!follow.current && !(left && focusHere(column.current))) return;
+    const moved = follow.current;
+    if (!moved && !(left && focusHere(column.current))) return;
     follow.current = false;
     if (current === undefined) return;
     const element = document.getElementById(`question-${current}`);
     if (!element) return;
     if (document.activeElement !== element)
       element.focus({ preventScroll: true });
-    reveal(element);
+    if (moved) toTitle(element);
+    else reveal(element);
   }, [current, order, chosen]);
 
-  // The keys, read on the window: the arrows reach the column with the focus nowhere, after a question left it.
+  // The keys, read on the window: the arrows reach the column from anywhere on the page, the others with the focus
+  // nowhere, after a question left it.
   const state = useRef({ order, current });
   state.current = { order, current };
   useEffect(() => {
@@ -198,14 +220,24 @@ export function QuestionColumn({
         !target ||
         target === document.body ||
         target === document.documentElement;
-      if (!inside && !nowhere) return;
-      if (
-        target instanceof HTMLElement &&
-        (target.isContentEditable || target.matches("input, textarea, select"))
-      )
-        return;
+      if (typing(target)) return;
       const { order, current } = state.current;
       const move = columnMove(e);
+      // No question has the focus: from anywhere on the page, the arrows give it to the open one first.
+      const focused = inQuestion(root, target);
+      if (
+        (move === "up" || move === "down") &&
+        !focused &&
+        (inside || nowhere || onPage(root, target))
+      ) {
+        const to = arrowTo(order, current, move === "down" ? 1 : -1, false);
+        if (!to) return;
+        e.preventDefault();
+        if (to.move) select(to.id);
+        else take(to.id);
+        return;
+      }
+      if (!inside && !nowhere) return;
       if (move && move !== "leave") {
         if (!order.length) return;
         e.preventDefault();
@@ -218,15 +250,25 @@ export function QuestionColumn({
         if (next === undefined) return;
         if (next === current) {
           // Nothing past either end: the focus stays where it is.
-          if (nowhere) select(next);
+          if (nowhere) take(next);
           return;
         }
         select(next);
         return;
       }
       if (current === undefined) return;
-      // With the focus nowhere, the open question takes the key as if it had it.
-      if (nowhere) keys.current?.(e);
+      // With the focus nowhere, the open question takes the key as if it had it, and the focus if it used it.
+      if (nowhere) {
+        keys.current?.(e);
+        if (
+          e.defaultPrevented &&
+          move !== "leave" &&
+          !inQuestion(root, document.activeElement)
+        )
+          document
+            .getElementById(`question-${current}`)
+            ?.focus({ preventScroll: true });
+      }
       if (move !== "leave" || e.defaultPrevented) return;
       e.preventDefault();
       follow.current = false;
@@ -313,6 +355,53 @@ export function QuestionColumn({
   );
 }
 
+// take gives the focus to the open question, without moving: the page scrolls to its title only when none of it is in
+// sight.
+function take(id: string) {
+  const element = document.getElementById(`question-${id}`);
+  if (!element) return;
+  element.focus({ preventScroll: true });
+  const scroller = scrollerOf(element);
+  const view = scroller
+    ? scroller.getBoundingClientRect()
+    : { top: 0, bottom: window.innerHeight };
+  const margin = parseFloat(getComputedStyle(element).scrollMarginTop) || 0;
+  const box = element.getBoundingClientRect();
+  if (box.bottom <= view.top + margin || box.top >= view.bottom)
+    toTitle(element);
+}
+
+// typing says whether a key goes to a field: the arrows move its caret.
+function typing(target: Node | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || target.matches("input, textarea, select"))
+  );
+}
+
+// inQuestion says whether a question of the column holds the element (the focus, a key's target).
+function inQuestion(column: HTMLElement, node: Node | null): boolean {
+  return (
+    node instanceof Element &&
+    column.contains(node) &&
+    !!node.closest(".question-row")
+  );
+}
+
+// What takes the arrows for itself on the page: a menu, a list to pick from, tabs, a slider.
+const ARROWS_TAKEN =
+  '[role="menu"], [role="listbox"], [role="tablist"], [role="slider"], [role="radiogroup"], [role="tree"], [role="grid"], [role="dialog"]';
+
+// onPage says whether a key's target is on the column's page (the flying carpet, a wish's page), out of what takes the
+// arrows for itself.
+function onPage(column: HTMLElement, target: Node | null): boolean {
+  return (
+    target instanceof Element &&
+    !!column.closest(".wish-view")?.contains(target) &&
+    !target.closest(ARROWS_TAKEN)
+  );
+}
+
 // focusHere says whether the focus is in the column, or nowhere: the open question that left had it.
 function focusHere(column: HTMLElement | null): boolean {
   const active = document.activeElement;
@@ -336,6 +425,14 @@ function reveal(element: HTMLElement) {
   )
     element.scrollIntoView({ block: "start" });
   else if (box.bottom > view.bottom) element.scrollIntoView({ block: "end" });
+}
+
+// toTitle scrolls the page so a question gone to reads from its title down: its top at the top of the view, below the
+// bar of what waits for you (its scroll margin), wherever the page was. The page keeps its place from there.
+function toTitle(element: HTMLElement) {
+  element.scrollIntoView({ block: "start" });
+  const scroller = scrollerOf(element, true);
+  if (scroller) placeTaken(scroller);
 }
 
 // scrollerOf is the element that scrolls the question: the first above it that scrolls, or with any, the first that can.
