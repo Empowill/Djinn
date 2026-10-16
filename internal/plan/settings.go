@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -572,7 +573,7 @@ func saveDeveloper(home, projectID string, change func(*planv1.ProjectSettings) 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	return s, os.WriteFile(path, b, 0o600)
+	return s, fsx.WriteAtomic(path, b, 0o600)
 }
 
 // AllowWatch adds command to the watcher commands the developer allows in the project, in their settings file in

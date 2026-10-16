@@ -23,6 +23,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
@@ -690,7 +691,7 @@ func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string, pr
 	h.installed[projectID] = sha
 	h.mu.Unlock()
 	_ = os.MkdirAll(filepath.Dir(installedFile(h.home, projectID)), 0o755) // The write below fails too.
-	if err := os.WriteFile(installedFile(h.home, projectID), []byte(sha+"\n"), 0o600); err != nil {
+	if err := fsx.WriteAtomic(installedFile(h.home, projectID), []byte(sha+"\n"), 0o600); err != nil {
 		logx.L().Warn("record the installed build", "project", projectID, "sha", short8(sha), "err", err)
 	}
 	h.closeInstallQuestions(ctx, projectID, sha)

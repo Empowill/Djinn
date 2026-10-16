@@ -16,6 +16,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/lead/notes"
 )
@@ -644,12 +645,7 @@ func writeLeadAgyProject(dir, djinnHome string) error {
 		return fmt.Errorf("agy's projects folder: %w", err)
 	}
 	path := filepath.Join(projectsDir, f.ID+".json")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
-		return fmt.Errorf("write agy's lead project: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
+	if err := fsx.WriteAtomic(path, append(b, '\n'), 0o600); err != nil {
 		return fmt.Errorf("write agy's lead project: %w", err)
 	}
 	return nil

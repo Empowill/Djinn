@@ -13,6 +13,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -58,7 +59,7 @@ func (w *Wishes) newLead(
 	if err := os.MkdirAll(own, 0o700); err != nil {
 		return "", "", nil, "", connect.NewError(connect.CodeInternal, err)
 	}
-	if err := os.WriteFile(filepath.Join(own, LeadFirstFile), []byte(msg), 0o600); err != nil {
+	if err := fsx.WriteAtomic(filepath.Join(own, LeadFirstFile), []byte(msg), 0o600); err != nil {
 		return "", "", nil, "", connect.NewError(connect.CodeInternal, fmt.Errorf("write the first message: %w", err))
 	}
 	lead = &planv1.Lead{Id: "lead", Provider: provider, Directory: dir}

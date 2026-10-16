@@ -18,6 +18,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -158,7 +159,7 @@ func (h *Harness) setUp(
 	if why, out, stopped = h.check(ctx, project.GetId(), run, dir); why != "" || stopped {
 		return why, out, stopped
 	}
-	if err := os.WriteFile(stamp, []byte(key), 0o600); err != nil {
+	if err := fsx.WriteAtomic(stamp, []byte(key), 0o600); err != nil {
 		logx.L().Warn("record the setup", "project", project.GetName(), "wish", wishID, "file", stamp, "err", err)
 	}
 	return "", out, false

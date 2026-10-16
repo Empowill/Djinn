@@ -503,3 +503,92 @@ func TestDefaultFile(t *testing.T) {
 		t.Errorf("DefaultFile when taken = %s, %v", second, err)
 	}
 }
+
+// TestRestoreCutBetweenItsRenames: a stop after the old data folder went aside and before the restored one took its
+// place leaves no data folder; Finish, as djinn up starts, puts the restored folder in place, its worktrees back,
+// and removes what a restore cut sooner left.
+func TestRestoreCutBetweenItsRenames(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	src, s := newHome(t)
+	writeFile(t, src, "state.json", "new")
+	archive := filepath.Join(t.TempDir(), "backup.tar.gz")
+	if _, err := Create(ctx, src, archive, "test", s.Snapshot); err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(t.TempDir(), "djinn")
+	writeFile(t, home, "state.json", "old")
+	writeFile(t, home, "projects/p1/worktrees/t1/main.go", "work in progress")
+	// The second rename never returns: the restore stands where a kill would stop it, its deferred calls not run.
+	cut, release := make(chan struct{}), make(chan struct{})
+	moves := 0
+	r := fsx.Renamer{Func: func(oldpath, newpath string) error {
+		if moves++; moves == 2 {
+			close(cut)
+			<-release
+			return errors.New("killed")
+		}
+		return os.Rename(oldpath, newpath)
+	}}
+	ended := make(chan struct{})
+	go func() {
+		defer close(ended)
+		_, _ = restore(ctx, home, archive, time.Now(), r)
+	}()
+	<-cut
+	if exists(home) {
+		t.Fatal("the data folder is there between the renames")
+	}
+	// What a restore cut while it extracted leaves, and a folder of another data folder's restore.
+	sooner := filepath.Join(filepath.Dir(home), ".djinn.restore-1")
+	writeFile(t, sooner, "djinn.db", "half")
+	other := filepath.Join(filepath.Dir(home), ".djinn-dev.restore-1")
+	writeFile(t, other, "djinn.db", "theirs")
+	did, err := Finish(home)
+	close(release)
+	<-ended
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(did) != 3 {
+		t.Errorf("Finish did %q, want the folder in place, its worktrees back and the cut extraction removed", did)
+	}
+	if got := readFile(t, filepath.Join(home, "state.json")); got != "new" {
+		t.Errorf("state = %q, want the restored one", got)
+	}
+	if got := readFile(t, filepath.Join(home, "projects", "p1", "worktrees", "t1", "main.go")); got != "work in progress" {
+		t.Errorf("worktree = %q, want it back at its path", got)
+	}
+	if exists(filepath.Join(home, restoreMark)) {
+		t.Error("the mark stays in the restored folder")
+	}
+	if exists(sooner) {
+		t.Error("the folder of a restore cut while it extracted stays")
+	}
+	if !exists(other) {
+		t.Error("the folder of another data folder's restore was removed")
+	}
+	if did, err := Finish(home); err != nil || len(did) != 0 {
+		t.Errorf("Finish again = %q, %v; want nothing to do", did, err)
+	}
+}
+
+// TestRestoreCutBeforeItsRenames: a stop before the data folder moves leaves it whole; the extracted folder, marked,
+// goes at the next start.
+func TestRestoreCutBeforeItsRenames(t *testing.T) {
+	t.Parallel()
+	home, _ := newHome(t)
+	writeFile(t, home, "state.json", "old")
+	marked := filepath.Join(filepath.Dir(home), ".djinn.restore-2")
+	writeFile(t, marked, "state.json", "new")
+	writeFile(t, marked, restoreMark, home+".before-restore-x")
+	if _, err := Finish(home); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(home, "state.json")); got != "old" {
+		t.Errorf("state = %q, want the data folder as it was", got)
+	}
+	if exists(marked) {
+		t.Error("the extracted folder stays")
+	}
+}
