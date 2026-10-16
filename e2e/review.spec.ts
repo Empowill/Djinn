@@ -146,11 +146,8 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   ]);
   await expect(bar).not.toContainText("W3");
   await expect(
-    page
-      .locator(".question-group-head")
-      .filter({ hasText: title })
-      .locator(".question-group-count"),
-  ).toHaveText("2");
+    page.locator(".plan-wish").filter({ hasText: title }),
+  ).toContainText("2 questions");
   await shoot(page, "review-flight-plan-dark");
   await theme(page, "light");
   await shoot(page, "review-flight-plan-light");

@@ -48,7 +48,6 @@ export {
   fixerOf,
 } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
-export { glanceOf, forgeMark } from "@/src/glance.tsx";
 export {
   attentionOf,
   AttentionBar,
@@ -3611,18 +3610,21 @@ test("the flying carpet merges the active wishes: their questions, the blocking 
     html,
     /id="view-tab-tasks"[^>]*>Tasks<span class="count">3<\/span>/,
   );
+  assert.doesNotMatch(html, /Taste the oils/);
   assert.match(
     html,
     /id="view-tab-decisions"[^>]*>Decisions<span class="count">1<\/span>/,
   );
   assert.doesNotMatch(html, /Tonight\?/);
-  // On the right, the glance (Decision Q08): the worker that runs, and nothing else of the wishes, not what they
-  // spent (each wish's page and the Tasks tab say it).
+  // What each wish spent: the first its price, reported, then its tokens; the second, with no price at all, its tokens
+  // and why.
   assert.match(
     html,
-    /<li class="glance-row run" title="Running · W1 Taste the oils">/,
+    /<span class="spent-price" title="\$0\.42 reported">\$0\.42<\/span><span>input 10 · output 400 · cache read 38K · cache written 12K<\/span>/,
   );
-  assert.doesNotMatch(html, /Trim the wick|spent-price/);
+  assert.doesNotMatch(html, /estimated/);
+  assert.match(html, /input 1\.2K · output 300 · cache read 5K/);
+  assert.match(html, /<small>1 task without a price in the table<\/small>/);
 });
 
 test("what a wish spent shows one price, ≈ when an estimate is in it; the hover splits it, in money only", () => {
@@ -4699,7 +4701,7 @@ test("work that merges stays in sight, shows as merging apart from the workers e
   assert.doesNotMatch(sidebar(committed, false), /running/);
   assert.doesNotMatch(sidebar(committed, true), /tone-running/);
 
-  // The head of the wish counts it as running; the flying carpet's glance shows workers only, and none runs for it.
+  // The head of the wish and the flying carpet count it as running.
   const page = async (list) => {
     const transport = s.createRouterTransport(({ service }) => {
       service(s.WishService, { list: () => ({ wishes: [lamp] }) });
@@ -4734,11 +4736,12 @@ test("work that merges stays in sight, shows as merging apart from the workers e
     /count-pill tone-running" title="1 merging: its work waits to merge, no worker runs"/,
   );
   assert.doesNotMatch(now.view, /title="1 running"/);
-  assert.doesNotMatch(now.plan, /glance-dot run/);
-  assert.doesNotMatch(now.plan, /1 running/);
+  assert.match(now.plan, /plan-wish tone-running/);
+  assert.match(now.plan, /<span>1 merging<\/span>/);
+  assert.doesNotMatch(now.plan, /<span>1 running<\/span>/);
   const later = await page(committed);
   assert.doesNotMatch(later.view, /count-pill tone-running/);
-  assert.doesNotMatch(later.plan, /glance-dot run/);
+  assert.doesNotMatch(later.plan, /plan-wish tone-running/);
 });
 
 // An investigator, the worker Enlighten me starts on a question (TaskRole.INVESTIGATOR), is violet while it works, as
@@ -4813,8 +4816,7 @@ test("an investigator at work shows violet, apart from the running workers, wher
   assert.match(row(investigator), /<span>Investigating<\/span>/);
   assert.match(row(worker), /wish-task tone-running/);
 
-  // The head of the wish and the flying carpet's glance count one running worker, not two; the glance shows the
-  // investigator violet.
+  // The head of the wish and the flying carpet count one running worker, not two.
   const page = async (list) => {
     const transport = s.createRouterTransport(({ service }) => {
       service(s.WishService, { list: () => ({ wishes: [lamp] }) });
@@ -4845,12 +4847,12 @@ test("an investigator at work shows violet, apart from the running workers, wher
   const now = await page(both);
   assert.match(now.view, pill("running", "1 running"));
   assert.doesNotMatch(now.view, /title="2 running"/);
-  assert.match(now.plan, /glance-count">1 running · 1 investigating</);
-  assert.match(now.plan, /glance-dot investigate/);
+  assert.match(now.plan, /plan-wish tone-running/);
+  assert.match(now.plan, /<span>1 running<\/span>/);
   const only = await page(alone);
   assert.doesNotMatch(only.view, /count-pill tone-running/);
-  assert.match(only.plan, /glance-count">1 investigating</);
-  assert.doesNotMatch(only.plan, /glance-dot run/);
+  assert.match(only.plan, /plan-wish tone-investigating/);
+  assert.match(only.plan, /<span>1 investigating<\/span>/);
 });
 
 test("a failed merge an agent fixes shows orange, naming its correction, everywhere; red once no correction runs", async () => {
@@ -4944,7 +4946,7 @@ test("a failed merge an agent fixes shows orange, naming its correction, everywh
   );
   assert.doesNotMatch(sidebar(failed), /tone-fixing/);
 
-  // The head of the wish, and the flying carpet.
+  // The head of the wish and the flying carpet.
   const page = async (list) => {
     const transport = s.createRouterTransport(({ service }) => {
       service(s.WishService, { list: () => ({ wishes: [lamp] }) });
@@ -4978,14 +4980,13 @@ test("a failed merge an agent fixes shows orange, naming its correction, everywh
     new RegExp(`count-pill tone-fixing" title="${detail}"`),
   );
   assert.match(live.view, /<b>1<\/b>being fixed<\/span>/);
-  // The flying carpet's glance shows its correction at work, blue, as any worker.
   assert.match(
     live.plan,
-    /glance-row run" title="Running · W2 Correct the merge of W1"/,
+    new RegExp(`count-pill tone-fixing" title="${detail}"`),
   );
   const dead = await page(failed);
   assert.doesNotMatch(dead.view, /tone-fixing/);
-  assert.doesNotMatch(dead.plan, /tone-fixing|glance-dot run/);
+  assert.doesNotMatch(dead.plan, /tone-fixing/);
 });
 
 test("the update banner proposes to install a build committed, on one line, what changed unfolded on demand", () => {
@@ -10216,239 +10217,4 @@ test("MakeWish requires an active lead before a wish can be created", async () =
   });
   assert.match(exitedPage.html(), /The Djinn ended \(code 1\)/);
   assert.match(exitedPage.html(), /djinn lead resume/);
-});
-
-// The glance (Decision Q08, mockup L04 v2): beside the questions, each wish's workers running now and to come, nothing
-// else. A filled dot runs, blue; an investigator runs violet, apart; a circle waits on a task, under it in the same
-// wish, else naming it and its wish; a dotted circle is planned; the watchers fold into one line.
-test("the glance shows each wish's workers: running, investigating apart, waiting under their task or across wishes, planned, watchers folded", async () => {
-  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
-  const lamp = wish(
-    "01a1440a-0000-7000-8000-000000000001",
-    "Ship the lamp",
-    s.WishState.ACTIVE,
-    1,
-  );
-  const qol = wish(
-    "01a1440a-0000-7000-8000-000000000002",
-    "Djinn QoL",
-    s.WishState.ACTIVE,
-    2,
-  );
-  const task = (wishId, code, status, extra = {}) => ({
-    id: `${wishId.slice(-1)}-${code}`,
-    wishId,
-    code,
-    title: `Task ${code}`,
-    status,
-    dependsOn: [],
-    createTime: at(1),
-    ...extra,
-  });
-  const L = (code, status, extra) => task(lamp.id, code, status, extra);
-  const id = (wishId, code) => `${wishId.slice(-1)}-${code}`;
-  const tasks = {
-    [lamp.id]: [
-      L("T1", s.TaskStatus.PENDING, {
-        kind: s.TaskKind.AZIMA,
-        azima: { state: s.AzimaState.IN_PROGRESS },
-      }),
-      L("W1", s.TaskStatus.RUNNING, { partOf: id(lamp.id, "T1") }),
-      // W3 waits on W2, which waits on W1: a staircase under W1.
-      L("W3", s.TaskStatus.PENDING, { dependsOn: [id(lamp.id, "W2")] }),
-      L("W2", s.TaskStatus.PENDING, { dependsOn: [id(lamp.id, "W1")] }),
-      // W4's dependency is done: planned.
-      L("W4", s.TaskStatus.PENDING, { dependsOn: [id(lamp.id, "W10")] }),
-      L("W5", s.TaskStatus.PENDING, { dependsOn: [id(qol.id, "W26")] }),
-      L("W6", s.TaskStatus.RUNNING, {
-        role: s.TaskRole.INVESTIGATOR,
-        question: "Q4",
-      }),
-      L("W7", s.TaskStatus.RUNNING, {
-        provider: s.Provider.WATCH,
-        babysit: {
-          url: "https://gitlab.com/acme/lamp/-/merge_requests/3",
-          number: 3,
-        },
-      }),
-      L("W8", s.TaskStatus.RUNNING, {
-        provider: s.Provider.WATCH,
-        babysit: { url: "https://github.com/acme/lamp/pull/12", number: 12 },
-      }),
-      L("W9", s.TaskStatus.RUNNING, { provider: s.Provider.WATCH }),
-      L("W10", s.TaskStatus.DONE, { endTime: at(5) }),
-      L("W11", s.TaskStatus.FAILED, { endTime: at(5) }),
-      L("W12", s.TaskStatus.WAITING),
-    ],
-    [qol.id]: [task(qol.id, "W26", s.TaskStatus.RUNNING)],
-  };
-  const all = [...tasks[lamp.id], ...tasks[qol.id]];
-  const titles = new Map([
-    [lamp.id, lamp.title],
-    [qol.id, qol.title],
-  ]);
-  const glance = s.glanceOf(
-    tasks[lamp.id],
-    (x) => all.find((t) => t.id === x),
-    (x) => titles.get(x),
-  );
-  // Work running first, each waiting task under the one it waits on, then what waits across wishes, then planned.
-  assert.deepEqual(
-    glance.rows.map((r) => [
-      r.task.code,
-      r.state,
-      r.depth,
-      r.after ?? "",
-      r.afterWish ?? "",
-    ]),
-    [
-      ["W1", "run", 0, "", ""],
-      ["W2", "wait", 1, "W1", ""],
-      ["W3", "wait", 2, "W2", ""],
-      ["W5", "wait", 0, "W26", "Djinn QoL"],
-      ["W4", "plan", 0, "", ""],
-    ],
-  );
-  assert.deepEqual(
-    glance.investigators.map((r) => [r.task.code, r.state]),
-    [["W6", "investigate"]],
-  );
-  assert.deepEqual(
-    glance.watchers.map((x) => [x.code, s.forgeMark(x)]),
-    [
-      ["W7", "!3"],
-      ["W8", "#12"],
-      ["W9", ""],
-    ],
-  );
-  // A dependency no wish read holds nothing back: planned.
-  const lone = s.glanceOf(
-    [L("W5", s.TaskStatus.PENDING, { dependsOn: ["gone"] })],
-    () => undefined,
-    () => undefined,
-  );
-  assert.deepEqual(
-    lone.rows.map((r) => r.state),
-    ["plan"],
-  );
-
-  const transport = s.createRouterTransport(({ service }) => {
-    service(s.WishService, { list: () => ({ wishes: [lamp, qol] }) });
-    service(s.TaskService, {
-      list: (req) => ({ tasks: tasks[req.wishId] ?? [] }),
-    });
-    service(s.QuestionService, { list: () => ({ questions: [] }) });
-    service(s.BlockService, { list: () => ({ blocks: [] }) });
-  });
-  const djinn = s.createDjinn(transport, 10);
-  const closes = [lamp, qol].map((w) => djinn.store.open(w.id));
-  await djinn.store.changed(lamp.id, [s.Change.WISH]);
-  await djinn.store.changed(qol.id, [s.Change.WISH]);
-  closes.forEach((close) => close());
-  const render = (node) =>
-    s.renderToStaticMarkup(h(s.DjinnProvider, { djinn }, node));
-
-  // The flying carpet: each active wish under its title, which opens it, with its counts.
-  const plan = render(
-    h(s.FlightPlan, { wishes: [lamp, qol], onOpen() {}, onToast() {} }),
-  );
-  assert.doesNotMatch(plan, /plan-wish/);
-  assert.match(plan, /<section class="glance" aria-label="What runs">/);
-  assert.match(
-    plan,
-    /<button type="button" title="Open this wish">Ship the lamp<\/button><span class="glance-count">1 running · 1 investigating · 4 to come · 3 watching<\/span>/,
-  );
-  assert.match(
-    plan,
-    /<button type="button" title="Open this wish">Djinn QoL<\/button><span class="glance-count">1 running<\/span>/,
-  );
-  // Running blue, its waiting tasks under it.
-  assert.match(
-    plan,
-    /<li class="glance-row run" title="Running · W1 Task W1"><span class="glance-dot run" role="img" aria-label="Running"><\/span><span class="glance-code">W1<\/span>/,
-  );
-  assert.match(
-    plan,
-    /<li class="glance-row wait child" title="Waits · W2 Task W2" style="--depth:1">[\s\S]*?<span class="glance-after">waits on W1<\/span>/,
-  );
-  assert.match(
-    plan,
-    /<li class="glance-row wait child" title="Waits · W3 Task W3" style="--depth:2">/,
-  );
-  // Across wishes: the task and its wish.
-  assert.match(
-    plan,
-    /<li class="glance-row wait" title="Waits · W5 Task W5">[\s\S]*?<span class="glance-after">waits on W26 · Djinn QoL<\/span>/,
-  );
-  assert.match(
-    plan,
-    /<li class="glance-row plan" title="Planned · W4 Task W4"><span class="glance-dot plan"/,
-  );
-  // The investigator apart, violet, naming its question.
-  assert.match(
-    plan,
-    /<ul class="glance-list glance-investigators"><li class="glance-row investigate" title="Investigating · W6 Task W6"><span class="glance-dot investigate"[\s\S]*?<span class="glance-after">on Q4<\/span>/,
-  );
-  // The watchers fold into one line: how many, and the requests they watch.
-  assert.match(
-    plan,
-    /<li class="glance-watch" title="W7 Task W7\nW8 Task W8\nW9 Task W9">[\s\S]*?3 watching<span class="glance-marks"><span>!3<\/span><span>#12<\/span><\/span>/,
-  );
-  assert.equal((plan.match(/glance-watch"/g) ?? []).length, 1);
-  assert.doesNotMatch(plan, /glance-row[^"]*" title="[^"]*W7 /);
-  // Done, failed, waiting for your answer, azimas: not in the glance.
-  assert.doesNotMatch(plan, /title="[^"]*· (W10|W11|W12|T1) /);
-  // Gold is for what waits on you: never in the glance.
-  assert.doesNotMatch(plan, /glance[^"]*waiting/);
-  // The legend names the states shown.
-  assert.match(
-    plan,
-    /<p class="glance-legend">.*running.*investigating.*waits on a task.*planned.*watches<\/span><\/p>/,
-  );
-  // Narrow: one line per wish, a dot per worker, the watchers counted.
-  assert.match(
-    plan,
-    /<button type="button" class="glance-line" title="Open this wish"><span class="name">Ship the lamp<\/span><span class="glance-line-marks">(<span class="glance-dot (run|wait|plan|investigate)" role="img" aria-label="[^"]+" title="[^"]+"><\/span>){6}<span class="glance-line-watch" title="3 watching">/,
-  );
-
-  // A wish's page: the wish alone, without its title; the task across wishes still names its wish.
-  const view = render(h(s.WishView, { wish: lamp, onToast() {} }));
-  assert.match(view, /<section class="glance" aria-label="What runs">/);
-  assert.doesNotMatch(view, /glance-head|Djinn QoL<\/button>/);
-  assert.match(view, /waits on W26 · Djinn QoL/);
-  assert.match(
-    view,
-    /<div class="glance-line"><span class="name">Ship the lamp<\/span>/,
-  );
-  // Its journal and rights below both columns.
-  assert.match(view, /<div class="main-after">/);
-
-  // A wish where nothing runs or is planned says so.
-  const quiet = s.glanceOf(
-    [],
-    () => undefined,
-    () => undefined,
-  );
-  assert.deepEqual(
-    [quiet.rows, quiet.investigators, quiet.watchers],
-    [[], [], []],
-  );
-  const calm = wish(
-    "01a1440a-0000-7000-8000-000000000003",
-    "Calm",
-    s.WishState.ACTIVE,
-    3,
-  );
-  const calmPlan = render(
-    h(s.FlightPlan, { wishes: [calm], onOpen() {}, onToast() {} }),
-  );
-  assert.match(
-    calmPlan,
-    /<li class="glance-quiet">Nothing runs, nothing planned\.<\/li>/,
-  );
-  assert.match(
-    calmPlan,
-    /<span class="glance-line-marks zero">nothing<\/span>/,
-  );
-  assert.doesNotMatch(calmPlan, /glance-legend/);
 });

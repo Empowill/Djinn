@@ -2,13 +2,21 @@
 // The flying carpet of the active wishes, merged (T13): a bar at the top while something waits for you, then two
 // columns (mockup L04 v2): on the left, what waits for you (the open questions of every wish, grouped by wish in the
 // questions column, question-column.tsx; then the workers that wait, the proofs you can give of the azimas whose work
-// is done, the wishes Djinn proposes to grant, and the questions you asked to investigate); on the right, the glance:
-// each wish's workers running now and to come (glance.tsx), which opens the wish. The tasks of every wish have a tab
-// of their own (task-tabs.tsx), and so have their decisions (decision-log.tsx). Every line shows the wish
+// is done, the wishes Djinn proposes to grant, and the questions you asked to investigate); on the right, each wish at
+// a glance. The tasks of every wish
+// have a tab of their own (task-tabs.tsx), and so have their decisions (decision-log.tsx). Every line shows the wish
 // it comes from, and an answer, a stop or a grant goes back to it. Each wish keeps its own view; an empty section is hidden.
 // The Djinn, the one lead, is at hand as on a wish: Talk to the Djinn in the header opens its terminal, the pill at the
 // bottom writes to it.
-import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
+import { GitMerge, Wrench } from "lucide-react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   Change,
@@ -17,6 +25,7 @@ import {
   type Provider,
   type Question,
   type Task,
+  TaskStatus,
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import { AttentionBar, attentionOf, useReach } from "./attention";
@@ -25,18 +34,27 @@ import { useData, usePausable, useWishDetails } from "./data/djinn";
 import {
   type AzimaGroup,
   flightPlan,
+  isAzima,
   mergeNest,
   spent,
   taskMapOf,
 } from "./data/flight";
-import { fixerOf, noLead, watcherRuns } from "./data/format";
+import {
+  fixerOf,
+  investigating,
+  noLead,
+  runningOf,
+  waitsForYou,
+  watcherRuns,
+  wishTone,
+} from "./data/format";
 import { DecisionLog } from "./decision-log";
 import { t } from "./i18n";
 import { Inbox } from "./inbox";
 import { LeadMessage } from "./lead-message";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
-import { StatusBadge } from "./status";
+import { CountPill, StatusBadge } from "./status";
 import {
   AzimaCard,
   azimaFinished,
@@ -51,7 +69,6 @@ import { OperatingLoad } from "./operating-load";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { QuestionColumn, questionGroups } from "./question-column";
-import { Glance } from "./glance";
 import { WishTask } from "./wish-task";
 import { HourglassLine } from "./hourglass";
 import { PageHeader } from "./page-header";
@@ -613,6 +630,185 @@ export function FlightPlan({
           {view === "main" && (
             <>
               <div className="main-columns">
+                {wishes.length > 0 && (
+                  <div className="main-side">
+                    <section
+                      className="plan-wishes"
+                      aria-label={t("sidebar.wishes")}
+                    >
+                      {wishes.map((wish) => {
+                        const detail = details[wish.id];
+                        const open =
+                          detail?.questions.filter(waitsForYou).length ?? 0;
+                        const digging =
+                          detail?.questions.filter(investigating).length ?? 0;
+                        const {
+                          running,
+                          investigating: investigators,
+                          watching,
+                          merging,
+                          fixing,
+                        } = runningOf(detail?.tasks ?? []);
+                        // Work merging is Djinn at work on the wish: its tone, not its count of workers (W577).
+                        const busy = running + merging;
+                        const done =
+                          detail?.tasks.filter(
+                            (x) => x.status === TaskStatus.DONE && !isAzima(x),
+                          ).length ?? 0;
+                        // A cancelled task will never be done: it shows apart, out of the progress.
+                        const cancelled =
+                          detail?.tasks.filter(
+                            (x) => x.status === TaskStatus.CANCELLED,
+                          ).length ?? 0;
+                        const total =
+                          (detail?.tasks.filter((x) => !isAzima(x)).length ??
+                            0) - cancelled;
+                        const failed =
+                          detail?.tasks.filter(
+                            (x) => x.status === TaskStatus.FAILED,
+                          ).length ?? 0;
+                        return (
+                          <button
+                            key={wish.id}
+                            className={`plan-wish tone-${wishTone(wish, open, busy, watching, investigators)}`}
+                            onClick={() => onOpen(wish.id)}
+                            title={t("plan.open_wish")}
+                          >
+                            <span className="plan-wish-title">
+                              <span className="plan-wish-rank">
+                                {wish.rank}
+                              </span>
+                              <strong>{wish.title}</strong>
+                            </span>
+                            <span className="plan-wish-counts">
+                              <StatusBadge
+                                tone={wishTone(
+                                  wish,
+                                  open,
+                                  busy,
+                                  watching,
+                                  investigators,
+                                )}
+                                label={
+                                  open
+                                    ? t("plan.questions", { count: open })
+                                    : wish.ready
+                                      ? t("wish.ready")
+                                      : running
+                                        ? t("plan.running", { count: running })
+                                        : merging
+                                          ? t("plan.merging", {
+                                              count: merging,
+                                            })
+                                          : investigators
+                                            ? t("plan.investigating", {
+                                                count: investigators,
+                                              })
+                                            : watching
+                                              ? t("plan.watching", {
+                                                  count: watching,
+                                                })
+                                              : t("pill.calm")
+                                }
+                              />
+                              {digging > 0 && (
+                                <CountPill
+                                  tone="investigating"
+                                  count={digging}
+                                  label={t("pill.investigating_detail", {
+                                    count: digging,
+                                  })}
+                                />
+                              )}
+                              {open > 0 && running > 0 && (
+                                <CountPill
+                                  tone="running"
+                                  count={running}
+                                  label={t("plan.running", { count: running })}
+                                />
+                              )}
+                              {merging > 0 && (open > 0 || running > 0) && (
+                                <CountPill
+                                  tone="running"
+                                  icon={GitMerge}
+                                  count={merging}
+                                  label={t("plan.merging_detail", {
+                                    count: merging,
+                                  })}
+                                />
+                              )}
+                              {fixing > 0 && (
+                                <CountPill
+                                  tone="fixing"
+                                  icon={Wrench}
+                                  count={fixing}
+                                  label={t("plan.fixing_detail", {
+                                    count: fixing,
+                                  })}
+                                />
+                              )}
+                              {(open > 0 || running > 0) && watching > 0 && (
+                                <CountPill
+                                  tone="watching"
+                                  count={watching}
+                                  label={t("plan.watching", {
+                                    count: watching,
+                                  })}
+                                />
+                              )}
+                              {failed > 0 && (
+                                <CountPill
+                                  tone="failed"
+                                  count={failed}
+                                  label={t("pill.failed_detail", {
+                                    count: failed,
+                                  })}
+                                />
+                              )}
+                              {cancelled > 0 && (
+                                <CountPill
+                                  tone="cancelled"
+                                  count={cancelled}
+                                  label={t("pill.cancelled_detail", {
+                                    count: cancelled,
+                                  })}
+                                />
+                              )}
+                              {total > 0 && (
+                                <CountPill
+                                  tone="done"
+                                  count={done}
+                                  label={t("pill.done_detail", {
+                                    done,
+                                    count: total,
+                                  })}
+                                >
+                                  / {total}
+                                </CountPill>
+                              )}
+                            </span>
+                            {total > 0 && (
+                              <span
+                                className="plan-wish-progress"
+                                style={
+                                  {
+                                    "--done": `${(100 * done) / total}%`,
+                                  } as CSSProperties
+                                }
+                                aria-hidden="true"
+                              />
+                            )}
+                            <SpentLine
+                              spent={spent(detail?.tasks ?? [])}
+                              showSwitch={false}
+                            />
+                          </button>
+                        );
+                      })}
+                    </section>
+                  </div>
+                )}
+
                 <div className="main-moves">
                   <QuestionColumn
                     groups={questionsByWish}
@@ -689,14 +885,6 @@ export function FlightPlan({
                     />
                   )}
                 </div>
-                {wishes.length > 0 && (
-                  <Glance
-                    wishes={wishes}
-                    tasksOf={details}
-                    all={allWishes.length > 0 ? allWishes : wishes}
-                    onOpenWish={onOpen}
-                  />
-                )}
               </div>
 
               {plan.loaded &&
