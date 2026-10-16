@@ -513,13 +513,13 @@ When a project's settings name its checks, Djinn brings finished work into the w
 ends, it merges the task's branch in a worktree of its own (made ready by the `setup` command), runs the checks named
 for `commit` through their gates, and moves the branch when they pass. Each task says where its work stands: waiting
 to be committed, committed, conflict, red, corrected by another task. A conflict in code or a red check start a
-correction worker; past two attempts, Djinn asks you.
+correction worker; past two attempts, Djinn hands it to the Djinn, which decides what follows.
 
 Each project defines its push cadence: **Standard** (pushes at an azima's end or after an hour and three tasks committed)
 or **On demand** (pushes only when you click **Push** or run `djinn project push <project> [--wish <wish>]`). You can
 switch cadence in the project view or with `djinn project set-push <project> standard|on_demand`. Before it pushes the branch,
 it runs the checks named for `push`: red, the push is held, and Djinn starts a correction worker; if that fails or attempts
-are spent, it asks you. `djinn project show` and the project's view in the window list the checks and how each last ran.
+are spent, it tells the Djinn. `djinn project show` and the project's view in the window list the checks and how each last ran.
 When the settings also name an install command, the window proposes the build it pushed, one per integration branch:
 on one line, its commit, the branch and wish it comes from, and against the running Djinn the tasks it adds, or "older
 than the running Djinn on 3 commits" when the running Djinn holds commits it lacks; **Details** unfolds the tasks merged
