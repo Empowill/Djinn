@@ -82,15 +82,30 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 	return b.base.RoundTrip(r)
 }
 
-// workerHeaders sends the worker token if set in the environment.
+// workerHeaders sends the worker token if set in the environment, and who runs the command (harness.CallerHeader):
+// the developer's own commands keep their ifrits lit.
 type workerHeaders struct {
 	base http.RoundTripper
 }
 
 func (w workerHeaders) RoundTrip(r *http.Request) (*http.Response, error) {
-	if token := os.Getenv("DJINN_WORKER_TOKEN"); token != "" {
-		r = r.Clone(r.Context())
+	r = r.Clone(r.Context())
+	token := os.Getenv("DJINN_WORKER_TOKEN")
+	if token != "" {
 		r.Header.Set("X-Djinn-Worker-Token", token)
 	}
+	r.Header.Set("X-Djinn-Caller", caller(token))
 	return w.base.RoundTrip(r)
+}
+
+// caller is who runs this command, as harness.Touching reads it: the lead in its terminal ($DJINN_LEAD=1), a process
+// Djinn started (a worker's token, a watcher's $DJINN_TASK_ID, a check's $DJINN_CALLER), else the developer.
+func caller(token string) string {
+	switch {
+	case os.Getenv("DJINN_LEAD") == "1":
+		return "lead"
+	case token != "" || os.Getenv("DJINN_TASK_ID") != "" || os.Getenv("DJINN_CALLER") == "djinn":
+		return "djinn"
+	}
+	return "you"
 }

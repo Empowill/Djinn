@@ -526,3 +526,31 @@ func TestNoticesShowTheLeadsChoiceOnceTheyCan(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 }
+
+// TestNoticesWarnAnIfritGoesOut: an ifrit about to go out is notified once per out time, even with the window in
+// front on its wish, which says nothing of it; its Keep lit button keeps it lit, and brings no window forward.
+func TestNoticesWarnAnIfritGoesOut(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	var kept, shown int
+	n.KeepLit = func() { kept++ }
+	n.Show = func(string, string) { shown++ }
+	w := makeWish(t, n.Store, "Front", planv1.WishState_WISH_STATE_ACTIVE)
+	n.View(w.GetId())
+	n.Focus(true)
+	out := time.Date(2026, 10, 16, 10, 30, 0, 0, time.Local)
+	ifrit := &planv1.Task{Id: store.NewID(), WishId: w.GetId(), Code: "W12", Kind: planv1.TaskKind_TASK_KIND_IFRIT,
+		Ifrit: &planv1.TaskIfrit{State: planv1.IfritState_IFRIT_STATE_LISTENING, OutTime: timestamppb.New(out)}}
+	n.IfritWarning(ifrit)
+	got := notes.next(t)
+	if got.Title != "W12 goes out in 5 min · Front" || !strings.Contains(got.Body, "W12 goes out at 10:30") ||
+		got.Target != "task-"+ifrit.GetId() || len(got.Actions) != 1 || got.Actions[0].Title != "Keep lit" {
+		t.Errorf("warning = %+v", got)
+	}
+	n.IfritWarning(ifrit)
+	notes.none(t)
+
+	n.Respond(t.Context(), Response{WishID: w.GetId(), Target: got.Target, Action: got.Actions[0].ID})
+	if kept != 1 || shown != 0 {
+		t.Errorf("Keep lit: kept %d, shown %d; want kept once, no window", kept, shown)
+	}
+}

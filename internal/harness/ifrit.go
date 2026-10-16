@@ -9,8 +9,12 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -136,6 +140,9 @@ func (h *Harness) doneIfrit(ctx context.Context, procedure string, req *planv1.T
 	if r != nil && !r.stopping && !r.final {
 		input, _ = r.worker.(Listener)
 	}
+	if input != nil {
+		r.ending, r.out = true, "" // Done, even when it was going out.
+	}
 	h.mu.Unlock()
 	if input == nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
@@ -161,4 +168,188 @@ func (h *Harness) doneIfrit(ctx context.Context, procedure string, req *planv1.T
 	}
 	input.CloseInput()
 	return task, nil
+}
+
+// An ifrit stays lit while the developer is there (Presence): once they left Djinn alone for its idle delay
+// (IfritIdle), counted from their last action or from when it was lit, whichever is later, it goes out. Djinn warns
+// ifritWarnAhead before (WarnIfrits: a system notification, with Keep lit), and an action of theirs clears the
+// warning. A turn under way ends first: the ifrit goes out once it listens. Out, its input closes, its agent ends, and
+// it gives its slot and gates back; its task is stopped, Task.ifrit OUT and why, its worktree, branch and session
+// kept; the lead hears of it (LEAD_EVENT_KIND_OUT). djinn task send lights it again (relight): its next worker
+// resumes its session on the message. A Djinn restart brings a lit ifrit back out (putOut), as the restart line says.
+
+// ifritWarnAhead is how long before an ifrit goes out Djinn warns the developer.
+const ifritWarnAhead = 5 * time.Minute
+
+// methodIfrit is journaled when an ifrit's timers move; the request is where it stands.
+const methodIfrit = "harness/ifrit"
+
+// WarnIfrits sets what shows the developer that an ifrit goes out soon (Task.ifrit.out_time): djinn up's system
+// notification, whose Keep lit button touches the Presence. It must not wait.
+func (h *Harness) WarnIfrits(warned func(*planv1.Task)) {
+	h.mu.Lock()
+	h.ifritWarned = warned
+	h.mu.Unlock()
+}
+
+// ifritOut tells whether t is an ifrit put out: a message lights it again.
+func ifritOut(t *planv1.Task) bool {
+	return dispatch.Ifrit(t) && t.GetIfrit().GetState() == planv1.IfritState_IFRIT_STATE_OUT
+}
+
+// pokeIfrits has the pump of every lit ifrit look at its timers (ifritTimers): the developer did something, or time
+// went by (each scheduler pass).
+func (h *Harness) pokeIfrits() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, r := range h.runs {
+		if r.ifrit && !r.final && !r.stopping {
+			select {
+			case r.timers <- struct{}{}:
+			default: // Its pump has one to look at already.
+			}
+		}
+	}
+}
+
+// ifritTimers puts the ifrit of r out once the developer left Djinn alone for its idle delay and it listens, warns
+// them before, and keeps Task.ifrit's out and warning times as the developer's last action sets them. The pump calls
+// it, as it owns the task.
+func (h *Harness) ifritTimers(r *run) {
+	now := h.now()
+	h.mu.Lock()
+	lit, listening, input, warn := r.startTime, !r.listenSince.IsZero(), r.worker, h.ifritWarned
+	going := r.out != "" || r.ending || r.stopping || r.final || input == nil
+	h.mu.Unlock()
+	if going {
+		return
+	}
+	since := h.presence.Last()
+	if since.Before(lit) {
+		since = lit // Lit at the developer's word: they were there.
+	}
+	idle := h.IfritIdle(r.task)
+	outAt := since.Add(idle)
+	ifrit := r.task.GetIfrit()
+	warned := ifrit.GetWarnTime() != nil
+	switch {
+	case !now.Before(outAt) && listening:
+		closer, ok := input.(Listener)
+		if !ok {
+			return
+		}
+		why := "out: you left Djinn alone at " + clockText(since, now)
+		h.mu.Lock()
+		r.out = why
+		h.mu.Unlock()
+		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+			Text: fmt.Sprintf("going out: nothing from you in Djinn for %s: its input closes", minutesText(now.Sub(since)))})
+		closer.CloseInput()
+	case !now.Before(outAt.Add(-ifritWarnAhead)):
+		if warned && ifrit.GetOutTime().AsTime().Equal(outAt) {
+			return // Warned of this out time already.
+		}
+		h.setIfritTimes(r, outAt, outAt.Add(-ifritWarnAhead))
+		h.write(r, actorHarness, methodEvent, r.task, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+			Text: "goes out at " + clockText(outAt, now) + " unless you come back to Djinn: Keep lit keeps it"})
+		if warn != nil {
+			warn(proto.CloneOf(r.task))
+		}
+	case warned:
+		h.setIfritTimes(r, outAt, time.Time{})
+		h.write(r, actorHarness, methodEvent, r.task, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+			Text: "kept lit: you came back; it goes out at " + clockText(outAt, now) + " if you leave"})
+	case ifrit.GetOutTime() == nil || outAt.Sub(ifrit.GetOutTime().AsTime()) >= time.Minute:
+		// Pushed back by the developer's actions: written a minute at a time, with no event.
+		h.setIfritTimes(r, outAt, time.Time{})
+		err := h.store.Tx(context.Background(), func(tx *store.Tx) error {
+			if err := tx.Journal(actorHarness, methodIfrit, r.task.GetIfrit()); err != nil {
+				return err
+			}
+			carry(tx, r.task)
+			return tx.Put(r.task)
+		})
+		if err != nil {
+			logx.L().Error("record when an ifrit goes out", "task", r.id, "err", err)
+		}
+	}
+}
+
+// setIfritTimes sets when the ifrit of r goes out, and when it was warned (zero: not yet). Replaced, never changed: a
+// copy of the task taken before shares it.
+func (h *Harness) setIfritTimes(r *run, outAt, warnAt time.Time) {
+	ifrit := proto.CloneOf(r.task.GetIfrit())
+	ifrit.OutTime, ifrit.WarnTime = timestamppb.New(outAt), nil
+	if !warnAt.IsZero() {
+		ifrit.WarnTime = timestamppb.New(warnAt)
+	}
+	r.task.Ifrit = ifrit
+}
+
+// minutesText writes d in whole minutes: "30 min".
+func minutesText(d time.Duration) string {
+	return fmt.Sprintf("%d min", int(d.Round(time.Minute)/time.Minute))
+}
+
+// tellOut tells the lead of t's wish that the ifrit t went out, and why.
+func (h *Harness) tellOut(t *planv1.Task) {
+	line := fmt.Sprintf("%s (ifrit) is %s; a message lights it again (djinn task send %s)", t.GetCode(), t.GetError(), t.GetCode())
+	if err := h.toLead(context.Background(), planv1.LeadEventKind_LEAD_EVENT_KIND_OUT, t.GetWishId(), t.GetCode(), line); err != nil {
+		logx.L().Warn("tell the lead an ifrit is out", "task", t.GetCode(), "err", err)
+	}
+}
+
+// whyRestartOut is why an ifrit a restart brought back is out.
+const whyRestartOut = "out: Djinn restarted"
+
+// putOut puts out the ifrit t that a djinn up left lit (running, or interrupted as it stopped): stopped, Task.ifrit
+// OUT, its worktree, branch and session kept. Nothing is resumed by itself: no turn is paid for nothing. Recover
+// calls it, and changes t in place, so that the rest of Recover sees it out.
+func (h *Harness) putOut(ctx context.Context, t *planv1.Task) error {
+	now := timestamppb.New(h.now())
+	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
+		t.EndTime = now
+	}
+	if len(t.Runs) > 0 {
+		if last := t.Runs[len(t.Runs)-1]; last.EndTime == nil {
+			last.EndTime, last.Reason = now, "interrupted"
+		}
+	}
+	t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_STOPPED, whyRestartOut, "", nil
+	setIfrit(t, planv1.IfritState_IFRIT_STATE_OUT, t.GetIfrit().GetListened().AsDuration())
+	t.Ifrit.OutTime, t.Ifrit.WarnTime = nil, nil
+	return h.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal(actorHarness, methodRecover, t); err != nil {
+			return err
+		}
+		if err := tx.Put(t); err != nil {
+			return err
+		}
+		return putEvents(ctx, tx, h.newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+			Text: whyRestartOut + "; its worktree, branch and session are kept, a message lights it again"}))
+	})
+}
+
+// errGoingOut is why a message did not reach an ifrit: it goes out. Send lights it again once it is out.
+var errGoingOut = errors.New("the ifrit goes out")
+
+// relight lights the out ifrit task again for the message of req, as djinn task continue would: its next worker
+// resumes its session in its worktree at once, its turn the message, told how long it was out. It returns the
+// message's prompt event.
+func (h *Harness) relight(ctx context.Context, req *planv1.TaskServiceSendRequest, task *planv1.Task) (*planv1.TaskEvent, error) {
+	away := h.now().Sub(task.GetEndTime().AsTime())
+	prompt := fmt.Sprintf("You were out for %s; Djinn lit you again for this message.\n\n%s", minutesText(away), req.GetText())
+	if _, err := h.Continue(ctx, planv1connect.TaskServiceContinueProcedure, &planv1.TaskServiceContinueRequest{
+		TaskId: task.GetId(), Prompt: &prompt, By: planv1.Closer_CLOSER_LEAD,
+	}); err != nil {
+		return nil, err
+	}
+	var ev *planv1.TaskEvent
+	err := store.Latest(ctx, h.store, store.Where{"task_id": task.GetId()}, func(e *planv1.TaskEvent) bool {
+		if e.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
+			ev = e
+		}
+		return ev == nil
+	})
+	return ev, plan.Status(err)
 }

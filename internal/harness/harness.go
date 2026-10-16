@@ -145,6 +145,8 @@ type Harness struct {
 	silenceLimit time.Duration                // silence limit before the Lamplighter checks a worker (lamplighter.go)
 	maxWallTime  time.Duration                // ceiling on wall time budget per task (lamplighter.go)
 	ifritIdle    time.Duration                // how long the developer may leave Djinn alone before an ifrit goes out (ifrit.go)
+	presence     *Presence                    // when the developer last did something in Djinn (presence.go)
+	ifritWarned  func(*planv1.Task)           // shows that an ifrit goes out soon (WarnIfrits), guarded by mu; nil: nothing shows
 	maxTurns     int                          // ceiling on model turns budget per task (lamplighter.go)
 	version      string                       // version of the running binary (WithVersion)
 	builtFrom    map[string]string            // by project id: the branch the running binary was built from (compare.go)
@@ -168,13 +170,14 @@ type Harness struct {
 
 // run is a task at work: its worker, or the workers it runs one after the other when the task starts again.
 type run struct {
-	id    string
-	wish  string             // the task's wish, which never changes
-	done  chan struct{}      // closed once the task has its final status
-	wake  chan struct{}      // an answer waits in answers
-	notes chan Event         // events from outside the worker (a gate), for the pump to write
-	sends chan *message      // messages for the worker (inbox.go), for the pump to deliver
-	holds chan chan struct{} // a pause or a resume for the pump to write; closed once written
+	id     string
+	wish   string             // the task's wish, which never changes
+	done   chan struct{}      // closed once the task has its final status
+	wake   chan struct{}      // an answer waits in answers
+	notes  chan Event         // events from outside the worker (a gate), for the pump to write
+	sends  chan *message      // messages for the worker (inbox.go), for the pump to deliver
+	timers chan struct{}      // an ifrit's timers to look at (ifritTimers), for the pump
+	holds  chan chan struct{} // a pause or a resume for the pump to write; closed once written
 
 	// Guarded by Harness.mu.
 	worker             Worker
@@ -196,6 +199,8 @@ type run struct {
 	ifrit              bool                 // an ifrit: its agent's input stays open between turns (ifrit.go)
 	listenSince        time.Time            // when the ifrit began to listen; zero while it works: it takes no slot meanwhile
 	listened           time.Duration        // how long the ifrit listened before listenSince, over all its runs
+	out                string               // why the ifrit goes out (ifritTimers): its input closes, and it ends out
+	ending             bool                 // djinn task done closed the ifrit's input (doneIfrit): it ends done, never out
 	final              bool                 // the task is getting its final status: an answer waits for done instead
 	answers            []*planv1.Question   // answers to the task's edit question, for the pump to apply
 	use                *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one; guarded by Harness.useMu
@@ -238,7 +243,7 @@ type run struct {
 func (h *Harness) newRun(task *planv1.Task) (*run, error) {
 	r := &run{
 		id: task.GetId(), wish: task.GetWishId(), task: task, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
-		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}),
+		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}), timers: make(chan struct{}, 1),
 		subs: map[chan *planv1.TaskEvent]struct{}{}, watcher: watching(task),
 		light: questionWorker(task), requestedModel: task.GetModel(),
 		token:        store.NewID(),
@@ -277,6 +282,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	for _, o := range opts {
 		o(h)
 	}
+	h.presence = &Presence{now: h.now, touched: h.pokeIfrits}
 	h.batcher = newTellBatcher(h)
 	dumps := ""
 	if home != "" {
@@ -376,11 +382,18 @@ func (h *Harness) Recover(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var interrupted []string
+	var interrupted, out []string
 	for _, t := range tasks {
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
 		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			if dispatch.Ifrit(t) { // Lit as the last djinn up ended: it comes back out, never resumed by itself.
+				if err := h.putOut(ctx, t); err != nil {
+					return err
+				}
+				out = append(out, t.GetCode())
+				continue
+			}
 			// Stopped as the last djinn up ended (end): its worker ran, resumed by Djinn or not.
 			if !lastStart.IsZero() && t.GetEndTime().AsTime().After(lastStart) && !watching(t) {
 				interrupted = append(interrupted, t.GetCode())
@@ -391,6 +404,13 @@ func (h *Harness) Recover(ctx context.Context) error {
 		}
 		// A task no worker ever started (planned, or imported with a wish) waits for one: nothing to interrupt.
 		if t.GetStartTime() == nil {
+			continue
+		}
+		if dispatch.Ifrit(t) { // Lit as the last djinn up crashed: it comes back out.
+			if err := h.putOut(ctx, t); err != nil {
+				return err
+			}
+			out = append(out, t.GetCode())
 			continue
 		}
 		if !watching(t) { // A watcher is no worker: the restart line counts it apart.
@@ -424,7 +444,8 @@ func (h *Harness) Recover(ctx context.Context) error {
 	}
 	// The lead hears of the restart from its queue, whether its watch died with the last djinn up or not.
 	restart := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART,
-		Text: restartLine(h.version, interrupted, resumed, watchers, orphans, cutPart(cut, integrating), lockedPart(locked))}
+		Text: restartLine(h.version, interrupted, resumed, watchers, out, orphans, cutPart(cut, integrating),
+			lockedPart(locked))}
 	if err := plan.QueueLeadEvent(ctx, h.store, restart, h.now()); err != nil {
 		return fmt.Errorf("tell the lead of the restart: %w", err)
 	}
@@ -449,10 +470,10 @@ func (h *Harness) lastStart(ctx context.Context) (time.Time, error) {
 
 // restartLine is what the lead's restart event says: the version Djinn started on, the workers the last djinn up
 // left running and Djinn interrupted (or that it stopped, and Djinn resumes), those of them it resumes by itself,
-// apart the watchers it resumes: a watcher is no worker, the processes the last djinn up left running that Djinn
-// stopped, by their labels (orphansPart), and the parts more, each "" for none: what the stop cut (cutPart), what it
-// left in the person's checkouts (lockedPart).
-func restartLine(version string, interrupted, resumed, watchers, orphans []string, more ...string) string {
+// apart the watchers it resumes: a watcher is no worker, the ifrits it left lit, which come back out (putOut), the
+// processes the last djinn up left running that Djinn stopped, by their labels (orphansPart), and the parts more,
+// each "" for none: what the stop cut (cutPart), what it left in the person's checkouts (lockedPart).
+func restartLine(version string, interrupted, resumed, watchers, out, orphans []string, more ...string) string {
 	if version == "" {
 		version = "unknown"
 	}
@@ -483,6 +504,13 @@ func restartLine(version string, interrupted, resumed, watchers, orphans []strin
 	if len(watchers) > 0 {
 		parts = append(parts, fmt.Sprintf("%d %s resumed: %s", len(watchers), plural(len(watchers), "watcher"),
 			strings.Join(watchers, ", ")))
+	}
+	switch len(out) {
+	case 0:
+	case 1:
+		parts = append(parts, out[0]+" (ifrit) is out: a message lights it again")
+	default:
+		parts = append(parts, strings.Join(out, ", ")+" (ifrits) are out: a message lights each again")
 	}
 	if part := orphansPart(orphans); part != "" {
 		parts = append(parts, part)
@@ -1473,6 +1501,8 @@ func (h *Harness) drain(r *run) Result {
 		case written := <-r.holds:
 			h.writeHold(r)
 			close(written)
+		case <-r.timers:
+			h.ifritTimers(r)
 		case <-r.wake:
 			for _, q := range h.takeAnswers(r) {
 				if h.applyAnswer(r, q) && !r.restart {
@@ -1553,6 +1583,9 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	h.acknowledge(r, ev)
 	h.write(r, actorWorker, methodEvent, task, ev)
+	if ev.Ifrit == planv1.IfritState_IFRIT_STATE_LISTENING && r.ifrit {
+		h.ifritTimers(r) // Its turn ended: past its out time, it goes out now.
+	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL && !r.notedPush {
 		if r.ranPushCheck(ev.Text) || r.ranPushCheck(ev.Raw) {
 			r.notedPush = true
@@ -1738,6 +1771,7 @@ func (h *Harness) end(r *run, res Result) {
 	}
 	h.mu.Lock()
 	stopping, stoppingReason, shelved, preemptedWhy, lamplighterEnd, lamplighterReason := r.stopping, r.stoppingReason, r.shelved, r.preemptedWhy, r.lamplighterEnd, r.lamplighterReason
+	out := r.out
 	h.mu.Unlock()
 	var streamIdleReason string
 	if isStreamIdle(res.Err) {
@@ -1773,7 +1807,12 @@ func (h *Harness) end(r *run, res Result) {
 		h.mu.Lock()
 		listened := r.listenedBy(now)
 		h.mu.Unlock()
-		setIfrit(t, planv1.IfritState_IFRIT_STATE_UNSPECIFIED, listened)
+		state := planv1.IfritState_IFRIT_STATE_UNSPECIFIED
+		if out != "" && !stopping {
+			state = planv1.IfritState_IFRIT_STATE_OUT
+		}
+		setIfrit(t, state, listened)
+		t.Ifrit.OutTime, t.Ifrit.WarnTime = nil, nil
 	}
 	// Under useMu, as measure sets them (lowestWorkTask copies the task). A copy: the reading is shared with what the
 	// workers use (Uses, RunsSeries), which never changes it.
@@ -1798,6 +1837,8 @@ func (h *Harness) end(r *run, res Result) {
 		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy
 	case stopping:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, cmp.Or(stoppingReason, "stopped on request")
+	case out != "":
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, out
 	case lamplighterEnd || streamIdleEnd:
 		why := streamIdleReason
 		if lamplighterEnd {
@@ -1888,6 +1929,8 @@ func (h *Harness) end(r *run, res Result) {
 		text = "resuming: " + lamplighterReason + "; continued"
 	case streamIdleEnd && t.GetContinuing():
 		text = "resuming: " + streamIdleReason + "; continued"
+	case ifritOut(t):
+		text = t.GetError() // It says out, and why.
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING:
 		text = "waiting: " + whyStoppedFirst
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING:
@@ -1913,6 +1956,8 @@ func (h *Harness) end(r *run, res Result) {
 	switch {
 	case watching(t) && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED:
 		h.tellWatcherFailed(t)
+	case ifritOut(t):
+		h.tellOut(t)
 	case !r.light && !watching(t):
 		h.workerEnded(t)
 		h.babysitOpened(proto.CloneOf(t))

@@ -16,6 +16,7 @@ import {
   useWishDetails,
 } from "./data/djinn";
 import { importWish } from "./data/exchange";
+import { followPresence } from "./data/presence";
 import { isActive, runningOf, waitsForYou } from "./data/format";
 import { AgentSetup, needsSetup } from "./agent-setup";
 import { FlightPlan } from "./flight-plan";
@@ -247,6 +248,16 @@ export function WishApp() {
   useEffect(() => {
     void clients.ui.view({ wishId: shownId }).catch(() => undefined);
   }, [clients, shownId]);
+  // A key, a click or a scroll in the window in front says the developer is there: it keeps their ifrits lit.
+  useEffect(
+    () =>
+      followPresence(
+        () => clients.ui.touch({}),
+        window,
+        () => document.hasFocus(),
+      ),
+    [clients],
+  );
   const project = projects.find((p) => p.id === projectId);
 
   const move = (wishId: string, to: number) =>

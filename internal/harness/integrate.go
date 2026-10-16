@@ -1537,6 +1537,8 @@ func runTracked(
 ) (string, int, error) {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
+	// A djinn command it runs (djinn gate run in a check) is Djinn's, not the developer's: it keeps no ifrit lit.
+	cmd.Env = append(os.Environ(), "DJINN_CALLER="+CallerDjinn)
 	// At ctx's end (Djinn stops), what the command started dies with it: a check's test runner, left alone, would
 	// hold the output open, and Djinn's shutdown with it, for as long as the tests run (W504).
 	ownGroup(cmd, false)

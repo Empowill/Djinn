@@ -183,3 +183,37 @@ func TestRefusesRealHomeSocket(t *testing.T) {
 		t.Fatalf("expected Run refusal message, got: %s", errs.String())
 	}
 }
+
+// TestCallerHeader: each request says who runs the command (harness.CallerHeader), so that only the developer's own
+// commands keep their ifrits lit: the lead's terminal, a worker, a watcher and Djinn's checks are not the developer.
+func TestCallerHeader(t *testing.T) {
+	f := &fake{}
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Header.Get("X-Djinn-Caller"))
+		handler(f).ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+	home := t.TempDir()
+	if _, err := server.WriteAddr(home, srv.URL); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		env  map[string]string
+		want string
+	}{
+		{nil, "you"},
+		{map[string]string{"DJINN_LEAD": "1"}, "lead"},
+		{map[string]string{"DJINN_WORKER_TOKEN": "w0rker"}, "djinn"},
+		{map[string]string{"DJINN_TASK_ID": "01a144b9-e0d2-71af-8c46-469eb0ca4513"}, "djinn"},
+		{map[string]string{"DJINN_CALLER": "djinn"}, "djinn"},
+	} {
+		for _, name := range []string{"DJINN_LEAD", "DJINN_WORKER_TOKEN", "DJINN_TASK_ID", "DJINN_CALLER"} {
+			t.Setenv(name, c.env[name])
+		}
+		seen = nil
+		if code, _, errs := runIn(home, "project", "list"); code != 0 || len(seen) != 1 || seen[0] != c.want {
+			t.Errorf("with %v: code %d (%s), caller %q, want %q", c.env, code, errs, seen, c.want)
+		}
+	}
+}

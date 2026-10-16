@@ -467,6 +467,8 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	svc[server.DumpPath] = server.Dump(logx.Folder(home))
 	h := server.Handler(djinn.UI(), djinn.Docs(), svc)
+	// The developer's own requests keep the ifrits lit; a worker's, inside WorkerContext, do not.
+	h = harness.Touching(h, workers.Presence())
 	h = server.WorkerContext(h, func(ctx context.Context, peerPID int, token string) context.Context {
 		if caller := workers.Caller(peerPID, token); caller != nil {
 			return plan.WithCaller(ctx, caller)
@@ -539,6 +541,9 @@ func runUp(args []string) (restart bool, err error) {
 		Answer: func(ctx context.Context, id string, choice planv1.Choice) error { return answer(ctx, addr, id, choice) },
 	}
 	uiSvc.Notices = notices
+	// The window's touches keep the ifrits lit, as the Keep lit button of the warning Djinn shows before one goes out.
+	uiSvc.Touched, notices.KeepLit = workers.Presence().Touch, workers.Presence().Touch
+	workers.WarnIfrits(notices.IfritWarning)
 	go notices.Run(ctx)
 	prompted := func() {
 		changeLead()

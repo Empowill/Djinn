@@ -55,6 +55,9 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 	if e := task.GetError(); e != "" {
 		text += " (" + e + ")"
 	}
+	if ifritOut(task) {
+		text = "lit again by a message, was " + task.GetError()
+	}
 	turnPrompt := req.GetPrompt()
 	addPromptEvent := true
 	if req.Prompt == nil || *req.Prompt == "" {
