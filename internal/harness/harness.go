@@ -343,6 +343,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 	orphans := h.children.sweep()
 	locked := h.unlockWorktrees(ctx) // No git of the last djinn up runs now, and none of this one yet.
 	cut := readCuts(h.home)
+	h.sweepTemp(ctx)
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {

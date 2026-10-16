@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/logx"
 )
 
@@ -182,8 +183,9 @@ func (cs *children) write(c child) error {
 	if err := os.MkdirAll(cs.dir, 0o700); err != nil {
 		return err
 	}
-	// No sync: the record matters only as long as the process runs, which a power cut ends too.
-	return os.WriteFile(cs.file(c.PID), b, 0o600)
+	// Whole or not there, as sweep reads it after a kill; no sync: the record matters only as long as the process
+	// runs, which a power cut ends too.
+	return fsx.WriteAtomicNoSync(cs.file(c.PID), b, 0o600)
 }
 
 // sweep stops what a previous djinn up left running: each child recorded whose djinn up is gone, and that still

@@ -88,7 +88,7 @@ func (h *Harness) writeCuts() {
 	logx.L().Warn("djinn up stopped during work", "cut", strings.Join(what, "; "))
 	b, err := json.Marshal(what)
 	if err == nil {
-		err = fsx.WriteAtomic(filepath.Join(h.home, cutFile), b)
+		err = fsx.WriteAtomic(filepath.Join(h.home, cutFile), b, 0o600)
 	}
 	if err != nil {
 		logx.L().Error("record what the stop cut", "err", err)

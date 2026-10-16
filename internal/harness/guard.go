@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/empowill/djinn/internal/fsx"
 )
 
 // noPushScheme is the transport every push of a worker goes to: Git has none of that name, so the push fails, and
@@ -56,24 +58,7 @@ func gitGuard(home, dir string) ([]string, error) {
 
 // writeGitGuard writes noPushConfig to file, whole: workers starting together each write their own and rename it.
 func writeGitGuard(file string) error {
-	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(filepath.Dir(file), filepath.Base(file)+".*")
-	if err != nil {
-		return err
-	}
-	_, err = f.WriteString(noPushConfig)
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err == nil {
-		err = os.Rename(f.Name(), file)
-	}
-	if err != nil {
-		_ = os.Remove(f.Name())
-	}
-	return err
+	return fsx.WriteAtomic(file, []byte(noPushConfig), 0o600)
 }
 
 // globEscape escapes what Git's wildmatch would read as a pattern in path.

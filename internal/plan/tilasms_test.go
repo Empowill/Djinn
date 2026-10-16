@@ -627,3 +627,51 @@ func TestTilasmMovesRetryARefusedRename(t *testing.T) {
 		t.Errorf("L01 after the import = %q, want its first version", text)
 	}
 }
+
+// TestSweepTilasmTemp: the staging folders a kill left in the tilasms' folder go; a tilasm an import put aside goes
+// back to its empty place, and one whose place is taken stays aside; the tilasms themselves are not touched.
+func TestSweepTilasmTemp(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, "tilasms")
+	put := func(rel string) {
+		t.Helper()
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(rel), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, rel := range []string{
+		".put-1/index.html", ".drop-2/a.zip", ".import-3/x/v1/index.html", ".restore-4/index.html",
+		".replaced-5/gone/v1/index.html", ".replaced-6/taken/v1/index.html", "taken/v2/index.html",
+		"kept/v1/index.html", ".other/index.html",
+	} {
+		put(rel)
+	}
+	removed, kept, err := SweepTilasmTemp(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, dir := range removed {
+		names = append(names, filepath.Base(dir))
+	}
+	slices.Sort(names)
+	if want := []string{".drop-2", ".import-3", ".put-1", ".replaced-5", ".restore-4"}; !slices.Equal(names, want) {
+		t.Errorf("removed %v, want %v", names, want)
+	}
+	if want := []string{filepath.Join(root, ".replaced-6")}; !slices.Equal(kept, want) {
+		t.Errorf("kept %v, want %v", kept, want)
+	}
+	for _, rel := range []string{"gone/v1/index.html", "taken/v2/index.html", "kept/v1/index.html", ".other/index.html",
+		".replaced-6/taken/v1/index.html"} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			t.Errorf("%s: %v", rel, err)
+		}
+	}
+	if _, _, err := SweepTilasmTemp(t.TempDir()); err != nil {
+		t.Errorf("a data folder without tilasms: %v", err)
+	}
+}

@@ -123,7 +123,7 @@ func (s *Shortcuts) Set(chord string) (*uiv1.Shortcut, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := fsx.WriteAtomic(filepath.Join(s.Home, settingsFile), data); err != nil {
+	if err := fsx.WriteAtomic(filepath.Join(s.Home, settingsFile), data, 0o600); err != nil {
 		return nil, fmt.Errorf("save the settings: %w", err)
 	}
 	s.release()
