@@ -1025,6 +1025,9 @@ button.glance-line:hover .name {
   font-weight: 500;
   white-space: nowrap;
 }
+.review .question-row .option-plan {
+  grid-column: 2 / -1;
+}
 .review .question-row textarea {
   max-width: none;
 }
@@ -1375,6 +1378,30 @@ button.glance-line:hover .name {
   border-radius: 999px;
   padding: 0 8px;
   font-weight: 600;
+}
+/* The task an option launches once picked: one grey line, cut short, never a second one (W100). */
+.option-plan {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+  user-select: text;
+}
+.option-plan svg {
+  flex: none;
+}
+.option-plan-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.option-plan-azima {
+  flex: none;
+  white-space: nowrap;
 }
 .review .question-card textarea {
   width: 100%;
