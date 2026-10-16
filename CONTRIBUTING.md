@@ -341,6 +341,10 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
 - **Tasks live in [`plan/`](plan/README.md)**, one file each. The README checklist is the only
   tracker.
 - **Every change is reviewed** by a maintainer.
+- **Every change carries its documentation.** A change to what Djinn does (a feature, a concept, a screen, a command,
+  a behaviour) updates the documentation site in the same change: its chapter or card in the Concepts tab of
+  [`docs/site/index.html`](docs/site/index.html), a new card for a new concept. The Command line tab follows the
+  command tree by itself, so a command's documentation is its proto comment or its `cli.Builtins` entry.
 - **How to release**: write the notes first, `docs/releases/vX.Y.Z.md`, with the
   [`release-notes`](.agents/skills/release-notes/SKILL.md) skill, which also gives the commands. From main, `go tool
   task release VERSION=vX.Y.Z` then `git push origin vX.Y.Z` opens a draft with every binary, published once read
