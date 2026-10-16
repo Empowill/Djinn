@@ -81,6 +81,11 @@ service UiService {
   rpc View(UiServiceViewRequest) returns (UiServiceViewResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
+  // Say that the developer is there: a key, a click or a scroll in the window in front, sent at most every 30 seconds.
+  // It keeps the ifrits lit.
+  rpc Touch(UiServiceTouchRequest) returns (UiServiceTouchResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
 }
 
 message UiServiceGetEnvironmentRequest {
@@ -123,6 +128,12 @@ message Settings {
   optional string shortcut = 1;
   // The operating load notch in effect on this machine. Unset: default (medium).
   optional djinn.v1.LoadNotch load = 2;
+  // Minutes without you in Djinn before Djinn puts an ifrit out, 5 to 240: your pace on this machine. Unset: 30.
+  // djinn up --ifrit-idle, and an ifrit's own (djinn task spawn --idle-minutes), come first.
+  optional uint32 ifrit_idle_minutes = 3 [(buf.validate.field).uint32 = {
+    gte: 5
+    lte: 240
+  }];
 }
 
 // An agent command line. Djinn looks for it on its PATH, the PATH of the user's login shell, and the folders its
@@ -416,3 +427,7 @@ message UiServiceViewRequest {
 }
 
 message UiServiceViewResponse {}
+
+message UiServiceTouchRequest {}
+
+message UiServiceTouchResponse {}

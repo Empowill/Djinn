@@ -209,6 +209,48 @@ func TestConvention(t *testing.T) {
 			want: &planv1.TaskServiceWatchRequest{TaskId: wishID, Last: 5},
 		},
 		{
+			name: "an ifrit, with its own idle minutes",
+			args: []string{wishID, "--kind", "ifrit", "--idle-minutes", "60"},
+			want: &planv1.TaskServiceSpawnRequest{WishId: wishID, Kind: planv1.TaskKind_TASK_KIND_IFRIT, IdleMinutes: 60},
+		},
+		{
+			name: "a question about a task",
+			args: []string{"Keep this margin?", wishID, "--about", "W12"},
+			want: &planv1.QuestionServiceAskRequest{Text: "Keep this margin?", WishId: wishID, About: "W12"},
+		},
+		{
+			name: "a revision about another task",
+			args: []string{"Q03", "--about", "W7"},
+			want: &planv1.QuestionServiceReviseRequest{
+				Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, About: proto.String("W7"),
+			},
+		},
+		{
+			name: "a revision about no task any more",
+			args: []string{"Q03", "--about", ""},
+			want: &planv1.QuestionServiceReviseRequest{
+				Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, About: proto.String(""),
+			},
+		},
+		{
+			name: "a serve with its gate, ports and stop command",
+			args: []string{"back", "task run-back", "--gate", "stack", "--port", "8080=api", "--port", "5432", "--stop", "task stop-back"},
+			want: &planv1.ServeServiceRunRequest{
+				Name: "back", Command: "task run-back", Gate: "stack", Port: []string{"8080=api", "5432"}, Stop: "task stop-back",
+			},
+		},
+		{
+			name:      "a serve's command after --",
+			args:      []string{"front", "--port", "5173=front", "--", "npm run dev"},
+			want:      &planv1.ServeServiceRunRequest{Name: "front", Command: "npm run dev", Port: []string{"5173=front"}},
+			parseOnly: true,
+		},
+		{
+			name: "a serve's last lines",
+			args: []string{"back", "--last", "50"},
+			want: &planv1.ServeServiceLogsRequest{Name: "back", Last: 50},
+		},
+		{
 			name:      "-- ends the flags",
 			args:      []string{"--", "--verbose?"},
 			want:      &planv1.QuestionServiceAskRequest{Text: "--verbose?"},
@@ -484,6 +526,8 @@ func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr 
 	mux.Handle(planv1connect.NewTilasmServiceHandler(tilasms{fake: f}))
 	mux.Handle(planv1connect.NewTaskServiceHandler(tasks{fake: f}))
 	mux.Handle(djinnv1connect.NewLoadServiceHandler(loads{fake: f}))
+	// ServeService answers unimplemented until Djinn runs an ifrit's serves, as djinn up's stub does.
+	mux.Handle(planv1connect.NewServeServiceHandler(planv1connect.UnimplementedServeServiceHandler{}))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return f, func(args ...string) (int, string, string) {
@@ -521,7 +565,7 @@ func TestRun(t *testing.T) {
 		{name: "rule on a repeated flag", args: []string{"q", "ask", "Which?", wishID, "--options", "a", "--options", "b", "--options", "c", "--options", "d", "--options", "e"}, wantCode: 2, wantErr: "--options: must contain no more than 4 item(s)"},
 		{name: "rule on a flag", args: []string{"q", "answer", "Q03", "b", "--wish-id", "W1"}, wantCode: 2, wantErr: "--wish-id: must be a valid UUID; expected a UUID"},
 		{name: "ambiguous method", args: []string{"question", "a"}, wantCode: 2, wantErr: `question method "a" is ambiguous: ask, answer`},
-		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, lead, load, machine, mark, plan, project, question, skill, task, tilasm, wish`},
+		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, lead, load, machine, mark, plan, project, question, serve, skill, task, tilasm, wish`},
 		{name: "load get", args: []string{"load", "get"}, wantOut: "notch: medium\n", wantCalled: true},
 		{name: "load set", args: []string{"load", "set", "minimal"}, wantOut: "notch: minimal\n", wantCalled: true},
 		{name: "load set auto", args: []string{"load", "set", "auto"}, wantOut: "notch: minimal\nauto: true\n", wantCalled: true},
@@ -548,6 +592,15 @@ func TestRun(t *testing.T) {
 		{name: "task update integration none", args: []string{"task", "update", taskID, "--integration", "none"}, wantCalled: true},
 		{name: "task update integration invalid", args: []string{"task", "update", taskID, "--integration", "other"}, wantCode: 2, wantErr: "--integration: must be in list [none, pending]"},
 		{name: "task cancel", args: []string{"task", "cancel", taskID, "--note", "not needed"}, wantOut: "status: cancelled", wantCalled: true},
+		{name: "an ifrit's idle minutes past 4 hours", args: []string{"task", "spawn", wishID, "--kind", "ifrit", "--idle-minutes", "300"}, wantCode: 2, wantErr: "--idle-minutes: must be greater than or equal to 5 and less than or equal to 240"},
+		{name: "an ifrit's idle minutes under 5", args: []string{"task", "spawn", wishID, "--kind", "ifrit", "--idle-minutes", "2"}, wantCode: 2, wantErr: "--idle-minutes: must be greater than or equal to 5"},
+		{name: "about a task by neither code nor id", args: []string{"q", "ask", "Which?", wishID, "--about", "Q12"}, wantCode: 2, wantErr: "--about: does not match regex pattern"},
+		{name: "a serve's port without a number", args: []string{"serve", "run", "front", "npm run dev", "--task-id", taskID, "--port", "api=5173"}, wantCode: 2, wantErr: "--port: "},
+		{name: "a serve's name with a space", args: []string{"serve", "run", "my front", "npm run dev", "--task-id", taskID}, wantCode: 2, wantErr: "<name>: does not match regex pattern"},
+		{name: "serve run reaches its stub", args: []string{"serve", "run", "front", "npm run dev", "--task-id", taskID, "--port", "5173=front"}, wantCode: 1, wantErr: "unimplemented"},
+		{name: "serve list reaches its stub", args: []string{"serve", "list", "--task-id", taskID}, wantCode: 1, wantErr: "unimplemented"},
+		{name: "serve stop reaches its stub", args: []string{"serve", "stop", "front", "--task-id", taskID}, wantCode: 1, wantErr: "unimplemented"},
+		{name: "serve logs reaches its stub", args: []string{"serve", "logs", "front", "--task-id", taskID, "--last", "50"}, wantCode: 1, wantErr: "unimplemented"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -588,6 +641,11 @@ func TestFromEnv(t *testing.T) {
 		{&planv1.QuestionServiceAskRequest{}, []string{"Which?", wishID}, task},
 		{&planv1.QuestionServiceReviseRequest{}, []string{"Q03", "--context", "found"}, task},
 		{&planv1.BlockServiceListRequest{}, []string{wishID}, ""},
+		// An ifrit names its own serves without saying it.
+		{&planv1.ServeServiceRunRequest{}, []string{"front", "npm run dev"}, task},
+		{&planv1.ServeServiceListRequest{}, nil, task},
+		{&planv1.ServeServiceStopRequest{}, []string{"front", "--task-id", other}, other},
+		{&planv1.ServeServiceLogsRequest{}, []string{"front"}, task},
 	} {
 		md := local(t, c.msg)
 		req, err := parse(md, c.args)

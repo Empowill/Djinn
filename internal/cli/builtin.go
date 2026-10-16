@@ -66,6 +66,11 @@ address in the data folder, for the other commands.`,
 				"$DJINN_ENLIGHTEN_WORKERS (on or off), else on.",
 		},
 		{
+			Name: "--ifrit-idle", Type: "duration",
+			Help: "How long you may leave Djinn alone before it puts an ifrit out, from 5m to 4h, like 30m; an ifrit " +
+				"spawned with --idle-minutes keeps its own; default the window's settings, else 30m.",
+		},
+		{
 			Name: "--pprof", Type: "bool", Env: "DJINN_PPROF",
 			Help: "Serve Go's profiles of djinn up at /debug/pprof/, on its own address only (the Unix socket, or the " +
 				"loopback server and its token), to measure what it spends its CPU and memory on; default " +

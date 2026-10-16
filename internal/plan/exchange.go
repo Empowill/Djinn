@@ -374,6 +374,10 @@ func portable(exp *planv1.WishExport, scrub *scrubber) *planv1.WishExport {
 	for _, t := range exp.GetTasks() {
 		// The worktree is a folder here, and the agent session lives in this machine's provider.
 		t.Worktree, t.SessionId, t.ForkSession = "", "", ""
+		for _, serve := range t.GetIfrit().GetServes() {
+			// An ifrit's serves run here, in a folder of this machine.
+			serve.Pid, serve.Directory = 0, ""
+		}
 	}
 	for _, e := range exp.GetEvents() {
 		e.Raw = ""

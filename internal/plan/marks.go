@@ -180,6 +180,25 @@ func taskByCode(ctx context.Context, tx *store.Tx, code, wishID string) (*planv1
 		"%d wishes have a task %s: give its identifier, or the wish with --wish-id", len(found), code))
 }
 
+// aboutTask is the identifier of the task of the wish wishID that ref names, by code (W12) or identifier, that a
+// question is about (djinn question ask --about); empty for an empty ref.
+func aboutTask(ctx context.Context, tx *store.Tx, wishID, ref string) (string, error) {
+	if ref == "" {
+		return "", nil
+	}
+	if !strings.ContainsRune(ref, '-') {
+		task, err := taskByCode(ctx, tx, ref, wishID)
+		if err != nil {
+			return "", err
+		}
+		return task.GetId(), nil
+	}
+	if err := taskOfWish(ctx, tx, wishID, ref); err != nil {
+		return "", err
+	}
+	return ref, nil
+}
+
 // setMark puts mark in marks, in place of one of its kind, or takes that one off.
 func setMark(marks []*planv1.Mark, mark *planv1.Mark, remove bool) []*planv1.Mark {
 	marks = slices.DeleteFunc(slices.Clone(marks), func(x *planv1.Mark) bool { return x.GetKind() == mark.GetKind() })

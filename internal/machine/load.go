@@ -60,6 +60,26 @@ func ReadNotch(home string) djinnv1.LoadNotch {
 	return *settings.Load
 }
 
+// ReadIfritIdle reads the minutes without the developer before Djinn puts an ifrit out from settings.json in home
+// (ui.v1.Settings.ifrit_idle_minutes). It returns 0 when the file does not say, or says a value out of 5 to 240.
+func ReadIfritIdle(home string) uint32 {
+	if home == "" {
+		return 0
+	}
+	data, err := os.ReadFile(filepath.Join(home, settingsFile))
+	if err != nil {
+		return 0
+	}
+	var settings uiv1.Settings
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(data, &settings); err != nil {
+		return 0
+	}
+	if m := settings.GetIfritIdleMinutes(); m >= 5 && m <= 240 {
+		return m
+	}
+	return 0
+}
+
 // WriteNotch writes the operating load notch to settings.json in home, preserving other settings.
 func WriteNotch(home string, notch djinnv1.LoadNotch) error {
 	if home == "" {
