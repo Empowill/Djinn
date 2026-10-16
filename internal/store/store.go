@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/google/uuid"
@@ -72,7 +73,7 @@ func Open(ctx context.Context, path string, entities ...proto.Message) (*Store, 
 		}
 		// synchronous(FULL): a committed write survives a power cut, not only a crash of Djinn. Djinn writes
 		// little, so one fsync per transaction costs nothing worth saving.
-		q := url.Values{"_pragma": {"journal_mode(WAL)", "busy_timeout(5000)", "synchronous(FULL)"}}
+		q := url.Values{"_pragma": {"journal_mode(WAL)", "busy_timeout(5000)", "synchronous(" + durability() + ")"}}
 		dsn = "file:" + filepath.ToSlash(path) + "?" + q.Encode()
 	}
 	db, err := sql.Open("sqlite", dsn)
@@ -87,6 +88,17 @@ func Open(ctx context.Context, path string, entities ...proto.Message) (*Store, 
 		return nil, err
 	}
 	return s, nil
+}
+
+// durability is how SQLite syncs a commit to the disk: FULL, an fsync per transaction, except in tests (go test, and
+// the djinn processes they start with DJINN_TEST=1), where NORMAL leaves the fsync to the checkpoints. A commit still
+// survives a crash of Djinn, which the tests kill; only a power cut, which no test makes, could lose the last ones.
+// An fsync costs ~20 ms on a machine busy with workers: a test writing 400 events waited 8 s on them (W124).
+func durability() string {
+	if testing.Testing() || os.Getenv("DJINN_TEST") == "1" {
+		return "NORMAL"
+	}
+	return "FULL"
 }
 
 // Close closes the database.

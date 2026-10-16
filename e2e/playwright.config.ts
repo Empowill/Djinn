@@ -34,7 +34,9 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   forbidOnly: Boolean(process.env.CI),
-  reporter: [["list"], [path.resolve(__dirname, "reporter.ts")]],
+  // The wall clock against the baseline first, then the list's summary: a push check keeps only the last lines of
+  // its output (W124), and they must name the tests that failed, not the baseline's warning.
+  reporter: [[path.resolve(__dirname, "reporter.ts")], ["list"]],
   use: {
     ...devices["Desktop Chrome"],
     viewport: { width: 1440, height: 1000 },
