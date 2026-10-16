@@ -6774,7 +6774,8 @@ type Closure struct {
 	// Why, in a few words; may be empty.
 	Note string `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
 	// The task that continues this one, by code (W57): a fork of its session, spawned once it was cut short, failed or
-	// stopped. The scheduler follows it: a task that depends on this one waits for the fork.
+	// stopped; or the question worker Djinn started again in its place after it failed on a refused call (W96). The
+	// scheduler follows it: a task that depends on this one waits for the fork.
 	ContinuedIn   string `protobuf:"bytes,4,opt,name=continued_in,json=continuedIn,proto3" json:"continued_in,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

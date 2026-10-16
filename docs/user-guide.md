@@ -184,8 +184,10 @@ one lead per wish keeps the lead of the first active wish as the Djinn.
 - a bar at the top while something waits for you, the most blocking first; a click takes you there;
 - the [inbox](#the-inbox), when a source found something;
 - each wish at a glance: its questions, what runs, or `READY`;
-- what waits for you, in every wish: open questions, workers that wait, wishes Djinn proposes to grant, and the
-  **Proofs you can give** (see [azimas](#azimas));
+- what waits for you, in every wish: open questions, workers that wait for your answer before they edit, wishes
+  Djinn proposes to grant, and the **Proofs you can give** (see [azimas](#azimas)). A worker that failed, refused
+  calls included, never waits for you, nor notifies you: it is the Djinn's, which asks you a question only for a right
+  it lacks, with the command that grants it;
 - the questions you asked the Djinn to investigate.
 
 Each line names its wish; an answer, a stop or a grant goes back to it. Like a wish, the flying carpet has a **Tasks**

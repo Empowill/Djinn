@@ -38,7 +38,6 @@ import {
   type Provider,
   type Question,
   type Task,
-  TaskStatus,
   type Wish,
   type WishExport,
   WishState,
@@ -76,7 +75,6 @@ import {
 import {
   allowanceOf,
   deletedText,
-  firstLine,
   fixerOf,
   MAX_ACTIVE,
   isActive,
@@ -1448,11 +1446,9 @@ export function WaitingTasks({
           <StatusBadge tone={taskTone(item)} label={taskStatusText(item)} />
           {origin && wishOrigin(wish)}
           <span>
-            {item.status === TaskStatus.FAILED
-              ? firstLine(item.error) || t("attention.worker_failed")
-              : question
-                ? t("page.action_waiting", { task: item.code, question })
-                : t("page.action_waiting_unknown", { task: item.code })}
+            {question
+              ? t("page.action_waiting", { task: item.code, question })
+              : t("page.action_waiting_unknown", { task: item.code })}
           </span>
         </p>
       ))}

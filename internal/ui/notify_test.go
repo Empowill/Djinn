@@ -290,28 +290,21 @@ func TestNoticesAskPermission(t *testing.T) {
 	notes.none(t)
 }
 
-func TestNoticesShowAFailedTaskOnce(t *testing.T) {
+// A failed worker is the lead's, never the developer's (Q273, W96: W19, an investigator failed on refused commands,
+// told the developer it waited for them): no notification, as a worker that waits for its edit question has one.
+func TestNoticesShowNoFailedTask(t *testing.T) {
 	n, notes := newNotices(t, "en")
 	db := n.Store
 	w := makeWish(t, db, "Ship it", planv1.WishState_WISH_STATE_ACTIVE)
-	// Failed long ago, written again: not news.
-	old := &planv1.Task{
-		Id: store.NewID(), WishId: w.GetId(), Code: "W1", Title: "Old", Status: planv1.TaskStatus_TASK_STATUS_FAILED,
-		EndTime: timestamppb.New(time.Now().Add(-time.Hour)),
-	}
-	put(t, db, old)
 	task := &planv1.Task{
-		Id: store.NewID(), WishId: w.GetId(), Code: "W2", Title: "Build", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Id: store.NewID(), WishId: w.GetId(), Code: "W19", Title: "Q17: enlighten", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Role: planv1.TaskRole_TASK_ROLE_INVESTIGATOR, Question: "Q17",
 	}
 	put(t, db, task)
 	notes.none(t)
-	task.Status, task.Error, task.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, "exit code 2", timestamppb.Now()
-	put(t, db, task)
-	got := notes.next(t)
-	if got.Title != "W2 failed · Ship it" || got.Body != "Build\nexit code 2" || got.Target != "task-"+task.GetId() ||
-		got.QuestionID != "" || len(got.Actions) != 0 {
-		t.Errorf("failed = %+v", got)
-	}
+	task.Status, task.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, timestamppb.Now()
+	task.Error = "its command was refused: djinn task list --wish-id x | head"
+	task.Refused = &planv1.TaskRefusals{Count: 2, Names: []string{"djinn"}}
 	put(t, db, task)
 	notes.none(t)
 }

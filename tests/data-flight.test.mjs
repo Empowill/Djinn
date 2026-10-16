@@ -656,7 +656,10 @@ test("a cancelled task has its own muted tone, never done's, and a compact note 
   // It is history: finished, dealt with, never the person's move.
   assert.ok(f.taskFinished(S.CANCELLED));
   assert.ok(f.finishedTask(task));
-  assert.ok(f.taskDealtWith(task, [task]));
+  assert.deepEqual(
+    f.waitingTasks({ id: "w" }, { tasks: [task], questions: [] }),
+    [],
+  );
 });
 
 test("a watcher has its own tone while its command runs", () => {

@@ -27,7 +27,7 @@ export {
   questionGroups,
   stepTo,
 } from "@/src/question-column.tsx";
-export { WishView } from "@/src/wish-view.tsx";
+export { WaitingTasks, WishView } from "@/src/wish-view.tsx";
 export {
   WishTask,
   TurnCommentsButton,
@@ -69,7 +69,6 @@ export {
   holdsUp,
   mergeNest,
   movingTasks,
-  taskDealtWith,
   waitingLeadQuestions,
   waitingTasks,
   workCount,
@@ -6526,8 +6525,7 @@ test("a line of the attention bar takes you to its target in another tab, a fold
         item: {
           id: "t9",
           code: "W9",
-          status: s.TaskStatus.FAILED,
-          error: "",
+          status: s.TaskStatus.WAITING,
         },
         question: "",
       },
@@ -6778,119 +6776,71 @@ test("an open question that can wait stays visible in WishView's questions colum
   assert.doesNotMatch(html, /question-card[^"]*folded/);
 });
 
-test("the attention bar shows a failed worker until it is dealt with (continued, done, or a new task names it)", () => {
-  const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
-  const failedTask = {
-    id: "t1",
+test("a failed worker never waits for you: refused calls are the Djinn's (W96)", () => {
+  // W19 of wish Will retour beta (16/10/2026): an investigator failed on refused djinn commands, Djinn started W20 in
+  // its place, and W19 still showed at the top as waiting for you, with nothing you could do.
+  const w = wish("w1", "Will retour beta", s.WishState.ACTIVE, 1);
+  const w19 = {
+    id: "t19",
     wishId: "w1",
-    code: "W1",
-    title: "Light the wick",
+    code: "W19",
+    title: "Q17: enlighten",
     status: s.TaskStatus.FAILED,
-    error: "exit code 1: fuel line broken\nstack trace follows",
+    role: s.TaskRole.INVESTIGATOR,
+    question: "Q17",
+    error: "its command was refused: djinn task list --wish-id w1 | grep Q17",
+    refused: { count: 2, names: ["djinn"] },
   };
-
-  // 1. Initially, undealt-with failed task is in waitingTasks and attentionOf.
-  let tasks = [failedTask];
-  let waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 1);
-  assert.equal(waiting[0].item.id, "t1");
-
-  let items = s.attentionOf([], waiting, []);
-  assert.equal(items.length, 1);
-  assert.equal(items[0].key, "t1");
-  assert.equal(items[0].level, "action");
-  assert.equal(items[0].target, "waiting-t1");
-  assert.equal(items[0].code, "W1");
-  assert.equal(items[0].text, "exit code 1: fuel line broken");
-
-  // 2. When marked done: dealt with, disappears from attention bar.
-  tasks = [{ ...failedTask, status: s.TaskStatus.DONE }];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 3. When continuing: true: dealt with, disappears.
-  tasks = [{ ...failedTask, continuing: true }];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 4. When closed.continuedIn is set: dealt with, disappears.
-  tasks = [{ ...failedTask, closed: { continuedIn: "t2" } }];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 5. When forked by another task (forkOf === "W1"): dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Forked",
-      status: s.TaskStatus.RUNNING,
-      forkOf: "W1",
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 6. When another task has decision === "W1": dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Follow up",
-      status: s.TaskStatus.RUNNING,
-      decision: "W1",
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 7. When another task's title names W1: dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Fix W1 build error",
-      status: s.TaskStatus.RUNNING,
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 8. When another task's correction failure taskIds includes t1.id: dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Correct W1",
-      status: s.TaskStatus.RUNNING,
-      correction: { failure: { taskIds: ["t1"] } },
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 9. When another task's review taskIds includes t1.id: dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Review W1",
-      status: s.TaskStatus.RUNNING,
-      review: { taskIds: ["t1"] },
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
+  const w20 = {
+    ...w19,
+    id: "t20",
+    code: "W20",
+    status: s.TaskStatus.RUNNING,
+    error: "",
+    refused: undefined,
+  };
+  const failed = {
+    ...w19,
+    id: "t3",
+    code: "W3",
+    title: "Light the wick",
+    role: s.TaskRole.UNSPECIFIED,
+    question: "",
+    error: "exit code 1: fuel line broken",
+    refused: undefined,
+  };
+  const detail = { tasks: [w19, w20, failed], questions: [] };
+  assert.deepEqual(s.waitingTasks(w, detail), []);
+  assert.deepEqual(s.attentionOf([], s.waitingTasks(w, detail), []), []);
+  const plan = s.flightPlan([w], {
+    w1: { ...detail, blocks: [], loaded: true },
+  });
+  assert.deepEqual(plan.waiting, []);
+  // It stays in sight among the tasks that move, failed, for the Djinn to take up.
+  assert.deepEqual(
+    plan.moving.map(({ item }) => item.code),
+    ["W20", "W19", "W3"],
+  );
+  // A worker that waits for its edit question still waits for you.
+  const asking = {
+    id: "t4",
+    wishId: "w1",
+    code: "W4",
+    title: "Edit",
+    status: s.TaskStatus.WAITING,
+  };
+  const waiting = s.waitingTasks(w, { tasks: [w19, asking], questions: [] });
+  assert.deepEqual(
+    waiting.map(({ item }) => item.code),
+    ["W4"],
+  );
+  const [line] = s.attentionOf([], waiting, []);
+  assert.equal(line.target, "waiting-t4");
+  assert.equal(line.text, "waits for your answer before it may edit");
+  // The flying carpet's list of what waits for you names it alone.
+  const html = s.renderToStaticMarkup(h(s.WaitingTasks, { waiting }));
+  assert.match(html, /waiting-t4/);
+  assert.doesNotMatch(html, /W19|refused/);
 });
 
 test("the wish's head says where Djinn last pushed its integration branch, and a push refused", () => {

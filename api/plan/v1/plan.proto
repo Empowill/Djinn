@@ -1430,7 +1430,8 @@ message Closure {
   // Why, in a few words; may be empty.
   string note = 3;
   // The task that continues this one, by code (W57): a fork of its session, spawned once it was cut short, failed or
-  // stopped. The scheduler follows it: a task that depends on this one waits for the fork.
+  // stopped; or the question worker Djinn started again in its place after it failed on a refused call (W96). The
+  // scheduler follows it: a task that depends on this one waits for the fork.
   string continued_in = 4;
 }
 

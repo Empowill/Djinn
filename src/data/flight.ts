@@ -77,7 +77,7 @@ export function byAsked(a: Item<Question>, b: Item<Question>): number {
   );
 }
 
-// Something that waits for the user and is not a question: a worker that waits for an answer, one cut short.
+// Something that waits for the user and is not a question: a worker that waits for an answer before it edits.
 export interface Waiting extends Item<Task> {
   // The code of the question the task waits for, when it is open.
   question: string;
@@ -546,42 +546,14 @@ export function forkedAs(task: Task, tasks: readonly Task[]): string {
   );
 }
 
-// taskDealtWith tells whether a failed worker has been addressed: marked done, cancelled, continued (or forked),
-// or a new task names it in its title, decision, forkOf, or as a correction/review target.
-export function taskDealtWith(task: Task, tasks: readonly Task[]): boolean {
-  if (task.status === TaskStatus.DONE || task.status === TaskStatus.CANCELLED)
-    return true;
-  if (task.continuing) return true;
-  if (task.closed?.continuedIn) return true;
-  if (forkedAs(task, tasks) !== "") return true;
-  const code = task.code;
-  if (!code) return false;
-  const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const word = new RegExp(`\\b${escaped}\\b`);
-  return tasks.some(
-    (other) =>
-      other.id !== task.id &&
-      (other.forkOf === code ||
-        other.decision === code ||
-        word.test(other.title) ||
-        (other.correction?.failure?.taskIds ?? []).includes(task.id) ||
-        (other.review?.taskIds ?? []).includes(task.id)),
-  );
-}
-
-// waitingTasks are a wish's tasks that wait for the user: for an answer before they edit, or cut short by a stop and
-// not resumed. A task Djinn resumes by itself (RESUMING), or one resumed as another task, is not the user's move; nor
-// are the calls a worker's permissions refused (Task.refused): the lead hears of them and decides (Q273).
+// waitingTasks are a wish's tasks that wait for the user: for an answer before they edit. A failed worker never does,
+// whatever made it fail, refused calls included: it is the lead's, who takes it up again, closes it, or asks the user a
+// question for a right only they grant (Q273, W96: W19, an investigator failed on refused commands, waited for you
+// with nothing you could do).
 export function waitingTasks(wish: Wish, detail: WishDetail): Waiting[] {
   const questions = new Map(detail.questions.map((q) => [q.id, q]));
   return detail.tasks
-    .filter(
-      (task) =>
-        task.status === TaskStatus.WAITING ||
-        (task.status === TaskStatus.FAILED &&
-          !taskDealtWith(task, detail.tasks) &&
-          !(task.envCause && (task.envReplays ?? 0) < 2)),
-    )
+    .filter((task) => task.status === TaskStatus.WAITING)
     .map((item) => {
       const q = questions.get(item.editQuestionId);
       const id = mergeNest(detail.tasks).host.get(item.id);
