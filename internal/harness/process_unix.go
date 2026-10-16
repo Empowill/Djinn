@@ -6,9 +6,12 @@ import (
 	"errors"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strconv"
 	"syscall"
+	"time"
 
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 )
 
@@ -178,4 +181,60 @@ func signalGroupErr(cmd *exec.Cmd, sig syscall.Signal) error {
 		return cmd.Process.Signal(sig)
 	}
 	return nil
+}
+
+// adopt does nothing on Unix: a process group, a cgroup and a mark hold what a process starts.
+func adopt(*process) {}
+
+// stopLeft stops what the process left running once it ended, as Stop does: it asks it to stop, kills it after the
+// grace delay. What it left is what runs in its cgroup, what carries its mark, wherever it went (setsid, a double
+// fork), and when held is set (holdExit), what runs in its process group. Never another process: a group is
+// matched only while the ended process, unreaped, keeps its ID, and a mark is random.
+func stopLeft(p *process, held bool) {
+	ids := leftBy(p, held)
+	if len(ids) == 0 {
+		return
+	}
+	logx.L().Info("process left processes running", "pid", p.cmd.Process.Pid, "left", len(ids))
+	signalSame(ids, syscall.SIGTERM)
+	deadline := time.Now().Add(p.grace)
+	for len(ids) > 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+		ids = leftBy(p, held)
+	}
+	// Killed again until gone, for a second at most: one may have started another as the last round killed it.
+	deadline = time.Now().Add(time.Second)
+	for len(ids) > 0 && time.Now().Before(deadline) {
+		if held {
+			_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
+		}
+		if p.cgroup != "" {
+			_ = machine.KillCgroup(p.cgroup)
+		}
+		signalSame(ids, syscall.SIGKILL)
+		time.Sleep(20 * time.Millisecond)
+		ids = leftBy(p, held)
+	}
+	if len(ids) > 0 {
+		logx.L().Warn("process left processes that would not die", "pid", p.cmd.Process.Pid, "left", len(ids))
+	}
+}
+
+// leftBy lists what the ended process left running: see stopLeft.
+func leftBy(p *process, held bool) []identity {
+	group := 0
+	if held {
+		group = p.cmd.Process.Pid
+	}
+	ids := procsOf(p.start, group, markEntry(p.mark))
+	if p.cgroup == "" {
+		return ids
+	}
+	pids, _ := machine.CgroupPIDs(p.cgroup)
+	for _, pid := range pids {
+		if start, err := procStart(pid); err == nil && !slices.ContainsFunc(ids, func(id identity) bool { return id.pid == pid }) {
+			ids = append(ids, identity{pid: pid, start: start})
+		}
+	}
+	return ids
 }
