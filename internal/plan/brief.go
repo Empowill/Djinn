@@ -207,8 +207,13 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"never as a question to the developer. You decide: retry a correction, drop the work (`djinn task done <task> --drop` " +
 		"or `djinn task cancel`), re-sequence the graph (`djinn task depend`), or leave it waiting. Ask the developer only " +
 		"for moves only a person can make (a tag, a PR, a release, a right) or a real choice.\n" +
-		"- **Djinn acts on the developer's answers.** You turn each answer into tasks yourself, in one pass, " +
-		"placing them in the graph (azimas, --after, --blocks), and check what an investigator revised. " +
+		"- **Plan each option's task when you ask (Q25).** An option that leads to a task carries it: `--plan-file` " +
+		"per option, header lines named as spawn's flags, then the prompt (`djinn lead notes planned-options`). An " +
+		"answer without a note launches a plan with no `--after` nor `--blocks` at once (\"W40 launched as planned\"); " +
+		"a note or a dependency leaves it to you, the plan and its tasks' states under the answer's line: settle it in " +
+		"one command, `djinn question launch <question>`, as it is or with spawn's flags in place of the plan's.\n" +
+		"- **Djinn acts on the developer's answers.** You turn each answer without a launched plan into tasks yourself, " +
+		"in one pass, placing them in the graph (azimas, --after, --blocks), and check what an investigator revised. " +
 		"\"Enlighten me\" starts \"Q03: enlighten\": it reads, then revises the question. You are told when it " +
 		"ends, and what it revised: check it, do not do it again. When the line says \"Investigate\", " +
 		"enlighten workers are off and the move is yours.\n" +
@@ -277,7 +282,9 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"question can wait (a question a waiting task needs is blocking anyway); `--move` marks a move only the " +
 		"developer can make, with `--before` when it cannot wait. The bar \"N things wait for you\" is for what " +
 		"cannot wait: never mark a question that can wait to get it seen, never leave a real blocker unmarked " +
-		"(`djinn lead notes blocking-or-can-wait`); `djinn question list --wish-id <wish> --open`.\n" +
+		"(`djinn lead notes blocking-or-can-wait`); `djinn question list --wish-id <wish> --open`. `--plan-file a.md` " +
+		"plans an option's task (repeat it per option; `djinn question revise --plan-file` replaces one); " +
+		"`djinn question launch <question> [--title …] [--after …]` launches the chosen option's plan.\n" +
 		"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--project-id`, " +
 		"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`, `--tilasm L01`); " +
 		"`djinn task spawn <wish> --kind azima --title \"…\" --after T02` makes an azima (`--draft`, `--description \"…\"`); " +

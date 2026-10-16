@@ -128,6 +128,15 @@ func (q *Questions) Revise(
 		m = proto.CloneOf(m)
 		m.Context, m.ContextFile = text, ""
 	}
+	if len(m.GetPlanFile()) > 0 {
+		// The journal keeps the plans' texts, not where they were read.
+		plans, err := readPlans(m.GetPlan(), m.GetPlanFile())
+		if err != nil {
+			return nil, err
+		}
+		m = proto.CloneOf(m)
+		m.Plan, m.PlanFile = plans, nil
+	}
 	question, err := q.round(ctx, req.Spec(), m, m.GetQuestion(), m.GetWishId(),
 		func(tx *store.Tx, question *planv1.Question, round *planv1.Round) error {
 			if m.About != nil {
@@ -147,6 +156,10 @@ func (q *Questions) Revise(
 			}
 			if len(m.GetOptions()) > 0 {
 				question.Options = m.GetOptions()
+				fitPlans(question)
+			}
+			if err := setPlans(ctx, tx, question, m.GetPlan(), true); err != nil {
+				return err
 			}
 			if m.GetRecommendation() != "" {
 				question.Recommendation = m.GetRecommendation()

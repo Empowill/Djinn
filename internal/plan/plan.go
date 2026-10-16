@@ -68,6 +68,7 @@ type options struct {
 	leadBroadcaster *func()
 	leadFailed      error
 	pusher          Pusher
+	launch          LaunchPlan
 	fillModels      func(context.Context, []*planv1.Task)
 	clock           func() time.Time
 }
@@ -170,7 +171,8 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	if o.leads != nil {
 		o.enlight = append(o.enlight, wishes.Enlightened) // The lead learns each request to investigate, after the harness.
 	}
-	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle, Workers: o.workers}
+	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle,
+		Workers: o.workers, LaunchPlan: o.launch}
 	if o.leads != nil {
 		questions.NoteEdited = wishes.NoteEdited // The lead learns an answer's new note, once.
 	}
@@ -950,6 +952,8 @@ type Questions struct {
 	Settle Settle
 	// Workers tells whether a task is running.
 	Workers WishWorkers
+	// LaunchPlan, when set, launches the task an answered question's option planned (Launch).
+	LaunchPlan LaunchPlan
 }
 
 // AnswerHook is called with a question once its answer is stored. It says what it did with the answer, for the
@@ -995,6 +999,16 @@ const maxCode = 999
 func (q *Questions) Ask(
 	ctx context.Context, req *connect.Request[planv1.QuestionServiceAskRequest],
 ) (*connect.Response[planv1.QuestionServiceAskResponse], error) {
+	m := req.Msg
+	if len(m.GetPlanFile()) > 0 {
+		// The journal keeps the plans' texts, not where they were read.
+		plans, err := readPlans(m.GetPlan(), m.GetPlanFile())
+		if err != nil {
+			return nil, err
+		}
+		m = proto.CloneOf(m)
+		m.Plan, m.PlanFile = plans, nil
+	}
 	question := &planv1.Question{
 		Id: store.NewID(), WishId: req.Msg.GetWishId(), Text: req.Msg.GetText(), Options: req.Msg.GetOptions(),
 		Context: req.Msg.GetContext(), Recommendation: req.Msg.GetRecommendation(), CreateTime: timestamppb.Now(),
@@ -1004,7 +1018,7 @@ func (q *Questions) Ask(
 	if err := checkIcon(question.GetIcon()); err != nil {
 		return nil, err
 	}
-	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+	err := write(ctx, q.Store, req.Spec(), m, func(tx *store.Tx) error {
 		if _, err := store.Get[*planv1.Wish](ctx, tx, question.GetWishId()); err != nil {
 			return err
 		}
@@ -1013,6 +1027,9 @@ func (q *Questions) Ask(
 		}
 		var err error
 		if question.AboutTaskId, err = aboutTask(ctx, tx, question.GetWishId(), req.Msg.GetAbout()); err != nil {
+			return err
+		}
+		if err := setPlans(ctx, tx, question, m.GetPlan(), false); err != nil {
 			return err
 		}
 		return Ask(ctx, tx, question)
@@ -1159,6 +1176,12 @@ func (q *Questions) Answer(
 		then(ctx)
 	}
 	afterAnswer(ctx, q.Answered, q.Told, question, was)
+	if len(question.GetPlans()) > 0 {
+		// The harness may have launched a plan: the answer shows its task.
+		if fresh, err := store.Get[*planv1.Question](ctx, q.Store, question.GetId()); err == nil {
+			question = fresh
+		}
+	}
 	return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
 }
 
@@ -1167,7 +1190,7 @@ var errSameAnswer = errors.New("the question has this answer already")
 
 // find resolves a reference to a question: its id, or its code within wishID, or within every wish when the code
 // is used by one only.
-func find(ctx context.Context, tx *store.Tx, ref *planv1.QuestionRef, wishID string) (*planv1.Question, error) {
+func find(ctx context.Context, tx store.Reader, ref *planv1.QuestionRef, wishID string) (*planv1.Question, error) {
 	if id := ref.GetId(); id != "" {
 		return store.Get[*planv1.Question](ctx, tx, id)
 	}
