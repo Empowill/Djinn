@@ -1332,6 +1332,10 @@ const (
 	AzimaState_AZIMA_STATE_AWAITING_PROOF AzimaState = 4
 	// A draft azima: not formalized yet, has a description but no parts spawned into it yet, and not counted in wish progress.
 	AzimaState_AZIMA_STATE_DRAFT AzimaState = 5
+	// Its only live work is a watcher (Provider.PROVIDER_WATCH, such as the babysit of its pull or merge request): no work
+	// task part of it, nor of its azimas, runs, waits or is left to merge, and a watcher part of it, or of an azima part of
+	// it, runs. Like in progress, it is not done: what depends on it still waits. A watcher never holds its push (W58).
+	AzimaState_AZIMA_STATE_WATCHING AzimaState = 6
 )
 
 // Enum value maps for AzimaState.
@@ -1343,6 +1347,7 @@ var (
 		3: "AZIMA_STATE_DONE",
 		4: "AZIMA_STATE_AWAITING_PROOF",
 		5: "AZIMA_STATE_DRAFT",
+		6: "AZIMA_STATE_WATCHING",
 	}
 	AzimaState_value = map[string]int32{
 		"AZIMA_STATE_UNSPECIFIED":    0,
@@ -1351,6 +1356,7 @@ var (
 		"AZIMA_STATE_DONE":           3,
 		"AZIMA_STATE_AWAITING_PROOF": 4,
 		"AZIMA_STATE_DRAFT":          5,
+		"AZIMA_STATE_WATCHING":       6,
 	}
 )
 
@@ -6356,7 +6362,7 @@ func (x *Port) GetOpen() bool {
 // branch under the per-azima push strategy (branch once cut, base_branch, cut_from, main) and of its pull request.
 type Azima struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Open, in progress, awaiting its proof, or done.
+	// Open, in progress, watching, awaiting its proof, or done.
 	State AzimaState `protobuf:"varint,1,opt,name=state,proto3,enum=plan.v1.AzimaState" json:"state,omitempty"`
 	// Every task it depends on is done: its work may go.
 	Ready bool `protobuf:"varint,2,opt,name=ready,proto3" json:"ready,omitempty"`
@@ -21930,7 +21936,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x14SERVE_STATE_STARTING\x10\x01\x12\x17\n" +
 	"\x13SERVE_STATE_RUNNING\x10\x02\x12\x17\n" +
 	"\x13SERVE_STATE_STOPPED\x10\x03\x12\x16\n" +
-	"\x12SERVE_STATE_EXITED\x10\x04*\xa9\x01\n" +
+	"\x12SERVE_STATE_EXITED\x10\x04*\xc3\x01\n" +
 	"\n" +
 	"AzimaState\x12\x1b\n" +
 	"\x17AZIMA_STATE_UNSPECIFIED\x10\x00\x12\x14\n" +
@@ -21938,7 +21944,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x17AZIMA_STATE_IN_PROGRESS\x10\x02\x12\x14\n" +
 	"\x10AZIMA_STATE_DONE\x10\x03\x12\x1e\n" +
 	"\x1aAZIMA_STATE_AWAITING_PROOF\x10\x04\x12\x15\n" +
-	"\x11AZIMA_STATE_DRAFT\x10\x05*\x7f\n" +
+	"\x11AZIMA_STATE_DRAFT\x10\x05\x12\x18\n" +
+	"\x14AZIMA_STATE_WATCHING\x10\x06*\x7f\n" +
 	"\fAzimaPrState\x12\x1e\n" +
 	"\x1aAZIMA_PR_STATE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17AZIMA_PR_STATE_PROPOSED\x10\x01\x12\x17\n" +

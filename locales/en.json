@@ -76,6 +76,7 @@
   "azima.state_draft": "Draft",
   "azima.state_in_progress": "In progress",
   "azima.state_open": "Open",
+  "azima.state_watching": "Watching",
   "azima.title": "Title of the azima",
   "azima.to_validate_title": "Its work is done: to validate",
   "azima.validate": "Validate",

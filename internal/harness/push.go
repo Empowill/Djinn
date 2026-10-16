@@ -263,7 +263,8 @@ func azimaEnded(id string, tasks []*planv1.Task) bool {
 }
 
 // withoutWatchers is tasks without their watchers: one, such as the babysit of an azima's pull request, runs until the
-// merge and has nothing to commit, so it never holds an azima's push; the azima still shows in progress while it runs.
+// merge and has nothing to commit, so it never holds an azima's push; the azima shows watching while it runs
+// (plan.FillAzimas).
 func withoutWatchers(tasks []*planv1.Task) []*planv1.Task {
 	if !slices.ContainsFunc(tasks, dispatch.Watcher) {
 		return tasks

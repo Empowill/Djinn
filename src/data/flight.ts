@@ -407,7 +407,7 @@ export function compareCodes(a: string, b: string): number {
 }
 
 // azimaRank orders the azimas in a stable order between renders and between days:
-// 0: azimas that move (a worker running on one of its parts, or in progress)
+// 0: azimas that move (a worker running on one of its parts, in progress, or watching)
 // 1: azimas waiting for the developer (awaiting proof / to validate)
 // 2: ready azimas not started (open and ready to begin)
 // 3: blocked azimas (waiting for unfinished dependencies)
@@ -419,7 +419,11 @@ export function azimaRank(task: Task): number {
   if (isDraftAzima(task) || task.azima?.state === AzimaState.DRAFT) return 4;
   const state = task.azima?.state ?? AzimaState.OPEN;
   if (state === AzimaState.DONE) return 5;
-  if ((task.azima?.partsRunning ?? 0) > 0 || state === AzimaState.IN_PROGRESS)
+  if (
+    (task.azima?.partsRunning ?? 0) > 0 ||
+    state === AzimaState.IN_PROGRESS ||
+    state === AzimaState.WATCHING
+  )
     return 0;
   if (state === AzimaState.AWAITING_PROOF) return 1;
   if (task.azima && !task.azima.ready) return 3;

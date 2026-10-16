@@ -76,6 +76,7 @@
   "azima.state_draft": "Brouillon",
   "azima.state_in_progress": "En cours",
   "azima.state_open": "Ouverte",
+  "azima.state_watching": "En guet",
   "azima.title": "Titre de l’azima",
   "azima.to_validate_title": "Son travail est fait : à valider",
   "azima.validate": "Valider",

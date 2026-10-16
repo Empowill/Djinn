@@ -453,6 +453,15 @@ func TestPushDue(t *testing.T) {
 			t.Errorf("%s: %q; want %q", c.name, got, c.want)
 		}
 	}
+	// An azima whose only live work is its watcher ends for the push and reads watching all the same (W86).
+	for _, tasks := range [][]*planv1.Task{
+		{t1, w1, watcher("W7", running, "a")},
+		{t1, w1, t2, task("W6", done, committed, "b"), watcher("W7", running, "b")},
+	} {
+		if s := plan.WithAzimas(tasks)[0].GetAzima().GetState(); s != planv1.AzimaState_AZIMA_STATE_WATCHING {
+			t.Errorf("T1 with only a watcher running reads %v; want watching", s)
+		}
+	}
 }
 
 func TestCommittedSince(t *testing.T) {

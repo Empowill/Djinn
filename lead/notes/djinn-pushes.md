@@ -9,8 +9,8 @@ strategy each azima's own branch, by itself, within the minute of the merge that
 
 1. **An azima ends:** a task part of it is committed and none of its other parts is left (a part still open, running,
    failed or waiting to be committed holds it). Its watchers do not count: a babysit of its pull or merge request
-   runs until the merge, so a correction committed while it watches pushes at once. The azima still shows in progress
-   while its watcher runs.
+   runs until the merge, so a correction committed while it watches pushes at once. The azima shows watching while
+   its watcher runs and no work part of it is left: not done, what depends on it still waits.
 2. **The cadence:** three tasks committed since the last push and more than an hour since it (a wish sets its own,
    `push_after_tasks` and `push_after_minutes`).
 
