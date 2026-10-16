@@ -27,6 +27,11 @@ the code does not say by itself; remove one when a change makes it false.
   `go tool task test` red on `French (…)`. *Do:* paraphrase in English; to show Unicode passes, use an em dash, not
   a French word; run `go test -tags headless ./locales/` (about 1 s) after writing non-ASCII text. *Where:*
   `locales/french_test.go`. Under a loaded full run it may report ~2 s although it takes 0.6 s alone: rerun it alone.
+- **protojson output depends on the binary.** protojson adds a space after a colon, or not, from a hash of the
+  running binary: a test binary built in another folder (Djinn's integration worktree) prints `"comments":  [`
+  where yours printed `"comments": [` (W187). *Sign:* a test on JSON text green in your worktree, red in the push
+  check. *Do:* print through `indentedJSON` (compact protojson, then `json.Indent`), or compare parsed JSON;
+  reproduce by appending a few bytes to a `go test -c` binary. *Where:* `internal/cli/cli.go`.
 - **A test goroutine that outlives its test kills the package.** A tick that called `t.Error` after the test returned
   hit a closed store, then panicked ("Log in goroutine after … has completed"), ending the test binary (W530,
   `TestLeadWatchSettleIsCapped`). *Sign:* `FAIL <package>` with no `--- FAIL` line; slowtests names the tests left

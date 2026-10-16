@@ -4,7 +4,9 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -206,15 +208,27 @@ func run(ctx context.Context, args []string, cfg Config) error {
 		return err
 	}
 	if asJSON {
-		b, err := protojson.MarshalOptions{Multiline: true, UseProtoNames: true}.Marshal(res)
+		out, err := indentedJSON(res)
 		if err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(cfg.Stdout, string(b))
+		_, err = fmt.Fprintln(cfg.Stdout, out)
 		return err
 	}
 	writeText(cfg.Stdout, res)
 	return nil
+}
+
+// indentedJSON is m in JSON, indented by two spaces. protojson varies its own spacing on purpose, from one build to
+// the next (a test binary built in another folder): indented here, the same answer reads the same.
+func indentedJSON(m proto.Message) (string, error) {
+	b, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+	var out bytes.Buffer
+	err = json.Indent(&out, b, "", "  ")
+	return out.String(), err
 }
 
 // autostart gives cfg the address of a running djinn, started if needed, when md is marked autostart and no
