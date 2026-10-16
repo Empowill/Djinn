@@ -50,11 +50,18 @@ export function urgency(question: OpenQuestion): number {
   return question.item.before ? 2 : 3;
 }
 
+// placeOf is where a question stands among the others: when it was asked, or when you put it off for later if that
+// came after (Question.laterTime), as Djinn's page and brief place it (render.Place).
+export function placeOf(question: Question): number {
+  return Math.max(time(question.createTime), time(question.laterTime));
+}
+
 // byAsked orders questions as they were asked, the oldest first: a new one always comes below, and a revision, which
-// keeps its creation time, never moves one. The window lists them so (AGENTS.md, Interface); its urgency shows on each.
+// keeps its creation time, never moves one. One put off for later goes below those asked before, and stays there.
+// The window lists them so (AGENTS.md, Interface); its urgency shows on each.
 export function byAsked(a: Item<Question>, b: Item<Question>): number {
   return (
-    time(a.item.createTime) - time(b.item.createTime) ||
+    placeOf(a.item) - placeOf(b.item) ||
     (a.item.id < b.item.id ? -1 : a.item.id > b.item.id ? 1 : 0)
   );
 }

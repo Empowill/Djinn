@@ -76,6 +76,9 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   `djinn question move <question> --wish <wish> [--follow]` moves an open question to another wish (retiring its code
   in this wish, taking the next code in the other; `--follow` moves tasks naming this question as their decision along
   with it). `djinn question withdraw <question> [--note "…"]` withdraws an open question without an answer.
+  `djinn question later <question> [--clear]` puts an open question off (the window's Later): Djinn stores the time
+  (`later_time`), and the window, the page and the brief list a wish's open questions by the later of when each was
+  asked and when it was put off (`render.Place`, `byAsked`), oldest first; `--clear` gives it its place back.
 - **Moves only the developer can make.** Granting a right, pushing a tag, opening or merging a PR, starting a
   release, checking on a Mac or Windows, installing and restarting: the Djinn asks them through `djinn question ask`,
   with the exact command in the question. In a project with `install_questions: never` (such as Djinn itself), Djinn

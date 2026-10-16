@@ -64,8 +64,9 @@ export function when(ts?: Timestamp): string {
   });
 }
 
-// askedWhen says when a question was asked, and when it was last revised: the day and month in figures, the hour
-// (asked 16/10 at 10:24 · revised at 10:31), the revision's day said only when it is another. "" when it has no time.
+// askedWhen says when a question was asked, when it was last revised and when you put it off for later: the day and
+// month in figures, the hour (asked 16/10 at 10:24 · revised at 10:31 · put off at 10:40), a later day said only when
+// it is another. "" when it has no time.
 export function askedWhen(question: Question): string {
   const asked = date(question.createTime);
   if (!asked) return "";
@@ -78,12 +79,18 @@ export function askedWhen(question: Question): string {
     .reverse()
     .find((r) => r.kind === RoundKind.REVISE);
   const revised = question.revision > 0 ? date(last?.createTime) : undefined;
-  if (!revised) return out;
-  const words =
-    revised.toDateString() === asked.toDateString()
-      ? t("question.revised_at", { time: hour(revised) })
-      : t("question.revised_on", { day: day(revised), time: hour(revised) });
-  return `${out} · ${words}`;
+  const later = date(question.laterTime);
+  const words = (d: Date, at: TextKey, on: TextKey) =>
+    d.toDateString() === asked.toDateString()
+      ? t(at, { time: hour(d) })
+      : t(on, { day: day(d), time: hour(d) });
+  return [
+    out,
+    revised && words(revised, "question.revised_at", "question.revised_on"),
+    later && words(later, "question.later_at", "question.later_on"),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 // span says a length of time as a counter, two units at most: 45s, 1m1s, 1h1m, 3d4h.

@@ -360,6 +360,7 @@ export function WishView({
     review: markReviewed,
     move,
     withdraw,
+    later,
   } = useWrites(onToast);
   const act = useCallback(
     (
@@ -718,6 +719,11 @@ export function WishView({
       return Promise.resolve();
     },
     [enlighten],
+  );
+
+  const handleQuestionLater = useCallback(
+    (q: Question) => later(q.wishId, q.id, !!q.laterTime),
+    [later],
   );
 
   const handleTaskFocus = useCallback(
@@ -1246,6 +1252,7 @@ export function WishView({
                   onEnlighten={handleQuestionEnlighten}
                   onMove={setMovingQuestion}
                   onWithdraw={setWithdrawingQuestion}
+                  onLater={handleQuestionLater}
                 />
                 {(waiting.length > 0 || wish.ready) && (
                   <section

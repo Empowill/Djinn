@@ -2,6 +2,9 @@ package render
 
 import (
 	"testing"
+	"time"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 )
@@ -45,5 +48,33 @@ func TestByUrgency(t *testing.T) {
 		if got := UrgencyOf(c.q, blocked); got != c.want {
 			t.Errorf("%s: urgency %d, want %d", c.q.GetCode(), got, c.want)
 		}
+	}
+}
+
+// TestByUrgencyPlace: within a level, a question put off for later comes after those asked before it was put off,
+// and before one asked after; once a level apart, urgency still comes first.
+func TestByUrgencyPlace(t *testing.T) {
+	at := func(m int) *timestamppb.Timestamp {
+		return timestamppb.New(time.Date(2026, 10, 16, 10, m, 0, 0, time.UTC))
+	}
+	questions := []*planv1.Question{
+		{Id: "a", Code: "Q01", CreateTime: at(1), LaterTime: at(5)},
+		{Id: "b", Code: "Q02", CreateTime: at(2)},
+		{Id: "c", Code: "Q03", CreateTime: at(3), Before: "before the merge", LaterTime: at(5)},
+		{Id: "d", Code: "Q04", CreateTime: at(4), Before: "before the merge"},
+		{Id: "e", Code: "Q05", CreateTime: at(6)},
+		// A date before its creation changes nothing.
+		{Id: "f", Code: "Q06", CreateTime: at(7), LaterTime: at(0)},
+	}
+	ByUrgency(questions, nil)
+	got := ""
+	for _, q := range questions {
+		got += q.GetCode() + " "
+	}
+	if want := "Q04 Q03 Q02 Q01 Q05 Q06 "; got != want {
+		t.Errorf("order = %q, want %q", got, want)
+	}
+	if got := Place(questions[0]); !got.Equal(at(4).AsTime()) {
+		t.Errorf("Place(Q04) = %v, want its creation", got)
 	}
 }

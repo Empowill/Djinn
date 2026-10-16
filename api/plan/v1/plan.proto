@@ -1585,6 +1585,10 @@ message Question {
   // The task it is about, by identifier, when the lead asks about a worker's work (djinn question ask --about W12):
   // the window shows it with that task, an ifrit's band first. Empty for a question about no task in particular.
   string about_task_id = 22;
+  // When the developer put it off for later (djinn question later, the window's Later): the window and the brief list
+  // the open questions by the later of create_time and this time, so it goes below those asked before it was put off,
+  // and stays there; a question asked after still comes below it. Unset: its place is when it was asked.
+  google.protobuf.Timestamp later_time = 23;
 }
 
 // DjinnMove is a move Djinn asked the developer for on its own move question, recorded when Djinn asks it.
@@ -1794,6 +1798,12 @@ service QuestionService {
   }
   // Withdraw an open question without an answer.
   rpc Withdraw(QuestionServiceWithdrawRequest) returns (QuestionServiceWithdrawResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Put an open question off for later: it goes below the open questions asked before now, in the window and the
+  // brief, and keeps that place. With clear, it goes back to its place, by when it was asked.
+  rpc Later(QuestionServiceLaterRequest) returns (QuestionServiceLaterResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
@@ -2027,6 +2037,23 @@ message QuestionServiceWithdrawRequest {
 
 message QuestionServiceWithdrawResponse {
   // The question, withdrawn.
+  Question question = 1;
+}
+
+message QuestionServiceLaterRequest {
+  // The question to put off: its code, like Q03, or its identifier.
+  QuestionRef question = 1 [(buf.validate.field).required = true];
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Take the date off instead: the question goes back to its place, by when it was asked.
+  bool clear = 3;
+}
+
+message QuestionServiceLaterResponse {
+  // The question, put off or back in its place.
   Question question = 1;
 }
 
