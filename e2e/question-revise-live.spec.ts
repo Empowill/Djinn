@@ -106,9 +106,10 @@ test("a revision reaches the card under investigation without a reload", async (
     await expect(question).not.toHaveClass(/investigating/);
     await expect(question).toHaveClass(/open/);
     await expect(question.locator(".revised-badge")).toHaveText("Revised");
-    await expect(question.locator(".question-context h2")).toHaveText(
-      "What the worker found",
-    );
+    // The whole context: what the worker found, then the history of its versions, never cut (mockup L04 v2).
+    const headings = question.locator(".question-context h2");
+    await expect(headings).toHaveCount(2);
+    await expect(headings.first()).toHaveText("What the worker found");
     await expect(
       question.getByRole("button", { name: /Linen, twice as long/ }),
     ).toHaveAttribute("aria-pressed", "true");
@@ -141,7 +142,7 @@ test("a revision reaches the card under investigation without a reload", async (
     await expect(digging).toHaveCount(0);
     const waiting = card(page, text);
     await expect(waiting).toHaveClass(/open/);
-    await expect(waiting.locator(".question-context h2")).toHaveText(
+    await expect(waiting.locator(".question-context h2").first()).toHaveText(
       "The price",
     );
     expect(errors).toEqual([]);

@@ -220,15 +220,22 @@ test("the flying carpet merges two wishes, and a question is answered from it", 
     page.locator(".plan-nav").filter({ hasText: "Flying carpet" }),
   ).toHaveClass(/selected/);
 
-  // Both questions, each marked with its wish.
-  const oilCard = page
-    .locator(".decisions-section .question-card")
+  // Both questions, each under its wish's title, by rank (question-column.tsx).
+  const group = (title: string) =>
+    page.locator(".question-group").filter({
+      has: page.locator(".question-group-head", { hasText: title }),
+    });
+  await expect(
+    page.locator(".question-column .question-group-head .name"),
+  ).toHaveText([lampTitle, oilTitle]);
+  const oilCard = group(oilTitle)
+    .locator(".question-card")
     .filter({ hasText: "May the worker pour the oil?" });
-  const lampCard = page
-    .locator(".decisions-section .question-card")
+  const lampCard = group(lampTitle)
+    .locator(".question-card")
     .filter({ hasText: "Which oil for the wick?" });
-  await expect(oilCard.locator(".wish-origin")).toHaveText(`2${oilTitle}`);
-  await expect(lampCard.locator(".wish-origin")).toHaveText(`1${lampTitle}`);
+  await expect(oilCard).toBeVisible();
+  await expect(lampCard).toBeVisible();
   // Each wish's card says what it spent: one price, then its tokens; the price's hover tells what was reported and
   // what has no price.
   const lampSpent = page
@@ -273,7 +280,9 @@ test("the flying carpet merges two wishes, and a question is answered from it", 
     fullPage: true,
   });
 
-  // Answered from the merged view: the answer goes to its own wish.
+  // Answered from the merged view: the answer goes to its own wish. Closed, a click opens it.
+  await oilCard.click();
+  await expect(oilCard).toHaveClass(/current/);
   await oilCard.getByLabel("Note with the answer").fill("Pour it.");
   await oilCard.getByRole("button", { name: "Rub the lamp" }).click();
   await expect(oilCard).toHaveCount(0);

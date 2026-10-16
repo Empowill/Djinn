@@ -1,6 +1,7 @@
-// The screen of one wish, read from the services: what waits for you first (its open questions, the blocking ones
-// first, its workers that wait, and "My wish is granted" once Djinn proposes it), its journal and the rights its
-// workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent, its decisions another
+// The screen of one wish, read from the services: on the left, what waits for you first (its open questions in the
+// questions column, question-column.tsx, the blocking ones first; its workers that wait, and "My wish is granted" once
+// Djinn proposes it; the questions you asked to investigate), on the right its journal and the rights its workers
+// have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent, its decisions another
 // (decision-log.tsx), its tilasms another (tilasms.tsx), and the blocks its agents wrote for one another the last
 // (agent-blocks.tsx): what is for you is a question.
 // Djinn proposes; only the user grants.
@@ -16,7 +17,6 @@ import {
   Trash2,
   Wrench,
 } from "lucide-react";
-import { AnimatePresence } from "motion/react";
 import {
   type ReactNode,
   memo,
@@ -127,6 +127,7 @@ import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
+import { QuestionColumn } from "./question-column";
 import { WishTask } from "./wish-task";
 import {
   LastPushes,
@@ -196,6 +197,11 @@ export function WishView({
     [wish, allProjects],
   );
   const open = openQuestions(wish, detail);
+  // Its questions column: one group, its own (question-column.tsx).
+  const questionGroup = useMemo(
+    () => (open.length ? [{ wish, questions: open }] : []),
+    [wish, open],
+  );
   const waitingLead = waitingLeadQuestions(wish, detail);
   const digging = investigatingQuestions(wish, detail);
   const waiting = waitingTasks(wish, detail);
@@ -1177,69 +1183,36 @@ export function WishView({
             ))}
           {view === "main" && (
             <div className="main-columns">
-              {(open.length > 0 ||
-                waiting.length > 0 ||
-                wish.ready ||
-                digging.length > 0) && (
-                <div className="main-moves">
-                  {(open.length > 0 || waiting.length > 0 || wish.ready) && (
-                    <section
-                      className="action-center"
-                      id="action-center"
-                      aria-label={t("panels.your_move")}
-                    >
-                      <div className="section-title">
-                        <h2>{t("panels.your_move")}</h2>
-                        <p>
-                          {open.length
-                            ? t("wish.questions_wait", { count: open.length })
-                            : wish.ready
-                              ? t("wish.ready_detail")
-                              : t("panels.your_move_detail")}
-                        </p>
-                      </div>
-                      {open.length > 0 && (
-                        <section className="decisions-section">
-                          <div className="section-heading">
-                            <h3>
-                              {t("panels.decisions")}
-                              <span className="count">{open.length}</span>
-                            </h3>
-                          </div>
-                          <AnimatePresence mode="popLayout">
-                            {open.map(({ item: q, blocking, report }) => (
-                              <WishQuestion
-                                key={q.id}
-                                question={q}
-                                blocking={blocking}
-                                report={report}
-                                noLead={noLead(leadRecord)}
-                                onAnswer={handleQuestionAnswer}
-                                onEnlighten={handleQuestionEnlighten}
-                                onMove={setMovingQuestion}
-                                onWithdraw={setWithdrawingQuestion}
-                              />
-                            ))}
-                          </AnimatePresence>
-                        </section>
-                      )}
-                      {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
-                      {wish.ready && (
-                        <GrantCard wish={wish} onGrant={handleGrant} />
-                      )}
-                    </section>
-                  )}
-
-                  {digging.length > 0 && (
-                    <InvestigatingSection
-                      questions={digging}
-                      onAnswer={handleQuestionAnswer}
-                      onMove={setMovingQuestion}
-                      onWithdraw={setWithdrawingQuestion}
-                    />
-                  )}
-                </div>
-              )}
+              <div className="main-moves">
+                <QuestionColumn
+                  groups={questionGroup}
+                  noLead={noLead(leadRecord)}
+                  onAnswer={handleQuestionAnswer}
+                  onEnlighten={handleQuestionEnlighten}
+                  onMove={setMovingQuestion}
+                  onWithdraw={setWithdrawingQuestion}
+                />
+                {(waiting.length > 0 || wish.ready) && (
+                  <section
+                    className="your-move"
+                    id="action-center"
+                    aria-label={t("panels.your_move")}
+                  >
+                    {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
+                    {wish.ready && (
+                      <GrantCard wish={wish} onGrant={handleGrant} />
+                    )}
+                  </section>
+                )}
+                {digging.length > 0 && (
+                  <InvestigatingSection
+                    questions={digging}
+                    onAnswer={handleQuestionAnswer}
+                    onMove={setMovingQuestion}
+                    onWithdraw={setWithdrawingQuestion}
+                  />
+                )}
+              </div>
 
               <div className="main-side">
                 <Journal

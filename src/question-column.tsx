@@ -1,0 +1,315 @@
+// The questions column of the flying carpet and of a wish's first page (Decision Q08, mockup L04 v2): the open
+// questions on the page's ground, no card around them, grouped by wish on the flying carpet (each group headed by its
+// wish's title, which opens it), the wish's own on its page. A question is closed, its two-line row, or open, in full
+// (wish-question.tsx): one is open at a time, the first until you go to another, and when the open one leaves (answered,
+// withdrawn, moved) the one below it opens, else the one above.
+// The keys: ↑ and ↓ (Home, End) go to the question above or below, from one wish to the next, and nothing moves past
+// either end; the question they reach opens, and the page shows it by its title. Escape steps back: from the note to
+// the question, then your pick is cleared (wish-question.tsx), then the focus leaves the column, where ↓ brings it
+// back. With the focus nowhere, the open question takes the keys as if it had it. Space and the page keys scroll a long
+// question: the arrows stay with the questions.
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
+import type { Choice, Question, Wish } from "../gen/ts/plan/v1/plan_pb";
+import type { OpenQuestion } from "./data/flight";
+import { t } from "./i18n";
+import {
+  type QuestionKey,
+  type QuestionKeys,
+  WishQuestion,
+} from "./wish-question";
+
+export interface QuestionGroup {
+  wish: Wish;
+  questions: OpenQuestion[];
+}
+
+// questionGroups groups the open questions by wish, in the order of the wishes (by rank), each wish's in the order
+// given (the most urgent first): one group per wish that has one.
+export function questionGroups(
+  wishes: readonly Wish[],
+  questions: readonly OpenQuestion[],
+): QuestionGroup[] {
+  const byWish = new Map<string, OpenQuestion[]>();
+  for (const question of questions) {
+    const list = byWish.get(question.wish.id);
+    if (list) list.push(question);
+    else byWish.set(question.wish.id, [question]);
+  }
+  return wishes.flatMap((wish) => {
+    const list = byWish.get(wish.id);
+    return list ? [{ wish, questions: list }] : [];
+  });
+}
+
+// stepTo is where ↑ (step -1) or ↓ (step 1) goes from the open question: the one above or below, itself at either end;
+// from none open, the first or the last.
+export function stepTo(
+  order: readonly string[],
+  current: string | undefined,
+  step: number,
+): string | undefined {
+  const at = current === undefined ? -1 : order.indexOf(current);
+  if (at < 0) return step > 0 ? order[0] : order.at(-1);
+  return order[Math.min(Math.max(at + step, 0), order.length - 1)];
+}
+
+// heir is the question that opens when the open one, gone, has left the list: the first below it in the list before
+// that is still there, else the nearest above.
+export function heir(
+  before: readonly string[],
+  after: readonly string[],
+  gone: string,
+): string | undefined {
+  const at = before.indexOf(gone);
+  if (at < 0) return after[0];
+  const still = new Set(after);
+  return (
+    before.slice(at + 1).find((id) => still.has(id)) ??
+    before
+      .slice(0, at)
+      .reverse()
+      .find((id) => still.has(id))
+  );
+}
+
+// What a key does to the column itself: go to another question, leave the column, or nothing it knows (the open
+// question may take it).
+export type ColumnMove = "up" | "down" | "first" | "last" | "leave";
+
+export function columnMove(e: {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+}): ColumnMove | undefined {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return undefined;
+  return (
+    {
+      ArrowUp: "up",
+      ArrowDown: "down",
+      Home: "first",
+      End: "last",
+      Escape: "leave",
+    } as const
+  )[e.key as "ArrowUp"];
+}
+
+export function QuestionColumn({
+  groups,
+  headings = false,
+  onOpenWish,
+  noLead = false,
+  onAnswer,
+  onEnlighten,
+  onMove,
+  onWithdraw,
+  children,
+}: {
+  groups: QuestionGroup[];
+  // On the flying carpet: each group is headed by its wish's title, which opens the wish.
+  headings?: boolean;
+  onOpenWish?: (wishId: string) => void;
+  noLead?: boolean;
+  onAnswer: (
+    choice: Choice,
+    note: string,
+    question?: Question,
+  ) => Promise<void>;
+  onEnlighten?: (note: string, question?: Question) => Promise<void>;
+  onMove?: (question: Question) => void;
+  onWithdraw?: (question: Question) => void;
+  // What else waits for you, below the questions: the workers that wait, the proofs, the grant.
+  children?: ReactNode;
+}) {
+  const order = useMemo(
+    () => groups.flatMap((g) => g.questions.map(({ item }) => item.id)),
+    [groups],
+  );
+  // The question you went to: undefined until you go to one (the first is open), null once you left the column.
+  const [chosen, setChosen] = useState<string | null>();
+  // The list as it was at the last render: where the open question was, once it is gone.
+  const seen = useRef<readonly string[]>(order);
+  const current =
+    chosen === null
+      ? undefined
+      : chosen === undefined
+        ? order[0]
+        : order.includes(chosen)
+          ? chosen
+          : heir(seen.current, order, chosen);
+  const column = useRef<HTMLElement>(null);
+  const keys: QuestionKeys = useRef<(e: QuestionKey) => void>(undefined);
+  // Whether the question that opens takes the focus: it was gone to, or the open one left with the focus in it.
+  const follow = useRef(false);
+  const shown = useRef(current);
+
+  const select = useCallback((id: string) => {
+    follow.current = true;
+    setChosen(id);
+  }, []);
+
+  useLayoutEffect(() => {
+    const was = shown.current;
+    shown.current = current;
+    seen.current = order;
+    if (typeof chosen === "string" && chosen !== current)
+      setChosen(current ?? undefined);
+    const left = was !== undefined && was !== current && !order.includes(was);
+    if (!follow.current && !(left && focusHere(column.current))) return;
+    follow.current = false;
+    if (current === undefined) return;
+    const element = document.getElementById(`question-${current}`);
+    if (!element) return;
+    if (document.activeElement !== element)
+      element.focus({ preventScroll: true });
+    reveal(element);
+  }, [current, order, chosen]);
+
+  // The keys, read on the window: the arrows reach the column with the focus nowhere, after a question left it.
+  const state = useRef({ order, current });
+  state.current = { order, current };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
+      const root = column.current;
+      if (!root || document.querySelector(".modal-backdrop")) return;
+      const target = e.target instanceof Node ? e.target : null;
+      const inside = !!target && root.contains(target);
+      const nowhere =
+        !target ||
+        target === document.body ||
+        target === document.documentElement;
+      if (!inside && !nowhere) return;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || target.matches("input, textarea, select"))
+      )
+        return;
+      const { order, current } = state.current;
+      const move = columnMove(e);
+      if (move && move !== "leave") {
+        if (!order.length) return;
+        e.preventDefault();
+        const next =
+          move === "first"
+            ? order[0]
+            : move === "last"
+              ? order.at(-1)
+              : stepTo(order, current, move === "down" ? 1 : -1);
+        if (next === undefined) return;
+        if (next === current) {
+          // Nothing past either end: the focus stays where it is.
+          if (nowhere) select(next);
+          return;
+        }
+        select(next);
+        return;
+      }
+      if (current === undefined) return;
+      // With the focus nowhere, the open question takes the key as if it had it.
+      if (nowhere) keys.current?.(e);
+      if (move !== "leave" || e.defaultPrevented) return;
+      e.preventDefault();
+      follow.current = false;
+      setChosen(null);
+      if (inside && document.activeElement instanceof HTMLElement)
+        document.activeElement.blur();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [select]);
+
+  return (
+    <section
+      className="question-column decisions-section"
+      id="questions"
+      ref={column}
+      aria-label={t("question.column")}
+    >
+      <h2 className="question-column-label">{t("question.column")}</h2>
+      {groups.length === 0 && (
+        <p className="question-none">{t("question.none")}</p>
+      )}
+      {groups.map(({ wish, questions }) => (
+        <div className="question-group" key={wish.id}>
+          {headings && (
+            <button
+              type="button"
+              className="question-group-head"
+              onClick={() => onOpenWish?.(wish.id)}
+              title={t("plan.open_wish")}
+            >
+              <span className="name">{wish.title}</span>
+              <span className="question-group-count">{questions.length}</span>
+            </button>
+          )}
+          {questions.map(({ item, blocking, report }) => (
+            <WishQuestion
+              key={item.id}
+              question={item}
+              blocking={blocking}
+              report={report}
+              noLead={noLead}
+              current={item.id === current}
+              tabbable={current === undefined && item.id === order[0]}
+              onSelect={select}
+              keys={keys}
+              onAnswer={onAnswer}
+              onEnlighten={onEnlighten}
+              onMove={onMove}
+              onWithdraw={onWithdraw}
+            />
+          ))}
+        </div>
+      ))}
+      {children}
+    </section>
+  );
+}
+
+// focusHere says whether the focus is in the column, or nowhere: the open question that left had it.
+function focusHere(column: HTMLElement | null): boolean {
+  const active = document.activeElement;
+  return (
+    !active || active === document.body || (!!column && column.contains(active))
+  );
+}
+
+// reveal shows a question that opens by its title: the page scrolls only when its top is out of sight, below the bar
+// of what waits for you (its scroll margin), or when its bottom is and it fits.
+function reveal(element: HTMLElement) {
+  const scroller = scrollerOf(element);
+  const view = scroller
+    ? scroller.getBoundingClientRect()
+    : { top: 0, bottom: window.innerHeight };
+  const margin = parseFloat(getComputedStyle(element).scrollMarginTop) || 0;
+  const box = element.getBoundingClientRect();
+  if (
+    box.top < view.top + margin ||
+    box.height > view.bottom - view.top - margin
+  )
+    element.scrollIntoView({ block: "start" });
+  else if (box.bottom > view.bottom) element.scrollIntoView({ block: "end" });
+}
+
+function scrollerOf(element: HTMLElement): HTMLElement | null {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if (
+      (overflowY === "auto" || overflowY === "scroll") &&
+      node.scrollHeight > node.clientHeight
+    )
+      return node;
+  }
+  return null;
+}
