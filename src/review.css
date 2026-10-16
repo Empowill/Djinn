@@ -1384,11 +1384,11 @@ button.glance-line:hover .name {
 .option-plan {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 0.3125rem;
   min-width: 0;
   color: var(--muted);
-  font-size: 12px;
-  line-height: 16px;
+  font-size: var(--font-size-body);
+  line-height: 1rem;
   user-select: text;
 }
 .option-plan svg {
