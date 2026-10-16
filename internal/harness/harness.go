@@ -1089,7 +1089,11 @@ const workerHandRule = "To try a command by hand, start a Djinn of your own with
 // workerCheckRule (Q246): what an agent can check, it checks; the developer runs no command to verify a worker's work.
 const workerCheckRule = "Never ask the developer for a check, a measure, a log to read, a CI result to look at or a command to run: do it yourself when you can; otherwise say in your final note what remains to verify, and the lead spawns a task for it or lets a watcher report it (a CI result comes from the PR's babysit watcher)."
 const workerMoveRule = "A question to the developer is only for a decision or a move only a person can make (grant a right, push a tag, open or merge a PR, start a release, check on a Mac or Windows Djinn does not have, install): ask it with `djinn question ask` before you end. " + plan.QuestionShape
-const workerRules = workerHandRule + " " + workerCheckRule + " " + workerMoveRule
+
+// workerWaitRule (W80): a worker that ends its turn on a run still going ends its task, and Djinn removes the worktree
+// the run writes to.
+const workerWaitRule = "Never end a turn while a long run you started is going (a benchmark, a build, a background command, a monitor): your task ends with your turn, and Djinn removes its worktree. Wait for it in the foreground, in commands under 9 minutes each (`sleep`, then read its output), until it ends; then report what it gave."
+const workerRules = workerHandRule + " " + workerCheckRule + " " + workerWaitRule + " " + workerMoveRule
 
 // briefed is the first prompt of the run's task as its worker reads it, at launch and on a resume that gives it again:
 // a worker that edits a worktree learns which checks its work meets (run.checks), to run the commit checks before it

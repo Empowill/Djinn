@@ -186,6 +186,39 @@ func TestScopePrefix(t *testing.T) {
 	}
 }
 
+// TestClaudeWaitsForItsBackgroundWork (W80): claude -p stops a worker's background work still running 10 minutes
+// after its last turn unless CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS is 0; in W31 of wish Will retour beta it stopped
+// a paid run the worker watched with a monitor, and the task ended done. Every Claude worker gets it, over the value
+// of the environment Djinn runs in (not parallel: it sets that environment).
+func TestClaudeWaitsForItsBackgroundWork(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", "600000")
+	env, _, _ := fake{provider: "claude", fixture: "success", end: "eof"}.env(t)
+	environ := filepath.Join(t.TempDir(), "environ")
+	env = append(env, "DJINN_FAKE_ENVIRON="+environ)
+	w, err := Claude{Command: os.Args[0]}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env})
+	if err != nil {
+		t.Fatal(err)
+	}
+	collect(w)
+	if res := w.Wait(); res.ExitCode != 0 || res.Err != nil {
+		t.Fatalf("the worker ended with %+v", res)
+	}
+	b, err := os.ReadFile(environ)
+	if err != nil {
+		t.Fatal("the agent did not run:", err)
+	}
+	var got []string
+	for l := range strings.Lines(string(b)) {
+		if v, ok := strings.CutPrefix(strings.TrimRight(l, "\r\n"), "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="); ok {
+			got = append(got, v)
+		}
+	}
+	if !slices.Equal(got, []string{"0"}) {
+		t.Errorf("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS in the worker's environment = %q, want [\"0\"]: claude -p stops "+
+			"the background work still running 10 minutes after the worker's last turn", got)
+	}
+}
+
 func TestClaudeWorkerStops(t *testing.T) {
 	t.Parallel()
 	env, _, _ := fake{provider: "claude", fixture: "process-dies", end: "wait"}.env(t)

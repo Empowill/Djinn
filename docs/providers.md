@@ -451,6 +451,19 @@ for later turns) as the number still waiting; at 0 it closes the input. A result
 versions, and agy) counts one message. If messages still wait after such a result and the agent writes nothing
 for `harness.Quiet` (10 minutes), Djinn takes them as answered, says so in a `STATUS`, and closes the input.
 
+**Background work.** Once its input is closed, `claude -p` waits for the background work its worker started before
+it exits, and the task stays `RUNNING` meanwhile. By default it stops a Monitor watch, a background subagent or a
+workflow still running 10 minutes after the last turn; a background command the worker started holds the run open
+until its own time limit (30 minutes, or the `timeout` the worker gives, 2 hours at most, with stream-json input).
+In W31 of wish Will retour beta the 10 minutes stopped a paid run a monitor watched, and the task ended done. Djinn
+starts every Claude worker with `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`, over the value of its own environment:
+claude waits however long, and the task's life bounds the wait, since a stopped or ended task stops everything its
+worker started (`stopLeft`; `TestClaudeWaitsForItsBackgroundWork`, `TestTaskEndStopsWhatItsWorkerStarted`). Every
+worker's instructions also say never to end a turn while a long run is going, but to wait in the foreground.
+**Verified** in Claude Code's docs (`env-vars.md`, `headless.md` "Background tasks at exit", `tools-reference.md`
+"Time limit for background commands"), 16/10/2026: the variable needs claude v2.1.182 or later. **Supposed:** the
+wait on a real run, not replayed.
+
 **Finding claude.** An app started from the Finder or a desktop menu gets a bare PATH: the shell's startup files
 that add `~/.local/bin` (where Claude Code's installer puts `claude`) are never read, not even by the login shell
 that runs a lead (`zsh -l -c` reads `.zprofile`, not `.zshrc`). One resolver, `machine.ExtendPath`, appends to
