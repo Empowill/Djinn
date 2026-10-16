@@ -68,7 +68,7 @@ import { CommandText } from "./copy-command";
 import { MoveLink } from "./link";
 import { FoldedMarkdown, MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
-import { isMac } from "./tooltip";
+import { isMac, TooltipButton } from "./tooltip";
 
 // A key on an open question: React's on the card, or the window's when the focus is nowhere (question-column.tsx).
 export type QuestionKey = Pick<
@@ -579,6 +579,16 @@ export const WishQuestion = memo(function WishQuestion({
       </div>
     </>
   );
+  // Moving to another wish is rare: an icon in the card's top right corner, on its title's line, named by its tooltip.
+  const move = onMove && (
+    <TooltipButton
+      label={t("question.move")}
+      className="question-move"
+      onClick={() => onMove(q)}
+    >
+      <ArrowRightLeft size={14} aria-hidden="true" />
+    </TooltipButton>
+  );
   const body = answered || withdrawn ? expanded : !folded;
   // An open move shows where to act first, as a button.
   const link = q.move && !answered && !withdrawn ? mainLink(q) : undefined;
@@ -630,21 +640,12 @@ export const WishQuestion = memo(function WishQuestion({
             {askedLine}
           </p>
         </div>
+        {current && move}
         {current && (
           <div className="question-open">
-            {(link || onMove) && (
+            {link && (
               <div className="question-open-top">
-                {link && <MoveLink href={link} />}
-                {onMove && (
-                  <button
-                    type="button"
-                    className="button secondary small question-move"
-                    onClick={() => onMove(q)}
-                  >
-                    <ArrowRightLeft size={13} aria-hidden="true" />
-                    {t("question.move")}
-                  </button>
-                )}
+                <MoveLink href={link} />
               </div>
             )}
             {q.context && (
@@ -714,16 +715,7 @@ export const WishQuestion = memo(function WishQuestion({
         ) : (
           <div className="question-heading">{heading}</div>
         )}
-        {onMove && !answered && !withdrawn && !folded && (
-          <button
-            type="button"
-            className="button secondary small question-move"
-            onClick={() => onMove(q)}
-          >
-            <ArrowRightLeft size={13} aria-hidden="true" />
-            {t("question.move")}
-          </button>
-        )}
+        {!answered && !withdrawn && !folded && move}
       </div>
       {body && (
         <div className="question-inner">

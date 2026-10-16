@@ -200,7 +200,7 @@ test("question card keyboard shortcuts: letters, 1-4, Shift+Enter, Enter, Ctrl+S
     const q3Answered = list.find((q) => q.text === "Choose a color");
     expect(q3Answered?.answer?.choice).toBe("CHOICE_B");
 
-    // 4. Question testing Ctrl+Shift+Backspace for Withdraw confirmation (and Move button at top).
+    // 4. Question testing Ctrl+Shift+Backspace for Withdraw confirmation (and the Move icon in the top right corner).
     djinn(
       "question",
       "ask",
@@ -216,9 +216,29 @@ test("question card keyboard shortcuts: letters, 1-4, Shift+Enter, Enter, Ctrl+S
       .locator(".question-card")
       .filter({ hasText: "Keep or withdraw?" });
     await expect(card4).toBeVisible();
-    await expect(
-      card4.locator(".question-open-top .question-move"),
-    ).toBeVisible();
+    // Move, rarely used: an icon on the title's line, in the card's top right corner; the title wraps before it.
+    const move = card4.getByRole("button", {
+      name: "Move to another wish",
+      exact: true,
+    });
+    await expect(move).toBeVisible();
+    const moveBox = (await move.boundingBox())!;
+    const titleBox = (await card4
+      .locator(".question-row-title")
+      .boundingBox())!;
+    const cardBox = (await card4.boundingBox())!;
+    expect(
+      cardBox.x + cardBox.width - (moveBox.x + moveBox.width),
+    ).toBeLessThan(20);
+    expect(moveBox.y - cardBox.y).toBeLessThan(20);
+    expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(moveBox.x);
+    await move.click();
+    const moveDialog = page.getByRole("dialog", { name: /^Move Q/ });
+    await expect(moveDialog).toBeVisible();
+    await moveDialog
+      .getByRole("button", { name: "Cancel", exact: true })
+      .click();
+    await expect(moveDialog).not.toBeVisible();
 
     await card4.getByLabel("Note with the answer").focus();
     await page.keyboard.press("Control+Shift+Backspace");
