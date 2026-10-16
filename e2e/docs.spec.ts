@@ -1,6 +1,7 @@
 // The documentation site that djinn serves at /docs/ (docs/site): its concepts, its Command line tab, filled in by
 // djinn from its own commands (TestCommands checks that every command has its entry), and the way to it from the
-// settings. Screenshots of both tabs, dark and light, go to test-results/e2e/docs-*.png.
+// side panel's Grimoire, unfolded and folded (W89). Screenshots of both tabs, dark and light, go to
+// test-results/e2e/docs-*.png.
 import { type Page, expect, test } from "@playwright/test";
 import path from "node:path";
 import { portable } from "./portable";
@@ -106,13 +107,26 @@ for (const scheme of ["dark", "light"] as const) {
 // The documentation was so slow to scroll in the window that it seemed to reload: a blur as wide as the window under
 // smoke that drifted, drawn again on every frame (W144). The frame scrolls at the pace of the screen, is never
 // reloaded by a scroll or a click, and nothing blurs what moves behind it.
-test("the settings open the documentation over the window, in its theme, and it scrolls without stalling", async ({
+test("the Grimoire opens the documentation over the window, in its theme, and it scrolls without stalling", async ({
   page,
 }) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto(djinnURL());
+  // The settings lead to it no more: the side panel's Grimoire does, just under the Hourglass.
   await page.getByTitle("Connections & preferences").click();
-  await page.getByRole("dialog").getByRole("button", { name: "Open" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("dialog").getByText("Documentation")).toHaveCount(
+    0,
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeHidden();
+  const grimoire = page.locator(".sidebar .grimoire-nav");
+  await expect(grimoire).toHaveText("Grimoire");
+  await expect(grimoire).toHaveAttribute("title", "Documentation");
+  await expect(
+    page.locator(".sidebar .hourglass-nav + .grimoire-nav"),
+  ).toHaveCount(1);
+  await page.getByRole("button", { name: "Grimoire", exact: true }).click();
   const docs = page.getByRole("dialog", { name: "Documentation" });
   await expect(docs).toBeVisible();
   const frame = page.frameLocator('iframe[title="Documentation"]');
@@ -195,4 +209,18 @@ test("the settings open the documentation over the window, in its theme, and it 
 
   await docs.getByRole("button", { name: "Close the window" }).click();
   await expect(docs).toBeHidden();
+
+  // Folded, the side panel keeps the Grimoire: its book, its name and its tooltip; it opens the Concepts tab.
+  await page.getByRole("button", { name: "Collapse the navigation" }).click();
+  await expect(page.locator(".app.sidebar-collapsed")).toBeVisible();
+  await expect(grimoire.locator("span")).toHaveCount(0);
+  await expect(grimoire.locator("svg.lucide-book-marked")).toBeVisible();
+  await expect(grimoire).toHaveAttribute("title", "Documentation");
+  await page.getByRole("button", { name: "Grimoire", exact: true }).click();
+  await expect(docs).toBeVisible();
+  await expect(frame.locator("#concepts")).toBeVisible();
+  await docs.getByRole("button", { name: "Close the window" }).click();
+  await expect(docs).toBeHidden();
+  await page.getByRole("button", { name: "Expand the navigation" }).click();
+  await expect(page.locator(".app.sidebar-collapsed")).toHaveCount(0);
 });

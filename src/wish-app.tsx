@@ -372,6 +372,7 @@ export function WishApp() {
             onSelectPlan={() => showPage(PLAN)}
             hourglassSelected={hourglass}
             onSelectHourglass={() => showPage(HOURGLASS)}
+            onOpenDocs={() => setModal("docs")}
             selectedWishId={wish?.id ?? ""}
             selectedProjectId={projectId}
             collapsed={collapsed}
@@ -468,12 +469,7 @@ export function WishApp() {
             }}
           />
         )}
-        {modal === "settings" && (
-          <Settings
-            onClose={() => setModal(null)}
-            onDocs={() => setModal("docs")}
-          />
-        )}
+        {modal === "settings" && <Settings onClose={() => setModal(null)} />}
         {modal === "docs" && <Docs onClose={closeDocs} />}
         {modal === "agents" && <AgentSetup onClose={() => setModal(null)} />}
         {project && modal !== "make" && (

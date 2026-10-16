@@ -1,14 +1,15 @@
 // The side panel's lists, read from the services: the flying carpet's entry with what waits for you there (questions,
 // new inbox items), the wishes, the active ones by rank and how many of the three places they take, then the paused
 // ones and the granted ones, each list in its own order; the projects, each with its branches out of sync with their
-// remote (project-sync.tsx); and the Hourglass's entry at the bottom before the profile (the live metrics,
-// hourglass.tsx). The wishes' list shows the active ones, each with its counts on a second line, and three rows more;
+// remote (project-sync.tsx); the Hourglass's entry at the bottom (the live metrics, hourglass.tsx), and under it the
+// Grimoire's, the documentation (docs.tsx), before the profile. The wishes' list shows the active ones, each with its counts on a second line, and three rows more;
 // it scrolls under the pointer. Every wish is dragged by its grip, on its left, or moved with Alt+Arrow, within its
 // list; while it is dragged, a thin line shows where it would land. A paused or granted wish dropped among the active
 // ones, or sent first with its button, becomes active there (Q01): three being active, the last one is paused, first
 // among the paused ones.
 import {
   ArrowUpToLine,
+  BookMarked,
   ChevronDown,
   ChevronRight,
   Folder,
@@ -79,6 +80,7 @@ export function WishSidebar({
   onSelectPlan,
   hourglassSelected = false,
   onSelectHourglass,
+  onOpenDocs,
   selectedWishId,
   selectedProjectId,
   collapsed,
@@ -103,6 +105,8 @@ export function WishSidebar({
   // The Hourglass, the live metrics, shows.
   hourglassSelected?: boolean;
   onSelectHourglass?: () => void;
+  // The Grimoire, the documentation, opens over the window.
+  onOpenDocs?: () => void;
   selectedWishId: string;
   selectedProjectId: string;
   collapsed: boolean;
@@ -554,6 +558,18 @@ export function WishSidebar({
         >
           <Hourglass size={15} />
           {!collapsed && <span>{t("hourglass.title")}</span>}
+        </button>
+      )}
+      {/* Its tooltip says Documentation in every language: folded to its book, it still reads as the documentation. */}
+      {onOpenDocs && (
+        <button
+          className="nav-item grimoire-nav"
+          onClick={onOpenDocs}
+          title={t("docs.title")}
+          aria-label={t("sidebar.grimoire")}
+        >
+          <BookMarked size={15} />
+          {!collapsed && <span>{t("sidebar.grimoire")}</span>}
         </button>
       )}
     </>
