@@ -31,7 +31,7 @@ type gateBook struct {
 	given []string
 }
 
-func (g *gateBook) take(_ context.Context, name, _, what, _ string, _ func(string)) (func(), error) {
+func (g *gateBook) take(_ context.Context, name, _, what, _ string, _ bool, _ func(string)) (func(), error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.held == nil {

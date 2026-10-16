@@ -278,7 +278,7 @@ func (h *Harness) runServe(ctx context.Context, r *run, p serveParams, worktree 
 	s.agent = r.pid
 	h.mu.Unlock()
 	if p.gate != "" && h.gates != nil {
-		give, err := h.gates(ctx, p.gate, r.id, p.command, dir, nil)
+		give, err := h.gates(ctx, p.gate, r.id, p.command, dir, false, nil)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("serve %s: gate %s: %w", p.name, p.gate, err))
 		}
