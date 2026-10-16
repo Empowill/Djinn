@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
@@ -23,11 +24,11 @@ import (
 
 // Pushing (T07): each task's work is committed into its wish's integration branch as soon as it ends; pushing that
 // branch to its remote is the orchestrator's, never an agent's (.agents/ denies git push). Djinn checks it each time
-// a task's merge ends: a push is due when an azima ends, its last part committed, or once enough tasks are committed
-// since the last push and more than an hour has passed since it. In auto mode, the default, Djinn pushes, through git
-// with the person's own credentials, never forcing; in ask mode it asks first. The project's push checks run first:
-// red, they hold the push (checks.go). A push the remote refuses is said, and asked about. Once pushed, a project that
-// names an install command proposes the build.
+// a task's merge ends: a push is due when an azima ends, its last part committed (a watcher part, which runs until the
+// merge, does not count), or once enough tasks are committed since the last push and more than an hour has passed
+// since it. In auto mode, the default, Djinn pushes, through git with the person's own credentials, never forcing; in
+// ask mode it asks first. The project's push checks run first: red, they hold the push (checks.go). A push the remote
+// refuses is said, and asked about. Once pushed, a project that names an install command proposes the build.
 
 // methodPush is how the journal records a push: the request is the push (planv1.IntegrationPush).
 const methodPush = "harness/push"
@@ -218,7 +219,7 @@ func committedSince(tasks []*planv1.Task, projectID string, since time.Time) []*
 // is part of has ended; or n tasks are committed since the last push, at since, and more than every has passed since.
 // tasks are all the wish's.
 func pushDue(committed, tasks []*planv1.Task, since, now time.Time, every time.Duration, n int) string {
-	tasks = plan.WithAzimas(tasks)
+	tasks = plan.WithAzimas(withoutWatchers(tasks))
 	for _, t := range slices.Backward(committed) {
 		if a := t.GetPartOf(); a != "" && azimaEnded(a, tasks) {
 			return "the azima " + codeOf(a, tasks) + " ends"
@@ -231,8 +232,8 @@ func pushDue(committed, tasks []*planv1.Task, since, now time.Time, every time.D
 }
 
 // azimaEnded tells whether the azima id has ended for the push, by the rule of where it stands (plan.FillAzimas, which
-// tasks carry): done or to validate, every part finished (a failed part keeps it in progress), and no work part of it,
-// nor of its azimas, waits to be committed.
+// tasks carry, filled without their watchers: withoutWatchers): done or to validate, every part finished (a failed
+// part keeps it in progress), and no work part of it, nor of its azimas, waits to be committed.
 func azimaEnded(id string, tasks []*planv1.Task) bool {
 	i := slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetId() == id })
 	if i < 0 {
@@ -259,6 +260,15 @@ func azimaEnded(id string, tasks []*planv1.Task) bool {
 		}
 	}
 	return true
+}
+
+// withoutWatchers is tasks without their watchers: one, such as the babysit of an azima's pull request, runs until the
+// merge and has nothing to commit, so it never holds an azima's push; the azima still shows in progress while it runs.
+func withoutWatchers(tasks []*planv1.Task) []*planv1.Task {
+	if !slices.ContainsFunc(tasks, dispatch.Watcher) {
+		return tasks
+	}
+	return slices.DeleteFunc(slices.Clone(tasks), dispatch.Watcher)
 }
 
 // codeOf is the code of the task id among tasks; id itself when it is not there.
@@ -605,7 +615,7 @@ func (h *Harness) committedBranchTasks(ctx context.Context, repo string, tasks [
 
 // pushDueAzima says why a push of azima's branch is due, "" when it is not.
 func pushDueAzima(azima *planv1.Task, committed, tasks []*planv1.Task, since, now time.Time, every time.Duration, n int) string {
-	tasks = plan.WithAzimas(tasks)
+	tasks = plan.WithAzimas(withoutWatchers(tasks))
 	if azimaEnded(azima.GetId(), tasks) && len(committed) > 0 {
 		return "the azima " + azima.GetCode() + " ends"
 	}

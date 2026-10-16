@@ -162,6 +162,49 @@ func TestPushAtAnAzimasEnd(t *testing.T) {
 	}
 }
 
+// TestPushPastAnAzimasWatcher: a watcher part of an azima (the babysit of its pull request) runs until the merge, so
+// it never holds the azima's push: its committed correction pushes the branch; a work part still running holds it.
+func TestPushPastAnAzimasWatcher(t *testing.T) {
+	testx.Portable(t)
+	for _, c := range []struct {
+		name   string
+		other  planv1.Provider
+		pushed bool
+	}{
+		{"its watcher runs", planv1.Provider_PROVIDER_WATCH, true},
+		{"its work runs", planv1.Provider_PROVIDER_FAKE, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			in := integrating(t)
+			bare := in.remote(t)
+			old := in.tip(t)
+			azima := in.azima(t, in.wishID, "Letters")
+			babysit := &planv1.Task{
+				Id: store.NewID(), WishId: in.wishID, ProjectId: in.projectID, Code: "W2", Title: "Babysit the PR",
+				Kind: planv1.TaskKind_TASK_KIND_WORK, Status: planv1.TaskStatus_TASK_STATUS_RUNNING, Provider: planv1.Provider_PROVIDER_WATCH,
+				PartOf: azima.GetId(), Scheduled: true, Babysit: &planv1.TaskBabysit{Url: "https://example.com/pr/1", Number: 1},
+			}
+			putTask(t, in.db, babysit, "gh pr checks 1 --watch")
+			running := &planv1.Task{
+				Id: store.NewID(), WishId: in.wishID, ProjectId: in.projectID, Code: "W3", Title: "Something else",
+				Kind: planv1.TaskKind_TASK_KIND_WORK, Status: planv1.TaskStatus_TASK_STATUS_RUNNING, Provider: c.other,
+				PartOf: azima.GetId(), Scheduled: true,
+			}
+			putTask(t, in.db, running, "another watcher, or work")
+			in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+
+			in.pass(t, 0)
+			want, pushes := old, 0
+			if c.pushed {
+				want, pushes = in.tip(t), 1
+			}
+			if got := in.remoteTip(t, bare); got != want || len(in.pushes(t)) != pushes {
+				t.Errorf("origin's %s is at %s, pushes %v; want it at %s", in.branch, got, in.pushes(t), want)
+			}
+		})
+	}
+}
+
 // TestPushAfterThreeTasksAndAnHour: without an azima, the branch is pushed once three tasks are committed since the
 // last push and more than an hour has passed since it, checked as a task's merge ends; not before. TestPushDue holds
 // three tasks within the hour.
@@ -372,6 +415,9 @@ func TestPushDue(t *testing.T) {
 			Integration: &planv1.TaskIntegration{State: state},
 		}
 	}
+	watcher := func(code string, status planv1.TaskStatus, partOf string) *planv1.Task {
+		return &planv1.Task{Id: code, Code: code, Status: status, Kind: planv1.TaskKind_TASK_KIND_WORK, Provider: planv1.Provider_PROVIDER_WATCH, PartOf: partOf}
+	}
 	done, running := planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_RUNNING
 	committed, pending := planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, planv1.IntegrationState_INTEGRATION_STATE_PENDING
 	none := planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED
@@ -392,6 +438,11 @@ func TestPushDue(t *testing.T) {
 		{"an azima whose other part was cut short", []*planv1.Task{w1}, []*planv1.Task{t1, w1, task("W4", planv1.TaskStatus_TASK_STATUS_INTERRUPTED, none, "a")}, 0, "the azima T1 ends"},
 		{"an azima whose azima part waits", []*planv1.Task{w1}, []*planv1.Task{t1, w1, t2, task("W6", done, pending, "b")}, 0, ""},
 		{"an azima whose azima part ended", []*planv1.Task{w1}, []*planv1.Task{t1, w1, t2, task("W6", done, committed, "b")}, 0, "the azima T1 ends"},
+		// A watcher runs until the merge: it holds no push, a work part still open does (Q10).
+		{"an azima with only its watcher running", []*planv1.Task{w1}, []*planv1.Task{t1, w1, watcher("W7", running, "a")}, 0, "the azima T1 ends"},
+		{"an azima whose azima part has only its watcher running", []*planv1.Task{w1}, []*planv1.Task{t1, w1, t2, task("W6", done, committed, "b"), watcher("W7", running, "b")}, 0, "the azima T1 ends"},
+		{"an azima with its watcher and a part running", []*planv1.Task{w1}, []*planv1.Task{t1, w1, watcher("W7", running, "a"), task("W4", running, none, "a")}, 0, ""},
+		{"an azima with its watcher and a part still open", []*planv1.Task{w1}, []*planv1.Task{t1, w1, watcher("W7", running, "a"), task("W4", planv1.TaskStatus_TASK_STATUS_PENDING, none, "a")}, 0, ""},
 		{"three tasks, 59 minutes", []*planv1.Task{w2, w3, task("W5", done, committed, "")}, nil, 59 * time.Minute, ""},
 		{"three tasks, an hour", []*planv1.Task{w2, w3, task("W5", done, committed, "")}, nil, time.Hour, ""},
 		{"three tasks, more than an hour", []*planv1.Task{w2, w3, task("W5", done, committed, "")}, nil, time.Hour + time.Second,

@@ -285,7 +285,9 @@ push` to every worker, and their environment makes the push impossible whatever 
 pushes](providers.md#no-worker-pushes)). Djinn checks it each time a task's merge ends, and a push is **due**:
 
 - when an azima ends: it is done or to validate, as its state says (every part finished: a failed part keeps it in
-  progress, one cut short for good does not), and its last part is committed;
+  progress, one cut short for good does not), and its last part is committed. Its watchers do not count: one that
+  babysits the azima's pull or merge request runs until the merge, so a correction committed while it watches pushes
+  the branch, though the azima still shows in progress;
 - or once three tasks are committed since the last push and more than an hour has passed since it.
 
 The [push checks](#checks) run first, on the branch's tip: red, they hold the push.
