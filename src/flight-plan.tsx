@@ -1,8 +1,9 @@
 // The flying carpet was called the flight plan: this file, FlightPlan and the flight-plan class keep that name.
-// The flying carpet of the active wishes, merged (T13): a bar at the top while something waits for you, then each
-// wish at a glance, then what waits for you (the open questions of every wish, the blocking ones first, the workers
-// that wait, the wishes Djinn proposes to grant, the proofs you can give of the azimas whose work is done), and the
-// questions you asked to investigate. The tasks of every wish
+// The flying carpet of the active wishes, merged (T13): a bar at the top while something waits for you, then two
+// columns (mockup L04 v2): on the left, what waits for you (the open questions of every wish, grouped by wish in the
+// questions column, question-column.tsx; then the workers that wait, the proofs you can give of the azimas whose work
+// is done, the wishes Djinn proposes to grant, and the questions you asked to investigate); on the right, each wish at
+// a glance. The tasks of every wish
 // have a tab of their own (task-tabs.tsx), and so have their decisions (decision-log.tsx). Every line shows the wish
 // it comes from, and an answer, a stop or a grant goes back to it. Each wish keeps its own view; an empty section is hidden.
 // The Djinn, the one lead, is at hand as on a wish: Talk to the Djinn in the header opens its terminal, the pill at the
@@ -67,7 +68,7 @@ import { TaskSections, type View, ViewTabs } from "./task-tabs";
 import { OperatingLoad } from "./operating-load";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
-import { WishQuestion } from "./wish-question";
+import { QuestionColumn, questionGroups } from "./question-column";
 import { WishTask } from "./wish-task";
 import { HourglassLine } from "./hourglass";
 import { PageHeader } from "./page-header";
@@ -158,6 +159,21 @@ export function FlightPlan({
     wishId: string;
     question: Question;
   } | null>(null);
+  const moveQuestion = useCallback(
+    (question: Question) =>
+      setMovingQuestion({ wishId: question.wishId, question }),
+    [],
+  );
+  const withdrawQuestion = useCallback(
+    (question: Question) =>
+      setWithdrawingQuestion({ wishId: question.wishId, question }),
+    [],
+  );
+  // The questions column, one group per wish (question-column.tsx).
+  const questionsByWish = useMemo(
+    () => questionGroups(wishes, plan.questions),
+    [wishes, plan.questions],
+  );
   // What a link between a decision and a task brings into sight in the other tab: its id.
   const [focus, setFocus] = useState("");
   const show = useCallback((to: View, id = "") => {
@@ -778,61 +794,26 @@ export function FlightPlan({
                   </div>
                 )}
 
-                {waits > 0 && (
-                  <div className="main-moves">
+                <div className="main-moves">
+                  <QuestionColumn
+                    groups={questionsByWish}
+                    headings
+                    onOpenWish={onOpen}
+                    noLead={noLead(lead)}
+                    onAnswer={handleQuestionAnswer}
+                    onEnlighten={handleQuestionEnlighten}
+                    onMove={moveQuestion}
+                    onWithdraw={withdrawQuestion}
+                  />
+                  {plan.waiting.length +
+                    plan.proofs.length +
+                    plan.ready.length >
+                    0 && (
                     <section
-                      className="action-center"
+                      className="your-move"
                       id="action-center"
                       aria-label={t("panels.your_move")}
                     >
-                      <div className="section-title">
-                        <h2>{t("panels.your_move")}</h2>
-                        <p>
-                          {plan.questions.length > 0
-                            ? t("wish.questions_wait", {
-                                count: plan.questions.length,
-                              })
-                            : t("panels.your_move_detail")}
-                        </p>
-                      </div>
-                      {plan.questions.length > 0 && (
-                        <section className="decisions-section">
-                          <div className="section-heading">
-                            <h3>
-                              {t("panels.decisions")}
-                              <span className="count">
-                                {plan.questions.length}
-                              </span>
-                            </h3>
-                          </div>
-                          {plan.questions.map(
-                            ({ wish, item, blocking, report }) => (
-                              <WishQuestion
-                                key={item.id}
-                                question={item}
-                                origin={wishOrigin(wish)}
-                                blocking={blocking}
-                                report={report}
-                                noLead={noLead(lead)}
-                                onAnswer={handleQuestionAnswer}
-                                onEnlighten={handleQuestionEnlighten}
-                                onMove={(q) =>
-                                  setMovingQuestion({
-                                    wishId: wish.id,
-                                    question: q,
-                                  })
-                                }
-                                onWithdraw={(q) =>
-                                  setWithdrawingQuestion({
-                                    wishId: wish.id,
-                                    question: q,
-                                  })
-                                }
-                              />
-                            ),
-                          )}
-                        </section>
-                      )}
                       {plan.waiting.length > 0 && (
                         <WaitingTasks waiting={plan.waiting} origin />
                       )}
@@ -878,30 +859,17 @@ export function FlightPlan({
                         />
                       ))}
                     </section>
-                  </div>
-                )}
-
-                {plan.investigating.length > 0 && (
-                  <div className="main-side">
+                  )}
+                  {plan.investigating.length > 0 && (
                     <InvestigatingSection
                       questions={plan.investigating}
                       origin
                       onAnswer={handleQuestionAnswer}
-                      onMove={(q) =>
-                        setMovingQuestion({
-                          wishId: q.wishId,
-                          question: q,
-                        })
-                      }
-                      onWithdraw={(q) =>
-                        setWithdrawingQuestion({
-                          wishId: q.wishId,
-                          question: q,
-                        })
-                      }
+                      onMove={moveQuestion}
+                      onWithdraw={withdrawQuestion}
                     />
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               {plan.loaded &&

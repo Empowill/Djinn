@@ -262,7 +262,7 @@ test("a task done with refused calls, in a wish with no project, shows a plain d
     await expect(page.locator("body")).not.toContainText(
       /refused|with problems/,
     );
-    await expect(page.locator(".action-center .plan-line")).toHaveCount(0);
+    await expect(page.locator("#action-center .plan-line")).toHaveCount(0);
 
     // In the Tasks tab, it is finished work: a plain Done, folded under Finished, with nothing to mark done.
     const tasksTab = page.getByRole("tab", { name: /^Tasks/ });

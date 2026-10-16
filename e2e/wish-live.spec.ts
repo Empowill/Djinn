@@ -98,7 +98,9 @@ test("a wish made by the command line shows live, and its question is answered f
       path: path.join(shots, "question-card-light.png"),
     });
     await card.getByRole("button", { name: "Rub the lamp" }).click();
-    await expect(page.locator(".decisions-section")).toHaveCount(0);
+    await expect(page.locator(".question-column .question-card")).toHaveCount(
+      0,
+    );
     // It is a decision now, in its own tab.
     await expect(page.getByRole("tab", { name: /^Decisions/ })).toHaveText(
       "Decisions1",

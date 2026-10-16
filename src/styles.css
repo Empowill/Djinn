@@ -951,19 +951,6 @@ html[data-theme="light"] .wordmark-period {
   align-items: center;
 }
 
-.action-center {
-  margin: 20px 0 5px;
-  padding: 19px 18px 8px;
-  border: 1px solid color-mix(in srgb, var(--lamp) 38%, var(--line));
-  border-radius: 10px;
-  background: var(--surface);
-  scroll-margin-top: 20px;
-}
-
-.action-center .decisions-section {
-  padding: 17px 0 1px;
-  border: 0;
-}
 .step-result-action {
   display: flex;
   align-items: flex-start;
@@ -1001,23 +988,7 @@ html[data-theme="light"] .wordmark-period {
 .step-result-action .button {
   flex-shrink: 0;
 }
-.action-center .decisions-section .section-heading {
-  margin-bottom: 10px;
-}
-.action-center .decisions-section .section-heading h3 {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--sand-ink);
-  font-size: 13px;
-  font-weight: 550;
-}
-
 @media (max-width: 700px) {
-  .action-center {
-    padding-left: 13px;
-    padding-right: 13px;
-  }
   .step-result-action {
     flex-direction: column;
   }

@@ -1,5 +1,6 @@
-// Keyboard shortcuts on a question card:
-// - Arrows or 1–4 pick an option when focus is on the card and not in the note.
+// Keyboard shortcuts on a question of the questions column (question-column.tsx):
+// - A letter (A, B, C…) or a digit (1–4) picks an option when focus is on the question and not in the note; the
+//   arrows go to the other questions (question-column.spec.ts).
 // - Shift+Enter inserts a new line in the note field.
 // - Enter in the note rubs the lamp and answers; Enter alone elsewhere on the card answers nothing (W574).
 // - Ctrl+Enter (Cmd+Enter on macOS) rubs the lamp from anywhere on the card.
@@ -26,7 +27,7 @@ function djinn(...args: string[]): string {
   });
 }
 
-test("question card keyboard shortcuts: arrows, 1-4, Shift+Enter, Enter, Ctrl+Shift+Enter, Ctrl+Shift+Backspace, unpicked warning", async ({
+test("question card keyboard shortcuts: letters, 1-4, Shift+Enter, Enter, Ctrl+Shift+Enter, Ctrl+Shift+Backspace, unpicked warning", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -79,16 +80,21 @@ test("question card keyboard shortcuts: arrows, 1-4, Shift+Enter, Enter, Ctrl+Sh
     await expect(diesel).toHaveAttribute("aria-pressed", "false");
     await expect(electric).toHaveAttribute("aria-pressed", "false");
 
-    // Focus card and navigate with ArrowDown / ArrowUp.
+    // Focus the question and pick by letter.
     await card1.focus();
-    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("b");
     await expect(diesel).toHaveAttribute("aria-pressed", "true");
     await expect(steam).toHaveAttribute("aria-pressed", "false");
 
-    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("C");
     await expect(electric).toHaveAttribute("aria-pressed", "true");
 
+    // The arrows are the column's: with one question, nothing moves and the pick stays.
     await page.keyboard.press("ArrowUp");
+    await expect(electric).toHaveAttribute("aria-pressed", "true");
+    await expect(card1).toBeFocused();
+
+    await page.keyboard.press("b");
     await expect(diesel).toHaveAttribute("aria-pressed", "true");
 
     // Number keys pick directly.
@@ -210,7 +216,9 @@ test("question card keyboard shortcuts: arrows, 1-4, Shift+Enter, Enter, Ctrl+Sh
       .locator(".question-card")
       .filter({ hasText: "Keep or withdraw?" });
     await expect(card4).toBeVisible();
-    await expect(card4.locator(".question-top .question-move")).toBeVisible();
+    await expect(
+      card4.locator(".question-open-top .question-move"),
+    ).toBeVisible();
 
     await card4.getByLabel("Note with the answer").focus();
     await page.keyboard.press("Control+Shift+Backspace");

@@ -1,7 +1,8 @@
-// The page keeps your place (src/scroll-anchor.ts): a question answered out of sight above the one you read goes
-// away, and the one you read does not move on screen, not even for a frame. Twice: with Chromium's own scroll
+// The page keeps your place (src/scroll-anchor.ts): a question answered out of sight above the one you read (the one
+// open in the questions column) goes away, and the one you read does not move on screen, not even for a frame. Twice: with Chromium's own scroll
 // anchoring, and with the script that stands in for it where WebKit lacks it (the window on Linux).
 import { expect, test } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -9,6 +10,18 @@ import path from "node:path";
 import { portable } from "./portable";
 
 portable();
+
+const binary = path.resolve(
+  __dirname,
+  "../bin/djinn-e2e" + (process.platform === "win32" ? ".exe" : ""),
+);
+
+function djinn(...args: string[]): string {
+  return execFileSync(binary, args, {
+    env: { ...process.env, DJINN_HOME: process.env.DJINN_E2E_HOME },
+    encoding: "utf8",
+  });
+}
 
 const at = "2026-10-07T21:10:00Z";
 
@@ -68,10 +81,12 @@ for (const engine of ["native", "script"] as const)
       `Keep my place ${wishId.slice(0, 8)}`,
     );
     const scroller = page.locator(".mission-scroll");
-    // The list's order is the interface's: the seventh card is read, the first one is answered.
+    // The list's order is the interface's: the twelfth question is open and read, the first one is answered.
     const cards = scroller.locator(".question-card");
     await expect(cards).toHaveCount(20);
-    const readText = await cards.nth(6).locator("h3").innerText();
+    await cards.nth(11).click();
+    await expect(cards.nth(11)).toHaveClass(/current/);
+    const readText = await cards.nth(11).locator("h3").innerText();
     const aboveText = await cards.nth(0).locator("h3").innerText();
     const read = cards.filter({ hasText: readText });
     const above = cards.filter({ hasText: aboveText });
@@ -83,7 +98,7 @@ for (const engine of ["native", "script"] as const)
     // The cards are done coming in.
     await expect(read).toHaveCSS("transform", "none");
 
-    // Read the seventh question halfway down; the first one is out of sight above.
+    // Read the twelfth question halfway down; the first one is out of sight above.
     await read.evaluate((el) => el.scrollIntoView({ block: "center" }));
     const viewTop = (await scroller.boundingBox())!.y;
     const box = (await above.boundingBox())!;
@@ -102,19 +117,14 @@ for (const engine of ["native", "script"] as const)
       step();
     });
 
-    // The first question opens, then is answered, from out of sight: no click scrolls to it.
-    await above.locator(".question-heading").dispatchEvent("click");
-    // No recommendation: the option is picked, then the lamp rubbed.
-    const yes = above.getByRole("button", { name: /Yes — go/ });
-    await expect(yes).toBeAttached();
-    await yes.dispatchEvent("click");
-    const rub = above.getByRole("button", { name: "Rub the lamp" });
-    await expect(rub).toBeEnabled();
-    await rub.dispatchEvent("click");
+    // The first question, closed, is answered out of sight, as from another window: nothing scrolls to it.
+    const code = aboveText
+      .match(/^Question number (\d+)\?$/)![1]
+      .padStart(2, "0");
+    djinn("question", "answer", `Q${code}`, "a", "--wish-id", wishId);
     await expect(above).toHaveCount(0);
-    await expect(scroller.locator(".decisions-section .count")).toHaveText(
-      "19",
-    );
+    await expect(cards).toHaveCount(19);
+    await expect(read).toHaveClass(/current/);
 
     const tops = await page.evaluate(async () => {
       const w = window as unknown as { tops: number[]; sampling: boolean };
