@@ -186,6 +186,9 @@ type run struct {
 	preemptedWhy       string               // if set, stopping to make room for an investigator
 	watcher            bool                 // a watcher runs a command, and takes no slot
 	light              bool                 // a question worker reads and runs djinn's commands: it takes no slot
+	ifrit              bool                 // an ifrit: its agent's input stays open between turns (ifrit.go)
+	listenSince        time.Time            // when the ifrit began to listen; zero while it works: it takes no slot meanwhile
+	listened           time.Duration        // how long the ifrit listened before listenSince, over all its runs
 	final              bool                 // the task is getting its final status: an answer waits for done instead
 	answers            []*planv1.Question   // answers to the task's edit question, for the pump to apply
 	use                *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one; guarded by Harness.useMu
@@ -242,7 +245,8 @@ func (h *Harness) newRun(task *planv1.Task) (*run, error) {
 	case h.runs[r.id] != nil:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is running", task.GetCode()))
 	}
-	r.forced = h.forcing == r.id // Started by hand (Start): counted so from its first instant.
+	r.ifrit = dispatch.Ifrit(task)
+	r.forced = h.forcing == r.id || r.ifrit // Started by hand (Start), or an ifrit: counted so from its first instant.
 	h.runs[r.id] = r
 	h.wg.Add(1)
 	h.notifyLocked() // A watcher of the planned task follows its worker now.
@@ -1234,7 +1238,12 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	r.startTime = now
 	r.lastActivity = now
 	r.code = t.GetCode()
+	r.listenSince, r.listened = time.Time{}, t.GetIfrit().GetListened().AsDuration()
 	h.mu.Unlock()
+	if r.ifrit {
+		setIfrit(t, planv1.IfritState_IFRIT_STATE_WORKING, r.listened)
+		spec.Listen = true
+	}
 	r.turnsBefore = int(t.GetTurns().GetTotal())
 	h.setTurns(r, func(int) int { return 1 })
 	if len(t.Runs) > 0 && t.Runs[len(t.Runs)-1].EndTime == nil {
@@ -1505,6 +1514,10 @@ func (h *Harness) record(r *run, ev Event) {
 	if w := ev.Watched; w != nil && w.First != "" {
 		r.task.LastLine, changed = clipRunes(w.First, watchLineMax), true
 	}
+	if ev.Ifrit != planv1.IfritState_IFRIT_STATE_UNSPECIFIED && r.ifrit {
+		h.ifritTurn(r, ev.Ifrit)
+		changed = true
+	}
 	var task proto.Message
 	if changed {
 		task = r.task
@@ -1724,6 +1737,12 @@ func (h *Harness) end(r *run, res Result) {
 	now := h.now()
 	nowPb := timestamppb.New(now)
 	t.EndTime, t.ExitCode = nowPb, int32(res.ExitCode)
+	if r.ifrit {
+		h.mu.Lock()
+		listened := r.listenedBy(now)
+		h.mu.Unlock()
+		setIfrit(t, planv1.IfritState_IFRIT_STATE_UNSPECIFIED, listened)
+	}
 	// Under useMu, as measure sets them (lowestWorkTask copies the task). A copy: the reading is shared with what the
 	// workers use (Uses, RunsSeries), which never changes it.
 	h.useMu.Lock()

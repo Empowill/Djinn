@@ -78,7 +78,8 @@ func WithTaskMaxTurns(n int) Option { return func(h *Harness) { h.maxTurns = n }
 // workers are ended, then woken (continued on their session, W296/W320) up to maxWakes times in a row, else failed. A
 // task whose status is RUNNING but has no active worker run (a lost process) is also found and ended the same way. A
 // budget of the task's seal (wall time, turns) stops a worker for good: no wake. A watcher is supervised apart, before
-// any budget (watcherLife).
+// any budget (watcherLife). An ifrit that listens between two turns is never silent too long, and its wall time
+// counts its turns only.
 func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLost bool) {
 	now := h.now()
 	limit := cmp.Or(h.silenceLimit, SilenceLimit)
@@ -120,6 +121,9 @@ func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLos
 		maxTurns := h.turnLimit()
 
 		wallTime := taskWallTime(t, now)
+		if r.ifrit {
+			wallTime -= r.listenedBy(now) // Its budget counts its turns, never its listening.
+		}
 		if wallTime >= maxWall {
 			r.stopping = true
 			r.stoppingReason = fmt.Sprintf("budget exceeded: wall time %s (limit %s)", wallTime.Round(time.Second), maxWall.Round(time.Second))
@@ -142,6 +146,12 @@ func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLos
 			if worker != nil {
 				worker.Stop()
 			}
+			continue
+		}
+
+		// An ifrit that listens waits on its input for the next message: its silence is its rest, no fault.
+		if !r.listenSince.IsZero() {
+			h.mu.Unlock()
 			continue
 		}
 

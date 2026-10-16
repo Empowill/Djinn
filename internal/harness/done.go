@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -16,7 +17,8 @@ import (
 // Done marks a task done by hand: a task no worker runs now, planned, waiting, cut short, failed, stopped or
 // imported. The task records who closed it, when and why, apart from a worker's own done. A running or paused task
 // is refused (stop it first), and so is a task done already, but one done with problems (plan.DoneWithProblems):
-// marked done, it is closed as seen, nothing else changes. A task waiting on it may start.
+// marked done, it is closed as seen, nothing else changes. A task waiting on it may start. A lit ifrit is ended
+// instead: its input closes, and its work integrates once its agent ends (doneIfrit).
 func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskServiceDoneRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
 	// No answer starts the worker again, and no pass of the scheduler starts a planned task, while it closes.
@@ -44,6 +46,8 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 		}
 	case s == planv1.TaskStatus_TASK_STATUS_CANCELLED:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is cancelled already", task.GetCode()))
+	case running && s == planv1.TaskStatus_TASK_STATUS_RUNNING && dispatch.Ifrit(task):
+		return h.doneIfrit(ctx, procedure, req, task)
 	case running || s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED:
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
 			fmt.Errorf("task %s is %s: stop it first (djinn task stop)", task.GetCode(), short(s)))

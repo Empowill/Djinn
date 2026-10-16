@@ -1237,11 +1237,14 @@ message TaskIfrit {
   repeated Serve serves = 5;
   // The first lines of its last answer, as its last turn ended; empty before one has.
   string reply = 6;
+  // How long it listened between its turns, over all its runs, the listening under way aside: the Lamplighter's
+  // duration budget (Task.runs) counts its turns only.
+  google.protobuf.Duration listened = 7;
 }
 
 // IfritState is where an ifrit stands between the developer's messages.
 enum IfritState {
-  // Not set: not lit yet.
+  // Not set: not lit yet, or its run ended.
   IFRIT_STATE_UNSPECIFIED = 0;
   // A turn of its model runs: it takes a slot, like any worker.
   IFRIT_STATE_WORKING = 1;

@@ -72,6 +72,10 @@ type Spec struct {
 	// IsWorkDone reports whether the worker has committed clean work since start.
 	// When nil, callers compute it from git status in Dir.
 	IsWorkDone func() bool
+	// Listen keeps the agent's input open once every message has its result: an ifrit's agent waits on it for the
+	// next message, spending nothing, until Djinn closes it (Listener). Its worker says when each turn starts and
+	// ends (Event.Ifrit).
+	Listen bool
 	// Track, when set, is told of each process the worker starts, its PID and the cgroup of its scope, as it starts;
 	// what it returns is called once the process ended. Djinn records them so that none outlives it (W514).
 	Track func(pid int, cgroup string) (ended func())
@@ -100,6 +104,13 @@ type Worker interface {
 	Stop()
 	// Wait blocks until the worker has ended and its events are all read, then says how it ended.
 	Wait() Result
+}
+
+// Listener is a worker started with Spec.Listen, whose input stays open between turns.
+type Listener interface {
+	// CloseInput closes the agent's input once the turn under way, if any, has its result: the agent then ends, as
+	// any worker does once every message has its result. It takes no message after.
+	CloseInput()
 }
 
 // Pauser is a worker that can hold still without losing anything: its agent stops where it is until it is resumed.
@@ -153,6 +164,9 @@ type Event struct {
 	Watched *Watched
 	// Model is the model the worker actually runs, when the event tells it.
 	Model string
+	// Ifrit is set by a worker started with Spec.Listen when its agent starts a turn on a message (WORKING), and
+	// when the turn ends and the agent waits on its open input (LISTENING).
+	Ifrit planv1.IfritState
 	// Turns is how many model turns the worker took so far, on the first event of a new one: the Lamplighter's count
 	// grows as they come, not only at a result (num_turns).
 	Turns int
