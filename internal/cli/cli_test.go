@@ -194,6 +194,11 @@ func TestConvention(t *testing.T) {
 			want: &planv1.LeadServiceNotesRequest{All: true},
 		},
 		{
+			name: "an optional bool set false takes its mark off",
+			args: []string{wishID, "--urgent=false"},
+			want: &planv1.TaskServiceUpdateRequest{TaskId: wishID, Urgent: proto.Bool(false)},
+		},
+		{
 			name: "the brief of the wishes alone",
 			args: []string{"--wishes"},
 			want: &planv1.LeadServiceBriefRequest{Wishes: true},

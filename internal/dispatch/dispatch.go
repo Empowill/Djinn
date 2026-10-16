@@ -181,8 +181,34 @@ func Light(t *planv1.Task) bool { return Watcher(t) || QuestionWorker(t) }
 // Resuming tells whether the task is one Djinn resumes.
 func Resuming(t *planv1.Task) bool { return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING }
 
+// Urgent tells whether the lead marked the task urgent (Task.urgent) and it is still to run or runs: planned, waiting,
+// running or paused. While planned it goes before every other planned task, takes a slot whatever the machine, as
+// djinn task start does, and its integration branch's red push checks do not hold it. A watcher or an azima never is:
+// neither takes a slot. At most one task of a wish is urgent at a time (UrgentOf).
+func Urgent(t *planv1.Task) bool {
+	if !t.GetUrgent() || Watcher(t) || plan.IsAzima(t) {
+		return false
+	}
+	switch t.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RESUMING, planv1.TaskStatus_TASK_STATUS_RUNNING,
+		planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_WAITING:
+		return true
+	}
+	return false
+}
+
+// UrgentOf is the urgent task of the wish among tasks (Urgent), other than the task except; nil when none is.
+func UrgentOf(tasks []*planv1.Task, wishID, except string) *planv1.Task {
+	for _, t := range tasks {
+		if t.GetWishId() == wishID && t.GetId() != except && Urgent(t) {
+			return t
+		}
+	}
+	return nil
+}
+
 // Pass decides for every planned task, the first wish of the rank first, then the oldest: each task it starts
-// counts as writing and takes a slot for the ones after it.
+// counts as writing and takes a slot for the ones after it. An urgent task starts whatever the machine (Urgent).
 func (s *Situation) Pass() []Decision {
 	var out []Decision
 	for _, t := range s.Order() {
@@ -201,7 +227,7 @@ func (s *Situation) Pass() []Decision {
 	return out
 }
 
-// Order is the planned tasks in the strict 5-tier order:
+// Order is the planned tasks in the strict 5-tier order, the urgent tasks before all (Urgent):
 //  1. Investigator workers (Enlighten me), followed by answer workers;
 //  2. Correction workers, followed by review workers;
 //  3. Resumed work tasks (RESUMING: limits, restarts, preemptions);
@@ -240,6 +266,8 @@ func (s *Situation) Order() []*planv1.Task {
 
 func taskPriority(t *planv1.Task, depCounts map[string]int) (level int, sub int) {
 	switch {
+	case Urgent(t):
+		return 0, 0
 	case t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
 		return 1, 0
 	case QuestionWorker(t):
@@ -550,9 +578,10 @@ func pushCheckHeld(p *planv1.WishPush) (sha, check string) {
 	return sha, check
 }
 
-// pushHeld tells whether t waits because the push of its wish's integration branch is held on red push checks.
+// pushHeld tells whether t waits because the push of its wish's integration branch is held on red push checks. A
+// correction, a question worker and an urgent task, which the lead marks to repair the branch, never do.
 func (s *Situation) pushHeld(t *planv1.Task) string {
-	if t.GetCorrection() != nil || QuestionWorker(t) {
+	if t.GetCorrection() != nil || QuestionWorker(t) || Urgent(t) {
 		return ""
 	}
 	wish := s.wishes[t.GetWishId()]
@@ -623,12 +652,15 @@ func Provider(t *planv1.Task) string {
 func provider(t *planv1.Task) string { return Provider(t) }
 
 // full says why the task's worker may not start now, or "" when it may: a slot is free, and the memory holds a worker
-// of its provider. Once the memory holds a task, the ones after it wait for it: they keep their order.
+// of its provider; an urgent task always may. Once the memory holds a task, the ones after it wait for it: they keep their order.
 // first tells that the task waits for one before it in that order, not for the machine: djinn task start never jumps it.
 // slot tells that it waits for a slot alone, its memory holding it: an investigator may take a paused task's slot.
 func (s *Situation) full(t *planv1.Task) (why string, first, slot bool) {
 	m := s.machine
 	if m == nil || Watcher(t) { // A watcher sleeps until its command prints: no slot.
+		return "", false, false
+	}
+	if Urgent(t) { // The lead marked it urgent: it takes a slot whatever the others, as djinn task start does.
 		return "", false, false
 	}
 	if m.Pressure != "" {

@@ -88,6 +88,8 @@ func format(msg protoreflect.Message) []string {
 			for i := range list.Len() {
 				args = append(args, name, text(fd, list.Get(i)))
 			}
+		case fd.Kind() == protoreflect.BoolKind && !msg.Get(fd).Bool():
+			args = append(args, name+"=false") // An optional bool set false: --urgent=false.
 		case fd.Kind() == protoreflect.BoolKind:
 			args = append(args, name)
 		default:
