@@ -22,6 +22,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/fsx"
 )
 
 // IsAzima tells whether the task is an azima: no worker ever runs it.
@@ -743,7 +744,7 @@ func WriteAfter(file string, codes []string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
+	return true, fsx.WriteAtomic(file, b.Bytes(), info.Mode().Perm())
 }
 
 // WriteStatus writes an azima's status ("open", "draft", etc.) into its plan file's front matter.
@@ -789,7 +790,7 @@ func WriteStatus(file string, status string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
+	return true, fsx.WriteAtomic(file, b.Bytes(), info.Mode().Perm())
 }
 
 // WriteDescription writes the description of an azima into its plan file, after its title heading.
@@ -840,7 +841,7 @@ func WriteDescription(file string, text string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(file, newContent, info.Mode().Perm())
+	return true, fsx.WriteAtomic(file, newContent, info.Mode().Perm())
 }
 
 // WriteWish sets or removes the wish of an azima in its plan file's front matter.
@@ -912,7 +913,7 @@ func WriteWish(file string, wish string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
+	return true, fsx.WriteAtomic(file, b.Bytes(), info.Mode().Perm())
 }
 
 // WriteCode updates an azima's code in its plan file's front matter and title heading.
@@ -981,7 +982,7 @@ func WriteCode(file string, code string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
+	return true, fsx.WriteAtomic(file, b.Bytes(), info.Mode().Perm())
 }
 
 // WriteTitle writes an azima's title into its plan file's heading, the first "# " line after its front matter: its
@@ -1035,5 +1036,5 @@ func WriteTitle(file string, code string, title string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(file, append(slices.Clip(head), newBody...), info.Mode().Perm())
+	return true, fsx.WriteAtomic(file, append(slices.Clip(head), newBody...), info.Mode().Perm())
 }

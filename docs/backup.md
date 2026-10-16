@@ -83,7 +83,8 @@ rsync -a ~/.cache/djinn-backup.tar.gz.age me@backup.example.org:djinn/
 
    The previous data folder moves aside, next to it (`djinn.before-restore-<date>`). Its worktrees move
    into the restored folder, at the same paths: Git still finds them. Delete the old folder once all is
-   well.
+   well. A restore killed on its way is finished by the next `djinn up`, or the next restore: the data
+   folder is the restored one or the previous one, never none.
 
 4. Start Djinn. On a new machine, a project whose folder is missing is listed; attach it with
    `djinn project add <folder>`, as after an import.

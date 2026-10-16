@@ -98,7 +98,7 @@ func WriteNotch(home string, notch djinnv1.LoadNotch) error {
 	if err != nil {
 		return err
 	}
-	return fsx.WriteAtomic(path, data)
+	return fsx.WriteAtomic(path, data, 0o600)
 }
 
 // LoadOption configures loadService.

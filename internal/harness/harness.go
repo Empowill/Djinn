@@ -331,6 +331,7 @@ func (h *Harness) Close() {
 // (children.sweep), so that no task resumes beside its old worker: the restart event names them.
 func (h *Harness) Recover(ctx context.Context) error {
 	orphans := h.children.sweep()
+	h.sweepTemp(ctx)
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {

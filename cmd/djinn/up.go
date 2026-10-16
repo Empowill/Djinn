@@ -143,6 +143,14 @@ func runUp(args []string) (restart bool, err error) {
 		fmt.Fprintln(os.Stderr, "djinn: the last djinn up did not stop cleanly; starting again")
 		unclean = true
 	}
+	// A restore a stop cut between its renames left no data folder: it ends before anything creates one.
+	restored, restoreErr := backup.Finish(home)
+	for _, line := range restored {
+		fmt.Fprintln(os.Stderr, "djinn:", line)
+	}
+	if restoreErr != nil {
+		return false, fmt.Errorf("finish the restore a stop cut: %w", restoreErr)
+	}
 	// What djinn up does goes to logs/djinn.log, rolled over (W511); its stop is followed step by step there, and a
 	// stop that hangs dumps its goroutines, then exits.
 	stopLog, err := logx.Start(home)
@@ -154,6 +162,9 @@ func runUp(args []string) (restart bool, err error) {
 		"flags", flagNames(flags))
 	if unclean {
 		logx.L().Warn("the last djinn up did not stop cleanly", "addr", filepath.Join(home, server.AddrFile))
+	}
+	for _, line := range restored {
+		logx.L().Warn("a cut restore", "did", line)
 	}
 	// A panic of djinn up's own goroutine ends it, its stack in the log first; each goroutine it starts does the same,
 	// or recovers where it can go on (a call to the server, a callback of the window).

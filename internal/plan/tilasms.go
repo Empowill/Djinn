@@ -81,6 +81,64 @@ func tempDir(home, prefix string) (string, error) {
 	return os.MkdirTemp(root, "."+prefix+"-*")
 }
 
+// stagingPrefixes are the folders of tempDir that hold only new files, on their way in: the store knows none of them
+// until they are renamed in place.
+var stagingPrefixes = []string{"drop", "put", "restore", "import"}
+
+// SweepTilasmTemp tidies the tilasms' folder of home after a djinn up that a kill cut, before anything writes there:
+// it removes the staging folders of tempDir, and returns the paths it removed. A folder of an import that went aside
+// (the "replaced" prefix) holds a tilasm's previous files: one whose place is empty goes back to it; one whose place
+// is taken stays, as the cut may have come before the import's transaction, and is returned in kept. Nothing else is
+// touched.
+func SweepTilasmTemp(home string) (removed, kept []string, err error) {
+	root := filepath.Join(home, "tilasms")
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	var errs []error
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() || !strings.HasPrefix(name, ".") {
+			continue
+		}
+		dir := filepath.Join(root, name)
+		if slices.ContainsFunc(stagingPrefixes, func(p string) bool { return strings.HasPrefix(name, "."+p+"-") }) {
+			if err := os.RemoveAll(dir); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			removed = append(removed, dir)
+			continue
+		}
+		if !strings.HasPrefix(name, ".replaced-") {
+			continue
+		}
+		held, err := os.ReadDir(dir)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		for _, h := range held {
+			back := TilasmDir(home, h.Name())
+			if _, err := os.Stat(back); errors.Is(err, fs.ErrNotExist) {
+				if err := renamer.Rename(filepath.Join(dir, h.Name()), back); err != nil {
+					errs = append(errs, err)
+				}
+			}
+		}
+		if os.Remove(dir) == nil { // Empty: everything went back.
+			removed = append(removed, dir)
+		} else {
+			kept = append(kept, dir)
+		}
+	}
+	return removed, kept, errors.Join(errs...)
+}
+
 func (t *Tilasms) ready() error {
 	if t.Home == "" {
 		return connect.NewError(connect.CodeUnavailable, errors.New("this server keeps no tilasms: run djinn up"))

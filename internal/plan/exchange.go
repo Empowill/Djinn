@@ -544,19 +544,7 @@ var renamer = fsx.OS()
 // writeFile writes data to file through a temporary file, so that a failed export leaves no half file and a reader
 // sees the old content or the new one.
 func writeFile(file string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(file), ".djinn-export-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return renamer.Rename(tmp.Name(), file)
+	return renamer.WriteAtomic(file, data, 0o600)
 }
 
 // load imports an export in one transaction, journaled as ImportData with the content itself: the journal then
