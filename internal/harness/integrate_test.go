@@ -32,6 +32,7 @@ type integration struct {
 	now       time.Time
 	runs      []string // the commands run: "test in <dir>"
 	gates     []string // the gates taken: "test W1"
+	behind    []string // of them, those not taken first, before the workers' (Q26): an install's
 	testCode  int      // what the test command exits with
 	testOut   string
 	afterTest func()         // run once by the next test command, then forgotten
@@ -129,7 +130,7 @@ func (in *integration) run(ctx context.Context, dir string, args []string) (stri
 	return "unknown command", 127, nil
 }
 
-func (in *integration) gate(ctx context.Context, name, taskID, what, dir string, waiting func(string)) (func(), error) {
+func (in *integration) gate(ctx context.Context, name, taskID, what, dir string, first bool, waiting func(string)) (func(), error) {
 	code := "-" // Taken for no task.
 	if taskID != "" {
 		task, err := store.Get[*planv1.Task](ctx, in.db, taskID)
@@ -144,6 +145,9 @@ func (in *integration) gate(ctx context.Context, name, taskID, what, dir string,
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	in.gates = append(in.gates, name+" "+code)
+	if !first {
+		in.behind = append(in.behind, name+" "+code)
+	}
 	return func() {}, nil
 }
 
@@ -321,11 +325,12 @@ func TestCommitEachTaskAlone(t *testing.T) {
 	if out := in.git(t, in.repo, "log", "--format=%s", "-1", w2.GetBranch()); out != "Work of W2" {
 		t.Errorf("W2's branch ends with %q", out)
 	}
-	// The tests ran once per task, in the integration worktree, never in the person's checkout, under the test gate.
+	// The tests ran once per task, in the integration worktree, never in the person's checkout, under the test gate,
+	// taken before the workers' requests (Q26).
 	wt := filepath.Join(integrationDir(in.home, in.projectID, in.wishID), "app")
 	if !slices.Equal(in.runs, []string{"test in " + wt, "test in " + wt, "test in " + wt}) ||
-		!slices.Equal(in.gates, []string{"test W1", "test W2", "test W3"}) {
-		t.Errorf("runs %v, gates %v", in.runs, in.gates)
+		!slices.Equal(in.gates, []string{"test W1", "test W2", "test W3"}) || in.behind != nil {
+		t.Errorf("runs %v, gates %v, not first %v", in.runs, in.gates, in.behind)
 	}
 	// The person's checkout was clean and on the branch: it follows, clean.
 	if b, err := os.ReadFile(filepath.Join(in.repo, "app", "src", "c.txt")); err != nil || string(b) != "c\n" {

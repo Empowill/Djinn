@@ -361,7 +361,9 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 		}
 		h.mu.Unlock()
 		if outside != nil {
-			m.Gates = outside()
+			// Djinn serves the gates: one slot is kept for the merges' and pushes' (Q26).
+			m.Gates, m.Merges = outside()
+			m.Keep = true
 		}
 		if h.available != nil {
 			m.Available, m.Policy = h.available(), h.Policy()
@@ -459,9 +461,11 @@ func (h *Harness) HeldGates(held, waiting func(taskID string) []string) {
 }
 
 // GatesOutside tells the harness how many gates are held outside its running workers, by a person's terminal, a
-// lead or a script: each takes a slot, so no new worker starts on it while it is held. djinn up gives the gates'
-// (gate.Gates.Outside). n calls the harness back (Works): it runs without h.mu (W549).
-func (h *Harness) GatesOutside(n func() int) {
+// lead, a script or Djinn's own merges and pushes, and how many of them are those merges' and pushes': each takes a
+// slot, so no new worker starts on it while it is held. Once told, the scheduler keeps one slot for the merges and
+// pushes on a machine of more than one (dispatch.Machine.Keep). djinn up gives the gates' (gate.Gates.Outside). n
+// calls the harness back (Works): it runs without h.mu (W549).
+func (h *Harness) GatesOutside(n func() (outside, merges int)) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.outside = n

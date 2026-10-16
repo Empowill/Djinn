@@ -276,7 +276,8 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   time, peak memory, duration); `djinn command list [--project <name>]` shows the costs. Held outside a running
   worker (a person's terminal, a lead, `djinn gate hold <name> --pid <pid>`), a gate takes a worker's slot, is
   measured when its process is known, and goes back once that process ends or after its timeout (an hour by default).
-  Next time, the gate waits until the machine has the memory the command peaked at. On Linux with a user systemd,
+  Next time, the gate waits until the machine has the memory the command peaked at. Djinn's own gates to merge or
+  push go before the others, and on a machine of more than one slot one is kept free for them (Q26). On Linux with a user systemd,
   each worker runs in a systemd user scope of its own (`djinn-<task code>-<uuid8>`), which stopping, pausing and
   measuring take whole, even a process that left its group; elsewhere `djinn up` says so once, and workers run in their
   process group. `djinn up --worker-cpu 150` caps each worker at 150% of a core, `--worker-memory 4096` at 4 GiB, where

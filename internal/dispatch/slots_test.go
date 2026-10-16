@@ -3,6 +3,7 @@ package dispatch
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -116,5 +117,54 @@ func TestSlotsCountWhatThisPassStarted(t *testing.T) {
 	// The Blocker of a task after them reads the slots this pass took.
 	if why, _ := s.Blocker(tasks[6]); why != "6 workers run, the most this machine holds (high)" {
 		t.Errorf("Blocker(work) = %q", why)
+	}
+}
+
+// TestSlotKeptForMerges plays a pass, Djinn serving the gates, on every machine from 1 to 6 slots, 0 to 7 workers
+// running, 0 to 2 gates held outside them of which 0 to all are merges' or pushes': on a machine of more than one
+// slot, one is kept for the merges and pushes (Q26), unless a merge's gate takes it already; on a machine of one, none
+// is kept. Each agent that waits on a full machine says so, and the kept slot when it is.
+func TestSlotKeptForMerges(t *testing.T) {
+	at := time.Date(2026, 10, 16, 1, 0, 0, 0, time.UTC)
+	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
+	git := map[string]bool{"repo": true}
+	for slots := 1; slots <= 6; slots++ {
+		for running := 0; running <= 7; running++ {
+			for gates := 0; gates <= 2; gates++ {
+				for merges := 0; merges <= gates; merges++ {
+					name := fmt.Sprintf("slots=%d running=%d gates=%d merges=%d", slots, running, gates, merges)
+					t.Run(name, func(t *testing.T) {
+						tasks := kinds(at)
+						m := &Machine{Slots: slots, Running: running, Gates: gates, Merges: merges, Keep: true, Rule: "test"}
+						s := New(tasks, []*planv1.Wish{wish}, git, m).At(at)
+						kept := 0
+						if slots > 1 && merges == 0 {
+							kept = 1
+						}
+						var started []string
+						for _, d := range s.Pass() {
+							id := d.Task.GetId()
+							switch {
+							case id == "watcher" || id == "blocked":
+							case d.Why == "":
+								started = append(started, id)
+							case strings.Contains(d.Why, "slot is kept for merges and pushes") != (kept == 1) && id != "investigator":
+								t.Errorf("%s waits because %q, kept %d", id, d.Why, kept)
+							}
+						}
+						var agents []string
+						for _, tk := range s.Order() {
+							if id := tk.GetId(); id != "watcher" && id != "blocked" {
+								agents = append(agents, id)
+							}
+						}
+						free := max(0, slots-running-gates-kept)
+						if want := agents[:min(free, len(agents))]; !slices.Equal(started, want) {
+							t.Errorf("started %v, want %v (the first %d in the order)", started, want, free)
+						}
+					})
+				}
+			}
+		}
 	}
 }

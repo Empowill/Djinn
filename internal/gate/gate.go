@@ -1,8 +1,9 @@
 // Package gate grants the gates: shared resources (code generation, the local stack, an end-to-end run, a paid
 // model run) that one holder uses at a time, granted only while the machine is not under pressure and has the memory
-// the command peaked at, the first wish of the rank first. A holder keeps its gate until it gives it back, its
-// connection ends, its process ends or its timeout passes. A gate held outside a running worker takes a worker's
-// slot.
+// the command peaked at. Djinn's own requests to merge a task's work, settle a merge or check a push go first, the
+// first come first; then the others, the first wish of the rank first (Q26). A holder keeps its gate until it gives it
+// back, its connection ends, its process ends or its timeout passes: none is taken back for a request that goes first.
+// A gate held outside a running worker takes a worker's slot.
 package gate
 
 import (
@@ -81,6 +82,7 @@ type waiter struct {
 	dir, project            string
 	peak                    uint64 // the command's highest measured peak memory; 0 when never measured
 	pid                     int    // the holder's process; 0 when unknown
+	first                   bool   // Djinn's request for a merge or a push: it goes before the others (Request.First)
 	timeout                 time.Duration
 	seq                     int
 	asked                   time.Time     // when the gate was requested
@@ -141,6 +143,10 @@ type Request struct {
 	PID int
 	// Timeout is how long the gate may be held: Djinn takes it back after that. 0: DefaultTimeout.
 	Timeout time.Duration
+	// First tells that Djinn takes the gate to merge a task's work into its branch (its wish's or its azima's), to
+	// settle such a merge, or to check a push: it blocks what comes after the task, so it goes before every other
+	// request, the first come first, and never waits for one that came after it (Q26).
+	First bool
 }
 
 // Hold is a gate held.
@@ -200,7 +206,8 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 		proj = g.projectResolver(taskID, r.Dir)
 	}
 	w := &waiter{
-		name: name, taskID: taskID, who: who, what: what, dir: r.Dir, project: proj, peak: peak, pid: r.PID, timeout: timeout, seq: g.seq,
+		name: name, taskID: taskID, who: who, what: what, dir: r.Dir, project: proj, peak: peak, pid: r.PID, first: r.First,
+		timeout: timeout, seq: g.seq,
 		asked:   time.Now(),
 		granted: make(chan struct{}), changed: make(chan struct{}, 1), done: make(chan struct{}),
 	}
@@ -342,27 +349,32 @@ func (g *Gates) outside(taskID string) bool {
 	return taskID == "" || g.tasks == nil || !g.tasks.Works(taskID)
 }
 
-// Outside counts the gates held outside any running worker, by a person's terminal, a lead or a script: each takes
-// a worker's slot, so no new worker starts on it while it is held. A worker's gate is in the worker's own slot.
-func (g *Gates) Outside() int {
+// Outside counts the gates held outside any running worker, by a person's terminal, a lead, a script or Djinn's
+// merges and pushes, and of them the merges' and pushes' (Request.First): each takes a worker's slot, so no new worker
+// starts on it while it is held. A worker's gate is in the worker's own slot.
+func (g *Gates) Outside() (n, merges int) {
 	g.mu.Lock()
-	ids := make([]string, 0, len(g.held))
+	holders := make([]*waiter, 0, len(g.held))
 	for _, h := range g.held {
-		ids = append(ids, h.taskID)
+		holders = append(holders, h)
 	}
 	g.mu.Unlock()
-	n := 0
-	for _, id := range ids {
-		if g.outside(id) {
+	for _, h := range holders {
+		if g.outside(h.taskID) {
 			n++
+			if h.first {
+				merges++
+			}
 		}
 	}
-	return n
+	return n, merges
 }
 
-// pass grants each free gate to its first waiter, the first wish of the rank first, then the first come, unless
-// the machine is under pressure or lacks the memory the waiter's command peaked at; it tells every other waiter why
-// it waits.
+// pass grants each free gate to its first waiter, unless the machine is under pressure or lacks the memory the
+// waiter's command peaked at; it tells every other waiter why it waits. Djinn's merges and pushes come first, the
+// first come first; then the others, the first wish of the rank first, then the first come. A waiter for a merge or a
+// push that cannot have its gate yet keeps it from the others; within a class, one the memory holds goes before one it
+// does not.
 func (g *Gates) pass(ctx context.Context) {
 	var snap machine.Snapshot
 	var policy machine.Policy
@@ -373,7 +385,7 @@ func (g *Gates) pass(ctx context.Context) {
 	g.mu.Lock()
 	var ids []string
 	for _, w := range g.queue {
-		if w.taskID != "" {
+		if w.taskID != "" && !w.first {
 			ids = append(ids, w.taskID)
 		}
 	}
@@ -396,15 +408,38 @@ func (g *Gates) pass(ctx context.Context) {
 		held += h.peak
 	}
 	queue := slices.Clone(g.queue)
-	slices.SortStableFunc(queue, func(a, b *waiter) int { return cmp.Or(cmp.Compare(rank(a), rank(b)), cmp.Compare(a.seq, b.seq)) })
+	slices.SortStableFunc(queue, func(a, b *waiter) int {
+		switch {
+		case a.first != b.first:
+			if a.first {
+				return -1
+			}
+			return 1
+		case a.first:
+			return cmp.Compare(a.seq, b.seq)
+		}
+		return cmp.Or(cmp.Compare(rank(a), rank(b)), cmp.Compare(a.seq, b.seq))
+	})
+	// The merges and pushes that wait for each gate in this pass, and why the first of them waits.
+	merges, mergeWhy, mergeCause := map[string]int{}, map[string]string{}, map[string]string{}
 	for _, w := range queue {
 		var why, cause string
 		switch h := g.held[w.name]; {
 		case h != nil:
 			why, cause = fmt.Sprintf("held by %s, for %s", h.who, time.Since(h.since).Round(time.Second)), "held by "+h.who
+			if n := merges[w.name]; !w.first && n > 0 {
+				then := fmt.Sprintf(", then %d merges or pushes go first", n)
+				if n == 1 {
+					then = ", then 1 merge or push goes first"
+				}
+				why, cause = why+then, cause+then
+			}
 		case pressure != "":
 			why = "the machine is under pressure: " + pressure
 			cause = why
+		case !w.first && merges[w.name] > 0:
+			why = "a merge or a push goes first: " + mergeWhy[w.name]
+			cause = "merge first: " + mergeCause[w.name]
 		default:
 			if why = policy.Room(snap, w.what, w.peak, held); why != "" {
 				cause = "memory"
@@ -417,6 +452,13 @@ func (g *Gates) pass(ctx context.Context) {
 			g.queue = slices.DeleteFunc(g.queue, func(o *waiter) bool { return o == w })
 			close(w.granted)
 			continue
+		}
+		if w.first {
+			if merges[w.name] == 0 {
+				mergeWhy[w.name], mergeCause[w.name] = why, cause
+			}
+			merges[w.name]++
+			why = "a merge or a push, served before the workers: " + why
 		}
 		// The holder's time and the memory free change every second: tell the waiter only when the cause changes.
 		if cause != w.cause {
