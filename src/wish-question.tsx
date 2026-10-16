@@ -21,6 +21,8 @@
 // earlier versions below it, to read, the current one staying what the card shows first (W114); Later sends it to the
 // bottom of its list, where it stays (Djinn keeps when, Question.laterTime), and, pressed, gives it its place back;
 // Move takes it to another wish.
+// An option that launches a task once picked (Question.plans, decision Q25) says so on one grey line under its text:
+// Launches: its title, and the azima it belongs to. Always one line, cut short, it never moves the card.
 // A gesture shows, by key or by click: its button stays pressed a moment and the answer leaves as it comes back up,
 // while the card glows in the colour of the gesture, the lamp's brass or a cool light, and a wisp of smoke rises
 // from the button (review.css). Reduced motion keeps the colour, without the movement.
@@ -49,15 +51,23 @@ import {
   useState,
 } from "react";
 
-import { type Block, Choice, type Question } from "../gen/ts/plan/v1/plan_pb";
+import {
+  type Block,
+  Choice,
+  type PlannedTask,
+  type Question,
+} from "../gen/ts/plan/v1/plan_pb";
+import { useOptionalData } from "./data/djinn";
 import { EMPTY_BLOCKING } from "./data/flight";
 import {
   answerText,
   askedWhen,
   choiceOf,
+  firstLine,
   investigating,
   isWithdrawn,
   letter,
+  planOf,
   questionVersions,
   type QuestionVersion,
   recommendedChoice,
@@ -504,6 +514,7 @@ export const WishQuestion = memo(function WishQuestion({
                 {t("question.recommended")}
               </span>
             )}
+            <PlanLine question={q} plan={planOf(q, choiceOf(index))} />
           </div>
         );
       })}
@@ -511,6 +522,9 @@ export const WishQuestion = memo(function WishQuestion({
   );
   const gestures = (
     <>
+      {q.options.length === 0 && (
+        <PlanLine question={q} plan={planOf(q, Choice.YES)} />
+      )}
       <textarea
         ref={noteField}
         value={note}
@@ -813,6 +827,37 @@ export const WishQuestion = memo(function WishQuestion({
     </motion.article>
   );
 });
+
+// PlanLine is the task an option launches once picked, on one grey line: its title, cut short when long, then the
+// azima it belongs to, whole, by its code and title once the wish's tasks are read. Nothing for an option without a
+// plan.
+function PlanLine({
+  question,
+  plan,
+}: {
+  question: Question;
+  plan?: PlannedTask;
+}) {
+  const id = plan?.partOf ?? "";
+  const azima = useOptionalData(
+    (s) =>
+      id
+        ? s.details[question.wishId]?.tasks.find((task) => task.id === id)
+        : undefined,
+    undefined,
+  );
+  if (!plan) return null;
+  const title = plan.title || firstLine(plan.prompt);
+  const part = azima ? `${azima.code} ${azima.title}`.trim() : "";
+  const text = t("question.plan_launches", { title });
+  return (
+    <span className="option-plan" title={part ? `${text} · ${part}` : text}>
+      <CornerDownRight size={12} aria-hidden="true" />
+      <span className="option-plan-text">{text}</span>
+      {part && <span className="option-plan-azima">· {part}</span>}
+    </span>
+  );
+}
 
 // holds says whether an element holds a key's target; with no document (the screens tests), none.
 function holds(element: HTMLElement | null, target: EventTarget | null) {

@@ -14,7 +14,9 @@ A question is a card, coded Q01, Q02 and on in its wish. From top to bottom:
 1. **The question**, in a sentence or two.
 2. **The recommendation**: the option the Djinn recommends, and why. Read it first; it is often enough.
 3. **The options**, A to D, the recommended one marked **Recommended**. A question may have none: then it asks for a
-   yes, or for your answer in words.
+   yes, or for your answer in words. An option that launches a task once picked says so on one grey line under it:
+   **Launches:** the task's title, and the azima it belongs to. An option without that line leaves the tasks to the
+   Djinn.
 4. **What is at stake**: the facts, what each option changes and costs, and, for a move, the exact commands to run.
    **Read more** unfolds it when it is long.
 
@@ -46,7 +48,10 @@ Under the options, one field takes your note, with three gestures:
 - **Withdraw question** closes a question that no longer matters, without an answer, with a note on why. It shows as
   **Withdrawn**, and is no decision.
 
-Your answer goes to the Djinn, which turns it into tasks itself, placing them in the plan. If the Djinn is not running,
+Your answer goes to the Djinn, which turns it into tasks itself, placing them in the plan. On an option that says
+**Launches:**, an answer without a note launches that task at once, when it waits for no other task; with a note, or
+a task to wait for, the Djinn reads your note and launches it, as planned or edited. The decision then links the task
+it launched, on its own line: **Launched as planned**. If the Djinn is not running,
 the answer is kept and the card says **Waiting for the Djinn**: it gets it once it starts.
 
 > **Example.** Q07 asks: "The export takes 40 s on large invoices. Render in the background?" The recommendation is A,

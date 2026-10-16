@@ -16,6 +16,7 @@ import {
   type Lead,
   type Mark,
   MarkKind,
+  type PlannedTask,
   type Project,
   type ProjectSync,
   Provider,
@@ -678,6 +679,23 @@ export function answerText(question: Question): string {
   const index = choice - Choice.A;
   const option = question.options[index];
   return option ? `${letter(index)} · ${option}` : letter(index);
+}
+
+// planOf is the task a question's option launches once picked (decision Q25), set by the asker; none for an option
+// without a plan. A message built by hand (a test) may leave the list out.
+export function planOf(
+  question: Question,
+  choice: Choice | undefined,
+): PlannedTask | undefined {
+  if (choice === undefined || choice === Choice.UNSPECIFIED) return undefined;
+  return (question.plans ?? []).find((p) => p.option === choice);
+}
+
+// launchedPlan is the task an answer launched from its option's plan, by Djinn or the lead: its identifier, once
+// launched.
+export function launchedPlan(question: Question): PlannedTask | undefined {
+  const plan = planOf(question, question.answer?.choice);
+  return plan?.taskId ? plan : undefined;
 }
 
 export function isOpen(question: Question): boolean {

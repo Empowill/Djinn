@@ -543,6 +543,162 @@ test("a revised question's earlier versions take no room: Versions (3) in its co
   assert.doesNotMatch(plain, /question-versions|Versions \(/);
 });
 
+test("W100: an option with a planned task says on one grey line what it launches, and its azima", () => {
+  const azima = {
+    id: "a58",
+    wishId: "w1",
+    code: "T58",
+    title: "Lighting",
+  };
+  const question = {
+    id: "q1",
+    code: "Q01",
+    wishId: "w1",
+    text: "Which oil?",
+    options: ["Olive", "Paraffin", "Neither"],
+    recommendation: "",
+    context: "",
+    plans: [
+      {
+        option: s.Choice.A,
+        title: "Fill the lamp with olive oil",
+        partOf: "a58",
+      },
+      {
+        option: s.Choice.B,
+        title: "",
+        prompt: "Buy paraffin\nThen fill the lamp.",
+      },
+    ],
+  };
+  // The wish's tasks read: the azima by its code and title.
+  const djinn = {
+    store: {
+      getState: () => ({ details: { w1: { tasks: [azima] } } }),
+      subscribe: () => () => {},
+    },
+  };
+  const render = (props) =>
+    s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishQuestion, { question, onAnswer: async () => {}, ...props }),
+      ),
+    );
+  for (const html of [render({}), render({ current: true, onSelect() {} })]) {
+    const options = html.split('<strong class="option-letter">').slice(1);
+    assert.equal(options.length, 3);
+    assert.match(
+      options[0],
+      /<p>Olive<\/p><span class="option-plan" title="Launches: Fill the lamp with olive oil · T58 Lighting"><svg[^>]*lucide-corner-down-right[^]*?<\/svg><span class="option-plan-text">Launches: Fill the lamp with olive oil<\/span><span class="option-plan-azima">· T58 Lighting<\/span><\/span><\/div>/,
+    );
+    // Untitled, its prompt's first line; no azima, nothing after it.
+    assert.match(
+      options[1],
+      /<span class="option-plan-text">Launches: Buy paraffin<\/span><\/span><\/div>/,
+    );
+    // An option without a plan says nothing.
+    assert.doesNotMatch(options[2], /option-plan/);
+  }
+  // The wish's tasks not read yet: the line, without its azima, on the same single line.
+  const alone = s.renderToStaticMarkup(
+    h(s.WishQuestion, { question, onAnswer: async () => {} }),
+  );
+  assert.match(
+    alone,
+    /<span class="option-plan" title="Launches: Fill the lamp with olive oil">.*?<span class="option-plan-text">Launches: Fill the lamp with olive oil<\/span>/,
+  );
+  assert.doesNotMatch(alone, /T58/);
+  // A question without options: the plan of its yes, above the note.
+  const yes = s.renderToStaticMarkup(
+    h(s.WishQuestion, {
+      question: {
+        ...question,
+        options: [],
+        plans: [{ option: s.Choice.YES, title: "Light the lamp" }],
+      },
+      onAnswer: async () => {},
+    }),
+  );
+  assert.match(yes, /Launches: Light the lamp<\/span><\/span><textarea/);
+});
+
+test("W100: an answer that launched its option's plan links the launched task on its own line in the decision log", () => {
+  const question = {
+    id: "q1",
+    code: "Q01",
+    wishId: "w1",
+    text: "Which oil?",
+    options: ["Olive", "Paraffin"],
+    answer: { choice: s.Choice.A, note: "" },
+    plans: [
+      {
+        option: s.Choice.A,
+        title: "Fill the lamp with olive oil",
+        taskId: "t40",
+      },
+      { option: s.Choice.B, title: "Buy paraffin" },
+    ],
+  };
+  const item = (q, tasks) => ({
+    item: {
+      id: q.id,
+      ref: q.code,
+      question: q,
+      human: true,
+      approved: false,
+      by: "",
+      icon: "*",
+      tasks,
+    },
+  });
+  const launched = { id: "t40", code: "W40", title: "Fill the lamp" };
+  const other = { id: "t41", code: "W41", title: "Polish the lamp" };
+  const opened = [];
+  const html = s.renderToStaticMarkup(
+    h(s.DecisionLog, {
+      items: [item(question, [launched, other])],
+      onTask: (id) => opened.push(id),
+    }),
+  );
+  assert.match(
+    html,
+    /<p class="decision-tasks decision-launched"><svg[^]*?<\/svg>Launched as planned<a class="agent-code" href="#task-t40" title="Open W40 in the Tasks tab">W40<\/a><span class="decision-launched-title">Fill the lamp<\/span><\/p><p class="decision-tasks"><svg[^]*?<\/svg>Led to<a class="agent-code" href="#task-t41"[^>]*>W41<\/a><\/p>/,
+  );
+  // Not launched yet (a note left it to the lead): nothing launched, the plan says nothing in the log.
+  const pending = s.renderToStaticMarkup(
+    h(s.DecisionLog, {
+      items: [
+        item(
+          {
+            ...question,
+            plans: [
+              { option: s.Choice.A, title: "Fill the lamp with olive oil" },
+            ],
+          },
+          [],
+        ),
+      ],
+      onTask() {},
+    }),
+  );
+  assert.doesNotMatch(pending, /decision-launched|Launched|Led to/);
+  // Another option's plan launched nothing for this answer.
+  const otherOption = s.renderToStaticMarkup(
+    h(s.DecisionLog, {
+      items: [
+        item({ ...question, answer: { choice: s.Choice.B, note: "" } }, [
+          other,
+        ]),
+      ],
+      onTask() {},
+    }),
+  );
+  assert.doesNotMatch(otherOption, /decision-launched/);
+  assert.match(otherOption, /Led to<a class="agent-code" href="#task-t41"/);
+});
+
 test("a question shows its options by letter and its recommendation; answered, what was chosen", () => {
   const open = s.renderToStaticMarkup(
     h(s.WishQuestion, {
