@@ -13,11 +13,29 @@ const s = await bundle(
   commandParts,
   djinnAutolinks,
   linksOf,
+  splitHistory,
 } from "@/src/data/text.ts";
 export { linkName, mainLink } from "@/src/data/links.ts";
 export { isReport, reportOf, reportsOf } from "@/src/data/reports.ts";
 export * as dew from "@/e2e/report-question.ts";`,
 );
+
+test("a question's context parts from the versions history Djinn appended, where Djinn cuts it", () => {
+  const header = "## Historique des versions pr\u00e9c\u00e9dentes";
+  const history = "### Tour 0 (initial)\n- Recommendation: A";
+  assert.deepEqual(s.splitHistory(`Why.\n\n${header}\n\n${history}\n`), {
+    context: "Why.",
+    history,
+  });
+  // Revised with no context of its own: the history alone.
+  assert.deepEqual(s.splitHistory(`${header}\n\n${history}`), {
+    context: "",
+    history,
+  });
+  // Never revised, or the words inside a line: nothing to fold.
+  for (const context of ["Why.", `Why: ${header} is a heading.`])
+    assert.deepEqual(s.splitHistory(context), { context, history: "" });
+});
 
 test("a long context shows its first section, and says more is left", () => {
   const fold = s.foldMarkdown(s.dew.CONTEXT);

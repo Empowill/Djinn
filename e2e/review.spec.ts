@@ -134,15 +134,15 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await page.setViewportSize({ width: 1440, height: 2200 });
   await page.goto(process.env.DJINN_URL!);
   await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
-  // The bar of what waits: one line per question and one for the worker that failed, a click goes there; the one
-  // needed before the first light under those words, the worker needing an action, the other that can wait. W3,
-  // cut short and not resumed by Djinn, asks nothing: it is history.
+  // The bar of what waits: one line per question that holds up the wish and one for the worker that failed, a click
+  // goes there; the one needed before the first light under those words, the worker needing an action. The other
+  // question can wait: the questions column alone shows it. W3, cut short and not resumed by Djinn, asks nothing: it
+  // is history.
   const bar = page.locator(".attention-bar");
-  await expect(bar).toContainText("3 things wait for you");
+  await expect(bar).toContainText("2 things wait for you");
   await expect(bar.locator(".attention-level")).toHaveText([
     "before the first light",
     "Worker",
-    "Can wait",
   ]);
   await expect(bar).not.toContainText("W3");
   await expect(
@@ -207,7 +207,8 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     "You asked: How long does each burn?",
   );
   await expect(digging.locator("textarea, .option")).toHaveCount(0);
-  await expect(bar.locator(".attention-item")).toHaveCount(2);
+  // Out of the bar too: the worker's line stays, the question that can wait never was one.
+  await expect(bar.locator(".attention-item")).toHaveCount(1);
   await digging.screenshot({
     path: path.join(shots, "review-question-folded.png"),
   });
@@ -252,6 +253,16 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await expect(revised.locator(".question-rounds summary")).toHaveText(
     "History: 2 rounds",
   );
+  // The new context first; the version before it, which Djinn appended, folded under Previous versions, closed.
+  const history = revised.locator(".question-history");
+  await expect(revised.locator(".question-context > .prose h2")).toHaveText(
+    "What we found",
+  );
+  await expect(history.locator("summary")).toHaveText("Previous versions");
+  await expect(history).not.toHaveAttribute("open");
+  await expect(history.getByText("Tour 0 (initial)")).toBeHidden();
+  await history.locator("summary").click();
+  await expect(history.getByText("Tour 0 (initial)")).toBeVisible();
   await expect(revised.locator(".option-recommended")).toHaveCount(1);
   await expect(
     revised.locator(".option", { has: page.locator(".option-recommended") }),

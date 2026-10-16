@@ -43,6 +43,7 @@ import {
   type ReactNode,
   memo,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -67,6 +68,7 @@ import {
   when,
 } from "./data/format";
 import { mainLink } from "./data/links";
+import { splitHistory } from "./data/text";
 import { t } from "./i18n";
 import { CommandText } from "./copy-command";
 import { MoveLink } from "./link";
@@ -678,14 +680,7 @@ export const WishQuestion = memo(function WishQuestion({
                 <MoveLink href={link} />
               </div>
             )}
-            {q.context && (
-              <section className="question-context">
-                <h4>{t("page.context")}</h4>
-                <div className="prose">
-                  <MarkdownBody text={q.context} copy />
-                </div>
-              </section>
-            )}
+            {q.context && <QuestionContext context={q.context} />}
             {report && <QuestionReport report={report} />}
             {recommendation}
             {options}
@@ -764,17 +759,7 @@ export const WishQuestion = memo(function WishQuestion({
               <MoveLink href={link} />
             </p>
           )}
-          {q.context && (
-            <section className="question-context">
-              <h4>{t("page.context")}</h4>
-              <FoldedMarkdown
-                text={q.context}
-                more={t("question.read_more")}
-                less={t("question.read_less")}
-                copy
-              />
-            </section>
-          )}
+          {q.context && <QuestionContext context={q.context} folded />}
           {report && <QuestionReport report={report} />}
           {recommendation}
           {answered ? (
@@ -867,6 +852,47 @@ function QuestionReport({ report }: { report: Block }) {
           )}
           <MarkdownBody text={report.content} copy />
         </div>
+      )}
+    </section>
+  );
+}
+
+// QuestionContext is what happened and what is at stake, whole or in its first view (folded); the earlier versions
+// Djinn appends to it at each revision fold below it under "Previous versions", closed until you open them.
+function QuestionContext({
+  context,
+  folded = false,
+}: {
+  context: string;
+  folded?: boolean;
+}) {
+  const versions = useMemo(() => splitHistory(context), [context]);
+  return (
+    <section className="question-context">
+      <h4>{t("page.context")}</h4>
+      {versions.context &&
+        (folded ? (
+          <FoldedMarkdown
+            text={versions.context}
+            more={t("question.read_more")}
+            less={t("question.read_less")}
+            copy
+          />
+        ) : (
+          <div className="prose">
+            <MarkdownBody text={versions.context} copy />
+          </div>
+        ))}
+      {versions.history && (
+        <details className="question-history">
+          <summary>
+            <History size={13} aria-hidden="true" />
+            {t("question.previous_versions")}
+          </summary>
+          <div className="prose">
+            <MarkdownBody text={versions.history} copy />
+          </div>
+        </details>
       )}
     </section>
   );

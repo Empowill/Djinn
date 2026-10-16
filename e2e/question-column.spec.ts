@@ -125,6 +125,9 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
       "Cotton",
       "--options",
       "Hemp",
+      // Needed before something: a line of the bar of what waits, a button of the page.
+      "--before",
+      "before the merge",
     );
     djinn(
       "question",

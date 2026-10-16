@@ -1,13 +1,15 @@
-// The bar that stays at the top of the flying carpet and of a wish while something waits for you: one line each, the
-// most blocking first, in the colour of how much it holds up; within a level the questions as they were asked, so a
-// new line comes after the others of its level. A click takes you there, in whatever tab, wish or fold it is; a line
-// the page cannot show any more is not a button. A move's line has its main link beside it, a button that opens where
-// the developer acts (a pull request, a CI run). A question is blocking (red), needed before something (orange, under
-// its before words) or can wait (grey), as on its card. A choice the lead's agent shows in its terminal (an approval,
-// a folder to trust) is blocking too: its options are buttons that answer it there. Each lit ifrit has a band right
-// after that choice, the one with the latest activity first: its links, its countdown once Djinn warned it goes out,
-// the first line of its last reply, then its own questions and the lead's questions about it, which leave the lines
-// below; without a lit ifrit, the order is the one above.
+// The bar that stays at the top of the flying carpet and of a wish while something keeps a wish from moving forward and
+// cannot wait, most often a move the developer is expected to make (Q13): one line each, the most blocking first, in
+// the colour of how much it holds up; within a level the questions as they were asked, so a new line comes after the
+// others of its level. A click takes you there, in whatever tab, wish or fold it is; a line the page cannot show any
+// more is not a button. A move's line has its main link beside it, a button that opens where the developer acts (a
+// pull request, a CI run). A question is a line when it holds up its wish (holdsUp, as on its card): blocking (red) or
+// needed before something (orange, under its before words); one that can wait is in the questions column alone. A
+// choice the lead's agent shows in its terminal (an approval, a folder to trust) is blocking too: its options are
+// buttons that answer it there. Each lit ifrit has a band right after that choice, the one with the latest activity
+// first: its links, its countdown once Djinn warned it goes out, the first line of its last reply, then its own
+// questions and the lead's questions about it that hold up their wish, which leave the lines below; without a lit
+// ifrit, the order is the one above.
 import {
   ArrowDownRight,
   BellRing,
@@ -26,8 +28,10 @@ import { message } from "./data/client";
 import { useClients, useDjinn } from "./data/djinn";
 import {
   byAsked,
+  holdsUp,
   type Item,
   type OpenQuestion,
+  urgency,
   type Waiting,
 } from "./data/flight";
 import { firstLine, useNow } from "./data/format";
@@ -39,10 +43,9 @@ import { MoveLink } from "./link";
 import { ToneIcon } from "./status";
 
 // How much a line holds up: a question workers wait on, a move only the developer can make, a question needed
-// before something, a worker that asks to edit, a question that can wait, a wish ready to grant.
-// A lit ifrit's band holds lines of these levels.
+// before something, a worker that asks to edit, a wish ready to grant. A lit ifrit's band holds lines of these levels.
 export type Level =
-  "blocking" | "move" | "question" | "action" | "later" | "ready" | "ifrit";
+  "blocking" | "move" | "question" | "action" | "ready" | "ifrit";
 
 export interface Attention {
   key: string;
@@ -72,15 +75,24 @@ const order: Record<Level, number> = {
   move: 1,
   question: 2,
   action: 3,
-  later: 4,
-  ready: 5,
+  ready: 4,
 };
 
-// attentionOf lists what waits for you, the most blocking first, each level's questions the oldest first; origin marks
-// a line with its wish. prompt is the choice the lead's agent shows in its terminal, if any: it holds up the lead, so
-// every wish, and comes first. ifrits are the lit ifrits (litIfrits, the latest activity first): a band each follows
-// the prompt, holding the ifrit's own questions (Question.task_id), then the lead's questions about it
-// (Question.about_task_id), each the most urgent first; they show there only.
+// The level of a question's line, by its urgency (urgency): an answered one waiting for a lead is a question.
+const questionLevel: readonly Level[] = [
+  "blocking",
+  "move",
+  "question",
+  "question",
+];
+
+// attentionOf lists what keeps a wish from moving forward, the most blocking first, each level's questions the oldest
+// first: the questions that hold up their wish (holdsUp), those answered that wait for a lead to start, the workers
+// that wait for you, the wishes ready to grant. origin marks a line with its wish. prompt is the choice the lead's
+// agent shows in its terminal, if any: it holds up the lead, so every wish, and comes first. ifrits are the lit ifrits
+// (litIfrits, the latest activity first): a band each follows the prompt, holding the ifrit's own questions
+// (Question.task_id), then the lead's questions about it (Question.about_task_id), each the most urgent first; they
+// show there only.
 export function attentionOf(
   questions: readonly OpenQuestion[],
   waiting: readonly Waiting[],
@@ -128,18 +140,13 @@ export function attentionOf(
       text: prompt.title || t("lead_prompt.title"),
       prompt,
     });
-  for (const { wish, item, blocking } of [...questions].sort(byAsked)) {
+  for (const question of [...questions].sort(byAsked)) {
+    const { wish, item, blocking } = question;
+    // One that can wait is not a line; one answered holds its wish until a lead starts and reads it.
+    if (!item.waitingLead && !holdsUp(question)) continue;
+    const level = questionLevel[urgency(question)];
     const band = bandOf.get(item.id);
     const lines = band ? (band.own ? own : about) : out;
-    const level: Level = blocking.length
-      ? "blocking"
-      : item.move && item.before
-        ? "move"
-        : item.waitingLead
-          ? "question"
-          : item.before
-            ? "question"
-            : "later";
     const host = band && bands.get(band.id)?.band.task;
     lines.push({
       key: item.id,
@@ -220,7 +227,6 @@ const levelKeys = {
   move: "attention.level_move",
   question: "attention.level_question",
   action: "attention.level_action",
-  later: "attention.level_later",
   ready: "attention.level_ready",
 } as const;
 
