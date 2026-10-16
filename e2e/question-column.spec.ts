@@ -3,11 +3,15 @@
 // go from one question to the next across the wishes and stop at both ends; a letter or a digit picks; Enter puts the
 // caret in the note; Escape steps back from the note to the question, then clears the pick, then leaves the column,
 // where Down comes back; Space and Page Down scroll a long question. Answered, the one below opens, else the one
-// above. A wish's page shows its own questions only. Shots, wide and narrow, dark and light, go to
-// test-results/e2e/question-column-*.png.
+// above. A wish's page shows its own questions only. The question that has the focus shows a gold ring, it alone; with
+// none focused, the first arrow gives the focus to the open one and the next moves (W59). Moving to another question
+// scrolls its title to the top of the view, wherever the page was, with Chromium's scroll anchoring and with the script
+// that stands in for it in WebKit. Shots, wide and narrow, dark and light, go to test-results/e2e/question-column-*.png.
 import { type Page, expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { portable } from "./portable";
 
@@ -216,10 +220,28 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
     await page.locator(".mission-scroll").evaluate((el) => el.scrollTo(0, 0));
     await open(order[0]);
     await expect(row(order[0])).toBeFocused();
+    // The question that has the focus shows a gold ring, it alone; the hover over a closed one draws none.
+    const ring = (text: string) =>
+      row(text).evaluate((el) => getComputedStyle(el).outlineStyle);
+    const sand = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--sand)";
+      document.querySelector(".review")!.append(probe);
+      const colour = getComputedStyle(probe).color;
+      probe.remove();
+      return colour;
+    });
+    await expect(row(order[0])).toHaveCSS("outline-color", sand);
+    await expect(row(order[0])).toHaveCSS("outline-style", "solid");
+    await row(order[1]).hover();
+    expect(await ring(order[1])).toBe("none");
+    expect(await ring(order[2])).toBe("none");
     for (const text of order.slice(1)) {
       await page.keyboard.press("ArrowDown");
       await expect(row(text)).toHaveClass(/current/);
       await expect(row(text)).toBeFocused();
+      for (const other of order)
+        expect(await ring(other)).toBe(other === text ? "solid" : "none");
     }
     await page.keyboard.press("ArrowDown");
     await expect(row(order[2])).toBeFocused();
@@ -348,6 +370,25 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
     );
     await expect(column.locator(".question-group-head")).toHaveCount(0);
     await expect(rows.first()).toHaveClass(/current/);
+    // No question has the focus: the first Down gives it to the open one, the second moves to the next.
+    expect(
+      await page.evaluate(
+        () => !document.activeElement?.closest(".question-row"),
+      ),
+    ).toBe(true);
+    await page.keyboard.press("ArrowDown");
+    await expect(rows.first()).toBeFocused();
+    await expect(rows.first()).toHaveCSS("outline-style", "solid");
+    await expect(row("Which wick?")).toHaveClass(/closed/);
+    await page.keyboard.press("ArrowDown");
+    await expect(row("Which wick?")).toBeFocused();
+    await expect(row("Which wick?")).toHaveClass(/current/);
+    // From a button of the page, not a field, Up gives the focus back to the open question first.
+    await page.locator(".attention-bar button").first().focus();
+    await page.keyboard.press("ArrowUp");
+    await expect(row("Which wick?")).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(rows.first()).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await expect(row("Which wick?")).toBeFocused();
     await page.locator(".mission-scroll").evaluate((el) => el.scrollTo(0, 0));
@@ -359,3 +400,116 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
     djinn("wish", "delete", oilId);
   }
 });
+
+// Three questions, the two last long, asked in this order: moving from one to another, by an arrow or a click, scrolls
+// the new one's title to the top of the view, below the bar of what waits for you, wherever the page was scrolled: in
+// the middle of the long one open, or at its end. Twice: with Chromium's own scroll anchoring, and with the script
+// that stands in for it where WebKit lacks it (the window on Linux), which must not bring the page back.
+for (const engine of ["native", "script"] as const)
+  test(`moving to another question shows its title at the top (${engine})`, async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    if (engine === "script")
+      await page.addInitScript(() => {
+        const supports = CSS.supports.bind(CSS);
+        CSS.supports = ((...args: [string, string?]) =>
+          args[0] === "overflow-anchor"
+            ? false
+            : supports(...(args as [string, string]))) as typeof CSS.supports;
+      });
+    const errors: string[] = [];
+    page.on("pageerror", (err) => errors.push(err.message));
+    const wishId = randomUUID();
+    const title = `Title on top ${engine} ${wishId.slice(0, 8)}`;
+    const texts = ["Which lamp?", "Which oil?", "Which wick?"];
+    const questions = texts.map((text, i) => ({
+      id: randomUUID(),
+      code: `Q0${i + 1}`,
+      wish_id: wishId,
+      text,
+      options: ["Yes", "No"],
+      context: i ? LONG : "",
+      create_time: `2026-10-16T10:0${i}:00Z`,
+    }));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-title-"));
+    const file = path.join(dir, "title.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        create_time: "2026-10-16T10:00:00Z",
+        wish: { id: wishId, title, create_time: "2026-10-16T10:00:00Z" },
+        questions,
+      }),
+    );
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(process.env.DJINN_URL!);
+      const importer = page
+        .locator(".sidebar")
+        .getByRole("button", { name: "Import a wish" });
+      await expect(importer).toBeEnabled();
+      const chooser = page.waitForEvent("filechooser");
+      await importer.click();
+      await (await chooser).setFiles(file);
+      await expect(page.locator(".hero h1")).toHaveText(title);
+      const scroller = page.locator(".mission-scroll");
+      await expect(scroller).toHaveCSS(
+        "overflow-anchor",
+        engine === "script" ? "none" : "auto",
+      );
+      const rows = page.locator(".question-column .question-row");
+      await expect(rows).toHaveCount(3);
+      const row = (text: string) => rows.filter({ hasText: text });
+      // Where the title stands below the top of the view, under the bar of what waits for you: read two frames
+      // after the move, then again later, so a scroll that brings the page back is caught.
+      const offset = (text: string) =>
+        row(text).evaluate(async (el) => {
+          const frame = () => new Promise((r) => requestAnimationFrame(r));
+          await frame();
+          await frame();
+          const scroll = el.closest(".mission-scroll")!;
+          const bar = scroll.querySelector(":scope > .attention-bar");
+          const top = bar
+            ? bar.getBoundingClientRect().bottom
+            : scroll.getBoundingClientRect().top;
+          return (
+            el.querySelector(".question-row-title")!.getBoundingClientRect()
+              .top - top
+          );
+        });
+      const onTop = async (text: string) => {
+        await expect(row(text)).toHaveClass(/current/);
+        await expect(row(text)).toBeFocused();
+        for (let i = 0; i < 2; i++) {
+          const at = await offset(text);
+          expect(at, `${text}'s title below the top`).toBeGreaterThanOrEqual(0);
+          expect(at, `${text}'s title at the top`).toBeLessThan(40);
+          await page.waitForTimeout(300);
+        }
+      };
+      const scrollBy = (y: number) =>
+        scroller.evaluate((el, y) => el.scrollBy(0, y), y);
+
+      // A click on a closed one: the long Which oil? opens, from its title.
+      await row("Which oil?").locator(".question-row-title").click();
+      await onTop("Which oil?");
+      // Read into its middle, then Down: Which wick? reads from its title, not from where the page was.
+      await scrollBy(700);
+      await page.keyboard.press("ArrowDown");
+      await onTop("Which wick?");
+      // At the end of Which wick?, Up: Which oil? again from its title.
+      await scrollBy(1500);
+      await page.keyboard.press("ArrowUp");
+      await onTop("Which oil?");
+      // In its middle, a click on the closed Which wick? below.
+      await scrollBy(900);
+      await row("Which wick?").locator(".question-row-title").click();
+      await onTop("Which wick?");
+      expect(errors).toEqual([]);
+    } finally {
+      djinn("wish", "delete", wishId);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });

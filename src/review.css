@@ -703,9 +703,11 @@ button.glance-line:hover .name {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
   cursor: auto;
 }
-.review .question-card.question-row:focus-visible {
-  outline: none;
-  border-color: color-mix(in srgb, var(--accent) 72%, transparent);
+/* The question that has the focus, the one Enter acts on, by the keys or a click: a gold ring around the whole of it,
+   uniform on its rounded edge, in both themes. The hover only tints a closed one's ground. */
+.review .question-card.question-row:focus {
+  outline: 2px solid var(--sand);
+  outline-offset: 2px;
 }
 .review .question-row .question-id {
   display: block;

@@ -556,3 +556,44 @@ test("running workers stay blue, apart from the investigators' violet, in both t
     );
   }
 });
+
+// W59: the question of the column that has the focus, the one Enter acts on, shows a gold ring around the whole of it,
+// uniform on its rounded edge, still (no box-shadow that moves, which repaints in WebKit); the hover only tints the
+// ground of a closed one, and no other state draws the ring.
+test("the focused question of the column, and it alone, shows a gold ring distinct from the hover", () => {
+  const css = fs
+    .readFileSync(path.join(root, "review.css"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const rule = (selector) => {
+    const from = css.indexOf(selector + " {");
+    assert.ok(from >= 0, `${selector} has its rule`);
+    return css.slice(from, css.indexOf("}", from));
+  };
+  const ring = rule(".review .question-card.question-row:focus");
+  assert.match(ring, /outline:\s*2px solid var\(--sand\);/);
+  assert.match(ring, /outline-offset:\s*2px;/);
+  assert.doesNotMatch(
+    ring,
+    /border-(?:top|right|bottom|left)|box-shadow|animation|transition/,
+  );
+  const row = rule(".review .question-card.question-row");
+  assert.match(row, /border:\s*1px solid transparent;/);
+  assert.match(row, /border-radius:/);
+  assert.doesNotMatch(
+    row,
+    /border-(?:top|right|bottom|left)|outline|box-shadow/,
+  );
+  const hover = rule(".review .question-row.closed:hover");
+  assert.match(hover, /background:/);
+  assert.doesNotMatch(hover, /outline|border|box-shadow/);
+  // The ring is the focus's alone: no other rule of a question row draws an outline.
+  const others = [
+    ...css.matchAll(/([^{}]*\.question-row[^{}]*)\{([^}]*)\}/g),
+  ].filter(([, selector]) => !/:focus\s*$/.test(selector.trim()));
+  for (const [, selector, body] of others)
+    assert.doesNotMatch(
+      body,
+      /outline:\s*(?!none)/,
+      `${selector.trim()} draws no ring`,
+    );
+});
