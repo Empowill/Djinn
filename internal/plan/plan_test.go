@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -342,6 +344,80 @@ func TestWishMake(t *testing.T) {
 	list, err := c.wishes.List(ctx, connect.NewRequest(&planv1.WishServiceListRequest{}))
 	if err != nil || len(list.Msg.GetWishes()) != 1 {
 		t.Errorf("List = %v, %v; want the one wish made", list, err)
+	}
+}
+
+func TestWishAddProject(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	add := func(dir string) *planv1.Project {
+		t.Helper()
+		res, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetProject()
+	}
+	docs := add(t.TempDir())
+	app := gitRepo(t, "app", "https://example.com/acme/app.git")
+	if out, err := exec.Command("git", "-C", app, "symbolic-ref", "HEAD", "refs/heads/trunk").CombinedOutput(); err != nil {
+		t.Fatalf("git symbolic-ref: %v\n%s", err, out)
+	}
+	appProject := add(app)
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Ship it", ProjectIds: []string{docs.GetId()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	addTo := func(project string) (*planv1.Wish, error) {
+		res, err := c.wishes.AddProject(ctx, connect.NewRequest(&planv1.WishServiceAddProjectRequest{WishId: wishID, ProjectId: project}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg.GetWish(), nil
+	}
+
+	// By name, case ignored: the wish works in it, its integration branch the one the checkout is on, as Make sets it.
+	wish, err := addTo("APP")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := wish.GetProjectIds(), []string{docs.GetId(), appProject.GetId()}; !slices.Equal(got, want) {
+		t.Errorf("projects = %v, want %v", got, want)
+	}
+	if got := IntegrationBranchOf(wish, appProject.GetId()); got != "trunk" {
+		t.Errorf("integration branch = %q, want trunk, the checked-out branch", got)
+	}
+
+	// Already in the wish, by identifier or name: refused, saying which.
+	for _, project := range []string{appProject.GetId(), docs.GetName()} {
+		_, err := addTo(project)
+		if code(err) != connect.CodeAlreadyExists || !strings.Contains(err.Error(), "already in wish") {
+			t.Errorf("AddProject(%s) again = %v, want already_exists", project, err)
+		}
+	}
+	// Unknown: refused, naming it.
+	if _, err := addTo("ghost"); code(err) != connect.CodeNotFound || !strings.Contains(err.Error(), "no project ghost") {
+		t.Errorf("AddProject(ghost) = %v, want not_found naming it", err)
+	}
+	// Without a project: refused before the store.
+	if _, err := addTo(""); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("AddProject without a project = %v, want invalid_argument", err)
+	}
+
+	// The list and the brief show it.
+	list, err := c.wishes.List(ctx, connect.NewRequest(&planv1.WishServiceListRequest{}))
+	if err != nil || len(list.Msg.GetWishes()) != 1 || len(list.Msg.GetWishes()[0].GetProjectIds()) != 2 {
+		t.Errorf("List = %v, %v; want the wish with its two projects", list, err)
+	}
+	brief, err := c.wishes.Brief(ctx, connect.NewRequest(&planv1.WishServiceBriefRequest{WishId: wishID}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "- Projects: " + docs.GetName() + ", app."; !strings.Contains(brief.Msg.GetText(), want) {
+		t.Errorf("brief lacks %q:\n%s", want, brief.Msg.GetText())
 	}
 }
 
