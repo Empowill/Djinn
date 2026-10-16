@@ -20,26 +20,30 @@ A worker's work counts once it is in the wish's branch, checked:
 ## How a task's work lands
 
 1. **The worker ends done.** Its work is **waiting to be committed**.
-2. **One at a time.** Djinn takes the finished tasks in the order they ended, each one alone, so a red check always
-   names the task that brought it.
+2. **In batches.** Djinn takes the finished tasks waiting for the same branch together, in the order they ended: one
+   **batch**, checked once. A task that ends while a batch is checked goes with the next one.
 3. **It looks for work left behind.** A worktree that still holds changes not committed is not merged: see
    [Work left not committed](#merges-and-corrections-work-left-not-committed).
-4. **It merges** the task's branch into the integration branch, in its own worktree under its data folder, never in your
-   folder. A merge commit always records it.
+4. **It merges** the tasks' branches into the integration branch, one on top of the other, in its own worktree under
+   its data folder, never in your folder. A merge commit records each branch. A branch that conflicts **leaves the
+   batch**: its merge is undone, the others go on without it, and it merges alone right after them.
 5. **It makes the worktree ready**, when the project names a setup, such as installing dependencies, and something it
    depends on changed.
-6. **It runs the commit checks**, each through the [gate](#gates) of its name, in the order the settings give them.
-7. **Green**: the branch moves to the merge. The task is **committed**, with its commit; its worktree is removed, its
-   branch kept. Your checkout of the branch follows when it is clean.
-8. **Red, or a conflict**: the branch stays as it was, the task says what failed, and a correction worker starts. The
-   tasks that end after it are merged on their own meanwhile.
+6. **It runs the commit checks** once for the batch, each through the [gate](#gates) of its name, in the order the
+   settings give them.
+7. **Green**: the branch moves to the merge. The batch's tasks are **committed**, with its commit; their worktrees are
+   removed, their branches kept. Your checkout of the branch follows when it is clean.
+8. **Red, or a conflict**: the branch stays as it was, the tasks say what failed, and a correction worker starts: one
+   for the whole red batch, or one for the branch that conflicts. While it works, nothing else merges into the branch:
+   see [One repair at a time](#merges-and-corrections-one-repair-at-a-time).
 
 Djinn runs this every minute, and at once when a task ends.
 
-> **Example.** W3 and W4 end a few minutes apart. Djinn merges W3 into feat/invoice-pdf: the lint passes, the branch
-> moves, W3 shows **Committed into feat/invoice-pdf as 1a2b3c4d**. W4 touched the same lines: its merge conflicts. W4
-> shows **Merge being fixed by W6**, and W6, a correction worker, starts on that very merge. Ten minutes later W6's work
-> passes the lint, and W4 shows **corrected by W6**.
+> **Example.** W3, W4 and W5 end a few minutes apart. Djinn merges them as one batch into feat/invoice-pdf; W4 touched
+> the same lines as W3: its merge conflicts, and it leaves the batch. W3 and W5 pass the lint together, the branch
+> moves, both show **Committed into feat/invoice-pdf as 1a2b3c4d**. W4 merges alone after them, conflicts again, and
+> shows **Merge being fixed by W6**; W6, a correction worker, starts on that very merge. W7, which ends meanwhile, waits
+> for W6. Ten minutes later W6's work passes the lint, W4 shows **corrected by W6**, and W7 merges.
 
 ### A check the worker already passed
 
@@ -60,7 +64,7 @@ Each finished task says where its work stands, in the Tasks tab, on its card and
 | What the task says | What it means |
 | --- | --- |
 | **Merging** | Its work waits to be merged, or is being merged. |
-| Waiting to be committed | In line, with why it waits when something holds it: your checkout, the remote, Git's identity. |
+| Waiting to be committed | In line, with why it waits when something holds it: a correction repairing the branch, your checkout, the remote, Git's identity. |
 | Being committed into feat/invoice-pdf | Djinn is merging it and running the checks. |
 | Committed into feat/invoice-pdf as 1a2b3c4d | In the branch, checked. |
 | **Merge failed** | A conflict or a red check, and no correction runs. |
@@ -88,6 +92,30 @@ Its first instructions say what failed: the files in conflict, or the check's co
 told to commit its work. Its branch then lands like any task's, checked; when it passes, the failed task is committed
 with it, **corrected by** the correction.
 
+### A red batch
+
+A batch whose commit checks are red gets **one** correction worker, which sees all of it: its first instructions name
+every task of the batch, the check's command and the end of its output. Its success brings the whole batch in.
+
+When that correction fails, Djinn goes **step by step**: it merges the batch's work one branch at a time, each checked
+on its own. The branches that pass go in; the first that turns the checks red is the culprit, and gets a correction of
+its own. The work of the batch's failed correction is left out. A project whose settings allow no correction goes step
+by step at once.
+
+### One repair at a time
+
+A correction **repairs** the branch, whatever failed: a merge's conflict, its commit checks, the push checks, or main's
+merge. One repair runs on a branch at a time:
+
+- **The branch is frozen.** While the correction works, and until its work is in, nothing else merges into the branch,
+  main neither. The work that ends meanwhile waits in line, each task saying *waits for W6, which repairs
+  feat/invoice-pdf*. The correction thus works on a branch that does not move under it.
+- **Its work goes first.** Once it ends, the correction's work merges alone; then the line merges as one batch, checked
+  once.
+- **A new failure waits its turn.** Push checks that go red while a correction runs keep the push held, and start no
+  second correction; work you ask Djinn to correct again waits for the one that runs, then merges alone.
+- **It starts on a red branch.** A correction never waits for the branch to be green: it is what makes it green again.
+
 ### When corrections run out
 
 A project's settings say how many correction workers Djinn tries on one failure: **two** by default, none at all if
@@ -95,7 +123,7 @@ set to zero. A correction whose worker fails, or whose own work conflicts or tes
 
 Past the last attempt, Djinn stops and hands the failure to the Djinn: the work of W4 into feat/invoice-pdf failed, and
 the move is the Djinn's: retry a correction, drop the work, or leave it waiting. The Djinn decides, and asks you when it
-needs you. The rest of the wish goes on meanwhile: the other tasks merge on their own.
+needs you. The rest of the wish goes on meanwhile: the other tasks merge without it.
 
 ### Stopping a correction
 
@@ -135,7 +163,8 @@ A review counts as an attempt, as a correction does.
 - **A correction is a task like any other.** It shows in the Tasks tab, part of the same azima, and you can follow it,
   send it a word, or stop it.
 - **Uncommitted work is not lost.** It is reviewed, not dropped: a review worker decides what belongs to the task.
-- **A failed merge blocks only what depends on it.** The tasks that come after it wait; the others go on.
+- **A failed merge holds the branch while it is repaired.** The tasks that depend on it wait; the work that ends
+  meanwhile waits in line, and merges as one batch once the correction is in.
 
 ## Read next
 

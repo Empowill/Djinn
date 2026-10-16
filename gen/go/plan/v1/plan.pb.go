@@ -6050,7 +6050,11 @@ type TaskIntegration struct {
 	QuestionId string `protobuf:"bytes,9,opt,name=question_id,json=questionId,proto3" json:"question_id,omitempty"`
 	// For UNCOMMITTED, the review worker that commits the work left in its worktree, or did: for COMMITTED, the work
 	// went in with it ("uncommitted: reviewed by W5").
-	ReviewedBy    string `protobuf:"bytes,10,opt,name=reviewed_by,json=reviewedBy,proto3" json:"reviewed_by,omitempty"`
+	ReviewedBy string `protobuf:"bytes,10,opt,name=reviewed_by,json=reviewedBy,proto3" json:"reviewed_by,omitempty"`
+	// For PENDING, its work merges in a batch of its own, once the batch of the others is in: its branch conflicted in a
+	// batch, or the correction of a red batch it was in failed and Djinn merges that batch's work one branch at a time to
+	// find what breaks the checks.
+	Alone         bool `protobuf:"varint,11,opt,name=alone,proto3" json:"alone,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6153,6 +6157,13 @@ func (x *TaskIntegration) GetReviewedBy() string {
 		return x.ReviewedBy
 	}
 	return ""
+}
+
+func (x *TaskIntegration) GetAlone() bool {
+	if x != nil {
+		return x.Alone
+	}
+	return false
 }
 
 // IntegrationCommit is a batch of finished work committed into a wish's integration branch, as the journal records
@@ -21811,7 +21822,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06output\x18\x06 \x01(\tR\x06output\x12\x19\n" +
 	"\btask_ids\x18\a \x03(\tR\ataskIds\x12\x16\n" +
 	"\x06reason\x18\b \x01(\tR\x06reason\x12\x19\n" +
-	"\bmain_sha\x18\t \x01(\tR\amainSha\"\xf9\x02\n" +
+	"\bmain_sha\x18\t \x01(\tR\amainSha\"\x8f\x03\n" +
 	"\x0fTaskIntegration\x12/\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x19.plan.v1.IntegrationStateR\x05state\x12\x16\n" +
 	"\x06branch\x18\x02 \x01(\tR\x06branch\x12\x10\n" +
@@ -21826,7 +21837,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"questionId\x12\x1f\n" +
 	"\vreviewed_by\x18\n" +
 	" \x01(\tR\n" +
-	"reviewedBy\"\xb0\x01\n" +
+	"reviewedBy\x12\x14\n" +
+	"\x05alone\x18\v \x01(\bR\x05alone\"\xb0\x01\n" +
 	"\x11IntegrationCommit\x12\x17\n" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1d\n" +
 	"\n" +

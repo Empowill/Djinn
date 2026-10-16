@@ -1202,6 +1202,10 @@ message TaskIntegration {
   // For UNCOMMITTED, the review worker that commits the work left in its worktree, or did: for COMMITTED, the work
   // went in with it ("uncommitted: reviewed by W5").
   string reviewed_by = 10;
+  // For PENDING, its work merges in a batch of its own, once the batch of the others is in: its branch conflicted in a
+  // batch, or the correction of a red batch it was in failed and Djinn merges that batch's work one branch at a time to
+  // find what breaks the checks.
+  bool alone = 11;
 }
 
 // IntegrationState is where a task's finished work stands on its way into its wish's integration branch.
