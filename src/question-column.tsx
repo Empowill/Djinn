@@ -135,6 +135,7 @@ export function QuestionColumn({
   onEnlighten,
   onMove,
   onWithdraw,
+  onLater,
   children,
 }: {
   groups: QuestionGroup[];
@@ -150,6 +151,8 @@ export function QuestionColumn({
   onEnlighten?: (note: string, question?: Question) => Promise<void>;
   onMove?: (question: Question) => void;
   onWithdraw?: (question: Question) => void;
+  // Puts a question off for later, or gives it its place back; resolves once djinn has it.
+  onLater?: (question: Question) => Promise<unknown>;
   // What else waits for you, below the questions: the workers that wait, the proofs, the grant.
   children?: ReactNode;
 }) {
@@ -209,6 +212,35 @@ export function QuestionColumn({
   // nowhere, after a question left it.
   const state = useRef({ order, current });
   state.current = { order, current };
+
+  // Put off, the open question goes to the bottom of its wish's list: the one that came after it opens, as when it
+  // leaves (the last stays open). Given its place back, it stays open and the page follows it there.
+  const later = useMemo(
+    () =>
+      onLater &&
+      ((question: Question) => {
+        const { order } = state.current;
+        const next = order[order.indexOf(question.id) + 1];
+        const back = !!question.laterTime;
+        void onLater(question).then(
+          () => {
+            if (!back) {
+              if (next) select(next);
+              return;
+            }
+            requestAnimationFrame(() => {
+              const element = document.getElementById(
+                `question-${question.id}`,
+              );
+              if (element) toTitle(element);
+            });
+          },
+          () => {},
+        );
+      }),
+    [onLater, select],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
@@ -346,6 +378,7 @@ export function QuestionColumn({
               onEnlighten={onEnlighten}
               onMove={onMove}
               onWithdraw={onWithdraw}
+              onLater={later}
             />
           ))}
         </div>

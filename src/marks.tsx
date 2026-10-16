@@ -1,5 +1,5 @@
-// The writes the screens share: an answer, a request to investigate, a task reviewed (src/review-tab.tsx), a move or
-// a withdrawal, each read again once djinn has it.
+// The writes the screens share: an answer, a request to investigate, a task reviewed (src/review-tab.tsx), a move, a
+// withdrawal or a question put off for later, each read again once djinn has it.
 import { useCallback, useMemo } from "react";
 
 import {
@@ -142,6 +142,25 @@ export function useWrites(onToast: (text: string) => void) {
     [act, clients.questions],
   );
 
+  // later puts an open question off for later, to the bottom of its list, or gives it its place back with clear.
+  const later = useCallback(
+    (wishId: string, id: string, clear: boolean) =>
+      act(
+        wishId,
+        async () => {
+          const res = await clients.questions.later({
+            question: { ref: { case: "id", value: id } },
+            wishId,
+            clear,
+          });
+          // It takes its new place now, whatever the reads that follow take.
+          if (res.question) store.putQuestion(res.question);
+        },
+        QUESTIONS_CHANGES,
+      ),
+    [act, clients.questions, store],
+  );
+
   return useMemo(
     () => ({
       clients,
@@ -152,7 +171,8 @@ export function useWrites(onToast: (text: string) => void) {
       review,
       move,
       withdraw,
+      later,
     }),
-    [clients, act, quiet, answer, enlighten, review, move, withdraw],
+    [clients, act, quiet, answer, enlighten, review, move, withdraw, later],
   );
 }

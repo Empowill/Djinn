@@ -18,6 +18,8 @@
 // is a decision: no mark asks to read or approve it again, and the decision log shows it. Djinn types each answer in
 // the lead's terminal; a wish without a lead session has no lead to tell, and the card says so. Its rounds, each
 // request and each revision, fold below; a grey line says when it was asked, and revised.
+// Two small buttons sit in its top right corner: Later sends it to the bottom of its list, where it stays (Djinn keeps
+// when, Question.laterTime), and, pressed, gives it its place back; Move takes it to another wish.
 // A gesture shows, by key or by click: its button stays pressed a moment and the answer leaves as it comes back up,
 // while the card glows in the colour of the gesture, the lamp's brass or a cool light, and a wisp of smoke rises
 // from the button (review.css). Reduced motion keeps the colour, without the movement.
@@ -26,6 +28,8 @@ import {
   Check,
   ChevronDown,
   CircleOff,
+  ClockArrowDown,
+  ClockArrowUp,
   CornerDownRight,
   FileText,
   History,
@@ -100,6 +104,7 @@ export const WishQuestion = memo(function WishQuestion({
   onEnlighten,
   onMove,
   onWithdraw,
+  onLater,
 }: {
   question: Question;
   // Where the question comes from, in the flying carpet of several wishes: its wish.
@@ -130,6 +135,8 @@ export const WishQuestion = memo(function WishQuestion({
   onMove?: (question: Question) => void;
   // Withdraws an open question without an answer.
   onWithdraw?: (question: Question) => void;
+  // Puts an open question off for later, to the bottom of its list, or gives it its place back when it is.
+  onLater?: (question: Question) => void;
 }) {
   const answered = !!q.answer;
   const withdrawn = isWithdrawn(q);
@@ -583,11 +590,34 @@ export const WishQuestion = memo(function WishQuestion({
   const move = onMove && (
     <TooltipButton
       label={t("question.move")}
-      className="question-move"
+      className="question-corner-button question-move"
       onClick={() => onMove(q)}
     >
       <ArrowRightLeft size={14} aria-hidden="true" />
     </TooltipButton>
+  );
+  // Later, beside it: pressed while the question is put off, its tooltip says what a click does.
+  const putOff = !!q.laterTime;
+  const later = onLater && (
+    <TooltipButton
+      label={t("question.later")}
+      tooltip={t(putOff ? "question.later_undo" : "question.later_detail")}
+      className={`question-corner-button question-later${putOff ? " is-pressed" : ""}`}
+      aria-pressed={putOff}
+      onClick={() => onLater(q)}
+    >
+      {putOff ? (
+        <ClockArrowUp size={14} aria-hidden="true" />
+      ) : (
+        <ClockArrowDown size={14} aria-hidden="true" />
+      )}
+    </TooltipButton>
+  );
+  const corner = (later || move) && (
+    <div className="question-corner">
+      {later}
+      {move}
+    </div>
   );
   const body = answered || withdrawn ? expanded : !folded;
   // An open move shows where to act first, as a button.
@@ -640,7 +670,7 @@ export const WishQuestion = memo(function WishQuestion({
             {askedLine}
           </p>
         </div>
-        {current && move}
+        {current && corner}
         {current && (
           <div className="question-open">
             {link && (
@@ -715,7 +745,7 @@ export const WishQuestion = memo(function WishQuestion({
         ) : (
           <div className="question-heading">{heading}</div>
         )}
-        {!answered && !withdrawn && !folded && move}
+        {!answered && !withdrawn && !folded && corner}
       </div>
       {body && (
         <div className="question-inner">

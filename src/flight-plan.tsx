@@ -99,7 +99,7 @@ export function FlightPlan({
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
   useStickyRoom(scrollRef, false);
-  const { clients, act, quiet, answer, enlighten, move, withdraw } =
+  const { clients, act, quiet, answer, enlighten, move, withdraw, later } =
     useWrites(onToast);
   const waits =
     plan.questions.length +
@@ -151,6 +151,11 @@ export function FlightPlan({
     (question: Question) =>
       setWithdrawingQuestion({ wishId: question.wishId, question }),
     [],
+  );
+  const laterQuestion = useCallback(
+    (question: Question) =>
+      later(question.wishId, question.id, !!question.laterTime),
+    [later],
   );
   // The questions column, one group per wish (question-column.tsx).
   const questionsByWish = useMemo(
@@ -623,6 +628,7 @@ export function FlightPlan({
                     onEnlighten={handleQuestionEnlighten}
                     onMove={moveQuestion}
                     onWithdraw={withdrawQuestion}
+                    onLater={laterQuestion}
                   />
                   {plan.waiting.length +
                     plan.proofs.length +

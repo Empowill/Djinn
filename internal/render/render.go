@@ -319,8 +319,8 @@ func build(in Input) (*view, error) {
 	blocking := Blocked(exp.GetTasks())
 
 	// Open questions, the blocking ones first, then those needed before something, then those that can wait; each in
-	// the order they were asked. Decisions, the latest first.
-	for _, q := range exp.GetQuestions() {
+	// the order they were asked, or put off for later (Place). Decisions, the latest first.
+	for _, q := range slices.SortedStableFunc(slices.Values(exp.GetQuestions()), ByPlace) {
 		if q.GetAnswer() != nil || q.GetWithdrawal() != nil {
 			continue
 		}
@@ -1196,6 +1196,15 @@ func summary(
 			code = q.GetCode()
 		}
 		return strings.TrimSpace(code + " " + m.GetNote())
+	case *planv1.QuestionServiceLaterRequest:
+		code := m.GetQuestion().GetCode()
+		if q := questions[m.GetQuestion().GetId()]; q != nil {
+			code = q.GetCode()
+		}
+		if m.GetClear() {
+			return strings.TrimSpace(code + " --clear")
+		}
+		return code
 	case *planv1.BlockServicePutRequest:
 		return strings.TrimSpace(m.GetKind() + " " + m.GetTitle())
 	case *planv1.TaskServiceSpawnRequest:

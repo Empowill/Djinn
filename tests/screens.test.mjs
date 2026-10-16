@@ -546,7 +546,7 @@ test("a question shows its options by letter and its recommendation; answered, w
   // lamp; B, recommended, is the one rubbed.
   assert.match(
     lamp,
-    /<\/div><button class="question-move" type="button" aria-label="Move to another wish"><svg[^>]*>(?:(?!<\/svg>).)*<\/svg><\/button><\/div>/,
+    /<\/div><div class="question-corner"><button class="question-corner-button question-move" type="button" aria-label="Move to another wish"><svg[^>]*>(?:(?!<\/svg>).)*<\/svg><\/button><\/div><\/div>/,
   );
   assert.doesNotMatch(lamp, /question-move"[^>]*title=/);
   assert.ok(
@@ -833,6 +833,59 @@ test("a gesture presses its button and the card answers back in its colour", asy
   assert.match(refused.html(), /gesture-rub/);
   await refused.settle();
   assert.doesNotMatch(refused.html(), /gesture-|is-pressed|question-wisp/);
+});
+
+test("Later sits before Move in a question's top right corner, pressed while the question is put off", () => {
+  const question = {
+    id: "q1",
+    code: "Q01",
+    text: "Which oil?",
+    options: ["Olive", "Paraffin"],
+    recommendation: "",
+    rounds: [],
+    revision: 0,
+    createTime: { seconds: 1_760_000_000n, nanos: 0 },
+  };
+  const later = [];
+  const card = live(s.WishQuestion, {
+    question,
+    onAnswer: async () => {},
+    onMove: () => {},
+    onLater: (q) => later.push(q.code),
+  });
+  // Two icons named by their labels, Later first; not pressed, its icon says it goes down.
+  assert.match(
+    card.html(),
+    /<div class="question-corner"><button class="question-corner-button question-later" aria-pressed="false" type="button" aria-label="Later"><svg[^>]*lucide-clock-arrow-down[^>]*>(?:(?!<\/svg>).)*<\/svg><\/button><button class="question-corner-button question-move" type="button" aria-label="Move to another wish">/,
+  );
+  assert.doesNotMatch(card.html(), /put off/);
+  card.one("question-later").onClick();
+  assert.deepEqual(later, ["Q01"]);
+
+  // Put off: pressed, its icon says it comes back up, and the grey line says when.
+  card.update({
+    question: {
+      ...question,
+      laterTime: { seconds: 1_760_000_600n, nanos: 0 },
+    },
+  });
+  assert.match(
+    card.html(),
+    /<button class="question-corner-button question-later is-pressed" aria-pressed="true" type="button" aria-label="Later"><svg[^>]*lucide-clock-arrow-up/,
+  );
+  assert.match(card.html(), /asked [^<]* · put off (?:at|[^<]* at) /);
+  card.one("question-later").onClick();
+  assert.deepEqual(later, ["Q01", "Q01"]);
+
+  // Without the write, no Later: Move alone in the corner.
+  const alone = s.renderToStaticMarkup(
+    h(s.WishQuestion, { question, onAnswer: async () => {}, onMove: () => {} }),
+  );
+  assert.doesNotMatch(alone, /question-later/);
+  assert.match(
+    alone,
+    /<div class="question-corner"><button class="question-corner-button question-move"/,
+  );
 });
 
 test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enlighten, Withdraw, Move, composing, arrows, 1-4, and macOS hints", async () => {
@@ -1232,7 +1285,7 @@ test("the questions column groups the open questions by wish, the first open in 
   );
   assert.match(
     rows[0],
-    /<\/p><\/div><button class="question-move" type="button" aria-label="Move to another wish"><svg[^>]*>(?:(?!<\/svg>).)*<\/svg><\/button><div class="question-open">/,
+    /<\/p><\/div><div class="question-corner"><button class="question-corner-button question-move" type="button" aria-label="Move to another wish"><svg[^>]*>(?:(?!<\/svg>).)*<\/svg><\/button><\/div><div class="question-open">/,
   );
   assert.doesNotMatch(rows[0], /read-more|Read more/);
   assert.match(rows[0], /<h2>Versions<\/h2>\s*<h3>Round 0<\/h3>/);
