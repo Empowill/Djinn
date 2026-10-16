@@ -134,16 +134,16 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await page.setViewportSize({ width: 1440, height: 2200 });
   await page.goto(process.env.DJINN_URL!);
   await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
-  // The bar of what waits: one line per question that holds up the wish and one for the worker that failed, a click
-  // goes there; the one needed before the first light under those words, the worker needing an action. The other
-  // question can wait: the questions column alone shows it. W3, cut short and not resumed by Djinn, asks nothing: it
-  // is history.
+  // The bar of what waits: one line per question that holds up the wish, a click goes there; the one needed before
+  // the first light under those words. The other question can wait: the questions column alone shows it. W2, failed,
+  // is the lead's, never the developer's (W96, Q273); W3, cut short and not resumed by Djinn, asks nothing: it is
+  // history.
   const bar = page.locator(".attention-bar");
-  await expect(bar).toContainText("2 things wait for you");
+  await expect(bar).toContainText("1 thing waits for you");
   await expect(bar.locator(".attention-level")).toHaveText([
     "before the first light",
-    "Worker",
   ]);
+  await expect(bar).not.toContainText("W2");
   await expect(bar).not.toContainText("W3");
   await expect(
     page
@@ -207,8 +207,8 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     "You asked: How long does each burn?",
   );
   await expect(digging.locator("textarea, .option")).toHaveCount(0);
-  // Out of the bar too: the worker's line stays, the question that can wait never was one.
-  await expect(bar.locator(".attention-item")).toHaveCount(1);
+  // Out of the bar too: the question that can wait never was in it, so nothing waits there.
+  await expect(bar.locator(".attention-item")).toHaveCount(0);
   await digging.screenshot({
     path: path.join(shots, "review-question-folded.png"),
   });
