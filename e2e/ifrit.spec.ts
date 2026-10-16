@@ -78,8 +78,16 @@ test("a lit ifrit shows on its wish in vermilion, its band first in what waits f
   ).wish.id as string;
   let ifritId = "";
   try {
-    // A question about nothing in particular, asked first: it stays below the band.
-    djinn("question", "ask", "Which wick for the lamp?", wishId);
+    // A question about nothing in particular, asked first: it stays below the band. Each question here is needed before
+    // something, so it holds up the wish: one that can wait is in the questions column alone, never in the bar.
+    djinn(
+      "question",
+      "ask",
+      "Which wick for the lamp?",
+      wishId,
+      "--before",
+      "the first light",
+    );
     const ifrit = JSON.parse(
       djinn(
         "task",
@@ -113,6 +121,8 @@ test("a lit ifrit shows on its wish in vermilion, its band first in what waits f
       wishId,
       "--task-id",
       ifritId,
+      "--before",
+      "the first light",
     );
     djinn(
       "question",
@@ -121,6 +131,8 @@ test("a lit ifrit shows on its wish in vermilion, its band first in what waits f
       wishId,
       "--about",
       code,
+      "--before",
+      "the first light",
     );
 
     await page.setViewportSize({ width: 1440, height: 1000 });

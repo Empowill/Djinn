@@ -106,10 +106,15 @@ test("a revision reaches the card under investigation without a reload", async (
     await expect(question).not.toHaveClass(/investigating/);
     await expect(question).toHaveClass(/open/);
     await expect(question.locator(".revised-badge")).toHaveText("Revised");
-    // The whole context: what the worker found, then the history of its versions, never cut (mockup L04 v2).
+    // The whole context: what the worker found, then the history of its versions folded under Previous versions,
+    // closed, never cut (mockup L04 v2, W69).
     const headings = question.locator(".question-context h2");
-    await expect(headings).toHaveCount(2);
+    await expect(headings).toHaveCount(1);
     await expect(headings.first()).toHaveText("What the worker found");
+    const history = question.locator(".question-history");
+    await expect(history.locator("summary")).toHaveText("Previous versions");
+    await expect(history).not.toHaveAttribute("open");
+    await expect(history.locator("h3")).toHaveText("Tour 0 (initial)");
     await expect(
       question.getByRole("button", { name: /Linen, twice as long/ }),
     ).toHaveAttribute("aria-pressed", "true");
