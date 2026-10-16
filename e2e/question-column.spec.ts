@@ -287,7 +287,34 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
     await expect(row(heir)).toHaveClass(/current/);
     await expect(row(heir)).toBeFocused();
 
-    // Narrow: one column, the wishes first as today, then the questions.
+    // The glance on the right (Decision Q08): each wish under its title, nothing running here. It stays in sight
+    // while the long question scrolls by.
+    const glance = page.locator(".glance");
+    await expect(glance.locator(".glance-head button")).toHaveText(titles);
+    await expect(glance.locator(".glance-quiet")).toHaveText([
+      "Nothing runs, nothing planned.",
+      "Nothing runs, nothing planned.",
+    ]);
+    await expect(glance.locator(".glance-narrow")).toBeHidden();
+    await open("Which oil for the lamp?");
+    await scroller.evaluate((el) => el.scrollTo(0, 0));
+    const startTop = (await glance.boundingBox())!.y;
+    await scroller.evaluate((el) => el.scrollBy(0, 900));
+    await expect
+      .poll(async () => (await glance.boundingBox())!.y)
+      .toBeLessThan(startTop);
+    const stuck = await page.evaluate(() => {
+      const top = document
+        .querySelector(".mission-scroll")!
+        .getBoundingClientRect().top;
+      return (
+        document.querySelector(".glance")!.getBoundingClientRect().top - top
+      );
+    });
+    expect(stuck).toBeGreaterThanOrEqual(0);
+    expect(stuck).toBeLessThan(200);
+
+    // Narrow: one column, the glance first, one line per wish, then the questions.
     await page.setViewportSize({ width: 720, height: 900 });
     await expect
       .poll(() =>
@@ -296,13 +323,25 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
           .evaluate((el) => getComputedStyle(el).gridTemplateColumns),
       )
       .not.toContain(" ");
+    await expect(glance.locator(".glance-wide")).toBeHidden();
+    await expect(glance.locator(".glance-line .name")).toHaveText(titles);
+    await expect(glance.locator(".glance-line-marks")).toHaveText([
+      "nothing",
+      "nothing",
+    ]);
+    expect((await glance.boundingBox())!.y).toBeLessThan(
+      (await column.boundingBox())!.y,
+    );
     await open("Which wick?");
     await page.locator(".mission-scroll").evaluate((el) => el.scrollTo(0, 0));
     await shoot(page, "narrow");
 
     // A wish's page shows its own questions only, with no heading.
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.locator(".plan-wish").filter({ hasText: lampTitle }).click();
+    await page
+      .locator(".glance-head button")
+      .filter({ hasText: lampTitle })
+      .click();
     await expect(page.locator(".hero h1")).toHaveText(lampTitle);
     await expect(rows.locator(".question-row-title")).toHaveText(
       asked[lampTitle],
