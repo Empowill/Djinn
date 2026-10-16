@@ -168,6 +168,9 @@ type Event struct {
 	// Ifrit is set by a worker started with Spec.Listen when its agent starts a turn on a message (WORKING), and
 	// when the turn ends and the agent waits on its open input (LISTENING).
 	Ifrit planv1.IfritState
+	// Serve is set by Djinn on an event of an ifrit's serve (serve.go): the serve as it stands now, which replaces the
+	// one of its name in Task.ifrit.serves.
+	Serve *planv1.Serve
 	// Turns is how many model turns the worker took so far, on the first event of a new one: the Lamplighter's count
 	// grows as they come, not only at a result (num_turns).
 	Turns int

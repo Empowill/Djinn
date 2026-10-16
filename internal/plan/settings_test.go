@@ -275,6 +275,7 @@ func TestResolveSettings(t *testing.T) {
 		got.Babysit, got.BabysitFrom = false, 0
 		// Watch commands are TestWatchCommandsSettings'.
 		got.WatchCommands, got.WatchCommandsFrom = nil, 0
+		got.ServeCommands, got.ServeCommandsFrom = nil, 0
 		// Install builds is TestInstallBuildsSettings'.
 		got.InstallBuilds, got.InstallBuildsFrom = false, 0
 		if !reflect.DeepEqual(got, c.want) {
@@ -391,6 +392,20 @@ func TestWatchCommandsSettings(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".agents")); !os.IsNotExist(err) {
 		t.Errorf("the repository was touched: %v", err)
+	}
+	// An ifrit's serve commands (djinn project allow --serve), beside the watcher's.
+	serveRes, err := c.projects.Allow(ctx, connect.NewRequest(&planv1.ProjectServiceAllowRequest{Project: "dolmen", Serve: proto.String("npm  run dev")}))
+	if err != nil || !slices.Equal(serveRes.Msg.GetServeCommands(), []string{"npm run dev"}) ||
+		!slices.Equal(serveRes.Msg.GetWatchCommands(), []string{"glab mr view"}) {
+		t.Errorf("a serve command allowed: %v, %v", serveRes, err)
+	}
+	if _, err := c.projects.Allow(ctx, connect.NewRequest(&planv1.ProjectServiceAllowRequest{
+		Project: "dolmen", Serve: proto.String("npm run dev"), Watch: proto.String("glab mr view"),
+	})); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("--serve and --watch at once: %v", err)
+	}
+	if s := ResolveSettings(&planv1.ProjectSettings{ServeCommands: []string{"rm -rf"}}, nil); len(s.ServeCommands) != 0 {
+		t.Errorf("the repository's serve commands: %q, want none", s.ServeCommands)
 	}
 
 	writeSettings(t, filepath.Join(dir, SettingsFile), "watch_commands: \"rm -rf\"\n")
@@ -607,7 +622,7 @@ func TestProjectShow(t *testing.T) {
 		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetProblems(), repoFile, devFile)
 	}
 	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT, "+
-		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
+		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
 		t.Errorf("no file: %s; want %s", got, want)
 	}
 	var question []string
@@ -626,7 +641,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY, "+
 		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/schema.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
 		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
 	}
 
@@ -636,7 +651,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=djinn/{code}-{uuid8} REPOSITORY, generated=gen/**,docs/schema.json REPOSITORY, "+
 		"generate=go tool task gen REPOSITORY, setup= DEFAULT, checks=test: go tool task test (commit) REPOSITORY, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)
 	}
 	if len(res.GetProblems()) != 1 || !strings.Contains(res.GetProblems()[0], devFile) {

@@ -157,6 +157,11 @@ type Harness struct {
 	// they hold (Resident), without waiting for a pass or a spawn that holds mu. Taken after mu, never before it.
 	useMu    sync.Mutex
 	resident map[string]uint64 // by task ID: the resident memory of a worker, as last read, watchers left out
+
+	// The serves the ifrits run (serve.go), apart from mu: a serve's start and stop take seconds. Never taken with mu
+	// held, nor mu with it.
+	servesMu sync.Mutex
+	serving  map[string]*ifritServes // by task ID
 }
 
 // run is a task at work: its worker, or the workers it runs one after the other when the task starts again.
@@ -328,12 +333,16 @@ func (h *Harness) Close() {
 // running, and those it stopped as it ended, interrupted since it started (lastStart). First, the azimas stored as
 // work before tasks had kinds become azimas (migrateAzimas), and a task part of an azima that is gone becomes part of
 // none (ungroupOrphans). Before all, the processes the last djinn up started and left running are stopped
-// (children.sweep), so that no task resumes beside its old worker: the restart event names them.
+// (children.sweep), so that no task resumes beside its old worker: the restart event names them; an ifrit's serves
+// they ran are stopped, their stop commands run (recoverServes).
 func (h *Harness) Recover(ctx context.Context) error {
 	orphans := h.children.sweep()
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
+		return err
+	}
+	if err := h.recoverServes(ctx, tasks); err != nil {
 		return err
 	}
 	if err := h.rebuildTaskRunsFromJournal(ctx, tasks); err != nil {
@@ -1276,6 +1285,9 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		t.Model = DefaultModel(t.GetProvider())
 	}
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
+	if r.ifrit {
+		h.relightServes(r, spec.Dir) // Before its agent: the message it was lit for may be about them.
+	}
 	// A worker that calls djinn knows its task; the Git guard keeps it from pushing.
 	guard, err := gitGuard(h.home, spec.Dir)
 	if err != nil {
@@ -1438,7 +1450,7 @@ func (h *Harness) drain(r *run) Result {
 			}
 			h.record(r, ev)
 		case ev := <-r.notes:
-			h.write(r, actorHarness, methodEvent, nil, ev)
+			h.note(r, ev)
 		case m := <-r.sends:
 			m.reply <- h.deliver(r, m)
 		case written := <-r.holds:
@@ -1696,10 +1708,13 @@ func (h *Harness) agyDoneAfterWork(r *run, res Result) bool {
 // process then exited 0, fails the task with the reason. But a failure its provider's usage limit caused is no
 // failure: the task waits for the limit to reset, and resumes.
 func (h *Harness) end(r *run, res Result) {
+	if r.ifrit {
+		h.endServes(r) // Before the notes: what its serves said before they stopped is stale now.
+	}
 	for flushed := false; !flushed; {
 		select {
 		case ev := <-r.notes:
-			h.write(r, actorHarness, methodEvent, nil, ev)
+			h.note(r, ev)
 		default:
 			flushed = true
 		}

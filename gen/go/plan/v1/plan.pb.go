@@ -2806,6 +2806,11 @@ type ProjectSettings struct {
 	// priority, once no gate runs and the machine is not under pressure; the restart is left to the person's click.
 	// Other branches' builds are only offered. Not set: on.
 	InstallBuilds *bool `protobuf:"varint,28,opt,name=install_builds,json=installBuilds,proto3,oneof" json:"install_builds,omitempty"`
+	// Commands an ifrit's serve may run in the project (djinn serve run), or the start of each on a word boundary,
+	// besides those .agents/permissions.txtpb lists: its command and its stop command. A developer's own allowance, read
+	// from their own file only (djinn project allow --serve), like watch_commands; the project's denied_commands still
+	// win. Not set: none.
+	ServeCommands []string `protobuf:"bytes,29,rep,name=serve_commands,json=serveCommands,proto3" json:"serve_commands,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3020,6 +3025,13 @@ func (x *ProjectSettings) GetInstallBuilds() bool {
 		return *x.InstallBuilds
 	}
 	return false
+}
+
+func (x *ProjectSettings) GetServeCommands() []string {
+	if x != nil {
+		return x.ServeCommands
+	}
+	return nil
 }
 
 // ProjectCheck is a command Djinn runs on a project's work: checks { name: "lint" command: "go tool task lint" when:
@@ -6172,7 +6184,10 @@ type Serve struct {
 	// When it last started.
 	StartTime *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	// The ports it listens on, found or declared.
-	Ports         []*Port `protobuf:"bytes,9,rep,name=ports,proto3" json:"ports,omitempty"`
+	Ports []*Port `protobuf:"bytes,9,rep,name=ports,proto3" json:"ports,omitempty"`
+	// It starts again when its ifrit is lit again: set as it starts, kept while its ifrit is out, cleared once djinn
+	// serve stop stopped it.
+	Relight       bool `protobuf:"varint,10,opt,name=relight,proto3" json:"relight,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6268,6 +6283,13 @@ func (x *Serve) GetPorts() []*Port {
 		return x.Ports
 	}
 	return nil
+}
+
+func (x *Serve) GetRelight() bool {
+	if x != nil {
+		return x.Relight
+	}
+	return false
 }
 
 // Port is a port a serve listens on, shown as a link (http://localhost:5173/).
@@ -9190,6 +9212,8 @@ type ProjectServiceShowResponse struct {
 	Warnings []string `protobuf:"bytes,8,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	// The watcher commands you allow in the project for yourself (djinn project allow --watch), from your own file.
 	WatchCommands []string `protobuf:"bytes,9,rep,name=watch_commands,json=watchCommands,proto3" json:"watch_commands,omitempty"`
+	// The serve commands you allow in the project for yourself (djinn project allow --serve), from your own file.
+	ServeCommands []string `protobuf:"bytes,10,rep,name=serve_commands,json=serveCommands,proto3" json:"serve_commands,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -9283,6 +9307,13 @@ func (x *ProjectServiceShowResponse) GetWarnings() []string {
 func (x *ProjectServiceShowResponse) GetWatchCommands() []string {
 	if x != nil {
 		return x.WatchCommands
+	}
+	return nil
+}
+
+func (x *ProjectServiceShowResponse) GetServeCommands() []string {
+	if x != nil {
+		return x.ServeCommands
 	}
 	return nil
 }
@@ -9618,10 +9649,13 @@ type ProjectServiceAllowRequest struct {
 	// The project, by name (case ignored) or identifier.
 	Project string `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
 	// A command a watcher may run in the project, or its start: a command that is it, or starts with it before a space,
-	// runs. Not set: show the commands you allow.
+	// runs. Neither this nor --serve: show the commands you allow.
 	Watch *string `protobuf:"bytes,2,opt,name=watch,proto3,oneof" json:"watch,omitempty"`
 	// Take the command back instead of allowing it.
-	Revoke        bool `protobuf:"varint,3,opt,name=revoke,proto3" json:"revoke,omitempty"`
+	Revoke bool `protobuf:"varint,3,opt,name=revoke,proto3" json:"revoke,omitempty"`
+	// A command an ifrit's serve may run in the project (djinn serve run), or its start, as --watch is for a watcher;
+	// not with --watch.
+	Serve         *string `protobuf:"bytes,4,opt,name=serve,proto3,oneof" json:"serve,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -9677,12 +9711,21 @@ func (x *ProjectServiceAllowRequest) GetRevoke() bool {
 	return false
 }
 
+func (x *ProjectServiceAllowRequest) GetServe() string {
+	if x != nil && x.Serve != nil {
+		return *x.Serve
+	}
+	return ""
+}
+
 type ProjectServiceAllowResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The watcher commands you allow in the project, from your own settings file.
 	WatchCommands []string `protobuf:"bytes,1,rep,name=watch_commands,json=watchCommands,proto3" json:"watch_commands,omitempty"`
 	// Your settings file, in Djinn's data folder.
 	DeveloperFile string `protobuf:"bytes,2,opt,name=developer_file,json=developerFile,proto3" json:"developer_file,omitempty"`
+	// The serve commands you allow in the project, from your own settings file.
+	ServeCommands []string `protobuf:"bytes,3,rep,name=serve_commands,json=serveCommands,proto3" json:"serve_commands,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -9729,6 +9772,13 @@ func (x *ProjectServiceAllowResponse) GetDeveloperFile() string {
 		return x.DeveloperFile
 	}
 	return ""
+}
+
+func (x *ProjectServiceAllowResponse) GetServeCommands() []string {
+	if x != nil {
+		return x.ServeCommands
+	}
+	return nil
 }
 
 type ProjectServiceBranchesRequest struct {
@@ -20283,7 +20333,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x14\n" +
 	"\x05skill\x18\x02 \x01(\tR\x05skill\x12;\n" +
 	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\"\xf3\x0f\n" +
+	"createTime\"\xad\x10\n" +
 	"\x0fProjectSettings\x12@\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x11.plan.v1.ProviderB\f\xbaH\t\x82\x01\x06\x10\x01 \x00 \x05H\x00R\bprovider\x88\x01\x01\x12=\n" +
 	"\x05model\x18\x02 \x01(\tB\"\xbaH\x1fr\x1d\x18\xc8\x012\x18^[A-Za-z0-9._:@/\\[\\]-]*$H\x01R\x05model\x88\x01\x01\x12B\n" +
@@ -20319,7 +20369,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x14R\x10installQuestions\x88\x01\x01\x12\x1d\n" +
 	"\ababysit\x18\x1a \x01(\bH\x15R\ababysit\x88\x01\x01\x128\n" +
 	"\x0ewatch_commands\x18\x1b \x03(\tB\x11\xbaH\x0e\x92\x01\v\x102\"\ar\x05\x10\x01\x18\xf4\x03R\rwatchCommands\x12*\n" +
-	"\x0einstall_builds\x18\x1c \x01(\bH\x16R\rinstallBuilds\x88\x01\x01B\v\n" +
+	"\x0einstall_builds\x18\x1c \x01(\bH\x16R\rinstallBuilds\x88\x01\x01\x128\n" +
+	"\x0eserve_commands\x18\x1d \x03(\tB\x11\xbaH\x0e\x92\x01\v\x102\"\ar\x05\x10\x01\x18\xf4\x03R\rserveCommandsB\v\n" +
 	"\t_providerB\b\n" +
 	"\x06_modelB\x11\n" +
 	"\x0f_max_budget_usdB\t\n" +
@@ -20654,7 +20705,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\fidle_minutes\x18\x04 \x01(\rR\vidleMinutes\x12&\n" +
 	"\x06serves\x18\x05 \x03(\v2\x0e.plan.v1.ServeR\x06serves\x12\x14\n" +
 	"\x05reply\x18\x06 \x01(\tR\x05reply\x125\n" +
-	"\blistened\x18\a \x01(\v2\x19.google.protobuf.DurationR\blistened\"\xe5\x02\n" +
+	"\blistened\x18\a \x01(\v2\x19.google.protobuf.DurationR\blistened\"\xff\x02\n" +
 	"\x05Serve\x128\n" +
 	"\x04name\x18\x01 \x01(\tB$\xbaH!r\x1f2\x1d^[A-Za-z][A-Za-z0-9_-]{0,39}$R\x04name\x12\"\n" +
 	"\acommand\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\acommand\x12&\n" +
@@ -20665,7 +20716,9 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05state\x18\a \x01(\x0e2\x13.plan.v1.ServeStateR\x05state\x129\n" +
 	"\n" +
 	"start_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\x12#\n" +
-	"\x05ports\x18\t \x03(\v2\r.plan.v1.PortR\x05ports\"\x9d\x01\n" +
+	"\x05ports\x18\t \x03(\v2\r.plan.v1.PortR\x05ports\x12\x18\n" +
+	"\arelight\x18\n" +
+	" \x01(\bR\arelight\"\x9d\x01\n" +
 	"\x04Port\x12#\n" +
 	"\x06number\x18\x01 \x01(\rB\v\xbaH\b*\x06\x18\xff\xff\x03(\x01R\x06number\x12\x1d\n" +
 	"\x05label\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x18(R\x05label\x12!\n" +
@@ -20903,7 +20956,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\bprojects\x18\x01 \x03(\v2\x10.plan.v1.ProjectR\bprojects\"A\n" +
 	"\x19ProjectServiceShowRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
-	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\"\xf1\x02\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\"\x98\x03\n" +
 	"\x1aProjectServiceShowResponse\x12*\n" +
 	"\aproject\x18\x01 \x01(\v2\x10.plan.v1.ProjectR\aproject\x123\n" +
 	"\bsettings\x18\x02 \x03(\v2\x17.plan.v1.ProjectSettingR\bsettings\x12'\n" +
@@ -20913,7 +20966,9 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05setup\x18\x06 \x01(\tR\x05setup\x12-\n" +
 	"\x06checks\x18\a \x03(\v2\x15.plan.v1.ProjectCheckR\x06checks\x12\x1a\n" +
 	"\bwarnings\x18\b \x03(\tR\bwarnings\x12%\n" +
-	"\x0ewatch_commands\x18\t \x03(\tR\rwatchCommands\"\x9e\x01\n" +
+	"\x0ewatch_commands\x18\t \x03(\tR\rwatchCommands\x12%\n" +
+	"\x0eserve_commands\x18\n" +
+	" \x03(\tR\rserveCommands\"\x9e\x01\n" +
 	"\x19ProjectServicePushRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\x12 \n" +
@@ -20939,17 +20994,21 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\t_strategy\"\x87\x01\n" +
 	"\"ProjectServicePushStrategyResponse\x121\n" +
 	"\bstrategy\x18\x01 \x01(\x0e2\x15.plan.v1.PushStrategyR\bstrategy\x12.\n" +
-	"\x06source\x18\x02 \x01(\x0e2\x16.plan.v1.SettingSourceR\x06source\"\x8b\x01\n" +
+	"\x06source\x18\x02 \x01(\x0e2\x16.plan.v1.SettingSourceR\x06source\"\xbc\x01\n" +
 	"\x1aProjectServiceAllowRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\x12%\n" +
 	"\x05watch\x18\x02 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\xf4\x03H\x00R\x05watch\x88\x01\x01\x12\x16\n" +
-	"\x06revoke\x18\x03 \x01(\bR\x06revokeB\b\n" +
-	"\x06_watch\"k\n" +
+	"\x06revoke\x18\x03 \x01(\bR\x06revoke\x12%\n" +
+	"\x05serve\x18\x04 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xf4\x03H\x01R\x05serve\x88\x01\x01B\b\n" +
+	"\x06_watchB\b\n" +
+	"\x06_serve\"\x92\x01\n" +
 	"\x1bProjectServiceAllowResponse\x12%\n" +
 	"\x0ewatch_commands\x18\x01 \x03(\tR\rwatchCommands\x12%\n" +
-	"\x0edeveloper_file\x18\x02 \x01(\tR\rdeveloperFile\"E\n" +
+	"\x0edeveloper_file\x18\x02 \x01(\tR\rdeveloperFile\x12%\n" +
+	"\x0eserve_commands\x18\x03 \x03(\tR\rserveCommands\"E\n" +
 	"\x1dProjectServiceBranchesRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\"]\n" +

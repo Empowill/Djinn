@@ -62,6 +62,7 @@ read from **your own file only**, never from the repository's (which lists its c
 | Setting          | What it sets                                                            | Not set |
 | ---------------- | ----------------------------------------------------------------------- | ------- |
 | `watch_commands` | The commands a watcher may run in the project besides those `.agents/permissions.txtpb` lists, each a command or its start on a word boundary, repeated: see [what a watcher may run](wish-templates.md#what-a-watcher-may-run). The project's `denied_commands` still win. `djinn project allow <project> --watch '<command>'` adds one (`--revoke` takes it back), as does the project's panel in the window; `djinn project show` lists them, from `DEVELOPER`. | none |
+| `serve_commands` | The commands an ifrit's serve may run in the project (`djinn serve run`, its command and its `--stop` command) besides those `.agents/permissions.txtpb` lists, by the same rule as `watch_commands`, read from your own file only. The project's `denied_commands` still win. `djinn project allow <project> --serve '<command>'` adds one (`--revoke` takes it back); `djinn project show` lists them, from `DEVELOPER`. | none |
 
 Four more set the *investigators*, the small tasks Djinn starts by itself on a question of a wish after
 "Enlighten me": `Q03: enlighten` investigates and revises the question (see [agent protocol](agent-protocol.md)).

@@ -198,6 +198,9 @@ type Settings struct {
 	// WatchCommands are the commands, or their starts, the developer lets a watcher run in the project besides those
 	// its .agents/permissions.txtpb lists: from their own file only.
 	WatchCommands []string
+	// ServeCommands are the commands, or their starts, the developer lets an ifrit's serve run in the project besides
+	// those its .agents/permissions.txtpb lists: from their own file only.
+	ServeCommands []string
 	// InstallBuilds says whether a build of the running Djinn's line, once pushed, installs by itself (W554).
 	InstallBuilds bool
 	Warnings      []string
@@ -208,6 +211,7 @@ type Settings struct {
 	QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                                        planv1.SettingSource
 	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom, PushStrategyFrom planv1.SettingSource
 	InstallQuestionsFrom, BabysitFrom, WatchCommandsFrom, InstallBuildsFrom                            planv1.SettingSource
+	ServeCommandsFrom                                                                                  planv1.SettingSource
 }
 
 // CanReadOnly tells whether a provider can run a question worker (read-only).
@@ -258,7 +262,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		PushStrategy:     planv1.PushStrategy_PUSH_STRATEGY_WISH,
 		InstallQuestions: DefaultInstallQuestions,
 		MainBranchFrom:   def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def, PushStrategyFrom: def,
-		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def, WatchCommandsFrom: def, InstallBuilds: true, InstallBuildsFrom: def,
+		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def, WatchCommandsFrom: def, ServeCommandsFrom: def, InstallBuilds: true, InstallBuildsFrom: def,
 	}
 	questionModel := false // a file set it
 	for _, f := range []struct {
@@ -347,6 +351,9 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		if len(f.settings.GetWatchCommands()) > 0 && f.from == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
 			s.WatchCommands, s.WatchCommandsFrom = f.settings.GetWatchCommands(), f.from
 		}
+		if len(f.settings.GetServeCommands()) > 0 && f.from == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+			s.ServeCommands, s.ServeCommandsFrom = f.settings.GetServeCommands(), f.from
+		}
 	}
 	effective := s.QuestionProvider
 	if effective == planv1.Provider_PROVIDER_UNSPECIFIED {
@@ -403,6 +410,10 @@ func loadSettings(home string, project *planv1.Project) (repo, dev *planv1.Proje
 				w = append(w, repoFile+": watch_commands is ignored: a developer allows a watcher command in their own "+
 					"file (djinn project allow --watch), the repository lists its commands in .agents/permissions.txtpb")
 			}
+			if len(repo.GetServeCommands()) > 0 {
+				w = append(w, repoFile+": serve_commands is ignored: a developer allows a serve command in their own "+
+					"file (djinn project allow --serve), the repository lists its commands in .agents/permissions.txtpb")
+			}
 			for _, warn := range w {
 				if !slices.Contains(warnings, warn) {
 					warnings = append(warnings, warn)
@@ -458,6 +469,7 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "push_strategy", Value: PushStrategyWord(s.PushStrategy), Source: s.PushStrategyFrom},
 		{Name: "babysit", Value: strconv.FormatBool(s.Babysit), Source: s.BabysitFrom},
 		{Name: "watch_commands", Value: strings.Join(s.WatchCommands, "; "), Source: s.WatchCommandsFrom},
+		{Name: "serve_commands", Value: strings.Join(s.ServeCommands, "; "), Source: s.ServeCommandsFrom},
 	}
 }
 
@@ -579,22 +591,36 @@ func saveDeveloper(home, projectID string, change func(*planv1.ProjectSettings) 
 // home, or takes it back with revoke: the commands allowed then. Its words are joined by single spaces, as a
 // watcher's command is compared.
 func AllowWatch(home, projectID, command string, revoke bool) ([]string, error) {
-	command = strings.Join(strings.Fields(command), " ")
 	s, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
-		at := slices.Index(s.GetWatchCommands(), command)
-		switch {
-		case command == "":
-			return errors.New("a watcher command has words")
-		case revoke && at < 0:
-			return fmt.Errorf("%q is not a watcher command you allow", command)
-		case revoke:
-			s.WatchCommands = slices.Delete(s.WatchCommands, at, at+1)
-		case at < 0:
-			s.WatchCommands = append(s.WatchCommands, command)
-		}
-		return nil
+		return allowIn(&s.WatchCommands, "watcher", command, revoke)
 	})
 	return s.GetWatchCommands(), err
+}
+
+// AllowServe is AllowWatch for the commands an ifrit's serve runs (djinn serve run).
+func AllowServe(home, projectID, command string, revoke bool) ([]string, error) {
+	s, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
+		return allowIn(&s.ServeCommands, "serve", command, revoke)
+	})
+	return s.GetServeCommands(), err
+}
+
+// allowIn adds command, its words joined by single spaces, to the commands of what (watcher, serve), or takes it
+// back with revoke.
+func allowIn(commands *[]string, what, command string, revoke bool) error {
+	command = strings.Join(strings.Fields(command), " ")
+	at := slices.Index(*commands, command)
+	switch {
+	case command == "":
+		return fmt.Errorf("a %s command has words", what)
+	case revoke && at < 0:
+		return fmt.Errorf("%q is not a %s command you allow", command, what)
+	case revoke:
+		*commands = slices.Delete(*commands, at, at+1)
+	case at < 0:
+		*commands = append(*commands, command)
+	}
+	return nil
 }
 
 // PushStrategyWord is how a wish integrates its work, as the settings say it: wish, azima.

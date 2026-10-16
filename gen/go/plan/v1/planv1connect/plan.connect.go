@@ -500,8 +500,9 @@ type ProjectServiceClient interface {
 	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
 	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
 	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
-	// Show or change the watcher commands you allow in a project for yourself, besides those its
-	// .agents/permissions.txtpb lists: kept in your own settings file, never in the repository.
+	// Show or change the watcher commands (--watch), or an ifrit's serve commands (--serve), you allow in a project for
+	// yourself, besides those its .agents/permissions.txtpb lists: kept in your own settings file, never in the
+	// repository.
 	Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error)
 	// List the local branches of a project's repository a wish's work may land in, the latest commit first: those
 	// Djinn made for its tasks' worktrees left out.
@@ -640,8 +641,9 @@ type ProjectServiceHandler interface {
 	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
 	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
 	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
-	// Show or change the watcher commands you allow in a project for yourself, besides those its
-	// .agents/permissions.txtpb lists: kept in your own settings file, never in the repository.
+	// Show or change the watcher commands (--watch), or an ifrit's serve commands (--serve), you allow in a project for
+	// yourself, besides those its .agents/permissions.txtpb lists: kept in your own settings file, never in the
+	// repository.
 	Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error)
 	// List the local branches of a project's repository a wish's work may land in, the latest commit first: those
 	// Djinn made for its tasks' worktrees left out.

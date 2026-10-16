@@ -273,6 +273,19 @@ message ProjectSettings {
   // priority, once no gate runs and the machine is not under pressure; the restart is left to the person's click.
   // Other branches' builds are only offered. Not set: on.
   optional bool install_builds = 28;
+  // Commands an ifrit's serve may run in the project (djinn serve run), or the start of each on a word boundary,
+  // besides those .agents/permissions.txtpb lists: its command and its stop command. A developer's own allowance, read
+  // from their own file only (djinn project allow --serve), like watch_commands; the project's denied_commands still
+  // win. Not set: none.
+  repeated string serve_commands = 29 [(buf.validate.field).repeated = {
+    max_items: 50
+    items: {
+      string: {
+        min_len: 1
+        max_len: 500
+      }
+    }
+  }];
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.
@@ -1277,6 +1290,9 @@ message Serve {
   google.protobuf.Timestamp start_time = 8;
   // The ports it listens on, found or declared.
   repeated Port ports = 9;
+  // It starts again when its ifrit is lit again: set as it starts, kept while its ifrit is out, cleared once djinn
+  // serve stop stopped it.
+  bool relight = 10;
 }
 
 // ServeState is where a serve stands.
@@ -2063,8 +2079,9 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Show or change the watcher commands you allow in a project for yourself, besides those its
-  // .agents/permissions.txtpb lists: kept in your own settings file, never in the repository.
+  // Show or change the watcher commands (--watch), or an ifrit's serve commands (--serve), you allow in a project for
+  // yourself, besides those its .agents/permissions.txtpb lists: kept in your own settings file, never in the
+  // repository.
   rpc Allow(ProjectServiceAllowRequest) returns (ProjectServiceAllowResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -2127,6 +2144,8 @@ message ProjectServiceShowResponse {
   repeated string warnings = 8;
   // The watcher commands you allow in the project for yourself (djinn project allow --watch), from your own file.
   repeated string watch_commands = 9;
+  // The serve commands you allow in the project for yourself (djinn project allow --serve), from your own file.
+  repeated string serve_commands = 10;
 }
 
 message ProjectServicePushRequest {
@@ -2195,13 +2214,19 @@ message ProjectServiceAllowRequest {
     (buf.validate.field).string.max_len = 100
   ];
   // A command a watcher may run in the project, or its start: a command that is it, or starts with it before a space,
-  // runs. Not set: show the commands you allow.
+  // runs. Neither this nor --serve: show the commands you allow.
   optional string watch = 2 [
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 500
   ];
   // Take the command back instead of allowing it.
   bool revoke = 3;
+  // A command an ifrit's serve may run in the project (djinn serve run), or its start, as --watch is for a watcher;
+  // not with --watch.
+  optional string serve = 4 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 500
+  ];
 }
 
 message ProjectServiceAllowResponse {
@@ -2209,6 +2234,8 @@ message ProjectServiceAllowResponse {
   repeated string watch_commands = 1;
   // Your settings file, in Djinn's data folder.
   string developer_file = 2;
+  // The serve commands you allow in the project, from your own settings file.
+  repeated string serve_commands = 3;
 }
 
 message ProjectServiceBranchesRequest {

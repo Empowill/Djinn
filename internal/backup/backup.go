@@ -178,11 +178,13 @@ func skipped(d fs.DirEntry) error {
 
 // excluded tells whether a path of the data folder, relative and with slashes, stays out of a backup and out of a
 // restore: the database's own side files, the socket and the address of a running djinn, the logs of its
-// processes and the log folder (logx), the record of the processes it runs, the worktrees, and any environment file.
+// processes and the log folder (logx), the record of the processes it runs, the logs of the ifrits' serves, the
+// worktrees, and any environment file.
 func excluded(rel string, dir bool) bool {
 	parts := strings.Split(rel, "/")
-	// The log folder (logx), and the record of the processes a djinn up runs (harness.runDir): this machine's.
-	if parts[0] == logx.Dir || parts[0] == "run" {
+	// The log folder (logx), the record of the processes a djinn up runs (harness.runDir) and the logs of the ifrits'
+	// serves (harness.servesDir): this machine's.
+	if parts[0] == logx.Dir || parts[0] == "run" || parts[0] == "serves" {
 		return true
 	}
 	// A task's worktree: projects/<project>/worktrees/<task> (harness.worktreeDir). Git holds it.
