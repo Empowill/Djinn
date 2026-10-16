@@ -164,6 +164,11 @@ func Watcher(t *planv1.Task) bool { return t.GetProvider() == planv1.Provider_PR
 // hold it. On a full machine, an investigator takes the slot of a work task it pauses (Decision.Slot).
 func QuestionWorker(t *planv1.Task) bool { return t.GetRole() != planv1.TaskRole_TASK_ROLE_UNSPECIFIED }
 
+// Ifrit tells whether the task is an ifrit (TASK_KIND_IFRIT): a worker that stays lit while the developer is there.
+// The developer waits for it: it starts beyond the slots, as a task started by hand does, and only the machine's
+// pressure or its memory hold it.
+func Ifrit(t *planv1.Task) bool { return t.GetKind() == planv1.TaskKind_TASK_KIND_IFRIT }
+
 // Light tells whether the task writes nothing in its project's folder: a watcher, or a question worker. Only a watcher
 // takes no slot.
 func Light(t *planv1.Task) bool { return Watcher(t) || QuestionWorker(t) }
@@ -650,11 +655,12 @@ func (s *Situation) full(t *planv1.Task) (why string, first, slot bool) {
 			workers += fmt.Sprintf(", %d paused workers resume first", resuming)
 		}
 		why = workers + ", the most this machine holds (" + m.Rule + ")"
-		if t.GetRole() != planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+		if t.GetRole() != planv1.TaskRole_TASK_ROLE_INVESTIGATOR && !Ifrit(t) {
 			return why, false, false
 		}
-		// An investigator may take the slot of a work task it pauses: only where the memory holds it.
-		if room, first := s.room(t); room != "" {
+		// An investigator may take the slot of a work task it pauses, and an ifrit starts beyond the slots: only where
+		// the memory holds it.
+		if room, first := s.room(t); room != "" || Ifrit(t) {
 			return room, first, false
 		}
 		return why, false, true

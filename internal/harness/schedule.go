@@ -231,8 +231,9 @@ func (h *Harness) Forced() int {
 	return n
 }
 
-// slotted tells whether the run's worker takes a slot now: it runs, and is not a watcher. The caller holds h.mu.
-func (r *run) slotted() bool { return !r.paused && !r.watcher }
+// slotted tells whether the run's worker takes a slot now: it runs, is not a watcher, and is no ifrit that listens
+// between two turns. The caller holds h.mu.
+func (r *run) slotted() bool { return !r.paused && !r.watcher && r.listenSince.IsZero() }
 
 // Works tells whether a worker of the task runs now and takes a slot: what it runs, a gate's command included, is in
 // that slot. A paused worker or a watcher takes none.
