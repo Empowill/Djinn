@@ -386,11 +386,7 @@ func (s *LeadService) Brief(
 	ctx context.Context, req *connect.Request[planv1.LeadServiceBriefRequest],
 ) (*connect.Response[planv1.LeadServiceBriefResponse], error) {
 	home := s.Wishes.home()
-	build := BuildGlobalBrief
-	if req.Msg.GetWishes() {
-		build = BuildWishesBrief
-	}
-	brief, err := build(ctx, s.Wishes.Store, home)
+	brief, err := globalBrief(ctx, s.Wishes.Store, home, req.Msg.GetWishes(), s.Wishes.ifritWaits())
 	if err != nil {
 		return nil, Status(err)
 	}

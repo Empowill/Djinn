@@ -81,10 +81,13 @@ func (s *service) List(
 	for _, st := range s.g.List() {
 		gate := &machinev1.Gate{
 			Name: st.Name, Holder: st.Holder, HolderTaskId: st.HolderTaskID, Waiting: st.Waiting, TakesSlot: st.TakesSlot,
-			Resources: st.Use,
+			Resources: st.Use, Ifrit: st.Ifrit,
 		}
 		if !st.Since.IsZero() {
-			gate.Since, gate.ExpireTime = timestamppb.New(st.Since), timestamppb.New(st.Until)
+			gate.Since = timestamppb.New(st.Since)
+		}
+		if !st.Since.IsZero() && !st.Until.IsZero() {
+			gate.ExpireTime = timestamppb.New(st.Until)
 		}
 		res.Gates = append(res.Gates, gate)
 	}

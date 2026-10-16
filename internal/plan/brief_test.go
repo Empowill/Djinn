@@ -1262,3 +1262,59 @@ func TestBriefListsNotes(t *testing.T) {
 		}
 	}
 }
+
+// TestBriefSaysWhoWaitsForTheIfrit: the lead's briefs, of the wish and of all of them, say who waits for the gates a
+// lit ifrit holds, so that the lead offers the developer to end it (Q11); an ifrit nobody waits for has no such line.
+func TestBriefSaysWhoWaitsForTheIfrit(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Front"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	start := timestamppb.New(time.Date(2026, 10, 16, 15, 0, 0, 0, time.UTC))
+	ifrit := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W12", Title: "Front of dolmen", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Kind: planv1.TaskKind_TASK_KIND_IFRIT, Ifrit: &planv1.TaskIfrit{State: planv1.IfritState_IFRIT_STATE_LISTENING}, StartTime: start}
+	other := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W13", Title: "Back of dolmen", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Kind: planv1.TaskKind_TASK_KIND_IFRIT, Ifrit: &planv1.TaskIfrit{State: planv1.IfritState_IFRIT_STATE_LISTENING}, StartTime: start}
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		for _, task := range []*planv1.Task{ifrit, other} {
+			if err := tx.Journal(actor, "test/put", task); err != nil {
+				return err
+			}
+			if err := tx.Put(task); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	waits := map[string][]string{ifrit.GetId(): {"W15 (Cards): go tool task e2e, for stack", "W16 (Lists), for stack"}}
+	want := "  - Waiting for the gates this ifrit holds until the developer leaves Djinn: " +
+		"W15 (Cards): go tool task e2e, for stack; W16 (Lists), for stack. " +
+		"Offer the developer to end it (`djinn task done W12`) or stop it (`djinn task stop W12`).\n"
+
+	brief, err := buildBrief(ctx, c.store, home, wishID, waits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(brief.Moving, "Front of dolmen (claude, since 2026-10-16 15:00 UTC)\n"+want) {
+		t.Errorf("the wish's brief does not say who waits for W12:\n%s", brief.Moving)
+	}
+	if strings.Count(brief.Moving, "Waiting for the gates this ifrit holds") != 1 {
+		t.Errorf("W13, which nobody waits for, has its line:\n%s", brief.Moving)
+	}
+	global, err := globalBrief(ctx, c.store, home, true, waits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(global, want) {
+		t.Errorf("the brief of the wishes does not say who waits for W12:\n%s", global)
+	}
+	if plain, err := BuildBrief(ctx, c.store, home, wishID); err != nil || strings.Contains(plain.Moving, "Waiting for the gates") {
+		t.Errorf("no gates known, the brief says who waits (%v):\n%s", err, plain.Moving)
+	}
+}

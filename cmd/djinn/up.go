@@ -438,6 +438,7 @@ func runUp(args []string) (restart bool, err error) {
 		plan.WithShowTilasm(showTilasm), plan.WithTilasmURL(tilasmURL),
 		plan.WithLoad(func() djinnv1.LoadNotch { return monitor.Policy().Notch }),
 		plan.WithLoadBroadcaster(&broadcastLoad), plan.WithLeadBroadcaster(&changeLead), plan.WithLeadFailed(leadFailed),
+		plan.WithIfritWaits(gates.IfritWaits),
 	)
 	loadPrefix, loadHandler := machine.LoadHandler(home, monitor, workers.SetPolicy, func(n djinnv1.LoadNotch) {
 		if broadcastLoad != nil {

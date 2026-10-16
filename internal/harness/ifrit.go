@@ -230,6 +230,9 @@ func (h *Harness) ifritTimers(r *run) {
 	}
 	idle := h.IfritIdle(r.task)
 	outAt := since.Add(idle)
+	h.mu.Lock()
+	r.outAt = outAt // Its gates' expire time (Ifrit).
+	h.mu.Unlock()
 	ifrit := r.task.GetIfrit()
 	warned := ifrit.GetWarnTime() != nil
 	switch {
@@ -238,7 +241,7 @@ func (h *Harness) ifritTimers(r *run) {
 		if !ok {
 			return
 		}
-		why := "out: you left Djinn alone at " + clockText(since, now)
+		why := "out: you left Djinn alone at " + ClockText(since, now)
 		h.mu.Lock()
 		r.out = why
 		h.mu.Unlock()
@@ -251,14 +254,14 @@ func (h *Harness) ifritTimers(r *run) {
 		}
 		h.setIfritTimes(r, outAt, outAt.Add(-ifritWarnAhead))
 		h.write(r, actorHarness, methodEvent, r.task, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
-			Text: "goes out at " + clockText(outAt, now) + " unless you come back to Djinn: Keep lit keeps it"})
+			Text: "goes out at " + ClockText(outAt, now) + " unless you come back to Djinn: Keep lit keeps it"})
 		if warn != nil {
 			warn(proto.CloneOf(r.task))
 		}
 	case warned:
 		h.setIfritTimes(r, outAt, time.Time{})
 		h.write(r, actorHarness, methodEvent, r.task, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
-			Text: "kept lit: you came back; it goes out at " + clockText(outAt, now) + " if you leave"})
+			Text: "kept lit: you came back; it goes out at " + ClockText(outAt, now) + " if you leave"})
 	case ifrit.GetOutTime() == nil || outAt.Sub(ifrit.GetOutTime().AsTime()) >= time.Minute:
 		// Pushed back by the developer's actions: written a minute at a time, with no event.
 		h.setIfritTimes(r, outAt, time.Time{})
@@ -273,6 +276,38 @@ func (h *Harness) ifritTimers(r *run) {
 			logx.L().Error("record when an ifrit goes out", "task", r.id, "err", err)
 		}
 	}
+}
+
+// Ifrit tells the gates whether the task taskID is an ifrit lit now, and when it goes out unless the developer comes
+// back: its gates have no timeout, their expire time is its out time, and they go back once it goes out or ends
+// (Q11). It is lit until its run ends, a djinn task done waiting for the turn under way included, unless it goes out;
+// then why says why, from its task once its run is over. A task that is no ifrit is not lit, with no why.
+func (h *Harness) Ifrit(ctx context.Context, taskID string) (lit bool, out time.Time, why string) {
+	h.mu.Lock()
+	r := h.runs[taskID]
+	if r != nil {
+		defer h.mu.Unlock()
+		switch {
+		case !r.ifrit:
+			return false, time.Time{}, ""
+		case r.out != "":
+			return false, time.Time{}, "went " + r.out
+		}
+		return true, r.outAt, ""
+	}
+	h.mu.Unlock()
+	t, err := store.Get[*planv1.Task](ctx, h.store, taskID)
+	switch {
+	case err != nil || !dispatch.Ifrit(t):
+		return false, time.Time{}, ""
+	case ifritOut(t):
+		return false, time.Time{}, "went " + t.GetError()
+	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING:
+		return true, time.Time{}, "" // Between its run's end and its final status: asked again at the next tick.
+	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE:
+		return false, time.Time{}, "ended"
+	}
+	return false, time.Time{}, "is " + short(t.GetStatus())
 }
 
 // setIfritTimes sets when the ifrit of r goes out, and when it was warned (zero: not yet). Replaced, never changed: a
