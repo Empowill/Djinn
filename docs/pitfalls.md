@@ -25,6 +25,10 @@ the code does not say by itself; remove one when a change makes it false.
   reproduce with `go test -c`, then `-test.run X -test.count=150 -test.cpu=1`. A provider hook in harness tests runs
   on the harness goroutine: return an error there, never `t.Fatal` (`Harness.Close` then hangs to the package
   timeout).
+- **A process a task's end stops can be gone before the test looks at it.** A done or failed task ends at once, and
+  stops what its worker left (stopLeft): a test that polled `/proc/PID/environ` of such a job raced that end (W135,
+  `TestTaskEndStopsWhatItsWorkerStarted`). *Do:* let the process write what the test checks to a file before its
+  PID, and read that file. *Where:* `internal/harness/leftover_linux_test.go`.
 - **`TestUpdateInstallsABuild` races under `-race`, before your change.** A test variable is written while Update's
   goroutine reads it; `test-go` and `test-pkg` run without `-race` and pass. Still true today. *Do:* run
   `go tool task test-race -- -skip TestUpdateInstallsABuild ./internal/ui`, and do not take it for your regression.

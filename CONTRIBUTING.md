@@ -134,7 +134,8 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   (`tools/slowtests`): a fake clock, a short tick, a wait on an event, never a sleep that waits for luck.
   `slowtests` watches the suite's total time (sum and wall clock) against a repository baseline
   (`tools/slowtests/baseline.json`), warning without failing if the total grows past the baseline by over 25%
-  (update with `go run ./tools/slowtests -update-baseline`). The `e2e` suite watches its wall clock against
+  (update with `go run ./tools/slowtests -update-baseline`). Its last line names the tests that failed: a red
+  push check keeps only the end of the output. The `e2e` suite watches its wall clock against
   `e2e/baseline.json` similarly (update with `UPDATE_BASELINE=1`).
   - **Windows runs what targets the system.** Linux and macOS run every test; the Windows job sets
     `DJINN_TEST_SYSTEM_ONLY=1`, which skips the tests marked portable: `testx.Portable(t)` first in a Go test
