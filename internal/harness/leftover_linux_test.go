@@ -31,7 +31,8 @@ exec "$DJINN_FAKE_BIN" "$@"
 // a background shell job, ends with its task, however the task ends: done, failed, stopped or cancelled;
 // in its process group or out of it, with or without a systemd scope. Else it runs on, holding its ports and the
 // worktree. W46 found both left running at a task's own end, and the daemon at a stop without a scope; since W68 the
-// worker's end stops its group, its cgroup and what carries its mark (stopLeft).
+// worker's end stops its group, its cgroup and what carries its mark (stopLeft). Since W80 claude waits for them past
+// its last turn, however long: the task's end still stops them.
 func TestTaskEndStopsWhatItsWorkerStarted(t *testing.T) {
 	t.Parallel()
 	script := filepath.Join(t.TempDir(), "claude")
@@ -69,6 +70,16 @@ func TestTaskEndStopsWhatItsWorkerStarted(t *testing.T) {
 				task := e.mustSpawn(t, wishID, "Start a dev server", "x",
 					&planv1.TaskServiceSpawnRequest{Provider: planv1.Provider_PROVIDER_CLAUDE})
 				job, daemon := leftoverPID(t, leftovers, "job"), leftoverPID(t, leftovers, "daemon")
+				// They run as a claude's background run does, its wait after the last turn unbounded (W80): the
+				// task's end bounds it. Its environment reads empty while it execs sleep.
+				var environ []byte
+				waitFor(t, "the job's environment", func() bool {
+					environ, _ = os.ReadFile("/proc/" + strconv.Itoa(job.pid) + "/environ")
+					return len(environ) > 0
+				})
+				if !slices.Contains(strings.Split(string(environ), "\x00"), claudeBackgroundWait) {
+					t.Errorf("the job runs without %s", claudeBackgroundWait)
+				}
 
 				switch end {
 				case "stopped":
