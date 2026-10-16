@@ -218,8 +218,8 @@ func notIntegrated(left string) string {
 }
 
 // recoverIntegrations puts back to pending the work a previous djinn up was integrating when it stopped: its batch
-// is integrated again.
-func (h *Harness) recoverIntegrations(ctx context.Context, tasks []*planv1.Task) {
+// is integrated again. It returns those tasks' codes.
+func (h *Harness) recoverIntegrations(ctx context.Context, tasks []*planv1.Task) []string {
 	var cut []*planv1.Task
 	for _, t := range tasks {
 		if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING {
@@ -230,6 +230,11 @@ func (h *Harness) recoverIntegrations(ctx context.Context, tasks []*planv1.Task)
 		h.settleIntegration(ctx, cut, pending(cut[0].GetIntegration().GetBranch(), ""),
 			"integration: djinn up stopped during it; Djinn integrates the work again", nil)
 	}
+	codes := make([]string, len(cut))
+	for i, t := range cut {
+		codes[i] = t.GetCode()
+	}
+	return codes
 }
 
 // integratePass commits the finished work waiting, each task alone in the order they ended, pushes the integration
@@ -458,8 +463,10 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 		}
 		batch = remaining
 	}
+	h.setDoing("the integration of " + codes(batch) + " into " + branch)
 	in, text, commit := h.commitBatch(ctx, wish, project, settings, branch, batch)
 	if ctx.Err() != nil && in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+		h.cutPass()
 		in, text, commit = pending(branch, ""), "integration: djinn up stopped during it; Djinn integrates the work again", nil
 	}
 	in.Branch = branch
@@ -1044,8 +1051,15 @@ func (h *Harness) commitBatch(
 
 // moveBranch moves branch from old to sha, tested green, in the repository holding repo, git checking it is still at
 // old; the person's checkout of it, if any, follows when clean. It returns that checkout ("" for none); or why the
-// branch stays at old, and whether it is because the branch moved meanwhile.
+// branch stays at old, and whether it is because the branch moved meanwhile. Once begun, the move ends whole though
+// djinn up stops: the branch moved, its checkout follows it, or the branch goes back (W52: the put back failed on the
+// cancel, and the checkout showed the work undone).
 func moveBranch(ctx context.Context, repo, branch, old, sha, message string) (holder, why string, moved bool) {
+	if ctx.Err() != nil {
+		return "", "djinn up stopped before " + branch + " moved", false
+	}
+	ctx, done := gitx.Uncut(ctx)
+	defer done()
 	// The person's checkout of the branch, if any, follows it when clean. One with changes is left alone, and the
 	// branch with it: moved under it, its next commit would undo the work.
 	holder, err := checkoutOf(ctx, repo, branch)
@@ -1102,6 +1116,9 @@ func (h *Harness) mergeAndTest(
 	if err != nil {
 		return wait("prepare the integration worktree: " + err.Error())
 	}
+	// A merge begun ends, or is aborted, though djinn up stops: none is left half done in the worktree (W52).
+	keep, done := gitx.Uncut(ctx)
+	defer done()
 	for i, t := range batch {
 		base, err := git(ctx, wt, "rev-parse", "HEAD")
 		if err != nil {
@@ -1112,20 +1129,23 @@ func (h *Harness) mergeAndTest(
 			return &planv1.IntegrationFailure{Base: base, MergeBranch: t.GetBranch(), Files: files, TaskIds: ids(batch[:i+1])}
 		}
 		msg := fmt.Sprintf("Merge branch '%s' into %s", t.GetBranch(), branch)
-		_, err = git(ctx, wt, "merge", "--no-ff", "--no-edit", "--quiet", "-m", msg, t.GetBranch())
+		if ctx.Err() != nil {
+			return wait("djinn up stopped")
+		}
+		_, err = git(keep, wt, "merge", "--no-ff", "--no-edit", "--quiet", "-m", msg, t.GetBranch())
 		if err == nil {
 			h.integrationStep(ctx, t, "integration: merged "+t.GetBranch())
 			continue
 		}
-		conflicts := conflicted(ctx, wt)
+		conflicts := conflicted(keep, wt)
 		var why string
 		switch {
 		case errors.Is(err, errNoIdentity):
 			// Not a conflict: the person sets the identity, and the next pass merges.
-			_, _ = git(ctx, wt, "merge", "--abort")
+			_, _ = git(keep, wt, "merge", "--abort")
 			return wait(noIdentity)
 		case len(conflicts) == 0:
-			_, _ = git(ctx, wt, "merge", "--abort")
+			_, _ = git(keep, wt, "merge", "--abort")
 			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, fmt.Sprintf("merge %s: %v", t.GetCode(), err), nil)
 		case !generatedOnly(conflicts, prefix, settings.Generated) || settings.Generate == "":
 			why = fmt.Sprintf("%s conflicts with %s in %s", t.GetCode(), branch, strings.Join(conflicts, ", "))
@@ -1136,7 +1156,7 @@ func (h *Harness) mergeAndTest(
 			})
 		}
 		if why != "" {
-			_, _ = git(ctx, wt, "merge", "--abort")
+			_, _ = git(keep, wt, "merge", "--abort")
 			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, why, conflict(conflicts))
 		}
 		h.integrationStep(ctx, t, fmt.Sprintf("integration: merged %s; its conflict, only in generated files (%s), settled by %s",
@@ -1152,6 +1172,7 @@ func (h *Harness) mergeAndTest(
 	}
 	command, why, out, stopped := h.commitChecks(ctx, wish, project, settings, batch, sha, wt, dir, func(c *planv1.ProjectCheck) {
 		h.integrationStep(ctx, batch[0], fmt.Sprintf("integration: checking %s: %s (%s)", codes(batch), c.GetName(), c.GetCommand()))
+		h.setDoing(fmt.Sprintf("the integration of %s into %s, checking %s", codes(batch), branch, c.GetName()))
 	})
 	switch {
 	case stopped != "":
@@ -1205,10 +1226,12 @@ func (h *Harness) commitChecks(
 func (h *Harness) settleGenerated(
 	ctx context.Context, what, taskID, wt, dir, generate string, conflicts []string, ready func() string,
 ) string {
-	if _, err := git(ctx, wt, append([]string{"checkout", "--theirs", "--"}, conflicts...)...); err != nil {
+	keep, done := gitx.Uncut(ctx) // A stop cuts the commands, not git's steps.
+	defer done()
+	if _, err := git(keep, wt, append([]string{"checkout", "--theirs", "--"}, conflicts...)...); err != nil {
 		return err.Error()
 	}
-	if _, err := git(ctx, wt, append([]string{"add", "--"}, conflicts...)...); err != nil {
+	if _, err := git(keep, wt, append([]string{"add", "--"}, conflicts...)...); err != nil {
 		return err.Error()
 	}
 	if why := ready(); why != "" {
@@ -1221,10 +1244,13 @@ func (h *Harness) settleGenerated(
 	case code != 0:
 		return fmt.Sprintf("%s conflicts in generated files (%s), and %s exited %d%s", what, strings.Join(conflicts, ", "), generate, code, tail(out))
 	}
-	if _, err := git(ctx, wt, "add", "--all"); err != nil {
+	if ctx.Err() != nil {
+		return "djinn up stopped"
+	}
+	if _, err := git(keep, wt, "add", "--all"); err != nil {
 		return err.Error()
 	}
-	if _, err := git(ctx, wt, "commit", "--no-edit", "--quiet"); err != nil {
+	if _, err := git(keep, wt, "commit", "--no-edit", "--quiet"); err != nil {
 		return err.Error()
 	}
 	return ""
@@ -1324,14 +1350,21 @@ func integrationDir(home, projectID, wishID string) string {
 
 // integrationWorktree makes wt, a worktree of the repository holding repo, ready to merge into: detached at old,
 // without changes. It returns the project's folder within it, and the project's folder in the repository ("app/"; ""
-// at its root).
+// at its root). Its caller holds the worktree alone (integrateMu, installMu): an index.lock there is a dead git's, taken
+// away (unlockWorktree), or every reset there would fail (W52). Once begun, it ends though djinn up stops.
 func integrationWorktree(ctx context.Context, repo, wt, old string) (string, string, error) {
 	prefix, err := git(ctx, repo, "rev-parse", "--show-prefix")
 	if err != nil {
 		return "", "", err
 	}
+	if err := ctx.Err(); err != nil {
+		return "", "", err
+	}
+	ctx, done := gitx.Uncut(ctx)
+	defer done()
 	dir := filepath.Join(wt, filepath.FromSlash(prefix))
 	if top, err := git(ctx, wt, "rev-parse", "--show-toplevel"); err == nil && samePath(top, wt) {
+		unlockWorktree(wt)
 		_, _ = git(ctx, wt, "merge", "--abort")
 		_, _ = git(ctx, wt, "rebase", "--abort")
 		if _, err := git(ctx, wt, "reset", "--quiet", "--hard", old); err != nil {

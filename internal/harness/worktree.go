@@ -144,7 +144,9 @@ func addWorktreeFrom(ctx context.Context, dir, path, branch, from string) (strin
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}
-	if _, err := git(ctx, dir, "worktree", "add", "--quiet", "-b", branch, path, from); err != nil {
+	keep, done := gitx.Uncut(ctx) // A worktree begun is made whole though djinn up stops (W52).
+	defer done()
+	if _, err := git(keep, dir, "worktree", "add", "--quiet", "-b", branch, path, from); err != nil {
 		return "", err
 	}
 	return filepath.Join(path, filepath.FromSlash(prefix)), nil
@@ -175,11 +177,13 @@ func correctionWorktree(ctx context.Context, dir, path, branch string, f *planv1
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}
-	if _, err := git(ctx, dir, "worktree", "add", "--quiet", "-b", branch, path, f.GetBase()); err != nil {
+	keep, done := gitx.Uncut(ctx) // The worktree and its merge are made whole though djinn up stops (W52).
+	defer done()
+	if _, err := git(keep, dir, "worktree", "add", "--quiet", "-b", branch, path, f.GetBase()); err != nil {
 		return "", err
 	}
 	if b := f.GetMergeBranch(); b != "" {
-		if _, err := git(ctx, path, "merge", "--no-ff", "--no-edit", "--quiet", b); err != nil && len(conflicted(ctx, path)) == 0 {
+		if _, err := git(keep, path, "merge", "--no-ff", "--no-edit", "--quiet", b); err != nil && len(conflicted(keep, path)) == 0 {
 			return "", fmt.Errorf("merge %s again: %w", b, err)
 		}
 	}
@@ -212,7 +216,9 @@ func removeWorktree(ctx context.Context, dir, path string, force bool) error {
 	if force {
 		args = append(args, "--force")
 	}
-	_, err := git(ctx, dir, append(args, path)...)
+	keep, done := gitx.Uncut(ctx) // Never half removed (W52).
+	defer done()
+	_, err := git(keep, dir, append(args, path)...)
 	if err == nil {
 		forgetAgyProject(path)
 	}

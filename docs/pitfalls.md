@@ -171,6 +171,14 @@ the code does not say by itself; remove one when a change makes it false.
   `DJINN_MARK` (a `setsid` daemon). A test or a watcher that expects a background process to outlive its command
   fails: nothing may outlive it until `djinn serve` (W63) lands. On Linux the process stays a zombie (waitid
   WNOWAIT) until its leftovers are gone, so its group ID cannot be reused meanwhile. *Where:* `internal/harness/process_unix.go` (stopLeft), `orphans_linux.go` (procsOf).
+- **A git that changes a repository must not stop half way.** A stop cancels the harness's context; a git killed
+  mid-reset left its `index.lock` and every later reset there failed, and `moveBranch` moved a branch but not the
+  checkout that follows it (W52). Since W84 `gitx.Command` stops git with SIGTERM (SIGKILL `WaitDelay` later), and
+  steps that change a repository (merge and its abort, reset, worktree add, a branch move and its put back) run under
+  `gitx.Uncut`, `Finish` at most past the stop. *Do:* wrap a new sequence of changing gits in `Uncut`, after checking
+  `ctx.Err()`; reads stay cancellable. To hold a git mid-checkout in a test, `testx.HoldCheckout`. *Where:*
+  `internal/gitx/gitx.go`, `internal/harness/locks.go`, `internal/harness/cut.go` (what the restart line says the stop
+  cut).
 - **Finding a freeze in a goroutine dump.** `djinn debug dump` (or `kill -USR2` on djinn up, found by its socket,
   not `pgrep`: from the desktop menu it runs as `djinn open`) writes the goroutines to the log folder. Every waiter
   shows `lockSlow(0xADDR)`; ADDR minus the base address of a `Harness` method's receiver is the field offset, which

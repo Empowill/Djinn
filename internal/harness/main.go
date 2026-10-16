@@ -289,6 +289,7 @@ func (h *Harness) mergeMain(
 	defer h.integrateMu.Unlock()
 	key := l.key()
 	repo := l.project.GetDirectory()
+	h.setDoing("the merge of " + shown + " into " + l.branch)
 	done, ok := h.mainTested[key]
 	message := "djinn: merge " + shown
 	switch {
@@ -299,6 +300,7 @@ func (h *Harness) mergeMain(
 		sha, f, why := h.mergeAndCheckMain(ctx, l.wish, l.project, settings, l.branch, shown, mainSha, old, release)
 		switch {
 		case ctx.Err() != nil:
+			h.cutPass()
 			return // djinn up stops: main is merged again at the next start.
 		case f != nil:
 			h.mainFailed(ctx, l, settings, shown, f, attempts)
@@ -309,6 +311,10 @@ func (h *Harness) mergeMain(
 		}
 		done = mainTested{old: old, main: mainSha, sha: sha, shown: shown, release: release}
 		h.mainTested[key] = done
+	}
+	if ctx.Err() != nil {
+		h.cutPass()
+		return // djinn up stops: main is merged again at the next start.
 	}
 	holder, why, moved := moveBranch(ctx, repo, l.branch, old, done.sha, message)
 	if why != "" {
@@ -339,10 +345,13 @@ func (h *Harness) mergeAndCheckMain(
 	if release != "" {
 		msg = fmt.Sprintf("Merge %s (%s) into %s", shown, release, branch)
 	}
-	if _, err := git(ctx, wt, "merge", "--no-ff", "--no-edit", "-m", msg, mainSha); err != nil {
-		conflicts := conflicted(ctx, wt)
+	// A merge begun ends, or is aborted, though djinn up stops: none is left half done in the worktree (W52).
+	keep, done := gitx.Uncut(ctx)
+	defer done()
+	if _, err := git(keep, wt, "merge", "--no-ff", "--no-edit", "-m", msg, mainSha); err != nil {
+		conflicts := conflicted(keep, wt)
 		conflict := func(why string) (string, *planv1.IntegrationFailure, string) {
-			_, _ = git(ctx, wt, "merge", "--abort")
+			_, _ = git(keep, wt, "merge", "--abort")
 			return "", &planv1.IntegrationFailure{
 				State: planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, Base: old, MergeBranch: mainSha, Files: conflicts,
 				Reason: why, MainSha: mainSha,
@@ -350,10 +359,10 @@ func (h *Harness) mergeAndCheckMain(
 		}
 		switch {
 		case errors.Is(err, errNoIdentity):
-			_, _ = git(ctx, wt, "merge", "--abort")
+			_, _ = git(keep, wt, "merge", "--abort")
 			return "", nil, noIdentity
 		case len(conflicts) == 0:
-			_, _ = git(ctx, wt, "merge", "--abort")
+			_, _ = git(keep, wt, "merge", "--abort")
 			return "", nil, fmt.Sprintf("merge %s: %v", shown, err)
 		case !generatedOnly(conflicts, prefix, settings.Generated) || settings.Generate == "":
 			return conflict(fmt.Sprintf("%s conflicts with %s in %s", shown, branch, strings.Join(conflicts, ", ")))
