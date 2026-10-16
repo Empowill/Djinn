@@ -550,9 +550,21 @@ Workers share one machine. Heavy commands (tests, builds, code generation) run t
 djinn gate run test -- go tool task test
 ```
 
-A gate has one holder at a time, and is granted only while the machine is not under pressure, the first wish by rank
-first; a command measured before waits until the machine has the memory it peaked at. The status bar shows how many
-gates are held. `djinn command list` shows what each command cost (CPU time, peak memory, duration).
+A gate has one holder at a time, and is granted only while the machine is not under pressure; a command measured
+before waits until the machine has the memory it peaked at. The status bar shows how many gates are held. `djinn
+command list` shows what each command cost (CPU time, peak memory, duration).
+
+Who gets a gate first: Djinn's own requests to merge a task's work into its branch (its wish's or its azima's), to
+settle such a merge, or to run a push's checks, the first come first; then the others (a worker's `djinn gate run`, a
+lead, your terminal), the first wish by rank first, then the first come. A merge or a push waiting for a gate keeps it
+from the others, even when the memory would hold a lighter command; a gate already held is never taken back for it.
+Each waiter says why it waits: `a merge or a push, served before the workers: held by W12 (…)` for Djinn's, `held by
+W12 (…), for 40s, then 1 merge or push goes first` or `a merge or a push goes first: …` for the others.
+
+A gate held outside a running worker (a merge's, a push's, your terminal's) takes one of the machine's slots; a
+worker's own gate is in its slot. On a machine of more than one slot, one stays free for the merges and pushes: a new
+worker waits (`5 workers run, 1 slot is kept for merges and pushes, the most this machine holds`), and a merge's gate
+takes that slot. On a machine of one slot, none is kept: only the order above applies.
 
 ## When Djinn stops and starts again
 

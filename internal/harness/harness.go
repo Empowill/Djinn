@@ -143,7 +143,7 @@ type Harness struct {
 	closed       bool
 	held         func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
 	waiting      func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
-	outside      func() int                   // the gates held outside the running workers (GatesOutside); nil: none
+	outside      func() (int, int)            // the gates held outside the running workers, and of them the merges' and pushes' (GatesOutside); nil: none
 	silenceLimit time.Duration                // silence limit before the Lamplighter checks a worker (lamplighter.go)
 	maxWallTime  time.Duration                // ceiling on wall time budget per task (lamplighter.go)
 	ifritIdle    time.Duration                // how long the developer may leave Djinn alone before an ifrit goes out (ifrit.go)

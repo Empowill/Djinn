@@ -53,9 +53,10 @@ const (
 )
 
 // TakeGate takes the gate name, for the task taskID, to run the command what in the folder dir, and returns how to
-// give it back. It calls waiting, when not nil, each time the reason it waits changes. djinn up takes the gates of
-// internal/gate, as djinn gate run does.
-type TakeGate func(ctx context.Context, name, taskID, what, dir string, waiting func(why string)) (give func(), err error)
+// give it back; first when Djinn takes it to merge a task's work into its branch, settle such a merge or check a push,
+// which goes before the workers' requests (Q26), not to install a build. It calls waiting, when not nil, each time the
+// reason it waits changes. djinn up takes the gates of internal/gate, as djinn gate run does.
+type TakeGate func(ctx context.Context, name, taskID, what, dir string, first bool, waiting func(why string)) (give func(), err error)
 
 // RunCommand runs args in dir, and returns the end of its output and its exit code; an error when it could not run.
 type RunCommand func(ctx context.Context, dir string, args []string) (out string, code int, err error)
@@ -619,6 +620,7 @@ func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string, pr
 	if progress == nil {
 		progress = func(InstallStep, string) {}
 	}
+	ctx = context.WithValue(ctx, installingKey{}, true)
 	wish, err1 := store.Get[*planv1.Wish](ctx, h.store, wishID)
 	project, err2 := store.Get[*planv1.Project](ctx, h.store, projectID)
 	if err := errors.Join(err1, err2); err != nil {
@@ -1478,7 +1480,9 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 		if waits != nil {
 			waiting = func(why string) { waits("gate " + name + ": " + why) }
 		}
-		give, err := h.gates(ctx, name, taskID, line, dir, waiting)
+		// Every command Djinn runs under a gate merges, settles a merge or checks a push, but an install's.
+		_, installing := ctx.Value(installingKey{}).(bool)
+		give, err := h.gates(ctx, name, taskID, line, dir, !installing, waiting)
 		if err != nil {
 			return "", -1, fmt.Errorf("gate %s: %w", name, err)
 		}
@@ -1511,6 +1515,9 @@ type gateWaitKey struct{}
 
 // installRunKey is the context key of how Install's commands run (InstallWith).
 type installRunKey struct{}
+
+// installingKey is the context key that marks Install's commands: their gates do not go first.
+type installingKey struct{}
 
 type installRun struct {
 	output func(line string) // told each line a command writes; nil: none

@@ -73,11 +73,11 @@ func TestFreezeInvestigatorWithAGateHeld(t *testing.T) {
 
 	// The work task holds a gate (its lint), as djinn up's gates count it: one outside a worker unless its holder works.
 	var holder atomic.Pointer[string]
-	e.h.GatesOutside(func() int {
+	e.h.GatesOutside(func() (int, int) {
 		if id := holder.Load(); id != nil && !e.h.Works(*id) {
-			return 1
+			return 1, 0
 		}
-		return 0
+		return 0, 0
 	})
 	flood := strings.Repeat("text a line of the flood\n", 300) + "wait"
 	w1 := e.mustSpawn(t, wishID, "Flood", flood, nil)

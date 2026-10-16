@@ -26,8 +26,13 @@ type Machine struct {
 	Pressure string
 	// Running is the number of workers that run now.
 	Running int
-	// Gates is the number of gates held outside the running workers: each takes a slot.
-	Gates int
+	// Gates is the number of gates held outside the running workers: each takes a slot. Merges is how many of them
+	// Djinn holds to merge a task's work, settle a merge or check a push.
+	Gates, Merges int
+	// Keep keeps one slot free for the gates of merges and pushes, when the machine has more than one (Q26): a new
+	// worker never takes it, so a merge or a push never waits behind workers on a full machine. A merge's gate held
+	// outside the workers takes that slot. djinn up keeps it once its gates are served.
+	Keep bool
 	// Resuming is the number of workers paused by the load bar or for an investigator, which resume before any new
 	// task (Q123): each keeps its slot from a new work task. An investigator goes before them.
 	Resuming int
@@ -635,7 +640,12 @@ func (s *Situation) full(t *planv1.Task) (why string, first, slot bool) {
 	if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
 		resuming = 0
 	}
-	if running := m.Running + len(s.started); running+m.Gates+resuming >= m.Slots {
+	// One slot kept for the merges and pushes, on a machine of more than one, unless a merge's gate already takes it.
+	kept := 0
+	if m.Keep && m.Slots > 1 && m.Merges == 0 {
+		kept = 1
+	}
+	if running := m.Running + len(s.started); running+m.Gates+kept+resuming >= m.Slots {
 		workers := "1 worker runs"
 		if running != 1 {
 			workers = fmt.Sprintf("%d workers run", running)
@@ -646,6 +656,9 @@ func (s *Situation) full(t *planv1.Task) (why string, first, slot bool) {
 			workers += " and 1 gate is held outside the workers"
 		default:
 			workers += fmt.Sprintf(" and %d gates are held outside the workers", m.Gates)
+		}
+		if kept > 0 {
+			workers += ", 1 slot is kept for merges and pushes"
 		}
 		switch resuming {
 		case 0:

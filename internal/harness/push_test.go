@@ -379,8 +379,10 @@ func TestABuildIsProposed(t *testing.T) {
 	out, err := in.h.Install(t.Context(), in.wishID, in.projectID, tip, progress)
 	in.h.integrateMu.Unlock()
 	wt := filepath.Join(installDir(in.home, in.projectID), "app")
-	if err != nil || out != "installed a\n" || in.runs[len(in.runs)-1] != "install in "+wt || in.gates[len(in.gates)-1] != "install -" {
-		t.Errorf("install: %q, %v; runs %v, gates %v", out, err, in.runs, in.gates)
+	// Its gate is no merge's nor push's: it does not go before the workers' (Q26).
+	if err != nil || out != "installed a\n" || in.runs[len(in.runs)-1] != "install in "+wt || in.gates[len(in.gates)-1] != "install -" ||
+		!slices.Equal(in.behind, []string{"install -"}) {
+		t.Errorf("install: %q, %v; runs %v, gates %v, not first %v", out, err, in.runs, in.gates, in.behind)
 	}
 	wantSteps := []string{
 		fmt.Sprint(InstallPreparing, " "), fmt.Sprint(InstallBuilding, " "),

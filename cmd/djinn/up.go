@@ -223,8 +223,8 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	// The integration of finished work runs its gen, setup and checks under the gates, as djinn gate run does.
 	var gates *gate.Gates
-	opts = append(opts, harness.WithGates(func(ctx context.Context, name, taskID, what, dir string, waiting func(string)) (func(), error) {
-		held, err := gates.Take(ctx, gate.Request{Name: name, TaskID: taskID, What: what, Dir: dir}, waiting)
+	opts = append(opts, harness.WithGates(func(ctx context.Context, name, taskID, what, dir string, first bool, waiting func(string)) (func(), error) {
+		held, err := gates.Take(ctx, gate.Request{Name: name, TaskID: taskID, What: what, Dir: dir, First: first}, waiting)
 		if err != nil {
 			return nil, err
 		}
