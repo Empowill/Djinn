@@ -81,13 +81,23 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The frame's page draws its own ground: a white one, as a browser shows a page that sets none. */
-.tilasm-frame {
+.tilasm-full-enter {
+  flex: none;
+}
+/* The frame's page draws its own ground: a white one, as a browser shows a page that sets none. The room it leaves in
+   the page, when full size, has its height. */
+.tilasm-frame,
+.tilasm-frame-room {
   display: block;
   width: 100%;
   height: min(70vh, 720px);
   border: 0;
+}
+.tilasm-frame {
   background: white;
+}
+.tilasm-frame-room {
+  display: none;
 }
 .tilasm-list,
 .tilasm-history {
@@ -123,9 +133,34 @@
     grid-column: 1;
     grid-row: 2;
   }
-  .tilasms.has-open .tilasm-frame {
+  .tilasms.has-open .tilasm-frame,
+  .tilasms.has-open .tilasm-frame-room {
     height: min(80vh, 1100px);
   }
+}
+/* Full size: the frame covers the main shell, everything right of the side panel, at the window's size and with no
+   margin; the side panel and its toolbar stay above it. The wish's view lets the main shell hold it. */
+.main-shell:has(.tilasm-view.full) > .wish-view {
+  position: static;
+}
+.tilasms.has-open .tilasm-view.full > .tilasm-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  width: 100%;
+  height: 100%;
+}
+.tilasm-view.full > .tilasm-frame-room {
+  display: block;
+}
+.tilasm-full-leave {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 31;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--shadow) 25%, transparent);
 }
 .tilasm-row {
   box-sizing: border-box;

@@ -805,6 +805,8 @@
   "tilasms.exported": "Exported to {file}",
   "tilasms.files.one": "{count} file",
   "tilasms.files.other": "{count} files",
+  "tilasms.full": "Full size",
+  "tilasms.full_leave": "Leave full size",
   "tilasms.history": "Versions",
   "tilasms.imported": "{code} imported",
   "tilasms.none": "No tilasm yet: the material that explains this wish, an .html file or a folder with an index.html. Drop one here, or the Djinn puts one with djinn tilasm put.",

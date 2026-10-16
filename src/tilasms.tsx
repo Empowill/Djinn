@@ -4,16 +4,25 @@
 // (internal/plan/tilasm_files.go): its scripts run, it reaches no network and nothing of Djinn. A search finds words in
 // the titles and the text, within the wish; "talisman" finds them all. A row's history restores an earlier version; its
 // export writes a .zip to the Downloads folder. An .html file, a folder or a .zip dropped on the tab or chosen in the
-// drop zone becomes a tilasm, or the new version of the one a .zip exported.
+// drop zone becomes a tilasm, or the new version of the one a .zip exported. The open one goes full size: its frame
+// covers the main shell, the side panel beside it; leaving puts the tab back as it was, the frame never reloaded.
 import {
   Download,
   FolderInput,
   History,
+  Maximize2,
+  Minimize2,
   RotateCcw,
   Search,
   X,
 } from "lucide-react";
-import { type DragEvent, useEffect, useState } from "react";
+import {
+  type DragEvent,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Change, type Task } from "../gen/ts/plan/v1/plan_pb";
 import type { Tilasm } from "../gen/ts/plan/v1/tilasm_pb";
@@ -196,6 +205,13 @@ export function TilasmList({
   onDrop: (entries: DropEntry[]) => void;
 }) {
   const [over, setOver] = useState(false);
+  // The tilasm shown full size: the open one, until it is left or closed.
+  const [fullId, setFullId] = useState("");
+  const full = open !== undefined && fullId === open.id;
+  const frame = useRef<HTMLIFrameElement>(null);
+  const enter = useRef<HTMLButtonElement>(null);
+  const leave = useRef<HTMLButtonElement>(null);
+  useFullSize(full, frame, enter, leave, setFullId);
   const dragging = (event: DragEvent) => {
     if (!event.dataTransfer?.types.includes("Files")) return;
     event.preventDefault();
@@ -248,7 +264,10 @@ export function TilasmList({
         </label>
       </div>
       {open && (
-        <section className="tilasm-view" aria-label={open.title}>
+        <section
+          className={`tilasm-view${full ? " full" : ""}`}
+          aria-label={open.title}
+        >
           <div className="tilasm-view-head">
             <span className="tilasm-code">{open.code}</span>
             <strong>{open.title}</strong>
@@ -256,24 +275,53 @@ export function TilasmList({
               {t("tilasms.version", { version: latest(open) })}
             </span>
             <button
+              ref={enter}
+              type="button"
+              className="text-button tilasm-full-enter"
+              onClick={() => setFullId(open.id)}
+            >
+              <Maximize2 size={13} aria-hidden="true" />
+              {t("tilasms.full")}
+            </button>
+            <button
               type="button"
               className="icon-button"
               title={t("tilasms.close")}
               aria-label={t("tilasms.close")}
-              onClick={() => onOpen("")}
+              onClick={() => {
+                setFullId("");
+                onOpen("");
+              }}
             >
               <X size={14} />
             </button>
           </div>
-          {/* Scripts only: an opaque origin, never Djinn's; the server's policy refuses the network. */}
+          {/* Scripts only: an opaque origin, never Djinn's; the server's policy refuses the network. Full size changes
+              the section's class only, never the frame's place in the page: a frame moved elsewhere would load again. */}
           <iframe
             key={`${open.id}-${latest(open)}`}
+            ref={frame}
             className="tilasm-frame"
             title={`${open.code} · ${open.title}`}
             src={tilasmAddress(open.id)}
             sandbox="allow-scripts"
             referrerPolicy="no-referrer"
           />
+          {/* The room the frame leaves in the page, full size: what it covers keeps its place and its scroll. It shows
+              by the same class that takes the frame out, so the page never lays out without both. */}
+          <div className="tilasm-frame-room" />
+          {full && (
+            <button
+              ref={leave}
+              type="button"
+              className="icon-button tilasm-full-leave"
+              aria-label={t("tilasms.full_leave")}
+              aria-keyshortcuts="Escape"
+              onClick={() => setFullId("")}
+            >
+              <Minimize2 size={14} aria-hidden="true" />
+            </button>
+          )}
         </section>
       )}
       {count === 0 ? (
@@ -367,4 +415,63 @@ export function TilasmList({
       )}
     </div>
   );
+}
+
+// useFullSize keeps the page under the full-size frame out of reach of the keyboard and gives the focus to the button
+// that leaves; Escape leaves too, unless a dialog takes it (a key pressed in the frame stays in the frame's document).
+// Once left, the focus goes back to the button that entered. The page never scrolls for it.
+function useFullSize(
+  full: boolean,
+  frame: RefObject<HTMLIFrameElement | null>,
+  enter: RefObject<HTMLButtonElement | null>,
+  leave: RefObject<HTMLButtonElement | null>,
+  setFullId: (id: string) => void,
+) {
+  const was = useRef(false);
+  useEffect(() => {
+    if (!full) {
+      if (was.current) enter.current?.focus({ preventScroll: true });
+      was.current = false;
+      return;
+    }
+    was.current = true;
+    const uncover = cover(frame.current, leave.current);
+    leave.current?.focus({ preventScroll: true });
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest('dialog, [role="dialog"]')
+      )
+        return;
+      event.preventDefault();
+      setFullId("");
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      uncover();
+    };
+  }, [full, frame, enter, leave, setFullId]);
+}
+
+// cover makes inert what the elements kept lie over in the main shell: every element there that holds none of them.
+// It returns what gives them back.
+function cover(...keep: (HTMLElement | null)[]): () => void {
+  const kept = keep.filter((el) => el !== null);
+  const shell = kept[0]?.closest(".main-shell");
+  const made: HTMLElement[] = [];
+  for (let at = kept[0]?.parentElement; at && shell; at = at.parentElement) {
+    for (const child of at.children)
+      if (
+        child instanceof HTMLElement &&
+        !child.inert &&
+        !kept.some((el) => child.contains(el))
+      ) {
+        child.inert = true;
+        made.push(child);
+      }
+    if (at === shell) break;
+  }
+  return () => made.forEach((el) => (el.inert = false));
 }

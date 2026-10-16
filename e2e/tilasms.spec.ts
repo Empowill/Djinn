@@ -1,8 +1,9 @@
 // The Tilasms tab, against the real djinn up --browser (see global-setup.ts): the lead puts a tilasm with the command
 // line, the developer opens it in the tab, in a frame Djinn serves with a policy of its own (its scripts and files run,
 // a fetch is refused, Djinn's page is out of reach), searches it, "talisman" too, and restores its first version once
-// the lead put another. Every run makes a fresh wish, so --repeat-each works on the same djinn. A screenshot of the tab
-// goes to test-results/e2e/.
+// the lead put another; it goes full size beside the side panel and back. Every run makes a fresh wish, so
+// --repeat-each works on the same djinn. Screenshots of the tab, and of a tilasm full size in both themes, go to
+// test-results/e2e/.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -91,6 +92,78 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
       .toBe(20);
     await page.screenshot({ path: path.join(shots, "tilasms-dark.png") });
 
+    // Full size: the frame covers everything right of the side panel, which stays usable; Escape (outside the frame)
+    // and the small button leave it, the same tilasm open, the page and the frame scrolled where they were.
+    const scroller = page.locator(".wish-view .mission-scroll");
+    await frame
+      .locator("body")
+      .evaluate((body) => (body.style.minHeight = "4000px"));
+    await frame.locator("body").evaluate(() => window.scrollTo(0, 900));
+    await scroller.evaluate((el) => (el.scrollTop = 120));
+    const places = async () => ({
+      page: await scroller.evaluate((el) => el.scrollTop),
+      frame: await frame.locator("body").evaluate(() => window.scrollY),
+    });
+    const before = await places();
+    expect(before.page).toBe(120);
+    expect(before.frame).toBe(900);
+    const full = page.locator(".tilasm-view.full > iframe.tilasm-frame");
+    const enter = page.getByRole("button", { name: "Full size", exact: true });
+    const leave = page.getByRole("button", { name: "Leave full size" });
+    const list = panel.locator(".tilasm-list");
+    for (const how of ["Escape", "button"]) {
+      await enter.click();
+      await expect(full).toBeVisible();
+      await expect(leave).toBeFocused();
+      const shell = (await page.locator(".main-shell").boundingBox())!;
+      const box = (await full.boundingBox())!;
+      for (const side of ["x", "y", "width", "height"] as const)
+        expect(Math.abs(box[side] - shell[side])).toBeLessThan(1);
+      const sidebar = (await page.locator("#djinn-sidebar").boundingBox())!;
+      expect(sidebar.x + sidebar.width).toBeLessThanOrEqual(box.x + 1);
+      expect(
+        await page.evaluate(
+          ([x, y]) =>
+            !!document
+              .elementFromPoint(x, y)
+              ?.closest("#djinn-sidebar, .app-toolbar"),
+          [sidebar.x + sidebar.width / 2, sidebar.y + sidebar.height / 2],
+        ),
+      ).toBe(true);
+      // What the frame covers is out of the keyboard's reach, and keeps its place.
+      await expect(list).toHaveJSProperty("inert", true);
+      expect(await places()).toEqual(before);
+      if (how === "Escape") {
+        for (const theme of ["dark", "light"]) {
+          await page.evaluate(async (theme) => {
+            document.documentElement.dataset.theme = theme;
+            await Promise.all(
+              document
+                .getAnimations()
+                .filter((a) => a instanceof CSSTransition)
+                .map((a) => a.finished),
+            );
+          }, theme);
+          await page.screenshot({
+            path: path.join(shots, `tilasms-full-${theme}.png`),
+          });
+        }
+        await page.evaluate(() => {
+          document.documentElement.dataset.theme = "dark";
+        });
+        await page.keyboard.press("Escape");
+      } else await leave.click();
+      await expect(full).toHaveCount(0);
+      await expect(enter).toBeFocused();
+      await expect(row).toHaveClass(/\bopen\b/);
+      await expect(list).toHaveJSProperty("inert", false);
+      expect({ how, ...(await places()) }).toEqual({ how, ...before });
+    }
+    await frame.locator("body").evaluate((body) => {
+      body.style.minHeight = "";
+      window.scrollTo(0, 0);
+    });
+
     // The search, on the titles and the text within the wish; the kind's own name finds them all.
     const search = panel.getByRole("searchbox");
     for (const words of ["wick flame", "ANATOMY", "talisman", "talismans"]) {
@@ -139,6 +212,13 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
       "Flame sketch",
     );
     await expect(frame.locator("body")).toContainText("Single HTML file.");
+
+    // Another view opened from the side panel leaves full size.
+    await enter.click();
+    await expect(full).toBeVisible();
+    await page.locator(".hourglass-nav").click();
+    await expect(page.locator("iframe.tilasm-frame")).toHaveCount(0);
+    await expect(page.locator(".main-shell [inert]")).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
