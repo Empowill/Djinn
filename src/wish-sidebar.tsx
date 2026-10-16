@@ -66,6 +66,8 @@ export interface WishCounts {
   merging: number;
   // Failed merges a correction task fixes (runningOf): Djinn's move, shown orange.
   fixing?: number;
+  // Lit ifrits (runningOf), apart from the running ones: a vermilion flame, and the wish's tone.
+  ifrits?: number;
 }
 
 export function WishSidebar({
@@ -202,9 +204,10 @@ export function WishSidebar({
       count.running + count.merging,
       count.watching,
       count.investigating,
+      count.ifrits,
     );
-    // Unfolded, an active wish takes a second line under its title: what waits for you, then what works, then what
-    // investigates, then what watches, a count at zero left out, and its rank at the end. Its icon then says what it
+    // Unfolded, an active wish takes a second line under its title: its lit ifrits' flame, then what waits for you,
+    // then what works, then what investigates, then what watches, a count at zero left out, and its rank at the end. Its icon then says what it
     // does: the questions have their count, and no raised hand repeats it (Q01). Folded to the rail, the icon is all
     // that shows: it keeps the hand. A narrow window folds the bar by its width alone (styles.css, 820px), the second
     // line hidden: the row carries the hand, which shows only then, in place of the icon.
@@ -284,6 +287,13 @@ export function WishSidebar({
             <span className="wish-title">{wish.title}</span>
             {counted && (
               <span className="wish-counts">
+                {!!count.ifrits && (
+                  <CountPill
+                    tone="ifrit"
+                    count={count.ifrits}
+                    label={t("wish.ifrits_lit", { count: count.ifrits })}
+                  />
+                )}
                 {count.questions > 0 && (
                   <CountPill
                     tone="waiting"

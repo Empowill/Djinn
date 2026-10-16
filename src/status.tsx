@@ -3,7 +3,7 @@
 // move, not yours), investigating violet, planned grey, failed red, interrupted amber, stopped and paused muted,
 // cancelled a muted stone with a ban sign, watching teal with an eye; a decision the developer took is human, rose with
 // a person; an azima whose work is done and that awaits its proof is olive, with a clipboard to check; a question that
-// can wait is grey, with a clock.
+// can wait is grey, with a clock; a lit ifrit is vermilion with a flame, and one put out grey with its flame outlined.
 // The colours are tokens of review.css, checked for contrast in both themes.
 import {
   Ban,
@@ -16,6 +16,7 @@ import {
   CircleUserRound,
   Clock3,
   Eye,
+  Flame,
   Hand,
   type LucideIcon,
   Search,
@@ -46,13 +47,17 @@ const icons: Record<Tone, LucideIcon | null> = {
   later: Clock3,
   withdrawn: CircleOff,
   accent: Star,
+  ifrit: Flame,
+  out: Flame,
 };
 
-// ToneIcon is a state's icon; running is a live dot.
+// ToneIcon is a state's icon; running is a live dot, and a lit ifrit's flame is filled.
 export function ToneIcon({ tone, size = 13 }: { tone: Tone; size?: number }) {
   const Icon = icons[tone] ?? CircleOff;
   if (tone === "running")
     return <span className="live-dot" aria-hidden="true" />;
+  if (tone === "ifrit")
+    return <Flame size={size} fill="currentColor" aria-hidden="true" />;
   return <Icon size={size} aria-hidden="true" />;
 }
 

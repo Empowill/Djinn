@@ -1,9 +1,12 @@
 import React, { useEffect, useSyncExternalStore } from "react";
 
 import { LoadNotch } from "../gen/ts/djinn/v1/load_pb";
+import { IfritState } from "../gen/ts/plan/v1/plan_pb";
 import type { Clients } from "./data/client";
-import { type Djinn, useDjinn } from "./data/djinn";
+import { type Djinn, useDjinn, useOptionalData } from "./data/djinn";
+import { ifritLit } from "./data/ifrit";
 import { t } from "./i18n";
+import { ToneIcon } from "./status";
 import { still } from "./stillness";
 import { memory } from "./usage";
 import "./operating-load.css";
@@ -399,17 +402,49 @@ function workersAt(
 }
 
 // overLimit says how many workers run beyond what a notch lets run, and why: started by hand (they stay), the rest
-// finishing their run, or pausing when the bar moves there and lowering pauses (previewed).
+// finishing their run, or pausing when the bar moves there and lowering pauses (previewed). ifrits is how many lit
+// ifrits are at work: Djinn starts them beyond the slots and counts them among the forced workers, and the gauge
+// counts them apart.
 function overLimit(
   data: Pick<
     LoadData,
     "runningWorkers" | "forcedWorkers" | "notchSlots" | "baseSlots"
   >,
   notch: LoadNotch,
+  ifrits = 0,
 ): { byHand: number; others: number } {
-  const over = Math.max(0, data.runningWorkers - workersAt(data, notch));
-  const byHand = Math.min(data.forcedWorkers, over);
+  const over = Math.max(
+    0,
+    data.runningWorkers - ifrits - workersAt(data, notch),
+  );
+  const byHand = Math.min(Math.max(0, data.forcedWorkers - ifrits), over);
   return { byHand, others: over - byHand };
+}
+
+// The lit ifrits of the wishes read, and how many of them are at work on a turn (taking a slot).
+function useIfrits(): { lit: number; working: number } {
+  const lit = useOptionalData(
+    (s) =>
+      Object.values(s.details).reduce(
+        (n, d) => n + d.tasks.filter(ifritLit).length,
+        0,
+      ),
+    0,
+  );
+  const working = useOptionalData(
+    (s) =>
+      Object.values(s.details).reduce(
+        (n, d) =>
+          n +
+          d.tasks.filter(
+            (task) =>
+              ifritLit(task) && task.ifrit?.state !== IfritState.LISTENING,
+          ).length,
+        0,
+      ),
+    0,
+  );
+  return { lit, working };
 }
 
 const MEMORY_RESERVE = 2n * 1024n * 1024n * 1024n; // 2 GiB
@@ -794,7 +829,8 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
 
   const displayNotch = preview ?? data.notch;
   const allowedWorkers = workersAt(data, displayNotch);
-  const over = overLimit(data, displayNotch);
+  const ifrits = useIfrits();
+  const over = overLimit(data, displayNotch, ifrits.working);
   // Overclock previewed, or in effect with no other level previewed: its risk, as a warning. Auto hovered or on: what
   // it does.
   const risk = displayNotch === LoadNotch.OVERCLOCK;
@@ -888,6 +924,13 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
             <span className="operating-load-forecast-paused">
               {" · "}
               {t("load.forecast_paused", { count: data.pausedWorkers })}
+            </span>
+          )}
+          {ifrits.lit > 0 && (
+            <span className="operating-load-forecast-ifrit tone-ifrit">
+              {" · "}
+              <ToneIcon tone="ifrit" size={12} />
+              {t("load.forecast_ifrits", { count: ifrits.lit })}
             </span>
           )}
           {over.byHand > 0 && (
