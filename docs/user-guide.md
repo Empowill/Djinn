@@ -472,6 +472,48 @@ The wish's page, one HTML file standing alone that runs no script, comes from a 
 <wish-id>` writes it once, `djinn wish sync <wish-id>` keeps it up to date while `djinn up` runs (delete the file to
 stop).
 
+## An ifrit: a worker that stays lit while you are there
+
+When you want to iterate live, on changes you judge by eye or on a stack you try by hand, ask the Djinn for an
+*ifrit*. It is a worker of a project, with its worktree and branch like any task, that does not end after its answer:
+between two of your requests its process waits on its input, taking no slot and spending no token. One is lit per
+wish; for work a task does alone with its checks, the Djinn spawns a task.
+
+- **Lighting it.** The Djinn runs `djinn task spawn <wish> --kind ifrit --title "…" --prompt "…"`, on Claude Code or
+  Antigravity (not Codex yet), in a project. It starts at once, beyond the slots, pausing no one; it takes a slot only
+  while it works on a turn.
+- **Talking to it.** You talk to the Djinn, which relays each request with `djinn task send W12 "…"`; you may also
+  write in the box under its events. After each request the ifrit makes the change, says in three lines at most what
+  changed and how to see it, then ends its turn. The Djinn does not repeat its answer, and asks you questions about it
+  only for a decision (`--about W12`): they show in the ifrit's band.
+- **Its processes.** It runs what lasts, a dev server or a stack, through Djinn, never in the background of its shell:
+  `djinn serve run front "npm run dev" --port 5173=front` (`--gate stack`, `--stop "…"` for containers), `djinn serve
+  list`, `djinn serve logs front`, `djinn serve stop front`. Djinn finds the ports they listen on and shows them as
+  links. A serve's command must be allowed: listed in the permissions of the wish or the project, or allowed by you
+  with `djinn project allow <project> --serve '<command>'` ([team settings](team-settings.md)).
+- **Its gates.** A gate it holds stays held while it is lit, with no hour limit: a task that waits for it says "given
+  back when you leave", and the Djinn offers you to finish or stop the ifrit.
+- **In the window.** It shows in vermilion with a flame: its band comes first in what waits for you, with its state,
+  its links, its questions, and **Keep lit** once Djinn warned that it goes out; its wish counts "1 ifrit lit"; the status bar counts the gates ifrits
+  hold.
+
+**When you leave.** Djinn keeps it lit while you are there: a key, a click or a scroll in the window in front, a key in
+a terminal of Djinn, an answer, a mark, a message, a `djinn` command you type. The Djinn, the workers and the watchers
+do not count, nor does the window left untouched. After 30 minutes without you, Djinn warns you with a notification,
+"W12 goes out in 5 min", and its **Keep lit** button; 5 minutes later, once its turn under way ends, Djinn puts it
+out: its input closes, its serves stop, its gates and slot go back. Its task is stopped, out, its worktree (uncommitted
+changes included), branch and session kept, and the Djinn is told. `djinn up --ifrit-idle 1h` changes the delay for
+this machine, and `--idle-minutes 60` at the spawn for one ifrit, from 5 minutes to 4 hours. A Djinn restart brings a
+lit ifrit back out: no turn is paid for nothing.
+
+**Lighting it again.** A message, from the Djinn (`djinn task send`) or yours under **Relight** on its card, resumes its
+session in its worktree, starts its serves first, and tells it how long it was out. The Djinn never relights one
+without your word.
+
+**Finishing it.** Once its work is good, **Finish**, or the Djinn's `djinn task done W12 --note "…"`: its input closes
+once its turn ends, its serves stop, its gates go back, and its work integrates like any task's, through the commit
+checks. `djinn task stop W12` stops it and keeps its work without integrating it.
+
 ## Watchers and wish templates
 
 A *watcher* is a task that runs a command, with no agent and no model: a pipeline, a merge request, a queue. Each

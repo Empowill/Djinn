@@ -679,6 +679,40 @@ func atCommit(name, command string) *planv1.ProjectCheck {
 	return &planv1.ProjectCheck{Name: name, Command: command, When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_COMMIT}}
 }
 
+// TestIfritChecksBrief (T51, Q11): an ifrit's first prompt says which checks Djinn runs, but that it runs none after
+// a change: Djinn runs the commit checks once it is finished; a test the developer asks for has its command.
+func TestIfritChecksBrief(t *testing.T) {
+	if got := (Settings{}).IfritChecksBrief(); got != "" {
+		t.Errorf("no check: %q", got)
+	}
+	both := Settings{Setup: "npm ci", TestOne: "go tool task test-pkg -- {pkg}", Checks: []*planv1.ProjectCheck{
+		atCommit("lint", "go tool task lint"),
+		{Name: "test", Command: "go tool task test", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}},
+	}}
+	want := "Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- go tool task lint`; " +
+		"before it pushes, with `djinn gate run test -- go tool task test`. Run neither after a change: Djinn runs the " +
+		"commit checks once you are finished, the push checks before it pushes. A test the developer asks for runs with " +
+		"`go tool task test-pkg -- {pkg}`. A fresh worktree needs `npm ci` first."
+	if got := both.IfritChecksBrief(); got != want {
+		t.Errorf("both:\n%s\nwant:\n%s", got, want)
+	}
+	commit := Settings{Checks: []*planv1.ProjectCheck{atCommit("test", "make test")}}
+	want = "Djinn checks this project's work before it commits a task's work, with `djinn gate run test -- make test`. " +
+		"Do not run them after a change: Djinn runs them once you are finished."
+	if got := commit.IfritChecksBrief(); got != want {
+		t.Errorf("commit only:\n%s\nwant:\n%s", got, want)
+	}
+	push := Settings{Checks: []*planv1.ProjectCheck{{Name: "lint", Command: "make lint", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}}}}
+	want = "Djinn checks this project's work before it pushes, with `djinn gate run lint -- make lint`. Do not run them: " +
+		"Djinn runs them before it pushes."
+	if got := push.IfritChecksBrief(); got != want {
+		t.Errorf("push only:\n%s\nwant:\n%s", got, want)
+	}
+	if got := both.IfritChecksBrief(); strings.Contains(got, "A worker runs the commit checks") {
+		t.Errorf("an ifrit is told to run the commit checks: %s", got)
+	}
+}
+
 // TestChecksBrief: the lead's brief and each worker's first prompt say which checks Djinn runs and when, how to run
 // them through their gates, and what a fresh worktree needs first; nothing for a project without checks.
 func TestChecksBrief(t *testing.T) {

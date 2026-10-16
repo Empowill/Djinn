@@ -1301,7 +1301,7 @@ func TestBriefSaysWhoWaitsForTheIfrit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(brief.Moving, "Front of dolmen (claude, since 2026-10-16 15:00 UTC)\n"+want) {
+	if !strings.Contains(brief.Moving, "Front of dolmen (claude, ifrit, listening, since 2026-10-16 15:00 UTC)\n"+want) {
 		t.Errorf("the wish's brief does not say who waits for W12:\n%s", brief.Moving)
 	}
 	if strings.Count(brief.Moving, "Waiting for the gates this ifrit holds") != 1 {
@@ -1311,10 +1311,76 @@ func TestBriefSaysWhoWaitsForTheIfrit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(global, want) {
+	if !strings.Contains(global, "Front of dolmen (claude, ifrit, listening, since 2026-10-16 15:00 UTC)\n"+want) {
 		t.Errorf("the brief of the wishes does not say who waits for W12:\n%s", global)
 	}
 	if plain, err := BuildBrief(ctx, c.store, home, wishID); err != nil || strings.Contains(plain.Moving, "Waiting for the gates") {
 		t.Errorf("no gates known, the brief says who waits (%v):\n%s", err, plain.Moving)
+	}
+}
+
+// TestBriefLeadsAnIfrit (T51, Q11): the lead's rules say when to light an ifrit and how to lead one, its commands
+// name --kind ifrit and --about; the wish's brief says which running task is an ifrit and where it stands, and that
+// one put out is lit again only at the developer's word.
+func TestBriefLeadsAnIfrit(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Front"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	start := timestamppb.New(time.Date(2026, 10, 16, 15, 0, 0, 0, time.UTC))
+	working := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W12", Title: "Front of dolmen", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Kind: planv1.TaskKind_TASK_KIND_IFRIT, Ifrit: &planv1.TaskIfrit{State: planv1.IfritState_IFRIT_STATE_WORKING}, StartTime: start}
+	out := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W13", Title: "Stack of dolmen", Status: planv1.TaskStatus_TASK_STATUS_STOPPED,
+		Kind: planv1.TaskKind_TASK_KIND_IFRIT, Ifrit: &planv1.TaskIfrit{State: planv1.IfritState_IFRIT_STATE_OUT},
+		Error: "out: you left Djinn alone at 15:12", StartTime: start, EndTime: timestamppb.New(start.AsTime().Add(time.Hour))}
+	task := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W14", Title: "Cards", Status: planv1.TaskStatus_TASK_STATUS_RUNNING, StartTime: start}
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		for _, task := range []*planv1.Task{working, out, task} {
+			if err := tx.Journal(actor, "test/put", task); err != nil {
+				return err
+			}
+			if err := tx.Put(task); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Front of dolmen (claude, ifrit, working, since",
+		"**W13** Stack of dolmen: an ifrit out: you left Djinn alone at 15:12, lit again by a message only at the developer's word",
+	} {
+		if !strings.Contains(brief.Moving, want) {
+			t.Errorf("the wish's brief lacks %q:\n%s", want, brief.Moving)
+		}
+	}
+	if !strings.Contains(brief.Moving, "**W14** Cards (claude, since") {
+		t.Errorf("a task that is no ifrit is called one:\n%s", brief.Moving)
+	}
+	for _, want := range []string{
+		IfritRule,
+		"never for work a task with its checks does alone. One lit per wish.",
+		"`djinn task send <ifrit> \"…\"`, instead of spawning tasks",
+		"`--about <ifrit>`",
+		"do not repeat its reply",
+		"When a task waits for a gate it holds, offer the developer to stop it",
+		"never send it one without the developer's word",
+		"`djinn task done <ifrit> --note \"…\"`: its work integrates",
+		"`--kind ifrit` with `--idle-minutes`",
+		"`--about W12` names the task it is about",
+		"to an ifrit out, it lights it again",
+		"- `ifrit`: ",
+	} {
+		if !strings.Contains(brief.Stable, want) {
+			t.Errorf("the lead's rules lack %q", want)
+		}
 	}
 }
