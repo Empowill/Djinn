@@ -1,7 +1,7 @@
 // The glance (Decision Q08, mockup L04 v2): beside the questions column, each wish's workers, running now and to come,
 // nothing else. A filled dot runs, blue; an investigator (the worker Enlighten me starts) runs violet, apart; a circle
 // waits on a task, listed under it when that task is of the same wish and shown here, else it names it ("waits on W26
-// · Djinn QoL"); a dotted circle is planned. The watchers (watch providers, babysits) fold into one line per wish.
+// · Djinn QoL"); a dotted circle is planned; a lit ifrit is a vermilion flame, with the word of its state. The watchers (watch providers, babysits) fold into one line per wish.
 // Gold stays for what waits on you, in the questions column. It stays in sight while a long question scrolls; on a
 // narrow view it comes above the questions, one line per wish. Read from the tasks the window already has: the
 // details of the active wishes, which the window always reads.
@@ -17,7 +17,9 @@ import {
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import { compareCodes, isAzima } from "./data/flight";
+import { ifritLit, ifritWord } from "./data/ifrit";
 import { type TextKey, t } from "./i18n";
+import { ToneIcon } from "./status";
 
 export type GlanceState = "run" | "investigate" | "wait" | "plan";
 
@@ -157,13 +159,19 @@ export function forgeMark(task: Task): string {
 
 // glanceCounts says, in words, what a wish's glance holds.
 export function glanceCounts(glance: WishGlance): string {
-  const running = glance.rows.filter((r) => r.state === "run").length;
+  const ifrits = glance.rows.filter((r) => ifritLit(r.task)).length;
+  const running = glance.rows.filter((r) => r.state === "run").length - ifrits;
   const investigating = glance.investigators.filter(
     (r) => r.state === "investigate",
   ).length;
   const later =
-    glance.rows.length - running + glance.investigators.length - investigating;
+    glance.rows.length -
+    running -
+    ifrits +
+    glance.investigators.length -
+    investigating;
   const parts: string[] = [];
+  if (ifrits) parts.push(t("wish.ifrits_lit", { count: ifrits }));
   if (running) parts.push(t("plan.running", { count: running }));
   if (investigating)
     parts.push(t("plan.investigating", { count: investigating }));
@@ -187,7 +195,27 @@ const legendKeys: Record<GlanceState, TextKey> = {
   plan: "glance.legend_plan",
 };
 
-function Dot({ state, title }: { state: GlanceState; title?: string }) {
+// Dot is a worker's mark: its state's dot, or a lit ifrit's flame.
+function Dot({
+  state,
+  title,
+  task,
+}: {
+  state: GlanceState;
+  title?: string;
+  task?: Task;
+}) {
+  if (task && ifritLit(task))
+    return (
+      <span
+        className="glance-flame tone-ifrit"
+        role="img"
+        aria-label={ifritWord(task)}
+        title={title}
+      >
+        <ToneIcon tone="ifrit" size={12} />
+      </span>
+    );
   return (
     <span
       className={`glance-dot ${state}`}
@@ -201,15 +229,16 @@ function Dot({ state, title }: { state: GlanceState; title?: string }) {
 function Row({ row }: { row: GlanceRow }) {
   const { task, state, after, afterWish } = row;
   const investigator = task.role === TaskRole.INVESTIGATOR;
+  const word = ifritLit(task) ? ifritWord(task) : stateWords[state]();
   return (
     <li
       className={`glance-row ${state}${row.depth ? " child" : ""}`}
-      title={`${stateWords[state]()} · ${task.code} ${task.title}`}
+      title={`${word} · ${task.code} ${task.title}`}
       style={
         row.depth ? ({ "--depth": row.depth } as CSSProperties) : undefined
       }
     >
-      <Dot state={state} />
+      <Dot state={state} task={task} />
       <span className="glance-code">{task.code}</span>
       <span className="glance-title">
         {task.title}
@@ -303,6 +332,7 @@ function GlanceLine({
           <Dot
             key={row.task.id}
             state={row.state}
+            task={row.task}
             title={`${row.task.code} ${row.task.title}`}
           />
         ))}

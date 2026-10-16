@@ -13,6 +13,7 @@ import {
   CirclePlay,
   CircleStop,
   FileText,
+  Flame,
   Gauge,
   Lock,
   MessageSquare,
@@ -52,7 +53,18 @@ import {
 } from "./data/djinn";
 import { isMerge } from "./data/flight";
 import {
+  ifritGates,
+  ifritLinks,
+  ifritLit,
+  ifritOut,
+  ifritPhase,
+  ifritWaitOf,
+  ifritWord,
+  isIfrit,
+} from "./data/ifrit";
+import {
   cancelledText,
+  firstLine,
   gitReason,
   taskActivity,
   taskFinished,
@@ -67,8 +79,9 @@ import {
 import { DecisionLink } from "./decision-log";
 import { HOURGLASS } from "./hourglass";
 import { language, t } from "./i18n";
+import { IfritCountdown, IfritGates, IfritLinks, KeepLit } from "./ifrit";
 import { MarkdownBody } from "./markdown-body";
-import { StatusBadge } from "./status";
+import { StatusBadge, ToneIcon } from "./status";
 import { type DiffDrawerView, TaskDiffDrawer } from "./diff";
 import {
   costTitle,
@@ -221,6 +234,7 @@ export const WishTask = memo(function WishTask({
   onHold,
   onDecision,
   onDone,
+  onRelight,
   merges,
   nested,
   mergeOpen = false,
@@ -250,6 +264,8 @@ export const WishTask = memo(function WishTask({
   onDecision?: (task: Task) => void;
   // Marks the task done by hand, with a note; none where the task cannot be closed from here.
   onDone?: (note: string, task: Task) => Promise<unknown>;
+  // Lights an ifrit put out again with a message (TaskService.Continue); none where it cannot be done from here.
+  onRelight?: (text: string, task: Task) => Promise<unknown>;
   // The merges that bring this task's work in (src/data/flight.ts mergeNest), and their rows: folded under it.
   merges?: readonly Task[];
   nested?: ReactNode;
@@ -292,7 +308,32 @@ export const WishTask = memo(function WishTask({
   const time = taskTime(task, now);
   const activity = taskActivity(task, now);
   const work = taskWork(task, codes, fixedBy);
-  const hasActions = holdable || stoppable || (!!onDone && closable(task));
+  // An ifrit lit or put out: its links, gates and buttons on a line of their own, Finish in place of Mark done.
+  const ifrit = isIfrit(task);
+  const lit = ifritLit(task);
+  const out = ifritOut(task);
+  const phase = ifritPhase(task, now);
+  const reply = ifrit ? firstLine(task.ifrit?.reply ?? "") : "";
+  const [relighting, setRelighting] = useState(false);
+  // The gates it holds while lit, and the gate an ifrit holds that it waits for, read as words: a new reading of the
+  // gates draws the card again only when they change.
+  const held = useOptionalData(
+    (s) => (lit ? ifritGates(task, s.gates).join(" ") : ""),
+    "",
+  );
+  const gateWait = useOptionalData((s) => {
+    const wait = ifritWaitOf(task, s.gates);
+    if (!wait) return "";
+    return wait.release
+      ? t("ifrit.gate_wait", {
+          gate: wait.gate,
+          holder: wait.holder,
+          time: wait.release,
+        })
+      : t("ifrit.gate_wait_held", { gate: wait.gate, holder: wait.holder });
+  }, "");
+  const markable = !!onDone && closable(task) && !ifrit;
+  const hasActions = holdable || stoppable || markable;
   const machineWait = task.status === TaskStatus.PENDING && task.machineWait;
   return (
     <article
@@ -308,7 +349,11 @@ export const WishTask = memo(function WishTask({
           <span className="wish-task-first-line">
             <StatusBadge
               tone={tone}
-              label={taskStatusText(task, forkedAs, fixedBy)}
+              label={
+                lit || out
+                  ? ifritWord(task, now)
+                  : taskStatusText(task, forkedAs, fixedBy)
+              }
               title={cancelledText(task) ?? activity ?? undefined}
             />
             {isMerge(task) && <MergeLabel task={task} codes={codes} />}
@@ -383,7 +428,7 @@ export const WishTask = memo(function WishTask({
                 <CircleStop size={14} />
               </button>
             )}
-            {onDone && closable(task) && (
+            {markable && (
               <button
                 className="icon-button"
                 onClick={() => setClosing(!closing)}
@@ -402,11 +447,63 @@ export const WishTask = memo(function WishTask({
           <DecisionLink decision={decision} onOpen={() => onDecision(task)} />
         </p>
       )}
-      {closing && onDone && closable(task) && (
+      {closing && onDone && markable && (
         <DoneBox
           onDone={(note) => onDone(note, task)}
           onCancel={() => setClosing(false)}
         />
+      )}
+      {(lit || out) && (
+        <div className="wish-task-note ifrit-line">
+          <IfritLinks links={ifritLinks(task)} />
+          <IfritGates gates={held ? held.split(" ") : []} />
+          {phase === "warned" && <IfritCountdown task={task} now={now} />}
+          <span className="ifrit-actions">
+            {phase === "warned" && <KeepLit />}
+            {out && onRelight && (
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={() => setRelighting(!relighting)}
+                title={t("ifrit.relight_detail")}
+                aria-expanded={relighting}
+              >
+                <Flame size={13} aria-hidden="true" />
+                <span>{t("ifrit.relight")}</span>
+              </button>
+            )}
+            {onDone && (
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={() => void onDone("", task).catch(() => {})}
+                title={t("ifrit.finish_detail")}
+              >
+                <CheckCircle2 size={13} aria-hidden="true" />
+                <span>{t("ifrit.finish")}</span>
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+      {relighting && out && onRelight && (
+        <SendBox
+          label={t("ifrit.relight_placeholder")}
+          onSend={(text) =>
+            onRelight(text, task).then(() => setRelighting(false))
+          }
+        />
+      )}
+      {reply && (
+        <p className="wish-task-note ifrit-reply" title={t("ifrit.reply")}>
+          <q>{reply}</q>
+        </p>
+      )}
+      {gateWait && (
+        <p className="wish-task-note ifrit-wait tone-ifrit">
+          <ToneIcon tone="ifrit" size={12} />
+          <span>{gateWait}</span>
+        </p>
       )}
       {task.closed && (
         <p className="wish-task-note wish-task-closed">
@@ -925,8 +1022,15 @@ function clock(event: TaskEvent): string {
   );
 }
 
-// SendBox sends the running worker an instruction; djinn's refusal shows as a toast, and the text stays.
-function SendBox({ onSend }: { onSend: (text: string) => Promise<unknown> }) {
+// SendBox sends the running worker an instruction, or the message that lights an ifrit again (label); djinn's refusal
+// shows as a toast, and the text stays.
+function SendBox({
+  onSend,
+  label = t("task.message_placeholder"),
+}: {
+  onSend: (text: string) => Promise<unknown>;
+  label?: string;
+}) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const submit = async (event: FormEvent) => {
@@ -948,8 +1052,8 @@ function SendBox({ onSend }: { onSend: (text: string) => Promise<unknown> }) {
       <input
         value={text}
         onChange={(event) => setText(event.target.value)}
-        placeholder={t("task.message_placeholder")}
-        aria-label={t("task.message_placeholder")}
+        placeholder={label}
+        aria-label={label}
         disabled={busy}
       />
       <button

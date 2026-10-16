@@ -30,6 +30,7 @@ import {
   taskMapOf,
 } from "./data/flight";
 import { fixerOf, noLead, watcherRuns } from "./data/format";
+import { litIfrits } from "./data/ifrit";
 import { DecisionLog } from "./decision-log";
 import { t } from "./i18n";
 import { Inbox } from "./inbox";
@@ -111,6 +112,16 @@ export function FlightPlan({
     (wish: Wish) => wishOrigin(wish),
     [],
   );
+  // The lit ifrits of every active wish, the latest activity first: a band each, at the top of what waits for you.
+  const ifrits = useMemo(
+    () =>
+      litIfrits(
+        wishes.flatMap((wish) =>
+          (details[wish.id]?.tasks ?? []).map((item) => ({ wish, item })),
+        ),
+      ),
+    [wishes, details],
+  );
   const attention = useMemo(
     () =>
       attentionOf(
@@ -119,6 +130,7 @@ export function FlightPlan({
         plan.ready,
         renderAttentionOrigin,
         leadPrompt,
+        ifrits,
       ),
     [
       plan.questions,
@@ -127,6 +139,7 @@ export function FlightPlan({
       plan.ready,
       renderAttentionOrigin,
       leadPrompt,
+      ifrits,
     ],
   );
   const [view, setView] = useState<View>("main");
@@ -172,8 +185,9 @@ export function FlightPlan({
         ...plan.decisions.map(({ item }) => `decision-${item.id}`),
         ...plan.waiting.map(({ item }) => `waiting-${item.id}`),
         ...plan.ready.map((wish) => `grant-${wish.id}`),
+        ...ifrits.map(({ item }) => `task-${item.id}`),
       ]),
-    [plan.questions, plan.decisions, plan.waiting, plan.ready],
+    [plan.questions, plan.decisions, plan.waiting, plan.ready, ifrits],
   );
   const { reach } = useReach(show, shown);
 
@@ -272,6 +286,23 @@ export function FlightPlan({
     [act, clients.tasks],
   );
 
+  // An ifrit put out: a message lights it again, in its own session and worktree.
+  const handleRelight = useCallback(
+    (text: string, task: Task) =>
+      act(
+        task.wishId,
+        () =>
+          clients.tasks.continue({
+            taskId: task.id,
+            prompt: text,
+            by: Closer.DEVELOPER,
+          }),
+        [Change.TASK],
+        t("ifrit.relit", { code: task.code }),
+      ),
+    [act, clients.tasks],
+  );
+
   // Where the merges of a wish show: under the task they serve.
   const nestOf = useCallback(
     (wishId: string) => mergeNest(details[wishId]?.tasks ?? noTasks),
@@ -313,6 +344,7 @@ export function FlightPlan({
           onSend={handleSend}
           onHold={pausable ? handleHold : undefined}
           onDone={handleDone}
+          onRelight={handleRelight}
           merges={merges}
           nested={merges?.map(row)}
           mergeOpen={nest.host.get(focus) === item.id}
@@ -335,6 +367,7 @@ export function FlightPlan({
       pausable,
       handleHold,
       handleDone,
+      handleRelight,
       handleTurnComments,
     ],
   );

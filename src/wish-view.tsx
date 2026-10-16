@@ -88,15 +88,18 @@ import {
   when,
   wishStateText,
   runningOf,
+  useNow,
   wishTone,
   effectivePushStrategy,
   isWithdrawn,
 } from "./data/format";
+import { ifritOut, litIfrits } from "./data/ifrit";
 import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
 import { AgentBlocks, agentBlocks } from "./agent-blocks";
 import { AttentionBar, attentionOf, useReach } from "./attention";
 import { ModalFrame } from "./frame";
+import { IfritBadge } from "./ifrit";
 import { useWrites } from "./marks";
 import { MarkdownBody } from "./markdown-body";
 import { OlderLine, useRecent } from "./older";
@@ -240,6 +243,16 @@ export function WishView({
   const { running, investigating, watching, merging, fixing } = runningOf(
     detail.tasks,
   );
+  // Its lit ifrits, the latest activity first, and those put out: each shows by the wish's title, flame and word.
+  const ifrits = useMemo(
+    () => litIfrits(detail.tasks.map((item) => ({ wish, item }))),
+    [detail.tasks, wish],
+  );
+  const outIfrits = useMemo(
+    () => detail.tasks.filter(ifritOut),
+    [detail.tasks],
+  );
+  const ifritNow = useNow(ifrits.length > 0, 15_000);
   const done = workDoneCount(detail.tasks);
   // The azimas' progress, then the work's: the azimas are not counted as tasks.
   const azimaProgress = azimasDone(detail.tasks);
@@ -421,6 +434,23 @@ export function WishView({
     [write, clients.tasks],
   );
 
+  // An ifrit put out: a message lights it again, in its own session and worktree.
+  const handleRelight = useCallback(
+    (text: string, task: Task) =>
+      write(
+        task.wishId,
+        () =>
+          clients.tasks.continue({
+            taskId: task.id,
+            prompt: text,
+            by: Closer.DEVELOPER,
+          }),
+        [Change.TASK],
+        t("ifrit.relit", { code: task.code }),
+      ),
+    [write, clients.tasks],
+  );
+
   const handleTurnComments = useCallback(
     (task: Task) =>
       write(
@@ -468,6 +498,7 @@ export function WishView({
           onSend={handleSend}
           onHold={pausable ? handleHold : undefined}
           onDone={handleDone}
+          onRelight={handleRelight}
           onTurnComments={handleTurnComments}
           merges={merges}
           nested={merges?.map(row)}
@@ -490,6 +521,7 @@ export function WishView({
       pausable,
       handleHold,
       handleDone,
+      handleRelight,
       handleTurnComments,
     ],
   );
@@ -733,6 +765,7 @@ export function WishView({
     wish.ready ? [wish] : [],
     undefined,
     leadPrompt,
+    ifrits,
   );
   // What the wish's tabs show of the bar's lines: the open questions, the waiting workers and the grant in the
   // first tab, the answered questions in the decisions.
@@ -741,6 +774,7 @@ export function WishView({
     ...decisions.map((d) => `decision-${d.id}`),
     ...waiting.map(({ item }) => `waiting-${item.id}`),
     ...(wish.ready ? [`grant-${wish.id}`] : []),
+    ...ifrits.map(({ item }) => `task-${item.id}`),
   ]);
   const { reach, to } = useReach(show, shown, wish.id);
   useEffect(() => {
@@ -753,6 +787,7 @@ export function WishView({
     running + merging,
     watching,
     investigating,
+    ifrits.length,
   );
 
   return (
@@ -862,7 +897,7 @@ export function WishView({
         <DeleteWish
           wish={wish}
           tasks={detail.tasks.length}
-          running={running + watching}
+          running={running + watching + ifrits.length}
           onClose={() => setDeleting(false)}
           onDelete={() => {
             setDeleting(false);
@@ -954,6 +989,13 @@ export function WishView({
             <div className="review-facts">
               <div className="review-pills">
                 <StatusBadge tone={tone} label={wishStateText(wish)} />
+                {ifrits.map(({ item }) => (
+                  <IfritBadge key={item.id} task={item} now={ifritNow} />
+                ))}
+                {!ifrits.length &&
+                  outIfrits.map((item) => (
+                    <IfritBadge key={item.id} task={item} now={ifritNow} />
+                  ))}
                 {isPrincipal(wish, allWishes) && (
                   <StatusBadge
                     tone="accent"

@@ -21,6 +21,7 @@ import { AgentSetup, needsSetup } from "./agent-setup";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
 import { HOURGLASS, Hourglass } from "./hourglass";
+import { HeldGates } from "./ifrit";
 import { t } from "./i18n";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
@@ -507,11 +508,10 @@ function HomePlaceholder() {
   );
 }
 
-// StatusBar says whether the page follows djinn, and how the machine is doing.
+// StatusBar says whether the page follows djinn, how the machine is doing, and the gates held (HeldGates).
 function StatusBar({ live, error }: { live: boolean; error: string }) {
   const machine = useMachine();
   const gates = useData((s) => s.gates);
-  const held = gates.filter((g) => g.holder).length;
   return (
     <footer className="app-statusbar">
       <span title={error || undefined}>
@@ -526,7 +526,9 @@ function StatusBar({ live, error }: { live: boolean; error: string }) {
           })}
         {machine?.pressure && ` · ${machine.pressure}`}
       </span>
-      <span>{held > 0 && t("status.gates", { count: held })}</span>
+      <span>
+        <HeldGates gates={gates} />
+      </span>
     </footer>
   );
 }

@@ -16,6 +16,7 @@
   --st-watching: #43c29f;
   --st-human: #e9c15c;
   --st-proof: #43c29f;
+  --st-ifrit: #ff6a2b;
   --lamp: #e2b33c;
   --lamp-hi: #f3d276;
   --lamp-lo: #d29f25;
@@ -50,6 +51,7 @@ html[data-theme="light"] {
   --st-watching: #146b5a;
   --st-human: #805c00;
   --st-proof: #146b5a;
+  --st-ifrit: #a63c00;
   --lamp: #dcaa2e;
   --lamp-hi: #f1d071;
   --lamp-lo: #d4a020;
@@ -102,6 +104,14 @@ html[data-theme="light"] {
 }
 .tone-later {
   --tone: var(--st-planned);
+}
+/* A lit ifrit: a warm vermilion, apart from the salmon of what blocks and the gold of what waits, with a flame and its
+   word. Out, it takes the grey of what stopped, its flame outlined. */
+.tone-ifrit {
+  --tone: var(--st-ifrit);
+}
+.tone-out {
+  --tone: var(--st-stopped);
 }
 .tone-withdrawn {
   --tone: var(--st-stopped);
@@ -287,6 +297,155 @@ button.attention-item:hover {
 .attention-prompt-error {
   margin: 0;
   color: var(--st-failed);
+}
+/* A lit ifrit's band: tinted vermilion, one border all round; its head (a button to its card, its links, its
+   countdown), the first line of its last reply, then its questions. The bar grows to hold it. */
+.attention-bar.with-ifrit ul {
+  max-height: 340px;
+}
+.attention-ifrit {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 8px 8px;
+  border: 1px solid color-mix(in srgb, var(--tone) 45%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tone) 12%, var(--surface-raised));
+}
+.attention-ifrit-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-width: 0;
+}
+.attention-ifrit-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 260px;
+  min-width: 0;
+  padding: 2px;
+  text-align: left;
+}
+.attention-ifrit-title > svg {
+  color: var(--muted);
+}
+.attention-ifrit-state {
+  flex: none;
+  color: var(--tone);
+  font-weight: 600;
+}
+.attention-ifrit-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.attention-ifrit-reply {
+  margin: 0;
+  padding: 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.attention-ifrit ul {
+  max-height: none;
+  overflow: visible;
+}
+.attention-asker {
+  flex: none;
+  color: var(--muted);
+}
+/* An ifrit's ports, links the system's browser opens: localhost:5173 then its name; one that does not answer is
+   greyed. */
+.ifrit-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.ifrit-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--mono);
+}
+.ifrit-link a {
+  color: var(--st-ifrit);
+}
+.ifrit-link-label {
+  color: var(--muted);
+}
+.ifrit-link.closed a {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.ifrit-gates {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ifrit-gate {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  color: var(--text);
+}
+/* Once Djinn warned it goes out: gold, dotted, as what waits for you. */
+.ifrit-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  border: 1px dashed var(--st-waiting);
+  border-radius: 999px;
+  color: var(--st-waiting);
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* On its card: its links, gates and buttons on one line, its last reply under it. A task that waits for a gate an
+   ifrit holds says so with the flame. */
+.wish-task-note.ifrit-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+.ifrit-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+.wish-task-note.ifrit-reply {
+  color: var(--text);
+}
+.wish-task-note.ifrit-wait {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.wish-task-note.ifrit-wait > svg {
+  flex: none;
+  color: var(--tone);
+}
+.status-ifrit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  color: var(--st-ifrit);
+}
+.status-dot.ifrit {
+  color: var(--st-ifrit);
+}
+.operating-load-forecast-ifrit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--tone);
 }
 .flash {
   animation: flash 1.4s ease-out;
@@ -541,6 +700,13 @@ button.attention-item:hover {
 }
 .glance-dot.plan {
   border: 1.5px dashed var(--st-planned);
+}
+/* A lit ifrit: its flame in place of the dot. */
+.glance-flame {
+  display: inline-flex;
+  justify-self: center;
+  flex: none;
+  color: var(--tone);
 }
 /* A worker at work breathes: a ring that widens and fades, still for whoever asks for less motion. */
 .glance-row .glance-dot.run::after,

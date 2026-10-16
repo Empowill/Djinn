@@ -58,8 +58,8 @@ test("the status colours keep their contrast in the dark and the light theme", (
     const states = Object.keys(theme).filter((k) => k.startsWith("st-"));
     assert.equal(
       states.length,
-      13,
-      `${name}: the thirteen states have a colour`,
+      14,
+      `${name}: the fourteen states have a colour`,
     );
     for (const state of states)
       for (const ground of theme.grounds) {

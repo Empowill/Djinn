@@ -20,7 +20,9 @@ export {
   taskStatusText,
   taskTime,
   taskTone,
+  wishTone,
 } from "@/src/data/format.ts";
+export * from "@/src/data/ifrit.ts";
 export { create } from "@bufbuild/protobuf";
 export { anyPack } from "@bufbuild/protobuf/wkt";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
@@ -369,7 +371,14 @@ test("work that merges counts as running: a worker at work, not a watcher", () =
       done(I.CONFLICT),
       { status: S.DONE },
     ]),
-    { running: 1, investigating: 0, watching: 1, merging: 2, fixing: 0 },
+    {
+      running: 1,
+      investigating: 0,
+      watching: 1,
+      merging: 2,
+      fixing: 0,
+      ifrits: 0,
+    },
   );
 });
 
@@ -466,7 +475,14 @@ test("a failed merge is being fixed while its correction works, failed when none
       correction(S.RUNNING),
       { id: "t2", status: S.DONE, integration: { state: I.RED } },
     ]),
-    { running: 1, investigating: 0, watching: 0, merging: 0, fixing: 1 },
+    {
+      running: 1,
+      investigating: 0,
+      watching: 0,
+      merging: 0,
+      fixing: 1,
+      ifrits: 0,
+    },
   );
 });
 
@@ -687,7 +703,14 @@ test("an investigator at work has its own tone and count, apart from the running
       investigator(S.DONE),
       { status: S.RUNNING, provider: f.Provider.WATCH },
     ]),
-    { running: 1, investigating: 2, watching: 1, merging: 0, fixing: 0 },
+    {
+      running: 1,
+      investigating: 2,
+      watching: 1,
+      merging: 0,
+      fixing: 0,
+      ifrits: 0,
+    },
   );
 });
 
@@ -1080,5 +1103,185 @@ test("open questions come as they were asked, by wish, whatever they hold up; ea
       )
       .map((q) => q.item.code),
     ["Q01", "Q02", "Q05"],
+  );
+});
+
+// An ifrit (T51): a worker that stays lit while the developer is there. Its tone and word never rest on the colour
+// alone: lit, at work, going out in 4 min once warned, out; it counts apart from the workers, and turns its wish's tone
+// before what waits.
+test("an ifrit lit, at work, warned or out: its tone, its word, and its count apart from the workers", () => {
+  const S = f.TaskStatus;
+  const I = f.IfritState;
+  const now = Date.UTC(2026, 9, 16, 15, 0, 0);
+  const ms = (t) => ({ seconds: BigInt(Math.floor(t / 1000)), nanos: 0 });
+  const ifrit = (status, state, extra = {}) => ({
+    id: "i1",
+    code: "W12",
+    title: "Front of the lamp",
+    kind: f.TaskKind.IFRIT,
+    status,
+    ifrit: { state, serves: [], reply: "", ...extra },
+  });
+  const working = ifrit(S.RUNNING, I.WORKING);
+  const lit = ifrit(S.RUNNING, I.LISTENING, { outTime: ms(now + 30 * 60e3) });
+  const warned = ifrit(S.RUNNING, I.LISTENING, {
+    warnTime: ms(now - 60e3),
+    outTime: ms(now + 3.5 * 60e3),
+  });
+  const out = ifrit(S.STOPPED, I.OUT);
+  const done = ifrit(S.DONE, I.UNSPECIFIED);
+  assert.deepEqual(
+    [working, lit, warned, out, done].map((t) => f.taskTone(t)),
+    ["ifrit", "ifrit", "ifrit", "out", "done"],
+  );
+  assert.deepEqual(
+    [working, lit, warned, out, done].map((t) => f.ifritPhase(t, now)),
+    ["working", "listening", "warned", "out", undefined],
+  );
+  assert.deepEqual(
+    [working, lit, warned, out].map((t) => f.ifritWord(t, now)),
+    ["At work", "Lit", "Goes out in 4 min", "Out"],
+  );
+  // Before its warning time, no countdown; a row that does not tick says where it stands, never a countdown.
+  assert.equal(f.ifritWord(warned, now - 2 * 60e3), "Lit", "not warned yet");
+  assert.equal(f.taskStatusText(warned), "Lit");
+  assert.equal(f.taskStatusText(out), "Out");
+  assert.equal(f.taskStatusText(done), "Done");
+  // A work task is no ifrit, whatever its fields.
+  assert.equal(f.taskTone({ status: S.RUNNING, ifrit: lit.ifrit }), "running");
+
+  // Counted apart: the workers running are the work alone; one put out counts nowhere.
+  assert.deepEqual(f.runningOf([working, lit, out, { status: S.RUNNING }]), {
+    running: 1,
+    investigating: 0,
+    watching: 0,
+    merging: 0,
+    fixing: 0,
+    ifrits: 2,
+  });
+  // Its wish takes its tone before what waits, after a paused or granted wish's.
+  const w = { state: f.WishState.ACTIVE, ready: true };
+  assert.equal(f.wishTone(w, 2, 1, 0, 0, 1), "ifrit");
+  assert.equal(f.wishTone(w, 2, 1, 0, 0, 0), "waiting");
+  assert.equal(
+    f.wishTone({ ...w, state: f.WishState.PAUSED }, 0, 0, 0, 0, 1),
+    "paused",
+  );
+});
+
+test("an ifrit's ports are links, its gates those it holds, and a task waiting for one is told when it comes back", () => {
+  const R = f.ServeState;
+  const ms = (t) => ({ seconds: BigInt(Math.floor(t / 1000)), nanos: 0 });
+  const ifrit = {
+    id: "i1",
+    code: "W12",
+    title: "Front of the lamp",
+    kind: f.TaskKind.IFRIT,
+    status: f.TaskStatus.RUNNING,
+    ifrit: {
+      state: f.IfritState.LISTENING,
+      serves: [
+        {
+          name: "front",
+          state: R.RUNNING,
+          gate: "",
+          ports: [{ number: 5173, label: "", open: true }],
+        },
+        {
+          name: "back",
+          state: R.STARTING,
+          gate: "Stack",
+          ports: [{ number: 8080, label: "api", open: false }],
+        },
+        {
+          name: "old",
+          state: R.STOPPED,
+          gate: "db",
+          ports: [{ number: 9000, label: "", open: true }],
+        },
+      ],
+    },
+  };
+  // The ports of the serves that run, named as declared, else by their serve; one that does not answer says so.
+  assert.deepEqual(f.ifritLinks(ifrit), [
+    {
+      url: "http://localhost:5173/",
+      host: "localhost:5173",
+      label: "front",
+      open: true,
+    },
+    {
+      url: "http://localhost:8080/",
+      host: "localhost:8080",
+      label: "api",
+      open: false,
+    },
+  ]);
+  const release = Date.UTC(2026, 9, 16, 15, 42);
+  const gates = [
+    {
+      name: "stack",
+      holder: "W12 (Front of the lamp): task run-back",
+      holderTaskId: "i1",
+      ifrit: true,
+      waiting: ["W15 (Tests): go tool task test"],
+      expireTime: ms(release),
+    },
+    {
+      name: "lint",
+      holder: "W3 (Lint)",
+      holderTaskId: "t3",
+      ifrit: false,
+      waiting: ["W16 (Other): go tool task lint"],
+    },
+    {
+      name: "e2e",
+      holder: "W12 (Front of the lamp): npx playwright test",
+      holderTaskId: "i1",
+      ifrit: true,
+      waiting: [],
+    },
+  ];
+  // The gates Djinn lists as its own, and those its running serves hold, each once.
+  assert.deepEqual(f.ifritGates(ifrit, gates), ["e2e", "stack"]);
+  const wait = f.ifritWaitOf({ code: "W15", title: "Tests" }, gates);
+  assert.equal(wait.gate, "stack");
+  assert.equal(wait.holder, "W12 (Front of the lamp): task run-back");
+  assert.equal(
+    wait.release,
+    new Date(release).toLocaleTimeString("en", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  );
+  // A gate held by a worker that is no ifrit, or a task that waits for nothing: no line.
+  assert.equal(
+    f.ifritWaitOf({ code: "W16", title: "Other" }, gates),
+    undefined,
+  );
+  assert.equal(f.ifritWaitOf({ code: "W1", title: "Tests" }, gates), undefined);
+
+  // The lit ifrits, the latest activity first; one put out is not lit.
+  const at = (id, seconds, extra = {}) => ({
+    item: {
+      ...ifrit,
+      id,
+      lastActivityTime: { seconds: BigInt(seconds), nanos: 0 },
+      ...extra,
+    },
+  });
+  assert.deepEqual(
+    f
+      .litIfrits([
+        at("a", 10),
+        at("b", 20),
+        at("c", 30, {
+          status: f.TaskStatus.STOPPED,
+          ifrit: { state: f.IfritState.OUT, serves: [] },
+        }),
+        at("d", 40, { kind: f.TaskKind.WORK }),
+      ])
+      .map(({ item }) => item.id),
+    ["b", "a"],
   );
 });

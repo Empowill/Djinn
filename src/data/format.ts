@@ -10,6 +10,7 @@ import {
   AzimaState,
   Choice,
   Closer,
+  IfritState,
   IntegrationState,
   type KeptWorktree,
   type Lead,
@@ -32,6 +33,7 @@ import { useEffect, useState } from "react";
 
 import { type TextKey, language, t } from "../i18n";
 import { onStillness, still } from "../stillness";
+import { ifritLit, ifritOut, ifritWord, isIfrit } from "./ifrit";
 
 // A djinn grants three wishes at a time, never more. The lamp refuses a fourth; the page only says so beforehand.
 export const MAX_ACTIVE = 3;
@@ -243,7 +245,11 @@ export function taskActivity(task: Task, now: number): string | null {
       : 0;
   if (!last) return null;
   const elapsed = Math.max(0, now - last);
-  if (elapsed >= SILENCE_HOVER_MS) {
+  // A listening ifrit is silent by design: it waits for your next message.
+  if (
+    elapsed >= SILENCE_HOVER_MS &&
+    task.ifrit?.state !== IfritState.LISTENING
+  ) {
     const mins = Math.max(1, Math.round(elapsed / 60000));
     return t("task.silent_for", { count: mins });
   }
@@ -398,11 +404,12 @@ const taskStatusKeys: Record<TaskStatus, TextKey> = {
 // being fixed, not failed.
 export function taskStatusText(
   task: Pick<Task, "status" | "resumeAfter"> &
-    Partial<Pick<Task, "provider" | "integration" | "role">>,
+    Partial<Pick<Task, "provider" | "integration" | "role" | "kind" | "ifrit">>,
   forkedAs = "",
   fixedBy = "",
 ): string {
   if (watcherRuns(task)) return t("task.status_watching");
+  if (ifritLit(task) || ifritOut(task)) return ifritWord(task);
   if (investigatorRuns(task)) return t("task.status_investigating");
   if (task.status === TaskStatus.RESUMING && task.resumeAfter)
     return t("task.status_limit");
@@ -463,7 +470,11 @@ export type Tone =
   // An open question nothing waits for: it can wait.
   | "later"
   | "withdrawn"
-  | "accent";
+  | "accent"
+  // A lit ifrit (src/data/ifrit.ts): vermilion, with a flame; it may hold gates others wait for, and it calls you.
+  | "ifrit"
+  // An ifrit put out: the grey of what stopped, its flame outlined; a message lights it again.
+  | "out";
 
 // taskTone is a task's state in that language. A task Djinn resumes runs; one waiting for its provider's limit to
 // reset holds still, as a paused one; one cut short and resumed as another task (forkedAs) is stopped, no alarm.
@@ -472,12 +483,14 @@ export type Tone =
 // that failed is red, unless a correction task fixes it while it works (fixedBy, fixerOf): orange, Djinn handles it.
 export function taskTone(
   task: Pick<Task, "status" | "resumeAfter"> &
-    Partial<Pick<Task, "provider" | "integration" | "role">>,
+    Partial<Pick<Task, "provider" | "integration" | "role" | "kind" | "ifrit">>,
   forkedAs = "",
   fixedBy = "",
 ): Tone {
   const status = task.status;
   if (watcherRuns(task)) return "watching";
+  if (ifritLit(task)) return "ifrit";
+  if (ifritOut(task)) return "out";
   if (status === TaskStatus.RESUMING && task.resumeAfter) return "paused";
   if (status === TaskStatus.INTERRUPTED && forkedAs) return "stopped";
   switch (status) {
@@ -594,20 +607,26 @@ export function fixerOf<T extends Fixable>(
 // worker runs for it, and the load bar's count of workers never had it (W577: 6 workers and 2 merges waiting read as "8
 // running" at a level that runs 6). Djinn is at work on it all the same: a wish's tone counts it as running. Work whose
 // merge failed and that a correction fixes (fixerOf) is counted apart too: its correction runs, and counts with the
-// running.
+// running. A lit ifrit is counted apart as well (ifritLit): it stays lit while you are there, at work or listening.
 export interface Running {
   running: number;
   investigating: number;
   watching: number;
   merging: number;
   fixing: number;
+  ifrits: number;
 }
 
 export function runningOf(
   tasks: (Pick<Task, "status"> &
-    Partial<Pick<Task, "id" | "provider" | "integration" | "role">>)[],
+    Partial<
+      Pick<Task, "id" | "provider" | "integration" | "role" | "kind" | "ifrit">
+    >)[],
 ): Running {
-  const live = tasks.filter((task) => task.status === TaskStatus.RUNNING);
+  const ifrits = tasks.filter(ifritLit).length;
+  const live = tasks.filter(
+    (task) => task.status === TaskStatus.RUNNING && !isIfrit(task),
+  );
   const watching = live.filter(watcherRuns).length;
   const investigating = live.filter(investigatorRuns).length;
   const merging = tasks.filter(isTaskMerging).length;
@@ -620,6 +639,7 @@ export function runningOf(
     watching,
     merging,
     fixing,
+    ifrits,
   };
 }
 
@@ -751,16 +771,19 @@ export function recommendedChoice(question: Question): Choice | undefined {
   return found.length === 1 ? choiceOf(found[0]) : undefined;
 }
 
-// wishTone is a wish's state in the status language: what it needs first.
+// wishTone is a wish's state in the status language: what it needs first. A lit ifrit comes before what waits: it is
+// there for you, and calls you.
 export function wishTone(
   wish: Wish,
   questions: number,
   running: number,
   watching = 0,
   investigating = 0,
+  ifrits = 0,
 ): Tone {
   if (wish.state === WishState.GRANTED) return "done";
   if (wish.state === WishState.PAUSED) return "paused";
+  if (ifrits > 0) return "ifrit";
   if (questions > 0 || wish.ready) return "waiting";
   if (running > 0) return "running";
   if (investigating > 0) return "investigating";
