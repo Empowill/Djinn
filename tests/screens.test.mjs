@@ -9998,9 +9998,9 @@ test("operating load: the fill rises to the level in effect, striped to the prev
     ];
   };
   try {
-    assert.equal(s.stopAt(0), "calc(7px + 0 * (100% - 14px))");
-    assert.equal(s.stopAt(2), "calc(7px + 0.5 * (100% - 14px))");
-    assert.equal(s.stopAt(4), "calc(7px + 1 * (100% - 14px))");
+    assert.equal(s.stopAt(0), "calc(0.4375rem + 0 * (100% - 0.875rem))");
+    assert.equal(s.stopAt(2), "calc(0.4375rem + 0.5 * (100% - 0.875rem))");
+    assert.equal(s.stopAt(4), "calc(0.4375rem + 1 * (100% - 0.875rem))");
     // At rest: both up to High.
     assert.deepEqual(fill(), [s.stopAt(2), "high", s.stopAt(2), "high"]);
     // Previewing Overclock: solid to High, striped on to Overclock in its colour.

@@ -105,9 +105,9 @@ test("the tree draws every task, finished ones included, the oldest at the botto
   // From the top of the page: the planned one, then the newest, down to the oldest. No row for the azima.
   const rows = [...html.matchAll(/data-task="(\w+)"/g)].map((m) => m[1]);
   const tops = Object.fromEntries(
-    [...html.matchAll(/style="top:(\d+)(?:px)?" data-task="(\w+)"/g)].map(
-      (m) => [m[2], Number(m[1])],
-    ),
+    [
+      ...html.matchAll(/style="top:([\d.]+)(?:px|rem)?" data-task="(\w+)"/g),
+    ].map((m) => [m[2], Number(m[1])]),
   );
   assert.deepEqual(rows.sort(), ["W1", "W2", "W3", "W4"]);
   assert.ok(tops.W3 < tops.W4 && tops.W4 < tops.W2 && tops.W2 < tops.W1);

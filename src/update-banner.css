@@ -10,7 +10,7 @@
   flex-direction: column;
   gap: var(--space-3);
   width: fit-content;
-  max-width: min(680px, calc(100vw - 32px));
+  max-width: min(42.5rem, calc(100vw - 2rem));
   max-height: 50vh;
   overflow-y: auto;
   margin: var(--space-2) auto;
@@ -19,9 +19,9 @@
   border-radius: var(--radius-panel);
   background: color-mix(in srgb, var(--lamp) 7%, var(--surface-raised));
   box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--lamp) 12%, transparent),
-    0 0 32px color-mix(in srgb, var(--lamp) 16%, transparent),
-    0 8px 28px color-mix(in srgb, var(--shadow) 50.2%, transparent);
+    0 0 0 0.1875rem color-mix(in srgb, var(--lamp) 12%, transparent),
+    0 0 2rem color-mix(in srgb, var(--lamp) 16%, transparent),
+    0 0.5rem 1.75rem color-mix(in srgb, var(--shadow) 50.2%, transparent);
   color: var(--text);
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
@@ -46,8 +46,8 @@
   flex: none;
 }
 .update-banner .brand-mark {
-  width: 22px;
-  height: 22px;
+  width: 1.375rem;
+  height: 1.375rem;
 }
 /* One line: the title is cut short when it does not fit, the hover tells it whole. */
 .update-banner-title {
@@ -84,7 +84,7 @@
 .update-banner a {
   color: var(--n-9c);
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 0.125rem;
 }
 .update-banner a:hover {
   color: var(--text);
@@ -124,7 +124,7 @@
 }
 .update-banner .update-banner-more {
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 0.125rem;
 }
 .update-banner .update-banner-close {
   padding: 0 var(--space-1);

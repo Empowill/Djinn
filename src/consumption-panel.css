@@ -6,9 +6,9 @@
   --chart-cpu: #5b8def;
   --chart-memory: #b8822a;
   --chart-surface: var(--n-19);
-  margin: var(--space-4, 16px) 0;
+  margin: var(--space-4, 1rem) 0;
   border: 1px solid var(--n-2a);
-  border-radius: 6px;
+  border-radius: 0.375rem;
   background: var(--n-17);
   overflow: hidden;
 }
@@ -25,8 +25,8 @@ html[data-theme="light"] .consumption-panel {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
   background: var(--n-19);
   border-bottom: 1px solid var(--n-25);
   user-select: none;
@@ -40,17 +40,17 @@ html[data-theme="light"] .consumption-header {
 .consumption-fold-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
   background: none;
   border: none;
-  padding: 4px 6px;
-  margin: -4px -6px;
+  padding: 0.25rem 0.375rem;
+  margin: -0.25rem -0.375rem;
   color: var(--n-e7);
   font-family: inherit;
-  font-size: var(--font-size-body, 12px);
+  font-size: var(--font-size-body, 0.75rem);
   font-weight: 600;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 0.25rem;
   transition: background-color 0.15s ease;
 }
 
@@ -63,8 +63,8 @@ html[data-theme="light"] .consumption-header {
   align-items: center;
   background: var(--n-14);
   border: 1px solid var(--n-28);
-  border-radius: 4px;
-  padding: 2px;
+  border-radius: 0.25rem;
+  padding: 0.125rem;
 }
 
 html[data-theme="light"] .consumption-range-selector {
@@ -77,9 +77,9 @@ html[data-theme="light"] .consumption-range-selector {
   border: none;
   color: var(--n-79);
   font-family: var(--mono);
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 3px;
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.1875rem;
   cursor: pointer;
   transition: all 0.12s ease;
 }
@@ -96,39 +96,39 @@ html[data-theme="light"] .consumption-range-selector {
 
 html[data-theme="light"] .range-pill.active {
   background: var(--n-17);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 0.125rem rgba(0, 0, 0, 0.06);
 }
 
 .consumption-body {
-  padding: 14px;
+  padding: 0.875rem;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 1.125rem;
 }
 
 .consumption-notice {
   margin: 0;
-  padding: 8px 12px;
+  padding: 0.5rem 0.75rem;
   background: var(--n-1e);
   border: 1px dashed var(--n-33);
-  border-radius: 4px;
+  border-radius: 0.25rem;
 }
 
 .resource-section-title {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 10px;
-  margin: 0 0 8px;
+  gap: 0.625rem;
+  margin: 0 0 0.5rem;
   color: var(--n-e7);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
 }
 
 .resource-section-detail {
   color: var(--n-88);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 400;
 }
 
@@ -136,35 +136,35 @@ html[data-theme="light"] .range-pill.active {
 .resource-machine {
   background: var(--n-19);
   border: 1px solid var(--n-25);
-  border-radius: 6px;
-  padding: 12px 14px;
+  border-radius: 0.375rem;
+  padding: 0.75rem 0.875rem;
 }
 
 .resource-machine-charts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 1rem;
 }
 
 .resource-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 18px;
-  margin: 8px 0 0;
+  gap: 0.25rem 1.125rem;
+  margin: 0.5rem 0 0;
   padding: 0;
   list-style: none;
   color: var(--n-a9);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .resource-legend li {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
 }
 
 .resource-legend-key {
-  width: 18px;
+  width: 1.125rem;
   border-top: 2px solid var(--n-88);
 }
 
@@ -177,28 +177,28 @@ html[data-theme="light"] .range-pill.active {
 }
 
 .resource-gates {
-  margin-top: 12px;
+  margin-top: 0.75rem;
 }
 
 .resource-gates-title {
-  margin: 0 0 6px;
+  margin: 0 0 0.375rem;
   color: var(--n-88);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
 }
 
 /* Aligned with the charts' plot: their left and right paddings. */
 .resource-gates-lanes {
   position: relative;
-  margin: 0 14px 0 56px;
+  margin: 0 0.875rem 0 3.5rem;
 }
 
 .resource-gates-band {
   position: absolute;
   display: flex;
-  height: 18px;
-  min-width: 3px;
-  border-radius: 3px;
+  height: 1.125rem;
+  min-width: 0.1875rem;
+  border-radius: 0.1875rem;
   overflow: hidden;
   background: var(--n-2a);
 }
@@ -207,20 +207,20 @@ html[data-theme="light"] .range-pill.active {
   flex-shrink: 0;
   background: repeating-linear-gradient(
     45deg,
-    var(--n-33) 0 2px,
-    transparent 2px 5px
+    var(--n-33) 0 0.125rem,
+    transparent 0.125rem 0.3125rem
   );
 }
 
 .resource-gates-held {
   flex: 1;
   min-width: 0;
-  padding: 0 6px;
+  padding: 0 0.375rem;
   overflow: hidden;
   color: var(--n-c4);
   font-family: var(--mono);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
   white-space: nowrap;
 }
 
@@ -228,7 +228,7 @@ html[data-theme="light"] .range-pill.active {
 .resource-workers {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0.625rem;
 }
 
 .resource-workers > .resource-section-title {
@@ -238,14 +238,14 @@ html[data-theme="light"] .range-pill.active {
 .resource-workers-scale {
   margin: 0;
   color: var(--n-a9);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .resource-worker {
   background: var(--n-19);
   border: 1px solid var(--n-25);
-  border-radius: 6px;
-  padding: 12px 14px;
+  border-radius: 0.375rem;
+  padding: 0.75rem 0.875rem;
 }
 
 .resource-worker.is-paused {
@@ -255,10 +255,10 @@ html[data-theme="light"] .range-pill.active {
 .resource-worker-title {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin: 0 0 10px;
+  gap: 0.5rem;
+  margin: 0 0 0.625rem;
   color: var(--n-e7);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1.45;
 }
@@ -283,34 +283,34 @@ html[data-theme="light"] .range-pill.active {
 }
 
 .resource-worker-paused {
-  padding: 1px 6px;
+  padding: 1px 0.375rem;
   border: 1px solid var(--st-paused);
-  border-radius: 3px;
+  border-radius: 0.1875rem;
   color: var(--st-paused);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 400;
 }
 
 .resource-worker-body {
   display: grid;
-  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: minmax(12.5rem, 16.25rem) minmax(0, 1fr);
+  gap: 1.125rem;
   align-items: start;
 }
 
 .resource-worker-facts {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.375rem;
   margin: 0;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .resource-worker-fact {
   display: grid;
-  grid-template-columns: 70px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 4.375rem minmax(0, 1fr);
+  gap: 0.5rem;
 }
 
 .resource-worker-fact dt {
@@ -325,8 +325,8 @@ html[data-theme="light"] .range-pill.active {
 
 .resource-worker-charts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(17.5rem, 1fr));
+  gap: 1rem;
 }
 
 /* A chart */
@@ -348,21 +348,21 @@ html[data-theme="light"] .range-pill.active {
   align-items: baseline;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 4px 10px;
-  margin-bottom: 4px;
-  font-size: 12px;
+  gap: 0.25rem 0.625rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
 }
 
 .resource-chart-title {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
   color: var(--n-de);
   font-weight: 600;
 }
 
 .resource-chart-key {
-  width: 14px;
+  width: 0.875rem;
   border-top: 2px solid var(--series);
 }
 
@@ -373,13 +373,13 @@ html[data-theme="light"] .range-pill.active {
 
 .resource-chart-plot {
   position: relative;
-  border-radius: 4px;
+  border-radius: 0.25rem;
   outline: none;
   cursor: crosshair;
 }
 
 .resource-chart-plot:focus-visible {
-  box-shadow: 0 0 0 2px var(--chart-cpu);
+  box-shadow: 0 0 0 0.125rem var(--chart-cpu);
 }
 
 .resource-chart-svg {
@@ -400,7 +400,7 @@ html[data-theme="light"] .range-pill.active {
 .resource-chart-tick {
   fill: var(--n-88);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .resource-chart-hatch {
@@ -416,7 +416,7 @@ html[data-theme="light"] .range-pill.active {
 .resource-chart-gate-label {
   fill: var(--n-a9);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .resource-chart-ref {
@@ -427,7 +427,7 @@ html[data-theme="light"] .range-pill.active {
 
 .resource-chart-ref-label {
   fill: var(--n-a9);
-  font-size: 12px;
+  font-size: 0.75rem;
   paint-order: stroke;
   stroke: var(--chart-surface);
   stroke-width: 3px;
@@ -475,25 +475,25 @@ html[data-theme="light"] .range-pill.active {
 
 .resource-chart-readout {
   position: absolute;
-  top: 6px;
+  top: 0.375rem;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px;
+  gap: 0.125rem;
+  padding: 0.375rem 0.5rem;
   border: 1px solid var(--n-33);
-  border-radius: 4px;
+  border-radius: 0.25rem;
   background: var(--n-14);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.25);
   color: var(--n-a9);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   white-space: nowrap;
   pointer-events: none;
 }
 
 html[data-theme="light"] .resource-chart-readout {
   background: var(--n-19);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.1);
 }
 
 .resource-chart-readout strong {
@@ -512,48 +512,48 @@ html[data-theme="light"] .resource-chart-readout {
 
 /* Where the time goes */
 .resource-commands-help {
-  max-width: 900px;
-  margin: 0 0 12px;
+  max-width: 56.25rem;
+  margin: 0 0 0.75rem;
   color: var(--n-a9);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.5;
 }
 
 .resource-project + .resource-project {
-  margin-top: 16px;
+  margin-top: 1rem;
 }
 
 .resource-project-name {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  margin: 0 0 6px;
+  gap: 0.625rem;
+  margin: 0 0 0.375rem;
   color: var(--n-de);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
 }
 
 .resource-project-top {
-  margin: 0 0 8px;
+  margin: 0 0 0.5rem;
   color: var(--n-c4);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .resource-table-scroll {
   overflow-x: auto;
   border: 1px solid var(--n-25);
-  border-radius: 6px;
+  border-radius: 0.375rem;
 }
 
 .resource-commands-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .resource-commands-table th,
 .resource-commands-table td {
-  padding: 6px 10px;
+  padding: 0.375rem 0.625rem;
   text-align: left;
   vertical-align: top;
 }
@@ -567,7 +567,7 @@ html[data-theme="light"] .resource-chart-readout {
 }
 
 .resource-commands-table thead th:first-child {
-  min-width: 260px;
+  min-width: 16.25rem;
 }
 
 .resource-commands-table thead .resource-col-group {
@@ -595,7 +595,7 @@ html[data-theme="light"] .resource-chart-readout {
 .resource-gate-row th {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
   font-family: var(--mono);
 }
 
@@ -607,33 +607,33 @@ html[data-theme="light"] .resource-chart-readout {
 }
 
 .resource-commands-table .resource-command-name {
-  padding-left: 28px;
+  padding-left: 1.75rem;
 }
 
 .resource-command-name code {
   color: var(--n-e7);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .resource-command-args {
   display: block;
-  margin-top: 2px;
+  margin-top: 0.125rem;
   color: var(--n-88);
   font-family: var(--mono);
   overflow-wrap: anywhere;
 }
 
 .resource-command-total {
-  width: 96px;
+  width: 6rem;
 }
 
 .resource-share {
   display: block;
-  height: 4px;
-  margin: 4px 0 2px auto;
-  width: 80px;
-  border-radius: 2px;
+  height: 0.25rem;
+  margin: 0.25rem 0 0.125rem auto;
+  width: 5rem;
+  border-radius: 0.125rem;
   background: var(--n-25);
   overflow: hidden;
 }
@@ -652,9 +652,9 @@ html[data-theme="light"] .resource-chart-readout {
 /* Provider badges */
 .provider-badge {
   display: inline-block;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-size: 12px;
+  padding: 1px 0.375rem;
+  border-radius: 0.1875rem;
+  font-size: 0.75rem;
   font-family: var(--mono);
   font-weight: 400;
   text-transform: lowercase;

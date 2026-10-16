@@ -280,7 +280,7 @@ const GatesTimeline = memo(function GatesTimeline({
       <h5 className="resource-gates-title">{t("consumption.gates_title")}</h5>
       <div
         className="resource-gates-lanes"
-        style={{ height: count * 22 }}
+        style={{ height: `${(count * 22) / 16}rem` }}
         role="list"
       >
         {lanes.map(({ g, lane }, i) => {
@@ -302,7 +302,7 @@ const GatesTimeline = memo(function GatesTimeline({
               title={label}
               aria-label={label}
               style={{
-                top: lane * 22,
+                top: `${(lane * 22) / 16}rem`,
                 left: at(asked),
                 right: `calc(100% - ${at(release)})`,
               }}

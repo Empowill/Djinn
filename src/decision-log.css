@@ -2,12 +2,12 @@
    decisions, human), no tile. The links to tasks read as codes. */
 .decision-log .decision-row {
   display: flex;
-  gap: 12px;
-  margin-bottom: 8px;
-  padding: 12px 14px;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  padding: 0.75rem 0.875rem;
   border: 1px solid
     color-mix(in srgb, var(--tone, var(--line)) 45%, var(--line));
-  border-radius: 8px;
+  border-radius: 0.5rem;
   background: var(--surface);
 }
 .decision-log .decision-row.focused {
@@ -17,7 +17,7 @@
 }
 .decision-icon {
   flex: none;
-  font-size: 18px;
+  font-size: 1.125rem;
   line-height: 1.5;
 }
 .decision-main {
@@ -29,35 +29,35 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 10px;
+  gap: 0.375rem 0.625rem;
   color: var(--muted);
   font-size: var(--font-size-body);
 }
 .decision-row h3 {
-  margin: 6px 0 0;
-  font-size: 14px;
+  margin: 0.375rem 0 0;
+  font-size: 0.875rem;
   font-weight: 600;
 }
 .decision-row .answer-value {
-  margin: 2px 0 0;
+  margin: 0.125rem 0 0;
 }
 /* An answer in a wish without a lead session: no lead was told. */
 .no-lead {
-  margin: 4px 0 0;
+  margin: 0.25rem 0 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-style: italic;
 }
 .decision-note {
-  margin-top: 6px;
+  margin-top: 0.375rem;
   color: var(--muted);
 }
 .decision-note summary {
   cursor: pointer;
 }
 .decision-tasks {
-  gap: 6px;
-  margin: 8px 0 0;
+  gap: 0.375rem;
+  margin: 0.5rem 0 0;
 }
 .decision-tasks a,
 .decision-link {
@@ -68,7 +68,7 @@
 .decision-link {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 0.3125rem;
   color: var(--muted);
   font-size: var(--font-size-body);
 }

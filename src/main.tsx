@@ -13,6 +13,7 @@ import { installNativeWindowDrag } from "./native-window";
 import { followStillness } from "./stillness";
 import "./theme.css";
 import "./styles.css";
+import { applyTextSize } from "./text-size";
 import { applyTheme, followSystem } from "./theme";
 import { UpdateBanner } from "./update-banner";
 import { WishApp } from "./wish-app";
@@ -39,6 +40,7 @@ hotModule?.dispose(() => {
   stillnessCleanup();
 });
 applyTheme();
+applyTextSize();
 followSystem();
 // djinn serves the page and its API on the same origin, over http:// in a browser or wails:// in the window; fetch
 // sends the session cookie on its own.
