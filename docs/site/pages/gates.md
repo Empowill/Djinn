@@ -7,8 +7,8 @@ records what each command cost, and next time waits until the machine has the me
 A holder keeps its gate an hour at most. A lit [ifrit](#ifrit) keeps its gates as long as it is lit: they go back when
 it goes out, at its out time at the latest, which each of your actions in Djinn pushes back, or when it ends. It goes
 before no one: the first wish first, then the first come. Those who wait read "held by ifrit W12: task run-back;
-released when you leave, at 15:42 at the latest", `djinn gate list` says `ifrit: true` with its `expire_time`, and the
-Djinn's brief says who waits on it, so that the Djinn offers you to end it.
+released when you leave, at 15:42 at the latest", the list of gates marks the ifrit's gates with the time they go back
+at the latest, and the Djinn's brief says who waits on it, so that the Djinn offers you to end it.
 
 > **This page is a sketch.** Its full guide, how to use it from the window and from the Djinn, what to expect and
 > the common mistakes, is being written.
