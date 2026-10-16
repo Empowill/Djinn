@@ -1313,7 +1313,7 @@ message Port {
 // Azima is where an azima stands, computed on every read from the tasks of its wish; but for what Djinn records of its
 // branch under the per-azima push strategy (branch once cut, base_branch, cut_from, main) and of its pull request.
 message Azima {
-  // Open, in progress, awaiting its proof, or done.
+  // Open, in progress, watching, awaiting its proof, or done.
   AzimaState state = 1;
   // Every task it depends on is done: its work may go.
   bool ready = 2;
@@ -1363,6 +1363,10 @@ enum AzimaState {
   AZIMA_STATE_AWAITING_PROOF = 4;
   // A draft azima: not formalized yet, has a description but no parts spawned into it yet, and not counted in wish progress.
   AZIMA_STATE_DRAFT = 5;
+  // Its only live work is a watcher (Provider.PROVIDER_WATCH, such as the babysit of its pull or merge request): no work
+  // task part of it, nor of its azimas, runs, waits or is left to merge, and a watcher part of it, or of an azima part of
+  // it, runs. Like in progress, it is not done: what depends on it still waits. A watcher never holds its push (W58).
+  AZIMA_STATE_WATCHING = 6;
 }
 
 // AzimaPrState is where a pull request for an azima stands.

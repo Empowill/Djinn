@@ -55,8 +55,8 @@ import { StatusBadge } from "./status";
 import { Fold } from "./task-tabs";
 
 // azimaTone and azimaLabel say where an azima stands: done in green, under way in blue while a worker runs on one of
-// its parts, its work done and its proof awaited in olive, planned grey otherwise. Never orange: an azima waits for no
-// one's answer.
+// its parts, teal with an eye while a watcher is its only live work (the babysit of its pull request), its work done
+// and its proof awaited in olive, planned grey otherwise. Never orange: an azima waits for no one's answer.
 function azimaState(azima: Task, _parts?: readonly Task[]): AzimaState {
   if (azima.draft || azima.azima?.state === AzimaState.DRAFT)
     return AzimaState.DRAFT;
@@ -77,6 +77,8 @@ function azimaTone(azima: Task, _parts?: readonly Task[]): Tone {
       const running = (azima.azima?.partsRunning ?? 0) > 0;
       return running ? "running" : "planned";
     }
+    case AzimaState.WATCHING:
+      return "watching";
     case AzimaState.AWAITING_PROOF:
       return "proof";
     case AzimaState.DRAFT:
@@ -89,6 +91,7 @@ const labels: Record<AzimaState, TextKey> = {
   [AzimaState.UNSPECIFIED]: "azima.state_open",
   [AzimaState.OPEN]: "azima.state_open",
   [AzimaState.IN_PROGRESS]: "azima.state_in_progress",
+  [AzimaState.WATCHING]: "azima.state_watching",
   [AzimaState.DONE]: "azima.state_done",
   [AzimaState.AWAITING_PROOF]: "azima.state_awaiting_proof",
   [AzimaState.DRAFT]: "azima.state_draft",
@@ -308,6 +311,7 @@ export const AzimaCard = memo(function AzimaCard({
   const waiting = Math.max(0, total - done - running);
   const isRunning =
     state === AzimaState.IN_PROGRESS ||
+    state === AzimaState.WATCHING ||
     (azima.azima?.partsRunning ?? 0) > 0 ||
     running > 0;
   const now = useNow(isRunning);

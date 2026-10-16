@@ -274,6 +274,65 @@ func TestAwaitingProof(t *testing.T) {
 	}
 }
 
+// TestAzimaWatching: an azima whose only live work is a watcher (the babysit of its pull request) is watching, not in
+// progress: closed or not, its work finished, its azimas done, to validate or watching in their turn. A work part that
+// runs, waits, or fails keeps it in progress, a watcher beside it or not; a watcher that no longer runs, or not yet,
+// leaves it where its work puts it. The push leaves its watchers out the same way (W58, harness TestPushDue).
+func TestAzimaWatching(t *testing.T) {
+	const (
+		done, stopped, failed = planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_FAILED
+		pending, running      = planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING
+		paused                = planv1.TaskStatus_TASK_STATUS_PAUSED
+	)
+	azima := func(code, partOf string, status planv1.TaskStatus) *planv1.Task {
+		return &planv1.Task{Id: code, Code: code, Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: status, PartOf: partOf}
+	}
+	work := func(code, partOf string, status planv1.TaskStatus) *planv1.Task {
+		return &planv1.Task{Id: code, Code: code, Status: status, PartOf: partOf}
+	}
+	watcher := func(code, partOf string, status planv1.TaskStatus) *planv1.Task {
+		return &planv1.Task{Id: code, Code: code, Status: status, PartOf: partOf, Provider: planv1.Provider_PROVIDER_WATCH}
+	}
+	merging := work("W14", "T9", done)
+	merging.Integration = &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING}
+	tasks := []*planv1.Task{
+		// Its work done, its watcher running: watching, closed or not; paused, the watcher still holds its place.
+		azima("T1", "", pending), work("W1", "T1", done), watcher("B1", "T1", running),
+		azima("T2", "", done), work("W2", "T2", done), work("W3", "T2", stopped), watcher("B2", "T2", running),
+		azima("T3", "", pending), watcher("B3", "T3", paused),
+		// Work left beside the watcher: in progress.
+		azima("T4", "", pending), work("W4", "T4", done), work("W5", "T4", running), watcher("B4", "T4", running),
+		azima("T5", "", pending), work("W6", "T5", pending), watcher("B5", "T5", running),
+		azima("T6", "", done), work("W7", "T6", failed), watcher("B6", "T6", running),
+		// Its azima part watching: it watches too; its azima part with work left keeps it in progress.
+		azima("T7", "", pending), work("W8", "T7", done), azima("T8", "T7", pending), work("W9", "T8", done),
+		watcher("B7", "T8", running),
+		azima("T9", "", pending), work("W10", "T9", done), watcher("B8", "T9", running), merging,
+		// The watcher ended, or has not started: the existing states.
+		azima("T10", "", done), work("W11", "T10", done), watcher("B9", "T10", done),
+		azima("T11", "", pending), work("W12", "T11", done), watcher("B10", "T11", stopped),
+		azima("T12", "", pending), work("W13", "T12", done), watcher("B11", "T12", pending),
+	}
+	FillAzimas(tasks)
+	const (
+		under, watching = planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, planv1.AzimaState_AZIMA_STATE_WATCHING
+		proof           = planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF
+	)
+	for code, want := range map[string]planv1.AzimaState{
+		"T1": watching, "T2": watching, "T3": watching, "T4": under, "T5": under, "T6": under, "T7": watching,
+		"T8": watching, "T9": under, "T10": planv1.AzimaState_AZIMA_STATE_DONE, "T11": proof, "T12": under,
+	} {
+		i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetCode() == code })
+		if got := tasks[i].GetAzima().GetState(); got != want {
+			t.Errorf("%s: %v, want %v", code, got, want)
+		}
+	}
+	// What it counts stays: the watcher is a part that runs.
+	if e := tasks[0].GetAzima(); e.GetParts() != 2 || e.GetPartsDone() != 1 || e.GetPartsRunning() != 1 {
+		t.Errorf("T1 counts %d parts, %d done, %d running; want 2, 1, 1", e.GetParts(), e.GetPartsDone(), e.GetPartsRunning())
+	}
+}
+
 // TestAzimaFiles: a plan file's front matter and title are read, the README's absence of one skips it; its after line
 // is written after its status, replaced, and removed, a file already right left as it is.
 func TestAzimaFiles(t *testing.T) {
@@ -464,11 +523,17 @@ func TestBriefAzimas(t *testing.T) {
 		Status: planv1.TaskStatus_TASK_STATUS_RUNNING, CreateTime: day, StartTime: day, Provider: planv1.Provider_PROVIDER_CLAUDE}
 	planned := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W2", Title: "Draw it", PartOf: t3.GetId(),
 		Status: pending, CreateTime: day, Scheduled: true}
+	// Its work done, the babysit of its pull request runs: watching, under way with the ones in progress.
+	t13 := azima("T13", "Babysat", pending)
+	merged := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W6", Title: "Ship it", PartOf: t13.GetId(),
+		Status: done, CreateTime: day}
+	babysit := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W7", Title: "Babysit the PR", PartOf: t13.GetId(),
+		Status: planv1.TaskStatus_TASK_STATUS_RUNNING, CreateTime: day, StartTime: day, Provider: planv1.Provider_PROVIDER_WATCH}
 	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal(actor, "test/put", t1); err != nil {
 			return err
 		}
-		for _, task := range []*planv1.Task{t1, t2, t3, t4, t5, t10, t11, t12, t31, running, planned, built, updated, dropped} {
+		for _, task := range []*planv1.Task{t1, t2, t3, t4, t5, t10, t11, t12, t31, running, planned, built, updated, dropped, t13, merged, babysit} {
 			if err := tx.Put(task); err != nil {
 				return err
 			}
@@ -488,6 +553,7 @@ func TestBriefAzimas(t *testing.T) {
 	azimas, rest, _ := strings.Cut(azimas, "\n## ")
 	want := "The plan as a graph, the ready azimas first. Spawn their work `--part-of <azima>`.\n\n" +
 		"- **T4** The orchestrator: ready, in progress, 0 of 1 parts done, 1 running\n" +
+		"- **T13** Babysat: ready, watching (only a watcher runs), 1 of 2 parts done, 1 running\n" +
 		"- **T3** The window: ready, open, 0 of 1 parts done\n" +
 		"- **T5** Spread the work: waits for T3, T4 (after T2, T3, T4); open\n" +
 		"- **T10** Releases: waits for T4; open\n" +

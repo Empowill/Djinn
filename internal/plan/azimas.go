@@ -30,7 +30,8 @@ func IsAzima(t *planv1.Task) bool { return t.GetKind() == planv1.TaskKind_TASK_K
 // FillAzimas sets Task.azima on the azimas among tasks, from the tasks of their wish among tasks: give it every task of
 // the wishes read. An azima is done when its status is and none of its parts is still to finish: a part that runs or
 // waits keeps it in progress, whatever its plan file says. It is in progress when one of its parts has a worker on it
-// or is done, or an azima part of it is under way; open otherwise. Once every part is finished, its azimas done or to
+// or is done, or an azima part of it is under way; open otherwise. In progress with a watcher as its only live work
+// (onlyWatched: the babysit of its pull request), it is watching. Once every part is finished, its azimas done or to
 // validate in their turn, it is to validate (AWAITING_PROOF): nothing is left for Djinn, and the person checks its
 // plan file's boxes (Task.proof_needs say what each one needs) and validates it. It is ready when every task it
 // depends on is done.
@@ -94,6 +95,9 @@ func FillAzimas(tasks []*planv1.Task) {
 			if !left {
 				s = planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF
 			}
+		}
+		if s == planv1.AzimaState_AZIMA_STATE_IN_PROGRESS && onlyWatched(parts[t.GetId()], state) {
+			s = planv1.AzimaState_AZIMA_STATE_WATCHING
 		}
 		states[t.GetId()] = s
 		return s
@@ -159,6 +163,34 @@ func FillAzimas(tasks []*planv1.Task) {
 		}
 		t.Azima = e
 	}
+}
+
+// watches tells a watcher (Provider.PROVIDER_WATCH): a task that watches, such as the babysit of a pull request, and
+// has nothing to commit (dispatch.Watcher).
+func watches(t *planv1.Task) bool { return t.GetProvider() == planv1.Provider_PROVIDER_WATCH }
+
+// onlyWatched tells whether an azima's only live work, among its parts, is a watcher: a watcher part runs, or an azima
+// part is watching, and no work part runs, waits or is left to merge, every other azima part done or to validate. A
+// watcher that does not run is no work either. state is where an azima part stands.
+func onlyWatched(parts []*planv1.Task, state func(*planv1.Task) planv1.AzimaState) bool {
+	watched := false
+	for _, p := range parts {
+		switch {
+		case IsAzima(p):
+			switch state(p) {
+			case planv1.AzimaState_AZIMA_STATE_WATCHING:
+				watched = true
+			case planv1.AzimaState_AZIMA_STATE_DONE, planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF:
+			default:
+				return false
+			}
+		case watches(p):
+			watched = watched || working(p)
+		case !Finished(p) || taskMergingOrFailed(p):
+			return false
+		}
+	}
+	return watched
 }
 
 // accents are folded to their letter in a slug.

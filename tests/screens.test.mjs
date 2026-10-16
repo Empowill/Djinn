@@ -3241,6 +3241,59 @@ test("a cancelled part leaves its azima's counters and shows among its finished 
   assert.doesNotMatch(only, /waiting/);
 });
 
+test("an azima whose only live work is a watcher reads Watching, teal with an eye, and still moves", () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const part = (code, status, provider) => ({
+    id: code,
+    code,
+    title: `Task ${code}`,
+    status,
+    provider,
+    partOf: "T1",
+    dependsOn: [],
+    createTime: at(1),
+    startTime: at(2),
+  });
+  const parts = [
+    part("W1", s.TaskStatus.DONE),
+    part("W2", s.TaskStatus.RUNNING, s.Provider.WATCH),
+  ];
+  const azima = (state) => ({
+    id: "T1",
+    code: "T1",
+    title: "Ship the lamp",
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    dependsOn: [],
+    azima: { state, ready: true, parts: 2, partsDone: 1, partsRunning: 1 },
+  });
+  const card = (state) =>
+    s.renderToStaticMarkup(
+      h(s.AzimaCard, {
+        azima: azima(state),
+        parts,
+        tasks: new Map(parts.map((x) => [x.id, x])),
+        render: (task) => h(s.WishTask, { key: task.id, task, onStop() {} }),
+      }),
+    );
+  // The server's state (internal/plan.FillAzimas): watching, never "In progress", in the watchers' teal.
+  const html = card(s.AzimaState.WATCHING);
+  assert.match(html, /azima-card tone-watching/);
+  assert.match(html, /status-badge tone-watching[^>]*>.*?Watching/);
+  assert.doesNotMatch(html, /In progress/);
+  // A work part running beside it: the server says in progress, and so does the card.
+  assert.match(card(s.AzimaState.IN_PROGRESS), /In progress/);
+  // Among the azimas, it moves: first, with the ones in progress.
+  assert.equal(s.azimaRank(azima(s.AzimaState.WATCHING)), 0);
+  assert.equal(
+    s.azimaRank({
+      ...azima(s.AzimaState.WATCHING),
+      azima: { state: s.AzimaState.WATCHING },
+    }),
+    0,
+  );
+});
+
 test("the Tasks tab groups work under its azima, which says what it waits for and its progress, and never waits", () => {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
   const azima = (code, title, extra) => ({

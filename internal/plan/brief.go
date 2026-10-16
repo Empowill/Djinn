@@ -747,10 +747,10 @@ func azimaBranchText(t *planv1.Task) string {
 	return text
 }
 
-// azimasBrief writes the plan's azimas as a graph: the ready ones first, under way before open, then the blocked ones
-// with what they wait for, then those whose work is done and that wait for their proof, with who gives it, then the
-// done ones on one line; each with the tilasms that explain it, and, per azima (perAzima), its own branch and its pull
-// request. Nothing without an azima.
+// azimasBrief writes the plan's azimas as a graph: the ready ones first, under way (in progress or watching) before
+// open, then the blocked ones with what they wait for, then those whose work is done and that wait for their proof,
+// with who gives it, then the done ones on one line; each with the tilasms that explain it, and, per azima (perAzima),
+// its own branch and its pull request. Nothing without an azima.
 func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]string, tilasms []*planv1.Tilasm, perAzima bool) {
 	tasks = WithAzimas(tasks)
 	var ready, blocked, proof, done, drafts []*planv1.Task
@@ -775,7 +775,8 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 	byCode := func(a, b *planv1.Task) int { return CompareCodes(a.GetCode(), b.GetCode()) }
 	slices.SortFunc(ready, func(a, b *planv1.Task) int {
 		under := func(t *planv1.Task) int {
-			return b2i(t.GetAzima().GetState() != planv1.AzimaState_AZIMA_STATE_IN_PROGRESS)
+			s := t.GetAzima().GetState()
+			return b2i(s != planv1.AzimaState_AZIMA_STATE_IN_PROGRESS && s != planv1.AzimaState_AZIMA_STATE_WATCHING)
 		}
 		return cmp.Or(cmp.Compare(under(a), under(b)), byCode(a, b))
 	})
@@ -789,8 +790,11 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 	for _, t := range append(slices.Clone(ready), blocked...) {
 		e := t.GetAzima()
 		text := "open"
-		if e.GetState() == planv1.AzimaState_AZIMA_STATE_IN_PROGRESS {
+		switch e.GetState() {
+		case planv1.AzimaState_AZIMA_STATE_IN_PROGRESS:
 			text = "in progress"
+		case planv1.AzimaState_AZIMA_STATE_WATCHING:
+			text = "watching (only a watcher runs)"
 		}
 		if n := e.GetParts(); n > 0 {
 			text += fmt.Sprintf(", %d of %d parts done", e.GetPartsDone(), n)

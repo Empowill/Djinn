@@ -286,13 +286,15 @@ folded underneath. The tasks inside an azima may flow in columns on a wide scree
 a single list. The top of the wish counts the azimas done before the tasks.
 
 The order of azimas is stable between renders and between days, so an azima stays at the same place: first the azimas
-that move (a worker running), then those waiting for the developer (awaiting proof / to validate), then the ready ones
-not started, then blocked ones, then drafts, and last the done ones folded at the end. Within each group, azimas follow
+that move (a worker running, in progress or watching), then those waiting for the developer (awaiting proof / to
+validate), then the ready ones not started, then blocked ones, then drafts, and last the done ones folded at the end. Within each group, azimas follow
 the plan's code order, never an order by time or by counts that change every minute.
 
-An azima is **Draft**, **Open**, **In progress**, **To validate** or **Done**. A draft azima holds tasks planned for later:
-**Open this azima** (`djinn task open <azima>`) turns it open, ready for parts to be spawned, and notifies the Djinn.
-**Move** (`djinn task move <azima> --wish <wish>`) moves an azima (a draft, or an azima no worker runs with parts that have
+An azima is **Draft**, **Open**, **In progress**, **Watching**, **To validate** or **Done**. It is **Watching** when a
+watcher is its only live work, such as the babysit of its pull request: no work task part of it runs, waits or is left
+to merge. Like in progress, it is not done: what depends on it still waits, and it moves with the ones in progress.
+A draft azima holds tasks planned for later: **Open this azima** (`djinn task open <azima>`) turns it open, ready for
+parts to be spawned, and notifies the Djinn. **Move** (`djinn task move <azima> --wish <wish>`) moves an azima (a draft, or an azima no worker runs with parts that have
 not started) to another wish.
 
 Each wish has a **Push strategy**: **Per wish** (one integration branch per wish and project) or **Per azima** (one
