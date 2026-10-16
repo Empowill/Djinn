@@ -400,7 +400,9 @@ of its context. A check, a measure, a log or a CI result is never asked of you: 
   - Arrows (Up/Down/Left/Right) or 1–4 pick an option when focus is on the card and not in the note.
   The shortcuts stay on the card: they never intercept keys from the terminal or other inputs.
 
-Your answer goes to the Djinn and the workers. An answered question is a decision. From a terminal,
+Your answer goes to the Djinn and the workers. An answered question is a decision. When the Djinn planned the
+task an option launches, picking that option without a note launches it at once; a note goes to the Djinn first,
+which adjusts the task to it before launching. From a terminal,
 `djinn question answer <question> <choice>` answers a question; the Djinn's terminal is marked with `$DJINN_LEAD`,
 so an answer typed by the Djinn is attributed to it without echoing back to its own terminal, whereas an answer
 typed in a plain shell is attributed to the developer and reaches the Djinn. When a question is answered in

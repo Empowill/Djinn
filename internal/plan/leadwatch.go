@@ -477,6 +477,11 @@ func (w *Wishes) digest(ctx context.Context, events []*planv1.LeadEvent, after s
 			fmt.Fprintf(&b, " [%s]", title)
 		}
 		b.WriteString("\n")
+		for line := range strings.SplitSeq(strings.TrimSpace(e.GetDetail()), "\n") {
+			if line != "" {
+				fmt.Fprintf(&b, "  %s\n", line) // Under its line, whole: what one line cannot carry.
+			}
+		}
 	}
 	if more > 0 {
 		fmt.Fprintf(&b, "%d more wait: the next watch returns them at once.\n", more)

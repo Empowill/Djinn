@@ -679,6 +679,9 @@ message LeadEvent {
   string ack_session_id = 7;
   // When it was acknowledged.
   google.protobuf.Timestamp ack_time = 8;
+  // What the digest prints in full under its line, when one line cannot carry it: the task an answer's option planned,
+  // its dependencies' states, and how to launch it.
+  string detail = 9;
 }
 
 // LeadEventKind says what a lead event is about.
@@ -1609,6 +1612,55 @@ message Question {
   // the open questions by the later of create_time and this time, so it goes below those asked before it was put off,
   // and stays there; a question asked after still comes below it. Unset: its place is when it was asked.
   google.protobuf.Timestamp later_time = 23;
+  // The task each option launches once the developer picks it, set by the asker (djinn question ask --plan-file):
+  // at most one per option. An answer without a note launches it at once when it comes after no task and blocks
+  // none; otherwise the lead reads the plan with the answer and launches it, as it is or edited (djinn question
+  // launch). An option without a plan is the lead's to turn into tasks.
+  repeated PlannedTask plans = 24;
+}
+
+// PlannedTask is the task an option of a question launches: the fields of djinn task spawn, in the question's wish,
+// its decision the question. The tasks it names are kept by identifier.
+message PlannedTask {
+  // The option it is planned for: its letter, or yes on a question without options.
+  Choice option = 1;
+  // What the task does, in a sentence.
+  string title = 2;
+  // What to ask the worker; the title when empty.
+  string prompt = 3;
+  // The project to work in; the wish's own when empty.
+  string project_id = 4;
+  // Kind of agent; the project's when not set.
+  Provider provider = 5;
+  // Model of the agent; the provider's when empty.
+  string model = 6;
+  // The azima the task belongs to.
+  string part_of = 7;
+  // The tasks that come before it.
+  repeated string after = 8;
+  // The planned tasks that come after it: each waits for it once it is launched.
+  repeated string blocks = 9;
+  // The tilasms given to its worker as context.
+  repeated string tilasm = 10;
+  // What the task is; work when not set.
+  TaskKind kind = 11;
+  // The tasks of after and blocks as they stood when it was planned: the lead's revision says what changed since.
+  repeated PlannedDependency dependencies = 12;
+  // The task launched from it, by Djinn on the answer or by the lead; empty until then. The plan is then the task
+  // as it was launched.
+  string task_id = 13;
+}
+
+// PlannedDependency is a task a planned task comes after or blocks, as it stood when the task was planned.
+message PlannedDependency {
+  // The task.
+  string task_id = 1;
+  // Its code then, like W12.
+  string code = 2;
+  // Its status then.
+  TaskStatus status = 3;
+  // Its title then.
+  string title = 4;
 }
 
 // DjinnMove is a move Djinn asked the developer for on its own move question, recorded when Djinn asks it.
@@ -1827,6 +1879,65 @@ service QuestionService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Launch the task the chosen option of an answered question planned, as it is or with the flags given in place of
+  // its own: what djinn task spawn takes, the question its decision. Djinn launches it by itself on an answer without
+  // a note when it comes after no task and blocks none; otherwise the lead does, once it has read the answer. A plan
+  // that no longer holds (its azima closed, a task it comes after cancelled, one it blocks started) is refused, why
+  // said, until the flags change what fails.
+  rpc Launch(QuestionServiceLaunchRequest) returns (QuestionServiceLaunchResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+}
+
+message QuestionServiceLaunchRequest {
+  // The question, answered: its code, like Q03, or its identifier.
+  QuestionRef question = 1 [(buf.validate.field).required = true];
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What the task does, in place of the plan's title.
+  string title = 3 [(buf.validate.field).string.max_len = 500];
+  // What to ask the worker, in place of the plan's prompt.
+  string prompt = 4 [(buf.validate.field).string.max_len = 200000];
+  // The project to work in, in place of the plan's; given empty (--project-id ""), the wish's own.
+  optional string project_id = 5 [(buf.validate.field).string.pattern = "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$"];
+  // Kind of agent, in place of the plan's.
+  Provider provider = 6 [(buf.validate.field).enum.defined_only = true];
+  // Model of the agent, in place of the plan's; given empty (--model ""), the provider's.
+  optional string model = 7 [(buf.validate.field).string.max_len = 200];
+  // The azima the task belongs to, by code (T07) or identifier, in place of the plan's; given empty (--part-of ""),
+  // none.
+  optional string part_of = 8 [(buf.validate.field).string.max_len = 64];
+  // What comes before the task, by code or identifier, in place of what the plan says: repeat it, or separate them
+  // with commas. Given empty (--after ""), nothing.
+  repeated string after = 9 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
+  // What comes after the task, planned tasks by code or identifier, in place of what the plan says. Given empty
+  // (--blocks ""), nothing.
+  repeated string blocks = 10 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
+  // The tilasms given to the worker, by code (L01) or identifier, in place of the plan's. Given empty (--tilasm ""),
+  // none.
+  repeated string tilasm = 11 [
+    (buf.validate.field).repeated.max_items = 20,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
+  // What the task is, in place of the plan's kind.
+  TaskKind kind = 12 [(buf.validate.field).enum.defined_only = true];
+}
+
+message QuestionServiceLaunchResponse {
+  // The task launched.
+  Task task = 1;
+  // The question, its plan now the task launched.
+  Question question = 2;
 }
 
 message QuestionServiceEnlightenRequest {
@@ -1878,6 +1989,18 @@ message QuestionServiceReviseRequest {
   // The task of the wish the question is about now, by code (W12) or identifier; the former one when not given, none
   // when given empty (--about "").
   optional string about = 9 [(buf.validate.field).string.pattern = "^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$"];
+  // The task an option launches now, in the text of a plan file (see djinn question ask --plan): it replaces that
+  // option's plan; one that says its option alone removes it. The options it does not name keep theirs.
+  repeated string plan = 10 [
+    (buf.validate.field).repeated.max_items = 4,
+    (buf.validate.field).repeated.items.string.max_len = 210000
+  ];
+  // A file holding the task an option launches now, read in place of --plan; a relative path starts from the current
+  // directory.
+  repeated string plan_file = 11 [
+    (buf.validate.field).repeated.max_items = 4,
+    (buf.validate.field).repeated.items.string.max_len = 4096
+  ];
 }
 
 message QuestionServiceReviseResponse {
@@ -1931,6 +2054,20 @@ message QuestionServiceAskRequest {
   string about = 10 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.pattern = "^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+  ];
+  // The task an option launches once picked, one per option, in the text of a plan file: header lines "key: value",
+  // named as djinn task spawn's flags (option, title, project-id, provider, model, part-of, after, blocks, tilasm,
+  // kind), then a blank line and the prompt. "option: B" names its option; a question without options needs none.
+  // An answer without a note launches it at once when it has no after and no blocks; otherwise the lead launches it.
+  repeated string plan = 11 [
+    (buf.validate.field).repeated.max_items = 4,
+    (buf.validate.field).repeated.items.string.max_len = 210000
+  ];
+  // A file holding the task an option launches, read in place of --plan, one per option; a relative path starts from
+  // the current directory.
+  repeated string plan_file = 12 [
+    (buf.validate.field).repeated.max_items = 4,
+    (buf.validate.field).repeated.items.string.max_len = 4096
   ];
 }
 
