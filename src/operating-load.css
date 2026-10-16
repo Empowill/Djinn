@@ -22,7 +22,7 @@ html[data-theme="light"] {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-2, 8px);
+  gap: var(--space-2, 0.5rem);
   -webkit-app-region: no-drag;
   margin: 0 auto;
   flex-shrink: 0;
@@ -34,14 +34,14 @@ html[data-theme="light"] {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: 2px;
-  min-width: 190px;
-  min-height: 44px;
+  gap: 0.125rem;
+  min-width: 11.875rem;
+  min-height: 2.75rem;
   cursor: pointer;
 
   /* Default (Medium) */
   --notch-color: #43c29f;
-  --thumb-size: 14px;
+  --thumb-size: 0.875rem;
   --thumb-glow: 0 0 0 1px rgba(67, 194, 159, 0.4);
   --thumb-animation: none;
 }
@@ -52,7 +52,7 @@ html[data-theme="light"] {
 .operating-load-fill[data-notch="minimal"],
 .operating-load-fill-reach[data-notch="minimal"] {
   --notch-color: #a3a3ab;
-  --thumb-size: 13px;
+  --thumb-size: 0.8125rem;
   --thumb-glow: 0 0 0 1px rgba(163, 163, 171, 0.4);
   --thumb-animation: none;
 }
@@ -62,7 +62,7 @@ html[data-theme="light"] {
 .operating-load-fill[data-notch="medium"],
 .operating-load-fill-reach[data-notch="medium"] {
   --notch-color: #43c29f;
-  --thumb-size: 14px;
+  --thumb-size: 0.875rem;
   --thumb-glow: 0 0 0 1px rgba(67, 194, 159, 0.4);
   --thumb-animation: none;
 }
@@ -72,8 +72,8 @@ html[data-theme="light"] {
 .operating-load-fill[data-notch="high"],
 .operating-load-fill-reach[data-notch="high"] {
   --notch-color: #43c29f;
-  --thumb-size: 15px;
-  --thumb-glow: 0 0 5px rgba(67, 194, 159, 0.45);
+  --thumb-size: 0.9375rem;
+  --thumb-glow: 0 0 0.3125rem rgba(67, 194, 159, 0.45);
   --thumb-animation: none;
 }
 
@@ -82,8 +82,8 @@ html[data-theme="light"] {
 .operating-load-fill[data-notch="max"],
 .operating-load-fill-reach[data-notch="max"] {
   --notch-color: #e2b33c;
-  --thumb-size: 16px;
-  --thumb-glow: 0 0 7px 1px rgba(226, 179, 60, 0.5);
+  --thumb-size: 1rem;
+  --thumb-glow: 0 0 0.4375rem 1px rgba(226, 179, 60, 0.5);
   --thumb-animation: none;
 }
 
@@ -92,8 +92,8 @@ html[data-theme="light"] {
 .operating-load-fill[data-notch="overclock"],
 .operating-load-fill-reach[data-notch="overclock"] {
   --notch-color: #f08a72;
-  --thumb-size: 18px;
-  --thumb-glow: 0 0 8px 2px rgba(240, 138, 114, 0.6);
+  --thumb-size: 1.125rem;
+  --thumb-glow: 0 0 0.5rem 0.125rem rgba(240, 138, 114, 0.6);
   --thumb-animation: overclock-pulse 2s infinite ease-in-out;
 }
 
@@ -119,7 +119,7 @@ html[data-theme="light"] .operating-load-forecast[data-notch="high"],
 html[data-theme="light"] .operating-load-fill[data-notch="high"],
 html[data-theme="light"] .operating-load-fill-reach[data-notch="high"] {
   --notch-color: #146b5a;
-  --thumb-glow: 0 0 5px rgba(20, 107, 90, 0.38);
+  --thumb-glow: 0 0 0.3125rem rgba(20, 107, 90, 0.38);
 }
 
 html[data-theme="light"] .operating-load-slider[data-notch="max"],
@@ -127,7 +127,7 @@ html[data-theme="light"] .operating-load-forecast[data-notch="max"],
 html[data-theme="light"] .operating-load-fill[data-notch="max"],
 html[data-theme="light"] .operating-load-fill-reach[data-notch="max"] {
   --notch-color: #805c00;
-  --thumb-glow: 0 0 7px 1px rgba(138, 99, 0, 0.38);
+  --thumb-glow: 0 0 0.4375rem 1px rgba(138, 99, 0, 0.38);
 }
 
 html[data-theme="light"] .operating-load-slider[data-notch="overclock"],
@@ -135,14 +135,14 @@ html[data-theme="light"] .operating-load-forecast[data-notch="overclock"],
 html[data-theme="light"] .operating-load-fill[data-notch="overclock"],
 html[data-theme="light"] .operating-load-fill-reach[data-notch="overclock"] {
   --notch-color: #b0321f;
-  --thumb-glow: 0 0 8px 2px rgba(176, 50, 31, 0.45);
+  --thumb-glow: 0 0 0.5rem 0.125rem rgba(176, 50, 31, 0.45);
 }
 
 /* Range input track: crafted 24px height with centered 6px track */
 .operating-load-input {
   display: block;
   width: 100%;
-  height: 24px;
+  height: 1.5rem;
   background: transparent;
   cursor: pointer;
   margin: 0;
@@ -154,14 +154,14 @@ html[data-theme="light"] .operating-load-fill-reach[data-notch="overclock"] {
 .operating-load-input:focus-visible {
   outline: 2px solid var(--notch-color);
   outline-offset: 3px;
-  border-radius: 4px;
+  border-radius: 0.25rem;
 }
 
 /* WebKit track */
 .operating-load-input::-webkit-slider-runnable-track {
   width: 100%;
-  height: 6px;
-  border-radius: 3px;
+  height: 0.375rem;
+  border-radius: 0.1875rem;
   background: var(--load-track-gradient);
   border: 1px solid var(--line, rgba(255, 255, 255, 0.1));
   transition: border-color 0.25s ease;
@@ -170,30 +170,30 @@ html[data-theme="light"] .operating-load-fill-reach[data-notch="overclock"] {
 /* Firefox track */
 .operating-load-input::-moz-range-track {
   width: 100%;
-  height: 6px;
-  border-radius: 3px;
+  height: 0.375rem;
+  border-radius: 0.1875rem;
   background: var(--load-track-gradient);
   border: 1px solid var(--line, rgba(255, 255, 255, 0.1));
   transition: border-color 0.25s ease;
 }
 
-/* The input's own thumb stays, unseen, for dragging: the filled stop above it draws the cursor. A fixed 14px, the
+/* The input's own thumb stays, unseen, for dragging: the filled stop above it draws the cursor. A fixed 0.875rem, the
    stops' inset below. */
 .operating-load-input::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
+  width: 0.875rem;
+  height: 0.875rem;
   border: none;
   border-radius: 50%;
   background: transparent;
   cursor: pointer;
-  margin-top: -4px;
+  margin-top: -0.25rem;
 }
 
 .operating-load-input::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
+  width: 0.875rem;
+  height: 0.875rem;
   border: none;
   border-radius: 50%;
   background: transparent;
@@ -208,7 +208,7 @@ html[data-theme="light"] .operating-load-fill-reach[data-notch="overclock"] {
 
 .operating-load-stops {
   position: absolute;
-  inset: 0 7px;
+  inset: 0 0.4375rem;
   pointer-events: none;
 }
 
@@ -219,9 +219,9 @@ html[data-theme="light"] .operating-load-fill-reach[data-notch="overclock"] {
   position: absolute;
   top: 50%;
   left: 0;
-  height: 6px;
-  margin-top: -3px;
-  border-radius: 3px;
+  height: 0.375rem;
+  margin-top: -0.1875rem;
+  border-radius: 0.1875rem;
   pointer-events: none;
   transition: width 0.2s ease;
 }
@@ -234,8 +234,8 @@ html[data-theme="light"] .operating-load-fill-reach[data-notch="overclock"] {
 .operating-load-fill-reach {
   background: repeating-linear-gradient(
     -45deg,
-    color-mix(in srgb, var(--notch-color) 70%, transparent) 0 3px,
-    color-mix(in srgb, var(--notch-color) 30%, transparent) 3px 6px
+    color-mix(in srgb, var(--notch-color) 70%, transparent) 0 0.1875rem,
+    color-mix(in srgb, var(--notch-color) 30%, transparent) 0.1875rem 0.375rem
   );
 }
 
@@ -243,9 +243,9 @@ html[data-theme="light"] .operating-load-fill-reach[data-notch="overclock"] {
 .operating-load-stop {
   position: absolute;
   top: 50%;
-  width: 18px;
-  height: 18px;
-  margin: -9px 0 0 -9px;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: -0.5625rem 0 0 -0.5625rem;
   padding: 0;
   display: flex;
   align-items: center;
@@ -276,8 +276,8 @@ html[data-theme="light"] .operating-load-fill-reach[data-notch="overclock"] {
 .operating-load-stop::before {
   content: "";
   box-sizing: border-box;
-  width: 8px;
-  height: 8px;
+  width: 0.5rem;
+  height: 0.5rem;
   border: 1.5px solid var(--muted);
   border-radius: 50%;
   background: var(--bg);
@@ -290,14 +290,14 @@ html[data-theme="light"] .operating-load-fill-reach[data-notch="overclock"] {
 }
 
 .operating-load-stop:hover::before {
-  width: 10px;
-  height: 10px;
+  width: 0.625rem;
+  height: 0.625rem;
   border-color: var(--notch-color);
 }
 
 .operating-load-stop.current::before {
-  width: var(--thumb-size, 14px);
-  height: var(--thumb-size, 14px);
+  width: var(--thumb-size, 0.875rem);
+  height: var(--thumb-size, 0.875rem);
   border: 2px solid var(--bg);
   background: var(--notch-color);
   box-shadow: var(--thumb-glow, none);
@@ -309,14 +309,14 @@ html[data-theme="light"] .operating-load-fill-reach[data-notch="overclock"] {
   0%,
   100% {
     box-shadow:
-      0 0 6px 1px rgba(240, 138, 114, 0.6),
-      0 0 12px 2px rgba(240, 138, 114, 0.3);
+      0 0 0.375rem 1px rgba(240, 138, 114, 0.6),
+      0 0 0.75rem 0.125rem rgba(240, 138, 114, 0.3);
     transform: scale(1);
   }
   50% {
     box-shadow:
-      0 0 12px 3px rgba(240, 138, 114, 0.9),
-      0 0 20px 5px rgba(240, 138, 114, 0.5);
+      0 0 0.75rem 0.1875rem rgba(240, 138, 114, 0.9),
+      0 0 1.25rem 0.3125rem rgba(240, 138, 114, 0.5);
     transform: scale(1.08);
   }
 }
@@ -332,11 +332,11 @@ html[data-theme="light"] .operating-load-fill-reach[data-notch="overclock"] {
 .operating-load-notch {
   background: transparent;
   border: none;
-  padding: 2px 4px;
+  padding: 0.125rem 0.25rem;
   font-family: var(--font-sans);
-  font-size: var(--font-size-body, 12px);
+  font-size: var(--font-size-body, 0.75rem);
   color: var(--muted);
-  border-radius: 3px;
+  border-radius: 0.1875rem;
   cursor: pointer;
   line-height: 1.2;
   transition:
@@ -400,12 +400,12 @@ html[data-theme="light"] .operating-load-notch[data-notch="overclock"].active {
 .operating-load-auto {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1, 4px);
+  gap: var(--space-1, 0.25rem);
 }
 
 .operating-load-effective {
   font-family: var(--font-sans);
-  font-size: var(--font-size-body, 12px);
+  font-size: var(--font-size-body, 0.75rem);
   color: var(--muted);
   font-weight: 500;
   line-height: 1.2;
@@ -416,7 +416,7 @@ html[data-theme="light"] .operating-load-notch[data-notch="overclock"].active {
    width. */
 .operating-load-forecast {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 0.375rem);
   left: 50%;
   z-index: 20;
   transform: translateX(-50%);
@@ -425,18 +425,18 @@ html[data-theme="light"] .operating-load-notch[data-notch="overclock"].active {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
+  gap: 0.125rem;
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
-  font-size: var(--font-size-body, 12px);
+  font-size: var(--font-size-body, 0.75rem);
   line-height: 1.2;
   color: var(--muted);
   white-space: nowrap;
-  padding: 6px 9px;
-  border-radius: 6px;
+  padding: 0.375rem 0.5625rem;
+  border-radius: 0.375rem;
   background: var(--surface-soft);
   border: 1px solid var(--line);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow) 48%, transparent);
+  box-shadow: 0 0.5rem 1.5rem color-mix(in srgb, var(--shadow) 48%, transparent);
   transition:
     opacity 0.15s ease,
     visibility 0s linear 0.15s,
@@ -451,7 +451,7 @@ html[data-theme="light"] .operating-load-notch[data-notch="overclock"].active {
   left: 0;
   right: 0;
   bottom: 100%;
-  height: 8px;
+  height: 0.5rem;
 }
 
 .operating-load:hover .operating-load-forecast,
@@ -466,7 +466,7 @@ html[data-theme="light"] .operating-load-notch[data-notch="overclock"].active {
 }
 
 .operating-load-forecast-binding {
-  font-size: var(--font-size-body, 12px);
+  font-size: var(--font-size-body, 0.75rem);
   font-weight: 600;
   color: var(--notch-color);
   letter-spacing: 0.1px;
@@ -478,14 +478,14 @@ html[data-theme="light"] .operating-load-notch[data-notch="overclock"].active {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 0.375rem;
 }
 
 .operating-load-forecast-label {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: var(--font-size-body, 12px);
+  font-size: var(--font-size-body, 0.75rem);
 }
 
 .operating-load-forecast-paused {
@@ -501,16 +501,16 @@ html[data-theme="light"] .operating-load-notch[data-notch="overclock"].active {
   box-sizing: border-box;
   width: 0;
   min-width: 100%;
-  margin-top: 3px;
+  margin-top: 0.1875rem;
   white-space: normal;
   line-height: 1.35;
 }
 
 /* Overclock's risk, a warning in the theme's danger colour, framed by one uniform border. */
 .operating-load-forecast-risk {
-  padding: 3px 6px;
+  padding: 0.1875rem 0.375rem;
   border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
-  border-radius: 4px;
+  border-radius: 0.25rem;
   background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
   font-weight: 600;
@@ -519,9 +519,9 @@ html[data-theme="light"] .operating-load-notch[data-notch="overclock"].active {
 /* Mini progress bars showing current use against new limit */
 .operating-load-bar {
   position: relative;
-  width: 36px;
-  height: 5px;
-  border-radius: 3px;
+  width: 2.25rem;
+  height: 0.3125rem;
+  border-radius: 0.1875rem;
   background: var(--surface-raised, rgba(128, 128, 128, 0.15));
   overflow: hidden;
   flex-shrink: 0;
@@ -534,7 +534,7 @@ html[data-theme="light"] .operating-load-notch[data-notch="overclock"].active {
   height: 100%;
   background: var(--notch-color);
   opacity: 0.32;
-  border-radius: 3px;
+  border-radius: 0.1875rem;
   transition:
     width 0.3s ease,
     background-color 0.3s ease;
@@ -546,7 +546,7 @@ html[data-theme="light"] .operating-load-notch[data-notch="overclock"].active {
   left: 0;
   height: 100%;
   background: var(--notch-color);
-  border-radius: 3px;
+  border-radius: 0.1875rem;
   transition:
     width 0.3s ease,
     background-color 0.3s ease;
@@ -556,7 +556,7 @@ html[data-theme="light"] .operating-load-notch[data-notch="overclock"].active {
 @media (prefers-reduced-motion: reduce) {
   .operating-load-slider,
   .operating-load-forecast {
-    --thumb-size: 14px !important;
+    --thumb-size: 0.875rem !important;
     --thumb-animation: none !important;
     --thumb-glow: none !important;
   }

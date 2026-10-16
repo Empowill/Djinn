@@ -3,19 +3,22 @@ import { motion } from "motion/react";
 import { X } from "lucide-react";
 
 import { language, t } from "./i18n";
+import { shownTextSize } from "./text-size";
 import { shownTheme } from "./theme";
 
 // DocsPath is where djinn serves its documentation, the Grimoire (docs/site): a splash page, then the book, Getting
 // started, a page per concept, and the command line.
 export const DocsPath = "/docs/";
 
-// Docs shows the Grimoire over the window, in the window's theme, its navigation in the window's language. It is a page
-// of djinn's own server, in a frame: the window keeps its wish, its terminal and its streams behind it.
+// Docs shows the Grimoire over the window, in the window's theme and text size, its navigation in the window's
+// language. It is a page of djinn's own server, in a frame: the window keeps its wish, its terminal and its streams
+// behind it.
 export const Docs = memo(function Docs({ onClose }: { onClose: () => void }) {
   // The frame's address is set once: a new one would reload the site, its place and its search lost.
-  const [src] = useState(
-    () => `${DocsPath}?theme=${shownTheme()}&lang=${language}&embedded=1`,
-  );
+  const [src] = useState(() => {
+    const text = shownTextSize();
+    return `${DocsPath}?theme=${shownTheme()}&lang=${language}&embedded=1${text ? `&text=${text}` : ""}`;
+  });
   useEffect(() => {
     const handle = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();

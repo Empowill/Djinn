@@ -497,9 +497,9 @@ function nearestNotch(clientX: number, box: { left: number; width: number }) {
 }
 
 // stopAt is the distance from the track's left end to the stop at index i: the stops' row is inset by the thumb's
-// half, 7px, at each end (operating-load.css).
+// half, 0.4375rem, at each end (operating-load.css).
 function stopAt(i: number): string {
-  return `calc(7px + ${i / (NOTCHES.length - 1)} * (100% - 14px))`;
+  return `calc(0.4375rem + ${i / (NOTCHES.length - 1)} * (100% - 0.875rem))`;
 }
 
 // useAnimatedNumber glides to target when glide changes with it: the notch the developer moves to. Any other move
