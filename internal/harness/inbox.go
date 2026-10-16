@@ -27,26 +27,48 @@ type sent struct {
 
 // Send gives a running worker a message, an instruction added while it works. The pump writes it on the worker's
 // input and records it as a MESSAGE event; the first thing the worker says after it is preceded by a RECEIVED
-// event. A worker that ends first never acknowledges it.
+// event. A worker that ends first never acknowledges it. An ifrit out, or going out, is lit again for the message
+// (relight).
 func (h *Harness) Send(ctx context.Context, procedure string, req *planv1.TaskServiceSendRequest) (*planv1.TaskEvent, error) {
 	task, err := store.Get[*planv1.Task](ctx, h.store, req.GetTaskId())
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	notRunning := connect.NewError(connect.CodeFailedPrecondition,
-		fmt.Errorf("task %s is not running: %s", task.GetCode(), short(task.GetStatus())))
 	h.mu.Lock()
 	r := h.runs[task.GetId()]
-	ready := r != nil && r.worker != nil && !r.final && !r.stopping
+	ready := r != nil && r.worker != nil && !r.final && !r.stopping && r.out == ""
+	going := r != nil && r.out != "" && !r.stopping
 	h.mu.Unlock()
-	if !ready {
-		return nil, notRunning
+	if ready {
+		res, err := h.sendTo(ctx, r, task.GetCode(), &message{procedure: procedure, req: req, reply: make(chan sent, 1)})
+		if !errors.Is(err, errGoingOut) {
+			return res, err
+		}
+		going = true
 	}
-	m := &message{procedure: procedure, req: req, reply: make(chan sent, 1)}
+	if going { // It goes out as its turn ended: lit again once it is.
+		select {
+		case <-r.done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		if task, err = store.Get[*planv1.Task](ctx, h.store, req.GetTaskId()); err != nil {
+			return nil, plan.Status(err)
+		}
+	}
+	if ifritOut(task) {
+		return h.relight(ctx, req, task)
+	}
+	return nil, connect.NewError(connect.CodeFailedPrecondition,
+		fmt.Errorf("task %s is not running: %s", task.GetCode(), short(task.GetStatus())))
+}
+
+// sendTo hands m to the pump of r, the run of the task code, and returns what delivering it gave.
+func (h *Harness) sendTo(ctx context.Context, r *run, code string, m *message) (*planv1.TaskEvent, error) {
 	select {
 	case r.sends <- m:
 	case <-r.done:
-		return nil, notRunning
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is not running: it ended", code))
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -55,8 +77,14 @@ func (h *Harness) Send(ctx context.Context, procedure string, req *planv1.TaskSe
 	return res.event, res.err
 }
 
-// deliver writes a message on the worker's input, then records it; the pump calls it.
+// deliver writes a message on the worker's input, then records it; the pump calls it. An ifrit going out takes none.
 func (h *Harness) deliver(r *run, m *message) sent {
+	h.mu.Lock()
+	going := r.out != ""
+	h.mu.Unlock()
+	if going {
+		return sent{err: errGoingOut}
+	}
 	if err := r.worker.Send(m.req.GetText()); err != nil {
 		code := connect.CodeInternal
 		if errors.Is(err, ErrClosed) {

@@ -81,6 +81,8 @@ type Service struct {
 	Known func(ctx context.Context, wishID string) bool
 	// Notices shows the system notifications, and knows whether the system lets it. Nil: none (a test).
 	Notices *Notices
+	// Touched says that the developer is there (harness.Presence): it keeps the ifrits lit. Nil: nothing.
+	Touched func()
 
 	dialogs sync.Mutex // One folder dialog at a time.
 
@@ -831,4 +833,13 @@ func (s *Service) View(
 		s.Notices.View(req.Msg.GetWishId())
 	}
 	return connect.NewResponse(&uiv1.UiServiceViewResponse{}), nil
+}
+
+func (s *Service) Touch(
+	context.Context, *connect.Request[uiv1.UiServiceTouchRequest],
+) (*connect.Response[uiv1.UiServiceTouchResponse], error) {
+	if s.Touched != nil {
+		s.Touched()
+	}
+	return connect.NewResponse(&uiv1.UiServiceTouchResponse{}), nil
 }
