@@ -388,7 +388,7 @@ func (p *Projects) Show(
 	settings := ResolveSettings(repo, dev)
 	out := &planv1.ProjectServiceShowResponse{
 		Project: project, Settings: settings.Rows(), Setup: settings.Setup, Checks: settings.Checks,
-		WatchCommands: settings.WatchCommands,
+		WatchCommands: settings.WatchCommands, ServeCommands: settings.ServeCommands,
 	}
 	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
 	for _, err := range problems {
@@ -487,8 +487,8 @@ func (p *Projects) PushStrategy(
 	}), nil
 }
 
-// Allow shows the watcher commands the developer allows in a project for themselves, or allows one, or takes one
-// back: in their own settings file, never in the repository.
+// Allow shows the watcher and serve commands the developer allows in a project for themselves, or allows one, or takes
+// one back: in their own settings file, never in the repository.
 func (p *Projects) Allow(
 	ctx context.Context, req *connect.Request[planv1.ProjectServiceAllowRequest],
 ) (*connect.Response[planv1.ProjectServiceAllowResponse], error) {
@@ -497,23 +497,30 @@ func (p *Projects) Allow(
 		return nil, Status(err)
 	}
 	out := &planv1.ProjectServiceAllowResponse{DeveloperFile: DeveloperSettingsFile(p.Home, project.GetId())}
-	if req.Msg.Watch == nil {
+	if req.Msg.Watch != nil && req.Msg.Serve != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--watch or --serve: one command at a time"))
+	}
+	dev, err := ReadSettings(out.DeveloperFile)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	out.WatchCommands, out.ServeCommands = dev.GetWatchCommands(), dev.GetServeCommands()
+	if req.Msg.Watch == nil && req.Msg.Serve == nil {
 		if req.Msg.GetRevoke() {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--revoke takes back the command --watch names"))
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--revoke takes back the command --watch or --serve names"))
 		}
-		dev, err := ReadSettings(out.DeveloperFile)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
-		}
-		out.WatchCommands = dev.GetWatchCommands()
 		return connect.NewResponse(out), nil
 	}
 	err = write(ctx, p.Store, req.Spec(), req.Msg, func(*store.Tx) error {
-		commands, err := AllowWatch(p.Home, project.GetId(), req.Msg.GetWatch(), req.Msg.GetRevoke())
+		var err error
+		if req.Msg.Serve != nil {
+			out.ServeCommands, err = AllowServe(p.Home, project.GetId(), req.Msg.GetServe(), req.Msg.GetRevoke())
+		} else {
+			out.WatchCommands, err = AllowWatch(p.Home, project.GetId(), req.Msg.GetWatch(), req.Msg.GetRevoke())
+		}
 		if err != nil {
 			return connect.NewError(connect.CodeFailedPrecondition, err)
 		}
-		out.WatchCommands = commands
 		return nil
 	})
 	if err != nil {

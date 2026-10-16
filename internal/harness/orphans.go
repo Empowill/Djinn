@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,9 +38,13 @@ type child struct {
 	// Djinn and DjinnStart are the djinn up that started it, and when that one started.
 	Djinn      int    `json:"djinn"`
 	DjinnStart string `json:"djinn_start"`
-	// Task is the code of its task, empty for none; Kind what it is: worker, watcher, gate or a check.
+	// Task is the code of its task, empty for none; Kind what it is: worker, watcher, gate, serve or a check.
 	Task string `json:"task,omitempty"`
 	Kind string `json:"kind"`
+	// Stop is a serve's stop command, run in Dir once it is stopped, whether it still ran or not: what it started
+	// outside its processes, like containers, outlives them (serve.go). Empty for none.
+	Stop string `json:"stop,omitempty"`
+	Dir  string `json:"dir,omitempty"`
 }
 
 // label names the child in the restart event: "W488's watcher", or its kind alone without a task.
@@ -92,14 +97,25 @@ func newChildren(dir string, grace time.Duration) *children {
 // cgroup of its scope (empty: none), with its mark (empty: none). leads says whether it leads a process group of its
 // own. It returns what to call once it ended. On a nil *children, it records nothing.
 func (cs *children) track(pid int, cgroup, mark, task, kind string, leads bool) (ended func()) {
+	return cs.trackChild(child{PID: pid, Cgroup: cgroup, Mark: mark, Task: task, Kind: kind}, leads)
+}
+
+// trackServe is track for the process of a serve of the ifrit code, its stop command stop (empty: none) run in dir.
+func (cs *children) trackServe(pid int, cgroup, mark, code, stop, dir string) (ended func()) {
+	return cs.trackChild(child{PID: pid, Cgroup: cgroup, Mark: mark, Task: code, Kind: "serve", Stop: stop, Dir: dir}, true)
+}
+
+// trackChild is track for the child c, its PID, cgroup, mark, task, kind and stop command set.
+func (cs *children) trackChild(c child, leads bool) (ended func()) {
+	pid := c.PID
 	if cs == nil || pid <= 0 {
 		return func() {}
 	}
-	c := child{PID: pid, Cgroup: cgroup, Mark: mark, Djinn: cs.self.pid, DjinnStart: cs.self.start, Task: task, Kind: kind}
+	c.Djinn, c.DjinnStart = cs.self.pid, cs.self.start
 	c.Start, _ = procStart(pid)
 	c.Group = groupOf(pid, leads)
 	if err := cs.write(c); err != nil {
-		logx.L().Warn("child not recorded", "pid", pid, "kind", kind, "err", err)
+		logx.L().Warn("child not recorded", "pid", pid, "kind", c.Kind, "err", err)
 	}
 	if g := cs.guarded(); g != nil {
 		g.add(c)
@@ -174,7 +190,8 @@ func (cs *children) write(c child) error {
 // runs, the same process (its start time tells it from a later one with its PID), or that left processes with its
 // mark running. It asks them to stop, then kills them after the grace delay, and returns their labels. It forgets the
 // records of the children that ended; it keeps, and leaves alone, those of a djinn up that still runs. A process
-// Djinn did not start is never touched.
+// Djinn did not start is never touched. Then it runs the stop commands of the serves among them, running or ended
+// (runStops).
 func (cs *children) sweep() []string {
 	if cs == nil {
 		return nil
@@ -186,7 +203,7 @@ func (cs *children) sweep() []string {
 		}
 		return nil
 	}
-	var left []child
+	var left, stops []child
 	for _, e := range entries {
 		if !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -206,11 +223,15 @@ func (cs *children) sweep() []string {
 		}
 		if !c.running() {
 			_ = os.Remove(path) // It ended, and its PID may be another process's now.
+			if c.Stop != "" {
+				stops = append(stops, c)
+			}
 			continue
 		}
 		left = append(left, c)
 	}
 	if len(left) == 0 {
+		runStops(stops)
 		return nil
 	}
 	for _, c := range left {
@@ -226,8 +247,31 @@ func (cs *children) sweep() []string {
 		labels = append(labels, c.label())
 		_ = os.Remove(cs.file(c.PID))
 		logx.L().Info("orphan stopped", "pid", c.PID, "kind", c.Kind, "task", c.Task, "djinn", c.Djinn)
+		if c.Stop != "" {
+			stops = append(stops, c)
+		}
 	}
+	runStops(stops)
 	return labels
+}
+
+// runStops runs the stop commands of the serves a previous djinn up left, each in its folder, beside the others, for
+// serveStopLimit at most: their processes are gone, what they started outside them, like containers, may not be.
+func runStops(serves []child) {
+	var wg sync.WaitGroup
+	for _, c := range serves {
+		if info, err := os.Stat(c.Dir); err != nil || !info.IsDir() {
+			logx.L().Warn("serve stop command not run: its folder is gone", "task", c.Task, "dir", c.Dir)
+			continue
+		}
+		wg.Go(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), serveStopLimit)
+			defer cancel()
+			_, code, err := runTracked(ctx, c.Dir, shellArgs(c.Stop), nil, nil, false)
+			logx.L().Info("serve stop command of the last djinn up run", "task", c.Task, "exit", code, "err", err)
+		})
+	}
+	wg.Wait()
 }
 
 // running says whether the child still runs, the same process, or a process with its mark does.

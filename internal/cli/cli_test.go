@@ -526,7 +526,7 @@ func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr 
 	mux.Handle(planv1connect.NewTilasmServiceHandler(tilasms{fake: f}))
 	mux.Handle(planv1connect.NewTaskServiceHandler(tasks{fake: f}))
 	mux.Handle(djinnv1connect.NewLoadServiceHandler(loads{fake: f}))
-	// ServeService answers unimplemented until Djinn runs an ifrit's serves, as djinn up's stub does.
+	// ServeService answers unimplemented here: the command line reaches it, which is all these tests check.
 	mux.Handle(planv1connect.NewServeServiceHandler(planv1connect.UnimplementedServeServiceHandler{}))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
