@@ -869,6 +869,8 @@
   "task.turns_last_run": "{run} tours du modèle dans son dernier run, sur les {limit} que son seal permet à un run",
   "task.turns_run": "{run} tours du modèle dans ce run, sur les {limit} que son seal permet à un run",
   "task.turns_total": "{total} tours du modèle sur toute sa vie",
+  "task.urgent": "Urgente",
+  "task.urgent_detail": "Le lead l’a rendue urgente pour débloquer le souhait : elle passe avant les tâches en attente et prend une place même quand la machine est pleine",
   "task.waits_for_memory": "attend de la mémoire",
   "tasks.all": "Toutes les tâches, les plus anciennes en bas",
   "tasks.azimas": "Azimas",

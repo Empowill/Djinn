@@ -11,13 +11,15 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
 
 // Update edits a task in place: only the fields given change, in one journaled transaction.
-// A task not started (planned, waiting) may change everything; a running or paused task may change its title only;
+// A task not started (planned, waiting) may change everything; a running or paused task may change its title and its
+// urgent mark only (one urgent task per wish, refuseSecondUrgent);
 // a finished task (done, failed, stopped, cut short) may change title, provider/model, prompt (for its next continue),
 // azima, and integration (none clears it, pending puts a done task's work back in line); never its dependencies once
 // it ran. An azima changes its title (renameAzima) or its branch (nameAzimaBranch) only.
@@ -38,14 +40,14 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 				"task %s is work: only an azima has a branch of its own; a work task's branch is Djinn's", task.GetCode()))
 		}
 		if req.Title != nil || req.Prompt != nil || req.Provider != nil || req.Model != nil || req.PartOf != nil || req.After != nil ||
-			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil {
+			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil || req.Urgent != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--branch goes alone: name an azima's branch in a call of its own"))
 		}
 		return h.nameAzimaBranch(ctx, procedure, req, task)
 	}
 	if task.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
 		if req.Title == nil || req.Prompt != nil || req.Provider != nil || req.Model != nil || req.PartOf != nil || req.After != nil ||
-			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil {
+			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil || req.Urgent != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 				"task %s is an azima of the plan: no worker runs it; only its title, or its branch, changes", task.GetCode()))
 		}
@@ -62,13 +64,14 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	budgetGiven := req.MaxBudgetUsd != nil
 	scopesGiven := req.WriteScopes != nil
 	integrationGiven := req.Integration != nil
+	urgentGiven := req.Urgent != nil
 
-	if !titleGiven && !promptGiven && !providerGiven && !modelGiven && !partOfGiven && !afterGiven && !decisionGiven && !budgetGiven && !scopesGiven && !integrationGiven {
+	if !titleGiven && !promptGiven && !providerGiven && !modelGiven && !partOfGiven && !afterGiven && !decisionGiven && !budgetGiven && !scopesGiven && !integrationGiven && !urgentGiven {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("nothing to update: give at least one field"))
 	}
 
 	if task.GetProvider() == planv1.Provider_PROVIDER_WATCH {
-		if providerGiven || modelGiven {
+		if providerGiven || modelGiven || req.GetUrgent() {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is a watcher: no agent runs it", task.GetCode()))
 		}
 	}
@@ -197,6 +200,19 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		return nil, plan.Status(err)
 	}
 
+	if urgentGiven {
+		t.Urgent = *req.Urgent
+		if t.GetUrgent() && !dispatch.Urgent(t) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition,
+				fmt.Errorf("task %s is %s: only a task to run or running may be urgent", task.GetCode(), short(task.GetStatus())))
+		}
+		if t.GetUrgent() {
+			if err := refuseSecondUrgent(tasks, t); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	newDeps := t.GetDependsOn()
 	if afterGiven {
 		deps, err := resolveIn(tasks, req.GetAfter(), "dependency")
@@ -268,6 +284,14 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		return nil, plan.Status(err)
 	}
 
+	if urgentGiven && t.GetUrgent() {
+		// A running worker marked urgent stays beyond the slots: the load bar never pauses it (enforceNotchCapacity).
+		h.mu.Lock()
+		if r := h.runs[id]; r != nil {
+			r.forced = true
+		}
+		h.mu.Unlock()
+	}
 	h.notify()
 	h.wake()
 	if integrationGiven {
@@ -285,6 +309,17 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		filled[0].Prompt = p
 	}
 	return filled[0], nil
+}
+
+// refuseSecondUrgent refuses to mark t urgent while another task of its wish is (dispatch.UrgentOf), naming it: one
+// urgent task at a time, or none passes the queue.
+func refuseSecondUrgent(tasks []*planv1.Task, t *planv1.Task) error {
+	if o := dispatch.UrgentOf(tasks, t.GetWishId(), t.GetId()); o != nil {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"%s (%s) is urgent already: one urgent task per wish at a time; take its mark off first: djinn task update %s --urgent=false",
+			o.GetCode(), o.GetTitle(), o.GetId()))
+	}
+	return nil
 }
 
 // pendAgain puts the work of task, done without an integration record, back in line to be merged in t, its copy: as

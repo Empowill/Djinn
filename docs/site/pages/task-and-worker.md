@@ -159,6 +159,21 @@ on its row against that limit. Past them it stops, and continuing it gives it fi
 A task may also get a spending cap, which only Claude enforces. A worker silent for fifteen minutes, with nothing
 running, is woken and continued on its session; after three wakes in a row, its task fails, saying so.
 
+## Urgent tasks
+
+A task waits its turn: the tasks Djinn resumes and the corrections first, then the ones others wait for, then the
+oldest. When something blocks the wish, the Djinn may mark the one task that unblocks it **urgent**: the repair of an
+integration branch whose push checks stay red after Djinn's corrections, or the task a stuck chain waits for. Its card
+and its line in the tree then carry a small **Urgent** label, and:
+
+- it goes before every task that waits, whatever their age;
+- it takes a place even when the machine is full, as **Start anyway** does, and the load bar counts it among the
+  workers started by hand;
+- it starts while the push checks are red: nothing else could make the branch green again.
+
+One task of a wish is urgent at a time: the Djinn cannot mark a second one while the first is to run or runs. Ask the
+Djinn for it; the window has no switch for it. Urgent is for unblocking only, never to hurry ordinary work.
+
 ## Good to know
 
 - **Cancel, don't mark done, what is no longer useful.** Mark done is for work that is done; its work is merged.

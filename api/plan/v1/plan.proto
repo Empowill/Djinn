@@ -1069,6 +1069,11 @@ message Task {
   TaskBabysit babysit = 68;
   // For an ifrit (TASK_KIND_IFRIT): where it stands, its timers and its serves. Unset for any other task.
   TaskIfrit ifrit = 69;
+  // The lead marked the task urgent (djinn task spawn --urgent, djinn task update --urgent), to unblock its wish: while
+  // planned, it goes before every other planned task, takes a slot even on a full machine (as djinn task start does)
+  // and is not held by its integration branch's red push checks. At most one task of a wish is urgent while it is to
+  // run or runs (dispatch.Urgent).
+  bool urgent = 70;
 }
 
 // TaskBabysit is the pull or merge request a watcher babysits.
@@ -4275,6 +4280,10 @@ message TaskServiceSpawnRequest {
       lte: 240
     }
   ];
+  // Mark the task urgent, to unblock the wish (a repair of its red integration branch, a task a chain waits for): it
+  // goes before the wish's other planned tasks, takes a slot even on a full machine, and starts while the push checks
+  // are red. One urgent task per wish at a time: refused, naming it, while another is to run or runs.
+  bool urgent = 24;
 }
 
 message TaskServiceSpawnResponse {
@@ -4305,8 +4314,8 @@ message TaskServiceListRequest {
   string page_token = 4 [(buf.validate.field).string.max_len = 500];
   // Only the failed tasks that wait for the lead.
   bool failed = 5;
-  // Each task in a few fields: its code, title, status, kind, azima, what it waits for and its times; no prompt, no
-  // runs, no resources. Where the tasks stand, in a few lines each.
+  // Each task in a few fields: its code, title, status, kind, azima, what it waits for, its times and its urgent mark;
+  // no prompt, no runs, no resources. Where the tasks stand, in a few lines each.
   bool short = 6;
 }
 
@@ -4792,6 +4801,9 @@ message TaskServiceUpdateRequest {
     min_len: 1
     max_len: 250
   }];
+  // Mark the task urgent (as djinn task spawn --urgent), or no longer with --urgent=false. Refused on an azima, a
+  // watcher, a task that has ended, and while another task of the wish is urgent, which the refusal names.
+  optional bool urgent = 14;
 }
 
 message TaskServiceUpdateResponse {

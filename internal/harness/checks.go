@@ -18,6 +18,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
@@ -452,8 +453,8 @@ func (h *Harness) askPushHeld(
 }
 
 // workLeft tells whether some work of tasks, in the project projectID, may still be committed while a push is held:
-// a running or integrating task, or an active correction worker. Planned tasks held on the push checks cannot run
-// until the push is green again. Azimas and watchers bring none.
+// a running or integrating task, or an active correction worker or urgent task. Other planned tasks, held on the push
+// checks, cannot run until the push is green again. Azimas and watchers bring none.
 func workLeft(tasks []*planv1.Task, projectID string) bool {
 	return slices.ContainsFunc(tasks, func(t *planv1.Task) bool {
 		if t.GetProjectId() != projectID || plan.IsAzima(t) || t.GetProvider() == planv1.Provider_PROVIDER_WATCH {
@@ -467,7 +468,7 @@ func workLeft(tasks []*planv1.Task, projectID string) bool {
 		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_WAITING:
 			return true
 		case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RESUMING:
-			return t.GetCorrection() != nil
+			return t.GetCorrection() != nil || dispatch.Urgent(t)
 		}
 		return false
 	})

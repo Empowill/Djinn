@@ -213,6 +213,11 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   with "Start anyway"; `djinn task start <task-id>` does the same. It never jumps a usage limit, a push hold or a
   task that goes first. On macOS, the system's memory pressure holds workers back at warning on the Minimal notch,
   at critical only from Medium up.
+- The lead marks the one task that unblocks a wish urgent (`djinn task spawn --urgent`,
+  `djinn task update <task-id> --urgent`, `--urgent=false` to take it off): it goes before every planned task, takes
+  a slot whatever the machine, as `djinn task start` does, and starts while the push checks are red, to repair the
+  branch once its corrections gave up. One urgent task per wish while it is to run or runs: a second is refused,
+  naming the first. The window labels it Urgent.
 - In a project whose settings name its checks ([`docs/team-settings.md`](docs/team-settings.md#checks)), Djinn
   integrates finished work by itself: as each task ends, alone, it merges the task's branch in a worktree of its own
   (made ready by the `setup` command, again when a lock file changes), makes the generated files again on a conflict
