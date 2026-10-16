@@ -97,7 +97,23 @@ func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, was *planv1.A
 		}
 		q.WaitingLead = true
 	}
-	w.replaceAnswer(ctx, q, func(*planv1.LeadEvent) string { return line })
+	w.replaceAnswer(ctx, q, func(*planv1.LeadEvent) string { return line }, w.planDetail(ctx, q))
+}
+
+// planDetail is what the lead reads under the line of q's answer when Djinn left the plan of the chosen option to it
+// (RevisionDetail), read from the store: the harness has launched it, or not, by now.
+func (w *Wishes) planDetail(ctx context.Context, q *planv1.Question) string {
+	if w.Store == nil || len(q.GetPlans()) == 0 {
+		return ""
+	}
+	if fresh, err := store.Get[*planv1.Question](ctx, w.Store, q.GetId()); err == nil {
+		q = fresh
+	}
+	detail, err := RevisionDetail(ctx, w.Store, q)
+	if err != nil {
+		logx.L().Error("tell the lead a question's plan", "wish", q.GetWishId(), "question", q.GetCode(), "err", err)
+	}
+	return detail
 }
 
 // NoteEdited tells the lead that the developer changed the note of their answer to q, which had the note was: the
@@ -119,17 +135,20 @@ func (w *Wishes) NoteEdited(ctx context.Context, q *planv1.Question, was string)
 			note = " The note is removed."
 		}
 		return text + note
-	})
+	}, w.planDetail(ctx, q))
 }
 
 // replaceAnswer queues an answer event about q, its text line(the newest answer event of q that waits for the lead,
-// or nil), in place of the answer events of q that wait: the lead has not acknowledged them, and reads the one.
+// or nil) and its detail detail, in place of the answer events of q that wait: the lead has not acknowledged them, and reads the one.
 // It is a new event, after the watch's cursor: a lead whose digest held the one it replaces reads this one too.
-func (w *Wishes) replaceAnswer(ctx context.Context, q *planv1.Question, line func(waiting *planv1.LeadEvent) string) {
+func (w *Wishes) replaceAnswer(
+	ctx context.Context, q *planv1.Question, line func(waiting *planv1.LeadEvent) string, detail string,
+) {
 	if w.Store == nil {
 		return
 	}
-	e := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, WishId: q.GetWishId(), Code: q.GetCode()}
+	e := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, WishId: q.GetWishId(), Code: q.GetCode(),
+		Detail: detail}
 	err := w.notifyInPlace(ctx, e, func(waiting []*planv1.LeadEvent) []*planv1.LeadEvent {
 		var mine []*planv1.LeadEvent
 		for _, o := range waiting {

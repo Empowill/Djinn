@@ -40,6 +40,7 @@ const (
 	methodEnd      = "harness/end"      // the worker ended; the request is the task
 	methodRecover  = "harness/recover"  // djinn up found a task whose worker it had lost; the request is the task
 	methodAnswer   = "harness/answer"   // the task took the answer to its edit question; the request is the task
+	methodLaunch   = "harness/launch"   // a question's planned task was launched; the request is the question
 	methodReceived = "harness/received" // the worker took a message in; the request is the event
 	methodHold     = "harness/hold"     // the task's worker was paused or resumed; the request is the task
 	methodMeasure  = "harness/measure"  // what the task's worker uses was read; the request is the reading
@@ -72,6 +73,7 @@ type Harness struct {
 	wg     sync.WaitGroup // one per run
 
 	answering        sync.Mutex    // one answer to an edit question at a time
+	launching        sync.Mutex    // one launch of a question's planned task at a time
 	questioning      sync.Mutex    // one question worker decided at a time (question.go)
 	enlightenWorkers *bool         // enlighten workers start (WithEnlightenWorkers); nil: follows project settings
 	enlightenWait    time.Duration // how long an investigator may take to start (WithEnlightenWait); 0: the default

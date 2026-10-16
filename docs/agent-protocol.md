@@ -76,6 +76,17 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   `djinn question move <question> --wish <wish> [--follow]` moves an open question to another wish (retiring its code
   in this wish, taking the next code in the other; `--follow` moves tasks naming this question as their decision along
   with it). `djinn question withdraw <question> [--note "…"]` withdraws an open question without an answer.
+- **Planned options (Decision Q25).** An option may carry the task it launches: `djinn question ask --plan-file
+  <file>`, one per option, header lines named as `djinn task spawn`'s flags (`option`, `title`, `project-id`,
+  `provider`, `model`, `part-of`, `after`, `blocks`, `tilasm`, `kind`), then a blank line and the prompt
+  (`Question.plans`, `internal/plan/plans.go`). `djinn question revise --plan-file` replaces an option's plan; a file
+  holding only its `option:` line removes it. An answer without a note, on a plan with no `after` and no `blocks`,
+  launches it at once, its decision the question (`W40 launched as planned`). A note or a dependency leaves it to the
+  Djinn: its answer event carries, under its line (`LeadEvent.detail`), the question, the answer and its note, the
+  plan, and how each task it names stands now against when it was planned; `djinn question launch <question>`
+  launches it, as it is or with spawn's flags in place of the plan's. A plan that no longer holds (its azima closed,
+  a task it comes after cancelled, a task it blocks started) never launches: the event says why, and launch refuses
+  it until the flags change what fails.
 - **Moves only the developer can make.** Granting a right, pushing a tag, opening or merging a PR, starting a
   release, checking on a Mac or Windows, installing and restarting: the Djinn asks them through `djinn question ask`,
   with the exact command in the question. In a project with `install_questions: never` (such as Djinn itself), Djinn
