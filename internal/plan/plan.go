@@ -393,7 +393,7 @@ func (p *Projects) Show(
 		WatchCommands: settings.WatchCommands, ServeCommands: settings.ServeCommands,
 	}
 	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
-	for _, err := range problems {
+	for _, err := range append(problems, SkillProblems(project.GetDirectory())...) {
 		out.Problems = append(out.Problems, err.Error())
 	}
 	out.Warnings = append(out.Warnings, warnings...)

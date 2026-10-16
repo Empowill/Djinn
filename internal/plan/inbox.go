@@ -126,8 +126,9 @@ func usedSkills(ctx context.Context, r store.Reader, project *planv1.Project) ([
 
 // declaredSources are the inbox sources of the skills the projects use, their own then those they summon, in the
 // projects' order then by name, each said plugged in or not on this machine; a source that cannot be used says
-// why. A skill used by several projects is one source, run in the first one's folder. A source plugged in whose
-// skill no longer declares it comes last, with why: it runs nothing, and can be unplugged.
+// why. A skill Djinn cannot read is no source, unless it is plugged in: it is a problem of its project. A skill used
+// by several projects is one source, run in the first one's folder. A source plugged in whose skill no longer
+// declares it comes last, with why: it runs nothing, and can be unplugged.
 func declaredSources(ctx context.Context, r store.Reader, projects []*planv1.Project) ([]*Source, error) {
 	plugged, err := store.List[*planv1.PluggedSource](ctx, r, nil)
 	if err != nil {
@@ -152,6 +153,7 @@ func declaredSources(ctx context.Context, r store.Reader, projects []*planv1.Pro
 				continue
 			}
 			s, err := ReadSource(d.Dir)
+			var unreadable *UnreadableSkillError
 			switch {
 			case err != nil:
 				s = &Source{Skill: d.Name, Dir: d.Dir, Err: err}
@@ -160,6 +162,11 @@ func declaredSources(ctx context.Context, r store.Reader, projects []*planv1.Pro
 			}
 			s.HolderID, s.Holder, s.ProjectID = d.HolderID, d.Holder, p.GetId()
 			s.Plugged = isPlugged(s)
+			// A skill Djinn cannot read declares no source it knows of: its project's problems say why. One plugged
+			// in stays listed, to be unplugged.
+			if errors.As(err, &unreadable) && !s.Plugged {
+				continue
+			}
 			out = append(out, s)
 		}
 	}

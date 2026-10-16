@@ -2305,7 +2305,8 @@ message ProjectServiceShowResponse {
   // Your own file, in Djinn's data folder. It wins over the team's, setting by setting.
   string developer_file = 4;
   // Why a file could not be read: its settings are not shown, and the project's tasks do not spawn until it is
-  // fixed.
+  // fixed. Each skill of the project whose SKILL.md Djinn cannot read is one too: its wish template, inbox source and
+  // babysit are ignored until it is fixed, and it is no source of the inbox.
   repeated string problems = 5;
   // The command that makes a fresh worktree ready, and the checks Djinn runs before it commits and pushes, as the
   // files resolve them. Their last runs are the project's check_runs.
