@@ -3864,6 +3864,81 @@ test("the Tilasms tab lists each tilasm newest first with its code, title, autho
   );
 });
 
+test("the open tilasm goes full size and back, the same tilasm open, its frame never made again", () => {
+  const model = tilasm("01a1223a-ae45-728f-8c37-c005eee91edb", "L01", "Model");
+  const flows = tilasm("01a1223a-ae45-728f-8c37-c005eee91edc", "L02", "Flows");
+  const opened = [];
+  const view = live(s.TilasmList, {
+    tilasms: [model, flows],
+    count: 2,
+    codes: new Map(),
+    search: "",
+    onSearch() {},
+    open: model,
+    onOpen: (id) => opened.push(id),
+    history: "",
+    onHistory() {},
+    onRestore() {},
+    onExport() {},
+    onDrop() {},
+  });
+  const frame = () => view.all("iframe")[0];
+  const before = frame();
+  // Not full size: the button that enters it says so in words, with no tooltip; nothing leaves it.
+  const enter = view.one("tilasm-full-enter");
+  assert.equal(enter.title, undefined);
+  assert.match(
+    view.html(),
+    /class="text-button tilasm-full-enter">.*Full size<\/button>/,
+  );
+  assert.match(view.html(), /<section class="tilasm-view"/);
+  assert.doesNotMatch(view.html(), /tilasm-full-leave/);
+
+  enter.onClick();
+  const html = view.html();
+  assert.match(html, /<section class="tilasm-view full"/);
+  // The same frame, at the same place: React keeps it, so its page does not load again.
+  assert.equal(frame().key, before.key);
+  assert.equal(frame().props.className, "tilasm-frame");
+  assert.equal(frame().props.src, before.props.src);
+  assert.equal(frame().props.sandbox, "allow-scripts");
+  assert.doesNotMatch(html.match(/<iframe[^>]*>/)[0], /allow-same-origin/);
+  // The room it left keeps the page's place; a small button leaves, named, with Escape as its key, and no tooltip.
+  assert.match(
+    html,
+    /<\/iframe><div class="tilasm-frame-room"><\/div><button type="button" class="icon-button tilasm-full-leave" aria-label="Leave full size" aria-keyshortcuts="Escape">/,
+  );
+  assert.equal(view.one("tilasm-full-leave").title, undefined);
+  assert.match(html, /tilasm-row open/);
+
+  view.one("tilasm-full-leave").onClick();
+  const back = view.html();
+  assert.match(back, /<section class="tilasm-view"/);
+  assert.doesNotMatch(back, /tilasm-full-leave/);
+  assert.equal(frame().key, before.key);
+  // The same tilasm open, the same row marked: leaving full size opens and closes nothing.
+  assert.deepEqual(opened, []);
+  assert.deepEqual(
+    view
+      .all("tilasm-row")
+      .filter((row) => /\bopen\b/.test(row.props.className))
+      .map((row) => row.key),
+    [model.id],
+  );
+
+  // Closing the tilasm while full ends full size: the next one opens in the page, and so does this one again.
+  view.one("tilasm-full-enter").onClick();
+  view
+    .all("icon-button")
+    .find((button) => button.props["aria-label"] === "Close the tilasm")
+    .props.onClick();
+  assert.deepEqual(opened, [""]);
+  view.update({ open: flows });
+  assert.match(view.html(), /<section class="tilasm-view"/);
+  view.update({ open: model });
+  assert.match(view.html(), /<section class="tilasm-view"/);
+});
+
 test("a wish's view has a Tilasms tab beside Tasks and Decisions, with its count", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da71";
   const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);

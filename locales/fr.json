@@ -805,6 +805,8 @@
   "tilasms.exported": "Exporté dans {file}",
   "tilasms.files.one": "{count} fichier",
   "tilasms.files.other": "{count} fichiers",
+  "tilasms.full": "Plein format",
+  "tilasms.full_leave": "Quitter le plein format",
   "tilasms.history": "Versions",
   "tilasms.imported": "{code} importé",
   "tilasms.none": "Aucun tilasm pour l'instant : le matériau qui explique ce souhait, un fichier .html ou un dossier avec un index.html. Déposez-en un ici, ou le Djinn en ajoute un avec djinn tilasm put.",
