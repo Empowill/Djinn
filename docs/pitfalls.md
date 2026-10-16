@@ -127,8 +127,8 @@ the code does not say by itself; remove one when a change makes it false.
   `env -i HOME=$(mktemp -d) PATH=<node, go, /usr/bin, /bin> PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright npx playwright test …`.
   *Where:* `e2e/agents.ts`.
 - **`docs.spec.ts` "scrolls without stalling" fails under load.** It measures scrolling smoothness, which other
-  workers' gates break (W177). *Do:* when it is the only failure and the change does not touch the docs, rerun it
-  alone and report both runs.
+  workers' gates break (W177); since W75 it keeps the best of five measures, as a stalling page stalls them all.
+  *Do:* when it still is the only failure and the change does not touch the docs, rerun it alone and report both runs.
 - **Two Playwright runs in one worktree erase each other's traces.** `go tool task test` runs the e2e too; beside
   `go tool task e2e` (or a second agent in the same worktree) both write `test-results/`. *Sign:*
   `ENOENT … .playwright-artifacts-0/traces/*.trace`. *Do:* one run at a time.
