@@ -77,6 +77,8 @@ class LoadManager {
     lowerPauses: true,
   };
   private previewNotch: LoadNotch | null = null;
+  // The Auto button hovered or focused: the preview explains Auto.
+  private previewAuto = false;
   private listeners = new Set<() => void>();
   private abort: AbortController | null = null;
   private clients: Clients | null = null;
@@ -121,6 +123,14 @@ class LoadManager {
   setPreviewNotch(notch: LoadNotch | null) {
     if (this.previewNotch === notch) return;
     this.previewNotch = notch;
+    this.notify();
+  }
+
+  getPreviewAuto = (): boolean => this.previewAuto;
+
+  setPreviewAuto(on: boolean) {
+    if (this.previewAuto === on) return;
+    this.previewAuto = on;
     this.notify();
   }
 
@@ -435,12 +445,26 @@ function notchTooltip(
     case LoadNotch.MAX:
       return t("load.tooltip.max", { workers: workersAt(data, notch) });
     case LoadNotch.OVERCLOCK:
-      return t("load.tooltip.overclock", { workers: workersAt(data, notch) });
+      return `${t("load.tooltip.overclock", { workers: workersAt(data, notch) })} ${t("load.overclock_risk")}`;
     case LoadNotch.AUTO:
       return t("load.tooltip.auto", { chosen: notchLabel(chosenNotch) });
     default:
       return "";
   }
+}
+
+// nearestNotch is the index of the stop nearest a pointer at clientX over box, the stops' row: the stops stand at
+// even steps from its left end to its right end.
+function nearestNotch(clientX: number, box: { left: number; width: number }) {
+  if (box.width <= 0) return null;
+  const ratio = Math.max(0, Math.min(1, (clientX - box.left) / box.width));
+  return Math.round(ratio * (NOTCHES.length - 1));
+}
+
+// stopAt is the distance from the track's left end to the stop at index i: the stops' row is inset by the thumb's
+// half, 7px, at each end (operating-load.css).
+function stopAt(i: number): string {
+  return `calc(7px + ${i / (NOTCHES.length - 1)} * (100% - 14px))`;
 }
 
 // useAnimatedNumber glides to target when glide changes with it: the notch the developer moves to. Any other move
@@ -562,20 +586,30 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
         })
       : baseTooltip;
 
+  // The stop nearest the pointer, measured on the stops' row (the slider's own box before it is drawn).
+  const stopsRef = React.useRef<HTMLDivElement>(null);
+  const nearest = (e: React.MouseEvent<HTMLDivElement>) => {
+    const box = (
+      stopsRef.current ?? e.currentTarget
+    )?.getBoundingClientRect?.();
+    const idx = box ? nearestNotch(e.clientX, box) : null;
+    return idx === null ? null : (NOTCHES[idx] ?? null);
+  };
+
+  // A click anywhere on the track sets the nearest stop.
   const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement)?.tagName === "BUTTON") return;
-    const rect = e.currentTarget?.getBoundingClientRect?.() ?? {
-      left: 0,
-      width: 0,
-    };
-    if (rect.width <= 0) return;
-    const ratio = Math.max(
-      0,
-      Math.min(1, (e.clientX - rect.left) / rect.width),
-    );
-    const idx = Math.min(4, Math.max(0, Math.round(ratio * 4)));
+    const notch = nearest(e);
+    if (notch === null) return;
     loadManager.setPreviewNotch(null);
-    void loadManager.setNotch(NOTCHES[idx] ?? LoadNotch.MEDIUM);
+    void loadManager.setNotch(notch);
+  };
+
+  // The pointer anywhere on the track, gaps included, previews the stop nearest it: the preview changes only when
+  // that stop changes, never falling back to the level in effect between two stops (W37).
+  const handleTrackMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const notch = nearest(e);
+    if (notch !== null) loadManager.setPreviewNotch(notch);
   };
 
   // select sets a notch from a label or a stop: the same move from either.
@@ -602,11 +636,16 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
     void loadManager.setNotch(NOTCHES[nextIdx] ?? LoadNotch.MEDIUM);
   };
 
+  // The gauge's fill: solid up to the level in effect, striped on to the previewed level when it is higher, or over
+  // the part a lower previewed level would give up.
+  const activeIndex = Math.max(0, NOTCHES.indexOf(activeNotch));
   return (
     <div
       className="operating-load-slider"
       data-notch={notchSlug(displayNotch)}
       onClick={handleTrackClick}
+      onMouseMove={handleTrackMove}
+      onMouseLeave={() => loadManager.setPreviewNotch(null)}
     >
       <div className="operating-load-track">
         <input
@@ -635,9 +674,19 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
           aria-description={sliderTooltip}
           className="operating-load-input"
         />
+        <div
+          className="operating-load-fill-reach"
+          data-notch={notchSlug(displayNotch)}
+          style={{ width: stopAt(Math.max(activeIndex, sliderIndex)) }}
+        />
+        <div
+          className="operating-load-fill"
+          data-notch={notchSlug(activeNotch)}
+          style={{ width: stopAt(Math.min(activeIndex, sliderIndex)) }}
+        />
         {/* A round stop per notch on the track, a button each: the one shown filled (it stands for the cursor), the
             one in effect let through to the cursor beneath, which it drags. */}
-        <div className="operating-load-stops">
+        <div className="operating-load-stops" ref={stopsRef}>
           {NOTCHES.map((n, i) => {
             const inEffect = !data.auto && activeNotch === n;
             return (
@@ -649,8 +698,6 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
                 style={{ left: `${(i / (NOTCHES.length - 1)) * 100}%` }}
                 aria-label={notchLabel(n)}
                 aria-pressed={inEffect}
-                onMouseEnter={() => loadManager.setPreviewNotch(n)}
-                onMouseLeave={() => loadManager.setPreviewNotch(null)}
                 onFocus={() => loadManager.setPreviewNotch(n)}
                 onBlur={() => loadManager.setPreviewNotch(null)}
                 onClick={(e) => {
@@ -671,8 +718,11 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
             tabIndex={-1}
             data-notch={notchSlug(n)}
             className={`operating-load-notch ${!data.auto && activeNotch === n ? "active" : ""}`}
-            onMouseEnter={() => loadManager.setPreviewNotch(n)}
-            onMouseLeave={() => loadManager.setPreviewNotch(null)}
+            // A label previews its own notch: spread edge to edge, the end labels sit off their stops.
+            onMouseMove={(e) => {
+              e.stopPropagation();
+              loadManager.setPreviewNotch(n);
+            }}
             onClick={(e) => {
               e.stopPropagation();
               select(n);
@@ -703,6 +753,10 @@ const OperatingLoadAuto = React.memo(function OperatingLoadAuto() {
         data-notch="auto"
         className={`operating-load-notch ${data.auto ? "active" : ""}`}
         onClick={() => void loadManager.setNotch(LoadNotch.AUTO)}
+        onMouseEnter={() => loadManager.setPreviewAuto(true)}
+        onMouseLeave={() => loadManager.setPreviewAuto(false)}
+        onFocus={() => loadManager.setPreviewAuto(true)}
+        onBlur={() => loadManager.setPreviewAuto(false)}
         aria-description={notchTooltip(LoadNotch.AUTO, data, chosen)}
       >
         {t("load.notch.auto")}
@@ -732,9 +786,19 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
     loadManager.getPreviewNotch,
   );
 
+  const previewAuto = useSyncExternalStore(
+    loadManager.subscribe,
+    loadManager.getPreviewAuto,
+    loadManager.getPreviewAuto,
+  );
+
   const displayNotch = preview ?? data.notch;
   const allowedWorkers = workersAt(data, displayNotch);
   const over = overLimit(data, displayNotch);
+  // Overclock previewed, or in effect with no other level previewed: its risk, as a warning. Auto hovered or on: what
+  // it does.
+  const risk = displayNotch === LoadNotch.OVERCLOCK;
+  const explainAuto = previewAuto || data.auto;
   // Previewing a notch below the one in effect: what moving there does to the workers above its limit.
   const previewing =
     preview !== null && workersAt(data, preview) < workersAt(data, data.notch);
@@ -874,6 +938,20 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
           />
         </div>
       </div>
+      {risk && (
+        <div className="operating-load-forecast-note operating-load-forecast-risk">
+          {t("load.overclock_risk")}
+        </div>
+      )}
+      {explainAuto && (
+        <div className="operating-load-forecast-note">
+          {notchTooltip(
+            LoadNotch.AUTO,
+            data,
+            data.chosenNotch || LoadNotch.MEDIUM,
+          )}
+        </div>
+      )}
     </div>
   );
 });
@@ -915,4 +993,6 @@ export {
   workersAt,
   overLimit,
   computeEngagedLimit,
+  nearestNotch,
+  stopAt,
 };

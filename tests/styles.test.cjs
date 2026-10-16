@@ -491,4 +491,19 @@ test("the load gauge's stops read as round buttons and its limits show on hover 
   );
   assert.match(shown, /visibility:\s*visible;/);
   assert.match(shown, /opacity:\s*1;/);
+
+  // W37: the gauge's fill moves by its width only (no shadow animated: WebKit burns CPU on it) and has no border; the
+  // Overclock warning is framed by one uniform border in the theme's danger colour.
+  const fill = rule(".operating-load-fill,\n.operating-load-fill-reach");
+  assert.match(fill, /transition:\s*width [^;,]*;/);
+  assert.doesNotMatch(
+    fill,
+    /border(?:-(?:top|right|bottom|left))?:|box-shadow/,
+  );
+  const risk = rule(".operating-load-forecast-risk");
+  assert.match(risk, /border:\s*1px solid [^;]*var\(--danger\)/);
+  assert.match(risk, /color:\s*var\(--danger\);/);
+  assert.doesNotMatch(risk, /border-(?:top|right|bottom|left)/);
+  const note = rule(".operating-load-forecast-note");
+  assert.match(note, /white-space:\s*normal;/);
 });
