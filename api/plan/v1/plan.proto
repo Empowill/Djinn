@@ -2581,6 +2581,34 @@ message InboxSource {
   bool plugged = 6;
   // Why it cannot be used; empty when it can.
   string error = 7;
+  // What it reads, in a sentence: its SKILL.md's metadata.djinn.source.summary, else the skill's description.
+  string summary = 8;
+  // Its last run on this machine; unset before its first, and once it is unplugged.
+  SourceRun last_run = 9;
+}
+
+// The last run of an inbox source on this machine. It lives in Djinn's data, never in a repository; unplugging the
+// source forgets it.
+message SourceRun {
+  option (djinn.v1.unique) = {fields: ["project_id", "skill"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The project that holds the skill.
+  string project_id = 2;
+  // The skill's folder name.
+  string skill = 3;
+  // When its command last ended, or could not start.
+  google.protobuf.Timestamp end_time = 4;
+  // How many items that run printed, those the inbox had already included.
+  int32 items = 5;
+  // Why that run failed: its exit code and the last lines of its error output, or why its command could not start.
+  // Empty when it went well.
+  string error = 6;
+  // How many runs failed in a row, that one included; 0 when it went well.
+  int32 failures = 7;
+  // When the first of those failed runs ended; unset when the last run went well.
+  google.protobuf.Timestamp failing_since = 8;
 }
 
 // A source plugged in on this machine. It lives in Djinn's data, never in a repository: a clone of a project whose

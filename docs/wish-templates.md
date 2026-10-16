@@ -237,6 +237,7 @@ metadata:
     source:
       watch: "sh .agents/skills/babysit-mr/assigned.sh"
       every: 10m
+      summary: "The merge requests of this project assigned to you, read with glab."
 ---
 ```
 
@@ -245,9 +246,12 @@ metadata:
   (`.agents/permissions.txtpb`), it must be one of them.
 - `every`: the least time between two starts of the command, 5 minutes by default, 1 minute at least. A command that
   waits on its own (a stream) runs as long as it likes; when it exits, Djinn starts it again `every` after its start.
+- `summary`: what it reads, in a sentence, for the person who decides whether to plug it in: whose requests, where,
+  read with which tool. Without one, Djinn says the skill's `description`.
 
-**What it prints.** One item per paragraph: lines separated by an empty line, or by a second of silence. Write each
-item as a request you would hand over, its link on a line: the template's `match` then reads it as it reads a request.
+**What it prints.** One item per paragraph of its output: lines separated by an empty line, or by a second of
+silence. Its error output makes no item: it says why a run failed. Write each item as a request you would hand over,
+its link on a line: the template's `match` then reads it as it reads a request.
 For the merge requests assigned to you, `assigned.sh` could be:
 
 ```sh
@@ -259,6 +263,12 @@ It may print every item each time: Djinn keeps the first link of an item (else i
 same one twice, whether it waits, was routed or was dismissed, nor one whose link a wish already holds in its title or
 its blocks.
 
+**What Djinn keeps of each run.** On this machine, for each source plugged in: when its command last ended, how many
+items that run printed (those the inbox had already included), and, when it failed, why (its exit code and the last
+lines of its error output, or why it could not start: a command the project's permissions do not list), how many runs
+failed in a row and since when. A run that goes well clears the failure. `djinn inbox sources` shows it, under
+`last_run`, beside the source's `summary`; unplugging the source forgets it.
+
 **What Djinn never does.** It never writes to the source: the command's input is closed, and no answer runs a command.
 It never comments, reacts, marks as read nor replies on your behalf. It stores no token: the command logs in by its own
 tool (`glab auth login`, `gh auth login`, a Slack or Notion command line). It runs the sources of the skills your
@@ -266,11 +276,13 @@ projects hold or summon, and no other: one skill summoned by several projects ru
 
 From the command line: `djinn inbox list` (`--all` for the routed and dismissed ones), `djinn inbox route <item>
 <letter>`, `djinn inbox dismiss <item>`, `djinn inbox sources`, `djinn inbox plug <source>`, `djinn inbox unplug
-<source>`. `djinn skill list` shows each source's command, or why it cannot be used.
+<source>`. `djinn inbox sources` says what each source reads and how its last run went. `djinn skill list` shows each
+source's command, or why it cannot be used.
 
 Djinn's own `babysit-pr` declares one, `sh .agents/skills/babysit-pr/inbox.sh`: the open pull requests of the
 repository assigned to you (`Babysit PR #12: …`, which proposes the skill's wish) or that request your review, each
-with its link, read with `gh pr list`. Unplugged until you plug it in: `djinn inbox plug babysit-pr`.
+with its link, read with `gh pr list`; its `summary` says so. Unplugged until you plug it in: `djinn inbox plug
+babysit-pr`. `babysit-mr` declares no source.
 
 Babysitting: `TestReadBabysit`, `TestProjectBabysit`, `TestFillBabysit`, `TestBabysitSettings`
 (`internal/plan`), `TestBabysitWhatATaskOpens`, `TestBabysitTheTaskBranch`, `TestBabysitOffOrUndeclared`,
@@ -282,6 +294,7 @@ Tests: `TestReadTemplate`, `TestFillQuotes`, `TestDoneLine`, `TestRouteTemplate`
 (`internal/harness/babysit_mr_test.go`: babysit-mr's template and watcher, a fake `glab` on the `PATH`),
 `TestBabysitPRSpeaksOnlyForTheLead` (`internal/harness/babysit_pr_test.go`: what babysit-pr's watcher says, and does not
 say again after a restart, a fake `gh` on the `PATH`), and `e2e/wish-template.spec.ts` (a fake watcher). The
-inbox: `TestReadSource`, `TestSources`, `TestOwnSource`, `TestInbox`, `TestItemKey` (`internal/plan/inbox_test.go`),
-`TestSourceReadsOnly`, `TestSourceRefused`, `TestSourceUnplugged` (`internal/harness/watch_source_test.go`),
+inbox: `TestReadSource`, `TestSources`, `TestKeepSourceRun`, `TestOwnSource`, `TestInbox`, `TestItemKey`
+(`internal/plan/inbox_test.go`), `TestSourceReadsOnly`, `TestSourceRefused`, `TestSourceFails`, `TestSourceUnplugged`
+(`internal/harness/watch_source_test.go`),
 `TestInboxPlug` (`cmd/djinn/inbox_test.go`), and `e2e/inbox.spec.ts` (a fake source, plugged in from the inbox).

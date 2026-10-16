@@ -44,6 +44,7 @@ const (
 const (
 	actorSource   = "source"
 	methodReceive = "inbox/receive" // a source printed a new item; the request is the item
+	methodRan     = "inbox/ran"     // a source's command ended, or could not start; the request is its run
 )
 
 // Source is the inbox source of a skill, read from its SKILL.md.
@@ -56,12 +57,16 @@ type Source struct {
 	ProjectID string
 	// Watch is the command line, run without a shell.
 	Watch string
+	// Summary says what it reads, in a sentence: metadata.djinn.source.summary, else the skill's description.
+	Summary string
 	// Every is the least time between two starts of the command.
 	Every time.Duration
 	// Plugged tells whether the source is plugged in on this machine: only then does its command run.
 	Plugged bool
 	// Err says why the source cannot be used; nil when it can.
 	Err error
+	// Run is its last run on this machine; nil before its first.
+	Run *planv1.SourceRun
 }
 
 // Name is the source as the developer names it: <project>/<skill>, the project that holds the skill.
@@ -69,8 +74,9 @@ func (s *Source) Name() string { return s.Holder + "/" + s.Skill }
 
 // sourceYAML is an inbox source as SKILL.md writes it.
 type sourceYAML struct {
-	Watch string `yaml:"watch"`
-	Every string `yaml:"every"`
+	Watch   string `yaml:"watch"`
+	Every   string `yaml:"every"`
+	Summary string `yaml:"summary"`
 }
 
 // ReadSource reads the inbox source of the skill in dir: nil without one, an error when it cannot be used.
@@ -79,7 +85,10 @@ func ReadSource(dir string) (*Source, error) {
 	if err != nil || djinn.Source == nil {
 		return nil, err
 	}
-	s := &Source{Skill: filepath.Base(dir), Dir: dir, Watch: strings.TrimSpace(djinn.Source.Watch), Every: SourceEvery}
+	s := &Source{
+		Skill: filepath.Base(dir), Dir: dir, Watch: strings.TrimSpace(djinn.Source.Watch), Every: SourceEvery,
+		Summary: cmp.Or(strings.Join(strings.Fields(djinn.Source.Summary), " "), Description(dir)),
+	}
 	if s.Watch == "" {
 		return nil, errors.New("metadata.djinn.source has no watch: the command that prints the items")
 	}
@@ -133,10 +142,20 @@ func declaredSources(ctx context.Context, r store.Reader, projects []*planv1.Pro
 	if err != nil {
 		return nil, err
 	}
+	runs, err := store.List[*planv1.SourceRun](ctx, r, nil)
+	if err != nil {
+		return nil, err
+	}
 	isPlugged := func(s *Source) bool {
 		return slices.ContainsFunc(plugged, func(p *planv1.PluggedSource) bool {
 			return strings.EqualFold(p.GetProjectId(), s.HolderID) && strings.EqualFold(p.GetSkill(), s.Skill)
 		})
+	}
+	lastRun := func(s *Source) *planv1.SourceRun {
+		if i := slices.IndexFunc(runs, func(r *planv1.SourceRun) bool { return ranFor(r, s) }); i >= 0 {
+			return runs[i]
+		}
+		return nil
 	}
 	var out []*Source
 	for _, p := range projects {
@@ -160,6 +179,9 @@ func declaredSources(ctx context.Context, r store.Reader, projects []*planv1.Pro
 			}
 			s.HolderID, s.Holder, s.ProjectID = d.HolderID, d.Holder, p.GetId()
 			s.Plugged = isPlugged(s)
+			if s.Plugged {
+				s.Run = lastRun(s)
+			}
 			out = append(out, s)
 		}
 	}
@@ -192,9 +214,53 @@ func Sources(ctx context.Context, r store.Reader, projects []*planv1.Project) ([
 	return slices.DeleteFunc(all, func(s *Source) bool { return s.Err != nil || !s.Plugged }), nil
 }
 
+// ranFor tells whether r is a run of the source s.
+func ranFor(r *planv1.SourceRun, s *Source) bool {
+	return strings.EqualFold(r.GetProjectId(), s.HolderID) && strings.EqualFold(r.GetSkill(), s.Skill)
+}
+
+// KeepSourceRun keeps the run of the source s that ended at end, on this machine: how many items it printed, and why
+// it failed, nil when it went well; a failed run counts the failures in a row, and when they began. A source no
+// longer plugged in keeps nothing: its run ended as it was unplugged.
+func KeepSourceRun(ctx context.Context, st *store.Store, s *Source, end time.Time, items int, failed error) error {
+	return st.Tx(ctx, func(tx *store.Tx) error {
+		plugged, err := store.List[*planv1.PluggedSource](ctx, tx, store.Where{"project_id": s.HolderID})
+		if err != nil {
+			return err
+		}
+		if !slices.ContainsFunc(plugged, func(p *planv1.PluggedSource) bool { return strings.EqualFold(p.GetSkill(), s.Skill) }) {
+			return nil
+		}
+		runs, err := store.List[*planv1.SourceRun](ctx, tx, store.Where{"project_id": s.HolderID})
+		if err != nil {
+			return err
+		}
+		run := &planv1.SourceRun{Id: store.NewID(), ProjectId: s.HolderID, Skill: s.Skill}
+		if i := slices.IndexFunc(runs, func(r *planv1.SourceRun) bool { return ranFor(r, s) }); i >= 0 {
+			run = runs[i]
+		}
+		run.EndTime, run.Items = timestamppb.New(end), int32(items)
+		if failed == nil {
+			run.Error, run.Failures, run.FailingSince = "", 0, nil
+		} else {
+			if run.GetFailures() == 0 {
+				run.FailingSince = run.GetEndTime()
+			}
+			run.Error, run.Failures = failed.Error(), run.GetFailures()+1
+		}
+		if err := tx.Journal(actorSource, methodRan, run); err != nil {
+			return err
+		}
+		return tx.Put(run)
+	})
+}
+
 // sourceMessage is the source s as InboxService shows it.
 func sourceMessage(s *Source) *planv1.InboxSource {
-	out := &planv1.InboxSource{Name: s.Name(), Skill: s.Skill, Project: s.Holder, Watch: s.Watch, Plugged: s.Plugged}
+	out := &planv1.InboxSource{
+		Name: s.Name(), Skill: s.Skill, Project: s.Holder, Watch: s.Watch, Plugged: s.Plugged, Summary: s.Summary,
+		LastRun: s.Run,
+	}
 	if s.Every > 0 {
 		out.Every = s.Every.String()
 	}
@@ -478,7 +544,19 @@ func (in *Inbox) Unplug(
 				}
 			}
 		}
-		s.Plugged = false
+		// Its runs were this machine's, while it was plugged in: plugged in again, it starts afresh.
+		runs, err := store.List[*planv1.SourceRun](ctx, tx, nil)
+		if err != nil {
+			return err
+		}
+		for _, r := range runs {
+			if ranFor(r, s) {
+				if err := tx.Delete(r); err != nil {
+					return err
+				}
+			}
+		}
+		s.Plugged, s.Run = false, nil
 		out = sourceMessage(s)
 		return nil
 	})
