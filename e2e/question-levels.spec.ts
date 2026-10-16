@@ -1,7 +1,8 @@
 // Three levels for an open question, against the real djinn up --browser (see global-setup.ts): blocking when a task
 // waits for its answer, before X when the asker said so (djinn question ask --before), can wait otherwise. A revision
-// with --before "" makes a question one that can wait. The window's cards, its attention bar, the page and the brief
-// list them in that order. Every run makes fresh identifiers, so --repeat-each works on the same djinn.
+// with --before "" makes a question one that can wait. The attention bar, the page and the brief list them in that
+// order; the window's cards list them as they were asked, each under its level (AGENTS.md, Interface: nothing moves
+// under the reader). Every run makes fresh identifiers, so --repeat-each works on the same djinn.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -30,7 +31,7 @@ const wishes = (): Wish[] =>
 
 const at = "2026-10-08T09:10:00Z";
 
-test("open questions come blocking, then before X, then can wait, in the window, the page and the brief", async ({
+test("open questions come blocking, then before X, then can wait, in the bar, the page and the brief; as asked in the cards", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -99,16 +100,21 @@ test("open questions come blocking, then before X, then can wait, in the window,
   await page.locator(".wish-nav").filter({ hasText: title }).click();
   await expect(page.locator(".hero h1")).toHaveText(title);
 
-  // The cards: red with the task it blocks, orange under its words, grey "Can wait".
+  // The cards, as they were asked: red with the task it blocks, orange under its words, grey "Can wait".
   const cards = page.locator(".decisions-section .question-card");
-  await expect(cards.locator(".question-id")).toHaveText(order);
+  await expect(cards.locator(".question-id")).toHaveText([
+    "Q01",
+    "Q02",
+    "Q03",
+    "Q04",
+  ]);
   await expect(cards.nth(0)).toHaveClass(/is-blocking/);
   await expect(cards.nth(0).locator(".status-badge")).toHaveText("Blocks W1");
-  await expect(cards.nth(1).locator(".status-badge")).toHaveText(
+  await expect(cards.nth(2).locator(".status-badge")).toHaveText(
     "before the first light",
   );
-  await expect(cards.nth(1)).toHaveCSS("opacity", "1");
-  for (const i of [2, 3]) {
+  await expect(cards.nth(2)).toHaveCSS("opacity", "1");
+  for (const i of [1, 3]) {
     await expect(cards.nth(i)).toHaveClass(/can-wait/);
     await expect(cards.nth(i).locator(".status-badge")).toHaveText("Can wait");
   }

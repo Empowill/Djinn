@@ -14,10 +14,10 @@
 // recommended one until you pick another, and the note with it. An option only picks: nothing but the lamp's button,
 // Enter in the note or Ctrl+Enter on the card answers (W574). Open, it says how much it holds up: red when a task
 // waits for it, orange under its before words ("before the merge"), grey when it can wait. Being investigated, it
-// folds to one line out of the way, and opens on a click; revised, it waits for you again, open. Answered, it is a
-// decision: no mark asks to read or approve it again, and the decision log shows it. Djinn types each answer in the
-// lead's terminal; a wish without a lead session has no lead to tell, and the card says so. Its rounds, each request
-// and each revision, fold below.
+// folds to one line out of the way, and opens on a click; revised, it waits for you again, in its place. Answered, it
+// is a decision: no mark asks to read or approve it again, and the decision log shows it. Djinn types each answer in
+// the lead's terminal; a wish without a lead session has no lead to tell, and the card says so. Its rounds, each
+// request and each revision, fold below; a grey line says when it was asked, and revised.
 // A gesture shows, by key or by click: its button stays pressed a moment and the answer leaves as it comes back up,
 // while the card glows in the colour of the gesture, the lamp's brass or a cool light, and a wisp of smoke rises
 // from the button (review.css). Reduced motion keeps the colour, without the movement.
@@ -52,6 +52,7 @@ import {
 import { EMPTY_BLOCKING } from "./data/flight";
 import {
   answerText,
+  askedWhen,
   choiceOf,
   investigating,
   isWithdrawn,
@@ -385,6 +386,11 @@ export const WishQuestion = memo(function WishQuestion({
   ) : (
     <StatusBadge tone="later" label={t("question.can_wait")} />
   );
+  // When it was asked, and revised, in grey: a question keeps its place by it (question-column.tsx).
+  const askedAt = askedWhen(q);
+  const askedLine = askedAt && (
+    <time className="question-asked">{askedAt}</time>
+  );
   const level =
     answered || withdrawn || digging
       ? ""
@@ -413,6 +419,7 @@ export const WishQuestion = memo(function WishQuestion({
               {t("question.revised", { count: q.revision })}
             </span>
           )}
+          {!answered && !withdrawn && askedLine}
         </span>
         {/* Inside the heading's button when it folds, its links and commands are text. */}
         <h3>
@@ -620,6 +627,7 @@ export const WishQuestion = memo(function WishQuestion({
                 {t("question.revised", { count: q.revision })}
               </span>
             )}
+            {askedLine}
           </p>
         </div>
         {current && (

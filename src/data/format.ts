@@ -62,6 +62,28 @@ export function when(ts?: Timestamp): string {
   });
 }
 
+// askedWhen says when a question was asked, and when it was last revised: the day and month in figures, the hour
+// (asked 16/10 at 10:24 · revised at 10:31), the revision's day said only when it is another. "" when it has no time.
+export function askedWhen(question: Question): string {
+  const asked = date(question.createTime);
+  if (!asked) return "";
+  const day = (d: Date) =>
+    d.toLocaleDateString(language, { day: "2-digit", month: "2-digit" });
+  const hour = (d: Date) =>
+    d.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" });
+  const out = t("question.asked_at", { day: day(asked), time: hour(asked) });
+  const last = [...(question.rounds ?? [])]
+    .reverse()
+    .find((r) => r.kind === RoundKind.REVISE);
+  const revised = question.revision > 0 ? date(last?.createTime) : undefined;
+  if (!revised) return out;
+  const words =
+    revised.toDateString() === asked.toDateString()
+      ? t("question.revised_at", { time: hour(revised) })
+      : t("question.revised_on", { day: day(revised), time: hour(revised) });
+  return `${out} · ${words}`;
+}
+
 // span says a length of time as a counter, two units at most: 45s, 1m1s, 1h1m, 3d4h.
 export function span(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));

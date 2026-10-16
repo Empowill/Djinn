@@ -10452,3 +10452,124 @@ test("the glance shows each wish's workers: running, investigating apart, waitin
   );
   assert.doesNotMatch(calmPlan, /glance-legend/);
 });
+
+// Nothing moves under the reader (AGENTS.md, Interface): on a wish's page, a question asked later renders after the
+// older ones, even one a task waits for, and a revision keeps the question in its place, open, dated in grey.
+test("a new question renders after the older ones, a revision keeps the order and the open question", async () => {
+  const container = setupMockDom();
+  const wishId = "01a1443f-0000-7000-8000-000000000047";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const at = (iso) => ({ seconds: BigInt(Date.parse(iso) / 1000), nanos: 0 });
+  const asked = (id, code, text, iso, extra = {}) => ({
+    id,
+    wishId,
+    code,
+    text,
+    options: ["Yes", "No"],
+    createTime: at(iso),
+    ...extra,
+  });
+  let questions = [
+    asked("q1", "Q01", "Brass?", "2026-10-16T10:24:00Z"),
+    asked("q2", "Q02", "Wick?", "2026-10-16T10:25:00Z"),
+  ];
+  let tasks = [];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, {
+      list: () => ({ wishes: [lamp] }),
+      describe: () => ({ wish: lamp }),
+      watch: async function* () {},
+    });
+    service(s.TaskService, { list: () => ({ tasks }) });
+    service(s.QuestionService, { list: () => ({ questions }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const close = djinn.store.open(wishId);
+  await djinn.store.changed(wishId, [s.Change.WISH]);
+  const root = s.createRoot(container);
+  s.act(() => {
+    root.render(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishView, { wish: lamp, onToast() {} }),
+      ),
+    );
+  });
+  const nodes = (node, out = []) => {
+    out.push(node);
+    for (const child of node.childNodes ?? []) nodes(child, out);
+    return out;
+  };
+  const textOf = (node) =>
+    node.nodeType === 3
+      ? node.nodeValue
+      : node.childNodes.length
+        ? node.childNodes.map(textOf).join("")
+        : (node.textContent ?? "");
+  const cards = () =>
+    nodes(container).filter((n) => /^question-/.test(n.attributes?.id ?? ""));
+  const ids = () => cards().map((n) => n.attributes.id.slice(9));
+  const open = () =>
+    cards()
+      .filter((n) => / current /.test(` ${n.attributes.class} `))
+      .map((n) => n.attributes.id.slice(9));
+  const date = (id) =>
+    textOf(
+      nodes(cards().find((n) => n.attributes.id === `question-${id}`)).find(
+        (n) => n.attributes?.class === "question-asked",
+      ),
+    );
+  assert.deepEqual(ids(), ["q1", "q2"]);
+  assert.deepEqual(open(), ["q1"]);
+  assert.match(date("q1"), /^asked \d\d\/\d\d at \d\d:\d\d( [AP]M)?$/);
+
+  // Asked later, a question a task waits for, needed before the merge: it still comes last.
+  questions = [
+    ...questions,
+    asked("q3", "Q03", "May W1 edit?", "2026-10-16T10:26:00Z", {
+      before: "before the merge",
+    }),
+  ];
+  tasks = [
+    {
+      id: "t1",
+      wishId,
+      code: "W1",
+      title: "Polish",
+      status: s.TaskStatus.WAITING,
+      editQuestionId: "q3",
+    },
+  ];
+  await s.act(async () => {
+    await djinn.store.changed(wishId, [s.Change.QUESTION, s.Change.TASK]);
+  });
+  assert.deepEqual(ids(), ["q1", "q2", "q3"]);
+  assert.deepEqual(open(), ["q1"]);
+
+  // Revised, the first question keeps its place, open, its date saying when.
+  questions = [
+    asked("q1", "Q01", "Brass or copper?", "2026-10-16T10:24:00Z", {
+      revision: 1,
+      rounds: [
+        { kind: s.RoundKind.REVISE, createTime: at("2026-10-16T10:31:00Z") },
+      ],
+    }),
+    ...questions.slice(1),
+  ];
+  await s.act(async () => {
+    await djinn.store.changed(wishId, [s.Change.QUESTION]);
+  });
+  assert.deepEqual(ids(), ["q1", "q2", "q3"]);
+  assert.deepEqual(open(), ["q1"]);
+  assert.match(
+    date("q1"),
+    /^asked \d\d\/\d\d at \d\d:\d\d( [AP]M)? · revised at \d\d:\d\d( [AP]M)?$/,
+  );
+  s.act(() => root.unmount());
+  close();
+  // React's scheduler port would keep the run alive, as above.
+  for (const handle of process._getActiveHandles())
+    if (handle?.constructor?.name === "MessagePort") handle.unref();
+});

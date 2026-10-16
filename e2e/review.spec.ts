@@ -237,9 +237,18 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   const revised = page
     .locator(".decisions-section .question-card")
     .filter({ hasText: "Which oil for the wick?" });
-  // Revised, it waits for an answer again, open by itself.
+  // Revised, it waits for an answer again, back in its place: the question opened meanwhile stays open, nothing
+  // moves under the reader (AGENTS.md, Interface); a click opens it.
   await expect(revised.locator(".revised-badge")).toHaveText("Revised");
   await expect(revised).not.toHaveClass(/folded/);
+  await expect(revised).toHaveClass(/closed/);
+  await expect(
+    page
+      .locator(".decisions-section .question-card")
+      .filter({ hasText: "May the worker polish the brass again?" }),
+  ).toHaveClass(/current/);
+  await revised.locator(".question-row-title").click();
+  await expect(revised).toHaveClass(/current/);
   await expect(revised.locator(".question-rounds summary")).toHaveText(
     "History: 2 rounds",
   );

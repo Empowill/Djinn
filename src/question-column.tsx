@@ -3,6 +3,10 @@
 // wish's title, which opens it), the wish's own on its page. A question is closed, its two-line row, or open, in full
 // (wish-question.tsx): one is open at a time, the first until you go to another, and when the open one leaves (answered,
 // withdrawn, moved) the one below it opens, else the one above.
+// Nothing moves under the reader (AGENTS.md, Interface): each wish's questions come as they were asked, the oldest
+// first, so a new one comes below and a revised one keeps its place; the groups keep the wishes' rank. The question
+// open stays open when one comes above it, and stays where it is on screen: the page's scroll anchoring holds it
+// (scroll-anchor.ts), and at the very top of the page, where that holds nothing, the column does.
 // The keys: ↑ and ↓ (Home, End) go to the question above or below, from one wish to the next, and nothing moves past
 // either end; the question they reach opens, and the page shows it by its title. Escape steps back: from the note to
 // the question, then your pick is cleared (wish-question.tsx), then the focus leaves the column, where ↓ brings it
@@ -19,7 +23,7 @@ import {
 } from "react";
 
 import type { Choice, Question, Wish } from "../gen/ts/plan/v1/plan_pb";
-import type { OpenQuestion } from "./data/flight";
+import { byAsked, type OpenQuestion } from "./data/flight";
 import { t } from "./i18n";
 import {
   type QuestionKey,
@@ -32,8 +36,8 @@ export interface QuestionGroup {
   questions: OpenQuestion[];
 }
 
-// questionGroups groups the open questions by wish, in the order of the wishes (by rank), each wish's in the order
-// given (the most urgent first): one group per wish that has one.
+// questionGroups groups the open questions by wish, in the order of the wishes (by rank), each wish's as they were
+// asked, the oldest first: one group per wish that has one.
 export function questionGroups(
   wishes: readonly Wish[],
   questions: readonly OpenQuestion[],
@@ -46,7 +50,7 @@ export function questionGroups(
   }
   return wishes.flatMap((wish) => {
     const list = byWish.get(wish.id);
-    return list ? [{ wish, questions: list }] : [];
+    return list ? [{ wish, questions: list.sort(byAsked) }] : [];
   });
 }
 
@@ -137,16 +141,20 @@ export function QuestionColumn({
   );
   // The question you went to: undefined until you go to one (the first is open), null once you left the column.
   const [chosen, setChosen] = useState<string | null>();
+  // The first question, open until you go to another: it stays the one open when another comes above it (a wish
+  // ranked higher asks one).
+  const first = useRef<string>(undefined);
   // The list as it was at the last render: where the open question was, once it is gone.
   const seen = useRef<readonly string[]>(order);
+  const opened = chosen === undefined ? first.current : chosen;
   const current =
-    chosen === null
+    opened === null
       ? undefined
-      : chosen === undefined
+      : opened === undefined
         ? order[0]
-        : order.includes(chosen)
-          ? chosen
-          : heir(seen.current, order, chosen);
+        : order.includes(opened)
+          ? opened
+          : heir(seen.current, order, opened);
   const column = useRef<HTMLElement>(null);
   const keys: QuestionKeys = useRef<(e: QuestionKey) => void>(undefined);
   // Whether the question that opens takes the focus: it was gone to, or the open one left with the focus in it.
@@ -162,6 +170,7 @@ export function QuestionColumn({
     const was = shown.current;
     shown.current = current;
     seen.current = order;
+    if (chosen === undefined) first.current = current;
     if (typeof chosen === "string" && chosen !== current)
       setChosen(current ?? undefined);
     const left = was !== undefined && was !== current && !order.includes(was);
@@ -228,6 +237,33 @@ export function QuestionColumn({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [select]);
+
+  // Where the open question stood in the page at the last render, scrolling aside. With the page at its very top,
+  // where its scroll anchoring keeps nothing, what grew above the question since (the bar of what waits for you, a
+  // wish's group) scrolls the page by as much, before it paints, so it stays where you read it. Once scrolled, the
+  // anchoring holds it.
+  const stood = useRef<{ id: string; at: number }>(undefined);
+  useLayoutEffect(() => {
+    const was = stood.current;
+    stood.current = undefined;
+    if (current === undefined || !column.current?.isConnected) return;
+    const element = document.getElementById(`question-${current}`);
+    const scroller = element && scrollerOf(element, true);
+    if (!element || !scroller) return;
+    const view = scroller.getBoundingClientRect();
+    const at = () =>
+      element.getBoundingClientRect().top - view.top + scroller.scrollTop;
+    const top = element.getBoundingClientRect().top;
+    if (
+      was?.id === current &&
+      scroller.scrollTop <= 0 &&
+      top >= view.top &&
+      top < view.bottom &&
+      at() - was.at >= 1
+    )
+      scroller.scrollTop += at() - was.at;
+    stood.current = { id: current, at: at() };
+  });
 
   return (
     <section
@@ -302,12 +338,13 @@ function reveal(element: HTMLElement) {
   else if (box.bottom > view.bottom) element.scrollIntoView({ block: "end" });
 }
 
-function scrollerOf(element: HTMLElement): HTMLElement | null {
+// scrollerOf is the element that scrolls the question: the first above it that scrolls, or with any, the first that can.
+function scrollerOf(element: HTMLElement, any = false): HTMLElement | null {
   for (let node = element.parentElement; node; node = node.parentElement) {
     const { overflowY } = getComputedStyle(node);
     if (
       (overflowY === "auto" || overflowY === "scroll") &&
-      node.scrollHeight > node.clientHeight
+      (any || node.scrollHeight > node.clientHeight)
     )
       return node;
   }
