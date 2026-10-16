@@ -326,6 +326,8 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 	if err != nil {
 		return nil, err
 	}
+	doing := "the push of " + branch + " to " + remote
+	h.setDoing(doing)
 	state := pushState(wish, project.GetId())
 	unchecked := approved && state.GetUnchecked()
 	// A branch its remote holds already, pushed by hand while its push checks held it, is checked all the same: green,
@@ -345,10 +347,14 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 			held = err.Error()
 		} else {
 			cmd, held, out, stopped = h.pushChecks(pushing, wish, project, settings, branch, sha, committed,
-				func(check string) { run.set(ctx, planv1.PushStage_PUSH_STAGE_CHECKING, check, "") })
+				func(check string) {
+					h.setDoing(doing + ", checking " + check)
+					run.set(ctx, planv1.PushStage_PUSH_STAGE_CHECKING, check, "")
+				})
 		}
 		switch {
 		case stopped || pushing.Err() != nil:
+			h.cutPass()
 			run.clear(ctx)
 			return nil, pushing.Err()
 		case held != "":
@@ -387,8 +393,10 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		return nil, nil
 	}
 	run.set(ctx, planv1.PushStage_PUSH_STAGE_PUSHING, "", "")
+	h.setDoing(doing)
 	old, out, err := gitPush(pushing, repo, remote, branch, target)
 	if pushing.Err() != nil {
+		h.cutPass()
 		run.clear(ctx)
 		return nil, pushing.Err()
 	}

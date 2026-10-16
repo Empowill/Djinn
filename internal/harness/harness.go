@@ -22,6 +22,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
@@ -70,6 +71,7 @@ type Harness struct {
 	ctx    context.Context // cancelled by Close: every worker stops
 	cancel context.CancelFunc
 	wg     sync.WaitGroup // one per run
+	cuts   stopCuts       // what a stop cuts, for the next start (cut.go)
 
 	answering        sync.Mutex    // one answer to an edit question at a time
 	questioning      sync.Mutex    // one question worker decided at a time (question.go)
@@ -264,6 +266,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 		installed: map[string]string{}, preempted: map[string]string{}, aliases: map[string]string{},
 		resident: map[string]uint64{},
 	}
+	h.ctx = gitx.OnCut(ctx, h.cutGit) // The gits a stop cuts are told to the next start (cut.go).
 	def := machine.DefaultPolicy()
 	h.policy.Store(&def)
 	for _, o := range opts {
@@ -320,6 +323,7 @@ func (h *Harness) Close() {
 	h.wg.Wait()
 	h.babysitting.Wait()
 	h.children.close() // What the workers left running stops with them.
+	h.writeCuts()
 }
 
 // Recover marks as interrupted the tasks a previous djinn up left running: their workers died with it. They keep
@@ -331,6 +335,8 @@ func (h *Harness) Close() {
 // (children.sweep), so that no task resumes beside its old worker: the restart event names them.
 func (h *Harness) Recover(ctx context.Context) error {
 	orphans := h.children.sweep()
+	locked := h.unlockWorktrees(ctx) // No git of the last djinn up runs now, and none of this one yet.
+	cut := readCuts(h.home)
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
@@ -345,7 +351,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 	if err := h.ungroupOrphans(ctx, tasks); err != nil {
 		return err
 	}
-	h.recoverIntegrations(ctx, tasks)
+	integrating := h.recoverIntegrations(ctx, tasks)
 	for _, t := range tasks {
 		if t.GetModel() != "" && !isModelAlias(t.GetModel()) {
 			h.learnAliases(t.GetModel())
@@ -408,7 +414,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 	}
 	// The lead hears of the restart from its queue, whether its watch died with the last djinn up or not.
 	restart := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART,
-		Text: restartLine(h.version, interrupted, resumed, watchers, orphans)}
+		Text: restartLine(h.version, interrupted, resumed, watchers, orphans, cutPart(cut, integrating), lockedPart(locked))}
 	if err := plan.QueueLeadEvent(ctx, h.store, restart, h.now()); err != nil {
 		return fmt.Errorf("tell the lead of the restart: %w", err)
 	}
@@ -433,9 +439,10 @@ func (h *Harness) lastStart(ctx context.Context) (time.Time, error) {
 
 // restartLine is what the lead's restart event says: the version Djinn started on, the workers the last djinn up
 // left running and Djinn interrupted (or that it stopped, and Djinn resumes), those of them it resumes by itself,
-// apart the watchers it resumes: a watcher is no worker, and the processes the last djinn up left running that Djinn
-// stopped, by their labels (orphansPart).
-func restartLine(version string, interrupted, resumed, watchers, orphans []string) string {
+// apart the watchers it resumes: a watcher is no worker, the processes the last djinn up left running that Djinn
+// stopped, by their labels (orphansPart), and the parts more, each "" for none: what the stop cut (cutPart), what it
+// left in the person's checkouts (lockedPart).
+func restartLine(version string, interrupted, resumed, watchers, orphans []string, more ...string) string {
 	if version == "" {
 		version = "unknown"
 	}
@@ -469,6 +476,11 @@ func restartLine(version string, interrupted, resumed, watchers, orphans []strin
 	}
 	if part := orphansPart(orphans); part != "" {
 		parts = append(parts, part)
+	}
+	for _, part := range more {
+		if part != "" {
+			parts = append(parts, part)
+		}
 	}
 	if len(parts) == 0 {
 		return line + ": no worker was running."
