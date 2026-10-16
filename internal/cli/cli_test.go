@@ -128,6 +128,11 @@ func TestConvention(t *testing.T) {
 			want: &planv1.WishServiceRenameRequest{WishId: wishID, Title: "Djinn orchestrator"},
 		},
 		{
+			name: "djinn wish add-project <wish> --project-id",
+			args: []string{wishID, "--project-id", "api"},
+			want: &planv1.WishServiceAddProjectRequest{WishId: wishID, ProjectId: "api"},
+		},
+		{
 			name: "a string and a list of strings in one input, repeated",
 			args: []string{taskID, "--after", "W1,W2", "--also", "W6=W5,W3", "--also", "W7="},
 			want: &planv1.TaskServiceDependRequest{
@@ -426,6 +431,21 @@ func (f wishes) PushStrategy(_ context.Context, req *connect.Request[planv1.Wish
 	}), nil
 }
 
+// AddProject adds the project named api, or of its identifier, to a wish that has web already; refuses web.
+func (f wishes) AddProject(_ context.Context, req *connect.Request[planv1.WishServiceAddProjectRequest]) (*connect.Response[planv1.WishServiceAddProjectResponse], error) {
+	f.record(req.Msg)
+	switch req.Msg.GetProjectId() {
+	case "api", projectID:
+	case "web":
+		return nil, connect.NewError(connect.CodeAlreadyExists, fmt.Errorf(`project web is already in wish %q`, "Ship it"))
+	default:
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no project %s: djinn project list shows them", req.Msg.GetProjectId()))
+	}
+	return connect.NewResponse(&planv1.WishServiceAddProjectResponse{Wish: &planv1.Wish{
+		Id: req.Msg.GetWishId(), Title: "Ship it", ProjectIds: []string{taskID, projectID},
+	}}), nil
+}
+
 func question() *planv1.Question {
 	return &planv1.Question{
 		Id: questionID, Code: "Q03", Text: "Which store?", Options: []string{"sqlite", "files"},
@@ -521,6 +541,10 @@ func TestRun(t *testing.T) {
 		{name: "project push strategy set", args: []string{"project", "push-strategy", "api", "--strategy", "azima"}, wantOut: "strategy: azima\nsource: developer\n", wantCalled: true},
 		{name: "wish push strategy show", args: []string{"wish", "push-strategy", wishID}, wantOut: "strategy: wish\nsource: default\n", wantCalled: true},
 		{name: "wish push strategy set", args: []string{"wish", "push-strategy", wishID, "--strategy", "azima"}, wantOut: "strategy: azima\nsource: wish\n", wantCalled: true},
+		{name: "wish add project by name", args: []string{"wish", "add-project", wishID, "--project-id", "api"}, wantOut: "project_ids:\n  - " + taskID + "\n  - " + projectID + "\n", wantCalled: true},
+		{name: "wish add project already in", args: []string{"wish", "add-project", wishID, "--project-id", "web"}, wantCode: 1, wantErr: `already_exists: project web is already in wish "Ship it"`, wantCalled: true},
+		{name: "wish add project unknown", args: []string{"wish", "add-project", wishID, "--project-id", "ghost"}, wantCode: 1, wantErr: "not_found: no project ghost", wantCalled: true},
+		{name: "wish add project without one", args: []string{"wish", "add-project", wishID}, wantCode: 2, wantErr: "--project-id: "},
 		{name: "task update integration none", args: []string{"task", "update", taskID, "--integration", "none"}, wantCalled: true},
 		{name: "task update integration invalid", args: []string{"task", "update", taskID, "--integration", "other"}, wantCode: 2, wantErr: "--integration: must be in list [none, pending]"},
 		{name: "task cancel", args: []string{"task", "cancel", taskID, "--note", "not needed"}, wantOut: "status: cancelled", wantCalled: true},

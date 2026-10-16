@@ -2449,6 +2449,13 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Add a project to a wish, by its name or identifier: the wish then works in it as in the projects it was made
+  // with. Its tasks may spawn there, and its finished work goes to the branch the project's checkout is on, as when a
+  // wish is made. A project already in the wish, or unknown, is refused. Removing a project is not possible.
+  rpc AddProject(WishServiceAddProjectRequest) returns (WishServiceAddProjectResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the
   // store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks
   // running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
@@ -3011,6 +3018,24 @@ message WishServiceRenameRequest {
 
 message WishServiceRenameResponse {
   // The wish, with its new title.
+  Wish wish = 1;
+}
+
+message WishServiceAddProjectRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The project to add, by name (case ignored) or identifier.
+  string project_id = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 100
+  ];
+}
+
+message WishServiceAddProjectResponse {
+  // The wish, with the project added.
   Wish wish = 1;
 }
 

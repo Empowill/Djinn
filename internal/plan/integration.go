@@ -73,14 +73,20 @@ func integrationBranches(ctx context.Context, tx store.Reader, wish *planv1.Wish
 		if err != nil {
 			return err
 		}
-		if !project.GetGit() || project.GetDirectory() == "" {
-			continue
-		}
-		if branch := CheckedOutBranch(ctx, project.GetDirectory()); branch != "" {
-			SetIntegrationBranch(wish, id, branch)
-		}
+		integrationBranch(ctx, wish, project)
 	}
 	return nil
+}
+
+// integrationBranch records the branch the checkout of project is on now as wish's integration branch there; nothing
+// for a project outside Git, without a folder, or on a detached HEAD.
+func integrationBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project) {
+	if !project.GetGit() || project.GetDirectory() == "" {
+		return
+	}
+	if branch := CheckedOutBranch(ctx, project.GetDirectory()); branch != "" {
+		SetIntegrationBranch(wish, project.GetId(), branch)
+	}
 }
 
 // MergeRunning says, in a phrase, what merges into wish's integration branch in the project projectID now: a batch of

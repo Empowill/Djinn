@@ -118,6 +118,8 @@ const (
 	WishServiceDescribeProcedure = "/plan.v1.WishService/Describe"
 	// WishServiceRenameProcedure is the fully-qualified name of the WishService's Rename RPC.
 	WishServiceRenameProcedure = "/plan.v1.WishService/Rename"
+	// WishServiceAddProjectProcedure is the fully-qualified name of the WishService's AddProject RPC.
+	WishServiceAddProjectProcedure = "/plan.v1.WishService/AddProject"
 	// WishServiceBriefProcedure is the fully-qualified name of the WishService's Brief RPC.
 	WishServiceBriefProcedure = "/plan.v1.WishService/Brief"
 	// WishServiceSnapshotProcedure is the fully-qualified name of the WishService's Snapshot RPC.
@@ -1125,6 +1127,10 @@ type WishServiceClient interface {
 	Describe(context.Context, *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error)
 	// Rename a wish: what you wish, in a sentence, in place of what it had.
 	Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error)
+	// Add a project to a wish, by its name or identifier: the wish then works in it as in the projects it was made
+	// with. Its tasks may spawn there, and its finished work goes to the branch the project's checkout is on, as when a
+	// wish is made. A project already in the wish, or unknown, is refused. Removing a project is not possible.
+	AddProject(context.Context, *connect.Request[v1.WishServiceAddProjectRequest]) (*connect.Response[v1.WishServiceAddProjectResponse], error)
 	// The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the
 	// store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks
 	// running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
@@ -1241,6 +1247,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Rename")),
 			connect.WithClientOptions(opts...),
 		),
+		addProject: connect.NewClient[v1.WishServiceAddProjectRequest, v1.WishServiceAddProjectResponse](
+			httpClient,
+			baseURL+WishServiceAddProjectProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("AddProject")),
+			connect.WithClientOptions(opts...),
+		),
 		brief: connect.NewClient[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse](
 			httpClient,
 			baseURL+WishServiceBriefProcedure,
@@ -1350,6 +1362,7 @@ type wishServiceClient struct {
 	importData     *connect.Client[v1.WishServiceImportDataRequest, v1.WishServiceImportDataResponse]
 	describe       *connect.Client[v1.WishServiceDescribeRequest, v1.WishServiceDescribeResponse]
 	rename         *connect.Client[v1.WishServiceRenameRequest, v1.WishServiceRenameResponse]
+	addProject     *connect.Client[v1.WishServiceAddProjectRequest, v1.WishServiceAddProjectResponse]
 	brief          *connect.Client[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse]
 	snapshot       *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
 	allow          *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
@@ -1401,6 +1414,11 @@ func (c *wishServiceClient) Describe(ctx context.Context, req *connect.Request[v
 // Rename calls plan.v1.WishService.Rename.
 func (c *wishServiceClient) Rename(ctx context.Context, req *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error) {
 	return c.rename.CallUnary(ctx, req)
+}
+
+// AddProject calls plan.v1.WishService.AddProject.
+func (c *wishServiceClient) AddProject(ctx context.Context, req *connect.Request[v1.WishServiceAddProjectRequest]) (*connect.Response[v1.WishServiceAddProjectResponse], error) {
+	return c.addProject.CallUnary(ctx, req)
 }
 
 // Brief calls plan.v1.WishService.Brief.
@@ -1505,6 +1523,10 @@ type WishServiceHandler interface {
 	Describe(context.Context, *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error)
 	// Rename a wish: what you wish, in a sentence, in place of what it had.
 	Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error)
+	// Add a project to a wish, by its name or identifier: the wish then works in it as in the projects it was made
+	// with. Its tasks may spawn there, and its finished work goes to the branch the project's checkout is on, as when a
+	// wish is made. A project already in the wish, or unknown, is refused. Removing a project is not possible.
+	AddProject(context.Context, *connect.Request[v1.WishServiceAddProjectRequest]) (*connect.Response[v1.WishServiceAddProjectResponse], error)
 	// The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the
 	// store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks
 	// running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
@@ -1615,6 +1637,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		WishServiceRenameProcedure,
 		svc.Rename,
 		connect.WithSchema(wishServiceMethods.ByName("Rename")),
+		connect.WithHandlerOptions(opts...),
+	)
+	wishServiceAddProjectHandler := connect.NewUnaryHandler(
+		WishServiceAddProjectProcedure,
+		svc.AddProject,
+		connect.WithSchema(wishServiceMethods.ByName("AddProject")),
 		connect.WithHandlerOptions(opts...),
 	)
 	wishServiceBriefHandler := connect.NewUnaryHandler(
@@ -1730,6 +1758,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceDescribeHandler.ServeHTTP(w, r)
 		case WishServiceRenameProcedure:
 			wishServiceRenameHandler.ServeHTTP(w, r)
+		case WishServiceAddProjectProcedure:
+			wishServiceAddProjectHandler.ServeHTTP(w, r)
 		case WishServiceBriefProcedure:
 			wishServiceBriefHandler.ServeHTTP(w, r)
 		case WishServiceSnapshotProcedure:
@@ -1797,6 +1827,10 @@ func (UnimplementedWishServiceHandler) Describe(context.Context, *connect.Reques
 
 func (UnimplementedWishServiceHandler) Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Rename is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) AddProject(context.Context, *connect.Request[v1.WishServiceAddProjectRequest]) (*connect.Response[v1.WishServiceAddProjectResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.AddProject is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error) {

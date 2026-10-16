@@ -883,6 +883,38 @@ func (w *Wishes) Rename(
 	return connect.NewResponse(&planv1.WishServiceRenameResponse{Wish: wish}), nil
 }
 
+// AddProject adds a project, named or by identifier, to the wish, with its integration branch there as Make records
+// one: the branch the project's checkout is on. A project already in the wish is refused.
+func (w *Wishes) AddProject(
+	ctx context.Context, req *connect.Request[planv1.WishServiceAddProjectRequest],
+) (*connect.Response[planv1.WishServiceAddProjectResponse], error) {
+	var wish *planv1.Wish
+	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if wish, err = store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		project, err := ProjectNamed(ctx, tx, req.Msg.GetProjectId())
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(wish.GetProjectIds(), func(id string) bool { return strings.EqualFold(id, project.GetId()) }) {
+			return connect.NewError(connect.CodeAlreadyExists, fmt.Errorf("project %s is already in wish %q",
+				project.GetName(), wish.GetTitle()))
+		}
+		wish.ProjectIds = append(wish.ProjectIds, project.GetId())
+		integrationBranch(ctx, wish, project)
+		return tx.Put(wish)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := fill(ctx, w.Store, wish); err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.WishServiceAddProjectResponse{Wish: wish}), nil
+}
+
 // AllowanceOf is the right wish allows its workers in the project projectID: ALLOWANCE_NONE when it allows none.
 func AllowanceOf(wish *planv1.Wish, projectID string) planv1.Allowance {
 	for _, a := range wish.GetAllowances() {
