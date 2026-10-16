@@ -10077,7 +10077,8 @@ type ProjectServiceShowResponse struct {
 	// Your own file, in Djinn's data folder. It wins over the team's, setting by setting.
 	DeveloperFile string `protobuf:"bytes,4,opt,name=developer_file,json=developerFile,proto3" json:"developer_file,omitempty"`
 	// Why a file could not be read: its settings are not shown, and the project's tasks do not spawn until it is
-	// fixed.
+	// fixed. Each skill of the project whose SKILL.md Djinn cannot read is one too: its wish template, inbox source and
+	// babysit are ignored until it is fixed, and it is no source of the inbox.
 	Problems []string `protobuf:"bytes,5,rep,name=problems,proto3" json:"problems,omitempty"`
 	// The command that makes a fresh worktree ready, and the checks Djinn runs before it commits and pushes, as the
 	// files resolve them. Their last runs are the project's check_runs.

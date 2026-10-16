@@ -251,6 +251,68 @@ func TestKeepSourceRun(t *testing.T) {
 	}
 }
 
+// TestUnreadableSkill: a skill whose front matter breaks the YAML, as dolmen's argument-hint lines did, is no source
+// of the inbox: the project's problems say Djinn cannot read it, and which line. Plugged in before it broke, it stays
+// listed with why, to be unplugged.
+func TestUnreadableSkill(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	dolmen := &planv1.Project{Id: store.NewID(), Name: "dolmen", Directory: t.TempDir()}
+	agentSkill(t, dolmen.GetDirectory(), "notion-ticket", "argument-hint: [bug|improvement] [description]\n")
+	agentSkill(t, dolmen.GetDirectory(), "bad-djinn", "metadata:\n  djinn: [wish]\n")
+	agentSkill(t, dolmen.GetDirectory(), "mentions", "metadata:\n  djinn:\n    source:\n      watch: mentions --new\n")
+	c.put(t, dolmen)
+	listed := func() []string {
+		t.Helper()
+		res, err := c.inbox.Sources(ctx, connect.NewRequest(&planv1.InboxServiceSourcesRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, s := range res.Msg.GetSources() {
+			got = append(got, fmt.Sprintf("%s %t|%s", s.GetName(), s.GetPlugged(), s.GetError()))
+		}
+		return got
+	}
+	if got, want := listed(), []string{"dolmen/mentions false|"}; !slices.Equal(got, want) {
+		t.Errorf("listed %q, want %q", got, want)
+	}
+
+	show, err := c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "dolmen"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	problems := show.Msg.GetProblems()
+	if len(problems) != 2 ||
+		!strings.HasPrefix(problems[0], "the skill bad-djinn cannot be read: Djinn ignores its wish template, inbox "+
+			"source and babysit: SKILL.md: metadata.djinn: ") ||
+		!strings.HasPrefix(problems[1], "the skill notion-ticket cannot be read: Djinn ignores its wish template, "+
+			"inbox source and babysit: SKILL.md: its front matter is not YAML: yaml: line 2: ") {
+		t.Errorf("problems = %q", problems)
+	}
+
+	// Plugged in, then broken: listed with why, and unplugged.
+	if _, err := c.inbox.Plug(ctx, connect.NewRequest(&planv1.InboxServicePlugRequest{Source: "mentions"})); err != nil {
+		t.Fatal(err)
+	}
+	agentSkill(t, dolmen.GetDirectory(), "mentions",
+		"argument-hint: [who] [what]\nmetadata:\n  djinn:\n    source:\n      watch: x\n")
+	if got := listed(); len(got) != 1 ||
+		!strings.HasPrefix(got[0], "dolmen/mentions true|SKILL.md: its front matter is not YAML") {
+		t.Errorf("listed %q", got)
+	}
+	if srcs, err := Sources(ctx, c.store, []*planv1.Project{dolmen}); err != nil || len(srcs) != 0 {
+		t.Errorf("running %v, %v; want none", srcs, err)
+	}
+	unplug := &planv1.InboxServiceUnplugRequest{Source: "dolmen/mentions"}
+	if _, err := c.inbox.Unplug(ctx, connect.NewRequest(unplug)); err != nil {
+		t.Fatal(err)
+	}
+	if got := listed(); len(got) != 0 {
+		t.Errorf("listed %q after unplugging", got)
+	}
+}
+
 // TestOwnSource: Djinn's own babysit-pr declares a source that reads with gh, and changes nothing: run with a fake
 // gh, it lists the pull requests assigned to the developer and those that request their review, read only. An assigned
 // one proposes the skill's wish; one to review proposes none of the skill.

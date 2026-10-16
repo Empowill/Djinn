@@ -4978,7 +4978,8 @@ export type ProjectServiceShowResponse = Message<"plan.v1.ProjectServiceShowResp
 
   /**
    * Why a file could not be read: its settings are not shown, and the project's tasks do not spawn until it is
-   * fixed.
+   * fixed. Each skill of the project whose SKILL.md Djinn cannot read is one too: its wish template, inbox source and
+   * babysit are ignored until it is fixed, and it is no source of the inbox.
    *
    * @generated from field: repeated string problems = 5;
    */

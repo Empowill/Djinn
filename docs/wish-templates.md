@@ -220,7 +220,10 @@ repository polls no forge by itself. The empty inbox lists the sources your proj
 command and a "Plug in" button ("Unplug" once plugged in); `djinn inbox sources`, `djinn inbox plug <source>` and
 `djinn inbox unplug <source>` do the same. A source is named `<project>/<skill>`, the project that holds the skill, or
 by its skill alone when one project holds it. Whether it is plugged in lives in Djinn's data on this machine, never in
-the repository. Unplugged, its command stops; the items it brought stay.
+the repository. Unplugged, its command stops; the items it brought stay. A skill whose front matter is not YAML, or
+whose `metadata.djinn` Djinn cannot read, is no source: its project's problems name it, in the project's panel and in
+`djinn project show`, and Djinn ignores its template, source and babysit until it is fixed. One plugged in before it
+broke stays listed with why, so that it can be unplugged.
 
 ```yaml
 ---
