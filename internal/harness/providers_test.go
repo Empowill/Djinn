@@ -103,6 +103,26 @@ func catalog() []catalogCase {
 					t.Errorf("session = %q", ev.SessionID)
 				}
 			}},
+		{provider: "claude", fixture: "lead-batch",
+			spec: Spec{SystemPrompt: "# Leading in Djinn", MaxTurns: 60, WriteDirs: []string{"/d/lead"}, ReadDirs: []string{"/d"},
+				Permissions: &djinnv1.Permissions{Commands: []string{"djinn"}, Mode: djinnv1.Mode_MODE_LISTED}},
+			want: []string{"STATUS", "TOOL_CALL", "STATUS", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, args, _ string) {
+				// The driven lead's session: its rules in the system prompt, its turns capped, its folder writable.
+				for _, want := range []string{"--append-system-prompt\n# Leading in Djinn\n--exclude-dynamic-system-prompt-sections",
+					"--max-turns\n60", `"Write(//d/lead/**)"`, `"Read(//d/**)"`, `"Bash(djinn *)"`} {
+					if !strings.Contains(args, want) {
+						t.Errorf("args lack %q: %q", want, args)
+					}
+				}
+				if strings.Contains(args, `"Write"`) {
+					t.Errorf("a deny of every edit would win over the lead's folder: %q", args)
+				}
+				if u := event(t, events, "USAGE").Usage; u.GetCostUsd() != 0.1599468 || u.GetCacheReadTokens() != 47074 ||
+					u.GetCacheWriteTokens() != 18102 {
+					t.Errorf("usage = %v", u)
+				}
+			}},
 		{provider: "claude", fixture: "session-limit", want: []string{"STATUS", "STATUS", "STATUS", "TEXT", "ERROR", "USAGE"},
 			err: "You've hit your session limit · resets 7:20am (Europe/Paris)",
 			check: func(t *testing.T, events []Event, _, _ string) {

@@ -22,6 +22,9 @@ var ErrNoLead = errors.New("this wish has no lead to tell")
 // the lead reads it as a message, and acts. A lead that does not run is reopened first, on its session, as Resume
 // does, without bringing the window to the front. ErrNoLead when there is none to tell.
 func (w *Wishes) Tell(ctx context.Context, wishID, line string) error {
+	if w.drive() != nil {
+		return fmt.Errorf("%w: %w", ErrNoLead, errDriven)
+	}
 	if w.Leads == nil {
 		return errors.New("this server runs no terminal")
 	}
@@ -81,7 +84,8 @@ func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, was *planv1.A
 	if routeOption(q) != nil {
 		line = RoutedLine(q)
 	}
-	if did == "" && routeOption(q) == nil && (w.Leads == nil || !w.Leads.Running(LeadTerminal)) && w.Store != nil {
+	if did == "" && routeOption(q) == nil && (w.Leads == nil || !w.Leads.Running(LeadTerminal)) && w.drive() == nil &&
+		w.Store != nil {
 		// No lead runs at all: the answer waits, marked waiting for a lead.
 		spec := connect.Spec{Procedure: planv1connect.QuestionServiceAnswerProcedure}
 		req := &planv1.QuestionServiceAnswerRequest{Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}}}

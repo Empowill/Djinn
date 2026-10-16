@@ -410,7 +410,9 @@ typed in a plain shell is attributed to the developer and reaches the Djinn. Whe
 any wish, the answer is queued for the Djinn, which waits on `djinn lead watch`: nothing is typed in its
 terminal while its watch runs, so nothing lands in your prompt box; without a watch, Djinn types one short line,
 "Djinn: N events waiting, run djinn lead watch". If the Djinn does not run, the question is marked as waiting for it until
-the Djinn acknowledges it, and the brief lists it under **Open answers without a lead.**
+the Djinn acknowledges it, and the brief lists it under **Open answers without a lead.** While Djinn drives the lead
+(`"leadDriven": true` in `settings.json`), there is no terminal and no watch: the answer goes to the next batch's
+session, whole, and `djinn lead journal` shows what each batch did.
 
 An open question can be moved to another wish (`djinn question move <question> --wish <wish>`), with `--follow` to
 bring tasks following this decision along with it. A question no longer relevant can be withdrawn without an answer

@@ -185,8 +185,8 @@ func (w *Wishes) RemindLead() {
 // remindLead plans the check that types the line, in after at the soonest, or later when a watch returned within
 // the grace.
 func (w *Wishes) remindLead(after time.Duration) {
-	if w.Leads == nil {
-		return
+	if w.Leads == nil || w.drive() != nil {
+		return // No terminal to type in: a driven lead gets its events in its batches.
 	}
 	l := w.leadWatch()
 	l.mu.Lock()
@@ -268,6 +268,9 @@ func (s *LeadService) Watch(
 	if CallerFromContext(ctx) != nil {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New(
 			"a worker cannot watch the lead's events: they are the lead's"))
+	}
+	if w.drive() != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errDriven)
 	}
 	lead, err := store.Get[*planv1.Lead](ctx, w.Store, "lead")
 	if err != nil && !errors.Is(err, store.ErrNotFound) {

@@ -80,6 +80,23 @@ func ReadIfritIdle(home string) uint32 {
 	return 0
 }
 
+// ReadLeadDriven tells whether settings.json in home says that Djinn drives the lead (ui.v1.Settings.lead_driven,
+// decision Q31): false when the file does not say, or cannot be read.
+func ReadLeadDriven(home string) bool {
+	if home == "" {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join(home, settingsFile))
+	if err != nil {
+		return false
+	}
+	var settings uiv1.Settings
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(data, &settings); err != nil {
+		return false
+	}
+	return settings.GetLeadDriven()
+}
+
 // WriteNotch writes the operating load notch to settings.json in home, preserving other settings.
 func WriteNotch(home string, notch djinnv1.LoadNotch) error {
 	if home == "" {
