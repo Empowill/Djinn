@@ -8067,7 +8067,10 @@ type QuestionServiceReviseRequest struct {
 	ContextFile string `protobuf:"bytes,8,opt,name=context_file,json=contextFile,proto3" json:"context_file,omitempty"`
 	// The task of the wish the question is about now, by code (W12) or identifier; the former one when not given, none
 	// when given empty (--about "").
-	About         *string `protobuf:"bytes,9,opt,name=about,proto3,oneof" json:"about,omitempty"`
+	About *string `protobuf:"bytes,9,opt,name=about,proto3,oneof" json:"about,omitempty"`
+	// Give back the question's earlier versions too: its rounds, each with what the question said before it. Not set:
+	// the question as it stands now, its current version only.
+	History       bool `protobuf:"varint,10,opt,name=history,proto3" json:"history,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -8165,9 +8168,16 @@ func (x *QuestionServiceReviseRequest) GetAbout() string {
 	return ""
 }
 
+func (x *QuestionServiceReviseRequest) GetHistory() bool {
+	if x != nil {
+		return x.History
+	}
+	return false
+}
+
 type QuestionServiceReviseResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The question, revised.
+	// The question, revised: its current version, and its rounds only when asked with history.
 	Question *Question `protobuf:"bytes,1,opt,name=question,proto3" json:"question,omitempty"`
 	// How its context breaks the shape a question reads in at a glance (every command in one code block at the top,
 	// short Markdown), a line each; none when it keeps it. The question is stored as given: revise it.
@@ -20948,7 +20958,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04note\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x04note\x12$\n" +
 	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"Q\n" +
 	" QuestionServiceEnlightenResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xa3\x04\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xbd\x04\n" +
 	"\x1cQuestionServiceReviseRequest\x128\n" +
 	"\bquestion\x18\x01 \x01(\v2\x14.plan.v1.QuestionRefB\x06\xbaH\x03\xc8\x01\x01R\bquestion\x12#\n" +
 	"\acontext\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\acontext\x12(\n" +
@@ -20958,7 +20968,9 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\atask_id\x18\x06 \x01(\tB\x1c\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01\xf2\xf3\x18\rDJINN_TASK_IDR\x06taskId\x12$\n" +
 	"\x06before\x18\a \x01(\tB\a\xbaH\x04r\x02\x18dH\x00R\x06before\x88\x01\x01\x12+\n" +
 	"\fcontext_file\x18\b \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\vcontextFile\x12\x81\x01\n" +
-	"\x05about\x18\t \x01(\tBf\xbaHcra2_^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$H\x01R\x05about\x88\x01\x01B\t\n" +
+	"\x05about\x18\t \x01(\tBf\xbaHcra2_^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$H\x01R\x05about\x88\x01\x01\x12\x18\n" +
+	"\ahistory\x18\n" +
+	" \x01(\bR\ahistoryB\t\n" +
 	"\a_beforeB\b\n" +
 	"\x06_about\"j\n" +
 	"\x1dQuestionServiceReviseResponse\x12-\n" +

@@ -1862,10 +1862,13 @@ message QuestionServiceReviseRequest {
   // The task of the wish the question is about now, by code (W12) or identifier; the former one when not given, none
   // when given empty (--about "").
   optional string about = 9 [(buf.validate.field).string.pattern = "^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$"];
+  // Give back the question's earlier versions too: its rounds, each with what the question said before it. Not set:
+  // the question as it stands now, its current version only.
+  bool history = 10;
 }
 
 message QuestionServiceReviseResponse {
-  // The question, revised.
+  // The question, revised: its current version, and its rounds only when asked with history.
   Question question = 1;
   // How its context breaks the shape a question reads in at a glance (every command in one code block at the top,
   // short Markdown), a line each; none when it keeps it. The question is stored as given: revise it.

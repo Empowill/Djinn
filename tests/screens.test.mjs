@@ -470,51 +470,78 @@ test("the side panel counts the new inbox items on the flying carpet's entry, ev
   );
 });
 
-test("a revised question's earlier versions fold under Previous versions, closed, in the column's card and elsewhere", () => {
-  // Djinn appends them to the context at each revision, below its French heading (internal/plan.HistoryHeader).
-  const header = "## Historique des versions pr\u00e9c\u00e9dentes";
+test("a revised question's earlier versions take no room: Versions (3) in its corner opens them below it, to read", () => {
+  // Its context is its current version only (W114); each revision's round keeps the version it replaced.
   const question = {
     id: "q1",
     code: "Q01",
     text: "Which oil?",
     options: ["Olive", "Paraffin"],
     recommendation: "A: it smells good.",
-    context: `The lamp smokes.\n\n${header}\n\n### Tour 0 (initial)\n- Options: A: Olive | B: Canola\n\nThe lamp smoked a little.`,
-    rounds: [],
+    context: "The lamp smokes.",
+    revision: 2,
+    rounds: [
+      { kind: s.RoundKind.ENLIGHTEN, note: "Burn time?" },
+      {
+        kind: s.RoundKind.REVISE,
+        context: "The lamp smoked a little.",
+        options: ["Olive", "Canola"],
+        recommendation: "B: it is cheap.",
+      },
+      {
+        kind: s.RoundKind.REVISE,
+        context: "The lamp smoked more.",
+        options: ["Olive", "Paraffin"],
+        recommendation: "B: brighter.",
+      },
+    ],
   };
-  const row = s.renderToStaticMarkup(
-    h(s.WishQuestion, {
-      question,
-      current: true,
-      onSelect() {},
-      onAnswer: async () => {},
-    }),
-  );
-  const card = s.renderToStaticMarkup(
-    h(s.WishQuestion, { question, expanded: true, onAnswer: async () => {} }),
-  );
-  for (const html of [row, card]) {
-    assert.match(html, /The lamp smokes\./);
+  const row = live(s.WishQuestion, {
+    question,
+    current: true,
+    onSelect() {},
+    onAnswer: async () => {},
+  });
+  const card = live(s.WishQuestion, {
+    question,
+    expanded: true,
+    onAnswer: async () => {},
+  });
+  for (const view of [row, card]) {
+    const closed = view.html();
+    assert.match(closed, /The lamp smokes\./);
     assert.match(
-      html,
-      /<details class="question-history"><summary><svg[^>]*>.*?<\/svg>Previous versions<\/summary><div class="prose">.*?Tour 0 \(initial\).*?The lamp smoked a little\..*?<\/div><\/details>/s,
+      closed,
+      /<div class="question-corner"><button type="button" class="question-corner-button question-versions" title="The earlier versions of this question, to read" aria-expanded="false"><svg[^>]*lucide-history[^>]*>.*?<\/svg>Versions \(3\)<\/button>/,
     );
-    // Closed by default, and its heading is the disclosure's, not the context's.
-    assert.doesNotMatch(html, /<details class="question-history" open/);
-    assert.doesNotMatch(html, /Historique/);
-    assert.ok(
-      html.indexOf("The lamp smokes.") < html.indexOf("Previous versions"),
+    // Closed, the earlier versions take no room, and no history is left in the context.
+    assert.doesNotMatch(
+      closed,
+      /smoked|Earlier versions|question-versions-list|Historique|Previous versions|question-rounds/,
     );
+    view.one("question-versions").onClick();
+    const open = view.html();
+    assert.match(
+      open,
+      /question-versions is-pressed" [^>]*aria-expanded="true"/,
+    );
+    // The current version first, then the earlier ones, the last one first, each with what was asked about it.
+    assert.match(
+      open,
+      /The lamp smokes\..*<h4>Earlier versions<\/h4><ol reversed=""><li>.*Version 2.*revised .*The lamp smoked more\..*<li>Olive<\/li><li>Paraffin<\/li>.*Recommended: B: brighter\..*<\/li><li>.*Version 1.*asked .*The lamp smoked a little\..*<li>Canola<\/li>.*Recommended: B: it is cheap\..*Asked to investigate: Burn time\?/s,
+    );
+    // To read only: nothing restores a version.
+    assert.doesNotMatch(open, /Restore/);
   }
-  // Never revised: no disclosure.
+  // Never revised: no Versions button.
   const plain = s.renderToStaticMarkup(
     h(s.WishQuestion, {
-      question: { ...question, context: "The lamp smokes." },
+      question: { ...question, revision: 0, rounds: [] },
       expanded: true,
       onAnswer: async () => {},
     }),
   );
-  assert.doesNotMatch(plain, /question-history|Previous versions/);
+  assert.doesNotMatch(plain, /question-versions|Versions \(/);
 });
 
 test("a question shows its options by letter and its recommendation; answered, what was chosen", () => {
@@ -698,11 +725,9 @@ test("a question shows its options by letter and its recommendation; answered, w
   );
   assert.match(digging, /You asked to find out more: And the price\?/);
   assert.match(digging, /Revised/);
-  assert.match(
-    digging,
-    /<details class="question-rounds"><summary>.*History: 3 rounds/,
-  );
-  assert.match(digging, /Recommended before: B: brighter\./);
+  // Its earlier version is behind Versions (2), closed.
+  assert.match(digging, /question-versions"[^>]*>.*?Versions \(2\)<\/button>/);
+  assert.doesNotMatch(digging, /B: brighter\./);
   // Already asked: no second request.
   assert.doesNotMatch(digging, /lamp-enlighten/);
   // A click on its heading folds it again.
