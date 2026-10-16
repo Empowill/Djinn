@@ -47,7 +47,18 @@ export const EMPTY_BLOCKING: string[] = [];
 export function urgency(question: OpenQuestion): number {
   if (question.blocking.length) return 0;
   if (question.item.move && question.item.before) return 1;
-  return question.item.before ? 2 : 3;
+  return question.item.before ? 2 : CAN_WAIT;
+}
+
+// The urgency of a question that can wait: no task waits for it, and it names nothing it is needed before, a move
+// included (Q13).
+export const CAN_WAIT = 3;
+
+// holdsUp tells an open question that keeps its wish from moving forward and cannot wait, as its card says: a task
+// waits for it, or it is needed before something, a move of the developer's or not. Only these are lines of the bar
+// of what waits for you (attention.tsx); one that can wait shows in the questions column alone.
+export function holdsUp(question: OpenQuestion): boolean {
+  return urgency(question) < CAN_WAIT;
 }
 
 // byAsked orders questions as they were asked, the oldest first: a new one always comes below, and a revision, which

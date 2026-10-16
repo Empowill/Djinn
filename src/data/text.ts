@@ -108,6 +108,32 @@ function sentenceEnd(line: string, near: number): number {
   );
 }
 
+// The heading Djinn puts above the versions history it appends to a question's context at each revision
+// (internal/plan.HistoryHeader), in French as Djinn writes it.
+export const HISTORY_HEADER =
+  "## Historique des versions pr\u00e9c\u00e9dentes";
+
+export interface Versions {
+  // The question's context, without its history.
+  context: string;
+  // The earlier versions, below their heading, in Markdown; "" when the question was never revised.
+  history: string;
+}
+
+// splitHistory parts a question's context from the versions history Djinn appended to it, where the Go side cuts it
+// (internal/plan.CleanContext): at the heading, on a line of its own.
+export function splitHistory(context: string): Versions {
+  const at = context.startsWith(HISTORY_HEADER)
+    ? 0
+    : context.indexOf("\n" + HISTORY_HEADER);
+  if (at < 0) return { context, history: "" };
+  const end = context.indexOf(HISTORY_HEADER, at) + HISTORY_HEADER.length;
+  return {
+    context: context.slice(0, at).trimEnd(),
+    history: context.slice(end).trim(),
+  };
+}
+
 export interface TextPart {
   text: string;
   // A command, to copy as it is.

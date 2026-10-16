@@ -225,6 +225,8 @@ for (const engine of ["native", "script"] as const)
         wish_id: wishId,
         text,
         options: ["Yes — go", "No — wait"],
+        // Needed before something: a line of the bar of what waits each.
+        before: "before the merge",
         ...(i === 1 && { context: long }),
         create_time: minute(i),
       }),
@@ -309,7 +311,14 @@ for (const engine of ["native", "script"] as const)
     await scroller.evaluate((el) => el.scrollTo(0, 0));
     await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBe(0);
     await track(heading);
-    djinn("question", "ask", "Which flame?", wishId);
+    djinn(
+      "question",
+      "ask",
+      "Which flame?",
+      wishId,
+      "--before",
+      "before the merge",
+    );
     await expect(codes).toHaveText(["Q01", "Q02", "Q03", "Q04", "Q05"]);
     await expect(page.locator(".attention-bar .attention-item")).toHaveCount(5);
     expect(await drift(page)).toBeLessThanOrEqual(1);

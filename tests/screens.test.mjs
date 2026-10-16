@@ -66,6 +66,7 @@ export {
   draftAzimas,
   finishedTasks,
   flightPlan,
+  holdsUp,
   mergeNest,
   movingTasks,
   taskDealtWith,
@@ -467,6 +468,53 @@ test("the side panel counts the new inbox items on the flying carpet's entry, ev
     sidebar([wish("w2", "Ship the lamp", s.WishState.ACTIVE, 1)], 1),
     /aria-label="1 new item in the inbox"/,
   );
+});
+
+test("a revised question's earlier versions fold under Previous versions, closed, in the column's card and elsewhere", () => {
+  // Djinn appends them to the context at each revision, below its French heading (internal/plan.HistoryHeader).
+  const header = "## Historique des versions pr\u00e9c\u00e9dentes";
+  const question = {
+    id: "q1",
+    code: "Q01",
+    text: "Which oil?",
+    options: ["Olive", "Paraffin"],
+    recommendation: "A: it smells good.",
+    context: `The lamp smokes.\n\n${header}\n\n### Tour 0 (initial)\n- Options: A: Olive | B: Canola\n\nThe lamp smoked a little.`,
+    rounds: [],
+  };
+  const row = s.renderToStaticMarkup(
+    h(s.WishQuestion, {
+      question,
+      current: true,
+      onSelect() {},
+      onAnswer: async () => {},
+    }),
+  );
+  const card = s.renderToStaticMarkup(
+    h(s.WishQuestion, { question, expanded: true, onAnswer: async () => {} }),
+  );
+  for (const html of [row, card]) {
+    assert.match(html, /The lamp smokes\./);
+    assert.match(
+      html,
+      /<details class="question-history"><summary><svg[^>]*>.*?<\/svg>Previous versions<\/summary><div class="prose">.*?Tour 0 \(initial\).*?The lamp smoked a little\..*?<\/div><\/details>/s,
+    );
+    // Closed by default, and its heading is the disclosure's, not the context's.
+    assert.doesNotMatch(html, /<details class="question-history" open/);
+    assert.doesNotMatch(html, /Historique/);
+    assert.ok(
+      html.indexOf("The lamp smokes.") < html.indexOf("Previous versions"),
+    );
+  }
+  // Never revised: no disclosure.
+  const plain = s.renderToStaticMarkup(
+    h(s.WishQuestion, {
+      question: { ...question, context: "The lamp smokes." },
+      expanded: true,
+      onAnswer: async () => {},
+    }),
+  );
+  assert.doesNotMatch(plain, /question-history|Previous versions/);
 });
 
 test("a question shows its options by letter and its recommendation; answered, what was chosen", () => {
@@ -6218,7 +6266,7 @@ test("the wish's title shows in the head and edits in place", () => {
   );
 });
 
-test("the attention bar says how much each question holds up: blocking, your move, before X, can wait", () => {
+test("the attention bar counts what holds up a wish: blocking, your move, before X; never a question that can wait", () => {
   const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
   const q = (id, before = "", move = false) => ({
     id,
@@ -6253,12 +6301,13 @@ test("the attention bar says how much each question holds up: blocking, your mov
       ["q2", "question", "before the demo"],
       ["q5", "question", "Waiting for the Djinn"],
       ["t9", "action", undefined],
-      ["q3", "later", undefined],
-      ["q6", "later", undefined],
       ["ready-w1", "ready", undefined],
     ],
   );
+  // q3 can wait, and so does q6, a move needed before nothing: their cards say "Can wait", the bar leaves them out.
   const markup = s.renderToStaticMarkup(h(s.AttentionBar, { items }));
+  assert.match(markup, /6 things wait for you/);
+  assert.doesNotMatch(markup, /Can wait|>Q3<|>Q6</);
   assert.match(markup, /<button class="attention-item level-move"/);
   // A move with no link has no button beside its line.
   assert.doesNotMatch(markup, /move-link/);
@@ -6266,6 +6315,44 @@ test("the attention bar says how much each question holds up: blocking, your mov
     markup,
     /<span class="attention-level"><svg[^>]*class="lucide lucide-circle-user-round[^>]*>.*<\/svg>Your move<\/span>/,
   );
+});
+
+test("the attention bar counts a blocking question and a move, not a question that can wait; nothing but those, no bar", () => {
+  const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const q = (id, extra = {}) => ({
+    id,
+    code: id.toUpperCase(),
+    text: id,
+    ...extra,
+  });
+  const blocking = { wish: w, item: q("q1"), blocking: ["W1"] };
+  const move = {
+    wish: w,
+    item: q("q2", { move: true, before: "before the release" }),
+    blocking: [],
+  };
+  const canWait = { wish: w, item: q("q3"), blocking: [] };
+  const items = s.attentionOf([blocking, canWait, move], [], []);
+  assert.deepEqual(
+    items.map((i) => [i.key, i.level]),
+    [
+      ["q1", "blocking"],
+      ["q2", "move"],
+    ],
+  );
+  assert.match(
+    s.renderToStaticMarkup(h(s.AttentionBar, { items })),
+    /2 things wait for you/,
+  );
+  // One definition: the bar keeps what holdsUp keeps.
+  assert.deepEqual([blocking, move, canWait].map(s.holdsUp), [
+    true,
+    true,
+    false,
+  ]);
+  const alone = s.attentionOf([canWait], [], []);
+  assert.equal(alone.length, 0);
+  assert.equal(s.renderToStaticMarkup(h(s.AttentionBar, { items: alone })), "");
 });
 
 test("a move's line in the attention bar has its main link beside it, a button", () => {
@@ -6372,12 +6459,13 @@ test("a line of the attention bar takes you to its target in another tab, a fold
     text: id,
     ...extra,
   });
+  const before = { before: "before the merge" };
   const items = s.attentionOf(
     [
-      { wish: w1, item: q("q1"), blocking: [] },
+      { wish: w1, item: q("q1", before), blocking: [] },
       { wish: w1, item: q("q2", { waitingLead: true }), blocking: [] },
-      { wish: w2, item: q("q3"), blocking: [] },
-      { wish: w1, item: q("q4"), blocking: [] },
+      { wish: w2, item: q("q3", before), blocking: [] },
+      { wish: w1, item: q("q4", before), blocking: [] },
     ],
     [
       {
@@ -6427,7 +6515,7 @@ test("a line of the attention bar takes you to its target in another tab, a fold
   assert.equal(markup.match(/<button class="attention-item/g).length, 4);
   assert.match(
     markup,
-    /<span class="attention-item level-later"><span class="attention-level">Can wait<\/span><b class="attention-code">Q4<\/b><span class="attention-text">q4<\/span><\/span>/,
+    /<span class="attention-item level-question"><span class="attention-level">before the merge<\/span><b class="attention-code">Q4<\/b><span class="attention-text">q4<\/span><\/span>/,
   );
 
   // In a folded part: a decision older than the latest ones shows when it is the one in focus, as the bar asks.
@@ -6575,7 +6663,7 @@ test("regression W507: a wish without a project shows its task, its rank as a ra
   assert.doesNotMatch(side, /count-pill/);
 });
 
-test("an open question that can wait stays visible in WishView's questions column and attention bar, never folded", async () => {
+test("an open question that can wait stays visible in WishView's questions column, never folded, and out of the attention bar", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da70";
   const lamp = wish(wishId, "Djinn sur Wails", s.WishState.ACTIVE, 1);
   const transport = s.createRouterTransport(({ service }) => {
@@ -6620,10 +6708,8 @@ test("an open question that can wait stays visible in WishView's questions colum
     h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: lamp, onToast() {} })),
   );
 
-  // 1. Attention bar shows the can-wait question with level-later and "Can wait".
-  assert.match(html, /class="attention-item level-later"/);
-  assert.match(html, /<b class="attention-code">Q86<\/b>/);
-  assert.match(html, /<span class="attention-level">Can wait<\/span>/);
+  // 1. Nothing holds up the wish: no attention bar.
+  assert.doesNotMatch(html, /attention-bar|attention-item/);
 
   // 2. The questions column shows it, open as the first, with the can-wait tone; no card holds the column.
   assert.doesNotMatch(html, /action-center/);
@@ -11066,7 +11152,11 @@ test("each lit ifrit has a band after the lead's choice, the latest active first
     { wish: w, item: q("q3", { taskId: "i1" }), blocking: ["W14"] },
     { wish: w, item: q("q4", { taskId: "i1" }), blocking: [] },
     { wish: w, item: q("q5"), blocking: [] },
-    { wish: w, item: q("q6", { aboutTaskId: "i2" }), blocking: [] },
+    {
+      wish: w,
+      item: q("q6", { aboutTaskId: "i2", before: "before the merge" }),
+      blocking: [],
+    },
   ];
   const prompt = {
     title: "Would you like to run the following command?",
@@ -11076,7 +11166,7 @@ test("each lit ifrit has a band after the lead's choice, the latest active first
   const today = s.attentionOf(questions, [], [w], undefined, prompt);
   assert.deepEqual(
     today.map((i) => i.key),
-    ["lead-prompt", "q1", "q3", "q2", "q4", "q5", "q6", "ready-w1"],
+    ["lead-prompt", "q1", "q3", "q2", "q6", "ready-w1"],
   );
   // Without a lit ifrit, the order is exactly today's.
   assert.deepEqual(
@@ -11096,16 +11186,15 @@ test("each lit ifrit has a band after the lead's choice, the latest active first
       ["ifrit-i2", "ifrit", "task-i2"],
       ["ifrit-i1", "ifrit", "task-i1"],
       ["q1", "blocking", "question-q1"],
-      ["q5", "later", "question-q5"],
       ["ready-w1", "ready", "grant-w1"],
     ],
   );
-  // A band holds the ifrit's own questions, then the lead's about it, each the most urgent first.
+  // A band holds the ifrit's own questions, then the lead's about it, each the most urgent first; one that can wait
+  // (q4) is in the questions column alone, as below (q5).
   assert.deepEqual(
     lit[2].band.items.map((i) => [i.key, i.level, i.asker]),
     [
       ["q3", "blocking", "asked by W12"],
-      ["q4", "later", "asked by W12"],
       ["q2", "question", "the Djinn, about W12"],
     ],
   );
@@ -11113,13 +11202,14 @@ test("each lit ifrit has a band after the lead's choice, the latest active first
     lit[1].band.items.map((i) => [i.key, i.asker]),
     [["q6", "the Djinn, about W13"]],
   );
-  // Never shown twice: each question once, in a band or below.
+  // Never shown twice: each question that holds up its wish once, in a band or below.
   const shown = lit.flatMap((i) => [
     i.key,
     ...(i.band?.items.map((x) => x.key) ?? []),
   ]);
   assert.equal(new Set(shown).size, shown.length);
-  for (const { item } of questions) assert.ok(shown.includes(item.id), item.id);
+  for (const id of ["q1", "q2", "q3", "q6"]) assert.ok(shown.includes(id), id);
+  for (const id of ["q4", "q5"]) assert.ok(!shown.includes(id), id);
   // No lead's choice: the bands come first.
   assert.deepEqual(
     s
@@ -11141,7 +11231,7 @@ test("each lit ifrit has a band after the lead's choice, the latest active first
     );
   const markup = render(lit);
   assert.match(markup, /<nav class="attention-bar with-ifrit"/);
-  assert.match(markup, /10 things wait for you/);
+  assert.match(markup, /8 things wait for you/);
   assert.match(
     markup,
     /<section class="attention-ifrit tone-ifrit" aria-label="Ifrit W12: Front of the lamp W12"><div class="attention-ifrit-head"><button class="attention-ifrit-title"><span class="attention-level"><svg[^>]*lucide-flame[^>]*>.*?<\/svg>Ifrit<\/span><b class="attention-code">W12<\/b><span class="attention-text">Front of the lamp W12<\/span><span class="attention-ifrit-state">Lit<\/span>/,

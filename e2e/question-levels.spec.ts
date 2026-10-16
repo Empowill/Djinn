@@ -119,15 +119,17 @@ test("open questions come blocking, then before X, then can wait, in the bar, th
     await expect(cards.nth(i).locator(".status-badge")).toHaveText("Can wait");
   }
 
-  // The attention bar, in the same order, each line under its level's words.
+  // The attention bar, in the same order, each line under its level's words: only what holds up the wish, never what
+  // can wait.
   const bar = page.locator(".attention-bar .attention-item");
-  await expect(bar.locator(".attention-code")).toHaveText(order);
+  await expect(bar.locator(".attention-code")).toHaveText(["Q01", "Q03"]);
   await expect(bar.locator(".attention-level")).toHaveText([
     "Blocking",
     "before the first light",
-    "Can wait",
-    "Can wait",
   ]);
+  await expect(page.locator(".attention-summary")).toHaveText(
+    "2 things wait for you",
+  );
 
   // The page, rendered in Go, and the brief follow.
   const html = path.join(dir, "page.html");
