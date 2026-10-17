@@ -16,7 +16,7 @@ export { createRoot } from "react-dom/client";
 export { renderToStaticMarkup } from "react-dom/server";
 export { createRouterTransport } from "@connectrpc/connect";
 export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
-export { WishSidebar } from "@/src/wish-sidebar.tsx";
+export { ProjectGear, WishSidebar } from "@/src/wish-sidebar.tsx";
 export { SyncLine, SyncLines, syncTitle } from "@/src/project-sync.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export {
@@ -470,6 +470,54 @@ test("the side panel counts the new inbox items on the flying carpet's entry, ev
     sidebar([wish("w2", "Ship the lamp", s.WishState.ACTIVE, 1)], 1),
     /aria-label="1 new item in the inbox"/,
   );
+});
+
+test("a project's gear opens its panel; red with a small flame while it has something to fix, which its tooltip counts; folded, the flame passes onto the folder", () => {
+  const sidebar = (collapsed) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [],
+        projects: [
+          { id: "p1", name: "lamp", directory: "/tmp/lamp", toFix: 0 },
+          { id: "p2", name: "dolmen", directory: "/tmp/dolmen", toFix: 2 },
+        ],
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  const html = sidebar(false);
+  // All well: a grey gear, no flame.
+  assert.match(
+    html,
+    /<button class="icon-button project-gear " title="Configuration of lamp" aria-label="Configuration of lamp"><svg[^>]*lucide-settings/,
+  );
+  // Something to fix: red, a flame on its corner, the count in its tooltip and on the folder's.
+  assert.match(
+    html,
+    /<button class="icon-button project-gear hot" title="Configuration of dolmen: 2 things to fix" aria-label="Configuration of dolmen: 2 things to fix"><svg[^>]*lucide-settings[^]*?<\/svg><span class="project-flame" aria-hidden="true"><span class="project-flame-glyph"><svg[^>]*lucide-flame/,
+  );
+  assert.match(html, /title="\/tmp\/dolmen · 2 things to fix"/);
+  assert.equal(html.split('project-flame"').length - 1, 1);
+  // Folded to the rail: no gear, the flame on the red project's folder alone.
+  const rail = sidebar(true);
+  assert.doesNotMatch(rail, /project-gear/);
+  assert.equal(rail.split('project-flame"').length - 1, 1);
+  assert.match(
+    rail,
+    /title="\/tmp\/dolmen · 2 things to fix"><span class="project-folder"><svg[^>]*lucide-folder-open[^]*?<\/svg><span class="project-flame"/,
+  );
+  // The gear opens the same panel as the name.
+  const opened = [];
+  s.ProjectGear({
+    project: { id: "p2", name: "dolmen", toFix: 2 },
+    onOpen: (id) => opened.push(id),
+  }).props.onClick();
+  assert.deepEqual(opened, ["p2"]);
 });
 
 test("a revised question's earlier versions take no room: Versions (3) in its corner opens them below it, to read", () => {
@@ -4309,6 +4357,71 @@ test("the inbox hides when nothing waits, however many sources the skills declar
   );
   assert.match(cannot, /<p>Fix its skill<\/p>/);
   assert.doesNotMatch(cannot, /failed run/);
+});
+
+test("a project with something to fix takes one line in the inbox, under the cards: its red gear, its name and count, and the button that opens its panel", async () => {
+  const lamp = wish(
+    "01a11833-a440-7479-a067-52615c91da71",
+    "Ship the lamp",
+    s.WishState.ACTIVE,
+    1,
+  );
+  const render = async (projects) => {
+    const transport = s.createRouterTransport(({ service }) => {
+      service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+      service(s.ProjectService, { list: () => ({ projects }) });
+      service(s.InboxService, {
+        list: () => ({ items: [] }),
+        sources: () => ({ sources: [] }),
+      });
+      service(s.TaskService, { list: () => ({ tasks: [] }) });
+      service(s.QuestionService, { list: () => ({ questions: [] }) });
+      service(s.BlockService, { list: () => ({ blocks: [] }) });
+    });
+    const djinn = s.createDjinn(transport, 10);
+    await djinn.store.changed("", [
+      s.Change.WISH,
+      s.Change.PROJECT,
+      s.Change.INBOX,
+    ]);
+    return s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.FlightPlan, {
+          wishes: [lamp],
+          onOpen() {},
+          onOpenProject() {},
+          onToast() {},
+        }),
+      ),
+    );
+  };
+  // All well: no line, no inbox.
+  assert.doesNotMatch(
+    await render([{ id: "p1", name: "lamp", toFix: 0 }]),
+    /Inbox|inbox/,
+  );
+  const html = await render([
+    { id: "p1", name: "lamp", toFix: 0 },
+    { id: "p2", name: "dolmen", toFix: 2 },
+  ]);
+  assert.match(html, /<span class="count">1<\/span>/);
+  assert.equal(html.split('inbox-project"').length - 1, 1);
+  assert.match(
+    html,
+    /<article class="question-card inbox-card inbox-project"><span class="inbox-project-gear" aria-hidden="true"><svg[^>]*lucide-settings[^]*?<\/svg><span class="project-flame"/,
+  );
+  assert.match(
+    html,
+    /<span class="inbox-kind">Project dolmen<\/span><span class="inbox-project-count">2 things to fix<\/span>/,
+  );
+  // Until Djinn says the first thing to fix, a sentence that sends to the panel; then the button that opens it.
+  assert.match(html, /<p>Djinn waits for you on its configuration/);
+  assert.match(
+    html,
+    /<button class="button small secondary">Open its configuration<\/button><\/article>/,
+  );
 });
 
 test("a project's panel lists the sources its skills declare: what each reads, how it stands, and Plug in or Unplug with what it does", async () => {

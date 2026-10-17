@@ -182,7 +182,7 @@ one lead per wish keeps the lead of the first active wish as the Djinn.
 **Flying carpet**, at the top of the side panel, or Ctrl+1 (Cmd+1 on macOS), shows every active wish together:
 
 - a bar at the top while something waits for you, the most blocking first; a click takes you there;
-- the [inbox](#the-inbox), when a source found something, or one you plugged in fails;
+- the [inbox](#the-inbox), when a source found something, one you plugged in fails, or a project has something to fix;
 - each wish at a glance: its questions, what runs, or `READY`;
 - what waits for you, in every wish: open questions, workers that wait for your answer before they edit, wishes
   Djinn proposes to grant, and the **Proofs you can give** (see [azimas](#azimas)). A worker that failed, refused
@@ -564,6 +564,12 @@ top of its panel and in `djinn project show`. Until it is fixed, Djinn ignores w
 breaks the YAML, like `argument-hint: [a] [b]`, which Claude Code reads anyway, is only an information there, with the
 line at fault: Djinn reads `metadata` apart from it. Details: [the
 inbox](wish-templates.md#the-inbox-what-comes-from-outside).
+
+A project with things to fix has its gear, beside its name in the side panel, red with a small flame (on its folder when
+the side panel is folded), its tooltip counting them, and one line in the inbox under the cards: **Project** and its
+name, how many things, the first of them in a sentence, and **Open its configuration**. The gear and the line open the
+same panel, as a click on the name does; the detail stays there. Once nothing is left to fix, the gear turns grey and
+the line goes.
 
 ## Team settings and integration
 

@@ -49,7 +49,7 @@ its remote, then by its name.
 
 ## The project's view
 
-A click on a project in the side panel opens its view:
+A click on a project in the side panel, on its name or on its gear, opens its view:
 
 | Part | What it shows |
 | --- | --- |
@@ -62,8 +62,8 @@ A click on a project in the side panel opens its view:
 | Inbox sources, on this machine | The sources its skills declare: what each reads, how its last run went, and **Plug in** or **Unplug**, with what that does. See [Inbox](#inbox). |
 | Skills | The project's skills, and those it uses from another project, marked **from** that project. |
 
-The side panel also shows, under each project, the branches waiting to be pushed, and a button that opens a terminal
-at the project's root.
+The side panel also shows, under each project, the branches waiting to be pushed, a button that opens a terminal at the
+project's root, and its gear.
 
 Nothing removes or renames a project once added.
 
@@ -72,7 +72,9 @@ Nothing removes or renames a project once added.
 Djinn reads a project's configuration each time it shows the project, and says what it finds in a list: things to fix,
 which wait for you, then information. Each one says what it is in one sentence, and the one action that settles it: a
 file to correct, a source to decide on, a skill to unsummon, a reference branch to name. The projects list carries the
-number of things to fix.
+number of things to fix: while there is one, the project's gear in the side panel turns red with a small flame, its
+tooltip counts them, and the [inbox](#inbox) gives the project one line that opens its view. Information leaves the
+gear grey: you read it on opening the view.
 
 - **Things to fix**: a settings file or the permissions Djinn cannot read; no reference branch found, or the one the
   settings name missing from the repository; the setup that failed its last run; a skill whose header Djinn cannot

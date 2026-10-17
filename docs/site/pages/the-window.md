@@ -17,10 +17,12 @@ From top to bottom:
 
 - **New wish**, Ctrl+N (Cmd+N on macOS).
 - **Flying carpet**, Ctrl+1, while a wish is active or the inbox has news: every active wish together. Its counts say
-  how many questions wait for you across them, and how many cards wait in the inbox.
+  how many questions wait for you across them, and how many cards and project lines wait in the inbox.
 - **Wishes**, with how many are active out of three: the wish bar, below.
-- **Projects**, with + to create one. Each project opens its panel; its terminal button opens a terminal at its root,
-  and a line shows each of its branches out of step with its remote.
+- **Projects**, with + to create one. Each project opens its panel, from its name or its gear; its terminal button
+  opens a terminal at its root, and a line shows each of its branches out of step with its remote. The gear turns red
+  with a small flame while the project has something for you to fix, and its tooltip counts them; folded to the rail,
+  the flame sits on the project's folder.
 - **Import a wish**, **Hourglass** (Ctrl+2), **Grimoire**, this documentation, and your profile, **Connections &
   preferences**.
 
