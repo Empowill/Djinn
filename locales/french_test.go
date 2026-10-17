@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 )
 
 // French is found by two signs on a line: a letter or a quote mark English does not use, or two different words
@@ -21,8 +22,21 @@ import (
 // repository in English.
 var (
 	frenchLetter = regexp.MustCompile(`[àâæçéèêëîïôœùûüÿÀÂÆÇÉÈÊËÎÏÔŒÙÛÜŸ«»]`)
-	frenchWord   = regexp.MustCompile(`\b(?:les|des|une|est|avec|dans|qui|que|sur|pas|aux|cette|ces|sont|nous|vous|mais|leur|leurs|tous|toutes|chez|il|ils|elle|elles|je|ne|ont|sera|peut|doit|faut|aussi|alors|donc|depuis|encore|toujours|jamais|rien|avoir|faire|fait|dont|lorsque|quand|puis|sinon|parce|voici|ici|oui)\b|\b(?:l|d|qu|n|c|j)['’][aeiouhyéèêàâîô]`)
+	frenchWord   = wordSet("les des une est avec dans qui que sur pas aux cette ces sont nous vous mais leur leurs tous " +
+		"toutes chez il ils elle elles je ne ont sera peut doit faut aussi alors donc depuis encore toujours jamais rien " +
+		"avoir faire fait dont lorsque quand puis sinon parce voici ici oui")
+	// An elision is one of these words, a quote mark, then a vowel: l'a, d'abord, qu'il.
+	frenchElided = wordSet("l d qu n c j")
+	elisionNext  = "aeiouhyéèêàâîô"
 )
+
+func wordSet(words string) map[string]bool {
+	set := map[string]bool{}
+	for _, word := range strings.Fields(words) {
+		set[word] = true
+	}
+	return set
+}
 
 // frenchAllowed are the files that hold French on purpose, with why.
 var frenchAllowed = map[string]string{
@@ -123,8 +137,8 @@ func french(line string, quoted []string) string {
 		return "the letter " + letter
 	}
 	words := map[string]bool{}
-	for _, word := range frenchWord.FindAllString(line, -1) {
-		words[strings.ReplaceAll(word, "’", "'")] = true // An elision counts with its next letter: l'a, l'i.
+	for _, word := range frenchWords(line) {
+		words[word] = true
 	}
 	if len(words) >= 2 {
 		var found []string
@@ -135,6 +149,43 @@ func french(line string, quoted []string) string {
 		return "the words " + strings.Join(found, ", ")
 	}
 	return ""
+}
+
+// frenchWords are the French words of a line, in order. A word is a run of ASCII letters, digits and underscores, as
+// \b reads it; an elision counts with its next letter (l'a, l'i, the curly quote read as a straight one) and takes
+// the word it starts. Words cut by hand, not by a regular expression: the backtracking of one alternation of sixty
+// words took most of the test's time, ten seconds on four cores.
+func frenchWords(line string) []string {
+	var found []string
+	for i := 0; i < len(line); i++ {
+		if !wordByte(line[i]) || i > 0 && wordByte(line[i-1]) {
+			continue
+		}
+		end := i + 1
+		for end < len(line) && wordByte(line[end]) {
+			end++
+		}
+		word := line[i:end]
+		if frenchWord[word] {
+			found = append(found, word)
+		} else if frenchElided[word] {
+			rest, ok := strings.CutPrefix(line[end:], "'")
+			if !ok {
+				rest, ok = strings.CutPrefix(line[end:], "’")
+			}
+			if next, size := utf8.DecodeRuneInString(rest); ok && size > 0 && strings.ContainsRune(elisionNext, next) {
+				found = append(found, word+"'"+string(next))
+				end = len(line) - len(rest) + size
+			}
+		}
+		i = end - 1
+	}
+	return found
+}
+
+// wordByte is a byte of a word as \b reads it: an ASCII letter, a digit or an underscore.
+func wordByte(b byte) bool {
+	return 'a' <= b && b <= 'z' || 'A' <= b && b <= 'Z' || '0' <= b && b <= '9' || b == '_'
 }
 
 func TestFrenchSigns(t *testing.T) {
