@@ -2648,7 +2648,11 @@ type Project struct {
 	Syncs []*ProjectSync `protobuf:"bytes,12,rep,name=syncs,proto3" json:"syncs,omitempty"`
 	// How many things of its configuration wait for you to fix, computed on every read: the notices of kind to fix
 	// that djinn project show lists.
-	ToFix         int32 `protobuf:"varint,13,opt,name=to_fix,json=toFix,proto3" json:"to_fix,omitempty"`
+	ToFix int32 `protobuf:"varint,13,opt,name=to_fix,json=toFix,proto3" json:"to_fix,omitempty"`
+	// The first thing to fix in one sentence, the text of its notice, computed on every read; empty when nothing waits.
+	// The inbox's line of the project says it from its first paint: a sentence that came later would grow the line,
+	// and move what is read below it.
+	FirstFix      string `protobuf:"bytes,14,opt,name=first_fix,json=firstFix,proto3" json:"first_fix,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2765,6 +2769,13 @@ func (x *Project) GetToFix() int32 {
 		return x.ToFix
 	}
 	return 0
+}
+
+func (x *Project) GetFirstFix() string {
+	if x != nil {
+		return x.FirstFix
+	}
+	return ""
 }
 
 // ProjectNotice is one thing Djinn finds in a project's configuration as this machine reads it, computed on every
@@ -24063,7 +24074,7 @@ var File_plan_v1_plan_proto protoreflect.FileDescriptor
 
 const file_plan_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x12plan/v1/plan.proto\x12\aplan.v1\x1a\x1bbuf/validate/validate.proto\x1a\x13djinn/v1/load.proto\x1a\x16djinn/v1/options.proto\x1a\x19google/protobuf/any.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14plan/v1/tilasm.proto\"\xe9\x03\n" +
+	"\x12plan/v1/plan.proto\x12\aplan.v1\x1a\x1bbuf/validate/validate.proto\x1a\x13djinn/v1/load.proto\x1a\x16djinn/v1/options.proto\x1a\x19google/protobuf/any.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14plan/v1/tilasm.proto\"\x86\x04\n" +
 	"\aProject\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -24079,7 +24090,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	" \x01(\x0e2\x14.plan.v1.ProjectPushR\x04push\x12:\n" +
 	"\rpush_strategy\x18\v \x01(\x0e2\x15.plan.v1.PushStrategyR\fpushStrategy\x12*\n" +
 	"\x05syncs\x18\f \x03(\v2\x14.plan.v1.ProjectSyncR\x05syncs\x12\x15\n" +
-	"\x06to_fix\x18\r \x01(\x05R\x05toFix:\x19\xd2\xf3\x18\x06\n" +
+	"\x06to_fix\x18\r \x01(\x05R\x05toFix\x12\x1b\n" +
+	"\tfirst_fix\x18\x0e \x01(\tR\bfirstFix:\x19\xd2\xf3\x18\x06\n" +
 	"\x04name\xd2\xf3\x18\v\n" +
 	"\tdirectoryJ\x04\b\t\x10\n" +
 	"R\x04sync\"\x9c\x02\n" +

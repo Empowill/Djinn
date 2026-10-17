@@ -487,8 +487,10 @@ func TestWatcherResumedSaysItOnce(t *testing.T) {
 	lead := &told{}
 	e.h.TellLeads(lead.tell)
 	wishID, _ := e.wish(t, gitRepo(t))
-	// Each run waits a little before it speaks: the test gives the lead to the Djinn started again before that.
-	cmd := watchCommand("keep:runs", "sleep:100ms", "say:CI red", "sleep:100ms", "from:2", "say:CI green", "wait")
+	// Each run waits a little before it speaks: the test gives the lead to the Djinn started again before that. Its
+	// two paragraphs are 300 ms apart, six times fastWatch's Quiet: 100 ms let a busy macOS runner read both lines in
+	// one paragraph, "CI red" first, which says again what the task said last (W270).
+	cmd := watchCommand("keep:runs", "sleep:100ms", "say:CI red", "sleep:300ms", "from:2", "say:CI green", "wait")
 	task, err := e.spawnWatch(t, wishID, cmd, true)
 	if err != nil {
 		t.Fatal(err)

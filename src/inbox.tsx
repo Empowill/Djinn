@@ -9,14 +9,13 @@
 // after the others and moves none of them while you read (AGENTS.md, Interface).
 import { timestampMs } from "@bufbuild/protobuf/wkt";
 import { Inbox as InboxIcon, Lamp, Plug, Settings, Unplug } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 
 import {
   Change,
   type InboxItem,
   type InboxSource,
   type Project,
-  ProjectNoticeKind,
   type RouteOption,
   RouteKind,
 } from "../gen/ts/plan/v1/plan_pb";
@@ -471,8 +470,9 @@ const SourceCard = memo(function SourceCard({
 });
 
 // ProjectLine is a project whose configuration has something for you to fix, in one line: its red gear, its name and
-// how many things, the first of them in one sentence as Djinn finds it (ProjectService.Show), and the button that opens
-// its panel, where each one is said with what settles it.
+// how many things, the first of them in one sentence as Djinn finds it (Project.first_fix, from its first paint: a
+// sentence fetched after would grow the line under the reader), and the button that opens its panel, where each one is
+// said with what settles it.
 const ProjectLine = memo(function ProjectLine({
   project,
   onOpenProject,
@@ -480,25 +480,6 @@ const ProjectLine = memo(function ProjectLine({
   project: Project;
   onOpenProject?: (projectId: string) => void;
 }) {
-  const clients = useClients();
-  const [first, setFirst] = useState("");
-  useEffect(() => {
-    let live = true;
-    clients.projects
-      .show({ project: project.id })
-      .then(
-        (res) =>
-          live &&
-          setFirst(
-            res.notices.find((n) => n.kind === ProjectNoticeKind.TO_FIX)
-              ?.text ?? "",
-          ),
-      )
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [clients, project.id, project.toFix]);
   return (
     <article className="question-card inbox-card inbox-project">
       <span className="inbox-project-gear" aria-hidden="true">
@@ -514,7 +495,7 @@ const ProjectLine = memo(function ProjectLine({
             {t("project.to_fix", { count: project.toFix })}
           </span>
         </span>
-        <p>{first || t("inbox.project_detail")}</p>
+        <p>{project.firstFix || t("inbox.project_detail")}</p>
       </div>
       {onOpenProject && (
         <button

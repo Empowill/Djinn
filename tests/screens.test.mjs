@@ -4458,7 +4458,7 @@ test("the inbox hides when nothing waits, however many sources the skills declar
   assert.doesNotMatch(cannot, /failed run/);
 });
 
-test("a project with something to fix takes one line in the inbox, under the cards: its red gear, its name and count, and the button that opens its panel", async () => {
+test("a project with something to fix takes one line in the inbox, under the cards: its red gear, its name and count, the first thing to fix from the first paint, and the button that opens its panel", async () => {
   const lamp = wish(
     "01a11833-a440-7479-a067-52615c91da71",
     "Ship the lamp",
@@ -4501,9 +4501,11 @@ test("a project with something to fix takes one line in the inbox, under the car
     await render([{ id: "p1", name: "lamp", toFix: 0 }]),
     /Inbox|inbox/,
   );
+  const first =
+    "The skill dolmen-news offers an inbox source this machine has not decided on: plug it in for its items to come here, or unplug it to say no.";
   const html = await render([
     { id: "p1", name: "lamp", toFix: 0 },
-    { id: "p2", name: "dolmen", toFix: 2 },
+    { id: "p2", name: "dolmen", toFix: 2, firstFix: first },
   ]);
   assert.match(html, /<span class="count">1<\/span>/);
   assert.equal(html.split('inbox-project"').length - 1, 1);
@@ -4515,11 +4517,17 @@ test("a project with something to fix takes one line in the inbox, under the car
     html,
     /<span class="inbox-kind">Project dolmen<\/span><span class="inbox-project-count">2 things to fix<\/span>/,
   );
-  // Until Djinn says the first thing to fix, a sentence that sends to the panel; then the button that opens it.
-  assert.match(html, /<p>Djinn waits for you on its configuration/);
+  // The first thing to fix as Djinn says it, from the first paint: no sentence comes later to grow the line under the
+  // reader. Then the button that opens the panel.
+  assert.ok(html.includes(`<p>${first}</p>`), html);
   assert.match(
     html,
     /<button class="button small secondary">Open its configuration<\/button><\/article>/,
+  );
+  // A project that says none: a sentence that sends to the panel.
+  assert.match(
+    await render([{ id: "p2", name: "dolmen", toFix: 1 }]),
+    /<p>Djinn waits for you on its configuration/,
   );
 });
 

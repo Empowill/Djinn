@@ -259,7 +259,7 @@ type Projects struct {
 }
 
 // fillProject adds to project what is computed on every read, and returns what Djinn finds in its configuration:
-// project.to_fix counts the things to fix.
+// project.to_fix counts the things to fix, project.first_fix says the first.
 func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) []*planv1.ProjectNotice {
 	if project == nil {
 		return nil
@@ -276,6 +276,7 @@ func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) []*
 	}
 	notices := p.projectNotices(ctx, project)
 	project.ToFix = countToFix(notices)
+	project.FirstFix = firstFix(notices)
 	return notices
 }
 

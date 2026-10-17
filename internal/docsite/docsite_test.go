@@ -26,7 +26,7 @@ import (
 // Nav in pages/, the Command line's with the commands, in ASCII; each seeks, as http.FileServerFS needs, is listed for
 // a walk, as os.CopyFS walks, and is served.
 func TestFS(t *testing.T) {
-	fsys := FS(os.DirFS(filepath.Join("..", "..", "docs", "site")))
+	fsys := FS(embedded(t))
 	b, err := fs.ReadFile(fsys, "index.html")
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +89,27 @@ func TestFS(t *testing.T) {
 			t.Errorf("%s served %d, %.80q", name, rec.Code, rec.Body.String())
 		}
 	}
+}
+
+// embedded is the site as djinn up embeds it (assets.go): its files in memory, a folder listed as it is opened. Read
+// from the disk, fstest.TestFS checks what the file system says of a folder, not the Grimoire: on the Windows runner,
+// the site's fonts and pages folders are listed with size 0 and opened with size 4096 (W270).
+func embedded(t *testing.T) fstest.MapFS {
+	t.Helper()
+	disk := os.DirFS(filepath.Join("..", "..", "docs", "site"))
+	site := fstest.MapFS{}
+	err := fs.WalkDir(disk, ".", func(name string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := fs.ReadFile(disk, name)
+		site[name] = &fstest.MapFile{Data: b, Mode: 0o444}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return site
 }
 
 // pageOf reads a page's script: the slug and the HTML it hands to site.js.

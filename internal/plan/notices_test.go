@@ -72,8 +72,9 @@ func TestProjectNotices(t *testing.T) {
 		}
 		return res.Msg
 	}
-	if res := show(); len(res.GetNotices()) > 0 || res.GetProject().GetToFix() != 0 {
-		t.Fatalf("a bare folder: %v, to fix %d; want nothing", noticeLines(res.GetNotices()), res.GetProject().GetToFix())
+	if res := show(); len(res.GetNotices()) > 0 || res.GetProject().GetToFix() != 0 || res.GetProject().GetFirstFix() != "" {
+		t.Fatalf("a bare folder: %v, to fix %d %q; want nothing", noticeLines(res.GetNotices()), res.GetProject().GetToFix(),
+			res.GetProject().GetFirstFix())
 	}
 
 	devFile := DeveloperSettingsFile(home, project.GetId())
@@ -155,13 +156,18 @@ func TestProjectNotices(t *testing.T) {
 	if res.GetProject().GetToFix() != 7 {
 		t.Errorf("to fix: %d, want 7", res.GetProject().GetToFix())
 	}
+	// The first thing to fix, as the list says it: the inbox's line of the project shows it from its first paint.
+	first := res.GetNotices()[0]
+	if first.GetKind() != toFix || res.GetProject().GetFirstFix() != first.GetText() {
+		t.Errorf("first to fix: %q, want %q", res.GetProject().GetFirstFix(), first.GetText())
+	}
 	list, err := c.projects.List(ctx, connect.NewRequest(&planv1.ProjectServiceListRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range list.Msg.GetProjects() {
-		if p.GetId() == project.GetId() && p.GetToFix() != 7 {
-			t.Errorf("listed, to fix: %d, want 7", p.GetToFix())
+		if p.GetId() == project.GetId() && (p.GetToFix() != 7 || p.GetFirstFix() != first.GetText()) {
+			t.Errorf("listed, to fix: %d, first %q; want 7, %q", p.GetToFix(), p.GetFirstFix(), first.GetText())
 		}
 	}
 
