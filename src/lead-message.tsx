@@ -203,14 +203,15 @@ export function LeadMessage({
     }
   };
   return (
-    <div className="lead-message" ref={root}>
+    <div className="lead-message" ref={root} data-eye-place="">
       <WorkspaceAction
         tone="secondary"
         expanded={open}
         className="workspace-action-lead"
         perch={
           // The socket on the pill's left, a porthole of the seal's emerald: its icon at rest, the eye when it listens,
-          // behind two halves that part for it (djinn-eye.css).
+          // behind two halves that part for it (djinn-eye.css). The whole pill is the eye's place: folded or open, the
+          // focus in it brings the eye to the socket.
           <span className="lead-socket">
             <EyePerch name="pill" opens />
             <span className="lead-socket-upper" />

@@ -4,65 +4,61 @@ import assert from "node:assert/strict";
 
 import { bundle } from "./bundle.mjs";
 
-const { eyeTarget, mattersMost, flight, calmWait, clampTo, easeInOut } =
-  await bundle("eye", `export * from "@/src/data/eye.ts";`);
+const { eyeTarget, flight, calmWait, clampTo, easeInOut } = await bundle(
+  "eye",
+  `export * from "@/src/data/eye.ts";`,
+);
 
-const all = new Set(["home", "pill", "q:a", "q:b"]);
+const all = new Set(["home", "pill", "q:a", "q:b", "tab:main", "tab:tasks"]);
 const base = {
   presence: "alive",
   live: true,
   stopped: false,
+  blocking: false,
   needs: false,
   perches: all,
 };
 
-test("the eye watches the question that matters, then reads the one you went to", () => {
-  const column = { current: "a", chosen: false, matters: "b", blocking: true };
-  assert.deepEqual(eyeTarget({ ...base, column }), {
+test("the eye rests by the element that has the focus, and only there", () => {
+  // A question has the focus: it reads it, whatever else the column holds.
+  assert.deepEqual(eyeTarget({ ...base, focus: "q:b", blocking: true }), {
     perch: "q:b",
-    mood: "watching",
+    mood: "reading",
     shine: true,
   });
-  assert.deepEqual(
-    eyeTarget({ ...base, column: { ...column, chosen: true } }),
-    {
-      perch: "q:a",
-      mood: "reading",
-      shine: true,
-    },
-  );
-});
-
-test("with no question open the eye listens on Write to the Djinn, else rests home", () => {
-  const column = { chosen: false, blocking: false };
-  assert.deepEqual(eyeTarget({ ...base, column }), {
+  assert.deepEqual(eyeTarget({ ...base, focus: "pill" }), {
     perch: "pill",
     mood: "listening",
     shine: false,
   });
-  assert.deepEqual(eyeTarget({ ...base, perches: new Set(["home"]) }), {
-    perch: "home",
-    mood: "resting",
+  assert.deepEqual(eyeTarget({ ...base, focus: "tab:tasks" }), {
+    perch: "tab:tasks",
+    mood: "watching",
     shine: false,
   });
-  // A question whose perch is not shown (another tab) leaves the eye on the pill.
-  assert.equal(
-    eyeTarget({
-      ...base,
-      column: { current: "z", chosen: true, blocking: false },
-    }).perch,
-    "pill",
+});
+
+test("with the focus on nothing that has a place, the eye listens on Write to the Djinn, else rests home", () => {
+  for (const focus of [undefined, "q:gone"])
+    assert.deepEqual(eyeTarget({ ...base, focus }), {
+      perch: "pill",
+      mood: "listening",
+      shine: false,
+    });
+  assert.deepEqual(
+    eyeTarget({ ...base, focus: "q:a", perches: new Set(["home"]) }),
+    { perch: "home", mood: "resting", shine: false },
   );
 });
 
 test("the eye sleeps home while the lead is stopped, pales while the stream is cut", () => {
-  const column = { current: "a", chosen: true, blocking: true };
-  assert.deepEqual(eyeTarget({ ...base, column, stopped: true }), {
+  const focused = { ...base, focus: "q:a", blocking: true };
+  assert.deepEqual(eyeTarget({ ...focused, stopped: true }), {
     perch: "home",
     mood: "asleep",
     shine: false,
   });
-  assert.deepEqual(eyeTarget({ ...base, column, live: false }), {
+  assert.deepEqual(eyeTarget({ ...focused, live: false }), {
     perch: "home",
     mood: "restarting",
     shine: false,
@@ -70,25 +66,12 @@ test("the eye sleeps home while the lead is stopped, pales while the stream is c
 });
 
 test("discreet keeps the eye home, its flame still shining; none shows no eye", () => {
-  const column = { current: "a", chosen: true, blocking: false };
+  const focused = { ...base, focus: "q:a" };
   assert.deepEqual(
-    eyeTarget({ ...base, column, needs: true, presence: "discreet" }),
+    eyeTarget({ ...focused, needs: true, presence: "discreet" }),
     { perch: "home", mood: "resting", shine: true },
   );
-  assert.equal(eyeTarget({ ...base, column, presence: "none" }).perch, "");
-});
-
-test("the question that matters is the first of the most urgent", () => {
-  assert.equal(
-    mattersMost([
-      { id: "old", urgency: 3 },
-      { id: "before", urgency: 2 },
-      { id: "blocks", urgency: 0 },
-      { id: "blocks-too", urgency: 0 },
-    ]),
-    "blocks",
-  );
-  assert.equal(mattersMost([]), undefined);
+  assert.equal(eyeTarget({ ...focused, presence: "none" }).perch, "");
 });
 
 test("a flight curves, eases, and lasts with its length", () => {

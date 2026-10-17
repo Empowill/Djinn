@@ -13,6 +13,8 @@ import {
 } from "react";
 
 import { Change } from "../gen/ts/plan/v1/plan_pb";
+import { tabPerch } from "./data/eye";
+import { EyePerch } from "./djinn-eye";
 import { t } from "./i18n";
 import { DraftDot } from "./tilasm-comments";
 
@@ -101,6 +103,8 @@ export function ViewTabs({
           className={`${view === id ? "active" : ""}${id === "agents" ? " discreet" : ""}`.trim()}
           onClick={() => onView(id)}
         >
+          {/* Under the tab, the Djinn's eye rests while it has the focus. */}
+          <EyePerch name={tabPerch(id)} />
           {label}
           {count >= 0 && <span className="count">{count}</span>}
           {id === "tilasms" && drafts > 0 && <DraftDot count={drafts} />}

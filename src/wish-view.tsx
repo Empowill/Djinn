@@ -352,26 +352,35 @@ export function WishView({
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
-  // The wish clicked in the side panel: its first tab, a tilasm the Tilasms tab showed closed, and the page at the top,
-  // or at the question that had the focus, which takes it back (question-column.tsx). After the commit that drops a
-  // full-size tilasm, whose page under it is inert until then.
+  // The wish clicked in the side panel: its first tab, a tilasm the Tilasms tab showed closed, the page at the top, and
+  // its first question open with the focus, once its questions are read (question-column.tsx); the Djinn's eye goes
+  // with the focus. After the commit that drops a full-size tilasm, whose page under it is inert until then.
   const land = useRef<() => boolean>(undefined);
-  const landed = useRef<Landing>(undefined);
+  // The last landing, and whether its first question had the focus: a tab chosen meanwhile drops it.
+  const landed = useRef<{ landing?: Landing; done: boolean }>({ done: true });
+  const questionsRead = detail.loadedKinds.has(Change.QUESTION);
   useEffect(() => {
-    if (!landing || landed.current === landing) return;
-    if (view !== "main") {
-      setOpened(undefined);
-      show("main");
-      return;
+    if (!landing) return;
+    if (landed.current.landing !== landing) {
+      landed.current = { landing, done: false };
+      if (view !== "main") {
+        setOpened(undefined);
+        show("main");
+        return;
+      }
     }
-    landed.current = landing;
+    if (landed.current.done || view !== "main") return;
     setOpened(undefined);
     setFocus("");
     const scroller = scrollRef.current;
-    if (land.current?.() || !scroller) return;
-    scroller.scrollTop = 0;
-    placeTaken(scroller);
-  }, [landing, view, show]);
+    if (scroller) {
+      scroller.scrollTop = 0;
+      placeTaken(scroller);
+    }
+    if (!questionsRead) return;
+    landed.current.done = true;
+    land.current?.();
+  }, [landing, view, show, questionsRead]);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !store) return;

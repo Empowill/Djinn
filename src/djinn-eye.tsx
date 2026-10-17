@@ -1,13 +1,15 @@
 // The Djinn's eye (Decision Q38 A, tilasm L13 v2): the seal of the side panel opens into an eye that rests where to
 // look now. Drawn from the seal: its khatam star for the iris, its saffron flame for the pupil, its malachite line;
 // solar and wide open in the light theme, a mocking demon with a lowered lid in the dark (the Djinn's two tones, W156).
-// It rests in three kinds of places, its perches: home in the seal; in the margin left of the question that matters, or
-// of the one you went to, reading with you; on Write to the Djinn, which it lights a little, when no question is open.
+// It rests by the element that has the focus, and only there (W259): in the margin left of the question that has it,
+// reading with you; in the socket of Write to the Djinn, folded or open; under the tab that has it. With the focus on
+// nothing that has a place, it listens on Write to the Djinn; home in the seal with no such place shown. It never takes
+// the focus itself: a click on a wish in the side panel gives it to the wish's first question (question-column.tsx).
 // It sleeps home while the lead is stopped, and pales there while Djinn's stream is cut. Its flame shines while
 // something waits for you: a question that holds up a worker, a worker waiting, a lit ifrit.
 // From one place to the next it flies on a curve, eased, long enough to be followed (data/eye.ts), above the page in a
 // layer of its own; at rest it covers nothing and scrolls with its perch. A calm gate holds it while you type, press,
-// scroll, read a dialog, or the window rests. It never takes the focus nor a click. It moves by transform and opacity
+// scroll, read a dialog, or the window rests; while you type, it goes nowhere but to the field you type in. It never takes the focus nor a click. It moves by transform and opacity
 // only, composed by the engine, and nothing of it loops: at rest, the window draws nothing for it.
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
@@ -17,7 +19,6 @@ import {
   AFTER_SCROLL,
   calmWait,
   clampTo,
-  type EyeColumn,
   type EyeTarget,
   eyeTarget,
   flight,
@@ -67,14 +68,14 @@ export const usePresence = () =>
     () => "alive" as const,
   );
 
-// What the pages tell the eye: the questions column, whether the lead is stopped, what else waits for the developer,
-// and Djinn's stream. One window, one eye: they live here, not in a context.
+// What the pages tell the eye: whether a question holds up a worker, whether the lead is stopped, what else waits for
+// the developer, and Djinn's stream. One window, one eye: they live here, not in a context.
 const signals: {
-  column?: EyeColumn;
+  blocking: boolean;
   stopped?: boolean;
   needs: boolean;
   live: boolean;
-} = { needs: false, live: true };
+} = { blocking: false, needs: false, live: true };
 const signalListeners = new Set<() => void>();
 const signalled = () => signalListeners.forEach((listener) => listener());
 
@@ -87,13 +88,10 @@ function signal<K extends keyof typeof signals>(
   signalled();
 }
 
-// useEyeColumn tells the eye the questions column's state while it shows.
-export function useEyeColumn(column: EyeColumn) {
-  const { current, chosen, matters, blocking } = column;
-  useEffect(() => {
-    signal("column", { current, chosen, matters, blocking });
-  }, [current, chosen, matters, blocking]);
-  useEffect(() => () => signal("column", undefined), []);
+// useEyeBlocking tells the eye that a question of the column shown holds up a worker: its flame shines.
+export function useEyeBlocking(blocking: boolean) {
+  useEffect(() => signal("blocking", blocking), [blocking]);
+  useEffect(() => () => signal("blocking", false), []);
 }
 
 // useEyeLead tells the eye whether the page's lead is stopped.
@@ -108,13 +106,14 @@ export function useEyeNeeds(needs: boolean) {
   useEffect(() => () => signal("needs", false), []);
 }
 
-// The perches shown, by name: "home", "pill", "q:<question id>".
+// The perches shown, by name: "home", "pill", "q:<question id>", "tab:<view>".
 const perches = new Map<string, HTMLElement>();
 // What the eye does when its perch leaves the page under it.
 let perchLeaves: ((perch: HTMLElement) => void) | undefined;
 
-// EyePerch is a place the eye may rest: an empty point, laid out by its stylesheet, that the eye is centred on. A perch
-// that opens for it (the socket of Write to the Djinn) shows it behind a porthole that opens as it lands: the eye blinks
+// EyePerch is a place the eye may rest: an empty point, laid out by its stylesheet, that the eye is centred on. It is
+// the place of the element that holds it, its parent, or of the one around marked data-eye-place: the eye rests there
+// while the focus is in that element. A perch that opens for it (the socket of Write to the Djinn) shows it behind a porthole that opens as it lands: the eye blinks
 // once it is open.
 export function EyePerch({ name, opens }: { name: string; opens?: boolean }) {
   const ref = useCallback(
@@ -177,6 +176,22 @@ function typing(): boolean {
         "textarea, select, input:not([type=checkbox], [type=radio], [type=button], [type=submit], [type=range])",
       ))
   );
+}
+
+// focusPerch is the perch of the element that has the focus, if it has one: the nearest whose place holds it.
+function focusPerch(): string | undefined {
+  const active = document.activeElement;
+  if (!active || active === document.body) return undefined;
+  let found: { name: string; place: Element } | undefined;
+  for (const [name, element] of perches) {
+    if (!shown(element)) continue;
+    const place =
+      element.parentElement?.closest("[data-eye-place]") ??
+      element.parentElement;
+    if (place?.contains(active) && (!found || found.place.contains(place)))
+      found = { name, place };
+  }
+  return found?.name;
 }
 
 const dialogOpen = () =>
@@ -302,16 +317,17 @@ class Eye {
     this.quietUntil = Math.max(this.quietUntil, performance.now() + ms);
   }
 
-  private target(): EyeTarget {
+  private target(focus: string | undefined): EyeTarget {
     const names = new Set<string>();
     for (const [name, element] of perches) if (shown(element)) names.add(name);
     return eyeTarget({
       presence: presenceNow(),
       live: signals.live,
       stopped: signals.stopped,
-      column: signals.column,
+      blocking: signals.blocking,
       needs: signals.needs,
       perches: names,
+      focus,
     });
   }
 
@@ -319,7 +335,8 @@ class Eye {
   readonly schedule = () => {
     clearTimeout(this.timer);
     this.timer = undefined;
-    const target = this.target();
+    const focus = focusPerch();
+    const target = this.target(focus);
     if (this.flying) return;
     // Not shown yet: it opens in the seal, and leaves it once the gate lets it.
     const home = perches.get("home");
@@ -343,7 +360,8 @@ class Eye {
     }
     const wait = calmWait({
       now: performance.now(),
-      typing: typing(),
+      // A field that gets the focus takes the eye to its place; once there, nothing else moves it while you type.
+      typing: typing() && target.perch !== focus,
       pressed: this.pressed,
       dialog: dialogOpen(),
       still: still(),
