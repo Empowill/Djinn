@@ -37,6 +37,12 @@ func WithSeriesIntervals(fn func(cutoff time.Time) []*machinev1.GateInterval) Ha
 	return func(s *service) { s.intervals = fn }
 }
 
+// WithNetwork sets the function telling since when the network is down (the harness's NetworkDownSince); nil while
+// it is up.
+func WithNetwork(fn func() *timestamppb.Timestamp) HandlerOption {
+	return func(s *service) { s.network = fn }
+}
+
 // Handler returns the Connect handler of MachineService on m, and its path prefix. running counts the workers that
 // run now, uses lists what each one uses; nil counts and lists none.
 func Handler(m *Monitor, running func() int, uses func() []*machinev1.WorkerUse, opts ...HandlerOption) (string, http.Handler) {
@@ -56,6 +62,7 @@ type service struct {
 	history   *History
 	workers   func(cutoff time.Time, gateIntervals []*machinev1.GateInterval) []*machinev1.WorkerSeries
 	intervals func(cutoff time.Time) []*machinev1.GateInterval
+	network   func() *timestamppb.Timestamp
 }
 
 func (s *service) Show(
@@ -96,6 +103,9 @@ func (s *service) Show(
 		out.WorkerUses = s.uses()
 	}
 	out.WorkerMeasure = NotMeasured
+	if s.network != nil {
+		out.NetworkDownSince = s.network()
+	}
 	return connect.NewResponse(&machinev1.MachineServiceShowResponse{Machine: out}), nil
 }
 

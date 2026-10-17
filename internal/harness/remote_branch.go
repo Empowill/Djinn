@@ -138,9 +138,11 @@ func pullBranch(ctx context.Context, repo, branch string, fetch bool) (pulled, e
 // when fetch, once a pass; and says why nothing may merge into it when it could not be: it diverged from the remote's,
 // or the person's checkout of it holds changes, the lead told once. Main too, when it is the branch work lands in.
 func (h *Harness) catchUp(ctx context.Context, wish *planv1.Wish, repo, branch string, fetch bool) string {
-	p, err := pullBranch(ctx, repo, branch, fetch && passMemoOf(ctx).fetchDue(repo, branch))
+	// While the network is down, the remote's branch as this repository last saw it (network.go).
+	p, err := pullBranch(ctx, repo, branch, fetch && !h.netHolds() && passMemoOf(ctx).fetchDue(repo, branch))
 	if err != nil {
 		logx.L().Warn("fetch before a merge", "branch", branch, "err", err)
+		h.netSign(planv1.Provider_PROVIDER_UNSPECIFIED, err.Error(), false)
 	}
 	if p.why == "" {
 		return ""

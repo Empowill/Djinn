@@ -376,6 +376,14 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 			h.cut(doing)
 			return nil, pushing.Err()
 		}
+		if held != "" && h.netCheckFailed("push/"+pushKey(wish.GetId(), project.GetId(), branch), sha, held+"\n"+out) {
+			// Not the code's failure: nothing held, no correction; the next push pass once the network is back runs
+			// them again, and only then, red again, they hold the push (network.go).
+			run.clear(ctx)
+			h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push checks of %s at %s failed on the network (%s); "+
+				"Djinn runs them again once it is back, with no correction", branch, short8(sha), headline(held)))
+			return nil, errNetworkDown
+		}
 	}
 	// What the checks found is acted on with no merge landing meanwhile: the branch still at sha, or the checks moot;
 	// a correction of red checks starting only when none repairs the branch (Q39).
@@ -464,6 +472,12 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		h.cut(doing)
 		run.clear(ctx)
 		return nil, pushing.Err()
+	}
+	if err != nil && h.netCheckFailed("git push/"+pushKey(wish.GetId(), project.GetId(), branch), sha, out+"\n"+err.Error()) {
+		run.clear(ctx)
+		h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push of %s to %s failed on the network (%s); Djinn "+
+			"pushes it again once the network is back", branch, remote, headline(lastLine(out))))
+		return nil, errNetworkDown
 	}
 	if err != nil {
 		reason := refusal(out, err)
@@ -1075,6 +1089,9 @@ func logPush(err error, args ...any) {
 		return
 	case errors.Is(err, errMoot):
 		logx.L().Info("push moot", append(append([]any{"loop", "push"}, args...), "err", err)...)
+		return
+	case errors.Is(err, errNetworkDown):
+		logx.L().Info("push waits for the network", append(append([]any{"loop", "push"}, args...), "err", err)...)
 		return
 	}
 	logx.L().Warn("push failed", append(append([]any{"loop", "push"}, args...), "err", err)...)

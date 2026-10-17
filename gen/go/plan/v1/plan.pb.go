@@ -777,6 +777,11 @@ const (
 	// The lead answers it only from a decision the wish already took or from its plan, or revises it to enrich it; a new
 	// choice is the developer's.
 	LeadEventKind_LEAD_EVENT_KIND_ASKED LeadEventKind = 18
+	// The network went down, or came back (W285): one line each, of no wish. Down, Djinn starts no worker, pauses the
+	// running ones between their turns, holds its pushes, fetches and forge calls, and sends the workers the outage cut
+	// back to resume; back, it resumes them one per pass, repairs first, and runs again once the push checks that failed
+	// on the network.
+	LeadEventKind_LEAD_EVENT_KIND_NETWORK LeadEventKind = 19
 )
 
 // Enum value maps for LeadEventKind.
@@ -801,6 +806,7 @@ var (
 		16: "LEAD_EVENT_KIND_HEALTH",
 		17: "LEAD_EVENT_KIND_LANDED",
 		18: "LEAD_EVENT_KIND_ASKED",
+		19: "LEAD_EVENT_KIND_NETWORK",
 	}
 	LeadEventKind_value = map[string]int32{
 		"LEAD_EVENT_KIND_UNSPECIFIED": 0,
@@ -822,6 +828,7 @@ var (
 		"LEAD_EVENT_KIND_HEALTH":      16,
 		"LEAD_EVENT_KIND_LANDED":      17,
 		"LEAD_EVENT_KIND_ASKED":       18,
+		"LEAD_EVENT_KIND_NETWORK":     19,
 	}
 )
 
@@ -6613,7 +6620,7 @@ type TaskRun struct {
 	StartTime *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	// When this run ended; unset while running.
 	EndTime *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
-	// Why this run ended: done, limit, restart, pause, preemption, interrupted, etc.
+	// Why this run ended: done, limit, network, restart, pause, preemption, interrupted, etc.
 	Reason        string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -26130,7 +26137,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16WISH_STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11WISH_STATE_ACTIVE\x10\x01\x12\x15\n" +
 	"\x11WISH_STATE_PAUSED\x10\x02\x12\x16\n" +
-	"\x12WISH_STATE_GRANTED\x10\x03*\xa9\x04\n" +
+	"\x12WISH_STATE_GRANTED\x10\x03*\xc6\x04\n" +
 	"\rLeadEventKind\x12\x1f\n" +
 	"\x1bLEAD_EVENT_KIND_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15LEAD_EVENT_KIND_ENDED\x10\x01\x12\x1a\n" +
@@ -26151,7 +26158,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x14LEAD_EVENT_KIND_WOKE\x10\x0f\x12\x1a\n" +
 	"\x16LEAD_EVENT_KIND_HEALTH\x10\x10\x12\x1a\n" +
 	"\x16LEAD_EVENT_KIND_LANDED\x10\x11\x12\x19\n" +
-	"\x15LEAD_EVENT_KIND_ASKED\x10\x12*\x88\x01\n" +
+	"\x15LEAD_EVENT_KIND_ASKED\x10\x12\x12\x1b\n" +
+	"\x17LEAD_EVENT_KIND_NETWORK\x10\x13*\x88\x01\n" +
 	"\x0eLeadBatchState\x12 \n" +
 	"\x1cLEAD_BATCH_STATE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18LEAD_BATCH_STATE_RUNNING\x10\x01\x12\x19\n" +

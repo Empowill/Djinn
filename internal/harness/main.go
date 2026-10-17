@@ -648,6 +648,7 @@ func (h *Harness) fetchMain(ctx context.Context, wishID, repo, ref string) error
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Run(); err != nil {
+		h.netSign(planv1.Provider_PROVIDER_UNSPECIFIED, out.String(), false)
 		return fmt.Errorf("fetch %s from %s: %s", target, remote, cmp.Or(strings.TrimSpace(out.String()), err.Error()))
 	}
 	tagCmd, cancelTags := gitx.Command(ctx, repo, "fetch", "--tags", remote)

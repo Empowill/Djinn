@@ -410,6 +410,9 @@ func (h *Harness) integratePass(ctx context.Context) {
 		name string
 		run  func(context.Context)
 	}{{"approved pushes", h.pushApproved}, {"push", h.pushPass}, {"main", h.mainPass}, {"moves", h.computedMovesPass}} {
+		if pass.name != "moves" && h.netHolds() {
+			continue // Pushes and fetches wait for the network (network.go).
+		}
 		start := time.Now()
 		pass.run(ctx)
 		logx.Took(slog.LevelDebug, "pass ended", start, "pass", pass.name)
@@ -1333,6 +1336,9 @@ func (h *Harness) mergeAndTest(
 		}
 		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, why, f)
 	}
+	if h.netWaits(commitKey(wish, project), codes(merged)+"@"+old) {
+		return wait("its commit checks failed on the network; Djinn runs them again once it is back")
+	}
 	command, why, out, run, stopped := h.commitChecks(ctx, wish, project, settings, merged, sha, wt, dir, func(c *planv1.ProjectCheck) {
 		// The window shows the check that runs, and since when (TaskIntegration.check).
 		h.settleIntegration(ctx, merged, &planv1.TaskIntegration{
@@ -1343,10 +1349,18 @@ func (h *Harness) mergeAndTest(
 	switch {
 	case stopped != "":
 		return wait(stopped)
+	case why != "" && h.netCheckFailed(commitKey(wish, project), codes(merged)+"@"+old, why+"\n"+out):
+		// Not the code's failure: run again once the network is back, never red nor corrected (network.go).
+		return wait("its commit checks failed on the network (" + headline(why) + "); Djinn runs them again once it is back")
 	case why != "":
 		return red(command, why, out, run)
 	}
 	return sha, nil, "", left
+}
+
+// commitKey names the commit checks of wish's integration branch in project, for netCheckFailed.
+func commitKey(wish *planv1.Wish, project *planv1.Project) string {
+	return "commit/" + wish.GetId() + "/" + project.GetId()
 }
 
 // commitChecks makes the integration worktree wt ready with the setup, then runs the project's commit checks on sha
@@ -2248,6 +2262,9 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 			}
 
 			// (b) PR to main: wish settled, pushed to remote, push checks green, ahead of remote default branch
+			if h.netHolds() {
+				continue // The forge cannot say whether one is open: none would look missing (network.go).
+			}
 			strat, _ := plan.ResolveWishPushStrategy(wish, settings)
 			if strat == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
 				allQuestions = h.azimaPRPass(ctx, wish, project, settings, allQuestions)
@@ -2626,7 +2643,15 @@ func (h *Harness) runCmd(ctx context.Context, dir string, args []string) (string
 	if run == nil {
 		run = runCommand
 	}
-	return run(ctx, dir, args)
+	out, code, err := run(ctx, dir, args)
+	if (err != nil || code != 0) && len(args) > 0 && (args[0] == "gh" || args[0] == "glab") {
+		text := out
+		if err != nil {
+			text += "\n" + err.Error()
+		}
+		h.netSign(planv1.Provider_PROVIDER_UNSPECIFIED, text, false) // "error connecting to api.github.com"
+	}
+	return out, code, err
 }
 
 // queryGhPR queries GitHub via gh for branch's pull request.

@@ -950,6 +950,8 @@
   "status.ifrit_gates.other": "{count} gates held by ifrits",
   "status.live": "Live",
   "status.machine": "Workers {running}/{workers}",
+  "status.network_down": "network down since {time}",
+  "status.network_down_hint": "Djinn starts no worker, pauses the running ones and holds its pushes until the network is back, then resumes them by itself.",
   "status.reconnecting": "Reconnecting to Djinn…",
   "tabs.agents": "For agents",
   "tabs.decisions": "Decisions",

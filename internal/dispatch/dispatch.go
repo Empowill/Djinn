@@ -69,6 +69,40 @@ type Situation struct {
 	// questionCode is the code of a question by its identifier (Q51), for the reason of a task whose dependency waits
 	// on a blocking question; "" when unknown.
 	questionCode func(id string) string
+	// network is what the network allows now (W285); nil: it holds nothing back.
+	network *Network
+}
+
+// Network is what the network allows now (W285).
+type Network struct {
+	// Down says since when the network is down, or that it may be while Djinn probes it: no worker starts then, a
+	// watcher neither. "" when it is up.
+	Down string
+	// OnePerPass: the network is back, and the work the outage stopped resumes one task per pass, so that its workers
+	// do not all call their providers at once; the tasks after it in the order wait their turn. Spent: the harness
+	// resumed a paused worker in this pass already, and no task starts besides.
+	OnePerPass, Spent bool
+}
+
+// WithNetwork tells the situation what the network allows now; nil: nothing holds back.
+func (s *Situation) WithNetwork(n *Network) *Situation {
+	s.network = n
+	return s
+}
+
+// networkHeld says why the network holds back t, which would start: it is down, or back and a task resumed in this
+// pass already; "" when it holds nothing back. A watcher takes no slot: it waits only while the network is down.
+func (s *Situation) networkHeld(t *planv1.Task) string {
+	n := s.network
+	switch {
+	case n == nil:
+		return ""
+	case n.Down != "":
+		return n.Down
+	case n.OnePerPass && n.Spent && !Watcher(t):
+		return "the network is back: Djinn resumes the work it stopped, one task per pass"
+	}
+	return ""
 }
 
 // AncestryChecker tells whether commit a is an ancestor of commit b in projectID:
@@ -262,12 +296,19 @@ func (s *Situation) Pass() []Decision {
 		why, failed := s.Held(t)
 		machine, room, slot := false, false, false
 		if why == "" && failed == "" {
-			var first bool
-			if why, first, slot = s.full(t); why == "" {
-				s.Start(t)
+			if why = s.networkHeld(t); why != "" {
+				machine, room = true, true // djinn task start may start it all the same.
+			} else {
+				var first bool
+				if why, first, slot = s.full(t); why == "" {
+					s.Start(t)
+					if s.network != nil && s.network.OnePerPass && !Watcher(t) {
+						s.network.Spent = true
+					}
+				}
+				room = why != ""
+				machine = room && !first
 			}
-			room = why != ""
-			machine = room && !first
 		}
 		out = append(out, Decision{Task: t, Why: why, Failed: failed, Commit: why != "" && s.awaitsCommit(t),
 			Machine: machine, Room: room, Slot: slot})

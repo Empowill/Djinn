@@ -950,6 +950,8 @@
   "status.ifrit_gates.other": "{count} portes tenues par des ifrits",
   "status.live": "En direct",
   "status.machine": "Workers {running}/{workers}",
+  "status.network_down": "réseau coupé depuis {time}",
+  "status.network_down_hint": "Djinn ne lance aucun worker, met en pause ceux qui tournent et retient ses push jusqu’au retour du réseau, puis reprend tout seul.",
   "status.reconnecting": "Reconnexion à Djinn…",
   "tabs.agents": "Pour les agents",
   "tabs.decisions": "Décisions",
