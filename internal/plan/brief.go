@@ -418,7 +418,10 @@ func leadCommandsBrief(driven bool) string {
 		"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task update <task>` edits what is given in place (not started: everything; running or paused: title only; finished: title, prompt, agent, azima, integration (none clears it, --force if unmerged); never its dependencies once it ran; alias `set-agent`); `djinn task done <task> [--drop] --note " +
 		"\"…\"` closes a task no worker runs (planned, cut short, failed, stopped, imported; unmerged commits queue for merging unless --drop) once its work is done " +
 		"elsewhere, and finishes a lit ifrit, its work integrated; a task no longer useful is cancelled, never marked done: `djinn task cancel <task> --note \"…\"` " +
-		"stops its worker, removes its worktree (its branch stays) and drops its work from integration.\n" +
+		"stops its worker, removes its worktree (its branch stays), drops its work from integration and takes it out of the window's lists; " +
+		"a task you end on purpose (a watcher no longer needed, a task made useless) is cancelled, never left stopped or paused, " +
+		"which the window lists as waiting: `djinn task stop` only for a worker you continue at once (`djinn task continue`, after " +
+		"a provider change for example).\n" +
 		"- `djinn wish route \"<request>\" --wish-id <wish> --ask`: where a request goes, asked to the developer on a " +
 		"card; without `--ask`, the proposal only.\n" +
 		"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\" --icon 🧱`; `djinn block list <wish>`.\n" +
