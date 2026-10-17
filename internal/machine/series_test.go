@@ -233,27 +233,52 @@ func TestSeriesRecorderSelf(t *testing.T) {
 	}
 }
 
-// The Djinn line counts its workers' strays from their second reading on: one just adopted, or gone, never counts
-// what it used before (W253).
-func TestSeriesStrays(t *testing.T) {
+// The Djinn line counts what its work's counters grew by: a scope or a process that ends never takes back what it
+// used, so the line never falls to 0 % when a test run ends (W347). A djinn-*.scope made since the last reading counts
+// all it used; a process first read counts from its next reading.
+func TestSeriesWork(t *testing.T) {
 	fsys := fstest.MapFS{"proc/stat": &fstest.MapFile{Data: []byte("cpu  100 0 0 900 0 0 0 0 0 0\n")}}
 	monitor := NewMonitor(DefaultPolicy(), func() (Snapshot, error) { return Snapshot{Cores: 1, MemoryTotal: 100}, nil })
-	tree := Group{Processes: 1, CPU: time.Second, Memory: 10}
-	rec := NewSeriesRecorder(monitor, func(int, string) (Group, error) { return tree, nil })
+	rec := NewSeriesRecorder(monitor, func(int, string) (Group, error) { t.Error("the tree read beside the work"); return Group{}, nil })
 	rec.SetFS(fsys)
-	strays := map[int]time.Duration{7: 10 * time.Second}
-	rec.ReadStrays(func() (map[int]time.Duration, uint64, error) { return strays, 5, nil })
-
-	rec.Sample()
-	time.Sleep(50 * time.Millisecond)
-	strays = map[int]time.Duration{7: 10*time.Second + 50*time.Millisecond, 8: time.Hour}
-	rec.Sample()
-	pts := rec.Points(time.Time{})
-	last := pts[len(pts)-1]
-	if last.GetDjinnCpuPercent() <= 0 || last.GetDjinnCpuPercent() > 100 {
-		t.Errorf("Djinn CPU %v %%, want stray 7's 50 ms over 50 ms or more, not stray 8's hour", last.GetDjinnCpuPercent())
+	const worker, check = "/a/djinn-W1-1.scope", "/a/djinn-gate-test-2.scope"
+	w := Work{
+		Cgroups: map[string]time.Duration{"/a/app-djinn.scope": time.Second, worker: time.Hour},
+		Procs:   map[int]time.Duration{7: 10 * time.Second},
+		Memory:  15,
 	}
-	if last.GetDjinnMemoryBytes() != 15 {
-		t.Errorf("Djinn memory %d, want the tree's 10 and the strays' 5", last.GetDjinnMemoryBytes())
+	rec.ReadWork(func() (Work, error) { return w, nil })
+	sample := func(next Work) *machinev1.MachinePoint {
+		t.Helper()
+		time.Sleep(100 * time.Millisecond)
+		w = next
+		rec.Sample()
+		pts := rec.Points(time.Time{})
+		return pts[len(pts)-1]
+	}
+	rec.Sample()
+	start := time.Now()
+
+	// The worker's scope ends (its test run with it), a check's scope starts: 20 ms of Djinn's own, 30 ms of the
+	// check's, 10 ms of process 7; process 8, adopted meanwhile, an hour before.
+	p := sample(Work{
+		Cgroups: map[string]time.Duration{"/a/app-djinn.scope": time.Second + 20*time.Millisecond, check: 30 * time.Millisecond},
+		Procs:   map[int]time.Duration{7: 10*time.Second + 10*time.Millisecond, 8: time.Hour},
+		Memory:  20,
+	})
+	if got, most := p.GetDjinnCpuPercent(), 60/float64(time.Since(start).Milliseconds())*100; got <= 0 || got > most+0.1 {
+		t.Errorf("Djinn CPU %v %%, want 60 ms of its work, at most %.1f %%: never the ended scope's hour", got, most)
+	}
+	if p.GetDjinnMemoryBytes() != 20 {
+		t.Errorf("Djinn memory %d, want 20", p.GetDjinnMemoryBytes())
+	}
+
+	// Process 8 counts from its second reading; process 7 ended.
+	p = sample(Work{
+		Cgroups: map[string]time.Duration{"/a/app-djinn.scope": time.Second + 20*time.Millisecond, check: 30 * time.Millisecond},
+		Procs:   map[int]time.Duration{8: time.Hour + 40*time.Millisecond},
+	})
+	if got := p.GetDjinnCpuPercent(); got <= 0 || got > 40.1 {
+		t.Errorf("Djinn CPU %v %%, want process 8's 40 ms over 100 ms or more", got)
 	}
 }

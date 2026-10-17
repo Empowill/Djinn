@@ -73,14 +73,14 @@ func (r *autoRig) want(n djinnv1.LoadNotch) {
 }
 
 // The developer using only Djinn, its workers at full tilt and the window watched: no load outside Djinn, the notch
-// climbs one step every 10 minutes up to the chosen one, never down (W253: it dropped to Minimal).
+// climbs one step every 5 minutes up to the chosen one, never down (W253: it dropped to Minimal).
 func TestAutoDjinnOnlyRaises(t *testing.T) {
 	r := newAutoRig(t, djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, djinnv1.LoadNotch_LOAD_NOTCH_MAX)
-	r.run(10*time.Minute, 99, 96) // below the low mark from the first beat, at 20 s
+	r.run(5*time.Minute, 99, 96) // below the low mark from the first beat, at 20 s
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
 	r.run(20*time.Second, 99, 96)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_HIGH)
-	r.run(10*time.Minute, 100, 97)
+	r.run(5*time.Minute, 100, 97)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MAX)
 	r.run(30*time.Minute, 100, 97)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MAX)
@@ -104,30 +104,31 @@ func TestAutoDjinnOnlyKeeps(t *testing.T) {
 	}
 }
 
-// A build outside Djinn that lasts lowers the notch one step once its minute average stayed 2 minutes above the high
-// mark, then one step every 2 minutes down to Minimal, and no lower.
+// A build outside Djinn that lasts lowers the notch one step once its 3-minute average stayed 3 minutes above the
+// high mark, then one step every 3 minutes down to Minimal, and no lower.
 func TestAutoOutsideBuildLowers(t *testing.T) {
 	r := newAutoRig(t, djinnv1.LoadNotch_LOAD_NOTCH_MAX, djinnv1.LoadNotch_LOAD_NOTCH_MAX)
 	r.run(10*time.Minute, 40, 35)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MAX)
-	r.run(time.Minute, 95, 30) // 65 % outside: the minute average passes 30 % at the second beat, 40 s in
+	// 65 % outside after 5 %: the 3-minute average passes 30 % with the 16th point, at the beat 80 s in.
+	r.run(time.Minute+40*time.Second, 95, 30)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MAX)
 	reason := r.auto.Reason()
 	if reason.GetStep() != djinnv1.LoadAutoStep_LOAD_AUTO_STEP_LOWER || reason.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_HIGH ||
-		reason.GetInSeconds() != 100 || reason.GetWindowSeconds() != 20 || reason.GetOutsidePercent() != 65 {
-		t.Errorf("reason %v, want outside 65 %% for 20 s, down to High in 100 s", reason)
+		reason.GetInSeconds() != 160 || reason.GetWindowSeconds() != 20 || reason.GetOutsidePercent() != 38 {
+		t.Errorf("reason %v, want outside 38 %% for 20 s, down to High in 160 s", reason)
 	}
-	r.run(time.Minute+20*time.Second, 95, 30)
+	r.run(2*time.Minute+20*time.Second, 95, 30)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MAX)
 	r.run(20*time.Second, 95, 30)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_HIGH)
-	r.run(2*time.Minute, 95, 30)
+	r.run(3*time.Minute, 95, 30)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
-	r.run(2*time.Minute, 95, 30)
+	r.run(3*time.Minute, 95, 30)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
 	r.run(10*time.Minute, 95, 30)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
-	want := []time.Duration{12*time.Minute + 40*time.Second, 14*time.Minute + 40*time.Second, 16*time.Minute + 40*time.Second}
+	want := []time.Duration{14*time.Minute + 20*time.Second, 17*time.Minute + 20*time.Second, 20*time.Minute + 20*time.Second}
 	if len(r.steps) != len(want) {
 		t.Fatalf("steps at %v, want %v", r.steps, want)
 	}
@@ -153,41 +154,90 @@ func TestAutoShortSpike(t *testing.T) {
 	}
 }
 
-// Once the outside load is gone, the notch comes back slowly: one step after 10 minutes below the low mark, the next
-// 10 minutes later; a load between the marks holds it, and a spike starts the wait again.
+// Once the outside load is gone, the notch comes back steadily: one step after 5 minutes below the low mark, the next
+// 5 minutes later; a load between the marks holds it, and a spike that keeps the average within 5 points of the low
+// mark does not start the wait again (W347: one beat at 15.1 % threw away 10 minutes).
 func TestAutoSlowRecovery(t *testing.T) {
 	r := newAutoRig(t, djinnv1.LoadNotch_LOAD_NOTCH_MAX, djinnv1.LoadNotch_LOAD_NOTCH_MAX)
-	r.run(7*time.Minute, 90, 10)
+	r.run(10*time.Minute, 90, 10)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
 	r.run(10*time.Minute, 30, 10) // 20 % outside: between the marks
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
 	if s := r.auto.Reason().GetStep(); s != djinnv1.LoadAutoStep_LOAD_AUTO_STEP_HOLD {
 		t.Errorf("step %v between the marks, want HOLD", s)
 	}
-	r.run(5*time.Minute, 50, 45) // 5 % outside: below the low mark from the beat at 40 s
-	r.run(30*time.Second, 80, 45)
-	r.run(10*time.Minute, 50, 45) // the spike held the minute average above 15 % for a minute after it
+	r.run(5*time.Minute, 50, 45)   // 5 % outside: the average below the low mark from the beat at 80 s, 21:20
+	r.run(30*time.Second, 100, 20) // 80 % outside for 30 s: the average at 17.5 %, within 5 points of the mark
+	r.run(20*time.Second, 50, 45)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
 	reason := r.auto.Reason()
-	wait := time.Duration(reason.GetInSeconds()) * time.Second
-	if reason.GetStep() != djinnv1.LoadAutoStep_LOAD_AUTO_STEP_RAISE || reason.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM ||
-		wait <= 0 || wait > 2*time.Minute {
-		t.Errorf("reason %v, want up to Medium within 2 min", reason)
+	if reason.GetStep() != djinnv1.LoadAutoStep_LOAD_AUTO_STEP_HOLD || reason.GetWindowSeconds() != 260 {
+		t.Errorf("reason %v, want held at 18 %%, below for 260 s", reason)
 	}
-	r.run(wait-AutoBeat, 50, 45)
+	// The spike leaves the 3-minute average at 28:20: back under 15 %, past the 5 minutes the wait asks.
+	r.run(2*time.Minute+10*time.Second, 50, 45)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
-	r.run(AutoBeat, 50, 45)
+	r.run(20*time.Second, 50, 45)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
-	r.run(9*time.Minute+40*time.Second, 50, 45)
+	r.run(4*time.Minute+40*time.Second, 50, 45)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
 	r.run(20*time.Second, 50, 45)
 	r.want(djinnv1.LoadNotch_LOAD_NOTCH_HIGH)
+	want := []time.Duration{28*time.Minute + 20*time.Second, 33*time.Minute + 20*time.Second}
+	if got := r.steps[3:]; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("steps up at %v, want %v", got, want)
+	}
+}
+
+// A spike that brings the average 5 points past the low mark starts the wait again; one that keeps the average within
+// 5 points of the high mark does not stop the way down.
+func TestAutoHysteresis(t *testing.T) {
+	r := newAutoRig(t, djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, djinnv1.LoadNotch_LOAD_NOTCH_MAX)
+	r.run(4*time.Minute, 50, 45)  // 5 % outside: below from 20 s
+	r.run(30*time.Second, 100, 0) // every core outside for 30 s: the average at 20.8 % from 4:40, past 20
+	// The spike leaves the average at 7:20, below again: the 5 minutes start there, not at 20 s.
+	r.run(7*time.Minute+30*time.Second, 50, 45)
+	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
+	r.run(20*time.Second, 50, 45)
+	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
+	if at := r.steps[0]; at != 12*time.Minute+20*time.Second {
+		t.Errorf("up at %v, want 12:20", at)
+	}
+
+	r = newAutoRig(t, djinnv1.LoadNotch_LOAD_NOTCH_MAX, djinnv1.LoadNotch_LOAD_NOTCH_MAX)
+	r.run(time.Minute, 50, 10)   // 40 % outside: above from 20 s
+	r.run(4*time.Minute, 50, 23) // 27 % outside: the average falls under 30 % at 3:20, within 5 points of the mark
+	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MAX)
+	if reason := r.auto.Reason(); reason.GetStep() != djinnv1.LoadAutoStep_LOAD_AUTO_STEP_HOLD || reason.GetWindowSeconds() != 280 {
+		t.Errorf("reason %v, want held above the mark for 280 s", reason)
+	}
+	r.run(40*time.Second, 50, 10)
+	r.want(djinnv1.LoadNotch_LOAD_NOTCH_MAX)
+	r.run(20*time.Second, 50, 10) // back past 30 % at 6:00: the 3 minutes are long gone, the step comes at once
+	r.want(djinnv1.LoadNotch_LOAD_NOTCH_HIGH)
+}
+
+// A notch auto stepped to is held AutoHold even if the wait asked of the load is shorter.
+func TestAutoHold(t *testing.T) {
+	r := newAutoRig(t, djinnv1.LoadNotch_LOAD_NOTCH_MAX, djinnv1.LoadNotch_LOAD_NOTCH_MAX)
+	r.run(3*time.Minute+20*time.Second, 90, 10)
+	r.want(djinnv1.LoadNotch_LOAD_NOTCH_HIGH)
+	stepped := r.now
+	r.auto.mu.Lock()
+	r.auto.since = r.now.Add(-time.Hour) // as if the load had been above for an hour
+	r.auto.mu.Unlock()
+	for r.auto.Effective() == djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
+		r.run(AutoBeat, 90, 10)
+	}
+	if held := r.now.Sub(stepped); held != AutoHold {
+		t.Errorf("High held %v, want %v", held, AutoHold)
+	}
 }
 
 // Memory used outside Djinn past its high mark lowers the notch as the CPU does, and the reason names the memory.
 func TestAutoOutsideMemory(t *testing.T) {
 	r := newAutoRig(t, djinnv1.LoadNotch_LOAD_NOTCH_HIGH, djinnv1.LoadNotch_LOAD_NOTCH_MAX)
-	for range 12 * 3 { // 3 minutes, the memory outside Djinn at 75 %
+	for range 12*3 + 4 { // 3 minutes 20 s, the memory outside Djinn at 75 %
 		r.now = r.now.Add(5 * time.Second)
 		r.rec.AddPoint(&machinev1.MachinePoint{
 			Time: timestamppb.New(r.now), CpuPercent: 20, DjinnCpuPercent: 18,

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"path"
 	"runtime"
 	"strconv"
 	"strings"
@@ -36,11 +37,11 @@ type SeriesRecorder struct {
 	readSelf       func() (Group, error) // Djinn's own process alone; nil: not read
 	lastSelfCPU    time.Duration
 	lastSelfAt     time.Time
-	readStrays     func() (map[int]time.Duration, uint64, error) // its workers' processes out of its tree; nil: none
-	lastStrays     map[int]time.Duration
-	cpuRead        bool     // the machine's CPU was read from /proc/stat: the points' CpuPercent is the machine's
-	memoryTotal    uint64   // the machine's memory, as the last sample read it
-	history        *History // nil: the samples are kept in memory only
+	readWork       func() (Work, error) // its work's cgroups and processes (ReadWork); nil: its tree, by readWorker
+	lastWork       *Work                // the last reading of readWork; nil: none yet
+	cpuRead        bool                 // the machine's CPU was read from /proc/stat: the points' CpuPercent is the machine's
+	memoryTotal    uint64               // the machine's memory, as the last sample read it
+	history        *History             // nil: the samples are kept in memory only
 }
 
 // NewSeriesRecorder returns a recorder for machine metrics.
@@ -109,31 +110,26 @@ func (r *SeriesRecorder) Sample() {
 		machineCPU = snap.CPU.Some
 	}
 
-	// 2. Djinn process CPU % and memory: its tree, and its workers' processes adopted out of it (ReadStrays).
+	// 2. Djinn's CPU % and memory: its work's cgroups and processes (ReadWork), else its tree alone.
 	var djinnCPU float64
 	var djinnMem uint64
-	if r.readWorker != nil {
-		if g, err := r.readWorker(os.Getpid(), ""); err == nil {
-			djinnMem = g.Memory
-			var used time.Duration
-			if g.CPU >= r.lastDjinnCPU {
-				used = g.CPU - r.lastDjinnCPU
-			}
-			if r.readStrays != nil {
-				if strays, memory, err := r.readStrays(); err == nil {
-					djinnMem += memory
-					// Each stray from its last reading: one that ended, or was just adopted, counts from the next.
-					for pid, cpu := range strays {
-						if was, ok := r.lastStrays[pid]; ok && cpu > was {
-							used += cpu - was
-						}
-					}
-					r.lastStrays = strays
+	switch {
+	case r.readWork != nil:
+		if w, err := r.readWork(); err == nil {
+			djinnMem = w.Memory
+			if r.lastWork != nil {
+				if d := now.Sub(r.lastDjinnAt); d > 0 {
+					djinnCPU = math.Round(float64(workUsed(*r.lastWork, w))/float64(d)*1000) / 10
 				}
 			}
+			r.lastWork, r.lastDjinnAt = &w, now
+		}
+	case r.readWorker != nil:
+		if g, err := r.readWorker(os.Getpid(), ""); err == nil {
+			djinnMem = g.Memory
 			if !r.lastDjinnAt.IsZero() {
-				if d := now.Sub(r.lastDjinnAt); d > 0 {
-					djinnCPU = math.Round(float64(used)/float64(d)*1000) / 10
+				if d := now.Sub(r.lastDjinnAt); d > 0 && g.CPU >= r.lastDjinnCPU {
+					djinnCPU = math.Round(float64(g.CPU-r.lastDjinnCPU)/float64(d)*1000) / 10
 				}
 			}
 			r.lastDjinnCPU = g.CPU
@@ -198,12 +194,35 @@ func (r *SeriesRecorder) ReadSelf(read func() (Group, error)) {
 	r.readSelf = read
 }
 
-// ReadStrays reads, with read, the processes of Djinn's running workers adopted out of its tree (ReadStrays in djinn
-// up): the Djinn line counts them.
-func (r *SeriesRecorder) ReadStrays(read func() (map[int]time.Duration, uint64, error)) {
+// ReadWork reads Djinn's work with read (ReadWork in djinn up): the Djinn line counts its cgroups and processes in
+// place of its tree.
+func (r *SeriesRecorder) ReadWork(read func() (Work, error)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.readStrays = read
+	r.readWork = read
+}
+
+// workUsed is the CPU time Djinn's work used from the reading last to now. Each counter counts what it grew by; one
+// that ended counts no more, and never takes back what it counted. A djinn-*.scope first read was made since: all it
+// used is new. Any other counter first read (a process just started or adopted, a cgroup Djinn's alone once a program
+// beside it ended) counts from its next reading.
+func workUsed(last, now Work) time.Duration {
+	var used time.Duration
+	for dir, cpu := range now.Cgroups {
+		was, ok := last.Cgroups[dir]
+		switch {
+		case ok && cpu > was:
+			used += cpu - was
+		case !ok && strings.HasPrefix(path.Base(dir), "djinn-"):
+			used += cpu
+		}
+	}
+	for pid, cpu := range now.Procs {
+		if was, ok := last.Procs[pid]; ok && cpu > was {
+			used += cpu - was
+		}
+	}
+	return used
 }
 
 // Keep keeps each sample in h too, the store's series that outlive a restart.

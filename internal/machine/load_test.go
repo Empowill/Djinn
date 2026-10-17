@@ -354,14 +354,14 @@ func TestLoadServiceAuto(t *testing.T) {
 		t.Errorf("saved notch %v, want auto", ReadNotch(home))
 	}
 
-	// A build outside Djinn: one notch down once it stayed 2 minutes above the high mark, from the first beat on,
+	// A build outside Djinn: one notch down once it stayed 3 minutes above the high mark, from the first beat on,
 	// applied to the policy and broadcast.
-	for range 7 {
+	for range 10 {
 		fakeNow = fakeNow.Add(AutoBeat)
 		s.Tick()
 	}
 	if latestPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_HIGH || !latestPolicy.Auto || latestBroadcast != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
-		t.Errorf("after 2 min outside: policy %v auto %v, broadcast %v, want High", latestPolicy.Notch, latestPolicy.Auto, latestBroadcast)
+		t.Errorf("after 3 min outside: policy %v auto %v, broadcast %v, want High", latestPolicy.Notch, latestPolicy.Auto, latestBroadcast)
 	}
 	getRes, err = client.Get(ctx, connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
 	if err != nil {
@@ -370,8 +370,8 @@ func TestLoadServiceAuto(t *testing.T) {
 	reason := getRes.Msg.GetAutoReason()
 	if getRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_HIGH || reason.GetOutsidePercent() != 60 ||
 		reason.GetStep() != djinnv1.LoadAutoStep_LOAD_AUTO_STEP_LOWER || reason.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM ||
-		reason.GetInSeconds() != 120 {
-		t.Errorf("Get in auto: %v, want High, outside 60 %%, down to Medium in 2 min", getRes.Msg)
+		reason.GetInSeconds() != 180 {
+		t.Errorf("Get in auto: %v, want High, outside 60 %%, down to Medium in 3 min", getRes.Msg)
 	}
 	if w := s.snapshot(ctx); w.GetAutoReason().GetOutsidePercent() != 60 {
 		t.Errorf("Watch: reason %v", w.GetAutoReason())

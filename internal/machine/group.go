@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -307,25 +309,28 @@ func ReadWorker(pid int, cgroup string) (Group, error) {
 	return g, listing.err
 }
 
-// ReadStrays reads the processes of the cgroups (the scopes of Djinn's running workers, Scope.Cgroup) that are out of
-// the tree of pid, and those they started: a worker's process whose parent ended is adopted by systemd, outside
-// Djinn's tree, and is still Djinn's work (W253: a worker's 32 busy loops, a load test of its own, and the headless
-// browsers of its end-to-end tests read as load outside Djinn). It gives each one's own CPU time, the children it
-// waited for left out (each is a stray of its own, counted once), from the same listing as ReadWorker, and their
-// resident memory summed.
-func ReadStrays(pid int, cgroups []string) (map[int]time.Duration, uint64, error) {
-	if len(cgroups) == 0 || NotMeasured != "" {
-		return nil, 0, nil
-	}
-	scoped := map[int]bool{}
-	for _, c := range cgroups {
-		pids, _ := CgroupPIDs(c) // Ended meanwhile: none.
-		for _, p := range pids {
-			scoped[p] = true
-		}
-	}
-	if len(scoped) == 0 {
-		return nil, 0, nil
+// Work is what Djinn's work used, read at once (ReadWork): counters that only grow while what they count lives, so
+// that a process or a scope that ends never takes back what it used (W347: when a test run ended, the sum of Djinn's
+// processes fell under its last reading, the Djinn line read 0 % and the next one too little).
+type Work struct {
+	// Cgroups is the CPU time of each cgroup that holds Djinn's work alone, by folder: its workers' and its own
+	// commands' scopes (djinn-*.scope), and its own cgroup when nothing else runs in it. A cgroup counts the
+	// processes it held that ended too: a test binary that exits leaves its time behind.
+	Cgroups map[string]time.Duration
+	// Procs is the CPU time of each process of Djinn's work in none of those cgroups, its own alone: its tree where
+	// its cgroup is shared, and what its work started that moved to a cgroup of its own (a headless browser, W253).
+	Procs map[int]time.Duration
+	// Memory is the resident memory of Djinn's tree, of the processes in its scopes and of what they started.
+	Memory uint64
+}
+
+// ReadWork reads what Djinn's work uses, pid being Djinn's process: the cgroups (v2) that hold it alone, every
+// djinn-*.scope under slice (Scopes.Slice: any Djinn's workers and commands, an end-to-end test's too) and in cgroups
+// (the scopes of its running workers, Scope.Cgroup), and the processes of its work out of them; from the same listing
+// as ReadWorker. Without cgroups, its tree's processes alone.
+func ReadWork(pid int, slice string, cgroups []string) (Work, error) {
+	if NotMeasured != "" {
+		return Work{}, errors.New(NotMeasured)
 	}
 	listing.mu.Lock()
 	defer listing.mu.Unlock()
@@ -333,13 +338,36 @@ func ReadStrays(pid int, cgroups []string) (map[int]time.Duration, uint64, error
 		listing.procs, listing.err = listProcs()
 		listing.at = now
 	}
-	cpu, memory := strays(listing.procs, pid, scoped)
-	return cpu, memory, listing.err
+	return work(os.DirFS("/"), listing.procs, pid, slice, cgroups), listing.err
 }
 
-// strays gives the own CPU time of each process of scoped out of the tree of pid, and of every process they started
-// (a headless browser moves to a scope of its own), and their resident memory summed.
-func strays(procs []proc, pid int, scoped map[int]bool) (map[int]time.Duration, uint64) {
+// work reads, from the file system fsys and the processes procs, what the work of Djinn's process pid uses: ReadWork.
+func work(fsys fs.FS, procs []proc, pid int, slice string, cgroups []string) Work {
+	w := Work{Cgroups: map[string]time.Duration{}, Procs: map[int]time.Duration{}}
+	dirs := slices.Clone(cgroups)
+	if slice != "" {
+		entries, _ := fs.ReadDir(fsys, strings.TrimPrefix(slice, "/")) // No slice: no scope.
+		for _, e := range entries {
+			if e.IsDir() && strings.HasPrefix(e.Name(), "djinn-") && strings.HasSuffix(e.Name(), ".scope") {
+				dirs = append(dirs, path.Join(slice, e.Name()))
+			}
+		}
+	}
+	counted := map[int]bool{} // the processes a cgroup counts
+	scoped := map[int]bool{}  // those in Djinn's scopes, whose children are Djinn's wherever they go
+	for _, dir := range dirs {
+		if _, ok := w.Cgroups[dir]; ok {
+			continue
+		}
+		pids, cpu, err := cgroupCPU(fsys, dir)
+		if err != nil {
+			continue // Not made yet, or ended meanwhile.
+		}
+		w.Cgroups[dir] = cpu
+		for _, p := range pids {
+			counted[p], scoped[p] = true, true
+		}
+	}
 	tree := map[int]bool{}
 	for _, p := range GroupPIDs(procs, pid) {
 		tree[p] = true
@@ -348,27 +376,63 @@ func strays(procs []proc, pid int, scoped map[int]bool) (map[int]time.Duration, 
 	for _, p := range procs {
 		parent[p.pid] = p.ppid
 	}
+	if own := ownCgroup(fsys, pid); own != "" {
+		if _, ok := w.Cgroups[own]; !ok {
+			if pids, cpu, err := cgroupCPU(fsys, own); err == nil && alone(pids, tree, parent, pid) {
+				w.Cgroups[own] = cpu
+				for _, p := range pids {
+					counted[p] = true
+				}
+			}
+		}
+	}
+	// Djinn's work: its tree, and what is in its scopes or descends from them, out of its tree.
 	known := map[int]bool{}
-	var stray func(p, depth int) bool
-	stray = func(p, depth int) bool {
+	var mine func(p, depth int) bool
+	mine = func(p, depth int) bool {
 		if v, ok := known[p]; ok {
 			return v
 		}
-		v := false
-		if !tree[p] {
-			pp, ok := parent[p]
-			v = scoped[p] || ok && pp > 1 && pp != p && depth < 64 && stray(pp, depth+1)
-		}
+		pp, ok := parent[p]
+		v := tree[p] || scoped[p] || ok && pp > 1 && pp != p && depth < 64 && mine(pp, depth+1)
 		known[p] = v
 		return v
 	}
-	cpu := map[int]time.Duration{}
-	var memory uint64
 	for _, p := range procs {
-		if stray(p.pid, 0) {
-			cpu[p.pid] = p.own
-			memory += p.memory
+		if !mine(p.pid, 0) {
+			continue
+		}
+		w.Memory += p.memory
+		if !counted[p.pid] {
+			w.Procs[p.pid] = p.own
 		}
 	}
-	return cpu, memory
+	return w
+}
+
+// alone says whether the processes pids of Djinn's cgroup are all Djinn's: none descends, within the cgroup, from what
+// started Djinn there (the shell of a terminal tab, which ran the developer's editor too). A process in its tree, one
+// started after the listing, and one whose parent ended (adopted out of the cgroup, by systemd) are Djinn's: the
+// cgroup reads as shared only while a program beside Djinn runs in it, and Djinn's processes are then counted one by
+// one.
+func alone(pids []int, tree map[int]bool, parent map[int]int, pid int) bool {
+	in := make(map[int]bool, len(pids))
+	for _, p := range pids {
+		in[p] = true
+	}
+	above := map[int]bool{} // what started Djinn, in its cgroup
+	for p, depth := parent[pid], 0; in[p] && depth < 64; p, depth = parent[p], depth+1 {
+		above[p] = true
+	}
+	for _, p := range pids {
+		if tree[p] || above[p] {
+			continue
+		}
+		for q, depth := p, 0; in[q] && !tree[q] && depth < 64; q, depth = parent[q], depth+1 {
+			if above[q] {
+				return false
+			}
+		}
+	}
+	return len(pids) > 0
 }

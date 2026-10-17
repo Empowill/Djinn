@@ -245,7 +245,8 @@ func runUp(args []string) (restart bool, err error) {
 	if idle > 0 {
 		opts = append(opts, harness.WithIfritIdle(idle))
 	}
-	if scopes := workerScopes(ctx, os.Stderr, workerCPU, policy.WorkerMemory, policy.WorkerMemoryGuard); scopes != nil {
+	scopes := workerScopes(ctx, os.Stderr, workerCPU, policy.WorkerMemory, policy.WorkerMemoryGuard)
+	if scopes != nil {
 		opts = append(opts, harness.WithScopes(scopes))
 	}
 	// The integration of finished work runs its gen, setup and checks under the gates, as djinn gate run does.
@@ -281,8 +282,9 @@ func runUp(args []string) (restart bool, err error) {
 	seriesRec := machine.NewSeriesRecorder(monitor, machine.ReadWorker)
 	seriesRec.Keep(history)
 	seriesRec.ReadSelf(machine.ReadSelf)
-	seriesRec.ReadStrays(func() (map[int]time.Duration, uint64, error) {
-		return machine.ReadStrays(os.Getpid(), workers.Cgroups())
+	// The Djinn line reads the cgroups of its work, every djinn-*.scope of the slice its scopes are made in (W347).
+	seriesRec.ReadWork(func() (machine.Work, error) {
+		return machine.ReadWork(os.Getpid(), scopes.Slice(), workers.Cgroups())
 	})
 	seriesRec.Sample()
 	go func() {

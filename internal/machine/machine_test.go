@@ -94,6 +94,8 @@ func TestPressure(t *testing.T) {
 		want string
 	}{
 		{"calm", Snapshot{Cores: 8, CPU: &Pressure{Some: 10}, Memory: &Pressure{Some: 1}, LoadKnown: true, Load1: 40}, ""},
+		// A go test's bursts of goroutines on 16 cores, the machine half idle: 30 to 57 % (W347) holds nothing.
+		{"test bursts", Snapshot{Cores: 16, CPU: &Pressure{Some: 57}, Memory: &Pressure{}}, ""},
 		{"cpu", Snapshot{Cores: 8, CPU: &Pressure{Some: 70}, Memory: &Pressure{}}, "waited for the CPU 70%"},
 		{"memory", Snapshot{Cores: 8, CPU: &Pressure{}, Memory: &Pressure{Some: 12}}, "waited for memory 12%"},
 		{"macOS critical", Snapshot{Cores: 8, MemoryLevel: 4, MemoryTotal: 16 * GiB}, "critical memory pressure"},
@@ -376,10 +378,10 @@ func TestNotchPolicy(t *testing.T) {
 		load       float64
 		free       float64
 	}{
-		{djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, "minimal", 0.20, 1024 * MiB, 25, 5, 1.0, 0.20},
-		{djinnv1.LoadNotch_LOAD_NOTCH_LIGHT, "medium", 0.50, 512 * MiB, 50, 10, 2.0, 0.10},
-		{djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, "medium", 0.50, 512 * MiB, 50, 10, 2.0, 0.10},
-		{djinnv1.LoadNotch_LOAD_NOTCH_HIGH, "high", 0.80, 384 * MiB, 70, 15, 3.0, 0.05},
+		{djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, "minimal", 0.20, 1024 * MiB, 40, 5, 1.0, 0.20},
+		{djinnv1.LoadNotch_LOAD_NOTCH_LIGHT, "medium", 0.50, 512 * MiB, 65, 10, 2.0, 0.10},
+		{djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, "medium", 0.50, 512 * MiB, 65, 10, 2.0, 0.10},
+		{djinnv1.LoadNotch_LOAD_NOTCH_HIGH, "high", 0.80, 384 * MiB, 80, 15, 3.0, 0.05},
 		{djinnv1.LoadNotch_LOAD_NOTCH_MAX, "max", 1.00, 256 * MiB, 90, 25, 5.0, 0.02},
 		{djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK, "overclock", 1.50, 128 * MiB, 95, 40, 8.0, 0.01},
 	} {

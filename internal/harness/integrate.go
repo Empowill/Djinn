@@ -1718,7 +1718,17 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 		prog, rest, started := lowCommand(args[0], args[1:])
 		args, low = append([]string{prog}, rest...), !started // Not started at its level: set once started.
 	}
-	return runTracked(ctx, dir, args, h.children.tracker("", name+" check"), run.output, low)
+	track := h.children.tracker("", name+" check")
+	if h.scopes != nil {
+		// In a systemd scope of its own, the Djinn line counts all the command uses, its test binaries that end
+		// first too (W347); its tracker stops the whole scope.
+		sc := h.scopes.Plain(name)
+		args = append(slices.Clone(sc.Prefix), args...)
+		if in := track; in != nil && sc.Cgroup != "" {
+			track = func(pid int, _, mark string) func() { return in(pid, sc.Cgroup, mark) }
+		}
+	}
+	return runTracked(ctx, dir, args, track, run.output, low)
 }
 
 // gateWaitKey is the context key of a function told why a command waits for its gate ("gate install: held by …"), and

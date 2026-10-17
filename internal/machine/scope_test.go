@@ -79,6 +79,18 @@ func TestScopePrefix(t *testing.T) {
 	if !slices.Equal(e.Prefix, want) {
 		t.Errorf("NewWithMemory 0 prefix = %q, want %q", e.Prefix, want)
 	}
+	// A push check Djinn runs: a djinn-gate-* scope beside the workers', never capped as they are (W347).
+	g := s.Plain("test")
+	want = []string{"systemd-run", "--user", "--scope", "--quiet", "--collect", "--unit=" + g.Unit, "--"}
+	if !regexp.MustCompile(`^djinn-gate-test-[0-9a-f]{8}\.scope$`).MatchString(g.Unit) || !slices.Equal(g.Prefix, want) {
+		t.Errorf("gate scope %q, prefix %q", g.Unit, g.Prefix)
+	}
+	if want := "/sys/fs/cgroup/" + s.slice; s.Slice() != want || g.Cgroup != want+"/"+g.Unit {
+		t.Errorf("slice %q, gate cgroup %q", s.Slice(), g.Cgroup)
+	}
+	if (*Scopes)(nil).Slice() != "" {
+		t.Error("no scopes, yet a slice")
+	}
 	if u := scopeUnit("a b/\u00e9", "0a1b2c3d"); u != "djinn-a_b__-0a1b2c3d.scope" {
 		t.Errorf("scopeUnit = %q", u)
 	}

@@ -10,18 +10,25 @@ import (
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 )
 
-// The auto mode's pace (W253). Once a beat it reads the load outside Djinn, averaged over the last AutoSmooth of
-// what the Hourglass already measured, and steps one notch at a time: down once that average stayed above its high
-// mark for AutoDownAfter, up once it stayed below its low marks for AutoUpAfter. Each step starts the wait again.
+// The auto mode's pace (W253, calmed by W347). Once a beat it reads the load outside Djinn, averaged over the last
+// AutoSmooth of what the Hourglass already measured, and steps one notch at a time: down once that average stayed above
+// its high mark for AutoDownAfter, up once it stayed below its low marks for AutoUpAfter. A side once reached is left
+// only AutoHysteresis points past its mark, each step starts the wait again, and a notch is held at least AutoHold.
 const (
 	// AutoBeat is how often auto mode reads the outside load and decides; never faster.
 	AutoBeat = 20 * time.Second
-	// AutoSmooth is the span of the moving average a beat reads: a dip of a few seconds in a build does not break it.
-	AutoSmooth = time.Minute
+	// AutoSmooth is the span of the moving average a beat reads: a test run's bursts of a minute do not break it.
+	AutoSmooth = 3 * time.Minute
 	// AutoDownAfter is how long the outside load stays above the high mark before auto lowers a notch.
-	AutoDownAfter = 2 * time.Minute
+	AutoDownAfter = 3 * time.Minute
 	// AutoUpAfter is how long the outside load stays below the low marks before auto raises a notch.
-	AutoUpAfter = 10 * time.Minute
+	AutoUpAfter = 5 * time.Minute
+	// AutoHold is the least time auto mode keeps a notch it stepped to, whatever the load does.
+	AutoHold = 3 * time.Minute
+	// AutoHysteresis is how far past a mark, in points of the machine, the load goes before it leaves the side it
+	// reached: below 15 % it climbs, and only above 20 % does the wait start again; above 30 % it lowers, and only
+	// below 25 % does that wait start again. A beat at 15.1 % no longer throws away minutes of calm (W347).
+	AutoHysteresis = 5.0
 )
 
 // AutoMarks are the outside loads, in percent of the machine, that auto mode steps at: above a high mark it lowers,
@@ -101,8 +108,10 @@ const (
 //
 // Once a beat (Tick, every AutoBeat) it reads the outside load's moving average over AutoSmooth. It lowers one notch
 // when that average stayed above a high mark for AutoDownAfter, raises one when it stayed below every low mark for
-// AutoUpAfter, and each step starts the wait again: never more than one step a beat, a short spike moves nothing, and
-// it comes back slowly. Lowering lowers the CPU priority and starts no new worker, never pausing a running one
+// AutoUpAfter, and each step starts the wait again: never more than one step a beat nor a notch held less than
+// AutoHold, a short spike moves nothing, and it comes back steadily. The wait goes on while the load stays within
+// AutoHysteresis of the mark it passed, and the step comes once it is past the mark again: a load that hovers about a
+// mark starts no wait again. Lowering lowers the CPU priority and starts no new worker, never pausing a running one
 // (Decision Q124 (C)). The lead hears nothing of it: the bar shows why (Reason).
 type AutoController struct {
 	mu        sync.Mutex
@@ -112,6 +121,8 @@ type AutoController struct {
 	load      Outside   // the outside load the last beat read
 	side      autoSide  // where it stands against the marks
 	since     time.Time // the beat it came to that side, or the last step
+	past      bool      // the load is past the mark of its side, not only within AutoHysteresis of it
+	stepped   time.Time // the last step; zero: none since auto mode started
 	reason    *djinnv1.LoadAutoReason
 	marks     AutoMarks
 	clock     func() time.Time
@@ -181,6 +192,9 @@ func (c *AutoController) SetNotch(notch djinnv1.LoadNotch) (effective djinnv1.Lo
 
 	old := c.effective
 	if notch == djinnv1.LoadNotch_LOAD_NOTCH_AUTO {
+		if !c.isAuto {
+			c.stepped = time.Time{}
+		}
 		c.isAuto = true
 		if NotchIndex(c.chosen) < 0 {
 			c.chosen = djinnv1.LoadNotch_LOAD_NOTCH_MAX
@@ -227,39 +241,58 @@ func (c *AutoController) Tick() (bool, djinnv1.LoadNotch) {
 	return changed, eff
 }
 
-// sample reads the outside load's moving average, and notes when it came to its side of the marks.
+// sample reads the outside load's moving average, and notes when it came to its side of the marks. A side once
+// reached is kept until the load goes AutoHysteresis points back past its mark; past says whether it is past the mark
+// itself, where a step may come.
 func (c *AutoController) sample(now time.Time) {
-	side := sideUnknown
+	side, past := sideUnknown, false
 	c.load = Outside{}
 	if c.source != nil {
 		if o, ok := c.source(now.Add(-AutoSmooth)); ok && (o.CPUKnown || o.MemoryKnown) {
 			c.load = o
 			switch {
-			case c.high(o):
-				side = sideAbove
-			case c.low(o):
-				side = sideBelow
+			case c.high(o, c.slack(sideAbove)):
+				side, past = sideAbove, c.high(o, 0)
+			case c.low(o, c.slack(sideBelow)):
+				side, past = sideBelow, c.low(o, 0)
 			default:
 				side = sideBetween
 			}
 		}
 	}
+	c.past = past
 	if side != c.side || c.since.IsZero() {
 		c.side, c.since = side, now
 	}
 }
 
-// cpuHigh says whether the CPU outside Djinn is measured and above its high mark.
-func (c *AutoController) cpuHigh(o Outside) bool { return o.CPUKnown && o.CPU > c.marks.CPUHigh }
-
-// high says whether a load outside Djinn is above its high mark.
-func (c *AutoController) high(o Outside) bool {
-	return c.cpuHigh(o) || o.MemoryKnown && o.Memory > c.marks.MemoryHigh
+// slack is how far back past its mark the load may come and keep to the side s: AutoHysteresis where it stands, none
+// on the other sides.
+func (c *AutoController) slack(s autoSide) float64 {
+	if c.side == s {
+		return AutoHysteresis
+	}
+	return 0
 }
 
-// low says whether every load measured is below its low mark.
-func (c *AutoController) low(o Outside) bool {
-	return (!o.CPUKnown || o.CPU < c.marks.CPULow) && (!o.MemoryKnown || o.Memory < c.marks.MemoryLow)
+// cpuHigh says whether the CPU outside Djinn is measured and above its high mark less slack.
+func (c *AutoController) cpuHigh(o Outside, slack float64) bool {
+	return o.CPUKnown && o.CPU > c.marks.CPUHigh-slack
+}
+
+// high says whether a load outside Djinn is above its high mark less slack.
+func (c *AutoController) high(o Outside, slack float64) bool {
+	return c.cpuHigh(o, slack) || o.MemoryKnown && o.Memory > c.marks.MemoryHigh-slack
+}
+
+// cpuLow says whether the CPU outside Djinn is unmeasured or below its low mark plus slack.
+func (c *AutoController) cpuLow(o Outside, slack float64) bool {
+	return !o.CPUKnown || o.CPU < c.marks.CPULow+slack
+}
+
+// low says whether every load measured is below its low mark plus slack.
+func (c *AutoController) low(o Outside, slack float64) bool {
+	return c.cpuLow(o, slack) && (!o.MemoryKnown || o.Memory < c.marks.MemoryLow+slack)
 }
 
 // ceiling is the index of the chosen notch, Max when none is.
@@ -283,13 +316,24 @@ func (c *AutoController) next() (djinnv1.LoadNotch, time.Duration, bool) {
 	return c.effective, 0, false
 }
 
-// step moves the notch one way once the load stayed long enough on a side of the marks; the wait starts again.
+// wait is how long the load must still stay on its side before the step it leads to: what remains of after, and of
+// AutoHold since the last step.
+func (c *AutoController) wait(now time.Time, after time.Duration) time.Duration {
+	left := after - now.Sub(c.since)
+	if !c.stepped.IsZero() {
+		left = max(left, AutoHold-now.Sub(c.stepped))
+	}
+	return max(left, 0)
+}
+
+// step moves the notch one way once the load stayed long enough on a side of the marks and is past the mark now, and
+// the notch was held AutoHold; the wait starts again.
 func (c *AutoController) step(now time.Time) bool {
 	n, after, ok := c.next()
-	if !ok || now.Sub(c.since) < after {
+	if !ok || !c.past || c.wait(now, after) > 0 {
 		return false
 	}
-	c.effective, c.since = n, now
+	c.effective, c.since, c.stepped = n, now, now
 	return true
 }
 
@@ -301,6 +345,9 @@ func (c *AutoController) explain(now time.Time) *djinnv1.LoadAutoReason {
 	}
 	n, after, ok := c.next()
 	switch {
+	case ok && !c.past:
+		// Back within AutoHysteresis of the mark: the wait goes on, no step until the load passes the mark again.
+		ok = false
 	case ok && c.side == sideAbove:
 		r.Step, r.Notch = djinnv1.LoadAutoStep_LOAD_AUTO_STEP_LOWER, n
 	case ok:
@@ -312,18 +359,18 @@ func (c *AutoController) explain(now time.Time) *djinnv1.LoadAutoReason {
 	}
 	stayed := now.Sub(c.since)
 	if ok {
-		r.InSeconds = seconds(max(after-stayed, 0))
+		r.InSeconds = seconds(c.wait(now, after))
 	}
 	// Memory is shown where it decides: above its high mark while the CPU is not, below its low mark with no CPU
 	// read, between the marks while the CPU is below its own.
 	o := c.load
 	switch c.side {
 	case sideAbove:
-		r.Memory = !c.cpuHigh(o)
+		r.Memory = !c.cpuHigh(o, AutoHysteresis)
 	case sideBelow:
 		r.Memory = !o.CPUKnown
 	default:
-		r.Memory = !o.CPUKnown || o.CPU < c.marks.CPULow
+		r.Memory = c.cpuLow(o, 0)
 	}
 	if r.Memory {
 		r.OutsidePercent = math.Round(o.Memory)

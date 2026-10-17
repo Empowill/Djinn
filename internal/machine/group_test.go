@@ -2,6 +2,7 @@ package machine
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"runtime"
 	"slices"
@@ -120,29 +121,67 @@ func TestNotMeasured(t *testing.T) {
 	}
 }
 
-// A worker's processes adopted out of Djinn's tree are Djinn's, and so are those they started in another cgroup (a
-// headless browser's scope); what is in Djinn's tree, or in no worker's scope, is not a stray (W253).
-func TestStrays(t *testing.T) {
+// Djinn's work is read from the cgroups that hold it alone: every djinn-*.scope of the slice (its workers' and its
+// commands', an ended process's time kept), its own cgroup when nothing else runs in it; and, one by one, the
+// processes of its work out of them: what a worker started that moved to a scope of its own. The developer's
+// browser is not Djinn's (W347).
+func TestWork(t *testing.T) {
+	const slice = "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice"
+	cg := func(fsys fstest.MapFS, unit, procs string, usec int) {
+		dir := slice[1:] + "/" + unit
+		fsys[dir+"/cgroup.procs"] = &fstest.MapFile{Data: []byte(procs)}
+		fsys[dir+"/cpu.stat"] = &fstest.MapFile{Data: []byte(fmt.Sprintf("usage_usec %d\nuser_usec 0\n", usec))}
+	}
+	fsys := fstest.MapFS{"proc/100/cgroup": {Data: []byte("0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-djinn-90.scope\n")}}
+	// The launcher, djinn up and its window; 700 a process of its window's whose parent ended, adopted by systemd; 800
+	// started after the listing.
+	cg(fsys, "app-gnome-djinn-90.scope", "90\n100\n110\n700\n800\n", 9_000_000)
+	cg(fsys, "djinn-W1-0a1b2c3d.scope", "200\n300\n", 20_000_000)            // a worker and its loop, adopted by systemd
+	cg(fsys, "djinn-gate-test-1a2b3c4d.scope", "500\n", 50_000_000)          // a push check: its ended test binaries too
+	cg(fsys, "app-org.chromium.Chromium-301.scope", "301\n302\n", 7_000_000) // the browser the worker's e2e started
+	cg(fsys, "app-firefox-400.scope", "400\n", 11_000_000)                   // the developer's browser
 	procs := []proc{
-		{pid: 100, ppid: 1, pgrp: 100, own: time.Second, memory: 1},        // djinn up
-		{pid: 200, ppid: 100, pgrp: 200, own: 2 * time.Second, memory: 2},  // a worker, in its scope
-		{pid: 300, ppid: 8, pgrp: 300, own: 3 * time.Second, memory: 4},    // its loop, adopted by systemd
-		{pid: 301, ppid: 300, pgrp: 300, own: 5 * time.Second, memory: 8},  // what the loop started, elsewhere
-		{pid: 302, ppid: 301, pgrp: 300, own: 7 * time.Second, memory: 16}, // and below it
-		{pid: 400, ppid: 8, pgrp: 400, own: 11 * time.Second, memory: 32},  // the developer's browser
+		{pid: 90, ppid: 1, pgrp: 90, own: time.Second, memory: 1},
+		{pid: 100, ppid: 90, pgrp: 100, own: time.Second, memory: 2},
+		{pid: 110, ppid: 100, pgrp: 100, own: time.Second, memory: 4},
+		{pid: 200, ppid: 100, pgrp: 200, own: 2 * time.Second, memory: 8},
+		{pid: 300, ppid: 8, pgrp: 300, own: 3 * time.Second, memory: 16},
+		{pid: 301, ppid: 300, pgrp: 300, own: 5 * time.Second, memory: 32},
+		{pid: 302, ppid: 301, pgrp: 300, own: 7 * time.Second, memory: 64},
+		{pid: 400, ppid: 8, pgrp: 400, own: 11 * time.Second, memory: 128},
+		{pid: 500, ppid: 100, pgrp: 500, own: 13 * time.Second, memory: 256},
+		{pid: 700, ppid: 8, pgrp: 110, own: 19 * time.Second, memory: 1024},
 	}
-	scoped := map[int]bool{200: true, 300: true}
-	cpu, memory := strays(procs, 100, scoped)
-	want := map[int]time.Duration{300: 3 * time.Second, 301: 5 * time.Second, 302: 7 * time.Second}
-	if len(cpu) != len(want) {
-		t.Fatalf("strays %v, want %v", cpu, want)
+	w := work(fsys, procs, 100, slice, []string{slice + "/djinn-W1-0a1b2c3d.scope"})
+	want := map[string]time.Duration{
+		slice + "/app-gnome-djinn-90.scope":       9 * time.Second,
+		slice + "/djinn-W1-0a1b2c3d.scope":        20 * time.Second,
+		slice + "/djinn-gate-test-1a2b3c4d.scope": 50 * time.Second,
 	}
-	for pid, d := range want {
-		if cpu[pid] != d {
-			t.Errorf("stray %d: %v, want %v", pid, cpu[pid], d)
-		}
+	if !maps.Equal(w.Cgroups, want) {
+		t.Errorf("cgroups %v, want %v", w.Cgroups, want)
 	}
-	if memory != 28 {
-		t.Errorf("memory %d, want 28", memory)
+	if want := map[int]time.Duration{301: 5 * time.Second, 302: 7 * time.Second}; !maps.Equal(w.Procs, want) {
+		t.Errorf("processes %v, want %v", w.Procs, want)
+	}
+	if w.Memory != 2+4+8+16+32+64+256 {
+		t.Errorf("memory %d, want all but the launcher's and the developer's browser", w.Memory)
+	}
+
+	// A terminal's cgroup, shared with the developer's editor: Djinn's processes there are read one by one.
+	cg(fsys, "app-gnome-djinn-90.scope", "90\n100\n110\n600\n", 9_000_000)
+	procs = append(procs, proc{pid: 600, ppid: 90, pgrp: 600, own: 17 * time.Second, memory: 512})
+	w = work(fsys, procs, 100, slice, nil)
+	if _, ok := w.Cgroups[slice+"/app-gnome-djinn-90.scope"]; ok || len(w.Cgroups) != 2 {
+		t.Errorf("cgroups %v, want the two scopes alone", w.Cgroups)
+	}
+	if w.Procs[100] != time.Second || w.Procs[110] != time.Second || len(w.Procs) != 4 {
+		t.Errorf("processes %v, want djinn up, its window, and the browser's two", w.Procs)
+	}
+
+	// No cgroup at all (macOS): its tree, process by process.
+	w = work(fstest.MapFS{}, procs, 100, "", nil)
+	if len(w.Cgroups) != 0 || len(w.Procs) != 4 || w.Procs[500] != 13*time.Second {
+		t.Errorf("without cgroups: %v %v, want djinn up, its window, the worker and the check", w.Cgroups, w.Procs)
 	}
 }
