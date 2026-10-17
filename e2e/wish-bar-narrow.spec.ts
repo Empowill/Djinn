@@ -1,6 +1,6 @@
 // The wish bar under 820px wide: the CSS narrows it to its icons, the wish unfolded, and hides an active wish's second
-// line; its icon, which leaves the raised hand to the question count on that line, gives way to the hand, as on the
-// folded rail. Wider, the hand stays hidden and the count says it.
+// line and its state's icon; the wish's own icon shows, as on the folded rail (L09 v6), with the small hand and the
+// questions' count on its corner. Wider, the hand stays hidden and the count says it on the second line.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -21,7 +21,7 @@ function djinn(...args: string[]): string {
   });
 }
 
-test("under 820px wide, an active wish with open questions shows the raised hand", async ({
+test("under 820px wide, an active wish with open questions shows its icon and the small hand", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -35,32 +35,29 @@ test("under 820px wide, an active wish with open questions shows the raised hand
     await page.setViewportSize({ width: 1200, height: 800 });
     await page.goto(process.env.DJINN_URL!);
     const row = page.locator(`.wish-list .wish-nav[title*="${title}"]`);
-    const icon = row.locator(".wish-tone");
-    const hand = icon.locator(".wish-hand");
+    const tone = row.locator(".wish-tone");
+    const icon = row.locator(".wish-emblem");
+    const hand = icon.locator(".wish-hand-corner");
     const count = row.locator(".wish-counts .count-pill.tone-waiting");
 
     // Wide: the count says the question on the second line; the hand stays hidden.
     await expect(count).toBeVisible();
     await expect(count).toHaveText("1");
     await expect(hand).toBeHidden();
+    await expect(tone).toBeVisible();
 
     for (const theme of ["light", "dark"] as const) {
       await page.evaluate((v) => {
         document.documentElement.dataset.theme = v;
       }, theme);
       await page.setViewportSize({ width: 800, height: 800 });
-      // Narrow: the second line hides, the hand takes the icon's place, in the questions' colour.
+      // Narrow: the second line and the state's icon hide; the wish's mark shows, the hand and its count on its corner.
       await expect(row.locator(".wish-counts")).toBeHidden();
+      await expect(tone).toBeHidden();
+      await expect(icon.locator("svg.wish-mark")).toBeVisible();
       await expect(hand).toBeVisible();
-      await expect(hand.locator("svg.lucide-hand")).toBeVisible();
-      expect(
-        await icon.evaluate(
-          (el) =>
-            [...el.children].filter(
-              (c) => getComputedStyle(c).display !== "none",
-            ).length,
-        ),
-      ).toBe(1);
+      await expect(hand.locator("svg.waiting-hand")).toBeVisible();
+      await expect(hand).toHaveText("1");
       await page.locator(".sidebar").screenshot({
         path: `test-results/e2e/wish-bar-narrow-${theme}.png`,
       });

@@ -113,3 +113,46 @@ export function CountPill({
     </span>
   );
 }
+
+// The marks on a wish's icon in the menu (L09 v6), without background: a small hand, in the colour of what waits for
+// you, for the questions that wait; the logo's flame, in two tones of the ifrit's vermilion, for a lit ifrit. A halo of
+// the row's colour keeps each apart from the icon (wish.css).
+export function WaitingHand() {
+  return (
+    <svg
+      className="lucide waiting-hand"
+      viewBox="0 0 24 24"
+      width="12"
+      height="12"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <rect x="7" y="5" width="3" height="10" rx="1.5" />
+      <rect x="10.6" y="2.5" width="3" height="11" rx="1.5" />
+      <rect x="14.2" y="3.5" width="3" height="11" rx="1.5" />
+      <rect x="17.8" y="6.5" width="3" height="9" rx="1.5" />
+      <path d="M7 12h13.8v3.5c0 4-3 7-7 7h-1c-2.6 0-4.4-1.4-5.6-3.6L3 13.4a1.7 1.7 0 0 1 2.7-2L7 13Z" />
+    </svg>
+  );
+}
+
+export function IfritFlame() {
+  return (
+    <svg
+      className="lucide ifrit-flame"
+      viewBox="0 0 24 24"
+      width="13"
+      height="14"
+      aria-hidden="true"
+    >
+      <path
+        className="ifrit-flame-out"
+        d="M12 1C19 7.5 18.5 16 12 23 5.5 16 5 7.5 12 1Z"
+      />
+      <path
+        className="ifrit-flame-core"
+        d="M12 8.5c3 3.6 2.6 7.8 0 11.2-2.6-3.4-3-7.6 0-11.2Z"
+      />
+    </svg>
+  );
+}

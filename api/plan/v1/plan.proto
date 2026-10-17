@@ -540,6 +540,9 @@ message Wish {
   // (djinn wish reorder). A wish paused or granted comes first in its list; one set aside before Djinn recorded places
   // has none, and comes after the others, the oldest first. 0 for an active wish.
   int32 place = 22;
+  // Its icon in the window's menu: a name of the bank of wish icons (djinn wish icons), which the Djinn chooses for
+  // its subject (djinn wish icon). Empty until then: the window draws the wish's mark, grey.
+  string icon = 23;
 }
 
 // PushMode is how Djinn pushes a wish's integration branch to its remote once a push is due.
@@ -3383,6 +3386,18 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Set a wish's icon in the window's menu, in place of what it had: a name of the bank (djinn wish icons) that says
+  // its subject. An empty name takes it back to its mark.
+  rpc Icon(WishServiceIconRequest) returns (WishServiceIconResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // List the bank of wish icons a wish's icon is chosen from, family by family: each name with its words in English
+  // and in French. --search keeps the icons whose name, family or words hold every word given, in either language.
+  rpc Icons(WishServiceIconsRequest) returns (WishServiceIconsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // Add a project to a wish, by its name or identifier: the wish then works in it as in the projects it was made
   // with. Its tasks may spawn there, and its finished work goes to the branch the project's checkout is on, as when a
   // wish is made. A project already in the wish, or unknown, is refused. Removing a project is not possible.
@@ -3953,6 +3968,44 @@ message WishServiceRenameRequest {
 message WishServiceRenameResponse {
   // The wish, with its new title.
   Wish wish = 1;
+}
+
+message WishServiceIconRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The icon's name in the bank, like lamp or wifi-off; empty takes the wish back to its mark.
+  string name = 2 [(buf.validate.field).string.max_len = 64];
+}
+
+message WishServiceIconResponse {
+  // The wish, with its icon.
+  Wish wish = 1;
+}
+
+message WishServiceIconsRequest {
+  // Words to look for, in English or in French, like "theme" or "export": the icons that hold all of them. Empty
+  // lists the whole bank.
+  string search = 1 [(buf.validate.field).string.max_len = 200];
+}
+
+message WishServiceIconsResponse {
+  // The icons found, in the bank's order.
+  repeated WishIcon icons = 1;
+}
+
+// WishIcon is an icon of the bank a wish's icon is chosen from.
+message WishIcon {
+  // Its name, which Wish.icon takes.
+  string name = 1;
+  // Its family: Screen, Data, Network, Security, People, Build, World, Nature, Things, Writing, Value or Tales.
+  string family = 2;
+  // The words a search reads in English.
+  string words = 3;
+  // The words a search reads in French.
+  string words_fr = 4;
 }
 
 message WishServiceAddProjectRequest {

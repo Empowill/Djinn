@@ -216,7 +216,8 @@ test("sidebar collapse glides, keeps focus, and persists", async ({ page }) => {
     await expect(sidebarContent).toHaveCSS("opacity", "1");
     expect(await sidebarContent.locator(".new-mission > span").count()).toBe(0);
     await expect(row).toBeVisible();
-    await expect(row.locator(".wish-tone")).toBeVisible();
+    await expect(row.locator(".wish-emblem svg.wish-icon")).toBeVisible();
+    await expect(row.locator(".wish-tone")).toHaveCount(0);
 
     await expect
       .poll(() =>

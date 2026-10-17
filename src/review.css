@@ -17,6 +17,16 @@
   --st-human: #e9c15c;
   --st-proof: #43c29f;
   --st-ifrit: #ff6a2b;
+  /* The ifrit's flame on a wish's icon in the menu, its heart: the logo's flame in two tones of vermilion. */
+  --ifrit-core: #ffd2a8;
+  /* The wish icons' colours (L09 v6), from the logo: the seal's emerald, the flame's saffron, the ticks' mint, and the
+     wish title's ink. Each icon of the bank takes a duo (.wish-duo-*), its line's colour then its gilding's; never the
+     lamp's gold, the ifrit's vermilion or the activity dots' blue and violet, which stay to their signs. Each reads at
+     3:1 at least on the menu, at rest and selected (tests/styles.test.cjs). */
+  --wi-emerald: #43c29f;
+  --wi-saffron: #f0b24a;
+  --wi-mint: #74d4b8;
+  --wi-ink: var(--n-de);
   --lamp: #e2b33c;
   --lamp-hi: #f3d276;
   --lamp-lo: #d29f25;
@@ -52,6 +62,10 @@ html[data-theme="light"] {
   --st-human: #805c00;
   --st-proof: #146b5a;
   --st-ifrit: #a63c00;
+  --ifrit-core: #f6b58a;
+  --wi-emerald: #146b5a;
+  --wi-saffron: #b26b00;
+  --wi-mint: #238773;
   --lamp: #dcaa2e;
   --lamp-hi: #f1d071;
   --lamp-lo: #d4a020;
@@ -118,6 +132,36 @@ html[data-theme="light"] {
 }
 .tone-accent {
   --tone: var(--accent);
+}
+/* The wish icons' duos (wish-icon.tsx): the line's colour, then the gilding's. S the seal, emerald and saffron; L the
+   lamp, saffron and emerald; E ink and saffron; M ink and mint. A mark without an icon is grey, darker selected. */
+.wish-duo-s {
+  --il-line: var(--wi-emerald);
+  --il-gild: var(--wi-saffron);
+}
+.wish-duo-l {
+  --il-line: var(--wi-saffron);
+  --il-gild: var(--wi-emerald);
+}
+.wish-duo-e {
+  --il-line: var(--wi-ink);
+  --il-gild: var(--wi-saffron);
+}
+.wish-duo-m {
+  --il-line: var(--wi-ink);
+  --il-gild: var(--wi-mint);
+}
+.wish-icon-line {
+  color: var(--il-line);
+}
+.wish-icon-gild {
+  color: var(--il-gild);
+}
+.wish-mark {
+  color: var(--n-9c);
+}
+.mission-nav.selected .wish-mark {
+  color: var(--n-de);
 }
 .status-badge,
 .count-pill {
@@ -2136,6 +2180,13 @@ html[data-theme="light"] ::selection {
 }
 html[data-theme="light"] .sidebar {
   background: #f0f0f3;
+}
+html[data-theme="light"] .wish-emblem {
+  --halo: #f0f0f3;
+}
+html[data-theme="light"] .mission-nav.selected .wish-emblem,
+html[data-theme="light"] .nav-item.selected .wish-emblem {
+  --halo: #e3e3e8;
 }
 html[data-theme="light"] .mission-nav,
 html[data-theme="light"] .import-nav,
