@@ -19,15 +19,18 @@ to come together somewhere before anyone else sees it:
   the result. See [Merges and corrections](#merges-and-corrections).
 - **One push for many tasks.** Djinn pushes the branch, not each worker's: one CI run per push instead of one per
   worker. See [Push](#push).
-- **Your checkout stays yours.** Djinn merges in a worktree of its own, never in your folder.
+- **Your copy stays yours.** Djinn merges in a worktree of its own, never in your folder, and no worker starts from
+  what your copy has checked out, nor from its changes not committed.
 
 ## Which branch it is
 
-When you make a wish, Djinn records, in each Git project of the wish, the branch your checkout is on: if you were on
-feat/invoices, the wish's work lands in feat/invoices. A project added to the wish later gets its branch the same way.
+When you make a wish, Djinn records, in each Git project of the wish, the project's reference branch, main by default
+(see [Project and settings](#project-and-settings)): whatever your copy has checked out, feat/invoices or anything else,
+the wish's work lands in main until you choose another branch. A project added to the wish later gets its branch the
+same way.
 
-When the checkout was on no branch at that moment, the wish has none yet: the first merge takes the branch the checkout
-is on then. If it is still on no branch, the work waits, saying so, until you name one.
+When Djinn finds no reference branch at that moment, the wish has none yet: the first merge takes the reference branch
+then. If there is still none, the work waits, saying so, until you name one.
 
 ### The chip at the top of the wish
 
@@ -54,13 +57,13 @@ branch, shown on its card. See [Push strategy](#push-strategy).
 
 You can also ask the Djinn to change it, in its terminal or with **Write to the Djinn**.
 
-> **Example.** You make the wish "Let customers export their invoices as PDF" while your checkout of app is on main.
+> **Example.** You make the wish "Let customers export their invoices as PDF" in app, whose reference branch is main.
 > Before the first task ends, you open the chip, type feat/invoice-pdf, and pick **New branch feat/invoice-pdf from
 > main**. Every task's work now lands there, checked, and Djinn pushes it there, never to main.
 
 ## Main is a branch like any other
 
-The integration branch is whatever branch your checkout was on, main included. In a project that names checks, Djinn
+The integration branch is the reference branch unless you choose another, main included. In a project that names checks, Djinn
 merges a wish's checked work into main when main is its integration branch, and pushes main by the project's cadence.
 
 In a project that names no check, Djinn never merges untested work into main: it merges only into a wish's own branch,
@@ -72,14 +75,22 @@ If your team does not push straight to main, give the wish a branch of its own b
 ## How workers use it
 
 Each worker of the wish starts its worktree from the integration branch's tip, as it is when the worker starts: its
-start event names the branch and the commit, as in **from feat/invoice-pdf at 1a2b3c4d**.
+start event names the branch and the commit, as in **from feat/invoice-pdf at 1a2b3c4d**. When the remote's copy of the
+branch holds commits yours lacks, and nothing of yours, the worker starts from the remote's, **from origin/main at
+1a2b3c4d**; the reference branch is fetched first, at most once a minute. A wish with no integration branch yet starts
+its workers from the reference branch, the remote's. Never from your copy: what it has checked out, and its changes not
+committed, stay out of every worktree. Under the per-azima strategy, an azima's work starts from the azima's own branch,
+cut from the remote's reference branch; see [Push strategy](#push-strategy).
 
 A task that comes after another waits until that task's work is **committed** into the branch, not only finished: it
 says **waits for W5 to be committed**. That way it starts on top of W5's work. See [Dependencies](#dependencies).
 
 ## Your checkout follows
 
-Djinn merges in its own integration worktree, under its data folder, never in your folder. When the branch moves:
+Djinn merges in its own integration worktree, under its data folder, never in your folder: it never checks out, resets
+or merges into your copy. One case touches it: the integration branch is the very branch your copy has checked out.
+Git's HEAD there is that branch, so Djinn cannot move it without your files following; moved alone, your copy would
+show the work undone, and your next commit would undo it. When the branch moves:
 
 - **Your checkout is on it and clean**: it follows, as a fast-forward would, and you see the new work in your folder.
 - **Your checkout is on it with changes not committed**: Djinn leaves your files alone, and the branch with them. Moved
@@ -130,10 +141,10 @@ You can bring a branch up to its remote yourself: see [Pulling yourself](#push-p
 
 ## Good to know
 
-- **Check the chip before the first task ends.** A wish made while your checkout is on main lands its work in main.
+- **Check the chip before the first task ends.** A new wish lands its work in the reference branch, main by default.
 - **Commit or put aside your changes.** A checkout of the integration branch with changes not committed holds every
   merge into it: the tasks show **Merging** and wait.
-- **Name a branch Git can check out.** A wish whose project's checkout is on no branch has nowhere to land.
+- **Name a reference branch.** A wish in a project where Djinn finds none has nowhere to land until you name one.
 - **Changing the branch moves nothing.** Work already merged stays in the old branch; the next work goes to the new one.
 - **Djinn needs a Git identity.** It merges and commits as you; without your name and email set in Git, the work waits,
   saying how to set them.

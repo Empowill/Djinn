@@ -1,7 +1,7 @@
 // A project's configuration, as Djinn reads it on this machine: what waits for you first, its reference branch, the
 // checks Djinn runs on its work, the sources of the inbox this machine reads, the role of each skill, how it pushes,
 // its settings and where each comes from, and the watcher commands you allow.
-import { Flame, GitBranch, Info, Plug, Unplug } from "lucide-react";
+import { Flame, GitBranch, GitFork, Info, Plug, Unplug } from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -24,6 +24,7 @@ import {
   ProjectNoticeTopic,
   ProjectPush,
   type ProjectReference,
+  PushStrategy,
   type ProjectServiceShowResponse,
   type ProjectSetting,
   type ProjectSync,
@@ -567,6 +568,12 @@ export function ReferenceBranch({
           )}
         </div>
       </div>
+      {reference && (
+        <WorkersStart
+          reference={reference}
+          strategy={shown?.project?.pushStrategy}
+        />
+      )}
       {notices.map((n) => (
         <div className="config-line" key={n.text}>
           <Info size={14} aria-hidden="true" />
@@ -576,6 +583,40 @@ export function ReferenceBranch({
         </div>
       ))}
     </section>
+  );
+}
+
+// WorkersStart says where a worker's worktree starts, for each push strategy, the project's own marked: never from
+// the developer's copy, whatever it has checked out (W227).
+export function WorkersStart({
+  reference,
+  strategy,
+}: {
+  reference: ProjectReference;
+  strategy?: PushStrategy;
+}) {
+  const perAzima = strategy === PushStrategy.AZIMA;
+  const mark = (on: boolean) =>
+    on && <span className="badge muted">{t("project.start_default")}</span>;
+  return (
+    <div className="config-line">
+      <GitFork size={14} aria-hidden="true" />
+      <div>
+        <strong>{t("project.start")}</strong>
+        <p>
+          {t("project.start_wish", { branch: reference.branch })}{" "}
+          {mark(!perAzima)}
+        </p>
+        <p>
+          {t("project.start_azima", {
+            ref: reference.ref,
+            branch: reference.branch,
+          })}{" "}
+          {mark(perAzima)}
+        </p>
+        <p className="muted-text">{t("project.start_never")}</p>
+      </div>
+    </div>
   );
 }
 

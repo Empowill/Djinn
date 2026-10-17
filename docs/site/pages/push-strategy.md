@@ -32,7 +32,8 @@ Choose before any work is merged: switching later is possible, but Djinn protect
 
 | | Per wish | Per azima |
 | --- | --- | --- |
-| Branches | One per wish and project, the one your checkout was on, or one you name | One per azima, cut from main, plus the wish's branch for work of no azima |
+| Branches | One per wish and project, the reference branch, or one you name | One per azima, cut from main, plus the wish's branch for work of no azima |
+| Workers start from | The wish's integration branch | An azima's work: its branch; work of no azima: the wish's integration branch |
 | Pull requests | One for the whole wish | One per azima |
 | Azimas may wait for each other | Yes | No |
 | The top of the wish says | **Lands in** and the branch | **Each azima lands in main** |

@@ -607,8 +607,8 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		if !questionWorker(t) && t.GetReview() == nil && t.GetCorrection().GetFailure() == nil && len(t.GetDependsOn()) > 0 {
 			if wish, err := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId()); err == nil {
 				from := h.workerStartBranch(ctx, wish, project, settings, t)
-				if sha, realFrom, err := startPoint(ctx, project.GetDirectory(), from); err == nil {
-					if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), t, sha, realFrom); depWhy != "" {
+				if sha, shown, err := h.startPoint(ctx, project, from); err == nil {
+					if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), t, sha, cmp.Or(from, shown)); depWhy != "" {
 						h.setWaiting(ctx, t, depWhy, false, false)
 						return nil
 					}

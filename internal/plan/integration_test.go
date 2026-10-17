@@ -56,7 +56,7 @@ func TestChangeIntegrationBranch(t *testing.T) {
 	}
 	wishID := made.Msg.GetWish().GetId()
 	if got := IntegrationBranchOf(made.Msg.GetWish(), projectID); got != "main" {
-		t.Fatalf("integration branch at the start = %q, want main, the checked-out branch", got)
+		t.Fatalf("integration branch at the start = %q, want main, the reference branch", got)
 	}
 	worker := &planv1.Task{Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W1", Branch: "w1-work",
 		Status: planv1.TaskStatus_TASK_STATUS_DONE}

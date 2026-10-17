@@ -138,7 +138,8 @@ From a terminal: `djinn wish pause <wish-id>`, `djinn wish activate <wish-id>`, 
 `djinn wish reorder <wish-id> --to 1` (a paused or granted wish, first in its list),
 `djinn wish rename <wish-id> --title "…"`, `djinn wish principal <wish-id> --principal`, `djinn wish delete <wish-id>`.
 `djinn wish add-project <wish-id> --project-id <project>` adds a project, by its name or identifier, to a wish made
-without it: its tasks may spawn there, and its finished work goes to the branch the project's checkout is on.
+without it: its tasks may spawn there, and its finished work goes to the project's reference branch, unless you choose
+another.
 
 ## The Djinn
 
@@ -315,8 +316,8 @@ azima with its own branch, status badges show **PR proposed**, **PR open** or **
 merge the PR. An individual **Push** button (`djinn project push <project> --wish <wish>`) pushes the branch on demand
 when you choose.
 
-**Where work lands.** Per wish, a wish's work lands in its integration branch, in each project the branch your checkout
-was on when the wish was made: the chip beside the push strategy names it (with the project, when the wish has several),
+**Where work lands.** Per wish, a wish's work lands in its integration branch, in each project the project's reference
+branch when the wish was made, whatever your copy has checked out: the chip beside the push strategy names it (with the project, when the wish has several),
 and a click on it changes it to another local branch or to a new one made from it (`djinn wish set-integration <wish>
 --branch feat/x`, `--create-branch` for a new one), refused while a merge into it runs. Per azima, each azima's work
 lands in main through its own branch and pull request, which its card shows once opened, and work of no azima in the wish's
