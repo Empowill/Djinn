@@ -9,6 +9,15 @@ const test = require("node:test");
 
 const root = path.resolve(__dirname, "../src");
 
+// The ::after rule of one family of the hover (styles.css, L17 proposal 1), found by the words of its comment.
+const hoverFamily = (words) => {
+  const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+  const from = css.indexOf(words);
+  assert.ok(from >= 0, `the hover's family "${words}" is described`);
+  const start = css.indexOf(":where(", from);
+  return css.slice(start, css.indexOf("}", css.indexOf("::after", start)));
+};
+
 const stylesheets = () =>
   fs
     .readdirSync(root)
@@ -240,8 +249,9 @@ test("the theme's tokens keep their contrast in the dark and the light theme", (
 });
 
 // No grey is written by hand outside the tokens: a new rule takes a token, and so follows the theme.
-// The update banner reads as Djinn's (src/update-banner.css): on its ground, 7% of the lamp over the raised surface,
-// the brass button's ink, the violet of Dismiss on its 10% tint and its quiet text (--n-9c) keep 4.5:1 in both themes.
+// The update banner reads as Djinn's (src/update-banner.css): on its ground, the raised surface (no warm tint, which
+// turned brown in the dark, L17), the brass button's ink on the lamp's gradient, the violet of Dismiss on its 10% tint
+// and its quiet text (--n-9c) keep 4.5:1 in both themes.
 test("the update banner's buttons keep their contrast in the dark and the light theme", () => {
   const read = (file, selector) => {
     const css = fs.readFileSync(path.join(root, file), "utf8");
@@ -255,15 +265,16 @@ test("the update banner's buttons keep their contrast in the dark and the light 
     );
   };
   const banner = fs.readFileSync(path.join(root, "update-banner.css"), "utf8");
-  assert.match(
-    banner,
-    /background: color-mix\(in srgb, var\(--lamp\) 7%, var\(--surface-raised\)\)/,
-  );
+  assert.match(banner, /background: var\(--surface-raised\);/);
+  assert.match(banner, /border: 1px solid var\(--lamp-edge\);/);
   assert.match(
     banner,
     /background: color-mix\(in srgb, var\(--st-investigating\) 10%, transparent\)/,
   );
-  assert.match(banner, /background: linear-gradient\(#f3d27a, var\(--lamp\)\)/);
+  assert.match(
+    banner,
+    /background: linear-gradient\(var\(--lamp-hi\), var\(--lamp-lo\)\)/,
+  );
   const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
   const lum = (c) => {
     const [r, g, b] = c.map((v) => {
@@ -291,13 +302,16 @@ test("the update banner's buttons keep their contrast in the dark and the light 
     },
   };
   for (const [name, theme] of Object.entries(themes)) {
-    const ground = mix(rgb(theme.lamp), rgb(theme["surface-raised"]), 0.07);
+    const ground = rgb(theme["surface-raised"]);
     const violet = rgb(theme["st-investigating"]);
     const pairs = {
-      "the brass button's ink": [rgb(theme["lamp-ink"]), rgb(theme.lamp)],
       "the brass button's ink at its top": [
         rgb(theme["lamp-ink"]),
-        rgb("#f3d27a"),
+        rgb(theme["lamp-hi"]),
+      ],
+      "the brass button's ink at its foot": [
+        rgb(theme["lamp-ink"]),
+        rgb(theme["lamp-lo"]),
       ],
       Dismiss: [violet, mix(violet, ground, 0.1)],
       "the quiet text": [rgb(theme["n-9c"]), ground],
@@ -560,11 +574,16 @@ test("the load gauge's stops read as round buttons and its limits show on hover 
   assert.match(dot, /border:\s*1.5px solid var\(--muted\);/);
   assert.match(dot, /border-radius:\s*50%;/);
   for (const selector of [
-    ".operating-load-stop:hover",
     ".operating-load-stop:focus-visible",
     ".operating-load-stop.current::before",
   ])
     rule(selector);
+  // Hovered, a stop takes the round of an icon alone (styles.css, the hover's families).
+  assert.match(
+    hoverFamily("An icon alone:"),
+    /\.operating-load-stop\b/,
+    "a stop's hover is the round tint",
+  );
   assert.match(
     rule(".operating-load-stop.current::before"),
     /background:\s*var\(--notch-color\);/,
@@ -676,9 +695,12 @@ test("the focused question of the column, and it alone, shows a gold ring distin
     row,
     /border-(?:top|right|bottom|left)|outline|box-shadow/,
   );
-  const hover = rule(".review .question-row.closed:hover");
-  assert.match(hover, /background:/);
-  assert.doesNotMatch(hover, /outline|border|box-shadow/);
+  // The hover only tints a closed one, in its radius, with no ring, border or shadow (styles.css's hover families).
+  const tint = hoverFamily("An object, a row:");
+  assert.match(tint, /\.review \.question-row\.closed\b/);
+  assert.match(tint, /background: var\(--hover-tint\);/);
+  assert.match(tint, /border-radius: inherit;/);
+  assert.doesNotMatch(tint, /outline|border:|box-shadow/);
   // The ring is the focus's alone: no other rule of a question row draws an outline.
   const others = [
     ...css.matchAll(/([^{}]*\.question-row[^{}]*)\{([^}]*)\}/g),

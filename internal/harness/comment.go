@@ -233,7 +233,7 @@ func (h *Harness) TurnComments(ctx context.Context, procedure string, req *planv
 			Model:     task.GetModel(),
 			PartOf:    azima,
 			After:     after,
-		}, nil)
+		}, &planv1.Task{}) // Djinn spawns it: never a repair it claims.
 	}
 	if err != nil {
 		return nil, err

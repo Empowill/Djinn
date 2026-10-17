@@ -281,7 +281,7 @@ func (h *Harness) continueStalled(ctx context.Context, procedure string, req *pl
 	}
 	h.mu.Lock()
 	r := h.runs[id]
-	if r == nil || r.stopping || r.final || r.lamplighterEnd {
+	if r == nil || r.stopping || r.final || r.lamplighterEnd || r.silentWhy != "" {
 		h.mu.Unlock()
 		return nil, nil
 	}

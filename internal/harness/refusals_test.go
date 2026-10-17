@@ -152,7 +152,7 @@ func TestDoneLine(t *testing.T) {
 			want: "Djinn: W3 done, nothing to merge into djinn/dew. Its final note: Done."},
 		{task: &planv1.Task{Code: "W4"}, want: "Djinn: W4 done. It left no final note."},
 	} {
-		got := doneLine(c.task, one, c.note, c.why)
+		got := doneLine(c.task, one, c.note, c.why, "")
 		if got != c.want {
 			t.Errorf("doneLine\n got %s\nwant %s", got, c.want)
 		}
@@ -258,7 +258,7 @@ func TestDoneCarriesTheWholeNote(t *testing.T) {
 	task := e.ended(t, e.spawn(t, wishID, "text working").GetId())
 	note := "Added djinn question get.\n\nLeft to verify:\n- the Windows build"
 	e.h.Note(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: note + "\n"})
-	e.h.tellDone(t.Context(), task, "")
+	e.h.tellDone(t.Context(), task, "", "")
 	events := queue.all()
 	if len(events) == 0 {
 		t.Fatal("no event for the lead")

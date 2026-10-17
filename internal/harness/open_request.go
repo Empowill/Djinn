@@ -48,7 +48,7 @@ func (h *Harness) openRequest(ctx context.Context, q *planv1.Question) string {
 		task, err := h.spawn(ctx, planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
 			WishId: o.wish.GetId(), ProjectId: o.project.GetId(), Title: "Open the draft " + kind + " of " + o.branch,
 			Prompt: openPrompt(o, kind, skill),
-		}, nil)
+		}, &planv1.Task{}) // Djinn spawns it: never a repair it claims.
 		if err != nil {
 			logx.L().Warn("spawn the opening of a request", "question", q.GetCode(), "branch", o.branch, "err", err)
 			return fmt.Sprintf("Djinn could not spawn a task: spawn one to open the %s of %s with the skill %s", kind, o.branch, skill)

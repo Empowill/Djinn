@@ -253,7 +253,6 @@ button {
 }
 .sidebar-toggle:hover {
   color: var(--text);
-  background: var(--surface-raised);
 }
 .brand {
   font-size: 1.8125rem;
@@ -334,14 +333,13 @@ html[data-theme="light"] .wordmark-period {
   font-weight: 650;
   box-shadow: inset 0 1px 0 var(--n-ff);
   white-space: nowrap;
-}
-.new-mission:hover {
-  background: var(--n-f6);
+  /* Its ground is the other theme's: the hover's tint takes its own ink, or white on white would not show. */
+  --hover-tint: color-mix(in srgb, currentColor 7%, transparent);
 }
 .new-mission kbd {
   margin-left: auto;
   font-size: var(--font-size-body, 0.75rem);
-  color: var(--n-6f);
+  color: var(--n-57);
 }
 
 .sidebar-section-label {
@@ -369,7 +367,6 @@ html[data-theme="light"] .wordmark-period {
   white-space: nowrap;
 }
 .nav-item:hover {
-  background: var(--n-22);
   color: var(--n-e7);
 }
 .nav-item.active {
@@ -420,9 +417,6 @@ html[data-theme="light"] .wordmark-period {
   background: var(--n-1e);
   color: var(--n-e7);
 }
-.mission-nav:hover {
-  background: var(--n-22);
-}
 
 .import-nav {
   font-size: var(--font-size-body, 0.75rem);
@@ -457,7 +451,7 @@ html[data-theme="light"] .wordmark-period {
 }
 .profile small {
   display: block;
-  color: var(--n-6f);
+  color: var(--n-8f);
   font-size: var(--font-size-body, 0.75rem);
   margin-top: 0.1875rem;
 }
@@ -581,8 +575,6 @@ html[data-theme="light"] .wordmark-period {
   border-radius: var(--radius-control, 0.4375rem);
 }
 .app .page-header-action.button.secondary:hover {
-  border-color: transparent;
-  background: var(--surface-raised);
   color: var(--accent);
 }
 .app .page-header-action.button.secondary.danger:hover {
@@ -621,18 +613,11 @@ html[data-theme="light"] .wordmark-period {
   border-color: var(--lamp-edge);
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 45%, transparent);
 }
-.button.accent:hover {
-  background: var(--lamp-hi);
-}
 .button.secondary {
   background: linear-gradient(var(--n-22), var(--n-1c));
   border-color: var(--n-38);
   color: var(--n-c4);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--n-a9) 6.3%, transparent);
-}
-.button.secondary:hover {
-  border-color: var(--n-6f);
-  background: var(--n-28);
 }
 .icon-button {
   display: inline-flex;
@@ -643,7 +628,9 @@ html[data-theme="light"] .wordmark-period {
   border-radius: 0.3125rem;
   color: var(--n-8f);
 }
-.icon-button:hover,
+.icon-button:hover {
+  color: var(--accent);
+}
 .icon-button.active {
   background: var(--n-2a);
   color: var(--accent);
@@ -1062,7 +1049,7 @@ html[data-theme="light"] .wordmark-period {
 .agent-code {
   white-space: nowrap;
   font: var(--font-size-body, 0.75rem) var(--mono);
-  color: var(--n-65);
+  color: var(--n-8f);
 }
 
 .wave {
@@ -2051,7 +2038,6 @@ html[data-motion="reduced"] *::after {
 }
 .project-section-label button:hover,
 .project-nav-main > button:hover {
-  background: var(--surface);
   color: var(--accent);
 }
 .project-list {
@@ -2064,9 +2050,9 @@ html[data-motion="reduced"] *::after {
 }
 .project-nav-main > button.project-gear.hot {
   color: var(--st-failed);
+  --hover-tint: color-mix(in srgb, var(--st-failed) 14%, transparent);
 }
 .project-nav-main > button.project-gear.hot:hover {
-  background: color-mix(in srgb, var(--st-failed) 14%, transparent);
   color: var(--st-failed);
 }
 .project-folder {
@@ -2438,4 +2424,140 @@ html:not(.native-mac) .sidebar {
 .app-tooltip .key-hint {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+/* The hover, proposal 1 Calm of L17: a tint of the text's ink (--hover-tint, theme.css) fades in, in the shape of the
+   element, and nothing moves. One rule per family, each a pseudo-element faded by its opacity alone, with no border: an
+   object (a button, a chip, a card) and a row take the tint in their own radius; an icon alone, in a round around its
+   pictogram; a question's option, on its letter key; a tab lights its bottom bar. The tint lies over the content, as
+   L17 measured it, and takes no pointer. :where() keeps the families at no weight: an element's own ::after (the
+   gesture's edge on a question) and its own position win. */
+:where(
+  .new-mission,
+  .button.accent,
+  .button.secondary,
+  .update-banner .update-banner-primary,
+  .update-banner .update-banner-dismiss,
+  .operating-load-notch,
+  .segmented-switch button,
+  button.wish-lands,
+  .wish-tag,
+  .wish-dropdown-trigger,
+  .wish-spent .usage-unit-switch,
+  button.attention-item,
+  .review .question-row.closed,
+  .wish-task:not(.open),
+  .question-corner-button,
+  .nav-item,
+  .mission-nav,
+  .project-nav,
+  .profile,
+  button.glance-row,
+  .lead-terminal-bar button,
+  .sidebar-toggle,
+  .icon-button,
+  .project-section-label button,
+  .wish-creation-back,
+  .operating-load-stop,
+  .review .question-row .option-letter,
+  .view-tabs > button:not(.active)
+) {
+  position: relative;
+}
+/* An object, a row: the tint in its own radius. A question's option takes it on its letter key alone. */
+:where(
+  .new-mission,
+  .button.accent,
+  .button.secondary,
+  .update-banner .update-banner-primary,
+  .update-banner .update-banner-dismiss,
+  .operating-load-notch,
+  .segmented-switch button,
+  button.wish-lands,
+  .wish-tag,
+  .wish-dropdown-trigger,
+  .wish-spent .usage-unit-switch,
+  button.attention-item,
+  .review .question-row.closed,
+  .wish-task:not(.open),
+  .question-corner-button,
+  .nav-item,
+  .mission-nav,
+  .project-nav,
+  .profile,
+  button.glance-row,
+  .lead-terminal-bar button,
+  .review .question-row .option-letter
+)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--hover-tint);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--hover-time) ease;
+}
+/* An icon alone: the round is its square box, the pictogram at its centre. */
+:where(
+  .sidebar-toggle,
+  .icon-button,
+  .app .page-header-action.button.secondary,
+  .project-section-label button,
+  .wish-creation-back,
+  .question-corner-button:not(.question-versions),
+  .operating-load-stop
+)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--hover-tint);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--hover-time) ease;
+}
+/* A tab: a bar over its bottom border, where the chosen tab's bar is. */
+:where(.view-tabs > button:not(.active))::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  border-top: 2px solid var(--hover-bar);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--hover-time) ease;
+}
+:where(
+    .new-mission,
+    .button.accent,
+    .button.secondary,
+    .update-banner .update-banner-primary,
+    .update-banner .update-banner-dismiss,
+    .operating-load-notch,
+    .segmented-switch button,
+    button.wish-lands,
+    .wish-tag,
+    .wish-dropdown-trigger,
+    .wish-spent .usage-unit-switch,
+    button.attention-item,
+    .review .question-row.closed,
+    .wish-task:not(.open),
+    .question-corner-button,
+    .nav-item,
+    .mission-nav,
+    .project-nav,
+    .profile,
+    button.glance-row,
+    .lead-terminal-bar button,
+    .sidebar-toggle,
+    .icon-button,
+    .project-section-label button,
+    .wish-creation-back,
+    .operating-load-stop,
+    .view-tabs > button
+  ):hover::after,
+:where(.review .question-row .option:hover .option-letter)::after {
+  opacity: 1;
 }

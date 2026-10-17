@@ -66,7 +66,10 @@
   gap: 0.125rem;
   margin-left: auto;
   font: var(--font-size-body) var(--mono);
-  color: var(--muted-dim);
+  color: var(--muted);
+}
+html[data-theme="light"] .mission-nav .wish-counts .wish-rank {
+  color: var(--n-a9);
 }
 .nav-counter.full {
   background: transparent;
@@ -632,7 +635,7 @@
 }
 .wish-spent .usage-unit-switch {
   background: transparent;
-  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm, 0.25rem);
   color: var(--accent);
   cursor: pointer;
@@ -641,18 +644,13 @@
   padding: 1px 0.375rem;
   line-height: 1.2;
 }
-.wish-spent .usage-unit-switch:hover {
-  background: var(--surface-hover, rgba(255, 255, 255, 0.08));
-}
 .wish-spent .spent-providers {
   color: var(--muted-dim);
 }
 
 /* The flying carpet of the active wishes: each line shows its wish. The Hourglass, below it, is selected alike. */
 .plan-nav.selected,
-.plan-nav.selected:hover,
-.hourglass-nav.selected,
-.hourglass-nav.selected:hover {
+.hourglass-nav.selected {
   background: var(--n-28);
   color: var(--n-e7);
 }
@@ -1091,7 +1089,6 @@
 }
 .wish-creation-back:hover {
   color: var(--text);
-  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 .wish-creation-scroll {
   position: relative;
