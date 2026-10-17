@@ -6,11 +6,8 @@ package terminal
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"regexp"
 	"strconv"
@@ -18,11 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	rawterm "golang.org/x/term"
-
-	terminalv1 "github.com/empowill/djinn/gen/go/terminal/v1"
-	"github.com/empowill/djinn/gen/go/terminal/v1/terminalv1connect"
 )
 
 // sh opens a terminal running /bin/sh in a temporary directory, closed at the end of the test.
@@ -36,90 +29,130 @@ func sh(t *testing.T, m *Manager, name string, args ...string) *Terminal {
 	return term
 }
 
-func TestWriteThenRead(t *testing.T) {
-	m := NewManager(Config{})
-	term := sh(t, m, "main")
-	// The quotes keep the typed line, which the terminal echoes, from matching.
-	if err := term.Write([]byte("echo hel''lo; exit 3\n")); err != nil {
-		t.Fatal(err)
-	}
-	output(t, term, 0, contains("hello"))
-	if code := end(t, term); code != 3 {
-		t.Fatalf("exit code %d, want 3", code)
-	}
-	// The whole output is still there, and the end comes last.
-	var last Output
-	if err := term.Read(0, nil, func(o Output) error { last = o; return nil }); err != nil {
-		t.Fatal(err)
-	}
-	if !last.Exited || last.Code != 3 {
-		t.Fatalf("last piece %+v, want the end with code 3", last)
-	}
-	if err := term.Write([]byte("x")); !errors.Is(err, ErrExited) {
-		t.Fatalf("write after the end: %v, want ErrExited", err)
-	}
-}
-
-func TestOpenAttachesToTheRunningTerminal(t *testing.T) {
-	m := NewManager(Config{Command: []string{"/bin/sh"}, Dir: t.TempDir()})
-	t.Cleanup(m.Close)
-	first, attached, err := m.Open("main", nil, "", 0, 0)
-	if err != nil || attached {
-		t.Fatalf("first open: attached %v, %v", attached, err)
-	}
-	again, attached, err := m.Open("main", nil, "", 0, 0)
-	if err != nil || !attached || again != first {
-		t.Fatalf("second open: attached %v, same %v, %v", attached, again == first, err)
-	}
-	other, attached, err := m.Open("other", nil, "", 0, 0)
-	if err != nil || attached || other == first {
-		t.Fatalf("other name: attached %v, %v", attached, err)
-	}
-	// The defaults of the manager apply: the shell runs in its directory.
-	if err := first.Write([]byte("pwd\n")); err != nil {
-		t.Fatal(err)
-	}
-	output(t, first, 0, contains(m.cfg.Dir))
-	// Once ended, the name starts a new program, and the old one is forgotten.
-	if err := first.Write([]byte("exit\n")); err != nil {
-		t.Fatal(err)
-	}
-	end(t, first)
-	next, attached, err := m.Open("main", nil, "", 0, 0)
-	if err != nil || attached || next.ID == first.ID {
-		t.Fatalf("open after the end: attached %v, new %v, %v", attached, next.ID != first.ID, err)
-	}
-	if _, err := m.Get(first.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("get the ended terminal: %v, want ErrNotFound", err)
-	}
-}
-
-// TestOpenStartsInAFolderGiven: without a folder from the window nor Dir, a terminal starts in the one Folder gives,
-// asked at each start; with none, it does not start, never in the home folder.
-func TestOpenStartsInAFolderGiven(t *testing.T) {
-	if _, _, err := NewManager(Config{Command: []string{"/bin/sh"}}).Open("main", nil, "", 0, 0); !errors.Is(err, ErrNoFolder) {
-		t.Fatalf("no folder at all: %v, want ErrNoFolder", err)
-	}
-	none := errors.New("no project yet")
-	folder := ""
-	m := NewManager(Config{Command: []string{"/bin/sh"}, Folder: func() (string, error) {
-		if folder == "" {
-			return "", none
+// TestOpen: a terminal starts its program, or attaches to the one running under its name; the manager's defaults fill
+// what the window leaves empty.
+func TestOpen(t *testing.T) {
+	t.Parallel()
+	t.Run("attaches to the running terminal", func(t *testing.T) {
+		t.Parallel()
+		m := NewManager(Config{Command: []string{"/bin/sh"}, Dir: t.TempDir()})
+		t.Cleanup(m.Close)
+		first, attached, err := m.Open("main", nil, "", 0, 0)
+		if err != nil || attached {
+			t.Fatalf("first open: attached %v, %v", attached, err)
 		}
-		return folder, nil
-	}})
-	t.Cleanup(m.Close)
-	if _, _, err := m.Open("main", nil, "", 0, 0); !errors.Is(err, ErrNoFolder) || !errors.Is(err, none) {
-		t.Fatalf("no folder yet: %v, want ErrNoFolder and why", err)
-	}
-	folder = t.TempDir()
-	term, _, err := m.Open("main", nil, "", 0, 0)
-	if err != nil || term.Dir != folder {
-		t.Fatalf("open once a folder is given: %v in %q, want %q", err, term.Dir, folder)
-	}
+		again, attached, err := m.Open("main", nil, "", 0, 0)
+		if err != nil || !attached || again != first {
+			t.Fatalf("second open: attached %v, same %v, %v", attached, again == first, err)
+		}
+		other, attached, err := m.Open("other", nil, "", 0, 0)
+		if err != nil || attached || other == first {
+			t.Fatalf("other name: attached %v, %v", attached, err)
+		}
+		// The defaults of the manager apply: the shell runs in its directory.
+		if err := first.Write([]byte("pwd\n")); err != nil {
+			t.Fatal(err)
+		}
+		output(t, first, 0, contains(m.cfg.Dir))
+		// Once ended, the name starts a new program, and the old one is forgotten.
+		if err := first.Write([]byte("exit\n")); err != nil {
+			t.Fatal(err)
+		}
+		end(t, first)
+		next, attached, err := m.Open("main", nil, "", 0, 0)
+		if err != nil || attached || next.ID == first.ID {
+			t.Fatalf("open after the end: attached %v, new %v, %v", attached, next.ID != first.ID, err)
+		}
+		if _, err := m.Get(first.ID); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("get the ended terminal: %v, want ErrNotFound", err)
+		}
+	})
+	// Without a folder from the window nor Dir, a terminal starts in the one Folder gives, asked at each start; with
+	// none, it does not start, never in the home folder.
+	t.Run("starts in a folder given", func(t *testing.T) {
+		t.Parallel()
+		if _, _, err := NewManager(Config{Command: []string{"/bin/sh"}}).Open("main", nil, "", 0, 0); !errors.Is(err, ErrNoFolder) {
+			t.Fatalf("no folder at all: %v, want ErrNoFolder", err)
+		}
+		none := errors.New("no project yet")
+		folder := ""
+		m := NewManager(Config{Command: []string{"/bin/sh"}, Folder: func() (string, error) {
+			if folder == "" {
+				return "", none
+			}
+			return folder, nil
+		}})
+		t.Cleanup(m.Close)
+		if _, _, err := m.Open("main", nil, "", 0, 0); !errors.Is(err, ErrNoFolder) || !errors.Is(err, none) {
+			t.Fatalf("no folder yet: %v, want ErrNoFolder and why", err)
+		}
+		folder = t.TempDir()
+		term, _, err := m.Open("main", nil, "", 0, 0)
+		if err != nil || term.Dir != folder {
+			t.Fatalf("open once a folder is given: %v in %q, want %q", err, term.Dir, folder)
+		}
+	})
+	// BeforeStart runs before the program starts, and what it sets is what the program gets: djinn up brings its PATH
+	// up to date there, so that a lead finds an agent installed from the window meanwhile.
+	t.Run("before start runs before the program", func(t *testing.T) {
+		t.Parallel()
+		var m *Manager
+		m = NewManager(Config{BeforeStart: func() { m.cfg.env = []string{"DJINN_BEFORE_START=set"} }})
+		t.Cleanup(m.Close)
+		term, _, err := m.Open("main", []string{"/bin/sh", "-c", `echo "got $DJINN_BEFORE_START"`}, t.TempDir(), 80, 24)
+		if err != nil {
+			t.Fatal(err)
+		}
+		output(t, term, 0, contains("got set"))
+	})
+	// Changed runs once a program starts and once it ends, when Running already says so; an Open that attaches
+	// changes nothing.
+	t.Run("changed follows what runs", func(t *testing.T) {
+		t.Parallel()
+		calls := make(chan []string, 10)
+		var m *Manager
+		m = NewManager(Config{Changed: func() {
+			var names []string
+			for _, r := range m.Running() {
+				names = append(names, r.Name)
+			}
+			calls <- names
+		}})
+		next := func() string {
+			t.Helper()
+			select {
+			case names := <-calls:
+				return strings.Join(names, ",")
+			case <-time.After(5 * time.Second):
+				t.Fatal("Changed did not run")
+				return ""
+			}
+		}
+		term := sh(t, m, "lead-a")
+		if got := next(); got != "lead-a" {
+			t.Fatalf("after the start: %q", got)
+		}
+		if _, attached, err := m.Open("lead-a", nil, "", 0, 0); err != nil || !attached {
+			t.Fatalf("attach: %v, %v", attached, err)
+		}
+		if err := term.Write([]byte("exit\n")); err != nil {
+			t.Fatal(err)
+		}
+		if got := next(); got != "" {
+			t.Fatalf("after the end: %q", got)
+		}
+		select {
+		case names := <-calls:
+			t.Fatalf("one more call: %q", names)
+		default:
+		}
+	})
 }
 
-func TestOpenExclusiveRefusesASessionRunningElsewhere(t *testing.T) {
+// TestOpenExclusive: a session that runs in a terminal of another name refuses a second program; another session, or
+// its own name, opens.
+func TestOpenExclusive(t *testing.T) {
+	t.Parallel()
 	m := NewManager(Config{})
 	t.Cleanup(m.Close)
 	dir := t.TempDir()
@@ -150,75 +183,83 @@ func TestOpenExclusiveRefusesASessionRunningElsewhere(t *testing.T) {
 	}
 }
 
-// TestChangedFollowsWhatRuns: Changed runs once a program starts and once it ends, when Running already says so; an
-// Open that attaches changes nothing.
-func TestChangedFollowsWhatRuns(t *testing.T) {
-	calls := make(chan []string, 10)
-	var m *Manager
-	m = NewManager(Config{Changed: func() {
-		var names []string
-		for _, r := range m.Running() {
-			names = append(names, r.Name)
+// TestWrite: keys written reach the program as typed, and none once it ended.
+func TestWrite(t *testing.T) {
+	t.Parallel()
+	t.Run("then read", func(t *testing.T) {
+		t.Parallel()
+		m := NewManager(Config{})
+		term := sh(t, m, "main")
+		// The quotes keep the typed line, which the terminal echoes, from matching.
+		if err := term.Write([]byte("echo hel''lo; exit 3\n")); err != nil {
+			t.Fatal(err)
 		}
-		calls <- names
-	}})
-	next := func() string {
-		t.Helper()
-		select {
-		case names := <-calls:
-			return strings.Join(names, ",")
-		case <-time.After(5 * time.Second):
-			t.Fatal("Changed did not run")
-			return ""
+		output(t, term, 0, contains("hello"))
+		if code := end(t, term); code != 3 {
+			t.Fatalf("exit code %d, want 3", code)
 		}
-	}
-	term := sh(t, m, "lead-a")
-	if got := next(); got != "lead-a" {
-		t.Fatalf("after the start: %q", got)
-	}
-	if _, attached, err := m.Open("lead-a", nil, "", 0, 0); err != nil || !attached {
-		t.Fatalf("attach: %v, %v", attached, err)
-	}
-	if err := term.Write([]byte("exit\n")); err != nil {
-		t.Fatal(err)
-	}
-	if got := next(); got != "" {
-		t.Fatalf("after the end: %q", got)
-	}
-	select {
-	case names := <-calls:
-		t.Fatalf("one more call: %q", names)
-	default:
-	}
+		// The whole output is still there, and the end comes last.
+		var last Output
+		if err := term.Read(0, nil, func(o Output) error { last = o; return nil }); err != nil {
+			t.Fatal(err)
+		}
+		if !last.Exited || last.Code != 3 {
+			t.Fatalf("last piece %+v, want the end with code 3", last)
+		}
+		if err := term.Write([]byte("x")); !errors.Is(err, ErrExited) {
+			t.Fatalf("write after the end: %v, want ErrExited", err)
+		}
+	})
+	// What Claude Code's dictation needs in hold mode: a terminal sends no key release, so the program tells a held
+	// Space from the key repeat, a quick run of spaces. Each space written to the terminal, at a key repeat rate, must
+	// reach a program in raw mode on its own and at once, not batched.
+	t.Run("a held space arrives as repeats", func(t *testing.T) {
+		t.Parallel()
+		const repeats, every = 20, 30 * time.Millisecond // A usual key repeat: 30 a second.
+		m := NewManager(Config{env: []string{helperEnv + "=spaces"}})
+		t.Cleanup(m.Close)
+		term, _, err := m.Open("main", []string{os.Args[0], "-test.run=^TestHelperProcess$"}, t.TempDir(), 80, 24)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := output(t, term, 0, contains("ready"))
+		// The time each space is typed, on the clock the program reads too. Its reads are compared with these, not with
+		// one another: a program late on one read, under load, then reads the next one sooner, and nothing was batched.
+		typed := make([]int64, repeats)
+		for i := range repeats {
+			typed[i] = time.Now().UnixMicro()
+			if err := term.Write([]byte(" ")); err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(every)
+		}
+		out = output(t, term, uint64(len(out)), contains("done"))
+		// One line a read: the byte count of the read and when it came, in microseconds since the epoch.
+		reads := regexp.MustCompile(`read (\d+) at (\d+)`).FindAllStringSubmatch(out, -1)
+		if len(reads) != repeats {
+			t.Fatalf("the program read %d times, want %d single spaces:\n%s", len(reads), repeats, out)
+		}
+		var late int64
+		for i, r := range reads {
+			n, _ := strconv.Atoi(r[1])
+			at, _ := strconv.ParseInt(r[2], 10, 64)
+			if n != 1 {
+				t.Fatalf("read %d got %d bytes, want one space at a time", i, n)
+			}
+			if i+1 < repeats && at >= typed[i+1] {
+				t.Fatalf("read %d came %d ms after the next space was typed: held back, not as typed",
+					i, (at-typed[i+1])/1000)
+			}
+			late = max(late, at-typed[i])
+		}
+		t.Logf("%d spaces, one read each, at most %d ms after they were typed", repeats, late/1000)
+	})
 }
 
-func TestResize(t *testing.T) {
-	m := NewManager(Config{})
-	term, _, err := m.Open("main", []string{"/bin/sh"}, t.TempDir(), 120, 30)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(m.Close)
-	// stty prints rows then columns; the offsets keep each answer apart.
-	if err := term.Write([]byte("stty size\n")); err != nil {
-		t.Fatal(err)
-	}
-	out := output(t, term, 0, regexp.MustCompile(`(^|\s)30 120\r?\n`).MatchString)
-	if err := term.Resize(100, 40); err != nil {
-		t.Fatal(err)
-	}
-	if cols, rows, _, _ := term.State(); cols != 100 || rows != 40 {
-		t.Fatalf("state %d×%d, want 100×40", cols, rows)
-	}
-	if err := term.Write([]byte("stty size\n")); err != nil {
-		t.Fatal(err)
-	}
-	output(t, term, uint64(len(out)), regexp.MustCompile(`(^|\s)40 100\r?\n`).MatchString)
-}
-
-// TestReadResumes checks the scrollback alone: a read from an offset gets what follows it, and a read from an
-// offset no longer kept starts at the oldest byte kept.
-func TestReadResumes(t *testing.T) {
+// TestRead checks the scrollback alone: a read from an offset gets what follows it, and a read from an offset no
+// longer kept starts at the oldest byte kept.
+func TestRead(t *testing.T) {
+	t.Parallel()
 	term := &Terminal{changed: make(chan struct{}), screen: newScreen(80, 24)}
 	var all []byte
 	for i := range 40 {
@@ -256,10 +297,37 @@ func TestReadResumes(t *testing.T) {
 	}
 }
 
-func TestCloseHangsUp(t *testing.T) {
-	defer func(g time.Duration) { grace = g }(grace)
-	grace = 300 * time.Millisecond
+func TestResize(t *testing.T) {
+	t.Parallel()
 	m := NewManager(Config{})
+	term, _, err := m.Open("main", []string{"/bin/sh"}, t.TempDir(), 120, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	// stty prints rows then columns; the offsets keep each answer apart.
+	if err := term.Write([]byte("stty size\n")); err != nil {
+		t.Fatal(err)
+	}
+	out := output(t, term, 0, regexp.MustCompile(`(^|\s)30 120\r?\n`).MatchString)
+	if err := term.Resize(100, 40); err != nil {
+		t.Fatal(err)
+	}
+	if cols, rows, _, _ := term.State(); cols != 100 || rows != 40 {
+		t.Fatalf("state %d×%d, want 100×40", cols, rows)
+	}
+	if err := term.Write([]byte("stty size\n")); err != nil {
+		t.Fatal(err)
+	}
+	output(t, term, uint64(len(out)), regexp.MustCompile(`(^|\s)40 100\r?\n`).MatchString)
+}
+
+// TestClose: closing the manager hangs up every program, kills those still there after the grace delay, and opens
+// nothing after.
+func TestClose(t *testing.T) {
+	t.Parallel()
+	const grace = 300 * time.Millisecond
+	m := NewManager(Config{pace: paced(func(p *pace) { p.grace = grace })})
 	polite := sh(t, m, "polite", "-c", `trap 'exit 7' HUP; echo ready; while :; do sleep 0.05; done`)
 	stubborn := sh(t, m, "stubborn", "-c", `trap '' HUP; echo ready; while :; do sleep 0.05; done`)
 	output(t, polite, 0, contains("ready"))
@@ -280,8 +348,9 @@ func TestCloseHangsUp(t *testing.T) {
 	}
 }
 
-// TestHangupByName: a wish deleted hangs up its lead's terminal by name, and leaves the others running.
-func TestHangupByName(t *testing.T) {
+// TestHangup: a wish deleted hangs up its lead's terminal by name, and leaves the others running.
+func TestHangup(t *testing.T) {
+	t.Parallel()
 	m := NewManager(Config{})
 	lead := sh(t, m, "lead-w", "-c", `trap 'exit 7' HUP; echo ready; while :; do sleep 0.05; done`)
 	other := sh(t, m, "other", "-c", `echo ready; while :; do sleep 0.05; done`)
@@ -301,56 +370,11 @@ func TestHangupByName(t *testing.T) {
 	}
 }
 
-// TestHeldSpaceArrivesAsRepeats is what Claude Code's dictation needs in hold mode: a terminal sends no key release,
-// so the program tells a held Space from the key repeat, a quick run of spaces. Each space written to the terminal,
-// at a key repeat rate, must reach a program in raw mode on its own and at once, not batched.
-func TestHeldSpaceArrivesAsRepeats(t *testing.T) {
-	const repeats, every = 20, 30 * time.Millisecond // A usual key repeat: 30 a second.
-	t.Setenv(helperEnv, "spaces")
-	m := NewManager(Config{})
-	t.Cleanup(m.Close)
-	term, _, err := m.Open("main", []string{os.Args[0], "-test.run=^TestHelperProcess$"}, t.TempDir(), 80, 24)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := output(t, term, 0, contains("ready"))
-	// The time each space is typed, on the clock the program reads too. Its reads are compared with these, not with
-	// one another: a program late on one read, under load, then reads the next one sooner, and nothing was batched.
-	typed := make([]int64, repeats)
-	for i := range repeats {
-		typed[i] = time.Now().UnixMicro()
-		if err := term.Write([]byte(" ")); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(every)
-	}
-	out = output(t, term, uint64(len(out)), contains("done"))
-	// One line a read: the byte count of the read and when it came, in microseconds since the epoch.
-	reads := regexp.MustCompile(`read (\d+) at (\d+)`).FindAllStringSubmatch(out, -1)
-	if len(reads) != repeats {
-		t.Fatalf("the program read %d times, want %d single spaces:\n%s", len(reads), repeats, out)
-	}
-	var late int64
-	for i, r := range reads {
-		n, _ := strconv.Atoi(r[1])
-		at, _ := strconv.ParseInt(r[2], 10, 64)
-		if n != 1 {
-			t.Fatalf("read %d got %d bytes, want one space at a time", i, n)
-		}
-		if i+1 < repeats && at >= typed[i+1] {
-			t.Fatalf("read %d came %d ms after the next space was typed: held back, not as typed",
-				i, (at-typed[i+1])/1000)
-		}
-		late = max(late, at-typed[i])
-	}
-	t.Logf("%d spaces, one read each, at most %d ms after they were typed", repeats, late/1000)
-}
-
 // TestHelperProcess is the program the tests run in a terminal, not a test: with spaces, it puts its terminal in raw
 // mode, as Claude Code does, and reports each read until it has read 20 spaces.
 func TestHelperProcess(t *testing.T) {
 	if os.Getenv(helperEnv) != "spaces" {
-		t.Skip("run by TestHeldSpaceArrivesAsRepeats")
+		t.Skip("run by TestWrite")
 	}
 	state, err := rawterm.MakeRaw(0)
 	if err != nil {
@@ -372,292 +396,4 @@ func TestHelperProcess(t *testing.T) {
 	fmt.Print("done\r\n")
 	rawterm.Restore(0, state) //nolint:errcheck // Exits next: nothing to report it to.
 	os.Exit(0)
-}
-
-// TestService drives the terminal through Connect, as the window does: open, write, read the stream, close.
-func TestService(t *testing.T) {
-	m := NewManager(Config{Command: []string{"/bin/sh"}, Dir: t.TempDir()})
-	t.Cleanup(m.Close)
-	srv := httptest.NewServer(func() *http.ServeMux {
-		mux := http.NewServeMux()
-		mux.Handle(Handler(m))
-		return mux
-	}())
-	t.Cleanup(srv.Close)
-	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
-	ctx := t.Context()
-	open, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "main", Cols: 90, Rows: 20}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := open.Msg.GetTerminal()
-	if got.GetCols() != 90 || got.GetRows() != 20 || got.GetCommand()[0] != "/bin/sh" || open.Msg.GetAttached() {
-		t.Fatalf("opened %v", open.Msg)
-	}
-	id := got.GetId()
-	if _, err := c.Write(ctx, connect.NewRequest(&terminalv1.TerminalServiceWriteRequest{
-		Id: id, Data: []byte("echo hel''lo\n"),
-	})); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.Resize(ctx, connect.NewRequest(&terminalv1.TerminalServiceResizeRequest{Id: id})); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Fatalf("resize to 0×0: %v, want invalid argument", err)
-	}
-	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	stream, err := c.Read(readCtx, connect.NewRequest(&terminalv1.TerminalServiceReadRequest{Id: id}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	for !strings.Contains(out.String(), "hello") && stream.Receive() {
-		out.Write(stream.Msg().GetData())
-	}
-	if !strings.Contains(out.String(), "hello") {
-		t.Fatalf("no hello in %q: %v", out.String(), stream.Err())
-	}
-	// Attached again, it says how far its output has come: the window answers no query below.
-	again, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "main"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !again.Msg.GetAttached() || again.Msg.GetEndOffset() < uint64(out.Len()) {
-		t.Fatalf("open again: %v, read %d bytes", again.Msg, out.Len())
-	}
-	if _, err := c.Close(ctx, connect.NewRequest(&terminalv1.TerminalServiceCloseRequest{Id: id})); err != nil {
-		t.Fatal(err)
-	}
-	// The stream ends with the program: an interactive shell exits on SIGHUP.
-	exited := false
-	for stream.Receive() {
-		exited = stream.Msg().GetExited()
-	}
-	if !exited {
-		t.Fatalf("the stream ended without the end of the program: %v", stream.Err())
-	}
-	if _, err := c.Write(ctx, connect.NewRequest(&terminalv1.TerminalServiceWriteRequest{Id: "nope"})); connect.CodeOf(err) != connect.CodeNotFound {
-		t.Fatalf("write to an unknown terminal: %v, want not found", err)
-	}
-}
-
-// TestServiceList gives the terminals whose program runs, by name, without starting any: the window shows a wish's
-// lead only while it runs.
-func TestServiceList(t *testing.T) {
-	m := NewManager(Config{Command: []string{"/bin/sh"}, Dir: t.TempDir()})
-	t.Cleanup(m.Close)
-	srv := httptest.NewServer(func() *http.ServeMux {
-		mux := http.NewServeMux()
-		mux.Handle(Handler(m))
-		return mux
-	}())
-	t.Cleanup(srv.Close)
-	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
-	ctx := t.Context()
-	names := func() []string {
-		t.Helper()
-		res, err := c.List(ctx, connect.NewRequest(&terminalv1.TerminalServiceListRequest{}))
-		if err != nil {
-			t.Fatal(err)
-		}
-		var out []string
-		for _, term := range res.Msg.GetTerminals() {
-			out = append(out, term.GetName())
-		}
-		return out
-	}
-	if got := names(); len(got) != 0 || len(m.Running()) != 0 {
-		t.Fatalf("listed %v before any terminal, or started one", got)
-	}
-	sh(t, m, "main")
-	lead := sh(t, m, "lead-w1", "-c", "exit 3")
-	end(t, lead)
-	if got := names(); len(got) != 1 || got[0] != "main" {
-		t.Fatalf("listed %v, want only main: an ended lead is not running", got)
-	}
-	sh(t, m, "lead-w2")
-	if got := strings.Join(names(), " "); got != "lead-w2 main" {
-		t.Fatalf("listed %q, want lead-w2 main", got)
-	}
-}
-
-// BeforeStart runs before the program starts, and what it sets is what the program gets: djinn up brings its PATH
-// up to date there, so that a lead finds an agent installed from the window meanwhile.
-func TestBeforeStartRunsBeforeTheProgram(t *testing.T) {
-	t.Setenv("DJINN_BEFORE_START", "")
-	m := NewManager(Config{BeforeStart: func() { _ = os.Setenv("DJINN_BEFORE_START", "set") }})
-	t.Cleanup(m.Close)
-	term, _, err := m.Open("main", []string{"/bin/sh", "-c", `echo "got $DJINN_BEFORE_START"`}, t.TempDir(), 80, 24)
-	if err != nil {
-		t.Fatal(err)
-	}
-	output(t, term, 0, contains("got set"))
-}
-
-// TestServiceRunsALine runs a command line through the user's shell, pipes and all, as the agents' setup does; a
-// line and a command together are refused.
-func TestServiceRunsALine(t *testing.T) {
-	t.Setenv("SHELL", "/bin/sh")
-	m := NewManager(Config{Dir: t.TempDir()})
-	t.Cleanup(m.Close)
-	srv := httptest.NewServer(func() *http.ServeMux {
-		mux := http.NewServeMux()
-		mux.Handle(Handler(m))
-		return mux
-	}())
-	t.Cleanup(srv.Close)
-	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
-	ctx := t.Context()
-	if _, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
-		Name: "both", Command: []string{"/bin/sh"}, Line: "true",
-	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Fatalf("a command and a line: %v, want invalid argument", err)
-	}
-	open, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
-		Name: "setup", Line: "echo set''up | tr s S; exit 3",
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := open.Msg.GetTerminal().GetCommand(); got[0] != "/bin/sh" || got[len(got)-1] != "echo set''up | tr s S; exit 3" {
-		t.Fatalf("command %q", got)
-	}
-	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	stream, err := c.Read(readCtx, connect.NewRequest(&terminalv1.TerminalServiceReadRequest{Id: open.Msg.GetTerminal().GetId()}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	code := int32(0)
-	for stream.Receive() {
-		out.Write(stream.Msg().GetData())
-		if stream.Msg().GetExited() {
-			code = stream.Msg().GetExitCode()
-		}
-	}
-	if !strings.Contains(out.String(), "Setup") || code != 3 {
-		t.Fatalf("output %q, exit %d: %v", out.String(), code, stream.Err())
-	}
-}
-
-// TestServiceNeverOpensAShellForALead attaches the window to the lead's terminal while the lead runs, and refuses to
-// start the default shell under that name, with DJINN_LEAD=1: a line Djinn types to the lead would run there as a
-// command. A command the window names (a restart) still runs there, and a terminal of another name gets the shell.
-func TestServiceNeverOpensAShellForALead(t *testing.T) {
-	m := NewManager(Config{Command: []string{"/bin/sh"}, Dir: t.TempDir()})
-	t.Cleanup(m.Close)
-	srv := httptest.NewServer(func() *http.ServeMux {
-		mux := http.NewServeMux()
-		mux.Handle(Handler(m))
-		return mux
-	}())
-	t.Cleanup(srv.Close)
-	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
-	ctx := t.Context()
-	refused := func(when string) {
-		t.Helper()
-		_, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead", Cols: 80, Rows: 24}))
-		if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-			t.Fatalf("open the lead's terminal %s: %v, want failed precondition", when, err)
-		}
-		if m.Lookup("lead") != nil {
-			t.Fatalf("a shell started under the lead's name %s", when)
-		}
-	}
-	refused("that runs nothing")
-
-	lead := sh(t, m, "lead", "-c", "echo lead here; exec cat")
-	output(t, lead, 0, contains("lead here"))
-	open, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead", Cols: 90, Rows: 20}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := open.Msg.GetTerminal(); got.GetId() != lead.ID || !open.Msg.GetAttached() || got.GetCols() != 90 ||
-		open.Msg.GetEndOffset() == 0 {
-		t.Fatalf("opened %v, want attached to %s at 90 columns, with the end of what it wrote", open.Msg, lead.ID)
-	}
-
-	// The lead ended: still no shell under its name, the window attaches to the ended lead
-	// (TestServiceAttachesToExitedLeadTerminal).
-	lead.Hangup()
-	select {
-	case <-lead.Done():
-	case <-time.After(10 * time.Second):
-		t.Fatal("the lead did not end")
-	}
-	ended, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead", Cols: 80, Rows: 24}))
-	if err != nil || ended.Msg.GetTerminal().GetId() != lead.ID || !ended.Msg.GetTerminal().GetExited() {
-		t.Fatalf("open the lead's terminal whose lead ended: %v, %v, want the ended lead", ended.Msg, err)
-	}
-	if m.Lookup("lead") != nil {
-		t.Fatal("a shell started under the lead's name whose lead ended")
-	}
-
-	// A command the window names runs there; another terminal gets the shell.
-	again, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
-		Name: "lead", Command: []string{"/bin/sh", "-c", "exec cat"}, Cols: 80, Rows: 24,
-	}))
-	if err != nil || again.Msg.GetAttached() || again.Msg.GetTerminal().GetCommand()[0] != "/bin/sh" {
-		t.Fatalf("restart the lead's command: %v, %v", again.Msg, err)
-	}
-	shell, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "main", Cols: 80, Rows: 24}))
-	if err != nil || shell.Msg.GetAttached() {
-		t.Fatalf("open the window's shell: %v, %v", shell.Msg, err)
-	}
-}
-
-// TestServiceAttachesToExitedLeadTerminal keeps the lead's last terminal for the window after a fast exit: its
-// output can still be read, and opening it starts nothing in its place.
-func TestServiceAttachesToExitedLeadTerminal(t *testing.T) {
-	m := NewManager(Config{Command: []string{"/bin/sh"}, Dir: t.TempDir()})
-	t.Cleanup(m.Close)
-	srv := httptest.NewServer(func() *http.ServeMux {
-		mux := http.NewServeMux()
-		mux.Handle(Handler(m))
-		return mux
-	}())
-	t.Cleanup(srv.Close)
-	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
-	ctx := t.Context()
-	lead, attached, err := m.Open("lead", []string{"/bin/sh", "-c", "printf 'retained\\n'; exit 7"}, t.TempDir(), 80, 24)
-	if err != nil || attached {
-		t.Fatalf("start lead: attached %v, %v", attached, err)
-	}
-	if code := end(t, lead); code != 7 {
-		t.Fatalf("lead exit code %d, want 7", code)
-	}
-	if m.Latest("lead") != lead {
-		t.Fatal("Latest lost the ended lead")
-	}
-
-	open, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
-		Name: "lead", Cols: 90, Rows: 20,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := open.Msg.GetTerminal()
-	if got.GetId() != lead.ID || !open.Msg.GetAttached() || !got.GetExited() || got.GetExitCode() != 7 {
-		t.Fatalf("opened %v, want attached to exited terminal %s", open.Msg, lead.ID)
-	}
-	if m.Lookup("lead") != nil {
-		t.Fatal("opening an exited lead restarted it")
-	}
-
-	stream, err := c.Read(ctx, connect.NewRequest(&terminalv1.TerminalServiceReadRequest{Id: got.GetId()}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	var code int32
-	var exited bool
-	for stream.Receive() {
-		out.Write(stream.Msg().GetData())
-		if stream.Msg().GetExited() {
-			exited, code = true, stream.Msg().GetExitCode()
-		}
-	}
-	if stream.Err() != nil || !strings.Contains(out.String(), "retained") || !exited || code != 7 {
-		t.Fatalf("read output %q, exited %v, code %d: %v", out.String(), exited, code, stream.Err())
-	}
 }

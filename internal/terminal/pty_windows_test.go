@@ -24,7 +24,7 @@ import (
 // helper opens a terminal running TestHelperProcess with mode, closed at the end of the test.
 func helper(t *testing.T, m *Manager, name, mode string, cols, rows int) *Terminal {
 	t.Helper()
-	t.Setenv(helperEnv, mode)
+	m.cfg.env = append(m.cfg.env, helperEnv+"="+mode)
 	term, _, err := m.Open(name, []string{os.Args[0], "-test.run=^TestHelperProcess$"}, t.TempDir(), cols, rows)
 	if err != nil {
 		t.Fatal(err)
@@ -33,77 +33,85 @@ func helper(t *testing.T, m *Manager, name, mode string, cols, rows int) *Termin
 	return term
 }
 
-func TestConsoleWriteThenRead(t *testing.T) {
-	m := NewManager(Config{})
-	t.Cleanup(m.Close)
-	term, _, err := m.Open("main", []string{comspec()}, t.TempDir(), 80, 24)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The caret keeps the typed line, which the console echoes, from matching. Enter is a carriage return.
-	if err := term.Write([]byte("echo hel^lo& exit 3\r")); err != nil {
-		t.Fatal(err)
-	}
-	output(t, term, 0, contains("hello"))
-	start := time.Now()
-	if code := end(t, term); code != 3 {
-		t.Fatalf("exit code %d, want 3", code)
-	}
-	// No process holds the console any more: it closes at once, without waiting for a child.
-	if took := time.Since(start); took >= drain {
-		t.Fatalf("the end took %v, the delay left to a child holding the terminal", took)
-	}
-	if err := term.Write([]byte("x")); err != ErrExited {
-		t.Fatalf("write after the end: %v, want ErrExited", err)
-	}
-}
-
-// TestConsoleProgramThatEndsAtOnce: the output of a program that ends at once, in the folder and with the
-// environment given, reaches the terminal whole.
-func TestConsoleProgramThatEndsAtOnce(t *testing.T) {
-	m := NewManager(Config{})
-	t.Cleanup(m.Close)
-	dir := t.TempDir()
-	term, _, err := m.Open("main", ShellCommand("cd& echo %TERM%& exit /b 4"), dir, 250, 24) // Wide: no line wraps.
-	if err != nil {
-		t.Fatal(err)
-	}
-	if code := end(t, term); code != 4 {
-		t.Fatalf("exit code %d, want 4", code)
-	}
-	var out strings.Builder
-	if err := term.Read(0, nil, func(o Output) error { out.Write(o.Data); return nil }); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{strings.ToLower(dir), "xterm-256color"} {
-		if !strings.Contains(strings.ToLower(out.String()), want) {
-			t.Fatalf("%q not in the output:\n%q", want, out.String())
+func TestWrite(t *testing.T) {
+	t.Parallel()
+	t.Run("then read", func(t *testing.T) {
+		t.Parallel()
+		m := NewManager(Config{})
+		t.Cleanup(m.Close)
+		term, _, err := m.Open("main", []string{comspec()}, t.TempDir(), 80, 24)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
+		// The caret keeps the typed line, which the console echoes, from matching. Enter is a carriage return.
+		if err := term.Write([]byte("echo hel^lo& exit 3\r")); err != nil {
+			t.Fatal(err)
+		}
+		output(t, term, 0, contains("hello"))
+		start := time.Now()
+		if code := end(t, term); code != 3 {
+			t.Fatalf("exit code %d, want 3", code)
+		}
+		// No process holds the console any more: it closes at once, without waiting for a child.
+		if took := time.Since(start); took >= drain {
+			t.Fatalf("the end took %v, the delay left to a child holding the terminal", took)
+		}
+		if err := term.Write([]byte("x")); err != ErrExited {
+			t.Fatalf("write after the end: %v, want ErrExited", err)
+		}
+	})
 }
 
-// TestConsoleShellLineAsTyped: a line with quotes and a pipe, a PowerShell installer's shape, reaches cmd.exe as
-// typed. Quoted the C runtime's way, cmd.exe echoed \"lamp | smoke\".
-func TestConsoleShellLineAsTyped(t *testing.T) {
-	m := NewManager(Config{})
-	t.Cleanup(m.Close)
-	term, _, err := m.Open("main", ShellCommand(`echo "lamp | smoke"& exit /b 5`), t.TempDir(), 250, 24)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if code := end(t, term); code != 5 {
-		t.Fatalf("exit code %d, want 5", code)
-	}
-	var out strings.Builder
-	if err := term.Read(0, nil, func(o Output) error { out.Write(o.Data); return nil }); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), `"lamp | smoke"`) || strings.Contains(out.String(), `\"`) {
-		t.Fatalf("the line did not reach cmd.exe as typed:\n%q", out.String())
-	}
+// TestShellCommand: the output of a program that ends at once, in the folder and with the environment given, reaches
+// the terminal whole; a line with quotes and a pipe, a PowerShell installer's shape, reaches cmd.exe as typed.
+func TestShellCommand(t *testing.T) {
+	t.Parallel()
+	t.Run("program that ends at once", func(t *testing.T) {
+		t.Parallel()
+		m := NewManager(Config{})
+		t.Cleanup(m.Close)
+		dir := t.TempDir()
+		term, _, err := m.Open("main", ShellCommand("cd& echo %TERM%& exit /b 4"), dir, 250, 24) // Wide: no line wraps.
+		if err != nil {
+			t.Fatal(err)
+		}
+		if code := end(t, term); code != 4 {
+			t.Fatalf("exit code %d, want 4", code)
+		}
+		var out strings.Builder
+		if err := term.Read(0, nil, func(o Output) error { out.Write(o.Data); return nil }); err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{strings.ToLower(dir), "xterm-256color"} {
+			if !strings.Contains(strings.ToLower(out.String()), want) {
+				t.Fatalf("%q not in the output:\n%q", want, out.String())
+			}
+		}
+	})
+	// Quoted the C runtime's way, cmd.exe echoed \"lamp | smoke\".
+	t.Run("shell line as typed", func(t *testing.T) {
+		t.Parallel()
+		m := NewManager(Config{})
+		t.Cleanup(m.Close)
+		term, _, err := m.Open("main", ShellCommand(`echo "lamp | smoke"& exit /b 5`), t.TempDir(), 250, 24)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if code := end(t, term); code != 5 {
+			t.Fatalf("exit code %d, want 5", code)
+		}
+		var out strings.Builder
+		if err := term.Read(0, nil, func(o Output) error { out.Write(o.Data); return nil }); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out.String(), `"lamp | smoke"`) || strings.Contains(out.String(), `\"`) {
+			t.Fatalf("the line did not reach cmd.exe as typed:\n%q", out.String())
+		}
+	})
 }
 
-func TestConsoleResize(t *testing.T) {
+func TestResize(t *testing.T) {
+	t.Parallel()
 	m := NewManager(Config{})
 	term := helper(t, m, "main", "size", 120, 30)
 	out := output(t, term, 0, contains("size 120x30"))
@@ -116,82 +124,83 @@ func TestConsoleResize(t *testing.T) {
 	output(t, term, uint64(len(out)), contains("size 100x40"))
 }
 
-// TestConsoleCloseKillsTheTree: closing the terminals sends CTRL_CLOSE_EVENT; the command interpreter ends, and a
-// program that holds on is killed after the grace delay with the process it started.
-func TestConsoleCloseKillsTheTree(t *testing.T) {
-	defer func(g time.Duration) { grace = g }(grace)
-	grace = 300 * time.Millisecond
-	m := NewManager(Config{})
-	polite, _, err := m.Open("polite", []string{comspec()}, t.TempDir(), 80, 24)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stubborn := helper(t, m, "stubborn", "stubborn", 80, 24)
-	child := readyChild(t, output(t, stubborn, 0, readyLine.MatchString))
-	start := time.Now()
-	m.Close() // djinn up stopping.
-	if code := end(t, polite); code == -1 {
-		t.Fatal("the command interpreter was killed, want it to end on CTRL_CLOSE_EVENT")
-	}
-	if code := end(t, stubborn); code != -1 {
-		t.Fatalf("the program that holds on ended with %d, want -1 (killed)", code)
-	}
-	if took := time.Since(start); took < grace {
-		t.Fatalf("closing took %v, want the grace delay %v at least", took, grace)
-	}
-	if ev, err := windows.WaitForSingleObject(child, 1000); err != nil || ev != windows.WAIT_OBJECT_0 {
-		t.Fatalf("the child of the killed program still runs: %d, %v", ev, err)
-	}
-}
-
-// TestConsoleHangupEndsTheChildren: a program that ends on CTRL_CLOSE_EVENT leaves no child behind to hold its
-// folder, without waiting for the grace delay.
-func TestConsoleHangupEndsTheChildren(t *testing.T) {
-	defer func(g time.Duration) { grace = g }(grace)
-	grace = time.Hour
-	m := NewManager(Config{})
-	parent := helper(t, m, "parent", "parent", 80, 24)
-	child := readyChild(t, output(t, parent, 0, readyLine.MatchString))
-	m.Close()
-	if code := end(t, parent); code == -1 {
-		t.Fatal("the program was killed, want it to end on CTRL_CLOSE_EVENT")
-	}
-	if ev, err := windows.WaitForSingleObject(child, 1000); err != nil || ev != windows.WAIT_OBJECT_0 {
-		t.Fatalf("the child of the program still runs: %d, %v", ev, err)
-	}
-}
-
-// TestConsoleEndsWithDjinn: djinn killed without closing its terminals (a crash, or the e2e's teardown on Windows),
-// the programs of its terminals end with it, and leave their folder free to remove (t.TempDir removes it).
-func TestConsoleEndsWithDjinn(t *testing.T) {
-	host := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$")
-	host.Env = append(os.Environ(), helperEnv+"=host", hostDirEnv+"="+t.TempDir())
-	stdout, err := host.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := host.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = host.Process.Kill()
-		_ = host.Wait()
+// TestClose: closing the terminals sends CTRL_CLOSE_EVENT; the command interpreter ends, and a program that holds on
+// is killed after the grace delay with the process it started; a program that ends on CTRL_CLOSE_EVENT leaves no child
+// behind to hold its folder; djinn killed without closing its terminals ends their programs with it.
+func TestClose(t *testing.T) {
+	t.Parallel()
+	t.Run("kills the tree", func(t *testing.T) {
+		t.Parallel()
+		const grace = 300 * time.Millisecond
+		m := NewManager(Config{pace: paced(func(p *pace) { p.grace = grace })})
+		polite, _, err := m.Open("polite", []string{comspec()}, t.TempDir(), 80, 24)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stubborn := helper(t, m, "stubborn", "stubborn", 80, 24)
+		child := readyChild(t, output(t, stubborn, 0, readyLine.MatchString))
+		start := time.Now()
+		m.Close() // djinn up stopping.
+		if code := end(t, polite); code == -1 {
+			t.Fatal("the command interpreter was killed, want it to end on CTRL_CLOSE_EVENT")
+		}
+		if code := end(t, stubborn); code != -1 {
+			t.Fatalf("the program that holds on ended with %d, want -1 (killed)", code)
+		}
+		if took := time.Since(start); took < grace {
+			t.Fatalf("closing took %v, want the grace delay %v at least", took, grace)
+		}
+		if ev, err := windows.WaitForSingleObject(child, 1000); err != nil || ev != windows.WAIT_OBJECT_0 {
+			t.Fatalf("the child of the killed program still runs: %d, %v", ev, err)
+		}
 	})
-	timeout := time.AfterFunc(5*time.Second, func() { _ = host.Process.Kill() })
-	line, err := bufio.NewReader(stdout).ReadString('\n')
-	timeout.Stop()
-	if err != nil || !readyLine.MatchString(line) {
-		t.Fatalf("the host said %q: %v", line, err)
-	}
-	child := readyChild(t, line)
-	if err := host.Process.Kill(); err != nil {
-		t.Fatal(err)
-	}
-	_ = host.Wait()
-	if ev, err := windows.WaitForSingleObject(child, 1000); err != nil || ev != windows.WAIT_OBJECT_0 {
-		t.Fatalf("the child of the terminal's program outlived djinn: %d, %v", ev, err)
-	}
+	t.Run("hangup ends the children", func(t *testing.T) {
+		t.Parallel()
+		m := NewManager(Config{pace: paced(func(p *pace) { p.grace = time.Hour })})
+		parent := helper(t, m, "parent", "parent", 80, 24)
+		child := readyChild(t, output(t, parent, 0, readyLine.MatchString))
+		m.Close()
+		if code := end(t, parent); code == -1 {
+			t.Fatal("the program was killed, want it to end on CTRL_CLOSE_EVENT")
+		}
+		if ev, err := windows.WaitForSingleObject(child, 1000); err != nil || ev != windows.WAIT_OBJECT_0 {
+			t.Fatalf("the child of the program still runs: %d, %v", ev, err)
+		}
+	})
+	t.Run("ends with djinn", func(t *testing.T) {
+		t.Parallel()
+		host := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$")
+		host.Env = append(os.Environ(), helperEnv+"=host", hostDirEnv+"="+t.TempDir())
+		stdout, err := host.StdoutPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := host.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_ = host.Process.Kill()
+			_ = host.Wait()
+		})
+		timeout := time.AfterFunc(5*time.Second, func() { _ = host.Process.Kill() })
+		line, err := bufio.NewReader(stdout).ReadString('\n')
+		timeout.Stop()
+		if err != nil || !readyLine.MatchString(line) {
+			t.Fatalf("the host said %q: %v", line, err)
+		}
+		child := readyChild(t, line)
+		if err := host.Process.Kill(); err != nil {
+			t.Fatal(err)
+		}
+		_ = host.Wait()
+		if ev, err := windows.WaitForSingleObject(child, 1000); err != nil || ev != windows.WAIT_OBJECT_0 {
+			t.Fatalf("the child of the terminal's program outlived djinn: %d, %v", ev, err)
+		}
+	})
 }
+
+// chooseOnScreen is the case of TestChoose at the fake lead's approval, which runs on Unix only (say_test.go).
+func chooseOnScreen(t *testing.T) { t.Skip("the fake lead runs on Unix") }
 
 // hostDirEnv is the folder of the terminal the host opens.
 const hostDirEnv = "DJINN_TERMINAL_HOST_DIR"
@@ -252,9 +261,8 @@ func TestHelperProcess(t *testing.T) {
 		signal.Notify(make(chan os.Signal, 1), syscall.SIGTERM)
 		time.Sleep(time.Hour)
 	case "host":
-		_ = os.Setenv(helperEnv, "stubborn")
-		term, _, err := NewManager(Config{}).Open("main", []string{os.Args[0], "-test.run=^TestHelperProcess$"},
-			os.Getenv(hostDirEnv), 80, 24)
+		term, _, err := NewManager(Config{env: []string{helperEnv + "=stubborn"}}).Open(
+			"main", []string{os.Args[0], "-test.run=^TestHelperProcess$"}, os.Getenv(hostDirEnv), 80, 24)
 		if err != nil {
 			fmt.Println("open:", err)
 			os.Exit(1)

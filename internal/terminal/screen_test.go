@@ -19,33 +19,36 @@ func rows(s *screen) []string {
 	return out
 }
 
-// TestScreenReadsClaudeCodeTrust: Claude Code's folder trust as recorded (claude 2.1.295, 120 columns) draws
-// word by word with cursor moves; cut anywhere between two writes, it reads as on screen, a choice.
-func TestScreenReadsClaudeCodeTrust(t *testing.T) {
-	recorded, err := os.ReadFile(filepath.Join("testdata", "claude-trust.out"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, cut := range []int{1, 2, 3, 7, 64, len(recorded)} {
-		term := &Terminal{screen: newScreen(120, 40)}
-		for i := 0; i < len(recorded); i += cut {
-			term.screen.write(recorded[i:min(len(recorded), i+cut)])
+// TestScreen checks the screen emulator: recorded agent output cut between writes, redraws, resizes, and agent
+// prompts with faint placeholders.
+func TestScreen(t *testing.T) {
+	t.Parallel()
+	// Claude Code's folder trust as recorded (claude 2.1.295, 120 columns) draws word by word with cursor moves; cut
+	// anywhere between two writes, it reads as on screen, a choice.
+	t.Run("claude trust", func(t *testing.T) {
+		t.Parallel()
+		recorded, err := os.ReadFile(filepath.Join("testdata", "claude-trust.out"))
+		if err != nil {
+			t.Fatal(err)
 		}
-		got := rows(term.screen)
-		for _, want := range []string{" ❯ No, exit", "   Yes, I trust this folder", " Enter to confirm · Esc to cancel"} {
-			if !slices.Contains(got, want) {
-				t.Fatalf("cut every %d bytes: %q not a row of:\n%s", cut, want, strings.Join(got, "\n"))
+		for _, cut := range []int{1, 2, 3, 7, 64, len(recorded)} {
+			term := &Terminal{screen: newScreen(120, 40)}
+			for i := 0; i < len(recorded); i += cut {
+				term.screen.write(recorded[i:min(len(recorded), i+cut)])
+			}
+			got := rows(term.screen)
+			for _, want := range []string{" ❯ No, exit", "   Yes, I trust this folder", " Enter to confirm · Esc to cancel"} {
+				if !slices.Contains(got, want) {
+					t.Fatalf("cut every %d bytes: %q not a row of:\n%s", cut, want, strings.Join(got, "\n"))
+				}
+			}
+			if !term.choosing() {
+				t.Fatalf("cut every %d bytes: the trust is not a choice", cut)
 			}
 		}
-		if !term.choosing() {
-			t.Fatalf("cut every %d bytes: the trust is not a choice", cut)
-		}
-	}
-}
-
-// TestScreenFollowsRedraws: what an agent erases in place, scrolls away or draws on the alternate screen and leaves
-// is gone; what it shows now stays.
-func TestScreenFollowsRedraws(t *testing.T) {
+	})
+	// What an agent erases in place, scrolls away or draws on the alternate screen and leaves is gone; what it shows
+	// now stays.
 	for name, c := range map[string]struct {
 		cols int
 		out  string
@@ -61,27 +64,69 @@ func TestScreenFollowsRedraws(t *testing.T) {
 		"wide":              {10, "界界界界界x", []string{"界 界 界 界 界", "x"}},
 		"region":            {10, "\x1b[2;4rtop\x1b[4;1Hq\r\nr", []string{"top", "q", "r"}},
 	} {
-		s := newScreen(c.cols, 5)
-		s.write([]byte(c.out))
-		if got := rows(s); strings.Join(got, "|") != strings.Join(c.want, "|") {
-			t.Errorf("%s: rows %q, want %q", name, got, c.want)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			s := newScreen(c.cols, 5)
+			s.write([]byte(c.out))
+			if got := rows(s); strings.Join(got, "|") != strings.Join(c.want, "|") {
+				t.Errorf("%s: rows %q, want %q", name, got, c.want)
+			}
+		})
+	}
+	t.Run("resize and restore", func(t *testing.T) {
+		t.Parallel()
+		s := newScreen(20, 3)
+		s.write([]byte("\x1b[3;15H\x1b7\x1b[HEsc to cancel"))
+		s.resize(5, 2)
+		if got := rows(s); strings.Join(got, "|") != "Esc t" {
+			t.Errorf("resized: rows %q, want what fits", got)
 		}
+		s.write([]byte("\x1b8x\x1b[?1049h\x1b[?1049ly"))             // The cursor saved before stays within the screen.
+		if got := rows(s); strings.Join(got, "|") != "Esc t|    y" { // y over x: the cursor came back from the alternate screen.
+			t.Errorf("restored: rows %q", got)
+		}
+	})
+	// Claude Code's and Codex's prompts as recorded (claude 2.1.295, codex 0.162, 120 columns): at rest, the
+	// placeholder drawn faint holds nothing; "Est" typed there holds text; Ctrl+U clears it.
+	for _, agent := range []string{"claude", "codex"} {
+		t.Run(agent+" prompt", func(t *testing.T) {
+			t.Parallel()
+			s := newScreen(120, 40)
+			for _, step := range []struct {
+				file  string
+				holds bool
+			}{{"-idle.out", false}, {"-est.out", true}, {"-cleared.out", false}} {
+				recorded, err := os.ReadFile(filepath.Join("testdata", agent+step.file))
+				if err != nil {
+					t.Fatal(err)
+				}
+				s.write(recorded)
+				if shown, holds := s.prompt(); !shown || holds != step.holds {
+					t.Errorf("%s%s: prompt shown %v, holds %v; want shown, holds %v:\n%s", agent, step.file, shown, holds,
+						step.holds, strings.Join(rows(s), "\n"))
+				}
+			}
+		})
 	}
-	s := newScreen(20, 3)
-	s.write([]byte("\x1b[3;15H\x1b7\x1b[HEsc to cancel"))
-	s.resize(5, 2)
-	if got := rows(s); strings.Join(got, "|") != "Esc t" {
-		t.Errorf("resized: rows %q, want what fits", got)
-	}
-	s.write([]byte("\x1b8x\x1b[?1049h\x1b[?1049ly"))             // The cursor saved before stays within the screen.
-	if got := rows(s); strings.Join(got, "|") != "Esc t|    y" { // y over x: the cursor came back from the alternate screen.
-		t.Errorf("restored: rows %q", got)
-	}
+	// Faint, then not, then faint in a color's own field: only SGR 2 and 22 and resets count.
+	t.Run("faint hint", func(t *testing.T) {
+		t.Parallel()
+		s := newScreen(20, 2)
+		s.write([]byte("› \x1b[2mhint\x1b[38;5;2mx\x1b[22m"))
+		if shown, holds := s.prompt(); !shown || holds {
+			t.Errorf("a faint hint: shown %v, holds %v", shown, holds)
+		}
+		s.write([]byte("\x1b[38:5:2mtyped"))
+		if _, holds := s.prompt(); !holds {
+			t.Error("text drawn after SGR 22 is typed text")
+		}
+	})
 }
 
-// TestChoosingReadsHints: a choice shows a key, "to" and what it does, at the end of a row or of a part of it between
+// TestChoosing: a choice shows a key, "to" and what it does, at the end of a row or of a part of it between
 // "·"; a sentence that says so does not, nor an agent's prompt at rest.
-func TestChoosingReadsHints(t *testing.T) {
+func TestChoosing(t *testing.T) {
+	t.Parallel()
 	for out, want := range map[string]bool{
 		"  Esc to cancel":                                  true,
 		"Enter to confirm · Esc to exit":                   true,
@@ -96,11 +141,14 @@ func TestChoosingReadsHints(t *testing.T) {
 		"  ← for agents · ? for shortcuts":                 false,
 		"✻ Thinking… (12s · esc to interrupt)":             false,
 	} {
-		term := &Terminal{screen: newScreen(80, 5)}
-		term.screen.write([]byte("❯ \r\n" + out + "\r\n"))
-		if got := term.choosing(); got != want {
-			t.Errorf("%q: choosing %v, want %v", out, got, want)
-		}
+		t.Run(out, func(t *testing.T) {
+			t.Parallel()
+			term := &Terminal{screen: newScreen(80, 5)}
+			term.screen.write([]byte("❯ \r\n" + out + "\r\n"))
+			if got := term.choosing(); got != want {
+				t.Errorf("%q: choosing %v, want %v", out, got, want)
+			}
+		})
 	}
 }
 
@@ -117,36 +165,4 @@ func FuzzScreen(f *testing.F) {
 		s.write(out[half:])
 		_ = s.text()
 	})
-}
-
-// TestScreenReadsAgentPrompts: Claude Code's and Codex's prompts as recorded (claude 2.1.295, codex 0.162, 120
-// columns): at rest, the placeholder drawn faint holds nothing; "Est" typed there holds text; Ctrl+U clears it.
-func TestScreenReadsAgentPrompts(t *testing.T) {
-	for _, agent := range []string{"claude", "codex"} {
-		s := newScreen(120, 40)
-		for _, step := range []struct {
-			file  string
-			holds bool
-		}{{"-idle.out", false}, {"-est.out", true}, {"-cleared.out", false}} {
-			recorded, err := os.ReadFile(filepath.Join("testdata", agent+step.file))
-			if err != nil {
-				t.Fatal(err)
-			}
-			s.write(recorded)
-			if shown, holds := s.prompt(); !shown || holds != step.holds {
-				t.Errorf("%s%s: prompt shown %v, holds %v; want shown, holds %v:\n%s", agent, step.file, shown, holds,
-					step.holds, strings.Join(rows(s), "\n"))
-			}
-		}
-	}
-	// Faint, then not, then faint in a color's own field: only SGR 2 and 22 and resets count.
-	s := newScreen(20, 2)
-	s.write([]byte("› \x1b[2mhint\x1b[38;5;2mx\x1b[22m"))
-	if shown, holds := s.prompt(); !shown || holds {
-		t.Errorf("a faint hint: shown %v, holds %v", shown, holds)
-	}
-	s.write([]byte("\x1b[38:5:2mtyped"))
-	if _, holds := s.prompt(); !holds {
-		t.Error("text drawn after SGR 22 is typed text")
-	}
 }

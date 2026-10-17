@@ -31,9 +31,6 @@ const (
 	drain = time.Second
 )
 
-// grace is Grace, shortened by the tests.
-var grace = Grace
-
 // Errors of the manager; the service turns them into Connect codes.
 var (
 	ErrNotFound = errors.New("no such terminal")
@@ -61,6 +58,11 @@ type Config struct {
 	// Prompted, when set, runs when the choice a program shows (Terminal.Prompt) appears, changes or goes, outside
 	// the terminal's lock.
 	Prompted func(t *Terminal)
+
+	// pace, when set, is how long the terminals wait (defaultPace when nil); env is added to the environment of
+	// their programs. Both for the tests, which run in parallel and so change no global.
+	pace *pace
+	env  []string
 }
 
 // Manager holds the terminals of a djinn up.
@@ -119,6 +121,7 @@ type Terminal struct {
 	answered string  // choice already sent, until it changes or disappears
 	shown    string  // the choice on screen as last seen (promptKey)
 	prompted func(*Terminal)
+	pace     pace // how long Say, Choose and Hangup wait
 }
 
 // Open returns the running terminal of name, attached true, or starts one: command in dir at cols×rows, each
@@ -190,6 +193,11 @@ func (m *Manager) OpenExclusive(
 	if name == "lead" {
 		env = append(env, "DJINN_LEAD=1")
 	}
+	env = append(env, m.cfg.env...)
+	pace := defaultPace
+	if m.cfg.pace != nil {
+		pace = *m.cfg.pace
+	}
 	p, err := start(command, dir, env, cols, rows)
 	if err != nil {
 		return nil, false, fmt.Errorf("start %s: %w", command[0], err)
@@ -197,7 +205,7 @@ func (m *Manager) OpenExclusive(
 	t = &Terminal{
 		ID: uuid.NewString(), Name: name, Command: slices.Clone(command), Dir: dir,
 		p: p, done: make(chan struct{}), cols: cols, rows: rows, changed: make(chan struct{}),
-		voice: voice{started: time.Now()}, screen: newScreen(cols, rows), prompted: m.cfg.Prompted,
+		voice: voice{started: time.Now()}, screen: newScreen(cols, rows), prompted: m.cfg.Prompted, pace: pace,
 	}
 	if old := m.byName[name]; old != nil {
 		delete(m.byID, old.ID) // Ended: its output goes with it.
@@ -440,13 +448,11 @@ func (t *Terminal) Hangup() {
 	t.hung.Store(true)
 	t.hang.Do(func() {
 		t.p.hangup()
-		// Read the delay here, not in the goroutine: it may outlive the caller, and a test restores grace after.
-		wait := grace
 		go func() {
 			defer logx.Crash("terminal hangup", "terminal", t.Name)
 			select {
 			case <-t.done:
-			case <-time.After(wait):
+			case <-time.After(t.pace.grace):
 				t.p.kill()
 			}
 		}()
