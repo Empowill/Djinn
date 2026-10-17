@@ -241,3 +241,84 @@ func TestPausedInterrupted(t *testing.T) {
 		t.Errorf("the task left paused by a crash was not interrupted first")
 	}
 }
+
+// eventTexts are the task's stored events of kind, as "KIND text" lines, in order.
+func (e *env) eventTexts(t *testing.T, id string, kind planv1.TaskEventKind) []string {
+	t.Helper()
+	var out []string
+	for _, ev := range e.storedEvents(t, id) {
+		if ev.GetKind() == kind {
+			out = append(out, ev.GetText())
+		}
+	}
+	return out
+}
+
+// TestPausedWorkerKeepsItsMessage (W226): a worker paused ten minutes, far past the silence the Lamplighter ends, is
+// not woken while it holds still; resumed, it reads the message sent while it was paused, and its task ends done in
+// the run it had.
+func TestPausedWorkerKeepsItsMessage(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	clock := &fakeClock{at: time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)}
+	e := up(t, t.TempDir(), WithClock(clock.now), WithSilenceLimit(100*time.Millisecond))
+	wishID, _ := e.wish(t, gitRepo(t))
+	id := e.spawn(t, wishID, "text start\nwait").GetId()
+	follow := e.follow(t, id)
+	follow("its worker said start", said("start"))
+
+	e.pause(t, id)
+	e.send(t, id, "Also check the docs.")
+	clock.set(clock.now().Add(10 * time.Minute))
+	e.h.lamplighter(t.Context(), []*planv1.Task{e.get(t, id)})
+	e.resume(t, id)
+	follow("its worker read the message", said("received: Also check the docs."))
+
+	done := e.ended(t, id)
+	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("status = %v (%s), want DONE", done.GetStatus(), done.GetError())
+	}
+	for _, r := range done.GetRuns() {
+		if r.GetReason() == runWoken {
+			t.Errorf("runs = %v: woken while paused", done.GetRuns())
+		}
+	}
+	if got := e.eventTexts(t, id, planv1.TaskEventKind_TASK_EVENT_KIND_RECEIVED); !slices.Equal(got, []string{"Also check the docs."}) {
+		t.Errorf("received = %q, want the message sent while paused", got)
+	}
+}
+
+// TestUnreadMessageToldToTheContinuation (W226, as W219 lost one): a message the worker took on its input but never
+// read, cut for an idle stream, is not lost to the continuation: the worker started again is told it with its prompt,
+// and it is received once that worker says something.
+func TestUnreadMessageToldToTheContinuation(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	clock := &fakeClock{at: time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)}
+	e := up(t, t.TempDir(), WithClock(clock.now))
+	wishID, _ := e.wish(t, gitRepo(t))
+	// It ends cut before it reads its inbox, as a stream silent 5 min once it runs again.
+	id := e.spawn(t, wishID, "text start\nwait\nfail stream idle for 5 min").GetId()
+	e.follow(t, id)("its worker said start", said("start"))
+	e.pause(t, id)
+	e.send(t, id, "Also check the docs.")
+	clock.set(clock.now().Add(10 * time.Minute))
+	e.resume(t, id)
+
+	done := e.ended(t, id)
+	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("status = %v (%s), want DONE once continued", done.GetStatus(), done.GetError())
+	}
+	runs := done.GetRuns()
+	woken := slices.IndexFunc(runs, func(r *planv1.TaskRun) bool { return r.GetReason() == runWoken })
+	if woken < 0 || woken != len(runs)-2 {
+		t.Errorf("runs = %v, want the one before the last woken for its idle stream", runs)
+	}
+	said := e.eventTexts(t, id, planv1.TaskEventKind_TASK_EVENT_KIND_TEXT)
+	if !slices.Contains(said, "Also check the docs.") {
+		t.Errorf("the continuation never had the message; it said %q", said)
+	}
+	if got := e.eventTexts(t, id, planv1.TaskEventKind_TASK_EVENT_KIND_RECEIVED); !slices.Equal(got, []string{"Also check the docs."}) {
+		t.Errorf("received = %q, want the message once, from the continuation", got)
+	}
+}

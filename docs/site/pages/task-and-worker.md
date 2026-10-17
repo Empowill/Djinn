@@ -114,7 +114,7 @@ On the card:
 
 | Button | What it does | When |
 | --- | --- | --- |
-| **Send** | Gives the running worker an instruction; "Received" shows once it says something after it | A running worker, not a watcher |
+| **Send** | Gives the running worker an instruction; "Received" shows once it says something after it; a worker that ends before reading it is told it when the Djinn starts it again | A running worker, not a watcher |
 | **Pause the worker** | Holds the worker where it is and frees its slot | Running; not on Windows yet |
 | **Resume the worker** | Lets a paused worker go on | Paused |
 | **Stop the worker** | Ends it; a planned task stops before it starts | Running, paused, planned or resuming |
@@ -164,7 +164,9 @@ The window follows tasks; the Djinn makes them. Ask it in words, and it uses the
 Each task runs under limits: two hours of work in total across its runs, and five hundred model turns in a run, shown
 on its row against that limit. Past them it stops, and continuing it gives it five hundred turns again, not more time.
 A task may also get a spending cap, which only Claude enforces. A worker silent for fifteen minutes, with nothing
-running, is woken and continued on its session; after three wakes in a row, its task fails, saying so.
+running, is woken and continued on its session; after three wakes in a row, its task fails, saying so. A paused worker
+is never silent: its time held still does not count, its silence starts again from zero once it goes on, and it
+reads then what was sent to it meanwhile.
 
 A worker silent for ten minutes with its processes idle, or a task failed for a reason a new turn may get past, carries
 a small circular arrow beside its code: the Djinn relaunches it by continuing it. See

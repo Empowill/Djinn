@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -152,4 +154,40 @@ func (h *Harness) acknowledge(r *run, ev Event) {
 		h.write(r, actorHarness, methodReceived, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_RECEIVED, Text: text})
 	}
 	r.unread = nil
+}
+
+// unreceived are the messages the task's last worker took on its input and said nothing after, the oldest first: it
+// ended before it read them (stopped while Djinn held it paused, cut for an idle stream, woken by the Lamplighter, a
+// restart), and its session never had them. A worker started again is told them with its prompt (W226: W219 lost the
+// developer's message, sent while Djinn held it paused, to the continuation that followed its idle stream).
+// Messages a worker ended done after, or took as answered by the turn they came in (Quiet), are no longer waiting.
+func unreceived(ctx context.Context, r store.Reader, taskID string) ([]string, error) {
+	var texts []string
+	err := store.Latest(ctx, r, store.Where{"task_id": taskID}, func(ev *planv1.TaskEvent) bool {
+		switch ev.GetKind() {
+		case planv1.TaskEventKind_TASK_EVENT_KIND_MESSAGE:
+			texts = append(texts, ev.GetText())
+		case planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL,
+			planv1.TaskEventKind_TASK_EVENT_KIND_RECEIVED:
+			return false
+		case planv1.TaskEventKind_TASK_EVENT_KIND_STATUS:
+			text := ev.GetText()
+			if text == short(planv1.TaskStatus_TASK_STATUS_DONE) || strings.HasSuffix(text, takenAsAnswered) {
+				return false
+			}
+		}
+		return true
+	})
+	slices.Reverse(texts)
+	return texts, err
+}
+
+// unreceivedText tells a worker started again the messages its last worker never read.
+func unreceivedText(texts []string) string {
+	var b strings.Builder
+	b.WriteString("Messages were sent to you while you worked, and your worker ended before it read them. Take them in now:")
+	for i, text := range texts {
+		fmt.Fprintf(&b, "\n\nMessage %d of %d:\n%s", i+1, len(texts), text)
+	}
+	return b.String()
 }

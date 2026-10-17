@@ -42,6 +42,9 @@ type turnEnd struct {
 // that ended: the input is closed, and the agent exits once done.
 const Quiet = 10 * time.Minute
 
+// takenAsAnswered ends what a worker says once Quiet has passed: the messages it holds are no longer waiting.
+const takenAsAnswered = "the messages sent during its turn are taken as answered"
+
 // StreamIdleTimeout is how long a model call that returns nothing may wait before being cut and continued.
 // Standard LLM streams produce chunks within seconds; 5 minutes without any stream event indicates a dead connection.
 const StreamIdleTimeout = 5 * time.Minute
@@ -70,7 +73,7 @@ func startStream(ctx context.Context, spec Spec, command string, args []string, 
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}
 	w := &streamWorker{ctx: ctx, a: a, p: p, events: make(chan Event, 64), done: make(chan struct{}), wake: make(chan struct{}, 1),
-		listen: spec.Listen}
+		held: make(chan struct{}, 1), listen: spec.Listen}
 	go func() {
 		defer logx.Crash("stream read", "agent", command)
 		w.read()
@@ -103,6 +106,7 @@ type streamWorker struct {
 	events chan Event
 	done   chan struct{}
 	wake   chan struct{}
+	held   chan struct{} // Pause or Resume changed paused
 
 	mu        sync.Mutex
 	pending   int  // messages sent without a result yet
@@ -110,6 +114,7 @@ type streamWorker struct {
 	listen    bool // the input stays open once every message has its result (Spec.Listen), until CloseInput
 	listening bool // every message has its result, and the agent waits on its open input
 	ending    bool // CloseInput was called: no more messages
+	paused    bool // Djinn holds the agent still (Pause): its silence is no idle stream
 	failure   string
 	stopped   atomic.Bool // asked to stop: a turn cut short is no failure of the agent
 }
@@ -125,8 +130,37 @@ func (w *streamWorker) PID() int { return w.p.cmd.Process.Pid }
 // Cgroup is the cgroup of the agent's scope.
 func (w *streamWorker) Cgroup() string { return w.p.cgroup }
 
-func (w *streamWorker) Pause() error               { return w.p.Pause() }
-func (w *streamWorker) Resume() error              { return w.p.Resume() }
+// Pause holds the agent still. Held still, it cannot say anything: the idle timer and the quiet timer wait, and
+// start again from zero once it resumes (W226: a worker paused by the load notch failed 'stream idle' 5 min later).
+func (w *streamWorker) Pause() error {
+	w.hold(true) // Before the process stops: no timer fires in between.
+	if err := w.p.Pause(); err != nil {
+		w.hold(false)
+		return err
+	}
+	return nil
+}
+
+// Resume lets the agent go on; what was sent to it meanwhile waits on its input, and it reads it now.
+func (w *streamWorker) Resume() error {
+	if err := w.p.Resume(); err != nil {
+		return err
+	}
+	w.hold(false)
+	return nil
+}
+
+// hold records whether the agent is held still, and tells read to stop or start its timers again.
+func (w *streamWorker) hold(paused bool) {
+	w.mu.Lock()
+	w.paused = paused
+	w.mu.Unlock()
+	select {
+	case w.held <- struct{}{}:
+	default:
+	}
+}
+
 func (w *streamWorker) SetPriority(low bool) error { return w.p.SetPriority(low) }
 
 func (w *streamWorker) Stop() {
@@ -249,12 +283,13 @@ func (w *streamWorker) read() {
 		w.mu.Lock()
 		pending := w.pending
 		closed := w.closed
+		paused := w.paused
 		w.mu.Unlock()
 		var toolRunning bool
 		if tt, ok := w.a.parser.(toolTracker); ok {
 			toolRunning = tt.toolRunning()
 		}
-		if pending > 0 && !closed && !toolRunning {
+		if pending > 0 && !closed && !toolRunning && !paused {
 			idleTimer.Reset(idleTimeout)
 		} else {
 			idleTimer.Stop()
@@ -273,8 +308,21 @@ lines:
 			working()
 			resetIdle()
 			continue
+		case <-w.held:
+			// Held still, the agent says nothing: its silence starts once it goes on.
+			if w.isPaused() {
+				silence.Stop()
+			} else if waiting {
+				silence.Reset(quiet)
+			}
+			resetIdle()
+			continue
 		case <-idleCh:
 			w.mu.Lock()
+			if w.paused { // Paused as the timer fired: Resume starts it again.
+				w.mu.Unlock()
+				continue
+			}
 			w.failure = formatStreamIdle(idleTimeout)
 			w.closed = true
 			w.p.stdin.Close()
@@ -284,6 +332,9 @@ lines:
 			w.p.Stop()
 			break lines
 		case <-silence.C:
+			if w.isPaused() {
+				continue // Still waiting: Resume starts the silence again.
+			}
 			waiting = false
 			var listens []Event
 			w.mu.Lock()
@@ -297,7 +348,7 @@ lines:
 			}
 			w.mu.Unlock()
 			send([]Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
-				Text: fmt.Sprintf("%s said nothing for %s after its result: the messages sent during its turn are taken as answered", w.a.name, quiet)}})
+				Text: fmt.Sprintf("%s said nothing for %s after its result: %s", w.a.name, quiet, takenAsAnswered)}})
 			send(listens)
 			continue
 		}
@@ -380,6 +431,13 @@ lines:
 	if cut {
 		w.events <- Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: failure}
 	}
+}
+
+// isPaused tells whether Djinn holds the agent still.
+func (w *streamWorker) isPaused() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.paused
 }
 
 // lineEvents is a parser's helper: the events of one line, the first one keeping the line raw.

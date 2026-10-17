@@ -309,7 +309,11 @@ Djinn resumes a worker by itself, in the same task (status `resuming`), in four 
   lamplighter woke the street's lamps one by one, and lit again the ones the wind blew out). It wakes before it
   fails: a worker silent past the silence limit with no process busy and no gate held or awaited, a worker whose
   stream went idle, or a task running without a process (a lost process) is ended, then continued on its session
-  ("continue where you stopped…"), its run ending `wake` (`TaskRun.reason`). Only after 3 wakes in a row does the
+  ("continue where you stopped…"), its run ending `wake` (`TaskRun.reason`). A paused worker is none of these: the
+  Lamplighter skips it, and its stream's idle timer (`StreamIdleTimeout`, 5 minutes) and quiet timer stop while it is
+  held still and start again from zero when it resumes (W226). Messages sent to a worker that ended before it read
+  them (no text nor tool call after them) are told to the worker started again, after its prompt, whatever started
+  it (a wake, a restart, a preemption, a continue), and are received once it says something. Only after 3 wakes in a row does the
   task fail, with "silent for 15 min; the Lamplighter woke it 3 times in a row and gives up", its lead told once; a
   run that ends otherwise (done, a limit, a restart) ends the row. Wakes are counted apart from usage-limit
   resumes: a worker that waited for its limits is woken all the same, and a wake spends no resume. A budget of
