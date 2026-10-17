@@ -1343,5 +1343,11 @@
   "sleep.task": "{code} fini",
   "sleep.merged": "demande de {code} fusionnée",
   "sleep.merged_url": "{url} fusionnée",
-  "sleep.time": "le {day} à {time}"
+  "sleep.time": "le {day} à {time}",
+  "glance.legend_paused": "en pause",
+  "glance.paused.one": "{count} en pause",
+  "glance.paused.other": "{count} en pause",
+  "glance.resumes_at": "reprend après {time}, une fois sa limite d’usage levée",
+  "plan.paused.one": "{count} worker en pause : arrêté, son travail gardé jusqu’à ce qu’il reprenne",
+  "plan.paused.other": "{count} workers en pause : arrêtés, leur travail gardé jusqu’à ce qu’ils reprennent"
 }

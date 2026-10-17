@@ -96,8 +96,8 @@ In the wish's **Tasks** tab, **How the tasks show** has two layouts:
   first started, or when it was created if it never started, in your language and time zone; the day shows only where
   it changes from the row above. Hovering the row says which of the two it is, and when the task ended.
 
-In **What runs**, beside the questions of a wish and of the flying carpet, a task that waits on another sits under it,
-or names it.
+In **What runs**, beside the questions of a wish and of the flying carpet, a task that waits on another sits under it
+when that one waits too, or names it.
 
 The window shows dependencies; it does not change them. There is no drag to link two tasks. **Mark done**, on a task
 no worker runs, is the one gesture there that frees what waits on it.

@@ -1125,6 +1125,9 @@ message Task {
   // The first line of the last paragraph a watcher's command printed, as its wish's lead was told. Empty for an
   // agent.
   string last_line = 30;
+  // When a watcher's first line last changed (last_line): since when the state it says holds, GREEN since 10:42. Unset
+  // for an agent.
+  google.protobuf.Timestamp last_line_time = 76;
   // Who marked the task done by hand, when and why (TaskService.Done), or which fork continues it. Empty for a task
   // its worker finished.
   Closure closed = 31;
@@ -4917,6 +4920,11 @@ message TaskServiceListRequest {
   // Each task in a few fields: its code, title, status, kind, azima, what it waits for, its times and its urgent mark;
   // no prompt, no runs, no resources. Where the tasks stand, in a few lines each.
   bool short = 6;
+  // Only the tasks the lists of what runs read: every task not done nor cancelled (running, paused, stopped, cut
+  // short, planned, waiting, failed), the azimas, and the done work still on its way into its branch (merging, waiting
+  // to merge, its merge failed or its work left not committed). Few, whatever the wish's size: the window reads them
+  // with the first page, so that a wish's glance shows its waiting work from the start.
+  bool live = 7;
 }
 
 message TaskServiceListResponse {

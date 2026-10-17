@@ -1659,7 +1659,11 @@ func (h *Harness) record(r *run, ev Event) {
 		r.refuse(what)
 	}
 	if w := ev.Watched; w != nil && w.First != "" {
-		r.task.LastLine, changed = clipRunes(w.First, watchLineMax), true
+		line := clipRunes(w.First, watchLineMax)
+		if line != r.task.GetLastLine() || r.task.GetLastLineTime() == nil {
+			r.task.LastLineTime = timestamppb.New(h.now()) // The same state said again keeps its time.
+		}
+		r.task.LastLine, changed = line, true
 	}
 	if ev.Ifrit != planv1.IfritState_IFRIT_STATE_UNSPECIFIED && r.ifrit {
 		h.ifritTurn(r, ev.Ifrit)

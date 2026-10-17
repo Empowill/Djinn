@@ -420,7 +420,10 @@ func (sub *watcher) readTasks(ctx context.Context, s *store.Store, wishID string
 	slices.SortFunc(tasks, func(a, b *planv1.Task) int { return strings.Compare(a.GetId(), b.GetId()) })
 	for _, t := range tasks {
 		if IsAzima(t) {
-			t.Azima = proto.CloneOf(shapes[t.GetId()].GetAzima())
+			// Its state from the shapes, which hold none of what Djinn records of it: that comes from the store (W219).
+			a := proto.CloneOf(shapes[t.GetId()].GetAzima())
+			KeepAzimaRecord(a, t.GetAzima())
+			t.Azima = a
 		}
 	}
 	if err := FillTilasms(ctx, s, tasks); err != nil {

@@ -13,6 +13,7 @@ import {
   ArrowUpToLine,
   BookMarked,
   ChevronDown,
+  CirclePause,
   ChevronRight,
   Flame,
   Folder,
@@ -75,6 +76,8 @@ export interface WishCounts {
   ifrits?: number;
   // Workers that wait for a place (placeWaitOf): a free slot, the machine's load or memory, a gate. Grey, with a seat.
   placeWait?: number;
+  // Workers paused, their work kept until they go on (runningOf, workerPhase): grey, with a circled pause.
+  paused?: number;
 }
 
 export function WishSidebar({
@@ -222,13 +225,14 @@ export function WishSidebar({
       count.ifrits,
     );
     // Unfolded, an active wish takes a second line under its title: its lit ifrits' flame, then what waits for you,
-    // then what works, then what waits for a place, then what investigates, then what watches, a count at zero left
-    // out, and its rank at the end. Its icon then says what it does: the questions have their count, and no raised hand
-    // repeats it (Q01). Folded to the rail, the icon is all that shows: it keeps the hand, and the workers waiting for a
-    // place hang on its corner. A narrow window folds the bar by its width alone (styles.css, 820px), the second line
+    // then what works, then what waits for a place, then what investigates, then what is paused, then what watches, a
+    // count at zero left out, and its rank at the end. Its icon then says what it does: the questions have their count,
+    // and no raised hand repeats it (Q01). Folded to the rail, the icon is all that shows: it keeps the hand, the workers
+    // waiting for a place hang on its lower corner, and the paused ones on its upper corner. A narrow window folds the bar by its width alone (styles.css, 820px), the second line
     // hidden: the row carries the hand, which shows only then, in place of the icon, and the corner's count (wish.css).
     const counted = !!rank && !collapsed;
     const placeLabel = t("plan.place_wait", { count: count.placeWait ?? 0 });
+    const pausedLabel = t("plan.paused", { count: count.paused ?? 0 });
     const shown =
       tone === "waiting" && counted
         ? wish.ready
@@ -309,6 +313,17 @@ export function WishSidebar({
               <b>{count.placeWait}</b>
             </span>
           )}
+          {!!rank && !!count.paused && (
+            <span
+              className="wish-paused-corner"
+              title={pausedLabel}
+              aria-label={pausedLabel}
+              role="img"
+            >
+              <CirclePause size={8} aria-hidden="true" />
+              <b>{count.paused}</b>
+            </span>
+          )}
         </span>
         {!collapsed && (
           <>
@@ -360,6 +375,13 @@ export function WishSidebar({
                     label={t("plan.investigating_detail", {
                       count: count.investigating,
                     })}
+                  />
+                )}
+                {!!count.paused && (
+                  <CountPill
+                    tone="paused"
+                    count={count.paused}
+                    label={pausedLabel}
                   />
                 )}
                 {!!count.fixing && (
