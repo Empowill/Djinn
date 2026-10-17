@@ -194,7 +194,8 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"- **To follow up on a task, continue it**: `djinn task continue <task> --prompt \"…\"` gives a task that " +
 		"ended, failed, stopped or was cut short a new turn of its own session, in its worktree, as the same task. " +
 		"Fork it only to start a different task from its context: a fork of a task cut short closes it, " +
-		"\"continued in\" the fork.\n" +
+		"\"continued in\" the fork. A worker started again whose branch lacks work of its target is told by Djinn to " +
+		"rebase first: never ask for it in the prompt.\n" +
 		"- **A `health` event is the scheduler's judgement of a worker (W188).** \"stalled\" or \"can be relaunched\" " +
 		"names the task, why, and the command that relaunches it (`djinn task continue <task>`, which also ends and " +
 		"continues a stalled worker): run it, unless what you know of the task says otherwise; never check a worker's " +

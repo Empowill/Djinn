@@ -90,6 +90,26 @@ A few things stop a worker without a restart, and Djinn handles them the same wa
 Only the resumes after a usage limit count against a task: after three of them, it fails. A restart, a pause or a lost
 process costs it nothing.
 
+## A resumed worker first takes what came in
+
+A worker may resume hours after its branch was cut, while other work went into the branch its own merges into: the
+wish's integration branch, its azima's branch, or the reference branch. So whenever Djinn starts a worker again (a
+continue, a resume after a usage limit or a restart, a wake of the Lamplighter, a wish resumed), the first line it is
+told asks it to rebase its branch onto that branch before anything else, with the commits that came in listed, the
+newest first: commit or set aside its work in progress, rebase, settle any conflict with its own changes in mind, run
+the tests that cover what it touched, then go on.
+
+- **Only when it matters.** A branch that holds every commit of its target hears nothing of it.
+- **A pause of 15 minutes or more.** A worker paused where it was, by you, by the load notch or for an investigator, is
+  asked the same once resumed, between two of its steps; a shorter pause says nothing. A paused worker is never ended
+  for its silence.
+- **The worker does it, never Djinn.** Only the worker knows its changes, as for a repaired branch: Djinn never
+  rebases in a worker's folder.
+- **Its events say it.** The task's events say when it was asked, from which commit onto which, and then that its
+  branch was rebased, from which commit to which, or merged, if the worker merged instead.
+
+A read-only worker, a watcher, a question worker, an ifrit, and the correction and review workers are not asked.
+
 ## A worker's health
 
 On each of its passes, Djinn's scheduler judges every worker from what it already knows of it: its last word, what its

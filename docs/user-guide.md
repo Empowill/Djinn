@@ -672,6 +672,11 @@ a usage limit count: after three of them, a task fails; a restart, a pause or a 
 
 A worker stopped by its provider's usage limit shows "Waiting for the limit", then resumes once the limit resets.
 
+A worker Djinn starts again (a continue, a resume after a limit or a restart, a wake) whose branch lacks work that went
+into the branch its own merges into is first told, on the first line of its prompt, to rebase onto that branch itself,
+with what came in listed; one paused 15 minutes or more is told the same once resumed. Its events say when it was
+asked and when its branch was rebased, from which commit to which. Djinn never rebases in a worker's worktree.
+
 The Lamplighter, Djinn's watchdog, wakes before it fails. A worker that prints nothing for 15 minutes, with no
 process busy and no gate held or awaited, a worker whose stream goes idle, or whose process is lost, is ended and
 continued on its session; only after three wakes in a row does its task fail, saying so, the Djinn told once. A

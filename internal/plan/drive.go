@@ -483,7 +483,7 @@ func DrivenRules(projects []*planv1.Project, home string) string {
 		"Never read nor search source code yourself. A worker starts from a short prompt: what to do, in which " +
 		"project, how to check it (the commit checks and the targeted tests, never the whole suite). To follow up " +
 		"on a task, continue it (`djinn task continue <task> --prompt \"…\"`); fork it only to start another task " +
-		"from its context.\n" +
+		"from its context. Djinn tells a worker started again to rebase onto its target first: never ask for it.\n" +
 		"- **The plan is a graph of azimas.** An azima (`T07`) carries one clear goal; spawn each task `--part-of " +
 		"<azima>`, `--after` only the tasks whose result it needs, `--blocks W5` to put it before a planned task. " +
 		"Tasks that touch the same files, protos or tests go one after the other; the others run side by side. Look " +
