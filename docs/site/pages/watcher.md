@@ -96,6 +96,7 @@ The Djinn does not poll. It waits for the events of its wishes, and each one wak
 | --- | --- |
 | Ended, failed | A task's worker ended or failed, and what Djinn does about it |
 | Merged | A task's work merged into its integration branch |
+| Landed | All of an azima's work is in main, and whether every azima of the wish is: then it proposes to grant it |
 | Answer, enlighten | You answered a question, or asked to know more before answering |
 | Approved | You approved a decision the Djinn took |
 | Move | Something left to the Djinn: work that failed to integrate, push checks that stay red |

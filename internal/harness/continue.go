@@ -97,7 +97,7 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 			return err
 		}
 		if t.GetPartOf() != "" {
-			if err := reopenAzima(ctx, tx, t.GetPartOf(), t.GetCode()+" started"); err != nil {
+			if err := reopenAzima(ctx, tx, t.GetPartOf(), t, "started"); err != nil {
 				return err
 			}
 		}
