@@ -261,7 +261,7 @@ func (h *Harness) leaveOut(ctx context.Context, t *planv1.Task, why string) {
 	}
 	h.notify()
 	if tellsDone(t) && !toldDoneAtEnd(t, true) {
-		h.tellDone(ctx, t, notIntegrated(why))
+		h.tellDone(ctx, t, notIntegrated(why), "")
 	}
 }
 
@@ -587,7 +587,7 @@ func (h *Harness) tellNothingMerged(ctx context.Context, batch []*planv1.Task, b
 			h.tellLeadDetail(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, t.GetWishId(), t.GetCode(),
 				"Djinn: "+t.GetCode()+" done, nothing to merge into "+branch+".", h.reviewLine(ctx, t))
 		case tellsDone(t) && !toldDoneAtEnd(t, true):
-			h.tellDone(ctx, t, "nothing to merge into "+branch)
+			h.tellDone(ctx, t, "nothing to merge into "+branch, "")
 		}
 	}
 }

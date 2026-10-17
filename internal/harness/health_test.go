@@ -122,8 +122,9 @@ func TestHealthStalled(t *testing.T) {
 	}
 }
 
-// TestHealthAfterTurn: a worker silent since its turn's result may wait for its background work: well past
-// StallSilence, stalled past StallAfterTurn. A worker that holds a gate is never stalled.
+// TestHealthAfterTurn: a worker silent since its turn's result, a turn that ended on an error, may wait for its
+// background work: well past StallSilence, stalled past StallAfterTurn (a turn that ended well, Djinn stops it past
+// SilentAfterResult, silent.go). A worker that holds a gate is never stalled.
 func TestHealthAfterTurn(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -137,7 +138,7 @@ func TestHealthAfterTurn(t *testing.T) {
 		return nil
 	}, nil)
 	wishID, _ := e.wish(t, gitRepo(t))
-	turn := e.spawn(t, wishID, "text start\nusage 100 20 0.01\nwait")
+	turn := e.spawn(t, wishID, "text start\nerror API Error: 529 overloaded\nusage 100 20 0.01\nwait")
 	gate := e.spawn(t, wishID, "text gated\nwait")
 	gated.Store(gate.GetId(), true)
 	e.follow(t, turn.GetId())("its worker said its usage", func(ev *planv1.TaskEvent) bool {

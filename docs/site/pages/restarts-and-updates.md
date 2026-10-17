@@ -82,6 +82,11 @@ A few things stop a worker without a restart, and Djinn handles them the same wa
 - **A silent worker.** The Lamplighter, Djinn's watchdog, wakes a worker that printed nothing for 15 minutes with no
   process busy and no gate held or awaited, or whose process is lost: it ends it and continues it on its session. After
   three wakes in a row the task fails, saying so, and the Djinn is told.
+- **A worker silent after its result.** A worker whose turn ended, silent since for ten minutes with its processes
+  idle and no gate held or awaited, is stopped: done if it wrote its final note, its work then integrated; otherwise
+  continued once, told to finish its task and write its final note, and failed if silent so again. One line to the
+  Djinn either way. On 17/10/2026 a correction hung so for eleven minutes after its final note, a wait it had sent to
+  the background still alive, and every task of its wish waited for it.
 - **A watcher** is never ended for its silence, which is its normal state. A command of it that dies starts again; five
   deaths in a row fail it, and the Djinn hears why.
 - **A budget.** A task is stopped, "budget exceeded", past 2 hours of work in total across its runs, or a worker past
@@ -123,8 +128,9 @@ processes use of the processor, the gates it holds, its usage limit and its erro
 | Limit lifted | The reset passed, or its agent's account changed | Djinn resumes it by itself; the Djinn hears it |
 | Can be relaunched | It failed for a reason a new turn may get past: its agent or its stream broke, a stop of Djinn cut it, a usage limit since lifted | A mark beside it; the Djinn hears it |
 
-A worker whose turn ended may still wait for work it started in the background: it is stalled only after thirty
-minutes. A task stopped on request, or failed for good (its budget, its permissions, a dependency, an error Djinn does
+A worker whose turn ended may still wait for work it started in the background: busy, it is well; idle for ten
+minutes, Djinn stops it (see a worker silent after its result, above), and it is stalled only
+after thirty minutes when its turn ended on an error or a usage limit. A task stopped on request, or failed for good (its budget, its permissions, a dependency, an error Djinn does
 not know), is never flagged.
 
 A flagged task shows a small circular arrow beside its code, on its card and in the tree, amber when stalled, salmon
@@ -135,7 +141,9 @@ continued on its own session, as the Lamplighter wakes one.
 The thresholds come from nine days of this machine's workers: of 330 817 pauses between two words of a worker, 64 passed
 ten minutes; every one whose processes worked 5% of a core or more was a command at work, and the idle ones were an
 outage of the agent's service, workers the Lamplighter woke, and workers waiting for their background work after their
-turn.
+turn. The ten minutes after a result come from the runs of one wish of three days, 315 results: the waits after a
+result that went on were busy (tests at about two cores, up to 23 minutes), or waited for a usage limit, or, once, idle
+for nine and a half minutes before going on; the worker that hung stayed idle for eleven.
 
 ## Updates
 

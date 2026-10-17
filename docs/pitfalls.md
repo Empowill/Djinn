@@ -56,6 +56,11 @@ the code does not say by itself; remove one when a change makes it false.
   stops what its worker left (stopLeft): a test that polled `/proc/PID/environ` of such a job raced that end (W135,
   `TestTaskEndStopsWhatItsWorkerStarted`). *Do:* let the process write what the test checks to a file before its
   PID, and read that file. *Where:* `internal/harness/leftover_linux_test.go`.
+- **A fake worker idle after its result is stopped at ten minutes.** A script that ends a turn (`usage …`) then
+  waits (`wait`), given idle CPU readings (`readCPU`) and a clock moved `SilentAfterResult` on, ends done (with a text
+  before the usage) or is continued once (without), at the scheduler's next pass (W272): a test that expected it to
+  run on, or to be stalled at thirty minutes, sees it ended. *Do:* give it busy readings, or end its turn on an error
+  (`error …` before `usage`), as `TestHealthAfterTurn` does. *Where:* `internal/harness/silent.go`.
 - **`TestUpdateInstallsABuild` races under `-race`, before your change.** A test variable is written while Update's
   goroutine reads it; `test-go` and `test-pkg` run without `-race` and pass. Still true today. *Do:* run
   `go tool task test-race -- -skip TestUpdateInstallsABuild ./internal/ui`, and do not take it for your regression.

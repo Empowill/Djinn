@@ -34,10 +34,10 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 	if req.GetPrompt() != "" || req.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || req.GetModel() != "" ||
 		req.GetMaxBudgetUsd() != 0 || len(req.GetWriteScopes()) > 0 || req.GetLater() || req.GetFork() != "" ||
 		req.GetFromLead() || req.GetRestart() || len(req.GetTilasm()) > 0 || req.GetUrgent() ||
-		req.GetFeedback() || req.GetMinutes() != 0 {
+		req.GetFeedback() || req.GetMinutes() != 0 || req.GetRepair() {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(
 			"an azima has no worker: no prompt, provider, model, budget, write scope, --later, --fork, --from-lead, "+
-				"--restart, --tilasm, --urgent, --feedback or --minutes"))
+				"--restart, --tilasm, --urgent, --feedback, --minutes or --repair"))
 	}
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()

@@ -133,23 +133,27 @@ func toldDoneAtEnd(t *planv1.Task, integrate bool) bool {
 
 // tellDone tells the lead of t's wish that its work worker ended done, with the first line of its final note and the
 // calls its permissions refused, its final note whole apart; why, when not empty, says what came of its work
-// ("nothing to merge").
-func (h *Harness) tellDone(ctx context.Context, t *planv1.Task, why string) {
+// ("nothing to merge"); stopped, when not empty, why Djinn stopped its worker (silent.go).
+func (h *Harness) tellDone(ctx context.Context, t *planv1.Task, why, stopped string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	wish, _ := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId())
 	note := h.finalNote(ctx, t.GetId())
-	line := doneLine(t, wish, firstLine(note), why)
+	line := doneLine(t, wish, firstLine(note), why, stopped)
 	if err := h.toLeadNote(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, t.GetWishId(), t.GetCode(), line,
 		note); err != nil && !errors.Is(err, plan.ErrNoLead) {
 		logx.L().Warn("tell the lead a task is done", "wish", t.GetWishId(), "task", t.GetCode(), "err", err)
 	}
 }
 
-// doneLine is the line that tells a lead the work worker t ended done: what was refused first, with as many names
-// as let the digest keep the whole command, then its note; why, when nothing was refused, says what came of its work.
-func doneLine(t *planv1.Task, wish *planv1.Wish, note, why string) string {
+// doneLine is the line that tells a lead the work worker t ended done: why Djinn stopped it when it did, what was
+// refused first, with as many names as let the digest keep the whole command, then its note; why, when nothing was
+// refused, says what came of its work.
+func doneLine(t *planv1.Task, wish *planv1.Wish, note, why, stopped string) string {
 	line := "Djinn: " + t.GetCode() + " done"
+	if stopped != "" {
+		line += " (" + stopped + ": Djinn stopped it)"
+	}
 	if t.GetRefused().GetCount() > 0 {
 		shown := refusedShown
 		for shown > 0 && !plan.DigestKeeps(&planv1.LeadEvent{

@@ -106,7 +106,7 @@ func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLos
 			continue
 		}
 
-		if r.stopping || r.final || r.paused || r.lamplighterEnd {
+		if r.stopping || r.final || r.paused || r.lamplighterEnd || r.silentWhy != "" {
 			h.mu.Unlock()
 			continue
 		}

@@ -199,7 +199,7 @@ func (h *Harness) runningHealth(t *planv1.Task, now time.Time) *planv1.TaskHealt
 	id := t.GetId()
 	h.mu.Lock()
 	r := h.runs[id]
-	if r == nil || r.stopping || r.final || r.paused || r.lamplighterEnd || r.watcher || r.ifrit {
+	if r == nil || r.stopping || r.final || r.paused || r.lamplighterEnd || r.silentWhy != "" || r.watcher || r.ifrit {
 		h.mu.Unlock()
 		return nil
 	}
@@ -216,30 +216,37 @@ func (h *Harness) runningHealth(t *planv1.Task, now time.Time) *planv1.TaskHealt
 	if (h.held != nil && len(h.held(id)) > 0) || (h.waiting != nil && len(h.waiting(id)) > 0) {
 		return nil // A gated command runs, or waits for its turn.
 	}
-	h.useMu.Lock()
-	var points []float64
-	if r.samples != nil {
-		for _, p := range r.samples.Points(last) {
-			points = append(points, p.GetCpuPercent())
-		}
-	}
-	h.useMu.Unlock()
-	if len(points) < stallReadings {
+	mean, idle := h.idleSince(r, last)
+	if !idle {
 		return nil
-	}
-	var sum float64
-	for _, p := range points {
-		sum += p
-	}
-	mean, peak := sum/float64(len(points)), slices.Max(points)
-	if mean >= stallCPU || peak >= stallPeak {
-		return nil // A command at work: a long test, a build.
 	}
 	why := fmt.Sprintf("silent %d min, CPU %.0f%%", int(math.Round(quiet.Minutes())), mean)
 	if kind == planv1.TaskEventKind_TASK_EVENT_KIND_USAGE {
 		why += ", since its turn ended"
 	}
 	return &planv1.TaskHealth{State: planv1.HealthState_HEALTH_STATE_STALLED, Reason: why}
+}
+
+// idleSince tells whether the processes of r's worker used almost no CPU since: stallReadings readings at least, their
+// mean under stallCPU and none past stallPeak; and that mean. Too few readings (Windows, the fake agent) is no idle.
+func (h *Harness) idleSince(r *run, since time.Time) (mean float64, idle bool) {
+	h.useMu.Lock()
+	var points []float64
+	if r.samples != nil {
+		for _, p := range r.samples.Points(since) {
+			points = append(points, p.GetCpuPercent())
+		}
+	}
+	h.useMu.Unlock()
+	if len(points) < stallReadings {
+		return 0, false
+	}
+	var sum float64
+	for _, p := range points {
+		sum += p
+	}
+	mean = sum / float64(len(points))
+	return mean, mean < stallCPU && slices.Max(points) < stallPeak // Past either, a command at work: a test, a build.
 }
 
 // The failures a new turn may get past, read in the error of a task failed or cut short, from the history of this

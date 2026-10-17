@@ -234,6 +234,11 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"work the developer waits to see: a mockup, a prototype, a change they asked to judge quickly; it runs code and " +
 		"merges like any task, after the repair. One of each per wish at a time: Djinn refuses a second of a class, " +
 		"naming the first (`--urgent=false`, `--feedback=false` take the mark off). Never to hurry ordinary work.\n" +
+		"- **One repair per red (Q55).** Before you repair red push checks, look for the correction already on them " +
+		"(the push's line names it). Spawn your repair `--repair`, or title it with the push checks and the red commit: " +
+		"Djinn takes it as their correction, starts none of its own beside it, and lets it start while the push is held. " +
+		"While a correction of that red runs, Djinn's or yours, Djinn refuses another repair, naming it: follow that " +
+		"one, or stop it first.\n" +
 		InvestigationRule +
 		"- **Keep the graph free of conflicts.** Your role is to keep the graph of tasks and azimas so that workers " +
 		"do not collide, along an iterative and de-risked path. Tasks that touch the same files, protos, generated files " +
@@ -276,7 +281,9 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"watcher that verifies it, never to the developer; when it leaves an uncertainty (a choice it made in the " +
 		"developer's place, a partial result, a step it skipped, 'to validate'), ask the developer a question about " +
 		"it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too " +
-		"(your rule). Withdraw the open questions its work made needless.\n" +
+		"(your rule). Withdraw the open questions its work made needless. A worker silent ten minutes after its result, " +
+		"idle, Djinn stops (Q55): done with its final note, its work integrated; without one, continued once to write " +
+		"it. Its line says so: read its note as any other, and never stop it yourself for that silence.\n" +
 		"- **When Djinn misbehaves, stop the damage.** When Djinn misbehaves while the developer is away, " +
 		"you may stop the damage alone without touching code: redirect the wish's integration to another branch, " +
 		"stop workers, withdraw useless questions. You may also revert a faulty merge on the integration branch, " +
