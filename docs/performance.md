@@ -136,9 +136,10 @@ lost at each start: the first task lists after a start still read every event of
 and the window showed its wishes empty for seconds (W283). Djinn now keeps each task's gate wait apart
 (`planv1.GateWait`), counted as it writes each gate event (`plan.CountGate`, from `putEvents`); a task list reads that
 count alone (`plan.FillTimes`). A task from before it is counted from its events once, at its first list, and kept.
-On a copy of the developer's data, cold start, page cache dropped, the three active wishes' tasks were all read
-CALM_BEFORE s after the start before and CALM_AFTER s after on a calm machine; 13 to 19 s before and 2.0 to 3.1 s after under
-load 45 to 50; the first start after the update, which counts the 446 tasks, takes as long as before, once.
+On a copy of the developer's data (1,418 tasks, 480,000 events), cold start, page cache dropped, the window's first
+reads (the wishes, then each active wish's tasks) all answered 6.9 to 13.8 s after the start before and 1.7 to 1.8 s
+after, at load 9 to 16; 13 to 19 s before and 2.0 to 3.1 s after at load 45 to 50. The first start after the update,
+which counts the 446 started tasks of the active wishes, takes as long as before, once.
 Every git command Djinn
 runs has a deadline (`internal/gitx`): 5 minutes for one that reaches a remote, 10 for one that stays in the
 repository, and its output is let go 5 s after it is killed, even when an ssh it started still holds it.
