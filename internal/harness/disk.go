@@ -71,6 +71,11 @@ func WithDiskGuard(g DiskGuard) Option { return func(h *Harness) { h.disk.guard 
 type disk struct {
 	guard DiskGuard
 	cache goCache
+	// What tests set: the Go build cache in place of go env GOCACHE (cacheDir), how often the free space is read
+	// while the disk is almost full (poll; 0: diskPollEvery), the folders measured in place of knownFolders'.
+	cacheDir func() string
+	poll     time.Duration
+	folders  func(cache string) []string
 
 	mu       sync.Mutex
 	trimming bool
@@ -111,7 +116,12 @@ func (h *Harness) readDisk(ctx context.Context) diskSpace {
 			logx.L().Debug("read the data folder's free space", "err", err)
 		}
 	}
-	if s.cache = h.disk.cache.find(ctx, h.now()); s.cache != "" {
+	if h.disk.cacheDir != nil {
+		s.cache = h.disk.cacheDir()
+	} else {
+		s.cache = h.disk.cache.find(ctx, h.now())
+	}
+	if s.cache != "" {
 		if free, err := g.Free(s.cache); err == nil {
 			s.cacheFree, s.cacheRead = free, true
 		} else {
@@ -190,10 +200,14 @@ func (h *Harness) diskFullLoop(s diskSpace, free uint64, where string) {
 	defer logx.Crash("disk guard")
 	defer h.disk.wg.Done()
 	ctx, cancel := context.WithTimeout(h.ctx, diskMeasureTimeout)
-	biggest := biggestFolders(ctx, h.knownFolders(s.cache), 3)
+	known := h.knownFolders
+	if h.disk.folders != nil {
+		known = h.disk.folders
+	}
+	biggest := biggestFolders(ctx, known(s.cache), 3)
 	cancel()
 	h.tellDisk(fullLine(free, where, h.disk.guard.Full), fullDetail(biggest))
-	tick := time.NewTicker(diskPollEvery)
+	tick := time.NewTicker(cmp.Or(h.disk.poll, diskPollEvery))
 	defer tick.Stop()
 	for {
 		select {
