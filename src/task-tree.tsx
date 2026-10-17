@@ -34,7 +34,12 @@ import { t } from "./i18n";
 import { ToneIcon } from "./status";
 import { useTextScale } from "./text-size";
 import { TaskUsage } from "./usage";
-import { MergeLabel, promptPreview, UrgentLabel } from "./wish-task";
+import {
+  HealthMark,
+  MergeLabel,
+  promptPreview,
+  UrgentLabel,
+} from "./wish-task";
 import "./task-tree.css";
 
 // A row's height, a lane's width, and the room left of the first lane, in pixels at the default text size: the tree
@@ -404,6 +409,7 @@ const TreeRow = memo(function TreeRow({
         {isMerge(task) && <MergeLabel task={task} codes={codes} />}
         {isUrgent(task) && <UrgentLabel />}
         <span className="agent-code">{task.code}</span>
+        <HealthMark task={task} />
         <span className="tree-title">{task.title}</span>
       </span>
     </button>

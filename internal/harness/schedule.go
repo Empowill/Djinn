@@ -277,6 +277,7 @@ func (h *Harness) schedule(ctx context.Context) {
 			tasks = reloaded
 		}
 	}
+	h.judge(ctx, tasks)
 	if !slices.ContainsFunc(tasks, planned) {
 		return
 	}

@@ -212,6 +212,8 @@ func runUp(args []string) (restart bool, err error) {
 		// Started from the Finder or a desktop menu, Djinn has a bare PATH (fromLauncher): before each start, its PATH
 		// gains the folders of the agents installed meanwhile.
 		harness.WithBeforeStart(beforeStart()),
+		// While a task waits for its agent's usage limit, an account changed since lifts it (health.go).
+		harness.WithAccount(ui.Account),
 	}
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))

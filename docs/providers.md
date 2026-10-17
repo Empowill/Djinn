@@ -295,7 +295,11 @@ Djinn resumes a worker by itself, in the same task (status `resuming`), in four 
   (it reads "resumed as W47").
 - **Its provider's usage limit stopped it.** The task waits for the reset (status "waiting for the limit", with
   "the account's session limit, resets at 07:20"), then resumes. Without a reset time, it waits 15 minutes, then 30,
-  doubling up to 2 hours. While a limit holds, no new worker of that provider starts.
+  doubling up to 2 hours. While a limit holds, no new worker of that provider starts. The scheduler notes the
+  account the agent was signed in with when the limit stopped it (`TaskHealth.account`: a hash of what its status
+  command prints of it, `claude auth status`'s email and organization, `codex login status`'s line; never the account
+  itself) and reads it again once a minute while the task waits: another account, and the task resumes at once.
+  agy documents no status command: its limit waits for the reset.
 - **Preemption for an investigator worker.** When memory is short and an investigator worker ("Qxx: enlighten")
   cannot start, Djinn makes room: it interrupts the running work task of lowest priority so that it resumes later in
   its session or conversation (Claude, Antigravity), RESUMING with the wait reason "made room for Qxx: enlighten",
@@ -309,6 +313,16 @@ Djinn resumes a worker by itself, in the same task (status `resuming`), in four 
   run that ends otherwise (done, a limit, a restart) ends the row. Wakes are counted apart from usage-limit
   resumes: a worker that waited for its limits is woken all the same, and a wake spends no resume. A budget of
   the task's [seal](#a-tasks-seal) is no wake: a task stopped past its wall time or its turns stays stopped.
+
+Beside these, the scheduler judges each work task's health on every pass (`internal/harness/health.go`,
+`Task.health`): a worker silent for `StallSilence` (10 minutes; `StallAfterTurn`, 30, after its turn's result) whose
+processes used under 5% of a core on average and never 25% in a reading, holding and waiting for no gate, is
+`stalled`; a task failed or cut short for a reason a new turn may get past (its agent or stream broke, a stop of
+Djinn, a usage limit since lifted) and that Djinn does not resume by itself is `retriable`. Both are flagged: the
+lead hears it once per change of state, in one `health` event with the command that relaunches the task
+(`djinn task continue`, which ends a stalled worker and continues it on its session as a wake), and the window
+marks the worker. Without readings of its processes (Windows, the fake agent), a worker is never stalled. The
+Lamplighter is unchanged: it ends a silent worker only when its processes used no CPU at all.
 
 The scheduler starts a resumed task like a planned one: slots, pressure and gates still apply. After 3
 resumes on usage limits without finishing (unspent by preemption, pauses, grants or wakes), the task fails, saying

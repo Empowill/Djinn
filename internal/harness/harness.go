@@ -133,6 +133,10 @@ type Harness struct {
 	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
 	toldApart        map[string]bool       // by wish and what was told the lead of a branch apart from its remote's (remote_branch.go), guarded by mu
 
+	// The workers' health (health.go), judged by the scheduler's pass: guarded by sched.
+	accountOf AccountFunc                     // nil: no agent's account is read
+	accounts  map[planv1.Provider]accountSeen // each agent's account, as last read
+
 	// Babysitting what tasks open (babysit.go).
 	babysitting sync.WaitGroup // one per look for what a task opened; Close waits for them
 	babysitMu   sync.Mutex     // one watcher decided at a time
@@ -211,12 +215,15 @@ type run struct {
 	samples            *workerRing          // recent measurement samples (measure.go); guarded by Harness.useMu
 	resources          *planv1.Resources    // the task's resources as its pump last set them, for the readers apart from the pump; guarded by Harness.useMu
 	subs               map[chan *planv1.TaskEvent]struct{}
-	startTime          time.Time     // when the current run started
-	turns              int           // model turns of the current worker (lamplighter.go), kept on the task by setTurns
-	lastActivity       time.Time     // when the worker last produced an event (lamplighter.go)
-	lastLamplighterCPU time.Duration // CPU time used at the Lamplighter's previous check
-	lamplighterEnd     bool          // the Lamplighter ended this worker
-	lamplighterReason  string        // why the Lamplighter ended it ("silent for N min")
+	startTime          time.Time            // when the current run started
+	turns              int                  // model turns of the current worker (lamplighter.go), kept on the task by setTurns
+	lastActivity       time.Time            // when the worker last produced an event (lamplighter.go)
+	lastKind           planv1.TaskEventKind // the kind of that event: after its turn's result, a worker may wait for its background work (health.go)
+	lastLamplighterCPU time.Duration        // CPU time used at the Lamplighter's previous check
+	lamplighterEnd     bool                 // the Lamplighter ended this worker
+	lamplighterReason  string               // why the Lamplighter ended it ("silent for N min")
+	wakePrompt         string               // what the woken worker is told, when not to continue (continueStalled)
+	relaunched         bool                 // the lead or the developer relaunched it, stalled (continueStalled): woken whatever its wakes
 
 	// Owned by whoever writes the task: Spawn, then the pump.
 	task           *planv1.Task
@@ -1821,6 +1828,7 @@ func (h *Harness) end(r *run, res Result) {
 	}
 	h.mu.Lock()
 	stopping, stoppingReason, shelved, preemptedWhy, lamplighterEnd, lamplighterReason := r.stopping, r.stoppingReason, r.shelved, r.preemptedWhy, r.lamplighterEnd, r.lamplighterReason
+	relaunched := r.relaunched
 	out := r.out
 	h.mu.Unlock()
 	var streamIdleReason string
@@ -1894,7 +1902,7 @@ func (h *Harness) end(r *run, res Result) {
 		if lamplighterEnd {
 			why = lamplighterReason
 		}
-		if canWake(t) {
+		if canWake(t) || (relaunched && plan.CanResume(t.GetProvider())) {
 			markWoken(t, why, nowPb)
 			logx.L().Info("lamplighter wakes a task", "task", t.GetCode(), "why", why)
 		} else {
@@ -1989,7 +1997,10 @@ func (h *Harness) end(r *run, res Result) {
 		text += ": " + t.GetError()
 	}
 	if (lamplighterEnd || streamIdleEnd) && t.GetContinuing() {
-		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: agyContinuePrompt})
+		h.mu.Lock()
+		prompt := cmp.Or(r.wakePrompt, agyContinuePrompt)
+		h.mu.Unlock()
+		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	}
 	h.write(r, actorHarness, methodEnd, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	if integrate {
@@ -2008,7 +2019,7 @@ func (h *Harness) end(r *run, res Result) {
 		h.tellWatcherFailed(t)
 	case ifritOut(t):
 		h.tellOut(t)
-	case !r.light && !watching(t):
+	case !r.light && !watching(t) && !relaunched: // Relaunched, its lead or the developer asked for it.
 		h.workerEnded(t)
 		h.babysitOpened(proto.CloneOf(t))
 	}
@@ -2075,6 +2086,9 @@ func (h *Harness) workerEnded(t *planv1.Task) {
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED ||
 		(t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && (t.GetResumeAfter() != nil || t.GetContinuing())) ||
 		(t.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED && !strings.HasPrefix(t.GetError(), "stopped on request")) {
+		if h.flaggedAtEnd(t) {
+			return // The scheduler's next pass flags it, in one line with the command that relaunches it (health.go).
+		}
 		h.tellWorkerFailed(t)
 	}
 }
@@ -2152,7 +2166,7 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 		return nil, err
 	}
 	h.mu.Lock()
-	r.lastActivity = h.now()
+	r.lastActivity, r.lastKind = h.now(), te.GetKind()
 	if r.task != nil {
 		r.task.LastActivityTime = timestamppb.New(r.lastActivity)
 	}
@@ -2162,12 +2176,18 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 }
 
 // carry copies onto the run's copy of its task, before it is written, what is stored on the task from outside the
-// run while it runs: the comments on its diff, the developer's marks, and the babysit Djinn found it does
-// (adoptBabysit).
+// run while it runs: the comments on its diff, the developer's marks, the babysit Djinn found it does
+// (adoptBabysit), and the health the scheduler judged it by.
 func carry(tx *store.Tx, t *planv1.Task) {
 	if stored, err := store.Get[*planv1.Task](context.Background(), tx, t.GetId()); err == nil {
 		t.Comments = stored.GetComments()
 		t.Marks = stored.GetMarks()
+		// The health the scheduler judged this run by (health.go): one judged before it started is the last run's.
+		t.Health = nil
+		if health := stored.GetHealth(); health != nil && t.GetStartTime() != nil &&
+			!health.GetSince().AsTime().Before(t.GetStartTime().AsTime()) {
+			t.Health = health
+		}
 		if t.GetBabysit().GetUrl() == "" && stored.GetBabysit().GetUrl() != "" {
 			t.Babysit = stored.GetBabysit()
 		}
